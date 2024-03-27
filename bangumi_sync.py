@@ -16,6 +16,7 @@ class CustomItem(BaseModel):
     season: int
     episode: int
     release_date: str
+    user_name: str
 
 
 # 自定义同步
@@ -35,6 +36,18 @@ def custom_sync(item: CustomItem):
     if item.episode == 0:
         logger.error(f'集数{item.episode}不能为0，跳过')
         return
+
+    # 根据同步模式判断是否跳过其它用户
+    mode = configs.raw.get('sync', 'mode', fallback='single')
+    if mode == 'single':
+        single_username = configs.raw.get('sync', 'single_username', fallback='')
+        if single_username:
+            if item.user_name != single_username:
+                logger.info(f'非配置同步用户，跳过')
+                return
+        else:
+            logger.error(f'未设置同步用户single_username，请检查config.ini配置')
+            return
 
     bgm = BangumiApi(
         username=configs.raw.get('bangumi', 'username', fallback=''),
@@ -56,7 +69,8 @@ def custom_sync(item: CustomItem):
         logger.error(f'bgm: {subject_id=} {item.season=} {item.episode=}, 不存在或集数过多，跳过')
         return
 
-    logger.info(f'bgm: 查询到 {bgm_data["name"]} S0{item.season}E{item.episode} https://bgm.tv/subject/{bgm_se_id}')
+    logger.debug(f'bgm: 查询到 {bgm_data["name"]} S0{item.season}E{item.episode} '
+                 f'https://bgm.tv/subject/{bgm_se_id} https://bgm.tv/ep/{bgm_ep_id}')
 
     bgm.mark_episode_watched(subject_id=bgm_se_id, ep_id=bgm_ep_id)
     logger.info(f'bgm: 已同步 {item.title} S0{item.season}E{item.episode} https://bgm.tv/ep/{bgm_ep_id}')
