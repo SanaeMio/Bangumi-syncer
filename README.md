@@ -70,9 +70,10 @@ pip install requests fastapi pydantic uvicorn[standard]
 4. 查看`控制台日志`或`log.txt`是否同步成功
 
 ### Tautulli
+**（默认您已将Plex与Tautulli绑定完成，以下内容只需要设置一次）**
+
 1. 运行Bangumi-syncer
 
-**（默认您已将Plex与Tautulli绑定完成，以下内容只需要设置一次）**
 2. 打开Tautulli控制面板，右上角`Settings` -> `Notification Agents` -> `Add a new notification agent` -> 选择`Webhook`
 ![](https://p.sda1.dev/16/c01e9de56892498c0163a0ffb7d112fe/1.jpg)
 
