@@ -4,8 +4,8 @@
 - [🧰 安装](#-安装)
   - [Windows](#Windows)
   - [Docker](#Docker)
-- [⚙️ 配置](#-配置)
-- [🛠️ 使用](#-使用)
+- [🔧 配置](#-配置)
+- [🥰 使用](#-使用)
   - [自定义Webhook](#自定义Webhook)
   - [Plex(Tautulli)](#Tautulli)
 - [📖 计划](#-计划)
@@ -34,10 +34,10 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 后续支持
 
-## ⚙️ 配置
+## 🔧 配置
 1. 修改config.ini，根据注释说明，填写`username`、`access_token`、`single_username`三项
 
-## 🛠️ 使用
+## 🥰 使用
 ### 自定义Webhook
 
 1. 运行Bangumi-syncer
@@ -46,7 +46,7 @@ pip install requests fastapi pydantic uvicorn[standard]
 {
   "media_type": 媒体类型（目前写死episode）,
   "title": 中文名,
-  "ori_title": 原名（取不到给中文名也行）,
+  "ori_title": 原名（取不到就给空）,
   "season": 季度,
   "episode": 集数,
   "release_date": 发布日期（取不到第一集的给当前集数的也行，格式YYYY-MM-DD）,
@@ -90,7 +90,7 @@ pip install requests fastapi pydantic uvicorn[standard]
 6. `Data`中展开`Watched`，在`JSON Data`中填写如下通知模版，然后点击右下角`Save`保存设置
 
 ```bash
-{"media_type": "{media_type}", "title": "{show_name}", "ori_title": "{show_name}", "season": "{season_num}", "episode": "{episode_num}", "release_date": "{air_date}", "user_name": "{username}"}
+{"media_type": "{media_type}", "title": "{show_name}", "ori_title": " ", "season": "{season_num}", "episode": "{episode_num}", "release_date": "{air_date}", "user_name": "{username}"}
 ```
 
 ![](https://p.sda1.dev/16/6870cf7c4167203114bc4df7eac4b41a/5.jpg)
