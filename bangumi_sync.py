@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI,Request
 from pydantic import BaseModel
 
 from utils.configs import configs, MyLogger
@@ -12,7 +12,7 @@ app = FastAPI()
 class CustomItem(BaseModel):
     media_type: str
     title: str
-    ori_title: str
+    ori_title: str = None
     season: int
     episode: int
     release_date: str
@@ -27,6 +27,10 @@ def custom_sync(item: CustomItem):
     # 检查记录类型是否为单集
     if item.media_type != 'episode':
         logger.error(f'标记记录类型{item.media_type}错误，跳过')
+        return
+    # 检查标题不能为空
+    if not item.title:
+        logger.error(f'同步名称为空，跳过')
         return
     # 检查季度是否为整数或为0
     if item.season == 0:
@@ -72,8 +76,14 @@ def custom_sync(item: CustomItem):
     logger.debug(f'bgm: 查询到 {bgm_data["name"]} S0{item.season}E{item.episode} '
                  f'https://bgm.tv/subject/{bgm_se_id} https://bgm.tv/ep/{bgm_ep_id}')
 
-    bgm.mark_episode_watched(subject_id=bgm_se_id, ep_id=bgm_ep_id)
-    logger.info(f'bgm: 已同步 {item.title} S0{item.season}E{item.episode} https://bgm.tv/ep/{bgm_ep_id}')
+    mark_status = bgm.mark_episode_watched(subject_id=bgm_se_id, ep_id=bgm_ep_id)
+    if mark_status == 0:
+        logger.info(f'bgm: {item.title} S0{item.season}E{item.episode} 已看过，不再重复标记')
+    elif mark_status == 1:
+        logger.info(f'bgm: {item.title} S0{item.season}E{item.episode} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}')
+    else:
+        logger.info(f'bgm: {bgm_data["name"]} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}')
+        logger.info(f'bgm: {item.title} S0{item.season}E{item.episode} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}')
 
-    return item
+    return
 
