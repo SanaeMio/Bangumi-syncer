@@ -6,8 +6,9 @@
   - [Docker](#Docker)
 - [🔧 配置](#-配置)
 - [🥰 使用](#-使用)
-  - [自定义Webhook](#自定义Webhook)
-  - [Plex(Tautulli)](#Tautulli)
+  - [方式一：自定义Webhook](#自定义Webhook)
+  - [方式二：Plex(Tautulli)](#Tautulli)
+  - [方式三：Plex Webhooks](#Plex-Webhooks)
 - [📖 计划](#-计划)
 - [😘 贡献](#-贡献)
 - [👏 鸣谢](#-鸣谢)
@@ -65,9 +66,9 @@ pip install requests fastapi pydantic uvicorn[standard]
   "user_name": "SanaeMio"
 }
 ```
-3. 将以上json发送到`http://{ip}:{port}/Custom`，ip和port根据本机情况填写
+3. 将以上json发送到`http://{ip}:8000/Custom`，ip根据本机情况填写
 
-4. 查看`控制台日志`或`log.txt`是否同步成功
+4. 播放完成后，查看`控制台日志`或`log.txt`是否同步成功
 
 ### Tautulli
 **（默认您已将Plex与Tautulli绑定完成，以下内容只需要设置一次）**
@@ -77,7 +78,7 @@ pip install requests fastapi pydantic uvicorn[standard]
 2. 打开Tautulli控制面板，右上角`Settings` -> `Notification Agents` -> `Add a new notification agent` -> 选择`Webhook`
 ![](https://p.sda1.dev/16/c01e9de56892498c0163a0ffb7d112fe/1.jpg)
 
-3. 在弹出页面的`Configuration`中的`Webhook URL`填写`http://{ip}:{port}/Custom`，ip和port根据本机情况填写
+3. 在弹出页面的`Configuration`中的`Webhook URL`填写`http://{ip}:8000/Custom`，ip根据本机情况填写
 ![](https://p.sda1.dev/16/3e08440dbe4c35c35ba4981a4c8945ed/2.jpg)
 
 4. `Triggers`勾选`Watched`
@@ -97,6 +98,17 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 7. 在Plex播放完成后，观察`控制台日志`或`log.txt`是否同步成功
 
+### Plex Webhooks
+**（默认您的账号已拥有Plex Pass，以下内容只需要设置一次）**
+
+1. 运行Bangumi-syncer
+2. 打开Plex控制面板，右上角`设置` -> `Webhooks` -> `添加 Webhook`
+![](https://p.sda1.dev/16/e68729e1d454bdd23a7c9fe76ca71251/1.jpg)
+
+3. 填写网址为`http://{ip}:8000/Plex`，ip根据本机情况填写，点击`保存修改`
+
+4. 在Plex播放完成后，查看`控制台日志`或`log.txt`是否同步成功
+
 ## 📖 计划
 ✅ 支持自定义Webhook同步标记
 
@@ -104,9 +116,9 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 ✅ 支持指定单用户同步
 
-⬜️ 适配Plex原生Webhook（需要Plex Pass）
+✅ 适配Plex原生Webhook（需要Plex Pass）
 
-⬜️ 适配Emby（需要Emby Premiere）
+⬜️ 适配Emby通知
 
 ⬜️ 适配Jellyfin（需要jellyfin-plugin-webhook插件）
 
