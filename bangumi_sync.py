@@ -1,8 +1,12 @@
-from fastapi import FastAPI,Request
+import json
+
+import requests
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from utils.configs import configs, MyLogger
 from utils.bangumi_api import BangumiApi
+from utils.data_util import extract_plex_json
 
 logger = MyLogger()
 
@@ -21,12 +25,12 @@ class CustomItem(BaseModel):
 
 # 自定义同步
 @app.post("/Custom")
-def custom_sync(item: CustomItem):
+async def custom_sync(item: CustomItem):
     logger.info(f'接收到同步请求：{item}')
 
     # 检查记录类型是否为单集
     if item.media_type != 'episode':
-        logger.error(f'标记记录类型{item.media_type}错误，跳过')
+        logger.error(f'同步类型{item.media_type}不支持，跳过')
         return
     # 检查标题不能为空
     if not item.title:
@@ -47,7 +51,7 @@ def custom_sync(item: CustomItem):
         single_username = configs.raw.get('sync', 'single_username', fallback='')
         if single_username:
             if item.user_name != single_username:
-                logger.info(f'非配置同步用户，跳过')
+                logger.debug(f'非配置同步用户，跳过')
                 return
         else:
             logger.error(f'未设置同步用户single_username，请检查config.ini配置')
@@ -73,8 +77,8 @@ def custom_sync(item: CustomItem):
         logger.error(f'bgm: {subject_id=} {item.season=} {item.episode=}, 不存在或集数过多，跳过')
         return
 
-    logger.debug(f'bgm: 查询到 {bgm_data["name"]} S0{item.season}E{item.episode} '
-                 f'https://bgm.tv/subject/{bgm_se_id} https://bgm.tv/ep/{bgm_ep_id}')
+    logger.debug(f'bgm: 查询到 {bgm_data["name"]} (https://bgm.tv/subject/{bgm_se_id}) '
+                 f'S0{item.season}E{item.episode} (https://bgm.tv/ep/{bgm_ep_id})')
 
     mark_status = bgm.mark_episode_watched(subject_id=bgm_se_id, ep_id=bgm_ep_id)
     if mark_status == 0:
@@ -87,3 +91,34 @@ def custom_sync(item: CustomItem):
 
     return
 
+
+# Plex同步
+@app.post("/Plex")
+async def plex_sync(request: Request):
+    json_str = await request.body()
+    json_data = json.loads(extract_plex_json(json_str))
+    logger.debug(f'接收到Plex同步请求：{json_data["event"]} {json_data["Account"]["title"]} '
+                 f'S0{json_data["Metadata"]["grandparentTitle"]} E{json_data["Metadata"]["originalTitle"]} '
+                 f'{json_data["Metadata"]["parentIndex"]} {json_data["Metadata"]["index"]}')
+
+    # 检查记录类型是否为单集
+    if json_data["event"] != 'media.scrobble':
+        logger.debug(f'事件类型{json_data["event"]}无需同步，跳过')
+        return
+
+    # 重新组装 JSON 报文
+    reorganized_json = {
+        "media_type": json_data["Metadata"]["type"],
+        "title": json_data["Metadata"]["grandparentTitle"],
+        "ori_title": json_data["Metadata"]["originalTitle"],
+        "season": json_data["Metadata"]["parentIndex"],
+        "episode": json_data["Metadata"]["index"],
+        "release_date": json_data["Metadata"]["originallyAvailableAt"],
+        "user_name": json_data["Account"]["title"]
+    }
+
+    logger.debug(f'重新组装 JSON 报文：{reorganized_json}')
+
+    reorganized_json = CustomItem(**reorganized_json)
+    # 重组成自定义标准格式后调用自定义同步
+    await custom_sync(reorganized_json)
