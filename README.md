@@ -9,6 +9,7 @@
   - [方式一：自定义Webhook](#自定义Webhook)
   - [方式二：Plex(Tautulli)](#Tautulli)
   - [方式三：Plex Webhooks](#Plex-Webhooks)
+  - [方式四：Emby通知](#Emby通知)
 - [📖 计划](#-计划)
 - [😘 贡献](#-贡献)
 - [👏 鸣谢](#-鸣谢)
