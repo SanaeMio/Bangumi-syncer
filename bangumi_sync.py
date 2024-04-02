@@ -150,3 +150,37 @@ async def emby_sync(emby_data: dict):
     emby_json = CustomItem(**emby_json)
     # 重组成自定义标准格式后调用自定义同步
     await custom_sync(emby_json)
+
+
+@app.post("/Jellyfin")
+async def jellyfin_sync(jellyfin_request: Request):
+    json_str = await jellyfin_request.body()
+    jellyfin_data = json.loads(json_str)
+    logger.debug(f'接收到Jellyfin同步请求：{jellyfin_data}')
+
+    # 检查事件类型是否为停止播放
+    if jellyfin_data["NotificationType"] != 'PlaybackStop':
+        logger.debug(f'事件类型{jellyfin_data["NotificationType"]}无需同步，跳过')
+        return
+
+    # 检查同步类型是否为看过
+    if jellyfin_data["PlayedToCompletion"] == 'False':
+        logger.debug(f'是否播完：{jellyfin_data["PlayedToCompletion"]}，无需同步，跳过')
+        return
+
+    # 重新组装 JSON 报文
+    jellyfin_json = {
+        "media_type": jellyfin_data["media_type"].lower(),
+        "title": jellyfin_data["title"],
+        "ori_title": jellyfin_data["ori_title"],
+        "season": jellyfin_data["season"],
+        "episode": jellyfin_data["episode"],
+        "release_date": jellyfin_data["release_date"],
+        "user_name": jellyfin_data["user_name"]
+    }
+
+    logger.debug(f'重新组装 JSON 报文：{jellyfin_json}')
+
+    jellyfin_json = CustomItem(**jellyfin_json)
+    # 重组成自定义标准格式后调用自定义同步
+    await custom_sync(jellyfin_json)

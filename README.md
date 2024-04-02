@@ -20,6 +20,7 @@
   - [方式二：Plex(Tautulli)](#Tautulli)
   - [方式三：Plex Webhooks](#Plex-Webhooks)
   - [方式四：Emby通知](#Emby通知)
+  - [方式五：Jellyfin Webhook插件](#Jellyfin插件)
 - [📖 计划](#-计划)
 - [😘 贡献](#-贡献)
 - [👏 鸣谢](#-鸣谢)
@@ -41,6 +42,8 @@ pip install requests fastapi pydantic uvicorn[standard]
 2. 下载 zip并解压到任意文件夹。 [发布页](https://github.com/SanaeMio/Bangumi-syncer/releases)
 
 3. 双击 `start.bat`，无报错即可
+
+4. 如果你希望修改默认端口号，可以用文本编辑器打开`start.bat`，修改`--port 8000`为`--port 你的自定义端口号`
 
 ### Docker
 
@@ -128,6 +131,22 @@ pip install requests fastapi pydantic uvicorn[standard]
 3. 名称随意填写，URL填写`http://{ip}:8000/Emby`，ip根据本机情况填写，请求内容类型选择`application/json`，Events里只勾选`标记为已播放`，`将媒体库事件限制为`根据自己情况，建议只勾选包含动画的库，最后点击`储存`
 4. 在Emby播放完成 或 手动标记为已播放后，查看`控制台日志`或`log.txt`是否同步成功
 
+### Jellyfin插件
+
+1. 运行Bangumi-syncer
+2. 打开Jellyfin控制台 -> `插件` -> `目录` -> 拉到最下面找到点进`Webhook` -> 选择`8.0.0.0`版本，点击`Install`安装此插件然后 **重启服务器**
+![](https://p.sda1.dev/16/be346724555f34a98b5dc16c73df794f/1.jpg)
+3. 打开Jellyfin控制台 -> `插件` -> `我的插件` -> 点进`Webhook`。`Server Url`里输入你的Jellyfin地址，点击`Add Generic Destination`
+![](https://p.sda1.dev/16/038568513c591f785d10ee745f254966/2.jpg)
+4. 展开下方的`Generic`,`Webhook Name`随便填，`Webhook Url`输入`http://{ip}:8000/Jellyfin`，ip根据本机情况填写。
+`Notification Type`只选中`Playback Stop`，`Item Type`只选中`Episodes`。`Template`填写如下模版，然后点击`Save`保存设置
+
+```bash
+{"media_type": "{{{ItemType}}}","title": "{{{SeriesName}}}","ori_title": " ","season": {{{SeasonNumber}}},"episode": {{{EpisodeNumber}}},"release_date": "{{{Year}}}-01-01","user_name": "{{{NotificationUsername}}}","NotificationType": "{{{NotificationType}}}","PlayedToCompletion": "{{{PlayedToCompletion}}}"}
+```
+
+5. 在Jellyfin播放完成后，查看`控制台日志`或`log.txt`是否同步成功
+
 ## 📖 计划
 ✅ 支持自定义Webhook同步标记
 
@@ -139,7 +158,7 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 ✅ 适配Emby通知
 
-⬜️ 适配Jellyfin（需要jellyfin-plugin-webhook插件）
+✅ 适配Jellyfin（需要jellyfin-plugin-webhook插件）
 
 ⬜️ 支持Docker部署
 
