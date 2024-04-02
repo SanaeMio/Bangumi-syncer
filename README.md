@@ -109,6 +109,14 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 4. 在Plex播放完成后，查看`控制台日志`或`log.txt`是否同步成功
 
+### Emby通知
+
+1. 运行Bangumi-syncer
+2. 打开Emby控制面板 -> `应用程序设置` -> `通知` -> `添加通知` -> 选择`Webhooks`
+![](https://p.sda1.dev/16/ba2ca4af8b382aebd6e9782c7971f703/1.jpg)
+3. 名称随意填写，URL填写`http://{ip}:8000/Emby`，ip根据本机情况填写，请求内容类型选择`application/json`，Events里只勾选`标记为已播放`，`将媒体库事件限制为`根据自己情况，建议只勾选包含动画的库，最后点击`储存`
+4. 在Emby播放完成 或 手动标记为已播放后，查看`控制台日志`或`log.txt`是否同步成功
+
 ## 📖 计划
 ✅ 支持自定义Webhook同步标记
 
@@ -118,7 +126,7 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 ✅ 适配Plex原生Webhook（需要Plex Pass）
 
-⬜️ 适配Emby通知
+✅ 适配Emby通知
 
 ⬜️ 适配Jellyfin（需要jellyfin-plugin-webhook插件）
 
