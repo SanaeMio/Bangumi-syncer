@@ -137,8 +137,8 @@ async def emby_sync(emby_data: dict):
     # 重新组装 JSON 报文
     emby_json = {
         "media_type": emby_data["Item"]["Type"].lower(),
-        "title": emby_data["Item"]["Name"],
-        "ori_title": emby_data["Item"]["SeriesName"],
+        "title": emby_data["Item"]["SeriesName"],
+        "ori_title": " ",
         "season": emby_data["Item"]["ParentIndexNumber"],
         "episode": emby_data["Item"]["IndexNumber"],
         "release_date": emby_data["Item"]["PremiereDate"][:10],
