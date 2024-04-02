@@ -1,5 +1,15 @@
-# Bangumi-syncer
+<p align="center">
+  <a href="https://github.com/SanaeMio/Bangumi-syncer">
+    <img alt="Bangumi-syncer Logo" width="250" src="https://p.sda1.dev/16/7b48f7a38f0deb790f0fdc17390e0d93/logo.png">
+  </a>
+</p>
+<p align="center">
+  <a href="https://github.com/SanaeMio/Bangumi-syncer"><img alt="languages" src="https://img.shields.io/github/languages/top/SanaeMio/Bangumi-syncer"/></a>
+  <a href="https://github.com/SanaeMio/Bangumi-syncer"><img alt="release" src="https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer"/></a>
+  <a href="https://github.com/SanaeMio/Bangumi-syncer"><img alt="license" src="https://img.shields.io/github/license/SanaeMio/Bangumi-syncer"/></a>
+</p>
 
+## 🔖目录
 - [🌟 简介](#-简介)
 - [🧰 安装](#-安装)
   - [Windows](#Windows)
