@@ -94,31 +94,59 @@ async def custom_sync(item: CustomItem):
 
 # Plex同步
 @app.post("/Plex")
-async def plex_sync(request: Request):
-    json_str = await request.body()
-    json_data = json.loads(extract_plex_json(json_str))
-    logger.debug(f'接收到Plex同步请求：{json_data["event"]} {json_data["Account"]["title"]} '
-                 f'S0{json_data["Metadata"]["grandparentTitle"]} E{json_data["Metadata"]["originalTitle"]} '
-                 f'{json_data["Metadata"]["parentIndex"]} {json_data["Metadata"]["index"]}')
+async def plex_sync(plex_request: Request):
+    json_str = await plex_request.body()
+    plex_data = json.loads(extract_plex_json(json_str))
+    logger.debug(f'接收到Plex同步请求：{plex_data["event"]} {plex_data["Account"]["title"]} '
+                 f'S0{plex_data["Metadata"]["grandparentTitle"]} E{plex_data["Metadata"]["originalTitle"]} '
+                 f'{plex_data["Metadata"]["parentIndex"]} {plex_data["Metadata"]["index"]}')
 
-    # 检查记录类型是否为单集
-    if json_data["event"] != 'media.scrobble':
-        logger.debug(f'事件类型{json_data["event"]}无需同步，跳过')
+    # 检查同步类型是否为看过
+    if plex_data["event"] != 'media.scrobble':
+        logger.debug(f'事件类型{plex_data["event"]}无需同步，跳过')
         return
 
     # 重新组装 JSON 报文
-    reorganized_json = {
-        "media_type": json_data["Metadata"]["type"],
-        "title": json_data["Metadata"]["grandparentTitle"],
-        "ori_title": json_data["Metadata"]["originalTitle"],
-        "season": json_data["Metadata"]["parentIndex"],
-        "episode": json_data["Metadata"]["index"],
-        "release_date": json_data["Metadata"]["originallyAvailableAt"],
-        "user_name": json_data["Account"]["title"]
+    plex_json = {
+        "media_type": plex_data["Metadata"]["type"],
+        "title": plex_data["Metadata"]["grandparentTitle"],
+        "ori_title": plex_data["Metadata"]["originalTitle"],
+        "season": plex_data["Metadata"]["parentIndex"],
+        "episode": plex_data["Metadata"]["index"],
+        "release_date": plex_data["Metadata"]["originallyAvailableAt"],
+        "user_name": plex_data["Account"]["title"]
     }
 
-    logger.debug(f'重新组装 JSON 报文：{reorganized_json}')
+    logger.debug(f'重新组装 JSON 报文：{plex_json}')
 
-    reorganized_json = CustomItem(**reorganized_json)
+    plex_json = CustomItem(**plex_json)
     # 重组成自定义标准格式后调用自定义同步
-    await custom_sync(reorganized_json)
+    await custom_sync(plex_json)
+
+
+# Emby同步
+@app.post("/Emby")
+async def emby_sync(emby_data: dict):
+    logger.debug(f'接收到Emby同步请求：{emby_data}')
+
+    # 检查同步类型是否为看过
+    if emby_data["Event"] != 'item.markplayed':
+        logger.debug(f'事件类型{emby_data["Event"]}无需同步，跳过')
+        return
+
+    # 重新组装 JSON 报文
+    emby_json = {
+        "media_type": emby_data["Item"]["Type"].lower(),
+        "title": emby_data["Item"]["Name"],
+        "ori_title": emby_data["Item"]["SeriesName"],
+        "season": emby_data["Item"]["ParentIndexNumber"],
+        "episode": emby_data["Item"]["IndexNumber"],
+        "release_date": emby_data["Item"]["PremiereDate"][:10],
+        "user_name": emby_data["User"]["Name"]
+    }
+
+    logger.debug(f'重新组装 JSON 报文：{emby_json}')
+
+    emby_json = CustomItem(**emby_json)
+    # 重组成自定义标准格式后调用自定义同步
+    await custom_sync(emby_json)
