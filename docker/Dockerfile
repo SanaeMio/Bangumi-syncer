@@ -9,9 +9,8 @@ COPY ../utils ./utils
 COPY ../bangumi_sync.py .
 COPY ../config.ini .
 
-# 复制 requirements.txt 并安装依赖
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 安装依赖
+RUN pip install requests fastapi pydantic uvicorn[standard]
 
 # 暴露端口8000
 EXPOSE 8000
