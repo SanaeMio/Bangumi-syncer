@@ -2,8 +2,8 @@ name: Publish Docker image
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - v*
 
 env:
   DOCKERHUB_REPO: sanaemio/bangumi-syncer
@@ -39,5 +39,7 @@ jobs:
             linux/amd64
           file: ./docker/Dockerfile
           push: true
-          tags: ${{ env.DOCKERHUB_REPO }}:test
+          tags: |
+            ${{ env.DOCKERHUB_REPO }}:latest
+            ${{ env.DOCKERHUB_REPO }}:${{ steps.meta.outputs.version }}
           labels: ${{ steps.meta.outputs.labels }}
