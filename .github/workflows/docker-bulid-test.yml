@@ -36,7 +36,6 @@ jobs:
         with:
           context: .
           platforms: |
-            linux/arm/v7
             linux/arm64
             linux/amd64
           file: ./docker/Dockerfile
