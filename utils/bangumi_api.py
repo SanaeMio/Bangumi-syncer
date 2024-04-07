@@ -111,10 +111,10 @@ class BangumiApi:
                         continue
                 episodes = self.get_episodes(current_id)
                 ep_info = episodes['data']
-                _target_ep = [i for i in ep_info if i['ep'] == target_ep]
+                _target_ep = [i for i in ep_info if i['sort'] == target_ep]
                 if _target_ep:
                     return current_id, _target_ep[0]['id']
-                normal_season = True if episodes['total'] > 3 and ep_info[0]['ep'] <= 1 else False
+                normal_season = True if episodes['total'] > 3 and ep_info[0]['sort'] <= 1 else False
                 if not fist_part and normal_season:
                     break
                 related = self.get_related_subjects(current_id)
@@ -136,8 +136,8 @@ class BangumiApi:
                 continue
             episodes = self.get_episodes(current_id)
             ep_info = episodes['data']
-            normal_season = True if episodes['total'] > 3 and ep_info[0]['ep'] <= 1 else False
-            _target_ep = [i for i in ep_info if i['ep'] == target_ep]
+            normal_season = True if episodes['total'] > 3 and ep_info[0]['sort'] <= 1 else False
+            _target_ep = [i for i in ep_info if i['sort'] == target_ep]
             ep_found = True if target_ep and _target_ep else False
             if normal_season:
                 season_num += 1
