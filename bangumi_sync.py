@@ -1,6 +1,5 @@
 import json
-
-import requests
+import uvicorn
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
@@ -63,21 +62,29 @@ async def custom_sync(item: CustomItem):
         private=configs.raw.getboolean('bangumi', 'private', fallback=False),
         http_proxy=configs.raw.get('bangumi', 'script_proxy', fallback=''))
 
-    # 尝试查询bangumi番剧基础信息
-    bgm_data = bgm.bgm_search(title=item.title, ori_title=item.ori_title, premiere_date=item.release_date[:10])
-    if not bgm_data:
-        logger.error(f'bgm: 未查询到番剧信息，跳过\nbgm: {item.title=} {item.ori_title=} {item.release_date[:10]=}')
-        return
-    bgm_data = bgm_data[0]
-    subject_id = bgm_data['id']
-    # 尝试查询bangumi番剧指定季度指定集数信息
+    # 获取自定义映射
+    mapping_item = item.title
+    mapping_subject_id = configs.raw.get('bangumi-mapping', mapping_item, fallback='')
+    if mapping_subject_id:
+        logger.debug(f'匹配到自定义映射：{mapping_item}={mapping_subject_id}')
+        subject_id = mapping_subject_id
+    else:
+        # 没有匹配到自定义映射再查询番剧基础信息
+        bgm_data = bgm.bgm_search(title=item.title, ori_title=item.ori_title, premiere_date=item.release_date[:10])
+        if not bgm_data:
+            logger.error(f'bgm: 未查询到番剧信息，跳过\nbgm: {item.title=} {item.ori_title=} {item.release_date[:10]=}')
+            return
+        bgm_data = bgm_data[0]
+        subject_id = bgm_data['id']
+
+    # 查询bangumi番剧指定季度指定集数信息
     bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
         subject_id=subject_id, target_season=item.season, target_ep=item.episode)
     if not bgm_ep_id:
         logger.error(f'bgm: {subject_id=} {item.season=} {item.episode=}, 不存在或集数过多，跳过')
         return
 
-    logger.debug(f'bgm: 查询到 {bgm_data["name"]} (https://bgm.tv/subject/{bgm_se_id}) '
+    logger.debug(f'bgm: 查询到 {item.title} (https://bgm.tv/subject/{bgm_se_id}) '
                  f'S0{item.season}E{item.episode} (https://bgm.tv/ep/{bgm_ep_id})')
 
     mark_status = bgm.mark_episode_watched(subject_id=bgm_se_id, ep_id=bgm_ep_id)
@@ -86,7 +93,7 @@ async def custom_sync(item: CustomItem):
     elif mark_status == 1:
         logger.info(f'bgm: {item.title} S0{item.season}E{item.episode} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}')
     else:
-        logger.info(f'bgm: {bgm_data["name"]} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}')
+        logger.info(f'bgm: {item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}')
         logger.info(f'bgm: {item.title} S0{item.season}E{item.episode} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}')
 
     return
@@ -97,14 +104,15 @@ async def custom_sync(item: CustomItem):
 async def plex_sync(plex_request: Request):
     json_str = await plex_request.body()
     plex_data = json.loads(extract_plex_json(json_str))
-    logger.debug(f'接收到Plex同步请求：{plex_data["event"]} {plex_data["Account"]["title"]} '
-                 f'S0{plex_data["Metadata"]["grandparentTitle"]} E{plex_data["Metadata"]["originalTitle"]} '
-                 f'{plex_data["Metadata"]["parentIndex"]} {plex_data["Metadata"]["index"]}')
 
     # 检查同步类型是否为看过
     if plex_data["event"] != 'media.scrobble':
         logger.debug(f'事件类型{plex_data["event"]}无需同步，跳过')
         return
+    
+    logger.debug(f'接收到Plex同步请求：{plex_data["event"]} {plex_data["Account"]["title"]} '
+                 f'S0{plex_data["Metadata"]["grandparentTitle"]} E{plex_data["Metadata"]["originalTitle"]} '
+                 f'{plex_data["Metadata"]["parentIndex"]} {plex_data["Metadata"]["index"]}')
 
     # 重新组装 JSON 报文
     plex_json = {
@@ -152,6 +160,7 @@ async def emby_sync(emby_data: dict):
     await custom_sync(emby_json)
 
 
+# Jellyfin同步
 @app.post("/Jellyfin")
 async def jellyfin_sync(jellyfin_request: Request):
     json_str = await jellyfin_request.body()
@@ -184,3 +193,25 @@ async def jellyfin_sync(jellyfin_request: Request):
     jellyfin_json = CustomItem(**jellyfin_json)
     # 重组成自定义标准格式后调用自定义同步
     await custom_sync(jellyfin_json)
+
+
+uvicorn_logging_config = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "loggers": {
+        "uvicorn": {
+            "level": logger.level(),
+        },
+        "uvicorn.access": {
+            "level": "WARNING",
+        },
+    },
+}
+
+if __name__ == "__main__":
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_config=uvicorn_logging_config
+    )

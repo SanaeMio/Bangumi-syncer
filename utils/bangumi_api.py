@@ -3,6 +3,9 @@ import difflib
 import functools
 import os
 import requests
+from .configs import MyLogger
+
+logger = MyLogger()
 
 
 class BangumiApi:
@@ -206,6 +209,7 @@ class BangumiApi:
                 bgm_data = None
         if not bgm_data:
             return
+        logger.debug(f'{start_date} {end_date} {bgm_data}')
         return bgm_data
 
     @staticmethod
