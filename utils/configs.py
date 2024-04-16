@@ -91,6 +91,11 @@ class MyLogger:
     def error(self, *args, end=None, silence=False):
         self.log(*args, end=end, silence=silence)
 
+    def level(self):
+        if self.debug_mode:
+            return "DEBUG"
+        return "INFO"
+
 
 class Configs:
 

@@ -5,8 +5,8 @@
 </p>
 <p align="center">
   <a href="https://github.com/SanaeMio/Bangumi-syncer"><img alt="languages" src="https://img.shields.io/github/languages/top/SanaeMio/Bangumi-syncer"/></a>
-  <a href="https://github.com/SanaeMio/Bangumi-syncer"><img alt="release" src="https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer"/></a>
-  <a href="https://github.com/SanaeMio/Bangumi-syncer"><img alt="license" src="https://img.shields.io/github/license/SanaeMio/Bangumi-syncer"/></a>
+  <a href="https://github.com/SanaeMio/Bangumi-syncer/releases"><img alt="release" src="https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer"/></a>
+  <a href="https://github.com/SanaeMio/Bangumi-syncer/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/github/license/SanaeMio/Bangumi-syncer"/></a>
 </p>
 
 ## 🔖目录
@@ -27,7 +27,9 @@
 - [📄 许可](#-许可)
 
 ## 🌟 简介
-通过Webhook调用 [Bangumi Api](https://bangumi.gihub.io/api/)，实现在客户端看完后自动同步打格子。
+通过Webhook调用 [Bangumi Api](https://bangumi.github.io/api/)，实现在客户端看完后自动同步打格子。
+
+已适配Plex、Emby、Jellyfin。
 
 ![QQ%E5%9B%BE%E7%89%8720240319171758.png](https://p.sda1.dev/16/bd3803efe27dc9a27f85d01f7e771a06/QQ图片20240319171758.png)
 
@@ -47,10 +49,11 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 ### Docker
 
-后续支持
+调试中，后续支持
 
 ## 🔧 配置
 1. 修改config.ini，根据注释说明，填写`username`、`access_token`、`single_username`三项
+2. config.ini中的`bangumi-mapping`根据实际匹配情况自行配置，如果没有发现匹配失败的条目则无需填写
 
 ## 🥰 使用
 ### 自定义Webhook
