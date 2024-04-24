@@ -160,19 +160,32 @@ class BangumiApi:
             return {}
         return res.json()
 
+    def get_ep_collection(self, episode_id):
+        res = self.get(f'users/-/collections/-/episodes/{episode_id}')
+        if res.status_code == 404:
+            return {}
+        return res.json()
+
     def mark_episode_watched(self, subject_id, ep_id):
         data = self.get_subject_collection(subject_id)
-        # 如果已看过则跳过
+        # 如果整部番已看过则跳过
         if data.get('type') == 2:
             return 0
-        # 如果未收藏，则先标记为再看，再点单集格子
+        # 如果未收藏，则先标记为在看，再点单集格子
         if not data:
             self.add_collection_subject(subject_id=subject_id)
             self.change_episode_state(ep_id=ep_id, state=2)
             return 2
-        # 否则直接点单集格子
-        self.change_episode_state(ep_id=ep_id, state=2)
-        return 1
+
+        ep_data = self.get_ep_collection(ep_id)
+        logger.debug(ep_data)
+        # 如果单集已看过则跳过
+        if ep_data.get('type') == 2:
+            return 0
+        else:
+            # 否则直接点单集格子
+            self.change_episode_state(ep_id=ep_id, state=2)
+            return 1
 
     def add_collection_subject(self, subject_id, private=None, state=3):
         private = self.private if private is None else private
