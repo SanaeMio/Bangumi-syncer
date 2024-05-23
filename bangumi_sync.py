@@ -138,8 +138,13 @@ async def emby_sync(emby_data: dict):
     logger.debug(f'接收到Emby同步请求：{emby_data}')
 
     # 检查同步类型是否为看过
-    if emby_data["Event"] != 'item.markplayed':
+    if emby_data["Event"] != 'item.markplayed' and emby_data["Event"] != 'playback.stop':
         logger.debug(f'事件类型{emby_data["Event"]}无需同步，跳过')
+        return
+
+    # 如果是播放停止事件,只有播放完成才判断为看过
+    if emby_data["Event"] == 'playback.stop' and emby_data["PlaybackInfo"]["PlayedToCompletion"] is not True:
+        logger.debug(f'{emby_data["Item"]["SeriesName"]} S0{emby_data["Item"]["ParentIndexNumber"]}E{emby_data["Item"]["IndexNumber"]}未播放完成，跳过')
         return
 
     # 重新组装 JSON 报文
