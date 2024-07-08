@@ -139,8 +139,17 @@ class BangumiApi:
                 continue
             episodes = self.get_episodes(current_id)
             ep_info = episodes['data']
+            logger.debug(ep_info)
             normal_season = True if episodes['total'] > 3 and ep_info[0]['sort'] <= 1 else False
             _target_ep = [i for i in ep_info if i['sort'] == target_ep]
+            logger.debug(_target_ep)
+            # 兼容存在多季情况下，第一集的sort不为1的场景
+            if not _target_ep:
+                _target_ep = [i for i in ep_info if i['ep'] == target_ep and i['ep'] <= i['sort']]
+                if (target_ep and _target_ep
+                        and '第2部分' not in current_info['name_cn']):
+                    season_num += 1
+                logger.debug(_target_ep)
             ep_found = True if target_ep and _target_ep else False
             if normal_season:
                 season_num += 1
