@@ -177,14 +177,19 @@ class BangumiApi:
 
     def mark_episode_watched(self, subject_id, ep_id):
         data = self.get_subject_collection(subject_id)
-        # 如果整部番已看过则跳过
-        if data.get('type') == 2:
-            return 0
+
         # 如果未收藏，则先标记为在看，再点单集格子
         if not data:
             self.add_collection_subject(subject_id=subject_id)
             self.change_episode_state(ep_id=ep_id, state=2)
             return 2
+        else:
+            # 如果整部番已看过则跳过
+            if data.get('type') == 2:
+                return 0
+            #  如果条目状态是想看或搁置则调整为在看
+            if data.get('type') == 1 or data.get('type') == 4:
+                self.change_collection_state(subject_id=subject_id, state=3)
 
         ep_data = self.get_ep_collection(ep_id)
         logger.debug(ep_data)
@@ -197,6 +202,12 @@ class BangumiApi:
             return 1
 
     def add_collection_subject(self, subject_id, private=None, state=3):
+        private = self.private if private is None else private
+        self.post(f'users/-/collections/{subject_id}',
+                  _json={'type': state,
+                         'private': bool(private)})
+
+    def change_collection_state(self, subject_id, private=None, state=3):
         private = self.private if private is None else private
         self.post(f'users/-/collections/{subject_id}',
                   _json={'type': state,
