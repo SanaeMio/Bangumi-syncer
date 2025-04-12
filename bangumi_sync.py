@@ -83,7 +83,7 @@ async def custom_sync(item: CustomItem):
                     season=item.season)
                     
                 if bangumi_data_id:
-                    logger.debug(f'通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}')
+                    logger.info(f'通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}')
                     subject_id = bangumi_data_id
             except Exception as e:
                 logger.error(f'bangumi-data 匹配出错: {e}')
