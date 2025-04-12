@@ -8,8 +8,12 @@ from configparser import ConfigParser
 def mini_conf():
     cwd = os.path.dirname(os.path.dirname(__file__))
     path = os.path.join(cwd, 'config.ini')
+    dev_path = os.path.join(cwd, 'config.dev.ini')
     config = ConfigParser()
-    config.read(path, encoding='utf-8-sig')
+    if os.path.exists(dev_path):
+        config.read(dev_path, encoding='utf-8-sig')
+    else:
+        config.read(path, encoding='utf-8-sig')
     return config
 
 
@@ -103,15 +107,24 @@ class Configs:
         self.platform = platform.system()
         self.cwd = os.path.dirname(os.path.dirname(__file__))
         self.path = os.path.join(self.cwd, 'config.ini')
+        self.dev_path = os.path.join(self.cwd, 'config.dev.ini')
+        self.active_config_path = self.dev_path if os.path.exists(self.dev_path) else self.path
         self.raw: ConfigParser = self.update()
         MyLogger.log(MyLogger.mix_args_str(f'Python path: {sys.executable}'))
-        MyLogger.log(MyLogger.mix_args_str(f'ini path: {self.path}'))
+        MyLogger.log(MyLogger.mix_args_str(f'ini path: {self.active_config_path}'))
         MyLogger.log(f'{platform.platform(True)} Python-{platform.python_version()}')
         self.debug_mode = self.raw.getboolean('dev', 'debug', fallback=False)
 
     def update(self):
         config = ConfigParser()
-        config.read(self.path, encoding='utf-8-sig')
+        # 首先检查是否存在开发配置文件
+        if os.path.exists(self.dev_path):
+            config.read(self.dev_path, encoding='utf-8-sig')
+            MyLogger.log(f'使用开发配置文件: {self.dev_path}')
+            self.active_config_path = self.dev_path
+        else:
+            config.read(self.path, encoding='utf-8-sig')
+            self.active_config_path = self.path
         return config
 
 

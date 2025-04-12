@@ -38,7 +38,7 @@
 ### Windows
 1. 请保证Python版本3.7以上，并安装以下依赖
 ```
-pip install requests fastapi pydantic uvicorn[standard]
+pip install requests fastapi pydantic uvicorn[standard] ijson
 ```
 
 2. 下载 zip并解压到任意文件夹。 [发布页](https://github.com/SanaeMio/Bangumi-syncer/releases)
@@ -163,6 +163,8 @@ pip install requests fastapi pydantic uvicorn[standard]
 
 ✅ 适配Jellyfin（需要jellyfin-plugin-webhook插件）
 
+✅ 支持通过 bangumi-data 匹配番剧 ID，减少 API 请求
+
 ⬜️ 支持Docker部署
 
 ⬜️ 支持多账号同步
@@ -179,6 +181,7 @@ pip install requests fastapi pydantic uvicorn[standard]
 ## 👏 鸣谢
 
 - [kjtsune/embyToLocalPlayer](https://github.com/kjtsune/embyToLocalPlayer)
+- [bangumi-data/bangumi-data](https://github.com/bangumi-data/bangumi-data)
 
 ## 📄 许可
 
