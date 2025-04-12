@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from utils.configs import configs, MyLogger
 from utils.bangumi_api import BangumiApi
 from utils.data_util import extract_plex_json
+from utils.bangumi_data import BangumiData
 
 logger = MyLogger()
 
@@ -65,17 +66,36 @@ async def custom_sync(item: CustomItem):
     # 获取自定义映射
     mapping_item = item.title
     mapping_subject_id = configs.raw.get('bangumi-mapping', mapping_item, fallback='')
+    subject_id = None
+    
     if mapping_subject_id:
         logger.debug(f'匹配到自定义映射：{mapping_item}={mapping_subject_id}')
         subject_id = mapping_subject_id
     else:
-        # 没有匹配到自定义映射再查询番剧基础信息
-        bgm_data = bgm.bgm_search(title=item.title, ori_title=item.ori_title, premiere_date=item.release_date[:10])
-        if not bgm_data:
-            logger.error(f'bgm: 未查询到番剧信息，跳过\nbgm: {item.title=} {item.ori_title=} {item.release_date[:10]=}')
-            return
-        bgm_data = bgm_data[0]
-        subject_id = bgm_data['id']
+        # 尝试使用 bangumi-data 匹配番剧ID
+        if configs.raw.getboolean('bangumi-data', 'enabled', fallback=True):
+            try:
+                bgm_data = BangumiData()
+                bangumi_data_id = bgm_data.find_bangumi_id(
+                    title=item.title, 
+                    ori_title=item.ori_title, 
+                    release_date=item.release_date[:10],
+                    season=item.season)
+                    
+                if bangumi_data_id:
+                    logger.debug(f'通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}')
+                    subject_id = bangumi_data_id
+            except Exception as e:
+                logger.error(f'bangumi-data 匹配出错: {e}')
+        
+        # 如果没有匹配到，使用 bangumi API 搜索
+        if not subject_id:
+            bgm_data = bgm.bgm_search(title=item.title, ori_title=item.ori_title, premiere_date=item.release_date[:10])
+            if not bgm_data:
+                logger.error(f'bgm: 未查询到番剧信息，跳过\nbgm: {item.title=} {item.ori_title=} {item.release_date[:10]=}')
+                return
+            bgm_data = bgm_data[0]
+            subject_id = bgm_data['id']
 
     # 查询bangumi番剧指定季度指定集数信息
     bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
