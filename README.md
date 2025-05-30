@@ -14,6 +14,7 @@
 - [🧰 安装](#-安装)
   - [Windows](#Windows)
   - [Docker](#Docker)
+  - [群晖NAS](#群晖NAS)
 - [🔧 配置](#-配置)
 - [🥰 使用](#-使用)
   - [方式一：自定义Webhook](#自定义Webhook)
@@ -49,11 +50,99 @@ pip install requests fastapi pydantic uvicorn[standard] ijson
 
 ### Docker
 
-调试中，后续支持
+docker-compose:
+```yaml
+version: '3.8'
+
+services:
+  bangumi-syncer:
+    image: sanaemio/bangumi-syncer:latest
+    container_name: bangumi-syncer
+    ports:
+      - "8000:8000"
+    volumes:
+      - /docker/bangumi-syncer/config:/app/config
+      - /docker/bangumi-syncer/logs:/app/logs
+      - /docker/bangumi-syncer/data:/app/data
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+```
+|            参数名            |      默认值       |                             说明                             |
+| :--------------------------: | :---------------: | :----------------------------------------------------------: |
+|             PUID             |         0         |                           用户 ID                            |
+|             PGID             |         0         |                            组 ID                             |
+|              TZ              |   Asia/Shanghai   |                             时区                             |
+
+#### 群晖NAS
+
+**方式一：通过 Container Manager（推荐）**
+
+1. 打开 Container Manager，点击「项目」→「新增」
+2. 项目名称填写：`bangumi-syncer`
+3. 路径选择：`/docker/bangumi-syncer`（或其他你喜欢的路径）
+4. 来源选择「创建 docker-compose.yml」，内容填写：
+
+```yaml
+version: '3.8'
+
+services:
+  bangumi-syncer:
+    image: sanaemio/bangumi-syncer:latest
+    container_name: bangumi-syncer
+    ports:
+      - "8000:8000"
+    volumes:
+      - /docker/bangumi-syncer/config:/app/config
+      - /docker/bangumi-syncer/logs:/app/logs
+      - /docker/bangumi-syncer/data:/app/data
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+```
+
+5. 点击「启动」，等待容器创建完成
+6. 通过 File Station 进入 `/docker/bangumi-syncer/config/` 目录
+7. 编辑 `config.ini` 文件（参考下方配置说明）
+8. 回到 Container Manager，重启 `bangumi-syncer` 容器
+
+**方式二：通过 Docker 注册表**
+
+1. 打开 Container Manager，点击「注册表」
+2. 搜索 `sanaemio/bangumi-syncer`，下载镜像
+3. 点击「映像」→「启动」
+4. 容器名称：`bangumi-syncer`
+5. 在「高级设置」中：
+   - 端口设置：本地端口 `8000`，容器端口 `8000`
+   - 卷：添加以下映射（路径可以根据自己情况调整）
+     - `/docker/bangumi-syncer/config` → `/app/config`
+     - `/docker/bangumi-syncer/logs` → `/app/logs`
+     - `/docker/bangumi-syncer/data` → `/app/data`
+6. 启动容器后，通过 File Station 编辑配置文件（参考下方配置说明）
+7. 重启容器使配置生效
 
 ## 🔧 配置
-1. 修改config.ini，根据注释说明，填写`username`、`access_token`、`single_username`三项
-2. config.ini中的`bangumi-mapping`根据实际匹配情况自行配置，如果没有发现匹配失败的条目则无需填写
+修改config.ini，根据注释说明，填写如下三个必填项：
+
+**Bangumi 用户名 (`username`)**
+- 访问你的 Bangumi 个人主页：`https://bgm.tv/user/你的用户名`
+- 填写用户名或者 URL 中的数字 ID
+
+**访问令牌 (`access_token`)**
+- 访问：https://next.bgm.tv/demo/access-token
+- 登录后点击「创建令牌」
+- 复制生成的令牌（注意保存，只显示一次）
+
+**媒体服务器用户名 (`single_username`)**
+- Plex：Plex 设置中的用户名
+- Emby：Emby 用户管理中的用户名  
+- Jellyfin：Jellyfin 用户管理中的用户名
+
+config.ini中的`bangumi-mapping`根据实际匹配情况自行配置，如果没有发现匹配失败的条目则无需填写
 
 ## 🥰 使用
 ### 自定义Webhook
@@ -165,7 +254,7 @@ pip install requests fastapi pydantic uvicorn[standard] ijson
 
 ✅ 支持通过 bangumi-data 匹配番剧 ID，减少 API 请求
 
-⬜️ 支持Docker部署
+✅ 支持Docker部署
 
 ⬜️ 支持多账号同步
 

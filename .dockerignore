@@ -1,0 +1,63 @@
+# Git相关
+.git
+.gitignore
+
+# Python缓存
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# 日志文件
+*.log
+log.txt
+logs/
+
+# 配置文件（使用挂载，但保留config.ini作为模板）
+config/
+config.dev.ini
+
+# 缓存文件（使用挂载）
+bangumi_data_cache.json
+data/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 文档
+README.md
+LICENSE
+
+# Docker相关
+Dockerfile
+docker-compose.yml
+.dockerignore 
