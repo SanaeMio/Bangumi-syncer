@@ -27,6 +27,9 @@ class BangumiData:
         self._cache_items = None
         # 是否启用更详细的日志，用于调试匹配问题
         self.verbose_logging = configs.raw.getboolean('bangumi-data', 'verbose_logging', fallback=False)
+        
+        # 启动时检查缓存，如果缺少则下载
+        self._check_and_download_cache_on_startup()
 
     def _is_cache_valid(self) -> bool:
         """检查缓存是否有效（未过期）"""
@@ -470,3 +473,29 @@ class BangumiData:
                     })
         
         return results 
+
+    def _check_and_download_cache_on_startup(self):
+        """启动时检查缓存，如果缺少则下载
+        
+        这个方法在类初始化时被调用，确保缓存文件存在且有效
+        """
+        if not self.use_cache:
+            logger.debug("缓存功能已禁用，跳过缓存检查")
+            return
+            
+        if not os.path.exists(self.local_cache_path):
+            logger.info(f"缓存文件不存在: {self.local_cache_path}，正在下载...")
+            success = self._download_data()
+            if success:
+                logger.info("缓存文件下载成功")
+            else:
+                logger.warning("缓存文件下载失败，将在需要时尝试从网络获取数据")
+        elif not self._is_cache_valid():
+            logger.info(f"缓存文件已过期（超过 {self.cache_ttl_days} 天），正在更新...")
+            success = self._download_data()
+            if success:
+                logger.info("缓存文件更新成功")
+            else:
+                logger.warning("缓存文件更新失败，将使用现有缓存文件")
+        else:
+            logger.debug("缓存文件存在且有效，无需下载") 

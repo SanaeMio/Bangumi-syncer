@@ -2,3 +2,4 @@ requests
 fastapi
 pydantic
 uvicorn[standard]
+ijson

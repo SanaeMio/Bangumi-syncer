@@ -161,3 +161,6 @@ cython_debug/
 /log.txt
 /bangumi_data_cache.json
 /config.dev.ini
+/test-docker.bat
+/docker-compose.yml
+/docker-compose.dev.yml
