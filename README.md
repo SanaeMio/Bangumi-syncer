@@ -82,7 +82,7 @@ services:
 
 1. 打开 Container Manager，点击「项目」→「新增」
 2. 项目名称填写：`bangumi-syncer`
-3. 路径选择：`/docker/bangumi-syncer`（或其他你喜欢的路径）
+3. 路径选择：`/volumeX/docker/bangumi-syncer`（X为你的存储空间编号，如存储空间1则为`/volume1/docker/bangumi-syncer`）
 4. 来源选择「创建 docker-compose.yml」，内容填写：
 
 ```yaml
@@ -95,9 +95,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - /docker/bangumi-syncer/config:/app/config
-      - /docker/bangumi-syncer/logs:/app/logs
-      - /docker/bangumi-syncer/data:/app/data
+      - /volumeX/docker/bangumi-syncer/config:/app/config
+      - /volumeX/docker/bangumi-syncer/logs:/app/logs
+      - /volumeX/docker/bangumi-syncer/data:/app/data
     restart: unless-stopped
     environment:
       - PUID=1000
@@ -105,8 +105,13 @@ services:
       - TZ=Asia/Shanghai
 ```
 
+> **注意**：请将上述配置中的 `volumeX` 替换为你的实际存储空间编号：
+> - 第一个存储空间：`/volume1/docker/bangumi-syncer/...`
+> - 第二个存储空间：`/volume2/docker/bangumi-syncer/...`
+> - 以此类推
+
 5. 点击「启动」，等待容器创建完成
-6. 通过 File Station 进入 `/docker/bangumi-syncer/config/` 目录
+6. 通过 File Station 进入 `/volumeX/docker/bangumi-syncer/config/` 目录
 7. 编辑 `config.ini` 文件（参考下方配置说明）
 8. 回到 Container Manager，重启 `bangumi-syncer` 容器
 
