@@ -58,6 +58,7 @@ services:
   bangumi-syncer:
     image: sanaemio/bangumi-syncer:latest
     container_name: bangumi-syncer
+    network_mode: bridge
     ports:
       - "8000:8000"
     volumes:
@@ -92,6 +93,7 @@ services:
   bangumi-syncer:
     image: sanaemio/bangumi-syncer:latest
     container_name: bangumi-syncer
+    network_mode: bridge
     ports:
       - "8000:8000"
     volumes:
@@ -133,21 +135,31 @@ services:
 ## 🔧 配置
 修改config.ini，根据注释说明，填写如下三个必填项：
 
-**Bangumi 用户名 (`username`)**
+**Bangumi 用户名 (`username`)** (必填)
 - 访问你的 Bangumi 个人主页：`https://bgm.tv/user/你的用户名`
 - 填写用户名或者 URL 中的数字 ID
 
-**访问令牌 (`access_token`)**
+**访问令牌 (`access_token`)** (必填)
 - 访问：https://next.bgm.tv/demo/access-token
 - 登录后点击「创建令牌」
 - 复制生成的令牌（注意保存，只显示一次）
 
-**媒体服务器用户名 (`single_username`)**
+**媒体服务器用户名 (`single_username`)** (必填)
 - Plex：Plex 设置中的用户名
 - Emby：Emby 用户管理中的用户名  
 - Jellyfin：Jellyfin 用户管理中的用户名
 
-config.ini中的`bangumi-mapping`根据实际匹配情况自行配置，如果没有发现匹配失败的条目则无需填写
+**自定义映射 (`bangumi-mapping`)** (可选)
+- 用于处理程序无法自动匹配的番剧
+- 格式：`番剧名 = bangumi_subject_id`，示例：`魔王学院的不适任者 = 292222`
+- 如果没有发现匹配失败的条目则无需填写
+
+**代理 (`script_proxy`)** (可选)
+- 如果需要通过代理访问 Bangumi API，请填写代理地址
+- 格式：`http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`
+- 留空则不使用代理
+
+
 
 ## 🥰 使用
 ### 自定义Webhook
