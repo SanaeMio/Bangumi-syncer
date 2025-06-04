@@ -98,12 +98,36 @@ class BangumiApi:
         })
         return res.json()
 
-    def get_target_season_episode_id(self, subject_id, target_season: int, target_ep: int):
+    def get_target_season_episode_id(self, subject_id, target_season: int, target_ep: int, is_season_subject_id: bool = False):
         season_num = 1
         current_id = subject_id
 
         if target_season > 5 or (target_ep and target_ep > 99):
             return None, None if target_ep else None
+            
+        # 如果已经是目标季数的ID，直接尝试匹配集数
+        if is_season_subject_id:
+            logger.debug(f"直接尝试从指定季度ID匹配集数: {subject_id}, 目标季度: {target_season}, 目标集数: {target_ep}")
+            if not target_ep:
+                return current_id
+            
+            episodes = self.get_episodes(current_id)
+            ep_info = episodes['data']
+            logger.debug(ep_info)
+            
+            # 先尝试完全匹配sort字段
+            _target_ep = [i for i in ep_info if i['sort'] == target_ep]
+            
+            # 如果完全匹配失败，尝试匹配ep字段
+            if not _target_ep:
+                _target_ep = [i for i in ep_info if i['ep'] == target_ep and i['ep'] <= i['sort']]
+                
+            if _target_ep:
+                return current_id, _target_ep[0]['id']
+            else:
+                logger.debug(f"在指定季度ID中未找到匹配的集数: {subject_id}, 目标集数: {target_ep}")
+                # 失败后回退到传统方法
+                logger.debug("回退到传统方式查找集数")
 
         if target_season == 1:
             if not target_ep:

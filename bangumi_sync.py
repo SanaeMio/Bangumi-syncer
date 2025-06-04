@@ -58,15 +58,25 @@ def check_user_permission(user_name: str) -> bool:
 
 
 # 查找番剧ID
-async def find_subject_id(item: CustomItem) -> Optional[str]:
-    """根据标题和日期查找番剧ID"""
+async def find_subject_id(item: CustomItem) -> tuple[Optional[str], bool]:
+    """根据标题和日期查找番剧ID
+    
+    Returns:
+        tuple: (subject_id, is_season_matched_id)
+            subject_id: 番剧ID
+            is_season_matched_id: 对于第二季及以上，该值为True表示ID可能已经是指定季度的ID
+    """
     # 获取自定义映射
     mapping_item = item.title
     mapping_subject_id = configs.raw.get('bangumi-mapping', mapping_item, fallback='')
     
     if mapping_subject_id:
         logger.debug(f'匹配到自定义映射：{mapping_item}={mapping_subject_id}')
-        return mapping_subject_id
+        # 自定义映射的ID不视为特定季度的ID
+        return mapping_subject_id, False
+    
+    # 标记是否通过bangumi-data获取的ID
+    is_season_matched_id = False
     
     # 尝试使用 bangumi-data 匹配番剧ID
     if configs.raw.getboolean('bangumi-data', 'enabled', fallback=True):
@@ -88,7 +98,10 @@ async def find_subject_id(item: CustomItem) -> Optional[str]:
                 
             if bangumi_data_id:
                 logger.info(f'通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}')
-                return bangumi_data_id
+                # 对于第二季及以上的番剧，通过bangumi-data匹配到的ID可能已经是目标季度的ID
+                if item.season > 1:
+                    is_season_matched_id = True
+                return bangumi_data_id, is_season_matched_id
         except Exception as e:
             logger.error(f'bangumi-data 匹配出错: {e}')
     
@@ -102,12 +115,13 @@ async def find_subject_id(item: CustomItem) -> Optional[str]:
         bgm_data = bgm.bgm_search(title=item.title, ori_title=item.ori_title, premiere_date=premiere_date)
         if not bgm_data:
             logger.error(f'bgm: 未查询到番剧信息，跳过\nbgm: {item.title=} {item.ori_title=} {premiere_date=}')
-            return None
+            return None, False
         
-        return bgm_data[0]['id']
+        # API搜索得到的ID不视为特定季度的ID
+        return bgm_data[0]['id'], False
     except Exception as e:
         logger.error(f'bgm API搜索出错: {e}')
-        return None
+        return None, False
 
 
 # 自定义同步
@@ -142,8 +156,8 @@ async def custom_sync(item: CustomItem, response: Response):
             response.status_code = 403
             return {"status": "error", "message": "用户无权限同步"}
 
-        # 查找番剧ID
-        subject_id = await find_subject_id(item)
+        # 查找番剧ID及其是否为特定季度ID的标记
+        subject_id, is_season_matched_id = await find_subject_id(item)
         if not subject_id:
             response.status_code = 404
             return {"status": "error", "message": "未找到匹配的番剧"}
@@ -151,7 +165,11 @@ async def custom_sync(item: CustomItem, response: Response):
         # 查询bangumi番剧指定季度指定集数信息
         bgm = get_bangumi_api()
         bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
-            subject_id=subject_id, target_season=item.season, target_ep=item.episode)
+            subject_id=subject_id, 
+            target_season=item.season, 
+            target_ep=item.episode,
+            is_season_subject_id=is_season_matched_id
+        )
         
         if not bgm_ep_id:
             logger.error(f'bgm: {subject_id=} {item.season=} {item.episode=}, 不存在或集数过多，跳过')
