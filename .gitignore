@@ -164,3 +164,4 @@ cython_debug/
 /test-docker.bat
 /docker-compose.yml
 /docker-compose.dev.yml
+.idea/
