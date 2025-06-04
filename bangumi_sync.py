@@ -32,7 +32,7 @@ def get_bangumi_api() -> BangumiApi:
         username=configs.raw.get('bangumi', 'username', fallback=''),
         access_token=configs.raw.get('bangumi', 'access_token', fallback=''),
         private=configs.raw.getboolean('bangumi', 'private', fallback=False),
-        http_proxy=configs.raw.get('bangumi', 'script_proxy', fallback='')
+        http_proxy=configs.raw.get('dev', 'script_proxy', fallback='')
     )
 
 

@@ -17,6 +17,8 @@ class BangumiApi:
         self.http_proxy = http_proxy
         self.req = requests.Session()
         self._req_not_auth = requests.Session()
+        
+        logger.debug(f'BangumiApi 初始化 - 代理参数: {http_proxy if http_proxy else "无"}')
         self.init()
 
     def init(self):
@@ -30,13 +32,13 @@ class BangumiApi:
         self._req_not_auth.headers = {k: v for k, v in self._req_not_auth.headers.items() if k != 'Authorization'}
 
     def get(self, path, params=None):
-        res = self.req.get(f'{self.host}/{path}',
-                           params=params)
+        logger.debug(f'BangumiApi GET请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else "无"}')
+        res = self.req.get(f'{self.host}/{path}', params=params)
         return res
 
     def post(self, path, _json, params=None):
-        res = self.req.post(f'{self.host}/{path}',
-                            json=_json, params=params)
+        logger.debug(f'BangumiApi POST请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else "无"}')
+        res = self.req.post(f'{self.host}/{path}', json=_json, params=params)
         return res
 
     def put(self, path, _json, params=None):
