@@ -4,6 +4,8 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
 from functools import lru_cache
+import os
+import time
 
 from utils.configs import configs, MyLogger
 from utils.bangumi_api import BangumiApi
@@ -23,6 +25,115 @@ class CustomItem(BaseModel):
     episode: int
     release_date: str
     user_name: str
+
+
+# 全局变量用于缓存映射配置和文件状态
+_cached_mappings: Dict[str, str] = {}
+_mapping_file_path: Optional[str] = None
+_last_modified_time: float = 0
+
+
+# 读取自定义映射配置文件（带缓存优化）
+def load_custom_mappings() -> Dict[str, str]:
+    """从外部JSON文件读取自定义映射配置
+    
+    Returns:
+        Dict[str, str]: 番剧名到bangumi ID的映射字典
+    """
+    global _cached_mappings, _mapping_file_path, _last_modified_time
+    
+    # 定义可能的配置文件路径
+    mapping_file_paths = [
+        './bangumi_mapping.json',  # 当前目录
+        '/app/config/bangumi_mapping.json',  # Docker挂载目录
+        '/app/bangumi_mapping.json'  # Docker内部目录
+    ]
+    
+    # 查找存在的配置文件
+    current_file_path = None
+    for mapping_file in mapping_file_paths:
+        if os.path.exists(mapping_file):
+            current_file_path = mapping_file
+            break
+    
+    # 如果没有找到配置文件，创建默认文件
+    if not current_file_path:
+        default_file = './bangumi_mapping.json'
+        try:
+            default_config = {
+                "_comment": "自定义映射配置文件 - 用于处理程序通过搜索无法自动匹配的项目，参考_examples的格式将新内容添加到mappings中",
+                "_format": "番剧名: bangumi_subject_id",
+                "_note": "bangumi_subject_id需要配置第一季的，程序会自动往后找",
+                "_examples": {
+                    "魔王学院的不适任者": "292222",
+                    "我推的孩子": "386809"
+                },
+                "mappings": {
+                    "假面骑士加布": "502002"
+                }
+            }
+            with open(default_file, 'w', encoding='utf-8') as f:
+                json.dump(default_config, f, ensure_ascii=False, indent=2)
+            logger.info(f'创建了默认的自定义映射文件: {default_file}')
+            current_file_path = default_file
+        except Exception as e:
+            logger.error(f'创建默认映射文件失败: {e}')
+            return {}
+    
+    try:
+        # 获取文件修改时间
+        current_modified_time = os.path.getmtime(current_file_path)
+        
+        # 检查是否需要重新加载
+        need_reload = (
+            _mapping_file_path != current_file_path or  # 文件路径变化
+            current_modified_time != _last_modified_time or  # 文件被修改
+            not _cached_mappings  # 缓存为空
+        )
+        
+        if need_reload:
+            logger.debug(f'检测到映射配置文件变化，重新加载: {current_file_path}')
+            
+            with open(current_file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                mappings = data.get('mappings', {})
+                
+                # 更新缓存
+                _cached_mappings = mappings
+                _mapping_file_path = current_file_path
+                _last_modified_time = current_modified_time
+                
+                if mappings:
+                    logger.debug(f'从 {current_file_path} 重新加载了 {len(mappings)} 个自定义映射')
+                else:
+                    logger.debug(f'映射配置文件 {current_file_path} 中没有配置映射项')
+        else:
+            logger.debug(f'使用缓存的映射配置，共 {len(_cached_mappings)} 个映射')
+            
+        return _cached_mappings.copy()  # 返回副本以避免外部修改影响缓存
+        
+    except Exception as e:
+        logger.error(f'读取自定义映射文件 {current_file_path} 失败: {e}')
+        # 如果读取失败，返回缓存的配置（如果有的话）
+        return _cached_mappings.copy() if _cached_mappings else {}
+
+
+# 强制重新加载映射配置（用于调试或手动刷新）
+def reload_custom_mappings() -> Dict[str, str]:
+    """强制重新加载自定义映射配置
+    
+    Returns:
+        Dict[str, str]: 番剧名到bangumi ID的映射字典
+    """
+    global _cached_mappings, _mapping_file_path, _last_modified_time
+    
+    # 清空缓存强制重新加载
+    _cached_mappings = {}
+    _mapping_file_path = None
+    _last_modified_time = 0
+    
+    logger.info('强制重新加载自定义映射配置')
+    return load_custom_mappings()
 
 
 # 创建BangumiApi实例的函数，使用缓存减少重复初始化
@@ -53,6 +164,7 @@ def check_user_permission(user_name: str) -> bool:
             return False
         if not single_username:
             logger.error(f'未设置同步用户single_username，请检查config.ini配置')
+
             return False
     return True
 
@@ -66,12 +178,12 @@ async def find_subject_id(item: CustomItem) -> tuple[Optional[str], bool]:
             subject_id: 番剧ID
             is_season_matched_id: 对于第二季及以上，该值为True表示ID可能已经是指定季度的ID
     """
-    # 获取自定义映射
-    mapping_item = item.title
-    mapping_subject_id = configs.raw.get('bangumi-mapping', mapping_item, fallback='')
+    # 获取自定义映射 - 使用优化后的缓存机制
+    custom_mappings = load_custom_mappings()
+    mapping_subject_id = custom_mappings.get(item.title, '')
     
     if mapping_subject_id:
-        logger.debug(f'匹配到自定义映射：{mapping_item}={mapping_subject_id}')
+        logger.debug(f'匹配到自定义映射：{item.title}={mapping_subject_id}')
         # 自定义映射的ID不视为特定季度的ID
         return mapping_subject_id, False
     
@@ -395,6 +507,53 @@ async def jellyfin_sync(jellyfin_request: Request):
         return {"status": "error", "message": f"处理失败: {str(e)}"}
 
 
+# 手动刷新映射配置缓存
+@app.post("/reload-mappings", status_code=200)
+async def reload_mappings_endpoint():
+    """手动刷新自定义映射配置缓存的API端点"""
+    try:
+        mappings = reload_custom_mappings()
+        return {
+            "status": "success",
+            "message": "映射配置已重新加载",
+            "data": {
+                "mappings_count": len(mappings),
+                "file_path": _mapping_file_path,
+                "last_modified": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(_last_modified_time)) if _last_modified_time else None
+            }
+        }
+    except Exception as e:
+        logger.error(f'重新加载映射配置失败: {e}')
+        return {
+            "status": "error", 
+            "message": f"重新加载失败: {str(e)}"
+        }
+
+
+# 获取当前映射配置状态
+@app.get("/mappings-status", status_code=200)
+async def get_mappings_status():
+    """获取当前自定义映射配置状态的API端点"""
+    try:
+        mappings = load_custom_mappings()
+        return {
+            "status": "success",
+            "data": {
+                "mappings_count": len(mappings),
+                "file_path": _mapping_file_path,
+                "last_modified": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(_last_modified_time)) if _last_modified_time else None,
+                "cached": bool(_cached_mappings),
+                "mappings": mappings
+            }
+        }
+    except Exception as e:
+        logger.error(f'获取映射配置状态失败: {e}')
+        return {
+            "status": "error",
+            "message": f"获取状态失败: {str(e)}"
+        }
+
+
 # 配置Uvicorn日志
 uvicorn_logging_config = {
     "version": 1,
@@ -416,3 +575,4 @@ if __name__ == "__main__":
         port=8000,
         log_config=uvicorn_logging_config
     )
+

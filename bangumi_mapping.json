@@ -1,0 +1,12 @@
+{
+  "_comment": "自定义映射配置文件 - 用于处理程序通过搜索无法自动匹配的项目，参考_examples的格式将新内容添加到mappings中",
+  "_format": "番剧名: bangumi_subject_id",
+  "_note": "bangumi_subject_id需要配置第一季的，程序会自动往后找",
+  "_examples": {
+    "魔王学院的不适任者": "292222",
+    "我推的孩子": "386809"
+  },
+  "mappings": {
+    "假面骑士加布": "502002"
+  }
+} 

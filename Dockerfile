@@ -17,6 +17,7 @@ COPY utils/ ./utils/
 
 # 复制配置模板
 COPY config.ini /app/config.ini.template
+COPY bangumi_mapping.json /app/bangumi_mapping.json.template
 
 # 创建启动脚本
 RUN echo '#!/bin/bash\n\
@@ -36,6 +37,13 @@ if [ ! -f "/app/config/config.ini" ]; then\n\
     sed -i "s|log_file = ./log.txt|log_file = /app/logs/log.txt|g" /app/config/config.ini\n\
     \n\
     echo "配置文件已创建并调整：/app/config/config.ini"\n\
+fi\n\
+\n\
+# 检查自定义映射文件是否存在，不存在则从模板复制\n\
+if [ ! -f "/app/config/bangumi_mapping.json" ]; then\n\
+    echo "自定义映射文件不存在，从模板创建..."\n\
+    cp /app/bangumi_mapping.json.template /app/config/bangumi_mapping.json\n\
+    echo "自定义映射文件已创建：/app/config/bangumi_mapping.json"\n\
 fi\n\
 \n\
 # 确保日志文件存在并有正确权限\n\
