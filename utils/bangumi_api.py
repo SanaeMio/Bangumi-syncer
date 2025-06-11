@@ -2,6 +2,7 @@ import datetime
 import difflib
 import functools
 import os
+import time
 import requests
 from .configs import MyLogger
 
@@ -31,25 +32,59 @@ class BangumiApi:
                 r.proxies = {'http': self.http_proxy, 'https': self.http_proxy}
         self._req_not_auth.headers = {k: v for k, v in self._req_not_auth.headers.items() if k != 'Authorization'}
 
+    def _request_with_retry(self, method, session, url, max_retries=3, **kwargs):
+        """带重试机制的请求方法"""
+        for attempt in range(max_retries + 1):
+            try:
+                if method.upper() == 'GET':
+                    res = session.get(url, **kwargs)
+                elif method.upper() == 'POST':
+                    res = session.post(url, **kwargs)
+                elif method.upper() == 'PUT':
+                    res = session.put(url, **kwargs)
+                elif method.upper() == 'PATCH':
+                    res = session.patch(url, **kwargs)
+                else:
+                    raise ValueError(f"不支持的HTTP方法: {method}")
+                
+                # 检查是否需要重试的状态码
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    if attempt < max_retries:
+                        delay = 2 ** attempt  # 指数退避: 2, 4, 8秒
+                        logger.error(f'HTTP {res.status_code} 错误，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f'HTTP {res.status_code} 错误，已达到最大重试次数 {max_retries}')
+                        raise requests.exceptions.HTTPError(f"HTTP {res.status_code} 错误，已达到最大重试次数")
+                
+                return res
+                
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.RequestException) as e:
+                if attempt < max_retries:
+                    delay = 2 ** attempt  # 指数退避: 2, 4, 8秒
+                    logger.error(f'请求异常: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f'请求异常: {str(e)}，已达到最大重试次数 {max_retries}')
+                    raise e
+        
+        return res
+
     def get(self, path, params=None):
         logger.debug(f'BangumiApi GET请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else "无"}')
-        res = self.req.get(f'{self.host}/{path}', params=params)
-        return res
+        return self._request_with_retry('GET', self.req, f'{self.host}/{path}', params=params)
 
     def post(self, path, _json, params=None):
         logger.debug(f'BangumiApi POST请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else "无"}')
-        res = self.req.post(f'{self.host}/{path}', json=_json, params=params)
-        return res
+        return self._request_with_retry('POST', self.req, f'{self.host}/{path}', json=_json, params=params)
 
     def put(self, path, _json, params=None):
-        res = self.req.put(f'{self.host}/{path}',
-                           json=_json, params=params)
-        return res
+        return self._request_with_retry('PUT', self.req, f'{self.host}/{path}', json=_json, params=params)
 
     def patch(self, path, _json, params=None):
-        res = self.req.patch(f'{self.host}/{path}',
-                             json=_json, params=params)
-        return res
+        return self._request_with_retry('PATCH', self.req, f'{self.host}/{path}', json=_json, params=params)
 
     def get_me(self):
         res = self.get('me')
@@ -61,19 +96,19 @@ class BangumiApi:
 
     @functools.lru_cache
     def search(self, title, start_date, end_date, limit=5, list_only=True):
-        res = self._req_not_auth.post(f'{self.host}/search/subjects',
+        res = self._request_with_retry('POST', self._req_not_auth, f'{self.host}/search/subjects',
                                       json={'keyword': title,
                                             'filter': {'type': [2],
                                                        'air_date': [f'>={start_date}',
                                                                     f'<{end_date}'],
                                                        'nsfw': True}},
-                                      params={'limit': limit}, )
+                                      params={'limit': limit})
         res = res.json()
         return res['data'] if list_only else res
 
     @functools.lru_cache
     def search_old(self, title, list_only=True):
-        res = self.req.get(f'{self.host[:-2]}/search/subject/{title}', params={'type': 2})
+        res = self._request_with_retry('GET', self.req, f'{self.host[:-2]}/search/subject/{title}', params={'type': 2})
         try:
             res = res.json()
         except Exception:

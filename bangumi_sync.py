@@ -236,6 +236,25 @@ async def find_subject_id(item: CustomItem) -> tuple[Optional[str], bool]:
         return None, False
 
 
+def retry_mark_episode(bgm_api, subject_id, ep_id, max_retries=3):
+    """带重试机制的标记剧集方法"""
+    for attempt in range(max_retries + 1):
+        try:
+            mark_status = bgm_api.mark_episode_watched(subject_id=subject_id, ep_id=ep_id)
+            if attempt > 0:
+                logger.info(f'重试成功，第 {attempt + 1} 次尝试标记成功')
+            return mark_status
+        except Exception as e:
+            if attempt < max_retries:
+                delay = 2 ** attempt  # 指数退避: 2, 4, 8秒
+                logger.error(f'标记剧集失败: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
+                time.sleep(delay)
+                continue
+            else:
+                logger.error(f'标记剧集失败，已达到最大重试次数 {max_retries}: {str(e)}')
+                raise e
+
+
 # 自定义同步
 @app.post("/Custom", status_code=200)
 async def custom_sync(item: CustomItem, response: Response):
@@ -292,7 +311,7 @@ async def custom_sync(item: CustomItem, response: Response):
                     f'S{item.season:02d}E{item.episode:02d} (https://bgm.tv/ep/{bgm_ep_id})')
 
         # 标记为看过
-        mark_status = bgm.mark_episode_watched(subject_id=bgm_se_id, ep_id=bgm_ep_id)
+        mark_status = retry_mark_episode(bgm, bgm_se_id, bgm_ep_id)
         result_message = ""
         
         if mark_status == 0:
