@@ -7,15 +7,47 @@ from typing import Dict, List, Optional, Union, Generator
 import requests
 import ijson
 from .configs import MyLogger, configs
+from difflib import SequenceMatcher
 
 logger = MyLogger()
+
+def _request_with_retry(url, proxies=None, stream=False, max_retries=3):
+    """带重试机制的HTTP请求方法"""
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.get(url, proxies=proxies, stream=stream)
+            response.raise_for_status()
+            
+            # 检查是否需要重试的状态码
+            if response.status_code in [429, 500, 502, 503, 504]:
+                if attempt < max_retries:
+                    delay = 2 ** attempt  # 指数退避: 2, 4, 8秒
+                    logger.error(f'HTTP {response.status_code} 错误，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f'HTTP {response.status_code} 错误，已达到最大重试次数 {max_retries}')
+            
+            return response
+            
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.RequestException) as e:
+            if attempt < max_retries:
+                delay = 2 ** attempt  # 指数退避: 2, 4, 8秒
+                logger.error(f'请求异常: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
+                time.sleep(delay)
+                continue
+            else:
+                logger.error(f'请求异常: {str(e)}，已达到最大重试次数 {max_retries}')
+                raise e
+    
+    return response
 
 class BangumiData:
     """处理 bangumi-data 数据的类"""
     
     def __init__(self):
         self.data_url = configs.raw.get('bangumi-data', 'data_url', 
-                                       fallback='https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json')
+                                       fallback='https://unpkg.com/bangumi-data@0.3/dist/data.json')
         self.local_cache_path = configs.raw.get('bangumi-data', 'local_cache_path', 
                                               fallback='./bangumi_data_cache.json')
         self.http_proxy = configs.raw.get('bangumi-data', 'http_proxy', 
@@ -26,7 +58,7 @@ class BangumiData:
         self._cached_data = None
         self._cache_items = None
         # 是否启用更详细的日志，用于调试匹配问题
-        self.verbose_logging = configs.raw.getboolean('bangumi-data', 'verbose_logging', fallback=False)
+        self.verbose_logging = configs.raw.getboolean('dev', 'debug', fallback=False)
         
         # 启动时检查缓存，如果缺少则下载
         self._check_and_download_cache_on_startup()
@@ -61,8 +93,7 @@ class BangumiData:
             proxies = {'http': self.http_proxy, 'https': self.http_proxy}
         
         try:
-            response = requests.get(self.data_url, proxies=proxies, stream=True)
-            response.raise_for_status()
+            response = _request_with_retry(self.data_url, proxies=proxies, stream=True)
             
             # 确保缓存目录存在
             cache_dir = os.path.dirname(self.local_cache_path)
@@ -124,8 +155,7 @@ class BangumiData:
                 if self.http_proxy:
                     proxies = {'http': self.http_proxy, 'https': self.http_proxy}
                 
-                with requests.get(self.data_url, proxies=proxies, stream=True) as response:
-                    response.raise_for_status()
+                with _request_with_retry(self.data_url, proxies=proxies, stream=True) as response:
                     for item in ijson.items(response.raw, 'items.item', use_float=True):
                         yield item
             except Exception as e:
@@ -377,7 +407,6 @@ class BangumiData:
             best_zh_score = 0
             if 'titleTranslate' in item and 'zh-Hans' in item['titleTranslate']:
                 for zh_title in item['titleTranslate']['zh-Hans']:
-                    from difflib import SequenceMatcher
                     similarity = SequenceMatcher(None, zh_title, title).ratio()
                     best_zh_score = max(best_zh_score, similarity)
             
@@ -390,9 +419,8 @@ class BangumiData:
             score += best_zh_score * 0.4
             
         if ori_title and 'title' in item:
-            from difflib import SequenceMatcher
-            ori_similarity = SequenceMatcher(None, item['title'], ori_title).ratio()
-            score += ori_similarity * 0.4
+            similarity = SequenceMatcher(None, item['title'], ori_title).ratio()
+            score += similarity * 0.4
             
             # 检查包含关系
             if ori_title in item['title'] or item['title'] in ori_title:
@@ -400,9 +428,8 @@ class BangumiData:
         
         # 用中文标题匹配原始标题
         if title and 'title' in item and not ori_title:
-            from difflib import SequenceMatcher
-            title_similarity = SequenceMatcher(None, item['title'], title).ratio()
-            score += title_similarity * 0.3
+            similarity = SequenceMatcher(None, item['title'], title).ratio()
+            score += similarity * 0.3
             
             # 检查包含关系
             if title in item['title'] or item['title'] in title:
