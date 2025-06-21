@@ -32,6 +32,143 @@ _cached_mappings: Dict[str, str] = {}
 _mapping_file_path: Optional[str] = None
 _last_modified_time: float = 0
 
+# 多账号配置缓存
+_bangumi_configs_cache: Optional[Dict[str, Dict[str, str]]] = None
+_user_mappings_cache: Optional[Dict[str, str]] = None
+
+
+# 获取多账号配置
+def get_multi_account_configs() -> Dict[str, Dict[str, str]]:
+    """获取所有bangumi账号配置
+    
+    Returns:
+        Dict[str, Dict[str, str]]: 配置段名到配置内容的映射
+    """
+    global _bangumi_configs_cache
+    
+    if _bangumi_configs_cache is not None:
+        return _bangumi_configs_cache
+    
+    bangumi_configs = {}
+    
+    # 遍历所有配置段，查找以 'bangumi-' 开头的段
+    for section_name in configs.raw.sections():
+        if section_name.startswith('bangumi-'):
+            config = {
+                'username': configs.raw.get(section_name, 'username', fallback=''),
+                'access_token': configs.raw.get(section_name, 'access_token', fallback=''),
+                'private': configs.raw.getboolean(section_name, 'private', fallback=False),
+            }
+            # 只保存有效的配置（至少有用户名和access_token）
+            if config['username'] and config['access_token']:
+                bangumi_configs[section_name] = config
+                logger.debug(f'加载多账号配置: {section_name}')
+    
+    _bangumi_configs_cache = bangumi_configs
+    logger.info(f'加载了 {len(bangumi_configs)} 个bangumi账号配置')
+    return bangumi_configs
+
+
+# 获取用户映射配置
+def get_user_mappings() -> Dict[str, str]:
+    """获取媒体服务器用户名到bangumi配置段的映射
+    
+    Returns:
+        Dict[str, str]: 媒体服务器用户名到bangumi配置段名的映射
+    """
+    global _user_mappings_cache
+    
+    if _user_mappings_cache is not None:
+        return _user_mappings_cache
+    
+    user_mappings = {}
+    
+    # 从sync段获取用户映射配置
+    if configs.raw.has_section('sync'):
+        for key, value in configs.raw.items('sync'):
+            # 跳过已知的配置项
+            if key in ['mode', 'single_username']:
+                continue
+            # 其他的键值对都视为用户映射
+            if value.strip():
+                user_mappings[key] = value.strip()
+                logger.debug(f'用户映射: {key} -> {value}')
+    
+    _user_mappings_cache = user_mappings
+    logger.info(f'加载了 {len(user_mappings)} 个用户映射配置')
+    return user_mappings
+
+
+# 根据用户名获取对应的bangumi配置
+def get_bangumi_config_for_user(user_name: str) -> Optional[Dict[str, str]]:
+    """根据媒体服务器用户名获取对应的bangumi配置
+    
+    Args:
+        user_name: 媒体服务器用户名
+        
+    Returns:
+        Optional[Dict[str, str]]: bangumi配置，如果找不到则返回None
+    """
+    mode = configs.raw.get('sync', 'mode', fallback='single')
+    
+    if mode == 'single':
+        # 单用户模式，使用默认的bangumi配置
+        return {
+            'username': configs.raw.get('bangumi', 'username', fallback=''),
+            'access_token': configs.raw.get('bangumi', 'access_token', fallback=''),
+            'private': configs.raw.getboolean('bangumi', 'private', fallback=False),
+        }
+    elif mode == 'multi':
+        # 多用户模式，根据用户映射查找对应的配置
+        user_mappings = get_user_mappings()
+        bangumi_configs = get_multi_account_configs()
+        
+        bangumi_section = user_mappings.get(user_name)
+        if bangumi_section and bangumi_section in bangumi_configs:
+            return bangumi_configs[bangumi_section]
+        else:
+            logger.error(f'多用户模式下未找到用户 {user_name} 的bangumi配置映射')
+            return None
+    
+    return None
+
+
+# 创建BangumiApi实例的函数，支持多账号
+def get_bangumi_api_for_user(user_name: str) -> Optional[BangumiApi]:
+    """根据用户名创建对应的BangumiApi实例
+    
+    Args:
+        user_name: 媒体服务器用户名
+        
+    Returns:
+        Optional[BangumiApi]: BangumiApi实例，如果配置无效则返回None
+    """
+    bangumi_config = get_bangumi_config_for_user(user_name)
+    if not bangumi_config:
+        return None
+    
+    if not bangumi_config['username'] or not bangumi_config['access_token']:
+        logger.error(f'用户 {user_name} 的bangumi配置不完整')
+        return None
+    
+    return BangumiApi(
+        username=bangumi_config['username'],
+        access_token=bangumi_config['access_token'],
+        private=bangumi_config['private'],
+        http_proxy=configs.raw.get('dev', 'script_proxy', fallback='')
+    )
+
+
+# 创建BangumiApi实例的函数，使用缓存减少重复初始化（保持向后兼容）
+@lru_cache(maxsize=1)
+def get_bangumi_api() -> BangumiApi:
+    return BangumiApi(
+        username=configs.raw.get('bangumi', 'username', fallback=''),
+        access_token=configs.raw.get('bangumi', 'access_token', fallback=''),
+        private=configs.raw.getboolean('bangumi', 'private', fallback=False),
+        http_proxy=configs.raw.get('dev', 'script_proxy', fallback='')
+    )
+
 
 # 读取自定义映射配置文件（带缓存优化）
 def load_custom_mappings() -> Dict[str, str]:
@@ -136,15 +273,17 @@ def reload_custom_mappings() -> Dict[str, str]:
     return load_custom_mappings()
 
 
-# 创建BangumiApi实例的函数，使用缓存减少重复初始化
-@lru_cache(maxsize=1)
-def get_bangumi_api() -> BangumiApi:
-    return BangumiApi(
-        username=configs.raw.get('bangumi', 'username', fallback=''),
-        access_token=configs.raw.get('bangumi', 'access_token', fallback=''),
-        private=configs.raw.getboolean('bangumi', 'private', fallback=False),
-        http_proxy=configs.raw.get('dev', 'script_proxy', fallback='')
-    )
+# 强制重新加载多账号配置
+def reload_multi_account_configs():
+    """强制重新加载多账号配置"""
+    global _bangumi_configs_cache, _user_mappings_cache
+    
+    _bangumi_configs_cache = None
+    _user_mappings_cache = None
+    
+    logger.info('强制重新加载多账号配置')
+    get_multi_account_configs()
+    get_user_mappings()
 
 
 # 创建BangumiData实例的函数，使用缓存减少重复初始化
@@ -157,6 +296,7 @@ def get_bangumi_data() -> BangumiData:
 def check_user_permission(user_name: str) -> bool:
     """检查用户是否有权限同步"""
     mode = configs.raw.get('sync', 'mode', fallback='single')
+    
     if mode == 'single':
         single_username = configs.raw.get('sync', 'single_username', fallback='')
         if single_username and user_name != single_username:
@@ -164,8 +304,23 @@ def check_user_permission(user_name: str) -> bool:
             return False
         if not single_username:
             logger.error(f'未设置同步用户single_username，请检查config.ini配置')
-
             return False
+    elif mode == 'multi':
+        # 多用户模式，检查用户是否在映射配置中
+        user_mappings = get_user_mappings()
+        if user_name not in user_mappings:
+            logger.debug(f'多用户模式下用户 {user_name} 未配置映射，跳过')
+            return False
+        
+        # 检查对应的bangumi配置是否存在且有效
+        bangumi_config = get_bangumi_config_for_user(user_name)
+        if not bangumi_config:
+            logger.error(f'多用户模式下用户 {user_name} 的bangumi配置无效')
+            return False
+    else:
+        logger.error(f'不支持的同步模式: {mode}')
+        return False
+    
     return True
 
 
@@ -219,7 +374,12 @@ async def find_subject_id(item: CustomItem) -> tuple[Optional[str], bool]:
     
     # 如果没有匹配到，使用 bangumi API 搜索
     try:
-        bgm = get_bangumi_api()
+        # 使用对应用户的bangumi API实例进行搜索
+        bgm = get_bangumi_api_for_user(item.user_name)
+        if not bgm:
+            logger.error(f'无法为用户 {item.user_name} 创建bangumi API实例进行搜索')
+            return None, False
+        
         premiere_date = None
         if item.release_date and len(item.release_date) >= 8:
             premiere_date = item.release_date[:10]
@@ -293,8 +453,14 @@ async def custom_sync(item: CustomItem, response: Response):
             response.status_code = 404
             return {"status": "error", "message": "未找到匹配的番剧"}
 
+        # 获取对应用户的bangumi API实例
+        bgm = get_bangumi_api_for_user(item.user_name)
+        if not bgm:
+            logger.error(f'无法为用户 {item.user_name} 创建bangumi API实例')
+            response.status_code = 500
+            return {"status": "error", "message": "bangumi配置错误"}
+
         # 查询bangumi番剧指定季度指定集数信息
-        bgm = get_bangumi_api()
         bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
             subject_id=subject_id, 
             target_season=item.season, 
@@ -570,6 +736,33 @@ async def get_mappings_status():
         return {
             "status": "error",
             "message": f"获取状态失败: {str(e)}"
+        }
+
+
+# 手动刷新多账号配置缓存
+@app.post("/reload-accounts", status_code=200)
+async def reload_accounts_endpoint():
+    """手动刷新多账号配置缓存的API端点"""
+    try:
+        reload_multi_account_configs()
+        bangumi_configs = get_multi_account_configs()
+        user_mappings = get_user_mappings()
+        
+        return {
+            "status": "success",
+            "message": "多账号配置已重新加载",
+            "data": {
+                "bangumi_accounts_count": len(bangumi_configs),
+                "user_mappings_count": len(user_mappings),
+                "bangumi_accounts": list(bangumi_configs.keys()),
+                "user_mappings": user_mappings
+            }
+        }
+    except Exception as e:
+        logger.error(f'重新加载多账号配置失败: {e}')
+        return {
+            "status": "error", 
+            "message": f"重新加载失败: {str(e)}"
         }
 
 
