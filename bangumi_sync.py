@@ -324,6 +324,47 @@ def check_user_permission(user_name: str) -> bool:
     return True
 
 
+def is_title_blocked(title: str, ori_title: str = None) -> bool:
+    """检查番剧标题是否包含屏蔽关键词
+    
+    Args:
+        title: 番剧标题
+        ori_title: 原始标题（可选）
+        
+    Returns:
+        bool: 如果包含屏蔽关键词返回True，否则返回False
+    """
+    # 获取屏蔽关键词配置
+    blocked_keywords_str = configs.raw.get('sync', 'blocked_keywords', fallback='').strip()
+    
+    # 如果没有配置屏蔽关键词，直接返回False
+    if not blocked_keywords_str:
+        return False
+    
+    # 解析屏蔽关键词列表
+    blocked_keywords = [keyword.strip() for keyword in blocked_keywords_str.split(',') if keyword.strip()]
+    
+    # 如果解析后的关键词列表为空，直接返回False
+    if not blocked_keywords:
+        return False
+    
+    # 检查主标题
+    if title:
+        for keyword in blocked_keywords:
+            if keyword.lower() in title.lower():
+                logger.info(f'番剧标题 "{title}" 包含屏蔽关键词 "{keyword}"，跳过同步')
+                return True
+    
+    # 检查原始标题
+    if ori_title:
+        for keyword in blocked_keywords:
+            if keyword.lower() in ori_title.lower():
+                logger.info(f'番剧原始标题 "{ori_title}" 包含屏蔽关键词 "{keyword}"，跳过同步')
+                return True
+    
+    return False
+
+
 # 查找番剧ID
 async def find_subject_id(item: CustomItem) -> tuple[Optional[str], bool]:
     """根据标题和日期查找番剧ID
@@ -446,6 +487,11 @@ async def custom_sync(item: CustomItem, response: Response):
         if not check_user_permission(item.user_name):
             response.status_code = 403
             return {"status": "error", "message": "用户无权限同步"}
+
+        # 检查是否包含屏蔽关键词
+        if is_title_blocked(item.title, item.ori_title):
+            response.status_code = 200
+            return {"status": "ignored", "message": "番剧标题包含屏蔽关键词，跳过同步"}
 
         # 查找番剧ID及其是否为特定季度ID的标记
         subject_id, is_season_matched_id = await find_subject_id(item)
