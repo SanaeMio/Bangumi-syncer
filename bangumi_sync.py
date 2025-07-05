@@ -1288,7 +1288,13 @@ async def update_custom_mappings(request: Request):
 async def get_logs(level: str = None, search: str = None, limit: str = "100"):
     """获取日志内容"""
     try:
-        log_file_path = "log.txt"
+        # 从配置文件中获取日志文件路径
+        log_file_path = configs.raw.get('dev', 'log_file', fallback='./log.txt')
+        
+        # 处理相对路径
+        if log_file_path.startswith('./'):
+            cwd = os.path.dirname(__file__)
+            log_file_path = os.path.join(cwd, log_file_path.split('./', 1)[1])
         
         if not os.path.exists(log_file_path):
             return {
@@ -1356,14 +1362,23 @@ async def clear_logs(request: Request):
         data = await request.json()
         create_backup = data.get("backup", False)
         
-        log_file_path = "log.txt"
+        # 从配置文件中获取日志文件路径
+        log_file_path = configs.raw.get('dev', 'log_file', fallback='./log.txt')
+        
+        # 处理相对路径
+        if log_file_path.startswith('./'):
+            cwd = os.path.dirname(__file__)
+            log_file_path = os.path.join(cwd, log_file_path.split('./', 1)[1])
         
         if not os.path.exists(log_file_path):
             return {"status": "success", "message": "日志文件不存在"}
         
         # 创建备份
         if create_backup:
-            backup_path = f"log_backup_{int(time.time())}.txt"
+            # 将备份文件保存在日志文件的同一目录下
+            log_dir = os.path.dirname(log_file_path)
+            backup_filename = f"log_backup_{int(time.time())}.txt"
+            backup_path = os.path.join(log_dir, backup_filename)
             import shutil
             shutil.copy2(log_file_path, backup_path)
             logger.info(f"日志已备份到: {backup_path}")
