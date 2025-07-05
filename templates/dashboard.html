@@ -286,14 +286,35 @@ function displayRecentRecords(records) {
     tbody.innerHTML = '';
     
     records.forEach(record => {
+        // 状态显示映射
+        const statusMap = {
+            'success': '成功',
+            'error': '失败',
+            'ignored': '忽略'
+        };
+        
+        const statusText = statusMap[record.status] || record.status;
+        const statusClass = record.status === 'success' ? 'success' : 
+                          record.status === 'ignored' ? 'warning' : 'danger';
+        
+        // 来源颜色映射
+        const sourceColorMap = {
+            'plex': 'warning',     // 黄色
+            'emby': 'success',     // 绿色
+            'jellyfin': 'primary', // 蓝色
+            'custom': 'secondary'  // 灰色
+        };
+        
+        const sourceClass = sourceColorMap[record.source.toLowerCase()] || 'secondary';
+        
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${new Date(record.timestamp).toLocaleString()}</td>
             <td><span class="fw-semibold">${record.user_name}</span></td>
             <td><span class="text-primary">${record.title}</span></td>
             <td><span class="badge bg-info">S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</span></td>
-            <td><span class="badge bg-${record.status === 'success' ? 'success' : 'danger'}">${record.status}</span></td>
-            <td><span class="badge bg-secondary">${record.source}</span></td>
+            <td><span class="badge bg-${statusClass}">${statusText}</span></td>
+            <td><span class="badge bg-${sourceClass}">${record.source}</span></td>
         `;
         tbody.appendChild(row);
     });

@@ -1,6 +1,11 @@
 /* 清新简洁的自定义样式 */
+
+/* 使用系统字体替代Google Fonts */
+body, .navbar, .sidebar, .btn, .form-control, .form-select {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background-color: #f8f9fa;
     min-height: 100vh;
 }

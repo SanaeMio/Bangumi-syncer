@@ -129,18 +129,6 @@
                     <div id="bangumi-accounts-container">
                         <!-- 动态添加的Bangumi账号配置 -->
                     </div>
-                    
-                    <hr class="my-4">
-                    <div class="d-flex align-items-center mb-3">
-                        <i class="bi bi-arrow-left-right me-2 text-secondary"></i>
-                        <h6 class="fw-bold text-secondary mb-0">用户映射</h6>
-                    </div>
-                    <div id="user-mappings-container">
-                        <!-- 动态添加的用户映射 -->
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addUserMapping()">
-                        <i class="bi bi-plus-circle me-1"></i>添加用户映射
-                    </button>
                 </div>
             </div>
         </div>
@@ -547,6 +535,8 @@ function populateForm(config) {
     document.getElementById('bangumi-data-enabled').checked = config.bangumi_data.enabled !== false;
     document.getElementById('bangumi-data-cache').checked = config.bangumi_data.use_cache !== false;
     document.getElementById('cache-ttl').value = config.bangumi_data.cache_ttl_days || 7;
+    document.getElementById('data-url').value = config.bangumi_data.data_url || 'https://unpkg.com/bangumi-data@0.3/dist/data.json';
+    document.getElementById('local-cache-path').value = config.bangumi_data.local_cache_path || './bangumi_data_cache.json';
     
     // 切换同步模式
     toggleSyncMode();
@@ -573,23 +563,18 @@ function toggleSyncMode() {
 
 function populateMultiUserConfig(accounts, mappings) {
     const accountsContainer = document.getElementById('bangumi-accounts-container');
-    const mappingsContainer = document.getElementById('user-mappings-container');
     
     accountsContainer.innerHTML = '';
-    mappingsContainer.innerHTML = '';
     
     bangumiAccountCounter = 0;
-    userMappingCounter = 0;
     
     // 添加Bangumi账号
     Object.entries(accounts || {}).forEach(([key, account]) => {
-        addBangumiAccount(key, account);
+        // 使用display_name作为显示名称，如果没有则使用配置段名
+        const displayName = account.display_name || key;
+        addBangumiAccount(displayName, account);
     });
     
-    // 添加用户映射
-    Object.entries(mappings || {}).forEach(([user, mapping]) => {
-        addUserMapping(user, mapping);
-    });
 }
 
 function addBangumiAccount(accountName = '', accountConfig = {}) {
@@ -606,15 +591,19 @@ function addBangumiAccount(accountName = '', accountConfig = {}) {
             </button>
         </div>
         <div class="row">
-            <div class="col-md-4">
-                <label class="form-label">账号名称</label>
-                <input type="text" class="form-control bangumi-account-name" value="${accountName}" placeholder="bangumi-user1">
+            <div class="col-md-3">
+                <label class="form-label">账号备注</label>
+                <input type="text" class="form-control bangumi-account-name" value="${accountName}" placeholder="用户昵称或备注">
             </div>
-            <div class="col-md-4">
-                <label class="form-label">用户名</label>
+            <div class="col-md-3">
+                <label class="form-label">Bangumi用户名</label>
                 <input type="text" class="form-control bangumi-account-username" value="${accountConfig.username || ''}" placeholder="Bangumi用户名">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label class="form-label">媒体服务器用户名</label>
+                <input type="text" class="form-control bangumi-account-media-username" value="${accountConfig.media_server_username || ''}" placeholder="Plex/Emby/Jellyfin用户名">
+            </div>
+            <div class="col-md-3">
                 <label class="form-label">访问令牌</label>
                 <input type="password" class="form-control bangumi-account-token" value="${accountConfig.access_token || ''}" placeholder="访问令牌">
             </div>
@@ -640,37 +629,6 @@ function removeBangumiAccount(id) {
     }
 }
 
-function addUserMapping(user = '', mapping = '') {
-    const container = document.getElementById('user-mappings-container');
-    const id = userMappingCounter++;
-    
-    const mappingDiv = document.createElement('div');
-    mappingDiv.className = 'row mb-2';
-    mappingDiv.innerHTML = `
-        <div class="col-md-5">
-            <input type="text" class="form-control user-mapping-user" value="${user}" placeholder="媒体服务器用户名">
-        </div>
-        <div class="col-md-5">
-            <input type="text" class="form-control user-mapping-bangumi" value="${mapping}" placeholder="bangumi-user1">
-        </div>
-        <div class="col-md-2">
-            <button type="button" class="btn btn-outline-danger" onclick="removeUserMapping(${id})">
-                <i class="bi bi-trash"></i>
-            </button>
-        </div>
-    `;
-    
-    mappingDiv.id = `user-mapping-${id}`;
-    container.appendChild(mappingDiv);
-}
-
-function removeUserMapping(id) {
-    const element = document.getElementById(`user-mapping-${id}`);
-    if (element) {
-        element.remove();
-    }
-}
-
 async function saveConfig() {
     try {
         const configData = {
@@ -691,7 +649,9 @@ async function saveConfig() {
             bangumi_data: {
                 enabled: document.getElementById('bangumi-data-enabled').checked,
                 use_cache: document.getElementById('bangumi-data-cache').checked,
-                cache_ttl_days: parseInt(document.getElementById('cache-ttl').value)
+                cache_ttl_days: parseInt(document.getElementById('cache-ttl').value),
+                data_url: document.getElementById('data-url').value,
+                local_cache_path: document.getElementById('local-cache-path').value
             }
         };
         
@@ -701,33 +661,26 @@ async function saveConfig() {
             const userMappings = {};
             
             // 收集Bangumi账号
-            document.querySelectorAll('[id^="bangumi-account-"]').forEach(element => {
-                const name = element.querySelector('.bangumi-account-name').value;
+            document.querySelectorAll('[id^="bangumi-account-"]').forEach((element, index) => {
+                const displayName = element.querySelector('.bangumi-account-name').value;
                 const username = element.querySelector('.bangumi-account-username').value;
+                const mediaUsername = element.querySelector('.bangumi-account-media-username').value;
                 const token = element.querySelector('.bangumi-account-token').value;
                 const isPrivate = element.querySelector('.bangumi-account-private').checked;
                 
-                if (name && username && token) {
-                    multiAccounts[name] = {
+                if (username && mediaUsername && token) {
+                    // 使用索引生成唯一的键名，实际的配置段名会在后端自动生成
+                    const accountKey = displayName || `account_${index + 1}`;
+                    multiAccounts[accountKey] = {
                         username: username,
                         access_token: token,
+                        media_server_username: mediaUsername,
                         private: isPrivate
                     };
                 }
             });
             
-            // 收集用户映射
-            document.querySelectorAll('[id^="user-mapping-"]').forEach(element => {
-                const user = element.querySelector('.user-mapping-user').value;
-                const mapping = element.querySelector('.user-mapping-bangumi').value;
-                
-                if (user && mapping) {
-                    userMappings[user] = mapping;
-                }
-            });
-            
             configData.multi_accounts = multiAccounts;
-            configData.user_mappings = userMappings;
         }
         
         const response = await fetch('/api/config', {
