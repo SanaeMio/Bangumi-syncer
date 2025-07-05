@@ -1,11 +1,17 @@
 import json
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, HTTPException, Form
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from functools import lru_cache
 import os
 import time
+import sqlite3
+from datetime import datetime, timedelta
+import configparser
 
 from utils.configs import configs, MyLogger
 from utils.bangumi_api import BangumiApi
@@ -14,7 +20,71 @@ from utils.bangumi_data import BangumiData
 
 logger = MyLogger()
 
-app = FastAPI()
+app = FastAPI(title="Bangumi-Syncer", description="自动同步Bangumi观看记录")
+
+# 创建静态文件和模板目录
+os.makedirs("static", exist_ok=True)
+os.makedirs("templates", exist_ok=True)
+
+# 挂载静态文件
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 设置模板引擎
+templates = Jinja2Templates(directory="templates")
+
+# 数据库初始化
+def init_database():
+    """初始化SQLite数据库"""
+    db_path = "sync_records.db"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # 创建同步记录表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sync_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_name TEXT NOT NULL,
+            title TEXT NOT NULL,
+            ori_title TEXT,
+            season INTEGER NOT NULL,
+            episode INTEGER NOT NULL,
+            subject_id TEXT,
+            episode_id TEXT,
+            status TEXT NOT NULL,
+            message TEXT,
+            source TEXT NOT NULL
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+# 初始化数据库
+init_database()
+
+# 记录同步日志到数据库
+def log_sync_record(user_name: str, title: str, ori_title: str, season: int, episode: int, 
+                   subject_id: str = None, episode_id: str = None, status: str = "success", 
+                   message: str = "", source: str = "custom"):
+    """记录同步日志到数据库"""
+    try:
+        conn = sqlite3.connect("sync_records.db")
+        cursor = conn.cursor()
+        
+        # 使用本地时间而不是UTC时间
+        local_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute('''
+            INSERT INTO sync_records 
+            (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (local_time, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"记录同步日志失败: {e}")
 
 
 class CustomItem(BaseModel):
@@ -87,7 +157,7 @@ def get_user_mappings() -> Dict[str, str]:
     if configs.raw.has_section('sync'):
         for key, value in configs.raw.items('sync'):
             # 跳过已知的配置项
-            if key in ['mode', 'single_username']:
+            if key in ['mode', 'single_username', 'blocked_keywords']:
                 continue
             # 其他的键值对都视为用户映射
             if value.strip():
@@ -458,7 +528,7 @@ def retry_mark_episode(bgm_api, subject_id, ep_id, max_retries=3):
 
 # 自定义同步
 @app.post("/Custom", status_code=200)
-async def custom_sync(item: CustomItem, response: Response):
+async def custom_sync(item: CustomItem, response: Response, source: str = "custom"):
     try:
         logger.info(f'接收到同步请求：{item}')
 
@@ -537,6 +607,20 @@ async def custom_sync(item: CustomItem, response: Response):
             logger.info(f'bgm: {item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}')
             logger.info(f'bgm: {item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}')
 
+        # 记录同步成功到数据库
+        log_sync_record(
+            user_name=item.user_name,
+            title=item.title,
+            ori_title=item.ori_title,
+            season=item.season,
+            episode=item.episode,
+            subject_id=bgm_se_id,
+            episode_id=bgm_ep_id,
+            status="success",
+            message=result_message,
+            source=source
+        )
+
         return {
             "status": "success", 
             "message": result_message,
@@ -550,6 +634,19 @@ async def custom_sync(item: CustomItem, response: Response):
         }
     except Exception as e:
         logger.error(f'自定义同步处理出错: {e}')
+        
+        # 记录同步失败到数据库
+        log_sync_record(
+            user_name=item.user_name if 'item' in locals() else "unknown",
+            title=item.title if 'item' in locals() else "unknown",
+            ori_title=item.ori_title if 'item' in locals() else "",
+            season=item.season if 'item' in locals() else 0,
+            episode=item.episode if 'item' in locals() else 0,
+            status="error",
+            message=str(e),
+            source=source
+        )
+        
         response.status_code = 500
         return {"status": "error", "message": f"处理失败: {str(e)}"}
 
@@ -636,7 +733,9 @@ async def plex_sync(plex_request: Request):
         # 提取数据并调用自定义同步
         custom_item = extract_plex_data(plex_data)
         logger.debug(f'Plex重新组装JSON报文：{custom_item}')
-        return await custom_sync(custom_item, Response())
+        
+        # 直接传入source参数
+        return await custom_sync(custom_item, Response(), source="plex")
     except Exception as e:
         logger.error(f'Plex同步处理出错: {e}')
         return {"status": "error", "message": f"处理失败: {str(e)}"}
@@ -702,8 +801,7 @@ async def emby_sync(emby_request: Request):
         # 提取数据并调用自定义同步
         custom_item = extract_emby_data(emby_data)
         logger.debug(f'Emby重新组装JSON报文：{custom_item}')
-        result = await custom_sync(custom_item, Response())
-        return result
+        return await custom_sync(custom_item, Response(), source="emby")
     except Exception as e:
         logger.error(f'Emby同步处理出错: {e}')
         import traceback
@@ -732,7 +830,7 @@ async def jellyfin_sync(jellyfin_request: Request):
         # 提取数据并调用自定义同步
         custom_item = extract_jellyfin_data(jellyfin_data)
         logger.debug(f'Jellyfin重新组装JSON报文：{custom_item}')
-        return await custom_sync(custom_item, Response())
+        return await custom_sync(custom_item, Response(), source="jellyfin")
     except Exception as e:
         logger.error(f'Jellyfin同步处理出错: {e}')
         return {"status": "error", "message": f"处理失败: {str(e)}"}
@@ -785,6 +883,13 @@ async def get_mappings_status():
         }
 
 
+# 重新加载多账号配置缓存的函数
+def reload_multi_account_configs():
+    """重新加载多账号配置缓存"""
+    global _bangumi_configs_cache, _user_mappings_cache
+    _bangumi_configs_cache = None
+    _user_mappings_cache = None
+
 # 手动刷新多账号配置缓存
 @app.post("/reload-accounts", status_code=200)
 async def reload_accounts_endpoint():
@@ -810,6 +915,928 @@ async def reload_accounts_endpoint():
             "status": "error", 
             "message": f"重新加载失败: {str(e)}"
         }
+
+
+# =========================== Web管理界面 ===========================
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    """主页面 - 仪表板"""
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+@app.get("/config", response_class=HTMLResponse)
+async def config_page(request: Request):
+    """配置管理页面"""
+    return templates.TemplateResponse("config.html", {"request": request})
+
+@app.get("/records", response_class=HTMLResponse)
+async def records_page(request: Request):
+    """同步记录页面"""
+    return templates.TemplateResponse("records.html", {"request": request})
+
+@app.get("/mappings", response_class=HTMLResponse)
+async def mappings_page(request: Request):
+    """映射管理页面"""
+    return templates.TemplateResponse("mappings.html", {"request": request})
+
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request):
+    """日志管理页面"""
+    return templates.TemplateResponse("logs.html", {"request": request})
+
+@app.get("/test", response_class=HTMLResponse)
+async def test_page(request: Request):
+    """测试页面"""
+    return templates.TemplateResponse("test_config_fix.html", {"request": request})
+
+# =========================== API端点 ===========================
+
+@app.get("/api/config")
+async def get_config():
+    """获取当前配置"""
+    try:
+        # 强制重新读取配置文件
+        configs.update()
+        reload_multi_account_configs()
+        
+        config_data = {
+            "bangumi": {
+                "username": configs.raw.get('bangumi', 'username', fallback=''),
+                "access_token": configs.raw.get('bangumi', 'access_token', fallback=''),
+                "private": configs.raw.getboolean('bangumi', 'private', fallback=False),
+            },
+            "sync": {
+                "mode": configs.raw.get('sync', 'mode', fallback='single'),
+                "single_username": configs.raw.get('sync', 'single_username', fallback=''),
+                "blocked_keywords": configs.raw.get('sync', 'blocked_keywords', fallback=''),
+            },
+            "dev": {
+                "script_proxy": configs.raw.get('dev', 'script_proxy', fallback=''),
+                "debug": configs.raw.getboolean('dev', 'debug', fallback=False),
+            },
+            "bangumi_data": {
+                "enabled": configs.raw.getboolean('bangumi-data', 'enabled', fallback=True),
+                "use_cache": configs.raw.getboolean('bangumi-data', 'use_cache', fallback=True),
+                "cache_ttl_days": configs.raw.getint('bangumi-data', 'cache_ttl_days', fallback=7),
+                "data_url": configs.raw.get('bangumi-data', 'data_url', fallback='https://unpkg.com/bangumi-data@0.3/dist/data.json'),
+                "local_cache_path": configs.raw.get('bangumi-data', 'local_cache_path', fallback='./bangumi_data_cache.json'),
+            }
+        }
+        
+        # 获取多账号配置
+        bangumi_configs = get_multi_account_configs()
+        user_mappings = get_user_mappings()
+        
+        config_data["multi_accounts"] = bangumi_configs
+        config_data["user_mappings"] = user_mappings
+        
+        return {"status": "success", "data": config_data}
+    except Exception as e:
+        logger.error(f"获取配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
+
+@app.post("/api/config")
+async def update_config(request: Request):
+    """更新配置"""
+    try:
+        data = await request.json()
+        
+        # 读取现有配置
+        config_path = configs.active_config_path
+        config = configparser.ConfigParser()
+        config.read(config_path, encoding='utf-8-sig')
+        
+        # 更新配置
+        if "bangumi" in data:
+            if not config.has_section('bangumi'):
+                config.add_section('bangumi')
+            for key, value in data["bangumi"].items():
+                if key == "private":
+                    config.set('bangumi', key, str(value).lower())
+                else:
+                    config.set('bangumi', key, str(value))
+        
+        if "sync" in data:
+            if not config.has_section('sync'):
+                config.add_section('sync')
+            for key, value in data["sync"].items():
+                config.set('sync', key, str(value))
+        
+        if "dev" in data:
+            if not config.has_section('dev'):
+                config.add_section('dev')
+            for key, value in data["dev"].items():
+                if key == "debug":
+                    config.set('dev', key, str(value).lower())
+                else:
+                    config.set('dev', key, str(value))
+        
+        if "bangumi_data" in data:
+            if not config.has_section('bangumi-data'):
+                config.add_section('bangumi-data')
+            for key, value in data["bangumi_data"].items():
+                if key in ["enabled", "use_cache"]:
+                    config.set('bangumi-data', key, str(value).lower())
+                else:
+                    config.set('bangumi-data', key, str(value))
+        
+        # 处理多账号配置
+        if "multi_accounts" in data:
+            # 先删除所有现有的bangumi-*段
+            sections_to_remove = [s for s in config.sections() if s.startswith('bangumi-')]
+            for section in sections_to_remove:
+                config.remove_section(section)
+            
+            # 添加新的多账号配置
+            for account_name, account_config in data["multi_accounts"].items():
+                if not config.has_section(account_name):
+                    config.add_section(account_name)
+                for key, value in account_config.items():
+                    if key == "private":
+                        config.set(account_name, key, str(value).lower())
+                    else:
+                        config.set(account_name, key, str(value))
+        
+        # 处理用户映射
+        if "user_mappings" in data:
+            if config.has_section('sync'):
+                # 先删除现有的用户映射
+                items_to_remove = []
+                for key, value in config.items('sync'):
+                    if key not in ['mode', 'single_username', 'blocked_keywords']:
+                        items_to_remove.append(key)
+                for key in items_to_remove:
+                    config.remove_option('sync', key)
+                
+                # 添加新的用户映射
+                for user, mapping in data["user_mappings"].items():
+                    config.set('sync', user, mapping)
+        
+        # 保存配置文件
+        with open(config_path, 'w', encoding='utf-8') as f:
+            config.write(f)
+        
+        # 重新加载配置
+        configs.update()
+        reload_multi_account_configs()
+        
+        # 清除所有函数缓存
+        if hasattr(get_bangumi_api, 'cache_clear'):
+            get_bangumi_api.cache_clear()
+        if hasattr(get_bangumi_data, 'cache_clear'):
+            get_bangumi_data.cache_clear()
+        
+        # 强制重新加载映射配置
+        reload_custom_mappings()
+        
+        # 添加调试日志
+        logger.info(f"配置已更新并重新加载，当前debug模式: {configs.raw.getboolean('dev', 'debug', fallback=False)}")
+        
+        return {"status": "success", "message": "配置已更新"}
+    except Exception as e:
+        logger.error(f"更新配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新配置失败: {str(e)}")
+
+@app.get("/api/records")
+async def get_sync_records(limit: int = 100, offset: int = 0, status: str = None, user_name: str = None, source: str = None):
+    """获取同步记录"""
+    try:
+        conn = sqlite3.connect("sync_records.db")
+        cursor = conn.cursor()
+        
+        # 构建查询条件
+        where_conditions = []
+        params = []
+        
+        if status:
+            where_conditions.append("status = ?")
+            params.append(status)
+        
+        if user_name:
+            where_conditions.append("user_name = ?")
+            params.append(user_name)
+        
+        if source:
+            where_conditions.append("source = ?")
+            params.append(source)
+        
+        where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        # 获取总数
+        count_query = f"SELECT COUNT(*) FROM sync_records{where_clause}"
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()[0]
+        
+        # 获取记录
+        query = f"""
+            SELECT id, timestamp, user_name, title, ori_title, season, episode, 
+                   subject_id, episode_id, status, message, source
+            FROM sync_records{where_clause}
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        """
+        cursor.execute(query, params + [limit, offset])
+        
+        records = []
+        for row in cursor.fetchall():
+            records.append({
+                "id": row[0],
+                "timestamp": row[1],
+                "user_name": row[2],
+                "title": row[3],
+                "ori_title": row[4],
+                "season": row[5],
+                "episode": row[6],
+                "subject_id": row[7],
+                "episode_id": row[8],
+                "status": row[9],
+                "message": row[10],
+                "source": row[11]
+            })
+        
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": {
+                "records": records,
+                "total": total,
+                "limit": limit,
+                "offset": offset
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取同步记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取同步记录失败: {str(e)}")
+
+@app.get("/api/stats")
+async def get_sync_stats():
+    """获取同步统计信息"""
+    try:
+        conn = sqlite3.connect("sync_records.db")
+        cursor = conn.cursor()
+        
+        # 总同步次数
+        cursor.execute("SELECT COUNT(*) FROM sync_records")
+        total_syncs = cursor.fetchone()[0]
+        
+        # 成功同步次数
+        cursor.execute("SELECT COUNT(*) FROM sync_records WHERE status = 'success'")
+        success_syncs = cursor.fetchone()[0]
+        
+        # 失败同步次数
+        cursor.execute("SELECT COUNT(*) FROM sync_records WHERE status = 'error'")
+        error_syncs = cursor.fetchone()[0]
+        
+        # 今日同步次数
+        cursor.execute("SELECT COUNT(*) FROM sync_records WHERE DATE(timestamp) = DATE('now')")
+        today_syncs = cursor.fetchone()[0]
+        
+        # 用户统计
+        cursor.execute("SELECT user_name, COUNT(*) FROM sync_records GROUP BY user_name ORDER BY COUNT(*) DESC")
+        user_stats = [{"user": row[0], "count": row[1]} for row in cursor.fetchall()]
+        
+        # 最近7天统计
+        cursor.execute("""
+            SELECT DATE(timestamp) as date, COUNT(*) as count
+            FROM sync_records 
+            WHERE timestamp >= datetime('now', '-7 days')
+            GROUP BY DATE(timestamp)
+            ORDER BY date
+        """)
+        daily_stats = [{"date": row[0], "count": row[1]} for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return {
+            "status": "success",
+            "data": {
+                "total_syncs": total_syncs,
+                "success_syncs": success_syncs,
+                "error_syncs": error_syncs,
+                "today_syncs": today_syncs,
+                "success_rate": round(success_syncs / total_syncs * 100, 2) if total_syncs > 0 else 0,
+                "user_stats": user_stats,
+                "daily_stats": daily_stats
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取统计信息失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取统计信息失败: {str(e)}")
+
+@app.get("/api/mappings")
+async def get_custom_mappings():
+    """获取自定义映射"""
+    try:
+        mappings = load_custom_mappings()
+        return {
+            "status": "success",
+            "data": {
+                "mappings": mappings,
+                "count": len(mappings)
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取自定义映射失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取自定义映射失败: {str(e)}")
+
+@app.post("/api/mappings")
+async def update_custom_mappings(request: Request):
+    """更新自定义映射"""
+    try:
+        data = await request.json()
+        mappings = data.get("mappings", {})
+        
+        # 找到配置文件路径
+        mapping_file_paths = [
+            './bangumi_mapping.json',
+            '/app/config/bangumi_mapping.json',
+            '/app/bangumi_mapping.json'
+        ]
+        
+        mapping_file_path = None
+        for path in mapping_file_paths:
+            if os.path.exists(path):
+                mapping_file_path = path
+                break
+        
+        if not mapping_file_path:
+            mapping_file_path = './bangumi_mapping.json'
+        
+        # 读取现有配置
+        config_data = {
+            "_comment": "自定义映射配置文件 - 用于处理程序通过搜索无法自动匹配的项目",
+            "_format": "番剧名: bangumi_subject_id",
+            "_note": "bangumi_subject_id需要配置第一季的，程序会自动往后找",
+            "mappings": mappings
+        }
+        
+        # 保存配置
+        with open(mapping_file_path, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=2)
+        
+        # 重新加载映射
+        reload_custom_mappings()
+        
+        return {"status": "success", "message": "自定义映射已更新"}
+    except Exception as e:
+        logger.error(f"更新自定义映射失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新自定义映射失败: {str(e)}")
+
+@app.get("/api/logs")
+async def get_logs(level: str = None, search: str = None, limit: str = "100"):
+    """获取日志内容"""
+    try:
+        log_file_path = "log.txt"
+        
+        if not os.path.exists(log_file_path):
+            return {
+                "status": "success",
+                "data": {
+                    "content": "",
+                    "stats": {
+                        "size": 0,
+                        "lines": 0,
+                        "modified": None,
+                        "errors": 0
+                    }
+                }
+            }
+        
+        # 获取文件统计信息
+        file_stats = os.stat(log_file_path)
+        file_size = file_stats.st_size
+        file_modified = file_stats.st_mtime
+        
+        # 读取日志内容
+        with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+        
+        # 统计错误数量
+        error_count = sum(1 for line in lines if 'ERROR' in line.upper())
+        
+        # 应用筛选
+        if level:
+            lines = [line for line in lines if level.upper() in line.upper()]
+        
+        if search:
+            lines = [line for line in lines if search.lower() in line.lower()]
+        
+        # 限制行数
+        if limit != "all":
+            try:
+                limit_num = int(limit)
+                lines = lines[-limit_num:] if len(lines) > limit_num else lines
+            except ValueError:
+                pass
+        
+        content = ''.join(lines)
+        
+        return {
+            "status": "success",
+            "data": {
+                "content": content,
+                "stats": {
+                    "size": file_size,
+                    "lines": len(lines) if not level and not search else len(lines),
+                    "modified": file_modified * 1000,  # 转换为毫秒
+                    "errors": error_count
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取日志失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取日志失败: {str(e)}")
+
+@app.post("/api/logs/clear")
+async def clear_logs(request: Request):
+    """清空日志"""
+    try:
+        data = await request.json()
+        create_backup = data.get("backup", False)
+        
+        log_file_path = "log.txt"
+        
+        if not os.path.exists(log_file_path):
+            return {"status": "success", "message": "日志文件不存在"}
+        
+        # 创建备份
+        if create_backup:
+            backup_path = f"log_backup_{int(time.time())}.txt"
+            import shutil
+            shutil.copy2(log_file_path, backup_path)
+            logger.info(f"日志已备份到: {backup_path}")
+        
+        # 清空日志文件
+        with open(log_file_path, 'w', encoding='utf-8') as f:
+            f.write("")
+        
+        logger.info("日志已清空")
+        
+        return {
+            "status": "success", 
+            "message": "日志已清空" + (f"，备份已保存" if create_backup else "")
+        }
+    except Exception as e:
+        logger.error(f"清空日志失败: {e}")
+        raise HTTPException(status_code=500, detail=f"清空日志失败: {str(e)}")
+
+@app.post("/api/config/backup")
+async def backup_config():
+    """备份当前配置"""
+    try:
+        # 强制重新读取配置文件
+        configs.update()
+        
+        config_data = {
+            "bangumi": {
+                "username": configs.raw.get('bangumi', 'username', fallback=''),
+                "access_token": configs.raw.get('bangumi', 'access_token', fallback=''),
+                "private": configs.raw.getboolean('bangumi', 'private', fallback=False),
+            },
+            "sync": {
+                "mode": configs.raw.get('sync', 'mode', fallback='single'),
+                "single_username": configs.raw.get('sync', 'single_username', fallback=''),
+                "blocked_keywords": configs.raw.get('sync', 'blocked_keywords', fallback=''),
+            },
+            "dev": {
+                "script_proxy": configs.raw.get('dev', 'script_proxy', fallback=''),
+                "debug": configs.raw.getboolean('dev', 'debug', fallback=False),
+            },
+                        "bangumi_data": {
+                "enabled": configs.raw.getboolean('bangumi-data', 'enabled', fallback=True),
+                "use_cache": configs.raw.getboolean('bangumi-data', 'use_cache', fallback=True),
+                "cache_ttl_days": configs.raw.getint('bangumi-data', 'cache_ttl_days', fallback=7),
+                "data_url": configs.raw.get('bangumi-data', 'data_url', fallback='https://unpkg.com/bangumi-data@0.3/dist/data.json'),
+                "local_cache_path": configs.raw.get('bangumi-data', 'local_cache_path', fallback='./bangumi_data_cache.json'),
+            }
+        }
+
+        # 获取多账号配置
+        bangumi_configs = get_multi_account_configs()
+        user_mappings = get_user_mappings()
+        
+        config_data["multi_accounts"] = bangumi_configs
+        config_data["user_mappings"] = user_mappings
+        
+        # 创建备份目录
+        backup_dir = "config_backups"
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # 生成备份文件名
+        timestamp = int(time.time())
+        backup_filename = f"config_backup_{timestamp}.json"
+        backup_path = os.path.join(backup_dir, backup_filename)
+        
+        # 保存备份文件
+        backup_data = {
+            "backup_info": {
+                "created_at": time.time(),
+                "version": "1.0",
+                "description": "配置备份文件"
+            },
+            "config": config_data
+        }
+        
+        with open(backup_path, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"配置已备份到: {backup_path}")
+        
+        return {
+            "status": "success",
+            "message": "配置备份成功",
+            "data": {
+                "filename": backup_filename,
+                "path": backup_path,
+                "config": config_data
+            }
+        }
+    except Exception as e:
+        logger.error(f"备份配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"备份配置失败: {str(e)}")
+
+@app.get("/api/config/backups")
+async def get_config_backups():
+    """获取配置备份列表"""
+    try:
+        backup_dir = "config_backups"
+        backups = []
+        
+        if os.path.exists(backup_dir):
+            for filename in os.listdir(backup_dir):
+                if filename.endswith('.json'):
+                    file_path = os.path.join(backup_dir, filename)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            backup_data = json.load(f)
+                        
+                        file_stats = os.stat(file_path)
+                        backup_info = backup_data.get('backup_info', {})
+                        
+                        backups.append({
+                            "filename": filename,
+                            "name": filename.replace('.json', '').replace('config_backup_', '配置备份_'),
+                            "created_at": backup_info.get('created_at', file_stats.st_mtime) * 1000,
+                            "size": file_stats.st_size,
+                            "description": backup_info.get('description', '配置备份文件')
+                        })
+                    except Exception as e:
+                        logger.warning(f"读取备份文件失败 {filename}: {e}")
+                        continue
+        
+        # 按创建时间倒序排列
+        backups.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        return {
+            "status": "success",
+            "data": {
+                "backups": backups,
+                "count": len(backups)
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取配置备份列表失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取配置备份列表失败: {str(e)}")
+
+@app.get("/api/config/backup/{filename}")
+async def get_config_backup(filename: str):
+    """获取指定备份文件的内容"""
+    try:
+        backup_dir = "config_backups"
+        backup_path = os.path.join(backup_dir, filename)
+        
+        if not os.path.exists(backup_path):
+            raise HTTPException(status_code=404, detail="备份文件不存在")
+        
+        with open(backup_path, 'r', encoding='utf-8') as f:
+            backup_data = json.load(f)
+        
+        return {
+            "status": "success",
+            "data": backup_data
+        }
+    except Exception as e:
+        logger.error(f"获取备份文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取备份文件失败: {str(e)}")
+
+@app.post("/api/config/restore/{filename}")
+async def restore_config(filename: str):
+    """恢复配置"""
+    try:
+        backup_dir = "config_backups"
+        backup_path = os.path.join(backup_dir, filename)
+        
+        if not os.path.exists(backup_path):
+            raise HTTPException(status_code=404, detail="备份文件不存在")
+        
+        # 读取备份文件
+        with open(backup_path, 'r', encoding='utf-8') as f:
+            backup_data = json.load(f)
+        
+        config_data = backup_data.get('config', {})
+        
+        # 找到配置文件路径
+        config_paths = [
+            './config.ini',
+            '/app/config/config.ini',
+            '/app/config.ini'
+        ]
+        
+        config_path = None
+        for path in config_paths:
+            if os.path.exists(path):
+                config_path = path
+                break
+        
+        if not config_path:
+            config_path = './config.ini'
+        
+        # 创建当前配置的备份
+        current_backup_path = f"config_backup_before_restore_{int(time.time())}.json"
+        current_backup_full_path = os.path.join(backup_dir, current_backup_path)
+        
+        # 读取当前配置
+        configs.update()
+        current_config = {
+            "bangumi": {
+                "username": configs.raw.get('bangumi', 'username', fallback=''),
+                "access_token": configs.raw.get('bangumi', 'access_token', fallback=''),
+                "private": configs.raw.getboolean('bangumi', 'private', fallback=False),
+            },
+            "sync": {
+                "mode": configs.raw.get('sync', 'mode', fallback='single'),
+                "single_username": configs.raw.get('sync', 'single_username', fallback=''),
+                "blocked_keywords": configs.raw.get('sync', 'blocked_keywords', fallback=''),
+            },
+            "dev": {
+                "script_proxy": configs.raw.get('dev', 'script_proxy', fallback=''),
+                "debug": configs.raw.getboolean('dev', 'debug', fallback=False),
+            },
+                        "bangumi_data": {
+                "enabled": configs.raw.getboolean('bangumi-data', 'enabled', fallback=True),
+                "use_cache": configs.raw.getboolean('bangumi-data', 'use_cache', fallback=True),
+                "cache_ttl_days": configs.raw.getint('bangumi-data', 'cache_ttl_days', fallback=7),
+                "data_url": configs.raw.get('bangumi-data', 'data_url', fallback='https://unpkg.com/bangumi-data@0.3/dist/data.json'),
+                "local_cache_path": configs.raw.get('bangumi-data', 'local_cache_path', fallback='./bangumi_data_cache.json'),
+            }
+        }
+
+        current_backup_data = {
+            "backup_info": {
+                "created_at": time.time(),
+                "version": "1.0",
+                "description": "恢复前自动备份"
+            },
+            "config": current_config
+        }
+        
+        with open(current_backup_full_path, 'w', encoding='utf-8') as f:
+            json.dump(current_backup_data, f, ensure_ascii=False, indent=2)
+        
+        # 恢复配置
+        config = configparser.ConfigParser()
+        config.read(config_path, encoding='utf-8')
+        
+        # 清空现有配置
+        for section in config.sections():
+            config.remove_section(section)
+        
+        # 应用备份配置
+        if "bangumi" in config_data:
+            config.add_section('bangumi')
+            for key, value in config_data["bangumi"].items():
+                if key == "private":
+                    config.set('bangumi', key, str(value).lower())
+                else:
+                    config.set('bangumi', key, str(value))
+        
+        if "sync" in config_data:
+            config.add_section('sync')
+            for key, value in config_data["sync"].items():
+                config.set('sync', key, str(value))
+        
+        if "dev" in config_data:
+            config.add_section('dev')
+            for key, value in config_data["dev"].items():
+                if key == "debug":
+                    config.set('dev', key, str(value).lower())
+                else:
+                    config.set('dev', key, str(value))
+        
+        if "bangumi_data" in config_data:
+            config.add_section('bangumi-data')
+            for key, value in config_data["bangumi_data"].items():
+                if key in ["enabled", "use_cache"]:
+                    config.set('bangumi-data', key, str(value).lower())
+                else:
+                    config.set('bangumi-data', key, str(value))
+        
+        # 处理多账号配置
+        if "multi_accounts" in config_data:
+            for account_name, account_config in config_data["multi_accounts"].items():
+                config.add_section(account_name)
+                for key, value in account_config.items():
+                    if key == "private":
+                        config.set(account_name, key, str(value).lower())
+                    else:
+                        config.set(account_name, key, str(value))
+        
+        # 处理用户映射
+        if "user_mappings" in config_data:
+            if config.has_section('sync'):
+                for user, mapping in config_data["user_mappings"].items():
+                    config.set('sync', user, mapping)
+        
+        # 保存配置文件
+        with open(config_path, 'w', encoding='utf-8') as f:
+            config.write(f)
+        
+        # 重新加载配置
+        configs.update()
+        reload_multi_account_configs()
+        reload_custom_mappings()
+        
+        # 清除缓存
+        if hasattr(get_bangumi_api, 'cache_clear'):
+            get_bangumi_api.cache_clear()
+        if hasattr(get_bangumi_data, 'cache_clear'):
+            get_bangumi_data.cache_clear()
+        
+        logger.info(f"配置已从 {filename} 恢复，当前配置已备份到 {current_backup_path}")
+        
+        return {
+            "status": "success",
+            "message": "配置恢复成功",
+            "data": {
+                "restored_from": filename,
+                "current_backup": current_backup_path
+            }
+        }
+    except Exception as e:
+        logger.error(f"恢复配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"恢复配置失败: {str(e)}")
+
+@app.delete("/api/mappings/{title}")
+async def delete_custom_mapping(title: str):
+    """删除自定义映射"""
+    try:
+        mappings = load_custom_mappings()
+        if title in mappings:
+            del mappings[title]
+            
+            # 更新配置文件
+            mapping_file_paths = [
+                './bangumi_mapping.json',
+                '/app/config/bangumi_mapping.json',
+                '/app/bangumi_mapping.json'
+            ]
+            
+            mapping_file_path = None
+            for path in mapping_file_paths:
+                if os.path.exists(path):
+                    mapping_file_path = path
+                    break
+            
+            if mapping_file_path:
+                config_data = {
+                    "_comment": "自定义映射配置文件 - 用于处理程序通过搜索无法自动匹配的项目",
+                    "_format": "番剧名: bangumi_subject_id",
+                    "_note": "bangumi_subject_id需要配置第一季的，程序会自动往后找",
+                    "mappings": mappings
+                }
+                
+                with open(mapping_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, ensure_ascii=False, indent=2)
+                
+                # 重新加载映射
+                reload_custom_mappings()
+                
+                return {"status": "success", "message": "映射已删除"}
+        
+        return {"status": "error", "message": "映射不存在"}
+    except Exception as e:
+        logger.error(f"删除自定义映射失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除自定义映射失败: {str(e)}")
+
+@app.post("/api/test-sync")
+async def test_sync(request: Request):
+    """测试同步功能"""
+    try:
+        data = await request.json()
+        
+        # 创建测试项目
+        test_item = CustomItem(
+            media_type="episode",
+            title=data.get("title", ""),
+            ori_title=data.get("ori_title", ""),
+            season=data.get("season", 1),
+            episode=data.get("episode", 1),
+            release_date=data.get("release_date", ""),
+            user_name=data.get("user_name", "test_user")
+        )
+        
+        # 执行同步测试
+        response = Response()
+        result = await custom_sync(test_item, response, source="test")
+        
+        return result
+    except Exception as e:
+        logger.error(f"测试同步失败: {e}")
+        raise HTTPException(status_code=500, detail=f"测试同步失败: {str(e)}")
+
+@app.post("/api/config/backups/cleanup")
+async def cleanup_config_backups(request: Request):
+    """清理配置备份文件"""
+    try:
+        data = await request.json()
+        strategy = data.get('strategy', 'recent')
+        
+        backup_dir = "config_backups"
+        if not os.path.exists(backup_dir):
+            return {"status": "success", "data": {"deleted_count": 0}, "message": "备份目录不存在"}
+        
+        # 获取所有备份文件
+        backup_files = []
+        for filename in os.listdir(backup_dir):
+            if filename.endswith('.json'):
+                file_path = os.path.join(backup_dir, filename)
+                file_stats = os.stat(file_path)
+                backup_files.append({
+                    "filename": filename,
+                    "path": file_path,
+                    "mtime": file_stats.st_mtime,
+                    "size": file_stats.st_size
+                })
+        
+        # 按修改时间排序
+        backup_files.sort(key=lambda x: x['mtime'], reverse=True)
+        
+        files_to_delete = []
+        
+        if strategy == 'recent':
+            # 保留最近的N个文件
+            keep_count = data.get('keep_count', 5)
+            files_to_delete = backup_files[keep_count:]
+        elif strategy == 'date':
+            # 删除N天前的文件
+            keep_days = data.get('keep_days', 30)
+            cutoff_time = time.time() - (keep_days * 24 * 60 * 60)
+            files_to_delete = [f for f in backup_files if f['mtime'] < cutoff_time]
+        elif strategy == 'all':
+            # 删除所有文件
+            files_to_delete = backup_files
+        
+        # 删除文件
+        deleted_count = 0
+        for file_info in files_to_delete:
+            try:
+                os.remove(file_info['path'])
+                deleted_count += 1
+                logger.info(f"删除备份文件: {file_info['filename']}")
+            except Exception as e:
+                logger.warning(f"删除备份文件失败 {file_info['filename']}: {e}")
+        
+        return {
+            "status": "success",
+            "data": {
+                "deleted_count": deleted_count,
+                "total_files": len(backup_files),
+                "remaining_files": len(backup_files) - deleted_count
+            },
+            "message": f"成功删除 {deleted_count} 个备份文件"
+        }
+    except Exception as e:
+        logger.error(f"清理备份文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"清理备份文件失败: {str(e)}")
+
+@app.delete("/api/config/backup/{filename}")
+async def delete_config_backup(filename: str):
+    """删除指定的配置备份文件"""
+    try:
+        backup_dir = "config_backups"
+        backup_path = os.path.join(backup_dir, filename)
+        
+        if not os.path.exists(backup_path):
+            raise HTTPException(status_code=404, detail="备份文件不存在")
+        
+        # 检查文件名安全性，防止路径遍历攻击
+        if not filename.endswith('.json') or '/' in filename or '\\' in filename:
+            raise HTTPException(status_code=400, detail="无效的文件名")
+        
+        # 删除文件
+        os.remove(backup_path)
+        logger.info(f"删除备份文件: {filename}")
+        
+        return {
+            "status": "success",
+            "message": f"成功删除备份文件: {filename}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除备份文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除备份文件失败: {str(e)}")
 
 
 # 配置Uvicorn日志

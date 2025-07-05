@@ -1,0 +1,1053 @@
+{% extends "base.html" %}
+
+{% block title %}配置管理 - Bangumi Syncer{% endblock %}
+{% block page_title %}配置管理{% endblock %}
+
+{% block page_actions %}
+{% endblock %}
+
+{% block content %}
+<form id="config-form">
+    <!-- Bangumi账号配置 -->
+    <div class="row">
+        <div class="col-12">
+                    <div class="card shadow-sm mb-4">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-person-circle me-2 text-primary"></i>
+                    <h6 class="m-0 fw-semibold">Bangumi账号配置</h6>
+                </div>
+            </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                                                    <label for="bangumi-username" class="form-label fw-semibold">
+                            <i class="bi bi-person me-1 text-primary"></i>用户名
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                               title="Bangumi 的用户名或 UID。如果设置了用户名，只能填用户名。UID 就是个人资料页里 @123456 或者网址 bgm.tv/user/123456 的数字部分"></i>
+                        </label>
+                            <input type="text" class="form-control form-control-lg" id="bangumi-username" name="bangumi.username" 
+                                   placeholder="输入Bangumi用户名或UID">
+                        </div>
+                                                <div class="col-md-6">
+                            <label for="bangumi-access-token" class="form-label fw-semibold">
+                                <i class="bi bi-key me-1 text-primary"></i>访问令牌
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="令牌，注意有效期。生成网址：https://next.bgm.tv/demo/access-token"></i>
+                                <a href="https://next.bgm.tv/demo/access-token" target="_blank" class="btn btn-link btn-sm p-0 ms-2 text-decoration-none">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </label>
+                            <div class="position-relative">
+                                <input type="password" class="form-control form-control-lg pe-5" id="bangumi-access-token" name="bangumi.access_token" 
+                                       placeholder="输入Bangumi访问令牌">
+                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 p-1" 
+                                        type="button" id="toggle-token-visibility" 
+                                        style="z-index: 10; border: none; background: none;">
+                                    <i class="bi bi-eye text-muted" id="token-visibility-icon"></i>
+                                </button>
+                            </div>
+                        </div>
+                                                <div class="col-12">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-eye-slash me-1 text-warning"></i>观看记录仅自己可见
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="观看记录是否仅自己可见。启用后观看记录只有自己能看到，不启用则为公开"></i>
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="bangumi-private" name="bangumi.private">
+                                <label class="form-check-label" for="bangumi-private">启用</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 同步配置 -->
+    <div class="row">
+        <div class="col-12">
+                    <div class="card shadow-sm mb-4">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-arrow-repeat me-2 text-success"></i>
+                    <h6 class="m-0 fw-semibold">同步配置</h6>
+                </div>
+            </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                                                    <label for="sync-mode" class="form-label fw-semibold">
+                            <i class="bi bi-gear me-1 text-success"></i>同步模式
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                               title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
+                        </label>
+                            <select class="form-select form-select-lg" id="sync-mode" name="sync.mode" onchange="toggleSyncMode()">
+                                <option value="single">单用户模式</option>
+                                <option value="multi">多用户模式</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="single-username-container">
+                                                    <label for="single-username" class="form-label fw-semibold">
+                            <i class="bi bi-person-check me-1 text-success"></i>单用户模式用户名
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                               title="单用户模式用户名（Plex/Emby/Jellyfin中的用户名），用于跳过无需同步的用户提交的记录，只同步配置中的用户名产生的记录"></i>
+                        </label>
+                            <input type="text" class="form-control form-control-lg" id="single-username" name="sync.single_username" 
+                                   placeholder="输入媒体服务器用户名">
+                        </div>
+                        <div class="col-12">
+                                                    <label for="blocked-keywords" class="form-label fw-semibold">
+                            <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                               title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
+                        </label>
+                            <input type="text" class="form-control form-control-lg" id="blocked-keywords" name="sync.blocked_keywords" 
+                                   placeholder="多个关键词用逗号分隔，如：物语系列,特典">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 多用户配置 -->
+    <div class="row" id="multi-user-section" style="display: none;">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-people me-2 text-secondary"></i>
+                        <h6 class="m-0 fw-semibold">多用户配置</h6>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="addBangumiAccount()">
+                        <i class="bi bi-plus-circle me-1"></i>添加Bangumi账号
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="bangumi-accounts-container">
+                        <!-- 动态添加的Bangumi账号配置 -->
+                    </div>
+                    
+                    <hr class="my-4">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="bi bi-arrow-left-right me-2 text-secondary"></i>
+                        <h6 class="fw-bold text-secondary mb-0">用户映射</h6>
+                    </div>
+                    <div id="user-mappings-container">
+                        <!-- 动态添加的用户映射 -->
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addUserMapping()">
+                        <i class="bi bi-plus-circle me-1"></i>添加用户映射
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 高级配置 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-sliders me-2 text-info"></i>
+                        <h6 class="m-0 fw-semibold">高级配置</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label for="script-proxy" class="form-label fw-semibold">
+                                <i class="bi bi-globe me-1 text-info"></i>HTTP代理
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="脚本的 HTTP 代理，例如 http://127.0.0.1:7890。若用 OpenClash 可能慢，原因未知，可尝试 CFW 或透明代理等"></i>
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="script-proxy" name="dev.script_proxy" 
+                                   placeholder="如：http://127.0.0.1:7890">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-bug me-1 text-warning"></i>调试模式
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="是否开启debug模式，一般不用开。开启后会输出详细的调试信息"></i>
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="debug-mode" name="dev.debug">
+                                <label class="form-check-label" for="debug-mode">启用</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bangumi-data配置 -->
+    <div class="row">
+        <div class="col-12">
+                    <div class="card shadow-sm mb-4">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-hdd-stack me-2 text-primary"></i>
+                    <h6 class="m-0 fw-semibold">Bangumi-data配置</h6>
+                </div>
+            </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-search me-1 text-success"></i>使用Bangumi-data匹配
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="是否启用 bangumi-data 匹配。启用后会先尝试通过 bangumi-data 匹配番剧ID，匹配成功后可以减少API请求次数"></i>
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="bangumi-data-enabled" name="bangumi_data.enabled">
+                                <label class="form-check-label" for="bangumi-data-enabled">启用</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-hdd me-1 text-primary"></i>使用本地缓存
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="是否使用本地缓存文件，默认启用。启用后会将下载的数据保存到本地，之后再次启动时优先使用缓存"></i>
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="bangumi-data-cache" name="bangumi_data.use_cache">
+                                <label class="form-check-label" for="bangumi-data-cache">启用</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="cache-ttl" class="form-label fw-semibold">
+                                <i class="bi bi-clock me-1 text-warning"></i>缓存有效期（天）
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="缓存有效期（天），超过此时间后会自动更新缓存。设置为0表示每次启动都会更新缓存"></i>
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="cache-ttl" name="bangumi_data.cache_ttl_days" 
+                                   placeholder="7" min="0" max="365">
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-3">
+                        <div class="col-md-6">
+                            <label for="data-url" class="form-label fw-semibold">
+                                <i class="bi bi-link me-1 text-info"></i>数据源URL
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="bangumi-data数据源的URL地址，默认使用官方CDN地址。如果官方地址无法访问，可以替换为其他镜像地址"></i>
+                            </label>
+                            <input type="url" class="form-control form-control-lg" id="data-url" name="bangumi_data.data_url" 
+                                   placeholder="https://unpkg.com/bangumi-data@0.3/dist/data.json">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="local-cache-path" class="form-label fw-semibold">
+                                <i class="bi bi-folder me-1 text-secondary"></i>本地缓存路径
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="bangumi-data本地缓存文件的存储路径，默认为当前目录下的bangumi_data_cache.json文件"></i>
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="local-cache-path" name="bangumi_data.local_cache_path" 
+                                   placeholder="./bangumi_data_cache.json">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- 操作按钮 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-gear me-2 text-primary"></i>
+                    <h6 class="m-0 fw-semibold">配置操作</h6>
+                </div>
+            </div>
+            <div class="card-body text-center py-4">
+                <div class="btn-group me-3" role="group">
+                    <button type="button" class="btn btn-primary px-4" onclick="saveConfig()">
+                        <i class="bi bi-save me-2"></i>保存配置
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary px-4" onclick="loadConfig(true)">
+                        <i class="bi bi-arrow-clockwise me-2"></i>重新加载
+                    </button>
+                </div>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-info px-4" onclick="backupConfig()">
+                        <i class="bi bi-download me-2"></i>备份配置
+                    </button>
+                    <button type="button" class="btn btn-outline-warning px-4" onclick="showRestoreModal()">
+                        <i class="bi bi-upload me-2"></i>恢复配置
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 测试同步 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-play-circle me-2 text-warning"></i>
+                    <h6 class="m-0 fw-semibold">测试同步</h6>
+                </div>
+            </div>
+            <div class="card-body">
+                <form id="test-sync-form">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label for="test-title" class="form-label fw-semibold">
+                                <i class="bi bi-film me-1 text-warning"></i>番剧标题
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="test-title" placeholder="测试番剧" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="test-season" class="form-label fw-semibold">
+                                <i class="bi bi-calendar3 me-1 text-warning"></i>季度
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="test-season" value="1" min="1" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="test-episode" class="form-label fw-semibold">
+                                <i class="bi bi-collection-play me-1 text-warning"></i>集数
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="test-episode" value="1" min="1" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="test-user" class="form-label fw-semibold">
+                                <i class="bi bi-person me-1 text-warning"></i>用户名
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="test-user" placeholder="测试用户" required>
+                        </div>
+                    </div>
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <button type="button" class="btn btn-warning px-3" onclick="testSync()">
+                                <i class="bi bi-play-circle me-2"></i>测试同步
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 恢复配置模态框 -->
+<div class="modal fade" id="restoreConfigModal" tabindex="-1" aria-labelledby="restoreConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="restoreConfigModalLabel">
+                    <i class="bi bi-upload me-2"></i>恢复配置
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="fw-semibold mb-0">
+                                <i class="bi bi-clock-history me-1"></i>选择备份文件
+                            </h6>
+                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="showCleanupModal()">
+                                <i class="bi bi-trash me-1"></i>清理备份
+                            </button>
+                        </div>
+                        <div class="list-group" id="backup-files-list">
+                            <div class="text-center p-3">
+                                <div class="spinner-border spinner-border-sm" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">正在加载备份文件...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-semibold mb-3">
+                            <i class="bi bi-eye me-1"></i>配置预览
+                        </h6>
+                        <div id="config-preview" class="border rounded p-3" style="height: 300px; overflow-y: auto; background-color: #f8f9fa;">
+                            <p class="text-muted mb-0">选择左侧的备份文件以预览配置内容</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert alert-warning mt-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>注意：</strong>恢复配置将覆盖当前所有配置，请确保已备份当前配置。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-warning" id="restore-confirm-btn" onclick="confirmRestore()" disabled>
+                    <i class="bi bi-check-circle me-1"></i>确认恢复
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 清理备份模态框 -->
+<div class="modal fade" id="cleanupBackupModal" tabindex="-1" aria-labelledby="cleanupBackupModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cleanupBackupModalLabel">
+                    <i class="bi bi-trash me-2"></i>清理备份文件
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>清理策略：</strong>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="cleanupStrategy" id="keepRecent" value="recent" checked>
+                            <label class="form-check-label" for="keepRecent">
+                                <strong>保留最近的备份</strong><br>
+                                <small class="text-muted">保留最近的几个备份文件</small>
+                            </label>
+                        </div>
+                        <div class="mt-2 ms-4">
+                            <label for="keepCount" class="form-label">保留数量：</label>
+                            <select class="form-select form-select-sm" id="keepCount">
+                                <option value="3">3个</option>
+                                <option value="5" selected>5个</option>
+                                <option value="10">10个</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="cleanupStrategy" id="keepByDate" value="date">
+                            <label class="form-check-label" for="keepByDate">
+                                <strong>按日期清理</strong><br>
+                                <small class="text-muted">删除指定天数前的备份</small>
+                            </label>
+                        </div>
+                        <div class="mt-2 ms-4">
+                            <label for="keepDays" class="form-label">保留天数：</label>
+                            <select class="form-select form-select-sm" id="keepDays">
+                                <option value="7">7天</option>
+                                <option value="30" selected>30天</option>
+                                <option value="90">90天</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="cleanupStrategy" id="deleteAll" value="all">
+                        <label class="form-check-label" for="deleteAll">
+                            <strong class="text-danger">删除所有备份</strong><br>
+                            <small class="text-muted">删除所有备份文件（慎用）</small>
+                        </label>
+                    </div>
+                </div>
+                <div class="alert alert-warning mt-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>注意：</strong>此操作不可逆，请确保已经确认要删除的备份文件。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="confirmCleanup()">
+                    <i class="bi bi-trash me-1"></i>确认清理
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentConfig = {};
+let bangumiAccountCounter = 0;
+let userMappingCounter = 0;
+let restoreConfigModal;
+let selectedBackupFile = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // 初始化工具提示
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // 初始化令牌显示/隐藏功能
+    document.getElementById('toggle-token-visibility').addEventListener('click', function() {
+        const tokenInput = document.getElementById('bangumi-access-token');
+        const icon = document.getElementById('token-visibility-icon');
+        
+        if (tokenInput.type === 'password') {
+            tokenInput.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            tokenInput.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    });
+    
+    // 初始化模态框
+    const modalElement = document.getElementById('restoreConfigModal');
+    if (modalElement) {
+        try {
+            restoreConfigModal = new bootstrap.Modal(modalElement);
+            console.log('恢复配置模态框初始化成功');
+        } catch (error) {
+            console.error('模态框初始化失败:', error);
+        }
+    } else {
+        console.error('找不到恢复配置模态框元素');
+    }
+    loadConfig(false); // 初始加载时不显示提示
+});
+
+async function loadConfig(showToast = true) {
+    try {
+        const response = await fetch('/api/config');
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            currentConfig = data.data;
+            populateForm(currentConfig);
+            if (showToast) {
+                showAlert('配置重新加载成功', 'success');
+            }
+        } else {
+            showAlert('加载配置失败', 'danger');
+        }
+    } catch (error) {
+        console.error('加载配置失败:', error);
+        showAlert('加载配置失败', 'danger');
+    }
+}
+
+function populateForm(config) {
+    // 填充基本配置
+    document.getElementById('bangumi-username').value = config.bangumi.username || '';
+    document.getElementById('bangumi-access-token').value = config.bangumi.access_token || '';
+    document.getElementById('bangumi-private').checked = config.bangumi.private || false;
+    
+    document.getElementById('sync-mode').value = config.sync.mode || 'single';
+    document.getElementById('single-username').value = config.sync.single_username || '';
+    document.getElementById('blocked-keywords').value = config.sync.blocked_keywords || '';
+    
+    document.getElementById('script-proxy').value = config.dev.script_proxy || '';
+    document.getElementById('debug-mode').checked = Boolean(config.dev.debug);
+    
+    document.getElementById('bangumi-data-enabled').checked = config.bangumi_data.enabled !== false;
+    document.getElementById('bangumi-data-cache').checked = config.bangumi_data.use_cache !== false;
+    document.getElementById('cache-ttl').value = config.bangumi_data.cache_ttl_days || 7;
+    
+    // 切换同步模式
+    toggleSyncMode();
+    
+    // 填充多用户配置
+    if (config.sync.mode === 'multi') {
+        populateMultiUserConfig(config.multi_accounts, config.user_mappings);
+    }
+}
+
+function toggleSyncMode() {
+    const mode = document.getElementById('sync-mode').value;
+    const singleContainer = document.getElementById('single-username-container');
+    const multiSection = document.getElementById('multi-user-section');
+    
+    if (mode === 'single') {
+        singleContainer.style.display = 'block';
+        multiSection.style.display = 'none';
+    } else {
+        singleContainer.style.display = 'none';
+        multiSection.style.display = 'block';
+    }
+}
+
+function populateMultiUserConfig(accounts, mappings) {
+    const accountsContainer = document.getElementById('bangumi-accounts-container');
+    const mappingsContainer = document.getElementById('user-mappings-container');
+    
+    accountsContainer.innerHTML = '';
+    mappingsContainer.innerHTML = '';
+    
+    bangumiAccountCounter = 0;
+    userMappingCounter = 0;
+    
+    // 添加Bangumi账号
+    Object.entries(accounts || {}).forEach(([key, account]) => {
+        addBangumiAccount(key, account);
+    });
+    
+    // 添加用户映射
+    Object.entries(mappings || {}).forEach(([user, mapping]) => {
+        addUserMapping(user, mapping);
+    });
+}
+
+function addBangumiAccount(accountName = '', accountConfig = {}) {
+    const container = document.getElementById('bangumi-accounts-container');
+    const id = bangumiAccountCounter++;
+    
+    const accountDiv = document.createElement('div');
+    accountDiv.className = 'border rounded p-3 mb-3';
+    accountDiv.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Bangumi账号 ${id + 1}</h6>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeBangumiAccount(${id})">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+        <div class="row">
+            <div class="col-md-4">
+                <label class="form-label">账号名称</label>
+                <input type="text" class="form-control bangumi-account-name" value="${accountName}" placeholder="bangumi-user1">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">用户名</label>
+                <input type="text" class="form-control bangumi-account-username" value="${accountConfig.username || ''}" placeholder="Bangumi用户名">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">访问令牌</label>
+                <input type="password" class="form-control bangumi-account-token" value="${accountConfig.access_token || ''}" placeholder="访问令牌">
+            </div>
+        </div>
+        <div class="row mt-2">
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input bangumi-account-private" type="checkbox" ${accountConfig.private ? 'checked' : ''}>
+                    <label class="form-check-label">观看记录仅自己可见</label>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    accountDiv.id = `bangumi-account-${id}`;
+    container.appendChild(accountDiv);
+}
+
+function removeBangumiAccount(id) {
+    const element = document.getElementById(`bangumi-account-${id}`);
+    if (element) {
+        element.remove();
+    }
+}
+
+function addUserMapping(user = '', mapping = '') {
+    const container = document.getElementById('user-mappings-container');
+    const id = userMappingCounter++;
+    
+    const mappingDiv = document.createElement('div');
+    mappingDiv.className = 'row mb-2';
+    mappingDiv.innerHTML = `
+        <div class="col-md-5">
+            <input type="text" class="form-control user-mapping-user" value="${user}" placeholder="媒体服务器用户名">
+        </div>
+        <div class="col-md-5">
+            <input type="text" class="form-control user-mapping-bangumi" value="${mapping}" placeholder="bangumi-user1">
+        </div>
+        <div class="col-md-2">
+            <button type="button" class="btn btn-outline-danger" onclick="removeUserMapping(${id})">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `;
+    
+    mappingDiv.id = `user-mapping-${id}`;
+    container.appendChild(mappingDiv);
+}
+
+function removeUserMapping(id) {
+    const element = document.getElementById(`user-mapping-${id}`);
+    if (element) {
+        element.remove();
+    }
+}
+
+async function saveConfig() {
+    try {
+        const configData = {
+            bangumi: {
+                username: document.getElementById('bangumi-username').value,
+                access_token: document.getElementById('bangumi-access-token').value,
+                private: document.getElementById('bangumi-private').checked
+            },
+            sync: {
+                mode: document.getElementById('sync-mode').value,
+                single_username: document.getElementById('single-username').value,
+                blocked_keywords: document.getElementById('blocked-keywords').value
+            },
+            dev: {
+                script_proxy: document.getElementById('script-proxy').value,
+                debug: document.getElementById('debug-mode').checked
+            },
+            bangumi_data: {
+                enabled: document.getElementById('bangumi-data-enabled').checked,
+                use_cache: document.getElementById('bangumi-data-cache').checked,
+                cache_ttl_days: parseInt(document.getElementById('cache-ttl').value)
+            }
+        };
+        
+        // 处理多用户配置
+        if (configData.sync.mode === 'multi') {
+            const multiAccounts = {};
+            const userMappings = {};
+            
+            // 收集Bangumi账号
+            document.querySelectorAll('[id^="bangumi-account-"]').forEach(element => {
+                const name = element.querySelector('.bangumi-account-name').value;
+                const username = element.querySelector('.bangumi-account-username').value;
+                const token = element.querySelector('.bangumi-account-token').value;
+                const isPrivate = element.querySelector('.bangumi-account-private').checked;
+                
+                if (name && username && token) {
+                    multiAccounts[name] = {
+                        username: username,
+                        access_token: token,
+                        private: isPrivate
+                    };
+                }
+            });
+            
+            // 收集用户映射
+            document.querySelectorAll('[id^="user-mapping-"]').forEach(element => {
+                const user = element.querySelector('.user-mapping-user').value;
+                const mapping = element.querySelector('.user-mapping-bangumi').value;
+                
+                if (user && mapping) {
+                    userMappings[user] = mapping;
+                }
+            });
+            
+            configData.multi_accounts = multiAccounts;
+            configData.user_mappings = userMappings;
+        }
+        
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            showAlert('配置保存成功', 'success');
+        } else {
+            showAlert('配置保存失败: ' + result.message, 'danger');
+        }
+    } catch (error) {
+        console.error('保存配置失败:', error);
+        showAlert('保存配置失败', 'danger');
+    }
+}
+
+async function testSync() {
+    try {
+        const testData = {
+            title: document.getElementById('test-title').value,
+            season: parseInt(document.getElementById('test-season').value),
+            episode: parseInt(document.getElementById('test-episode').value),
+            user_name: document.getElementById('test-user').value
+        };
+        
+        const response = await fetch('/api/test-sync', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(testData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            showAlert('测试同步成功: ' + result.message, 'success');
+        } else {
+            showAlert('测试同步失败: ' + result.message, 'danger');
+        }
+    } catch (error) {
+        console.error('测试同步失败:', error);
+        showAlert('测试同步失败', 'danger');
+    }
+}
+
+// 备份配置
+async function backupConfig() {
+    try {
+        const response = await fetch('/api/config/backup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showAlert('配置备份成功，已保存到服务器', 'success');
+            // 刷新备份文件列表
+            await loadBackupFiles();
+        } else {
+            showAlert('备份配置失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('备份配置失败:', error);
+        showAlert('备份配置失败', 'danger');
+    }
+}
+
+// 显示恢复配置模态框
+async function showRestoreModal() {
+    console.log('尝试显示恢复配置模态框');
+    
+    // 确保模态框已初始化
+    if (!restoreConfigModal) {
+        console.log('模态框未初始化，尝试重新初始化');
+        const modalElement = document.getElementById('restoreConfigModal');
+        if (modalElement) {
+            try {
+                restoreConfigModal = new bootstrap.Modal(modalElement);
+                console.log('模态框重新初始化成功');
+            } catch (error) {
+                console.error('模态框初始化失败:', error);
+                showAlert('恢复配置功能初始化失败', 'danger');
+                return;
+            }
+        } else {
+            console.error('找不到模态框元素');
+            showAlert('恢复配置功能暂不可用', 'warning');
+            return;
+        }
+    }
+    
+    try {
+        restoreConfigModal.show();
+        console.log('模态框显示成功');
+        await loadBackupFiles();
+    } catch (error) {
+        console.error('显示模态框失败:', error);
+        showAlert('无法显示恢复配置对话框', 'danger');
+    }
+}
+
+// 加载备份文件列表
+async function loadBackupFiles() {
+    try {
+        const response = await fetch('/api/config/backups');
+        const data = await response.json();
+        
+        const backupFilesList = document.getElementById('backup-files-list');
+        backupFilesList.innerHTML = '';
+        
+        if (data.status === 'success' && data.data.backups.length > 0) {
+            data.data.backups.forEach(backup => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item list-group-item-action';
+                item.innerHTML = `
+                    <div class="d-flex w-100 justify-content-between align-items-start">
+                        <div class="flex-grow-1" onclick="selectBackupFile('${backup.filename}')">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${backup.name}</h6>
+                                <small class="text-muted">${new Date(backup.created_at).toLocaleString()}</small>
+                            </div>
+                            <p class="mb-1 text-muted">${backup.description || '配置备份文件'}</p>
+                            <small class="text-muted">大小: ${(backup.size / 1024).toFixed(2)} KB</small>
+                        </div>
+                        <button class="btn btn-outline-danger btn-sm ms-2" onclick="deleteBackupFile('${backup.filename}', event)" title="删除备份">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                `;
+                backupFilesList.appendChild(item);
+            });
+        } else {
+            backupFilesList.innerHTML = `
+                <div class="text-center p-3">
+                    <i class="bi bi-inbox text-muted" style="font-size: 2rem;"></i>
+                    <p class="mt-2 mb-0 text-muted">暂无备份文件</p>
+                    <small class="text-muted">点击"备份配置"创建第一个备份</small>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('加载备份文件失败:', error);
+        document.getElementById('backup-files-list').innerHTML = `
+            <div class="text-center p-3">
+                <i class="bi bi-exclamation-triangle text-warning" style="font-size: 2rem;"></i>
+                <p class="mt-2 mb-0 text-muted">加载备份文件失败</p>
+            </div>
+        `;
+    }
+}
+
+// 选择备份文件
+async function selectBackupFile(filename) {
+    // 更新选中状态
+    document.querySelectorAll('#backup-files-list .list-group-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    event.target.closest('.list-group-item').classList.add('active');
+    
+    // 找到对应的backup对象
+    const response = await fetch('/api/config/backups');
+    const data = await response.json();
+    const backup = data.data.backups.find(b => b.filename === filename);
+    
+    selectedBackupFile = backup;
+    document.getElementById('restore-confirm-btn').disabled = false;
+    
+    // 预览配置内容
+    try {
+        const response = await fetch(`/api/config/backup/${filename}`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            const preview = document.getElementById('config-preview');
+            preview.innerHTML = `<pre class="mb-0">${JSON.stringify(data.data.config, null, 2)}</pre>`;
+        } else {
+            document.getElementById('config-preview').innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    无法预览配置文件: ${data.message}
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('预览配置失败:', error);
+        document.getElementById('config-preview').innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                预览配置失败
+            </div>
+        `;
+    }
+}
+
+// 删除单个备份文件
+async function deleteBackupFile(filename, event) {
+    event.stopPropagation(); // 阻止事件冒泡
+    
+    if (!confirm('确定要删除这个备份文件吗？此操作不可逆。')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/config/backup/${filename}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showAlert('备份文件删除成功', 'success');
+            // 刷新备份文件列表
+            await loadBackupFiles();
+            
+            // 如果删除的是当前选中的文件，清空预览
+            if (selectedBackupFile && selectedBackupFile.filename === filename) {
+                selectedBackupFile = null;
+                document.getElementById('restore-confirm-btn').disabled = true;
+                document.getElementById('config-preview').innerHTML = `
+                    <p class="text-muted mb-0">选择左侧的备份文件以预览配置内容</p>
+                `;
+            }
+        } else {
+            showAlert('删除备份文件失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('删除备份文件失败:', error);
+        showAlert('删除备份文件失败', 'danger');
+    }
+}
+
+// 确认恢复配置
+async function confirmRestore() {
+    if (!selectedBackupFile) {
+        showAlert('请选择要恢复的备份文件', 'warning');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/config/restore/${selectedBackupFile.filename}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            if (restoreConfigModal) {
+                restoreConfigModal.hide();
+            }
+            showAlert('配置已恢复，正在重新加载...', 'success');
+            
+            // 延迟重新加载配置
+            setTimeout(() => {
+                loadConfig(true);
+            }, 1000);
+        } else {
+            showAlert('恢复配置失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('恢复配置失败:', error);
+        showAlert('恢复配置失败', 'danger');
+    }
+}
+
+// 显示清理备份模态框
+function showCleanupModal() {
+    const cleanupModal = new bootstrap.Modal(document.getElementById('cleanupBackupModal'));
+    cleanupModal.show();
+}
+
+// 确认清理备份
+async function confirmCleanup() {
+    const strategy = document.querySelector('input[name="cleanupStrategy"]:checked').value;
+    let params = { strategy: strategy };
+    
+    if (strategy === 'recent') {
+        params.keep_count = parseInt(document.getElementById('keepCount').value);
+    } else if (strategy === 'date') {
+        params.keep_days = parseInt(document.getElementById('keepDays').value);
+    }
+    
+    try {
+        const response = await fetch('/api/config/backups/cleanup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(params)
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showAlert(`清理完成，删除了 ${data.data.deleted_count} 个备份文件`, 'success');
+            // 关闭模态框
+            const cleanupModal = bootstrap.Modal.getInstance(document.getElementById('cleanupBackupModal'));
+            cleanupModal.hide();
+            // 刷新备份文件列表
+            await loadBackupFiles();
+        } else {
+            showAlert('清理备份失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('清理备份失败:', error);
+        showAlert('清理备份失败', 'danger');
+    }
+}
+</script>
+{% endblock %} 

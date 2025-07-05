@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}仪表板 - Bangumi Syncer{% endblock %}
+{% block page_title %}仪表板{% endblock %}
+
+{% block content %}
+<!-- 统计卡片 -->
+<div class="row g-4 mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card stats-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center">
+                    <div class="stats-icon me-3 bg-primary-soft">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
+                            总同步次数
+                        </div>
+                        <div class="h4 mb-0 fw-bold text-dark" id="total-syncs">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6">
+        <div class="card stats-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center">
+                    <div class="stats-icon me-3 bg-info-soft">
+                        <i class="bi bi-calendar-day"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
+                            今日同步
+                        </div>
+                        <div class="h4 mb-0 fw-bold text-dark" id="today-syncs">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6">
+        <div class="card stats-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center">
+                    <div class="stats-icon me-3 bg-success-soft">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
+                            成功率
+                        </div>
+                        <div class="h4 mb-0 fw-bold text-dark" id="success-rate">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6">
+        <div class="card stats-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center">
+                    <div class="stats-icon me-3 bg-danger-soft">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
+                            失败次数
+                        </div>
+                        <div class="h4 mb-0 fw-bold text-dark" id="error-syncs">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- 最近7天同步趋势 -->
+    <div class="col-xl-8 col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-graph-up me-2 text-primary"></i>
+                    <h6 class="m-0 fw-semibold">最近7天同步趋势</h6>
+                </div>
+            </div>
+            <div class="card-body p-4 d-flex align-items-center">
+                <div class="chart-area w-100">
+                    <canvas id="dailyChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用户同步统计 -->
+    <div class="col-xl-4 col-lg-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-pie-chart me-2 text-info"></i>
+                    <h6 class="m-0 fw-semibold">用户同步统计</h6>
+                </div>
+            </div>
+            <div class="card-body p-4 d-flex align-items-center">
+                <div class="chart-pie pt-2 pb-2 w-100">
+                    <canvas id="userChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 最近同步记录 -->
+<div class="card shadow-sm">
+    <div class="card-header py-3">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-clock-history me-2 text-secondary"></i>
+            <h6 class="m-0 fw-semibold">最近同步记录</h6>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="recent-records">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>用户</th>
+                        <th>番剧</th>
+                        <th>季/集</th>
+                        <th>状态</th>
+                        <th>来源</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 动态加载 -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardData();
+});
+
+async function loadDashboardData() {
+    try {
+        // 加载统计数据
+        const statsResponse = await fetch('/api/stats');
+        const statsData = await statsResponse.json();
+        
+        if (statsData.status === 'success') {
+            const stats = statsData.data;
+            document.getElementById('total-syncs').textContent = stats.total_syncs;
+            document.getElementById('success-rate').textContent = stats.success_rate + '%';
+            document.getElementById('today-syncs').textContent = stats.today_syncs;
+            document.getElementById('error-syncs').textContent = stats.error_syncs;
+            
+            // 绘制图表
+            drawDailyChart(stats.daily_stats);
+            drawUserChart(stats.user_stats);
+        }
+        
+        // 加载最近记录
+        const recordsResponse = await fetch('/api/records?limit=10');
+        const recordsData = await recordsResponse.json();
+        
+        if (recordsData.status === 'success') {
+            displayRecentRecords(recordsData.data.records);
+        }
+    } catch (error) {
+        console.error('加载仪表板数据失败:', error);
+        showAlert('加载数据失败', 'danger');
+    }
+}
+
+function drawDailyChart(dailyStats) {
+    const ctx = document.getElementById('dailyChart').getContext('2d');
+    
+    // 准备最近7天的数据
+    const dates = [];
+    const counts = [];
+    
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        dates.push(dateStr);
+        
+        const found = dailyStats.find(item => item.date === dateStr);
+        counts.push(found ? found.count : 0);
+    }
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dates.map(date => new Date(date).toLocaleDateString()),
+            datasets: [{
+                label: '同步次数',
+                data: counts,
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                tension: 0.4,
+                fill: true,
+                pointBackgroundColor: '#0d6efd',
+                pointBorderColor: 'white',
+                pointBorderWidth: 2,
+                pointRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.1)'
+                    }
+                },
+                x: {
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.1)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function drawUserChart(userStats) {
+    const ctx = document.getElementById('userChart').getContext('2d');
+    
+    const labels = userStats.slice(0, 5).map(item => item.user);
+    const data = userStats.slice(0, 5).map(item => item.count);
+    
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: [
+                    '#0d6efd',
+                    '#198754',
+                    '#0dcaf0',
+                    '#fd7e14',
+                    '#dc3545'
+                ],
+                borderWidth: 0,
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function displayRecentRecords(records) {
+    const tbody = document.querySelector('#recent-records tbody');
+    tbody.innerHTML = '';
+    
+    records.forEach(record => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${new Date(record.timestamp).toLocaleString()}</td>
+            <td><span class="fw-semibold">${record.user_name}</span></td>
+            <td><span class="text-primary">${record.title}</span></td>
+            <td><span class="badge bg-info">S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</span></td>
+            <td><span class="badge bg-${record.status === 'success' ? 'success' : 'danger'}">${record.status}</span></td>
+            <td><span class="badge bg-secondary">${record.source}</span></td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+</script>
+{% endblock %} 

@@ -3,3 +3,5 @@ fastapi
 pydantic
 uvicorn[standard]
 ijson
+jinja2
+python-multipart

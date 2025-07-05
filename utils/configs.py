@@ -54,12 +54,11 @@ class MyLogger:
 
     @property
     def debug_mode(self):
-        if self._debug_mode is None:
-            try:
-                self._debug_mode = mini_conf().getboolean('dev', 'debug', fallback=False)
-            except:
-                self._debug_mode = False
-        return self._debug_mode
+        # 每次都重新获取，确保配置更新后立即生效
+        try:
+            return mini_conf().getboolean('dev', 'debug', fallback=False)
+        except:
+            return False
 
     @staticmethod
     def mix_host_gen(netloc):
@@ -207,6 +206,8 @@ class Configs:
                 config.set(section, option, env_value)
                 MyLogger.log(f'环境变量覆盖配置: {section}.{option} = {env_var}')
         
+        # 更新self.raw属性
+        self.raw = config
         return config
 
 
