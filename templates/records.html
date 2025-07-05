@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+
+{% block title %}同步记录 - Bangumi Syncer{% endblock %}
+{% block page_title %}同步记录{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group" role="group">
+    <button type="button" class="btn btn-primary" onclick="loadRecords()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- 筛选条件 -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-funnel me-2 text-primary"></i>
+            <h6 class="m-0 fw-semibold">筛选条件</h6>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <label for="filter-status" class="form-label">状态</label>
+                <select class="form-select" id="filter-status">
+                    <option value="">全部</option>
+                    <option value="success">成功</option>
+                    <option value="error">失败</option>
+                    <option value="ignored">已忽略</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="filter-user" class="form-label">用户</label>
+                <select class="form-select" id="filter-user">
+                    <option value="">全部用户</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="filter-source" class="form-label">来源</label>
+                <select class="form-select" id="filter-source">
+                    <option value="">全部来源</option>
+                    <option value="custom">自定义</option>
+                    <option value="plex">Plex</option>
+                    <option value="emby">Emby</option>
+                    <option value="jellyfin">Jellyfin</option>
+                    <option value="test">测试</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-primary w-100" onclick="applyFilters()">
+                    <i class="bi bi-funnel me-1"></i>应用筛选
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 记录表格 -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-journal-text me-2 text-success"></i>
+            <h6 class="m-0 fw-semibold">同步记录</h6>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered" id="records-table">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>用户</th>
+                        <th>番剧标题</th>
+                        <th>原始标题</th>
+                        <th>季/集</th>
+                        <th>状态</th>
+                        <th>来源</th>
+                        <th>消息</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 动态加载 -->
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- 分页 -->
+        <nav aria-label="分页导航">
+            <ul class="pagination justify-content-center" id="pagination">
+                <!-- 动态生成分页 -->
+            </ul>
+        </nav>
+        
+        <!-- 加载状态 -->
+        <div id="loading" class="text-center" style="display: none;">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 记录详情模态框 -->
+<div class="modal fade" id="recordDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">同步记录详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="record-detail-content">
+                    <!-- 动态填充 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+let currentLimit = 50;
+let currentFilters = {};
+let allUsers = new Set();
+let recordDetailModal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
+    loadRecords();
+});
+
+async function loadRecords(page = 1, limit = 50) {
+    currentPage = page;
+    currentLimit = limit;
+    
+    showLoading(true);
+    
+    try {
+        const params = new URLSearchParams({
+            limit: limit,
+            offset: (page - 1) * limit,
+            ...currentFilters
+        });
+        
+        const response = await fetch(`/api/records?${params}`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            displayRecords(data.data.records);
+            updatePagination(data.data.total, page, limit);
+            updateUserFilter(data.data.records);
+        } else {
+            showAlert('加载记录失败', 'danger');
+        }
+    } catch (error) {
+        console.error('加载记录失败:', error);
+        showAlert('加载记录失败', 'danger');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function displayRecords(records) {
+    const tbody = document.querySelector('#records-table tbody');
+    tbody.innerHTML = '';
+    
+    if (records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">暂无记录</td></tr>';
+        return;
+    }
+    
+    records.forEach(record => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${new Date(record.timestamp).toLocaleString()}</td>
+            <td>${record.user_name}</td>
+            <td>${record.title}</td>
+            <td>${record.ori_title || '-'}</td>
+            <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
+            <td><span class="badge bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
+            <td><span class="badge bg-secondary">${record.source}</span></td>
+            <td class="text-truncate" style="max-width: 200px;" title="${record.message}">${record.message}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="showRecordDetail(${record.id})">
+                    <i class="bi bi-eye"></i>
+                </button>
+                ${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="查看Bangumi页面"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function getStatusColor(status) {
+    switch (status) {
+        case 'success': return 'success';
+        case 'error': return 'danger';
+        case 'ignored': return 'warning';
+        default: return 'secondary';
+    }
+}
+
+function getStatusText(status) {
+    switch (status) {
+        case 'success': return '成功';
+        case 'error': return '失败';
+        case 'ignored': return '已忽略';
+        default: return status;
+    }
+}
+
+function updatePagination(total, currentPage, limit) {
+    const totalPages = Math.ceil(total / limit);
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+    
+    if (totalPages <= 1) return;
+    
+    // 上一页
+    const prevLi = document.createElement('li');
+    prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+    prevLi.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${currentPage - 1})">上一页</a>`;
+    pagination.appendChild(prevLi);
+    
+    // 页码
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        const firstLi = document.createElement('li');
+        firstLi.className = 'page-item';
+        firstLi.innerHTML = '<a class="page-link" href="#" onclick="loadRecords(1)">1</a>';
+        pagination.appendChild(firstLi);
+        
+        if (startPage > 2) {
+            const ellipsisLi = document.createElement('li');
+            ellipsisLi.className = 'page-item disabled';
+            ellipsisLi.innerHTML = '<span class="page-link">...</span>';
+            pagination.appendChild(ellipsisLi);
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const li = document.createElement('li');
+        li.className = `page-item ${i === currentPage ? 'active' : ''}`;
+        li.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${i})">${i}</a>`;
+        pagination.appendChild(li);
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            const ellipsisLi = document.createElement('li');
+            ellipsisLi.className = 'page-item disabled';
+            ellipsisLi.innerHTML = '<span class="page-link">...</span>';
+            pagination.appendChild(ellipsisLi);
+        }
+        
+        const lastLi = document.createElement('li');
+        lastLi.className = 'page-item';
+        lastLi.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${totalPages})">${totalPages}</a>`;
+        pagination.appendChild(lastLi);
+    }
+    
+    // 下一页
+    const nextLi = document.createElement('li');
+    nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+    nextLi.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${currentPage + 1})">下一页</a>`;
+    pagination.appendChild(nextLi);
+}
+
+function updateUserFilter(records) {
+    records.forEach(record => {
+        allUsers.add(record.user_name);
+    });
+    
+    const userSelect = document.getElementById('filter-user');
+    const currentValue = userSelect.value;
+    
+    // 清空现有选项（保留"全部用户"）
+    while (userSelect.children.length > 1) {
+        userSelect.removeChild(userSelect.lastChild);
+    }
+    
+    // 添加用户选项
+    Array.from(allUsers).sort().forEach(user => {
+        const option = document.createElement('option');
+        option.value = user;
+        option.textContent = user;
+        userSelect.appendChild(option);
+    });
+    
+    // 恢复之前的选择
+    userSelect.value = currentValue;
+}
+
+function applyFilters() {
+    currentFilters = {};
+    
+    const status = document.getElementById('filter-status').value;
+    const user = document.getElementById('filter-user').value;
+    const source = document.getElementById('filter-source').value;
+    
+    if (status) currentFilters.status = status;
+    if (user) currentFilters.user_name = user;
+    if (source) currentFilters.source = source;
+    
+    loadRecords(1);
+}
+
+async function showRecordDetail(recordId) {
+    try {
+        // 从当前表格中找到记录
+        const records = Array.from(document.querySelectorAll('#records-table tbody tr')).map(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 8) return null;
+            
+            return {
+                timestamp: cells[0].textContent,
+                user_name: cells[1].textContent,
+                title: cells[2].textContent,
+                ori_title: cells[3].textContent,
+                season_episode: cells[4].textContent,
+                status: cells[5].textContent,
+                source: cells[6].textContent,
+                message: cells[7].getAttribute('title') || cells[7].textContent
+            };
+        }).filter(r => r !== null);
+        
+        const recordIndex = Array.from(document.querySelectorAll('#records-table tbody tr')).findIndex(row => {
+            const button = row.querySelector('button[onclick*="' + recordId + '"]');
+            return button !== null;
+        });
+        
+        if (recordIndex >= 0 && records[recordIndex]) {
+            const record = records[recordIndex];
+            
+            const detailContent = document.getElementById('record-detail-content');
+            detailContent.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>时间:</strong> ${record.timestamp}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>用户:</strong> ${record.user_name}
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-md-6">
+                        <strong>番剧标题:</strong> ${record.title}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>原始标题:</strong> ${record.ori_title}
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-md-4">
+                        <strong>季/集:</strong> ${record.season_episode}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>状态:</strong> ${record.status}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>来源:</strong> ${record.source}
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <strong>消息:</strong>
+                        <div class="border rounded p-2 mt-1" style="background-color: #f8f9fa;">
+                            ${record.message}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            recordDetailModal.show();
+        }
+    } catch (error) {
+        console.error('显示记录详情失败:', error);
+        showAlert('显示记录详情失败', 'danger');
+    }
+}
+
+function showLoading(show) {
+    const loading = document.getElementById('loading');
+    const table = document.getElementById('records-table');
+    
+    if (show) {
+        loading.style.display = 'block';
+        table.style.opacity = '0.5';
+    } else {
+        loading.style.display = 'none';
+        table.style.opacity = '1';
+    }
+}
+</script>
+{% endblock %} 

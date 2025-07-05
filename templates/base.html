@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bangumi Syncer{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <!-- 移动端顶部导航栏 -->
+    <nav class="navbar navbar-expand-md navbar-light bg-white border-bottom d-md-none fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <img src="/static/logo.png" alt="Bangumi-Syncer" style="height: 32px; width: auto; object-fit: contain;">
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mobileNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mobileNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">
+                            <i class="bi bi-house-door me-2"></i>仪表板
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/config' %}active{% endif %}" href="/config">
+                            <i class="bi bi-gear me-2"></i>配置管理
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/records' %}active{% endif %}" href="/records">
+                            <i class="bi bi-journal-text me-2"></i>同步记录
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/mappings' %}active{% endif %}" href="/mappings">
+                            <i class="bi bi-diagram-3 me-2"></i>映射管理
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/logs' %}active{% endif %}" href="/logs">
+                            <i class="bi bi-file-text me-2"></i>日志管理
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 侧边栏 -->
+            <nav class="col-md-3 col-lg-2 d-none d-md-block sidebar">
+                <div class="position-sticky pt-4">
+                    <div class="text-center mb-4 px-3">
+                        <img src="/static/logo.png" alt="Bangumi-Syncer" style="width: 175px; height: 100px; object-fit: contain;">
+                    </div>
+                    <ul class="nav flex-column px-2">
+                        <li class="nav-item mb-1">
+                            <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">
+                                <i class="bi bi-house-door me-2"></i>
+                                仪表板
+                            </a>
+                        </li>
+                        <li class="nav-item mb-1">
+                            <a class="nav-link {% if request.url.path == '/config' %}active{% endif %}" href="/config">
+                                <i class="bi bi-gear me-2"></i>
+                                配置管理
+                            </a>
+                        </li>
+                        <li class="nav-item mb-1">
+                            <a class="nav-link {% if request.url.path == '/records' %}active{% endif %}" href="/records">
+                                <i class="bi bi-journal-text me-2"></i>
+                                同步记录
+                            </a>
+                        </li>
+                        <li class="nav-item mb-1">
+                            <a class="nav-link {% if request.url.path == '/mappings' %}active{% endif %}" href="/mappings">
+                                <i class="bi bi-diagram-3 me-2"></i>
+                                映射管理
+                            </a>
+                        </li>
+                        <li class="nav-item mb-1">
+                            <a class="nav-link {% if request.url.path == '/logs' %}active{% endif %}" href="/logs">
+                                <i class="bi bi-file-text me-2"></i>
+                                日志管理
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- 主要内容 -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-4 pb-3 mb-4">
+                    <h1 class="h2 fw-bold text-dark">{% block page_title %}{% endblock %}</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        {% block page_actions %}{% endblock %}
+                    </div>
+                </div>
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Toast通知容器 -->
+    <div class="toast-container position-fixed top-0 end-0 p-3">
+        <!-- Toast通知将在这里动态添加 -->
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/js/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html> 

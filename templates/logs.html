@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+
+{% block title %}日志管理 - Bangumi-Syncer{% endblock %}
+{% block page_title %}日志管理{% endblock %}
+
+{% block page_actions %}
+<div class="btn-group" role="group">
+    <button type="button" class="btn btn-primary" onclick="loadLogs()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新日志
+    </button>
+    <button type="button" class="btn btn-outline-warning" onclick="clearLogs()">
+        <i class="bi bi-trash me-1"></i>清空日志
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- 日志统计 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="stats-card p-4 text-center">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1" id="log-size">-</h5>
+                    <small class="text-muted">日志大小</small>
+                </div>
+                <div class="stats-icon bg-primary-soft">
+                    <i class="bi bi-file-earmark-text"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card p-4 text-center">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1" id="log-lines">-</h5>
+                    <small class="text-muted">日志行数</small>
+                </div>
+                <div class="stats-icon bg-success-soft">
+                    <i class="bi bi-list-ol"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card p-4 text-center">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1" id="log-modified">-</h5>
+                    <small class="text-muted">最后修改</small>
+                </div>
+                <div class="stats-icon bg-info-soft">
+                    <i class="bi bi-clock"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card p-4 text-center">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1" id="log-errors">-</h5>
+                    <small class="text-muted">错误数量</small>
+                </div>
+                <div class="stats-icon bg-danger-soft">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日志筛选 -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-funnel me-2 text-primary"></i>
+            <h6 class="m-0 fw-semibold">日志筛选</h6>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <label for="log-level" class="form-label">日志级别</label>
+                <select class="form-select" id="log-level">
+                    <option value="">全部</option>
+                    <option value="DEBUG">调试</option>
+                    <option value="INFO">信息</option>
+                    <option value="WARNING">警告</option>
+                    <option value="ERROR">错误</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="log-search" class="form-label">搜索关键词</label>
+                <input type="text" class="form-control" id="log-search" placeholder="输入关键词搜索">
+            </div>
+            <div class="col-md-3">
+                <label for="log-lines-limit" class="form-label">显示行数</label>
+                <select class="form-select" id="log-lines-limit">
+                    <option value="100">最新100行</option>
+                    <option value="500">最新500行</option>
+                    <option value="1000">最新1000行</option>
+                    <option value="all">全部</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-primary w-100" onclick="applyLogFilter()">
+                    <i class="bi bi-search me-1"></i>应用筛选
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日志内容 -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-terminal me-2 text-success"></i>
+            <h6 class="m-0 fw-semibold">日志内容</h6>
+        </div>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
+            <label class="form-check-label" for="auto-refresh">自动刷新</label>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div id="log-content" class="log-viewer">
+            <div class="text-center p-4">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+                <p class="mt-2 text-muted">正在加载日志...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 清空日志确认模态框 -->
+<div class="modal fade" id="clearLogsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认清空日志</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>警告：</strong>此操作将永久删除所有日志内容，无法恢复。
+                </div>
+                <p>确定要清空所有日志吗？</p>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="backup-before-clear">
+                    <label class="form-check-label" for="backup-before-clear">
+                        清空前创建备份
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="confirmClearLogs()">确认清空</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let autoRefreshInterval;
+let clearLogsModal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    clearLogsModal = new bootstrap.Modal(document.getElementById('clearLogsModal'));
+    loadLogs();
+    startAutoRefresh();
+    
+    // 监听自动刷新开关
+    document.getElementById('auto-refresh').addEventListener('change', function() {
+        if (this.checked) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    });
+});
+
+function startAutoRefresh() {
+    stopAutoRefresh();
+    autoRefreshInterval = setInterval(loadLogs, 5000); // 每5秒刷新一次
+}
+
+function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+}
+
+async function loadLogs() {
+    try {
+        const response = await fetch('/api/logs');
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            displayLogStats(data.data.stats);
+            displayLogContent(data.data.content);
+        } else {
+            showAlert('加载日志失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('加载日志失败:', error);
+        showAlert('加载日志失败', 'danger');
+    }
+}
+
+function displayLogStats(stats) {
+    document.getElementById('log-size').textContent = formatFileSize(stats.size);
+    document.getElementById('log-lines').textContent = stats.lines.toLocaleString();
+    document.getElementById('log-modified').textContent = new Date(stats.modified).toLocaleString();
+    document.getElementById('log-errors').textContent = stats.errors.toLocaleString();
+}
+
+function displayLogContent(content) {
+    const logContent = document.getElementById('log-content');
+    logContent.innerHTML = '';
+    
+    if (!content || content.length === 0) {
+        logContent.innerHTML = '<div class="text-center p-4 text-muted">暂无日志内容</div>';
+        return;
+    }
+    
+    const pre = document.createElement('pre');
+    pre.className = 'log-text';
+    pre.textContent = content;
+    logContent.appendChild(pre);
+    
+    // 滚动到底部
+    logContent.scrollTop = logContent.scrollHeight;
+}
+
+async function applyLogFilter() {
+    const level = document.getElementById('log-level').value;
+    const search = document.getElementById('log-search').value;
+    const limit = document.getElementById('log-lines-limit').value;
+    
+    try {
+        const params = new URLSearchParams({
+            level: level,
+            search: search,
+            limit: limit
+        });
+        
+        const response = await fetch(`/api/logs?${params}`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            displayLogContent(data.data.content);
+        } else {
+            showAlert('筛选日志失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('筛选日志失败:', error);
+        showAlert('筛选日志失败', 'danger');
+    }
+}
+
+function clearLogs() {
+    clearLogsModal.show();
+}
+
+async function confirmClearLogs() {
+    const createBackup = document.getElementById('backup-before-clear').checked;
+    
+    try {
+        const response = await fetch('/api/logs/clear', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                backup: createBackup
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            clearLogsModal.hide();
+            showAlert('日志已清空', 'success');
+            loadLogs();
+        } else {
+            showAlert('清空日志失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('清空日志失败:', error);
+        showAlert('清空日志失败', 'danger');
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function showAlert(message, type) {
+    // 创建Toast通知
+    const toastContainer = document.querySelector('.toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+    toastContainer.appendChild(toast);
+    
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+    
+    // 自动移除
+    toast.addEventListener('hidden.bs.toast', function() {
+        toast.remove();
+    });
+}
+</script>
+{% endblock %} 

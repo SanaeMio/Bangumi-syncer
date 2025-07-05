@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bangumi_sync.py .
 COPY utils/ ./utils/
 
+# 复制Web界面文件
+COPY templates/ ./templates/
+COPY static/ ./static/
+
 # 复制配置模板
 COPY config.ini /app/config.ini.template
 COPY bangumi_mapping.json /app/bangumi_mapping.json.template
@@ -24,7 +28,7 @@ RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
 # 创建必要目录\n\
-mkdir -p /app/config /app/logs /app/data\n\
+mkdir -p /app/config /app/logs /app/data /app/config_backups\n\
 \n\
 # 检查配置文件是否存在，不存在则从模板复制\n\
 if [ ! -f "/app/config/config.ini" ]; then\n\
