@@ -39,14 +39,16 @@
 ### Windows
 1. 请保证Python版本3.7以上，并安装以下依赖
 ```
-pip install requests fastapi pydantic uvicorn[standard] ijson
+pip install requests fastapi pydantic uvicorn[standard] ijson jinja2 python-multipart
 ```
 
 2. 下载 zip并解压到任意文件夹。 [发布页](https://github.com/SanaeMio/Bangumi-syncer/releases)
 
 3. 双击 `start.bat`，无报错即可
 
-4. 如果你希望修改默认端口号，可以用文本编辑器打开`start.bat`，修改`--port 8000`为`--port 你的自定义端口号`
+4. 浏览器访问 `http://localhost:8000` 进入Web管理界面
+
+5. 如果你希望修改默认端口号，可以用文本编辑器打开`start.bat`，修改`--port 8000`为`--port 你的自定义端口号`
 
 ### Docker
 
@@ -113,9 +115,8 @@ services:
 > - 以此类推
 
 5. 点击「启动」，等待容器创建完成
-6. 通过 File Station 进入 `/volumeX/docker/bangumi-syncer/config/` 目录
-7. 编辑 `config.ini` 文件（参考下方配置说明）
-8. 回到 Container Manager，重启 `bangumi-syncer` 容器
+6. 浏览器访问 `http://群晖IP:8000` 进入Web管理界面
+7. 点击「配置管理」进行在线配置
 
 **方式二：通过 Docker 注册表**
 
@@ -129,100 +130,39 @@ services:
      - `/docker/bangumi-syncer/config` → `/app/config`
      - `/docker/bangumi-syncer/logs` → `/app/logs`
      - `/docker/bangumi-syncer/data` → `/app/data`
-6. 启动容器后，通过 File Station 编辑配置文件（参考下方配置说明）
-7. 重启容器使配置生效
+6. 启动容器后，浏览器访问 `http://群晖IP:8000` 进入Web管理界面
+7. 点击「配置管理」进行在线配置
 
 ## 🔧 配置
 
-### 单账号模式配置 (默认)
-修改config.ini，根据注释说明，填写如下三个必填项：
+程序提供了完整的Web管理界面，支持在线配置所有参数，无需手动编辑配置文件。
 
-**Bangumi 用户名 (`username`)** (必填)
-- 访问你的 Bangumi 个人主页：`https://bgm.tv/user/你的用户名`
-- 填写用户名或者 URL 中的数字 ID
+### 主要配置项说明
 
-**访问令牌 (`access_token`)** (必填)
-- 访问：https://next.bgm.tv/demo/access-token
-- 登录后点击「创建令牌」
-- 复制生成的令牌（注意保存，只显示一次）
+**Bangumi账号配置**
+- **用户名**：Bangumi 的用户名或 UID **（必填）**
+- **访问令牌**：从 [令牌生成页面](https://next.bgm.tv/demo/access-token) 获取 **（必填）**
+- **观看记录仅自己可见**：是否将同步的观看记录设为私有
 
-**媒体服务器用户名 (`single_username`)** (必填)
-- Plex：Plex 设置中的用户名
-- Emby：Emby 用户管理中的用户名  
-- Jellyfin：Jellyfin 用户管理中的用户名
+**同步配置**
+- **同步模式**：选择单用户模式或多用户模式
+- **单用户模式用户名**：媒体服务器中的用户名 **（单用户模式必填）**
+- **屏蔽关键词**：跳过包含指定关键词的番剧，多个关键词用逗号分隔
 
-**代理 (`script_proxy`)** (可选)
-- 如果需要通过代理访问 Bangumi API，请填写代理地址
-- 格式：`http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`
-- 留空则不使用代理
+**多用户模式配置**（有需要时才填）
+- **添加Bangumi账号**：为每个需要同步的Bangumi账号添加配置
+- **用户映射**：设置媒体服务器用户名与Bangumi账号的对应关系
 
-**屏蔽关键词 (`blocked_keywords`)** (可选)
-- 支持配置屏蔽关键词来跳过某些不需要同步的番剧或因元数据混乱导致的同步识别错误（如物语系列等）
-- 格式：多个关键词用逗号分隔，如 `物语系列,特典`
-- 留空则不启用屏蔽功能
+**高级配置**
+- **HTTP代理**：如需通过代理访问 Bangumi API
+- **调试模式**：开启详细日志输出
+- **Bangumi-data配置**：本地数据缓存设置
 
-### 多账号模式配置 (可选)
+**自定义映射配置**
+- 在「映射管理」页面直接添加、编辑和删除自定义番剧映射
+- 用于处理程序无法自动匹配的番剧（如三次元、名称不同的番剧等）
+- 支持批量导入导出功能
 
-如果你需要支持多个用户同步到不同的 Bangumi 账号，可以启用多账号模式：
-
-#### 1. 启用多用户模式
-在 `config.ini` 的 `[sync]` 段中设置：
-```ini
-mode = multi
-```
-
-#### 2. 配置多个 Bangumi 账号
-为每个 Bangumi 账号创建一个配置段，格式为 `[bangumi-账号名]`：
-
-```ini
-[bangumi-user1]
-username = bangumi_user1
-access_token = your_access_token_1
-private = False
-
-[bangumi-user2]
-username = bangumi_user2
-access_token = your_access_token_2
-private = True
-```
-
-#### 3. 配置用户映射
-在 `[sync]` 段中添加媒体服务器用户名到 Bangumi 配置的映射：
-
-```ini
-[sync]
-mode = multi
-# 媒体服务器用户名 = bangumi配置段名
-plex_user1 = bangumi-user1
-plex_user2 = bangumi-user2
-emby_user1 = bangumi-user1
-jellyfin_user3 = bangumi-user2
-```
-
-### 自定义映射配置 (可选)
-
-程序支持通过独立的JSON配置文件来设置自定义映射，用于处理程序无法自动匹配的番剧（如三次元、tmdb和bgm名字不同的番剧）。
-
-**配置文件位置：**
-- 本地部署：`./bangumi_mapping.json`
-- Docker部署：`/app/config/bangumi_mapping.json`（通过挂载卷访问）
-
-**配置文件格式：**
-```json
-{
-  "mappings": {
-    "假面骑士加布": "502002",
-    "我推的孩子": "386809"
-  }
-}
-```
-
-**使用说明：**
-1. 在 `mappings` 对象中添加你需要的映射关系
-2. 格式为：`"番剧中文名": "bangumi_subject_id"`
-3. bangumi_subject_id 可以从番剧页面URL中获取
-4. 修改配置文件后**无需重启服务**，程序下次同步前会自动检测文件变化并重新加载
-5. 如果没有匹配失败的条目，可以保持 `mappings` 为空对象
 
 ## 🥰 使用
 ### 自定义Webhook
@@ -254,7 +194,7 @@ jellyfin_user3 = bangumi-user2
 ```
 3. 将以上json发送到`http://{ip}:8000/Custom`，ip根据本机情况填写
 
-4. 播放完成后，查看`控制台日志`或`log.txt`是否同步成功
+4. 播放完成后，可在Web界面「日志管理」页面查看同步结果
 
 ### Tautulli
 **（默认您已将Plex与Tautulli绑定完成，以下内容只需要设置一次）**
@@ -282,7 +222,7 @@ jellyfin_user3 = bangumi-user2
 
 ![](https://p.sda1.dev/16/6870cf7c4167203114bc4df7eac4b41a/5.jpg)
 
-7. 在Plex播放完成后，观察`控制台日志`或`log.txt`是否同步成功
+7. 在Plex播放完成后，可在Web界面「日志管理」页面查看同步结果
 
 ### Plex Webhooks
 **（默认您的账号已拥有Plex Pass，以下内容只需要设置一次）**
@@ -293,7 +233,7 @@ jellyfin_user3 = bangumi-user2
 
 3. 填写网址为`http://{ip}:8000/Plex`，ip根据本机情况填写，点击`保存修改`
 
-4. 在Plex播放完成后，查看`控制台日志`或`log.txt`是否同步成功
+4. 在Plex播放完成后，可在Web界面「日志管理」页面查看同步结果
 
 ### Emby通知
 
@@ -301,7 +241,7 @@ jellyfin_user3 = bangumi-user2
 2. 打开Emby控制面板 -> `应用程序设置` -> `通知` -> `添加通知` -> 选择`Webhooks`
 ![](https://p.sda1.dev/16/ba2ca4af8b382aebd6e9782c7971f703/1.jpg)
 3. 名称随意填写，URL填写`http://{ip}:8000/Emby`，ip根据本机情况填写，请求内容类型选择`application/json`，Events里勾选`播放-停止`和`用户-标记为已播放`，`将媒体库事件限制为`根据自己情况，建议只勾选包含动画的库，最后点击`储存`
-4. 在Emby播放完成 或 手动标记为已播放后，查看`控制台日志`或`log.txt`是否同步成功
+4. 在Emby播放完成 或 手动标记为已播放后，可在Web界面「日志管理」页面查看同步结果
 
 ### Jellyfin插件
 
@@ -317,7 +257,7 @@ jellyfin_user3 = bangumi-user2
 {"media_type": "{{{ItemType}}}","title": "{{{SeriesName}}}","ori_title": " ","season": {{{SeasonNumber}}},"episode": {{{EpisodeNumber}}},"release_date": "{{{Year}}}-01-01","user_name": "{{{NotificationUsername}}}","NotificationType": "{{{NotificationType}}}","PlayedToCompletion": "{{{PlayedToCompletion}}}"}
 ```
 
-5. 在Jellyfin播放完成后，查看`控制台日志`或`log.txt`是否同步成功
+5. 在Jellyfin播放完成后，可在Web界面「日志管理」页面查看同步结果
 
 ## 📖 计划
 ✅ 支持自定义Webhook同步标记
@@ -337,6 +277,16 @@ jellyfin_user3 = bangumi-user2
 ✅ 支持Docker部署
 
 ✅ 支持多账号同步
+
+✅ Web端管理界面
+
+✅ 同步记录查看和统计
+
+✅ 配置文件在线编辑
+
+✅ 自定义映射管理
+
+✅ 配置备份和恢复
 
 ⬜️ ……
 

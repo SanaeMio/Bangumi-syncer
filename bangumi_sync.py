@@ -944,10 +944,7 @@ async def logs_page(request: Request):
     """日志管理页面"""
     return templates.TemplateResponse("logs.html", {"request": request})
 
-@app.get("/test", response_class=HTMLResponse)
-async def test_page(request: Request):
-    """测试页面"""
-    return templates.TemplateResponse("test_config_fix.html", {"request": request})
+
 
 # =========================== API端点 ===========================
 
