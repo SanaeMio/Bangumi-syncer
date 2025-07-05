@@ -186,7 +186,7 @@ function displayRecords(records) {
             <td>${record.ori_title || '-'}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
             <td><span class="badge bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
-            <td><span class="badge bg-secondary">${record.source}</span></td>
+            <td><span class="badge bg-${getSourceColor(record.source)}">${record.source}</span></td>
             <td class="text-truncate" style="max-width: 200px;" title="${record.message}">${record.message}</td>
             <td>
                 <button class="btn btn-sm btn-outline-primary" onclick="showRecordDetail(${record.id})">
@@ -214,6 +214,16 @@ function getStatusText(status) {
         case 'error': return '失败';
         case 'ignored': return '已忽略';
         default: return status;
+    }
+}
+
+function getSourceColor(source) {
+    switch (source.toLowerCase()) {
+        case 'plex': return 'warning';     // 黄色
+        case 'emby': return 'success';     // 绿色
+        case 'jellyfin': return 'primary'; // 蓝色
+        case 'custom': return 'secondary'; // 灰色
+        default: return 'secondary';
     }
 }
 

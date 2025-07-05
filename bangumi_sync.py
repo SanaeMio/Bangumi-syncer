@@ -95,6 +95,7 @@ class CustomItem(BaseModel):
     episode: int
     release_date: str
     user_name: str
+    source: str = None  # 可选的source字段
 
 
 # 全局变量用于缓存映射配置和文件状态
@@ -128,11 +129,15 @@ def get_multi_account_configs() -> Dict[str, Dict[str, str]]:
                 'username': configs.raw.get(section_name, 'username', fallback=''),
                 'access_token': configs.raw.get(section_name, 'access_token', fallback=''),
                 'private': configs.raw.getboolean(section_name, 'private', fallback=False),
+                'media_server_username': configs.raw.get(section_name, 'media_server_username', fallback=''),
+                'display_name': configs.raw.get(section_name, 'display_name', fallback=''),
             }
-            # 只保存有效的配置（至少有用户名和access_token）
-            if config['username'] and config['access_token']:
+            # 只保存有效的配置（至少有用户名、access_token和媒体服务器用户名）
+            if config['username'] and config['access_token'] and config['media_server_username']:
                 bangumi_configs[section_name] = config
                 logger.debug(f'加载多账号配置: {section_name}')
+            elif config['username'] and config['access_token']:
+                logger.error(f'多账号配置 {section_name} 缺少 media_server_username 字段，配置无效')
     
     _bangumi_configs_cache = bangumi_configs
     logger.info(f'加载了 {len(bangumi_configs)} 个bangumi账号配置')
@@ -153,16 +158,13 @@ def get_user_mappings() -> Dict[str, str]:
     
     user_mappings = {}
     
-    # 从sync段获取用户映射配置
-    if configs.raw.has_section('sync'):
-        for key, value in configs.raw.items('sync'):
-            # 跳过已知的配置项
-            if key in ['mode', 'single_username', 'blocked_keywords']:
-                continue
-            # 其他的键值对都视为用户映射
-            if value.strip():
-                user_mappings[key] = value.strip()
-                logger.debug(f'用户映射: {key} -> {value}')
+    # 从bangumi配置中自动生成用户映射
+    bangumi_configs = get_multi_account_configs()
+    for section_name, config in bangumi_configs.items():
+        media_server_username = config.get('media_server_username', '')
+        if media_server_username:
+            user_mappings[media_server_username] = section_name
+            logger.debug(f'自动生成用户映射: {media_server_username} -> {section_name}')
     
     _user_mappings_cache = user_mappings
     logger.info(f'加载了 {len(user_mappings)} 个用户映射配置')
@@ -530,6 +532,8 @@ def retry_mark_episode(bgm_api, subject_id, ep_id, max_retries=3):
 @app.post("/Custom", status_code=200)
 async def custom_sync(item: CustomItem, response: Response, source: str = "custom"):
     try:
+        # 如果item中包含source字段，优先使用item的source
+        actual_source = item.source if item.source else source
         logger.info(f'接收到同步请求：{item}')
 
         # 基本验证
@@ -618,7 +622,7 @@ async def custom_sync(item: CustomItem, response: Response, source: str = "custo
             episode_id=bgm_ep_id,
             status="success",
             message=result_message,
-            source=source
+            source=actual_source
         )
 
         return {
@@ -644,7 +648,7 @@ async def custom_sync(item: CustomItem, response: Response, source: str = "custo
             episode=item.episode if 'item' in locals() else 0,
             status="error",
             message=str(e),
-            source=source
+            source=actual_source if 'actual_source' in locals() else source
         )
         
         response.status_code = 500
@@ -982,10 +986,8 @@ async def get_config():
         
         # 获取多账号配置
         bangumi_configs = get_multi_account_configs()
-        user_mappings = get_user_mappings()
         
         config_data["multi_accounts"] = bangumi_configs
-        config_data["user_mappings"] = user_mappings
         
         return {"status": "success", "data": config_data}
     except Exception as e:
@@ -1045,29 +1047,34 @@ async def update_config(request: Request):
                 config.remove_section(section)
             
             # 添加新的多账号配置
+            account_counter = 1
             for account_name, account_config in data["multi_accounts"].items():
-                if not config.has_section(account_name):
-                    config.add_section(account_name)
+                # 自动生成配置段名称，格式为 bangumi-userN
+                section_name = f"bangumi-user{account_counter}"
+                if not config.has_section(section_name):
+                    config.add_section(section_name)
+                
+                # 添加账号备注字段
+                if account_name and not account_name.startswith('account_'):  # 如果有有效的备注名称，保存到配置中
+                    config.set(section_name, 'display_name', account_name)
+                
                 for key, value in account_config.items():
                     if key == "private":
-                        config.set(account_name, key, str(value).lower())
+                        config.set(section_name, key, str(value).lower())
                     else:
-                        config.set(account_name, key, str(value))
-        
-        # 处理用户映射
-        if "user_mappings" in data:
-            if config.has_section('sync'):
-                # 先删除现有的用户映射
-                items_to_remove = []
-                for key, value in config.items('sync'):
-                    if key not in ['mode', 'single_username', 'blocked_keywords']:
-                        items_to_remove.append(key)
-                for key in items_to_remove:
-                    config.remove_option('sync', key)
+                        config.set(section_name, key, str(value))
                 
-                # 添加新的用户映射
-                for user, mapping in data["user_mappings"].items():
-                    config.set('sync', user, mapping)
+                account_counter += 1
+        
+        # 清理sync段中的旧用户映射配置
+        if config.has_section('sync'):
+            # 删除现有的用户映射
+            items_to_remove = []
+            for key, value in config.items('sync'):
+                if key not in ['mode', 'single_username', 'blocked_keywords']:
+                    items_to_remove.append(key)
+            for key in items_to_remove:
+                config.remove_option('sync', key)
         
         # 保存配置文件
         with open(config_path, 'w', encoding='utf-8') as f:
@@ -1085,9 +1092,6 @@ async def update_config(request: Request):
         
         # 强制重新加载映射配置
         reload_custom_mappings()
-        
-        # 添加调试日志
-        logger.info(f"配置已更新并重新加载，当前debug模式: {configs.raw.getboolean('dev', 'debug', fallback=False)}")
         
         return {"status": "success", "message": "配置已更新"}
     except Exception as e:
@@ -1411,10 +1415,8 @@ async def backup_config():
 
         # 获取多账号配置
         bangumi_configs = get_multi_account_configs()
-        user_mappings = get_user_mappings()
         
         config_data["multi_accounts"] = bangumi_configs
-        config_data["user_mappings"] = user_mappings
         
         # 创建备份目录
         backup_dir = "config_backups"
@@ -1639,12 +1641,6 @@ async def restore_config(filename: str):
                     else:
                         config.set(account_name, key, str(value))
         
-        # 处理用户映射
-        if "user_mappings" in config_data:
-            if config.has_section('sync'):
-                for user, mapping in config_data["user_mappings"].items():
-                    config.set('sync', user, mapping)
-        
         # 保存配置文件
         with open(config_path, 'w', encoding='utf-8') as f:
             config.write(f)
@@ -1730,7 +1726,8 @@ async def test_sync(request: Request):
             season=data.get("season", 1),
             episode=data.get("episode", 1),
             release_date=data.get("release_date", ""),
-            user_name=data.get("user_name", "test_user")
+            user_name=data.get("user_name", "test_user"),
+            source=data.get("source", "test")  # 支持自定义source
         )
         
         # 执行同步测试
