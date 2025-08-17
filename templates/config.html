@@ -3,6 +3,10 @@
 {% block title %}配置管理 - Bangumi Syncer{% endblock %}
 {% block page_title %}配置管理{% endblock %}
 
+{% block head %}
+
+{% endblock %}
+
 {% block page_actions %}
 {% endblock %}
 
@@ -11,7 +15,7 @@
     <!-- Bangumi账号配置 -->
     <div class="row">
         <div class="col-12">
-                    <div class="card shadow-sm mb-4">
+                    <div class="card shadow-sm mb-4 config-card">
             <div class="card-header py-3">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-person-circle me-2 text-primary"></i>
@@ -41,9 +45,8 @@
                             <div class="position-relative">
                                 <input type="password" class="form-control form-control-lg pe-5" id="bangumi-access-token" name="bangumi.access_token" 
                                        placeholder="输入Bangumi访问令牌">
-                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 p-1" 
-                                        type="button" id="toggle-token-visibility" 
-                                        style="z-index: 10; border: none; background: none;">
+                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn" 
+                                        type="button" id="toggle-token-visibility">
                                     <i class="bi bi-eye text-muted" id="token-visibility-icon"></i>
                                 </button>
                             </div>
@@ -68,7 +71,7 @@
     <!-- 同步配置 -->
     <div class="row">
         <div class="col-12">
-                    <div class="card shadow-sm mb-4">
+                    <div class="card shadow-sm mb-4 config-card">
             <div class="card-header py-3">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-arrow-repeat me-2 text-success"></i>
@@ -172,10 +175,107 @@
         </div>
     </div>
 
+    <!-- Web认证配置 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-shield-lock me-2 text-danger"></i>
+                        <h6 class="m-0 fw-semibold">Web认证配置</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-shield-check me-1 text-success"></i>启用Web认证
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="是否启用Web管理界面认证，建议在外网环境下启用。禁用后任何人都可以访问管理界面"></i>
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="auth-enabled" name="auth.enabled">
+                                <label class="form-check-label" for="auth-enabled">启用</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="auth-username" class="form-label fw-semibold">
+                                <i class="bi bi-person me-1 text-primary"></i>管理员用户名
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="Web管理界面的登录用户名"></i>
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="auth-username" name="auth.username" 
+                                   placeholder="admin">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="auth-password" class="form-label fw-semibold">
+                                <i class="bi bi-key me-1 text-warning"></i>管理员密码
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="Web管理界面的登录密码。留空表示不修改当前密码"></i>
+                            </label>
+                            <div class="position-relative">
+                                <input type="password" class="form-control form-control-lg pe-5" id="auth-password" name="auth.password" 
+                                       placeholder="留空表示不修改密码">
+                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn" 
+                                        type="button" id="toggle-auth-password-visibility">
+                                    <i class="bi bi-eye text-muted" id="auth-password-visibility-icon"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="session-timeout" class="form-label fw-semibold">
+                                <i class="bi bi-clock me-1 text-info"></i>会话超时时间
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="登录会话的超时时间（秒），默认3600秒（1小时）"></i>
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="session-timeout" name="auth.session_timeout" 
+                                   placeholder="3600" min="300" max="86400">
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-2">
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-shield-lock me-1 text-success"></i>启用HTTPS安全Cookie
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="启用后Cookie只在HTTPS连接下传输，提高安全性。仅在使用HTTPS时启用"></i>
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="https-only" name="auth.https_only">
+                                <label class="form-check-label" for="https-only">启用</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="max-login-attempts" class="form-label fw-semibold">
+                                <i class="bi bi-shield-x me-1 text-warning"></i>最大登录尝试次数
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="单个IP地址的最大登录失败次数，超过后将被锁定"></i>
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="max-login-attempts" name="auth.max_login_attempts" 
+                                   placeholder="5" min="1" max="20">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="lockout-duration" class="form-label fw-semibold">
+                                <i class="bi bi-clock-history me-1 text-danger"></i>锁定时间（秒）
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="IP被锁定的时间长度（秒），默认900秒（15分钟）"></i>
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="lockout-duration" name="auth.lockout_duration" 
+                                   placeholder="900" min="60" max="86400">
+                        </div>
+                    </div>
+                    <div class="alert alert-warning mt-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bangumi-data配置 -->
     <div class="row">
         <div class="col-12">
-                    <div class="card shadow-sm mb-4">
+                    <div class="card shadow-sm mb-4 config-card">
             <div class="card-header py-3">
                 <div class="d-flex align-items-center">
                     <i class="bi bi-hdd-stack me-2 text-primary"></i>
@@ -457,11 +557,6 @@
 
 {% block scripts %}
 <script>
-let currentConfig = {};
-let bangumiAccountCounter = 0;
-let userMappingCounter = 0;
-let restoreConfigModal;
-let selectedBackupFile = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     // 初始化工具提示
@@ -484,6 +579,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // 初始化认证密码显示/隐藏功能
+    document.getElementById('toggle-auth-password-visibility').addEventListener('click', function() {
+        const passwordInput = document.getElementById('auth-password');
+        const icon = document.getElementById('auth-password-visibility-icon');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            passwordInput.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    });
+    
     // 初始化模态框
     const modalElement = document.getElementById('restoreConfigModal');
     if (modalElement) {
@@ -501,7 +610,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadConfig(showToast = true) {
     try {
-        const response = await fetch('/api/config');
+        const response = await fetch('/api/config', {
+            method: 'GET',
+            credentials: 'include',  // 包含Cookie认证信息
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.status === 401) {
+            // 认证失败，跳转到登录页面
+            window.location.href = '/login';
+            return;
+        }
+        
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -511,11 +633,11 @@ async function loadConfig(showToast = true) {
                 showAlert('配置重新加载成功', 'success');
             }
         } else {
-            showAlert('加载配置失败', 'danger');
+            showAlert('加载配置失败: ' + (data.message || '未知错误'), 'danger');
         }
     } catch (error) {
         console.error('加载配置失败:', error);
-        showAlert('加载配置失败', 'danger');
+        showAlert('加载配置失败: ' + error.message, 'danger');
     }
 }
 
@@ -537,6 +659,18 @@ function populateForm(config) {
     document.getElementById('cache-ttl').value = config.bangumi_data.cache_ttl_days || 7;
     document.getElementById('data-url').value = config.bangumi_data.data_url || 'https://unpkg.com/bangumi-data@0.3/dist/data.json';
     document.getElementById('local-cache-path').value = config.bangumi_data.local_cache_path || './bangumi_data_cache.json';
+    
+    // 填充认证配置
+    if (config.auth) {
+        document.getElementById('auth-enabled').checked = config.auth.enabled !== false;
+        document.getElementById('auth-username').value = config.auth.username || 'admin';
+        document.getElementById('session-timeout').value = config.auth.session_timeout || 3600;
+        document.getElementById('https-only').checked = config.auth.https_only || false;
+        document.getElementById('max-login-attempts').value = config.auth.max_login_attempts || 5;
+        document.getElementById('lockout-duration').value = config.auth.lockout_duration || 900;
+        // 密码字段留空，表示不修改
+        document.getElementById('auth-password').value = '';
+    }
     
     // 切换同步模式
     toggleSyncMode();
@@ -652,8 +786,22 @@ async function saveConfig() {
                 cache_ttl_days: parseInt(document.getElementById('cache-ttl').value),
                 data_url: document.getElementById('data-url').value,
                 local_cache_path: document.getElementById('local-cache-path').value
+            },
+            auth: {
+                enabled: document.getElementById('auth-enabled').checked,
+                username: document.getElementById('auth-username').value,
+                session_timeout: parseInt(document.getElementById('session-timeout').value) || 3600,
+                https_only: document.getElementById('https-only').checked,
+                max_login_attempts: parseInt(document.getElementById('max-login-attempts').value) || 5,
+                lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900
             }
         };
+        
+        // 如果密码字段不为空，则添加到配置中
+        const authPassword = document.getElementById('auth-password').value;
+        if (authPassword.trim() !== '') {
+            configData.auth.password = authPassword;
+        }
         
         // 处理多用户配置
         if (configData.sync.mode === 'multi') {
@@ -685,6 +833,7 @@ async function saveConfig() {
         
         const response = await fetch('/api/config', {
             method: 'POST',
+            credentials: 'include',  // 包含Cookie认证信息
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -695,6 +844,21 @@ async function saveConfig() {
         
         if (result.status === 'success') {
             showAlert('配置保存成功', 'success');
+            
+            // 如果修改了密码，提示需要重新登录
+            if (authPassword.trim() !== '') {
+                setTimeout(() => {
+                    if (confirm('您已修改了登录密码，需要重新登录。是否现在跳转到登录页面？')) {
+                        // 先登出，然后跳转到登录页面
+                        fetch('/api/logout', {
+                            method: 'POST',
+                            credentials: 'include'
+                        }).then(() => {
+                            window.location.href = '/login';
+                        });
+                    }
+                }, 1000);
+            }
         } else {
             showAlert('配置保存失败: ' + result.message, 'danger');
         }
@@ -715,6 +879,7 @@ async function testSync() {
         
         const response = await fetch('/api/test-sync', {
             method: 'POST',
+            credentials: 'include',  // 包含Cookie认证信息
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -739,6 +904,7 @@ async function backupConfig() {
     try {
         const response = await fetch('/api/config/backup', {
             method: 'POST',
+            credentials: 'include',  // 包含Cookie认证信息
             headers: {
                 'Content-Type': 'application/json',
             }
@@ -796,7 +962,9 @@ async function showRestoreModal() {
 // 加载备份文件列表
 async function loadBackupFiles() {
     try {
-        const response = await fetch('/api/config/backups');
+        const response = await fetch('/api/config/backups', {
+            credentials: 'include'
+        });
         const data = await response.json();
         
         const backupFilesList = document.getElementById('backup-files-list');
@@ -852,7 +1020,9 @@ async function selectBackupFile(filename) {
     event.target.closest('.list-group-item').classList.add('active');
     
     // 找到对应的backup对象
-    const response = await fetch('/api/config/backups');
+    const response = await fetch('/api/config/backups', {
+        credentials: 'include'
+    });
     const data = await response.json();
     const backup = data.data.backups.find(b => b.filename === filename);
     
@@ -861,7 +1031,9 @@ async function selectBackupFile(filename) {
     
     // 预览配置内容
     try {
-        const response = await fetch(`/api/config/backup/${filename}`);
+        const response = await fetch(`/api/config/backup/${filename}`, {
+            credentials: 'include'
+        });
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -896,7 +1068,8 @@ async function deleteBackupFile(filename, event) {
     
     try {
         const response = await fetch(`/api/config/backup/${filename}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            credentials: 'include'
         });
         
         const data = await response.json();
@@ -933,6 +1106,7 @@ async function confirmRestore() {
     try {
         const response = await fetch(`/api/config/restore/${selectedBackupFile.filename}`, {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
             }
@@ -979,6 +1153,7 @@ async function confirmCleanup() {
     try {
         const response = await fetch('/api/config/backups/cleanup', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
             },

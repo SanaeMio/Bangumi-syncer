@@ -1,10 +1,12 @@
 import json
 from typing import Dict, Optional, Any, List
 import uvicorn
-from fastapi import FastAPI, Request, Response, HTTPException, Form
+from fastapi import FastAPI, Request, Response, HTTPException, Form, Depends, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 from functools import lru_cache
 import os
@@ -12,6 +14,9 @@ import time
 import sqlite3
 from datetime import datetime, timedelta
 import configparser
+import secrets
+import hashlib
+import hmac
 
 from utils.configs import configs, MyLogger
 from utils.bangumi_api import BangumiApi
@@ -21,6 +26,52 @@ from utils.bangumi_data import BangumiData
 logger = MyLogger()
 
 app = FastAPI(title="Bangumi-Syncer", description="自动同步Bangumi观看记录")
+
+# 访问日志中间件
+class AccessLogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        
+        # 获取客户端信息
+        client_ip = request.client.host
+        user_agent = request.headers.get("user-agent", "")
+        method = request.method
+        url = str(request.url)
+        
+        # 处理请求
+        response = await call_next(request)
+        
+        # 计算处理时间
+        process_time = time.time() - start_time
+        
+        # 获取用户信息（如果已登录）
+        user = "anonymous"
+        try:
+            # 尝试从cookie获取用户信息
+            token = request.cookies.get('session_token')
+            if token and token in active_sessions:
+                user = active_sessions[token]['username']
+        except:
+            pass
+        
+        # 根据状态码决定日志级别和消息格式
+        if response.status_code >= 400:
+            log_message = (
+                f"[WARNING] ACCESS - {client_ip} - {user} - \"{method} {url}\" "
+                f"{response.status_code} - {process_time:.3f}s - \"{user_agent}\""
+            )
+            logger.warning(log_message)
+        else:
+            log_message = (
+                f"[INFO] ACCESS - {client_ip} - {user} - \"{method} {url}\" "
+                f"{response.status_code} - {process_time:.3f}s - \"{user_agent}\""
+            )
+            logger.info(log_message)
+        
+        return response
+
+# 添加中间件
+app.add_middleware(AccessLogMiddleware)
 
 # 创建静态文件和模板目录
 os.makedirs("static", exist_ok=True)
@@ -96,6 +147,286 @@ class CustomItem(BaseModel):
     release_date: str
     user_name: str
     source: str = None  # 可选的source字段
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+# 会话管理
+security = HTTPBearer(auto_error=False)
+active_sessions: Dict[str, Dict[str, Any]] = {}  # token -> session_info
+
+# 登录失败跟踪
+login_attempts: Dict[str, Dict[str, Any]] = {}  # ip -> {attempts: int, locked_until: datetime}
+
+# 认证辅助函数
+def get_auth_config():
+    """获取认证配置"""
+    return {
+        'enabled': configs.raw.getboolean('auth', 'enabled', fallback=True),
+        'username': configs.raw.get('auth', 'username', fallback='admin'),
+        'password': configs.raw.get('auth', 'password', fallback='admin'),
+        'session_timeout': configs.raw.getint('auth', 'session_timeout', fallback=3600),  # 1小时
+        'secret_key': configs.raw.get('auth', 'secret_key', fallback=''),
+        'https_only': configs.raw.getboolean('auth', 'https_only', fallback=False),
+        'max_login_attempts': configs.raw.getint('auth', 'max_login_attempts', fallback=5),
+        'lockout_duration': configs.raw.getint('auth', 'lockout_duration', fallback=900)  # 15分钟
+    }
+
+def hash_password(password: str, secret_key: str) -> str:
+    """使用HMAC-SHA256哈希密码"""
+    return hmac.new(secret_key.encode(), password.encode(), hashlib.sha256).hexdigest()
+
+def init_auth_config():
+    """初始化认证配置，确保老版本升级时有完整的默认配置"""
+    try:
+        config_path = configs.active_config_path
+        config = configparser.ConfigParser()
+        config.read(config_path, encoding='utf-8-sig')
+        
+        config_updated = False
+        
+        # 检查是否存在auth段，如果不存在则创建
+        if not config.has_section('auth'):
+            config.add_section('auth')
+            logger.info('[INFO] 检测到老版本升级，正在初始化认证配置...')
+            config_updated = True
+        
+        # 确保所有必要的认证配置项都存在，如果不存在则添加默认值
+        auth_defaults = {
+            'enabled': 'True',
+            'username': 'admin',
+            'password': 'admin',  # 明文密码，稍后会被加密
+            'session_timeout': '3600',
+            'secret_key': '',  # 空值，稍后会生成
+            'https_only': 'False',
+            'max_login_attempts': '5',
+            'lockout_duration': '900'
+        }
+        
+        for key, default_value in auth_defaults.items():
+            if not config.has_option('auth', key):
+                config.set('auth', key, default_value)
+                config_updated = True
+                logger.info(f'[INFO] 添加认证配置项: {key} = {default_value}')
+        
+        # 检查并生成secret_key
+        current_secret_key = config.get('auth', 'secret_key', fallback='')
+        if not current_secret_key:
+            new_secret_key = secrets.token_urlsafe(32)
+            config.set('auth', 'secret_key', new_secret_key)
+            config_updated = True
+            logger.info('[INFO] 生成新的认证密钥')
+        else:
+            new_secret_key = current_secret_key
+        
+        # 检查密码是否需要加密
+        current_password = config.get('auth', 'password', fallback='admin')
+        if current_password and len(current_password) < 64:  # 假设哈希后的密码至少64位
+            hashed_password = hash_password(current_password, new_secret_key)
+            config.set('auth', 'password', hashed_password)
+            config_updated = True
+            logger.info('[INFO] 密码已自动加密')
+        
+        # 如果配置有更新，保存到文件
+        if config_updated:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                config.write(f)
+            
+            # 重新加载配置
+            configs.update()
+            
+            # 显示用户友好的提示信息
+            auth_config = get_auth_config()
+            logger.info('[INFO] ==========================================')
+            logger.info('[INFO] 认证配置已初始化完成！')
+            logger.info('[INFO] 默认登录信息：')
+            logger.info(f'[INFO]   用户名: {auth_config["username"]}')
+            logger.info('[INFO]   密码: admin')
+            logger.info('[INFO] 请访问 Web 界面并立即修改默认密码！')
+            logger.info('[INFO] ==========================================')
+        
+    except Exception as e:
+        logger.error(f'[ERROR] 初始化认证配置失败: {e}')
+
+def generate_session_token() -> str:
+    """生成会话令牌"""
+    return secrets.token_urlsafe(32)
+
+def create_session(username: str) -> str:
+    """创建会话"""
+    token = generate_session_token()
+    auth_config = get_auth_config()
+    session_info = {
+        'username': username,
+        'created_at': time.time(),
+        'expires_at': time.time() + auth_config['session_timeout'],
+        'last_activity': time.time()
+    }
+    active_sessions[token] = session_info
+    logger.info(f'[INFO] 用户 {username} 创建会话: {token[:8]}...')
+    return token
+
+def validate_session(token: str) -> Optional[Dict[str, Any]]:
+    """验证会话"""
+    if not token or token not in active_sessions:
+        return None
+    
+    session = active_sessions[token]
+    current_time = time.time()
+    
+    # 检查会话是否过期
+    if current_time > session['expires_at']:
+        del active_sessions[token]
+        logger.debug(f'会话已过期: {token[:8]}...')
+        return None
+    
+    # 更新最后活动时间
+    session['last_activity'] = current_time
+    return session
+
+def cleanup_expired_sessions():
+    """清理过期会话"""
+    current_time = time.time()
+    expired_tokens = [
+        token for token, session in active_sessions.items()
+        if current_time > session['expires_at']
+    ]
+    
+    for token in expired_tokens:
+        username = active_sessions[token]['username']
+        del active_sessions[token]
+        logger.debug(f'清理过期会话: {username} - {token[:8]}...')
+
+def check_login_attempts(ip: str) -> bool:
+    """检查IP是否被锁定"""
+    auth_config = get_auth_config()
+    current_time = time.time()
+    
+    if ip in login_attempts:
+        attempt_info = login_attempts[ip]
+        
+        # 检查是否还在锁定期内
+        if 'locked_until' in attempt_info and current_time < attempt_info['locked_until']:
+            return False
+        
+        # 如果锁定期已过，重置尝试次数
+        if 'locked_until' in attempt_info and current_time >= attempt_info['locked_until']:
+            login_attempts[ip] = {'attempts': 0}
+    
+    return True
+
+def record_login_failure(ip: str):
+    """记录登录失败"""
+    auth_config = get_auth_config()
+    current_time = time.time()
+    
+    if ip not in login_attempts:
+        login_attempts[ip] = {'attempts': 0}
+    
+    login_attempts[ip]['attempts'] += 1
+    
+    # 如果超过最大尝试次数，锁定IP
+    if login_attempts[ip]['attempts'] >= auth_config['max_login_attempts']:
+        lockout_until = current_time + auth_config['lockout_duration']
+        login_attempts[ip]['locked_until'] = lockout_until
+        logger.warning(f'[WARNING] IP {ip} 因登录失败次数过多被锁定至 {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lockout_until))}')
+
+def reset_login_attempts(ip: str):
+    """重置登录尝试次数"""
+    if ip in login_attempts:
+        del login_attempts[ip]
+
+def cleanup_expired_lockouts():
+    """清理过期的IP锁定"""
+    current_time = time.time()
+    expired_ips = []
+    
+    for ip, attempt_info in login_attempts.items():
+        if 'locked_until' in attempt_info and current_time >= attempt_info['locked_until']:
+            expired_ips.append(ip)
+    
+    for ip in expired_ips:
+        del login_attempts[ip]
+        logger.debug(f'清理过期IP锁定: {ip}')
+
+def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """获取当前用户（用于依赖注入）"""
+    auth_config = get_auth_config()
+    
+    # 如果认证被禁用，直接通过
+    if not auth_config['enabled']:
+        return {'username': 'admin', 'auth_disabled': True}
+    
+    # 清理过期会话
+    cleanup_expired_sessions()
+    
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未提供认证令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    session = validate_session(credentials.credentials)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效或过期的认证令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return session
+
+def get_current_user_from_cookie(request: Request):
+    """从Cookie获取当前用户（用于Web页面）"""
+    auth_config = get_auth_config()
+    
+    # 如果认证被禁用，直接通过
+    if not auth_config['enabled']:
+        return {'username': 'admin', 'auth_disabled': True}
+    
+    # 清理过期会话
+    cleanup_expired_sessions()
+    
+    token = request.cookies.get('session_token')
+    if not token:
+        return None
+    
+    session = validate_session(token)
+    return session
+
+
+async def get_current_user_flexible(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """灵活的用户认证（支持Cookie和Bearer token）"""
+    auth_config = get_auth_config()
+    
+    # 如果认证被禁用，直接通过
+    if not auth_config['enabled']:
+        return {'username': 'admin', 'auth_disabled': True}
+    
+    # 清理过期会话
+    cleanup_expired_sessions()
+    
+    # 首先尝试从Cookie获取（Web界面）
+    token = request.cookies.get('session_token')
+    if token:
+        session = validate_session(token)
+        if session:
+            return session
+    
+    # 然后尝试从Bearer token获取（API调用）
+    if credentials:
+        session = validate_session(credentials.credentials)
+        if session:
+            return session
+    
+    # 如果都没有有效的认证信息
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="未提供有效的认证信息",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 # 全局变量用于缓存映射配置和文件状态
@@ -842,7 +1173,7 @@ async def jellyfin_sync(jellyfin_request: Request):
 
 # 手动刷新映射配置缓存
 @app.post("/reload-mappings", status_code=200)
-async def reload_mappings_endpoint():
+async def reload_mappings_endpoint(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """手动刷新自定义映射配置缓存的API端点"""
     try:
         mappings = reload_custom_mappings()
@@ -865,7 +1196,7 @@ async def reload_mappings_endpoint():
 
 # 获取当前映射配置状态
 @app.get("/mappings-status", status_code=200)
-async def get_mappings_status():
+async def get_mappings_status(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """获取当前自定义映射配置状态的API端点"""
     try:
         mappings = load_custom_mappings()
@@ -896,7 +1227,7 @@ def reload_multi_account_configs():
 
 # 手动刷新多账号配置缓存
 @app.post("/reload-accounts", status_code=200)
-async def reload_accounts_endpoint():
+async def reload_accounts_endpoint(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """手动刷新多账号配置缓存的API端点"""
     try:
         reload_multi_account_configs()
@@ -921,39 +1252,214 @@ async def reload_accounts_endpoint():
         }
 
 
+# =========================== 认证相关路由 ===========================
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """登录页面"""
+    # 如果已经登录，直接跳转到主页
+    user = get_current_user_from_cookie(request)
+    if user:
+        return RedirectResponse(url="/", status_code=302)
+    
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/api/login")
+async def login(request: Request, login_data: LoginRequest):
+    """登录API"""
+    try:
+        auth_config = get_auth_config()
+        client_ip = request.client.host
+        
+        # 清理过期的IP锁定
+        cleanup_expired_lockouts()
+        
+        # 检查IP是否被锁定
+        if not check_login_attempts(client_ip):
+            remaining_attempts = login_attempts.get(client_ip, {})
+            lockout_until = remaining_attempts.get('locked_until', 0)
+            lockout_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lockout_until))
+            logger.warning(f'[WARNING] IP {client_ip} 尝试登录但已被锁定至 {lockout_time}')
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"登录失败次数过多，IP已被锁定至 {lockout_time}"
+            )
+        
+        # 验证用户名和密码
+        if (login_data.username != auth_config['username'] or 
+            hash_password(login_data.password, auth_config['secret_key']) != auth_config['password']):
+            # 记录登录失败尝试
+            record_login_failure(client_ip)
+            attempts_info = login_attempts.get(client_ip, {})
+            remaining = max(0, auth_config['max_login_attempts'] - attempts_info.get('attempts', 0))
+            
+            logger.warning(f'[WARNING] 登录失败尝试: 用户名={login_data.username}, IP={client_ip}, 剩余尝试次数={remaining}')
+            
+            if remaining == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="登录失败次数过多，IP已被锁定"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"用户名或密码错误，剩余尝试次数: {remaining}"
+                )
+        
+        # 登录成功，重置失败次数
+        reset_login_attempts(client_ip)
+        
+        # 创建会话
+        token = create_session(login_data.username)
+        
+        # 创建响应
+        response = JSONResponse({
+            "status": "success",
+            "message": "登录成功",
+            "data": {
+                "username": login_data.username,
+                "token": token
+            }
+        })
+        
+        # 设置Cookie（根据配置决定是否启用secure标志）
+        response.set_cookie(
+            key="session_token",
+            value=token,
+            max_age=auth_config['session_timeout'],
+            httponly=True,
+            secure=auth_config['https_only'],  # 根据配置设置
+            samesite="lax"
+        )
+        
+        logger.info(f'[INFO] 用户 {login_data.username} 登录成功, IP={client_ip}')
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"登录处理出错: {e}")
+        raise HTTPException(status_code=500, detail=f"登录失败: {str(e)}")
+
+@app.post("/api/logout")
+async def logout(request: Request):
+    """登出API"""
+    try:
+        token = request.cookies.get('session_token')
+        
+        if token and token in active_sessions:
+            username = active_sessions[token]['username']
+            del active_sessions[token]
+            logger.info(f'用户 {username} 登出')
+        
+        response = JSONResponse({
+            "status": "success",
+            "message": "登出成功"
+        })
+        
+        # 清除Cookie
+        response.delete_cookie("session_token")
+        return response
+        
+    except Exception as e:
+        logger.error(f"登出处理出错: {e}")
+        raise HTTPException(status_code=500, detail=f"登出失败: {str(e)}")
+
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    """获取认证状态"""
+    try:
+        auth_config = get_auth_config()
+        user = get_current_user_from_cookie(request)
+        
+        return {
+            "status": "success",
+            "data": {
+                "authenticated": user is not None,
+                "username": user['username'] if user else None,
+                "auth_enabled": auth_config['enabled'],
+                "session_timeout": auth_config['session_timeout']
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "success",
+            "data": {
+                "authenticated": False,
+                "username": None,
+                "auth_enabled": True,
+                "session_timeout": 3600
+            }
+        }
+
 # =========================== Web管理界面 ===========================
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """主页面 - 仪表板"""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request, 
+        "user": user
+    })
 
 @app.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request):
     """配置管理页面"""
-    return templates.TemplateResponse("config.html", {"request": request})
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    return templates.TemplateResponse("config.html", {
+        "request": request, 
+        "user": user
+    })
 
 @app.get("/records", response_class=HTMLResponse)
 async def records_page(request: Request):
     """同步记录页面"""
-    return templates.TemplateResponse("records.html", {"request": request})
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    return templates.TemplateResponse("records.html", {
+        "request": request, 
+        "user": user
+    })
 
 @app.get("/mappings", response_class=HTMLResponse)
 async def mappings_page(request: Request):
     """映射管理页面"""
-    return templates.TemplateResponse("mappings.html", {"request": request})
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    return templates.TemplateResponse("mappings.html", {
+        "request": request, 
+        "user": user
+    })
 
 @app.get("/logs", response_class=HTMLResponse)
 async def logs_page(request: Request):
     """日志管理页面"""
-    return templates.TemplateResponse("logs.html", {"request": request})
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    return templates.TemplateResponse("logs.html", {
+        "request": request, 
+        "user": user
+    })
 
 
 
 # =========================== API端点 ===========================
 
 @app.get("/api/config")
-async def get_config():
+async def get_config(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """获取当前配置"""
     try:
         # 强制重新读取配置文件
@@ -981,6 +1487,14 @@ async def get_config():
                 "cache_ttl_days": configs.raw.getint('bangumi-data', 'cache_ttl_days', fallback=7),
                 "data_url": configs.raw.get('bangumi-data', 'data_url', fallback='https://unpkg.com/bangumi-data@0.3/dist/data.json'),
                 "local_cache_path": configs.raw.get('bangumi-data', 'local_cache_path', fallback='./bangumi_data_cache.json'),
+            },
+            "auth": {
+                "enabled": configs.raw.getboolean('auth', 'enabled', fallback=True),
+                "username": configs.raw.get('auth', 'username', fallback='admin'),
+                "session_timeout": configs.raw.getint('auth', 'session_timeout', fallback=3600),
+                "https_only": configs.raw.getboolean('auth', 'https_only', fallback=False),
+                "max_login_attempts": configs.raw.getint('auth', 'max_login_attempts', fallback=5),
+                "lockout_duration": configs.raw.getint('auth', 'lockout_duration', fallback=900),
             }
         }
         
@@ -995,7 +1509,7 @@ async def get_config():
         raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
 
 @app.post("/api/config")
-async def update_config(request: Request):
+async def update_config(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """更新配置"""
     try:
         data = await request.json()
@@ -1038,6 +1552,28 @@ async def update_config(request: Request):
                     config.set('bangumi-data', key, str(value).lower())
                 else:
                     config.set('bangumi-data', key, str(value))
+        
+        if "auth" in data:
+            if not config.has_section('auth'):
+                config.add_section('auth')
+            for key, value in data["auth"].items():
+                if key == "enabled":
+                    config.set('auth', key, str(value).lower())
+                elif key == "password":
+                    # 如果提供了新密码，使用当前secret_key进行哈希
+                    auth_config = get_auth_config()
+                    if str(value).strip():  # 只有密码不为空时才更新
+                        hashed_password = hash_password(str(value), auth_config['secret_key'])
+                        config.set('auth', key, hashed_password)
+                        logger.info('[INFO] 管理员密码已更新')
+                elif key in ["https_only", "max_login_attempts", "lockout_duration"]:
+                    # 处理新的安全配置项
+                    if key == "https_only":
+                        config.set('auth', key, str(value).lower())
+                    else:
+                        config.set('auth', key, str(value))
+                else:
+                    config.set('auth', key, str(value))
         
         # 处理多账号配置
         if "multi_accounts" in data:
@@ -1099,7 +1635,7 @@ async def update_config(request: Request):
         raise HTTPException(status_code=500, detail=f"更新配置失败: {str(e)}")
 
 @app.get("/api/records")
-async def get_sync_records(limit: int = 100, offset: int = 0, status: str = None, user_name: str = None, source: str = None):
+async def get_sync_records(request: Request, limit: int = 100, offset: int = 0, status: str = None, user_name: str = None, source: str = None, current_user: dict = Depends(get_current_user_flexible)):
     """获取同步记录"""
     try:
         conn = sqlite3.connect("sync_records.db")
@@ -1171,7 +1707,7 @@ async def get_sync_records(limit: int = 100, offset: int = 0, status: str = None
         raise HTTPException(status_code=500, detail=f"获取同步记录失败: {str(e)}")
 
 @app.get("/api/stats")
-async def get_sync_stats():
+async def get_sync_stats(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """获取同步统计信息"""
     try:
         conn = sqlite3.connect("sync_records.db")
@@ -1226,7 +1762,7 @@ async def get_sync_stats():
         raise HTTPException(status_code=500, detail=f"获取统计信息失败: {str(e)}")
 
 @app.get("/api/mappings")
-async def get_custom_mappings():
+async def get_custom_mappings(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """获取自定义映射"""
     try:
         mappings = load_custom_mappings()
@@ -1242,7 +1778,7 @@ async def get_custom_mappings():
         raise HTTPException(status_code=500, detail=f"获取自定义映射失败: {str(e)}")
 
 @app.post("/api/mappings")
-async def update_custom_mappings(request: Request):
+async def update_custom_mappings(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """更新自定义映射"""
     try:
         data = await request.json()
@@ -1285,7 +1821,7 @@ async def update_custom_mappings(request: Request):
         raise HTTPException(status_code=500, detail=f"更新自定义映射失败: {str(e)}")
 
 @app.get("/api/logs")
-async def get_logs(level: str = None, search: str = None, limit: str = "100"):
+async def get_logs(request: Request, level: str = None, search: str = None, limit: str = "100", current_user: dict = Depends(get_current_user_flexible)):
     """获取日志内容"""
     try:
         # 从配置文件中获取日志文件路径
@@ -1356,7 +1892,7 @@ async def get_logs(level: str = None, search: str = None, limit: str = "100"):
         raise HTTPException(status_code=500, detail=f"获取日志失败: {str(e)}")
 
 @app.post("/api/logs/clear")
-async def clear_logs(request: Request):
+async def clear_logs(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """清空日志"""
     try:
         data = await request.json()
@@ -1398,7 +1934,7 @@ async def clear_logs(request: Request):
         raise HTTPException(status_code=500, detail=f"清空日志失败: {str(e)}")
 
 @app.post("/api/config/backup")
-async def backup_config():
+async def backup_config(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """备份当前配置"""
     try:
         # 强制重新读取配置文件
@@ -1471,7 +2007,7 @@ async def backup_config():
         raise HTTPException(status_code=500, detail=f"备份配置失败: {str(e)}")
 
 @app.get("/api/config/backups")
-async def get_config_backups():
+async def get_config_backups(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """获取配置备份列表"""
     try:
         backup_dir = "config_backups"
@@ -1514,7 +2050,7 @@ async def get_config_backups():
         raise HTTPException(status_code=500, detail=f"获取配置备份列表失败: {str(e)}")
 
 @app.get("/api/config/backup/{filename}")
-async def get_config_backup(filename: str):
+async def get_config_backup(request: Request, filename: str, current_user: dict = Depends(get_current_user_flexible)):
     """获取指定备份文件的内容"""
     try:
         backup_dir = "config_backups"
@@ -1535,7 +2071,7 @@ async def get_config_backup(filename: str):
         raise HTTPException(status_code=500, detail=f"获取备份文件失败: {str(e)}")
 
 @app.post("/api/config/restore/{filename}")
-async def restore_config(filename: str):
+async def restore_config(request: Request, filename: str, current_user: dict = Depends(get_current_user_flexible)):
     """恢复配置"""
     try:
         backup_dir = "config_backups"
@@ -1686,7 +2222,7 @@ async def restore_config(filename: str):
         raise HTTPException(status_code=500, detail=f"恢复配置失败: {str(e)}")
 
 @app.delete("/api/mappings/{title}")
-async def delete_custom_mapping(title: str):
+async def delete_custom_mapping(request: Request, title: str, current_user: dict = Depends(get_current_user_flexible)):
     """删除自定义映射"""
     try:
         mappings = load_custom_mappings()
@@ -1728,7 +2264,7 @@ async def delete_custom_mapping(title: str):
         raise HTTPException(status_code=500, detail=f"删除自定义映射失败: {str(e)}")
 
 @app.post("/api/test-sync")
-async def test_sync(request: Request):
+async def test_sync(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """测试同步功能"""
     try:
         data = await request.json()
@@ -1755,7 +2291,7 @@ async def test_sync(request: Request):
         raise HTTPException(status_code=500, detail=f"测试同步失败: {str(e)}")
 
 @app.post("/api/config/backups/cleanup")
-async def cleanup_config_backups(request: Request):
+async def cleanup_config_backups(request: Request, current_user: dict = Depends(get_current_user_flexible)):
     """清理配置备份文件"""
     try:
         data = await request.json()
@@ -1820,7 +2356,7 @@ async def cleanup_config_backups(request: Request):
         raise HTTPException(status_code=500, detail=f"清理备份文件失败: {str(e)}")
 
 @app.delete("/api/config/backup/{filename}")
-async def delete_config_backup(filename: str):
+async def delete_config_backup(request: Request, filename: str, current_user: dict = Depends(get_current_user_flexible)):
     """删除指定的配置备份文件"""
     try:
         backup_dir = "config_backups"
@@ -1862,11 +2398,18 @@ uvicorn_logging_config = {
     },
 }
 
+# 在模块加载时初始化认证配置（无论是直接运行还是通过uvicorn启动）
+try:
+    init_auth_config()
+except Exception as e:
+    logger.error(f'[ERROR] 初始化认证配置失败: {e}')
+
 if __name__ == "__main__":
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8000,
-        log_config=uvicorn_logging_config
+        log_config=uvicorn_logging_config,
+        access_log=False  # 禁用Uvicorn的访问日志，使用我们自定义的访问日志中间件
     )
 
