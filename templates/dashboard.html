@@ -154,7 +154,9 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadDashboardData() {
     try {
         // 加载统计数据
-        const statsResponse = await fetch('/api/stats');
+        const statsResponse = await fetch('/api/stats', {
+            credentials: 'include'
+        });
         const statsData = await statsResponse.json();
         
         if (statsData.status === 'success') {
@@ -170,7 +172,9 @@ async function loadDashboardData() {
         }
         
         // 加载最近记录
-        const recordsResponse = await fetch('/api/records?limit=10');
+        const recordsResponse = await fetch('/api/records?limit=10', {
+            credentials: 'include'
+        });
         const recordsData = await recordsResponse.json();
         
         if (recordsData.status === 'success') {

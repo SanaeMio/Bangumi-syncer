@@ -211,7 +211,9 @@ async function loadMappings() {
     showLoading(true);
     
     try {
-        const response = await fetch('/api/mappings');
+        const response = await fetch('/api/mappings', {
+            credentials: 'include'
+        });
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -327,6 +329,7 @@ async function saveMapping() {
         
         const response = await fetch('/api/mappings', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -361,7 +364,8 @@ async function confirmDelete() {
     
     try {
         const response = await fetch(`/api/mappings/${encodeURIComponent(title)}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            credentials: 'include'
         });
         
         const result = await response.json();
@@ -418,6 +422,7 @@ async function importMappings() {
         
         const response = await fetch('/api/mappings', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -469,6 +474,7 @@ async function clearAllMappings() {
     try {
         const response = await fetch('/api/mappings', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },

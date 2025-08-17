@@ -201,7 +201,9 @@ function stopAutoRefresh() {
 
 async function loadLogs() {
     try {
-        const response = await fetch('/api/logs');
+        const response = await fetch('/api/logs', {
+            credentials: 'include'
+        });
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -277,6 +279,7 @@ async function confirmClearLogs() {
     try {
         const response = await fetch('/api/logs/clear', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
             },

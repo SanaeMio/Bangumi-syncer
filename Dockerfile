@@ -64,7 +64,7 @@ echo "==============="\n\
 \n\
 # 启动应用\n\
 echo "启动应用..."\n\
-exec uvicorn bangumi_sync:app --host 0.0.0.0 --port 8000' > /app/start.sh && chmod +x /app/start.sh
+exec uvicorn bangumi_sync:app --host 0.0.0.0 --port 8000 --no-access-log' > /app/start.sh && chmod +x /app/start.sh
 
 # 设置环境变量
 ENV PYTHONPATH=/app

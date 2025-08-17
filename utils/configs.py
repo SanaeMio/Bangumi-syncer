@@ -94,6 +94,11 @@ class MyLogger:
     def error(self, *args, end=None, silence=False):
         self.log(*args, end=end, silence=silence)
 
+    def warning(self, *args, end=None, silence=False):
+        if not silence and MyLogger.need_mix:
+            args = self.mix_args_str(*args)
+        self.log(*args, end=end, silence=silence)
+
     def level(self):
         if self.debug_mode:
             return "DEBUG"
