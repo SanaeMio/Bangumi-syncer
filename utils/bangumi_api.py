@@ -103,27 +103,58 @@ class BangumiApi:
                                                                     f'<{end_date}'],
                                                        'nsfw': True}},
                                       params={'limit': limit})
-        res = res.json()
-        return res['data'] if list_only else res
+        try:
+            res = res.json()
+            # 确保返回的是字典类型
+            if not isinstance(res, dict):
+                logger.error(f'search API返回非字典类型: {type(res)}, 内容: {res}')
+                res = {'data': []}
+        except Exception as e:
+            logger.error(f'search JSON解析失败: {e}')
+            res = {'data': []}
+        return res.get('data', []) if list_only else res
 
     @functools.lru_cache
     def search_old(self, title, list_only=True):
         res = self._request_with_retry('GET', self.req, f'{self.host[:-2]}/search/subject/{title}', params={'type': 2})
         try:
             res = res.json()
-        except Exception:
+            # 确保返回的是字典类型
+            if not isinstance(res, dict):
+                logger.error(f'search_old API返回非字典类型: {type(res)}, 内容: {res}')
+                res = {'results': 0, 'list': []}
+        except Exception as e:
+            logger.error(f'search_old JSON解析失败: {e}')
             res = {'results': 0, 'list': []}
-        return res['list'] if list_only else res
+        return res.get('list', []) if list_only else res
 
     @functools.lru_cache
     def get_subject(self, subject_id):
         res = self.get(f'subjects/{subject_id}')
-        return res.json()
+        try:
+            res = res.json()
+            # 确保返回的是字典类型
+            if not isinstance(res, dict):
+                logger.error(f'get_subject API返回非字典类型: {type(res)}, 内容: {res}')
+                res = {}
+        except Exception as e:
+            logger.error(f'get_subject JSON解析失败: {e}')
+            res = {}
+        return res
 
     @functools.lru_cache
     def get_related_subjects(self, subject_id):
         res = self.get(f'subjects/{subject_id}/subjects')
-        return res.json()
+        try:
+            res = res.json()
+            # get_related_subjects 可能返回列表或字典，都是正常的
+            if not isinstance(res, (dict, list)):
+                logger.error(f'get_related_subjects API返回异常类型: {type(res)}, 内容: {res}')
+                res = []
+        except Exception as e:
+            logger.error(f'get_related_subjects JSON解析失败: {e}')
+            res = []
+        return res
 
     @functools.lru_cache
     def get_episodes(self, subject_id, _type=0):
@@ -131,7 +162,16 @@ class BangumiApi:
             'subject_id': subject_id,
             'type': _type,
         })
-        return res.json()
+        try:
+            res = res.json()
+            # 确保返回的是字典类型
+            if not isinstance(res, dict):
+                logger.error(f'get_episodes API返回非字典类型: {type(res)}, 内容: {res}')
+                res = {'data': [], 'total': 0}
+        except Exception as e:
+            logger.error(f'get_episodes JSON解析失败: {e}')
+            res = {'data': [], 'total': 0}
+        return res
 
     def get_target_season_episode_id(self, subject_id, target_season: int, target_ep: int, is_season_subject_id: bool = False):
         season_num = 1
@@ -147,15 +187,19 @@ class BangumiApi:
                 return current_id
             
             episodes = self.get_episodes(current_id)
-            ep_info = episodes['data']
+            ep_info = episodes.get('data', [])
             logger.debug(ep_info)
             
+            if not ep_info:
+                logger.debug(f"未获取到剧集信息: {subject_id}")
+                return None, None if target_ep else None
+            
             # 先尝试完全匹配sort字段
-            _target_ep = [i for i in ep_info if i['sort'] == target_ep]
+            _target_ep = [i for i in ep_info if i.get('sort') == target_ep]
             
             # 如果完全匹配失败，尝试匹配ep字段
             if not _target_ep:
-                _target_ep = [i for i in ep_info if i['ep'] == target_ep and i['ep'] <= i['sort']]
+                _target_ep = [i for i in ep_info if i.get('ep') == target_ep and i.get('ep', 0) <= i.get('sort', 0)]
                 
             if _target_ep:
                 return current_id, _target_ep[0]['id']
@@ -171,18 +215,30 @@ class BangumiApi:
             while True:
                 if not fist_part:
                     current_info = self.get_subject(current_id)
-                    if current_info['platform'] != 'TV':
+                    if not current_info or current_info.get('platform') != 'TV':
                         continue
                 episodes = self.get_episodes(current_id)
-                ep_info = episodes['data']
-                _target_ep = [i for i in ep_info if i['sort'] == target_ep]
+                ep_info = episodes.get('data', [])
+                if not ep_info:
+                    logger.debug(f"未获取到剧集信息: {current_id}")
+                    # 修复死循环：如果获取不到剧集信息，应该跳出循环而不是继续
+                    break
+                _target_ep = [i for i in ep_info if i.get('sort') == target_ep]
                 if _target_ep:
                     return current_id, _target_ep[0]['id']
-                normal_season = True if episodes['total'] > 3 and ep_info[0]['sort'] <= 1 else False
+                normal_season = True if episodes.get('total', 0) > 3 and ep_info[0].get('sort', 0) <= 1 else False
                 if not fist_part and normal_season:
                     break
                 related = self.get_related_subjects(current_id)
-                next_id = [i for i in related if i['relation'] == '续集']
+                # 处理related可能是列表或字典的情况
+                if isinstance(related, list):
+                    next_id = [i for i in related if i.get('relation') == '续集']
+                elif isinstance(related, dict):
+                    # 如果是字典，可能包含data字段
+                    related_list = related.get('data', [])
+                    next_id = [i for i in related_list if i.get('relation') == '续集']
+                else:
+                    next_id = []
                 if not next_id:
                     break
                 current_id = next_id[0]['id']
@@ -191,24 +247,36 @@ class BangumiApi:
 
         while True:
             related = self.get_related_subjects(current_id)
-            next_id = [i for i in related if i['relation'] == '续集']
+            # 处理related可能是列表或字典的情况
+            if isinstance(related, list):
+                next_id = [i for i in related if i.get('relation') == '续集']
+            elif isinstance(related, dict):
+                # 如果是字典，可能包含data字段
+                related_list = related.get('data', [])
+                next_id = [i for i in related_list if i.get('relation') == '续集']
+            else:
+                next_id = []
             if not next_id:
                 break
             current_id = next_id[0]['id']
             current_info = self.get_subject(current_id)
-            if current_info['platform'] != 'TV':
+            if not current_info or current_info.get('platform') != 'TV':
                 continue
             episodes = self.get_episodes(current_id)
-            ep_info = episodes['data']
+            ep_info = episodes.get('data', [])
+            if not ep_info:
+                logger.debug(f"未获取到剧集信息: {current_id}")
+                # 修复死循环：如果获取不到剧集信息，应该跳出循环而不是继续
+                break
             logger.debug(ep_info)
-            normal_season = True if episodes['total'] > 3 and ep_info[0]['sort'] <= 1 else False
-            _target_ep = [i for i in ep_info if i['sort'] == target_ep]
+            normal_season = True if episodes.get('total', 0) > 3 and ep_info[0].get('sort', 0) <= 1 else False
+            _target_ep = [i for i in ep_info if i.get('sort') == target_ep]
             logger.debug(_target_ep)
             # 兼容存在多季情况下，第一集的sort不为1的场景
             if not _target_ep:
-                _target_ep = [i for i in ep_info if i['ep'] == target_ep and i['ep'] <= i['sort']]
+                _target_ep = [i for i in ep_info if i.get('ep') == target_ep and i.get('ep', 0) <= i.get('sort', 0)]
                 if (target_ep and _target_ep
-                        and '第2部分' not in current_info['name_cn']):
+                        and '第2部分' not in current_info.get('name_cn', '')):
                     season_num += 1
                 logger.debug(_target_ep)
             ep_found = True if target_ep and _target_ep else False
@@ -228,13 +296,31 @@ class BangumiApi:
         res = self.get(f'users/{self.username}/collections/{subject_id}')
         if res.status_code == 404:
             return {}
-        return res.json()
+        try:
+            res = res.json()
+            # 确保返回的是字典类型
+            if not isinstance(res, dict):
+                logger.error(f'get_subject_collection API返回非字典类型: {type(res)}, 内容: {res}')
+                res = {}
+        except Exception as e:
+            logger.error(f'get_subject_collection JSON解析失败: {e}')
+            res = {}
+        return res
 
     def get_ep_collection(self, episode_id):
         res = self.get(f'users/-/collections/-/episodes/{episode_id}')
         if res.status_code == 404:
             return {}
-        return res.json()
+        try:
+            res = res.json()
+            # 确保返回的是字典类型
+            if not isinstance(res, dict):
+                logger.error(f'get_ep_collection API返回非字典类型: {type(res)}, 内容: {res}')
+                res = {}
+        except Exception as e:
+            logger.error(f'get_ep_collection JSON解析失败: {e}')
+            res = {}
+        return res
 
     def mark_episode_watched(self, subject_id, ep_id):
         data = self.get_subject_collection(subject_id)
@@ -293,15 +379,15 @@ class BangumiApi:
             title = ori_title or title
             end_date = air_date + datetime.timedelta(days=200)
             bgm_data = self.search(title=title, start_date=start_date, end_date=end_date)
-        if not bgm_data or (bgm_data and self.title_diff_ratio(
+        if not bgm_data or (bgm_data and len(bgm_data) > 0 and self.title_diff_ratio(
                 title=title, ori_title=ori_title, bgm_data=bgm_data[0]) < 0.5):
             for t in ori_title, title:
                 bgm_data = self.search_old(title=t)
-                if bgm_data and self.title_diff_ratio(title, ori_title, bgm_data=bgm_data[0]) > 0.5:
+                if bgm_data and len(bgm_data) > 0 and self.title_diff_ratio(title, ori_title, bgm_data=bgm_data[0]) > 0.5:
                     break
             else:
                 bgm_data = None
-        if not bgm_data:
+        if not bgm_data or len(bgm_data) == 0:
             return
         logger.debug(f'{start_date} {end_date} {bgm_data}')
         return bgm_data

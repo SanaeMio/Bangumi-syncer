@@ -90,7 +90,7 @@ services:
 
 1. 打开 Container Manager，点击「项目」→「新增」
 2. 项目名称填写：`bangumi-syncer`
-3. 路径选择：`/volumeX/docker/bangumi-syncer`（X为你的存储空间编号，如存储空间1则为`/volume1/docker/bangumi-syncer`）
+3. 路径选择：`/docker/bangumi-syncer`
 4. 来源选择「创建 docker-compose.yml」，内容填写：
 
 ```yaml
@@ -104,9 +104,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - /volumeX/docker/bangumi-syncer/config:/app/config
-      - /volumeX/docker/bangumi-syncer/logs:/app/logs
-      - /volumeX/docker/bangumi-syncer/data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./data:/app/data
     restart: unless-stopped
     environment:
       - PUID=1000
