@@ -42,6 +42,12 @@ raw_stdout = sys.stdout
 
 
 class MyLogger:
+    # 日志级别常量
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    
     need_mix = True
     api_key = '_hide_api_key_'
     netloc = '_mix_netloc_'
@@ -75,34 +81,46 @@ class MyLogger:
                 for i in args]
 
     @staticmethod
-    def log(*args, end=None, silence=False):
+    def log(*args, end=None, silence=False, level=None):
+        """统一的日志输出方法，level参数用于控制日志级别"""
         if silence:
             return
+        
+        # 根据日志级别添加对应的标识符
+        level_prefix = f"[{level}]"
+        
         t = f"[{datetime.datetime.now().strftime('%D %H:%M:%S.%f')[:19]}] "
         args = ' '.join(str(i) for i in args)
-        print(t + args, end=end)
+        print(t + level_prefix + " " + args, end=end)
 
     def info(self, *args, end=None, silence=False):
+        """INFO级别日志"""
         if not silence and MyLogger.need_mix:
             args = self.mix_args_str(*args)
-        self.log(*args, end=end, silence=silence)
+        self.log(*args, end=end, silence=silence, level=MyLogger.INFO)
 
     def debug(self, *args, end=None, silence=False):
-        if self.debug_mode:
-            self.log(*args, end=end, silence=silence)
-
-    def error(self, *args, end=None, silence=False):
-        self.log(*args, end=end, silence=silence)
-
-    def warning(self, *args, end=None, silence=False):
+        """DEBUG级别日志"""
+        # DEBUG级别只在调试模式下输出
+        if not self.debug_mode:
+            return
         if not silence and MyLogger.need_mix:
             args = self.mix_args_str(*args)
-        self.log(*args, end=end, silence=silence)
+        self.log(*args, end=end, silence=silence, level=MyLogger.DEBUG)
 
-    def level(self):
-        if self.debug_mode:
-            return "DEBUG"
-        return "INFO"
+    def error(self, *args, end=None, silence=False):
+        """ERROR级别日志"""
+        if not silence and MyLogger.need_mix:
+            args = self.mix_args_str(*args)
+        self.log(*args, end=end, silence=silence, level=MyLogger.ERROR)
+
+    def warning(self, *args, end=None, silence=False):
+        """WARNING级别日志"""
+        if not silence and MyLogger.need_mix:
+            args = self.mix_args_str(*args)
+        self.log(*args, end=end, silence=silence, level=MyLogger.WARNING)
+
+
 
 
 class Stdout:
@@ -162,32 +180,35 @@ class Configs:
                 self.active_config_path = self.dev_path if os.path.exists(self.dev_path) else self.path
         
         self.raw: ConfigParser = self.update()
-        MyLogger.log(MyLogger.mix_args_str(f'Python path: {sys.executable}'))
-        MyLogger.log(MyLogger.mix_args_str(f'ini path: {self.active_config_path}'))
-        MyLogger.log(f'{platform.platform(True)} Python-{platform.python_version()}')
+        # 使用info级别记录启动信息
+        logger = MyLogger()
+        logger.info(f'Python path: {sys.executable}')
+        logger.info(f'ini path: {self.active_config_path}')
+        logger.info(f'{platform.platform(True)} Python-{platform.python_version()}')
         self.debug_mode = self.raw.getboolean('dev', 'debug', fallback=False)
 
     def update(self):
         config = ConfigParser()
+        logger = MyLogger()
         
         # 支持Docker环境变量指定配置文件路径
         config_file = os.environ.get('CONFIG_FILE')
         if config_file and os.path.exists(config_file):
             config.read(config_file, encoding='utf-8-sig')
-            MyLogger.log(f'使用环境变量指定的配置文件: {config_file}')
+            logger.info(f'使用环境变量指定的配置文件: {config_file}')
             self.active_config_path = config_file
         else:
             # 检查挂载的配置文件
             mounted_config = '/app/config/config.ini'
             if os.path.exists(mounted_config):
                 config.read(mounted_config, encoding='utf-8-sig')
-                MyLogger.log(f'使用挂载的配置文件: {mounted_config}')
+                logger.info(f'使用挂载的配置文件: {mounted_config}')
                 self.active_config_path = mounted_config
             else:
                 # 首先检查是否存在开发配置文件
                 if os.path.exists(self.dev_path):
                     config.read(self.dev_path, encoding='utf-8-sig')
-                    MyLogger.log(f'使用开发配置文件: {self.dev_path}')
+                    logger.info(f'使用开发配置文件: {self.dev_path}')
                     self.active_config_path = self.dev_path
                 else:
                     config.read(self.path, encoding='utf-8-sig')
@@ -209,7 +230,7 @@ class Configs:
                 if not config.has_section(section):
                     config.add_section(section)
                 config.set(section, option, env_value)
-                MyLogger.log(f'环境变量覆盖配置: {section}.{option} = {env_var}')
+                logger.info(f'环境变量覆盖配置: {section}.{option} = {env_var}')
         
         # 更新self.raw属性
         self.raw = config

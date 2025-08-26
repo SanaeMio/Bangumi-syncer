@@ -57,13 +57,13 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         # 根据状态码决定日志级别和消息格式
         if response.status_code >= 400:
             log_message = (
-                f"[WARNING] ACCESS - {client_ip} - {user} - \"{method} {url}\" "
+                f"ACCESS - {client_ip} - {user} - \"{method} {url}\" "
                 f"{response.status_code} - {process_time:.3f}s - \"{user_agent}\""
             )
             logger.warning(log_message)
         else:
             log_message = (
-                f"[INFO] ACCESS - {client_ip} - {user} - \"{method} {url}\" "
+                f"ACCESS - {client_ip} - {user} - \"{method} {url}\" "
                 f"{response.status_code} - {process_time:.3f}s - \"{user_agent}\""
             )
             logger.info(log_message)
@@ -189,7 +189,7 @@ def init_auth_config():
         # 检查是否存在auth段，如果不存在则创建
         if not config.has_section('auth'):
             config.add_section('auth')
-            logger.info('[INFO] 检测到老版本升级，正在初始化认证配置...')
+            logger.info('检测到老版本升级，正在初始化认证配置...')
             config_updated = True
         
         # 确保所有必要的认证配置项都存在，如果不存在则添加默认值
@@ -208,7 +208,7 @@ def init_auth_config():
             if not config.has_option('auth', key):
                 config.set('auth', key, default_value)
                 config_updated = True
-                logger.info(f'[INFO] 添加认证配置项: {key} = {default_value}')
+                logger.info(f'添加认证配置项: {key} = {default_value}')
         
         # 检查并生成secret_key
         current_secret_key = config.get('auth', 'secret_key', fallback='')
@@ -216,7 +216,7 @@ def init_auth_config():
             new_secret_key = secrets.token_urlsafe(32)
             config.set('auth', 'secret_key', new_secret_key)
             config_updated = True
-            logger.info('[INFO] 生成新的认证密钥')
+            logger.info('生成新的认证密钥')
         else:
             new_secret_key = current_secret_key
         
@@ -226,9 +226,9 @@ def init_auth_config():
             hashed_password = hash_password(current_password, new_secret_key)
             config.set('auth', 'password', hashed_password)
             config_updated = True
-            logger.info('[INFO] 密码已自动加密')
+            logger.info('密码已自动加密')
         
-        # 如果配置有更新，保存到文件
+        # 如果配置有更新，保存到文件并显示提示信息
         if config_updated:
             with open(config_path, 'w', encoding='utf-8') as f:
                 config.write(f)
@@ -236,18 +236,18 @@ def init_auth_config():
             # 重新加载配置
             configs.update()
             
-            # 显示用户友好的提示信息
+            # 只在配置更新时显示用户友好的提示信息
             auth_config = get_auth_config()
-            logger.info('[INFO] ==========================================')
-            logger.info('[INFO] 认证配置已初始化完成！')
-            logger.info('[INFO] 默认登录信息：')
-            logger.info(f'[INFO]   用户名: {auth_config["username"]}')
-            logger.info('[INFO]   密码: admin')
-            logger.info('[INFO] 请访问 Web 界面并立即修改默认密码！')
-            logger.info('[INFO] ==========================================')
+            logger.info('==========================================')
+            logger.info('认证配置已初始化完成！')
+            logger.info('默认登录信息：')
+            logger.info(f'  用户名: {auth_config["username"]}')
+            logger.info('  密码: admin')
+            logger.info('请访问 Web 界面并立即修改默认密码！')
+            logger.info('==========================================')
         
     except Exception as e:
-        logger.error(f'[ERROR] 初始化认证配置失败: {e}')
+        logger.error(f'初始化认证配置失败: {e}')
 
 def generate_session_token() -> str:
     """生成会话令牌"""
@@ -264,7 +264,7 @@ def create_session(username: str) -> str:
         'last_activity': time.time()
     }
     active_sessions[token] = session_info
-    logger.info(f'[INFO] 用户 {username} 创建会话: {token[:8]}...')
+    logger.info(f'用户 {username} 创建会话: {token[:8]}...')
     return token
 
 def validate_session(token: str) -> Optional[Dict[str, Any]]:
@@ -330,7 +330,7 @@ def record_login_failure(ip: str):
     if login_attempts[ip]['attempts'] >= auth_config['max_login_attempts']:
         lockout_until = current_time + auth_config['lockout_duration']
         login_attempts[ip]['locked_until'] = lockout_until
-        logger.warning(f'[WARNING] IP {ip} 因登录失败次数过多被锁定至 {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lockout_until))}')
+        logger.warning(f'IP {ip} 因登录失败次数过多被锁定至 {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lockout_until))}')
 
 def reset_login_attempts(ip: str):
     """重置登录尝试次数"""
@@ -470,8 +470,15 @@ def get_multi_account_configs() -> Dict[str, Dict[str, str]]:
             elif config['username'] and config['access_token']:
                 logger.error(f'多账号配置 {section_name} 缺少 media_server_username 字段，配置无效')
     
+    # 检查配置是否有变化
+    config_changed = _bangumi_configs_cache is None or len(_bangumi_configs_cache) != len(bangumi_configs)
+    
     _bangumi_configs_cache = bangumi_configs
-    logger.info(f'加载了 {len(bangumi_configs)} 个bangumi账号配置')
+    
+    # 只在配置有变化时显示日志
+    if config_changed:
+        logger.info(f'加载了 {len(bangumi_configs)} 个bangumi账号配置')
+    
     return bangumi_configs
 
 
@@ -497,8 +504,15 @@ def get_user_mappings() -> Dict[str, str]:
             user_mappings[media_server_username] = section_name
             logger.debug(f'自动生成用户映射: {media_server_username} -> {section_name}')
     
+    # 检查配置是否有变化
+    config_changed = _user_mappings_cache is None or len(_user_mappings_cache) != len(user_mappings)
+    
     _user_mappings_cache = user_mappings
-    logger.info(f'加载了 {len(user_mappings)} 个用户映射配置')
+    
+    # 只在配置有变化时显示日志
+    if config_changed:
+        logger.info(f'加载了 {len(user_mappings)} 个用户映射配置')
+    
     return user_mappings
 
 
@@ -1279,7 +1293,7 @@ async def login(request: Request, login_data: LoginRequest):
             remaining_attempts = login_attempts.get(client_ip, {})
             lockout_until = remaining_attempts.get('locked_until', 0)
             lockout_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lockout_until))
-            logger.warning(f'[WARNING] IP {client_ip} 尝试登录但已被锁定至 {lockout_time}')
+            logger.warning(f'IP {client_ip} 尝试登录但已被锁定至 {lockout_time}')
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"登录失败次数过多，IP已被锁定至 {lockout_time}"
@@ -1293,7 +1307,7 @@ async def login(request: Request, login_data: LoginRequest):
             attempts_info = login_attempts.get(client_ip, {})
             remaining = max(0, auth_config['max_login_attempts'] - attempts_info.get('attempts', 0))
             
-            logger.warning(f'[WARNING] 登录失败尝试: 用户名={login_data.username}, IP={client_ip}, 剩余尝试次数={remaining}')
+            logger.warning(f'登录失败尝试: 用户名={login_data.username}, IP={client_ip}, 剩余尝试次数={remaining}')
             
             if remaining == 0:
                 raise HTTPException(
@@ -1332,7 +1346,7 @@ async def login(request: Request, login_data: LoginRequest):
             samesite="lax"
         )
         
-        logger.info(f'[INFO] 用户 {login_data.username} 登录成功, IP={client_ip}')
+        logger.info(f'用户 {login_data.username} 登录成功, IP={client_ip}')
         return response
         
     except HTTPException:
@@ -1565,7 +1579,7 @@ async def update_config(request: Request, current_user: dict = Depends(get_curre
                     if str(value).strip():  # 只有密码不为空时才更新
                         hashed_password = hash_password(str(value), auth_config['secret_key'])
                         config.set('auth', key, hashed_password)
-                        logger.info('[INFO] 管理员密码已更新')
+                        logger.info('管理员密码已更新')
                 elif key in ["https_only", "max_login_attempts", "lockout_duration"]:
                     # 处理新的安全配置项
                     if key == "https_only":
@@ -2390,7 +2404,7 @@ uvicorn_logging_config = {
     "disable_existing_loggers": False,
     "loggers": {
         "uvicorn": {
-            "level": logger.level(),
+            "level": "DEBUG" if logger.debug_mode else "INFO",
         },
         "uvicorn.access": {
             "level": "WARNING",
@@ -2402,7 +2416,7 @@ uvicorn_logging_config = {
 try:
     init_auth_config()
 except Exception as e:
-    logger.error(f'[ERROR] 初始化认证配置失败: {e}')
+    logger.error(f'初始化认证配置失败: {e}')
 
 if __name__ == "__main__":
     uvicorn.run(

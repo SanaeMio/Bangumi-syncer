@@ -269,9 +269,6 @@ class BangumiData:
                 continue
                 
             score = self._calculate_match_score(item, title, ori_title, release_date)
-            
-            if self.verbose_logging:
-                logger.debug(f"计算匹配得分: {item.get('title', '')} / {item.get('title_cn', '')}, 得分: {score}")
                 
             if score > 0.4:  # 设置一个基本阈值，只保存有一定相似度的结果
                 bangumi_id = self._extract_bangumi_id(item)
