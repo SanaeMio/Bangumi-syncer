@@ -57,11 +57,19 @@ class BangumiData:
         self.cache_ttl_days = configs.raw.getint('bangumi-data', 'cache_ttl_days', fallback=7)
         self._cached_data = None
         self._cache_items = None
+        # 内存缓存，避免重复解析文件
+        self._data_cache = None
+        self._cache_timestamp = None
+        self._cache_hit_count = 0  # 缓存命中次数
+        self._cache_miss_count = 0  # 缓存未命中次数
         # 是否启用更详细的日志，用于调试匹配问题
         self.verbose_logging = configs.raw.getboolean('dev', 'debug', fallback=False)
         
         # 启动时检查缓存，如果缺少则下载
         self._check_and_download_cache_on_startup()
+        
+        # 启动时预加载数据到内存
+        self._preload_data_to_memory()
 
     def _is_cache_valid(self) -> bool:
         """检查缓存是否有效（未过期）"""
@@ -130,16 +138,31 @@ class BangumiData:
         return True
 
     def _parse_data(self) -> Generator[Dict, None, None]:
-        """解析数据，以生成器方式返回，使用ijson流式解析防止内存溢出"""
+        """解析数据，以生成器方式返回，使用内存缓存避免重复解析"""
         # 首先确保数据是最新的
         self._ensure_fresh_data()
         
+        # 检查内存缓存是否有效
+        if self._data_cache is not None:
+            self._cache_hit_count += 1
+            logger.debug(f"使用内存缓存数据 (命中次数: {self._cache_hit_count})")
+            for item in self._data_cache:
+                yield item
+            return
+        
+        self._cache_miss_count += 1
+        logger.debug(f"缓存未命中，重新解析数据 (未命中次数: {self._cache_miss_count})")
+        
+        # 如果没有缓存，先解析数据到内存
+        logger.debug("解析数据到内存缓存")
+        items = []
+        
         if self.use_cache and os.path.exists(self.local_cache_path):
-            # 从缓存文件中流式解析
+            # 从缓存文件中解析
             try:
                 with open(self.local_cache_path, 'rb') as f:
                     for item in ijson.items(f, 'items.item'):
-                        yield item
+                        items.append(item)
             except Exception as e:
                 logger.error(f"从缓存解析 bangumi-data 失败: {e}")
                 
@@ -147,9 +170,9 @@ class BangumiData:
                 if self._download_data():
                     with open(self.local_cache_path, 'rb') as f:
                         for item in ijson.items(f, 'items.item'):
-                            yield item
+                            items.append(item)
         else:
-            # 从网络直接流式解析
+            # 从网络直接解析
             try:
                 proxies = {}
                 if self.http_proxy:
@@ -157,7 +180,7 @@ class BangumiData:
                 
                 with _request_with_retry(self.data_url, proxies=proxies, stream=True) as response:
                     for item in ijson.items(response.raw, 'items.item', use_float=True):
-                        yield item
+                        items.append(item)
             except Exception as e:
                 logger.error(f"流式解析 bangumi-data 失败: {e}")
                 # 如果网络请求失败，但有缓存文件，尝试使用缓存
@@ -165,7 +188,15 @@ class BangumiData:
                     logger.debug(f"尝试使用缓存文件 {self.local_cache_path}")
                     with open(self.local_cache_path, 'rb') as f:
                         for item in ijson.items(f, 'items.item'):
-                            yield item
+                            items.append(item)
+        
+        # 更新内存缓存
+        self._data_cache = items
+        self._cache_timestamp = time.time()
+        
+        # 从内存缓存中yield数据
+        for item in items:
+            yield item
 
     def find_bangumi_id(self, title: str, ori_title: str = None, release_date: str = None, season: int = 1) -> Optional[str]:
         """
@@ -197,41 +228,65 @@ class BangumiData:
                 logger.debug(f"移除季度信息后的标题: {title_without_season}")
                 title = title_without_season
         
+        # 使用优化的匹配算法，避免重复计算
+        return self._find_bangumi_id_optimized(title, ori_title, release_date, original_title)
+        
+    def _find_bangumi_id_optimized(self, title: str, ori_title: str = None, release_date: str = None, original_title: str = None) -> Optional[str]:
+        """优化的番剧ID查找算法，避免重复计算相似度"""
+        
         # 首先检查完全匹配
         logger.debug("开始尝试完全匹配...")
         exact_matches = []
+        partial_matches = []
+        
+        # 优化：先进行快速预筛选
+        processed_count = 0
         
         for item in self._parse_data():
-            # 检查是否匹配标题
-            match_result = self._match_title(item, title, ori_title)
-            if match_result:
-                # 如果有发布日期，检查是否在合理范围内
-                if release_date and 'begin' in item:
-                    date_match = self._is_date_close(item['begin'], release_date)
-                    if not date_match:
-                        if self.verbose_logging:
-                            logger.debug(f"标题匹配但日期不匹配: {item.get('title', '')} / {item.get('title_cn', '')}, 日期: {item.get('begin', '')}")
-                        continue
-                
-                # 提取bangumi_id
+            processed_count += 1
+            
+            # 快速预筛选：检查是否有中文翻译
+            if title and ('titleTranslate' not in item or 'zh-Hans' not in item['titleTranslate']):
+                continue
+            
+            # 一次性计算所有相似度，避免重复计算
+            match_info = self._calculate_match_info(item, title, ori_title, release_date)
+            
+            if match_info['exact_match']:
+                # 完全匹配
                 bangumi_id = self._extract_bangumi_id(item)
                 if bangumi_id:
-                    match_type = match_result  # 记录匹配的类型（匹配方式）
-                    exact_matches.append((item, bangumi_id, match_type))
+                    exact_matches.append((item, bangumi_id, match_info['match_type']))
                     
                     if self.verbose_logging:
                         zh_hans = item.get('titleTranslate', {}).get('zh-Hans', [])
                         zh_hans_str = ', '.join(zh_hans) if zh_hans else ''
-                        logger.debug(f"找到完全匹配: {item.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配方式: {match_type}")
+                        logger.debug(f"找到完全匹配: {item.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配方式: {match_info['match_type']}")
+                    
+                    # 如果找到完全匹配，可以提前退出（除非需要检查日期）
+                    if not release_date or len(exact_matches) >= 3:
+                        break
+            elif match_info['score'] > 0.4:
+                # 部分匹配
+                bangumi_id = self._extract_bangumi_id(item)
+                if bangumi_id:
+                    partial_matches.append((item, match_info['score'], bangumi_id))
+                    
+                    # 限制部分匹配的数量以提高性能
+                    if len(partial_matches) >= 10:
+                        break
         
-        # 如果有多个完全匹配，优先使用中文翻译匹配的结果
+        if self.verbose_logging:
+            logger.debug(f"处理了 {processed_count} 个项目，找到 {len(exact_matches)} 个完全匹配，{len(partial_matches)} 个部分匹配")
+        
+        # 处理完全匹配
         if len(exact_matches) > 0:
             # 按匹配类型排序，优先使用中文翻译匹配
             exact_matches.sort(key=lambda x: x[2])
             
             if release_date and len(exact_matches) > 1:
                 # 如果有多个相同类型的匹配，使用日期最接近的
-                match_type = exact_matches[0][2]  # 获取最高优先级的匹配类型
+                match_type = exact_matches[0][2]
                 matches_of_same_type = [m for m in exact_matches if m[2] == match_type]
                 
                 if len(matches_of_same_type) > 1:
@@ -256,52 +311,61 @@ class BangumiData:
             logger.debug(f"找到匹配的番剧: {result_item.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {exact_matches[0][1]}, 匹配方式: {exact_matches[0][2]}")
             return exact_matches[0][1]
         
-        # 如果没有找到完全匹配，尝试进行部分匹配
-        logger.debug("没有找到完全匹配的番剧，尝试进行模糊匹配...")
-        
-        # 记录所有部分匹配
-        partial_matches = []
-        
-        for item in self._parse_data():
-            # 只检查还没检查过的项目
-            title_match = self._match_title_fuzzy(item, title, ori_title)
-            if not title_match:
-                continue
-                
-            score = self._calculate_match_score(item, title, ori_title, release_date)
-                
-            if score > 0.4:  # 设置一个基本阈值，只保存有一定相似度的结果
-                bangumi_id = self._extract_bangumi_id(item)
-                if bangumi_id:
-                    partial_matches.append((item, score, bangumi_id))
-        
-        # 按匹配度排序
-        partial_matches.sort(key=lambda x: x[1], reverse=True)
-        
-        if self.verbose_logging and partial_matches:
-            logger.debug(f"找到 {len(partial_matches)} 个可能的匹配项:")
-            for i, (item, score, _) in enumerate(partial_matches[:5]):  # 只显示前5个
-                zh_hans = item.get('titleTranslate', {}).get('zh-Hans', [])
+        # 处理部分匹配
+        if partial_matches:
+            logger.debug("没有找到完全匹配的番剧，尝试进行模糊匹配...")
+            
+            # 按匹配度排序
+            partial_matches.sort(key=lambda x: x[1], reverse=True)
+            
+            if self.verbose_logging:
+                logger.debug(f"找到 {len(partial_matches)} 个可能的匹配项:")
+                for i, (item, score, _) in enumerate(partial_matches[:5]):
+                    zh_hans = item.get('titleTranslate', {}).get('zh-Hans', [])
+                    zh_hans_str = ', '.join(zh_hans) if zh_hans else ''
+                    logger.debug(f"  {i+1}. {item.get('title', '')}, 中文翻译: {zh_hans_str}, 匹配度: {score}")
+            
+            if partial_matches[0][1] >= 0.6:
+                best_match = partial_matches[0][0]
+                highest_score = partial_matches[0][1]
+                bangumi_id = partial_matches[0][2]
+                zh_hans = best_match.get('titleTranslate', {}).get('zh-Hans', [])
                 zh_hans_str = ', '.join(zh_hans) if zh_hans else ''
-                logger.debug(f"  {i+1}. {item.get('title', '')}, 中文翻译: {zh_hans_str}, 匹配度: {score}")
-        
-        if partial_matches and partial_matches[0][1] >= 0.6:  # 设置一个阈值，避免错误匹配
-            best_match = partial_matches[0][0]
-            highest_score = partial_matches[0][1]
-            bangumi_id = partial_matches[0][2]
-            zh_hans = best_match.get('titleTranslate', {}).get('zh-Hans', [])
-            zh_hans_str = ', '.join(zh_hans) if zh_hans else ''
-            logger.debug(f"找到最佳匹配的番剧: {best_match.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配度: {highest_score}")
-            return bangumi_id
+                logger.debug(f"找到最佳匹配的番剧: {best_match.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配度: {highest_score}")
+                return bangumi_id
         
         # 如果处理过标题，再用原始标题尝试一次
-        if original_title != title:
+        if original_title and original_title != title:
             logger.debug(f"使用原始标题 {original_title} 再次尝试匹配")
-            return self.find_bangumi_id(original_title, ori_title, release_date, 1)
+            return self._find_bangumi_id_optimized(original_title, ori_title, release_date, None)
             
         logger.debug(f"未找到匹配的番剧 ID")
         return None
 
+    def get_cache_stats(self) -> Dict:
+        """获取缓存统计信息
+        
+        返回:
+            Dict: 包含缓存统计信息的字典
+        """
+        total_requests = self._cache_hit_count + self._cache_miss_count
+        hit_rate = (self._cache_hit_count / total_requests * 100) if total_requests > 0 else 0
+        
+        return {
+            'cache_hits': self._cache_hit_count,
+            'cache_misses': self._cache_miss_count,
+            'total_requests': total_requests,
+            'hit_rate': hit_rate,
+            'cache_size': len(self._data_cache) if self._data_cache else 0,
+            'cache_age_minutes': (time.time() - self._cache_timestamp) / 60 if self._cache_timestamp else 0
+        }
+    
+    def clear_cache(self):
+        """清理内存缓存"""
+        self._data_cache = None
+        self._cache_timestamp = None
+        logger.debug("内存缓存已清理")
+    
     def force_update(self) -> bool:
         """强制更新 bangumi-data 数据
         
@@ -316,12 +380,17 @@ class BangumiData:
         if not item or 'title' not in item:
             return False
             
-        # 检查中文标题包含关系
+        # 检查中文标题包含关系或高度相似
         if title:
             # 首先检查中文翻译
             if 'titleTranslate' in item and 'zh-Hans' in item['titleTranslate']:
                 for zh_title in item['titleTranslate']['zh-Hans']:
+                    # 检查包含关系
                     if title in zh_title or zh_title in title:
+                        return True
+                    # 检查高度相似（相似度>0.7）
+                    similarity = SequenceMatcher(None, zh_title, title).ratio()
+                    if similarity > 0.7:
                         return True
                 
         # 检查原始标题包含关系
@@ -383,6 +452,32 @@ class BangumiData:
         except Exception:
             return True  # 如果日期解析失败，默认认为日期匹配
             
+    def _check_key_characters(self, title1: str, title2: str) -> bool:
+        """检查两个标题的关键字符是否匹配"""
+        if not title1 or not title2:
+            return False
+            
+        # 提取关键字符（去除常见的无意义字符）
+        def extract_key_chars(text):
+            # 去除空格、标点符号等
+            import re
+            text = re.sub(r'[^\u4e00-\u9fff\w]', '', text)
+            return text.lower()
+        
+        key1 = extract_key_chars(title1)
+        key2 = extract_key_chars(title2)
+        
+        # 如果关键字符完全相同，返回True
+        if key1 == key2:
+            return True
+            
+        # 检查关键字符的相似度
+        if len(key1) > 3 and len(key2) > 3:
+            similarity = SequenceMatcher(None, key1, key2).ratio()
+            return similarity > 0.9  # 90%相似度认为匹配
+            
+        return False
+            
     def _date_diff(self, date1: str, date2: str) -> int:
         """计算两个日期之间的天数差"""
         try:
@@ -394,52 +489,107 @@ class BangumiData:
             logger.error(f"计算日期差异时出错: {e}")
             return 999999  # 返回一个非常大的数字表示不匹配
 
-    def _calculate_match_score(self, item: Dict, title: str, ori_title: str = None, release_date: str = None) -> float:
-        """计算条目与给定信息的匹配得分"""
+    def _calculate_match_info(self, item: Dict, title: str, ori_title: str = None, release_date: str = None) -> Dict:
+        """一次性计算所有匹配信息，避免重复计算"""
+        result = {
+            'exact_match': False,
+            'match_type': None,
+            'score': 0.0,
+            'best_zh_score': 0.0,
+            'best_zh_title': ""
+        }
+        
+        # 检查中文翻译匹配
+        if title and 'titleTranslate' in item and 'zh-Hans' in item['titleTranslate']:
+            for zh_title in item['titleTranslate']['zh-Hans']:
+                # 检查完全相等
+                if title == zh_title:
+                    result['exact_match'] = True
+                    result['match_type'] = 'zh-hans'
+                    result['score'] = 1.0
+                    return result
+                
+                # 计算相似度
+                similarity = SequenceMatcher(None, zh_title, title).ratio()
+                if similarity > result['best_zh_score']:
+                    result['best_zh_score'] = similarity
+                    result['best_zh_title'] = zh_title
+                
+                # 检查高度相似（相似度>0.9）
+                if similarity > 0.9:
+                    result['exact_match'] = True
+                    result['match_type'] = 'zh-hans'
+                    result['score'] = similarity
+                    return result
+        
+        # 检查原始标题匹配
+        if ori_title and 'title' in item:
+            if ori_title == item['title']:
+                result['exact_match'] = True
+                result['match_type'] = 'title'
+                result['score'] = 1.0
+                return result
+        
+        if title and 'title' in item and not ori_title:
+            if title == item['title']:
+                result['exact_match'] = True
+                result['match_type'] = 'title'
+                result['score'] = 1.0
+                return result
+        
+        # 如果没有完全匹配，计算模糊匹配分数
         score = 0.0
         
-        # 标题匹配得分
-        if title:
-            # 首先检查中文翻译标题
-            best_zh_score = 0
-            if 'titleTranslate' in item and 'zh-Hans' in item['titleTranslate']:
-                for zh_title in item['titleTranslate']['zh-Hans']:
-                    similarity = SequenceMatcher(None, zh_title, title).ratio()
-                    best_zh_score = max(best_zh_score, similarity)
-            
-                # 检查是否包含关系
+        # 中文翻译匹配得分
+        if result['best_zh_score'] > 0:
+            # 检查是否包含关系
+            if title and 'titleTranslate' in item and 'zh-Hans' in item['titleTranslate']:
                 for zh_title in item['titleTranslate']['zh-Hans']:
                     if title in zh_title or zh_title in title:
-                        score += 0.1
+                        score += 0.15
                         break
             
-            score += best_zh_score * 0.4
+            # 检查高度相似的中文标题（相似度>0.8）
+            if result['best_zh_score'] > 0.8:
+                score += 0.2
             
+            # 检查关键字符匹配
+            if self._check_key_characters(title, result['best_zh_title']):
+                score += 0.1
+            
+            # 中文翻译匹配权重60%
+            score += result['best_zh_score'] * 0.6
+        
+        # 原标题匹配得分
         if ori_title and 'title' in item:
             similarity = SequenceMatcher(None, item['title'], ori_title).ratio()
-            score += similarity * 0.4
+            score += similarity * 0.3
             
-            # 检查包含关系
             if ori_title in item['title'] or item['title'] in ori_title:
                 score += 0.1
         
         # 用中文标题匹配原始标题
         if title and 'title' in item and not ori_title:
             similarity = SequenceMatcher(None, item['title'], title).ratio()
-            score += similarity * 0.3
+            score += similarity * 0.2
             
-            # 检查包含关系
             if title in item['title'] or item['title'] in title:
                 score += 0.1
-            
+        
         # 发布日期匹配得分
         if release_date and 'begin' in item:
             if self._is_date_close(item['begin'], release_date, 30):
-                score += 0.2
+                score += 0.15
             elif self._is_date_close(item['begin'], release_date, 120):
-                score += 0.1
-                
-        return score
+                score += 0.05
+        
+        result['score'] = min(score, 1.0)
+        return result
+
+    def _calculate_match_score(self, item: Dict, title: str, ori_title: str = None, release_date: str = None) -> float:
+        """计算条目与给定信息的匹配得分（保持向后兼容）"""
+        match_info = self._calculate_match_info(item, title, ori_title, release_date)
+        return match_info['score']
 
     def _extract_bangumi_id(self, item: Dict) -> Optional[str]:
         """从番剧条目中提取 bangumi id"""
@@ -522,4 +672,49 @@ class BangumiData:
             else:
                 logger.warning("缓存文件更新失败，将使用现有缓存文件")
         else:
-            logger.debug("缓存文件存在且有效，无需下载") 
+            logger.debug("缓存文件存在且有效，无需下载")
+    
+    def _preload_data_to_memory(self):
+        """启动时预加载数据到内存"""
+        try:
+            logger.info("启动时预加载 bangumi-data 到内存...")
+            start_time = time.time()
+            
+            # 确保数据是最新的
+            self._ensure_fresh_data()
+            
+            # 解析数据到内存
+            items = []
+            if self.use_cache and os.path.exists(self.local_cache_path):
+                # 从缓存文件中解析
+                try:
+                    with open(self.local_cache_path, 'rb') as f:
+                        for item in ijson.items(f, 'items.item'):
+                            items.append(item)
+                except Exception as e:
+                    logger.error(f"预加载时从缓存解析 bangumi-data 失败: {e}")
+                    return
+            else:
+                # 从网络直接解析
+                try:
+                    proxies = {}
+                    if self.http_proxy:
+                        proxies = {'http': self.http_proxy, 'https': self.http_proxy}
+                    
+                    with _request_with_retry(self.data_url, proxies=proxies, stream=True) as response:
+                        for item in ijson.items(response.raw, 'items.item', use_float=True):
+                            items.append(item)
+                except Exception as e:
+                    logger.error(f"预加载时流式解析 bangumi-data 失败: {e}")
+                    return
+            
+            # 更新内存缓存
+            self._data_cache = items
+            self._cache_timestamp = time.time()
+            
+            end_time = time.time()
+            logger.info(f"预加载完成，共加载 {len(items)} 个项目，耗时 {end_time - start_time:.2f}秒")
+            
+        except Exception as e:
+            logger.error(f"预加载 bangumi-data 到内存失败: {e}")
+            # 预加载失败不影响后续使用，会在第一次调用时重新加载 
