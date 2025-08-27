@@ -198,7 +198,7 @@ class BangumiData:
         for item in items:
             yield item
 
-    def find_bangumi_id(self, title: str, ori_title: str = None, release_date: str = None, season: int = 1) -> Optional[str]:
+    def find_bangumi_id(self, title: str, ori_title: str = None, release_date: str = None, season: int = 1) -> Optional[tuple[str, str]]:
         """
         根据标题和其他信息查找 bangumi id
         
@@ -209,7 +209,7 @@ class BangumiData:
             season: 季度，默认为 1（第一季）
             
         Returns:
-            找到匹配的 bangumi id 或 None
+            找到匹配的 (bangumi_id, matched_title) 或 None
         """
         logger.debug(f"正在查找番剧 ID: {title=}, {ori_title=}, {release_date=}, {season=}")
         
@@ -229,10 +229,17 @@ class BangumiData:
                 title = title_without_season
         
         # 使用优化的匹配算法，避免重复计算
-        return self._find_bangumi_id_optimized(title, ori_title, release_date, original_title)
+        result = self._find_bangumi_id_optimized(title, ori_title, release_date, original_title)
+        if result:
+            return result
+        return None
         
-    def _find_bangumi_id_optimized(self, title: str, ori_title: str = None, release_date: str = None, original_title: str = None) -> Optional[str]:
-        """优化的番剧ID查找算法，避免重复计算相似度"""
+    def _find_bangumi_id_optimized(self, title: str, ori_title: str = None, release_date: str = None, original_title: str = None) -> Optional[tuple[str, str]]:
+        """优化的番剧ID查找算法，避免重复计算相似度
+        
+        Returns:
+            Optional[tuple[str, str]]: (bangumi_id, matched_title) 或 None
+        """
         
         # 首先检查完全匹配
         logger.debug("开始尝试完全匹配...")
@@ -302,14 +309,18 @@ class BangumiData:
                     
                     if closest_match:
                         logger.debug(f"找到最佳日期匹配的番剧: {closest_match[0].get('title', '')}, bangumi_id: {closest_match[1]}")
-                        return closest_match[1]
+                        # 获取匹配到的标题
+                        matched_title = self._get_best_matched_title(closest_match[0])
+                        return (closest_match[1], matched_title)
             
             # 返回最高优先级的匹配结果
             result_item = exact_matches[0][0]
             zh_hans = result_item.get('titleTranslate', {}).get('zh-Hans', [])
             zh_hans_str = ', '.join(zh_hans) if zh_hans else ''
             logger.debug(f"找到匹配的番剧: {result_item.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {exact_matches[0][1]}, 匹配方式: {exact_matches[0][2]}")
-            return exact_matches[0][1]
+            # 获取匹配到的标题
+            matched_title = self._get_best_matched_title(result_item)
+            return (exact_matches[0][1], matched_title)
         
         # 处理部分匹配
         if partial_matches:
@@ -332,7 +343,9 @@ class BangumiData:
                 zh_hans = best_match.get('titleTranslate', {}).get('zh-Hans', [])
                 zh_hans_str = ', '.join(zh_hans) if zh_hans else ''
                 logger.debug(f"找到最佳匹配的番剧: {best_match.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配度: {highest_score}")
-                return bangumi_id
+                # 获取匹配到的标题
+                matched_title = self._get_best_matched_title(best_match)
+                return (bangumi_id, matched_title)
         
         # 如果处理过标题，再用原始标题尝试一次
         if original_title and original_title != title:
@@ -443,6 +456,17 @@ class BangumiData:
             titles.extend(item['titleTranslate']['zh-Hans'])
             
         return titles
+
+    def _get_best_matched_title(self, item: Dict) -> str:
+        """获取最佳匹配的标题（优先返回中文标题）"""
+        # 优先返回中文翻译标题
+        if 'titleTranslate' in item and 'zh-Hans' in item['titleTranslate']:
+            zh_titles = item['titleTranslate']['zh-Hans']
+            if zh_titles:
+                return zh_titles[0]  # 返回第一个中文标题
+        
+        # 如果没有中文标题，返回原始标题
+        return item.get('title', '')
 
     def _is_date_close(self, date1: str, date2: str, max_days: int = 60) -> bool:
         """检查两个日期是否在允许的范围内"""
@@ -675,9 +699,9 @@ class BangumiData:
             logger.debug("缓存文件存在且有效，无需下载")
     
     def _preload_data_to_memory(self):
-        """启动时预加载数据到内存"""
+        """初始化时预加载数据到内存"""
         try:
-            logger.info("启动时预加载 bangumi-data 到内存...")
+            logger.info("初始化时预加载 bangumi-data 到内存...")
             start_time = time.time()
             
             # 确保数据是最新的

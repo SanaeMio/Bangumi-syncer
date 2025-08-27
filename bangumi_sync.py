@@ -814,18 +814,104 @@ async def find_subject_id(item: CustomItem) -> tuple[Optional[str], bool]:
             else:
                 logger.debug(f'release_date为空或无效，尝试从bangumi-data中获取日期')
             
-            bangumi_data_id = bgm_data.find_bangumi_id(
+            bangumi_data_result = bgm_data.find_bangumi_id(
                 title=item.title,
                 ori_title=item.ori_title,
                 release_date=release_date,
                 season=item.season
             )
                 
-            if bangumi_data_id:
-                logger.info(f'通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}')
-                # 对于第二季及以上的番剧，通过bangumi-data匹配到的ID可能已经是目标季度的ID
+            if bangumi_data_result:
+                bangumi_data_id, matched_title = bangumi_data_result
+                logger.info(f'通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}, 匹配标题: {matched_title}')
+                
+                # 判断逻辑：
+                # 1. 如果bangumi-data匹配到的标题包含明确的季度信息，说明可能匹配到了正确的季度
+                # 2. 如果匹配到的标题不包含季度信息，bangumi-data返回的通常是系列ID，需要遍历续集
                 if item.season > 1:
+                    # 检查匹配到的标题中是否包含季度信息
+                    title_has_season_info = False
+                    season_keywords = []
+                    
+                    # 数字形式
+                    season_keywords.extend([
+                        f'第{item.season}季', f'第{item.season}期',
+                        f'{item.season}期', f'{item.season}季',
+                        f'Season {item.season}', f'S{item.season}'
+                    ])
+                    
+                    # 中文数字形式
+                    chinese_numbers = {
+                        1: '一', 2: '二', 3: '三', 4: '四', 5: '五',
+                        6: '六', 7: '七', 8: '八', 9: '九', 10: '十'
+                    }
+                    if item.season in chinese_numbers:
+                        chinese_num = chinese_numbers[item.season]
+                        season_keywords.extend([
+                            f'第{chinese_num}季', f'第{chinese_num}期',
+                            f'{chinese_num}期', f'{chinese_num}季'
+                        ])
+                    
+                    # 检查基本季度关键词
+                    for keyword in season_keywords:
+                        if keyword in matched_title:
+                            title_has_season_info = True
+                            logger.debug(f'匹配标题 "{matched_title}" 包含季度信息: {keyword}')
+                            break
+                    
+                    # 如果没有找到基本季度信息，检查更复杂的格式
+                    if not title_has_season_info:
+                        # 检查包含部分信息的格式，如"第二季 上半"、"第二季 第2部分"等
+                        # 使用更优雅的正则表达式方式
+                        import re
+                        
+                        # 构建正则表达式模式
+                        season_num = item.season
+                        chinese_num = chinese_numbers.get(season_num, '')
+                        
+                        # 基础模式：第X季 或 X季
+                        base_patterns = [
+                            rf'第{season_num}季',
+                            rf'{season_num}季'
+                        ]
+                        
+                        # 如果有中文数字，添加中文数字模式
+                        if chinese_num:
+                            base_patterns.extend([
+                                rf'第{chinese_num}季',
+                                rf'{chinese_num}季'
+                            ])
+                        
+                        # 部分标识符
+                        part_indicators = [
+                            r'\s+上半', r'\s+下半',
+                            r'\s+第2部分', r'\s+第二部分'
+                        ]
+                        
+                        # 组合所有模式
+                        for base_pattern in base_patterns:
+                            for indicator in part_indicators:
+                                full_pattern = base_pattern + indicator
+                                if re.search(full_pattern, matched_title):
+                                    title_has_season_info = True
+                                    logger.debug(f'匹配标题 "{matched_title}" 包含复杂季度信息: {full_pattern}')
+                                    break
+                            if title_has_season_info:
+                                break
+                    
+                    # 根据季度信息判断是否为特定季度ID
+                    if title_has_season_info:
+                        # 匹配到的标题包含季度信息，bangumi-data可能匹配到了正确的季度
+                        logger.debug(f'匹配标题包含季度信息，bangumi-data可能匹配到了正确的季度，标记为特定季度ID')
+                        is_season_matched_id = True
+                    else:
+                        # 匹配到的标题不包含季度信息，bangumi-data返回的通常是系列ID，需要遍历续集
+                        logger.debug(f'匹配标题不包含季度信息，bangumi-data返回的通常是系列ID，需要遍历续集')
+                        is_season_matched_id = False
+                else:
+                    # 第一季总是返回True
                     is_season_matched_id = True
+                
                 return bangumi_data_id, is_season_matched_id
         except Exception as e:
             logger.error(f'bangumi-data 匹配出错: {e}')
@@ -1017,7 +1103,8 @@ def extract_plex_data(plex_data: Dict[str, Any]) -> CustomItem:
         season=plex_data["Metadata"]["parentIndex"],
         episode=plex_data["Metadata"]["index"],
         release_date=release_date,
-        user_name=plex_data["Account"]["title"]
+        user_name=plex_data["Account"]["title"],
+        source="plex"
     )
 
 
@@ -1038,7 +1125,8 @@ def extract_emby_data(emby_data: Dict[str, Any]) -> CustomItem:
         season=emby_data["Item"]["ParentIndexNumber"],
         episode=emby_data["Item"]["IndexNumber"],
         release_date=release_date,
-        user_name=emby_data["User"]["Name"]
+        user_name=emby_data["User"]["Name"],
+        source="emby"
     )
 
 
@@ -1059,7 +1147,8 @@ def extract_jellyfin_data(jellyfin_data: Dict[str, Any]) -> CustomItem:
         season=jellyfin_data["season"],
         episode=jellyfin_data["episode"],
         release_date=release_date,
-        user_name=jellyfin_data["user_name"]
+        user_name=jellyfin_data["user_name"],
+        source="jellyfin"
     )
 
 
