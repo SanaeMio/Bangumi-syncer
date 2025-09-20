@@ -192,7 +192,8 @@ function displayRecords(records) {
                 <button class="btn btn-sm btn-outline-primary" onclick="showRecordDetail(${record.id})">
                     <i class="bi bi-eye"></i>
                 </button>
-                ${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="查看Bangumi页面"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+                ${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-sm btn-outline-primary ms-1" title="查看Bangumi番剧页面"><i class="bi bi-collection"></i></a>` : ''}
+                ${record.episode_id ? `<a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="查看Bangumi剧集页面"><i class="bi bi-play-circle"></i></a>` : ''}
             </td>
         `;
         tbody.appendChild(row);
@@ -327,30 +328,20 @@ function applyFilters() {
 
 async function showRecordDetail(recordId) {
     try {
-        // 从当前表格中找到记录
-        const records = Array.from(document.querySelectorAll('#records-table tbody tr')).map(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length < 8) return null;
-            
-            return {
-                timestamp: cells[0].textContent,
-                user_name: cells[1].textContent,
-                title: cells[2].textContent,
-                ori_title: cells[3].textContent,
-                season_episode: cells[4].textContent,
-                status: cells[5].textContent,
-                source: cells[6].textContent,
-                message: cells[7].getAttribute('title') || cells[7].textContent
-            };
-        }).filter(r => r !== null);
-        
-        const recordIndex = Array.from(document.querySelectorAll('#records-table tbody tr')).findIndex(row => {
-            const button = row.querySelector('button[onclick*="' + recordId + '"]');
-            return button !== null;
+        // 从API获取完整的记录数据
+        const response = await fetch(`/api/records/${recordId}`, {
+            method: 'GET',
+            credentials: 'include'
         });
         
-        if (recordIndex >= 0 && records[recordIndex]) {
-            const record = records[recordIndex];
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.status === 'success' && result.data) {
+            const record = result.data;
             
             const detailContent = document.getElementById('record-detail-content');
             detailContent.innerHTML = `
@@ -367,20 +358,47 @@ async function showRecordDetail(recordId) {
                         <strong>番剧标题:</strong> ${record.title}
                     </div>
                     <div class="col-md-6">
-                        <strong>原始标题:</strong> ${record.ori_title}
+                        <strong>原始标题:</strong> ${record.ori_title || '无'}
                     </div>
                 </div>
                 <div class="row mt-2">
                     <div class="col-md-4">
-                        <strong>季/集:</strong> ${record.season_episode}
+                        <strong>季/集:</strong> S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}
                     </div>
                     <div class="col-md-4">
-                        <strong>状态:</strong> ${record.status}
+                        <strong>状态:</strong> <span class="badge bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span>
                     </div>
                     <div class="col-md-4">
-                        <strong>来源:</strong> ${record.source}
+                        <strong>来源:</strong> <span class="badge bg-${getSourceColor(record.source)}">${record.source}</span>
                     </div>
                 </div>
+                ${(record.subject_id || record.episode_id) ? `
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <strong>Bangumi链接:</strong>
+                        <div class="mt-1">
+                            ${record.subject_id ? `
+                            <a href="https://bgm.tv/subject/${record.subject_id}" 
+                               target="_blank" 
+                               class="btn btn-sm btn-outline-primary me-2"
+                               title="查看Bangumi番剧页面">
+                                <i class="bi bi-collection me-1"></i>番剧 ${record.subject_id}
+                                <i class="bi bi-box-arrow-up-right ms-1"></i>
+                            </a>
+                            ` : ''}
+                            ${record.episode_id ? `
+                            <a href="https://bgm.tv/ep/${record.episode_id}" 
+                               target="_blank" 
+                               class="btn btn-sm btn-outline-success"
+                               title="查看Bangumi剧集页面">
+                                <i class="bi bi-play-circle me-1"></i>剧集 ${record.episode_id}
+                                <i class="bi bi-box-arrow-up-right ms-1"></i>
+                            </a>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
                 <div class="row mt-2">
                     <div class="col-12">
                         <strong>消息:</strong>
@@ -392,6 +410,8 @@ async function showRecordDetail(recordId) {
             `;
             
             recordDetailModal.show();
+        } else {
+            throw new Error('获取记录数据失败');
         }
     } catch (error) {
         console.error('显示记录详情失败:', error);

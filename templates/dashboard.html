@@ -315,8 +315,26 @@ function displayRecentRecords(records) {
         row.innerHTML = `
             <td>${new Date(record.timestamp).toLocaleString()}</td>
             <td><span class="fw-semibold">${record.user_name}</span></td>
-            <td><span class="text-primary">${record.title}</span></td>
-            <td><span class="badge bg-info">S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</span></td>
+            <td>
+                ${record.subject_id ? `
+                <a href="https://bgm.tv/subject/${record.subject_id}" 
+                   target="_blank" 
+                   class="text-decoration-none text-primary fw-semibold"
+                   title="点击打开Bangumi番剧页面">
+                    ${record.title}
+                </a>
+                ` : `<span class="text-primary">${record.title}</span>`}
+            </td>
+            <td>
+                ${record.episode_id ? `
+                <a href="https://bgm.tv/ep/${record.episode_id}" 
+                   target="_blank" 
+                   class="badge bg-info text-decoration-none"
+                   title="点击打开Bangumi剧集页面">
+                    S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}
+                </a>
+                ` : `<span class="badge bg-info">S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</span>`}
+            </td>
             <td><span class="badge bg-${statusClass}">${statusText}</span></td>
             <td><span class="badge bg-${sourceClass}">${record.source}</span></td>
         `;

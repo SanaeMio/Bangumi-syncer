@@ -6,10 +6,11 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union, Generator
 import requests
 import ijson
-from .configs import MyLogger, configs
+from ..core.logging import logger
+from ..core.config import config_manager
 from difflib import SequenceMatcher
 
-logger = MyLogger()
+# 使用全局logger实例
 
 def _request_with_retry(url, proxies=None, stream=False, max_retries=3):
     """带重试机制的HTTP请求方法"""
@@ -46,15 +47,15 @@ class BangumiData:
     """处理 bangumi-data 数据的类"""
     
     def __init__(self):
-        self.data_url = configs.raw.get('bangumi-data', 'data_url', 
+        self.data_url = config_manager.get('bangumi-data', 'data_url',
                                        fallback='https://unpkg.com/bangumi-data@0.3/dist/data.json')
-        self.local_cache_path = configs.raw.get('bangumi-data', 'local_cache_path', 
+        self.local_cache_path = config_manager.get('bangumi-data', 'local_cache_path',
                                               fallback='./bangumi_data_cache.json')
-        self.http_proxy = configs.raw.get('bangumi-data', 'http_proxy', 
-                                        fallback=configs.raw.get('bangumi', 'script_proxy', fallback=''))
-        self.use_cache = configs.raw.getboolean('bangumi-data', 'use_cache', fallback=True)
+        self.http_proxy = config_manager.get('bangumi-data', 'http_proxy',
+                                        fallback=config_manager.get('dev', 'script_proxy', fallback=''))
+        self.use_cache = config_manager.get('bangumi-data', 'use_cache', fallback=True)
         # 缓存有效期（天），默认7天
-        self.cache_ttl_days = configs.raw.getint('bangumi-data', 'cache_ttl_days', fallback=7)
+        self.cache_ttl_days = config_manager.get('bangumi-data', 'cache_ttl_days', fallback=7)
         self._cached_data = None
         self._cache_items = None
         # 内存缓存，避免重复解析文件
@@ -63,7 +64,7 @@ class BangumiData:
         self._cache_hit_count = 0  # 缓存命中次数
         self._cache_miss_count = 0  # 缓存未命中次数
         # 是否启用更详细的日志，用于调试匹配问题
-        self.verbose_logging = configs.raw.getboolean('dev', 'debug', fallback=False)
+        self.verbose_logging = config_manager.get('dev', 'debug', fallback=False)
         
         # 启动时检查缓存，如果缺少则下载
         self._check_and_download_cache_on_startup()
@@ -264,11 +265,6 @@ class BangumiData:
                 bangumi_id = self._extract_bangumi_id(item)
                 if bangumi_id:
                     exact_matches.append((item, bangumi_id, match_info['match_type']))
-                    
-                    if self.verbose_logging:
-                        zh_hans = item.get('titleTranslate', {}).get('zh-Hans', [])
-                        zh_hans_str = ', '.join(zh_hans) if zh_hans else ''
-                        logger.debug(f"找到完全匹配: {item.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配方式: {match_info['match_type']}")
                     
                     # 如果找到完全匹配，可以提前退出（除非需要检查日期）
                     if not release_date or len(exact_matches) >= 3:
@@ -484,7 +480,6 @@ class BangumiData:
         # 提取关键字符（去除常见的无意义字符）
         def extract_key_chars(text):
             # 去除空格、标点符号等
-            import re
             text = re.sub(r'[^\u4e00-\u9fff\w]', '', text)
             return text.lower()
         
@@ -505,7 +500,6 @@ class BangumiData:
     def _date_diff(self, date1: str, date2: str) -> int:
         """计算两个日期之间的天数差"""
         try:
-            from datetime import datetime
             d1 = datetime.strptime(date1[:10], "%Y-%m-%d")
             d2 = datetime.strptime(date2[:10], "%Y-%m-%d")
             return abs((d2 - d1).days)
