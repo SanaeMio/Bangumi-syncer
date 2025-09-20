@@ -149,7 +149,7 @@
                 </div>
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-6">
+                        <div class="col-12">
                             <label for="script-proxy" class="form-label fw-semibold">
                                 <i class="bi bi-globe me-1 text-info"></i>HTTP代理
                                 <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
@@ -157,6 +157,19 @@
                             </label>
                             <input type="text" class="form-control form-control-lg" id="script-proxy" name="dev.script_proxy" 
                                    placeholder="如：http://127.0.0.1:7890">
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-2">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-shield-check me-1 text-success"></i>SSL证书验证
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="SSL证书验证。当使用代理时可能需要关闭。注意：关闭SSL验证会降低安全性，仅在代理环境下出现SSL错误时使用"></i>
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="ssl-verify" name="dev.ssl_verify">
+                                <label class="form-check-label" for="ssl-verify">启用SSL验证</label>
+                            </div>
                         </div>
                         <div class="col-6">
                             <label class="form-label fw-semibold">
@@ -166,7 +179,7 @@
                             </label>
                             <div class="form-check form-switch d-flex align-items-center">
                                 <input class="form-check-input me-2" type="checkbox" id="debug-mode" name="dev.debug">
-                                <label class="form-check-label" for="debug-mode">启用</label>
+                                <label class="form-check-label" for="debug-mode">启用调试模式</label>
                             </div>
                         </div>
                     </div>
@@ -673,6 +686,7 @@ function populateForm(config) {
     document.getElementById('blocked-keywords').value = config.sync.blocked_keywords || '';
     
     document.getElementById('script-proxy').value = config.dev.script_proxy || '';
+    document.getElementById('ssl-verify').checked = Boolean(config.dev.ssl_verify);
     document.getElementById('debug-mode').checked = Boolean(config.dev.debug);
     
     document.getElementById('bangumi-data-enabled').checked = config.bangumi_data.enabled !== false;
@@ -805,6 +819,7 @@ async function saveConfig() {
             },
             dev: {
                 script_proxy: document.getElementById('script-proxy').value,
+                ssl_verify: document.getElementById('ssl-verify').checked,
                 debug: document.getElementById('debug-mode').checked
             },
             bangumi_data: {
