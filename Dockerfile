@@ -12,8 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目文件
-COPY bangumi_sync.py .
-COPY utils/ ./utils/
+COPY app/ ./app/
 
 # 复制Web界面文件
 COPY templates/ ./templates/
@@ -64,12 +63,13 @@ echo "==============="\n\
 \n\
 # 启动应用\n\
 echo "启动应用..."\n\
-exec uvicorn bangumi_sync:app --host 0.0.0.0 --port 8000 --no-access-log' > /app/start.sh && chmod +x /app/start.sh
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log' > /app/start.sh && chmod +x /app/start.sh
 
 # 设置环境变量
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV CONFIG_FILE=/app/config/config.ini
+ENV DOCKER_CONTAINER=true
 
 # 暴露端口8000
 EXPOSE 8000

@@ -12,8 +12,55 @@
 
 {% block content %}
 <form id="config-form">
-    <!-- Bangumi账号配置 -->
+    <!-- 同步配置 -->
     <div class="row">
+        <div class="col-12">
+                    <div class="card shadow-sm mb-4 config-card">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-arrow-repeat me-2 text-success"></i>
+                    <h6 class="m-0 fw-semibold">同步配置</h6>
+                </div>
+            </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                                                    <label for="sync-mode" class="form-label fw-semibold">
+                            <i class="bi bi-gear me-1 text-success"></i>同步模式
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                               title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
+                        </label>
+                            <select class="form-select form-select-lg" id="sync-mode" name="sync.mode" onchange="toggleSyncMode()">
+                                <option value="single">单用户模式</option>
+                                <option value="multi">多用户模式</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="single-username-container">
+                                                    <label for="single-username" class="form-label fw-semibold">
+                            <i class="bi bi-person-check me-1 text-success"></i>单用户模式用户名
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                               title="单用户模式用户名（Plex/Emby/Jellyfin中的用户名），用于跳过无需同步的用户提交的记录，只同步配置中的用户名产生的记录"></i>
+                        </label>
+                            <input type="text" class="form-control form-control-lg" id="single-username" name="sync.single_username" 
+                                   placeholder="输入媒体服务器用户名">
+                        </div>
+                        <div class="col-12">
+                                                    <label for="blocked-keywords" class="form-label fw-semibold">
+                            <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                               title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
+                        </label>
+                            <input type="text" class="form-control form-control-lg" id="blocked-keywords" name="sync.blocked_keywords" 
+                                   placeholder="多个关键词用逗号分隔，如：物语系列,特典">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bangumi账号配置（单用户模式） -->
+    <div class="row" id="single-user-bangumi-section">
         <div class="col-12">
                     <div class="card shadow-sm mb-4 config-card">
             <div class="card-header py-3">
@@ -61,53 +108,6 @@
                                 <input class="form-check-input me-2" type="checkbox" id="bangumi-private" name="bangumi.private">
                                 <label class="form-check-label" for="bangumi-private">启用</label>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 同步配置 -->
-    <div class="row">
-        <div class="col-12">
-                    <div class="card shadow-sm mb-4 config-card">
-            <div class="card-header py-3">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-arrow-repeat me-2 text-success"></i>
-                    <h6 class="m-0 fw-semibold">同步配置</h6>
-                </div>
-            </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                                                    <label for="sync-mode" class="form-label fw-semibold">
-                            <i class="bi bi-gear me-1 text-success"></i>同步模式
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                               title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
-                        </label>
-                            <select class="form-select form-select-lg" id="sync-mode" name="sync.mode" onchange="toggleSyncMode()">
-                                <option value="single">单用户模式</option>
-                                <option value="multi">多用户模式</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6" id="single-username-container">
-                                                    <label for="single-username" class="form-label fw-semibold">
-                            <i class="bi bi-person-check me-1 text-success"></i>单用户模式用户名
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                               title="单用户模式用户名（Plex/Emby/Jellyfin中的用户名），用于跳过无需同步的用户提交的记录，只同步配置中的用户名产生的记录"></i>
-                        </label>
-                            <input type="text" class="form-control form-control-lg" id="single-username" name="sync.single_username" 
-                                   placeholder="输入媒体服务器用户名">
-                        </div>
-                        <div class="col-12">
-                                                    <label for="blocked-keywords" class="form-label fw-semibold">
-                            <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                               title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
-                        </label>
-                            <input type="text" class="form-control form-control-lg" id="blocked-keywords" name="sync.blocked_keywords" 
-                                   placeholder="多个关键词用逗号分隔，如：物语系列,特典">
                         </div>
                     </div>
                 </div>
@@ -414,9 +414,27 @@
                     </div>
                     <div class="row mt-4">
                         <div class="col-12">
-                            <button type="button" class="btn btn-warning px-3" onclick="testSync()">
+                            <button type="button" class="btn btn-warning px-3" id="test-sync-btn" onclick="testSync()">
                                 <i class="bi bi-play-circle me-2"></i>测试同步
                             </button>
+                            <div class="mt-3" id="test-sync-progress" style="display: none;">
+                                <div class="d-flex align-items-center">
+                                    <div class="spinner-border spinner-border-sm text-warning me-2" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span id="test-sync-status">正在测试同步...</span>
+                                </div>
+                                <div class="progress mt-2" style="height: 6px;">
+                                    <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
+                                         role="progressbar" style="width: 100%"></div>
+                                </div>
+                            </div>
+                            <div class="mt-3" id="test-sync-result" style="display: none;">
+                                <div class="alert alert-dismissible fade show" role="alert" id="test-result-alert">
+                                    <div id="test-result-content"></div>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -558,6 +576,9 @@
 {% block scripts %}
 <script>
 
+// 全局变量
+let bangumiAccountCounter = 0;
+
 document.addEventListener('DOMContentLoaded', function() {
     // 初始化工具提示
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -684,13 +705,18 @@ function populateForm(config) {
 function toggleSyncMode() {
     const mode = document.getElementById('sync-mode').value;
     const singleContainer = document.getElementById('single-username-container');
+    const singleBangumiSection = document.getElementById('single-user-bangumi-section');
     const multiSection = document.getElementById('multi-user-section');
     
     if (mode === 'single') {
+        // 单用户模式：显示单用户名输入框和Bangumi账号配置，隐藏多用户配置
         singleContainer.style.display = 'block';
+        singleBangumiSection.style.display = 'block';
         multiSection.style.display = 'none';
     } else {
+        // 多用户模式：隐藏单用户名输入框和Bangumi账号配置，显示多用户配置
         singleContainer.style.display = 'none';
+        singleBangumiSection.style.display = 'none';
         multiSection.style.display = 'block';
     }
 }
@@ -700,6 +726,7 @@ function populateMultiUserConfig(accounts, mappings) {
     
     accountsContainer.innerHTML = '';
     
+    // 重置全局计数器
     bangumiAccountCounter = 0;
     
     // 添加Bangumi账号
@@ -869,17 +896,50 @@ async function saveConfig() {
 }
 
 async function testSync() {
+    const btn = document.getElementById('test-sync-btn');
+    const progressDiv = document.getElementById('test-sync-progress');
+    const statusSpan = document.getElementById('test-sync-status');
+    const resultDiv = document.getElementById('test-sync-result');
+    const resultAlert = document.getElementById('test-result-alert');
+    const resultContent = document.getElementById('test-result-content');
+    
     try {
+        // 验证表单
+        const title = document.getElementById('test-title').value.trim();
+        const season = parseInt(document.getElementById('test-season').value);
+        const episode = parseInt(document.getElementById('test-episode').value);
+        const user = document.getElementById('test-user').value.trim();
+        
+        if (!title) {
+            showAlert('请输入番剧标题', 'warning');
+            return;
+        }
+        if (!user) {
+            showAlert('请输入用户名', 'warning');
+            return;
+        }
+        
+        // 显示进度
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>测试中...';
+        progressDiv.style.display = 'block';
+        resultDiv.style.display = 'none';
+        
         const testData = {
-            title: document.getElementById('test-title').value,
-            season: parseInt(document.getElementById('test-season').value),
-            episode: parseInt(document.getElementById('test-episode').value),
-            user_name: document.getElementById('test-user').value
+            title: title,
+            season: season,
+            episode: episode,
+            user_name: user
         };
+        
+        // 更新状态
+        statusSpan.textContent = `正在测试同步: ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
+        
+        const startTime = Date.now();
         
         const response = await fetch('/api/test-sync', {
             method: 'POST',
-            credentials: 'include',  // 包含Cookie认证信息
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -887,15 +947,101 @@ async function testSync() {
         });
         
         const result = await response.json();
+        const endTime = Date.now();
+        const actualTime = ((endTime - startTime) / 1000).toFixed(2);
+        
+        // 隐藏进度，显示结果
+        progressDiv.style.display = 'none';
+        resultDiv.style.display = 'block';
         
         if (result.status === 'success') {
-            showAlert('测试同步成功: ' + result.message, 'success');
+            resultAlert.className = 'alert alert-success alert-dismissible fade show';
+            resultContent.innerHTML = `
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-check-circle-fill text-success me-3 mt-1"></i>
+                    <div class="flex-grow-1">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                            <h6 class="mb-0 text-success fw-bold">测试同步成功！</h6>
+                            <small class="text-muted">
+                                <i class="bi bi-stopwatch me-1"></i>${result.elapsed_time || actualTime + '秒'}
+                            </small>
+                        </div>
+                        <div class="mb-3">
+                            <span class="text-muted me-2">
+                                <i class="bi bi-film me-1"></i>${result.test_info?.title || title}
+                            </span>
+                            <span class="badge bg-secondary me-2">${result.test_info?.episode || 'S' + season.toString().padStart(2, '0') + 'E' + episode.toString().padStart(2, '0')}</span>
+                            ${result.data && (result.data.subject_id || result.data.episode_id) ? `
+                                ${result.data.subject_id ? `
+                                <a href="https://bgm.tv/subject/${result.data.subject_id}" 
+                                   target="_blank" 
+                                   class="badge bg-primary text-decoration-none me-1"
+                                   title="点击打开Bangumi番剧页面">
+                                    <i class="bi bi-collection me-1"></i>ID: ${result.data.subject_id}
+                                    <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                </a>
+                                ` : ''}
+                                ${result.data.episode_id ? `
+                                <a href="https://bgm.tv/ep/${result.data.episode_id}" 
+                                   target="_blank" 
+                                   class="badge bg-success text-decoration-none"
+                                   title="点击打开Bangumi剧集页面">
+                                    <i class="bi bi-play-circle me-1"></i>EP: ${result.data.episode_id}
+                                    <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                </a>
+                                ` : ''}
+                            ` : ''}
+                        </div>
+                        <p class="mb-0 text-muted small">
+                            <i class="bi bi-info-circle me-1"></i>${result.message}
+                        </p>
+                    </div>
+                </div>
+            `;
+            // 已有详细结果展示，不需要额外的Toast提醒
         } else {
-            showAlert('测试同步失败: ' + result.message, 'danger');
+            resultAlert.className = 'alert alert-danger alert-dismissible fade show';
+            resultContent.innerHTML = `
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-exclamation-triangle-fill text-danger me-2 mt-1"></i>
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">测试同步失败</h6>
+                        <p class="mb-2">${result.message}</p>
+                        <div class="row g-2 small text-muted">
+                            <div class="col-md-8">
+                                <strong>番剧:</strong> ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>耗时:</strong> ${result.elapsed_time || actualTime + '秒'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            // 已有详细结果展示，不需要额外的Toast提醒
         }
     } catch (error) {
         console.error('测试同步失败:', error);
-        showAlert('测试同步失败', 'danger');
+        
+        // 隐藏进度，显示错误
+        progressDiv.style.display = 'none';
+        resultDiv.style.display = 'block';
+        resultAlert.className = 'alert alert-danger alert-dismissible fade show';
+        resultContent.innerHTML = `
+            <div class="d-flex align-items-start">
+                <i class="bi bi-x-circle-fill text-danger me-2 mt-1"></i>
+                <div class="flex-grow-1">
+                    <h6 class="mb-1">网络错误</h6>
+                    <p class="mb-0">无法连接到服务器，请检查网络连接或稍后重试。</p>
+                    <small class="text-muted">错误详情: ${error.message}</small>
+                </div>
+            </div>
+        `;
+        // 已有详细结果展示，不需要额外的Toast提醒
+    } finally {
+        // 恢复按钮状态
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>测试同步';
     }
 }
 
@@ -975,18 +1121,21 @@ async function loadBackupFiles() {
                 const item = document.createElement('div');
                 item.className = 'list-group-item list-group-item-action';
                 item.innerHTML = `
-                    <div class="d-flex w-100 justify-content-between align-items-start">
-                        <div class="flex-grow-1" onclick="selectBackupFile('${backup.filename}')">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">${backup.name}</h6>
-                                <small class="text-muted">${new Date(backup.created_at).toLocaleString()}</small>
+                    <div class="d-flex align-items-center">
+                        <div class="flex-grow-1 me-3" onclick="selectBackupFile('${backup.filename}')" style="cursor: pointer;">
+                            <h6 class="mb-1">${backup.filename}</h6>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">${backup.created}</small>
+                                <small class="text-muted">大小: ${(backup.size / 1024).toFixed(2)} KB</small>
                             </div>
-                            <p class="mb-1 text-muted">${backup.description || '配置备份文件'}</p>
-                            <small class="text-muted">大小: ${(backup.size / 1024).toFixed(2)} KB</small>
                         </div>
-                        <button class="btn btn-outline-danger btn-sm ms-2" onclick="deleteBackupFile('${backup.filename}', event)" title="删除备份">
-                            <i class="bi bi-trash"></i>
-                        </button>
+                        <div class="flex-shrink-0">
+                            <button class="btn btn-outline-danger btn-sm" 
+                                    onclick="deleteBackupFile('${backup.filename}', event)" 
+                                    title="删除备份">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
                     </div>
                 `;
                 backupFilesList.appendChild(item);
@@ -1038,7 +1187,7 @@ async function selectBackupFile(filename) {
         
         if (data.status === 'success') {
             const preview = document.getElementById('config-preview');
-            preview.innerHTML = `<pre class="mb-0">${JSON.stringify(data.data.config, null, 2)}</pre>`;
+            preview.innerHTML = `<pre class="mb-0">${data.data.content}</pre>`;
         } else {
             document.getElementById('config-preview').innerHTML = `
                 <div class="alert alert-danger mb-0">
@@ -1123,6 +1272,10 @@ async function confirmRestore() {
             // 延迟重新加载配置
             setTimeout(() => {
                 loadConfig(true);
+                // 恢复成功后提醒用户保存配置
+                setTimeout(() => {
+                    showAlert('配置已恢复成功！请记得点击"保存配置"按钮保存当前设置，避免丢失恢复的配置。', 'warning', 8000);
+                }, 1500);
             }, 1000);
         } else {
             showAlert('恢复配置失败: ' + data.message, 'danger');
@@ -1163,7 +1316,7 @@ async function confirmCleanup() {
         const data = await response.json();
         
         if (data.status === 'success') {
-            showAlert(`清理完成，删除了 ${data.data.deleted_count} 个备份文件`, 'success');
+            showAlert(data.message, 'success');
             // 关闭模态框
             const cleanupModal = bootstrap.Modal.getInstance(document.getElementById('cleanupBackupModal'));
             cleanupModal.hide();

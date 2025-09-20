@@ -4,9 +4,9 @@ import functools
 import os
 import time
 import requests
-from .configs import MyLogger
+from ..core.logging import logger
 
-logger = MyLogger()
+# 使用全局logger实例
 
 
 class BangumiApi:
