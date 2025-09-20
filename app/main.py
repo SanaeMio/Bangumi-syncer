@@ -26,6 +26,7 @@ from .api.mappings import router as mappings_router
 from .api.logs import router as logs_router
 from .api.pages import router as pages_router
 from .api.health import router as health_router
+from .api.proxy import router as proxy_router
 
 
 # 创建FastAPI应用
@@ -55,6 +56,7 @@ app.include_router(mappings_router)
 app.include_router(logs_router)
 app.include_router(pages_router)
 app.include_router(health_router)
+app.include_router(proxy_router)
 
 
 # 启动事件

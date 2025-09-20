@@ -22,28 +22,77 @@ router = APIRouter(prefix="/api", tags=["sync"])
 root_router = APIRouter(tags=["sync"])
 
 
-@root_router.post("/Custom", status_code=200)
-async def custom_sync(item: CustomItem, response: Response, source: str = "custom"):
+@root_router.post("/Custom", status_code=202)
+async def custom_sync(item: CustomItem, response: Response, source: str = "custom", async_mode: bool = True):
     """自定义同步接口"""
     try:
-        # 调用同步服务
-        result = sync_service.sync_custom_item(item, source)
-        
-        # 根据结果设置响应状态码
-        if result.status == "error":
-            response.status_code = 500
-        elif result.status == "ignored":
-            response.status_code = 200
-        
-        return result.dict()
+        if async_mode:
+            # 异步处理模式
+            task_id = await sync_service.sync_custom_item_async(item, source)
+            response.status_code = 202  # Accepted
+            return {
+                "status": "accepted", 
+                "message": "同步任务已提交到异步队列", 
+                "task_id": task_id,
+                "check_url": f"/api/sync/status/{task_id}"
+            }
+        else:
+            # 同步处理模式（保持向后兼容）
+            result = sync_service.sync_custom_item(item, source)
+            
+            # 根据结果设置响应状态码
+            if result.status == "error":
+                response.status_code = 500
+            elif result.status == "ignored":
+                response.status_code = 200
+            
+            return result.dict()
     except Exception as e:
         logger.error(f'自定义同步API处理出错: {e}')
         response.status_code = 500
         return {"status": "error", "message": f"处理失败: {str(e)}"}
 
 
+@router.get("/sync/status/{task_id}")
+async def get_sync_status(task_id: str, current_user: dict = Depends(get_current_user_flexible)):
+    """获取同步任务状态"""
+    try:
+        task_status = sync_service.get_sync_task_status(task_id)
+        
+        if not task_status:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        return {
+            "status": "success",
+            "data": task_status
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'获取同步任务状态失败: {e}')
+        raise HTTPException(status_code=500, detail=f"获取状态失败: {str(e)}")
+
+@router.get("/sync/tasks")
+async def list_sync_tasks(current_user: dict = Depends(get_current_user_flexible)):
+    """获取所有同步任务列表"""
+    try:
+        # 清理旧任务
+        sync_service.cleanup_old_tasks()
+        
+        tasks = sync_service._sync_tasks
+        return {
+            "status": "success",
+            "data": {
+                "tasks": tasks,
+                "total": len(tasks)
+            }
+        }
+    except Exception as e:
+        logger.error(f'获取同步任务列表失败: {e}')
+        raise HTTPException(status_code=500, detail=f"获取任务列表失败: {str(e)}")
+
 @router.post("/test-sync")
-async def test_sync(request: Request, current_user: dict = Depends(get_current_user_flexible)):
+async def test_sync(request: Request, current_user: dict = Depends(get_current_user_flexible), async_mode: bool = Query(None)):
     """测试同步功能"""
     start_time = time.time()
     
@@ -66,22 +115,50 @@ async def test_sync(request: Request, current_user: dict = Depends(get_current_u
             source=data.get("source", "test")
         )
         
-        # 执行同步测试
-        result = sync_service.sync_custom_item(test_item, source="test")
+        # 智能判断处理模式
+        # 如果没有明确指定async_mode，则根据User-Agent判断
+        if async_mode is None:
+            user_agent = request.headers.get("user-agent", "").lower()
+            # 如果是浏览器请求（配置页面），默认使用同步模式以便立即显示结果
+            is_browser = any(browser in user_agent for browser in ["mozilla", "chrome", "safari", "edge"])
+            async_mode = not is_browser
         
-        # 计算耗时
-        elapsed_time = round(time.time() - start_time, 2)
-        
-        # 精简返回信息
-        response_data = result.dict()
-        response_data["elapsed_time"] = f"{elapsed_time}秒"
-        response_data["test_info"] = {
-            "title": test_item.title,
-            "episode": f"S{test_item.season:02d}E{test_item.episode:02d}",
-            "user": test_item.user_name
-        }
-        
-        return response_data
+        if async_mode:
+            # 异步处理模式
+            task_id = await sync_service.sync_custom_item_async(test_item, source="test")
+            
+            # 计算提交耗时
+            elapsed_time = round(time.time() - start_time, 3)
+            
+            return {
+                "status": "accepted",
+                "message": "测试同步任务已提交到异步队列",
+                "task_id": task_id,
+                "check_url": f"/api/sync/status/{task_id}",
+                "elapsed_time": f"{elapsed_time}秒",
+                "test_info": {
+                    "title": test_item.title,
+                    "episode": f"S{test_item.season:02d}E{test_item.episode:02d}",
+                    "user": test_item.user_name
+                }
+            }
+        else:
+            # 同步处理模式（配置页面使用，立即返回结果）
+            result = sync_service.sync_custom_item(test_item, source="test")
+            
+            # 计算耗时
+            elapsed_time = round(time.time() - start_time, 2)
+            
+            # 精简返回信息
+            response_data = result.dict()
+            response_data["elapsed_time"] = f"{elapsed_time}秒"
+            response_data["test_info"] = {
+                "title": test_item.title,
+                "episode": f"S{test_item.season:02d}E{test_item.episode:02d}",
+                "user": test_item.user_name
+            }
+            
+            return response_data
         
     except HTTPException:
         raise
@@ -171,9 +248,24 @@ async def plex_sync(plex_request: Request):
         json_str = await plex_request.body()
         plex_data = json.loads(extract_plex_json(json_str))
         
-        # 调用同步服务
-        result = sync_service.sync_plex_item(plex_data)
-        return result.dict()
+        # 异步调用同步服务（不阻塞webhook响应）
+        # 对于webhook，我们立即返回成功响应，同步在后台进行
+        try:
+            # 提交到异步队列处理
+            task_id = await sync_service.sync_plex_item_async(plex_data)
+            logger.info(f"Plex webhook已提交异步任务: {task_id}")
+            # 对于webhook，立即返回成功响应
+            return {"status": "accepted", "message": "Plex同步请求已接收", "task_id": task_id}
+        except Exception as sync_error:
+            logger.error(f'Plex同步服务调用失败: {sync_error}')
+            # 如果异步提交失败，回退到同步模式
+            try:
+                result = sync_service.sync_plex_item(plex_data)
+                return {"status": "accepted", "message": "Plex同步请求已接收（同步模式）"}
+            except Exception as fallback_error:
+                logger.error(f'Plex同步回退模式也失败: {fallback_error}')
+                return {"status": "accepted", "message": "Plex同步请求已接收，但处理时出现错误"}
+            
     except Exception as e:
         logger.error(f'Plex同步处理出错: {e}')
         return {"status": "error", "message": f"处理失败: {str(e)}"}
@@ -203,9 +295,22 @@ async def emby_sync(emby_request: Request):
             logger.error(f'Emby请求数据格式无效: {body_str[:100]}...')
             return {"status": "error", "message": "无效的请求格式"}
         
-        # 调用同步服务
-        result = sync_service.sync_emby_item(emby_data)
-        return result.dict()
+        # 异步调用同步服务（不阻塞webhook响应）
+        try:
+            # 提交到异步队列处理
+            task_id = await sync_service.sync_emby_item_async(emby_data)
+            logger.info(f"Emby webhook已提交异步任务: {task_id}")
+            # 对于webhook，立即返回成功响应
+            return {"status": "accepted", "message": "Emby同步请求已接收", "task_id": task_id}
+        except Exception as sync_error:
+            logger.error(f'Emby同步服务调用失败: {sync_error}')
+            # 如果异步提交失败，回退到同步模式
+            try:
+                result = sync_service.sync_emby_item(emby_data)
+                return {"status": "accepted", "message": "Emby同步请求已接收（同步模式）"}
+            except Exception as fallback_error:
+                logger.error(f'Emby同步回退模式也失败: {fallback_error}')
+                return {"status": "accepted", "message": "Emby同步请求已接收，但处理时出现错误"}
     except Exception as e:
         logger.error(f'Emby同步处理出错: {e}')
         logger.error(traceback.format_exc())
@@ -222,9 +327,24 @@ async def jellyfin_sync(jellyfin_request: Request):
         json_str = await jellyfin_request.body()
         jellyfin_data = json.loads(json_str)
         
-        # 调用同步服务
-        result = sync_service.sync_jellyfin_item(jellyfin_data)
-        return result.dict()
+        # 异步调用同步服务（不阻塞webhook响应）
+        # 对于webhook，我们立即返回成功响应，同步在后台进行
+        try:
+            # 提交到异步队列处理
+            task_id = await sync_service.sync_jellyfin_item_async(jellyfin_data)
+            logger.info(f"Jellyfin webhook已提交异步任务: {task_id}")
+            # 对于webhook，立即返回成功响应
+            return {"status": "accepted", "message": "Jellyfin同步请求已接收", "task_id": task_id}
+        except Exception as sync_error:
+            logger.error(f'Jellyfin同步服务调用失败: {sync_error}')
+            # 如果异步提交失败，回退到同步模式
+            try:
+                result = sync_service.sync_jellyfin_item(jellyfin_data)
+                return {"status": "accepted", "message": "Jellyfin同步请求已接收（同步模式）"}
+            except Exception as fallback_error:
+                logger.error(f'Jellyfin同步回退模式也失败: {fallback_error}')
+                return {"status": "accepted", "message": "Jellyfin同步请求已接收，但处理时出现错误"}
+            
     except Exception as e:
         logger.error(f'Jellyfin同步处理出错: {e}')
         return {"status": "error", "message": f"处理失败: {str(e)}"} 

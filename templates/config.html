@@ -155,8 +155,104 @@
                                 <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
                                    title="脚本的 HTTP 代理，例如 http://127.0.0.1:7890。若用 OpenClash 可能慢，原因未知，可尝试 CFW 或透明代理等"></i>
                             </label>
-                            <input type="text" class="form-control form-control-lg" id="script-proxy" name="dev.script_proxy" 
-                                   placeholder="如：http://127.0.0.1:7890">
+                            <div class="input-group">
+                                <input type="text" class="form-control form-control-lg" id="script-proxy" name="dev.script_proxy" 
+                                       placeholder="如：http://127.0.0.1:7890">
+                                <button class="btn btn-warning fw-bold" type="button" onclick="showProxyHelper()" 
+                                        title="智能代理配置助手 - 自动检测环境并推荐最佳配置"
+                                        style="min-width: 120px;">
+                                    <i class="bi bi-magic me-1"></i>智能配置
+                                </button>
+                            </div>
+                            <div class="form-text mt-1">
+                                <i class="bi bi-lightbulb text-warning me-1"></i>
+                                <small class="text-muted">点击"智能配置"按钮获取适合您环境的代理配置建议</small>
+                            </div>
+                            
+                            <!-- 代理助手区域 -->
+                            <div id="proxy-helper" class="mt-3" style="display: none;">
+                                <div class="card border-info">
+                                    <div class="card-header bg-light">
+                                        <h6 class="mb-0">
+                                            <i class="bi bi-magic me-2 text-warning"></i>智能代理配置助手
+                                            <small class="text-muted ms-2">支持Docker和本机环境</small>
+                                        </h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <!-- 端口号配置 -->
+                                        <div class="row g-3 mb-3">
+                                            <div class="col-md-6">
+                                                <label for="proxy-port" class="form-label fw-semibold">
+                                                    <i class="bi bi-hdd-network me-1"></i>代理端口号
+                                                </label>
+                                                <input type="number" class="form-control" id="proxy-port" 
+                                                       value="7890" min="1" max="65535" 
+                                                       onchange="updateProxySuggestions()"
+                                                       placeholder="如：7890">
+                                            </div>
+                                            <div class="col-md-6 d-flex align-items-end">
+                                                <button type="button" class="btn btn-outline-primary" onclick="detectPortFromInput(event)">
+                                                    <i class="bi bi-search me-1"></i>从HTTP代理输入框识别
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div id="proxy-suggestions" class="mb-3">
+                                            <div class="text-center">
+                                                <div class="spinner-border spinner-border-sm text-info" role="status">
+                                                    <span class="visually-hidden">检测中...</span>
+                                                </div>
+                                                <span class="ms-2">正在检测环境并生成建议...</span>
+                                            </div>
+                                        </div>
+                                        <!-- 主机连通性测试区域 -->
+                                        <div class="mt-3 border-top pt-3">
+                                            <h6 class="text-primary mb-3">
+                                                <i class="bi bi-wifi me-2"></i>网络连通性测试
+                                                <small class="text-muted ms-2">验证容器是否能访问宿主机</small>
+                                            </h6>
+                                            
+                                            <div class="row g-3 mb-3">
+                                                <div class="col-md-4">
+                                                    <label for="test-host" class="form-label">主机地址</label>
+                                                    <input type="text" class="form-control form-control-sm" id="test-host" 
+                                                           placeholder="如：192.168.1.100" value="192.168.1.100">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label for="test-port" class="form-label">端口</label>
+                                                    <input type="number" class="form-control form-control-sm" id="test-port" 
+                                                           value="7890" min="1" max="65535">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label for="test-timeout" class="form-label">超时(秒)</label>
+                                                    <input type="number" class="form-control form-control-sm" id="test-timeout" 
+                                                           value="5" min="1" max="30">
+                                                </div>
+                                                <div class="col-md-2 d-flex align-items-end">
+                                                    <button type="button" class="btn btn-primary btn-sm w-100" 
+                                                            onclick="testHostConnectivity()" id="test-host-btn">
+                                                        <i class="bi bi-play-circle me-1"></i>测试
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            
+                                            <div id="host-test-result" class="mb-3" style="display: none;">
+                                                <!-- 测试结果将显示在这里 -->
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="d-flex justify-content-between">
+                                            <small class="text-muted">
+                                                <i class="bi bi-info-circle me-1"></i>
+                                                点击建议的代理地址可自动填入，可自定义端口号重新生成建议
+                                            </small>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="hideProxyHelper()">
+                                                关闭
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="row g-3 mt-2">
@@ -952,7 +1048,7 @@ async function testSync() {
         
         const startTime = Date.now();
         
-        const response = await fetch('/api/test-sync', {
+        const response = await fetch('/api/test-sync?async_mode=false', {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -1305,6 +1401,387 @@ async function confirmRestore() {
 function showCleanupModal() {
     const cleanupModal = new bootstrap.Modal(document.getElementById('cleanupBackupModal'));
     cleanupModal.show();
+}
+
+// 显示代理助手
+async function showProxyHelper() {
+    const helperDiv = document.getElementById('proxy-helper');
+    helperDiv.style.display = 'block';
+    
+    // 尝试从当前输入框检测端口号
+    detectPortFromInput();
+    
+    // 获取代理建议
+    await loadProxySuggestions();
+}
+
+// 从输入框检测端口号
+function detectPortFromInput(event) {
+    // 阻止事件冒泡和默认行为
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    
+    const proxyInput = document.getElementById('script-proxy').value.trim();
+    const portInput = document.getElementById('proxy-port');
+    
+    if (!proxyInput) {
+        showAlert('代理输入框为空，请先填写代理地址', 'warning', 3000);
+        return;
+    }
+    
+    // 尝试从URL中提取端口号，支持多种格式
+    const portPatterns = [
+        /:(\d+)(?:\/|$)/,           // http://127.0.0.1:7890 或 http://127.0.0.1:7890/
+        /:(\d+)(?:\?|#|$)/,         // http://127.0.0.1:7890?param=value
+        /127\.0\.0\.1:(\d+)/,       // 127.0.0.1:7890
+        /localhost:(\d+)/,          // localhost:7890
+        /172\.17\.0\.1:(\d+)/,      // 172.17.0.1:7890
+        /host\.docker\.internal:(\d+)/, // host.docker.internal:7890
+        /192\.168\.\d+\.\d+:(\d+)/  // 192.168.x.x:7890
+    ];
+    
+    let detectedPort = null;
+    
+    for (const pattern of portPatterns) {
+        const match = proxyInput.match(pattern);
+        if (match && match[1]) {
+            const port = parseInt(match[1]);
+            if (port >= 1 && port <= 65535) {
+                detectedPort = port;
+                break;
+            }
+        }
+    }
+    
+    if (detectedPort) {
+        portInput.value = detectedPort;
+        showAlert(`✅ 已从输入框检测到端口号: ${detectedPort}`, 'success', 3000);
+        // 自动更新建议
+        updateProxySuggestions();
+    } else {
+        showAlert('❌ 未能从输入框检测到有效端口号，请检查格式或手动输入', 'warning', 4000);
+        // 聚焦到端口输入框
+        portInput.focus();
+    }
+}
+
+        // 更新代理建议
+        async function updateProxySuggestions() {
+            await loadProxySuggestions();
+        }
+        
+        // 测试主机连通性
+        async function testHostConnectivity() {
+            const hostInput = document.getElementById('test-host');
+            const portInput = document.getElementById('test-port');
+            const timeoutInput = document.getElementById('test-timeout');
+            const testBtn = document.getElementById('test-host-btn');
+            const resultDiv = document.getElementById('host-test-result');
+            
+            const host = hostInput.value.trim();
+            const port = parseInt(portInput.value) || 7890;
+            const timeout = parseInt(timeoutInput.value) || 5;
+            
+            if (!host) {
+                showAlert('请输入主机地址', 'warning', 3000);
+                hostInput.focus();
+                return;
+            }
+            
+            // 显示测试中状态
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div class="alert alert-info">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                        <span>正在测试连接到 ${host}:${port}...</span>
+                    </div>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch('/api/proxy/test-host', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        host: host,
+                        port: port,
+                        timeout: timeout
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    displayHostTestResult(data.data, host, port);
+                } else {
+                    showHostTestError('测试失败: ' + data.message);
+                }
+                
+            } catch (error) {
+                console.error('主机连通性测试失败:', error);
+                showHostTestError('网络错误，无法执行连通性测试');
+            } finally {
+                // 恢复按钮状态
+                testBtn.disabled = false;
+                testBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>测试';
+            }
+        }
+        
+        // 显示主机测试结果
+        function displayHostTestResult(result, host, port) {
+            const resultDiv = document.getElementById('host-test-result');
+            
+            let html = '';
+            
+            if (result.success) {
+                html = `
+                    <div class="alert alert-success">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-check-circle me-2"></i>
+                            连接成功！
+                        </h6>
+                        <p class="mb-2">
+                            <strong>目标：</strong>${host}:${port}<br>
+                            <strong>响应时间：</strong>${result.response_time}ms
+                        </p>
+                        <hr>
+                        <p class="mb-0 small text-success">
+                            <i class="bi bi-info-circle me-1"></i>
+                            容器可以访问到宿主机的这个地址和端口，代理配置应该可以正常工作。
+                        </p>
+                    </div>
+                `;
+            } else {
+                html = `
+                    <div class="alert alert-danger">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-x-circle me-2"></i>
+                            连接失败
+                        </h6>
+                        <p class="mb-2">
+                            <strong>目标：</strong>${host}:${port}<br>
+                            <strong>错误：</strong>${result.error}
+                        </p>
+                `;
+                
+                // 添加详细的测试结果
+                if (result.details) {
+                    html += '<hr><h6 class="small">详细测试结果：</h6>';
+                    
+                    if (result.details.tcp_test) {
+                        const tcpTest = result.details.tcp_test;
+                        const tcpIcon = tcpTest.success ? 'check-circle text-success' : 'x-circle text-danger';
+                        html += `
+                            <p class="small mb-1">
+                                <i class="bi bi-${tcpIcon} me-1"></i>
+                                <strong>TCP连接：</strong>${tcpTest.success ? '成功' : tcpTest.error}
+                            </p>
+                        `;
+                    }
+                    
+                    if (result.details.ping_test) {
+                        const pingTest = result.details.ping_test;
+                        const pingIcon = pingTest.success ? 'check-circle text-success' : 'x-circle text-warning';
+                        html += `
+                            <p class="small mb-1">
+                                <i class="bi bi-${pingIcon} me-1"></i>
+                                <strong>Ping测试：</strong>${pingTest.success ? '成功' : pingTest.error}
+                            </p>
+                        `;
+                    }
+                }
+                
+                html += `
+                        <hr>
+                        <p class="mb-0 small text-danger">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            容器无法访问到宿主机的这个地址和端口，请检查：<br>
+                            1. 宿主机IP地址是否正确<br>
+                            2. 代理服务是否正在运行<br>
+                            3. 防火墙是否允许连接<br>
+                            4. 代理是否允许来自Docker网段的连接
+                        </p>
+                    </div>
+                `;
+            }
+            
+            resultDiv.innerHTML = html;
+        }
+        
+        // 显示主机测试错误
+        function showHostTestError(message) {
+            const resultDiv = document.getElementById('host-test-result');
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6 class="alert-heading">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        测试异常
+                    </h6>
+                    <p class="mb-0">${message}</p>
+                </div>
+            `;
+        }
+
+// 加载代理建议
+async function loadProxySuggestions() {
+    const portInput = document.getElementById('proxy-port');
+    const port = parseInt(portInput.value) || 7890;
+    
+    try {
+        // 获取代理建议
+        const response = await fetch(`/api/proxy/suggestions?port=${port}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            displayProxySuggestions(data.data);
+        } else {
+            showProxyError('获取代理建议失败: ' + data.message);
+        }
+    } catch (error) {
+        console.error('获取代理建议失败:', error);
+        showProxyError('网络错误，无法获取代理建议');
+    }
+}
+
+// 隐藏代理助手
+function hideProxyHelper() {
+    document.getElementById('proxy-helper').style.display = 'none';
+}
+
+// 显示代理建议
+function displayProxySuggestions(data) {
+    const suggestionsDiv = document.getElementById('proxy-suggestions');
+    
+    if (!data.suggestions || data.suggestions.length === 0) {
+        suggestionsDiv.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                未找到合适的代理配置建议
+            </div>
+        `;
+        return;
+    }
+    
+    const currentPort = document.getElementById('proxy-port').value;
+    
+    let html = `
+        <div class="mb-3">
+            <h6 class="text-info">
+                <i class="bi bi-info-circle me-2"></i>
+                检测到环境: ${data.environment.is_docker ? 'Docker容器' : '本机环境'}
+                ${data.environment.is_docker ? `(${data.environment.network_mode}模式)` : '(原生运行)'}
+            </h6>
+            <p class="small text-muted mb-0">
+                ${data.environment.is_docker ? 
+                    `已为Docker环境优化代理配置建议，使用端口: ${currentPort}` : 
+                    `已为本机环境提供常用代理配置，使用端口: ${currentPort}`}
+            </p>
+        </div>
+        <div class="row g-2">
+    `;
+    
+    data.suggestions.forEach((suggestion, index) => {
+        const badgeClass = index === 0 ? 'bg-success' : 'bg-info';
+        const recommendText = index === 0 ? '推荐' : '';
+        
+        html += `
+            <div class="col-12">
+                <div class="card border-light proxy-suggestion" onclick="selectProxy('${suggestion.address}')" style="cursor: pointer;">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <code class="text-primary">${suggestion.address}</code>
+                                <small class="text-muted d-block">${suggestion.description}</small>
+                            </div>
+                            <div>
+                                ${recommendText ? `<span class="badge ${badgeClass}">${recommendText}</span>` : ''}
+                                <button class="btn btn-sm btn-outline-primary ms-2" onclick="testProxy('${suggestion.address}', event)">
+                                    <i class="bi bi-wifi"></i> 测试
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    suggestionsDiv.innerHTML = html;
+}
+
+// 显示代理错误
+function showProxyError(message) {
+    const suggestionsDiv = document.getElementById('proxy-suggestions');
+    suggestionsDiv.innerHTML = `
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            ${message}
+        </div>
+    `;
+}
+
+// 选择代理
+function selectProxy(address) {
+    document.getElementById('script-proxy').value = address;
+    showAlert('代理地址已填入，记得保存配置', 'success', 3000);
+}
+
+// 测试代理连通性
+async function testProxy(address, event) {
+    event.stopPropagation(); // 阻止冒泡
+    
+    const button = event.target.closest('button');
+    const originalHtml = button.innerHTML;
+    
+    // 显示测试状态
+    button.disabled = true;
+    button.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div>';
+    
+    try {
+        const response = await fetch('/api/proxy/test', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ proxy_url: address })
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.data.success) {
+            button.innerHTML = '<i class="bi bi-check-circle text-success"></i>';
+            showAlert(`代理测试成功 (${data.data.response_time}ms)`, 'success', 3000);
+        } else {
+            button.innerHTML = '<i class="bi bi-x-circle text-danger"></i>';
+            showAlert(`代理测试失败: ${data.data.error}`, 'warning', 5000);
+        }
+    } catch (error) {
+        button.innerHTML = '<i class="bi bi-x-circle text-danger"></i>';
+        showAlert('代理测试失败: 网络错误', 'danger', 5000);
+    }
+    
+    // 3秒后恢复按钮
+    setTimeout(() => {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    }, 3000);
 }
 
 // 确认清理备份
