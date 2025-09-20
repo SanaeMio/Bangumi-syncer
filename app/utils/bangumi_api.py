@@ -10,16 +10,17 @@ from ..core.logging import logger
 
 
 class BangumiApi:
-    def __init__(self, username=None, access_token=None, private=True, http_proxy=None):
+    def __init__(self, username=None, access_token=None, private=True, http_proxy=None, ssl_verify=False):
         self.host = 'https://api.bgm.tv/v0'
         self.username = username
         self.access_token = access_token
         self.private = private
         self.http_proxy = http_proxy
+        self.ssl_verify = ssl_verify
         self.req = requests.Session()
         self._req_not_auth = requests.Session()
         
-        logger.debug(f'BangumiApi 初始化 - 代理参数: {http_proxy if http_proxy else "无"}')
+        logger.debug(f'BangumiApi 初始化 - 代理参数: {http_proxy if http_proxy else "无"}, SSL验证: {ssl_verify}')
         self.init()
 
     def init(self):
@@ -36,6 +37,9 @@ class BangumiApi:
         """带重试机制的请求方法"""
         for attempt in range(max_retries + 1):
             try:
+                # 添加SSL验证配置
+                kwargs['verify'] = self.ssl_verify
+                
                 if method.upper() == 'GET':
                     res = session.get(url, **kwargs)
                 elif method.upper() == 'POST':

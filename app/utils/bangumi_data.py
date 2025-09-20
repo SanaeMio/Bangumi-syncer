@@ -12,11 +12,11 @@ from difflib import SequenceMatcher
 
 # 使用全局logger实例
 
-def _request_with_retry(url, proxies=None, stream=False, max_retries=3):
+def _request_with_retry(url, proxies=None, stream=False, max_retries=3, ssl_verify=False):
     """带重试机制的HTTP请求方法"""
     for attempt in range(max_retries + 1):
         try:
-            response = requests.get(url, proxies=proxies, stream=stream)
+            response = requests.get(url, proxies=proxies, stream=stream, verify=ssl_verify)
             response.raise_for_status()
             
             # 检查是否需要重试的状态码
@@ -53,6 +53,7 @@ class BangumiData:
                                               fallback='./bangumi_data_cache.json')
         self.http_proxy = config_manager.get('bangumi-data', 'http_proxy',
                                         fallback=config_manager.get('dev', 'script_proxy', fallback=''))
+        self.ssl_verify = config_manager.get('dev', 'ssl_verify', fallback=False)
         self.use_cache = config_manager.get('bangumi-data', 'use_cache', fallback=True)
         # 缓存有效期（天），默认7天
         self.cache_ttl_days = config_manager.get('bangumi-data', 'cache_ttl_days', fallback=7)
@@ -102,7 +103,7 @@ class BangumiData:
             proxies = {'http': self.http_proxy, 'https': self.http_proxy}
         
         try:
-            response = _request_with_retry(self.data_url, proxies=proxies, stream=True)
+            response = _request_with_retry(self.data_url, proxies=proxies, stream=True, ssl_verify=self.ssl_verify)
             
             # 确保缓存目录存在
             cache_dir = os.path.dirname(self.local_cache_path)
@@ -179,7 +180,7 @@ class BangumiData:
                 if self.http_proxy:
                     proxies = {'http': self.http_proxy, 'https': self.http_proxy}
                 
-                with _request_with_retry(self.data_url, proxies=proxies, stream=True) as response:
+                with _request_with_retry(self.data_url, proxies=proxies, stream=True, ssl_verify=self.ssl_verify) as response:
                     for item in ijson.items(response.raw, 'items.item', use_float=True):
                         items.append(item)
             except Exception as e:
@@ -719,7 +720,7 @@ class BangumiData:
                     if self.http_proxy:
                         proxies = {'http': self.http_proxy, 'https': self.http_proxy}
                     
-                    with _request_with_retry(self.data_url, proxies=proxies, stream=True) as response:
+                    with _request_with_retry(self.data_url, proxies=proxies, stream=True, ssl_verify=self.ssl_verify) as response:
                         for item in ijson.items(response.raw, 'items.item', use_float=True):
                             items.append(item)
                 except Exception as e:

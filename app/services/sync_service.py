@@ -400,7 +400,8 @@ class SyncService:
             username=bangumi_config['username'],
             access_token=bangumi_config['access_token'],
             private=bangumi_config['private'],
-            http_proxy=config_manager.get('dev', 'script_proxy', fallback='')
+            http_proxy=config_manager.get('dev', 'script_proxy', fallback=''),
+            ssl_verify=config_manager.get('dev', 'ssl_verify', fallback=False)
         )
     
     @lru_cache(maxsize=1)
