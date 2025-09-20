@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+import warnings
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union, Generator
 import requests
@@ -12,8 +13,14 @@ from difflib import SequenceMatcher
 
 # 使用全局logger实例
 
-def _request_with_retry(url, proxies=None, stream=False, max_retries=3, ssl_verify=False):
+def _request_with_retry(url, proxies=None, stream=False, max_retries=3, ssl_verify=True):
     """带重试机制的HTTP请求方法"""
+    # 如果禁用SSL验证，抑制urllib3的警告
+    if not ssl_verify:
+        warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+        from urllib3.exceptions import InsecureRequestWarning
+        warnings.filterwarnings('ignore', category=InsecureRequestWarning)
+    
     for attempt in range(max_retries + 1):
         try:
             response = requests.get(url, proxies=proxies, stream=stream, verify=ssl_verify)
@@ -53,7 +60,7 @@ class BangumiData:
                                               fallback='./bangumi_data_cache.json')
         self.http_proxy = config_manager.get('bangumi-data', 'http_proxy',
                                         fallback=config_manager.get('dev', 'script_proxy', fallback=''))
-        self.ssl_verify = config_manager.get('dev', 'ssl_verify', fallback=False)
+        self.ssl_verify = config_manager.get('dev', 'ssl_verify', fallback=True)
         self.use_cache = config_manager.get('bangumi-data', 'use_cache', fallback=True)
         # 缓存有效期（天），默认7天
         self.cache_ttl_days = config_manager.get('bangumi-data', 'cache_ttl_days', fallback=7)

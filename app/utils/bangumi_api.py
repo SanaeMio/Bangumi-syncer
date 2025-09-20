@@ -4,13 +4,14 @@ import functools
 import os
 import time
 import requests
+import warnings
 from ..core.logging import logger
 
 # 使用全局logger实例
 
 
 class BangumiApi:
-    def __init__(self, username=None, access_token=None, private=True, http_proxy=None, ssl_verify=False):
+    def __init__(self, username=None, access_token=None, private=True, http_proxy=None, ssl_verify=True):
         self.host = 'https://api.bgm.tv/v0'
         self.username = username
         self.access_token = access_token
@@ -19,6 +20,13 @@ class BangumiApi:
         self.ssl_verify = ssl_verify
         self.req = requests.Session()
         self._req_not_auth = requests.Session()
+        
+        # 如果禁用SSL验证，抑制urllib3的警告
+        if not ssl_verify:
+            warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+            from urllib3.exceptions import InsecureRequestWarning
+            warnings.filterwarnings('ignore', category=InsecureRequestWarning)
+            logger.warning('SSL证书验证已禁用，这会降低安全性。建议仅在代理环境下出现SSL错误时使用。')
         
         logger.debug(f'BangumiApi 初始化 - 代理参数: {http_proxy if http_proxy else "无"}, SSL验证: {ssl_verify}')
         self.init()

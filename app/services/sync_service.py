@@ -4,6 +4,9 @@
 import time
 import re
 import traceback
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional, Tuple
 from functools import lru_cache
 
@@ -25,7 +28,76 @@ class SyncService:
         self._cached_mappings: Dict[str, str] = {}
         self._mapping_file_path: Optional[str] = None
         self._last_modified_time: float = 0
+        # 线程池用于异步处理同步任务
+        self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sync_worker")
+        # 同步任务状态跟踪
+        self._sync_tasks = {}
+        self._task_counter = 0
     
+    async def sync_custom_item_async(self, item: CustomItem, source: str = "custom") -> str:
+        """异步同步自定义项目，返回任务ID"""
+        self._task_counter += 1
+        task_id = f"sync_{self._task_counter}_{int(time.time())}"
+        
+        # 记录任务状态
+        self._sync_tasks[task_id] = {
+            'status': 'pending',
+            'item': item.dict(),
+            'source': source,
+            'created_at': time.time(),
+            'result': None,
+            'error': None
+        }
+        
+        # 提交到线程池异步执行
+        future = self._executor.submit(self._sync_custom_item_sync, item, source, task_id)
+        
+        # 不等待结果，立即返回任务ID
+        logger.info(f"同步任务 {task_id} 已提交到异步队列")
+        return task_id
+    
+    def _sync_custom_item_sync(self, item: CustomItem, source: str, task_id: str) -> SyncResponse:
+        """同步执行的内部方法"""
+        try:
+            # 更新任务状态
+            self._sync_tasks[task_id]['status'] = 'running'
+            
+            # 执行同步逻辑
+            result = self.sync_custom_item(item, source)
+            
+            # 更新任务结果
+            self._sync_tasks[task_id]['status'] = 'completed'
+            self._sync_tasks[task_id]['result'] = result.dict()
+            
+            return result
+            
+        except Exception as e:
+            # 更新任务错误
+            self._sync_tasks[task_id]['status'] = 'failed'
+            self._sync_tasks[task_id]['error'] = str(e)
+            logger.error(f"异步同步任务 {task_id} 失败: {e}")
+            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+    
+    def get_sync_task_status(self, task_id: str) -> Optional[Dict]:
+        """获取同步任务状态"""
+        return self._sync_tasks.get(task_id)
+    
+    def cleanup_old_tasks(self, max_age_hours: int = 24):
+        """清理旧的任务记录"""
+        current_time = time.time()
+        cutoff_time = current_time - (max_age_hours * 3600)
+        
+        old_tasks = [
+            task_id for task_id, task_info in self._sync_tasks.items()
+            if task_info['created_at'] < cutoff_time
+        ]
+        
+        for task_id in old_tasks:
+            del self._sync_tasks[task_id]
+            
+        if old_tasks:
+            logger.info(f"清理了 {len(old_tasks)} 个旧的同步任务记录")
+
     def sync_custom_item(self, item: CustomItem, source: str = "custom") -> SyncResponse:
         """同步自定义项目"""
         try:
@@ -344,7 +416,7 @@ class SyncService:
         return False
     
     def _retry_mark_episode(self, bgm_api: BangumiApi, subject_id: str, ep_id: str, max_retries: int = 3) -> int:
-        """带重试机制的标记剧集方法"""
+        """带重试机制的标记剧集方法（优化版，减少阻塞时间）"""
         for attempt in range(max_retries + 1):
             try:
                 mark_status = bgm_api.mark_episode_watched(subject_id=subject_id, ep_id=ep_id)
@@ -353,12 +425,42 @@ class SyncService:
                 return mark_status
             except Exception as e:
                 if attempt < max_retries:
-                    delay = 2 ** attempt  # 指数退避: 2, 4, 8秒
+                    # 优化延迟策略：减少最大延迟时间
+                    delay = min(2 ** attempt, 3)  # 最大延迟3秒: 1, 2, 3秒
                     logger.error(f'标记剧集失败: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
+                    
+                    # 使用非阻塞方式等待（在线程池中执行时不会阻塞主线程）
                     time.sleep(delay)
                     continue
                 else:
                     logger.error(f'标记剧集失败，已达到最大重试次数 {max_retries}: {str(e)}')
+                    raise e
+    
+    async def _retry_mark_episode_async(self, bgm_api: BangumiApi, subject_id: str, ep_id: str, max_retries: int = 3) -> int:
+        """异步版本的重试标记剧集方法"""
+        for attempt in range(max_retries + 1):
+            try:
+                # 在线程池中执行同步操作
+                loop = asyncio.get_event_loop()
+                mark_status = await loop.run_in_executor(
+                    self._executor, 
+                    bgm_api.mark_episode_watched, 
+                    subject_id, 
+                    ep_id
+                )
+                if attempt > 0:
+                    logger.info(f'异步重试成功，第 {attempt + 1} 次尝试标记成功')
+                return mark_status
+            except Exception as e:
+                if attempt < max_retries:
+                    delay = min(2 ** attempt, 3)  # 最大延迟3秒
+                    logger.error(f'异步标记剧集失败: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
+                    
+                    # 使用异步等待，不阻塞事件循环
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f'异步标记剧集失败，已达到最大重试次数 {max_retries}: {str(e)}')
                     raise e
     
     def _get_bangumi_config_for_user(self, user_name: str) -> Optional[Dict[str, str]]:
@@ -401,7 +503,7 @@ class SyncService:
             access_token=bangumi_config['access_token'],
             private=bangumi_config['private'],
             http_proxy=config_manager.get('dev', 'script_proxy', fallback=''),
-            ssl_verify=config_manager.get('dev', 'ssl_verify', fallback=False)
+                    ssl_verify=config_manager.get('dev', 'ssl_verify', fallback=True)
         )
     
     @lru_cache(maxsize=1)
@@ -413,6 +515,49 @@ class SyncService:
         """从外部JSON文件读取自定义映射配置"""
         return mapping_service.load_custom_mappings()
     
+    async def sync_plex_item_async(self, plex_data: Dict[str, Any]) -> str:
+        """异步同步Plex项目，返回任务ID"""
+        self._task_counter += 1
+        task_id = f"plex_{self._task_counter}_{int(time.time())}"
+        
+        # 记录任务状态
+        self._sync_tasks[task_id] = {
+            'status': 'pending',
+            'item': plex_data,
+            'source': 'plex',
+            'created_at': time.time(),
+            'result': None,
+            'error': None
+        }
+        
+        # 提交到线程池异步执行
+        future = self._executor.submit(self._sync_plex_item_sync, plex_data, task_id)
+        
+        logger.info(f"Plex同步任务 {task_id} 已提交到异步队列")
+        return task_id
+    
+    def _sync_plex_item_sync(self, plex_data: Dict[str, Any], task_id: str) -> SyncResponse:
+        """同步执行Plex同步的内部方法"""
+        try:
+            # 更新任务状态
+            self._sync_tasks[task_id]['status'] = 'running'
+            
+            # 执行同步逻辑
+            result = self.sync_plex_item(plex_data)
+            
+            # 更新任务结果
+            self._sync_tasks[task_id]['status'] = 'completed'
+            self._sync_tasks[task_id]['result'] = result.dict()
+            
+            return result
+            
+        except Exception as e:
+            # 更新任务错误
+            self._sync_tasks[task_id]['status'] = 'failed'
+            self._sync_tasks[task_id]['error'] = str(e)
+            logger.error(f"异步Plex同步任务 {task_id} 失败: {e}")
+            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+
     def sync_plex_item(self, plex_data: Dict[str, Any]) -> SyncResponse:
         """处理Plex同步请求"""
         try:
@@ -434,6 +579,49 @@ class SyncService:
             logger.error(f'Plex同步处理出错: {e}')
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
     
+    async def sync_emby_item_async(self, emby_data: Dict[str, Any]) -> str:
+        """异步同步Emby项目，返回任务ID"""
+        self._task_counter += 1
+        task_id = f"emby_{self._task_counter}_{int(time.time())}"
+        
+        # 记录任务状态
+        self._sync_tasks[task_id] = {
+            'status': 'pending',
+            'item': emby_data,
+            'source': 'emby',
+            'created_at': time.time(),
+            'result': None,
+            'error': None
+        }
+        
+        # 提交到线程池异步执行
+        future = self._executor.submit(self._sync_emby_item_sync, emby_data, task_id)
+        
+        logger.info(f"Emby同步任务 {task_id} 已提交到异步队列")
+        return task_id
+    
+    def _sync_emby_item_sync(self, emby_data: Dict[str, Any], task_id: str) -> SyncResponse:
+        """同步执行Emby同步的内部方法"""
+        try:
+            # 更新任务状态
+            self._sync_tasks[task_id]['status'] = 'running'
+            
+            # 执行同步逻辑
+            result = self.sync_emby_item(emby_data)
+            
+            # 更新任务结果
+            self._sync_tasks[task_id]['status'] = 'completed'
+            self._sync_tasks[task_id]['result'] = result.dict()
+            
+            return result
+            
+        except Exception as e:
+            # 更新任务错误
+            self._sync_tasks[task_id]['status'] = 'failed'
+            self._sync_tasks[task_id]['error'] = str(e)
+            logger.error(f"异步Emby同步任务 {task_id} 失败: {e}")
+            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+
     def sync_emby_item(self, emby_data: Dict[str, Any]) -> SyncResponse:
         """处理Emby同步请求"""
         try:
@@ -479,6 +667,49 @@ class SyncService:
             logger.error(traceback.format_exc())
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
     
+    async def sync_jellyfin_item_async(self, jellyfin_data: Dict[str, Any]) -> str:
+        """异步同步Jellyfin项目，返回任务ID"""
+        self._task_counter += 1
+        task_id = f"jellyfin_{self._task_counter}_{int(time.time())}"
+        
+        # 记录任务状态
+        self._sync_tasks[task_id] = {
+            'status': 'pending',
+            'item': jellyfin_data,
+            'source': 'jellyfin',
+            'created_at': time.time(),
+            'result': None,
+            'error': None
+        }
+        
+        # 提交到线程池异步执行
+        future = self._executor.submit(self._sync_jellyfin_item_sync, jellyfin_data, task_id)
+        
+        logger.info(f"Jellyfin同步任务 {task_id} 已提交到异步队列")
+        return task_id
+    
+    def _sync_jellyfin_item_sync(self, jellyfin_data: Dict[str, Any], task_id: str) -> SyncResponse:
+        """同步执行Jellyfin同步的内部方法"""
+        try:
+            # 更新任务状态
+            self._sync_tasks[task_id]['status'] = 'running'
+            
+            # 执行同步逻辑
+            result = self.sync_jellyfin_item(jellyfin_data)
+            
+            # 更新任务结果
+            self._sync_tasks[task_id]['status'] = 'completed'
+            self._sync_tasks[task_id]['result'] = result.dict()
+            
+            return result
+            
+        except Exception as e:
+            # 更新任务错误
+            self._sync_tasks[task_id]['status'] = 'failed'
+            self._sync_tasks[task_id]['error'] = str(e)
+            logger.error(f"异步Jellyfin同步任务 {task_id} 失败: {e}")
+            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+
     def sync_jellyfin_item(self, jellyfin_data: Dict[str, Any]) -> SyncResponse:
         """处理Jellyfin同步请求"""
         try:
