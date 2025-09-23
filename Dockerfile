@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目文件
 COPY app/ ./app/
+COPY version.py ./
 
 # 复制Web界面文件
 COPY templates/ ./templates/
