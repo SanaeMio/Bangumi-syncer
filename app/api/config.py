@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..core.config import config_manager
 from ..core.logging import logger
+from ..core.security import security_manager
 from .deps import get_current_user_flexible
 
 
@@ -92,6 +93,12 @@ async def update_config(request: Request, current_user: dict = Depends(get_curre
             # 将下划线转换为连字符，以匹配配置文件格式
             normalized_section = section.replace('_', '-')
             for key, value in items.items():
+                # 对密码进行加密再保存
+                if normalized_section == 'auth' and key == 'password':
+                    secret_key = config_manager.get('auth', 'secret_key')
+                    config_manager.set_config(normalized_section, key, security_manager.hash_password(value, secret_key))
+                    break
+
                 config_manager.set_config(normalized_section, key, value)
         
         # 处理多账号配置
