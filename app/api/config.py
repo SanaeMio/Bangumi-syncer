@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..core.config import config_manager
 from ..core.logging import logger
+from ..core.security import security_manager
 from .deps import get_current_user_flexible
 
 
@@ -69,6 +70,16 @@ async def get_config(request: Request, current_user: dict = Depends(get_current_
     """获取配置信息"""
     try:
         config_data = config_manager.get_all_config()
+        
+        # 处理敏感信息：不向前端返回加密的密码
+        if 'auth' in config_data and 'password' in config_data['auth']:
+            # 检查密码是否已加密（长度为64的十六进制字符串）
+            password = config_data['auth']['password']
+            if password and len(str(password)) == 64:
+                # 已加密的密码，返回空字符串给前端
+                config_data['auth']['password'] = ''
+                logger.debug("已隐藏加密密码，返回空字符串给前端")
+        
         return {
             "status": "success",
             "data": config_data
@@ -88,11 +99,32 @@ async def update_config(request: Request, current_user: dict = Depends(get_curre
         multi_accounts = data.pop('multi_accounts', None)
         
         # 更新常规配置
+        password_updated = False
         for section, items in data.items():
             # 将下划线转换为连字符，以匹配配置文件格式
             normalized_section = section.replace('_', '-')
             for key, value in items.items():
-                config_manager.set_config(normalized_section, key, value)
+                # 特殊处理auth段的password字段
+                if normalized_section == 'auth' and key == 'password':
+                    # 如果提交的密码为空，跳过更新（保持现有密码不变）
+                    if not value or str(value).strip() == '':
+                        logger.debug("跳过空密码更新，保持现有密码不变")
+                        continue
+                    
+                    # 检查密码是否需要加密（如果长度小于64，说明是明文密码）
+                    if len(str(value)) < 64:
+                        # 获取当前的secret_key用于加密
+                        auth_config = security_manager.get_auth_config()
+                        encrypted_password = security_manager.hash_password(str(value), auth_config['secret_key'])
+                        config_manager.set_config(normalized_section, key, encrypted_password)
+                        password_updated = True
+                        logger.info(f"密码已在保存时自动加密")
+                    else:
+                        # 已经是加密密码，直接保存
+                        config_manager.set_config(normalized_section, key, value)
+                else:
+                    # 其他配置项正常保存
+                    config_manager.set_config(normalized_section, key, value)
         
         # 处理多账号配置
         if multi_accounts is not None:
@@ -100,6 +132,11 @@ async def update_config(request: Request, current_user: dict = Depends(get_curre
         
         # 保存配置
         config_manager.save_config()
+        
+        # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
+        if password_updated:
+            security_manager._init_auth_config()
+            logger.info("密码更新完成，认证配置已重新加载")
         
         return {"status": "success", "message": "配置更新成功"}
     except Exception as e:
