@@ -1,0 +1,881 @@
+{% extends "base.html" %}
+
+{% block title %}调试工具 - Bangumi Syncer{% endblock %}
+{% block page_title %}调试工具{% endblock %}
+
+{% block content %}
+
+    <!-- 测试同步 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-play-circle me-2 text-warning"></i>
+                        <h6 class="m-0 fw-semibold">番剧同步测试</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form id="test-sync-form">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label for="test-title" class="form-label fw-semibold">
+                                    <i class="bi bi-film me-1 text-warning"></i>番剧标题
+                                </label>
+                                <input type="text" class="form-control form-control-lg" id="test-title" placeholder="测试番剧" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="test-season" class="form-label fw-semibold">
+                                    <i class="bi bi-calendar3 me-1 text-warning"></i>季度
+                                </label>
+                                <input type="number" class="form-control form-control-lg" id="test-season" value="1" min="1" max="20" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="test-episode" class="form-label fw-semibold">
+                                    <i class="bi bi-collection-play me-1 text-warning"></i>集数
+                                </label>
+                                <input type="number" class="form-control form-control-lg" id="test-episode" value="1" min="1" max="1000" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="test-user" class="form-label fw-semibold">
+                                    <i class="bi bi-person me-1 text-warning"></i>用户名
+                                    <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                       title="媒体服务器中的用户名（Plex/Emby/Jellyfin用户名）"></i>
+                                </label>
+                                <input type="text" class="form-control form-control-lg" id="test-user" placeholder="媒体服务器用户名" required>
+                            </div>
+                        </div>
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <button type="button" class="btn btn-warning px-3" id="test-sync-btn" onclick="testSync()">
+                                    <i class="bi bi-play-circle me-2"></i>开始测试
+                                </button>
+                                <div class="mt-3" id="test-sync-progress" style="display: none;">
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm text-warning me-2" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <span id="test-sync-status">正在测试同步...</span>
+                                    </div>
+                                    <div class="progress mt-2" style="height: 6px;">
+                                        <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
+                                             role="progressbar" style="width: 100%"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-3" id="test-sync-result" style="display: none;">
+                                    <div class="alert alert-dismissible fade show" role="alert" id="test-result-alert">
+                                        <div id="test-result-content"></div>
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 网络诊断工具 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-wifi me-2 text-info"></i>
+                        <h6 class="m-0 fw-semibold">网络诊断工具</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Bangumi网络诊断 -->
+                    <div class="card border-light mb-4">
+                        <div class="card-header py-2 bg-light">
+                            <h6 class="mb-0 fw-semibold">
+                                <i class="bi bi-search me-2 text-info"></i>Bangumi API诊断
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="bangumi-url" class="form-label fw-semibold">API地址</label>
+                                <input type="text" class="form-control" id="bangumi-url" 
+                                       value="https://api.bgm.tv" readonly>
+                            </div>
+                            <button type="button" class="btn btn-info" 
+                                    onclick="diagnoseBangumiNetwork()" id="diagnose-bangumi-btn">
+                                <i class="bi bi-search me-1"></i>开始诊断
+                            </button>
+                            <div id="bangumi-diagnosis-result" class="mt-3" style="display: none;">
+                                <!-- 诊断结果将显示在这里 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 自定义主机连通性测试 -->
+                    <div class="card border-light">
+                        <div class="card-header py-2 bg-light">
+                            <h6 class="mb-0 fw-semibold">
+                                <i class="bi bi-hdd-network me-2 text-success"></i>主机连通性测试
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3 mb-3">
+                                <div class="col-8">
+                                    <label for="test-host" class="form-label fw-semibold">主机地址</label>
+                                    <input type="text" class="form-control" id="test-host" 
+                                           placeholder="如：192.168.1.100" value="">
+                                </div>
+                                <div class="col-4">
+                                    <label for="test-port" class="form-label fw-semibold">端口</label>
+                                    <input type="number" class="form-control" id="test-port" 
+                                           value="7890" min="1" max="65535">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="test-timeout" class="form-label fw-semibold">超时时间(秒)</label>
+                                <input type="number" class="form-control" id="test-timeout" 
+                                       value="5" min="1" max="30">
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-success" 
+                                        onclick="testHostConnectivity()" id="test-host-btn">
+                                    <i class="bi bi-play-circle me-1"></i>测试连接
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" 
+                                        onclick="autoFillHostAddress()" title="自动填充常用主机地址">
+                                    <i class="bi bi-magic"></i>
+                                </button>
+                            </div>
+                            <div id="host-test-result" class="mt-3" style="display: none;">
+                                <!-- 测试结果将显示在这里 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+<script>
+// 测试同步功能
+async function testSync() {
+    const btn = document.getElementById('test-sync-btn');
+    const progressDiv = document.getElementById('test-sync-progress');
+    const resultDiv = document.getElementById('test-sync-result');
+    const resultAlert = document.getElementById('test-result-alert');
+    const resultContent = document.getElementById('test-result-content');
+    const statusSpan = document.getElementById('test-sync-status');
+    
+    // 获取表单数据
+    const title = document.getElementById('test-title').value.trim();
+    const season = parseInt(document.getElementById('test-season').value);
+    const episode = parseInt(document.getElementById('test-episode').value);
+    const user = document.getElementById('test-user').value.trim();
+    
+    // 验证输入
+    if (!title || !season || !episode || !user) {
+        showAlert('请填写完整的测试信息，包括用户名', 'warning', 3000);
+        return;
+    }
+    
+    // 显示进度，隐藏之前的结果
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>测试中...';
+    progressDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
+    
+    try {
+        const testData = {
+            title: title,
+            season: season,
+            episode: episode,
+            user_name: user
+        };
+        
+        // 更新状态
+        statusSpan.textContent = `正在测试同步: ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
+        
+        const startTime = Date.now();
+        
+        const response = await fetch('/api/test-sync?async_mode=false', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(testData)
+        });
+        
+        const result = await response.json();
+        const endTime = Date.now();
+        const actualTime = ((endTime - startTime) / 1000).toFixed(2);
+        
+        // 隐藏进度，显示结果
+        progressDiv.style.display = 'none';
+        resultDiv.style.display = 'block';
+        
+        // 判断是否为连接成功（包括成功同步和已看过状态）
+        const isConnectionSuccess = result.success || 
+                                   (result.message && (
+                                       result.message.includes('已看过') || 
+                                       result.message.includes('已标记') ||
+                                       result.message.includes('重复') ||
+                                       result.message.includes('已存在')
+                                   ));
+        
+        if (isConnectionSuccess) {
+            // 根据是否真正同步成功来决定显示内容
+            const isActualSync = result.success;
+            const statusText = isActualSync ? '测试同步成功！' : '连接测试成功！';
+            const statusIcon = isActualSync ? 'bi-check-circle-fill' : 'bi-info-circle-fill';
+            const statusColor = isActualSync ? 'success' : 'info';
+            
+            resultAlert.className = `alert alert-${statusColor} alert-dismissible fade show`;
+            resultContent.innerHTML = `
+                <div class="d-flex align-items-start">
+                    <i class="bi ${statusIcon} text-${statusColor} me-3 mt-1"></i>
+                    <div class="flex-grow-1">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                            <h6 class="mb-0 text-${statusColor} fw-bold">${statusText}</h6>
+                            <small class="text-muted">
+                                <i class="bi bi-stopwatch me-1"></i>${result.elapsed_time || actualTime + '秒'}
+                            </small>
+                        </div>
+                        <div class="mb-3">
+                            <span class="text-muted me-2">
+                                <i class="bi bi-film me-1"></i>${result.test_info?.title || title}
+                            </span>
+                            <span class="badge bg-secondary me-2">${result.test_info?.episode || 'S' + season.toString().padStart(2, '0') + 'E' + episode.toString().padStart(2, '0')}</span>
+                            ${result.data && (result.data.subject_id || result.data.episode_id) ? `
+                                ${result.data.subject_id ? `
+                                <a href="https://bgm.tv/subject/${result.data.subject_id}" 
+                                   target="_blank" 
+                                   class="badge bg-primary text-decoration-none me-1"
+                                   title="点击打开Bangumi番剧页面">
+                                    <i class="bi bi-link-45deg me-1"></i>Bangumi ID: ${result.data.subject_id}
+                                </a>
+                                ` : ''}
+                                ${result.data.episode_id ? `
+                                <a href="https://bgm.tv/ep/${result.data.episode_id}" 
+                                   target="_blank" 
+                                   class="badge bg-info text-decoration-none"
+                                   title="点击打开Bangumi剧集页面">
+                                    <i class="bi bi-link-45deg me-1"></i>EP ID: ${result.data.episode_id}
+                                </a>
+                                ` : ''}
+                            ` : ''}
+                        </div>
+                        ${result.message ? `
+                            <div class="mb-0">
+                                <p class="mb-1 text-muted small"><strong>结果说明：</strong></p>
+                                <p class="mb-0 text-muted small">${result.message}</p>
+                                ${!isActualSync ? `
+                                    <p class="mb-0 text-info small mt-1">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        连接和认证正常，同步系统工作正常。
+                                    </p>
+                                ` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        } else {
+            resultAlert.className = 'alert alert-danger alert-dismissible fade show';
+            resultContent.innerHTML = `
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-exclamation-triangle-fill text-danger me-2 mt-1"></i>
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">测试同步失败</h6>
+                        <p class="mb-2">${result.message}</p>
+                        <div class="row g-2 small text-muted">
+                            <div class="col-md-8">
+                                <strong>番剧:</strong> ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}
+                            </div>
+                            <div class="col-md-4">
+                                <strong>耗时:</strong> ${result.elapsed_time || actualTime + '秒'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('测试同步失败:', error);
+        
+        // 隐藏进度，显示错误
+        progressDiv.style.display = 'none';
+        resultDiv.style.display = 'block';
+        resultAlert.className = 'alert alert-danger alert-dismissible fade show';
+        resultContent.innerHTML = `
+            <div class="d-flex align-items-start">
+                <i class="bi bi-x-circle-fill text-danger me-2 mt-1"></i>
+                <div class="flex-grow-1">
+                    <h6 class="mb-1">网络错误</h6>
+                    <p class="mb-0">无法连接到服务器，请检查网络连接或稍后重试。</p>
+                    <small class="text-muted">错误详情: ${error.message}</small>
+                </div>
+            </div>
+        `;
+    } finally {
+        // 恢复按钮状态
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>开始测试';
+    }
+}
+
+// Bangumi网络诊断
+async function diagnoseBangumiNetwork() {
+    const button = document.getElementById('diagnose-bangumi-btn');
+    const resultDiv = document.getElementById('bangumi-diagnosis-result');
+    const urlInput = document.getElementById('bangumi-url');
+    
+    // 显示加载状态
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>诊断中...';
+    
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `
+        <div class="alert alert-info">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm text-info me-3" role="status">
+                    <span class="visually-hidden">诊断中...</span>
+                </div>
+                <div>
+                    <h6 class="mb-1">正在诊断网络连接</h6>
+                    <small class="text-muted">检测DNS解析和TCP连接...</small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    try {
+        const response = await fetch('/api/network/diagnose', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url: urlInput.value })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            displayBangumiDiagnosisResult(result.data);
+        } else {
+            showBangumiDiagnosisError(result.message);
+        }
+        
+    } catch (error) {
+        console.error('Bangumi网络诊断失败:', error);
+        showBangumiDiagnosisError('网络错误，无法进行诊断');
+    } finally {
+        // 恢复按钮状态
+        button.disabled = false;
+        button.innerHTML = '<i class="bi bi-search me-1"></i>开始诊断';
+    }
+}
+
+// 显示Bangumi诊断结果
+function displayBangumiDiagnosisResult(data) {
+    const resultDiv = document.getElementById('bangumi-diagnosis-result');
+    
+    let html = `
+        <div class="alert alert-light border">
+            <h6 class="mb-3">
+                <i class="bi bi-list-check me-2 text-info"></i>
+                网络诊断结果 - ${data.hostname}:${data.port}
+            </h6>
+            
+            <!-- 环境信息 -->
+            ${data.environment ? `
+            <div class="mb-3">
+                <h6 class="mb-2">
+                    <i class="bi bi-pc-display me-2 text-info"></i>
+                    运行环境
+                </h6>
+                <div class="ms-4">
+                    <span class="badge ${data.environment.is_docker ? 'bg-primary' : 'bg-secondary'} me-2">
+                        ${data.environment.is_docker ? 
+                            `Docker容器 (${data.environment.network_mode}模式)` : 
+                            '本机环境'
+                        }
+                    </span>
+                    ${data.environment.is_docker ? 
+                        '<small class="text-muted d-block mt-1">Docker环境下DNS解析可能经过容器网络转发</small>' : 
+                        ''
+                    }
+                </div>
+            </div>
+            ` : ''}
+            
+            <!-- 代理配置信息 -->
+            ${data.proxy_config ? `
+            <div class="mb-3">
+                <h6 class="mb-2">
+                    <i class="bi bi-shield-check me-2 text-success"></i>
+                    代理配置
+                </h6>
+                <div class="ms-4">
+                    <code class="text-success">${data.proxy_config}</code>
+                    ${data.proxy_config === '未配置代理' ? 
+                        '<small class="text-muted d-block mt-1">将使用直接连接进行测试</small>' : 
+                        '<small class="text-success d-block mt-1">HTTP连接测试将使用此代理</small>'
+                    }
+                </div>
+            </div>
+            ` : ''}
+            
+            <!-- 系统DNS信息 -->
+            <div class="mb-3">
+                <h6 class="mb-2">
+                    <i class="bi bi-hdd-network me-2 text-secondary"></i>
+                    DNS配置
+                </h6>
+                <div class="ms-4">
+                    ${data.dns_servers && data.dns_servers.length > 0 ? 
+                        data.dns_servers.map(dns => {
+                            // 特殊处理Docker相关的DNS信息
+                            if (dns.includes('Docker') || dns.includes('容器') || dns.includes('127.0.0.11')) {
+                                return `<div class="mb-1"><code class="text-primary">${dns}</code></div>`;
+                            } else if (dns.includes('注意:')) {
+                                return `<div class="mb-1"><small class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>${dns}</small></div>`;
+                            } else {
+                                return `<code class="me-2 mb-1 d-inline-block">${dns}</code>`;
+                            }
+                        }).join('') :
+                        '<small class="text-muted">无法获取DNS服务器信息</small>'
+                    }
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            常用DNS服务器：
+                            <code class="ms-1">8.8.8.8</code>
+                            <code class="ms-1">114.114.114.114</code>
+                            <code class="ms-1">1.1.1.1</code>
+                        </small>
+                    </div>
+                </div>
+            </div>
+    `;
+    
+    data.diagnosis.forEach(test => {
+        const statusIcon = test.status === 'success' ? 'bi-check-circle-fill text-success' : 
+                          test.status === 'failed' ? 'bi-x-circle-fill text-danger' : 
+                          'bi-exclamation-triangle-fill text-warning';
+        
+        html += `
+            <div class="mb-3">
+                <h6 class="mb-2">
+                    <i class="bi ${statusIcon} me-2"></i>
+                    ${test.test}
+                </h6>
+                <p class="mb-2 ms-4">${test.message}</p>
+        `;
+        
+        if (test.suggestions) {
+            html += `
+                <div class="ms-4">
+                    <small class="text-muted fw-semibold">💡 建议解决方案:</small>
+                    <ul class="small text-muted mt-1 mb-0">
+            `;
+            test.suggestions.forEach(suggestion => {
+                html += `<li>${suggestion}</li>`;
+            });
+            html += `</ul></div>`;
+        }
+        
+        if (test.ips) {
+            html += `
+                <div class="ms-4">
+                    <small class="text-muted">解析到的IP地址: <code>${test.ips.join(', ')}</code></small>
+                </div>
+            `;
+        }
+        
+        // 显示代理和SSL信息
+        if (test.proxy_used !== undefined) {
+            html += `
+                <div class="ms-4">
+                    <small class="text-muted">
+                        代理: <code>${test.proxy_used}</code>
+                        ${test.ssl_verify !== undefined ? ` | SSL验证: <code>${test.ssl_verify ? '启用' : '禁用'}</code>` : ''}
+                    </small>
+                </div>
+            `;
+        }
+        
+        html += `</div>`;
+    });
+    
+    // 添加总结性建议
+    const dnsSuccess = data.diagnosis.some(t => t.test === 'DNS解析' && t.status === 'success');
+    const tcpSuccess = data.diagnosis.some(t => (t.test === 'TCP连接' || t.test === 'TCP直连') && t.status === 'success');
+    const httpSuccess = data.diagnosis.some(t => t.test === 'HTTP连接' && t.status === 'success');
+    const isDockerEnv = data.environment && data.environment.is_docker;
+    
+    if (dnsSuccess && (tcpSuccess || httpSuccess)) {
+        let statusDetails = [];
+        if (tcpSuccess) statusDetails.push('TCP连接成功');
+        if (httpSuccess) statusDetails.push('HTTP连接成功');
+        
+        html += `
+            <div class="alert alert-success mb-0">
+                <i class="bi bi-check-circle me-2"></i>
+                <strong>网络连接正常！</strong> DNS解析和${statusDetails.join('、')}，Bangumi API可以正常访问。
+                ${isDockerEnv ? '<br><small>Docker环境下网络正常，容器可以正常访问外部网络。</small>' : ''}
+            </div>
+        `;
+    } else if (!dnsSuccess) {
+        let suggestions = [];
+        if (isDockerEnv) {
+            suggestions = [
+                "检查Docker容器的DNS配置",
+                "尝试重启Docker容器",
+                "检查Docker宿主机的DNS设置",
+                "在docker run时使用 --dns=8.8.8.8 参数",
+                "检查Docker网络模式是否正确"
+            ];
+        } else {
+            suggestions = [
+                "检查网络连接是否正常",
+                "尝试更换DNS服务器 (8.8.8.8或114.114.114.114)",
+                "检查是否需要配置代理"
+            ];
+        }
+        
+        html += `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>DNS解析失败</strong> - 这是导致连接问题的主要原因。
+                <div class="mt-2">
+                    <strong>${isDockerEnv ? 'Docker环境' : ''}解决建议：</strong>
+                    <ul class="mb-0 mt-1">
+                        ${suggestions.map(s => `<li>${s}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>
+        `;
+    } else if (dnsSuccess && !tcpSuccess && !httpSuccess) {
+        html += `
+            <div class="alert alert-warning mb-0">
+                <i class="bi bi-shield-x me-2"></i>
+                <strong>连接被阻止</strong> - DNS解析正常但无法建立TCP或HTTP连接，可能被防火墙或网络策略阻止。
+                ${isDockerEnv ? '<br><small>Docker环境下请检查端口映射和网络策略。</small>' : ''}
+            </div>
+        `;
+    } else if (dnsSuccess && !tcpSuccess && httpSuccess) {
+        html += `
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>部分连接成功</strong> - TCP直连失败但HTTP连接成功，可能需要通过代理访问。
+                ${isDockerEnv ? '<br><small>Docker环境下建议检查网络配置。</small>' : ''}
+            </div>
+        `;
+    }
+    
+    html += `</div>`;
+    resultDiv.innerHTML = html;
+}
+
+// 显示Bangumi诊断错误
+function showBangumiDiagnosisError(message) {
+    const resultDiv = document.getElementById('bangumi-diagnosis-result');
+    resultDiv.innerHTML = `
+        <div class="alert alert-danger">
+            <h6 class="alert-heading">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                诊断失败
+            </h6>
+            <p class="mb-0">${message}</p>
+        </div>
+    `;
+}
+
+// 自动填充主机地址
+function autoFillHostAddress() {
+    const hostInput = document.getElementById('test-host');
+    const portInput = document.getElementById('test-port');
+    const currentPort = portInput.value || '7890';
+    
+    // 基于当前页面URL推测合适的主机地址
+    const currentHost = window.location.hostname;
+    
+    let suggestedHost = '';
+    
+    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+        // 本地环境，建议测试网关
+        suggestedHost = '192.168.1.1';
+    } else if (currentHost.startsWith('192.168.')) {
+        // 局域网环境，建议测试网关或其他常见IP
+        const parts = currentHost.split('.');
+        if (parts.length === 4) {
+            // 使用相同网段的网关
+            suggestedHost = `${parts[0]}.${parts[1]}.${parts[2]}.1`;
+        } else {
+            suggestedHost = '192.168.1.1';
+        }
+    } else {
+        // 其他环境，使用常见的局域网地址
+        suggestedHost = '192.168.1.1';
+    }
+    
+    hostInput.value = suggestedHost;
+    
+    // 显示提示信息
+    showAlert(`已自动填入 ${suggestedHost}:${currentPort}，这是基于当前网络环境的推测`, 'info', 3000);
+}
+
+// 主机连通性测试
+async function testHostConnectivity() {
+    const button = document.getElementById('test-host-btn');
+    const resultDiv = document.getElementById('host-test-result');
+    const host = document.getElementById('test-host').value.trim();
+    const port = parseInt(document.getElementById('test-port').value);
+    const timeout = parseInt(document.getElementById('test-timeout').value);
+    
+    if (!host) {
+        showAlert('请输入主机地址', 'warning', 3000);
+        return;
+    }
+    
+    // 显示加载状态
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>测试中...';
+    
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `
+        <div class="alert alert-info">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm text-info me-3" role="status">
+                    <span class="visually-hidden">测试中...</span>
+                </div>
+                <div>
+                    <h6 class="mb-1">正在测试连接</h6>
+                    <small class="text-muted">检测到 ${host}:${port} 的连通性...</small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    try {
+        const response = await fetch('/api/proxy/test-host', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ host, port, timeout })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            displayHostTestResult(result.data);
+        } else {
+            showHostTestError(result.message);
+        }
+        
+    } catch (error) {
+        console.error('主机连通性测试失败:', error);
+        showHostTestError('网络错误，无法进行测试');
+    } finally {
+        // 恢复按钮状态
+        button.disabled = false;
+        button.innerHTML = '<i class="bi bi-play-circle me-1"></i>测试连接';
+    }
+}
+
+// 显示主机测试结果
+function displayHostTestResult(data) {
+    const resultDiv = document.getElementById('host-test-result');
+    
+    let html = `
+        <div class="alert alert-light border">
+            <h6 class="mb-3">
+                <i class="bi bi-hdd-network me-2 text-info"></i>
+                连通性测试结果 - ${data.host}:${data.port}
+            </h6>
+    `;
+    
+    // TCP连接测试结果
+    const tcpSuccess = data.tcp_reachable;
+    const tcpIcon = tcpSuccess ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+    
+    html += `
+        <div class="mb-3">
+            <h6 class="mb-2">
+                <i class="bi ${tcpIcon} me-2"></i>
+                TCP连接测试
+            </h6>
+            <p class="mb-2 ms-4">${tcpSuccess ? 'TCP连接成功' : 'TCP连接失败'}</p>
+            <div class="ms-4">
+                <small class="text-muted">耗时: ${data.tcp_time}ms</small>
+            </div>
+        </div>
+    `;
+    
+    // Ping测试结果
+    if (data.ping_reachable !== null) {
+        const pingSuccess = data.ping_reachable;
+        const pingIcon = pingSuccess ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+        
+        html += `
+            <div class="mb-3">
+                <h6 class="mb-2">
+                    <i class="bi ${pingIcon} me-2"></i>
+                    Ping测试
+                </h6>
+                <p class="mb-2 ms-4">${pingSuccess ? 'Ping成功' : 'Ping失败或无权限'}</p>
+                ${data.ping_time ? `
+                    <div class="ms-4">
+                        <small class="text-muted">平均延迟: ${data.ping_time}ms</small>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    
+    // 详细信息
+    if (data.details) {
+        html += `
+            <div class="mb-3">
+                <h6 class="mb-2">
+                    <i class="bi bi-info-circle me-2 text-info"></i>
+                    详细信息
+                </h6>
+                <div class="ms-4">
+                    <small class="text-muted">${data.details}</small>
+                </div>
+            </div>
+        `;
+    }
+    
+    // 总结性建议
+    if (tcpSuccess) {
+        html += `
+            <div class="alert alert-success mb-0">
+                <i class="bi bi-check-circle me-2"></i>
+                <strong>连接成功！</strong> 目标主机和端口可以正常访问。
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>连接失败</strong> - 无法连接到目标主机，请检查主机地址、端口号和网络配置。
+            </div>
+        `;
+    }
+    
+    html += `</div>`;
+    resultDiv.innerHTML = html;
+}
+
+// 显示主机测试错误
+function showHostTestError(message) {
+    const resultDiv = document.getElementById('host-test-result');
+    resultDiv.innerHTML = `
+        <div class="alert alert-danger">
+            <h6 class="alert-heading">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                测试异常
+            </h6>
+            <p class="mb-0">${message}</p>
+        </div>
+    `;
+}
+
+
+// 复制到剪贴板
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showAlert('代理地址已复制到剪贴板', 'success', 2000);
+    } catch (err) {
+        console.error('复制失败:', err);
+        showAlert('复制失败，请手动复制', 'warning', 3000);
+    }
+}
+
+// 测试代理连通性
+async function testProxy(address, event) {
+    event.stopPropagation(); // 阻止冒泡
+    
+    const button = event.target.closest('button');
+    const originalText = button.innerHTML;
+    
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>测试中';
+    
+    try {
+        const response = await fetch('/api/proxy/test', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ proxy_url: address })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            showAlert(`代理测试成功！延迟: ${result.data.response_time_ms}ms`, 'success', 3000);
+        } else {
+            showAlert(`代理测试失败: ${result.message}`, 'danger', 5000);
+        }
+        
+    } catch (error) {
+        console.error('代理测试失败:', error);
+        showAlert('代理测试异常', 'danger', 3000);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalText;
+    }
+}
+
+// Toast提示函数
+function showAlert(message, type = 'info', duration = 3000) {
+    // 创建Toast容器（如果不存在）
+    let toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toast-container';
+        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+        toastContainer.style.zIndex = '1050';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // 创建Toast元素
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    // 初始化Bootstrap Toast
+    const bsToast = new bootstrap.Toast(toast, {
+        autohide: true,
+        delay: duration
+    });
+    
+    // 显示Toast
+    bsToast.show();
+    
+    // 自动移除元素
+    toast.addEventListener('hidden.bs.toast', () => {
+        toast.remove();
+    });
+}
+</script>
+{% endblock %}

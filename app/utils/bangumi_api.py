@@ -2,6 +2,7 @@ import datetime
 import difflib
 import functools
 import os
+import socket
 import time
 import requests
 import warnings
@@ -41,8 +42,54 @@ class BangumiApi:
                 r.proxies = {'http': self.http_proxy, 'https': self.http_proxy}
         self._req_not_auth.headers = {k: v for k, v in self._req_not_auth.headers.items() if k != 'Authorization'}
 
+    def _diagnose_network_issue(self, url):
+        """诊断网络连接问题"""
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+        
+        logger.info(f"🔍 开始网络诊断 - 目标: {hostname}:{port}")
+        
+        # 1. DNS解析测试
+        try:
+            ip_list = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            ips = [ip[4][0] for ip in ip_list]
+            logger.info(f"✅ DNS解析成功: {hostname} -> {', '.join(set(ips))}")
+        except socket.gaierror as e:
+            logger.error(f"❌ DNS解析失败: {e}")
+            logger.info("💡 建议检查:")
+            logger.info("   1. 网络连接是否正常")
+            logger.info("   2. DNS设置是否正确 (可尝试8.8.8.8或114.114.114.114)")
+            logger.info("   3. 是否需要配置代理")
+            return
+        except Exception as e:
+            logger.error(f"❌ DNS解析异常: {e}")
+            return
+        
+        # 2. TCP连接测试
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            result = sock.connect_ex((ips[0], port))
+            sock.close()
+            
+            if result == 0:
+                logger.info(f"✅ TCP连接成功: {ips[0]}:{port}")
+            else:
+                logger.error(f"❌ TCP连接失败: {ips[0]}:{port} (错误码: {result})")
+                logger.info("💡 建议检查:")
+                logger.info("   1. 防火墙设置")
+                logger.info("   2. 网络代理配置")
+                logger.info("   3. 是否需要VPN或其他网络工具")
+        except Exception as e:
+            logger.error(f"❌ TCP连接测试异常: {e}")
+
     def _request_with_retry(self, method, session, url, max_retries=3, **kwargs):
         """带重试机制的请求方法"""
+        last_exception = None
+        dns_error_occurred = False
+        
         for attempt in range(max_retries + 1):
             try:
                 # 添加SSL验证配置
@@ -73,6 +120,12 @@ class BangumiApi:
                 return res
                 
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.RequestException) as e:
+                last_exception = e
+                
+                # 检查是否是DNS解析错误
+                if "Failed to resolve" in str(e) or "Temporary failure in name resolution" in str(e):
+                    dns_error_occurred = True
+                
                 if attempt < max_retries:
                     delay = 2 ** attempt  # 指数退避: 2, 4, 8秒
                     logger.error(f'请求异常: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试')
@@ -80,9 +133,13 @@ class BangumiApi:
                     continue
                 else:
                     logger.error(f'请求异常: {str(e)}，已达到最大重试次数 {max_retries}')
+                    
+                    # 如果是DNS错误，进行网络诊断
+                    if dns_error_occurred:
+                        logger.warning("⚠️  检测到DNS解析问题，开始网络诊断...")
+                        self._diagnose_network_issue(url)
+                    
                     raise e
-        
-        return res
 
     def get(self, path, params=None):
         logger.debug(f'BangumiApi GET请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else "无"}')

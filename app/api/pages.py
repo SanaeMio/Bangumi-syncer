@@ -83,6 +83,19 @@ async def mappings_page(request: Request):
     })
 
 
+@router.get("/debug", response_class=HTMLResponse)
+async def debug_page(request: Request):
+    """调试工具页面"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    return templates.TemplateResponse("debug.html", {
+        "request": request, 
+        "user": user
+    })
+
+
 @router.get("/logs", response_class=HTMLResponse)
 async def logs_page(request: Request):
     """日志页面"""
