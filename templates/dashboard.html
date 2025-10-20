@@ -147,6 +147,10 @@
 
 {% block scripts %}
 <script>
+// 全局图表实例
+let dailyChartInstance = null;
+let userChartInstance = null;
+
 document.addEventListener('DOMContentLoaded', function() {
     loadDashboardData();
 });
@@ -187,6 +191,11 @@ async function loadDashboardData() {
 }
 
 function drawDailyChart(dailyStats) {
+    // 销毁旧的图表实例
+    if (dailyChartInstance) {
+        dailyChartInstance.destroy();
+    }
+    
     const ctx = document.getElementById('dailyChart').getContext('2d');
     
     // 准备最近7天的数据
@@ -203,7 +212,7 @@ function drawDailyChart(dailyStats) {
         counts.push(found ? found.count : 0);
     }
     
-    new Chart(ctx, {
+    dailyChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels: dates.map(date => new Date(date).toLocaleDateString()),
@@ -246,12 +255,17 @@ function drawDailyChart(dailyStats) {
 }
 
 function drawUserChart(userStats) {
+    // 销毁旧的图表实例
+    if (userChartInstance) {
+        userChartInstance.destroy();
+    }
+    
     const ctx = document.getElementById('userChart').getContext('2d');
     
     const labels = userStats.slice(0, 5).map(item => item.user);
     const data = userStats.slice(0, 5).map(item => item.count);
     
-    new Chart(ctx, {
+    userChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: labels,
@@ -294,22 +308,32 @@ function displayRecentRecords(records) {
         const statusMap = {
             'success': '成功',
             'error': '失败',
-            'ignored': '忽略'
+            'ignored': '忽略',
+            'retried': '已重试'
         };
         
         const statusText = statusMap[record.status] || record.status;
         const statusClass = record.status === 'success' ? 'success' : 
-                          record.status === 'ignored' ? 'warning' : 'danger';
+                          record.status === 'ignored' ? 'warning' : 
+                          record.status === 'retried' ? 'success' : 'danger';
         
         // 来源颜色映射
         const sourceColorMap = {
             'plex': 'warning',     // 黄色
             'emby': 'success',     // 绿色
             'jellyfin': 'primary', // 蓝色
-            'custom': 'secondary'  // 灰色
+            'custom': 'secondary', // 灰色
+            'test': 'info'         // 浅蓝色
         };
         
-        const sourceClass = sourceColorMap[record.source.toLowerCase()] || 'secondary';
+        // 处理重试来源（retry-xxx）
+        let sourceClass = 'secondary';
+        const sourceLower = record.source.toLowerCase();
+        if (sourceLower.startsWith('retry-')) {
+            sourceClass = 'purple';  // 重试记录用紫色标识
+        } else {
+            sourceClass = sourceColorMap[sourceLower] || 'secondary';
+        }
         
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -335,7 +359,16 @@ function displayRecentRecords(records) {
                 </a>
                 ` : `<span class="badge bg-info">S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</span>`}
             </td>
-            <td><span class="badge bg-${statusClass}">${statusText}</span></td>
+            <td class="align-middle">
+                <span class="badge bg-${statusClass}">${statusText}</span>
+                ${record.status === 'error' ? `
+                <button class="badge-retry-btn ms-1" 
+                        onclick="retrySync(${record.id})" 
+                        title="重试同步">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+                ` : ''}
+            </td>
             <td><span class="badge bg-${sourceClass}">${record.source}</span></td>
         `;
         tbody.appendChild(row);

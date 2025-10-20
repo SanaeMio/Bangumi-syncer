@@ -243,7 +243,7 @@ services:
 6. `Data`中展开`Watched`，在`JSON Data`中填写如下通知模版，然后点击右下角`Save`保存设置
 
 ```bash
-{"media_type": "{media_type}", "title": "{show_name}", "ori_title": " ", "season": "{season_num}", "episode": "{episode_num}", "release_date": "{air_date}", "user_name": "{username}"}
+{"media_type": "{media_type}", "title": "{show_name}", "ori_title": " ", "season": "{season_num}", "episode": "{episode_num}", "release_date": "{air_date}", "user_name": "{username}, "source": "plex"}
 ```
 
 ![](https://p.sda1.dev/16/6870cf7c4167203114bc4df7eac4b41a/5.jpg)

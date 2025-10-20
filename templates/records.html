@@ -29,6 +29,7 @@
                     <option value="success">成功</option>
                     <option value="error">失败</option>
                     <option value="ignored">已忽略</option>
+                    <option value="retried">已重试</option>
                 </select>
             </div>
             <div class="col-md-3">
@@ -46,11 +47,15 @@
                     <option value="emby">Emby</option>
                     <option value="jellyfin">Jellyfin</option>
                     <option value="test">测试</option>
+                    <option value="retry">重试记录</option>
                 </select>
             </div>
-            <div class="col-md-3 d-flex align-items-end">
-                <button type="button" class="btn btn-outline-primary w-100" onclick="applyFilters()">
+            <div class="col-md-3 d-flex align-items-end gap-2">
+                <button type="button" class="btn btn-outline-primary flex-fill" onclick="applyFilters()">
                     <i class="bi bi-funnel me-1"></i>应用筛选
+                </button>
+                <button type="button" class="btn btn-outline-secondary flex-fill" onclick="clearFilters()">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>重置筛选
                 </button>
             </div>
         </div>
@@ -194,6 +199,7 @@ function displayRecords(records) {
                 </button>
                 ${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-sm btn-outline-primary ms-1" title="查看Bangumi番剧页面"><i class="bi bi-collection"></i></a>` : ''}
                 ${record.episode_id ? `<a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="查看Bangumi剧集页面"><i class="bi bi-play-circle"></i></a>` : ''}
+                ${record.status === 'error' ? `<button class="btn btn-sm btn-outline-warning btn-retry ms-1" onclick="retrySync(${record.id})" title="重试同步"><i class="bi bi-arrow-clockwise"></i></button>` : ''}
             </td>
         `;
         tbody.appendChild(row);
@@ -205,6 +211,7 @@ function getStatusColor(status) {
         case 'success': return 'success';
         case 'error': return 'danger';
         case 'ignored': return 'warning';
+        case 'retried': return 'success';  // 已重试也用绿色，表示问题已解决
         default: return 'secondary';
     }
 }
@@ -214,16 +221,25 @@ function getStatusText(status) {
         case 'success': return '成功';
         case 'error': return '失败';
         case 'ignored': return '已忽略';
+        case 'retried': return '已重试';
         default: return status;
     }
 }
 
 function getSourceColor(source) {
-    switch (source.toLowerCase()) {
+    const sourceLower = source.toLowerCase();
+    
+    // 处理重试来源
+    if (sourceLower.startsWith('retry-')) {
+        return 'purple';  // 重试记录用紫色标识
+    }
+    
+    switch (sourceLower) {
         case 'plex': return 'warning';     // 黄色
         case 'emby': return 'success';     // 绿色
         case 'jellyfin': return 'primary'; // 蓝色
         case 'custom': return 'secondary'; // 灰色
+        case 'test': return 'info';        // 浅蓝色
         default: return 'secondary';
     }
 }
@@ -238,7 +254,7 @@ function updatePagination(total, currentPage, limit) {
     // 上一页
     const prevLi = document.createElement('li');
     prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
-    prevLi.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${currentPage - 1})">上一页</a>`;
+    prevLi.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${currentPage - 1})">上一页</a>`;
     pagination.appendChild(prevLi);
     
     // 页码
@@ -248,7 +264,7 @@ function updatePagination(total, currentPage, limit) {
     if (startPage > 1) {
         const firstLi = document.createElement('li');
         firstLi.className = 'page-item';
-        firstLi.innerHTML = '<a class="page-link" href="#" onclick="loadRecords(1)">1</a>';
+        firstLi.innerHTML = '<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(1)">1</a>';
         pagination.appendChild(firstLi);
         
         if (startPage > 2) {
@@ -262,7 +278,7 @@ function updatePagination(total, currentPage, limit) {
     for (let i = startPage; i <= endPage; i++) {
         const li = document.createElement('li');
         li.className = `page-item ${i === currentPage ? 'active' : ''}`;
-        li.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${i})">${i}</a>`;
+        li.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${i})">${i}</a>`;
         pagination.appendChild(li);
     }
     
@@ -276,14 +292,14 @@ function updatePagination(total, currentPage, limit) {
         
         const lastLi = document.createElement('li');
         lastLi.className = 'page-item';
-        lastLi.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${totalPages})">${totalPages}</a>`;
+        lastLi.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${totalPages})">${totalPages}</a>`;
         pagination.appendChild(lastLi);
     }
     
     // 下一页
     const nextLi = document.createElement('li');
     nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
-    nextLi.innerHTML = `<a class="page-link" href="#" onclick="loadRecords(${currentPage + 1})">下一页</a>`;
+    nextLi.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${currentPage + 1})">下一页</a>`;
     pagination.appendChild(nextLi);
 }
 
@@ -321,8 +337,28 @@ function applyFilters() {
     
     if (status) currentFilters.status = status;
     if (user) currentFilters.user_name = user;
-    if (source) currentFilters.source = source;
+    if (source) {
+        // 如果选择"重试记录"，使用特殊的筛选参数
+        if (source === 'retry') {
+            currentFilters.source_prefix = 'retry-';
+        } else {
+            currentFilters.source = source;
+        }
+    }
     
+    loadRecords(1);
+}
+
+function clearFilters() {
+    // 清空所有筛选条件
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-user').value = '';
+    document.getElementById('filter-source').value = '';
+    
+    // 清空筛选对象
+    currentFilters = {};
+    
+    // 重新加载记录
     loadRecords(1);
 }
 
