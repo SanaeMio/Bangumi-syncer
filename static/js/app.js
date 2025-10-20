@@ -586,4 +586,83 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 导出登录相关函数
 window.initLoginPage = initLoginPage;
-window.handleLoginSubmit = handleLoginSubmit; 
+window.handleLoginSubmit = handleLoginSubmit;
+
+// ========== 同步重试功能 ==========
+
+/**
+ * 重试同步记录
+ * @param {number} recordId - 记录ID
+ */
+async function retrySync(recordId) {
+    if (!recordId) {
+        showAlert('记录ID无效', 'danger');
+        return;
+    }
+    
+    // 确认重试
+    if (!confirm('确定要重试此同步记录吗？')) {
+        return;
+    }
+    
+    try {
+        // 显示加载状态
+        showAlert('正在重试同步...', 'info', 0);
+        
+        // 调用重试API
+        const response = await fetch(`/api/records/${recordId}/retry`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        // 关闭加载提示
+        const toastContainer = document.getElementById('toast-container');
+        if (toastContainer) {
+            toastContainer.innerHTML = '';
+        }
+        
+        if (response.ok && result.status === 'success') {
+            const syncResult = result.data;
+            
+            if (syncResult.status === 'success') {
+                showAlert('重试成功！已同步到Bangumi', 'success', 3000);
+            } else if (syncResult.status === 'ignored') {
+                showAlert('重试完成，但记录被忽略：' + syncResult.message, 'warning', 5000);
+            } else {
+                showAlert('重试失败：' + syncResult.message, 'danger', 5000);
+            }
+            
+            // 延迟刷新页面以显示最新数据
+            setTimeout(() => {
+                // 根据当前页面刷新相应的数据
+                if (typeof loadDashboardData === 'function') {
+                    loadDashboardData();
+                } else if (typeof loadRecords === 'function') {
+                    loadRecords(currentPage, currentLimit);
+                } else {
+                    location.reload();
+                }
+            }, 1500);
+        } else {
+            throw new Error(result.message || '重试失败');
+        }
+    } catch (error) {
+        console.error('重试同步失败:', error);
+        
+        // 关闭加载提示
+        const toastContainer = document.getElementById('toast-container');
+        if (toastContainer) {
+            toastContainer.innerHTML = '';
+        }
+        
+        showAlert('重试失败：' + error.message, 'danger', 5000);
+    }
+}
+
+// 导出重试功能
+window.retrySync = retrySync; 

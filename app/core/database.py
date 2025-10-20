@@ -68,7 +68,7 @@ class DatabaseManager:
     
     def get_sync_records(self, limit: int = 100, offset: int = 0, 
                         status: Optional[str] = None, user_name: Optional[str] = None, 
-                        source: Optional[str] = None) -> Dict[str, Any]:
+                        source: Optional[str] = None, source_prefix: Optional[str] = None) -> Dict[str, Any]:
         """获取同步记录"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -89,6 +89,10 @@ class DatabaseManager:
             if source:
                 where_conditions.append("source = ?")
                 params.append(source)
+            
+            if source_prefix:
+                where_conditions.append("source LIKE ?")
+                params.append(f"{source_prefix}%")
             
             where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
             
@@ -171,6 +175,31 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"获取同步记录详情失败: {e}")
             raise
+    
+    def update_sync_record_status(self, record_id: int, status: str, message: str = "") -> bool:
+        """更新同步记录的状态"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE sync_records 
+                SET status = ?, message = ?
+                WHERE id = ?
+            ''', (status, message, record_id))
+            
+            conn.commit()
+            affected_rows = cursor.rowcount
+            conn.close()
+            
+            if affected_rows > 0:
+                return True
+            else:
+                logger.warning(f"记录 {record_id} 不存在，无法更新")
+                return False
+        except Exception as e:
+            logger.error(f"更新同步记录状态失败: {e}")
+            return False
     
     def get_sync_stats(self) -> Dict[str, Any]:
         """获取同步统计信息"""

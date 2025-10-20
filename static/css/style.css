@@ -384,6 +384,7 @@ main {
 .pagination .page-item.active .page-link {
     background-color: #0d6efd;
     border-color: #0d6efd;
+    color: #ffffff;  /* 白色文字，确保在蓝色背景上清晰可见 */
 }
 
 /* 警告框样式 */
@@ -508,6 +509,118 @@ main {
     .btn-group .btn {
         margin-bottom: 0.5rem;
     }
+    
+    /* 同步记录表格移动端优化 */
+    #records-table {
+        font-size: 0.75rem;
+        table-layout: fixed;  /* 固定表格布局，便于控制列宽 */
+        width: 100%;
+    }
+    
+    /* 隐藏移动端不重要的列 */
+    #records-table th:nth-child(2),  /* 用户 */
+    #records-table td:nth-child(2),
+    #records-table th:nth-child(4),  /* 原始标题 */
+    #records-table td:nth-child(4),
+    #records-table th:nth-child(7),  /* 来源 */
+    #records-table td:nth-child(7),
+    #records-table th:nth-child(8),  /* 消息 */
+    #records-table td:nth-child(8) {
+        display: none;
+    }
+    
+    /* 设置移动端列宽 */
+    #records-table th:nth-child(1),  /* 时间 */
+    #records-table td:nth-child(1) {
+        width: 20%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    /* 时间列数据单元格字体大小 */
+    #records-table td:nth-child(1) {
+        font-size: 0.7rem;
+    }
+    
+    #records-table th:nth-child(3),  /* 番剧标题 */
+    #records-table td:nth-child(3) {
+        width: 30%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    #records-table th:nth-child(5),  /* 季/集 */
+    #records-table td:nth-child(5) {
+        width: 14%;
+        text-align: center;
+    }
+    
+    #records-table th:nth-child(6),  /* 状态 */
+    #records-table td:nth-child(6) {
+        width: 12%;
+        text-align: center;
+    }
+    
+    #records-table th:nth-child(9),  /* 操作 */
+    #records-table td:nth-child(9) {
+        width: 24%;
+        text-align: center;
+        padding: 0.5rem 0.2rem;
+    }
+    
+    /* 移动端操作按钮 - 保持横排但优化间距 */
+    #records-table td:last-child {
+        white-space: nowrap;
+        padding: 0.5rem 0.2rem;
+    }
+    
+    #records-table td:last-child .btn,
+    #records-table td:last-child a {
+        padding: 0.25rem 0.35rem;
+        font-size: 0.7rem;
+        margin: 0 0.15rem 0 0 !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+    }
+    
+    #records-table td:last-child .btn:last-child,
+    #records-table td:last-child a:last-child {
+        margin-right: 0 !important;
+    }
+    
+    #records-table td:last-child .btn i,
+    #records-table td:last-child a i {
+        font-size: 0.85rem;
+    }
+    
+    /* 移动端徽章优化 */
+    #records-table .badge {
+        font-size: 0.65rem;
+        padding: 0.3em 0.5em;
+        white-space: nowrap;
+    }
+    
+    /* 移动端筛选条件优化 */
+    .card-body .row .col-md-3 {
+        margin-bottom: 0.75rem;
+    }
+    
+    /* 移动端表格容器优化 */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* 确保表格不会超出容器 */
+    #records-table th,
+    #records-table td {
+        padding: 0.5rem 0.25rem;
+        vertical-align: middle;
+    }
 }
 
 /* 动画效果 */
@@ -583,6 +696,96 @@ pre {
 
 .bg-secondary {
     background-color: #6c757d !important;
+}
+
+/* 紫色主题 - 用于重试记录 */
+.bg-purple {
+    background-color: #8b5cf6 !important;
+    color: #ffffff !important;
+}
+
+.text-purple {
+    color: #8b5cf6 !important;
+}
+
+.badge.bg-purple {
+    background-color: #8b5cf6 !important;
+    color: #ffffff !important;
+}
+
+.btn-purple {
+    background-color: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+}
+
+.btn-purple:hover {
+    background-color: #7c3aed;
+    border-color: #7c3aed;
+    color: white;
+    transform: translateY(-1px);
+}
+
+.btn-outline-purple {
+    border-color: #8b5cf6;
+    color: #8b5cf6;
+    background-color: transparent;
+}
+
+.btn-outline-purple:hover {
+    background-color: #8b5cf6;
+    border-color: #8b5cf6;
+    color: white;
+    transform: translateY(-1px);
+}
+
+/* 重试按钮徽章样式 - 悬停效果 */
+.badge-retry-btn {
+    display: inline-block;
+    padding: 0.4em 0.6em;
+    font-size: 0.75em;
+    font-weight: 500;
+    line-height: 1;
+    color: #fd7e14;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: middle;  /* 改为 middle 确保与徽章对齐 */
+    border-radius: 20px;
+    border: 1px solid #fd7e14;
+    background-color: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.badge-retry-btn:hover {
+    background-color: #fd7e14;
+    color: #ffffff;
+    transform: scale(1.05);
+}
+
+.badge-retry-btn:active {
+    transform: scale(0.95);
+}
+
+/* 确保徽章也使用相同的垂直对齐 */
+.badge {
+    vertical-align: middle;
+}
+
+/* 同步记录页面的重试按钮样式 - 方形按钮带悬停效果 */
+.btn-retry {
+    transition: all 0.2s ease;
+}
+
+.btn-retry:hover {
+    background-color: #fd7e14;
+    border-color: #fd7e14;
+    color: #ffffff;
+    transform: scale(1.05);
+}
+
+.btn-retry:active {
+    transform: scale(0.95);
 }
 
 /* 日志查看器样式 */

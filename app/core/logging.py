@@ -103,7 +103,7 @@ class Logger:
         # 根据日志级别添加对应的标识符
         level_prefix = f"[{level}]" if level else ""
         
-        timestamp = f"[{datetime.datetime.now().strftime('%D %H:%M:%S.%f')[:19]}] "
+        timestamp = f"[{datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S.%f')[:-3]}] "
         message = ' '.join(str(i) for i in args)
         log_line = timestamp + level_prefix + " " + message
         

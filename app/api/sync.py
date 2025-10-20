@@ -176,6 +176,7 @@ async def get_sync_records(
     status: Optional[str] = None,
     user_name: Optional[str] = None,
     source: Optional[str] = None,
+    source_prefix: Optional[str] = None,
     current_user: dict = Depends(get_current_user_flexible)
 ):
     """获取同步记录"""
@@ -185,7 +186,8 @@ async def get_sync_records(
             offset=offset,
             status=status,
             user_name=user_name,
-            source=source
+            source=source,
+            source_prefix=source_prefix
         )
         
         return {
@@ -219,6 +221,73 @@ async def get_sync_record(
     except Exception as e:
         logger.error(f"获取同步记录详情失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取同步记录详情失败: {str(e)}")
+
+
+@router.post("/records/{record_id}/retry")
+async def retry_sync_record(
+    record_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible)
+):
+    """重试同步记录"""
+    try:
+        # 获取原始记录
+        record = database_manager.get_sync_record_by_id(record_id)
+        
+        if not record:
+            raise HTTPException(status_code=404, detail="记录不存在")
+        
+        # 只允许重试失败的记录
+        if record.get('status') != 'error':
+            raise HTTPException(status_code=400, detail="只能重试失败的记录")
+        
+        # 获取原始来源并添加重试标记
+        original_source = record.get('source', 'custom')
+        retry_source = f"retry-{original_source}"  # 组合来源，如 "retry-plex", "retry-emby" 等
+        
+        # 重新构建同步项目
+        retry_item = CustomItem(
+            media_type="episode",
+            title=record.get('title', ''),
+            ori_title=record.get('ori_title', ''),
+            season=record.get('season', 1),
+            episode=record.get('episode', 1),
+            release_date='',
+            user_name=record.get('user_name', ''),
+            source=retry_source  # 使用组合来源标识这是重试记录
+        )
+        
+        logger.info(f"重试同步记录 {record_id}: {retry_item.title} S{retry_item.season:02d}E{retry_item.episode:02d}, 原始来源: {original_source}, 重试来源: {retry_source}")
+        
+        # 执行同步
+        result = sync_service.sync_custom_item(retry_item, source=retry_source)
+        
+        # 如果重试成功，更新原记录的状态
+        if result.status == "success":
+            database_manager.update_sync_record_status(
+                record_id=record_id,
+                status="retried",  # 标记为已重试
+                message=f"已重试成功: {result.message}"
+            )
+        elif result.status == "ignored":
+            database_manager.update_sync_record_status(
+                record_id=record_id,
+                status="retried",
+                message=f"重试被忽略: {result.message}"
+            )
+        # 如果重试仍然失败，保持原状态不变
+        
+        return {
+            "status": "success",
+            "message": "重试完成",
+            "data": result.dict()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"重试同步记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"重试失败: {str(e)}")
 
 
 @router.get("/stats")
