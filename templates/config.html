@@ -449,6 +449,210 @@
             </div>
         </div>
     </div>
+
+    <!-- 通知配置 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4 config-card">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-bell me-2 text-warning"></i>
+                        <h6 class="m-0 fw-semibold">通知配置</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Webhook 通知 -->
+                    <!-- Webhook 基本配置（合并为一行） -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-send me-1 text-success"></i>启用 Webhook
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="webhook-enabled" name="notification.webhook_enabled">
+                                <label class="form-check-label" for="webhook-enabled">启用</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="webhook-url" class="form-label fw-semibold">
+                                <i class="bi bi-link me-1 text-info"></i>Webhook URL
+                                <span class="text-danger">*</span>
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="Webhook 地址，支持钉钉、企业微信、Slack、Discord 等服务"></i>
+                            </label>
+                            <input type="url" class="form-control form-control-lg" id="webhook-url" name="notification.webhook_url" 
+                                   placeholder="https://your-webhook-url.com/hook">
+                        </div>
+                        <div class="col-md-2">
+                            <label for="webhook-method" class="form-label fw-semibold">
+                                <i class="bi bi-arrow-right-circle me-1"></i>请求方法
+                            </label>
+                            <select class="form-select form-select-lg" id="webhook-method" name="notification.webhook_method">
+                                <option value="POST">POST</option>
+                                <option value="GET">GET</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="webhook-headers" class="form-label fw-semibold">
+                                <i class="bi bi-list-ul me-1"></i>自定义请求头（可选）
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="自定义 HTTP 请求头，多个用逗号分隔。例如：Authorization: Bearer token"></i>
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="webhook-headers" name="notification.webhook_headers" 
+                                   placeholder="如：Authorization: Bearer token">
+                        </div>
+                    </div>
+                    
+                    <!-- 消息模板 -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <label for="webhook-template" class="form-label fw-semibold">
+                                <i class="bi bi-code-square me-1"></i>消息模板
+                                <span class="text-danger">*</span>
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="Webhook 消息模板，使用 {变量名} 引用数据。支持 JSON 或纯文本格式。系统会完全按照此模板发送数据。"></i>
+                            </label>
+                            <textarea class="form-control" id="webhook-template" name="notification.webhook_template" rows="5" 
+                                      placeholder='{"content": "🚨 Bangumi-Syncer同步出错\n时间: {timestamp}\n错误信息: {error_message}\n番剧信息: {title} S{season}E{episode}"}'></textarea>
+                            <div class="alert alert-info mt-2 mb-0">
+                                <h6 class="alert-heading mb-2"><i class="bi bi-info-circle me-1"></i>可用变量</h6>
+                                <div class="row g-2 small">
+                                    <div class="col-md-6">
+                                        <code>{timestamp}</code> - 错误时间<br>
+                                        <code>{error_type}</code> - 错误类型<br>
+                                        <code>{error_message}</code> - 错误消息<br>
+                                        <code>{user_name}</code> - 用户名
+                                    </div>
+                                    <div class="col-md-6">
+                                        <code>{title}</code> - 番剧标题<br>
+                                        <code>{season}</code> - 季数<br>
+                                        <code>{episode}</code> - 集数<br>
+                                        <code>{source}</code> - 来源（plex/emby/jellyfin）
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <!-- 邮件通知 -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-envelope me-1 text-success"></i>启用邮件
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="email-enabled" name="notification.email_enabled">
+                                <label class="form-check-label" for="email-enabled">启用</label>
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="smtp-server" class="form-label fw-semibold">
+                                <i class="bi bi-server me-1"></i>SMTP 服务器
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="SMTP 服务器地址。Gmail: smtp.gmail.com, QQ: smtp.qq.com, 163: smtp.163.com"></i>
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="smtp-server" name="notification.smtp_server" 
+                                   placeholder="smtp.qq.com">
+                        </div>
+                        <div class="col-md-2">
+                            <label for="smtp-port" class="form-label fw-semibold">
+                                <i class="bi bi-hdd-network me-1"></i>端口
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="SMTP 端口。TLS 加密通常使用 587，SSL 加密通常使用 465"></i>
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="smtp-port" name="notification.smtp_port" 
+                                   placeholder="465" min="1" max="65535">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-shield-lock me-1"></i>使用 TLS
+                            </label>
+                            <div class="form-check form-switch d-flex align-items-center">
+                                <input class="form-check-input me-2" type="checkbox" id="smtp-use-tls" name="notification.smtp_use_tls">
+                                <label class="form-check-label" for="smtp-use-tls">启用</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="smtp-username" class="form-label fw-semibold">
+                                <i class="bi bi-person me-1"></i>SMTP 用户名
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="通常是邮箱地址"></i>
+                            </label>
+                            <input type="email" class="form-control form-control-lg" id="smtp-username" name="notification.smtp_username" 
+                                   placeholder="your-email@example.com">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="smtp-password" class="form-label fw-semibold">
+                                <i class="bi bi-key me-1"></i>SMTP 密码/授权码
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="注意：很多邮箱需要使用授权码而不是登录密码"></i>
+                            </label>
+                            <div class="position-relative">
+                                <input type="password" class="form-control form-control-lg pe-5" id="smtp-password" name="notification.smtp_password" 
+                                       placeholder="授权码或密码">
+                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn" 
+                                        type="button" id="toggle-smtp-password-visibility">
+                                    <i class="bi bi-eye text-muted" id="smtp-password-visibility-icon"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="email-from" class="form-label fw-semibold">
+                                <i class="bi bi-envelope-at me-1"></i>发件人地址（可选）
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="留空则使用 SMTP 用户名"></i>
+                            </label>
+                            <input type="email" class="form-control form-control-lg" id="email-from" name="notification.email_from" 
+                                   placeholder="留空使用 SMTP 用户名">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="email-to" class="form-label fw-semibold">
+                                <i class="bi bi-envelope-check me-1"></i>收件人地址
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="接收通知的邮箱地址"></i>
+                            </label>
+                            <input type="email" class="form-control form-control-lg" id="email-to" name="notification.email_to" 
+                                   placeholder="recipient@example.com">
+                        </div>
+                    </div>
+
+                    <!-- 邮件自定义配置 -->
+                    <div class="row g-3 mt-3">
+                        <div class="col-12">
+                            <label for="email-subject" class="form-label fw-semibold">
+                                <i class="bi bi-chat-square-text me-1"></i>邮件标题
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="自定义邮件标题，使用 {变量名} 引用数据。留空使用默认标题"></i>
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="email-subject" name="notification.email_subject" 
+                                   placeholder="例如: [Bangumi-Syncer] {error_type} - {title} S{season}E{episode}">
+                        </div>
+                        
+                        <div class="col-12">
+                            <label for="email-template-file" class="form-label fw-semibold">
+                                <i class="bi bi-file-earmark-code me-1"></i>自定义邮件模板文件路径
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                   title="自定义邮件 HTML 模板文件路径，支持相对路径和绝对路径。留空使用默认模板"></i>
+                            </label>
+                            <input type="text" class="form-control font-monospace" id="email-template-file" name="notification.email_template_file" 
+                                   placeholder="留空使用默认模板">
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info mt-4">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>提示：</strong>配置完成后，可以在「调试工具」页面测试通知功能。同步错误时会自动发送通知（60秒冷却时间）。
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </form>
 
 <!-- 操作按钮 -->
@@ -675,6 +879,34 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // 初始化 SMTP 密码显示/隐藏功能
+    document.getElementById('toggle-smtp-password-visibility').addEventListener('click', function() {
+        const passwordInput = document.getElementById('smtp-password');
+        const icon = document.getElementById('smtp-password-visibility-icon');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            passwordInput.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    });
+    
+    // 监听 Webhook 启用状态变化，动态添加/移除必填提示
+    document.getElementById('webhook-enabled').addEventListener('change', function() {
+        const webhookUrl = document.getElementById('webhook-url');
+        const webhookTemplate = document.getElementById('webhook-template');
+        
+        if (this.checked) {
+            webhookUrl.setAttribute('required', 'required');
+            webhookTemplate.setAttribute('required', 'required');
+        } else {
+            webhookUrl.removeAttribute('required');
+            webhookTemplate.removeAttribute('required');
+        }
+    });
+    
     // 初始化模态框
     const modalElement = document.getElementById('restoreConfigModal');
     if (modalElement) {
@@ -753,6 +985,26 @@ function populateForm(config) {
         document.getElementById('lockout-duration').value = config.auth.lockout_duration || 900;
         // 密码字段留空，表示不修改
         document.getElementById('auth-password').value = '';
+    }
+    
+    // 填充通知配置
+    if (config.notification) {
+        document.getElementById('webhook-enabled').checked = config.notification.webhook_enabled || false;
+        document.getElementById('webhook-url').value = config.notification.webhook_url || '';
+        document.getElementById('webhook-method').value = config.notification.webhook_method || 'POST';
+        document.getElementById('webhook-headers').value = config.notification.webhook_headers || '';
+        document.getElementById('webhook-template').value = config.notification.webhook_template || '';
+        
+        document.getElementById('email-enabled').checked = config.notification.email_enabled || false;
+        document.getElementById('smtp-server').value = config.notification.smtp_server || '';
+        document.getElementById('smtp-port').value = config.notification.smtp_port || 587;
+        document.getElementById('smtp-use-tls').checked = config.notification.smtp_use_tls !== false;
+        document.getElementById('smtp-username').value = config.notification.smtp_username || '';
+        document.getElementById('smtp-password').value = config.notification.smtp_password || '';
+        document.getElementById('email-from').value = config.notification.email_from || '';
+        document.getElementById('email-to').value = config.notification.email_to || '';
+        document.getElementById('email-subject').value = config.notification.email_subject || '';
+        document.getElementById('email-template-file').value = config.notification.email_template_file || '';
     }
     
     // 切换同步模式
@@ -854,6 +1106,27 @@ function removeBangumiAccount(id) {
 
 async function saveConfig() {
     try {
+        // 验证 Webhook 配置
+        const webhookEnabled = document.getElementById('webhook-enabled').checked;
+        const webhookUrl = document.getElementById('webhook-url').value.trim();
+        const webhookTemplate = document.getElementById('webhook-template').value.trim();
+        
+        if (webhookEnabled) {
+            if (!webhookUrl) {
+                showAlert('启用 Webhook 通知时，Webhook URL 为必填项', 'warning');
+                document.getElementById('webhook-url').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                document.getElementById('webhook-url').focus();
+                return;
+            }
+            
+            if (!webhookTemplate) {
+                showAlert('启用 Webhook 通知时，消息模板为必填项', 'warning');
+                document.getElementById('webhook-template').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                document.getElementById('webhook-template').focus();
+                return;
+            }
+        }
+        
         const configData = {
             bangumi: {
                 username: document.getElementById('bangumi-username').value,
@@ -884,6 +1157,23 @@ async function saveConfig() {
                 https_only: document.getElementById('https-only').checked,
                 max_login_attempts: parseInt(document.getElementById('max-login-attempts').value) || 5,
                 lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900
+            },
+            notification: {
+                webhook_enabled: document.getElementById('webhook-enabled').checked,
+                webhook_url: document.getElementById('webhook-url').value,
+                webhook_method: document.getElementById('webhook-method').value,
+                webhook_headers: document.getElementById('webhook-headers').value,
+                webhook_template: document.getElementById('webhook-template').value,
+                email_enabled: document.getElementById('email-enabled').checked,
+                smtp_server: document.getElementById('smtp-server').value,
+                smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
+                smtp_use_tls: document.getElementById('smtp-use-tls').checked,
+                smtp_username: document.getElementById('smtp-username').value,
+                smtp_password: document.getElementById('smtp-password').value,
+                email_from: document.getElementById('email-from').value,
+                email_to: document.getElementById('email-to').value,
+                email_subject: document.getElementById('email-subject').value,
+                email_template_file: document.getElementById('email-template-file').value
             }
         };
         

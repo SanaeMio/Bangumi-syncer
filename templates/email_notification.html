@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bangumi-Syncer 通知</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.5;
+            color: #333;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 10px;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        .email-header {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 16px 20px;
+            text-align: center;
+        }
+        .email-header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .email-content {
+            padding: 20px;
+        }
+        .error-box {
+            background-color: #fff3cd;
+            border-left: 3px solid #ffc107;
+            padding: 12px 15px;
+            margin: 12px 0;
+            border-radius: 4px;
+        }
+        .error-box .title {
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .error-box .message {
+            color: #856404;
+            word-wrap: break-word;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .info-grid {
+            display: table;
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+        .info-row {
+            display: table-row;
+        }
+        .info-label {
+            display: table-cell;
+            padding: 6px 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            font-weight: 600;
+            color: #495057;
+            width: 90px;
+            font-size: 13px;
+        }
+        .info-value {
+            display: table-cell;
+            padding: 6px 10px;
+            background-color: white;
+            border: 1px solid #e9ecef;
+            color: #333;
+            font-size: 13px;
+        }
+        .anime-section {
+            background-color: #e7f3ff;
+            border-left: 3px solid #0d6efd;
+            padding: 12px 15px;
+            margin: 12px 0;
+            border-radius: 4px;
+        }
+        .anime-section .section-title {
+            font-weight: 600;
+            color: #004085;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .anime-info {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #004085;
+        }
+        .anime-info strong {
+            font-weight: 600;
+            display: inline-block;
+            min-width: 60px;
+        }
+        .email-footer {
+            background-color: #f8f9fa;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 11px;
+            color: #6c757d;
+            border-top: 1px solid #e9ecef;
+        }
+        .email-footer p {
+            margin: 4px 0;
+        }
+        .email-footer a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .emoji {
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- 邮件头部 -->
+        <div class="email-header">
+            <h2><span class="emoji">🚨</span> Bangumi-Syncer 同步错误</h2>
+        </div>
+        
+        <!-- 邮件内容 -->
+        <div class="email-content">
+            <!-- 基本信息表格 -->
+            <div class="info-grid">
+                <div class="info-row">
+                    <div class="info-label"><span class="emoji">📅</span> 时间</div>
+                    <div class="info-value">{timestamp}</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label"><span class="emoji">⚠️</span> 类型</div>
+                    <div class="info-value">{error_type}</div>
+                </div>
+            </div>
+            
+            <!-- 错误详情 -->
+            <div class="error-box">
+                <div class="title"><span class="emoji">❌</span> 错误详情</div>
+                <div class="message">{error_message}</div>
+            </div>
+            
+            <!-- 番剧信息 -->
+            <div class="anime-section">
+                <div class="section-title"><span class="emoji">📺</span> 番剧信息</div>
+                <div class="anime-info">
+                    <div><strong>标题:</strong> {title}</div>
+                    <div><strong>集数:</strong> 第 {season} 季 第 {episode} 集</div>
+                    <div><strong>用户:</strong> {user_name}</div>
+                    <div><strong>来源:</strong> {source}</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 邮件底部 -->
+        <div class="email-footer">
+            <p>本邮件由 <strong>Bangumi-Syncer</strong> 自动发送 · {timestamp}</p>
+        </div>
+    </div>
+</body>
+</html>

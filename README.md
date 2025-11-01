@@ -14,7 +14,7 @@
 - [🧰 安装](#-安装)
   - [Windows](#Windows)
   - [Docker](#Docker)
-  - [群晖NAS](#群晖NAS)
+  - [群晖NAS (DSM7.2)](#群晖NAS)
 - [🔧 配置](#-配置)
 - [🥰 使用](#-使用)
   - [方式一：自定义Webhook](#自定义Webhook)
@@ -86,7 +86,7 @@ services:
 
 #### 群晖NAS
 
-**方式一：通过 Container Manager（推荐）**
+**方式一：通过 Container Manager 项目(docker-compose)**
 
 1. 打开 Container Manager，点击「项目」→「新增」
 2. 项目名称填写：`bangumi-syncer`
@@ -114,37 +114,38 @@ services:
       - TZ=Asia/Shanghai
 ```
 
-> **注意**：请将上述配置中的 `volumeX` 替换为你的实际存储空间编号：
-> - 第一个存储空间：`/volume1/docker/bangumi-syncer/...`
-> - 第二个存储空间：`/volume2/docker/bangumi-syncer/...`
-> - 以此类推
+> 如有设置共享文件夹权限,也可以修改文件夹映射为如 `/volume1/docker/bangumi-syncer/...` 等绝对路径
 
-5. 点击「启动」，等待容器创建完成
-6. 浏览器访问 `http://群晖IP:8000` 进入Web管理界面
-7. **首次使用登录信息**：
+5. 点击「下一步」,根据需求设置 `Web Station 网页门户` (反向代理)
+6. 点击「下一步」,预览摘要,无误后点击「完成」并等待项目启动
+7. 浏览器访问 `http://群晖IP:8000` 进入Web管理界面
+8. **首次使用登录信息**：
    - 用户名：`admin`
    - 密码：`admin`
    - 登录后请立即在「配置管理」页面修改默认密码
-8. 点击「配置管理」进行在线配置
+9. 点击「配置管理」进行在线配置
 
-**方式二：通过 Docker 注册表**
+**方式二：通过 Container Manager 镜像仓库(原注册表)**
 
-1. 打开 Container Manager，点击「注册表」
-2. 搜索 `sanaemio/bangumi-syncer`，下载镜像
-3. 点击「映像」→「启动」
-4. 容器名称：`bangumi-syncer`
-5. 在「高级设置」中：
-   - 端口设置：本地端口 `8000`，容器端口 `8000`
+> **注意:** 由于大陆网络问题,请自行更换存储库
+
+1. 打开 Container Manager，点击「镜像仓库」
+2. 搜索 `sanaemio/bangumi-syncer`，镜像并点击「下载」
+3. 选择标签: `latest` 并下载
+4. 点击「映像」找到下载好的 `sanaemio/bangumi-syncer` 打开点击「运行」
+5. 容器名称：`bangumi-syncer`
+6. 在「高级设置」中：
+   - 端口设置：本地端口 `8000`，容器端口 `8000`，默认 `TCP`
    - 卷：添加以下映射（路径可以根据自己情况调整）
-     - `/docker/bangumi-syncer/config` → `/app/config`
-     - `/docker/bangumi-syncer/logs` → `/app/logs`
-     - `/docker/bangumi-syncer/data` → `/app/data`
-6. 启动容器后，浏览器访问 `http://群晖IP:8000` 进入Web管理界面
-7. **首次使用登录信息**：
+     - `/docker/bangumi-syncer/config` → `/app/config` (默认选`可读写`)
+     - `/docker/bangumi-syncer/logs` → `/app/logs` (默认选`可读写`)
+     - `/docker/bangumi-syncer/data` → `/app/data` (默认选`可读写`)
+7. 点击「下一步」,预览摘要无误后点击「完成」并等待容器启动,浏览器访问 `http://群晖IP:8000` 进入Web管理界面
+8. **首次使用登录信息**：
    - 用户名：`admin`
    - 密码：`admin`
    - 登录后请立即在「配置管理」页面修改默认密码
-8. 点击「配置管理」进行在线配置
+9. 点击「配置管理」进行在线配置
 
 ## 🔧 配置
 
@@ -178,6 +179,10 @@ services:
 - **启用HTTPS安全Cookie**：在使用HTTPS时启用，确保Cookie仅在安全连接下传输
 - **最大登录尝试次数**：单个IP地址的最大登录失败次数，超过后将被锁定，默认5次
 - **锁定时间**：IP被锁定的时长（秒），默认15分钟（900秒）
+
+**通知配置**
+- 支持 Webhook 和邮件通知，在同步出现错误时及时提醒
+- 支持自定义消息模板和邮件模板
 
 **高级配置**
 - **HTTP代理**：如需通过代理访问 Bangumi API
@@ -313,6 +318,8 @@ services:
 ✅ 自定义映射管理
 
 ✅ 配置备份和恢复
+
+✅ 同步错误通知（Webhook/邮件）
 
 ⬜️ ……
 
