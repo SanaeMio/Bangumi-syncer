@@ -22,6 +22,9 @@ class BangumiApi:
         self.req = requests.Session()
         self._req_not_auth = requests.Session()
         
+        # 代理失败标记：一旦代理失败，后续请求都直接使用直连
+        self._proxy_failed = False
+        
         # 如果禁用SSL验证，抑制urllib3的警告
         if not ssl_verify:
             warnings.filterwarnings('ignore', message='Unverified HTTPS request')
@@ -42,6 +45,57 @@ class BangumiApi:
                 r.proxies = {'http': self.http_proxy, 'https': self.http_proxy}
         self._req_not_auth.headers = {k: v for k, v in self._req_not_auth.headers.items() if k != 'Authorization'}
 
+    def _try_direct_connection(self, method, url, **kwargs):
+        """尝试直连（不使用代理）"""
+        logger.info(f"🔄 尝试直连: {url}")
+        
+        # 创建一个临时的session，不使用代理
+        temp_session = requests.Session()
+        temp_session.headers.update({
+            'Accept': 'application/json',
+            'User-Agent': 'SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)'
+        })
+        
+        if self.access_token:
+            temp_session.headers.update({'Authorization': f'Bearer {self.access_token}'})
+        
+        # 明确设置不使用代理
+        temp_session.proxies = {}
+        
+        # 移除kwargs中可能存在的代理设置
+        kwargs_copy = kwargs.copy()
+        if 'proxies' in kwargs_copy:
+            del kwargs_copy['proxies']
+        
+        # 设置较短的超时时间，避免直连等待过久
+        if 'timeout' not in kwargs_copy:
+            kwargs_copy['timeout'] = 15
+        
+        try:
+            if method.upper() == 'GET':
+                res = temp_session.get(url, **kwargs_copy)
+            elif method.upper() == 'POST':
+                res = temp_session.post(url, **kwargs_copy)
+            elif method.upper() == 'PUT':
+                res = temp_session.put(url, **kwargs_copy)
+            elif method.upper() == 'PATCH':
+                res = temp_session.patch(url, **kwargs_copy)
+            else:
+                raise ValueError(f"不支持的HTTP方法: {method}")
+            
+            # 检查响应状态
+            if res.status_code < 400:
+                return res
+            else:
+                logger.warning(f"⚠️  直连请求返回错误状态码: {res.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"直连请求失败: {str(e)}")
+            raise e
+        finally:
+            temp_session.close()
+    
     def _diagnose_network_issue(self, url):
         """诊断网络连接问题"""
         from urllib.parse import urlparse
@@ -86,9 +140,18 @@ class BangumiApi:
             logger.error(f"❌ TCP连接测试异常: {e}")
 
     def _request_with_retry(self, method, session, url, max_retries=3, **kwargs):
-        """带重试机制的请求方法"""
+        """带重试机制的请求方法（支持代理失败后直连重试）"""
         last_exception = None
         dns_error_occurred = False
+        
+        # 如果之前代理已经失败过，直接使用直连
+        if self.http_proxy and self._proxy_failed:
+            logger.info("💡 检测到代理之前已失败，本次请求直接使用直连")
+            try:
+                return self._try_direct_connection(method, url, **kwargs)
+            except Exception as e:
+                logger.error(f"直连请求失败: {str(e)}")
+                raise e
         
         for attempt in range(max_retries + 1):
             try:
@@ -133,6 +196,21 @@ class BangumiApi:
                     continue
                 else:
                     logger.error(f'请求异常: {str(e)}，已达到最大重试次数 {max_retries}')
+                    
+                    # 如果配置了代理且重试失败，尝试直连
+                    if self.http_proxy:
+                        logger.warning("⚠️  代理请求失败，尝试抛弃代理直连...")
+                        
+                        # 尝试直连（不使用代理）
+                        try:
+                            direct_result = self._try_direct_connection(method, url, **kwargs)
+                            if direct_result:
+                                # 标记代理已失败，后续请求直接使用直连
+                                self._proxy_failed = True
+                                logger.info("✅ 直连成功！已成功绕过代理问题")
+                                return direct_result
+                        except Exception as direct_error:
+                            logger.error(f"❌ 直连也失败了: {str(direct_error)}")
                     
                     # 如果是DNS错误，进行网络诊断
                     if dns_error_occurred:

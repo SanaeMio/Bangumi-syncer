@@ -17,6 +17,7 @@ from ..models.sync import CustomItem, SyncResponse
 from ..utils.bangumi_api import BangumiApi
 from ..utils.bangumi_data import BangumiData
 from ..utils.data_util import extract_plex_data, extract_emby_data, extract_jellyfin_data
+from ..utils.notifier import get_notifier
 from .mapping_service import mapping_service
 
 
@@ -210,6 +211,24 @@ class SyncService:
                 message=str(e),
                 source=actual_source if 'actual_source' in locals() else source
             )
+            
+            # 发送错误通知
+            try:
+                notifier = get_notifier()
+                notifier.send_error_notification(
+                    error_type="sync_error",
+                    error_message=str(e),
+                    context={
+                        'user_name': item.user_name if 'item' in locals() else "unknown",
+                        'title': item.title if 'item' in locals() else "unknown",
+                        'season': item.season if 'item' in locals() else 0,
+                        'episode': item.episode if 'item' in locals() else 0,
+                        'source': actual_source if 'actual_source' in locals() else source,
+                        'additional_info': f'完整错误信息: {traceback.format_exc()}'
+                    }
+                )
+            except Exception as notify_error:
+                logger.error(f'发送错误通知失败: {notify_error}')
             
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
     

@@ -50,6 +50,14 @@ if [ ! -f "/app/config/bangumi_mapping.json" ]; then\n\
     echo "自定义映射文件已创建：/app/config/bangumi_mapping.json"\n\
 fi\n\
 \n\
+# 检查邮件通知模板文件是否存在，不存在则从默认模板复制\n\
+if [ ! -f "/app/config/email_notification.html" ]; then\n\
+    echo "邮件通知模板不存在，从默认模板创建..."\n\
+    cp /app/templates/email_notification.html /app/config/email_notification.html\n\
+    echo "邮件通知模板已创建：/app/config/email_notification.html"\n\
+    echo "提示：可以编辑此文件自定义邮件通知样式"\n\
+fi\n\
+\n\
 # 确保日志文件存在并有正确权限\n\
 touch /app/logs/log.txt\n\
 chmod 666 /app/logs/log.txt\n\
