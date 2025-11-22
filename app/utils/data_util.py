@@ -41,11 +41,13 @@ def extract_plex_data(plex_data):
     else:
         logger.debug(f'未找到originallyAvailableAt字段，将尝试从bangumi-data获取日期信息')
 
+    original_title = plex_data["Metadata"].get("originalTitle", " ")
+
     # 重新组装数据
     return CustomItem(
         media_type=plex_data["Metadata"]["type"],
         title=plex_data["Metadata"]["grandparentTitle"],
-        ori_title=plex_data["Metadata"]["originalTitle"],
+        ori_title=original_title,
         season=plex_data["Metadata"]["parentIndex"],
         episode=plex_data["Metadata"]["index"],
         release_date=release_date,
