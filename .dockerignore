@@ -23,6 +23,8 @@ coverage.xml
 .mypy_cache
 .pytest_cache
 .hypothesis
+.venv
+venv
 
 # 日志文件
 *.log

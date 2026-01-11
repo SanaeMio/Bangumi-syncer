@@ -1,87 +1,72 @@
-# 使用 Python 3.9 slim 环境作为基础镜像
-FROM python:3.9-slim
+# ==========================================
+# Stage 1: Builder (依赖构建层)
+# ==========================================
+FROM python:3.9-slim-bookworm AS builder
 
-# 安装curl用于下载数据
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# 1. 获取 uv, 使用 uv.lock 确保依赖稳定
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# 设置工作目录
+# 2. 环境变量：指定安装到系统目录
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    # 【重点】告诉 uv 直接安装到 /usr/local，而不是创建 .venv
+    UV_PROJECT_ENVIRONMENT="/usr/local"
+
 WORKDIR /app
 
-# 复制requirements.txt并安装依赖
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 3. 安装依赖
+# --no-install-project: 只安装依赖，不安装当前项目(因为后面我们会手动COPY app)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project --no-dev
 
-# 复制项目文件
-COPY app/ ./app/
-COPY version.py ./
 
-# 复制Web界面文件
-COPY templates/ ./templates/
-COPY static/ ./static/
+# ==========================================
+# Stage 2: Runtime (运行层)
+# ==========================================
+FROM python:3.9-slim-bookworm
 
-# 复制配置模板
-COPY config.ini /app/config.ini.template
-COPY bangumi_mapping.json /app/bangumi_mapping.json.template
+# 1. 环境变量
+# 注意：这里不需要再改 PATH 了，因为 /usr/local/bin 默认就在 PATH 里
+ENV PYTHONUNBUFFERED=1 \
+    DOCKER_CONTAINER=true \
+    CONFIG_FILE=/app/config/config.ini
 
-# 创建启动脚本
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-# 创建必要目录\n\
-mkdir -p /app/config /app/logs /app/data /app/config_backups\n\
-\n\
-# 检查配置文件是否存在，不存在则从模板复制\n\
-if [ ! -f "/app/config/config.ini" ]; then\n\
-    echo "配置文件不存在，从模板创建..."\n\
-    cp /app/config.ini.template /app/config/config.ini\n\
-    \n\
-    # Docker环境下自动调整路径配置\n\
-    echo "调整Docker环境路径配置..."\n\
-    sed -i "s|local_cache_path = ./bangumi_data_cache.json|local_cache_path = /app/data/bangumi_data_cache.json|g" /app/config/config.ini\n\
-    sed -i "s|log_file = ./log.txt|log_file = /app/logs/log.txt|g" /app/config/config.ini\n\
-    \n\
-    echo "配置文件已创建并调整：/app/config/config.ini"\n\
-fi\n\
-\n\
-# 检查自定义映射文件是否存在，不存在则从模板复制\n\
-if [ ! -f "/app/config/bangumi_mapping.json" ]; then\n\
-    echo "自定义映射文件不存在，从模板创建..."\n\
-    cp /app/bangumi_mapping.json.template /app/config/bangumi_mapping.json\n\
-    echo "自定义映射文件已创建：/app/config/bangumi_mapping.json"\n\
-fi\n\
-\n\
-# 检查邮件通知模板文件是否存在，不存在则从默认模板复制\n\
-if [ ! -f "/app/config/email_notification.html" ]; then\n\
-    echo "邮件通知模板不存在，从默认模板创建..."\n\
-    cp /app/templates/email_notification.html /app/config/email_notification.html\n\
-    echo "邮件通知模板已创建：/app/config/email_notification.html"\n\
-    echo "提示：可以编辑此文件自定义邮件通知样式"\n\
-fi\n\
-\n\
-# 确保日志文件存在并有正确权限\n\
-touch /app/logs/log.txt\n\
-chmod 666 /app/logs/log.txt\n\
-\n\
-# 显示配置信息用于调试\n\
-echo "=== 配置信息 ==="\n\
-echo "配置文件: $CONFIG_FILE"\n\
-echo "工作目录: $(pwd)"\n\
-echo "Python路径: $PYTHONPATH"\n\
-ls -la /app/config/ /app/logs/ /app/data/ || true\n\
-echo "==============="\n\
-\n\
-# 启动应用\n\
-echo "启动应用..."\n\
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log' > /app/start.sh && chmod +x /app/start.sh
+WORKDIR /app
 
-# 设置环境变量
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-ENV CONFIG_FILE=/app/config/config.ini
-ENV DOCKER_CONTAINER=true
+# 2. 安全优化：创建非 Root 用户
+RUN groupadd -r appuser && useradd -r -g appuser --create-home appuser
 
-# 暴露端口8000
+# 3. 预创建目录
+RUN mkdir -p /app/config /app/logs /app/data /app/config_backups && \
+    chown -R appuser:appuser /app
+
+# 4. 【关键步骤】从 Builder 拷贝系统 Python 的包
+# 拷贝依赖库 (site-packages)
+COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+# 拷贝可执行文件 (如 uvicorn, gunicorn 等脚本)
+# 注意：这会覆盖 Runtime 层的 /usr/local/bin，但在同版本 slim 镜像间通常是安全的
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# 5. 拷贝脚本与模版
+COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
+COPY --chown=appuser:appuser config.ini /app/config.ini.template
+COPY --chown=appuser:appuser bangumi_mapping.json /app/bangumi_mapping.json.template
+COPY --chown=appuser:appuser version.py  /app/version.py
+
+RUN chmod +x /app/entrypoint.sh
+
+# 6. 拷贝业务代码
+COPY --chown=appuser:appuser app/ ./app/
+COPY --chown=appuser:appuser templates/ ./templates/
+COPY --chown=appuser:appuser static/ ./static/
+
+# 7. 切换用户
+USER appuser
+
+# 8. 启动
 EXPOSE 8000
-
-# 使用启动脚本
-CMD ["/app/start.sh"] 
+ENTRYPOINT ["/app/entrypoint.sh"]
+# 直接调用 uvicorn，因为他在 /usr/local/bin 里，且该目录在 PATH 中
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
