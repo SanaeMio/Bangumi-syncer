@@ -1,0 +1,41 @@
+[project]
+name = "bangumi-syncer"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.126.0",
+    "ijson>=3.4.0.post0",
+    "jinja2>=3.1.6",
+    "pydantic>=2.12.5",
+    "python-multipart>=0.0.20",
+    "requests>=2.32.5",
+    "uvicorn[standard]>=0.38.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "ruff>=0.14.10",
+    "ty>=0.0.9",
+]
+
+[tool.ruff]
+# 设定目标 Python 版本
+target-version = "py39"
+line-length = 88
+
+[tool.ruff.lint]
+# 建议开启的初始规则集
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (错误检测)
+    "I",   # isort (自动整理 import)
+    "UP",  # pyupgrade (自动升级旧语法)
+    "B",   # flake8-bugbear (发现潜在设计缺陷)
+]
+ignore = []
+
+[tool.ruff.lint.isort]
+# 自动合并同类 import
+combine-as-imports = true

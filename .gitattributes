@@ -1,0 +1,3 @@
+# 告诉 GitHub 这是一个自动生成的文件，默认折叠，且不计入语言统计
+uv.lock linguist-generated
+requirements.txt linguist-generated
