@@ -277,7 +277,7 @@ services:
 ### Jellyfin插件
 
 1. 运行Bangumi-syncer
-2. 打开Jellyfin控制台 -> `插件` -> `目录` -> 拉到最下面找到点进`Webhook` -> 选择`8.0.0.0`版本，点击`Install`安装此插件然后 **重启服务器**
+2. 打开Jellyfin控制台 -> `插件` -> `目录` -> 拉到最下面找到点进`Webhook` -> 选择`18.0.0.0`版本，点击`Install`安装此插件然后 **重启服务器**
 ![](https://p.sda1.dev/16/be346724555f34a98b5dc16c73df794f/1.jpg)
 3. 打开Jellyfin控制台 -> `插件` -> `我的插件` -> 点进`Webhook`。`Server Url`里输入你的Jellyfin地址，点击`Add Generic Destination`
 ![](https://p.sda1.dev/16/038568513c591f785d10ee745f254966/2.jpg)
