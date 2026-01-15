@@ -455,82 +455,25 @@
         <div class="col-12">
             <div class="card shadow-sm mb-4 config-card">
                 <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-bell me-2 text-warning"></i>
-                        <h6 class="m-0 fw-semibold">通知配置</h6>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-bell me-2 text-warning"></i>
+                            <h6 class="m-0 fw-semibold">通知配置</h6>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="showAddWebhookModal()">
+                            <i class="bi bi-plus-lg me-1"></i>添加 Webhook 配置
+                        </button>
                     </div>
                 </div>
                 <div class="card-body">
-                    <!-- Webhook 通知 -->
-                    <!-- Webhook 基本配置（合并为一行） -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-md-2">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-send me-1 text-success"></i>启用 Webhook
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="webhook-enabled" name="notification.webhook_enabled">
-                                <label class="form-check-label" for="webhook-enabled">启用</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="webhook-url" class="form-label fw-semibold">
-                                <i class="bi bi-link me-1 text-info"></i>Webhook URL
-                                <span class="text-danger">*</span>
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="Webhook 地址，支持钉钉、企业微信、Slack、Discord 等服务"></i>
-                            </label>
-                            <input type="url" class="form-control form-control-lg" id="webhook-url" name="notification.webhook_url" 
-                                   placeholder="https://your-webhook-url.com/hook">
-                        </div>
-                        <div class="col-md-2">
-                            <label for="webhook-method" class="form-label fw-semibold">
-                                <i class="bi bi-arrow-right-circle me-1"></i>请求方法
-                            </label>
-                            <select class="form-select form-select-lg" id="webhook-method" name="notification.webhook_method">
-                                <option value="POST">POST</option>
-                                <option value="GET">GET</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="webhook-headers" class="form-label fw-semibold">
-                                <i class="bi bi-list-ul me-1"></i>自定义请求头（可选）
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="自定义 HTTP 请求头，多个用逗号分隔。例如：Authorization: Bearer token"></i>
-                            </label>
-                            <input type="text" class="form-control form-control-lg" id="webhook-headers" name="notification.webhook_headers" 
-                                   placeholder="如：Authorization: Bearer token">
-                        </div>
-                    </div>
-                    
-                    <!-- 消息模板 -->
-                    <div class="row g-3 mb-4">
-                        <div class="col-12">
-                            <label for="webhook-template" class="form-label fw-semibold">
-                                <i class="bi bi-code-square me-1"></i>消息模板
-                                <span class="text-danger">*</span>
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="Webhook 消息模板，使用 {变量名} 引用数据。支持 JSON 或纯文本格式。系统会完全按照此模板发送数据。"></i>
-                            </label>
-                            <textarea class="form-control" id="webhook-template" name="notification.webhook_template" rows="5" 
-                                      placeholder='{"content": "🚨 Bangumi-Syncer同步出错\n时间: {timestamp}\n错误信息: {error_message}\n番剧信息: {title} S{season}E{episode}"}'></textarea>
-                            <div class="alert alert-info mt-2 mb-0">
-                                <h6 class="alert-heading mb-2"><i class="bi bi-info-circle me-1"></i>可用变量</h6>
-                                <div class="row g-2 small">
-                                    <div class="col-md-6">
-                                        <code>{timestamp}</code> - 错误时间<br>
-                                        <code>{error_type}</code> - 错误类型<br>
-                                        <code>{error_message}</code> - 错误消息<br>
-                                        <code>{user_name}</code> - 用户名
-                                    </div>
-                                    <div class="col-md-6">
-                                        <code>{title}</code> - 番剧标题<br>
-                                        <code>{season}</code> - 季数<br>
-                                        <code>{episode}</code> - 集数<br>
-                                        <code>{source}</code> - 来源（plex/emby/jellyfin）
-                                    </div>
-                                </div>
-                            </div>
+                    <!-- Webhook 配置列表 -->
+                    <div id="webhook-configs-container">
+                        <div class="text-center py-5">
+                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-3">暂无 Webhook 配置</p>
+                            <button type="button" class="btn btn-outline-primary" onclick="showAddWebhookModal()">
+                                <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                            </button>
                         </div>
                     </div>
 
@@ -550,19 +493,19 @@
                         <div class="col-md-5">
                             <label for="smtp-server" class="form-label fw-semibold">
                                 <i class="bi bi-server me-1"></i>SMTP 服务器
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="SMTP 服务器地址。Gmail: smtp.gmail.com, QQ: smtp.qq.com, 163: smtp.163.com"></i>
                             </label>
-                            <input type="text" class="form-control form-control-lg" id="smtp-server" name="notification.smtp_server" 
+                            <input type="text" class="form-control form-control-lg" id="smtp-server" name="notification.smtp_server"
                                    placeholder="smtp.qq.com">
                         </div>
                         <div class="col-md-2">
                             <label for="smtp-port" class="form-label fw-semibold">
                                 <i class="bi bi-hdd-network me-1"></i>端口
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="SMTP 端口。TLS 加密通常使用 587，SSL 加密通常使用 465"></i>
                             </label>
-                            <input type="number" class="form-control form-control-lg" id="smtp-port" name="notification.smtp_port" 
+                            <input type="number" class="form-control form-control-lg" id="smtp-port" name="notification.smtp_port"
                                    placeholder="465" min="1" max="65535">
                         </div>
                         <div class="col-md-3">
@@ -579,22 +522,22 @@
                         <div class="col-md-6">
                             <label for="smtp-username" class="form-label fw-semibold">
                                 <i class="bi bi-person me-1"></i>SMTP 用户名
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="通常是邮箱地址"></i>
                             </label>
-                            <input type="email" class="form-control form-control-lg" id="smtp-username" name="notification.smtp_username" 
+                            <input type="email" class="form-control form-control-lg" id="smtp-username" name="notification.smtp_username"
                                    placeholder="your-email@example.com">
                         </div>
                         <div class="col-md-6">
                             <label for="smtp-password" class="form-label fw-semibold">
                                 <i class="bi bi-key me-1"></i>SMTP 密码/授权码
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="注意：很多邮箱需要使用授权码而不是登录密码"></i>
                             </label>
                             <div class="position-relative">
-                                <input type="password" class="form-control form-control-lg pe-5" id="smtp-password" name="notification.smtp_password" 
+                                <input type="password" class="form-control form-control-lg pe-5" id="smtp-password" name="notification.smtp_password"
                                        placeholder="授权码或密码">
-                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn" 
+                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn"
                                         type="button" id="toggle-smtp-password-visibility">
                                     <i class="bi bi-eye text-muted" id="smtp-password-visibility-icon"></i>
                                 </button>
@@ -605,19 +548,19 @@
                         <div class="col-md-6">
                             <label for="email-from" class="form-label fw-semibold">
                                 <i class="bi bi-envelope-at me-1"></i>发件人地址（可选）
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="留空则使用 SMTP 用户名"></i>
                             </label>
-                            <input type="email" class="form-control form-control-lg" id="email-from" name="notification.email_from" 
+                            <input type="email" class="form-control form-control-lg" id="email-from" name="notification.email_from"
                                    placeholder="留空使用 SMTP 用户名">
                         </div>
                         <div class="col-md-6">
                             <label for="email-to" class="form-label fw-semibold">
                                 <i class="bi bi-envelope-check me-1"></i>收件人地址
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="接收通知的邮箱地址"></i>
                             </label>
-                            <input type="email" class="form-control form-control-lg" id="email-to" name="notification.email_to" 
+                            <input type="email" class="form-control form-control-lg" id="email-to" name="notification.email_to"
                                    placeholder="recipient@example.com">
                         </div>
                     </div>
@@ -627,20 +570,20 @@
                         <div class="col-12">
                             <label for="email-subject" class="form-label fw-semibold">
                                 <i class="bi bi-chat-square-text me-1"></i>邮件标题
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="自定义邮件标题，使用 {变量名} 引用数据。留空使用默认标题"></i>
                             </label>
-                            <input type="text" class="form-control form-control-lg" id="email-subject" name="notification.email_subject" 
+                            <input type="text" class="form-control form-control-lg" id="email-subject" name="notification.email_subject"
                                    placeholder="例如: [Bangumi-Syncer] {error_type} - {title} S{season}E{episode}">
                         </div>
-                        
+
                         <div class="col-12">
                             <label for="email-template-file" class="form-label fw-semibold">
                                 <i class="bi bi-file-earmark-code me-1"></i>自定义邮件模板文件路径
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
                                    title="自定义邮件 HTML 模板文件路径，支持相对路径和绝对路径。留空使用默认模板"></i>
                             </label>
-                            <input type="text" class="form-control font-monospace" id="email-template-file" name="notification.email_template_file" 
+                            <input type="text" class="form-control font-monospace" id="email-template-file" name="notification.email_template_file"
                                    placeholder="留空使用默认模板">
                         </div>
                     </div>
@@ -892,21 +835,7 @@ document.addEventListener('DOMContentLoaded', function() {
             icon.className = 'bi bi-eye';
         }
     });
-    
-    // 监听 Webhook 启用状态变化，动态添加/移除必填提示
-    document.getElementById('webhook-enabled').addEventListener('change', function() {
-        const webhookUrl = document.getElementById('webhook-url');
-        const webhookTemplate = document.getElementById('webhook-template');
-        
-        if (this.checked) {
-            webhookUrl.setAttribute('required', 'required');
-            webhookTemplate.setAttribute('required', 'required');
-        } else {
-            webhookUrl.removeAttribute('required');
-            webhookTemplate.removeAttribute('required');
-        }
-    });
-    
+
     // 初始化模态框
     const modalElement = document.getElementById('restoreConfigModal');
     if (modalElement) {
@@ -989,12 +918,8 @@ function populateForm(config) {
     
     // 填充通知配置
     if (config.notification) {
-        document.getElementById('webhook-enabled').checked = config.notification.webhook_enabled || false;
-        document.getElementById('webhook-url').value = config.notification.webhook_url || '';
-        document.getElementById('webhook-method').value = config.notification.webhook_method || 'POST';
-        document.getElementById('webhook-headers').value = config.notification.webhook_headers || '';
-        document.getElementById('webhook-template').value = config.notification.webhook_template || '';
-        
+        // 旧的webhook配置已被迁移到新的webhook配置管理系统
+        // 邮件配置保持不变
         document.getElementById('email-enabled').checked = config.notification.email_enabled || false;
         document.getElementById('smtp-server').value = config.notification.smtp_server || '';
         document.getElementById('smtp-port').value = config.notification.smtp_port || 587;
@@ -1106,27 +1031,6 @@ function removeBangumiAccount(id) {
 
 async function saveConfig() {
     try {
-        // 验证 Webhook 配置
-        const webhookEnabled = document.getElementById('webhook-enabled').checked;
-        const webhookUrl = document.getElementById('webhook-url').value.trim();
-        const webhookTemplate = document.getElementById('webhook-template').value.trim();
-        
-        if (webhookEnabled) {
-            if (!webhookUrl) {
-                showAlert('启用 Webhook 通知时，Webhook URL 为必填项', 'warning');
-                document.getElementById('webhook-url').scrollIntoView({ behavior: 'smooth', block: 'center' });
-                document.getElementById('webhook-url').focus();
-                return;
-            }
-            
-            if (!webhookTemplate) {
-                showAlert('启用 Webhook 通知时，消息模板为必填项', 'warning');
-                document.getElementById('webhook-template').scrollIntoView({ behavior: 'smooth', block: 'center' });
-                document.getElementById('webhook-template').focus();
-                return;
-            }
-        }
-        
         const configData = {
             bangumi: {
                 username: document.getElementById('bangumi-username').value,
@@ -1159,11 +1063,8 @@ async function saveConfig() {
                 lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900
             },
             notification: {
-                webhook_enabled: document.getElementById('webhook-enabled').checked,
-                webhook_url: document.getElementById('webhook-url').value,
-                webhook_method: document.getElementById('webhook-method').value,
-                webhook_headers: document.getElementById('webhook-headers').value,
-                webhook_template: document.getElementById('webhook-template').value,
+                // 旧的webhook配置已被迁移到新的webhook配置管理系统
+                // 邮件配置保持不变
                 email_enabled: document.getElementById('email-enabled').checked,
                 smtp_server: document.getElementById('smtp-server').value,
                 smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
@@ -1915,5 +1816,413 @@ async function confirmCleanup() {
         showAlert('清理备份失败', 'danger');
     }
 }
+
+// ========== Webhook 配置管理 ==========
+
+// 加载 Webhook 配置列表
+async function loadWebhookConfigs() {
+    try {
+        const response = await fetch('/api/notification/webhooks', {
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            renderWebhookConfigs(data.data);
+        } else {
+            console.error('加载 Webhook 配置失败:', data.message);
+        }
+    } catch (error) {
+        console.error('加载 Webhook 配置失败:', error);
+    }
+}
+
+// 渲染 Webhook 配置列表
+function renderWebhookConfigs(webhooks) {
+    const container = document.getElementById('webhook-configs-container');
+
+    if (!webhooks || webhooks.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                <p class="text-muted mt-3">暂无 Webhook 配置</p>
+                <button type="button" class="btn btn-outline-primary" onclick="showAddWebhookModal()">
+                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '<div class="row g-3">';
+    webhooks.forEach(webhook => {
+        const typesBadge = webhook.types === 'all'
+            ? '<span class="badge bg-primary">全部类型</span>'
+            : webhook.types.split(',').map(t => `<span class="badge bg-secondary">${t.trim()}</span>`).join(' ');
+
+        html += `
+            <div class="col-md-6">
+                <div class="card border ${webhook.enabled ? 'border-success' : 'border-secondary'}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-send ${webhook.enabled ? 'text-success' : 'text-muted'} me-2"></i>
+                                <h6 class="card-title mb-0">Webhook #${webhook.id}</h6>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="webhook-enabled-${webhook.id}"
+                                       ${webhook.enabled ? 'checked' : ''} onchange="toggleWebhookEnabled(${webhook.id}, this.checked)">
+                                <label class="form-check-label" for="webhook-enabled-${webhook.id}"></label>
+                            </div>
+                        </div>
+                        <p class="card-text small text-muted mb-2">
+                            <i class="bi bi-link-45deg me-1"></i>${webhook.url}
+                        </p>
+                        <div class="mb-2">
+                            ${typesBadge}
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="showEditWebhookModal(${webhook.id})">
+                                <i class="bi bi-pencil me-1"></i>编辑
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="testWebhook(${webhook.id})">
+                                <i class="bi bi-play-circle me-1"></i>测试
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="showDeleteWebhookModal(${webhook.id})">
+                                <i class="bi bi-trash me-1"></i>删除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// 显示添加 Webhook 模态框
+function showAddWebhookModal() {
+    document.getElementById('webhook-modal-title').textContent = '添加 Webhook 配置';
+    document.getElementById('webhook-id').value = '';
+    document.getElementById('webhook-enabled-input').checked = true;
+    document.getElementById('webhook-url-input').value = '';
+    document.getElementById('webhook-method-input').value = 'POST';
+    document.getElementById('webhook-headers-input').value = '';
+    document.getElementById('webhook-template-input').value = '';
+    document.getElementById('webhook-types-input').value = 'all';
+
+    const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
+    modal.show();
+}
+
+// 显示编辑 Webhook 模态框
+async function showEditWebhookModal(webhookId) {
+    try {
+        const response = await fetch('/api/notification/webhooks', {
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            const webhook = data.data.find(w => w.id === webhookId);
+            if (webhook) {
+                document.getElementById('webhook-modal-title').textContent = '编辑 Webhook 配置';
+                document.getElementById('webhook-id').value = webhook.id;
+                document.getElementById('webhook-enabled-input').checked = webhook.enabled;
+                document.getElementById('webhook-url-input').value = webhook.url;
+                document.getElementById('webhook-method-input').value = webhook.method;
+                document.getElementById('webhook-headers-input').value = webhook.headers;
+                document.getElementById('webhook-template-input').value = webhook.template;
+                document.getElementById('webhook-types-input').value = webhook.types;
+
+                const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
+                modal.show();
+            }
+        }
+    } catch (error) {
+        console.error('加载 Webhook 配置失败:', error);
+        showAlert('加载 Webhook 配置失败', 'danger');
+    }
+}
+
+// 保存 Webhook 配置
+async function saveWebhookConfig() {
+    const webhookId = document.getElementById('webhook-id').value;
+    const webhookData = {
+        enabled: document.getElementById('webhook-enabled-input').checked,
+        url: document.getElementById('webhook-url-input').value,
+        method: document.getElementById('webhook-method-input').value,
+        headers: document.getElementById('webhook-headers-input').value,
+        template: document.getElementById('webhook-template-input').value,
+        types: document.getElementById('webhook-types-input').value
+    };
+
+    // 验证必填字段
+    if (!webhookData.url) {
+        showAlert('Webhook URL 为必填项', 'warning');
+        return;
+    }
+
+    try {
+        let response;
+        if (webhookId) {
+            // 更新
+            response = await fetch(`/api/notification/webhooks/${webhookId}`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(webhookData)
+            });
+        } else {
+            // 创建
+            response = await fetch('/api/notification/webhooks', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(webhookData)
+            });
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showAlert(webhookId ? 'Webhook 配置更新成功' : 'Webhook 配置创建成功', 'success');
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('webhookModal'));
+            modal.hide();
+            // 刷新配置列表
+            await loadWebhookConfigs();
+        } else {
+            showAlert('保存失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('保存 Webhook 配置失败:', error);
+        showAlert('保存 Webhook 配置失败', 'danger');
+    }
+}
+
+// 切换 Webhook 启用状态
+async function toggleWebhookEnabled(webhookId, enabled) {
+    try {
+        const response = await fetch(`/api/notification/webhooks/${webhookId}`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ enabled: enabled })
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showAlert(enabled ? 'Webhook 已启用' : 'Webhook 已禁用', 'success');
+            await loadWebhookConfigs();
+        } else {
+            showAlert('操作失败: ' + data.message, 'danger');
+            // 恢复开关状态
+            const checkbox = document.getElementById(`webhook-enabled-${webhookId}`);
+            checkbox.checked = !enabled;
+        }
+    } catch (error) {
+        console.error('切换 Webhook 启用状态失败:', error);
+        showAlert('操作失败', 'danger');
+        // 恢复开关状态
+        const checkbox = document.getElementById(`webhook-enabled-${webhookId}`);
+        checkbox.checked = !enabled;
+    }
+}
+
+// 显示删除 Webhook 确认模态框
+function showDeleteWebhookModal(webhookId) {
+    document.getElementById('delete-webhook-id').value = webhookId;
+    const modal = new bootstrap.Modal(document.getElementById('deleteWebhookModal'));
+    modal.show();
+}
+
+// 删除 Webhook 配置
+async function deleteWebhookConfig() {
+    const webhookId = document.getElementById('delete-webhook-id').value;
+
+    try {
+        const response = await fetch(`/api/notification/webhooks/${webhookId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showAlert('Webhook 配置删除成功', 'success');
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('deleteWebhookModal'));
+            modal.hide();
+            // 刷新配置列表
+            await loadWebhookConfigs();
+        } else {
+            showAlert('删除失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('删除 Webhook 配置失败:', error);
+        showAlert('删除 Webhook 配置失败', 'danger');
+    }
+}
+
+// 测试 Webhook 配置
+async function testWebhook(webhookId) {
+    const button = event.target.closest('button');
+    const originalHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
+
+    try {
+        const response = await fetch(`/api/notification/webhooks/${webhookId}/test`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            const webhookResult = data.data.webhook.webhooks[0];
+            if (webhookResult.success) {
+                showAlert('Webhook 测试成功', 'success');
+            } else {
+                showAlert('Webhook 测试失败: ' + webhookResult.message, 'warning');
+            }
+        } else {
+            showAlert('测试失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('测试 Webhook 失败:', error);
+        showAlert('测试 Webhook 失败', 'danger');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    }
+}
+</script>
+
+<!-- Webhook 配置模态框 -->
+<div class="modal fade" id="webhookModal" tabindex="-1" aria-labelledby="webhookModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="webhook-modal-title">添加 Webhook 配置</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="webhook-form">
+                    <input type="hidden" id="webhook-id">
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-toggle-on me-1 text-success"></i>启用
+                            </label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="webhook-enabled-input" checked>
+                                <label class="form-check-label" for="webhook-enabled-input">启用</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="webhook-url-input" class="form-label fw-semibold">
+                                <i class="bi bi-link me-1 text-info"></i>Webhook URL
+                                <span class="text-danger">*</span>
+                            </label>
+                            <input type="url" class="form-control" id="webhook-url-input" required
+                                   placeholder="https://your-webhook-url.com/hook">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="webhook-method-input" class="form-label fw-semibold">
+                                <i class="bi bi-arrow-right-circle me-1"></i>请求方法
+                            </label>
+                            <select class="form-select" id="webhook-method-input">
+                                <option value="POST">POST</option>
+                                <option value="GET">GET</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="webhook-types-input" class="form-label fw-semibold">
+                            <i class="bi bi-tags me-1"></i>通知类型
+                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
+                               title="选择要触发的通知类型，多个类型用逗号分隔。选择 'all' 表示所有类型"></i>
+                        </label>
+                        <select class="form-select" id="webhook-types-input">
+                            <option value="all">全部类型 (all)</option>
+                            <option value="request_received">收到请求 (request_received)</option>
+                            <option value="bangumi_id_found">找到番剧 (bangumi_id_found)</option>
+                            <option value="mark_success">标记成功 (mark_success)</option>
+                            <option value="mark_failed">标记失败 (mark_failed)</option>
+                            <option value="mark_skipped">标记跳过 (mark_skipped)</option>
+                            <option value="config_error">配置错误 (config_error)</option>
+                            <option value="anime_not_found">未找到番剧 (anime_not_found)</option>
+                            <option value="episode_not_found">未找到剧集 (episode_not_found)</option>
+                            <option value="api_auth_error">API认证失败 (api_auth_error)</option>
+                            <option value="api_error">API错误 (api_error)</option>
+                            <option value="api_retry_failed">API重试失败 (api_retry_failed)</option>
+                            <option value="ip_locked">IP被锁定 (ip_locked)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="webhook-headers-input" class="form-label fw-semibold">
+                            <i class="bi bi-list-ul me-1"></i>自定义请求头（可选）
+                        </label>
+                        <textarea class="form-control" id="webhook-headers-input" rows="2"
+                                  placeholder='{"Authorization": "Bearer token"}'></textarea>
+                        <div class="form-text">支持 JSON 格式，例如：{"Authorization": "Bearer token"}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="webhook-template-input" class="form-label fw-semibold">
+                            <i class="bi bi-code-square me-1"></i>消息模板（可选）
+                        </label>
+                        <textarea class="form-control" id="webhook-template-input" rows="5"
+                                  placeholder='{"content": "📢 {title} S{season}E{episode} - {notification_type}"}'></textarea>
+                        <div class="form-text">支持 JSON 格式，可用变量：{timestamp}, {user_name}, {title}, {season}, {episode}, {source}, {notification_type}, {error_message}, {subject_id}, {episode_id}</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveWebhookConfig()">
+                    <i class="bi bi-save me-1"></i>保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除 Webhook 确认模态框 -->
+<div class="modal fade" id="deleteWebhookModal" tabindex="-1" aria-labelledby="deleteWebhookModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteWebhookModalLabel">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除这个 Webhook 配置吗？此操作不可逆。</p>
+                <input type="hidden" id="delete-webhook-id">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="deleteWebhookConfig()">
+                    <i class="bi bi-trash me-1"></i>删除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 </script>
 {% endblock %} 

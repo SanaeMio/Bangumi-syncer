@@ -27,6 +27,12 @@ class ConfigManager:
         # 初始化配置
         self._load_config()
         
+        # 检查并执行配置迁移
+        if self._needs_migration():
+            self._migrate_webhook_config()
+            # 重新加载配置
+            self._load_config()
+        
         # 立即输出启动信息（在模块导入时）
         from .startup_info import startup_info
         startup_info.print_banner()
@@ -256,6 +262,66 @@ class ConfigManager:
         logger.info('强制重新加载多账号配置')
         logger.info(f'加载了 {len(bangumi_configs)} 个bangumi账号配置')
         logger.info(f'加载了 {len(user_mappings)} 个用户映射配置')
+    
+    def _needs_migration(self) -> bool:
+        """检查是否需要执行配置迁移"""
+        config = self.get_config_parser()
+        
+        # 检查是否存在旧的webhook配置
+        has_old_webhook = config.has_option('notification', 'webhook_url')
+        
+        # 检查是否已经存在新的webhook配置段
+        has_new_webhook = any(
+            section.startswith('webhook-')
+            for section in config.sections()
+        )
+        
+        # 如果存在旧配置且不存在新配置，则需要迁移
+        return has_old_webhook and not has_new_webhook
+    
+    def _migrate_webhook_config(self) -> None:
+        """将旧的webhook配置迁移到新的多webhook结构"""
+        from .logging import logger
+        
+        config = self.get_config_parser()
+        
+        # 读取旧的webhook配置
+        webhook_enabled = config.get('notification', 'webhook_enabled', fallback='False')
+        webhook_url = config.get('notification', 'webhook_url', fallback='')
+        webhook_method = config.get('notification', 'webhook_method', fallback='POST')
+        webhook_headers = config.get('notification', 'webhook_headers', fallback='')
+        webhook_template = config.get('notification', 'webhook_template', fallback='')
+        
+        # 如果没有配置URL，跳过迁移
+        if not webhook_url:
+            logger.info('未检测到旧webhook配置，跳过迁移')
+            return
+        
+        # 创建新的webhook-1配置段
+        if not config.has_section('webhook-1'):
+            config.add_section('webhook-1')
+        
+        config.set('webhook-1', 'id', '1')
+        config.set('webhook-1', 'enabled', webhook_enabled)
+        config.set('webhook-1', 'url', webhook_url)
+        config.set('webhook-1', 'method', webhook_method)
+        config.set('webhook-1', 'headers', webhook_headers)
+        config.set('webhook-1', 'template', webhook_template)
+        
+        # 迁移策略：只启用错误通知类型，保持原有行为
+        config.set('webhook-1', 'types', 'mark_failed')
+        
+        # 删除旧的webhook配置字段
+        config.remove_option('notification', 'webhook_enabled')
+        config.remove_option('notification', 'webhook_url')
+        config.remove_option('notification', 'webhook_method')
+        config.remove_option('notification', 'webhook_headers')
+        config.remove_option('notification', 'webhook_template')
+        
+        # 保存配置
+        self._save_config(config)
+        
+        logger.info('配置迁移完成：旧webhook配置已迁移到webhook-1配置段（仅启用mark_failed类型）')
 
 
 # 全局配置实例

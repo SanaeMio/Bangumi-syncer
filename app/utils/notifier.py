@@ -35,34 +35,36 @@ class Notifier:
         self._last_notification_time[notification_type] = current_time
         return True
     
-    def send_error_notification(self, error_type: str, error_message: str, 
+    def send_error_notification(self, error_type: str, error_message: str,
                                context: Optional[Dict[str, Any]] = None) -> None:
         """
-        发送错误通知
-        
+        发送错误通知（保持向后兼容）
+
         Args:
             error_type: 错误类型（如 "sync_error", "proxy_error" 等）
             error_message: 错误消息
             context: 额外的上下文信息
         """
-        # 检查是否启用通知
-        if not self._is_notification_enabled():
-            return
-        
-        # 检查通知冷却
-        if not self._should_send_notification(error_type):
-            return
-        
-        # 构建通知内容
-        notification_data = self._build_notification_data(error_type, error_message, context)
-        
-        # 发送 Webhook 通知
-        if self._is_webhook_enabled():
-            self._send_webhook(notification_data)
-        
-        # 发送邮件通知
+        # 检查是否启用邮件通知
         if self._is_email_enabled():
+            notification_data = self._build_notification_data(error_type, error_message, context)
             self._send_email(notification_data)
+
+        # 使用新的通知系统发送webhook通知
+        context = context or {}
+        data = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'error_type': error_type,
+            'error_message': error_message,
+            'user_name': context.get('user_name', 'Unknown'),
+            'title': context.get('title', 'Unknown'),
+            'season': context.get('season', 0),
+            'episode': context.get('episode', 0),
+            'source': context.get('source', 'Unknown'),
+            'additional_info': context.get('additional_info', '')
+        }
+
+        self.send_notification_by_type('mark_failed', data)
     
     def _is_notification_enabled(self) -> bool:
         """检查是否启用了任何通知方式"""
@@ -398,7 +400,7 @@ class Notifier:
         if not template_file:
             # 智能检测环境：Docker 环境优先使用 /config 目录的模板
             if os.getenv('DOCKER_CONTAINER') == 'true' and os.path.exists('/app/config/email_notification.html'):
-                template_file = '/config/email_notification.html'
+                template_file = '/app/config/email_notification.html'
             else:
                 template_file = 'templates/email_notification.html'
         
@@ -461,65 +463,364 @@ class Notifier:
 </html>"""
     
     
-    def test_notification(self, notification_type: Optional[str] = None) -> Dict[str, Any]:
+    def send_notification_by_type(
+        self,
+        notification_type: str,
+        data: Dict[str, Any]
+    ) -> None:
+        """
+        根据通知类型发送通知
+
+        Args:
+            notification_type: 通知类型（request_received, bangumi_id_found, mark_success, mark_failed, mark_skipped）
+            data: 通知数据（包含timestamp, user_name, title, season, episode, source等）
+        """
+        # 获取所有启用的webhook配置
+        webhook_configs = self._get_webhook_configs()
+
+        for webhook_config in webhook_configs:
+            # 检查是否启用
+            if not webhook_config.get('enabled', False):
+                continue
+
+            # 检查是否支持此通知类型
+            types = webhook_config.get('types', '')
+            if types != 'all' and notification_type not in types:
+                continue
+
+            # 检查冷却时间
+            cooldown_key = f"{webhook_config['id']}_{notification_type}"
+            if not self._should_send_notification(cooldown_key):
+                continue
+
+            # 发送webhook通知
+            self._send_webhook_by_config(webhook_config, notification_type, data)
+
+    def _get_webhook_configs(self) -> list:
+        """获取所有webhook配置"""
+        config = self.config_manager.get_config_parser()
+        webhook_configs = []
+
+        for section_name in config.sections():
+            if section_name.startswith('webhook-'):
+                section_config = self.config_manager.get_section(section_name)
+                if section_config.get('url'):  # 必须有URL才有效
+                    webhook_configs.append(section_config)
+
+        return webhook_configs
+
+    def _send_webhook_by_config(
+        self,
+        webhook_config: Dict[str, Any],
+        notification_type: str,
+        data: Dict[str, Any]
+    ) -> bool:
+        """
+        根据配置发送webhook通知
+
+        Args:
+            webhook_config: webhook配置字典
+            notification_type: 通知类型
+            data: 通知数据
+        """
+        try:
+            url = webhook_config['url']
+            method = webhook_config.get('method', 'POST').upper()
+            headers = self._parse_headers(webhook_config.get('headers', ''))
+            template = webhook_config.get('template', '')
+
+            # 构建载荷
+            payload = self._build_payload_by_type(notification_type, data, template)
+
+            # 发送请求
+            logger.info(f"📤 发送 {notification_type} 通知到: {url}")
+
+            if method == 'POST':
+                response = requests.post(url, json=payload, headers=headers, timeout=10)
+            else:  # GET
+                response = requests.get(url, params=payload if isinstance(payload, dict) else None,
+                                       headers=headers, timeout=10)
+
+            if response.status_code < 300:
+                logger.info(f"✅ Webhook通知发送成功，响应状态码: {response.status_code}")
+                return True
+            else:
+                logger.warning(f"⚠️  Webhook返回非成功状态码: {response.status_code}")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Webhook通知发送失败: {str(e)}")
+            return False
+
+    def _build_payload_by_type(
+        self,
+        notification_type: str,
+        data: Dict[str, Any],
+        template: str
+    ) -> Dict[str, Any]:
+        """
+        根据通知类型构建载荷
+
+        Args:
+            notification_type: 通知类型
+            data: 原始数据
+            template: 自定义模板
+        """
+        # 添加通知类型到数据中
+        data['notification_type'] = notification_type
+
+        # 如果有自定义模板，使用模板
+        if template:
+            try:
+                import json
+                template_obj = json.loads(template)
+                return self._replace_template_variables(template_obj, data)
+            except Exception as e:
+                logger.warning(f"自定义模板解析失败: {e}，使用默认格式")
+
+        # 根据通知类型使用不同的默认格式
+        default_templates = {
+            'request_received': {
+                'title': '📥 收到同步请求',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'user': data.get('user_name', ''),
+                'anime': data.get('title', ''),
+                'episode': f"S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
+                'source': data.get('source', '')
+            },
+            'bangumi_id_found': {
+                'title': '🔍 匹配到Bangumi番剧',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'user': data.get('user_name', ''),
+                'anime': data.get('title', ''),
+                'episode': f"S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
+                'source': data.get('source', ''),
+                'subject_id': data.get('subject_id', '')
+            },
+            'mark_success': {
+                'title': '✅ 同步成功',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'user': data.get('user_name', ''),
+                'anime': data.get('title', ''),
+                'episode': f"S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
+                'source': data.get('source', ''),
+                'subject_id': data.get('subject_id', ''),
+                'episode_id': data.get('episode_id', '')
+            },
+            'mark_failed': {
+                'title': '❌ 同步失败',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'user': data.get('user_name', ''),
+                'anime': data.get('title', ''),
+                'episode': f"S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
+                'source': data.get('source', ''),
+                'error': data.get('error_message', ''),
+                'error_type': data.get('error_type', '')
+            },
+            'mark_skipped': {
+                'title': '⏭️ 已看过，跳过',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'user': data.get('user_name', ''),
+                'anime': data.get('title', ''),
+                'episode': f"S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
+                'source': data.get('source', ''),
+                'subject_id': data.get('subject_id', ''),
+                'episode_id': data.get('episode_id', '')
+            },
+            'config_error': {
+                'title': '⚠️ 配置错误',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'error_message': data.get('error_message', ''),
+                'config_type': data.get('config_type', ''),
+                'user_name': data.get('user_name', ''),
+                'mode': data.get('mode', '')
+            },
+            'anime_not_found': {
+                'title': '🔍 未找到番剧',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'user': data.get('user_name', ''),
+                'title': data.get('title', ''),
+                'ori_title': data.get('ori_title', ''),
+                'season': data.get('season', 0),
+                'source': data.get('source', ''),
+                'search_method': data.get('search_method', '')
+            },
+            'episode_not_found': {
+                'title': '📺 未找到剧集',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'user': data.get('user_name', ''),
+                'title': data.get('title', ''),
+                'season': data.get('season', 0),
+                'episode': data.get('episode', 0),
+                'subject_id': data.get('subject_id', ''),
+                'source': data.get('source', '')
+            },
+            'api_auth_error': {
+                'title': '🔑 API认证失败',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'username': data.get('username', ''),
+                'status_code': data.get('status_code', 0),
+                'error_message': data.get('error_message', '')
+            },
+            'api_error': {
+                'title': '🌐 API错误',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'status_code': data.get('status_code', 0),
+                'url': data.get('url', ''),
+                'method': data.get('method', ''),
+                'error_message': data.get('error_message', ''),
+                'retry_count': data.get('retry_count', 0)
+            },
+            'api_retry_failed': {
+                'title': '🔄 API重试失败',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'subject_id': data.get('subject_id', ''),
+                'episode_id': data.get('episode_id', ''),
+                'max_retries': data.get('max_retries', 0),
+                'error_message': data.get('error_message', '')
+            },
+            'ip_locked': {
+                'title': '🔒 IP被锁定',
+                'type': notification_type,
+                'timestamp': data.get('timestamp', ''),
+                'ip': data.get('ip', ''),
+                'locked_until': data.get('locked_until', ''),
+                'attempt_count': data.get('attempt_count', 0),
+                'max_attempts': data.get('max_attempts', 0)
+            }
+        }
+
+        return default_templates.get(notification_type, {
+            'title': f'📢 {notification_type}',
+            'type': notification_type,
+            'timestamp': data.get('timestamp', ''),
+            'data': data
+        })
+
+    def _parse_headers(self, headers_str: str) -> Dict[str, str]:
+        """解析请求头字符串"""
+        headers = {'User-Agent': 'Bangumi-Syncer-Notifier'}
+
+        # 确保headers_str是字符串类型
+        if not headers_str:
+            return headers
+
+        # 如果headers_str不是字符串，转换为字符串
+        if not isinstance(headers_str, str):
+            headers_str = str(headers_str)
+
+        try:
+            # 尝试解析为JSON
+            import json
+            parsed = json.loads(headers_str)
+            if isinstance(parsed, dict):
+                headers.update(parsed)
+        except:
+            # 如果不是JSON，尝试解析为逗号分隔的键值对
+            try:
+                for header in headers_str.split(','):
+                    if ':' in header:
+                        key, value = header.split(':', 1)
+                        headers[key.strip()] = value.strip()
+            except Exception as e:
+                logger.warning(f"解析headers失败: {e}")
+
+        return headers
+
+    def test_notification(self, notification_type: Optional[str] = None,
+                     webhook_id: Optional[int] = None) -> Dict[str, Any]:
         """
         测试通知功能
-        
+
         Args:
-            notification_type: 通知类型，可选值: 'webhook', 'email', None（测试全部）
-            
+            notification_type: 通知类型，可选值: 'webhook', 'email', 'all'
+            webhook_id: 指定测试的webhook ID（可选）
+
         Returns:
             测试结果字典
         """
         results = {
-            'webhook': {'enabled': False, 'success': False, 'message': ''},
+            'webhook': {'enabled': False, 'success': False, 'message': '', 'webhooks': []},
             'email': {'enabled': False, 'success': False, 'message': ''}
         }
-        
+
         test_data = {
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'error_type': 'test',
-            'error_message': '这是一条测试通知',
             'user_name': 'TestUser',
             'title': '测试番剧',
             'season': 1,
             'episode': 1,
             'source': 'test',
-            'additional_info': '通知功能测试'
+            'error_message': '这是一条测试通知'
         }
-        
-        # 测试 Webhook
-        if notification_type in (None, 'webhook'):
-            if self._is_webhook_enabled():
-                results['webhook']['enabled'] = True
-                try:
-                    success = self._send_webhook(test_data, raise_on_error=True)
-                    if success:
-                        results['webhook']['success'] = True
-                        results['webhook']['message'] = 'Webhook 测试通知发送成功'
-                    else:
-                        results['webhook']['message'] = 'Webhook 测试失败: 发送失败'
-                except Exception as e:
-                    results['webhook']['message'] = f'Webhook 测试失败: {str(e)}'
-            else:
-                results['webhook']['message'] = 'Webhook 未启用'
-        
+
+        # 测试webhook
+        if notification_type in (None, 'webhook', 'all'):
+            webhook_configs = self._get_webhook_configs()
+
+            if webhook_id:
+                # 测试指定的webhook
+                webhook_configs = [w for w in webhook_configs if w.get('id') == webhook_id]
+
+            for webhook_config in webhook_configs:
+                webhook_result = {
+                    'id': webhook_config.get('id'),
+                    'url': webhook_config.get('url', ''),
+                    'enabled': webhook_config.get('enabled', False),
+                    'success': False,
+                    'message': ''
+                }
+
+                if webhook_config.get('enabled', False):
+                    webhook_result['enabled'] = True
+                    try:
+                        success = self._send_webhook_by_config(
+                            webhook_config,
+                            'mark_success',  # 测试使用成功通知类型
+                            test_data
+                        )
+                        if success:
+                            webhook_result['success'] = True
+                            webhook_result['message'] = f'Webhook {webhook_config["id"]} 测试成功'
+                        else:
+                            webhook_result['message'] = f'Webhook {webhook_config["id"]} 测试失败'
+                    except Exception as e:
+                        webhook_result['message'] = f'Webhook {webhook_config["id"]} 测试失败: {str(e)}'
+                else:
+                    webhook_result['message'] = f'Webhook {webhook_config["id"]} 未启用'
+
+                results['webhook']['webhooks'].append(webhook_result)
+
+            results['webhook']['enabled'] = len(webhook_configs) > 0
+            results['webhook']['message'] = f'测试了 {len(webhook_configs)} 个webhook'
+
         # 测试邮件
-        if notification_type in (None, 'email'):
+        if notification_type in (None, 'email', 'all'):
             if self._is_email_enabled():
                 results['email']['enabled'] = True
                 try:
                     success = self._send_email(test_data, raise_on_error=True)
                     if success:
                         results['email']['success'] = True
-                        results['email']['message'] = '邮件测试通知发送成功'
+                        results['email']['message'] = '邮件测试成功'
                     else:
-                        results['email']['message'] = '邮件测试失败: 发送失败'
+                        results['email']['message'] = '邮件测试失败'
                 except Exception as e:
                     results['email']['message'] = f'邮件测试失败: {str(e)}'
             else:
                 results['email']['message'] = '邮件通知未启用'
-        
+
         return results
 
 
@@ -534,5 +835,3 @@ def get_notifier():
         from ..core.config import config_manager
         _notifier_instance = Notifier(config_manager)
     return _notifier_instance
-
-

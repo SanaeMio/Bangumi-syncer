@@ -178,6 +178,20 @@ class BangumiApi:
                         continue
                     else:
                         logger.error(f'HTTP {res.status_code} 错误，已达到最大重试次数 {max_retries}')
+                        # 发送API错误通知
+                        try:
+                            from .notifier import get_notifier
+                            notifier = get_notifier()
+                            notifier.send_notification_by_type('api_error', {
+                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'status_code': res.status_code,
+                                'url': url,
+                                'method': method,
+                                'error_message': f"HTTP {res.status_code} 错误，已达到最大重试次数 {max_retries}",
+                                'retry_count': attempt + 1
+                            })
+                        except Exception as notify_error:
+                            logger.error(f'发送API错误通知失败: {notify_error}')
                         raise requests.exceptions.HTTPError(f"HTTP {res.status_code} 错误，已达到最大重试次数")
                 
                 return res
@@ -236,6 +250,18 @@ class BangumiApi:
     def get_me(self):
         res = self.get('me')
         if 400 <= res.status_code < 500:
+            # 发送API认证失败通知
+            try:
+                from .notifier import get_notifier
+                notifier = get_notifier()
+                notifier.send_notification_by_type('api_auth_error', {
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'username': self.username,
+                    'status_code': res.status_code,
+                    'error_message': 'BangumiApi: 未授权, access_token不正确或未设置'
+                })
+            except Exception as notify_error:
+                logger.error(f'发送API认证失败通知失败: {notify_error}')
             if os.name == 'nt':
                 os.startfile('https://next.bgm.tv/demo/access-token')
             raise ValueError('BangumiApi: 未授权, access_token不正确或未设置')
