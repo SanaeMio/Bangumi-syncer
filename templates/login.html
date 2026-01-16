@@ -1,62 +1,70 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登录 - Bangumi-Syncer</title>
-    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
-    <link href="/static/css/style.css" rel="stylesheet">
-
-</head>
-<body class="bg-light">
-    <div class="container-fluid vh-100 d-flex align-items-center justify-content-center px-3">
-        <div class="row w-100 justify-content-center">
-            <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-4 col-xxl-3">
-                <div class="card shadow-sm border-0 login-card">
-                    <div class="card-body p-4">
-                        <!-- Logo 和标题 -->
-                        <div class="text-center mb-4">
-                            <img src="/static/logo.png" alt="Bangumi-Syncer" class="login-logo mb-3 d-block mx-auto">
-                            <p class="text-muted mb-0">请登录以访问管理界面</p>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>登录 - Bangumi-Syncer</title>
+        <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+        <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+        <link href="/static/css/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-light">
+        <div class="container-fluid vh-100 d-flex align-items-center justify-content-center px-3">
+            <div class="row w-100 justify-content-center">
+                <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-4 col-xxl-3">
+                    <div class="card shadow-sm border-0 login-card">
+                        <div class="card-body p-4">
+                            <!-- Logo 和标题 -->
+                            <div class="text-center mb-4">
+                                <img src="/static/logo.png"
+                                     alt="Bangumi-Syncer"
+                                     class="login-logo mb-3 d-block mx-auto">
+                                <p class="text-muted mb-0">请登录以访问管理界面</p>
+                            </div>
+                            <!-- 错误提示容器 -->
+                            <div id="alert-container"></div>
+                            <!-- 登录表单 -->
+                            <form id="loginForm">
+                                <div class="mb-3">
+                                    <label for="username" class="form-label fw-semibold">
+                                        <i class="bi bi-person me-1 text-primary"></i>用户名
+                                    </label>
+                                    <input type="text"
+                                           class="form-control form-control-lg"
+                                           id="username"
+                                           name="username"
+                                           placeholder="输入用户名"
+                                           required>
+                                </div>
+                                <div class="mb-4">
+                                    <label for="password" class="form-label fw-semibold">
+                                        <i class="bi bi-lock me-1 text-primary"></i>密码
+                                    </label>
+                                    <input type="password"
+                                           class="form-control form-control-lg"
+                                           id="password"
+                                           name="password"
+                                           placeholder="输入密码"
+                                           required>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-lg w-100" id="loginBtn">
+                                    <span class="login-text">
+                                        <i class="bi bi-box-arrow-in-right me-2"></i>登录
+                                    </span>
+                                    <span class="loading-spinner d-none">
+                                        <span class="spinner-border spinner-border-sm me-2"
+                                              role="status"
+                                              aria-hidden="true"></span>
+                                        登录中...
+                                    </span>
+                                </button>
+                            </form>
                         </div>
-
-                        <!-- 错误提示容器 -->
-                        <div id="alert-container"></div>
-
-                        <!-- 登录表单 -->
-                        <form id="loginForm">
-                            <div class="mb-3">
-                                <label for="username" class="form-label fw-semibold">
-                                    <i class="bi bi-person me-1 text-primary"></i>用户名
-                                </label>
-                                <input type="text" class="form-control form-control-lg" id="username" name="username" placeholder="输入用户名" required>
-                            </div>
-                            
-                            <div class="mb-4">
-                                <label for="password" class="form-label fw-semibold">
-                                    <i class="bi bi-lock me-1 text-primary"></i>密码
-                                </label>
-                                <input type="password" class="form-control form-control-lg" id="password" name="password" placeholder="输入密码" required>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary btn-lg w-100" id="loginBtn">
-                                <span class="login-text">
-                                    <i class="bi bi-box-arrow-in-right me-2"></i>登录
-                                </span>
-                                <span class="loading-spinner d-none">
-                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                    登录中...
-                                </span>
-                            </button>
-                        </form>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <script src="/static/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/js/app.js"></script>
-</body>
+        <script src="/static/js/bootstrap.bundle.min.js"></script>
+        <script src="/static/js/app.js"></script>
+    </body>
 </html>

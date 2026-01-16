@@ -1,152 +1,139 @@
 {% extends "base.html" %}
-
 {% block title %}仪表板 - Bangumi Syncer{% endblock %}
 {% block page_title %}仪表板{% endblock %}
-
 {% block content %}
-<!-- 统计卡片 -->
-<div class="row g-4 mb-4">
-    <div class="col-xl-3 col-md-6">
-        <div class="card stats-card h-100">
-            <div class="card-body p-4">
-                <div class="d-flex align-items-center">
-                    <div class="stats-icon me-3 bg-primary-soft">
-                        <i class="bi bi-arrow-repeat"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
-                            总同步次数
+    <!-- 统计卡片 -->
+    <div class="row g-4 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-arrow-repeat"></i>
                         </div>
-                        <div class="h4 mb-0 fw-bold text-dark" id="total-syncs">-</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card stats-card h-100">
-            <div class="card-body p-4">
-                <div class="d-flex align-items-center">
-                    <div class="stats-icon me-3 bg-info-soft">
-                        <i class="bi bi-calendar-day"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
-                            今日同步
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">总同步次数</div>
+                            <div class="h4 mb-0 fw-bold text-dark" id="total-syncs">-</div>
                         </div>
-                        <div class="h4 mb-0 fw-bold text-dark" id="today-syncs">-</div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card stats-card h-100">
-            <div class="card-body p-4">
-                <div class="d-flex align-items-center">
-                    <div class="stats-icon me-3 bg-success-soft">
-                        <i class="bi bi-check-circle"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
-                            成功率
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-info-soft">
+                            <i class="bi bi-calendar-day"></i>
                         </div>
-                        <div class="h4 mb-0 fw-bold text-dark" id="success-rate">-</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card stats-card h-100">
-            <div class="card-body p-4">
-                <div class="d-flex align-items-center">
-                    <div class="stats-icon me-3 bg-danger-soft">
-                        <i class="bi bi-exclamation-triangle"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted fw-semibold text-uppercase mb-1" style="font-size: 0.75rem;">
-                            失败次数
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">今日同步</div>
+                            <div class="h4 mb-0 fw-bold text-dark" id="today-syncs">-</div>
                         </div>
-                        <div class="h4 mb-0 fw-bold text-dark" id="error-syncs">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-success-soft">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">成功率</div>
+                            <div class="h4 mb-0 fw-bold text-dark" id="success-rate">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-danger-soft">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">失败次数</div>
+                            <div class="h4 mb-0 fw-bold text-dark" id="error-syncs">-</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-
-<div class="row g-4 mb-4">
-    <!-- 最近7天同步趋势 -->
-    <div class="col-xl-8 col-lg-7">
-        <div class="card shadow-sm h-100">
-            <div class="card-header py-3">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-graph-up me-2 text-primary"></i>
-                    <h6 class="m-0 fw-semibold">最近7天同步趋势</h6>
+    <div class="row g-4 mb-4">
+        <!-- 最近7天同步趋势 -->
+        <div class="col-xl-8 col-lg-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-graph-up me-2 text-primary"></i>
+                        <h6 class="m-0 fw-semibold">最近7天同步趋势</h6>
+                    </div>
+                </div>
+                <div class="card-body p-4 d-flex align-items-center">
+                    <div class="chart-area w-100">
+                        <canvas id="dailyChart"></canvas>
+                    </div>
                 </div>
             </div>
-            <div class="card-body p-4 d-flex align-items-center">
-                <div class="chart-area w-100">
-                    <canvas id="dailyChart"></canvas>
+        </div>
+        <!-- 用户同步统计 -->
+        <div class="col-xl-4 col-lg-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-pie-chart me-2 text-info"></i>
+                        <h6 class="m-0 fw-semibold">用户同步统计</h6>
+                    </div>
+                </div>
+                <div class="card-body p-4 d-flex align-items-center">
+                    <div class="chart-pie pt-2 pb-2 w-100">
+                        <canvas id="userChart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- 用户同步统计 -->
-    <div class="col-xl-4 col-lg-5">
-        <div class="card shadow-sm h-100">
-            <div class="card-header py-3">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-pie-chart me-2 text-info"></i>
-                    <h6 class="m-0 fw-semibold">用户同步统计</h6>
-                </div>
-            </div>
-            <div class="card-body p-4 d-flex align-items-center">
-                <div class="chart-pie pt-2 pb-2 w-100">
-                    <canvas id="userChart"></canvas>
-                </div>
+    <!-- 最近同步记录 -->
+    <div class="card shadow-sm">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-clock-history me-2 text-secondary"></i>
+                <h6 class="m-0 fw-semibold">最近同步记录</h6>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- 最近同步记录 -->
-<div class="card shadow-sm">
-    <div class="card-header py-3">
-        <div class="d-flex align-items-center">
-            <i class="bi bi-clock-history me-2 text-secondary"></i>
-            <h6 class="m-0 fw-semibold">最近同步记录</h6>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="recent-records">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>用户</th>
+                            <th>番剧</th>
+                            <th>季/集</th>
+                            <th>状态</th>
+                            <th>来源</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 动态加载 -->
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0" id="recent-records">
-                <thead>
-                    <tr>
-                        <th>时间</th>
-                        <th>用户</th>
-                        <th>番剧</th>
-                        <th>季/集</th>
-                        <th>状态</th>
-                        <th>来源</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- 动态加载 -->
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
 {% endblock %}
-
 {% block scripts %}
-<script>
+    <script>
 // 全局图表实例
 let dailyChartInstance = null;
 let userChartInstance = null;
@@ -341,20 +328,14 @@ function displayRecentRecords(records) {
             <td><span class="fw-semibold">${record.user_name}</span></td>
             <td>
                 ${record.subject_id ? `
-                <a href="https://bgm.tv/subject/${record.subject_id}" 
-                   target="_blank" 
-                   class="text-decoration-none text-primary fw-semibold"
-                   title="点击打开Bangumi番剧页面">
+                <a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="text-decoration-none text-primary fw-semibold" title="点击打开Bangumi番剧页面">
                     ${record.title}
                 </a>
                 ` : `<span class="text-primary">${record.title}</span>`}
             </td>
             <td>
                 ${record.episode_id ? `
-                <a href="https://bgm.tv/ep/${record.episode_id}" 
-                   target="_blank" 
-                   class="badge bg-info text-decoration-none"
-                   title="点击打开Bangumi剧集页面">
+                <a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="badge bg-info text-decoration-none" title="点击打开Bangumi剧集页面">
                     S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}
                 </a>
                 ` : `<span class="badge bg-info">S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</span>`}
@@ -362,9 +343,7 @@ function displayRecentRecords(records) {
             <td class="align-middle">
                 <span class="badge bg-${statusClass}">${statusText}</span>
                 ${record.status === 'error' ? `
-                <button class="badge-retry-btn ms-1" 
-                        onclick="retrySync(${record.id})" 
-                        title="重试同步">
+                <button class="badge-retry-btn ms-1" onclick="retrySync(${record.id})" title="重试同步">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
                 ` : ''}
@@ -374,5 +353,5 @@ function displayRecentRecords(records) {
         tbody.appendChild(row);
     });
 }
-</script>
-{% endblock %} 
+    </script>
+{% endblock %}

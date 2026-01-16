@@ -16,18 +16,22 @@ VERSION_INFO = {
     "full_name": f"{VERSION_NAME} v{VERSION}",
 }
 
+
 def get_version() -> str:
     """获取版本号"""
     return VERSION
+
 
 def get_version_name() -> str:
     """获取应用名称"""
     return VERSION_NAME
 
+
 def get_full_name() -> str:
     """获取完整版本名称"""
     return VERSION_INFO["full_name"]
 
+
 def get_version_info() -> dict:
     """获取完整版本信息"""
-    return VERSION_INFO.copy() 
+    return VERSION_INFO.copy()

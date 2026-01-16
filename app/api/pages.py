@@ -1,6 +1,7 @@
 """
 页面路由模块
 """
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -26,11 +27,10 @@ async def dashboard(request: Request):
     user = get_current_user_from_cookie(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request, 
-        "user": user
-    })
+
+    return templates.TemplateResponse(
+        "dashboard.html", {"request": request, "user": user}
+    )
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -40,7 +40,7 @@ async def login_page(request: Request):
     user = get_current_user_from_cookie(request)
     if user:
         return RedirectResponse(url="/dashboard", status_code=302)
-    
+
     return templates.TemplateResponse("login.html", {"request": request})
 
 
@@ -50,11 +50,8 @@ async def config_page(request: Request):
     user = get_current_user_from_cookie(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    
-    return templates.TemplateResponse("config.html", {
-        "request": request, 
-        "user": user
-    })
+
+    return templates.TemplateResponse("config.html", {"request": request, "user": user})
 
 
 @router.get("/records", response_class=HTMLResponse)
@@ -63,11 +60,10 @@ async def records_page(request: Request):
     user = get_current_user_from_cookie(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    
-    return templates.TemplateResponse("records.html", {
-        "request": request, 
-        "user": user
-    })
+
+    return templates.TemplateResponse(
+        "records.html", {"request": request, "user": user}
+    )
 
 
 @router.get("/mappings", response_class=HTMLResponse)
@@ -76,11 +72,10 @@ async def mappings_page(request: Request):
     user = get_current_user_from_cookie(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    
-    return templates.TemplateResponse("mappings.html", {
-        "request": request, 
-        "user": user
-    })
+
+    return templates.TemplateResponse(
+        "mappings.html", {"request": request, "user": user}
+    )
 
 
 @router.get("/debug", response_class=HTMLResponse)
@@ -89,11 +84,8 @@ async def debug_page(request: Request):
     user = get_current_user_from_cookie(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    
-    return templates.TemplateResponse("debug.html", {
-        "request": request, 
-        "user": user
-    })
+
+    return templates.TemplateResponse("debug.html", {"request": request, "user": user})
 
 
 @router.get("/logs", response_class=HTMLResponse)
@@ -102,8 +94,5 @@ async def logs_page(request: Request):
     user = get_current_user_from_cookie(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    
-    return templates.TemplateResponse("logs.html", {
-        "request": request, 
-        "user": user
-    }) 
+
+    return templates.TemplateResponse("logs.html", {"request": request, "user": user})

@@ -1,195 +1,194 @@
 {% extends "base.html" %}
-
 {% block title %}映射管理 - Bangumi Syncer{% endblock %}
 {% block page_title %}映射管理{% endblock %}
-
 {% block page_actions %}
-<div class="btn-group" role="group">
-    <button type="button" class="btn btn-primary" onclick="showAddMappingModal()">
-        <i class="bi bi-plus-circle me-1"></i>添加映射
-    </button>
-    <button type="button" class="btn btn-outline-secondary" onclick="loadMappings()">
-        <i class="bi bi-arrow-clockwise me-1"></i>刷新
-    </button>
-</div>
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-primary" onclick="showAddMappingModal()">
+            <i class="bi bi-plus-circle me-1"></i>添加映射
+        </button>
+        <button type="button"
+                class="btn btn-outline-secondary"
+                onclick="loadMappings()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
 {% endblock %}
-
 {% block content %}
-<!-- 说明信息 -->
-<div class="alert alert-info" role="alert">
-    <i class="bi bi-info-circle me-2"></i>
-    <strong>自定义映射说明：</strong>当程序无法自动匹配番剧时，可以手动添加映射关系。映射格式为"番剧名 → Bangumi ID"，其中Bangumi ID可以从番剧页面URL中获取。
-</div>
-
-<!-- 映射列表 -->
-<div class="card shadow mb-4">
-    <div class="card-header py-3">
-        <div class="d-flex align-items-center">
-            <i class="bi bi-diagram-3 me-2 text-info"></i>
-            <h6 class="m-0 fw-semibold">自定义映射列表</h6>
-        </div>
+    <!-- 说明信息 -->
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>自定义映射说明：</strong>当程序无法自动匹配番剧时，可以手动添加映射关系。映射格式为"番剧名 → Bangumi ID"，其中Bangumi ID可以从番剧页面URL中获取。
     </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered" id="mappings-table">
-                <thead>
-                    <tr>
-                        <th>番剧名称</th>
-                        <th>Bangumi ID</th>
-                        <th>Bangumi链接</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- 动态加载 -->
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- 空状态 -->
-        <div id="empty-state" class="text-center py-5" style="display: none;">
-            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-            <h5 class="text-muted mt-3">暂无自定义映射</h5>
-            <p class="text-muted">点击上方"添加映射"按钮来创建第一个映射</p>
-        </div>
-        
-        <!-- 加载状态 -->
-        <div id="loading" class="text-center" style="display: none;">
-            <div class="spinner-border" role="status">
-                <span class="visually-hidden">加载中...</span>
+    <!-- 映射列表 -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-diagram-3 me-2 text-info"></i>
+                <h6 class="m-0 fw-semibold">自定义映射列表</h6>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- 添加/编辑映射模态框 -->
-<div class="modal fade" id="mappingModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="mappingModalTitle">添加映射</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered" id="mappings-table">
+                    <thead>
+                        <tr>
+                            <th>番剧名称</th>
+                            <th>Bangumi ID</th>
+                            <th>Bangumi链接</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 动态加载 -->
+                    </tbody>
+                </table>
             </div>
-            <div class="modal-body">
-                <form id="mapping-form">
-                    <div class="mb-3">
-                        <label for="mapping-title" class="form-label">番剧名称</label>
-                        <input type="text" class="form-control" id="mapping-title" required 
-                               placeholder="输入番剧名称，如：我推的孩子">
-                        <div class="form-text">请输入准确的番剧名称，这将用于匹配同步请求</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="mapping-id" class="form-label">Bangumi ID</label>
-                        <input type="text" class="form-control" id="mapping-id" required 
-                               placeholder="输入Bangumi ID，如：386809">
-                        <div class="form-text">
-                            可以从Bangumi页面URL中获取，如 https://bgm.tv/subject/386809 中的 386809
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">预览链接</label>
-                        <div class="input-group">
-                            <span class="input-group-text">https://bgm.tv/subject/</span>
-                            <input type="text" class="form-control" id="preview-id" readonly>
-                        </div>
-                        <div class="form-text">
-                            <a id="preview-link" href="#" target="_blank" style="display: none;">
-                                点击查看Bangumi页面
-                            </a>
-                        </div>
-                    </div>
-                </form>
+            <!-- 空状态 -->
+            <div id="empty-state" class="text-center py-5" style="display: none;">
+                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                <h5 class="text-muted mt-3">暂无自定义映射</h5>
+                <p class="text-muted">点击上方"添加映射"按钮来创建第一个映射</p>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="saveMapping()">保存</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 删除确认模态框 -->
-<div class="modal fade" id="deleteModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">确认删除</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p>确定要删除映射 "<span id="delete-mapping-title"></span>" 吗？</p>
-                <p class="text-muted">此操作不可撤销。</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-danger" onclick="confirmDelete()">删除</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 批量导入模态框 -->
-<div class="modal fade" id="importModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">批量导入映射</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label for="import-text" class="form-label">映射数据 (JSON格式)</label>
-                    <textarea class="form-control" id="import-text" rows="10" 
-                              placeholder='{"番剧名1": "bangumi_id1", "番剧名2": "bangumi_id2"}'></textarea>
-                    <div class="form-text">
-                        请输入JSON格式的映射数据，格式：{"番剧名": "bangumi_id"}
-                    </div>
-                </div>
-                <div class="mb-3">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="merge-mappings" checked>
-                        <label class="form-check-label" for="merge-mappings">
-                            与现有映射合并（取消勾选将覆盖所有现有映射）
-                        </label>
-                    </div>
+            <!-- 加载状态 -->
+            <div id="loading" class="text-center" style="display: none;">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="importMappings()">导入</button>
+        </div>
+    </div>
+    <!-- 添加/编辑映射模态框 -->
+    <div class="modal fade" id="mappingModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="mappingModalTitle">添加映射</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="mapping-form">
+                        <div class="mb-3">
+                            <label for="mapping-title" class="form-label">番剧名称</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="mapping-title"
+                                   required
+                                   placeholder="输入番剧名称，如：我推的孩子">
+                            <div class="form-text">请输入准确的番剧名称，这将用于匹配同步请求</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="mapping-id" class="form-label">Bangumi ID</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="mapping-id"
+                                   required
+                                   placeholder="输入Bangumi ID，如：386809">
+                            <div class="form-text">可以从Bangumi页面URL中获取，如 https://bgm.tv/subject/386809 中的 386809</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">预览链接</label>
+                            <div class="input-group">
+                                <span class="input-group-text">https://bgm.tv/subject/</span>
+                                <input type="text" class="form-control" id="preview-id" readonly>
+                            </div>
+                            <div class="form-text">
+                                <a id="preview-link" href="#" target="_blank" style="display: none;">点击查看Bangumi页面</a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveMapping()">保存</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-<!-- 额外操作按钮 -->
-<div class="card shadow">
-    <div class="card-header py-3">
-        <div class="d-flex align-items-center">
-            <i class="bi bi-tools me-2 text-warning"></i>
-            <h6 class="m-0 fw-semibold">批量操作</h6>
-        </div>
-    </div>
-    <div class="card-body">
-        <div class="d-flex justify-content-center">
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-outline-primary" onclick="showImportModal()">
-                    <i class="bi bi-upload me-1"></i>批量导入
-                </button>
-                <button type="button" class="btn btn-outline-success" onclick="exportMappings()">
-                    <i class="bi bi-download me-1"></i>导出映射
-                </button>
-                <button type="button" class="btn btn-outline-warning" onclick="clearAllMappings()">
-                    <i class="bi bi-trash me-1"></i>清空所有
-                </button>
+    <!-- 删除确认模态框 -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">确认删除</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        确定要删除映射 "<span id="delete-mapping-title"></span>" 吗？
+                    </p>
+                    <p class="text-muted">此操作不可撤销。</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDelete()">删除</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
+    <!-- 批量导入模态框 -->
+    <div class="modal fade" id="importModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量导入映射</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="import-text" class="form-label">映射数据 (JSON格式)</label>
+                        <textarea class="form-control"
+                                  id="import-text"
+                                  rows="10"
+                                  placeholder='{"番剧名1": "bangumi_id1", "番剧名2": "bangumi_id2"}'></textarea>
+                        <div class="form-text">请输入JSON格式的映射数据，格式：{"番剧名": "bangumi_id"}</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="merge-mappings" checked>
+                            <label class="form-check-label" for="merge-mappings">与现有映射合并（取消勾选将覆盖所有现有映射）</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="importMappings()">导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 额外操作按钮 -->
+    <div class="card shadow">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-tools me-2 text-warning"></i>
+                <h6 class="m-0 fw-semibold">批量操作</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="d-flex justify-content-center">
+                <div class="btn-group" role="group">
+                    <button type="button"
+                            class="btn btn-outline-primary"
+                            onclick="showImportModal()">
+                        <i class="bi bi-upload me-1"></i>批量导入
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-success"
+                            onclick="exportMappings()">
+                        <i class="bi bi-download me-1"></i>导出映射
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-warning"
+                            onclick="clearAllMappings()">
+                        <i class="bi bi-trash me-1"></i>清空所有
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
-
 {% block scripts %}
-<script>
+    <script>
 let currentMappings = {};
 let mappingModal;
 let deleteModal;
@@ -508,5 +507,5 @@ function showLoading(show) {
         loading.style.display = 'none';
     }
 }
-</script>
-{% endblock %} 
+    </script>
+{% endblock %}

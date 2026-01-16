@@ -1,12 +1,15 @@
 """
 同步相关数据模型
 """
-from typing import Optional, Dict, Any
+
+from typing import Any, Optional
+
 from pydantic import BaseModel, Field
 
 
 class CustomItem(BaseModel):
     """自定义同步项目模型"""
+
     media_type: str = Field(..., description="媒体类型")
     title: str = Field(..., description="番剧标题")
     ori_title: Optional[str] = Field(None, description="原始标题")
@@ -19,6 +22,7 @@ class CustomItem(BaseModel):
 
 class SyncResponse(BaseModel):
     """同步响应模型"""
+
     status: str = Field(..., description="状态")
     message: str = Field(..., description="消息")
     data: Optional[dict] = Field(None, description="数据")
@@ -26,60 +30,75 @@ class SyncResponse(BaseModel):
 
 class PlexWebhookData(BaseModel):
     """Plex Webhook数据模型"""
+
     # 允许额外字段
     model_config = {"extra": "allow"}
-    
+
     event: str = Field(..., description="事件类型", example="media.scrobble")
-    Account: Dict[str, Any] = Field(..., description="账户信息", example={"title": "用户名"})
-    Metadata: Dict[str, Any] = Field(..., description="媒体元数据", example={
-        "type": "episode",
-        "title": "第01话",
-        "grandparentTitle": "番剧名称",
-        "originalTitle": "Original Title",
-        "parentIndex": 1,
-        "index": 1,
-        "originallyAvailableAt": "2024-01-01"
-    })
-    
+    Account: dict[str, Any] = Field(
+        ..., description="账户信息", example={"title": "用户名"}
+    )
+    Metadata: dict[str, Any] = Field(
+        ...,
+        description="媒体元数据",
+        example={
+            "type": "episode",
+            "title": "第01话",
+            "grandparentTitle": "番剧名称",
+            "originalTitle": "Original Title",
+            "parentIndex": 1,
+            "index": 1,
+            "originallyAvailableAt": "2024-01-01",
+        },
+    )
+
     # 可选字段
     user: Optional[bool] = Field(None, description="是否为用户事件")
     owner: Optional[bool] = Field(None, description="是否为所有者事件")
-    Server: Optional[Dict[str, Any]] = Field(None, description="服务器信息")
-    Player: Optional[Dict[str, Any]] = Field(None, description="播放器信息")
+    Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
+    Player: Optional[dict[str, Any]] = Field(None, description="播放器信息")
 
 
 class EmbyWebhookData(BaseModel):
     """Emby通知数据模型"""
+
     # 使用model_config来允许额外字段
     model_config = {"extra": "allow"}
-    
+
     # 核心必需字段
     Event: str = Field(..., description="事件类型", example="item.markplayed")
-    User: Dict[str, Any] = Field(..., description="用户信息", example={"Name": "用户名", "Id": "user-id"})
-    Item: Dict[str, Any] = Field(..., description="媒体项目信息", example={
-        "Type": "Episode",
-        "SeriesName": "番剧名称",
-        "ParentIndexNumber": 1,
-        "IndexNumber": 1,
-        "PremiereDate": "2024-01-01T00:00:00.0000000Z",
-        "Name": "剧集名称"
-    })
-    
+    User: dict[str, Any] = Field(
+        ..., description="用户信息", example={"Name": "用户名", "Id": "user-id"}
+    )
+    Item: dict[str, Any] = Field(
+        ...,
+        description="媒体项目信息",
+        example={
+            "Type": "Episode",
+            "SeriesName": "番剧名称",
+            "ParentIndexNumber": 1,
+            "IndexNumber": 1,
+            "PremiereDate": "2024-01-01T00:00:00.0000000Z",
+            "Name": "剧集名称",
+        },
+    )
+
     # 可选字段
     Title: Optional[str] = Field(None, description="通知标题")
     Description: Optional[str] = Field(None, description="通知描述")
     Date: Optional[str] = Field(None, description="通知日期")
-    Server: Optional[Dict[str, Any]] = Field(None, description="服务器信息")
-    PlaybackInfo: Optional[Dict[str, Any]] = Field(None, description="播放信息", example={
-        "PlayedToCompletion": True
-    })
+    Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
+    PlaybackInfo: Optional[dict[str, Any]] = Field(
+        None, description="播放信息", example={"PlayedToCompletion": True}
+    )
 
 
 class JellyfinWebhookData(BaseModel):
     """Jellyfin Webhook数据模型"""
+
     # 允许额外字段
     model_config = {"extra": "allow"}
-    
+
     NotificationType: str = Field(..., description="通知类型", example="PlaybackStop")
     PlayedToCompletion: str = Field(..., description="是否播放完成", example="True")
     media_type: str = Field(..., description="媒体类型", example="episode")
@@ -88,11 +107,14 @@ class JellyfinWebhookData(BaseModel):
     season: int = Field(..., description="季数", example=1)
     episode: int = Field(..., description="集数", example=1)
     user_name: str = Field(..., description="用户名", example="用户名")
-    release_date: Optional[str] = Field(None, description="发行日期", example="2024-01-01")
+    release_date: Optional[str] = Field(
+        None, description="发行日期", example="2024-01-01"
+    )
 
 
 class SyncRecord(BaseModel):
     """同步记录模型"""
+
     id: int
     timestamp: str
     user_name: str
@@ -109,6 +131,7 @@ class SyncRecord(BaseModel):
 
 class SyncStats(BaseModel):
     """同步统计模型"""
+
     total_syncs: int
     success_syncs: int
     error_syncs: int
@@ -120,10 +143,11 @@ class SyncStats(BaseModel):
 
 class TestSyncRequest(BaseModel):
     """测试同步请求模型"""
+
     title: str = Field(..., description="番剧标题")
     ori_title: Optional[str] = Field(None, description="原始标题")
     season: int = Field(1, description="季度")
     episode: int = Field(1, description="集数")
     release_date: Optional[str] = Field(None, description="发行日期")
     user_name: str = Field("test_user", description="用户名")
-    source: str = Field("test", description="来源") 
+    source: str = Field("test", description="来源")

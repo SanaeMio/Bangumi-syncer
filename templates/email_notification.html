@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bangumi-Syncer 通知</title>
-    <style>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Bangumi-Syncer 通知</title>
+        <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             line-height: 1.5;
@@ -150,37 +150,42 @@
         .emoji {
             font-size: 1.1em;
         }
-    </style>
-</head>
-<body>
-    <div class="email-container">
-        <!-- 邮件头部 -->
-        <div class="email-header">
-            <h2><span class="emoji">📢</span> Bangumi-Syncer 通知</h2>
-        </div>
-
-        <!-- 邮件内容 -->
-        <div class="email-content">
-            <!-- 基本信息表格 -->
-            <div class="info-grid">
-                <div class="info-row">
-                    <div class="info-label"><span class="emoji">📅</span> 时间</div>
-                    <div class="info-value">{timestamp}</div>
-                </div>
-                <div class="info-row">
-                    <div class="info-label"><span class="emoji">⚠️</span> 类型</div>
-                    <div class="info-value">{notification_type}</div>
-                </div>
+        </style>
+    </head>
+    <body>
+        <div class="email-container">
+            <!-- 邮件头部 -->
+            <div class="email-header">
+                <h2>
+                    <span class="emoji">📢</span> Bangumi-Syncer 通知
+                </h2>
             </div>
-
-            <!-- 动态内容区域（邮箱大多不能使用Javascript,因此由Python根据类型填充） -->
-            {dynamic_content}
+            <!-- 邮件内容 -->
+            <div class="email-content">
+                <!-- 基本信息表格 -->
+                <div class="info-grid">
+                    <div class="info-row">
+                        <div class="info-label">
+                            <span class="emoji">📅</span> 时间
+                        </div>
+                        <div class="info-value">{timestamp}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">
+                            <span class="emoji">⚠️</span> 类型
+                        </div>
+                        <div class="info-value">{notification_type}</div>
+                    </div>
+                </div>
+                <!-- 动态内容区域（邮箱大多不能使用Javascript,因此由Python根据类型填充） -->
+                {dynamic_content}
+            </div>
+            <!-- 邮件底部 -->
+            <div class="email-footer">
+                <p>
+                    本邮件由 <strong>Bangumi-Syncer</strong> 自动发送 · {timestamp}
+                </p>
+            </div>
         </div>
-
-        <!-- 邮件底部 -->
-        <div class="email-footer">
-            <p>本邮件由 <strong>Bangumi-Syncer</strong> 自动发送 · {timestamp}</p>
-        </div>
-    </div>
-</body>
+    </body>
 </html>

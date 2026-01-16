@@ -14,6 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "djlint>=1.36.4",
     "mypy>=1.19.1",
     "ruff>=0.14.10",
     "ty>=0.0.9",
@@ -34,7 +35,12 @@ select = [
     "UP",  # pyupgrade (自动升级旧语法)
     "B",   # flake8-bugbear (发现潜在设计缺陷)
 ]
-ignore = []
+ignore = [
+    "E501",  # 行过长（由 ruff format 处理）
+    "E722",  # bare except
+    "B008",  # 函数调用作为默认参数
+    "B904",  # raise 不带 from（简化异常处理）
+]
 
 [tool.ruff.lint.isort]
 # 自动合并同类 import
