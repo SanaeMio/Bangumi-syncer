@@ -14,7 +14,7 @@
 - [🧰 安装](#-安装)
   - [Windows](#Windows)
   - [Docker](#Docker)
-  - [群晖NAS (DSM7.2)](#群晖NAS)
+  - [群晖NAS](#群晖NAS)
 - [🔧 配置](#-配置)
 - [🥰 使用](#-使用)
   - [方式一：自定义Webhook](#自定义Webhook)
@@ -84,7 +84,9 @@ services:
 |             PGID             |         0         |                            组 ID                             |
 |              TZ              |   Asia/Shanghai   |                             时区                             |
 
-#### 群晖NAS (DSM7.2)
+#### 群晖NAS
+
+**此处以DSM7.2为例**
 
 **方式一：通过 Container Manager 项目(docker-compose)**
 
@@ -285,7 +287,7 @@ services:
 `Notification Type`只选中`Playback Stop`，`Item Type`只选中`Episodes`。`Template`填写如下模版，然后点击`Save`保存设置
 
 ```bash
-{"media_type": "{{{ItemType}}}","title": "{{{SeriesName}}}","ori_title": " ","season": {{{SeasonNumber}}},"episode": {{{EpisodeNumber}}},"release_date": "{{{Year}}}-01-01","user_name": "{{{NotificationUsername}}}","NotificationType": "{{{NotificationType}}}","PlayedToCompletion": "{{{PlayedToCompletion}}}"}
+{"media_type": "{{{ItemType}}}","title": "{{{SeriesName}}}","ori_title": " ","season": {{{SeasonNumber}}},"episode": {{{EpisodeNumber}}},"release_date": "{{{Year}}}-01-01","user_name": "{{{NotificationUsername}}}","NotificationType": "{{{NotificationType}}}","PlayedToCompletion": "{{{PlayedToCompletion}}}", "source": "jellyfin"}
 ```
 
 5. 在Jellyfin播放完成后，可在Web界面「日志管理」页面查看同步结果
