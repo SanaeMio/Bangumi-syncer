@@ -479,118 +479,31 @@
 
                     <hr class="my-4">
 
-                    <!-- 邮件通知 -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-2">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-envelope me-1 text-success"></i>启用邮件
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="email-enabled" name="notification.email_enabled">
-                                <label class="form-check-label" for="email-enabled">启用</label>
-                            </div>
+                    <!-- 邮件通知配置 -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-envelope text-success me-2"></i>
+                            <h6 class="m-0 fw-semibold">邮件通知配置</h6>
                         </div>
-                        <div class="col-md-5">
-                            <label for="smtp-server" class="form-label fw-semibold">
-                                <i class="bi bi-server me-1"></i>SMTP 服务器
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="SMTP 服务器地址。Gmail: smtp.gmail.com, QQ: smtp.qq.com, 163: smtp.163.com"></i>
-                            </label>
-                            <input type="text" class="form-control form-control-lg" id="smtp-server" name="notification.smtp_server"
-                                   placeholder="smtp.qq.com">
-                        </div>
-                        <div class="col-md-2">
-                            <label for="smtp-port" class="form-label fw-semibold">
-                                <i class="bi bi-hdd-network me-1"></i>端口
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="SMTP 端口。TLS 加密通常使用 587，SSL 加密通常使用 465"></i>
-                            </label>
-                            <input type="number" class="form-control form-control-lg" id="smtp-port" name="notification.smtp_port"
-                                   placeholder="465" min="1" max="65535">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-shield-lock me-1"></i>使用 TLS
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="smtp-use-tls" name="notification.smtp_use_tls">
-                                <label class="form-check-label" for="smtp-use-tls">启用</label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label for="smtp-username" class="form-label fw-semibold">
-                                <i class="bi bi-person me-1"></i>SMTP 用户名
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="通常是邮箱地址"></i>
-                            </label>
-                            <input type="email" class="form-control form-control-lg" id="smtp-username" name="notification.smtp_username"
-                                   placeholder="your-email@example.com">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="smtp-password" class="form-label fw-semibold">
-                                <i class="bi bi-key me-1"></i>SMTP 密码/授权码
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="注意：很多邮箱需要使用授权码而不是登录密码"></i>
-                            </label>
-                            <div class="position-relative">
-                                <input type="password" class="form-control form-control-lg pe-5" id="smtp-password" name="notification.smtp_password"
-                                       placeholder="授权码或密码">
-                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn"
-                                        type="button" id="toggle-smtp-password-visibility">
-                                    <i class="bi bi-eye text-muted" id="smtp-password-visibility-icon"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="email-from" class="form-label fw-semibold">
-                                <i class="bi bi-envelope-at me-1"></i>发件人地址（可选）
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="留空则使用 SMTP 用户名"></i>
-                            </label>
-                            <input type="email" class="form-control form-control-lg" id="email-from" name="notification.email_from"
-                                   placeholder="留空使用 SMTP 用户名">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="email-to" class="form-label fw-semibold">
-                                <i class="bi bi-envelope-check me-1"></i>收件人地址
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="接收通知的邮箱地址"></i>
-                            </label>
-                            <input type="email" class="form-control form-control-lg" id="email-to" name="notification.email_to"
-                                   placeholder="recipient@example.com">
-                        </div>
+                        <button type="button" class="btn btn-success btn-sm" onclick="showAddEmailModal()">
+                            <i class="bi bi-plus-lg me-1"></i>添加邮件配置
+                        </button>
                     </div>
 
-                    <!-- 邮件自定义配置 -->
-                    <div class="row g-3 mt-3">
-                        <div class="col-12">
-                            <label for="email-subject" class="form-label fw-semibold">
-                                <i class="bi bi-chat-square-text me-1"></i>邮件标题
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="自定义邮件标题，使用 {变量名} 引用数据。留空使用默认标题"></i>
-                            </label>
-                            <input type="text" class="form-control form-control-lg" id="email-subject" name="notification.email_subject"
-                                   placeholder="例如: [Bangumi-Syncer] {error_type} - {title} S{season}E{episode}">
-                        </div>
-
-                        <div class="col-12">
-                            <label for="email-template-file" class="form-label fw-semibold">
-                                <i class="bi bi-file-earmark-code me-1"></i>自定义邮件模板文件路径
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                                   title="自定义邮件 HTML 模板文件路径，支持相对路径和绝对路径。留空使用默认模板"></i>
-                            </label>
-                            <input type="text" class="form-control font-monospace" id="email-template-file" name="notification.email_template_file"
-                                   placeholder="留空使用默认模板">
+                    <!-- 邮件配置列表 -->
+                    <div id="email-configs-container">
+                        <div class="text-center py-5">
+                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-3">暂无邮件配置</p>
+                            <button type="button" class="btn btn-outline-success" onclick="showAddEmailModal()">
+                                <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                            </button>
                         </div>
                     </div>
 
                     <div class="alert alert-info mt-4">
                         <i class="bi bi-info-circle me-2"></i>
-                        <strong>提示：</strong>配置完成后，可以在「调试工具」页面测试通知功能。同步错误时会自动发送通知（60秒冷却时间）。
+                        <strong>提示：</strong>配置完成后，也可以在「调试工具」页面测试全部通知项功能。特定事件发生时会自动发送通知（60秒冷却时间）。
                     </div>
                 </div>
             </div>
@@ -821,20 +734,6 @@ document.addEventListener('DOMContentLoaded', function() {
             icon.className = 'bi bi-eye';
         }
     });
-    
-    // 初始化 SMTP 密码显示/隐藏功能
-    document.getElementById('toggle-smtp-password-visibility').addEventListener('click', function() {
-        const passwordInput = document.getElementById('smtp-password');
-        const icon = document.getElementById('smtp-password-visibility-icon');
-        
-        if (passwordInput.type === 'password') {
-            passwordInput.type = 'text';
-            icon.className = 'bi bi-eye-slash';
-        } else {
-            passwordInput.type = 'password';
-            icon.className = 'bi bi-eye';
-        }
-    });
 
     // 初始化模态框
     const modalElement = document.getElementById('restoreConfigModal');
@@ -872,6 +771,9 @@ async function loadConfig(showToast = true) {
         if (data.status === 'success') {
             currentConfig = data.data;
             populateForm(currentConfig);
+            // 加载通知配置
+            loadWebhookConfigs();
+            loadEmailConfigs();
             if (showToast) {
                 showAlert('配置重新加载成功', 'success');
             }
@@ -915,23 +817,7 @@ function populateForm(config) {
         // 密码字段留空，表示不修改
         document.getElementById('auth-password').value = '';
     }
-    
-    // 填充通知配置
-    if (config.notification) {
-        // 旧的webhook配置已被迁移到新的webhook配置管理系统
-        // 邮件配置保持不变
-        document.getElementById('email-enabled').checked = config.notification.email_enabled || false;
-        document.getElementById('smtp-server').value = config.notification.smtp_server || '';
-        document.getElementById('smtp-port').value = config.notification.smtp_port || 587;
-        document.getElementById('smtp-use-tls').checked = config.notification.smtp_use_tls !== false;
-        document.getElementById('smtp-username').value = config.notification.smtp_username || '';
-        document.getElementById('smtp-password').value = config.notification.smtp_password || '';
-        document.getElementById('email-from').value = config.notification.email_from || '';
-        document.getElementById('email-to').value = config.notification.email_to || '';
-        document.getElementById('email-subject').value = config.notification.email_subject || '';
-        document.getElementById('email-template-file').value = config.notification.email_template_file || '';
-    }
-    
+
     // 切换同步模式
     toggleSyncMode();
     
@@ -1061,20 +947,6 @@ async function saveConfig() {
                 https_only: document.getElementById('https-only').checked,
                 max_login_attempts: parseInt(document.getElementById('max-login-attempts').value) || 5,
                 lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900
-            },
-            notification: {
-                // 旧的webhook配置已被迁移到新的webhook配置管理系统
-                // 邮件配置保持不变
-                email_enabled: document.getElementById('email-enabled').checked,
-                smtp_server: document.getElementById('smtp-server').value,
-                smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
-                smtp_use_tls: document.getElementById('smtp-use-tls').checked,
-                smtp_username: document.getElementById('smtp-username').value,
-                smtp_password: document.getElementById('smtp-password').value,
-                email_from: document.getElementById('email-from').value,
-                email_to: document.getElementById('email-to').value,
-                email_subject: document.getElementById('email-subject').value,
-                email_template_file: document.getElementById('email-template-file').value
             }
         };
         
@@ -1863,7 +1735,7 @@ function renderWebhookConfigs(webhooks) {
 
         html += `
             <div class="col-md-6">
-                <div class="card border ${webhook.enabled ? 'border-success' : 'border-secondary'}">
+                <div class="card border ${webhook.enabled ? 'border-primary' : 'border-secondary'}">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div class="d-flex align-items-center">
@@ -2224,5 +2096,497 @@ async function testWebhook(webhookId) {
         </div>
     </div>
 </div>
+
+<!-- 邮件配置模态框 -->
+<div class="modal fade" id="emailModal" tabindex="-1" aria-labelledby="emailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="emailModalLabel">
+                    <i class="bi bi-envelope me-2"></i><span id="email-modal-title">添加邮件配置</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="email-config-form">
+                    <input type="hidden" id="email-id">
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="email-enabled-input" checked>
+                            <label class="form-check-label fw-semibold" for="email-enabled-input">
+                                <i class="bi bi-toggle-on me-1"></i>启用此配置
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <label for="email-smtp-server-input" class="form-label fw-semibold">
+                                <i class="bi bi-server me-1"></i>SMTP 服务器 <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control" id="email-smtp-server-input" required
+                                   placeholder="smtp.qq.com">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="email-smtp-port-input" class="form-label fw-semibold">
+                                <i class="bi bi-hdd-network me-1"></i>端口 <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" class="form-control" id="email-smtp-port-input" required
+                                   placeholder="465" min="1" max="65535" value="465">
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="email-smtp-username-input" class="form-label fw-semibold">
+                                <i class="bi bi-person me-1"></i>SMTP 用户名 <span class="text-danger">*</span>
+                            </label>
+                            <input type="email" class="form-control" id="email-smtp-username-input" required
+                                   placeholder="your-email@qq.com">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="email-smtp-password-input" class="form-label fw-semibold">
+                                <i class="bi bi-key me-1"></i>SMTP 密码/授权码 <span class="text-danger">*</span>
+                            </label>
+                            <input type="password" class="form-control" id="email-smtp-password-input" required
+                                   placeholder="授权码或密码">
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="email-from-input" class="form-label fw-semibold">
+                                <i class="bi bi-envelope-at me-1"></i>发件人地址（可选）
+                            </label>
+                            <input type="email" class="form-control" id="email-from-input"
+                                   placeholder="留空使用 SMTP 用户名">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="email-to-input" class="form-label fw-semibold">
+                                <i class="bi bi-envelope-check me-1"></i>收件人地址 <span class="text-danger">*</span>
+                            </label>
+                            <input type="email" class="form-control" id="email-to-input" required
+                                   placeholder="recipient@example.com">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="email-smtp-use-tls-input" checked>
+                            <label class="form-check-label fw-semibold" for="email-smtp-use-tls-input">
+                                <i class="bi bi-shield-lock me-1"></i>使用 TLS 加密
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="email-subject-input" class="form-label fw-semibold">
+                            <i class="bi bi-chat-square-text me-1"></i>邮件标题模板（可选）
+                        </label>
+                        <input type="text" class="form-control" id="email-subject-input"
+                               placeholder="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}">
+                        <div class="form-text">可用变量：{timestamp}, {user_name}, {title}, {season}, {episode}, {source}, {error_type}, {error_message}, {notification_type}, {subject_id}, {episode_id}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="email-template-file-input" class="form-label fw-semibold">
+                            <i class="bi bi-file-earmark-code me-1"></i>自定义模板文件路径（可选）
+                        </label>
+                        <input type="text" class="form-control font-monospace" id="email-template-file-input"
+                               placeholder="留空使用默认模板">
+                        <div class="form-text">支持相对路径和绝对路径</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-tags me-1"></i>通知类型
+                        </label>
+                        <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-request_received" value="request_received">
+                                <label class="form-check-label" for="email-type-request_received">收到同步请求 (request_received)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-bangumi_id_found" value="bangumi_id_found">
+                                <label class="form-check-label" for="email-type-bangumi_id_found">匹配到番剧 (bangumi_id_found)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-mark_success" value="mark_success">
+                                <label class="form-check-label" for="email-type-mark_success">同步成功 (mark_success)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-mark_failed" value="mark_failed">
+                                <label class="form-check-label" for="email-type-mark_failed">同步失败 (mark_failed)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-mark_skipped" value="mark_skipped">
+                                <label class="form-check-label" for="email-type-mark_skipped">已看过跳过 (mark_skipped)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-config_error" value="config_error">
+                                <label class="form-check-label" for="email-type-config_error">配置错误 (config_error)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-anime_not_found" value="anime_not_found">
+                                <label class="form-check-label" for="email-type-anime_not_found">未找到番剧 (anime_not_found)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-episode_not_found" value="episode_not_found">
+                                <label class="form-check-label" for="email-type-episode_not_found">未找到剧集 (episode_not_found)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-api_auth_error" value="api_auth_error">
+                                <label class="form-check-label" for="email-type-api_auth_error">API认证失败 (api_auth_error)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-api_error" value="api_error">
+                                <label class="form-check-label" for="email-type-api_error">API错误 (api_error)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-api_retry_failed" value="api_retry_failed">
+                                <label class="form-check-label" for="email-type-api_retry_failed">API重试失败 (api_retry_failed)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="email-type-ip_locked" value="ip_locked">
+                                <label class="form-check-label" for="email-type-ip_locked">IP被锁定 (ip_locked)</label>
+                            </div>
+                        </div>
+                        <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-success" onclick="saveEmailConfig()">
+                    <i class="bi bi-save me-1"></i>保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除邮件确认模态框 -->
+<div class="modal fade" id="deleteEmailModal" tabindex="-1" aria-labelledby="deleteEmailModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteEmailModalLabel">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除这个邮件配置吗？此操作不可逆。</p>
+                <input type="hidden" id="delete-email-id">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="deleteEmailConfig()">
+                    <i class="bi bi-trash me-1"></i>删除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ========== 邮件配置管理 ==========
+
+// 加载邮件配置列表
+async function loadEmailConfigs() {
+    try {
+        const response = await fetch('/api/notification/emails', {
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            renderEmailConfigs(data.data);
+        } else {
+            console.error('加载邮件配置失败:', data.message);
+        }
+    } catch (error) {
+        console.error('加载邮件配置失败:', error);
+    }
+}
+
+// 渲染邮件配置列表
+function renderEmailConfigs(emails) {
+    const container = document.getElementById('email-configs-container');
+
+    if (!emails || emails.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                <p class="text-muted mt-3">暂无邮件配置</p>
+                <button type="button" class="btn btn-outline-success" onclick="showAddEmailModal()">
+                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '<div class="row g-3">';
+    emails.forEach(email => {
+        const typesBadge = email.types === 'all'
+            ? '<span class="badge bg-success">全部类型</span>'
+            : email.types.split(',').map(t => `<span class="badge bg-secondary">${t.trim()}</span>`).join(' ');
+
+        html += `
+            <div class="col-md-6">
+                <div class="card border ${email.enabled ? 'border-success' : 'border-secondary'}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-envelope ${email.enabled ? 'text-success' : 'text-muted'} me-2"></i>
+                                <h6 class="card-title mb-0">邮件配置 #${email.id}</h6>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="email-enabled-${email.id}"
+                                       ${email.enabled ? 'checked' : ''} onchange="toggleEmailEnabled(${email.id}, this.checked)">
+                                <label class="form-check-label" for="email-enabled-${email.id}"></label>
+                            </div>
+                        </div>
+                        <p class="card-text small text-muted mb-2">
+                            <i class="bi bi-envelope-check me-1"></i>${email.email_to}
+                        </p>
+                        <p class="card-text small text-muted mb-2">
+                            <i class="bi bi-server me-1"></i>${email.smtp_server}:${email.smtp_port}
+                        </p>
+                        <div class="mb-2">
+                            ${typesBadge}
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-success" onclick="showEditEmailModal(${email.id})">
+                                <i class="bi bi-pencil me-1"></i>编辑
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="testEmail(${email.id})">
+                                <i class="bi bi-play-circle me-1"></i>测试
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="showDeleteEmailModal(${email.id})">
+                                <i class="bi bi-trash me-1"></i>删除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// 显示添加邮件配置模态框
+function showAddEmailModal() {
+    document.getElementById('email-modal-title').textContent = '添加邮件配置';
+    document.getElementById('email-id').value = '';
+    document.getElementById('email-enabled-input').checked = true;
+    document.getElementById('email-smtp-server-input').value = '';
+    document.getElementById('email-smtp-port-input').value = '465';
+    document.getElementById('email-smtp-username-input').value = '';
+    document.getElementById('email-smtp-password-input').value = '';
+    document.getElementById('email-from-input').value = '';
+    document.getElementById('email-to-input').value = '';
+    document.getElementById('email-smtp-use-tls-input').checked = true;
+    document.getElementById('email-subject-input').value = '';
+    document.getElementById('email-template-file-input').value = '';
+
+    // 重置复选框
+    const checkboxes = document.querySelectorAll('[id^="email-type-"]');
+    checkboxes.forEach(cb => cb.checked = false);
+
+    const modal = new bootstrap.Modal(document.getElementById('emailModal'));
+    modal.show();
+}
+
+// 显示编辑邮件配置模态框
+async function showEditEmailModal(emailId) {
+    try {
+        const response = await fetch('/api/notification/emails', {
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            const email = data.data.find(e => e.id == emailId);
+            if (email) {
+                document.getElementById('email-modal-title').textContent = '编辑邮件配置';
+                document.getElementById('email-id').value = email.id;
+                document.getElementById('email-enabled-input').checked = email.enabled;
+                document.getElementById('email-smtp-server-input').value = email.smtp_server;
+                document.getElementById('email-smtp-port-input').value = email.smtp_port;
+                document.getElementById('email-smtp-username-input').value = email.smtp_username;
+                document.getElementById('email-smtp-password-input').value = email.smtp_password === '******' ? '' : email.smtp_password;
+                document.getElementById('email-from-input').value = email.email_from;
+                document.getElementById('email-to-input').value = email.email_to;
+                document.getElementById('email-smtp-use-tls-input').checked = email.smtp_use_tls;
+                document.getElementById('email-subject-input').value = email.email_subject;
+                document.getElementById('email-template-file-input').value = email.email_template_file;
+
+                // 设置复选框
+                const checkboxes = document.querySelectorAll('[id^="email-type-"]');
+                checkboxes.forEach(cb => {
+                    if (email.types === 'all') {
+                        cb.checked = false;
+                    } else {
+                        cb.checked = email.types.split(',').includes(cb.value);
+                    }
+                });
+
+                const modal = new bootstrap.Modal(document.getElementById('emailModal'));
+                modal.show();
+            }
+        }
+    } catch (error) {
+        console.error('加载邮件配置失败:', error);
+        showAlert('加载邮件配置失败', 'danger');
+    }
+}
+
+// 保存邮件配置
+async function saveEmailConfig() {
+    const emailId = document.getElementById('email-id').value;
+    const emailData = {
+        enabled: document.getElementById('email-enabled-input').checked,
+        smtp_server: document.getElementById('email-smtp-server-input').value,
+        smtp_port: parseInt(document.getElementById('email-smtp-port-input').value),
+        smtp_username: document.getElementById('email-smtp-username-input').value,
+        smtp_password: document.getElementById('email-smtp-password-input').value,
+        email_from: document.getElementById('email-from-input').value,
+        email_to: document.getElementById('email-to-input').value,
+        smtp_use_tls: document.getElementById('email-smtp-use-tls-input').checked,
+        email_subject: document.getElementById('email-subject-input').value,
+        email_template_file: document.getElementById('email-template-file-input').value,
+        types: Array.from(document.querySelectorAll('[id^="email-type-"]:checked')).map(cb => cb.value).join(',') || 'all'
+    };
+
+    // 验证必填字段
+    if (!emailData.smtp_server || !emailData.smtp_username || !emailData.smtp_password || !emailData.email_to) {
+        showAlert('请填写所有必填字段', 'warning');
+        return;
+    }
+
+    try {
+        let response;
+        if (emailId) {
+            response = await fetch(`/api/notification/emails/${emailId}`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(emailData)
+            });
+        } else {
+            response = await fetch('/api/notification/emails', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(emailData)
+            });
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            showAlert(emailId ? '邮件配置更新成功' : '邮件配置创建成功', 'success');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('emailModal'));
+            modal.hide();
+            await loadEmailConfigs();
+        } else {
+            showAlert('保存失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('保存邮件配置失败:', error);
+        showAlert('保存邮件配置失败', 'danger');
+    }
+}
+
+// 切换邮件配置启用状态
+async function toggleEmailEnabled(emailId, enabled) {
+    try {
+        const response = await fetch(`/api/notification/emails/${emailId}`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            showAlert(enabled ? '邮件配置已启用' : '邮件配置已禁用', 'success');
+            await loadEmailConfigs();
+        } else {
+            showAlert('操作失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('切换邮件配置状态失败:', error);
+        showAlert('操作失败', 'danger');
+    }
+}
+
+// 显示删除邮件配置确认模态框
+function showDeleteEmailModal(emailId) {
+    document.getElementById('delete-email-id').value = emailId;
+    const modal = new bootstrap.Modal(document.getElementById('deleteEmailModal'));
+    modal.show();
+}
+
+// 删除邮件配置
+async function deleteEmailConfig() {
+    const emailId = document.getElementById('delete-email-id').value;
+
+    try {
+        const response = await fetch(`/api/notification/emails/${emailId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            showAlert('邮件配置删除成功', 'success');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('deleteEmailModal'));
+            modal.hide();
+            await loadEmailConfigs();
+        } else {
+            showAlert('删除失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('删除邮件配置失败:', error);
+        showAlert('删除邮件配置失败', 'danger');
+    }
+}
+
+// 测试邮件配置
+async function testEmail(emailId) {
+    const button = event.target.closest('button');
+    const originalHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
+
+    try {
+        const response = await fetch(`/api/notification/emails/${emailId}/test`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            const emailResult = data.data.email.emails[0];
+            if (emailResult.success) {
+                showAlert('邮件测试成功', 'success');
+            } else {
+                showAlert('邮件测试失败: ' + emailResult.message, 'warning');
+            }
+        } else {
+            showAlert('测试失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('测试邮件失败:', error);
+        showAlert('测试邮件失败', 'danger');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    }
+}
 </script>
 {% endblock %} 

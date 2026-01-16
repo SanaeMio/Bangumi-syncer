@@ -15,6 +15,7 @@ class NotificationTestRequest(BaseModel):
     """通知测试请求"""
     notification_type: Optional[str] = "webhook"  # webhook, email, all
     webhook_id: Optional[int] = None  # 指定测试的webhook ID
+    email_id: Optional[int] = None  # 指定测试的email ID
 
 
 class WebhookConfigCreate(BaseModel):
@@ -37,6 +38,36 @@ class WebhookConfigUpdate(BaseModel):
     types: Optional[str] = None
 
 
+class EmailConfigCreate(BaseModel):
+    """创建邮件配置请求"""
+    enabled: bool = True
+    smtp_server: str
+    smtp_port: int = 465
+    smtp_username: str
+    smtp_password: str
+    smtp_use_tls: bool = True
+    email_from: str = ""
+    email_to: str
+    email_subject: str = ""
+    email_template_file: str = ""
+    types: str = "mark_failed"
+
+
+class EmailConfigUpdate(BaseModel):
+    """更新邮件配置请求"""
+    enabled: Optional[bool] = None
+    smtp_server: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: Optional[bool] = None
+    email_from: Optional[str] = None
+    email_to: Optional[str] = None
+    email_subject: Optional[str] = None
+    email_template_file: Optional[str] = None
+    types: Optional[str] = None
+
+
 @router.post("/notification/test")
 async def test_notification(
     request: NotificationTestRequest,
@@ -53,7 +84,8 @@ async def test_notification(
         else:
             results = notifier.test_notification(
                 notification_type=notification_type,
-                webhook_id=request.webhook_id
+                webhook_id=request.webhook_id,
+                email_id=request.email_id
             )
 
         return {
@@ -77,26 +109,38 @@ async def get_notification_status(
     try:
         from ..core.config import config_manager
 
-        webhook_enabled = config_manager.get('notification', 'webhook_enabled', fallback=False)
-        webhook_url = config_manager.get('notification', 'webhook_url', fallback='')
+        # 获取webhook配置数量
+        webhook_count = 0
+        webhook_enabled_count = 0
+        for section_name in config_manager.get_config_parser().sections():
+            if section_name.startswith('webhook-'):
+                webhook_count += 1
+                section_config = config_manager.get_section(section_name)
+                if section_config.get('enabled', False):
+                    webhook_enabled_count += 1
 
-        email_enabled = config_manager.get('notification', 'email_enabled', fallback=False)
-        smtp_server = config_manager.get('notification', 'smtp_server', fallback='')
-        email_to = config_manager.get('notification', 'email_to', fallback='')
+        # 获取邮件配置数量
+        email_count = 0
+        email_enabled_count = 0
+        for section_name in config_manager.get_config_parser().sections():
+            if section_name.startswith('email-'):
+                email_count += 1
+                section_config = config_manager.get_section(section_name)
+                if section_config.get('enabled', False):
+                    email_enabled_count += 1
 
         return {
             "status": "success",
             "data": {
                 "webhook": {
-                    "enabled": bool(webhook_enabled),
-                    "configured": bool(webhook_url),
-                    "url": webhook_url if webhook_url else None
+                    "total": webhook_count,
+                    "enabled": webhook_enabled_count,
+                    "configured": webhook_count > 0
                 },
                 "email": {
-                    "enabled": bool(email_enabled),
-                    "configured": bool(smtp_server and email_to),
-                    "smtp_server": smtp_server if smtp_server else None,
-                    "email_to": email_to if email_to else None
+                    "total": email_count,
+                    "enabled": email_enabled_count,
+                    "configured": email_count > 0
                 }
             }
         }
@@ -361,6 +405,294 @@ async def test_webhook(
         return {
             "status": "error",
             "message": f"测试webhook失败: {str(e)}"
+        }
+
+
+# ========== 邮件配置CRUD接口 ==========
+
+@router.get("/notification/emails")
+async def get_emails(
+    current_user: dict = Depends(get_current_user_flexible)
+):
+    """获取所有邮件配置"""
+    try:
+        from ..core.config import config_manager
+
+        email_configs = []
+        config = config_manager.get_config_parser()
+
+        for section_name in config.sections():
+            if section_name.startswith('email-'):
+                section_config = config_manager.get_section(section_name)
+                # 不返回密码字段（或返回掩码）
+                email_config = {
+                    'id': section_config.get('id'),
+                    'enabled': section_config.get('enabled', False),
+                    'smtp_server': section_config.get('smtp_server', ''),
+                    'smtp_port': section_config.get('smtp_port', 587),
+                    'smtp_username': section_config.get('smtp_username', ''),
+                    'smtp_password': '******' if section_config.get('smtp_password') else '',
+                    'smtp_use_tls': section_config.get('smtp_use_tls', True),
+                    'email_from': section_config.get('email_from', ''),
+                    'email_to': section_config.get('email_to', ''),
+                    'email_subject': section_config.get('email_subject', ''),
+                    'email_template_file': section_config.get('email_template_file', ''),
+                    'types': section_config.get('types', 'mark_failed')
+                }
+                email_configs.append(email_config)
+
+        # 按ID排序
+        email_configs.sort(key=lambda x: int(x['id']))
+
+        return {
+            "status": "success",
+            "data": email_configs
+        }
+    except Exception as e:
+        logger.error(f"获取邮件配置失败: {e}")
+        return {
+            "status": "error",
+            "message": f"获取邮件配置失败: {str(e)}"
+        }
+
+
+@router.post("/notification/emails")
+async def create_email(
+    email_data: EmailConfigCreate,
+    current_user: dict = Depends(get_current_user_flexible)
+):
+    """创建新的邮件配置"""
+    try:
+        from ..core.config import config_manager
+
+        config = config_manager.get_config_parser()
+
+        # 计算当前邮件配置的数量
+        email_count = 0
+        for section_name in config.sections():
+            if section_name.startswith('email-'):
+                email_count += 1
+
+        # 新ID为当前数量+1
+        new_id = email_count + 1
+        section_name = f'email-{new_id}'
+
+        # 创建新的配置段
+        if not config.has_section(section_name):
+            config.add_section(section_name)
+
+        config.set(section_name, 'id', str(new_id))
+        config.set(section_name, 'enabled', str(email_data.enabled))
+        config.set(section_name, 'smtp_server', email_data.smtp_server)
+        config.set(section_name, 'smtp_port', str(email_data.smtp_port))
+        config.set(section_name, 'smtp_username', email_data.smtp_username)
+        config.set(section_name, 'smtp_password', email_data.smtp_password)
+        config.set(section_name, 'smtp_use_tls', str(email_data.smtp_use_tls))
+        config.set(section_name, 'email_from', email_data.email_from)
+        config.set(section_name, 'email_to', email_data.email_to)
+        config.set(section_name, 'email_subject', email_data.email_subject)
+        config.set(section_name, 'email_template_file', email_data.email_template_file)
+        config.set(section_name, 'types', email_data.types)
+
+        # 保存配置
+        config_manager._save_config(config)
+
+        logger.info(f'创建邮件配置成功: ID={new_id}')
+
+        return {
+            "status": "success",
+            "message": "邮件配置创建成功",
+            "data": {
+                'id': new_id,
+                'enabled': email_data.enabled,
+                'smtp_server': email_data.smtp_server,
+                'smtp_port': email_data.smtp_port,
+                'smtp_username': email_data.smtp_username,
+                'smtp_password': '******',
+                'smtp_use_tls': email_data.smtp_use_tls,
+                'email_from': email_data.email_from,
+                'email_to': email_data.email_to,
+                'email_subject': email_data.email_subject,
+                'email_template_file': email_data.email_template_file,
+                'types': email_data.types
+            }
+        }
+    except Exception as e:
+        logger.error(f"创建邮件配置失败: {e}")
+        return {
+            "status": "error",
+            "message": f"创建邮件配置失败: {str(e)}"
+        }
+
+
+@router.put("/notification/emails/{email_id}")
+async def update_email(
+    email_id: int,
+    email_data: EmailConfigUpdate,
+    current_user: dict = Depends(get_current_user_flexible)
+):
+    """更新邮件配置"""
+    try:
+        from ..core.config import config_manager
+
+        section_name = f'email-{email_id}'
+        config = config_manager.get_config_parser()
+
+        # 检查配置段是否存在
+        if not config.has_section(section_name):
+            return {
+                "status": "error",
+                "message": f"邮件配置不存在: ID={email_id}"
+            }
+
+        # 更新配置
+        if email_data.enabled is not None:
+            config.set(section_name, 'enabled', str(email_data.enabled))
+        if email_data.smtp_server is not None:
+            config.set(section_name, 'smtp_server', email_data.smtp_server)
+        if email_data.smtp_port is not None:
+            config.set(section_name, 'smtp_port', str(email_data.smtp_port))
+        if email_data.smtp_username is not None:
+            config.set(section_name, 'smtp_username', email_data.smtp_username)
+        if email_data.smtp_password is not None:
+            config.set(section_name, 'smtp_password', email_data.smtp_password)
+        if email_data.smtp_use_tls is not None:
+            config.set(section_name, 'smtp_use_tls', str(email_data.smtp_use_tls))
+        if email_data.email_from is not None:
+            config.set(section_name, 'email_from', email_data.email_from)
+        if email_data.email_to is not None:
+            config.set(section_name, 'email_to', email_data.email_to)
+        if email_data.email_subject is not None:
+            config.set(section_name, 'email_subject', email_data.email_subject)
+        if email_data.email_template_file is not None:
+            config.set(section_name, 'email_template_file', email_data.email_template_file)
+        if email_data.types is not None:
+            config.set(section_name, 'types', email_data.types)
+
+        # 保存配置
+        config_manager._save_config(config)
+
+        logger.info(f'更新邮件配置成功: ID={email_id}')
+
+        # 返回更新后的配置
+        section_config = config_manager.get_section(section_name)
+        return {
+            "status": "success",
+            "message": "邮件配置更新成功",
+            "data": {
+                'id': email_id,
+                'enabled': section_config.get('enabled', False),
+                'smtp_server': section_config.get('smtp_server', ''),
+                'smtp_port': section_config.get('smtp_port', 587),
+                'smtp_username': section_config.get('smtp_username', ''),
+                'smtp_password': '******',
+                'smtp_use_tls': section_config.get('smtp_use_tls', True),
+                'email_from': section_config.get('email_from', ''),
+                'email_to': section_config.get('email_to', ''),
+                'email_subject': section_config.get('email_subject', ''),
+                'email_template_file': section_config.get('email_template_file', ''),
+                'types': section_config.get('types', 'mark_failed')
+            }
+        }
+    except Exception as e:
+        logger.error(f"更新邮件配置失败: {e}")
+        return {
+            "status": "error",
+            "message": f"更新邮件配置失败: {str(e)}"
+        }
+
+
+@router.delete("/notification/emails/{email_id}")
+async def delete_email(
+    email_id: int,
+    current_user: dict = Depends(get_current_user_flexible)
+):
+    """删除邮件配置"""
+    try:
+        from ..core.config import config_manager
+
+        section_name = f'email-{email_id}'
+        config = config_manager.get_config_parser()
+
+        # 检查配置段是否存在
+        if not config.has_section(section_name):
+            return {
+                "status": "error",
+                "message": f"邮件配置不存在: ID={email_id}"
+            }
+
+        # 删除配置段
+        config.remove_section(section_name)
+
+        # 重新索引剩余的邮件配置
+        email_sections = []
+        for section_name in config.sections():
+            if section_name.startswith('email-'):
+                section_config = config_manager.get_section(section_name)
+                email_sections.append({
+                    'section_name': section_name,
+                    'config': section_config
+                })
+
+        # 按原始ID排序
+        email_sections.sort(key=lambda x: int(x['config'].get('id', 0)))
+
+        # 重新分配ID（从1开始）
+        for new_id, email in enumerate(email_sections, 1):
+            old_section_name = email['section_name']
+            new_section_name = f'email-{new_id}'
+
+            # 如果配置段名称需要更改
+            if old_section_name != new_section_name:
+                # 创建新的配置段
+                config.add_section(new_section_name)
+                # 复制所有配置项
+                for key, value in email['config'].items():
+                    config.set(new_section_name, key, str(value))
+                # 更新ID
+                config.set(new_section_name, 'id', str(new_id))
+                # 删除旧的配置段
+                config.remove_section(old_section_name)
+            else:
+                # 只需要更新ID
+                config.set(old_section_name, 'id', str(new_id))
+
+        # 保存配置
+        config_manager._save_config(config)
+
+        logger.info(f'删除邮件配置成功: ID={email_id}，已重新索引')
+
+        return {
+            "status": "success",
+            "message": "邮件配置删除成功"
+        }
+    except Exception as e:
+        logger.error(f"删除邮件配置失败: {e}")
+        return {
+            "status": "error",
+            "message": f"删除邮件配置失败: {str(e)}"
+        }
+
+
+@router.post("/notification/emails/{email_id}/test")
+async def test_email(
+    email_id: int,
+    current_user: dict = Depends(get_current_user_flexible)
+):
+    """测试指定的邮件配置"""
+    try:
+        notifier = get_notifier()
+        results = notifier.test_notification(notification_type='email', email_id=email_id)
+
+        return {
+            "status": "success",
+            "data": results
+        }
+    except Exception as e:
+        logger.error(f"测试邮件失败: {e}")
+        return {
+            "status": "error",
+            "message": f"测试邮件失败: {str(e)}"
         }
 
 

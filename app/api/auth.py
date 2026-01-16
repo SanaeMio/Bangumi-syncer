@@ -1,6 +1,7 @@
 """
 认证相关API
 """
+import datetime
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from fastapi.responses import JSONResponse
 
@@ -46,10 +47,10 @@ async def login(request: Request, response: Response):
         if security_manager.is_ip_locked(client_ip):
             lockout_info = security_manager.get_lockout_info(client_ip)
             lockout_time = lockout_info.get('locked_until', 0)
-            lockout_str = logger.format_time(lockout_time)
+            lockout_str = datetime.datetime.fromtimestamp(lockout_time).strftime('%Y-%m-%d %H:%M:%S')
             logger.warning(f'IP {client_ip} 被锁定，拒绝登录请求')
             raise HTTPException(
-                status_code=423, 
+                status_code=423,
                 detail=f"IP已被锁定，请于 {lockout_str} 后重试"
             )
         
@@ -80,10 +81,10 @@ async def login(request: Request, response: Response):
             if security_manager.is_ip_locked(client_ip):
                 lockout_info = security_manager.get_lockout_info(client_ip)
                 lockout_time = lockout_info.get('locked_until', 0)
-                lockout_str = logger.format_time(lockout_time)
+                lockout_str = datetime.datetime.fromtimestamp(lockout_time).strftime('%Y-%m-%d %H:%M:%S')
                 logger.warning(f'IP {client_ip} 因登录失败次数过多被锁定')
                 raise HTTPException(
-                    status_code=423, 
+                    status_code=423,
                     detail=f"登录失败次数过多，IP已被锁定，请于 {lockout_str} 后重试"
                 )
             else:
