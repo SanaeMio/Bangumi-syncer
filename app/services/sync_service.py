@@ -106,6 +106,21 @@ class SyncService:
             actual_source = item.source if item.source else source
             logger.info(f'接收到同步请求：{item}')
 
+            # ========== 新增：发送请求接收通知 ==========
+            try:
+                notifier = get_notifier()
+                notifier.send_notification_by_type('request_received', {
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'user_name': item.user_name,
+                    'title': item.title,
+                    'season': item.season,
+                    'episode': item.episode,
+                    'source': actual_source
+                })
+            except Exception as notify_error:
+                logger.error(f'发送请求接收通知失败: {notify_error}')
+            # ========== 新增结束 ==========
+
             # 基本验证
             if item.media_type != 'episode':
                 logger.error(f'同步类型{item.media_type}不支持，跳过')
@@ -136,6 +151,22 @@ class SyncService:
             if not subject_id:
                 return SyncResponse(status="error", message="未找到匹配的番剧")
 
+            # ========== 新增：发送Bangumi ID找到通知 ==========
+            try:
+                notifier = get_notifier()
+                notifier.send_notification_by_type('bangumi_id_found', {
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'user_name': item.user_name,
+                    'title': item.title,
+                    'season': item.season,
+                    'episode': item.episode,
+                    'source': actual_source,
+                    'subject_id': subject_id
+                })
+            except Exception as notify_error:
+                logger.error(f'发送Bangumi ID找到通知失败: {notify_error}')
+            # ========== 新增结束 ==========
+
             # 获取对应用户的bangumi API实例
             bgm = self._get_bangumi_api_for_user(item.user_name)
             if not bgm:
@@ -160,17 +191,70 @@ class SyncService:
             # 标记为看过
             mark_status = self._retry_mark_episode(bgm, bgm_se_id, bgm_ep_id)
             result_message = ""
-            
+
             if mark_status == 0:
                 result_message = f'已看过，不再重复标记'
                 logger.info(f'bgm: {item.title} S{item.season:02d}E{item.episode:02d} {result_message}')
+
+                # ========== 新增：发送跳过通知 ==========
+                try:
+                    notifier = get_notifier()
+                    notifier.send_notification_by_type('mark_skipped', {
+                        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'user_name': item.user_name,
+                        'title': item.title,
+                        'season': item.season,
+                        'episode': item.episode,
+                        'source': actual_source,
+                        'subject_id': bgm_se_id,
+                        'episode_id': bgm_ep_id
+                    })
+                except Exception as notify_error:
+                    logger.error(f'发送跳过通知失败: {notify_error}')
+                # ========== 新增结束 ==========
+
             elif mark_status == 1:
                 result_message = f'已标记为看过'
                 logger.info(f'bgm: {item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}')
+
+                # ========== 新增：发送成功通知 ==========
+                try:
+                    notifier = get_notifier()
+                    notifier.send_notification_by_type('mark_success', {
+                        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'user_name': item.user_name,
+                        'title': item.title,
+                        'season': item.season,
+                        'episode': item.episode,
+                        'source': actual_source,
+                        'subject_id': bgm_se_id,
+                        'episode_id': bgm_ep_id
+                    })
+                except Exception as notify_error:
+                    logger.error(f'发送成功通知失败: {notify_error}')
+                # ========== 新增结束 ==========
+
             else:
                 result_message = f'已添加到收藏并标记为看过'
                 logger.info(f'bgm: {item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}')
                 logger.info(f'bgm: {item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}')
+
+                # ========== 新增：发送成功通知 ==========
+                try:
+                    notifier = get_notifier()
+                    notifier.send_notification_by_type('mark_success', {
+                        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'user_name': item.user_name,
+                        'title': item.title,
+                        'season': item.season,
+                        'episode': item.episode,
+                        'source': actual_source,
+                        'subject_id': bgm_se_id,
+                        'episode_id': bgm_ep_id
+                    })
+                except Exception as notify_error:
+                    logger.error(f'发送成功通知失败: {notify_error}')
+                # ========== 新增结束 ==========
 
             # 记录同步成功到数据库
             database_manager.log_sync_record(
@@ -199,7 +283,7 @@ class SyncService:
             )
         except Exception as e:
             logger.error(f'自定义同步处理出错: {e}')
-            
+
             # 记录同步失败到数据库
             database_manager.log_sync_record(
                 user_name=item.user_name if 'item' in locals() else "unknown",
@@ -211,25 +295,25 @@ class SyncService:
                 message=str(e),
                 source=actual_source if 'actual_source' in locals() else source
             )
-            
-            # 发送错误通知
+
+            # ========== 修改：使用新的通知系统 ==========
             try:
                 notifier = get_notifier()
-                notifier.send_error_notification(
-                    error_type="sync_error",
-                    error_message=str(e),
-                    context={
-                        'user_name': item.user_name if 'item' in locals() else "unknown",
-                        'title': item.title if 'item' in locals() else "unknown",
-                        'season': item.season if 'item' in locals() else 0,
-                        'episode': item.episode if 'item' in locals() else 0,
-                        'source': actual_source if 'actual_source' in locals() else source,
-                        'additional_info': f'完整错误信息: {traceback.format_exc()}'
-                    }
-                )
+                notifier.send_notification_by_type('mark_failed', {
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'user_name': item.user_name if 'item' in locals() else "unknown",
+                    'title': item.title if 'item' in locals() else "unknown",
+                    'season': item.season if 'item' in locals() else 0,
+                    'episode': item.episode if 'item' in locals() else 0,
+                    'source': actual_source if 'actual_source' in locals() else source,
+                    'error_message': str(e),
+                    'error_type': 'sync_error',
+                    'additional_info': f'完整错误信息: {traceback.format_exc()}'
+                })
             except Exception as notify_error:
-                logger.error(f'发送错误通知失败: {notify_error}')
-            
+                logger.error(f'发送失败通知失败: {notify_error}')
+            # ========== 修改结束 ==========
+
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
     
     def _check_user_permission(self, user_name: str) -> bool:
@@ -258,6 +342,17 @@ class SyncService:
                 return False
         else:
             logger.error(f'不支持的同步模式: {mode}')
+            # 发送配置错误通知
+            try:
+                notifier = get_notifier()
+                notifier.send_notification_by_type('config_error', {
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'error_message': f'不支持的同步模式: {mode}',
+                    'config_type': 'sync_mode',
+                    'mode': mode
+                })
+            except Exception as notify_error:
+                logger.error(f'发送配置错误通知失败: {notify_error}')
             return False
         
         return True
@@ -755,4 +850,4 @@ class SyncService:
 
 
 # 全局同步服务实例
-sync_service = SyncService() 
+sync_service = SyncService()

@@ -187,7 +187,22 @@ class SecurityManager:
         if self.login_attempts[ip]['attempts'] >= auth_config['max_login_attempts']:
             lockout_until = current_time + auth_config['lockout_duration']
             self.login_attempts[ip]['locked_until'] = lockout_until
-            logger.warning(f'IP {ip} 因登录失败次数过多被锁定至 {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lockout_until))}')
+            lockout_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lockout_until))
+            logger.warning(f'IP {ip} 因登录失败次数过多被锁定至 {lockout_time_str}')
+            
+            # 发送IP锁定通知
+            try:
+                from ..utils.notifier import get_notifier
+                notifier = get_notifier()
+                notifier.send_notification_by_type('ip_locked', {
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'ip': ip,
+                    'locked_until': lockout_time_str,
+                    'attempt_count': self.login_attempts[ip]['attempts'],
+                    'max_attempts': auth_config['max_login_attempts']
+                })
+            except Exception as e:
+                logger.error(f'发送IP锁定通知失败: {e}')
     
     def reset_login_attempts(self, ip: str) -> None:
         """重置登录尝试次数"""
@@ -206,6 +221,30 @@ class SecurityManager:
         for ip in expired_ips:
             del self.login_attempts[ip]
             logger.debug(f'清理过期IP锁定: {ip}')
+    
+    def get_login_attempts(self, ip: str) -> Dict[str, Any]:
+        """获取登录尝试信息"""
+        return self.login_attempts.get(ip, {'attempts': 0})
+    
+    def get_lockout_info(self, ip: str) -> Dict[str, Any]:
+        """获取锁定信息"""
+        if ip in self.login_attempts and 'locked_until' in self.login_attempts[ip]:
+            return self.login_attempts[ip]
+        return {}
+    
+    def is_ip_locked(self, ip: str) -> bool:
+        """检查IP是否被锁定"""
+        auth_config = self.get_auth_config()
+        current_time = time.time()
+        
+        if ip in self.login_attempts:
+            attempt_info = self.login_attempts[ip]
+            
+            # 检查是否还在锁定期内
+            if 'locked_until' in attempt_info and current_time < attempt_info['locked_until']:
+                return True
+        
+        return False
     
     def verify_password(self, username: str, password: str) -> bool:
         """验证用户名和密码"""
@@ -233,4 +272,4 @@ class SecurityManager:
 
 
 # 全局安全实例
-security_manager = SecurityManager() 
+security_manager = SecurityManager()

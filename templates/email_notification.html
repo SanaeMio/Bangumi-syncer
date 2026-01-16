@@ -22,10 +22,22 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.1);
         }
         .email-header {
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
             color: white;
             padding: 16px 20px;
             text-align: center;
+        }
+        .email-header.success {
+            background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+        }
+        .email-header.error {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+        .email-header.warning {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+        }
+        .email-header.info {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
         }
         .email-header h2 {
             margin: 0;
@@ -35,24 +47,44 @@
         .email-content {
             padding: 20px;
         }
-        .error-box {
-            background-color: #fff3cd;
-            border-left: 3px solid #ffc107;
+        .info-box {
+            background-color: #d1ecf1;
+            border-left: 3px solid #0dcaf0;
             padding: 12px 15px;
             margin: 12px 0;
             border-radius: 4px;
         }
-        .error-box .title {
+        .info-box.error {
+            background-color: #fff3cd;
+            border-left: 3px solid #ffc107;
+        }
+        .info-box.success {
+            background-color: #d1e7dd;
+            border-left: 3px solid #198754;
+        }
+        .info-box .title {
             font-weight: 600;
-            color: #856404;
+            color: #055160;
             margin-bottom: 6px;
             font-size: 14px;
         }
-        .error-box .message {
+        .info-box.error .title {
             color: #856404;
+        }
+        .info-box.success .title {
+            color: #0f5132;
+        }
+        .info-box .message {
+            color: #055160;
             word-wrap: break-word;
             font-size: 13px;
             line-height: 1.4;
+        }
+        .info-box.error .message {
+            color: #856404;
+        }
+        .info-box.success .message {
+            color: #0f5132;
         }
         .info-grid {
             display: table;
@@ -70,7 +102,7 @@
             border: 1px solid #e9ecef;
             font-weight: 600;
             color: #495057;
-            width: 90px;
+            width: 100px;
             font-size: 13px;
         }
         .info-value {
@@ -102,7 +134,7 @@
         .anime-info strong {
             font-weight: 600;
             display: inline-block;
-            min-width: 60px;
+            min-width: 70px;
         }
         .email-footer {
             background-color: #f8f9fa;
@@ -115,10 +147,6 @@
         .email-footer p {
             margin: 4px 0;
         }
-        .email-footer a {
-            color: #007bff;
-            text-decoration: none;
-        }
         .emoji {
             font-size: 1.1em;
         }
@@ -128,9 +156,9 @@
     <div class="email-container">
         <!-- 邮件头部 -->
         <div class="email-header">
-            <h2><span class="emoji">🚨</span> Bangumi-Syncer 同步错误</h2>
+            <h2><span class="emoji">📢</span> Bangumi-Syncer 通知</h2>
         </div>
-        
+
         <!-- 邮件内容 -->
         <div class="email-content">
             <!-- 基本信息表格 -->
@@ -141,28 +169,14 @@
                 </div>
                 <div class="info-row">
                     <div class="info-label"><span class="emoji">⚠️</span> 类型</div>
-                    <div class="info-value">{error_type}</div>
+                    <div class="info-value">{notification_type}</div>
                 </div>
             </div>
-            
-            <!-- 错误详情 -->
-            <div class="error-box">
-                <div class="title"><span class="emoji">❌</span> 错误详情</div>
-                <div class="message">{error_message}</div>
-            </div>
-            
-            <!-- 番剧信息 -->
-            <div class="anime-section">
-                <div class="section-title"><span class="emoji">📺</span> 番剧信息</div>
-                <div class="anime-info">
-                    <div><strong>标题:</strong> {title}</div>
-                    <div><strong>集数:</strong> 第 {season} 季 第 {episode} 集</div>
-                    <div><strong>用户:</strong> {user_name}</div>
-                    <div><strong>来源:</strong> {source}</div>
-                </div>
-            </div>
+
+            <!-- 动态内容区域（邮箱大多不能使用Javascript,因此由Python根据类型填充） -->
+            {dynamic_content}
         </div>
-        
+
         <!-- 邮件底部 -->
         <div class="email-footer">
             <p>本邮件由 <strong>Bangumi-Syncer</strong> 自动发送 · {timestamp}</p>
