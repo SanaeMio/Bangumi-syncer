@@ -1,702 +1,842 @@
 {% extends "base.html" %}
-
 {% block title %}配置管理 - Bangumi Syncer{% endblock %}
 {% block page_title %}配置管理{% endblock %}
-
-{% block head %}
-
-{% endblock %}
-
-{% block page_actions %}
-{% endblock %}
-
+{% block head %}{% endblock %}
+{% block page_actions %}{% endblock %}
 {% block content %}
-<form id="config-form">
-    <!-- 同步配置 -->
-    <div class="row">
-        <div class="col-12">
-                    <div class="card shadow-sm mb-4 config-card">
-            <div class="card-header py-3">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-arrow-repeat me-2 text-success"></i>
-                    <h6 class="m-0 fw-semibold">同步配置</h6>
-                </div>
-            </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                                                    <label for="sync-mode" class="form-label fw-semibold">
-                            <i class="bi bi-gear me-1 text-success"></i>同步模式
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                               title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
-                        </label>
-                            <select class="form-select form-select-lg" id="sync-mode" name="sync.mode" onchange="toggleSyncMode()">
-                                <option value="single">单用户模式</option>
-                                <option value="multi">多用户模式</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6" id="single-username-container">
-                                                    <label for="single-username" class="form-label fw-semibold">
-                            <i class="bi bi-person-check me-1 text-success"></i>单用户模式用户名
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                               title="单用户模式用户名（Plex/Emby/Jellyfin中的用户名），用于跳过无需同步的用户提交的记录，只同步配置中的用户名产生的记录"></i>
-                        </label>
-                            <input type="text" class="form-control form-control-lg" id="single-username" name="sync.single_username" 
-                                   placeholder="输入媒体服务器用户名">
-                        </div>
-                        <div class="col-12">
-                                                    <label for="blocked-keywords" class="form-label fw-semibold">
-                            <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                               title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
-                        </label>
-                            <input type="text" class="form-control form-control-lg" id="blocked-keywords" name="sync.blocked_keywords" 
-                                   placeholder="多个关键词用逗号分隔，如：物语系列,特典">
+    <form id="config-form">
+        <!-- 同步配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-arrow-repeat me-2 text-success"></i>
+                            <h6 class="m-0 fw-semibold">同步配置</h6>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Bangumi账号配置（单用户模式） -->
-    <div class="row" id="single-user-bangumi-section">
-        <div class="col-12">
-                    <div class="card shadow-sm mb-4 config-card">
-            <div class="card-header py-3">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-person-circle me-2 text-primary"></i>
-                    <h6 class="m-0 fw-semibold">Bangumi账号配置</h6>
-                </div>
-            </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                                                    <label for="bangumi-username" class="form-label fw-semibold">
-                            <i class="bi bi-person me-1 text-primary"></i>用户名
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                               title="Bangumi 的用户名或 UID。如果设置了用户名，只能填用户名。UID 就是个人资料页里 @123456 或者网址 bgm.tv/user/123456 的数字部分"></i>
-                        </label>
-                            <input type="text" class="form-control form-control-lg" id="bangumi-username" name="bangumi.username" 
-                                   placeholder="输入Bangumi用户名或UID">
-                        </div>
-                                                <div class="col-md-6">
-                            <label for="bangumi-access-token" class="form-label fw-semibold">
-                                <i class="bi bi-key me-1 text-primary"></i>访问令牌
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="令牌，注意有效期。生成网址：https://next.bgm.tv/demo/access-token"></i>
-                                <a href="https://next.bgm.tv/demo/access-token" target="_blank" class="btn btn-link btn-sm p-0 ms-2 text-decoration-none">
-                                    <i class="bi bi-box-arrow-up-right"></i>
-                                </a>
-                            </label>
-                            <div class="position-relative">
-                                <input type="password" class="form-control form-control-lg pe-5" id="bangumi-access-token" name="bangumi.access_token" 
-                                       placeholder="输入Bangumi访问令牌">
-                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn" 
-                                        type="button" id="toggle-token-visibility">
-                                    <i class="bi bi-eye text-muted" id="token-visibility-icon"></i>
-                                </button>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="sync-mode" class="form-label fw-semibold">
+                                    <i class="bi bi-gear me-1 text-success"></i>同步模式
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
+                                </label>
+                                <select class="form-select form-select-lg"
+                                        id="sync-mode"
+                                        name="sync.mode"
+                                        onchange="toggleSyncMode()">
+                                    <option value="single">单用户模式</option>
+                                    <option value="multi">多用户模式</option>
+                                </select>
                             </div>
-                        </div>
-                                                <div class="col-12">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-eye-slash me-1 text-warning"></i>观看记录仅自己可见
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="观看记录是否仅自己可见。启用后观看记录只有自己能看到，不启用则为公开"></i>
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="bangumi-private" name="bangumi.private">
-                                <label class="form-check-label" for="bangumi-private">启用</label>
+                            <div class="col-md-6" id="single-username-container">
+                                <label for="single-username" class="form-label fw-semibold">
+                                    <i class="bi bi-person-check me-1 text-success"></i>单用户模式用户名
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="单用户模式用户名（Plex/Emby/Jellyfin中的用户名），用于跳过无需同步的用户提交的记录，只同步配置中的用户名产生的记录"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="single-username"
+                                       name="sync.single_username"
+                                       placeholder="输入媒体服务器用户名">
+                            </div>
+                            <div class="col-12">
+                                <label for="blocked-keywords" class="form-label fw-semibold">
+                                    <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="blocked-keywords"
+                                       name="sync.blocked_keywords"
+                                       placeholder="多个关键词用逗号分隔，如：物语系列,特典">
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- 多用户配置 -->
-    <div class="row" id="multi-user-section" style="display: none;">
-        <div class="col-12">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-people me-2 text-secondary"></i>
-                        <h6 class="m-0 fw-semibold">多用户配置</h6>
+        <!-- Bangumi账号配置（单用户模式） -->
+        <div class="row" id="single-user-bangumi-section">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-person-circle me-2 text-primary"></i>
+                            <h6 class="m-0 fw-semibold">Bangumi账号配置</h6>
+                        </div>
                     </div>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="addBangumiAccount()">
-                        <i class="bi bi-plus-circle me-1"></i>添加Bangumi账号
-                    </button>
-                </div>
-                <div class="card-body">
-                    <div id="bangumi-accounts-container">
-                        <!-- 动态添加的Bangumi账号配置 -->
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="bangumi-username" class="form-label fw-semibold">
+                                    <i class="bi bi-person me-1 text-primary"></i>用户名
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="Bangumi 的用户名或 UID。如果设置了用户名，只能填用户名。UID 就是个人资料页里 @123456 或者网址 bgm.tv/user/123456 的数字部分"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="bangumi-username"
+                                       name="bangumi.username"
+                                       placeholder="输入Bangumi用户名或UID">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bangumi-access-token" class="form-label fw-semibold">
+                                    <i class="bi bi-key me-1 text-primary"></i>访问令牌
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="令牌，注意有效期。生成网址：https://next.bgm.tv/demo/access-token"></i>
+                                    <a href="https://next.bgm.tv/demo/access-token"
+                                       target="_blank"
+                                       class="btn btn-link btn-sm p-0 ms-2 text-decoration-none">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                    </a>
+                                </label>
+                                <div class="position-relative">
+                                    <input type="password"
+                                           class="form-control form-control-lg pe-5"
+                                           id="bangumi-access-token"
+                                           name="bangumi.access_token"
+                                           placeholder="输入Bangumi访问令牌">
+                                    <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn"
+                                            type="button"
+                                            id="toggle-token-visibility">
+                                        <i class="bi bi-eye text-muted" id="token-visibility-icon"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-eye-slash me-1 text-warning"></i>观看记录仅自己可见
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="观看记录是否仅自己可见。启用后观看记录只有自己能看到，不启用则为公开"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="bangumi-private"
+                                           name="bangumi.private">
+                                    <label class="form-check-label" for="bangumi-private">启用</label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- 高级配置 -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-sliders me-2 text-info"></i>
-                        <h6 class="m-0 fw-semibold">高级配置</h6>
+        <!-- 多用户配置 -->
+        <div class="row" id="multi-user-section" style="display: none;">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-people me-2 text-secondary"></i>
+                            <h6 class="m-0 fw-semibold">多用户配置</h6>
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-primary"
+                                onclick="addBangumiAccount()">
+                            <i class="bi bi-plus-circle me-1"></i>添加Bangumi账号
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="bangumi-accounts-container">
+                            <!-- 动态添加的Bangumi账号配置 -->
+                        </div>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-12">
-                            <label for="script-proxy" class="form-label fw-semibold">
-                                <i class="bi bi-globe me-1 text-info"></i>HTTP代理
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="脚本的 HTTP 代理，例如 http://127.0.0.1:7890。若用 OpenClash 可能慢，原因未知，可尝试 CFW 或透明代理等"></i>
-                            </label>
-                            <div class="input-group">
-                                <input type="text" class="form-control form-control-lg" id="script-proxy" name="dev.script_proxy" 
-                                       placeholder="如：http://127.0.0.1:7890">
-                                <button class="btn btn-warning fw-bold" type="button" onclick="showProxyHelper()" 
-                                        title="智能代理配置助手 - 自动检测环境并推荐最佳配置"
-                                        style="min-width: 120px;">
-                                    <i class="bi bi-magic me-1"></i>智能配置
-                                </button>
-                            </div>
-                            <div class="form-text mt-1">
-                                <i class="bi bi-lightbulb text-warning me-1"></i>
-                                <small class="text-muted">点击"智能配置"按钮获取适合您环境的代理配置建议</small>
-                            </div>
-                            
-                            <!-- 代理助手区域 -->
-                            <div id="proxy-helper" class="mt-3" style="display: none;">
-                                <div class="card border-info">
-                                    <div class="card-header bg-light">
-                                        <h6 class="mb-0">
-                                            <i class="bi bi-magic me-2 text-warning"></i>智能代理配置助手
-                                            <small class="text-muted ms-2">支持Docker和本机环境</small>
-                                        </h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <!-- 端口号配置 -->
-                                        <div class="row g-3 mb-3">
-                                            <div class="col-md-6">
-                                                <label for="proxy-port" class="form-label fw-semibold">
-                                                    <i class="bi bi-hdd-network me-1"></i>代理端口号
-                                                </label>
-                                                <input type="number" class="form-control" id="proxy-port" 
-                                                       value="7890" min="1" max="65535" 
-                                                       onchange="updateProxySuggestions()"
-                                                       placeholder="如：7890">
-                                            </div>
-                                            <div class="col-md-6 d-flex align-items-end">
-                                                <button type="button" class="btn btn-outline-primary" onclick="detectPortFromInput(event)">
-                                                    <i class="bi bi-search me-1"></i>从HTTP代理输入框识别
-                                                </button>
-                                            </div>
-                                        </div>
-                                        
-                                        <div id="proxy-suggestions" class="mb-3">
-                                            <div class="text-center">
-                                                <div class="spinner-border spinner-border-sm text-info" role="status">
-                                                    <span class="visually-hidden">检测中...</span>
-                                                </div>
-                                                <span class="ms-2">正在检测环境并生成建议...</span>
-                                            </div>
-                                        </div>
-                                        <!-- 主机连通性测试区域 -->
-                                        <div class="mt-3 border-top pt-3">
-                                            <h6 class="text-primary mb-3">
-                                                <i class="bi bi-wifi me-2"></i>网络连通性测试
-                                                <small class="text-muted ms-2">验证容器是否能访问宿主机</small>
+            </div>
+        </div>
+        <!-- 高级配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-sliders me-2 text-info"></i>
+                            <h6 class="m-0 fw-semibold">高级配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="script-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-globe me-1 text-info"></i>HTTP代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="脚本的 HTTP 代理，例如 http://127.0.0.1:7890。若用 OpenClash 可能慢，原因未知，可尝试 CFW 或透明代理等"></i>
+                                </label>
+                                <div class="input-group">
+                                    <input type="text"
+                                           class="form-control form-control-lg"
+                                           id="script-proxy"
+                                           name="dev.script_proxy"
+                                           placeholder="如：http://127.0.0.1:7890">
+                                    <button class="btn btn-warning fw-bold"
+                                            type="button"
+                                            onclick="showProxyHelper()"
+                                            title="智能代理配置助手 - 自动检测环境并推荐最佳配置"
+                                            style="min-width: 120px">
+                                        <i class="bi bi-magic me-1"></i>智能配置
+                                    </button>
+                                </div>
+                                <div class="form-text mt-1">
+                                    <i class="bi bi-lightbulb text-warning me-1"></i>
+                                    <small class="text-muted">点击"智能配置"按钮获取适合您环境的代理配置建议</small>
+                                </div>
+                                <!-- 代理助手区域 -->
+                                <div id="proxy-helper" class="mt-3" style="display: none;">
+                                    <div class="card border-info">
+                                        <div class="card-header bg-light">
+                                            <h6 class="mb-0">
+                                                <i class="bi bi-magic me-2 text-warning"></i>智能代理配置助手
+                                                <small class="text-muted ms-2">支持Docker和本机环境</small>
                                             </h6>
-                                            
+                                        </div>
+                                        <div class="card-body">
+                                            <!-- 端口号配置 -->
                                             <div class="row g-3 mb-3">
-                                                <div class="col-md-4">
-                                                    <label for="test-host" class="form-label">主机地址</label>
-                                                    <input type="text" class="form-control form-control-sm" id="test-host" 
-                                                           placeholder="如：192.168.1.100" value="">
+                                                <div class="col-md-6">
+                                                    <label for="proxy-port" class="form-label fw-semibold">
+                                                        <i class="bi bi-hdd-network me-1"></i>代理端口号
+                                                    </label>
+                                                    <input type="number"
+                                                           class="form-control"
+                                                           id="proxy-port"
+                                                           value="7890"
+                                                           min="1"
+                                                           max="65535"
+                                                           onchange="updateProxySuggestions()"
+                                                           placeholder="如：7890">
                                                 </div>
-                                                <div class="col-md-3">
-                                                    <label for="test-port" class="form-label">端口</label>
-                                                    <input type="number" class="form-control form-control-sm" id="test-port" 
-                                                           value="7890" min="1" max="65535">
-                                                </div>
-                                                <div class="col-md-3">
-                                                    <label for="test-timeout" class="form-label">超时(秒)</label>
-                                                    <input type="number" class="form-control form-control-sm" id="test-timeout" 
-                                                           value="5" min="1" max="30">
-                                                </div>
-                                                <div class="col-md-2 d-flex align-items-end">
-                                                    <button type="button" class="btn btn-primary btn-sm w-100" 
-                                                            onclick="testHostConnectivity()" id="test-host-btn">
-                                                        <i class="bi bi-play-circle me-1"></i>测试
+                                                <div class="col-md-6 d-flex align-items-end">
+                                                    <button type="button"
+                                                            class="btn btn-outline-primary"
+                                                            onclick="detectPortFromInput(event)">
+                                                        <i class="bi bi-search me-1"></i>从HTTP代理输入框识别
                                                     </button>
                                                 </div>
                                             </div>
-                                            
-                                            <div id="host-test-result" class="mb-3" style="display: none;">
-                                                <!-- 测试结果将显示在这里 -->
+                                            <div id="proxy-suggestions" class="mb-3">
+                                                <div class="text-center">
+                                                    <div class="spinner-border spinner-border-sm text-info" role="status">
+                                                        <span class="visually-hidden">检测中...</span>
+                                                    </div>
+                                                    <span class="ms-2">正在检测环境并生成建议...</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                        
-                                        <div class="d-flex justify-content-between">
-                                            <small class="text-muted">
-                                                <i class="bi bi-info-circle me-1"></i>
-                                                点击建议的代理地址可自动填入，可自定义端口号重新生成建议
-                                            </small>
-                                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="hideProxyHelper()">
-                                                关闭
-                                            </button>
+                                            <!-- 主机连通性测试区域 -->
+                                            <div class="mt-3 border-top pt-3">
+                                                <h6 class="text-primary mb-3">
+                                                    <i class="bi bi-wifi me-2"></i>网络连通性测试
+                                                    <small class="text-muted ms-2">验证容器是否能访问宿主机</small>
+                                                </h6>
+                                                <div class="row g-3 mb-3">
+                                                    <div class="col-md-4">
+                                                        <label for="test-host" class="form-label">主机地址</label>
+                                                        <input type="text"
+                                                               class="form-control form-control-sm"
+                                                               id="test-host"
+                                                               placeholder="如：192.168.1.100"
+                                                               value="">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label for="test-port" class="form-label">端口</label>
+                                                        <input type="number"
+                                                               class="form-control form-control-sm"
+                                                               id="test-port"
+                                                               value="7890"
+                                                               min="1"
+                                                               max="65535">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label for="test-timeout" class="form-label">超时(秒)</label>
+                                                        <input type="number"
+                                                               class="form-control form-control-sm"
+                                                               id="test-timeout"
+                                                               value="5"
+                                                               min="1"
+                                                               max="30">
+                                                    </div>
+                                                    <div class="col-md-2 d-flex align-items-end">
+                                                        <button type="button"
+                                                                class="btn btn-primary btn-sm w-100"
+                                                                onclick="testHostConnectivity()"
+                                                                id="test-host-btn">
+                                                            <i class="bi bi-play-circle me-1"></i>测试
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div id="host-test-result" class="mb-3" style="display: none;">
+                                                    <!-- 测试结果将显示在这里 -->
+                                                </div>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted">
+                                                    <i class="bi bi-info-circle me-1"></i>
+                                                    点击建议的代理地址可自动填入，可自定义端口号重新生成建议
+                                                </small>
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        onclick="hideProxyHelper()">关闭</button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="row g-3 mt-2">
-                        <div class="col-6">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-shield-check me-1 text-success"></i>SSL证书验证
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="SSL证书验证。当使用代理时可能需要关闭。注意：关闭SSL验证会降低安全性，仅在代理环境下出现SSL错误时使用"></i>
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="ssl-verify" name="dev.ssl_verify">
-                                <label class="form-check-label" for="ssl-verify">启用SSL验证</label>
+                        <div class="row g-3 mt-2">
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-check me-1 text-success"></i>SSL证书验证
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="SSL证书验证。当使用代理时可能需要关闭。注意：关闭SSL验证会降低安全性，仅在代理环境下出现SSL错误时使用"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="ssl-verify"
+                                           name="dev.ssl_verify">
+                                    <label class="form-check-label" for="ssl-verify">启用SSL验证</label>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-bug me-1 text-warning"></i>调试模式
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="是否开启debug模式，一般不用开。开启后会输出详细的调试信息"></i>
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="debug-mode" name="dev.debug">
-                                <label class="form-check-label" for="debug-mode">启用调试模式</label>
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-bug me-1 text-warning"></i>调试模式
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否开启debug模式，一般不用开。开启后会输出详细的调试信息"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="debug-mode"
+                                           name="dev.debug">
+                                    <label class="form-check-label" for="debug-mode">启用调试模式</label>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- Web认证配置 -->
+        <!-- Web认证配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-shield-lock me-2 text-danger"></i>
+                            <h6 class="m-0 fw-semibold">Web认证配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-check me-1 text-success"></i>启用Web认证
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否启用Web管理界面认证，建议在外网环境下启用。禁用后任何人都可以访问管理界面"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="auth-enabled"
+                                           name="auth.enabled">
+                                    <label class="form-check-label" for="auth-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="auth-username" class="form-label fw-semibold">
+                                    <i class="bi bi-person me-1 text-primary"></i>管理员用户名
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="Web管理界面的登录用户名"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="auth-username"
+                                       name="auth.username"
+                                       placeholder="admin">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="auth-password" class="form-label fw-semibold">
+                                    <i class="bi bi-key me-1 text-warning"></i>管理员密码
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="Web管理界面的登录密码。留空表示不修改当前密码"></i>
+                                </label>
+                                <div class="position-relative">
+                                    <input type="password"
+                                           class="form-control form-control-lg pe-5"
+                                           id="auth-password"
+                                           name="auth.password"
+                                           placeholder="留空表示不修改密码">
+                                    <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn"
+                                            type="button"
+                                            id="toggle-auth-password-visibility">
+                                        <i class="bi bi-eye text-muted" id="auth-password-visibility-icon"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="session-timeout" class="form-label fw-semibold">
+                                    <i class="bi bi-clock me-1 text-info"></i>会话超时时间
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="登录会话的超时时间（秒），默认3600秒（1小时）"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="session-timeout"
+                                       name="auth.session_timeout"
+                                       placeholder="3600"
+                                       min="300"
+                                       max="86400">
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-lock me-1 text-success"></i>启用HTTPS安全Cookie
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="启用后Cookie只在HTTPS连接下传输，提高安全性。仅在使用HTTPS时启用"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="https-only"
+                                           name="auth.https_only">
+                                    <label class="form-check-label" for="https-only">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="max-login-attempts" class="form-label fw-semibold">
+                                    <i class="bi bi-shield-x me-1 text-warning"></i>最大登录尝试次数
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="单个IP地址的最大登录失败次数，超过后将被锁定"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="max-login-attempts"
+                                       name="auth.max_login_attempts"
+                                       placeholder="5"
+                                       min="1"
+                                       max="20">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="lockout-duration" class="form-label fw-semibold">
+                                    <i class="bi bi-clock-history me-1 text-danger"></i>锁定时间（秒）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="IP被锁定的时间长度（秒），默认900秒（15分钟）"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="lockout-duration"
+                                       name="auth.lockout_duration"
+                                       placeholder="900"
+                                       min="60"
+                                       max="86400">
+                            </div>
+                        </div>
+                        <div class="alert alert-warning mt-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Bangumi-data配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-hdd-stack me-2 text-primary"></i>
+                            <h6 class="m-0 fw-semibold">Bangumi-data配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-search me-1 text-success"></i>使用Bangumi-data匹配
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否启用 bangumi-data 匹配。启用后会先尝试通过 bangumi-data 匹配番剧ID，匹配成功后可以减少API请求次数"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="bangumi-data-enabled"
+                                           name="bangumi_data.enabled">
+                                    <label class="form-check-label" for="bangumi-data-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-hdd me-1 text-primary"></i>使用本地缓存
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否使用本地缓存文件，默认启用。启用后会将下载的数据保存到本地，之后再次启动时优先使用缓存"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="bangumi-data-cache"
+                                           name="bangumi_data.use_cache">
+                                    <label class="form-check-label" for="bangumi-data-cache">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="cache-ttl" class="form-label fw-semibold">
+                                    <i class="bi bi-clock me-1 text-warning"></i>缓存有效期（天）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="缓存有效期（天），超过此时间后会自动更新缓存。设置为0表示每次启动都会更新缓存"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="cache-ttl"
+                                       name="bangumi_data.cache_ttl_days"
+                                       placeholder="7"
+                                       min="0"
+                                       max="365">
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-3">
+                            <div class="col-md-6">
+                                <label for="data-url" class="form-label fw-semibold">
+                                    <i class="bi bi-link me-1 text-info"></i>数据源URL
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="bangumi-data数据源的URL地址，默认使用官方CDN地址。如果官方地址无法访问，可以替换为其他镜像地址"></i>
+                                </label>
+                                <input type="url"
+                                       class="form-control form-control-lg"
+                                       id="data-url"
+                                       name="bangumi_data.data_url"
+                                       placeholder="https://unpkg.com/bangumi-data@0.3/dist/data.json">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="local-cache-path" class="form-label fw-semibold">
+                                    <i class="bi bi-folder me-1 text-secondary"></i>本地缓存路径
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="bangumi-data本地缓存文件的存储路径，默认为当前目录下的bangumi_data_cache.json文件"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="local-cache-path"
+                                       name="bangumi_data.local_cache_path"
+                                       placeholder="./bangumi_data_cache.json">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 通知配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-bell me-2 text-warning"></i>
+                                <h6 class="m-0 fw-semibold">通知配置</h6>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-primary btn-sm"
+                                    onclick="showAddWebhookModal()">
+                                <i class="bi bi-plus-lg me-1"></i>添加 Webhook 配置
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Webhook 配置列表 -->
+                        <div id="webhook-configs-container">
+                            <div class="text-center py-5">
+                                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                                <p class="text-muted mt-3">暂无 Webhook 配置</p>
+                                <button type="button"
+                                        class="btn btn-outline-primary"
+                                        onclick="showAddWebhookModal()">
+                                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                                </button>
+                            </div>
+                        </div>
+                        <hr class="my-4">
+                        <!-- 邮件通知配置 -->
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-envelope text-success me-2"></i>
+                                <h6 class="m-0 fw-semibold">邮件通知配置</h6>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-success btn-sm"
+                                    onclick="showAddEmailModal()">
+                                <i class="bi bi-plus-lg me-1"></i>添加邮件配置
+                            </button>
+                        </div>
+                        <!-- 邮件配置列表 -->
+                        <div id="email-configs-container">
+                            <div class="text-center py-5">
+                                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                                <p class="text-muted mt-3">暂无邮件配置</p>
+                                <button type="button"
+                                        class="btn btn-outline-success"
+                                        onclick="showAddEmailModal()">
+                                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                                </button>
+                            </div>
+                        </div>
+                        <div class="alert alert-info mt-4">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>提示：</strong>配置完成后，也可以在「调试工具」页面测试全部通知项功能。特定事件发生时会自动发送通知（60秒冷却时间）。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    <!-- 操作按钮 -->
     <div class="row">
         <div class="col-12">
             <div class="card shadow-sm mb-4">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-shield-lock me-2 text-danger"></i>
-                        <h6 class="m-0 fw-semibold">Web认证配置</h6>
+                        <i class="bi bi-gear me-2 text-primary"></i>
+                        <h6 class="m-0 fw-semibold">配置操作</h6>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-shield-check me-1 text-success"></i>启用Web认证
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="是否启用Web管理界面认证，建议在外网环境下启用。禁用后任何人都可以访问管理界面"></i>
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="auth-enabled" name="auth.enabled">
-                                <label class="form-check-label" for="auth-enabled">启用</label>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <label for="auth-username" class="form-label fw-semibold">
-                                <i class="bi bi-person me-1 text-primary"></i>管理员用户名
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="Web管理界面的登录用户名"></i>
-                            </label>
-                            <input type="text" class="form-control form-control-lg" id="auth-username" name="auth.username" 
-                                   placeholder="admin">
-                        </div>
-                        <div class="col-md-3">
-                            <label for="auth-password" class="form-label fw-semibold">
-                                <i class="bi bi-key me-1 text-warning"></i>管理员密码
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="Web管理界面的登录密码。留空表示不修改当前密码"></i>
-                            </label>
-                            <div class="position-relative">
-                                <input type="password" class="form-control form-control-lg pe-5" id="auth-password" name="auth.password" 
-                                       placeholder="留空表示不修改密码">
-                                <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn" 
-                                        type="button" id="toggle-auth-password-visibility">
-                                    <i class="bi bi-eye text-muted" id="auth-password-visibility-icon"></i>
+                <div class="card-body text-center py-4">
+                    <div class="btn-group me-3" role="group">
+                        <button type="button" class="btn btn-primary px-4" onclick="saveConfig()">
+                            <i class="bi bi-save me-2"></i>保存配置
+                        </button>
+                        <button type="button"
+                                class="btn btn-outline-secondary px-4"
+                                onclick="loadConfig(true)">
+                            <i class="bi bi-arrow-clockwise me-2"></i>重新加载
+                        </button>
+                    </div>
+                    <div class="btn-group" role="group">
+                        <button type="button"
+                                class="btn btn-outline-info px-4"
+                                onclick="backupConfig()">
+                            <i class="bi bi-download me-2"></i>备份配置
+                        </button>
+                        <button type="button"
+                                class="btn btn-outline-warning px-4"
+                                onclick="showRestoreModal()">
+                            <i class="bi bi-upload me-2"></i>恢复配置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 调试工具导航 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4 border-info border-opacity-25">
+                <div class="card-body text-center py-4">
+                    <div class="mb-3">
+                        <i class="bi bi-bug display-4 text-info"></i>
+                    </div>
+                    <h5 class="card-title text-info mb-3">需要测试同步功能？</h5>
+                    <p class="card-text text-muted mb-4">
+                        测试同步和网络诊断功能已移至专门的调试工具页面，
+                        <br>
+                        提供更丰富的调试功能和更好的用户体验。
+                    </p>
+                    <a href="/debug" class="btn btn-info px-4">
+                        <i class="bi bi-arrow-right-circle me-2"></i>前往调试工具
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 恢复配置模态框 -->
+    <div class="modal fade"
+         id="restoreConfigModal"
+         tabindex="-1"
+         aria-labelledby="restoreConfigModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="restoreConfigModalLabel">
+                        <i class="bi bi-upload me-2"></i>恢复配置
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-semibold mb-0">
+                                    <i class="bi bi-clock-history me-1"></i>选择备份文件
+                                </h6>
+                                <button type="button"
+                                        class="btn btn-outline-danger btn-sm"
+                                        onclick="showCleanupModal()">
+                                    <i class="bi bi-trash me-1"></i>清理备份
                                 </button>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <label for="session-timeout" class="form-label fw-semibold">
-                                <i class="bi bi-clock me-1 text-info"></i>会话超时时间
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="登录会话的超时时间（秒），默认3600秒（1小时）"></i>
-                            </label>
-                            <input type="number" class="form-control form-control-lg" id="session-timeout" name="auth.session_timeout" 
-                                   placeholder="3600" min="300" max="86400">
-                        </div>
-                    </div>
-                    <div class="row g-3 mt-2">
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-shield-lock me-1 text-success"></i>启用HTTPS安全Cookie
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="启用后Cookie只在HTTPS连接下传输，提高安全性。仅在使用HTTPS时启用"></i>
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="https-only" name="auth.https_only">
-                                <label class="form-check-label" for="https-only">启用</label>
+                            <div class="list-group" id="backup-files-list">
+                                <div class="text-center p-3">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">加载中...</span>
+                                    </div>
+                                    <p class="mt-2 mb-0 text-muted">正在加载备份文件...</p>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-md-3">
-                            <label for="max-login-attempts" class="form-label fw-semibold">
-                                <i class="bi bi-shield-x me-1 text-warning"></i>最大登录尝试次数
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="单个IP地址的最大登录失败次数，超过后将被锁定"></i>
-                            </label>
-                            <input type="number" class="form-control form-control-lg" id="max-login-attempts" name="auth.max_login_attempts" 
-                                   placeholder="5" min="1" max="20">
-                        </div>
-                        <div class="col-md-3">
-                            <label for="lockout-duration" class="form-label fw-semibold">
-                                <i class="bi bi-clock-history me-1 text-danger"></i>锁定时间（秒）
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="IP被锁定的时间长度（秒），默认900秒（15分钟）"></i>
-                            </label>
-                            <input type="number" class="form-control form-control-lg" id="lockout-duration" name="auth.lockout_duration" 
-                                   placeholder="900" min="60" max="86400">
+                        <div class="col-md-6">
+                            <h6 class="fw-semibold mb-3">
+                                <i class="bi bi-eye me-1"></i>配置预览
+                            </h6>
+                            <div id="config-preview"
+                                 class="border rounded p-3"
+                                 style="height: 300px;
+                                        overflow-y: auto;
+                                        background-color: #f8f9fa">
+                                <p class="text-muted mb-0">选择左侧的备份文件以预览配置内容</p>
+                            </div>
                         </div>
                     </div>
                     <div class="alert alert-warning mt-3">
                         <i class="bi bi-exclamation-triangle me-2"></i>
-                        <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。
+                        <strong>注意：</strong>恢复配置将覆盖当前所有配置，请确保已备份当前配置。
                     </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button"
+                            class="btn btn-warning"
+                            id="restore-confirm-btn"
+                            onclick="confirmRestore()"
+                            disabled>
+                        <i class="bi bi-check-circle me-1"></i>确认恢复
+                    </button>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Bangumi-data配置 -->
-    <div class="row">
-        <div class="col-12">
-                    <div class="card shadow-sm mb-4 config-card">
-            <div class="card-header py-3">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-hdd-stack me-2 text-primary"></i>
-                    <h6 class="m-0 fw-semibold">Bangumi-data配置</h6>
+    <!-- 清理备份模态框 -->
+    <div class="modal fade"
+         id="cleanupBackupModal"
+         tabindex="-1"
+         aria-labelledby="cleanupBackupModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="cleanupBackupModalLabel">
+                        <i class="bi bi-trash me-2"></i>清理备份文件
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-            </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-search me-1 text-success"></i>使用Bangumi-data匹配
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="是否启用 bangumi-data 匹配。启用后会先尝试通过 bangumi-data 匹配番剧ID，匹配成功后可以减少API请求次数"></i>
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="bangumi-data-enabled" name="bangumi_data.enabled">
-                                <label class="form-check-label" for="bangumi-data-enabled">启用</label>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-hdd me-1 text-primary"></i>使用本地缓存
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="是否使用本地缓存文件，默认启用。启用后会将下载的数据保存到本地，之后再次启动时优先使用缓存"></i>
-                            </label>
-                            <div class="form-check form-switch d-flex align-items-center">
-                                <input class="form-check-input me-2" type="checkbox" id="bangumi-data-cache" name="bangumi_data.use_cache">
-                                <label class="form-check-label" for="bangumi-data-cache">启用</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="cache-ttl" class="form-label fw-semibold">
-                                <i class="bi bi-clock me-1 text-warning"></i>缓存有效期（天）
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="缓存有效期（天），超过此时间后会自动更新缓存。设置为0表示每次启动都会更新缓存"></i>
-                            </label>
-                            <input type="number" class="form-control form-control-lg" id="cache-ttl" name="bangumi_data.cache_ttl_days" 
-                                   placeholder="7" min="0" max="365">
-                        </div>
-                    </div>
-                    <div class="row g-3 mt-3">
-                        <div class="col-md-6">
-                            <label for="data-url" class="form-label fw-semibold">
-                                <i class="bi bi-link me-1 text-info"></i>数据源URL
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="bangumi-data数据源的URL地址，默认使用官方CDN地址。如果官方地址无法访问，可以替换为其他镜像地址"></i>
-                            </label>
-                            <input type="url" class="form-control form-control-lg" id="data-url" name="bangumi_data.data_url" 
-                                   placeholder="https://unpkg.com/bangumi-data@0.3/dist/data.json">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="local-cache-path" class="form-label fw-semibold">
-                                <i class="bi bi-folder me-1 text-secondary"></i>本地缓存路径
-                                <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
-                                   title="bangumi-data本地缓存文件的存储路径，默认为当前目录下的bangumi_data_cache.json文件"></i>
-                            </label>
-                            <input type="text" class="form-control form-control-lg" id="local-cache-path" name="bangumi_data.local_cache_path" 
-                                   placeholder="./bangumi_data_cache.json">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 通知配置 -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm mb-4 config-card">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-bell me-2 text-warning"></i>
-                            <h6 class="m-0 fw-semibold">通知配置</h6>
-                        </div>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="showAddWebhookModal()">
-                            <i class="bi bi-plus-lg me-1"></i>添加 Webhook 配置
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <!-- Webhook 配置列表 -->
-                    <div id="webhook-configs-container">
-                        <div class="text-center py-5">
-                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                            <p class="text-muted mt-3">暂无 Webhook 配置</p>
-                            <button type="button" class="btn btn-outline-primary" onclick="showAddWebhookModal()">
-                                <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                            </button>
-                        </div>
-                    </div>
-
-                    <hr class="my-4">
-
-                    <!-- 邮件通知配置 -->
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-envelope text-success me-2"></i>
-                            <h6 class="m-0 fw-semibold">邮件通知配置</h6>
-                        </div>
-                        <button type="button" class="btn btn-success btn-sm" onclick="showAddEmailModal()">
-                            <i class="bi bi-plus-lg me-1"></i>添加邮件配置
-                        </button>
-                    </div>
-
-                    <!-- 邮件配置列表 -->
-                    <div id="email-configs-container">
-                        <div class="text-center py-5">
-                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                            <p class="text-muted mt-3">暂无邮件配置</p>
-                            <button type="button" class="btn btn-outline-success" onclick="showAddEmailModal()">
-                                <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="alert alert-info mt-4">
+                <div class="modal-body">
+                    <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>
-                        <strong>提示：</strong>配置完成后，也可以在「调试工具」页面测试全部通知项功能。特定事件发生时会自动发送通知（60秒冷却时间）。
+                        <strong>清理策略：</strong>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</form>
-
-<!-- 操作按钮 -->
-<div class="row">
-    <div class="col-12">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header py-3">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-gear me-2 text-primary"></i>
-                    <h6 class="m-0 fw-semibold">配置操作</h6>
-                </div>
-            </div>
-            <div class="card-body text-center py-4">
-                <div class="btn-group me-3" role="group">
-                    <button type="button" class="btn btn-primary px-4" onclick="saveConfig()">
-                        <i class="bi bi-save me-2"></i>保存配置
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary px-4" onclick="loadConfig(true)">
-                        <i class="bi bi-arrow-clockwise me-2"></i>重新加载
-                    </button>
-                </div>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-outline-info px-4" onclick="backupConfig()">
-                        <i class="bi bi-download me-2"></i>备份配置
-                    </button>
-                    <button type="button" class="btn btn-outline-warning px-4" onclick="showRestoreModal()">
-                        <i class="bi bi-upload me-2"></i>恢复配置
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 调试工具导航 -->
-<div class="row">
-    <div class="col-12">
-        <div class="card shadow-sm mb-4 border-info border-opacity-25">
-            <div class="card-body text-center py-4">
-                <div class="mb-3">
-                    <i class="bi bi-bug display-4 text-info"></i>
-                </div>
-                <h5 class="card-title text-info mb-3">需要测试同步功能？</h5>
-                <p class="card-text text-muted mb-4">
-                    测试同步和网络诊断功能已移至专门的调试工具页面，<br>
-                    提供更丰富的调试功能和更好的用户体验。
-                </p>
-                <a href="/debug" class="btn btn-info px-4">
-                    <i class="bi bi-arrow-right-circle me-2"></i>前往调试工具
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 恢复配置模态框 -->
-<div class="modal fade" id="restoreConfigModal" tabindex="-1" aria-labelledby="restoreConfigModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="restoreConfigModalLabel">
-                    <i class="bi bi-upload me-2"></i>恢复配置
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h6 class="fw-semibold mb-0">
-                                <i class="bi bi-clock-history me-1"></i>选择备份文件
-                            </h6>
-                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="showCleanupModal()">
-                                <i class="bi bi-trash me-1"></i>清理备份
-                            </button>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                       type="radio"
+                                       name="cleanupStrategy"
+                                       id="keepRecent"
+                                       value="recent"
+                                       checked>
+                                <label class="form-check-label" for="keepRecent">
+                                    <strong>保留最近的备份</strong>
+                                    <br>
+                                    <small class="text-muted">保留最近的几个备份文件</small>
+                                </label>
+                            </div>
+                            <div class="mt-2 ms-4">
+                                <label for="keepCount" class="form-label">保留数量：</label>
+                                <select class="form-select form-select-sm" id="keepCount">
+                                    <option value="3">3个</option>
+                                    <option value="5" selected>5个</option>
+                                    <option value="10">10个</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="list-group" id="backup-files-list">
-                            <div class="text-center p-3">
-                                <div class="spinner-border spinner-border-sm" role="status">
-                                    <span class="visually-hidden">加载中...</span>
-                                </div>
-                                <p class="mt-2 mb-0 text-muted">正在加载备份文件...</p>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                       type="radio"
+                                       name="cleanupStrategy"
+                                       id="keepByDate"
+                                       value="date">
+                                <label class="form-check-label" for="keepByDate">
+                                    <strong>按日期清理</strong>
+                                    <br>
+                                    <small class="text-muted">删除指定天数前的备份</small>
+                                </label>
+                            </div>
+                            <div class="mt-2 ms-4">
+                                <label for="keepDays" class="form-label">保留天数：</label>
+                                <select class="form-select form-select-sm" id="keepDays">
+                                    <option value="7">7天</option>
+                                    <option value="30" selected>30天</option>
+                                    <option value="90">90天</option>
+                                </select>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <h6 class="fw-semibold mb-3">
-                            <i class="bi bi-eye me-1"></i>配置预览
-                        </h6>
-                        <div id="config-preview" class="border rounded p-3" style="height: 300px; overflow-y: auto; background-color: #f8f9fa;">
-                            <p class="text-muted mb-0">选择左侧的备份文件以预览配置内容</p>
+                    <div class="mt-3">
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="radio"
+                                   name="cleanupStrategy"
+                                   id="deleteAll"
+                                   value="all">
+                            <label class="form-check-label" for="deleteAll">
+                                <strong class="text-danger">删除所有备份</strong>
+                                <br>
+                                <small class="text-muted">删除所有备份文件（慎用）</small>
+                            </label>
                         </div>
                     </div>
+                    <div class="alert alert-warning mt-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>注意：</strong>此操作不可逆，请确保已经确认要删除的备份文件。
+                    </div>
                 </div>
-                <div class="alert alert-warning mt-3">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>注意：</strong>恢复配置将覆盖当前所有配置，请确保已备份当前配置。
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmCleanup()">
+                        <i class="bi bi-trash me-1"></i>确认清理
+                    </button>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-warning" id="restore-confirm-btn" onclick="confirmRestore()" disabled>
-                    <i class="bi bi-check-circle me-1"></i>确认恢复
-                </button>
             </div>
         </div>
     </div>
-</div>
-
-<!-- 清理备份模态框 -->
-<div class="modal fade" id="cleanupBackupModal" tabindex="-1" aria-labelledby="cleanupBackupModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="cleanupBackupModalLabel">
-                    <i class="bi bi-trash me-2"></i>清理备份文件
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle me-2"></i>
-                    <strong>清理策略：</strong>
-                </div>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="cleanupStrategy" id="keepRecent" value="recent" checked>
-                            <label class="form-check-label" for="keepRecent">
-                                <strong>保留最近的备份</strong><br>
-                                <small class="text-muted">保留最近的几个备份文件</small>
-                            </label>
-                        </div>
-                        <div class="mt-2 ms-4">
-                            <label for="keepCount" class="form-label">保留数量：</label>
-                            <select class="form-select form-select-sm" id="keepCount">
-                                <option value="3">3个</option>
-                                <option value="5" selected>5个</option>
-                                <option value="10">10个</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="cleanupStrategy" id="keepByDate" value="date">
-                            <label class="form-check-label" for="keepByDate">
-                                <strong>按日期清理</strong><br>
-                                <small class="text-muted">删除指定天数前的备份</small>
-                            </label>
-                        </div>
-                        <div class="mt-2 ms-4">
-                            <label for="keepDays" class="form-label">保留天数：</label>
-                            <select class="form-select form-select-sm" id="keepDays">
-                                <option value="7">7天</option>
-                                <option value="30" selected>30天</option>
-                                <option value="90">90天</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-3">
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="cleanupStrategy" id="deleteAll" value="all">
-                        <label class="form-check-label" for="deleteAll">
-                            <strong class="text-danger">删除所有备份</strong><br>
-                            <small class="text-muted">删除所有备份文件（慎用）</small>
-                        </label>
-                    </div>
-                </div>
-                <div class="alert alert-warning mt-3">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>注意：</strong>此操作不可逆，请确保已经确认要删除的备份文件。
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-danger" onclick="confirmCleanup()">
-                    <i class="bi bi-trash me-1"></i>确认清理
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
-
 {% block scripts %}
-<script>
-
+    <script>
 // 全局变量
 let bangumiAccountCounter = 0;
 
@@ -1107,9 +1247,7 @@ async function loadBackupFiles() {
                             </div>
                         </div>
                         <div class="flex-shrink-0">
-                            <button class="btn btn-outline-danger btn-sm" 
-                                    onclick="deleteBackupFile('${backup.filename}', event)" 
-                                    title="删除备份">
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteBackupFile('${backup.filename}', event)" title="删除备份">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -1980,315 +2118,409 @@ async function testWebhook(webhookId) {
         button.innerHTML = originalHtml;
     }
 }
-</script>
-
-<!-- Webhook 配置模态框 -->
-<div class="modal fade" id="webhookModal" tabindex="-1" aria-labelledby="webhookModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="webhook-modal-title">添加 Webhook 配置</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="webhook-form">
-                    <input type="hidden" id="webhook-id">
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-2">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-toggle-on me-1 text-success"></i>启用
-                            </label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="webhook-enabled-input" checked>
-                                <label class="form-check-label" for="webhook-enabled-input">启用</label>
+    </script>
+    <!-- Webhook 配置模态框 -->
+    <div class="modal fade"
+         id="webhookModal"
+         tabindex="-1"
+         aria-labelledby="webhookModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="webhook-modal-title">添加 Webhook 配置</h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="webhook-form">
+                        <input type="hidden" id="webhook-id">
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-2">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-toggle-on me-1 text-success"></i>启用
+                                </label>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-enabled-input"
+                                           checked>
+                                    <label class="form-check-label" for="webhook-enabled-input">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="webhook-url-input" class="form-label fw-semibold">
+                                    <i class="bi bi-link me-1 text-info"></i>Webhook URL
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input type="url"
+                                       class="form-control"
+                                       id="webhook-url-input"
+                                       required
+                                       placeholder="https://your-webhook-url.com/hook">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="webhook-method-input" class="form-label fw-semibold">
+                                    <i class="bi bi-arrow-right-circle me-1"></i>请求方法
+                                </label>
+                                <select class="form-select" id="webhook-method-input">
+                                    <option value="POST">POST</option>
+                                    <option value="GET">GET</option>
+                                </select>
                             </div>
                         </div>
-                        <div class="col-md-6">
-                            <label for="webhook-url-input" class="form-label fw-semibold">
-                                <i class="bi bi-link me-1 text-info"></i>Webhook URL
-                                <span class="text-danger">*</span>
+                        <div class="mb-3">
+                            <label for="webhook-types-input" class="form-label fw-semibold">
+                                <i class="bi bi-tags me-1"></i>通知类型
+                                <i class="bi bi-question-circle ms-1 text-muted"
+                                   data-bs-toggle="tooltip"
+                                   title="选择要触发的通知类型，多个类型用逗号分隔。选择 'all' 表示所有类型"></i>
                             </label>
-                            <input type="url" class="form-control" id="webhook-url-input" required
-                                   placeholder="https://your-webhook-url.com/hook">
-                        </div>
-                        <div class="col-md-4">
-                            <label for="webhook-method-input" class="form-label fw-semibold">
-                                <i class="bi bi-arrow-right-circle me-1"></i>请求方法
-                            </label>
-                            <select class="form-select" id="webhook-method-input">
-                                <option value="POST">POST</option>
-                                <option value="GET">GET</option>
+                            <select class="form-select" id="webhook-types-input">
+                                <option value="all">全部类型 (all)</option>
+                                <option value="request_received">收到请求 (request_received)</option>
+                                <option value="bangumi_id_found">找到番剧 (bangumi_id_found)</option>
+                                <option value="mark_success">标记成功 (mark_success)</option>
+                                <option value="mark_failed">标记失败 (mark_failed)</option>
+                                <option value="mark_skipped">标记跳过 (mark_skipped)</option>
+                                <option value="config_error">配置错误 (config_error)</option>
+                                <option value="anime_not_found">未找到番剧 (anime_not_found)</option>
+                                <option value="episode_not_found">未找到剧集 (episode_not_found)</option>
+                                <option value="api_auth_error">API认证失败 (api_auth_error)</option>
+                                <option value="api_error">API错误 (api_error)</option>
+                                <option value="api_retry_failed">API重试失败 (api_retry_failed)</option>
+                                <option value="ip_locked">IP被锁定 (ip_locked)</option>
                             </select>
                         </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="webhook-types-input" class="form-label fw-semibold">
-                            <i class="bi bi-tags me-1"></i>通知类型
-                            <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip"
-                               title="选择要触发的通知类型，多个类型用逗号分隔。选择 'all' 表示所有类型"></i>
-                        </label>
-                        <select class="form-select" id="webhook-types-input">
-                            <option value="all">全部类型 (all)</option>
-                            <option value="request_received">收到请求 (request_received)</option>
-                            <option value="bangumi_id_found">找到番剧 (bangumi_id_found)</option>
-                            <option value="mark_success">标记成功 (mark_success)</option>
-                            <option value="mark_failed">标记失败 (mark_failed)</option>
-                            <option value="mark_skipped">标记跳过 (mark_skipped)</option>
-                            <option value="config_error">配置错误 (config_error)</option>
-                            <option value="anime_not_found">未找到番剧 (anime_not_found)</option>
-                            <option value="episode_not_found">未找到剧集 (episode_not_found)</option>
-                            <option value="api_auth_error">API认证失败 (api_auth_error)</option>
-                            <option value="api_error">API错误 (api_error)</option>
-                            <option value="api_retry_failed">API重试失败 (api_retry_failed)</option>
-                            <option value="ip_locked">IP被锁定 (ip_locked)</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="webhook-headers-input" class="form-label fw-semibold">
-                            <i class="bi bi-list-ul me-1"></i>自定义请求头（可选）
-                        </label>
-                        <textarea class="form-control" id="webhook-headers-input" rows="2"
-                                  placeholder='{"Authorization": "Bearer token"}'></textarea>
-                        <div class="form-text">支持 JSON 格式，例如：{"Authorization": "Bearer token"}</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="webhook-template-input" class="form-label fw-semibold">
-                            <i class="bi bi-code-square me-1"></i>消息模板（可选）
-                        </label>
-                        <textarea class="form-control" id="webhook-template-input" rows="5"
-                                  placeholder='{"content": "📢 {title} S{season}E{episode} - {notification_type}"}'></textarea>
-                        <div class="form-text">支持 JSON 格式，可用变量：{timestamp}, {user_name}, {title}, {season}, {episode}, {source}, {notification_type}, {error_message}, {subject_id}, {episode_id}</div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="saveWebhookConfig()">
-                    <i class="bi bi-save me-1"></i>保存
-                </button>
+                        <div class="mb-3">
+                            <label for="webhook-headers-input" class="form-label fw-semibold">
+                                <i class="bi bi-list-ul me-1"></i>自定义请求头（可选）
+                            </label>
+                            <textarea class="form-control"
+                                      id="webhook-headers-input"
+                                      rows="2"
+                                      placeholder='{"Authorization": "Bearer token"}'></textarea>
+                            <div class="form-text">支持 JSON 格式，例如：{"Authorization": "Bearer token"}</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="webhook-template-input" class="form-label fw-semibold">
+                                <i class="bi bi-code-square me-1"></i>消息模板（可选）
+                            </label>
+                            <textarea class="form-control"
+                                      id="webhook-template-input"
+                                      rows="5"
+                                      placeholder='{"content": "📢 {title} S{season}E{episode} - {notification_type}"}'></textarea>
+                            <div class="form-text">
+                                支持 JSON 格式，可用变量：{timestamp}, {user_name}, {title}, {season}, {episode}, {source}, {notification_type}, {error_message}, {subject_id}, {episode_id}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveWebhookConfig()">
+                        <i class="bi bi-save me-1"></i>保存
+                    </button>
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-<!-- 删除 Webhook 确认模态框 -->
-<div class="modal fade" id="deleteWebhookModal" tabindex="-1" aria-labelledby="deleteWebhookModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="deleteWebhookModalLabel">确认删除</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p>确定要删除这个 Webhook 配置吗？此操作不可逆。</p>
-                <input type="hidden" id="delete-webhook-id">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-danger" onclick="deleteWebhookConfig()">
-                    <i class="bi bi-trash me-1"></i>删除
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 邮件配置模态框 -->
-<div class="modal fade" id="emailModal" tabindex="-1" aria-labelledby="emailModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="emailModalLabel">
-                    <i class="bi bi-envelope me-2"></i><span id="email-modal-title">添加邮件配置</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="email-config-form">
-                    <input type="hidden" id="email-id">
-
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="email-enabled-input" checked>
-                            <label class="form-check-label fw-semibold" for="email-enabled-input">
-                                <i class="bi bi-toggle-on me-1"></i>启用此配置
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-8">
-                            <label for="email-smtp-server-input" class="form-label fw-semibold">
-                                <i class="bi bi-server me-1"></i>SMTP 服务器 <span class="text-danger">*</span>
-                            </label>
-                            <input type="text" class="form-control" id="email-smtp-server-input" required
-                                   placeholder="smtp.qq.com">
-                        </div>
-                        <div class="col-md-4">
-                            <label for="email-smtp-port-input" class="form-label fw-semibold">
-                                <i class="bi bi-hdd-network me-1"></i>端口 <span class="text-danger">*</span>
-                            </label>
-                            <input type="number" class="form-control" id="email-smtp-port-input" required
-                                   placeholder="465" min="1" max="65535" value="465">
-                        </div>
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label for="email-smtp-username-input" class="form-label fw-semibold">
-                                <i class="bi bi-person me-1"></i>SMTP 用户名 <span class="text-danger">*</span>
-                            </label>
-                            <input type="email" class="form-control" id="email-smtp-username-input" required
-                                   placeholder="your-email@qq.com">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="email-smtp-password-input" class="form-label fw-semibold">
-                                <i class="bi bi-key me-1"></i>SMTP 密码/授权码 <span class="text-danger">*</span>
-                            </label>
-                            <input type="password" class="form-control" id="email-smtp-password-input" required
-                                   placeholder="授权码或密码">
-                        </div>
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label for="email-from-input" class="form-label fw-semibold">
-                                <i class="bi bi-envelope-at me-1"></i>发件人地址（可选）
-                            </label>
-                            <input type="email" class="form-control" id="email-from-input"
-                                   placeholder="留空使用 SMTP 用户名">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="email-to-input" class="form-label fw-semibold">
-                                <i class="bi bi-envelope-check me-1"></i>收件人地址 <span class="text-danger">*</span>
-                            </label>
-                            <input type="email" class="form-control" id="email-to-input" required
-                                   placeholder="recipient@example.com">
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="email-smtp-use-tls-input" checked>
-                            <label class="form-check-label fw-semibold" for="email-smtp-use-tls-input">
-                                <i class="bi bi-shield-lock me-1"></i>使用 TLS 加密
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="email-subject-input" class="form-label fw-semibold">
-                            <i class="bi bi-chat-square-text me-1"></i>邮件标题模板（可选）
-                        </label>
-                        <input type="text" class="form-control" id="email-subject-input"
-                               placeholder="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}">
-                        <div class="form-text">可用变量：{timestamp}, {user_name}, {title}, {season}, {episode}, {source}, {error_type}, {error_message}, {notification_type}, {subject_id}, {episode_id}</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="email-template-file-input" class="form-label fw-semibold">
-                            <i class="bi bi-file-earmark-code me-1"></i>自定义模板文件路径（可选）
-                        </label>
-                        <input type="text" class="form-control font-monospace" id="email-template-file-input"
-                               placeholder="留空使用默认模板">
-                        <div class="form-text">支持相对路径和绝对路径</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">
-                            <i class="bi bi-tags me-1"></i>通知类型
-                        </label>
-                        <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-request_received" value="request_received">
-                                <label class="form-check-label" for="email-type-request_received">收到同步请求 (request_received)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-bangumi_id_found" value="bangumi_id_found">
-                                <label class="form-check-label" for="email-type-bangumi_id_found">匹配到番剧 (bangumi_id_found)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-mark_success" value="mark_success">
-                                <label class="form-check-label" for="email-type-mark_success">同步成功 (mark_success)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-mark_failed" value="mark_failed">
-                                <label class="form-check-label" for="email-type-mark_failed">同步失败 (mark_failed)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-mark_skipped" value="mark_skipped">
-                                <label class="form-check-label" for="email-type-mark_skipped">已看过跳过 (mark_skipped)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-config_error" value="config_error">
-                                <label class="form-check-label" for="email-type-config_error">配置错误 (config_error)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-anime_not_found" value="anime_not_found">
-                                <label class="form-check-label" for="email-type-anime_not_found">未找到番剧 (anime_not_found)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-episode_not_found" value="episode_not_found">
-                                <label class="form-check-label" for="email-type-episode_not_found">未找到剧集 (episode_not_found)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-api_auth_error" value="api_auth_error">
-                                <label class="form-check-label" for="email-type-api_auth_error">API认证失败 (api_auth_error)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-api_error" value="api_error">
-                                <label class="form-check-label" for="email-type-api_error">API错误 (api_error)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-api_retry_failed" value="api_retry_failed">
-                                <label class="form-check-label" for="email-type-api_retry_failed">API重试失败 (api_retry_failed)</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="email-type-ip_locked" value="ip_locked">
-                                <label class="form-check-label" for="email-type-ip_locked">IP被锁定 (ip_locked)</label>
-                            </div>
-                        </div>
-                        <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-success" onclick="saveEmailConfig()">
-                    <i class="bi bi-save me-1"></i>保存
-                </button>
+    <!-- 删除 Webhook 确认模态框 -->
+    <div class="modal fade"
+         id="deleteWebhookModal"
+         tabindex="-1"
+         aria-labelledby="deleteWebhookModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteWebhookModalLabel">确认删除</h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>确定要删除这个 Webhook 配置吗？此操作不可逆。</p>
+                    <input type="hidden" id="delete-webhook-id">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" onclick="deleteWebhookConfig()">
+                        <i class="bi bi-trash me-1"></i>删除
+                    </button>
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-<!-- 删除邮件确认模态框 -->
-<div class="modal fade" id="deleteEmailModal" tabindex="-1" aria-labelledby="deleteEmailModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="deleteEmailModalLabel">确认删除</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p>确定要删除这个邮件配置吗？此操作不可逆。</p>
-                <input type="hidden" id="delete-email-id">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-danger" onclick="deleteEmailConfig()">
-                    <i class="bi bi-trash me-1"></i>删除
-                </button>
+    <!-- 邮件配置模态框 -->
+    <div class="modal fade"
+         id="emailModal"
+         tabindex="-1"
+         aria-labelledby="emailModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="emailModalLabel">
+                        <i class="bi bi-envelope me-2"></i><span id="email-modal-title">添加邮件配置</span>
+                    </h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="email-config-form">
+                        <input type="hidden" id="email-id">
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       id="email-enabled-input"
+                                       checked>
+                                <label class="form-check-label fw-semibold" for="email-enabled-input">
+                                    <i class="bi bi-toggle-on me-1"></i>启用此配置
+                                </label>
+                            </div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-8">
+                                <label for="email-smtp-server-input" class="form-label fw-semibold">
+                                    <i class="bi bi-server me-1"></i>SMTP 服务器 <span class="text-danger">*</span>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="email-smtp-server-input"
+                                       required
+                                       placeholder="smtp.qq.com">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="email-smtp-port-input" class="form-label fw-semibold">
+                                    <i class="bi bi-hdd-network me-1"></i>端口 <span class="text-danger">*</span>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="email-smtp-port-input"
+                                       required
+                                       placeholder="465"
+                                       min="1"
+                                       max="65535"
+                                       value="465">
+                            </div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label for="email-smtp-username-input" class="form-label fw-semibold">
+                                    <i class="bi bi-person me-1"></i>SMTP 用户名 <span class="text-danger">*</span>
+                                </label>
+                                <input type="email"
+                                       class="form-control"
+                                       id="email-smtp-username-input"
+                                       required
+                                       placeholder="your-email@qq.com">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="email-smtp-password-input" class="form-label fw-semibold">
+                                    <i class="bi bi-key me-1"></i>SMTP 密码/授权码 <span class="text-danger">*</span>
+                                </label>
+                                <input type="password"
+                                       class="form-control"
+                                       id="email-smtp-password-input"
+                                       required
+                                       placeholder="授权码或密码">
+                            </div>
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label for="email-from-input" class="form-label fw-semibold">
+                                    <i class="bi bi-envelope-at me-1"></i>发件人地址（可选）
+                                </label>
+                                <input type="email"
+                                       class="form-control"
+                                       id="email-from-input"
+                                       placeholder="留空使用 SMTP 用户名">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="email-to-input" class="form-label fw-semibold">
+                                    <i class="bi bi-envelope-check me-1"></i>收件人地址 <span class="text-danger">*</span>
+                                </label>
+                                <input type="email"
+                                       class="form-control"
+                                       id="email-to-input"
+                                       required
+                                       placeholder="recipient@example.com">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       id="email-smtp-use-tls-input"
+                                       checked>
+                                <label class="form-check-label fw-semibold" for="email-smtp-use-tls-input">
+                                    <i class="bi bi-shield-lock me-1"></i>使用 TLS 加密
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="email-subject-input" class="form-label fw-semibold">
+                                <i class="bi bi-chat-square-text me-1"></i>邮件标题模板（可选）
+                            </label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="email-subject-input"
+                                   placeholder="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}">
+                            <div class="form-text">
+                                可用变量：{timestamp}, {user_name}, {title}, {season}, {episode}, {source}, {error_type}, {error_message}, {notification_type}, {subject_id}, {episode_id}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="email-template-file-input" class="form-label fw-semibold">
+                                <i class="bi bi-file-earmark-code me-1"></i>自定义模板文件路径（可选）
+                            </label>
+                            <input type="text"
+                                   class="form-control font-monospace"
+                                   id="email-template-file-input"
+                                   placeholder="留空使用默认模板">
+                            <div class="form-text">支持相对路径和绝对路径</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-tags me-1"></i>通知类型
+                            </label>
+                            <div class="border rounded p-3"
+                                 style="max-height: 200px;
+                                        overflow-y: auto">
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-request_received"
+                                           value="request_received">
+                                    <label class="form-check-label" for="email-type-request_received">收到同步请求 (request_received)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-bangumi_id_found"
+                                           value="bangumi_id_found">
+                                    <label class="form-check-label" for="email-type-bangumi_id_found">匹配到番剧 (bangumi_id_found)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-mark_success"
+                                           value="mark_success">
+                                    <label class="form-check-label" for="email-type-mark_success">同步成功 (mark_success)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-mark_failed"
+                                           value="mark_failed">
+                                    <label class="form-check-label" for="email-type-mark_failed">同步失败 (mark_failed)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-mark_skipped"
+                                           value="mark_skipped">
+                                    <label class="form-check-label" for="email-type-mark_skipped">已看过跳过 (mark_skipped)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-config_error"
+                                           value="config_error">
+                                    <label class="form-check-label" for="email-type-config_error">配置错误 (config_error)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-anime_not_found"
+                                           value="anime_not_found">
+                                    <label class="form-check-label" for="email-type-anime_not_found">未找到番剧 (anime_not_found)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-episode_not_found"
+                                           value="episode_not_found">
+                                    <label class="form-check-label" for="email-type-episode_not_found">未找到剧集 (episode_not_found)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-api_auth_error"
+                                           value="api_auth_error">
+                                    <label class="form-check-label" for="email-type-api_auth_error">API认证失败 (api_auth_error)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-api_error"
+                                           value="api_error">
+                                    <label class="form-check-label" for="email-type-api_error">API错误 (api_error)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-api_retry_failed"
+                                           value="api_retry_failed">
+                                    <label class="form-check-label" for="email-type-api_retry_failed">API重试失败 (api_retry_failed)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-ip_locked"
+                                           value="ip_locked">
+                                    <label class="form-check-label" for="email-type-ip_locked">IP被锁定 (ip_locked)</label>
+                                </div>
+                            </div>
+                            <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-success" onclick="saveEmailConfig()">
+                        <i class="bi bi-save me-1"></i>保存
+                    </button>
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-<script>
+    <!-- 删除邮件确认模态框 -->
+    <div class="modal fade"
+         id="deleteEmailModal"
+         tabindex="-1"
+         aria-labelledby="deleteEmailModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteEmailModalLabel">确认删除</h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>确定要删除这个邮件配置吗？此操作不可逆。</p>
+                    <input type="hidden" id="delete-email-id">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" onclick="deleteEmailConfig()">
+                        <i class="bi bi-trash me-1"></i>删除
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
 // ========== 邮件配置管理 ==========
 
 // 加载邮件配置列表
@@ -2588,5 +2820,5 @@ async function testEmail(emailId) {
         button.innerHTML = originalHtml;
     }
 }
-</script>
-{% endblock %} 
+    </script>
+{% endblock %}

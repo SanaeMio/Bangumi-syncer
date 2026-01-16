@@ -1,10 +1,7 @@
 {% extends "base.html" %}
-
 {% block title %}调试工具 - Bangumi Syncer{% endblock %}
 {% block page_title %}调试工具{% endblock %}
-
 {% block content %}
-
     <!-- 测试同步 -->
     <div class="row">
         <div class="col-12">
@@ -22,50 +19,81 @@
                                 <label for="test-title" class="form-label fw-semibold">
                                     <i class="bi bi-film me-1 text-warning"></i>番剧标题
                                 </label>
-                                <input type="text" class="form-control form-control-lg" id="test-title" placeholder="测试番剧" required>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="test-title"
+                                       placeholder="测试番剧"
+                                       required>
                             </div>
                             <div class="col-md-3">
                                 <label for="test-season" class="form-label fw-semibold">
                                     <i class="bi bi-calendar3 me-1 text-warning"></i>季度
                                 </label>
-                                <input type="number" class="form-control form-control-lg" id="test-season" value="1" min="1" max="20" required>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="test-season"
+                                       value="1"
+                                       min="1"
+                                       max="20"
+                                       required>
                             </div>
                             <div class="col-md-3">
                                 <label for="test-episode" class="form-label fw-semibold">
                                     <i class="bi bi-collection-play me-1 text-warning"></i>集数
                                 </label>
-                                <input type="number" class="form-control form-control-lg" id="test-episode" value="1" min="1" max="1000" required>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="test-episode"
+                                       value="1"
+                                       min="1"
+                                       max="1000"
+                                       required>
                             </div>
                             <div class="col-md-3">
                                 <label for="test-user" class="form-label fw-semibold">
                                     <i class="bi bi-person me-1 text-warning"></i>用户名
-                                    <i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" 
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
                                        title="媒体服务器中的用户名（Plex/Emby/Jellyfin用户名）"></i>
                                 </label>
-                                <input type="text" class="form-control form-control-lg" id="test-user" placeholder="媒体服务器用户名" required>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="test-user"
+                                       placeholder="媒体服务器用户名"
+                                       required>
                             </div>
                         </div>
                         <div class="row mt-4">
                             <div class="col-12">
-                                <button type="button" class="btn btn-warning px-3" id="test-sync-btn" onclick="testSync()">
+                                <button type="button"
+                                        class="btn btn-warning px-3"
+                                        id="test-sync-btn"
+                                        onclick="testSync()">
                                     <i class="bi bi-play-circle me-2"></i>开始测试
                                 </button>
                                 <div class="mt-3" id="test-sync-progress" style="display: none;">
                                     <div class="d-flex align-items-center">
-                                        <div class="spinner-border spinner-border-sm text-warning me-2" role="status">
+                                        <div class="spinner-border spinner-border-sm text-warning me-2"
+                                             role="status">
                                             <span class="visually-hidden">Loading...</span>
                                         </div>
                                         <span id="test-sync-status">正在测试同步...</span>
                                     </div>
                                     <div class="progress mt-2" style="height: 6px;">
-                                        <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
-                                             role="progressbar" style="width: 100%"></div>
+                                        <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated"
+                                             role="progressbar"
+                                             style="width: 100%"></div>
                                     </div>
                                 </div>
                                 <div class="mt-3" id="test-sync-result" style="display: none;">
-                                    <div class="alert alert-dismissible fade show" role="alert" id="test-result-alert">
+                                    <div class="alert alert-dismissible fade show"
+                                         role="alert"
+                                         id="test-result-alert">
                                         <div id="test-result-content"></div>
-                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                        <button type="button"
+                                                class="btn-close"
+                                                data-bs-dismiss="alert"
+                                                aria-label="Close"></button>
                                     </div>
                                 </div>
                             </div>
@@ -75,7 +103,6 @@
             </div>
         </div>
     </div>
-
     <!-- 网络诊断工具 -->
     <div class="row">
         <div class="col-12">
@@ -97,11 +124,16 @@
                         <div class="card-body">
                             <div class="mb-3">
                                 <label for="bangumi-url" class="form-label fw-semibold">API地址</label>
-                                <input type="text" class="form-control" id="bangumi-url" 
-                                       value="https://api.bgm.tv" readonly>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bangumi-url"
+                                       value="https://api.bgm.tv"
+                                       readonly>
                             </div>
-                            <button type="button" class="btn btn-info" 
-                                    onclick="diagnoseBangumiNetwork()" id="diagnose-bangumi-btn">
+                            <button type="button"
+                                    class="btn btn-info"
+                                    onclick="diagnoseBangumiNetwork()"
+                                    id="diagnose-bangumi-btn">
                                 <i class="bi bi-search me-1"></i>开始诊断
                             </button>
                             <div id="bangumi-diagnosis-result" class="mt-3" style="display: none;">
@@ -109,7 +141,6 @@
                             </div>
                         </div>
                     </div>
-
                     <!-- 自定义主机连通性测试 -->
                     <div class="card border-light">
                         <div class="card-header py-2 bg-light">
@@ -121,27 +152,42 @@
                             <div class="row g-3 mb-3">
                                 <div class="col-8">
                                     <label for="test-host" class="form-label fw-semibold">主机地址</label>
-                                    <input type="text" class="form-control" id="test-host" 
-                                           placeholder="如：192.168.1.100" value="">
+                                    <input type="text"
+                                           class="form-control"
+                                           id="test-host"
+                                           placeholder="如：192.168.1.100"
+                                           value="">
                                 </div>
                                 <div class="col-4">
                                     <label for="test-port" class="form-label fw-semibold">端口</label>
-                                    <input type="number" class="form-control" id="test-port" 
-                                           value="7890" min="1" max="65535">
+                                    <input type="number"
+                                           class="form-control"
+                                           id="test-port"
+                                           value="7890"
+                                           min="1"
+                                           max="65535">
                                 </div>
                             </div>
                             <div class="mb-3">
                                 <label for="test-timeout" class="form-label fw-semibold">超时时间(秒)</label>
-                                <input type="number" class="form-control" id="test-timeout" 
-                                       value="5" min="1" max="30">
+                                <input type="number"
+                                       class="form-control"
+                                       id="test-timeout"
+                                       value="5"
+                                       min="1"
+                                       max="30">
                             </div>
                             <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-success" 
-                                        onclick="testHostConnectivity()" id="test-host-btn">
+                                <button type="button"
+                                        class="btn btn-success"
+                                        onclick="testHostConnectivity()"
+                                        id="test-host-btn">
                                     <i class="bi bi-play-circle me-1"></i>测试连接
                                 </button>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" 
-                                        onclick="autoFillHostAddress()" title="自动填充常用主机地址">
+                                <button type="button"
+                                        class="btn btn-outline-secondary btn-sm"
+                                        onclick="autoFillHostAddress()"
+                                        title="自动填充常用主机地址">
                                     <i class="bi bi-magic"></i>
                                 </button>
                             </div>
@@ -154,7 +200,6 @@
             </div>
         </div>
     </div>
-
     <!-- 通知测试 -->
     <div class="row">
         <div class="col-12">
@@ -170,7 +215,6 @@
                         <i class="bi bi-info-circle me-2"></i>
                         测试当前配置的通知功能是否正常工作。如需配置通知，请前往「配置管理」页面。
                     </div>
-                    
                     <div class="row g-3">
                         <!-- Webhook 测试 -->
                         <div class="col-md-6">
@@ -181,7 +225,10 @@
                                     </h6>
                                 </div>
                                 <div class="card-body">
-                                    <button type="button" class="btn btn-primary w-100" onclick="testWebhookNotification()" id="test-webhook-btn">
+                                    <button type="button"
+                                            class="btn btn-primary w-100"
+                                            onclick="testWebhookNotification()"
+                                            id="test-webhook-btn">
                                         <i class="bi bi-send me-1"></i>测试 Webhook
                                     </button>
                                     <div id="webhook-test-result" class="mt-3" style="display: none;">
@@ -190,7 +237,6 @@
                                 </div>
                             </div>
                         </div>
-                        
                         <!-- 邮件测试 -->
                         <div class="col-md-6">
                             <div class="card border-light">
@@ -200,7 +246,10 @@
                                     </h6>
                                 </div>
                                 <div class="card-body">
-                                    <button type="button" class="btn btn-success w-100" onclick="testEmailNotification()" id="test-email-btn">
+                                    <button type="button"
+                                            class="btn btn-success w-100"
+                                            onclick="testEmailNotification()"
+                                            id="test-email-btn">
                                         <i class="bi bi-send me-1"></i>测试邮件
                                     </button>
                                     <div id="email-test-result" class="mt-3" style="display: none;">
@@ -214,9 +263,7 @@
             </div>
         </div>
     </div>
-
-
-<script>
+    <script>
 // 测试同步功能
 async function testSync() {
     const btn = document.getElementById('test-sync-btn');
@@ -308,18 +355,12 @@ async function testSync() {
                             <span class="badge bg-secondary me-2">${result.test_info?.episode || 'S' + season.toString().padStart(2, '0') + 'E' + episode.toString().padStart(2, '0')}</span>
                             ${result.data && (result.data.subject_id || result.data.episode_id) ? `
                                 ${result.data.subject_id ? `
-                                <a href="https://bgm.tv/subject/${result.data.subject_id}" 
-                                   target="_blank" 
-                                   class="badge bg-primary text-decoration-none me-1"
-                                   title="点击打开Bangumi番剧页面">
+                                <a href="https://bgm.tv/subject/${result.data.subject_id}" target="_blank" class="badge bg-primary text-decoration-none me-1" title="点击打开Bangumi番剧页面">
                                     <i class="bi bi-link-45deg me-1"></i>Bangumi ID: ${result.data.subject_id}
                                 </a>
                                 ` : ''}
                                 ${result.data.episode_id ? `
-                                <a href="https://bgm.tv/ep/${result.data.episode_id}" 
-                                   target="_blank" 
-                                   class="badge bg-info text-decoration-none"
-                                   title="点击打开Bangumi剧集页面">
+                                <a href="https://bgm.tv/ep/${result.data.episode_id}" target="_blank" class="badge bg-info text-decoration-none" title="点击打开Bangumi剧集页面">
                                     <i class="bi bi-link-45deg me-1"></i>EP ID: ${result.data.episode_id}
                                 </a>
                                 ` : ''}
@@ -1043,5 +1084,5 @@ async function testNotificationByType(type, btnId, resultDivId) {
         }
     }
 }
-</script>
+    </script>
 {% endblock %}

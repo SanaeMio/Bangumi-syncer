@@ -1,136 +1,132 @@
 {% extends "base.html" %}
-
 {% block title %}同步记录 - Bangumi Syncer{% endblock %}
 {% block page_title %}同步记录{% endblock %}
-
 {% block page_actions %}
-<div class="btn-group" role="group">
-    <button type="button" class="btn btn-primary" onclick="loadRecords()">
-        <i class="bi bi-arrow-clockwise me-1"></i>刷新
-    </button>
-</div>
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-primary" onclick="loadRecords()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
 {% endblock %}
-
 {% block content %}
-<!-- 筛选条件 -->
-<div class="card shadow mb-4">
-    <div class="card-header py-3">
-        <div class="d-flex align-items-center">
-            <i class="bi bi-funnel me-2 text-primary"></i>
-            <h6 class="m-0 fw-semibold">筛选条件</h6>
-        </div>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-3">
-                <label for="filter-status" class="form-label">状态</label>
-                <select class="form-select" id="filter-status">
-                    <option value="">全部</option>
-                    <option value="success">成功</option>
-                    <option value="error">失败</option>
-                    <option value="ignored">已忽略</option>
-                    <option value="retried">已重试</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="filter-user" class="form-label">用户</label>
-                <select class="form-select" id="filter-user">
-                    <option value="">全部用户</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="filter-source" class="form-label">来源</label>
-                <select class="form-select" id="filter-source">
-                    <option value="">全部来源</option>
-                    <option value="custom">自定义</option>
-                    <option value="plex">Plex</option>
-                    <option value="emby">Emby</option>
-                    <option value="jellyfin">Jellyfin</option>
-                    <option value="test">测试</option>
-                    <option value="retry">重试记录</option>
-                </select>
-            </div>
-            <div class="col-md-3 d-flex align-items-end gap-2">
-                <button type="button" class="btn btn-outline-primary flex-fill" onclick="applyFilters()">
-                    <i class="bi bi-funnel me-1"></i>应用筛选
-                </button>
-                <button type="button" class="btn btn-outline-secondary flex-fill" onclick="clearFilters()">
-                    <i class="bi bi-arrow-counterclockwise me-1"></i>重置筛选
-                </button>
+    <!-- 筛选条件 -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-funnel me-2 text-primary"></i>
+                <h6 class="m-0 fw-semibold">筛选条件</h6>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- 记录表格 -->
-<div class="card shadow mb-4">
-    <div class="card-header py-3">
-        <div class="d-flex align-items-center">
-            <i class="bi bi-journal-text me-2 text-success"></i>
-            <h6 class="m-0 fw-semibold">同步记录</h6>
-        </div>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered" id="records-table">
-                <thead>
-                    <tr>
-                        <th>时间</th>
-                        <th>用户</th>
-                        <th>番剧标题</th>
-                        <th>原始标题</th>
-                        <th>季/集</th>
-                        <th>状态</th>
-                        <th>来源</th>
-                        <th>消息</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- 动态加载 -->
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- 分页 -->
-        <nav aria-label="分页导航">
-            <ul class="pagination justify-content-center" id="pagination">
-                <!-- 动态生成分页 -->
-            </ul>
-        </nav>
-        
-        <!-- 加载状态 -->
-        <div id="loading" class="text-center" style="display: none;">
-            <div class="spinner-border" role="status">
-                <span class="visually-hidden">加载中...</span>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 记录详情模态框 -->
-<div class="modal fade" id="recordDetailModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">同步记录详情</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="record-detail-content">
-                    <!-- 动态填充 -->
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <label for="filter-status" class="form-label">状态</label>
+                    <select class="form-select" id="filter-status">
+                        <option value="">全部</option>
+                        <option value="success">成功</option>
+                        <option value="error">失败</option>
+                        <option value="ignored">已忽略</option>
+                        <option value="retried">已重试</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="filter-user" class="form-label">用户</label>
+                    <select class="form-select" id="filter-user">
+                        <option value="">全部用户</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="filter-source" class="form-label">来源</label>
+                    <select class="form-select" id="filter-source">
+                        <option value="">全部来源</option>
+                        <option value="custom">自定义</option>
+                        <option value="plex">Plex</option>
+                        <option value="emby">Emby</option>
+                        <option value="jellyfin">Jellyfin</option>
+                        <option value="test">测试</option>
+                        <option value="retry">重试记录</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="button"
+                            class="btn btn-outline-primary flex-fill"
+                            onclick="applyFilters()">
+                        <i class="bi bi-funnel me-1"></i>应用筛选
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary flex-fill"
+                            onclick="clearFilters()">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置筛选
+                    </button>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+        </div>
+    </div>
+    <!-- 记录表格 -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-journal-text me-2 text-success"></i>
+                <h6 class="m-0 fw-semibold">同步记录</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered" id="records-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>用户</th>
+                            <th>番剧标题</th>
+                            <th>原始标题</th>
+                            <th>季/集</th>
+                            <th>状态</th>
+                            <th>来源</th>
+                            <th>消息</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 动态加载 -->
+                    </tbody>
+                </table>
+            </div>
+            <!-- 分页 -->
+            <nav aria-label="分页导航">
+                <ul class="pagination justify-content-center" id="pagination">
+                    <!-- 动态生成分页 -->
+                </ul>
+            </nav>
+            <!-- 加载状态 -->
+            <div id="loading" class="text-center" style="display: none;">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
             </div>
         </div>
     </div>
-</div>
+    <!-- 记录详情模态框 -->
+    <div class="modal fade" id="recordDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">同步记录详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="record-detail-content">
+                        <!-- 动态填充 -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
-
 {% block scripts %}
-<script>
+    <script>
 let currentPage = 1;
 let currentLimit = 50;
 let currentFilters = {};
@@ -414,19 +410,13 @@ async function showRecordDetail(recordId) {
                         <strong>Bangumi链接:</strong>
                         <div class="mt-1">
                             ${record.subject_id ? `
-                            <a href="https://bgm.tv/subject/${record.subject_id}" 
-                               target="_blank" 
-                               class="btn btn-sm btn-outline-primary me-2"
-                               title="查看Bangumi番剧页面">
+                            <a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-sm btn-outline-primary me-2" title="查看Bangumi番剧页面">
                                 <i class="bi bi-collection me-1"></i>番剧 ${record.subject_id}
                                 <i class="bi bi-box-arrow-up-right ms-1"></i>
                             </a>
                             ` : ''}
                             ${record.episode_id ? `
-                            <a href="https://bgm.tv/ep/${record.episode_id}" 
-                               target="_blank" 
-                               class="btn btn-sm btn-outline-success"
-                               title="查看Bangumi剧集页面">
+                            <a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="btn btn-sm btn-outline-success" title="查看Bangumi剧集页面">
                                 <i class="bi bi-play-circle me-1"></i>剧集 ${record.episode_id}
                                 <i class="bi bi-box-arrow-up-right ms-1"></i>
                             </a>
@@ -467,5 +457,5 @@ function showLoading(show) {
         table.style.opacity = '1';
     }
 }
-</script>
-{% endblock %} 
+    </script>
+{% endblock %}
