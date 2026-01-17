@@ -35,10 +35,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# 2. 安全优化：创建非 Root 用户
-RUN groupadd -r appuser && useradd -r -g appuser --create-home appuser
+# 2. 安全优化：创建非 Root 用户，支持通过环境变量 PUID/PGID 指定用户ID
+ARG PUID=1000
+ARG PGID=1000
+RUN groupadd -g ${PGID} appuser && useradd -u ${PUID} -g appuser --create-home appuser
 
-# 3. 预创建目录
+# 3. 安装 gosu 用于用户切换（Docker社区标准工具）
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+
+# 4. 预创建目录
 RUN mkdir -p /app/config /app/logs /app/data /app/config_backups && \
     chown -R appuser:appuser /app
 
@@ -62,8 +67,7 @@ COPY --chown=appuser:appuser app/ ./app/
 COPY --chown=appuser:appuser templates/ ./templates/
 COPY --chown=appuser:appuser static/ ./static/
 
-# 7. 切换用户
-USER appuser
+# 7. 不切换用户，在 entrypoint.sh 中处理用户切换
 
 # 8. 启动
 EXPOSE 8000

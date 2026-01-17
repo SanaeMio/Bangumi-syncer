@@ -1,6 +1,45 @@
 #!/bin/bash
 set -e
 
+# ============================================================================
+# 用户和权限处理（仅当以root身份运行时执行）
+# ============================================================================
+
+# 如果当前用户是root（UID=0），则处理用户切换
+if [ "$(id -u)" = "0" ]; then
+    # 默认用户ID和组ID
+    PUID=${PUID:-1000}
+    PGID=${PGID:-1000}
+
+    echo "配置用户权限: UID=${PUID}, GID=${PGID}"
+
+    # 检查并修改用户组ID（如果PGID不等于默认值）
+    if [ "$(id -g appuser)" != "${PGID}" ]; then
+        echo "调整用户组ID为 ${PGID}..."
+        groupmod -g ${PGID} appuser
+    fi
+
+    # 检查并修改用户ID（如果PUID不等于默认值）
+    if [ "$(id -u appuser)" != "${PUID}" ]; then
+        echo "调整用户ID为 ${PUID}..."
+        usermod -u ${PUID} appuser
+    fi
+
+    # 确保挂载目录的所有权正确（以root身份运行，可以修改目录所有权）
+    echo "设置目录所有权..."
+    chown -R ${PUID}:${PGID} /app/config /app/logs /app/data /app/config_backups 2>/dev/null || true
+
+    # 切换到非root用户执行后续操作
+    echo "切换到用户 appuser (UID=${PUID}, GID=${PGID}) 执行应用..."
+    exec gosu appuser "$0" "$@"
+    # 注意：上面的 exec 会替换当前进程，所以下面的代码只有在没有切换时才会执行
+    # 实际上，gosu 会执行相同的脚本，但以 appuser 身份
+fi
+
+# ============================================================================
+# 以下代码以非root用户身份执行（可能是appuser或其他用户）
+# ============================================================================
+
 # 注意：因为 Dockerfile 里已经预创建了目录，这里的 mkdir -p 只是防御性编程，不会报错
 mkdir -p /app/config /app/logs /app/data /app/config_backups
 
@@ -8,13 +47,13 @@ mkdir -p /app/config /app/logs /app/data /app/config_backups
 if [ ! -f "/app/config/config.ini" ]; then
     echo "配置文件不存在，从模板创建..."
     cp /app/config.ini.template /app/config/config.ini
-    
+
     # Docker环境下自动调整路径配置
     echo "调整Docker环境路径配置..."
-    # 注意：确保 appuser 对 config.ini 有写权限，我们在 Dockerfile 里已经 chown 了
+    # 注意：确保 appuser 对 config.ini 有写权限，我们已经设置过所有权
     sed -i "s|local_cache_path = ./bangumi_data_cache.json|local_cache_path = /app/data/bangumi_data_cache.json|g" /app/config/config.ini
     sed -i "s|log_file = ./log.txt|log_file = /app/logs/log.txt|g" /app/config/config.ini
-    
+
     echo "配置文件已创建并调整：/app/config/config.ini"
 fi
 
