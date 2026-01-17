@@ -40,8 +40,8 @@ ARG PUID=1000
 ARG PGID=1000
 RUN groupadd -g ${PGID} appuser && useradd -u ${PUID} -g appuser --create-home appuser
 
-# 3. 安装 util-linux 用于用户切换（包含 setpriv）
-RUN apt-get update && apt-get install -y --no-install-recommends util-linux && rm -rf /var/lib/apt/lists/*
+# 3. 安装 gosu 用于用户切换（Docker社区标准工具）
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
 
 # 4. 预创建目录
 RUN mkdir -p /app/config /app/logs /app/data /app/config_backups && \

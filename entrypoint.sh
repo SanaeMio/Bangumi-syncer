@@ -31,9 +31,9 @@ if [ "$(id -u)" = "0" ]; then
 
     # 切换到非root用户执行后续操作
     echo "切换到用户 appuser (UID=${PUID}, GID=${PGID}) 执行应用..."
-    exec setpriv --reuid=${PUID} --regid=${PGID} --init-groups "$0" "$@"
+    exec gosu appuser "$0" "$@"
     # 注意：上面的 exec 会替换当前进程，所以下面的代码只有在没有切换时才会执行
-    # 实际上，su-exec 会执行相同的脚本，但以 appuser 身份
+    # 实际上，gosu 会执行相同的脚本，但以 appuser 身份
 fi
 
 # ============================================================================
