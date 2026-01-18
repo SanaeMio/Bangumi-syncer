@@ -37,229 +37,6 @@ class Notifier:
         self._last_notification_time[notification_type] = current_time
         return True
 
-    def send_error_notification(
-        self,
-        error_type: str,
-        error_message: str,
-        context: Optional[dict[str, Any]] = None,
-    ) -> None:
-        """
-        发送错误通知（保持向后兼容）
-
-        Args:
-            error_type: 错误类型（如 "sync_error", "proxy_error" 等）
-            error_message: 错误消息
-            context: 额外的上下文信息
-        """
-        # 检查是否启用邮件通知
-        if self._is_email_enabled():
-            notification_data = self._build_notification_data(
-                error_type, error_message, context
-            )
-            self._send_email(notification_data)
-
-        # 使用新的通知系统发送webhook通知
-        context = context or {}
-        data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "error_type": error_type,
-            "error_message": error_message,
-            "user_name": context.get("user_name", "Unknown"),
-            "title": context.get("title", "Unknown"),
-            "season": context.get("season", 0),
-            "episode": context.get("episode", 0),
-            "source": context.get("source", "Unknown"),
-            "additional_info": context.get("additional_info", ""),
-        }
-
-        self.send_notification_by_type("mark_failed", data)
-
-    def _is_notification_enabled(self) -> bool:
-        """检查是否启用了任何通知方式"""
-        return self._is_webhook_enabled() or self._is_email_enabled()
-
-    def _is_webhook_enabled(self) -> bool:
-        """检查是否启用 Webhook 通知"""
-        enabled = self.config_manager.get(
-            "notification", "webhook_enabled", fallback=False
-        )
-        webhook_url = self.config_manager.get(
-            "notification", "webhook_url", fallback=""
-        )
-        return bool(enabled) and bool(webhook_url)
-
-    def _is_email_enabled(self) -> bool:
-        """检查是否启用邮件通知"""
-        enabled = self.config_manager.get(
-            "notification", "email_enabled", fallback=False
-        )
-        smtp_server = self.config_manager.get(
-            "notification", "smtp_server", fallback=""
-        )
-        return bool(enabled) and bool(smtp_server)
-
-    def _build_notification_data(
-        self,
-        error_type: str,
-        error_message: str,
-        context: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
-        """构建通知数据"""
-        context = context or {}
-
-        return {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "error_type": error_type,
-            "error_message": error_message,
-            "user_name": context.get("user_name", "Unknown"),
-            "title": context.get("title", "Unknown"),
-            "season": context.get("season", 0),
-            "episode": context.get("episode", 0),
-            "source": context.get("source", "Unknown"),
-            "additional_info": context.get("additional_info", ""),
-        }
-
-    def _send_webhook(self, data: dict[str, Any], raise_on_error: bool = False) -> bool:
-        """
-        发送 Webhook 通知
-
-        Args:
-            data: 通知数据
-            raise_on_error: 是否在错误时抛出异常（测试模式使用）
-
-        Returns:
-            是否发送成功
-        """
-        webhook_url = self.config_manager.get(
-            "notification", "webhook_url", fallback=""
-        )
-        webhook_method = self.config_manager.get(
-            "notification", "webhook_method", fallback="POST"
-        ).upper()
-        webhook_format = self.config_manager.get(
-            "notification", "webhook_format", fallback="json"
-        )
-        custom_headers = self.config_manager.get(
-            "notification", "webhook_headers", fallback=""
-        )
-
-        try:
-            # 构建请求头
-            headers = {"User-Agent": "Bangumi-Syncer-Notifier"}
-
-            # 解析自定义请求头
-            if custom_headers:
-                for header in custom_headers.split(","):
-                    if ":" in header:
-                        key, value = header.split(":", 1)
-                        headers[key.strip()] = value.strip()
-
-            # 构建请求体
-            if webhook_format == "json":
-                headers["Content-Type"] = "application/json"
-                payload = self._build_webhook_json_payload(data)
-            else:  # text
-                headers["Content-Type"] = "text/plain"
-                payload = self._build_webhook_text_payload(data)
-
-            # 打印发送的内容（用于调试）
-            import json
-
-            if isinstance(payload, dict):
-                logger.info(f"📤 发送 Webhook 通知到: {webhook_url}")
-                logger.info(f"📋 请求方法: {webhook_method}")
-                logger.info(
-                    f"📦 发送内容: {json.dumps(payload, ensure_ascii=False, indent=2)}"
-                )
-            else:
-                logger.info(f"📤 发送 Webhook 通知到: {webhook_url}")
-                logger.info(f"📋 请求方法: {webhook_method}")
-                logger.info(f"📦 发送内容: {payload}")
-
-            # 发送请求
-            if webhook_method == "POST":
-                if webhook_format == "json":
-                    response = requests.post(
-                        webhook_url, json=payload, headers=headers, timeout=10
-                    )
-                else:
-                    response = requests.post(
-                        webhook_url, data=payload, headers=headers, timeout=10
-                    )
-            else:  # GET
-                response = requests.get(
-                    webhook_url,
-                    params=payload if isinstance(payload, dict) else None,
-                    headers=headers,
-                    timeout=10,
-                )
-
-            if response.status_code < 300:
-                logger.info(
-                    f"✅ Webhook 通知发送成功，响应状态码: {response.status_code}"
-                )
-                return True
-            else:
-                error_msg = f"Webhook 返回非成功状态码: {response.status_code}"
-                logger.warning(f"⚠️  {error_msg}")
-                if raise_on_error:
-                    raise Exception(error_msg)
-                return False
-
-        except Exception as e:
-            logger.error(f"❌ Webhook 通知发送失败: {str(e)}")
-            if raise_on_error:
-                raise
-            return False
-
-    def _build_webhook_json_payload(self, data: dict[str, Any]) -> dict[str, Any]:
-        """构建 JSON 格式的 Webhook 载荷"""
-        webhook_template = self.config_manager.get(
-            "notification", "webhook_template", fallback=""
-        )
-
-        if webhook_template:
-            # 使用自定义模板
-            try:
-                import json
-
-                template = json.loads(webhook_template)
-                # 替换模板中的变量
-                return self._replace_template_variables(template, data)
-            except Exception as e:
-                logger.warning(f"自定义 Webhook 模板解析失败: {e}，使用默认格式")
-
-        # 默认格式
-        return {
-            "title": "🚨 Bangumi-Syncer 同步错误",
-            "type": data["error_type"],
-            "message": data["error_message"],
-            "timestamp": data["timestamp"],
-            "details": {
-                "user": data["user_name"],
-                "anime": data["title"],
-                "episode": f"S{data['season']:02d}E{data['episode']:02d}",
-                "source": data["source"],
-            },
-        }
-
-    def _build_webhook_text_payload(self, data: dict[str, Any]) -> str:
-        """构建文本格式的 Webhook 载荷"""
-        return f"""🚨 Bangumi-Syncer 同步错误
-
-时间: {data["timestamp"]}
-错误类型: {data["error_type"]}
-错误消息: {data["error_message"]}
-
-详细信息:
-- 用户: {data["user_name"]}
-- 番剧: {data["title"]}
-- 集数: S{data["season"]:02d}E{data["episode"]:02d}
-- 来源: {data["source"]}
-
-{data["additional_info"]}
-"""
-
     def _replace_template_variables(self, template: Any, data: dict[str, Any]) -> Any:
         """递归替换模板中的变量"""
         if isinstance(template, dict):
@@ -284,180 +61,6 @@ class Notifier:
             return re.sub(pattern, replace_match, template)
         else:
             return template
-
-    def _send_email(self, data: dict[str, Any], raise_on_error: bool = False) -> bool:
-        """
-        发送邮件通知
-
-        Args:
-            data: 通知数据
-            raise_on_error: 是否在错误时抛出异常（测试模式使用）
-
-        Returns:
-            是否发送成功
-        """
-        try:
-            # 获取邮件配置
-            smtp_server = self.config_manager.get(
-                "notification", "smtp_server", fallback=""
-            )
-            smtp_port = self.config_manager.get(
-                "notification", "smtp_port", fallback=587
-            )
-            smtp_username = self.config_manager.get(
-                "notification", "smtp_username", fallback=""
-            )
-            smtp_password = self.config_manager.get(
-                "notification", "smtp_password", fallback=""
-            )
-            smtp_use_tls = self.config_manager.get(
-                "notification", "smtp_use_tls", fallback=True
-            )
-
-            from_email = self.config_manager.get(
-                "notification", "email_from", fallback=smtp_username
-            )
-            to_email = self.config_manager.get("notification", "email_to", fallback="")
-
-            # 如果发件人为空，使用 SMTP 用户名
-            if not from_email:
-                from_email = smtp_username
-
-            if not from_email:
-                error_msg = "未配置发件人邮箱地址（email_from 或 smtp_username）"
-                logger.error(error_msg)
-                if raise_on_error:
-                    raise Exception(error_msg)
-                return False
-
-            if not to_email:
-                error_msg = "未配置收件人邮箱地址"
-                logger.error(error_msg)
-                if raise_on_error:
-                    raise Exception(error_msg)
-                return False
-
-            # 打印邮件配置信息
-            logger.info(f"📧 准备发送邮件通知到: {to_email}")
-
-            # 获取自定义邮件标题和模板文件路径
-            email_subject = self.config_manager.get(
-                "notification", "email_subject", fallback=""
-            )
-            email_template_file = self.config_manager.get(
-                "notification", "email_template_file", fallback=""
-            )
-
-            # 构建邮件
-            msg = MIMEMultipart("alternative")
-
-            # 使用自定义标题或默认标题
-            if email_subject:
-                subject = self._replace_template_variables(email_subject, data)
-            else:
-                subject = "[Bangumi-Syncer] 同步错误"
-
-            msg["Subject"] = subject
-            msg["From"] = from_email
-            msg["To"] = to_email
-            msg["Date"] = formatdate(localtime=True)
-
-            # 邮件正文 - 纯文本和HTML两种格式
-            text_content = self._build_email_text(data)
-            html_content = self._load_email_template(email_template_file, data)
-
-            # 添加纯文本部分
-            part1 = MIMEText(text_content, "plain", "utf-8")
-            msg.attach(part1)
-
-            # 添加HTML部分
-            part2 = MIMEText(html_content, "html", "utf-8")
-            msg.attach(part2)
-
-            # 根据端口和配置选择合适的连接方式
-            smtp_port_int = int(smtp_port)
-
-            # 465 端口必须使用 SSL（强制），587 端口使用 STARTTLS
-            if smtp_port_int == 465:
-                # 使用 SSL 连接（端口 465）
-                context = ssl.create_default_context()
-
-                server = smtplib.SMTP_SSL(
-                    smtp_server, smtp_port_int, timeout=30, context=context
-                )
-                try:
-                    server.set_debuglevel(0)
-                    if smtp_username and smtp_password:
-                        server.login(smtp_username, smtp_password)
-                    server.send_message(msg)
-                    server.quit()
-                except Exception as e:
-                    try:
-                        server.quit()
-                    except:
-                        pass
-                    raise e
-            else:
-                # 使用 STARTTLS 连接（端口 587 或其他）
-                server = smtplib.SMTP(smtp_server, smtp_port_int, timeout=30)
-                try:
-                    server.set_debuglevel(0)
-                    if smtp_use_tls:
-                        server.starttls()
-                    if smtp_username and smtp_password:
-                        server.login(smtp_username, smtp_password)
-                    server.send_message(msg)
-                    server.quit()
-                except Exception as e:
-                    try:
-                        server.quit()
-                    except:
-                        pass
-                    raise e
-
-            logger.info(f"✅ 邮件通知发送成功: {to_email}")
-            return True
-
-        except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"❌ 邮件认证失败: {str(e)}")
-            logger.error("请检查用户名和密码（QQ邮箱需要使用授权码，不是登录密码）")
-            if raise_on_error:
-                raise
-            return False
-        except smtplib.SMTPException as e:
-            logger.error(f"❌ SMTP 错误: {str(e)}")
-            if raise_on_error:
-                raise
-            return False
-        except Exception as e:
-            logger.error(f"❌ 邮件通知发送失败: {str(e)}")
-            logger.error(f"错误类型: {type(e).__name__}")
-            import traceback
-
-            logger.debug(f"详细错误:\n{traceback.format_exc()}")
-            if raise_on_error:
-                raise
-            return False
-
-    def _build_email_text(self, data: dict[str, Any]) -> str:
-        """构建纯文本邮件内容"""
-        return f"""Bangumi-Syncer 同步错误通知
-
-时间: {data["timestamp"]}
-错误类型: {data["error_type"]}
-错误消息: {data["error_message"]}
-
-详细信息:
-- 用户: {data["user_name"]}
-- 番剧: {data["title"]}
-- 集数: S{data["season"]:02d}E{data["episode"]:02d}
-- 来源: {data["source"]}
-
-{data["additional_info"]}
-
----
-此邮件由 Bangumi-Syncer 自动发送
-"""
 
     def _load_email_template(self, template_file: str, data: dict[str, Any]) -> str:
         """
@@ -519,7 +122,8 @@ class Notifier:
 
             # 替换模板中的变量
             html_content = self._replace_template_variables(template_content, data)
-            return html_content
+            # return html_content
+            return self._build_simple_email_html(data)
 
         except Exception as e:
             logger.error(f"加载邮件模板失败: {e}，使用最简单的内置模板")
@@ -528,19 +132,98 @@ class Notifier:
 
     def _build_simple_email_html(self, data: dict[str, Any]) -> str:
         """构建简单的 HTML 邮件内容（仅在模板文件完全无法加载时使用）"""
+        notification_type = data.get("notification_type", "未知")
+
+        # 根据通知类型设置标题颜色和图标
+        type_config = {
+            "request_received": {"color": "#0d6efd", "icon": "📥", "title": "收到同步请求"},
+            "bangumi_id_found": {"color": "#198754", "icon": "🔍", "title": "匹配到番剧"},
+            "mark_success": {"color": "#198754", "icon": "✅", "title": "同步成功"},
+            "mark_failed": {"color": "#dc3545", "icon": "❌", "title": "同步失败"},
+            "mark_skipped": {"color": "#6c757d", "icon": "⏭️", "title": "已看过，跳过"},
+            "config_error": {"color": "#ffc107", "icon": "⚙️", "title": "配置错误"},
+            "anime_not_found": {"color": "#fd7e14", "icon": "🔍", "title": "未找到番剧"},
+            "episode_not_found": {"color": "#fd7e14", "icon": "📺", "title": "未找到剧集"},
+            "api_auth_error": {"color": "#dc3545", "icon": "🔐", "title": "API认证失败"},
+            "api_error": {"color": "#dc3545", "icon": "🌐", "title": "API错误"},
+            "api_retry_failed": {"color": "#dc3545", "icon": "🔄", "title": "API重试失败"},
+            "ip_locked": {"color": "#dc3545", "icon": "🔒", "title": "IP被锁定"},
+        }
+
+        config = type_config.get(notification_type, {"color": "#6c757d", "icon": "📢", "title": notification_type})
+
+        # 构建详细信息HTML
+        details_html = ""
+
+        # 通用信息
+        if data.get("timestamp"):
+            details_html += f'<p><strong>时间:</strong> {data["timestamp"]}</p>'
+
+        # 番剧相关信息
+        if data.get("title"):
+            details_html += f'<p><strong>番剧:</strong> {data["title"]}</p>'
+        if data.get("season", 0) > 0 or data.get("episode", 0) > 0:
+            details_html += f'<p><strong>集数:</strong> 第 {data.get("season", 0)} 季 第 {data.get("episode", 0)} 集</p>'
+        if data.get("user_name"):
+            details_html += f'<p><strong>用户:</strong> {data["user_name"]}</p>'
+        if data.get("source"):
+            details_html += f'<p><strong>来源:</strong> {data["source"]}</p>'
+
+        # 错误相关信息
+        if data.get("error_message"):
+            details_html += f'<p><strong>错误信息:</strong> {data["error_message"]}</p>'
+        if data.get("error_type"):
+            details_html += f'<p><strong>错误类型:</strong> {data["error_type"]}</p>'
+
+        # API相关信息
+        if data.get("status_code"):
+            details_html += f'<p><strong>状态码:</strong> {data["status_code"]}</p>'
+        if data.get("url"):
+            details_html += f'<p><strong>URL:</strong> {data["url"]}</p>'
+
+        # ID相关信息
+        if data.get("subject_id"):
+            details_html += f'<p><strong>Subject ID:</strong> {data["subject_id"]}</p>'
+        if data.get("episode_id"):
+            details_html += f'<p><strong>Episode ID:</strong> {data["episode_id"]}</p>'
+
+        # 动态内容（如果存在）
+        if data.get("dynamic_content"):
+            details_html += f'<div style="margin: 15px 0; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">{data["dynamic_content"]}</div>'
+
         return f"""<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"></head>
-<body style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-    <h2 style="color: #dc3545;">🚨 Bangumi-Syncer 同步错误</h2>
-    <p><strong>时间:</strong> {data["timestamp"]}</p>
-    <p><strong>错误类型:</strong> {data["error_type"]}</p>
-    <p><strong>错误消息:</strong> {data["error_message"]}</p>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            color: #333;
+            line-height: 1.6;
+        }}
+        h2 {{
+            color: {config["color"]};
+            margin-bottom: 20px;
+        }}
+        p {{
+            margin: 5px 0;
+        }}
+        strong {{
+            color: #495057;
+        }}
+        hr {{
+            border: none;
+            border-top: 1px solid #dee2e6;
+            margin: 20px 0;
+        }}
+    </style>
+</head>
+<body>
+    <h2>{config["icon"]} {config["title"]}</h2>
+    {details_html}
     <hr>
-    <p><strong>番剧:</strong> {data["title"]}</p>
-    <p><strong>集数:</strong> S{data["season"]}E{data["episode"]}</p>
-    <p><strong>用户:</strong> {data["user_name"]}</p>
-    <p><strong>来源:</strong> {data["source"]}</p>
+    <p style="color: #6c757d; font-size: 12px;">此邮件由 Bangumi-Syncer 自动发送</p>
 </body>
 </html>"""
 
