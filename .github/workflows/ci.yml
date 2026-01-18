@@ -1,0 +1,52 @@
+name: CI & Dev Build
+
+on:
+  push:
+    branches:
+      - 'main'    # 主分支推送触发测试
+    tags-ignore:
+      - 'v*'      # 忽略版本 Tag (交给 release.yml 处理)
+  pull_request:   # PR 也触发测试
+
+jobs:
+  dev_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # =========================================================
+      # 1. 动态设置镜像名 (关键步骤)
+      # =========================================================
+      - name: Set up Docker Image Name
+        run: |
+          # 获取当前仓库名 (如 User/Repo)，并转换为全小写
+          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "DOCKER_IMAGE=${REPO_NAME}" >> $GITHUB_ENV
+          echo "Current Docker Image Target: ${REPO_NAME}"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # =========================================================
+      # 2. 构建并加载到本地 (用于测试)
+      # =========================================================
+      - name: Build and Load
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true       # 加载到本地 Docker
+          tags: ${{ env.DOCKER_IMAGE }}:test-local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # =========================================================
+      # 3. 运行集成测试脚本
+      # =========================================================
+      - name: Run Integration Tests
+        run: |
+          chmod +x tests/integration/test_docker_perms.sh
+          ./tests/integration/test_docker_perms.sh "${{ env.DOCKER_IMAGE }}:test-local"
