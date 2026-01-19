@@ -353,9 +353,7 @@ class ConfigManager:
         else:
             # 字段不完整，删除旧配置但不创建新配置
             self._save_config(config)
-            logger.info(
-                "配置迁移：旧webhook配置字段不完整，已删除旧配置"
-            )
+            logger.info("配置迁移：旧webhook配置字段不完整，已删除旧配置")
 
     def _migrate_email_config(self) -> None:
         """将旧的邮件配置迁移到新的多邮件结构"""
@@ -432,9 +430,7 @@ class ConfigManager:
         else:
             # 字段不完整，删除旧配置但不创建新配置
             self._save_config(config)
-            logger.info(
-                "配置迁移：旧邮件配置字段不完整，已删除旧配置"
-            )
+            logger.info("配置迁移：旧邮件配置字段不完整，已删除旧配置")
 
 
 # 全局配置实例
