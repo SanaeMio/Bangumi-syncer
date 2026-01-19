@@ -122,9 +122,7 @@ class Notifier:
 
             # 替换模板中的变量
             html_content = self._replace_template_variables(template_content, data)
-            # return html_content
-            return self._build_simple_email_html(data)
-
+            return html_content
         except Exception as e:
             logger.error(f"加载邮件模板失败: {e}，使用最简单的内置模板")
             # 最后的 fallback：使用最简单的内置模板
