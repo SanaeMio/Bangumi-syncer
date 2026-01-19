@@ -317,38 +317,45 @@ class ConfigManager:
         webhook_headers = config.get("notification", "webhook_headers", fallback="")
         webhook_template = config.get("notification", "webhook_template", fallback="")
 
-        # 如果没有配置URL，跳过迁移
-        if not webhook_url:
-            logger.info("未检测到旧webhook配置，跳过迁移")
-            return
-
-        # 创建新的webhook-1配置段
-        if not config.has_section("webhook-1"):
-            config.add_section("webhook-1")
-
-        config.set("webhook-1", "id", "1")
-        config.set("webhook-1", "enabled", webhook_enabled)
-        config.set("webhook-1", "url", webhook_url)
-        config.set("webhook-1", "method", webhook_method)
-        config.set("webhook-1", "headers", webhook_headers)
-        config.set("webhook-1", "template", webhook_template)
-
-        # 迁移策略：只启用错误通知类型，保持原有行为
-        config.set("webhook-1", "types", "mark_failed")
-
         # 删除旧的webhook配置字段
-        config.remove_option("notification", "webhook_enabled")
-        config.remove_option("notification", "webhook_url")
-        config.remove_option("notification", "webhook_method")
-        config.remove_option("notification", "webhook_headers")
-        config.remove_option("notification", "webhook_template")
+        if config.has_option("notification", "webhook_enabled"):
+            config.remove_option("notification", "webhook_enabled")
+        if config.has_option("notification", "webhook_url"):
+            config.remove_option("notification", "webhook_url")
+        if config.has_option("notification", "webhook_method"):
+            config.remove_option("notification", "webhook_method")
+        if config.has_option("notification", "webhook_headers"):
+            config.remove_option("notification", "webhook_headers")
+        if config.has_option("notification", "webhook_template"):
+            config.remove_option("notification", "webhook_template")
 
-        # 保存配置
-        self._save_config(config)
+        if webhook_url and webhook_headers and webhook_template:
+            # 创建新的webhook-1配置段
+            if not config.has_section("webhook-1"):
+                config.add_section("webhook-1")
 
-        logger.info(
-            "配置迁移完成：旧webhook配置已迁移到webhook-1配置段（仅启用mark_failed类型）"
-        )
+            config.set("webhook-1", "id", "1")
+            config.set("webhook-1", "enabled", webhook_enabled)
+            config.set("webhook-1", "url", webhook_url)
+            config.set("webhook-1", "method", webhook_method)
+            config.set("webhook-1", "headers", webhook_headers)
+            config.set("webhook-1", "template", webhook_template)
+
+            # 迁移策略：只启用错误通知类型，保持原有行为
+            config.set("webhook-1", "types", "mark_failed")
+
+            # 保存配置
+            self._save_config(config)
+
+            logger.info(
+                "配置迁移完成：旧webhook配置已迁移到webhook-1配置段（仅启用mark_failed类型）"
+            )
+        else:
+            # 字段不完整，删除旧配置但不创建新配置
+            self._save_config(config)
+            logger.info(
+                "配置迁移：旧webhook配置字段不完整，已删除旧配置"
+            )
 
     def _migrate_email_config(self) -> None:
         """将旧的邮件配置迁移到新的多邮件结构"""
@@ -370,48 +377,64 @@ class ConfigManager:
             "notification", "email_template_file", fallback=""
         )
 
-        # 如果没有配置SMTP服务器，跳过迁移
-        if not smtp_server:
-            logger.info("未检测到旧邮件配置，跳过迁移")
-            return
-
-        # 创建新的email-1配置段
-        if not config.has_section("email-1"):
-            config.add_section("email-1")
-
-        config.set("email-1", "id", "1")
-        config.set("email-1", "enabled", email_enabled)
-        config.set("email-1", "smtp_server", smtp_server)
-        config.set("email-1", "smtp_port", smtp_port)
-        config.set("email-1", "smtp_username", smtp_username)
-        config.set("email-1", "smtp_password", smtp_password)
-        config.set("email-1", "smtp_use_tls", smtp_use_tls)
-        config.set("email-1", "email_from", email_from)
-        config.set("email-1", "email_to", email_to)
-        config.set("email-1", "email_subject", email_subject)
-        config.set("email-1", "email_template_file", email_template_file)
-
-        # 迁移策略：只启用错误通知类型，保持原有行为
-        config.set("email-1", "types", "mark_failed")
-
         # 删除旧的邮件配置字段
-        config.remove_option("notification", "email_enabled")
-        config.remove_option("notification", "smtp_server")
-        config.remove_option("notification", "smtp_port")
-        config.remove_option("notification", "smtp_username")
-        config.remove_option("notification", "smtp_password")
-        config.remove_option("notification", "smtp_use_tls")
-        config.remove_option("notification", "email_from")
-        config.remove_option("notification", "email_to")
-        config.remove_option("notification", "email_subject")
-        config.remove_option("notification", "email_template_file")
+        if config.has_option("notification", "email_enabled"):
+            config.remove_option("notification", "email_enabled")
+        if config.has_option("notification", "smtp_server"):
+            config.remove_option("notification", "smtp_server")
+        if config.has_option("notification", "smtp_port"):
+            config.remove_option("notification", "smtp_port")
+        if config.has_option("notification", "smtp_username"):
+            config.remove_option("notification", "smtp_username")
+        if config.has_option("notification", "smtp_password"):
+            config.remove_option("notification", "smtp_password")
+        if config.has_option("notification", "smtp_use_tls"):
+            config.remove_option("notification", "smtp_use_tls")
+        if config.has_option("notification", "email_from"):
+            config.remove_option("notification", "email_from")
+        if config.has_option("notification", "email_to"):
+            config.remove_option("notification", "email_to")
+        if config.has_option("notification", "email_subject"):
+            config.remove_option("notification", "email_subject")
+        if config.has_option("notification", "email_template_file"):
+            config.remove_option("notification", "email_template_file")
 
-        # 保存配置
-        self._save_config(config)
+        # 删除notification配置空间
+        if config.has_section("notification"):
+            config.remove_section("notification")
 
-        logger.info(
-            "配置迁移完成：旧邮件配置已迁移到email-1配置段（仅启用mark_failed类型）"
-        )
+        if smtp_server and smtp_username and smtp_password and email_from:
+            # 创建新的email-1配置段
+            if not config.has_section("email-1"):
+                config.add_section("email-1")
+
+            config.set("email-1", "id", "1")
+            config.set("email-1", "enabled", email_enabled)
+            config.set("email-1", "smtp_server", smtp_server)
+            config.set("email-1", "smtp_port", smtp_port)
+            config.set("email-1", "smtp_username", smtp_username)
+            config.set("email-1", "smtp_password", smtp_password)
+            config.set("email-1", "smtp_use_tls", smtp_use_tls)
+            config.set("email-1", "email_from", email_from)
+            config.set("email-1", "email_to", email_to)
+            config.set("email-1", "email_subject", email_subject)
+            config.set("email-1", "email_template_file", email_template_file)
+
+            # 迁移策略：只启用错误通知类型，保持原有行为
+            config.set("email-1", "types", "mark_failed")
+
+            # 保存配置
+            self._save_config(config)
+
+            logger.info(
+                "配置迁移完成：旧邮件配置已迁移到email-1配置段（仅启用mark_failed类型）"
+            )
+        else:
+            # 字段不完整，删除旧配置但不创建新配置
+            self._save_config(config)
+            logger.info(
+                "配置迁移：旧邮件配置字段不完整，已删除旧配置"
+            )
 
 
 # 全局配置实例
