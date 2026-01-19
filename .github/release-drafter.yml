@@ -1,16 +1,18 @@
 name-template: '🌟 v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 categories:
-  - title: '🚀 Features'
+  - title: '✨ 新功能'
+    label: 'feature'
+  - title: '🐛 Bug修复'
+    label: 'bug'
+  - title: '🚀 优化'
     labels:
-      - 'feature'
-  - title: '🐛 Bug Fixes'
-    labels:
-      - 'fix'
-      - 'bugfix'
-      - 'bug'
-  - title: '🧰 Maintenance'
+      - 'perf'
+      - 'refactor'
+  - title: '🧰 维护相关'
     label: 'chore'
+  - title: '📚 文档更新'
+    label: 'docs'
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
 version-resolver:
@@ -25,16 +27,71 @@ version-resolver:
       - 'patch'
   default: patch
 autolabeler:
+  # Bug 修复
   - label: 'bug'
     branch:
       - '/fix\/.+/'
+      - '/bugfix\/.+/'
+      - '/hotfix\/.+/'
     title:
+      - '/(fix|修复|bug)/i'
+    body:
       - '/fix/i'
+  
+  # 新功能
   - label: 'feature'
     branch:
       - '/feature\/.+/'
+      - '/feat\/.+/'
     title:
+      - '/(feat|feature|新功能)/i'
+    body:
       - '/feature/i'
+  
+  # 文档更新
+  - label: 'docs'
+    branch:
+      - '/docs\/.+/'
+      - '/documentation\/.+/'
+    title:
+      - '/(docs|文档)/i'
+    files:
+      - '*.md'
+      - 'docs/**/*'
+      - 'README*'
+      - 'CHANGELOG*'
+  
+  # 性能优化
+  - label: 'perf'
+    branch:
+      - '/perf\/.+/'
+      - '/performance\/.+/'
+    title:
+      - '/(perf|performance|性能|优化)/i'
+  
+  # 代码重构
+  - label: 'refactor'
+    branch:
+      - '/refactor\/.+/'
+    title:
+      - '/(refactor|重构)/i'
+  
+  # 维护相关 (配置、依赖等)
+  - label: 'chore'
+    branch:
+      - '/chore\/.+/'
+      - '/deps\/.+/'
+      - '/dependencies\/.+/'
+    title:
+      - '/(chore|deps|依赖|配置|更新)/i'
+    files:
+      - 'package.json'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'Dockerfile'
+      - 'docker-compose*.yml'
+      - '.github/workflows/**/*'
 template: |
   ## Changes
 
