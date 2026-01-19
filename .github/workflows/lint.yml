@@ -1,0 +1,42 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    - name: 设置 Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: 安装 uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+    
+    - name: 安装依赖
+      run: |
+        uv sync --group dev
+    
+    - name: 运行 Ruff 检查
+      run: |
+        uv run ruff check . --output-format=github
+    
+    - name: 运行 Ruff 格式检查
+      run: |
+        uv run ruff format --check .
+    
+    - name: 运行 djLint 检查
+      run: |
+        uv run djlint templates/ --check
