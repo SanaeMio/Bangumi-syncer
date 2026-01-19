@@ -45,3 +45,13 @@ ignore = [
 [tool.ruff.lint.isort]
 # 自动合并同类 import
 combine-as-imports = true
+
+[tool.djlint]
+# 模板引擎类型
+profile = "jinja"
+
+# 缩进空格数
+indent = 4
+
+# 最大行长度
+max_line_length = 120
