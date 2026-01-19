@@ -122,9 +122,7 @@ class Notifier:
 
             # 替换模板中的变量
             html_content = self._replace_template_variables(template_content, data)
-            # return html_content
-            return self._build_simple_email_html(data)
-
+            return html_content
         except Exception as e:
             logger.error(f"加载邮件模板失败: {e}，使用最简单的内置模板")
             # 最后的 fallback：使用最简单的内置模板
@@ -136,56 +134,83 @@ class Notifier:
 
         # 根据通知类型设置标题颜色和图标
         type_config = {
-            "request_received": {"color": "#0d6efd", "icon": "📥", "title": "收到同步请求"},
-            "bangumi_id_found": {"color": "#198754", "icon": "🔍", "title": "匹配到番剧"},
+            "request_received": {
+                "color": "#0d6efd",
+                "icon": "📥",
+                "title": "收到同步请求",
+            },
+            "bangumi_id_found": {
+                "color": "#198754",
+                "icon": "🔍",
+                "title": "匹配到番剧",
+            },
             "mark_success": {"color": "#198754", "icon": "✅", "title": "同步成功"},
             "mark_failed": {"color": "#dc3545", "icon": "❌", "title": "同步失败"},
             "mark_skipped": {"color": "#6c757d", "icon": "⏭️", "title": "已看过，跳过"},
             "config_error": {"color": "#ffc107", "icon": "⚙️", "title": "配置错误"},
-            "anime_not_found": {"color": "#fd7e14", "icon": "🔍", "title": "未找到番剧"},
-            "episode_not_found": {"color": "#fd7e14", "icon": "📺", "title": "未找到剧集"},
-            "api_auth_error": {"color": "#dc3545", "icon": "🔐", "title": "API认证失败"},
+            "anime_not_found": {
+                "color": "#fd7e14",
+                "icon": "🔍",
+                "title": "未找到番剧",
+            },
+            "episode_not_found": {
+                "color": "#fd7e14",
+                "icon": "📺",
+                "title": "未找到剧集",
+            },
+            "api_auth_error": {
+                "color": "#dc3545",
+                "icon": "🔐",
+                "title": "API认证失败",
+            },
             "api_error": {"color": "#dc3545", "icon": "🌐", "title": "API错误"},
-            "api_retry_failed": {"color": "#dc3545", "icon": "🔄", "title": "API重试失败"},
+            "api_retry_failed": {
+                "color": "#dc3545",
+                "icon": "🔄",
+                "title": "API重试失败",
+            },
             "ip_locked": {"color": "#dc3545", "icon": "🔒", "title": "IP被锁定"},
         }
 
-        config = type_config.get(notification_type, {"color": "#6c757d", "icon": "📢", "title": notification_type})
+        config = type_config.get(
+            notification_type,
+            {"color": "#6c757d", "icon": "📢", "title": notification_type},
+        )
 
         # 构建详细信息HTML
         details_html = ""
 
         # 通用信息
         if data.get("timestamp"):
-            details_html += f'<p><strong>时间:</strong> {data["timestamp"]}</p>'
+            details_html += f"<p><strong>时间:</strong> {data['timestamp']}</p>"
 
         # 番剧相关信息
         if data.get("title"):
-            details_html += f'<p><strong>番剧:</strong> {data["title"]}</p>'
+            details_html += f"<p><strong>番剧:</strong> {data['title']}</p>"
         if data.get("season", 0) > 0 or data.get("episode", 0) > 0:
-            details_html += f'<p><strong>集数:</strong> 第 {data.get("season", 0)} 季 第 {data.get("episode", 0)} 集</p>'
+            details_html += f"<p><strong>集数:</strong> 第 {data.get('season', 0)} 季 第 {data.get('episode', 0)} 集</p>"
         if data.get("user_name"):
-            details_html += f'<p><strong>用户:</strong> {data["user_name"]}</p>'
+            details_html += f"<p><strong>用户:</strong> {data['user_name']}</p>"
         if data.get("source"):
-            details_html += f'<p><strong>来源:</strong> {data["source"]}</p>'
+            details_html += f"<p><strong>来源:</strong> {data['source']}</p>"
 
         # 错误相关信息
         if data.get("error_message"):
-            details_html += f'<p><strong>错误信息:</strong> {data["error_message"]}</p>'
+            details_html += f"<p><strong>错误信息:</strong> {data['error_message']}</p>"
         if data.get("error_type"):
-            details_html += f'<p><strong>错误类型:</strong> {data["error_type"]}</p>'
+            details_html += f"<p><strong>错误类型:</strong> {data['error_type']}</p>"
 
         # API相关信息
         if data.get("status_code"):
-            details_html += f'<p><strong>状态码:</strong> {data["status_code"]}</p>'
+            details_html += f"<p><strong>状态码:</strong> {data['status_code']}</p>"
         if data.get("url"):
-            details_html += f'<p><strong>URL:</strong> {data["url"]}</p>'
+            details_html += f"<p><strong>URL:</strong> {data['url']}</p>"
 
         # ID相关信息
         if data.get("subject_id"):
-            details_html += f'<p><strong>Subject ID:</strong> {data["subject_id"]}</p>'
+            details_html += f"<p><strong>Subject ID:</strong> {data['subject_id']}</p>"
         if data.get("episode_id"):
-            details_html += f'<p><strong>Episode ID:</strong> {data["episode_id"]}</p>'
+            details_html += f"<p><strong>Episode ID:</strong> {data['episode_id']}</p>"
 
         # 动态内容（如果存在）
         if data.get("dynamic_content"):
