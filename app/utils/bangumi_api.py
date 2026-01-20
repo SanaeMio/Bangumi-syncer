@@ -289,31 +289,63 @@ class BangumiApi:
 
                     raise e
 
+    def _check_auth_error(self, res):
+        """统一检查认证错误"""
+        if res.status_code == 401:
+            error_msg = "Bangumi API 认证失败: access_token可能已过期（有效期1年）或无效，请更新token"
+            logger.error(error_msg)
+
+            # 发送API认证失败通知（webhook和邮件）
+            try:
+                from .notifier import get_notifier
+
+                notifier = get_notifier()
+                notifier.send_notification_by_type(
+                    "api_auth_error",
+                    {
+                        "timestamp": datetime.datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "username": self.username,
+                        "status_code": res.status_code,
+                        "error_message": error_msg,
+                    },
+                )
+            except Exception as notify_error:
+                logger.error(f"发送API认证失败通知失败: {notify_error}")
+
+            raise ValueError(error_msg)
+        return res
+
     def get(self, path, params=None):
         logger.debug(
             f"BangumiApi GET请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else '无'}"
         )
-        return self._request_with_retry(
+        res = self._request_with_retry(
             "GET", self.req, f"{self.host}/{path}", params=params
         )
+        return self._check_auth_error(res)
 
     def post(self, path, _json, params=None):
         logger.debug(
             f"BangumiApi POST请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else '无'}"
         )
-        return self._request_with_retry(
+        res = self._request_with_retry(
             "POST", self.req, f"{self.host}/{path}", json=_json, params=params
         )
+        return self._check_auth_error(res)
 
     def put(self, path, _json, params=None):
-        return self._request_with_retry(
+        res = self._request_with_retry(
             "PUT", self.req, f"{self.host}/{path}", json=_json, params=params
         )
+        return self._check_auth_error(res)
 
     def patch(self, path, _json, params=None):
-        return self._request_with_retry(
+        res = self._request_with_retry(
             "PATCH", self.req, f"{self.host}/{path}", json=_json, params=params
         )
+        return self._check_auth_error(res)
 
     def get_me(self):
         res = self.get("me")
