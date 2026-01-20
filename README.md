@@ -37,9 +37,13 @@
 ## 🧰 安装
 
 ### Windows
-1. 请保证Python版本3.7以上，并安装以下依赖
+1. 请保证Python版本3.9以上，并安装以下依赖
 ```
 pip install requests fastapi pydantic uvicorn[standard] ijson jinja2 python-multipart
+```
+或使用 `requirements.txt` 文件安装：
+```
+pip install -r requirements.txt
 ```
 
 2. 下载 zip并解压到任意文件夹。 [发布页](https://github.com/SanaeMio/Bangumi-syncer/releases)
@@ -210,7 +214,8 @@ services:
   "season": 季度,
   "episode": 集数,
   "release_date": 发布日期（取不到第一集的给当前集数的也行，格式YYYY-MM-DD）,
-  "user_name": 用户名（同步发起方的用户名）
+  "user_name": 用户名（同步发起方的用户名）,
+  "source": "custom（根据实际情况定义一个来源名称）"
 }
 ```
 比如
@@ -222,7 +227,8 @@ services:
   "season": 2,
   "episode": 12,
   "release_date": "2023-04-01",
-  "user_name": "SanaeMio"
+  "user_name": "SanaeMio",
+  "source": "custom（根据实际情况定义一个来源名称）"
 }
 ```
 3. 将以上json发送到`http://{ip}:8000/Custom`，ip根据本机情况填写
@@ -250,7 +256,7 @@ services:
 6. `Data`中展开`Watched`，在`JSON Data`中填写如下通知模版，然后点击右下角`Save`保存设置
 
 ```bash
-{"media_type": "{media_type}", "title": "{show_name}", "ori_title": " ", "season": "{season_num}", "episode": "{episode_num}", "release_date": "{air_date}", "user_name": "{username}, "source": "plex"}
+{"media_type": "{media_type}", "title": "{show_name}", "ori_title": " ", "season": "{season_num}", "episode": "{episode_num}", "release_date": "{air_date}", "user_name": "{username}", "source": "plex"}
 ```
 
 ![](https://p.sda1.dev/16/6870cf7c4167203114bc4df7eac4b41a/5.jpg)
