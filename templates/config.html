@@ -2324,12 +2324,11 @@ async function testWebhook(webhookId) {
                             </div>
                             <div class="col-md-6">
                                 <label for="email-smtp-password-input" class="form-label fw-semibold">
-                                    <i class="bi bi-key me-1"></i>SMTP 密码/授权码 <span class="text-danger">*</span>
+                                    <i class="bi bi-key me-1"></i>SMTP 密码/授权码 <span class="text-danger" id="email-password-required">*</span>
                                 </label>
                                 <input type="password"
                                        class="form-control"
                                        id="email-smtp-password-input"
-                                       required
                                        placeholder="授权码或密码">
                             </div>
                         </div>
@@ -2618,11 +2617,15 @@ function showAddEmailModal() {
     document.getElementById('email-smtp-port-input').value = '465';
     document.getElementById('email-smtp-username-input').value = '';
     document.getElementById('email-smtp-password-input').value = '';
+    document.getElementById('email-smtp-password-input').placeholder = '授权码或密码';
     document.getElementById('email-from-input').value = '';
     document.getElementById('email-to-input').value = '';
     document.getElementById('email-smtp-use-tls-input').checked = true;
     document.getElementById('email-subject-input').value = '';
     document.getElementById('email-template-file-input').value = '';
+    
+    // 新建时密码为必填
+    document.getElementById('email-password-required').style.display = 'inline';
 
     // 重置复选框
     const checkboxes = document.querySelectorAll('[id^="email-type-"]');
@@ -2650,7 +2653,12 @@ async function showEditEmailModal(emailId) {
                 document.getElementById('email-smtp-server-input').value = email.smtp_server;
                 document.getElementById('email-smtp-port-input').value = email.smtp_port;
                 document.getElementById('email-smtp-username-input').value = email.smtp_username;
-                document.getElementById('email-smtp-password-input').value = email.smtp_password === '******' ? '' : email.smtp_password;
+                // 保留密码掩码，用户可以选择修改或保持不变
+                document.getElementById('email-smtp-password-input').value = email.smtp_password || '';
+                // 编辑时提示用户可以不修改密码
+                document.getElementById('email-smtp-password-input').placeholder = '留空则保持原密码不变';
+                // 编辑时密码不是必填
+                document.getElementById('email-password-required').style.display = 'none';
                 document.getElementById('email-from-input').value = email.email_from;
                 document.getElementById('email-to-input').value = email.email_to;
                 document.getElementById('email-smtp-use-tls-input').checked = email.smtp_use_tls;
@@ -2680,12 +2688,13 @@ async function showEditEmailModal(emailId) {
 // 保存邮件配置
 async function saveEmailConfig() {
     const emailId = document.getElementById('email-id').value;
+    const passwordValue = document.getElementById('email-smtp-password-input').value;
+    
     const emailData = {
         enabled: document.getElementById('email-enabled-input').checked,
         smtp_server: document.getElementById('email-smtp-server-input').value,
         smtp_port: parseInt(document.getElementById('email-smtp-port-input').value),
         smtp_username: document.getElementById('email-smtp-username-input').value,
-        smtp_password: document.getElementById('email-smtp-password-input').value,
         email_from: document.getElementById('email-from-input').value,
         email_to: document.getElementById('email-to-input').value,
         smtp_use_tls: document.getElementById('email-smtp-use-tls-input').checked,
@@ -2693,10 +2702,21 @@ async function saveEmailConfig() {
         email_template_file: document.getElementById('email-template-file-input').value,
         types: Array.from(document.querySelectorAll('[id^="email-type-"]:checked')).map(cb => cb.value).join(',') || 'all'
     };
+    
+    // 只有当密码不是掩码且不为空时才添加到请求数据中
+    if (passwordValue && passwordValue !== '******') {
+        emailData.smtp_password = passwordValue;
+    }
 
     // 验证必填字段
-    if (!emailData.smtp_server || !emailData.smtp_username || !emailData.smtp_password || !emailData.email_to) {
+    if (!emailData.smtp_server || !emailData.smtp_username || !emailData.email_to) {
         showAlert('请填写所有必填字段', 'warning');
+        return;
+    }
+    
+    // 新建时必须填写密码
+    if (!emailId && !emailData.smtp_password) {
+        showAlert('请填写 SMTP 密码/授权码', 'warning');
         return;
     }
 

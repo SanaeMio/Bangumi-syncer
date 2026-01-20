@@ -513,7 +513,12 @@ async def update_email(
             config.set(section_name, "smtp_port", str(email_data.smtp_port))
         if email_data.smtp_username is not None:
             config.set(section_name, "smtp_username", email_data.smtp_username)
-        if email_data.smtp_password is not None:
+        # 只有当密码不为空且不是掩码时才更新密码
+        if (
+            email_data.smtp_password is not None
+            and email_data.smtp_password.strip()
+            and email_data.smtp_password != "******"
+        ):
             config.set(section_name, "smtp_password", email_data.smtp_password)
         if email_data.smtp_use_tls is not None:
             config.set(section_name, "smtp_use_tls", str(email_data.smtp_use_tls))
