@@ -199,12 +199,19 @@ class SyncService:
                 return SyncResponse(status="error", message="bangumi配置错误")
 
             # 查询bangumi番剧指定季度指定集数信息
-            bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
-                subject_id=subject_id,
-                target_season=item.season,
-                target_ep=item.episode,
-                is_season_subject_id=is_season_matched_id,
-            )
+            try:
+                bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
+                    subject_id=subject_id,
+                    target_season=item.season,
+                    target_ep=item.episode,
+                    is_season_subject_id=is_season_matched_id,
+                )
+            except ValueError as ve:
+                # 捕获认证错误（通知已在 BangumiApi 中发送）
+                if "认证失败" in str(ve) or "access_token" in str(ve):
+                    return SyncResponse(status="error", message=str(ve))
+                else:
+                    raise ve
 
             if not bgm_ep_id:
                 logger.error(
@@ -218,7 +225,15 @@ class SyncService:
             )
 
             # 标记为看过
-            mark_status = self._retry_mark_episode(bgm, bgm_se_id, bgm_ep_id)
+            try:
+                mark_status = self._retry_mark_episode(bgm, bgm_se_id, bgm_ep_id)
+            except ValueError as ve:
+                # 捕获认证错误（通知已在 BangumiApi 中发送）
+                if "认证失败" in str(ve) or "access_token" in str(ve):
+                    return SyncResponse(status="error", message=str(ve))
+                else:
+                    raise ve
+
             result_message = ""
 
             if mark_status == 0:
