@@ -14,9 +14,25 @@ if [ "$(id -u)" = "0" ]; then
     echo "配置用户权限: UID=${PUID}, GID=${PGID}"
 
     # 检查并修改用户组ID（如果PGID不等于默认值）
-    if [ "$(id -g appuser)" != "${PGID}" ]; then
-        echo "调整用户组ID为 ${PGID}..."
-        groupmod -g ${PGID} appuser
+    CURRENT_GID=$(id -g appuser)
+    if [ "${CURRENT_GID}" != "${PGID}" ]; then
+        echo "需调整用户组ID为 ${PGID}..."
+        
+        # 1. 检查目标 GID 是否已被占用
+        EXISTING_GROUP_NAME=$(getent group ${PGID} | cut -d: -f1)
+        
+        if [ -n "${EXISTING_GROUP_NAME}" ]; then
+            # --- 分支 A: 组已存在 (例如 users 组) ---
+            echo "注意: GID ${PGID} 已被系统组 '${EXISTING_GROUP_NAME}' 占用。"
+            echo "策略: 不修改组定义，直接将 appuser 的主组改为 '${EXISTING_GROUP_NAME}'。"
+            
+            # 使用 usermod -g 直接修改用户的主组
+            usermod -g ${PGID} appuser
+        else
+            # --- 分支 B: 组不存在 (安全) ---
+            echo "策略: 目标 GID 未占用，修改 appuser 组 ID。"
+            groupmod -g ${PGID} appuser
+        fi
     fi
 
     # 检查并修改用户ID（如果PUID不等于默认值）
@@ -26,6 +42,7 @@ if [ "$(id -u)" = "0" ]; then
     fi
 
     # 确保挂载目录的所有权正确（以root身份运行，可以修改目录所有权）
+    # 注意：指定 PGID 时，容器启动时会尝试将数据目录的所有权修改为该 GID。
     echo "设置目录所有权..."
     chown -R ${PUID}:${PGID} /app/config /app/logs /app/data /app/config_backups 2>/dev/null || true
 
