@@ -4,7 +4,7 @@
 """
 
 # 应用版本信息
-VERSION = "3.4.0"
+VERSION = "3.4.3"
 VERSION_NAME = "Bangumi-Syncer"
 VERSION_DESCRIPTION = "自动同步Bangumi观看记录"
 
