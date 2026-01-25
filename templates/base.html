@@ -66,6 +66,12 @@
                                 <i class="bi bi-file-text me-2"></i>日志管理
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
+                               href="/trakt/config">
+                                <i class="bi bi-tv me-2"></i>Trakt 同步
+                            </a>
+                        </li>
                     </ul>
                     <ul class="navbar-nav">
                         <li class="nav-item dropdown">
@@ -146,6 +152,13 @@
                                    href="/logs">
                                     <i class="bi bi-file-text me-2"></i>
                                     日志管理
+                                </a>
+                            </li>
+                            <li class="nav-item mb-1">
+                                <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
+                                   href="/trakt/config">
+                                    <i class="bi bi-tv me-2"></i>
+                                    Trakt 同步
                                 </a>
                             </li>
                         </ul>

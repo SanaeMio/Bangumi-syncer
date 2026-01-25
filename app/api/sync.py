@@ -159,7 +159,7 @@ async def test_sync(
             elapsed_time = round(time.time() - start_time, 2)
 
             # 精简返回信息
-            response_data = result.dict()
+            response_data = result.model_dump()
             response_data["elapsed_time"] = f"{elapsed_time}秒"
             response_data["test_info"] = {
                 "title": test_item.title,
@@ -203,6 +203,33 @@ async def get_sync_records(
     except Exception as e:
         logger.error(f"获取同步记录失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取同步记录失败: {str(e)}")
+
+
+@router.get("/sync/history")
+async def get_sync_history(
+    limit: int = Query(20, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    source_prefix: str = Query("trakt"),
+):
+    """获取同步历史（前端兼容接口）
+
+    注意：此端点为前端 Trakt 配置页面提供兼容接口，
+    直接返回前端期望的数据格式，不包含状态包装。
+    """
+    try:
+        result = database_manager.get_sync_records(
+            limit=limit,
+            offset=offset,
+            source_prefix=source_prefix,
+        )
+
+        # 前端期望直接返回数据库结果（包含 records 字段）
+        # 而不是 {"status": "success", "data": result} 格式
+        return result
+    except Exception as e:
+        logger.error(f"获取同步历史失败: {e}")
+        # 返回空结果而不是抛出异常，避免前端报错
+        return {"records": [], "total": 0, "limit": limit, "offset": offset}
 
 
 @router.get("/records/{record_id}")
@@ -284,7 +311,7 @@ async def retry_sync_record(
             )
         # 如果重试仍然失败，保持原状态不变
 
-        return {"status": "success", "message": "重试完成", "data": result.dict()}
+        return {"status": "success", "message": "重试完成", "data": result.model_dump()}
 
     except HTTPException:
         raise

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Trakt 授权失败 - Bangumi Syncer</title>
+        <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+        <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+        <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .error-container {
+            max-width: 500px;
+            margin: 100px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .error-icon {
+            font-size: 4rem;
+            color: #dc3545;
+            margin-bottom: 20px;
+        }
+        .btn-retry {
+            margin-top: 20px;
+        }
+        </style>
+    </head>
+    <body>
+        <div class="error-container">
+            <div class="error-icon">
+                <i class="bi bi-x-circle-fill"></i>
+            </div>
+            <h2>授权失败</h2>
+            {% if message %}
+                <div class="alert alert-danger mt-3">{{ message }}</div>
+            {% else %}
+                <p class="text-muted">Trakt.tv 授权过程中出现错误。</p>
+            {% endif %}
+            <div class="mt-4">
+                <button id="close-button" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-2"></i>关闭窗口
+                </button>
+                <button id="retry-button" class="btn btn-primary ms-2 btn-retry">
+                    <i class="bi bi-arrow-clockwise me-2"></i>重试授权
+                </button>
+            </div>
+        </div>
+        <script>
+        // 尝试通知父窗口授权失败
+        try {
+            if (window.opener && !window.opener.closed) {
+                // 发送消息给父窗口
+                window.opener.postMessage({
+                    type: 'trakt_auth_error',
+                    message: '{{ message }}',
+                    timestamp: Date.now()
+                }, window.location.origin);
+            }
+        } catch (e) {
+            console.log('无法与父窗口通信:', e);
+        }
+
+        // 关闭窗口按钮
+        document.getElementById('close-button').addEventListener('click', function() {
+            window.close();
+        });
+
+        // 重试按钮
+        document.getElementById('retry-button').addEventListener('click', function() {
+            // 尝试重新打开授权页面
+            try {
+                if (window.opener && !window.opener.closed) {
+                    // 通知父窗口重试
+                    window.opener.postMessage({
+                        type: 'trakt_auth_retry',
+                        timestamp: Date.now()
+                    }, window.location.origin);
+                }
+            } catch (e) {
+                console.log('无法与父窗口通信:', e);
+            }
+            window.close();
+        });
+        </script>
+    </body>
+</html>

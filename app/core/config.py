@@ -224,6 +224,79 @@ class ConfigManager:
 
         return user_mappings
 
+    def get_trakt_config(self) -> dict[str, Any]:
+        """获取 Trakt 配置"""
+        config = self.get_config_parser()
+
+        # 检查 trakt 节是否存在
+        if not config.has_section("trakt"):
+            return {}
+
+        trakt_config = self.get_section("trakt")
+
+        # 确保配置有默认值
+        default_config = {
+            "client_id": "",
+            "client_secret": "",
+            "redirect_uri": "http://localhost:8000/api/trakt/auth/callback",
+            "default_sync_interval": "0 */6 * * *",
+            "default_enabled": True,
+        }
+
+        # 合并配置，确保所有键都存在
+        for key, default_value in default_config.items():
+            if key not in trakt_config:
+                trakt_config[key] = default_value
+            elif key == "default_enabled":
+                # 转换布尔值
+                value = trakt_config[key]
+                if isinstance(value, str):
+                    trakt_config[key] = value.lower() in (
+                        "true",
+                        "1",
+                        "yes",
+                        "on",
+                        "enabled",
+                    )
+                else:
+                    trakt_config[key] = bool(value)
+
+        return trakt_config
+
+    def get_scheduler_config(self) -> dict[str, Any]:
+        """获取调度器配置"""
+        config = self.get_config_parser()
+
+        # 检查 scheduler 节是否存在
+        if not config.has_section("scheduler"):
+            return {}
+
+        scheduler_config = self.get_section("scheduler")
+
+        # 确保配置有默认值并转换类型
+        default_config = {
+            "startup_delay": 30,
+            "max_concurrent_syncs": 3,
+            "job_timeout": 300,
+            "max_retries": 3,
+            "retry_delay": 60,
+        }
+
+        # 合并配置并转换类型
+        result_config = {}
+        for key, default_value in default_config.items():
+            value = scheduler_config.get(key)
+            if value is None or value == "":
+                result_config[key] = default_value
+            else:
+                # 转换为整数
+                try:
+                    result_config[key] = int(value)
+                except (ValueError, TypeError):
+                    result_config[key] = default_value
+
+        return result_config
+
     def get_all_config(self) -> dict[str, dict[str, Any]]:
         """获取所有配置"""
         config = self.get_config_parser()

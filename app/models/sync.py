@@ -34,21 +34,25 @@ class PlexWebhookData(BaseModel):
     # 允许额外字段
     model_config = {"extra": "allow"}
 
-    event: str = Field(..., description="事件类型", example="media.scrobble")
+    event: str = Field(
+        ..., description="事件类型", json_schema_extra={"example": "media.scrobble"}
+    )
     Account: dict[str, Any] = Field(
-        ..., description="账户信息", example={"title": "用户名"}
+        ..., description="账户信息", json_schema_extra={"example": {"title": "用户名"}}
     )
     Metadata: dict[str, Any] = Field(
         ...,
         description="媒体元数据",
-        example={
-            "type": "episode",
-            "title": "第01话",
-            "grandparentTitle": "番剧名称",
-            "originalTitle": "Original Title",
-            "parentIndex": 1,
-            "index": 1,
-            "originallyAvailableAt": "2024-01-01",
+        json_schema_extra={
+            "example": {
+                "type": "episode",
+                "title": "第01话",
+                "grandparentTitle": "番剧名称",
+                "originalTitle": "Original Title",
+                "parentIndex": 1,
+                "index": 1,
+                "originallyAvailableAt": "2024-01-01",
+            }
         },
     )
 
@@ -66,20 +70,26 @@ class EmbyWebhookData(BaseModel):
     model_config = {"extra": "allow"}
 
     # 核心必需字段
-    Event: str = Field(..., description="事件类型", example="item.markplayed")
+    Event: str = Field(
+        ..., description="事件类型", json_schema_extra={"example": "item.markplayed"}
+    )
     User: dict[str, Any] = Field(
-        ..., description="用户信息", example={"Name": "用户名", "Id": "user-id"}
+        ...,
+        description="用户信息",
+        json_schema_extra={"example": {"Name": "用户名", "Id": "user-id"}},
     )
     Item: dict[str, Any] = Field(
         ...,
         description="媒体项目信息",
-        example={
-            "Type": "Episode",
-            "SeriesName": "番剧名称",
-            "ParentIndexNumber": 1,
-            "IndexNumber": 1,
-            "PremiereDate": "2024-01-01T00:00:00.0000000Z",
-            "Name": "剧集名称",
+        json_schema_extra={
+            "example": {
+                "Type": "Episode",
+                "SeriesName": "番剧名称",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+                "PremiereDate": "2024-01-01T00:00:00.0000000Z",
+                "Name": "剧集名称",
+            }
         },
     )
 
@@ -89,7 +99,9 @@ class EmbyWebhookData(BaseModel):
     Date: Optional[str] = Field(None, description="通知日期")
     Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
     PlaybackInfo: Optional[dict[str, Any]] = Field(
-        None, description="播放信息", example={"PlayedToCompletion": True}
+        None,
+        description="播放信息",
+        json_schema_extra={"example": {"PlayedToCompletion": True}},
     )
 
 
@@ -99,16 +111,28 @@ class JellyfinWebhookData(BaseModel):
     # 允许额外字段
     model_config = {"extra": "allow"}
 
-    NotificationType: str = Field(..., description="通知类型", example="PlaybackStop")
-    PlayedToCompletion: str = Field(..., description="是否播放完成", example="True")
-    media_type: str = Field(..., description="媒体类型", example="episode")
-    title: str = Field(..., description="番剧标题", example="番剧名称")
-    ori_title: str = Field(..., description="原始标题", example="Original Title")
-    season: int = Field(..., description="季数", example=1)
-    episode: int = Field(..., description="集数", example=1)
-    user_name: str = Field(..., description="用户名", example="用户名")
+    NotificationType: str = Field(
+        ..., description="通知类型", json_schema_extra={"example": "PlaybackStop"}
+    )
+    PlayedToCompletion: str = Field(
+        ..., description="是否播放完成", json_schema_extra={"example": "True"}
+    )
+    media_type: str = Field(
+        ..., description="媒体类型", json_schema_extra={"example": "episode"}
+    )
+    title: str = Field(
+        ..., description="番剧标题", json_schema_extra={"example": "番剧名称"}
+    )
+    ori_title: str = Field(
+        ..., description="原始标题", json_schema_extra={"example": "Original Title"}
+    )
+    season: int = Field(..., description="季数", json_schema_extra={"example": 1})
+    episode: int = Field(..., description="集数", json_schema_extra={"example": 1})
+    user_name: str = Field(
+        ..., description="用户名", json_schema_extra={"example": "用户名"}
+    )
     release_date: Optional[str] = Field(
-        None, description="发行日期", example="2024-01-01"
+        None, description="发行日期", json_schema_extra={"example": "2024-01-01"}
     )
 
 
