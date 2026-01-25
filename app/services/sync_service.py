@@ -513,9 +513,7 @@ class SyncService:
                     if item.season > 1:
                         if date_matched:
                             # 通过日期匹配找到的，高可信度，直接标记为特定季度ID
-                            logger.debug(
-                                f"通过日期匹配找到番剧，标记为可信的季度ID"
-                            )
+                            logger.debug("通过日期匹配找到番剧，标记为可信的季度ID")
                             is_season_matched_id = True
                         else:
                             logger.debug(
