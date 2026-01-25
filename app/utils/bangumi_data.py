@@ -248,7 +248,7 @@ class BangumiData:
         ori_title: str = None,
         release_date: str = None,
         season: int = 1,
-    ) -> Optional[tuple[str, str]]:
+    ) -> Optional[tuple[str, str, bool]]:
         """
         根据标题和其他信息查找 bangumi id
 
@@ -259,7 +259,8 @@ class BangumiData:
             season: 季度，默认为 1（第一季）
 
         Returns:
-            找到匹配的 (bangumi_id, matched_title) 或 None
+            找到匹配的 (bangumi_id, matched_title, date_matched) 或 None
+            date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
         """
         logger.debug(
             f"正在查找番剧 ID: {title=}, {ori_title=}, {release_date=}, {season=}"
@@ -288,7 +289,7 @@ class BangumiData:
 
         # 使用优化的匹配算法，避免重复计算
         result = self._find_bangumi_id_optimized(
-            title, ori_title, release_date, original_title
+            title, ori_title, release_date, original_title, season
         )
         if result:
             return result
@@ -300,11 +301,13 @@ class BangumiData:
         ori_title: str = None,
         release_date: str = None,
         original_title: str = None,
-    ) -> Optional[tuple[str, str]]:
+        season: int = 1,
+    ) -> Optional[tuple[str, str, bool]]:
         """优化的番剧ID查找算法，避免重复计算相似度
 
         Returns:
-            Optional[tuple[str, str]]: (bangumi_id, matched_title) 或 None
+            Optional[tuple[str, str, bool]]: (bangumi_id, matched_title, date_matched) 或 None
+            date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
         """
 
         # 首先检查完全匹配
@@ -364,23 +367,38 @@ class BangumiData:
                 matches_of_same_type = [m for m in exact_matches if m[2] == match_type]
 
                 if len(matches_of_same_type) > 1:
+                    logger.debug(
+                        f"发现 {len(matches_of_same_type)} 个相同类型的匹配，使用日期进行进一步筛选"
+                    )
                     closest_match = None
                     min_diff = float("inf")
 
                     for match_item, match_id, _ in matches_of_same_type:
                         if "begin" in match_item:
                             diff = self._date_diff(match_item["begin"], release_date)
+                            logger.debug(
+                                f"  候选: {match_item.get('title', '')} (ID: {match_id}), "
+                                f"日期: {match_item['begin']}, 与目标日期差距: {diff}天"
+                            )
                             if diff < min_diff:
                                 min_diff = diff
                                 closest_match = (match_item, match_id)
 
                     if closest_match:
                         logger.debug(
-                            f"找到最佳日期匹配的番剧: {closest_match[0].get('title', '')}, bangumi_id: {closest_match[1]}"
+                            f"找到最佳日期匹配的番剧: {closest_match[0].get('title', '')}, "
+                            f"bangumi_id: {closest_match[1]}, 日期差距: {min_diff}天"
                         )
                         # 获取匹配到的标题
                         matched_title = self._get_best_matched_title(closest_match[0])
-                        return (closest_match[1], matched_title)
+                        # 如果是通过日期匹配找到的，且是非第一季，标记为可信的季度ID
+                        date_matched = season > 1
+                        if date_matched:
+                            logger.info(
+                                f"通过日期匹配找到特定季度 (season={season})，"
+                                f"标记为可信的季度ID，跳过续集遍历"
+                            )
+                        return (closest_match[1], matched_title, date_matched)
 
             # 返回最高优先级的匹配结果
             result_item = exact_matches[0][0]
@@ -391,7 +409,8 @@ class BangumiData:
             )
             # 获取匹配到的标题
             matched_title = self._get_best_matched_title(result_item)
-            return (exact_matches[0][1], matched_title)
+            # 没有通过日期筛选，标记为非日期匹配
+            return (exact_matches[0][1], matched_title, False)
 
         # 处理部分匹配
         if partial_matches:
@@ -420,13 +439,14 @@ class BangumiData:
                 )
                 # 获取匹配到的标题
                 matched_title = self._get_best_matched_title(best_match)
-                return (bangumi_id, matched_title)
+                # 模糊匹配标记为非日期匹配
+                return (bangumi_id, matched_title, False)
 
         # 如果处理过标题，再用原始标题尝试一次
         if original_title and original_title != title:
             logger.debug(f"使用原始标题 {original_title} 再次尝试匹配")
             return self._find_bangumi_id_optimized(
-                original_title, ori_title, release_date, None
+                original_title, ori_title, release_date, None, season
             )
 
         logger.debug("未找到匹配的番剧 ID")
