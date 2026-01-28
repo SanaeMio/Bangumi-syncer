@@ -7,7 +7,6 @@ import re
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from typing import Any, Optional
 
 from ..core.config import config_manager
@@ -21,7 +20,7 @@ from ..utils.data_util import (
     extract_jellyfin_data,
     extract_plex_data,
 )
-from ..utils.notifier import get_notifier
+from ..utils.notifier import send_notify
 from .mapping_service import mapping_service
 
 
@@ -119,23 +118,7 @@ class SyncService:
             actual_source = item.source if item.source else source
             logger.info(f"接收到同步请求：{item}")
 
-            # ========== 新增：发送请求接收通知 ==========
-            try:
-                notifier = get_notifier()
-                notifier.send_notification_by_type(
-                    "request_received",
-                    {
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "user_name": item.user_name,
-                        "title": item.title,
-                        "season": item.season,
-                        "episode": item.episode,
-                        "source": actual_source,
-                    },
-                )
-            except Exception as notify_error:
-                logger.error(f"发送请求接收通知失败: {notify_error}")
-            # ========== 新增结束 ==========
+            send_notify("request_received", item, actual_source)
 
             # 基本验证
             if item.media_type != "episode":
@@ -171,26 +154,15 @@ class SyncService:
             # 查找番剧ID及其是否为特定季度ID的标记
             subject_id, is_season_matched_id = self._find_subject_id(item)
             if not subject_id:
+                send_notify(
+                    "anime_not_found",
+                    item,
+                    actual_source,
+                    error_message="未找到匹配的番剧",
+                )
                 return SyncResponse(status="error", message="未找到匹配的番剧")
 
-            # ========== 新增：发送Bangumi ID找到通知 ==========
-            try:
-                notifier = get_notifier()
-                notifier.send_notification_by_type(
-                    "bangumi_id_found",
-                    {
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "user_name": item.user_name,
-                        "title": item.title,
-                        "season": item.season,
-                        "episode": item.episode,
-                        "source": actual_source,
-                        "subject_id": subject_id,
-                    },
-                )
-            except Exception as notify_error:
-                logger.error(f"发送Bangumi ID找到通知失败: {notify_error}")
-            # ========== 新增结束 ==========
+            send_notify("bangumi_id_found", item, actual_source, subject_id=subject_id)
 
             # 获取对应用户的bangumi API实例
             bgm = self._get_bangumi_api_for_user(item.user_name)
@@ -217,6 +189,13 @@ class SyncService:
                 logger.error(
                     f"bgm: {subject_id=} {item.season=} {item.episode=}, 不存在或集数过多，跳过"
                 )
+                send_notify(
+                    "episode_not_found",
+                    item,
+                    actual_source,
+                    subject_id=subject_id,
+                    error_message="不存在或集数过多",
+                )
                 return SyncResponse(status="error", message="未找到对应的剧集")
 
             logger.debug(
@@ -242,25 +221,13 @@ class SyncService:
                     f"bgm: {item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
                 )
 
-                # ========== 新增：发送跳过通知 ==========
-                try:
-                    notifier = get_notifier()
-                    notifier.send_notification_by_type(
-                        "mark_skipped",
-                        {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "user_name": item.user_name,
-                            "title": item.title,
-                            "season": item.season,
-                            "episode": item.episode,
-                            "source": actual_source,
-                            "subject_id": bgm_se_id,
-                            "episode_id": bgm_ep_id,
-                        },
-                    )
-                except Exception as notify_error:
-                    logger.error(f"发送跳过通知失败: {notify_error}")
-                # ========== 新增结束 ==========
+                send_notify(
+                    "mark_skipped",
+                    item,
+                    actual_source,
+                    subject_id=bgm_se_id,
+                    episode_id=bgm_ep_id,
+                )
 
             elif mark_status == 1:
                 result_message = "已标记为看过"
@@ -268,25 +235,13 @@ class SyncService:
                     f"bgm: {item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
                 )
 
-                # ========== 新增：发送成功通知 ==========
-                try:
-                    notifier = get_notifier()
-                    notifier.send_notification_by_type(
-                        "mark_success",
-                        {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "user_name": item.user_name,
-                            "title": item.title,
-                            "season": item.season,
-                            "episode": item.episode,
-                            "source": actual_source,
-                            "subject_id": bgm_se_id,
-                            "episode_id": bgm_ep_id,
-                        },
-                    )
-                except Exception as notify_error:
-                    logger.error(f"发送成功通知失败: {notify_error}")
-                # ========== 新增结束 ==========
+                send_notify(
+                    "mark_success",
+                    item,
+                    actual_source,
+                    subject_id=bgm_se_id,
+                    episode_id=bgm_ep_id,
+                )
 
             else:
                 result_message = "已添加到收藏并标记为看过"
@@ -297,25 +252,13 @@ class SyncService:
                     f"bgm: {item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
                 )
 
-                # ========== 新增：发送成功通知 ==========
-                try:
-                    notifier = get_notifier()
-                    notifier.send_notification_by_type(
-                        "mark_success",
-                        {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "user_name": item.user_name,
-                            "title": item.title,
-                            "season": item.season,
-                            "episode": item.episode,
-                            "source": actual_source,
-                            "subject_id": bgm_se_id,
-                            "episode_id": bgm_ep_id,
-                        },
-                    )
-                except Exception as notify_error:
-                    logger.error(f"发送成功通知失败: {notify_error}")
-                # ========== 新增结束 ==========
+                send_notify(
+                    "mark_success",
+                    item,
+                    actual_source,
+                    subject_id=bgm_se_id,
+                    episode_id=bgm_ep_id,
+                )
 
             # 记录同步成功到数据库
             database_manager.log_sync_record(
@@ -357,30 +300,14 @@ class SyncService:
                 source=actual_source if "actual_source" in locals() else source,
             )
 
-            # ========== 修改：使用新的通知系统 ==========
-            try:
-                notifier = get_notifier()
-                notifier.send_notification_by_type(
-                    "mark_failed",
-                    {
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "user_name": item.user_name
-                        if "item" in locals()
-                        else "unknown",
-                        "title": item.title if "item" in locals() else "unknown",
-                        "season": item.season if "item" in locals() else 0,
-                        "episode": item.episode if "item" in locals() else 0,
-                        "source": actual_source
-                        if "actual_source" in locals()
-                        else source,
-                        "error_message": str(e),
-                        "error_type": "sync_error",
-                        "additional_info": f"完整错误信息: {traceback.format_exc()}",
-                    },
-                )
-            except Exception as notify_error:
-                logger.error(f"发送失败通知失败: {notify_error}")
-            # ========== 修改结束 ==========
+            send_notify(
+                "mark_failed",
+                item if "item" in locals() else None,
+                actual_source if "actual_source" in locals() else source,
+                error_message=str(e),
+                error_type="sync_error",
+                additional_info=f"完整错误信息: {traceback.format_exc()}",
+            )
 
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
 
@@ -410,20 +337,12 @@ class SyncService:
                 return False
         else:
             logger.error(f"不支持的同步模式: {mode}")
-            # 发送配置错误通知
-            try:
-                notifier = get_notifier()
-                notifier.send_notification_by_type(
-                    "config_error",
-                    {
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "error_message": f"不支持的同步模式: {mode}",
-                        "config_type": "sync_mode",
-                        "mode": mode,
-                    },
-                )
-            except Exception as notify_error:
-                logger.error(f"发送配置错误通知失败: {notify_error}")
+            send_notify(
+                "config_error",
+                error_message=f"不支持的同步模式: {mode}",
+                config_type="sync_mode",
+                mode=mode,
+            )
             return False
 
         return True

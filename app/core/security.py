@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import secrets
 import time
-from datetime import datetime
 from typing import Any, Optional
 
 from .config import config_manager
@@ -211,22 +210,15 @@ class SecurityManager:
             logger.warning(f"IP {ip} 因登录失败次数过多被锁定至 {lockout_time_str}")
 
             # 发送IP锁定通知
-            try:
-                from ..utils.notifier import get_notifier
+            from ..utils.notifier import send_notify
 
-                notifier = get_notifier()
-                notifier.send_notification_by_type(
-                    "ip_locked",
-                    {
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "ip": ip,
-                        "locked_until": lockout_time_str,
-                        "attempt_count": self.login_attempts[ip]["attempts"],
-                        "max_attempts": auth_config["max_login_attempts"],
-                    },
-                )
-            except Exception as e:
-                logger.error(f"发送IP锁定通知失败: {e}")
+            send_notify(
+                "ip_locked",
+                ip=ip,
+                locked_until=lockout_time_str,
+                attempt_count=self.login_attempts[ip]["attempts"],
+                max_attempts=auth_config["max_login_attempts"],
+            )
 
     def reset_login_attempts(self, ip: str) -> None:
         """重置登录尝试次数"""
