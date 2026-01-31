@@ -15,7 +15,7 @@ from ..core.database import database_manager
 from ..core.logging import logger
 from ..models.sync import CustomItem, SyncResponse
 from ..utils.bangumi_api import BangumiApi
-from ..utils.bangumi_data import BangumiData
+from ..utils.bangumi_data import BangumiData, bangumi_data
 from ..utils.data_util import (
     extract_emby_data,
     extract_jellyfin_data,
@@ -321,7 +321,7 @@ class SyncService:
             database_manager.log_sync_record(
                 user_name=item.user_name,
                 title=item.title,
-                ori_title=item.ori_title,
+                ori_title=item.ori_title or "",
                 season=item.season,
                 episode=item.episode,
                 subject_id=bgm_se_id,
@@ -556,7 +556,9 @@ class SyncService:
                 premiere_date = item.release_date[:10]
 
             bgm_data = bgm.bgm_search(
-                title=item.title, ori_title=item.ori_title, premiere_date=premiere_date
+                title=item.title,
+                ori_title=item.ori_title,
+                release_date=release_date,
             )
             if not bgm_data:
                 logger.error(
@@ -665,6 +667,8 @@ class SyncService:
                         f"标记剧集失败，已达到最大重试次数 {max_retries}: {str(e)}"
                     )
                     raise e
+        # This line should never be reached due to the loop logic
+        return 0  # pragma: no cover
 
     async def _retry_mark_episode_async(
         self, bgm_api: BangumiApi, subject_id: str, ep_id: str, max_retries: int = 3
@@ -695,6 +699,8 @@ class SyncService:
                         f"异步标记剧集失败，已达到最大重试次数 {max_retries}: {str(e)}"
                     )
                     raise e
+        # This line should never be reached due to the loop logic
+        return 0  # pragma: no cover
 
     def _get_bangumi_config_for_user(self, user_name: str) -> Optional[dict[str, str]]:
         """根据媒体服务器用户名获取对应的bangumi配置"""
@@ -744,7 +750,7 @@ class SyncService:
     def _get_bangumi_data(self) -> BangumiData:
         """获取BangumiData实例（使用实例缓存避免内存泄漏）"""
         if self._bangumi_data_cache is None:
-            self._bangumi_data_cache = BangumiData()
+            self._bangumi_data_cache = bangumi_data
         return self._bangumi_data_cache
 
     def _load_custom_mappings(self) -> dict[str, str]:
