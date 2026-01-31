@@ -20,10 +20,12 @@ from .api.notification import router as notification_router
 from .api.pages import router as pages_router
 from .api.proxy import router as proxy_router
 from .api.sync import root_router, router as sync_router
+from .api.trakt import router as trakt_router
 from .core.config import config_manager
 from .core.logging import logger
 from .core.startup_info import startup_info
 from .services.mapping_service import mapping_service
+from .services.trakt.scheduler import trakt_scheduler
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -54,6 +56,7 @@ app.include_router(pages_router)
 app.include_router(health_router)
 app.include_router(proxy_router)
 app.include_router(notification_router)
+app.include_router(trakt_router)
 
 
 # 启动事件
@@ -79,6 +82,30 @@ async def startup_event():
         startup_info.print_error(f"启动时加载配置信息失败: {e}")
 
     startup_info.print_separator()
+
+    # 启动 Trakt 调度器（延迟启动）
+    try:
+        scheduler_config = config_manager.get_scheduler_config()
+        startup_delay = scheduler_config.get("startup_delay", 30)
+
+        logger.info(f"Trakt 调度器将在 {startup_delay} 秒后启动...")
+
+        # 使用异步任务延迟启动调度器
+        import asyncio
+
+        async def delayed_scheduler_start():
+            await asyncio.sleep(startup_delay)
+            success = trakt_scheduler.start()
+            if success:
+                logger.info("Trakt 调度器启动成功")
+            else:
+                logger.error("Trakt 调度器启动失败")
+
+        asyncio.create_task(delayed_scheduler_start())
+
+    except Exception as e:
+        logger.error(f"启动 Trakt 调度器失败: {e}")
+
     startup_info.print_startup_complete()
 
 
@@ -87,6 +114,13 @@ async def startup_event():
 async def shutdown_event():
     """应用关闭事件"""
     logger.info("Bangumi-Syncer 正在关闭...")
+
+    # 停止 Trakt 调度器
+    try:
+        trakt_scheduler.stop()
+        logger.info("Trakt 调度器已停止")
+    except Exception as e:
+        logger.error(f"停止 Trakt 调度器失败: {e}")
 
 
 if __name__ == "__main__":
