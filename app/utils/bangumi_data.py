@@ -101,12 +101,16 @@ class BangumiData:
         self._cache_miss_count = 0  # 缓存未命中次数
         # 是否启用更详细的日志，用于调试匹配问题
         self.verbose_logging = config_manager.get("dev", "debug", fallback=False)
+        self._cache_tmdb_mapping: dict[str, str] = {}
 
         # 启动时检查缓存，如果缺少则下载
         self._check_and_download_cache_on_startup()
 
         # 启动时预加载数据到内存
         self._preload_data_to_memory()
+
+        # 启动时构建 TMDB 映射番剧名, 用于 trakt 同步时快速查找
+        self._build_tmdb_mapping()
 
     def _is_cache_valid(self) -> bool:
         """检查缓存是否有效（未过期）"""
@@ -865,3 +869,31 @@ class BangumiData:
         except Exception as e:
             logger.error(f"预加载 bangumi-data 到内存失败: {e}")
             # 预加载失败不影响后续使用，会在第一次调用时重新加载
+
+    def _build_tmdb_mapping(self):
+        """构建 TMDB id 到番剧名的映射"""
+
+        for item in self._parse_data():
+            tmdb_id = None
+
+            # 提取 TMDB id
+            for site in item.get("sites", []):
+                if site.get("site") == "tmdb":
+                    tmdb_id = site.get("id")
+                    self._cache_tmdb_mapping[tmdb_id] = item.get("title", "")
+                    break
+
+    def get_title_by_tmdb_id(self, tmdb_id: str) -> Optional[str]:
+        """根据 TMDB id 获取番剧名
+
+        Args:
+            tmdb_id: TMDB id
+
+        Returns:
+            番剧名或 None
+        """
+        return self._cache_tmdb_mapping.get(tmdb_id, None)
+
+
+# 全局 bangumi_data 实例
+bangumi_data = BangumiData()
