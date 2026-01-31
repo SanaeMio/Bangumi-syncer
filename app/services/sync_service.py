@@ -557,8 +557,8 @@ class SyncService:
 
             bgm_data = bgm.bgm_search(
                 title=item.title,
-                ori_title=item.ori_title,
-                release_date=release_date,
+                ori_title=item.ori_title or "",
+                premiere_date=premiere_date or "",
             )
             if not bgm_data:
                 logger.error(
