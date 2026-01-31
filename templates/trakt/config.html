@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Trakt 配置 - Bangumi Syncer{% endblock %}
+{% block head %}
+    {{ super() }}
+    <style>
+        .status-connected { color: #198754; }
+        .status-disconnected { color: #dc3545; }
+        .status-pending { color: #ffc107; }
+        .card { margin-bottom: 1.5rem; }
+        .sync-history-table { max-height: 400px; overflow-y: auto; }
+        .loading-spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spinner-border 0.75s linear infinite;
+        }
+        @keyframes spinner-border {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+{% endblock %}
+{% block page_title %}Trakt.tv 配置{% endblock %}
+{% block content %}
+    <p class="text-muted mb-4">配置 Trakt.tv 数据同步到 Bangumi</p>
+    <!-- 连接状态卡片 -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-plug me-2"></i>连接状态
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div id="connection-status" class="d-flex align-items-center">
+                        <div class="loading-spinner me-2"></div>
+                        <span>正在检查连接状态...</span>
+                    </div>
+                    <div id="connection-details" class="mt-2 small text-muted"></div>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button id="auth-button" class="btn btn-primary" disabled>
+                        <i class="bi bi-key me-1"></i>授权 Trakt
+                    </button>
+                    <button id="disconnect-button" class="btn btn-outline-danger ms-2" disabled>
+                        <i class="bi bi-plug me-1"></i>断开连接
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- API 配置卡片 -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-key me-2"></i>API 配置
+            </h5>
+        </div>
+        <div class="card-body">
+            <form id="api-config-form">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="client-id" class="form-label">Client ID</label>
+                        <input type="text"
+                               class="form-control"
+                               id="client-id"
+                               name="client_id"
+                               placeholder="从 trakt.tv/oauth/applications 获取"
+                               required>
+                        <div class="form-text">在 Trakt.tv 创建应用获取的 Client ID</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="client-secret" class="form-label">Client Secret</label>
+                        <input type="password"
+                               class="form-control"
+                               id="client-secret"
+                               name="client_secret"
+                               placeholder="从 trakt.tv/oauth/applications 获取"
+                               required>
+                        <div class="form-text">在 Trakt.tv 创建应用获取的 Client Secret</div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="redirect-uri" class="form-label">Redirect URI</label>
+                        <input type="text"
+                               class="form-control"
+                               id="redirect-uri"
+                               name="redirect_uri"
+                               placeholder="http://localhost:8000/api/trakt/auth/callback"
+                               required>
+                        <div class="form-text">必须与 Trakt 应用设置中的回调 URL 一致</div>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <button type="submit" class="btn btn-primary" disabled>
+                        <i class="bi bi-save me-1"></i>保存 API 配置
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- 同步配置卡片 -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-gear me-2"></i>同步配置
+            </h5>
+        </div>
+        <div class="card-body">
+            <form id="sync-config-form">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="sync-enabled" class="form-label">启用同步</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   id="sync-enabled"
+                                   name="enabled">
+                            <label class="form-check-label" for="sync-enabled">启用定时同步</label>
+                        </div>
+                        <div class="form-text">启用后系统将按照设定的时间间隔自动同步 Trakt 数据</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="sync-interval" class="form-label">同步间隔 (Cron 表达式)</label>
+                        <input type="text"
+                               class="form-control"
+                               id="sync-interval"
+                               name="sync_interval"
+                               placeholder="0 */6 * * * (每6小时)"
+                               required>
+                        <div class="form-text">
+                            Cron 表达式格式: <code>分钟 小时 日 月 星期</code>
+                            <br>
+                            示例: <code>0 */6 * * *</code> (每6小时), <code>0 2 * * *</code> (每天凌晨2点)
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label class="form-label">同步数据类型</label>
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   id="sync-history"
+                                   name="sync_history"
+                                   checked>
+                            <label class="form-check-label" for="sync-history">观看历史 (剧集)</label>
+                        </div>
+                        <!-- <div class="form-check"> -->
+                        <!-- <input class="form-check-input" type="checkbox" id="sync-ratings" name="sync_ratings">
+                            <label class="form-check-label" for="sync-ratings">评分 (暂未实现)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="sync-collection" name="sync_collection">
+                            <label class="form-check-label" for="sync-collection">收藏 (暂未实现)</label>
+                        </div> -->
+                    </div>
+                </div>
+                <div class="text-end">
+                    <button type="submit" class="btn btn-primary" disabled>
+                        <i class="bi bi-save me-1"></i>保存同步配置
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- 同步控制卡片 -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-play-circle me-2"></i>同步控制
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div id="sync-status" class="d-flex align-items-center">
+                        <div class="loading-spinner me-2"></div>
+                        <span>正在检查同步状态...</span>
+                    </div>
+                    <div id="sync-details" class="mt-2 small text-muted"></div>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button id="manual-sync-button" class="btn btn-success" disabled>
+                        <i class="bi bi-arrow-repeat me-1"></i>手动同步
+                    </button>
+                    <button id="full-sync-button" class="btn btn-outline-success ms-2" disabled>
+                        <i class="bi bi-arrow-clockwise me-1"></i>全量同步
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 同步历史卡片 -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-clock-history me-2"></i>同步历史
+            </h5>
+            <button id="refresh-history" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="sync-history-table">
+                <table class="table table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>类型</th>
+                            <th>标题</th>
+                            <th>季/集</th>
+                            <th>状态</th>
+                            <th>消息</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sync-history-body">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                <div class="loading-spinner mx-auto"></div>
+                                <div class="mt-2">正在加载同步历史...</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="text-center mt-3">
+                <div class="btn-group" role="group">
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            id="prev-page"
+                            disabled>上一页</button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            id="next-page"
+                            disabled>下一页</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 授权模态框 -->
+    <div class="modal fade" id="authModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Trakt.tv 授权</h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="auth-step-1">
+                        <p>点击下面的按钮将在新窗口打开 Trakt.tv 授权页面。</p>
+                        <p class="text-muted small">请确保已登录 Trakt.tv 账户，并授权应用访问您的观看历史。</p>
+                        <div class="text-center">
+                            <button id="start-auth-button" class="btn btn-primary btn-lg">
+                                <i class="bi bi-key me-2"></i>开始授权
+                            </button>
+                        </div>
+                    </div>
+                    <div id="auth-step-2" class="d-none">
+                        <div class="text-center py-4">
+                            <div class="loading-spinner mx-auto" style="width: 3rem; height: 3rem;"></div>
+                            <h5 class="mt-3">正在等待授权...</h5>
+                            <p class="text-muted">请在新打开的窗口中完成 Trakt.tv 授权流程。</p>
+                            <button id="cancel-auth-button" class="btn btn-outline-secondary mt-3">取消授权</button>
+                        </div>
+                    </div>
+                    <div id="auth-step-3" class="d-none">
+                        <div class="text-center py-4">
+                            <i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>
+                            <h5 class="mt-3">授权成功！</h5>
+                            <p class="text-muted">Trakt.tv 授权已完成，现在可以配置同步了。</p>
+                            <button class="btn btn-primary" data-bs-dismiss="modal">关闭</button>
+                        </div>
+                    </div>
+                    <div id="auth-step-error" class="d-none">
+                        <div class="text-center py-4">
+                            <i class="bi bi-x-circle-fill text-danger" style="font-size: 3rem;"></i>
+                            <h5 class="mt-3">授权失败</h5>
+                            <p id="auth-error-message" class="text-muted"></p>
+                            <button id="retry-auth-button" class="btn btn-primary">重试</button>
+                            <button class="btn btn-outline-secondary ms-2" data-bs-dismiss="modal">取消</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    {{ super() }}
+    <script src="/static/js/trakt/config.js"></script>
+{% endblock %}
