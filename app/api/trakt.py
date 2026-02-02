@@ -4,7 +4,7 @@ Trakt.tv API 路由
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 
 from ..api import deps
@@ -30,12 +30,15 @@ router = APIRouter(prefix="/api/trakt", tags=["trakt"])
 
 
 @router.post("/auth/init", response_model=TraktAuthResponse)
-async def init_trakt_auth(request: TraktAuthRequest, req: Request) -> TraktAuthResponse:
+async def init_trakt_auth(
+    request: TraktAuthRequest,
+    current_user: dict = Depends(deps.get_current_user_flexible),
+) -> TraktAuthResponse:
     """初始化 Trakt OAuth 授权"""
     try:
         # 这里应该从会话或令牌中获取实际用户ID
         # 暂时使用请求中的 user_id
-        user_id = request.user_id
+        user_id = current_user.get("username", "default_user")
 
         auth_response = await trakt_auth_service.init_oauth(user_id)
 

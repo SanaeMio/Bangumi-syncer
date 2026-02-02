@@ -98,11 +98,9 @@ class TraktAuthService:
                 return TraktCallbackResponse(success=False, message="Trakt 配置无效")
 
             # 验证 state 参数（这里简化，实际应验证与存储的 state 匹配）
-            # state = callback_request.state
-            # if not self._verify_oauth_state(user_id, state):
-            #     return TraktCallbackResponse(
-            #         success=False, message="State 验证失败"
-            #     )
+            state = callback_request.state
+            if not self._verify_oauth_state(user_id, state):
+                return TraktCallbackResponse(success=False, message="State 验证失败")
 
             # 使用授权码交换访问令牌
             token_data = await self._exchange_code_for_token(callback_request.code)
@@ -137,48 +135,6 @@ class TraktAuthService:
             return TraktCallbackResponse(
                 success=False, message=f"处理回调时发生错误: {str(e)}"
             )
-
-    async def handle_callback_legacy(self, code: str, state: str, user_id: str) -> bool:
-        """处理 OAuth 回调的接口，用于兼容测试"""
-        try:
-            if not self._validate_config():
-                return False
-
-            # 验证 state 参数（这里简化，实际应验证与存储的 state 匹配）
-            # if not self._verify_oauth_state(user_id, state):
-            #     return False
-
-            # 使用授权码交换访问令牌
-            token_data = await self._exchange_code_for_token(code)
-
-            if not token_data:
-                return False
-
-            # 保存令牌到数据库
-            trakt_config = TraktConfig(
-                user_id=user_id,
-                access_token=token_data["access_token"],
-                refresh_token=token_data.get("refresh_token"),
-                expires_at=self._calculate_expires_at(token_data.get("expires_in")),
-                enabled=True,
-                sync_interval=self.trakt_config.get(
-                    "default_sync_interval", "0 */6 * * *"
-                ),
-                last_sync_time=None,
-            )
-
-            success = database_manager.save_trakt_config(trakt_config.to_dict())
-
-            if success:
-                logger.info(f"用户 {user_id} 的 Trakt 令牌保存成功")
-                return True
-            else:
-                logger.error(f"用户 {user_id} 的 Trakt 令牌保存失败")
-                return False
-
-        except Exception as e:
-            logger.error(f"处理 Trakt 回调时发生错误: {e}")
-            return False
 
     async def refresh_token(self, user_id: str) -> bool:
         """刷新过期的访问令牌"""
