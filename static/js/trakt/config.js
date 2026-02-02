@@ -271,9 +271,9 @@ class TraktConfigPage {
         syncInterval.value = config.sync_interval || '0 */6 * * *';
 
         // 更新 API 配置表单
-        if (clientId) clientId.value = config.client_id || '';
-        if (clientSecret) clientSecret.value = config.client_secret || '';
-        if (redirectUri) redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
+        if (clientId && config.client_id) clientId.value = config.client_id;
+        if (clientSecret && config.client_secret) clientSecret.value = config.client_secret;
+        if (redirectUri && config.redirect_uri) redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
     }
 
     /**
