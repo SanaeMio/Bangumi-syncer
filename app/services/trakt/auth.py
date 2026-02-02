@@ -139,7 +139,7 @@ class TraktAuthService:
             )
 
     async def handle_callback_legacy(self, code: str, state: str, user_id: str) -> bool:
-        """处理 OAuth 回调的z接口，用于兼容测试"""
+        """处理 OAuth 回调的接口，用于兼容测试"""
         try:
             if not self._validate_config():
                 return False
