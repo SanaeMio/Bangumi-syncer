@@ -218,6 +218,10 @@ class TraktScheduler:
 
             config = TraktConfig.from_dict(config_dict)
 
+            if not config:
+                logger.error(f"用户 {user_id} 的 Trakt 配置无效")
+                return
+
             # 检查是否启用
             if not config.enabled:
                 logger.info(f"用户 {user_id} 的 Trakt 同步已禁用，跳过")
