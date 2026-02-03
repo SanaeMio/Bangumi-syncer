@@ -271,9 +271,10 @@ class TraktConfigPage {
         syncInterval.value = config.sync_interval || '0 */6 * * *';
 
         // 更新 API 配置表单
-        if (clientId && config.client_id) clientId.value = config.client_id;
-        if (clientSecret && config.client_secret) clientSecret.value = config.client_secret;
-        if (redirectUri && config.redirect_uri) redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
+        // TODO 需要考虑下希望把配置刷新为空的情况
+        if (clientId) clientId.value = config.client_id || '';
+        if (clientSecret) clientSecret.value = config.client_secret || '';
+        if (redirectUri) redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
     }
 
     /**
@@ -336,15 +337,15 @@ class TraktConfigPage {
         try {
             this.showLoading('sync-history-body', '正在加载同步历史...');
 
-            // 注意：这里需要调用实际的同步历史API
-            // 暂时使用模拟数据
-            const response = await fetch(`/api/sync/history?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}`);
+            const response = await fetch(`/api/records?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
 
-            const data = await response.json();
+            const result = await response.json();
+            const data = result.data;
+            console.log('同步历史数据:', data);
             this.updateSyncHistoryDisplay(data);
         } catch (error) {
             console.error('加载同步历史失败:', error);
