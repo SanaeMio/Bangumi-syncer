@@ -155,7 +155,11 @@ class TraktClient:
             if reset is not None:
                 self.rate_limit_reset = int(reset)
         except (ValueError, TypeError):
-            pass
+            logger.warning(
+                "从 HTTP 响应头解析速率限制信息失败: remaining=%s, reset=%s",
+                remaining,
+                reset,
+            )
 
     async def _check_rate_limit(self) -> None:
         """检查速率限制，必要时等待"""
