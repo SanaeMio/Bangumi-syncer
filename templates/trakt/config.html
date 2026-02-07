@@ -25,33 +25,6 @@
 {% block page_title %}Trakt.tv 配置{% endblock %}
 {% block content %}
     <p class="text-muted mb-4">配置 Trakt.tv 数据同步到 Bangumi</p>
-    <!-- 连接状态卡片 -->
-    <div class="card">
-        <div class="card-header">
-            <h5 class="mb-0">
-                <i class="bi bi-plug me-2"></i>连接状态
-            </h5>
-        </div>
-        <div class="card-body">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <div id="connection-status" class="d-flex align-items-center">
-                        <div class="loading-spinner me-2"></div>
-                        <span>正在检查连接状态...</span>
-                    </div>
-                    <div id="connection-details" class="mt-2 small text-muted"></div>
-                </div>
-                <div class="col-md-4 text-end">
-                    <button id="auth-button" class="btn btn-primary" disabled>
-                        <i class="bi bi-key me-1"></i>授权 Trakt
-                    </button>
-                    <button id="disconnect-button" class="btn btn-outline-danger ms-2" disabled>
-                        <i class="bi bi-plug me-1"></i>断开连接
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
     <!-- API 配置卡片 -->
     <div class="card">
         <div class="card-header">
@@ -101,6 +74,33 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+    <!-- 连接状态卡片 -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-plug me-2"></i>连接状态
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div id="connection-status" class="d-flex align-items-center">
+                        <div class="loading-spinner me-2"></div>
+                        <span>正在检查连接状态...</span>
+                    </div>
+                    <div id="connection-details" class="mt-2 small text-muted"></div>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button id="auth-button" class="btn btn-primary" disabled>
+                        <i class="bi bi-key me-1"></i>授权 Trakt
+                    </button>
+                    <button id="disconnect-button" class="btn btn-outline-danger ms-2" disabled>
+                        <i class="bi bi-plug me-1"></i>断开连接
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
     <!-- 同步配置卡片 -->

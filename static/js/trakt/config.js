@@ -431,6 +431,7 @@ class TraktConfigPage {
 
             const result = await response.json();
             this.showNotification('同步配置保存成功', 'success');
+            this.updateConfigDisplay(result)
         } catch (error) {
             console.error('保存配置失败:', error);
             this.showNotification(`保存配置失败: ${error.message}`, 'danger');

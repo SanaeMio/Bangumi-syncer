@@ -161,15 +161,17 @@ async def update_trakt_config(
                 detail="Trakt 配置未找到，请先完成授权",
             )
 
-        # 更新配置
-        if update_request.enabled is not None:
-            config.enabled = update_request.enabled
+        enable = update_request.enabled
+        sync_interval = update_request.sync_interval
 
-        if update_request.sync_interval is not None:
-            config.sync_interval = update_request.sync_interval
+        # 更新配置
+        if enable is not None:
+            config.enabled = enable
+
+        if sync_interval is not None:
+            config.sync_interval = sync_interval
 
         # 保存到数据库
-
         success = database_manager.save_trakt_config(config.to_dict())
 
         if not success:
@@ -178,8 +180,16 @@ async def update_trakt_config(
                 detail="保存配置失败",
             )
 
+        if enable is not None and sync_interval is not None:
+            # sync_interval 可能被更新了, 需要先移除旧的作业再添加新的作业
+            trakt_scheduler.remove_user_job(user_id)
+            if enable:
+                trakt_scheduler.add_user_job(user_id, sync_interval)
+
         # 返回更新后的配置
         is_connected = bool(config.access_token) and not config.is_token_expired()
+        # 从配置文件获取 API 配置
+        trakt_api_config = config_manager.get_trakt_config()
 
         return TraktConfigResponse(
             user_id=config.user_id,
@@ -188,6 +198,11 @@ async def update_trakt_config(
             last_sync_time=config.last_sync_time,
             is_connected=is_connected,
             token_expires_at=config.expires_at,
+            client_id=trakt_api_config.get("client_id", ""),
+            client_secret=trakt_api_config.get("client_secret", ""),
+            redirect_uri=trakt_api_config.get(
+                "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
+            ),
         )
 
     except HTTPException:
