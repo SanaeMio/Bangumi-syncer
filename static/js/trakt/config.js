@@ -266,16 +266,14 @@ class TraktConfigPage {
             syncSaveButton.disabled = false;
         }
 
-        // 更新同步配置表单
-        syncEnabled.checked = config.enabled;
-        syncInterval.value = config.sync_interval || '0 */6 * * *';
-
-        // 更新 API 配置表单
-        // TODO 需要考虑下希望把配置刷新为空的情况
+        if (syncEnabled) syncEnabled.checked = config.enabled;
+        if (syncInterval) syncInterval.value = config.sync_interval || '0 */6 * * *';
+        
         if (clientId) clientId.value = config.client_id || '';
         if (clientSecret) clientSecret.value = config.client_secret || '';
         if (redirectUri) redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
     }
+
 
     /**
      * 加载同步状态
@@ -433,7 +431,6 @@ class TraktConfigPage {
 
             const result = await response.json();
             this.showNotification('同步配置保存成功', 'success');
-            this.updateConfigDisplay(result);
         } catch (error) {
             console.error('保存配置失败:', error);
             this.showNotification(`保存配置失败: ${error.message}`, 'danger');
