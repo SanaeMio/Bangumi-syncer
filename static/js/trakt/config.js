@@ -266,12 +266,12 @@ class TraktConfigPage {
             syncSaveButton.disabled = false;
         }
 
-        if (syncEnabled) syncEnabled.checked = config.enabled;
-        if (syncInterval) syncInterval.value = config.sync_interval || '0 */6 * * *';
+        syncEnabled.checked = config.enabled;
+        syncInterval.value = config.sync_interval || '0 */6 * * *';
         
-        if (clientId) clientId.value = config.client_id || '';
-        if (clientSecret) clientSecret.value = config.client_secret || '';
-        if (redirectUri) redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
+        clientId.value = config.client_id || '';
+        clientSecret.value = config.client_secret || '';
+        redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
     }
 
 
