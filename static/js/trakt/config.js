@@ -383,7 +383,7 @@ class TraktConfigPage {
 
             rows += `
                 <tr>
-                    <td>${this.formatDate(record.timestamp)}</td>
+                    <td>${record.timestamp}</td>
                     <td><span class="badge bg-secondary">${record.source || 'unknown'}</span></td>
                     <td>${this.escapeHtml(record.title)}</td>
                     <td>S${record.season}E${record.episode}</td>
