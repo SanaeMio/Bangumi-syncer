@@ -311,13 +311,15 @@ services:
    - 点击「新建应用」创建OAuth应用
    - 填写应用信息：
      - **Name**: Bangumi-syncer（或自定义名称）
-     - **Redirect uri**: `http://localhost:8000/api/trakt/auth/callback`
+     - **Redirect uri**: `http://localhost:8000/api/trakt/auth/callback`(localhost 需替换为 Bangumi-syncer 实际的 IP + 端口)
      - 其他字段可选填
    - 创建后获取 **Client ID** 和 **Client Secret**
 
 3. **Bangumi-syncer配置**
    - 访问Web管理界面（`http://localhost:8000`）
    - 登录后进入「Trakt配置」页面（左侧菜单）
+   - 填写第 2 步获取的 Trakt 的 Client ID 和 Client Secret
+   - **Redirect uri** 与第 2 步保持一致
    - 在「连接状态」区域点击「授权 Trakt」按钮
    - 在弹出的窗口中点击「开始授权」，系统将打开Trakt授权页面
    - 在Trakt页面授权应用访问您的观看历史
