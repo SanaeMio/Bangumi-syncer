@@ -361,6 +361,7 @@ async def disconnect_trakt(
         success = trakt_auth_service.disconnect_trakt(user_id)
 
         if success:
+            trakt_scheduler.remove_user_job(user_id)
             return {"success": True, "message": "Trakt 连接已断开"}
         else:
             raise HTTPException(
