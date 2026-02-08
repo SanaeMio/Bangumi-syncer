@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Trakt 授权成功 - Bangumi Syncer</title>
+        <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+        <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
+        <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .success-container {
+            max-width: 500px;
+            margin: 100px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .success-icon {
+            font-size: 4rem;
+            color: #198754;
+            margin-bottom: 20px;
+        }
+        .btn-close-window {
+            margin-top: 20px;
+        }
+        </style>
+    </head>
+    <body>
+        <div class="success-container">
+            <div class="success-icon">
+                <i class="bi bi-check-circle-fill"></i>
+            </div>
+            <h2>授权成功！</h2>
+            <p class="text-muted">Trakt.tv 授权已完成。</p>
+            <p class="text-muted">现在可以关闭此窗口并返回配置页面。</p>
+            <div class="mt-4">
+                <button id="close-button" class="btn btn-primary btn-close-window">
+                    <i class="bi bi-x-circle me-2"></i>关闭窗口
+                </button>
+            </div>
+        </div>
+        <script>
+        // 尝试通知父窗口授权成功
+        try {
+            if (window.opener && !window.opener.closed) {
+                // 发送消息给父窗口
+                window.opener.postMessage({
+                    type: 'trakt_auth_success',
+                    timestamp: Date.now()
+                }, window.location.origin);
+
+                // 也可以尝试调用父窗口的特定函数
+                if (typeof window.opener.handleTraktAuthSuccess === 'function') {
+                    window.opener.handleTraktAuthSuccess();
+                }
+            }
+        } catch (e) {
+            console.log('无法与父窗口通信:', e);
+        }
+
+        // 关闭窗口按钮
+        document.getElementById('close-button').addEventListener('click', function() {
+            window.close();
+        });
+
+        // 3秒后自动尝试关闭窗口
+        setTimeout(function() {
+            if (!window.closed) {
+                try {
+                    window.close();
+                } catch (e) {
+                    console.log('无法自动关闭窗口:', e);
+                }
+            }
+        }, 3000);
+        </script>
+    </body>
+</html>
