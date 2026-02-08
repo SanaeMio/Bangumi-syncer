@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -28,7 +28,7 @@ class TraktScheduler:
         self.scheduler_config = config_manager.get_scheduler_config()
         self._user_jobs: dict[str, str] = {}  # user_id -> job_id
 
-    def start(self) -> bool:
+    async def start(self) -> bool:
         """启动调度器"""
         try:
             if self.scheduler and self.scheduler.running:
@@ -37,11 +37,7 @@ class TraktScheduler:
 
             # 配置作业存储和执行器
             jobstores = {"default": MemoryJobStore()}
-            executors = {
-                "default": ThreadPoolExecutor(
-                    self.scheduler_config.get("max_concurrent_syncs", 3)
-                )
-            }
+            executors = {"default": AsyncIOExecutor()}
             job_defaults = {
                 "coalesce": True,
                 "max_instances": 1,
@@ -69,7 +65,7 @@ class TraktScheduler:
             logger.error(f"启动调度器失败: {e}")
             return False
 
-    def stop(self) -> bool:
+    async def stop(self) -> bool:
         """停止调度器"""
         try:
             if self.scheduler and self.scheduler.running:
@@ -107,9 +103,13 @@ class TraktScheduler:
     def add_user_job(self, user_id: str, cron_expression: str) -> bool:
         """为用户添加定时任务"""
         try:
-            if not self.scheduler:
-                logger.error("调度器未初始化")
-                return False
+            # 如果调度器未初始化或未运行，尝试启动
+            if not self.scheduler or not self.scheduler.running:
+                logger.warning("调度器未运行，尝试启动...")
+                success = self.start()
+                if not success:
+                    logger.error("调度器启动失败，无法添加定时任务")
+                    return False
 
             # 如果用户已有任务，先移除
             if user_id in self._user_jobs:
@@ -133,6 +133,11 @@ class TraktScheduler:
                 logger.error(f"解析 Cron 表达式失败: {cron_expression}, 错误: {e}")
                 # 使用默认间隔: 每6小时
                 trigger = CronTrigger(hour="*/6")
+
+            # 确保调度器已初始化
+            if not self.scheduler:
+                logger.error("调度器初始化失败")
+                return False
 
             # 创建任务
             job = self.scheduler.add_job(

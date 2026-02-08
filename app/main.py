@@ -95,7 +95,7 @@ async def startup_event():
 
         async def delayed_scheduler_start():
             await asyncio.sleep(startup_delay)
-            success = trakt_scheduler.start()
+            success = await trakt_scheduler.start()
             if success:
                 logger.info("Trakt 调度器启动成功")
             else:
@@ -117,7 +117,7 @@ async def shutdown_event():
 
     # 停止 Trakt 调度器
     try:
-        trakt_scheduler.stop()
+        await trakt_scheduler.stop()
         logger.info("Trakt 调度器已停止")
     except Exception as e:
         logger.error(f"停止 Trakt 调度器失败: {e}")
