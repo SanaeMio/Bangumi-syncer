@@ -358,24 +358,52 @@ class TraktConfigPage {
         const tbody = document.getElementById('sync-history-body');
         const prevButton = document.getElementById('prev-page');
         const nextButton = document.getElementById('next-page');
+        const pageInfoElement = document.getElementById('page-info');
 
-        if (!data || !data.records || data.records.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="6" class="text-center text-muted py-4">
-                        <i class="bi bi-inbox me-2"></i>
-                        暂无同步记录
-                    </td>
-                </tr>
-            `;
-            prevButton.disabled = true;
-            nextButton.disabled = true;
+        // 获取总记录数，如果API没有返回total则使用0
+        const total = data?.total || 0;
+        const records = data?.records || [];
+
+        // 计算总页数
+        const totalPages = total > 0 ? Math.ceil(total / this.pageSize) : 0;
+
+        // 如果当前页码超出有效范围，调整到有效页码
+        if (totalPages > 0 && this.currentPage > totalPages) {
+            this.currentPage = totalPages;
+            this.loadSyncHistory();
             return;
+        }
+
+        // 如果没有数据，根据当前页码显示不同信息
+        if (!records || records.length === 0) {
+            if (this.currentPage > 1) {
+                // 当前页大于1但没有数据，且没有总记录数信息
+                // 回退到前一页并重新加载
+                this.currentPage--;
+                this.loadSyncHistory();
+                return;
+            } else {
+                // 第一页就没有数据，显示暂无记录
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox me-2"></i>
+                            暂无同步记录
+                        </td>
+                    </tr>
+                `;
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+                if (pageInfoElement) {
+                    pageInfoElement.textContent = '第 1 页';
+                }
+                return;
+            }
         }
 
         // 构建表格行
         let rows = '';
-        data.records.forEach(record => {
+        records.forEach(record => {
             const statusClass = record.status === 'success' ? 'text-success' :
                                record.status === 'error' ? 'text-danger' : 'text-warning';
             const statusIcon = record.status === 'success' ? 'bi-check-circle-fill' :
@@ -400,7 +428,24 @@ class TraktConfigPage {
 
         // 更新分页按钮状态
         prevButton.disabled = this.currentPage <= 1;
-        nextButton.disabled = !data.records || data.records.length < this.pageSize;
+
+        // 判断是否有下一页：如果有总记录数，使用总记录数计算；否则根据当前页记录数判断
+        let hasNextPage = false;
+        if (total > 0) {
+            hasNextPage = (this.currentPage * this.pageSize) < total;
+        } else {
+            hasNextPage = records.length >= this.pageSize;
+        }
+        nextButton.disabled = !hasNextPage;
+
+        // 更新页码显示
+        if (pageInfoElement) {
+            if (totalPages > 0) {
+                pageInfoElement.textContent = `第 ${this.currentPage} 页 / 共 ${totalPages} 页`;
+            } else {
+                pageInfoElement.textContent = `第 ${this.currentPage} 页`;
+            }
+        }
     }
 
     /**

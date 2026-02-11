@@ -7,7 +7,10 @@
         .status-disconnected { color: #dc3545; }
         .status-pending { color: #ffc107; }
         .card { margin-bottom: 1.5rem; }
-        .sync-history-table { max-height: 400px; overflow-y: auto; }
+        .sync-history-table { max-height: 400px; overflow-y: auto; overflow-x: auto; }
+        .sync-history-table table { min-width: 800px; }
+        .sync-history-table th:first-child,
+        .sync-history-table td:first-child { min-width: 150px; white-space: nowrap; }
         .loading-spinner {
             display: inline-block;
             width: 1rem;
@@ -248,6 +251,7 @@
                             id="next-page"
                             disabled>下一页</button>
                 </div>
+                <div id="page-info" class="mt-2 small text-muted">第 1 页</div>
             </div>
         </div>
     </div>
