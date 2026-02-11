@@ -118,7 +118,7 @@ class TraktAuthService:
                 sync_interval=self._get_config().get(
                     "default_sync_interval", "0 */6 * * *"
                 ),
-                last_sync_time=None,
+                last_sync_time=int(time.time()),  # 设置为授权成功时间，用于增量同步的起始点
             )
 
             success = database_manager.save_trakt_config(trakt_config.to_dict())
