@@ -10,6 +10,8 @@ dependencies = [
     "python-multipart>=0.0.20",
     "requests>=2.32.5",
     "uvicorn[standard]>=0.38.0",
+    "httpx>=0.25.0",
+    "APScheduler>=3.10.0",
 ]
 
 [dependency-groups]
@@ -18,6 +20,9 @@ dev = [
     "mypy>=1.19.1",
     "ruff>=0.14.10",
     "ty>=0.0.9",
+    "playwright>=1.57.0",
+    "pytest-playwright>=0.4.0",
+    "pytest-asyncio>=1.2.0",
 ]
 
 [tool.ruff]
@@ -55,3 +60,29 @@ indent = 4
 
 # 最大行长度
 max_line_length = 120
+
+[tool.pytest.ini_options]
+# 基础配置
+minversion = "6.0"
+pythonpath = "."    # ✅ 关键修复：将根目录加入搜索路径
+addopts = "-ra -q --durations=5"  # 运行时参数：显示额外汇总、精简输出、列出最慢的5个测试
+testpaths = [
+]
+
+# 匹配规则
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*", "Check*"]
+python_functions = ["test_*", "check_*"]
+
+# 环境变量或日志配置（可选）
+log_cli = true
+log_cli_level = "INFO"
+
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"  # 消除新版 pytest-asyncio 的 Scope 警告
+
+# ✅ 新增：注册自定义标记，消除 PytestUnknownMarkWarning
+markers = [
+    "asyncio: mark test as async",
+    "performance: mark test as a performance test",
+]
