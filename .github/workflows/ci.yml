@@ -17,15 +17,17 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Set up Python
         run: uv python install 3.9
 
       - name: Install dependencies
-        run: uv pip install --system pytest pytest-asyncio pytest-cov httpx
+        run: uv venv && source .venv/bin/activate && uv pip install pytest pytest-asyncio pytest-cov httpx
 
       - name: Run tests with coverage
-        run: pytest tests/unit/ --cov=app --cov-report=xml --cov-report=term
+        run: source .venv/bin/activate && pytest tests/unit/ --cov=app --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
