@@ -20,9 +20,6 @@ dev = [
     "mypy>=1.19.1",
     "ruff>=0.14.10",
     "ty>=0.0.9",
-    "playwright>=1.57.0",
-    "pytest-playwright>=0.4.0",
-    "pytest-asyncio>=1.2.0",
 ]
 test = [
     "pytest>=8.0.0",
