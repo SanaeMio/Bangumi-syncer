@@ -36,7 +36,7 @@ class TestMappingServiceSimple:
                 mock_file = MagicMock()
                 mock_open.return_value.__enter__.return_value = mock_file
 
-                result = service.update_custom_mappings(
+                service.update_custom_mappings(
                     {"动画1": "123456", "动画2": "789012"}
                 )
                 mock_dump.assert_called_once()
@@ -60,5 +60,5 @@ class TestMappingServiceSimple:
         with patch.object(
             service, "update_custom_mappings", return_value=True
         ) as mock_update:
-            result = service.update_mappings({})
+            service.update_mappings({})
             mock_update.assert_called_once()
