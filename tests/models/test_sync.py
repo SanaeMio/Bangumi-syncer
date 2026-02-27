@@ -3,7 +3,6 @@ Sync models tests
 """
 
 
-
 class TestSyncModels:
     """Test sync-related Pydantic models"""
 

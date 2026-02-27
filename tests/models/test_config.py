@@ -3,7 +3,6 @@ Config models tests
 """
 
 
-
 class TestConfigModels:
     """Test config-related Pydantic models"""
 

@@ -36,9 +36,7 @@ class TestMappingServiceSimple:
                 mock_file = MagicMock()
                 mock_open.return_value.__enter__.return_value = mock_file
 
-                service.update_custom_mappings(
-                    {"动画1": "123456", "动画2": "789012"}
-                )
+                service.update_custom_mappings({"动画1": "123456", "动画2": "789012"})
                 mock_dump.assert_called_once()
 
     def test_delete_custom_mapping_not_found(self):

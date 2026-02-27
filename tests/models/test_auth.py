@@ -3,7 +3,6 @@ Auth models tests
 """
 
 
-
 class TestAuthModels:
     """Test auth-related Pydantic models"""
 
