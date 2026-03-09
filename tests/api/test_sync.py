@@ -125,7 +125,6 @@ async def test_custom_sync_async_mode(
         assert "task_id" in data
 
 
-
 @pytest.mark.asyncio
 async def test_get_sync_status(app_with_auth, mock_sync_service, mock_database_manager):
     """测试获取同步任务状态"""
