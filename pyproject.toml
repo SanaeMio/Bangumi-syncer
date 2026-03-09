@@ -20,11 +20,13 @@ dev = [
     "mypy>=1.19.1",
     "ruff>=0.14.10",
     "ty>=0.0.9",
-]
-test = [
-    "pytest>=8.0.0",
-    "pytest-cov>=4.1.0",
-    "pytest-asyncio>=0.23.0",
+    "playwright>=1.57.0",
+    "pytest-playwright>=0.4.0",
+    "pytest-asyncio>=1.2.0",
+    "pytest-bdd>=7.0.0",
+    "pytest-cov>=6.0.0",
+    "responses>=0.25.0",
+    "respx>=0.22.0",
 ]
 
 [tool.ruff]
@@ -67,7 +69,7 @@ max_line_length = 120
 # 基础配置
 minversion = "6.0"
 pythonpath = "."    # ✅ 关键修复：将根目录加入搜索路径
-addopts = "-ra -q --durations=5"  # 运行时参数：显示额外汇总、精简输出、列出最慢的5个测试
+addopts = "-ra -q --durations=5 --feature tests/features"  # 运行时参数：显示额外汇总、精简输出、列出最慢的5个测试
 testpaths = [
 ]
 
@@ -75,6 +77,9 @@ testpaths = [
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*", "Check*"]
 python_functions = ["test_*", "check_*"]
+
+# pytest-bdd 配置
+bdd_features_base_dir = "tests/features"
 
 # 环境变量或日志配置（可选）
 log_cli = true
@@ -87,4 +92,49 @@ asyncio_default_fixture_loop_scope = "function"  # 消除新版 pytest-asyncio �
 markers = [
     "asyncio: mark test as async",
     "performance: mark test as a performance test",
+    "playwright: mark test as a Playwright E2E test",
 ]
+
+# Playwright 配置
+[tool.playwright]
+# 浏览器配置
+browser = "chromium"
+# 是否无头模式运行
+headless = true
+# 是否捕获视频
+video = "retain-on-failure"
+# 是否捕获跟踪
+trace = "retain-on-failure"
+# 截图目录
+screenshot = "only-on-failure"
+
+[tool.playwright.options]
+# 浏览器启动选项
+launch_options = { args = ["--disable-dev-shm-usage", "--no-sandbox"] }
+# 视口大小
+viewport = { width = 1280, height = 720 }
+# 区域设置
+locale = "zh-CN"
+timezone_id = "Asia/Shanghai"
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+show_missing = true
+skip_empty = true
