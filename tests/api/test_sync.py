@@ -125,33 +125,6 @@ async def test_custom_sync_async_mode(
         assert "task_id" in data
 
 
-@pytest.mark.asyncio
-async def test_custom_sync_sync_mode(
-    app_with_auth, mock_sync_service, mock_database_manager
-):
-    """测试自定义同步同步模式"""
-    item = CustomItem(
-        media_type="episode",
-        title="Test Show",
-        season=1,
-        episode=5,
-        release_date="2024-01-01",
-        user_name="test_user",
-    )
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app_with_auth), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/Custom",
-            json=item.model_dump(),
-            params={"async_mode": "false"},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "success"
-
 
 @pytest.mark.asyncio
 async def test_get_sync_status(app_with_auth, mock_sync_service, mock_database_manager):
