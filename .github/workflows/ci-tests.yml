@@ -36,7 +36,7 @@ jobs:
           flags: unittests
           name: codecov-umbrella
 
-  dev_build:
+  build_docker_and_integration_test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
