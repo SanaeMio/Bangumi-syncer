@@ -107,7 +107,7 @@ class TestNotifierIntegration:
             ]
         }
 
-        notifier = Notifier(mock_config)
+        _notifier = Notifier(mock_config)
         # 注意：这里需要调用实际的 send_notification 方法
         # 但由于方法可能不存在，我们测试基本功能
 
@@ -117,7 +117,7 @@ class TestNotifierIntegration:
         mock_post.side_effect = Exception("Network error")
 
         mock_config = MagicMock()
-        notifier = Notifier(mock_config)
+        _notifier = Notifier(mock_config)
 
         # 测试失败情况
         try:

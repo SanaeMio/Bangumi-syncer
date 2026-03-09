@@ -3,7 +3,7 @@ Trakt 客户端 HTTP Mock 测试
 使用 respx 库模拟 Trakt API 调用 (httpx)
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -81,6 +81,7 @@ async def test_get_watched_history(mock_config):
 
     assert len(result) == 1
     assert result[0].show["title"] == "Test Show"
+    assert mock_route.called
 
 
 @pytest.mark.asyncio
@@ -112,6 +113,7 @@ async def test_get_ratings(mock_config):
 
     assert len(result) == 1
     assert result[0].rating == 8
+    assert mock_route.called
 
 
 @pytest.mark.asyncio
@@ -142,6 +144,7 @@ async def test_get_collection(mock_config):
 
     assert len(result) == 1
     assert result[0].show["title"] == "Test Show"
+    assert mock_route.called
 
 
 @pytest.mark.asyncio
@@ -170,6 +173,7 @@ async def test_get_movie_info(mock_config):
 
     assert result["title"] == "Test Movie"
     assert result["year"] == 2024
+    assert mock_route.called
 
 
 @pytest.mark.asyncio
@@ -197,6 +201,7 @@ async def test_get_show_info(mock_config):
         result = await client.get_show_info(123)
 
     assert result["title"] == "Test Show"
+    assert mock_route.called
 
 
 @pytest.mark.asyncio
@@ -225,6 +230,7 @@ async def test_get_episode_info(mock_config):
         result = await client.get_episode_info(123, 1, 1)
 
     assert result["title"] == "Episode 1"
+    assert mock_route.called
 
 
 @pytest.mark.asyncio
@@ -248,6 +254,7 @@ async def test_test_connection(mock_config):
         result = await client.test_connection()
 
     assert result is True
+    assert mock_route.called
 
 
 @pytest.mark.asyncio
@@ -271,9 +278,7 @@ async def test_test_connection_failure(mock_config):
         result = await client.test_connection()
 
     assert result is False
-
-
-from unittest.mock import AsyncMock
+    assert mock_route.called
 
 
 @pytest.mark.asyncio

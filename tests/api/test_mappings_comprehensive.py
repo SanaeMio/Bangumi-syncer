@@ -60,7 +60,7 @@ async def test_get_custom_mappings_exception(app_with_auth):
 @pytest.mark.asyncio
 async def test_update_custom_mappings(app_with_auth):
     """测试更新自定义映射"""
-    with patch("app.api.mappings.mapping_service") as mock_service:
+    with patch("app.api.mappings.mapping_service"):
         async with AsyncClient(
             transport=ASGITransport(app=app_with_auth), base_url="http://test"
         ) as client:

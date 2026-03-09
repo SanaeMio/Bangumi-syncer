@@ -98,11 +98,11 @@ class TestBangumiDataExtract:
 
         # 测试从URL提取
         item = {"url": "https://bgm.tv/subject/123"}
-        result = data._extract_bangumi_id(item)
+        _result = data._extract_bangumi_id(item)
 
         # 测试从其他字段提取
         item2 = {"id": 456}
-        result2 = data._extract_bangumi_id(item2)
+        _result2 = data._extract_bangumi_id(item2)
 
 
 class TestBangumiDataSearch:

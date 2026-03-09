@@ -80,7 +80,7 @@ def test_webhook_notification_success(mock_config_with_webhook):
     )
 
     notifier = Notifier(mock_config_with_webhook)
-    result = notifier.send_notification_by_type(
+    _result = notifier.send_notification_by_type(
         "mark_success",
         {
             "timestamp": "2024-01-01 12:00:00",
@@ -276,7 +276,7 @@ def test_webhook_disabled(mock_config_with_webhook):
     config.get_config_parser.return_value = config_parser
 
     notifier = Notifier(config)
-    result = notifier.send_notification_by_type(
+    _result = notifier.send_notification_by_type(
         "mark_success",
         {"timestamp": "2024-01-01 12:00:00"},
     )
@@ -367,7 +367,7 @@ def test_email_notification_no_recipient(mock_config_with_email):
     config.get_config_parser.return_value = config_parser
 
     notifier = Notifier(config)
-    result = notifier.send_notification_by_type(
+    _result = notifier.send_notification_by_type(
         "mark_success",
         {"timestamp": "2024-01-01 12:00:00"},
     )

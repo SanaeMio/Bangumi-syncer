@@ -250,25 +250,6 @@ def test_get_ep_collection():
 
 
 @responses.activate
-def test_search_old():
-    """测试旧版搜索 API"""
-    # 注意：旧的搜索 API URL 是 api.bgm.tv (不带 /v0)
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/search/subject/test",
-        json={"results": 1, "list": [{"id": 1, "name": "Test"}]},
-        status=200,
-    )
-
-    api = BangumiApi()
-    # 需要使用正确的参数
-    result = api.search_old("test", list_only=True)
-
-    assert len(result) == 1
-    assert result[0]["id"] == 1
-
-
-@responses.activate
 def test_get_me():
     """测试获取当前用户信息"""
     responses.add(

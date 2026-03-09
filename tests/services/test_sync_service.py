@@ -167,7 +167,7 @@ class TestSyncCustomItem:
             assert result.status == "ignored"
             assert "屏蔽关键词" in result.message
 
-    def test_sync_custom_item_invalid_media_type(self, mock_sync_service):
+    def test_sync_custom_item_invalid_media_type_with_fixture(self, mock_sync_service):
         """测试不支持的媒体类型"""
         service, mock_config, mock_db, mock_notify = mock_sync_service
 

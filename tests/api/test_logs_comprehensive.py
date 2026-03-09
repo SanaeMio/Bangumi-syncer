@@ -171,7 +171,7 @@ Line 5
                         data = response.json()
                         # 限制后应该只返回最后2行
                         lines = data["data"]["content"].split("\n")
-                        assert len([l for l in lines if l]) <= 2
+                        assert len([line for line in lines if line]) <= 2
 
 
 @pytest.mark.asyncio
@@ -248,7 +248,7 @@ async def test_clear_logs_success(app_with_auth):
         mock_cm.get_config.return_value = "./log.txt"
 
         with patch("app.api.logs.os.path.exists", return_value=True):
-            with patch("builtins.open", mock_open()) as mock_file:
+            with patch("builtins.open", mock_open()) as _mock_file:
                 async with AsyncClient(
                     transport=ASGITransport(app=app_with_auth), base_url="http://test"
                 ) as client:

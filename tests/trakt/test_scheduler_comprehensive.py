@@ -28,7 +28,7 @@ class TestTraktSchedulerComprehensive:
     async def test_start_scheduler(self):
         """测试启动调度器"""
         with (
-            patch("app.services.trakt.scheduler.config_manager") as mock_cm,
+            patch("app.services.trakt.scheduler.config_manager"),
             patch("app.services.trakt.scheduler.database_manager"),
             patch(
                 "app.services.trakt.scheduler.AsyncIOScheduler"
@@ -278,7 +278,7 @@ class TestAddUserJob:
             with patch.object(
                 TraktScheduler, "remove_user_job", return_value=True
             ) as mock_remove:
-                result = scheduler.add_user_job("user1", "0 * * * *")
+                _result = scheduler.add_user_job("user1", "0 * * * *")
                 mock_remove.assert_called_once_with("user1")
 
 

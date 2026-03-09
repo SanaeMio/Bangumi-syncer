@@ -20,7 +20,7 @@ class TestConfigAPIEndpoints:
         from app.api import config
         from app.main import app
 
-        client = TestClient(app)
+        TestClient(app)
         # 由于路由需要认证，这里只是测试路由存在
         assert config.router is not None
 
