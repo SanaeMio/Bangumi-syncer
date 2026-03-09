@@ -301,10 +301,8 @@ async def test_diagnose_network_with_proxy(app_with_auth):
         mock_dh.get_environment_info.return_value = mock_env_info
 
         with patch("app.core.config.config_manager") as mock_cm:
-            mock_cm.get.side_effect = (
-                lambda *args, **kwargs: "http://proxy:7890"
-                if args[1] == "script_proxy"
-                else True
+            mock_cm.get.side_effect = lambda *args, **kwargs: (
+                "http://proxy:7890" if args[1] == "script_proxy" else True
             )
 
             with patch("app.api.proxy.socket.getaddrinfo") as mock_getaddrinfo:
