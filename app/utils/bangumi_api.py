@@ -389,8 +389,7 @@ class BangumiApi:
         res = self._request_with_retry(
             "GET",
             self.req,
-            # 由于 Python 负向索引使用长度（而不是最后一个字母的索引）减去负向索引，所以需要使用 -3 代替 -2
-            f"{self.host[:-3]}/search/subject/{title}",
+            f"{self.host[:-2]}/search/subject/{title}",
             params={"type": 2},
         )
         try:
