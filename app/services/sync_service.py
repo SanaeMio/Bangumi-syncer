@@ -162,8 +162,6 @@ class SyncService:
                 )
                 return SyncResponse(status="error", message="未找到匹配的番剧")
 
-            send_notify("bangumi_id_found", item, actual_source, subject_id=subject_id)
-
             # 获取对应用户的bangumi API实例
             bgm = self._get_bangumi_api_for_user(item.user_name)
             if not bgm:
@@ -202,6 +200,9 @@ class SyncService:
                 f"bgm: 查询到 {item.title} (https://bgm.tv/subject/{bgm_se_id}) "
                 f"S{item.season:02d}E{item.episode:02d} (https://bgm.tv/ep/{bgm_ep_id})"
             )
+
+            # 发送匹配成功的通知，使用解析后的正确季度ID
+            send_notify("bangumi_id_found", item, actual_source, subject_id=bgm_se_id)
 
             # 标记为看过
             try:
