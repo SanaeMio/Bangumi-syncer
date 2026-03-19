@@ -20,9 +20,10 @@ dev = [
     "mypy>=1.19.1",
     "ruff>=0.14.10",
     "ty>=0.0.9",
-    "playwright>=1.57.0",
-    "pytest-playwright>=0.4.0",
     "pytest-asyncio>=1.2.0",
+    "pytest-cov>=6.0.0",
+    "responses>=0.25.0",
+    "respx>=0.22.0",
 ]
 
 [tool.ruff]
@@ -86,3 +87,25 @@ markers = [
     "asyncio: mark test as async",
     "performance: mark test as a performance test",
 ]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+show_missing = true
+skip_empty = true
