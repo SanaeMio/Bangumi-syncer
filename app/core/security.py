@@ -44,6 +44,7 @@ class SecurityManager:
                 "https_only": "False",
                 "max_login_attempts": "5",
                 "lockout_duration": "900",
+                "webhook_key": "",
             }
 
             for key, default_value in auth_defaults.items():
@@ -59,6 +60,14 @@ class SecurityManager:
                 config.set("auth", "secret_key", new_secret_key)
                 config_updated = True
                 logger.info("生成新的认证密钥")
+
+            # 检查并生成webhook_key
+            current_webhook_key = config.get("auth", "webhook_key", fallback="")
+            if not current_webhook_key:
+                new_webhook_key = secrets.token_urlsafe(32)
+                config.set("auth", "webhook_key", new_webhook_key)
+                config_updated = True
+                logger.info("生成新的webhook密钥")
 
             # 检查密码是否需要加密
             current_password = config.get("auth", "password", fallback="admin")
@@ -101,6 +110,7 @@ class SecurityManager:
             "lockout_duration": config_manager.get(
                 "auth", "lockout_duration", fallback=900
             ),
+            "webhook_key": config_manager.get("auth", "webhook_key", fallback=""),
         }
 
     def hash_password(self, password: str, secret_key: str) -> str:
@@ -291,6 +301,23 @@ class SecurityManager:
         except Exception as e:
             logger.error(f"用户认证失败: {e}")
             return False
+
+    def verify_webhook_key(self, key: str) -> bool:
+        """验证 webhook key 是否正确"""
+        webhook_key = config_manager.get("auth", "webhook_key", "")
+        return key == webhook_key
+
+    def refresh_webhook_key(self) -> str:
+        """刷新 webhook key"""
+        try:
+            new_webhook_key = secrets.token_urlsafe(32)
+            config_manager.set_config("auth", "webhook_key", new_webhook_key)
+            config_manager.save_config()
+            logger.info("webhook key 已刷新")
+            return new_webhook_key
+        except Exception as e:
+            logger.error(f"刷新 webhook key 失败: {e}")
+            raise
 
 
 # 全局安全实例

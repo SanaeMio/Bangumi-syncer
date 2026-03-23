@@ -452,10 +452,30 @@
                                        min="60"
                                        max="86400">
                             </div>
+                            <div class="col-md-3">
+                                <label for="webhook-key" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Webhook认证密钥
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于Plex/Emby/Jellyfin webhook的认证密钥。刷新后需要更新媒体服务器的webhook配置"></i>
+                                </label>
+                                <div class="input-group">
+                                    <input type="text"
+                                           class="form-control form-control-lg"
+                                           id="webhook-key"
+                                           readonly
+                                           placeholder="加载中...">
+                                    <button class="btn btn-outline-primary"
+                                            type="button"
+                                            onclick="refreshWebhookKey()">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                         <div class="alert alert-warning mt-3">
                             <i class="bi bi-exclamation-triangle me-2"></i>
-                            <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。
+                            <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。刷新Webhook密钥后，需要更新媒体服务器的webhook配置。
                         </div>
                     </div>
                 </div>
@@ -954,6 +974,7 @@ function populateForm(config) {
         document.getElementById('https-only').checked = config.auth.https_only || false;
         document.getElementById('max-login-attempts').value = config.auth.max_login_attempts || 5;
         document.getElementById('lockout-duration').value = config.auth.lockout_duration || 900;
+        document.getElementById('webhook-key').value = config.auth.webhook_key || '';
         // 密码字段留空，表示不修改
         document.getElementById('auth-password').value = '';
     }
@@ -2116,6 +2137,35 @@ async function testWebhook(webhookId) {
     } finally {
         button.disabled = false;
         button.innerHTML = originalHtml;
+    }
+}
+
+// 刷新 Webhook 密钥
+async function refreshWebhookKey() {
+    if (!confirm('确定要刷新 Webhook 密钥吗？\n\n刷新后需要更新媒体服务器的 webhook 配置：\n- Plex: http://{ip}:8000/Plex/{新密钥}\n- Emby: http://{ip}:8000/Emby/{新密钥}\n- Jellyfin: http://{ip}:8000/Jellyfin/{新密钥}')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/config/auth/refresh-webhook-key', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            document.getElementById('webhook-key').value = data.data.webhook_key;
+            showAlert('Webhook 密钥刷新成功！请更新媒体服务器的 webhook 配置', 'success', 8000);
+        } else {
+            showAlert('刷新失败: ' + data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('刷新 Webhook 密钥失败:', error);
+        showAlert('刷新 Webhook 密钥失败', 'danger');
     }
 }
     </script>
