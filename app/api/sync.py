@@ -315,8 +315,9 @@ async def plex_sync(plex_request: Request, webhook_key: str):
     """Plex同步接口（实际webhook端点）"""
     # 验证 webhook key
     from ..core.security import security_manager
+
     if not security_manager.verify_webhook_key(webhook_key):
-        logger.warning(f"Plex webhook 认证失败，无效的 key")
+        logger.warning("Plex webhook 认证失败，无效的 key")
         return {"status": "error", "message": "认证失败"}
 
     try:
@@ -361,8 +362,9 @@ async def emby_sync(emby_request: Request, webhook_key: str):
     """Emby同步接口（实际webhook端点）"""
     # 验证 webhook key
     from ..core.security import security_manager
+
     if not security_manager.verify_webhook_key(webhook_key):
-        logger.warning(f"Emby webhook 认证失败，无效的 key")
+        logger.warning("Emby webhook 认证失败，无效的 key")
         return {"status": "error", "message": "认证失败"}
 
     try:
@@ -423,8 +425,9 @@ async def jellyfin_sync(jellyfin_request: Request, webhook_key: str):
     """Jellyfin同步接口（实际webhook端点）"""
     # 验证 webhook key
     from ..core.security import security_manager
+
     if not security_manager.verify_webhook_key(webhook_key):
-        logger.warning(f"Jellyfin webhook 认证失败，无效的 key")
+        logger.warning("Jellyfin webhook 认证失败，无效的 key")
         return {"status": "error", "message": "认证失败"}
 
     try:
