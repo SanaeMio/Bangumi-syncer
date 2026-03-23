@@ -310,9 +310,15 @@ async def get_sync_stats(
 # ========== 媒体服务器专用接口 ==========
 
 
-@root_router.post("/Plex")
-async def plex_sync(plex_request: Request):
+@root_router.post("/Plex/{webhook_key}")
+async def plex_sync(plex_request: Request, webhook_key: str):
     """Plex同步接口（实际webhook端点）"""
+    # 验证 webhook key
+    from ..core.security import security_manager
+    if not security_manager.verify_webhook_key(webhook_key):
+        logger.warning(f"Plex webhook 认证失败，无效的 key")
+        return {"status": "error", "message": "认证失败"}
+
     try:
         json_str = await plex_request.body()
         plex_data = json.loads(extract_plex_json(json_str))
@@ -350,9 +356,15 @@ async def plex_sync(plex_request: Request):
         return {"status": "error", "message": f"处理失败: {str(e)}"}
 
 
-@root_router.post("/Emby")
-async def emby_sync(emby_request: Request):
+@root_router.post("/Emby/{webhook_key}")
+async def emby_sync(emby_request: Request, webhook_key: str):
     """Emby同步接口（实际webhook端点）"""
+    # 验证 webhook key
+    from ..core.security import security_manager
+    if not security_manager.verify_webhook_key(webhook_key):
+        logger.warning(f"Emby webhook 认证失败，无效的 key")
+        return {"status": "error", "message": "认证失败"}
+
     try:
         # 获取请求内容
         body = await emby_request.body()
@@ -406,9 +418,15 @@ async def emby_sync(emby_request: Request):
         return {"status": "error", "message": f"处理失败: {str(e)}"}
 
 
-@root_router.post("/Jellyfin")
-async def jellyfin_sync(jellyfin_request: Request):
+@root_router.post("/Jellyfin/{webhook_key}")
+async def jellyfin_sync(jellyfin_request: Request, webhook_key: str):
     """Jellyfin同步接口（实际webhook端点）"""
+    # 验证 webhook key
+    from ..core.security import security_manager
+    if not security_manager.verify_webhook_key(webhook_key):
+        logger.warning(f"Jellyfin webhook 认证失败，无效的 key")
+        return {"status": "error", "message": "认证失败"}
+
     try:
         json_str = await jellyfin_request.body()
         jellyfin_data = json.loads(json_str)
