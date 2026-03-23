@@ -233,7 +233,7 @@ services:
   "source": "custom（根据实际情况定义一个来源名称）"
 }
 ```
-3. 将以上json发送到`http://{ip}:8000/Custom`，ip根据本机情况填写
+3. 将以上json发送到`http://{ip}:8000/Custom/{webhook_key}`，ip根据本机情况填写，webhook_key从配置页面的「Webhook认证密钥」复制
 
 4. 播放完成后，可在Web界面「日志管理」页面查看同步结果
 

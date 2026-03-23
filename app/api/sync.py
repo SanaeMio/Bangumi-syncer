@@ -22,14 +22,20 @@ router = APIRouter(prefix="/api", tags=["sync"])
 root_router = APIRouter(tags=["sync"])
 
 
-@root_router.post("/Custom", status_code=202)
+@root_router.post("/Custom/{webhook_key}", status_code=202)
 async def custom_sync(
     item: CustomItem,
     response: Response,
+    webhook_key: str,
     source: str = "custom",
     async_mode: bool = True,
 ):
     """自定义同步接口"""
+    from ..core.security import security_manager
+
+    if not security_manager.verify_webhook_key(webhook_key):
+        logger.warning("Custom webhook 认证失败，无效的 key")
+        return {"status": "error", "message": "认证失败"}
     try:
         if async_mode:
             # 异步处理模式
