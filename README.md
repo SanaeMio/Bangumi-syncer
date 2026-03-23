@@ -168,6 +168,7 @@ services:
 **同步配置**
 - **同步模式**：选择单用户模式或多用户模式
 - **单用户模式用户名**：媒体服务器中的用户名 **（单用户模式必填）**
+- **Webhook认证密钥**：用于Plex/Emby/Jellyfin webhook的认证密钥，可在配置页面复制使用
 - **屏蔽关键词**：跳过包含指定关键词的番剧，多个关键词用逗号分隔
 
 **多用户模式配置**（有需要时才填）
@@ -244,7 +245,7 @@ services:
 2. 打开Tautulli控制面板，右上角`Settings` -> `Notification Agents` -> `Add a new notification agent` -> 选择`Webhook`
 ![](https://p.sda1.dev/16/c01e9de56892498c0163a0ffb7d112fe/1.jpg)
 
-3. 在弹出页面的`Configuration`中的`Webhook URL`填写`http://{ip}:8000/Custom`，ip根据本机情况填写
+3. 在弹出页面的`Configuration`中的`Webhook URL`填写`http://{ip}:8000/Plex/{密钥}`，ip根据本机情况填写，密钥从配置页面的「Webhook认证密钥」复制
 ![](https://p.sda1.dev/16/3e08440dbe4c35c35ba4981a4c8945ed/2.jpg)
 
 4. `Triggers`勾选`Watched`
@@ -271,7 +272,7 @@ services:
 2. 打开Plex控制面板，右上角`设置` -> `Webhooks` -> `添加 Webhook`
 ![](https://p.sda1.dev/16/e68729e1d454bdd23a7c9fe76ca71251/1.jpg)
 
-3. 填写网址为`http://{ip}:8000/Plex`，ip根据本机情况填写，点击`保存修改`
+3. 填写网址为`http://{ip}:8000/Plex/{密钥}`，ip根据本机情况填写，密钥从配置页面的「Webhook认证密钥」复制，点击`保存修改`
 
 4. 在Plex播放完成后，可在Web界面「日志管理」页面查看同步结果
 
@@ -280,7 +281,7 @@ services:
 1. 运行Bangumi-syncer
 2. 打开Emby控制面板 -> `应用程序设置` -> `通知` -> `添加通知` -> 选择`Webhooks`
 ![](https://p.sda1.dev/16/ba2ca4af8b382aebd6e9782c7971f703/1.jpg)
-3. 名称随意填写，URL填写`http://{ip}:8000/Emby`，ip根据本机情况填写，请求内容类型选择`application/json`，Events里勾选`播放-停止`和`用户-标记为已播放`，`将媒体库事件限制为`根据自己情况，建议只勾选包含动画的库，最后点击`储存`
+3. 名称随意填写，URL填写`http://{ip}:8000/Emby/{密钥}`，ip根据本机情况填写，密钥从配置页面的「Webhook认证密钥」复制，请求内容类型选择`application/json`，Events里勾选`播放-停止`和`用户-标记为已播放`，`将媒体库事件限制为`根据自己情况，建议只勾选包含动画的库，最后点击`储存`
 4. 在Emby播放完成 或 手动标记为已播放后，可在Web界面「日志管理」页面查看同步结果
 
 ### Jellyfin插件
@@ -290,7 +291,7 @@ services:
 ![](https://p.sda1.dev/16/be346724555f34a98b5dc16c73df794f/1.jpg)
 3. 打开Jellyfin控制台 -> `插件` -> `我的插件` -> 点进`Webhook`。`Server Url`里输入你的Jellyfin地址，点击`Add Generic Destination`
 ![](https://p.sda1.dev/16/038568513c591f785d10ee745f254966/2.jpg)
-4. 展开下方的`Generic`,`Webhook Name`随便填，`Webhook Url`输入`http://{ip}:8000/Jellyfin`，ip根据本机情况填写。
+4. 展开下方的`Generic`,`Webhook Name`随便填，`Webhook Url`输入`http://{ip}:8000/Jellyfin/{密钥}`，ip根据本机情况填写，密钥从配置页面的「Webhook认证密钥」复制。
 `Notification Type`只选中`Playback Stop`，`Item Type`只选中`Episodes`。`Template`填写如下模版，然后点击`Save`保存设置
 
 ```bash

@@ -46,6 +46,46 @@
                                        placeholder="输入媒体服务器用户名">
                             </div>
                             <div class="col-12">
+                                <label for="webhook-key" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Webhook认证密钥
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于Plex/Emby/Jellyfin webhook的认证密钥。刷新后需要更新媒体服务器的webhook配置"></i>
+                                </label>
+                                <div class="input-group">
+                                    <input type="text"
+                                           class="form-control form-control-lg"
+                                           id="webhook-key"
+                                           readonly
+                                           placeholder="加载中...">
+                                    <button class="btn btn-outline-primary"
+                                            type="button"
+                                            onclick="copyWebhookKey()">
+                                        <i class="bi bi-clipboard me-1"></i>复制
+                                    </button>
+                                    <button class="btn btn-outline-secondary"
+                                            type="button"
+                                            onclick="refreshWebhookKey()">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+                                    </button>
+                                </div>
+                                <div class="alert alert-info mt-2 mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <strong>Webhook 配置提示：</strong>
+                                    <div class="mt-2">
+                                        <div>
+                                            <strong>Plex：</strong>http://{ip}:8000/Plex/{密钥}
+                                        </div>
+                                        <div>
+                                            <strong>Emby：</strong>http://{ip}:8000/Emby/{密钥}
+                                        </div>
+                                        <div>
+                                            <strong>Jellyfin：</strong>http://{ip}:8000/Jellyfin/{密钥}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
                                 <label for="blocked-keywords" class="form-label fw-semibold">
                                     <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -452,30 +492,10 @@
                                        min="60"
                                        max="86400">
                             </div>
-                            <div class="col-md-3">
-                                <label for="webhook-key" class="form-label fw-semibold">
-                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Webhook认证密钥
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="用于Plex/Emby/Jellyfin webhook的认证密钥。刷新后需要更新媒体服务器的webhook配置"></i>
-                                </label>
-                                <div class="input-group">
-                                    <input type="text"
-                                           class="form-control form-control-lg"
-                                           id="webhook-key"
-                                           readonly
-                                           placeholder="加载中...">
-                                    <button class="btn btn-outline-primary"
-                                            type="button"
-                                            onclick="refreshWebhookKey()">
-                                        <i class="bi bi-arrow-clockwise me-1"></i>刷新
-                                    </button>
-                                </div>
-                            </div>
                         </div>
                         <div class="alert alert-warning mt-3">
                             <i class="bi bi-exclamation-triangle me-2"></i>
-                            <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。刷新Webhook密钥后，需要更新媒体服务器的webhook配置。
+                            <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。
                         </div>
                     </div>
                 </div>
@@ -2166,6 +2186,37 @@ async function refreshWebhookKey() {
     } catch (error) {
         console.error('刷新 Webhook 密钥失败:', error);
         showAlert('刷新 Webhook 密钥失败', 'danger');
+    }
+}
+
+// 复制 Webhook 密钥
+function copyWebhookKey() {
+    const webhookKey = document.getElementById('webhook-key').value;
+    if (!webhookKey || webhookKey === '加载中...') {
+        showAlert('Webhook 密钥未加载', 'warning');
+        return;
+    }
+    
+    const textarea = document.createElement('textarea');
+    textarea.value = webhookKey;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    
+    try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        
+        if (successful) {
+            showAlert('Webhook 密钥已复制到剪贴板', 'success');
+        } else {
+            showAlert('复制失败，请手动复制', 'danger');
+        }
+    } catch (err) {
+        document.body.removeChild(textarea);
+        console.error('复制失败:', err);
+        showAlert('复制失败，请手动复制', 'danger');
     }
 }
     </script>
