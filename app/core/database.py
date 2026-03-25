@@ -2,6 +2,8 @@
 数据库管理模块
 """
 
+import os
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -10,11 +12,30 @@ from typing import Any, Optional
 from .logging import logger
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 class DatabaseManager:
     """数据库管理器"""
 
-    def __init__(self, db_path: str = "sync_records.db"):
+    def __init__(self, db_path: Optional[str] = None):
+        auto = db_path is None
+        if auto:
+            db_path = (
+                "data/sync_records.db"
+                if _env_flag("DOCKER_CONTAINER")
+                else "sync_records.db"
+            )
         self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if auto and _env_flag("DOCKER_CONTAINER"):
+            legacy = Path("sync_records.db")
+            if not self.db_path.exists() and legacy.is_file():
+                shutil.move(str(legacy), str(self.db_path))
+                logger.info(f"Docker: 已从旧路径迁移数据库 {legacy} -> {self.db_path}")
+
         self._init_database()
 
     def _init_database(self) -> None:
