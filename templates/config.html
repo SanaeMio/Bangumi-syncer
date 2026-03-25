@@ -46,6 +46,21 @@
                                        placeholder="输入媒体服务器用户名">
                             </div>
                             <div class="col-12">
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-auth-enabled"
+                                           name="auth.webhook_auth_enabled"
+                                           onchange="toggleWebhookKeySection()">
+                                    <label class="form-check-label fw-semibold" for="webhook-auth-enabled">
+                                        <i class="bi bi-shield-lock me-1 text-warning"></i>启用Webhook认证
+                                        <i class="bi bi-question-circle ms-1 text-muted"
+                                           data-bs-toggle="tooltip"
+                                           title="开启后需要提供密钥才能访问webhook接口，关闭后可直接访问无需密钥"></i>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-12" id="webhook-key-section">
                                 <label for="webhook-key" class="form-label fw-semibold">
                                     <i class="bi bi-link-45deg me-1 text-primary"></i>Webhook认证密钥
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -73,14 +88,23 @@
                                     <i class="bi bi-info-circle me-2"></i>
                                     <strong>Webhook 配置提示：</strong>
                                     <div class="mt-2">
-                                        <div>
+                                        <div id="webhook-auth-enabled-tip">
                                             <strong>Plex：</strong>http://{ip}:8000/Plex/{密钥}
                                         </div>
-                                        <div>
+                                        <div id="webhook-auth-disabled-tip" style="display: none;">
+                                            <strong>Plex：</strong>http://{ip}:8000/Plex/
+                                        </div>
+                                        <div id="webhook-auth-enabled-tip-emby">
                                             <strong>Emby：</strong>http://{ip}:8000/Emby/{密钥}
                                         </div>
-                                        <div>
+                                        <div id="webhook-auth-disabled-tip-emby" style="display: none;">
+                                            <strong>Emby：</strong>http://{ip}:8000/Emby/
+                                        </div>
+                                        <div id="webhook-auth-enabled-tip-jellyfin">
                                             <strong>Jellyfin：</strong>http://{ip}:8000/Jellyfin/{密钥}
+                                        </div>
+                                        <div id="webhook-auth-disabled-tip-jellyfin" style="display: none;">
+                                            <strong>Jellyfin：</strong>http://{ip}:8000/Jellyfin/
                                         </div>
                                     </div>
                                 </div>
@@ -994,9 +1018,13 @@ function populateForm(config) {
         document.getElementById('https-only').checked = config.auth.https_only || false;
         document.getElementById('max-login-attempts').value = config.auth.max_login_attempts || 5;
         document.getElementById('lockout-duration').value = config.auth.lockout_duration || 900;
+        document.getElementById('webhook-auth-enabled').checked = config.auth.webhook_auth_enabled || false;
         document.getElementById('webhook-key').value = config.auth.webhook_key || '';
         // 密码字段留空，表示不修改
         document.getElementById('auth-password').value = '';
+        
+        // 根据webhook认证开关显示/隐藏密钥区域
+        toggleWebhookKeySection();
     }
 
     // 切换同步模式
@@ -1024,6 +1052,29 @@ function toggleSyncMode() {
         singleContainer.style.display = 'none';
         singleBangumiSection.style.display = 'none';
         multiSection.style.display = 'block';
+    }
+}
+
+function toggleWebhookKeySection() {
+    const enabled = document.getElementById('webhook-auth-enabled').checked;
+    const keySection = document.getElementById('webhook-key-section');
+    
+    if (enabled) {
+        keySection.style.display = 'block';
+        document.getElementById('webhook-auth-enabled-tip').style.display = 'block';
+        document.getElementById('webhook-auth-disabled-tip').style.display = 'none';
+        document.getElementById('webhook-auth-enabled-tip-emby').style.display = 'block';
+        document.getElementById('webhook-auth-disabled-tip-emby').style.display = 'none';
+        document.getElementById('webhook-auth-enabled-tip-jellyfin').style.display = 'block';
+        document.getElementById('webhook-auth-disabled-tip-jellyfin').style.display = 'none';
+    } else {
+        keySection.style.display = 'none';
+        document.getElementById('webhook-auth-enabled-tip').style.display = 'none';
+        document.getElementById('webhook-auth-disabled-tip').style.display = 'block';
+        document.getElementById('webhook-auth-enabled-tip-emby').style.display = 'none';
+        document.getElementById('webhook-auth-disabled-tip-emby').style.display = 'block';
+        document.getElementById('webhook-auth-enabled-tip-jellyfin').style.display = 'none';
+        document.getElementById('webhook-auth-disabled-tip-jellyfin').style.display = 'block';
     }
 }
 
@@ -1127,7 +1178,8 @@ async function saveConfig() {
                 session_timeout: parseInt(document.getElementById('session-timeout').value) || 3600,
                 https_only: document.getElementById('https-only').checked,
                 max_login_attempts: parseInt(document.getElementById('max-login-attempts').value) || 5,
-                lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900
+                lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900,
+                webhook_auth_enabled: document.getElementById('webhook-auth-enabled').checked
             }
         };
         

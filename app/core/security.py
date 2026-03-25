@@ -45,6 +45,7 @@ class SecurityManager:
                 "max_login_attempts": "5",
                 "lockout_duration": "900",
                 "webhook_key": "",
+                "webhook_auth_enabled": "False",
             }
 
             for key, default_value in auth_defaults.items():
@@ -111,6 +112,9 @@ class SecurityManager:
                 "auth", "lockout_duration", fallback=900
             ),
             "webhook_key": config_manager.get("auth", "webhook_key", fallback=""),
+            "webhook_auth_enabled": config_manager.get(
+                "auth", "webhook_auth_enabled", fallback=False
+            ),
         }
 
     def hash_password(self, password: str, secret_key: str) -> str:
@@ -303,7 +307,16 @@ class SecurityManager:
             return False
 
     def verify_webhook_key(self, key: str) -> bool:
-        """验证 webhook key 是否正确"""
+        """验证 webhook key 是否正确
+
+        如果 webhook_auth_enabled 为 False，则跳过验证直接返回 True
+        """
+        webhook_auth_enabled = config_manager.get(
+            "auth", "webhook_auth_enabled", fallback=False
+        )
+        if not webhook_auth_enabled:
+            return True
+
         webhook_key = config_manager.get("auth", "webhook_key", "")
         return key == webhook_key
 
