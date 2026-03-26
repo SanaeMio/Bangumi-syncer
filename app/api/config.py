@@ -346,3 +346,20 @@ async def cleanup_config_backups(
     except Exception as e:
         logger.error(f"清理配置备份失败: {e}")
         raise HTTPException(status_code=500, detail=f"清理配置备份失败: {str(e)}")
+
+
+@router.post("/config/auth/refresh-webhook-key")
+async def refresh_webhook_key(
+    request: Request, current_user: dict = Depends(get_current_user_flexible)
+):
+    """刷新webhook密钥"""
+    try:
+        new_webhook_key = security_manager.refresh_webhook_key()
+        return {
+            "status": "success",
+            "message": "webhook密钥刷新成功",
+            "data": {"webhook_key": new_webhook_key},
+        }
+    except Exception as e:
+        logger.error(f"刷新webhook密钥失败: {e}")
+        raise HTTPException(status_code=500, detail=f"刷新webhook密钥失败: {str(e)}")
