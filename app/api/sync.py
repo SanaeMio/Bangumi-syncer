@@ -23,7 +23,7 @@ root_router = APIRouter(tags=["sync"])
 
 
 @root_router.post("/Custom/{webhook_key}", status_code=202)
-async def custom_sync_with_key(
+async def custom_sync(
     item: CustomItem,
     response: Response,
     webhook_key: str,
