@@ -3,13 +3,13 @@
 """
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 
+from ..core.public_url import redirect_public
+from ..core.web_templates import get_templates
 from .deps import get_current_user_from_cookie
 
-# 设置模板引擎
-templates = Jinja2Templates(directory="templates")
+templates = get_templates()
 
 # 创建页面路由
 router = APIRouter(tags=["pages"])
@@ -18,7 +18,7 @@ router = APIRouter(tags=["pages"])
 @router.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     """根路径重定向到仪表板"""
-    return RedirectResponse(url="/dashboard", status_code=302)
+    return redirect_public("/dashboard")
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -26,7 +26,7 @@ async def dashboard(request: Request):
     """仪表板页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return redirect_public("/login")
 
     return templates.TemplateResponse(
         "dashboard.html", {"request": request, "user": user}
@@ -39,7 +39,7 @@ async def login_page(request: Request):
     # 如果已经登录，直接跳转到主页
     user = get_current_user_from_cookie(request)
     if user:
-        return RedirectResponse(url="/dashboard", status_code=302)
+        return redirect_public("/dashboard")
 
     return templates.TemplateResponse("login.html", {"request": request})
 
@@ -49,7 +49,7 @@ async def config_page(request: Request):
     """配置管理页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return redirect_public("/login")
 
     return templates.TemplateResponse("config.html", {"request": request, "user": user})
 
@@ -59,7 +59,7 @@ async def records_page(request: Request):
     """同步记录页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return redirect_public("/login")
 
     return templates.TemplateResponse(
         "records.html", {"request": request, "user": user}
@@ -71,7 +71,7 @@ async def mappings_page(request: Request):
     """映射管理页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return redirect_public("/login")
 
     return templates.TemplateResponse(
         "mappings.html", {"request": request, "user": user}
@@ -83,7 +83,7 @@ async def debug_page(request: Request):
     """调试工具页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return redirect_public("/login")
 
     return templates.TemplateResponse("debug.html", {"request": request, "user": user})
 
@@ -93,7 +93,7 @@ async def logs_page(request: Request):
     """日志页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return redirect_public("/login")
 
     return templates.TemplateResponse("logs.html", {"request": request, "user": user})
 
@@ -103,7 +103,7 @@ async def trakt_config_page(request: Request):
     """Trakt 配置页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return RedirectResponse(url="/login", status_code=302)
+        return redirect_public("/login")
 
     return templates.TemplateResponse(
         "trakt/config.html", {"request": request, "user": user}

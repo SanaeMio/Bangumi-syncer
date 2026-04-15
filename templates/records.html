@@ -151,7 +151,7 @@ async function loadRecords(page = 1, limit = 50) {
             ...currentFilters
         });
         
-        const response = await fetch(`/api/records?${params}`);
+        const response = await fetch(appUrl(`/api/records?${params}`));
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -361,7 +361,7 @@ function clearFilters() {
 async function showRecordDetail(recordId) {
     try {
         // 从API获取完整的记录数据
-        const response = await fetch(`/api/records/${recordId}`, {
+        const response = await fetch(appUrl(`/api/records/${recordId}`), {
             method: 'GET',
             credentials: 'include'
         });

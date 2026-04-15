@@ -7,7 +7,6 @@ import os
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from version import get_version, get_version_info, get_version_name
 
@@ -23,16 +22,21 @@ from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
 from .core.config import config_manager
 from .core.logging import logger
+from .core.public_url import get_public_base_path
 from .core.startup_info import startup_info
 from .services.mapping_service import mapping_service
 from .services.trakt.scheduler import trakt_scheduler
 
-# 创建FastAPI应用
-app = FastAPI(
-    title=get_version_name(),
-    description=get_version_info()["description"],
-    version=get_version(),
-)
+# 创建FastAPI应用（root_path 便于反代子路径下 OpenAPI 等）
+_app_kw: dict = {
+    "title": get_version_name(),
+    "description": get_version_info()["description"],
+    "version": get_version(),
+}
+_rp = get_public_base_path()
+if _rp:
+    _app_kw["root_path"] = _rp
+app = FastAPI(**_app_kw)
 
 
 # 创建静态文件和模板目录
@@ -41,9 +45,6 @@ os.makedirs("templates", exist_ok=True)
 
 # 挂载静态文件
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# 设置模板引擎
-templates = Jinja2Templates(directory="templates")
 
 # 注册路由
 app.include_router(sync_router)
