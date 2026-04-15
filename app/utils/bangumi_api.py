@@ -4,6 +4,7 @@ import os
 import socket
 import time
 import warnings
+from typing import Optional, Union
 
 import requests
 
@@ -474,12 +475,100 @@ class BangumiApi:
         self._cache["get_episodes"][cache_key] = res
         return res
 
+    @staticmethod
+    def _parse_iso_date_ymd(value: Optional[str]) -> Optional[datetime.date]:
+        if not value or len(value) < 10:
+            return None
+        try:
+            return datetime.datetime.strptime(value[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    def _sequel_next_tv_subject_id(self, current_id: Union[str, int]) -> Optional[int]:
+        related = self.get_related_subjects(current_id)
+        if isinstance(related, list):
+            nxt = [i for i in related if i.get("relation") == "续集"]
+        elif isinstance(related, dict):
+            related_list = related.get("data", [])
+            nxt = [i for i in related_list if i.get("relation") == "续集"]
+        else:
+            nxt = []
+        if not nxt:
+            return None
+        return nxt[0]["id"]
+
+    def _match_target_ep_rows(self, ep_info: list, target_ep: int):
+        """与 target_season>1 分支一致的章节匹配规则。"""
+        rows = [i for i in ep_info if i.get("sort") == target_ep]
+        if not rows:
+            rows = [
+                i
+                for i in ep_info
+                if i.get("ep") == target_ep and i.get("ep", 0) <= i.get("sort", 0)
+            ]
+        return rows
+
+    def _try_resolve_sequel_by_airdate(
+        self,
+        subject_id: Union[str, int],
+        target_ep: int,
+        release_date: str,
+        max_hops: int = 15,
+        max_days_diff: int = 120,
+    ) -> Optional[tuple[Union[str, int], Union[str, int]]]:
+        """
+        沿「续集」链查找与 release_date 最接近的 target_ep 章节（用于 Plex 季数与 Bangumi 分段不一致）。
+        仅在存在有效 airdate 且与播出日差距不超过 max_days_diff 时返回。
+        """
+        target_day = self._parse_iso_date_ymd(release_date)
+        if not target_day:
+            return None
+
+        candidates: list[
+            tuple[Union[str, int], Union[str, int], int, int]
+        ] = []  # sid, ep_id, diff_days, hop
+        current_id: Union[str, int] = subject_id
+        for hop in range(max_hops):
+            nxt = self._sequel_next_tv_subject_id(current_id)
+            if nxt is None:
+                break
+            current_id = nxt
+            current_info = self.get_subject(current_id)
+            if not current_info or current_info.get("platform") != "TV":
+                continue
+            episodes = self.get_episodes(current_id)
+            ep_info = episodes.get("data", [])
+            if not ep_info:
+                continue
+            rows = self._match_target_ep_rows(ep_info, target_ep)
+            if not rows:
+                continue
+            air_raw = (rows[0].get("airdate") or "").strip()
+            ep_day = self._parse_iso_date_ymd(air_raw)
+            if not ep_day:
+                continue
+            diff_days = abs((ep_day - target_day).days)
+            candidates.append((current_id, rows[0]["id"], diff_days, hop))
+
+        if not candidates:
+            return None
+        # 日期差最小；并列时取续集链更靠后的条目（通常更新）
+        best = min(candidates, key=lambda x: (x[2], -x[3]))
+        if best[2] > max_days_diff:
+            return None
+        logger.debug(
+            f"按 airdate 择优续集链匹配: subject_id={best[0]} ep_id={best[1]} "
+            f"与播出日相差 {best[2]} 天"
+        )
+        return best[0], best[1]
+
     def get_target_season_episode_id(
         self,
         subject_id,
         target_season: int,
         target_ep: int,
         is_season_subject_id: bool = False,
+        release_date: Optional[str] = None,
     ):
         season_num = 1
         current_id = subject_id
@@ -564,6 +653,19 @@ class BangumiApi:
                 fist_part = False
             return None, None if target_ep else None
 
+        # Plex 季数与 Bangumi 多期/续集计数不一致时，用播出日 + 章节 airdate 择优
+        if (
+            release_date
+            and not is_season_subject_id
+            and target_season > 1
+            and target_ep
+        ):
+            air_pick = self._try_resolve_sequel_by_airdate(
+                subject_id, target_ep, release_date
+            )
+            if air_pick is not None:
+                return air_pick[0], air_pick[1]
+
         while True:
             related = self.get_related_subjects(current_id)
             # 处理related可能是列表或字典的情况
@@ -593,15 +695,11 @@ class BangumiApi:
                 if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
                 else False
             )
-            _target_ep = [i for i in ep_info if i.get("sort") == target_ep]
+            sort_rows = [i for i in ep_info if i.get("sort") == target_ep]
+            _target_ep = self._match_target_ep_rows(ep_info, target_ep)
             logger.debug(_target_ep)
             # 兼容存在多季情况下，第一集的sort不为1的场景
-            if not _target_ep:
-                _target_ep = [
-                    i
-                    for i in ep_info
-                    if i.get("ep") == target_ep and i.get("ep", 0) <= i.get("sort", 0)
-                ]
+            if not sort_rows:
                 if (
                     target_ep
                     and _target_ep
