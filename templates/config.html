@@ -918,6 +918,44 @@
 // 全局变量
 let bangumiAccountCounter = 0;
 
+// ========== 通用通知类型复选框处理函数 ==========
+
+/**
+ * 清空所有通知类型复选框
+ * @param {string} prefix - 复选框ID前缀，如 'webhook-type-' 或 'email-type-'
+ */
+function clearNotificationTypeCheckboxes(prefix) {
+    const checkboxes = document.querySelectorAll(`[id^="${prefix}"]`);
+    checkboxes.forEach(cb => {
+        cb.checked = false;
+    });
+}
+
+/**
+ * 设置通知类型复选框的选中状态
+ * @param {string} prefix - 复选框ID前缀，如 'webhook-type-' 或 'email-type-'
+ * @param {string} types - 类型字符串，如 'all' 或 'mark_failed,mark_success'
+ */
+function setNotificationTypeCheckboxes(prefix, types) {
+    const checkboxes = document.querySelectorAll(`[id^="${prefix}"]`);
+    checkboxes.forEach(cb => {
+        if (types === 'all') {
+            cb.checked = false;
+        } else {
+            cb.checked = types.split(',').includes(cb.value);
+        }
+    });
+}
+
+/**
+ * 获取选中的通知类型字符串
+ * @param {string} prefix - 复选框ID前缀，如 'webhook-type-' 或 'email-type-'
+ * @returns {string} 选中的类型字符串，如 'mark_failed,mark_success' 或 'all'
+ */
+function getNotificationTypeCheckboxes(prefix) {
+    return Array.from(document.querySelectorAll(`[id^="${prefix}"]:checked`)).map(cb => cb.value).join(',') || 'all';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // 初始化工具提示
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -2035,7 +2073,9 @@ function showAddWebhookModal() {
     document.getElementById('webhook-method-input').value = 'POST';
     document.getElementById('webhook-headers-input').value = '';
     document.getElementById('webhook-template-input').value = '';
-    document.getElementById('webhook-types-input').value = 'all';
+    
+    // 清空所有 webhook 类型复选框
+    clearNotificationTypeCheckboxes('webhook-type-');
 
     const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
     modal.show();
@@ -2060,7 +2100,9 @@ async function showEditWebhookModal(webhookId) {
                 document.getElementById('webhook-method-input').value = webhook.method;
                 document.getElementById('webhook-headers-input').value = webhook.headers;
                 document.getElementById('webhook-template-input').value = webhook.template;
-                document.getElementById('webhook-types-input').value = webhook.types;
+                
+                // 设置复选框
+                setNotificationTypeCheckboxes('webhook-type-', webhook.types);
 
                 const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
                 modal.show();
@@ -2075,13 +2117,14 @@ async function showEditWebhookModal(webhookId) {
 // 保存 Webhook 配置
 async function saveWebhookConfig() {
     const webhookId = document.getElementById('webhook-id').value;
+    
     const webhookData = {
         enabled: document.getElementById('webhook-enabled-input').checked,
         url: document.getElementById('webhook-url-input').value,
         method: document.getElementById('webhook-method-input').value,
         headers: document.getElementById('webhook-headers-input').value,
         template: document.getElementById('webhook-template-input').value,
-        types: document.getElementById('webhook-types-input').value
+        types: getNotificationTypeCheckboxes('webhook-type-')
     };
 
     // 验证必填字段
@@ -2346,27 +2389,98 @@ function copyWebhookKey() {
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label for="webhook-types-input" class="form-label fw-semibold">
+                            <label class="form-label fw-semibold">
                                 <i class="bi bi-tags me-1"></i>通知类型
-                                <i class="bi bi-question-circle ms-1 text-muted"
-                                   data-bs-toggle="tooltip"
-                                   title="选择要触发的通知类型，多个类型用逗号分隔。选择 'all' 表示所有类型"></i>
                             </label>
-                            <select class="form-select" id="webhook-types-input">
-                                <option value="all">全部类型 (all)</option>
-                                <option value="request_received">收到请求 (request_received)</option>
-                                <option value="bangumi_id_found">找到番剧 (bangumi_id_found)</option>
-                                <option value="mark_success">标记成功 (mark_success)</option>
-                                <option value="mark_failed">标记失败 (mark_failed)</option>
-                                <option value="mark_skipped">标记跳过 (mark_skipped)</option>
-                                <option value="config_error">配置错误 (config_error)</option>
-                                <option value="anime_not_found">未找到番剧 (anime_not_found)</option>
-                                <option value="episode_not_found">未找到剧集 (episode_not_found)</option>
-                                <option value="api_auth_error">API认证失败 (api_auth_error)</option>
-                                <option value="api_error">API错误 (api_error)</option>
-                                <option value="api_retry_failed">API重试失败 (api_retry_failed)</option>
-                                <option value="ip_locked">IP被锁定 (ip_locked)</option>
-                            </select>
+                            <div class="border rounded p-3"
+                                 style="max-height: 200px;
+                                        overflow-y: auto">
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-request_received"
+                                           value="request_received">
+                                    <label class="form-check-label" for="webhook-type-request_received">收到同步请求 (request_received)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-bangumi_id_found"
+                                           value="bangumi_id_found">
+                                    <label class="form-check-label" for="webhook-type-bangumi_id_found">匹配到番剧 (bangumi_id_found)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-mark_success"
+                                           value="mark_success">
+                                    <label class="form-check-label" for="webhook-type-mark_success">同步成功 (mark_success)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-mark_failed"
+                                           value="mark_failed">
+                                    <label class="form-check-label" for="webhook-type-mark_failed">同步失败 (mark_failed)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-mark_skipped"
+                                           value="mark_skipped">
+                                    <label class="form-check-label" for="webhook-type-mark_skipped">已看过跳过 (mark_skipped)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-config_error"
+                                           value="config_error">
+                                    <label class="form-check-label" for="webhook-type-config_error">配置错误 (config_error)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-anime_not_found"
+                                           value="anime_not_found">
+                                    <label class="form-check-label" for="webhook-type-anime_not_found">未找到番剧 (anime_not_found)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-episode_not_found"
+                                           value="episode_not_found">
+                                    <label class="form-check-label" for="webhook-type-episode_not_found">未找到剧集 (episode_not_found)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-api_auth_error"
+                                           value="api_auth_error">
+                                    <label class="form-check-label" for="webhook-type-api_auth_error">API认证失败 (api_auth_error)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-api_error"
+                                           value="api_error">
+                                    <label class="form-check-label" for="webhook-type-api_error">API错误 (api_error)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-api_retry_failed"
+                                           value="api_retry_failed">
+                                    <label class="form-check-label" for="webhook-type-api_retry_failed">API重试失败 (api_retry_failed)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-ip_locked"
+                                           value="ip_locked">
+                                    <label class="form-check-label" for="webhook-type-ip_locked">IP被锁定 (ip_locked)</label>
+                                </div>
+                            </div>
+                            <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
                         </div>
                         <div class="mb-3">
                             <label for="webhook-headers-input" class="form-label fw-semibold">
@@ -2802,8 +2916,7 @@ function showAddEmailModal() {
     document.getElementById('email-password-required').style.display = 'inline';
 
     // 重置复选框
-    const checkboxes = document.querySelectorAll('[id^="email-type-"]');
-    checkboxes.forEach(cb => cb.checked = false);
+    clearNotificationTypeCheckboxes('email-type-');
 
     const modal = new bootstrap.Modal(document.getElementById('emailModal'));
     modal.show();
@@ -2840,14 +2953,7 @@ async function showEditEmailModal(emailId) {
                 document.getElementById('email-template-file-input').value = email.email_template_file;
 
                 // 设置复选框
-                const checkboxes = document.querySelectorAll('[id^="email-type-"]');
-                checkboxes.forEach(cb => {
-                    if (email.types === 'all') {
-                        cb.checked = false;
-                    } else {
-                        cb.checked = email.types.split(',').includes(cb.value);
-                    }
-                });
+                setNotificationTypeCheckboxes('email-type-', email.types);
 
                 const modal = new bootstrap.Modal(document.getElementById('emailModal'));
                 modal.show();
@@ -2874,7 +2980,7 @@ async function saveEmailConfig() {
         smtp_use_tls: document.getElementById('email-smtp-use-tls-input').checked,
         email_subject: document.getElementById('email-subject-input').value,
         email_template_file: document.getElementById('email-template-file-input').value,
-        types: Array.from(document.querySelectorAll('[id^="email-type-"]:checked')).map(cb => cb.value).join(',') || 'all'
+        types: getNotificationTypeCheckboxes('email-type-')
     };
     
     // 只有当密码不是掩码且不为空时才添加到请求数据中
