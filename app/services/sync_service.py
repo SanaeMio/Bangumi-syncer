@@ -170,11 +170,15 @@ class SyncService:
 
             # 查询bangumi番剧指定季度指定集数信息
             try:
+                release_for_ep = None
+                if item.release_date and len(item.release_date) >= 8:
+                    release_for_ep = item.release_date[:10]
                 bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
                     subject_id=subject_id,
                     target_season=item.season,
                     target_ep=item.episode,
                     is_season_subject_id=is_season_matched_id,
+                    release_date=release_for_ep,
                 )
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
