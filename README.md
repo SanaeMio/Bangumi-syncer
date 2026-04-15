@@ -1,11 +1,16 @@
 <p align="center">
   <a href="https://github.com/SanaeMio/Bangumi-syncer">
+    <img alt="Bangumi-syncer Mascot‌" width="250" src="https://p.sda1.dev/32/17c7fd38960a757b65292bdbfd2526d9/mascot‌.png">
+  </a>
+  <a href="https://github.com/SanaeMio/Bangumi-syncer">
     <img alt="Bangumi-syncer Logo" width="250" src="https://p.sda1.dev/16/7b48f7a38f0deb790f0fdc17390e0d93/logo.png">
   </a>
 </p>
 <p align="center">
-  <a href="https://github.com/SanaeMio/Bangumi-syncer"><img alt="languages" src="https://img.shields.io/github/languages/top/SanaeMio/Bangumi-syncer"/></a>
-  <a href="https://github.com/SanaeMio/Bangumi-syncer/releases"><img alt="release" src="https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer"/></a>
+ <a href="https://github.com/SanaeMio/Bangumi-syncer/releases"><img alt="release" src="https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer"/></a>
+  <a href="https://www.python.org/downloads/"><img alt="python" src="https://img.shields.io/badge/python-3.9+-3776AB"/></a>
+  <a href="https://hub.docker.com/r/sanaemio/bangumi-syncer"><img alt="docker pulls" src="https://img.shields.io/docker/pulls/sanaemio/bangumi-syncer"/></a>
+  <a href="https://codecov.io/gh/SanaeMio/Bangumi-syncer"><img alt="codecov" src="https://img.shields.io/codecov/c/github/SanaeMio/Bangumi-syncer"/></a>
   <a href="https://github.com/SanaeMio/Bangumi-syncer/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/github/license/SanaeMio/Bangumi-syncer"/></a>
 </p>
 
@@ -27,6 +32,8 @@
 - [😘 贡献](#-贡献)
 - [👏 鸣谢](#-鸣谢)
 - [📄 许可](#-许可)
+- [👥 贡献者](#-贡献者)
+- [⭐ Star 历史](#-star-历史)
 
 ## 🌟 简介
 通过Webhook调用 [Bangumi Api](https://bangumi.github.io/api/)，实现在客户端看完后自动同步打格子。
@@ -388,7 +395,7 @@ services:
 ## 😘 贡献
 因为我不是专业python开发者，纯兴趣，代码比较垃圾请见谅
 
-如果存在bug或想增加功能，欢迎 [提一个 Issue](https://github.com/SanaeMio/Bangumi-syncer/issues/new/choose) 或者提交一个 Pull Request
+如果存在 bug 或想增加功能，欢迎 [提一个 Issue](https://github.com/SanaeMio/Bangumi-syncer/issues/new/choose) 或者提交一个 Pull Request。参与开发前请先阅读 [贡献指南](CONTRIBUTING.md)。
 
 ## 👏 鸣谢
 
@@ -398,3 +405,13 @@ services:
 ## 📄 许可
 
 [MIT](https://github.com/SanaeMio/Bangumi-syncer/blob/main/LICENSE) © SanaeMio
+
+## ❤️ 贡献者
+
+<a href="https://github.com/SanaeMio/Bangumi-syncer/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=SanaeMio/Bangumi-syncer" alt="Contributors" />
+</a>
+
+## ⭐ Star 历史
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SanaeMio/Bangumi-syncer&type=Date)](https://star-history.com/#SanaeMio/Bangumi-syncer&Date)
