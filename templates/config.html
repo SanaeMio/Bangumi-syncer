@@ -233,6 +233,20 @@
                     <div class="card-body">
                         <div class="row g-3">
                             <div class="col-12">
+                                <label for="web-base-path" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Web 对外路径前缀（子路径反代）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="部署在反向代理子路径下时才需要填写，例如 /Bangumi，须与 Nginx location 一致；根路径访问请留空。修改后需要重启服务才生效。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="web-base-path"
+                                       name="web.base_path"
+                                       placeholder="除非你知道自己在做什么，否则留空，修改后需要重启服务才生效"
+                                       autocomplete="off">
+                            </div>
+                            <div class="col-12">
                                 <label for="script-proxy" class="form-label fw-semibold">
                                     <i class="bi bi-globe me-1 text-info"></i>HTTP代理
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -730,7 +744,7 @@
                         <br>
                         提供更丰富的调试功能和更好的用户体验。
                     </p>
-                    <a href="/debug" class="btn btn-info px-4">
+                    <a href="{{ '/debug' | p }}" class="btn btn-info px-4">
                         <i class="bi bi-arrow-right-circle me-2"></i>前往调试工具
                     </a>
                 </div>
@@ -956,7 +970,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadConfig(showToast = true) {
     try {
-        const response = await fetch('/api/config', {
+        const response = await fetch(appUrl('/api/config'), {
             method: 'GET',
             credentials: 'include',  // 包含Cookie认证信息
             headers: {
@@ -966,7 +980,7 @@ async function loadConfig(showToast = true) {
         
         if (response.status === 401) {
             // 认证失败，跳转到登录页面
-            window.location.href = '/login';
+            window.location.href = appUrl('/login');
             return;
         }
         
@@ -1000,6 +1014,10 @@ function populateForm(config) {
     document.getElementById('single-username').value = config.sync.single_username || '';
     document.getElementById('blocked-keywords').value = config.sync.blocked_keywords || '';
     
+    const webBase = document.getElementById('web-base-path');
+    if (webBase) {
+        webBase.value = (config.web && config.web.base_path) ? String(config.web.base_path) : '';
+    }
     document.getElementById('script-proxy').value = config.dev.script_proxy || '';
     document.getElementById('ssl-verify').checked = Boolean(config.dev.ssl_verify);
     document.getElementById('debug-mode').checked = Boolean(config.dev.debug);
@@ -1160,6 +1178,9 @@ async function saveConfig() {
                 single_username: document.getElementById('single-username').value,
                 blocked_keywords: document.getElementById('blocked-keywords').value
             },
+            web: {
+                base_path: (document.getElementById('web-base-path') && document.getElementById('web-base-path').value.trim()) || ''
+            },
             dev: {
                 script_proxy: document.getElementById('script-proxy').value,
                 ssl_verify: document.getElementById('ssl-verify').checked,
@@ -1217,7 +1238,7 @@ async function saveConfig() {
             configData.multi_accounts = multiAccounts;
         }
         
-        const response = await fetch('/api/config', {
+        const response = await fetch(appUrl('/api/config'), {
             method: 'POST',
             credentials: 'include',  // 包含Cookie认证信息
             headers: {
@@ -1236,11 +1257,11 @@ async function saveConfig() {
                 setTimeout(() => {
                     if (confirm('您已修改了登录密码，需要重新登录。是否现在跳转到登录页面？')) {
                         // 先登出，然后跳转到登录页面
-                        fetch('/api/logout', {
+                        fetch(appUrl('/api/logout'), {
                             method: 'POST',
                             credentials: 'include'
                         }).then(() => {
-                            window.location.href = '/login';
+                            window.location.href = appUrl('/login');
                         });
                     }
                 }, 1000);
@@ -1258,7 +1279,7 @@ async function saveConfig() {
 // 备份配置
 async function backupConfig() {
     try {
-        const response = await fetch('/api/config/backup', {
+        const response = await fetch(appUrl('/api/config/backup'), {
             method: 'POST',
             credentials: 'include',  // 包含Cookie认证信息
             headers: {
@@ -1318,7 +1339,7 @@ async function showRestoreModal() {
 // 加载备份文件列表
 async function loadBackupFiles() {
     try {
-        const response = await fetch('/api/config/backups', {
+        const response = await fetch(appUrl('/api/config/backups'), {
             credentials: 'include'
         });
         const data = await response.json();
@@ -1377,7 +1398,7 @@ async function selectBackupFile(filename) {
     event.target.closest('.list-group-item').classList.add('active');
     
     // 找到对应的backup对象
-    const response = await fetch('/api/config/backups', {
+    const response = await fetch(appUrl('/api/config/backups'), {
         credentials: 'include'
     });
     const data = await response.json();
@@ -1388,7 +1409,7 @@ async function selectBackupFile(filename) {
     
     // 预览配置内容
     try {
-        const response = await fetch(`/api/config/backup/${filename}`, {
+        const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
             credentials: 'include'
         });
         const data = await response.json();
@@ -1424,7 +1445,7 @@ async function deleteBackupFile(filename, event) {
     }
     
     try {
-        const response = await fetch(`/api/config/backup/${filename}`, {
+        const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
             method: 'DELETE',
             credentials: 'include'
         });
@@ -1461,7 +1482,7 @@ async function confirmRestore() {
     }
     
     try {
-        const response = await fetch(`/api/config/restore/${selectedBackupFile.filename}`, {
+        const response = await fetch(appUrl(`/api/config/restore/${selectedBackupFile.filename}`), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -1601,7 +1622,7 @@ function detectPortFromInput(event) {
             `;
             
             try {
-                const response = await fetch('/api/proxy/test-host', {
+                const response = await fetch(appUrl('/api/proxy/test-host'), {
                     method: 'POST',
                     credentials: 'include',
                     headers: {
@@ -1734,7 +1755,7 @@ async function loadProxySuggestions() {
     
     try {
         // 获取代理建议
-        const response = await fetch(`/api/proxy/suggestions?port=${port}`, {
+        const response = await fetch(appUrl(`/api/proxy/suggestions?port=${port}`), {
             method: 'GET',
             credentials: 'include',
             headers: {
@@ -1851,7 +1872,7 @@ async function testProxy(address, event) {
     button.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div>';
     
     try {
-        const response = await fetch('/api/proxy/test', {
+        const response = await fetch(appUrl('/api/proxy/test'), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -1893,7 +1914,7 @@ async function confirmCleanup() {
     }
     
     try {
-        const response = await fetch('/api/config/backups/cleanup', {
+        const response = await fetch(appUrl('/api/config/backups/cleanup'), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -1925,7 +1946,7 @@ async function confirmCleanup() {
 // 加载 Webhook 配置列表
 async function loadWebhookConfigs() {
     try {
-        const response = await fetch('/api/notification/webhooks', {
+        const response = await fetch(appUrl('/api/notification/webhooks'), {
             credentials: 'include'
         });
 
@@ -2023,7 +2044,7 @@ function showAddWebhookModal() {
 // 显示编辑 Webhook 模态框
 async function showEditWebhookModal(webhookId) {
     try {
-        const response = await fetch('/api/notification/webhooks', {
+        const response = await fetch(appUrl('/api/notification/webhooks'), {
             credentials: 'include'
         });
 
@@ -2073,7 +2094,7 @@ async function saveWebhookConfig() {
         let response;
         if (webhookId) {
             // 更新
-            response = await fetch(`/api/notification/webhooks/${webhookId}`, {
+            response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}`), {
                 method: 'PUT',
                 credentials: 'include',
                 headers: {
@@ -2083,7 +2104,7 @@ async function saveWebhookConfig() {
             });
         } else {
             // 创建
-            response = await fetch('/api/notification/webhooks', {
+            response = await fetch(appUrl('/api/notification/webhooks'), {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
@@ -2114,7 +2135,7 @@ async function saveWebhookConfig() {
 // 切换 Webhook 启用状态
 async function toggleWebhookEnabled(webhookId, enabled) {
     try {
-        const response = await fetch(`/api/notification/webhooks/${webhookId}`, {
+        const response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}`), {
             method: 'PUT',
             credentials: 'include',
             headers: {
@@ -2155,7 +2176,7 @@ async function deleteWebhookConfig() {
     const webhookId = document.getElementById('delete-webhook-id').value;
 
     try {
-        const response = await fetch(`/api/notification/webhooks/${webhookId}`, {
+        const response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}`), {
             method: 'DELETE',
             credentials: 'include'
         });
@@ -2186,7 +2207,7 @@ async function testWebhook(webhookId) {
     button.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
 
     try {
-        const response = await fetch(`/api/notification/webhooks/${webhookId}/test`, {
+        const response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}/test`), {
             method: 'POST',
             credentials: 'include'
         });
@@ -2219,7 +2240,7 @@ async function refreshWebhookKey() {
     }
 
     try {
-        const response = await fetch('/api/config/auth/refresh-webhook-key', {
+        const response = await fetch(appUrl('/api/config/auth/refresh-webhook-key'), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -2678,7 +2699,7 @@ function copyWebhookKey() {
 // 加载邮件配置列表
 async function loadEmailConfigs() {
     try {
-        const response = await fetch('/api/notification/emails', {
+        const response = await fetch(appUrl('/api/notification/emails'), {
             credentials: 'include'
         });
 
@@ -2791,7 +2812,7 @@ function showAddEmailModal() {
 // 显示编辑邮件配置模态框
 async function showEditEmailModal(emailId) {
     try {
-        const response = await fetch('/api/notification/emails', {
+        const response = await fetch(appUrl('/api/notification/emails'), {
             credentials: 'include'
         });
 
@@ -2876,14 +2897,14 @@ async function saveEmailConfig() {
     try {
         let response;
         if (emailId) {
-            response = await fetch(`/api/notification/emails/${emailId}`, {
+            response = await fetch(appUrl(`/api/notification/emails/${emailId}`), {
                 method: 'PUT',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(emailData)
             });
         } else {
-            response = await fetch('/api/notification/emails', {
+            response = await fetch(appUrl('/api/notification/emails'), {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -2909,7 +2930,7 @@ async function saveEmailConfig() {
 // 切换邮件配置启用状态
 async function toggleEmailEnabled(emailId, enabled) {
     try {
-        const response = await fetch(`/api/notification/emails/${emailId}`, {
+        const response = await fetch(appUrl(`/api/notification/emails/${emailId}`), {
             method: 'PUT',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
@@ -2941,7 +2962,7 @@ async function deleteEmailConfig() {
     const emailId = document.getElementById('delete-email-id').value;
 
     try {
-        const response = await fetch(`/api/notification/emails/${emailId}`, {
+        const response = await fetch(appUrl(`/api/notification/emails/${emailId}`), {
             method: 'DELETE',
             credentials: 'include'
         });
@@ -2969,7 +2990,7 @@ async function testEmail(emailId) {
     button.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
 
     try {
-        const response = await fetch(`/api/notification/emails/${emailId}/test`, {
+        const response = await fetch(appUrl(`/api/notification/emails/${emailId}/test`), {
             method: 'POST',
             credentials: 'include'
         });

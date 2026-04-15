@@ -197,7 +197,7 @@ function stopAutoRefresh() {
 
 async function loadLogs() {
     try {
-        const response = await fetch('/api/logs', {
+        const response = await fetch(appUrl('/api/logs'), {
             credentials: 'include'
         });
         const data = await response.json();
@@ -251,7 +251,7 @@ async function applyLogFilter() {
             limit: limit
         });
         
-        const response = await fetch(`/api/logs?${params}`);
+        const response = await fetch(appUrl(`/api/logs?${params}`));
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -273,7 +273,7 @@ async function confirmClearLogs() {
     const createBackup = document.getElementById('backup-before-clear').checked;
     
     try {
-        const response = await fetch('/api/logs/clear', {
+        const response = await fetch(appUrl('/api/logs/clear'), {
             method: 'POST',
             credentials: 'include',
             headers: {

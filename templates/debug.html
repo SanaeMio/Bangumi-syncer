@@ -304,7 +304,7 @@ async function testSync() {
         
         const startTime = Date.now();
         
-        const response = await fetch('/api/test-sync?async_mode=false', {
+        const response = await fetch(appUrl('/api/test-sync?async_mode=false'), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -451,7 +451,7 @@ async function diagnoseBangumiNetwork() {
     `;
     
     try {
-        const response = await fetch('/api/network/diagnose', {
+        const response = await fetch(appUrl('/api/network/diagnose'), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -761,7 +761,7 @@ async function testHostConnectivity() {
     `;
     
     try {
-        const response = await fetch('/api/proxy/test-host', {
+        const response = await fetch(appUrl('/api/proxy/test-host'), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -911,7 +911,7 @@ async function testProxy(address, event) {
     button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>测试中';
     
     try {
-        const response = await fetch('/api/proxy/test', {
+        const response = await fetch(appUrl('/api/proxy/test'), {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -1010,7 +1010,7 @@ async function testNotificationByType(type, btnId, resultDivId) {
     `;
     
     try {
-        const response = await fetch('/api/notification/test', {
+        const response = await fetch(appUrl('/api/notification/test'), {
             method: 'POST',
             credentials: 'include',
             headers: {

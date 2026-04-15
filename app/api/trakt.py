@@ -3,6 +3,7 @@ Trakt.tv API 路由
 """
 
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
@@ -11,6 +12,7 @@ from ..api import deps
 from ..core.config import config_manager
 from ..core.database import database_manager
 from ..core.logging import logger
+from ..core.public_url import redirect_public
 from ..models.trakt import (
     TraktApiConfigUpdateRequest,
     TraktAuthRequest,
@@ -65,30 +67,31 @@ async def trakt_auth_callback(
 ) -> RedirectResponse:
     """Trakt OAuth 回调处理"""
     try:
-        # 这里需要从会话或 state 中获取用户ID
-        # 简化处理：使用默认用户ID
-        if state is not None:
-            user_id = (
-                trakt_auth_service.extract_user_id_from_state(state) or "default_user"
+        if state is None:
+            return redirect_public(
+                "/trakt/auth?status=error&message=" + quote("缺少 state 参数", safe="")
             )
 
-            callback_request = TraktCallbackRequest(code=code, state=state or "")
-            callback_response = await trakt_auth_service.handle_callback(
-                callback_request, user_id
-            )
+        user_id = trakt_auth_service.extract_user_id_from_state(state) or "default_user"
 
-            if callback_response.success:
-                # 重定向到成功页面（不需要认证）
-                return RedirectResponse(url="/trakt/auth/success")
+        callback_request = TraktCallbackRequest(code=code, state=state or "")
+        callback_response = await trakt_auth_service.handle_callback(
+            callback_request, user_id
+        )
 
-        # 重定向到失败页面
-        return RedirectResponse(
-            url=f"/trakt/auth?status=error&message={callback_response.message}"
+        if callback_response.success:
+            return redirect_public("/trakt/auth/success")
+
+        return redirect_public(
+            "/trakt/auth?status=error&message="
+            + quote(str(callback_response.message), safe="")
         )
 
     except Exception as e:
         logger.error(f"处理 Trakt 回调失败: {e}")
-        return RedirectResponse(url=f"/trakt/auth?status=error&message={str(e)}")
+        return redirect_public(
+            "/trakt/auth?status=error&message=" + quote(str(e), safe="")
+        )
 
 
 @router.get("/config", response_model=TraktConfigResponse)

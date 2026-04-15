@@ -1,5 +1,18 @@
 // 通用JavaScript功能
 
+/**
+ * 子路径反向代理下的站内 URL（与后端 join_public / 模板 | p 一致）
+ */
+function appUrl(path) {
+    const base =
+        typeof window.__APP_BASE_PATH__ === 'string' ? window.__APP_BASE_PATH__ : '';
+    if (!path) {
+        return base || '/';
+    }
+    const p = path.startsWith('/') ? path : '/' + path;
+    return base + p;
+}
+
 // 显示提示消息
 function showAlert(message, type = 'info', duration = 5000) {
     // 创建Toast容器（如果不存在）
@@ -201,7 +214,7 @@ class ApiClient {
             // 处理认证失败
             if (response.status === 401) {
                 // 跳转到登录页面
-                window.location.href = '/login';
+                window.location.href = appUrl('/login');
                 return;
             }
             
@@ -246,7 +259,9 @@ class ApiClient {
     }
 }
 
-const api = new ApiClient();
+const api = new ApiClient(
+    typeof window.__APP_BASE_PATH__ === 'string' ? window.__APP_BASE_PATH__ : ''
+);
 
 // 表单验证
 class FormValidator {
@@ -401,7 +416,7 @@ document.addEventListener('DOMContentLoaded', function() {
 async function logout() {
     try {
         const result = await confirmAction('确定要登出吗？', async () => {
-            const response = await fetch('/api/logout', {
+            const response = await fetch(appUrl('/api/logout'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -412,7 +427,7 @@ async function logout() {
                 showAlert('登出成功', 'success', 2000);
                 // 延迟跳转到登录页面
                 setTimeout(() => {
-                    window.location.href = '/login';
+                    window.location.href = appUrl('/login');
                 }, 1000);
             } else {
                 throw new Error('登出失败');
@@ -440,7 +455,7 @@ async function confirmAction(message, callback) {
 // 检查认证状态
 async function checkAuthStatus() {
     try {
-        const response = await fetch('/api/auth/status');
+        const response = await fetch(appUrl('/api/auth/status'));
         const result = await response.json();
         
         if (result.status === 'success' && result.data) {
@@ -459,7 +474,7 @@ async function initAuth() {
     
     // 如果未认证且不在登录页面，跳转到登录页面
     if (!authStatus.authenticated && !window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
+        window.location.href = appUrl('/login');
         return false;
     }
     
@@ -482,6 +497,7 @@ window.StorageManager = StorageManager;
 window.logout = logout;
 window.checkAuthStatus = checkAuthStatus;
 window.initAuth = initAuth;
+window.appUrl = appUrl;
 
 // ========== 登录页面专用功能 ==========
 
@@ -534,7 +550,7 @@ async function handleLoginSubmit(e) {
     };
     
     try {
-        const response = await fetch('/api/login', {
+        const response = await fetch(appUrl('/api/login'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -554,7 +570,7 @@ async function handleLoginSubmit(e) {
             
             // 延迟跳转以显示成功信息
             setTimeout(() => {
-                window.location.href = '/';
+                window.location.href = appUrl('/');
             }, 1000);
         } else {
             // 登录失败
@@ -615,7 +631,7 @@ async function retrySync(recordId) {
         showAlert('正在重试同步...', 'info', 0);
         
         // 调用重试API
-        const response = await fetch(`/api/records/${recordId}/retry`, {
+        const response = await fetch(appUrl(`/api/records/${recordId}/retry`), {
             method: 'POST',
             credentials: 'include',
             headers: {

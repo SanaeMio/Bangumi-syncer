@@ -2,21 +2,22 @@
 <html lang="zh-CN">
     <head>
         <meta charset="UTF-8">
+        <script>window.__APP_BASE_PATH__ = {{ public_base_path_json() }};</script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>
             {% block title %}Bangumi Syncer{% endblock %}
         </title>
-        <link href="/static/css/bootstrap.min.css" rel="stylesheet">
-        <link href="/static/css/bootstrap-icons.css" rel="stylesheet">
-        <link href="/static/css/style.css" rel="stylesheet">
+        <link href="{{ '/static/css/bootstrap.min.css' | p }}" rel="stylesheet">
+        <link href="{{ '/static/css/bootstrap-icons.css' | p }}" rel="stylesheet">
+        <link href="{{ '/static/css/style.css' | p }}" rel="stylesheet">
         {% block head %}{% endblock %}
     </head>
     <body class="bg-light">
         <!-- 移动端顶部导航栏 -->
         <nav class="navbar navbar-expand-md navbar-light bg-white border-bottom d-md-none fixed-top">
             <div class="container-fluid">
-                <a class="navbar-brand d-flex align-items-center" href="/">
-                    <img src="/static/logo.png"
+                <a class="navbar-brand d-flex align-items-center" href="{{ '/' | p }}">
+                    <img src="{{ '/static/logo.png' | p }}"
                          alt="Bangumi-Syncer"
                          style="height: 32px;
                                 width: auto;
@@ -32,43 +33,43 @@
                     <ul class="navbar-nav me-auto">
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/' %}active{% endif %}"
-                               href="/">
+                               href="{{ '/' | p }}">
                                 <i class="bi bi-house-door me-2"></i>仪表板
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/config' %}active{% endif %}"
-                               href="/config">
+                               href="{{ '/config' | p }}">
                                 <i class="bi bi-gear me-2"></i>配置管理
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/records' %}active{% endif %}"
-                               href="/records">
+                               href="{{ '/records' | p }}">
                                 <i class="bi bi-journal-text me-2"></i>同步记录
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/mappings' %}active{% endif %}"
-                               href="/mappings">
+                               href="{{ '/mappings' | p }}">
                                 <i class="bi bi-diagram-3 me-2"></i>映射管理
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/debug' %}active{% endif %}"
-                               href="/debug">
+                               href="{{ '/debug' | p }}">
                                 <i class="bi bi-bug me-2"></i>调试工具
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/logs' %}active{% endif %}"
-                               href="/logs">
+                               href="{{ '/logs' | p }}">
                                 <i class="bi bi-file-text me-2"></i>日志管理
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
-                               href="/trakt/config">
+                               href="{{ '/trakt/config' | p }}">
                                 <i class="bi bi-tv me-2"></i>Trakt 同步
                             </a>
                         </li>
@@ -105,7 +106,7 @@
                 <nav class="col-md-3 col-lg-2 d-none d-md-block sidebar">
                     <div class="position-sticky pt-4">
                         <div class="text-center mb-4 px-3">
-                            <img src="/static/logo.png"
+                            <img src="{{ '/static/logo.png' | p }}"
                                  alt="Bangumi-Syncer"
                                  style="width: 175px;
                                         height: 100px;
@@ -114,49 +115,49 @@
                         <ul class="nav flex-column px-2">
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/' %}active{% endif %}"
-                                   href="/">
+                                   href="{{ '/' | p }}">
                                     <i class="bi bi-house-door me-2"></i>
                                     仪表板
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/config' %}active{% endif %}"
-                                   href="/config">
+                                   href="{{ '/config' | p }}">
                                     <i class="bi bi-gear me-2"></i>
                                     配置管理
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/records' %}active{% endif %}"
-                                   href="/records">
+                                   href="{{ '/records' | p }}">
                                     <i class="bi bi-journal-text me-2"></i>
                                     同步记录
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/mappings' %}active{% endif %}"
-                                   href="/mappings">
+                                   href="{{ '/mappings' | p }}">
                                     <i class="bi bi-diagram-3 me-2"></i>
                                     映射管理
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/debug' %}active{% endif %}"
-                                   href="/debug">
+                                   href="{{ '/debug' | p }}">
                                     <i class="bi bi-bug me-2"></i>
                                     调试工具
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/logs' %}active{% endif %}"
-                                   href="/logs">
+                                   href="{{ '/logs' | p }}">
                                     <i class="bi bi-file-text me-2"></i>
                                     日志管理
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
-                                   href="/trakt/config">
+                                   href="{{ '/trakt/config' | p }}">
                                     <i class="bi bi-tv me-2"></i>
                                     Trakt 同步
                                 </a>
@@ -199,9 +200,9 @@
         <div class="toast-container position-fixed top-0 end-0 p-3">
             <!-- Toast通知将在这里动态添加 -->
         </div>
-        <script src="/static/js/bootstrap.bundle.min.js"></script>
-        <script src="/static/js/chart.js"></script>
-        <script src="/static/js/app.js"></script>
+        <script src="{{ '/static/js/bootstrap.bundle.min.js' | p }}"></script>
+        <script src="{{ '/static/js/chart.js' | p }}"></script>
+        <script src="{{ '/static/js/app.js' | p }}"></script>
         {% block scripts %}{% endblock %}
     </body>
 </html>

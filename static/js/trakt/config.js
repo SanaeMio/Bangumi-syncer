@@ -192,7 +192,7 @@ class TraktConfigPage {
     async loadConfig() {
         try {
             this.showLoading('connection-status', '正在检查连接状态...');
-            const response = await fetch('/api/trakt/config');
+            const response = await fetch(appUrl('/api/trakt/config'));
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -281,7 +281,7 @@ class TraktConfigPage {
     async loadSyncStatus() {
         try {
             this.showLoading('sync-status', '正在检查同步状态...');
-            const response = await fetch('/api/trakt/sync/status');
+            const response = await fetch(appUrl('/api/trakt/sync/status'));
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -335,7 +335,7 @@ class TraktConfigPage {
         try {
             this.showLoading('sync-history-body', '正在加载同步历史...');
 
-            const response = await fetch(`/api/records?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}`);
+            const response = await fetch(appUrl(`/api/records?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}`));
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -461,7 +461,7 @@ class TraktConfigPage {
         };
 
         try {
-            const response = await fetch('/api/trakt/config', {
+            const response = await fetch(appUrl('/api/trakt/config'), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -497,7 +497,7 @@ class TraktConfigPage {
         };
 
         try {
-            const response = await fetch('/api/trakt/config/api', {
+            const response = await fetch(appUrl('/api/trakt/config/api'), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -526,7 +526,7 @@ class TraktConfigPage {
     async triggerManualSync(fullSync = false) {
         try {
             // 获取用户ID（从配置中）
-            const configResponse = await fetch('/api/trakt/config');
+            const configResponse = await fetch(appUrl('/api/trakt/config'));
             if (!configResponse.ok) {
                 throw new Error('无法获取用户配置');
             }
@@ -534,7 +534,7 @@ class TraktConfigPage {
             const config = await configResponse.json();
             const user_id = config.user_id || 'default_user';
 
-            const response = await fetch('/api/trakt/sync/manual', {
+            const response = await fetch(appUrl('/api/trakt/sync/manual'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -573,7 +573,7 @@ class TraktConfigPage {
         }
 
         try {
-            const response = await fetch('/api/trakt/disconnect', {
+            const response = await fetch(appUrl('/api/trakt/disconnect'), {
                 method: 'DELETE'
             });
 
@@ -627,12 +627,12 @@ class TraktConfigPage {
             this.showAuthStep(2);
 
             // 获取用户ID（从配置中或使用默认）
-            const configResponse = await fetch('/api/trakt/config');
+            const configResponse = await fetch(appUrl('/api/trakt/config'));
             const config = await configResponse.json();
             const user_id = config.user_id || 'default_user';
 
             // 初始化授权
-            const response = await fetch('/api/trakt/auth/init', {
+            const response = await fetch(appUrl('/api/trakt/auth/init'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -804,7 +804,7 @@ class TraktConfigPage {
      */
     async checkAuthStatus() {
         try {
-            const response = await fetch('/api/trakt/config');
+            const response = await fetch(appUrl('/api/trakt/config'));
             if (!response.ok) {
                 return false;
             }

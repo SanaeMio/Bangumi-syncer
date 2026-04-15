@@ -308,5 +308,5 @@
 {% endblock %}
 {% block scripts %}
     {{ super() }}
-    <script src="/static/js/trakt/config.js"></script>
+    <script src="{{ '/static/js/trakt/config.js' | p }}"></script>
 {% endblock %}

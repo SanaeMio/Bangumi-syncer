@@ -93,6 +93,7 @@ class ConfigManager:
             ("bangumi", "private"): "BANGUMI_PRIVATE",
             ("dev", "script_proxy"): "HTTP_PROXY",
             ("dev", "debug"): "DEBUG_MODE",
+            ("web", "base_path"): "APPLICATION_ROOT",
         }
 
         for (section, option), env_var in env_overrides.items():
