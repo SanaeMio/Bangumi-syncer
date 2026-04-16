@@ -19,16 +19,18 @@
 
 
 ## 📋 提交前检查清单
+<!-- 提交前请逐项勾选：将 `- [ ]` 改为 `- [x]`，或在 GitHub 编辑器的预览中直接勾选。未勾选项视为尚未完成。 -->
 
-### 代码质量检查
+### 规范与静态检查
 <!-- 请在提交 PR 前完成以下检查 -->
-- 已运行 `uv run ruff check .` 并修复所有问题
-- 已运行 `uv run ruff format .` 格式化代码
-- 如有页面模板变更，已运行 `uv run djlint templates/ --reformat` 格式化模板
+- [ ] 已运行 `uv run ruff check .` 并修复所有问题
+- [ ] 已运行 `uv run ruff format .` 格式化代码
+- [ ] 如有页面模板变更，已运行 `uv run djlint templates/ --reformat` 格式化模板
 
-### 功能测试
-- 新功能已在本地测试通过
-- 现有功能未受影响
+### 测试
+- [ ] 已运行 `uv run pytest tests/ --cov=app --cov-report=term`且全部通过
+- [ ] 新功能已在本地测试通过
+- [ ] 现有功能未受影响
 
 ## 🔍 额外说明
 <!-- 其他需要审查者注意的事项 -->
