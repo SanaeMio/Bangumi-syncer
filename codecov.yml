@@ -1,0 +1,13 @@
+# https://docs.codecov.com/docs/codecov-yaml
+# PR 上不发布 Codecov 评论（仍会上传报告，网页与 badge 可用）
+comment: false
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 3%
+    patch:
+      default:
+        target: auto

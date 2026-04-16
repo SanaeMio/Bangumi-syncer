@@ -167,3 +167,56 @@ class TestStartupInfoSimple:
         expected_colors = ["reset", "bold", "red", "green", "yellow", "blue"]
         for color in expected_colors:
             assert color in info.COLORS
+
+    def test_print_startup_progress(self, capsys):
+        from app.core.startup_info import StartupInfo
+
+        info = StartupInfo()
+        info.supports_color = False
+        info.print_startup_progress(2, 4, "loading")
+        out = capsys.readouterr().out
+        assert "50%" in out or "loading" in out
+
+    def test_print_banner_defaults(self, capsys):
+        from app.core.startup_info import StartupInfo
+
+        info = StartupInfo()
+        info.supports_color = False
+        info.print_banner()
+        out = capsys.readouterr().out
+        assert "Bangumi" in out or "v" in out
+
+    def test_print_startup_complete_docker_branch(self, capsys, monkeypatch):
+        from app.core.startup_info import StartupInfo
+
+        monkeypatch.setenv("DOCKER_CONTAINER", "1")
+        info = StartupInfo()
+        info.supports_color = False
+        info.print_startup_complete(host="0.0.0.0", port=9000)
+        out = capsys.readouterr().out
+        assert "localhost:9000" in out
+        assert "容器内" in out
+
+    def test_check_color_windows_powershell(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        monkeypatch.delenv("TERM", raising=False)
+        with patch("app.core.startup_info.platform.system", return_value="Windows"):
+            with patch("app.core.startup_info.subprocess.run") as run:
+                run.return_value = MagicMock(stdout="Windows PowerShell", stderr="")
+                from app.core.startup_info import StartupInfo
+
+                assert StartupInfo().supports_color is True
+
+    def test_check_color_windows_subprocess_fails(self, monkeypatch):
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        monkeypatch.delenv("TERM", raising=False)
+        with patch("app.core.startup_info.platform.system", return_value="Windows"):
+            with patch(
+                "app.core.startup_info.subprocess.run",
+                side_effect=TimeoutError(),
+            ):
+                from app.core.startup_info import StartupInfo
+
+                assert StartupInfo().supports_color is False

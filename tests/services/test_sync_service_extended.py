@@ -4,6 +4,7 @@ SyncService 更多测试
 
 import os
 import sys
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +13,32 @@ import pytest
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
+
+from app.models.sync import CustomItem
+
+
+@contextmanager
+def patched_sync_deps():
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+        with patch("app.services.sync_service.database_manager"):
+            with patch("app.services.sync_service.send_notify"):
+                with patch("app.services.sync_service.mapping_service"):
+                    yield mock_cfg
+
+
+def _branch_custom_item(**kwargs):
+    defaults = dict(
+        user_name="testuser",
+        title="番剧A",
+        ori_title="A",
+        season=1,
+        episode=1,
+        media_type="episode",
+        release_date="2024-01-15",
+        source=None,
+    )
+    defaults.update(kwargs)
+    return CustomItem(**defaults)
 
 
 class TestSyncServiceHelperMethods:
@@ -42,10 +69,67 @@ class TestSyncServiceHelperMethods:
             result = service._check_user_permission("other_user")
             assert result is False
 
-    def test_check_user_permission_multi_mode(self):
-        """测试多用户模式权限检查 - 简化测试"""
-        # 跳过复杂测试，简化覆盖
-        pass
+    def test_check_user_permission_single_mode_missing_single_username(self):
+        """单用户模式未配置 single_username 时拒绝"""
+        with patched_sync_deps() as cfg:
+
+            def get_side_effect(section, key, fallback=None):
+                if section == "sync" and key == "mode":
+                    return "single"
+                if section == "sync" and key == "single_username":
+                    return ""
+                return fallback
+
+            cfg.get.side_effect = get_side_effect
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            assert svc._check_user_permission("anyone") is False
+
+    def test_check_user_permission_multi_mode_user_not_in_mappings(self):
+        with patched_sync_deps() as cfg:
+
+            def get_side_effect(section, key, fallback=None):
+                if section == "sync" and key == "mode":
+                    return "multi"
+                return fallback
+
+            cfg.get.side_effect = get_side_effect
+            cfg.get_user_mappings.return_value = {}
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            assert svc._check_user_permission("ghost") is False
+
+    def test_check_user_permission_multi_mode_missing_bangumi_section(self):
+        with patched_sync_deps() as cfg:
+
+            def get_side_effect(section, key, fallback=None):
+                if section == "sync" and key == "mode":
+                    return "multi"
+                return fallback
+
+            cfg.get.side_effect = get_side_effect
+            cfg.get_user_mappings.return_value = {"u1": "missing_section"}
+            cfg.get_bangumi_configs.return_value = {}
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            assert svc._check_user_permission("u1") is False
+
+    def test_check_user_permission_unknown_mode_returns_false(self):
+        with patched_sync_deps() as cfg:
+
+            def get_side_effect(section, key, fallback=None):
+                if section == "sync" and key == "mode":
+                    return "weird"
+                return fallback
+
+            cfg.get.side_effect = get_side_effect
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            assert svc._check_user_permission("u") is False
 
     def test_is_title_blocked_empty_keywords(self):
         """测试空屏蔽关键词"""
@@ -115,6 +199,45 @@ class TestSyncServiceHelperMethods:
             result = service._get_bangumi_config_for_user("testuser")
             assert result is not None
 
+    def test_is_title_blocked_keywords_only_commas_returns_false(self):
+        with patched_sync_deps() as cfg:
+            cfg.get.return_value = "  ,  ,  "
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            assert svc._is_title_blocked("任何标题", "副标题") is False
+
+    def test_get_bangumi_api_incomplete_config_returns_none(self):
+        with patched_sync_deps() as cfg:
+
+            def get_side_effect(section, key, fallback=None):
+                if section == "sync" and key == "mode":
+                    return "single"
+                return fallback
+
+            cfg.get.side_effect = get_side_effect
+            cfg.get_user_mappings.return_value = {}
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            with patch.object(
+                svc,
+                "_get_bangumi_config_for_user",
+                return_value={"username": "", "access_token": "t", "private": False},
+            ):
+                assert svc._get_bangumi_api_for_user("u") is None
+
+    def test_get_bangumi_data_uses_singleton_cache(self):
+        with patched_sync_deps():
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            svc._bangumi_data_cache = None
+            m = MagicMock()
+            with patch("app.services.sync_service.bangumi_data", m):
+                assert svc._get_bangumi_data() is m
+                assert svc._get_bangumi_data() is m
+
 
 class TestPlexSync:
     """测试 Plex 同步功能"""
@@ -141,6 +264,48 @@ class TestPlexSync:
 
             assert result.status == "ignored"
             assert "无需同步" in result.message
+
+    def test_sync_plex_item_sync_failure_records_task_failed(self):
+        with patched_sync_deps():
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            tid = "plex_x"
+            svc._sync_tasks[tid] = {
+                "status": "pending",
+                "item": {},
+                "source": "plex",
+                "created_at": 0.0,
+                "result": None,
+                "error": None,
+            }
+            with patch.object(
+                svc, "sync_plex_item", side_effect=ValueError("plex bad")
+            ):
+                out = svc._sync_plex_item_sync({"event": "media.scrobble"}, tid)
+            assert out.status == "error"
+            assert svc._sync_tasks[tid]["status"] == "failed"
+
+    def test_sync_plex_item_extract_raises_returns_error(self):
+        with patched_sync_deps():
+            with patch(
+                "app.services.sync_service.extract_plex_data",
+                side_effect=RuntimeError("parse"),
+            ):
+                from app.services.sync_service import SyncService
+
+                svc = SyncService()
+                plex = {
+                    "event": "media.scrobble",
+                    "Account": {"title": "u"},
+                    "Metadata": {
+                        "parentIndex": 1,
+                        "index": 1,
+                        "grandparentTitle": "G",
+                    },
+                }
+                r = svc.sync_plex_item(plex_data=plex)
+            assert r.status == "error"
 
 
 class TestEmbySync:
@@ -219,6 +384,86 @@ class TestEmbySync:
 
             assert result.status == "error"
 
+    def test_sync_emby_playback_stop_incomplete_playback_info_ignored(self):
+        with patched_sync_deps():
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            payload = {
+                "Event": "playback.stop",
+                "Item": {
+                    "Type": "Episode",
+                    "SeriesName": "S",
+                    "ParentIndexNumber": 1,
+                    "IndexNumber": 1,
+                },
+                "User": {"Id": "1"},
+            }
+            r = svc.sync_emby_item(payload)
+            assert r.status == "ignored"
+            assert "不完整" in r.message
+
+    def test_sync_emby_playback_stop_not_completed_ignored(self):
+        with patched_sync_deps():
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            payload = {
+                "Event": "playback.stop",
+                "Item": {
+                    "Type": "Episode",
+                    "SeriesName": "S",
+                    "ParentIndexNumber": 1,
+                    "IndexNumber": 2,
+                },
+                "User": {"Id": "1"},
+                "PlaybackInfo": {"PlayedToCompletion": False},
+            }
+            r = svc.sync_emby_item(payload)
+            assert r.status == "ignored"
+            assert "未播放完成" in r.message
+
+    def test_sync_emby_item_extract_raises_returns_error(self):
+        with patched_sync_deps():
+            with patch(
+                "app.services.sync_service.extract_emby_data",
+                side_effect=OSError("emby ex"),
+            ):
+                from app.services.sync_service import SyncService
+
+                svc = SyncService()
+                payload = {
+                    "Event": "item.markplayed",
+                    "Item": {
+                        "Type": "Episode",
+                        "SeriesName": "S",
+                        "ParentIndexNumber": 1,
+                        "IndexNumber": 1,
+                    },
+                    "User": {"Id": "1"},
+                }
+                r = svc.sync_emby_item(payload)
+            assert r.status == "error"
+
+    def test_sync_emby_item_sync_failure_records_task_failed(self):
+        with patched_sync_deps():
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            tid = "emby_t"
+            svc._sync_tasks[tid] = {
+                "status": "pending",
+                "item": {},
+                "source": "emby",
+                "created_at": 0.0,
+                "result": None,
+                "error": None,
+            }
+            with patch.object(svc, "sync_emby_item", side_effect=KeyError("k")):
+                out = svc._sync_emby_item_sync({}, tid)
+            assert out.status == "error"
+            assert svc._sync_tasks[tid]["status"] == "failed"
+
 
 class TestJellyfinSync:
     """测试 Jellyfin 同步功能"""
@@ -265,6 +510,41 @@ class TestJellyfinSync:
             result = service.sync_jellyfin_item(jellyfin_data)
 
             assert result.status == "ignored"
+
+    def test_sync_jellyfin_item_extract_raises_returns_error(self):
+        with patched_sync_deps():
+            with patch(
+                "app.services.sync_service.extract_jellyfin_data",
+                side_effect=ValueError("jf"),
+            ):
+                from app.services.sync_service import SyncService
+
+                svc = SyncService()
+                jf = {
+                    "NotificationType": "PlaybackStop",
+                    "PlayedToCompletion": "True",
+                }
+                r = svc.sync_jellyfin_item(jf)
+            assert r.status == "error"
+
+    def test_sync_jellyfin_item_sync_failure_records_task_failed(self):
+        with patched_sync_deps():
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            tid = "jf_t"
+            svc._sync_tasks[tid] = {
+                "status": "pending",
+                "item": {},
+                "source": "jellyfin",
+                "created_at": 0.0,
+                "result": None,
+                "error": None,
+            }
+            with patch.object(svc, "sync_jellyfin_item", side_effect=RuntimeError("x")):
+                out = svc._sync_jellyfin_item_sync({}, tid)
+            assert out.status == "error"
+            assert svc._sync_tasks[tid]["status"] == "failed"
 
 
 class TestAsyncMethods:
@@ -339,3 +619,27 @@ class TestAsyncMethods:
             plex_data = {"event": "media.scrobble"}
             task_id = await service.sync_plex_item_async(plex_data)
             assert task_id is not None
+
+    def test_sync_custom_item_sync_records_failure_on_inner_error(self):
+        with patched_sync_deps():
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            item = _branch_custom_item()
+            tid = "manual_task"
+            svc._sync_tasks[tid] = {
+                "status": "pending",
+                "item": item.model_dump(mode="python"),
+                "source": "custom",
+                "created_at": 0.0,
+                "result": None,
+                "error": None,
+            }
+            with patch.object(
+                svc, "sync_custom_item", side_effect=RuntimeError("inner boom")
+            ):
+                out = svc._sync_custom_item_sync(item, "custom", tid)
+            assert out.status == "error"
+            assert "异步处理失败" in out.message
+            assert svc._sync_tasks[tid]["status"] == "failed"
+            assert "inner boom" in svc._sync_tasks[tid]["error"]

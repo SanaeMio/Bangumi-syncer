@@ -5,6 +5,8 @@ Security 模块扩展测试
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 class TestSecurityManager:
     """SecurityManager 类测试"""
@@ -468,3 +470,27 @@ class TestSecurityManagerExtended:
         result = sm.authenticate_user("admin", "wrongpassword")
 
         assert result is False
+
+    @patch("app.core.security.SecurityManager.cleanup_expired_sessions")
+    @patch("app.core.security.SecurityManager.cleanup_expired_lockouts")
+    @patch("app.core.security.SecurityManager.verify_password")
+    @patch("app.core.security.config_manager")
+    def test_authenticate_user_exception_returns_false(
+        self, mock_config, mock_verify, mock_cleanup_lockouts, mock_cleanup_sessions
+    ):
+        mock_verify.side_effect = RuntimeError("verify boom")
+        mock_config.get_config_parser.return_value = MagicMock()
+        from app.core.security import SecurityManager
+
+        sm = SecurityManager()
+        assert sm.authenticate_user("admin", "x") is False
+
+    @patch("app.core.security.config_manager")
+    def test_refresh_webhook_key_propagates_on_save_error(self, mock_config):
+        mock_config.get_config_parser.return_value = MagicMock()
+        mock_config.set_config.side_effect = OSError("no write")
+        from app.core.security import SecurityManager
+
+        sm = SecurityManager()
+        with pytest.raises(OSError):
+            sm.refresh_webhook_key()

@@ -161,3 +161,95 @@ class TestDockerProxyHelperSimple:
             info = helper.get_environment_info()
             assert "is_docker" in info
             assert "network_mode" in info
+
+    def test_detect_docker_via_dockerenv_file(self):
+        with (
+            patch("app.utils.docker_helper.os.environ.get", return_value=None),
+            patch("app.utils.docker_helper.os.path.exists") as ex,
+        ):
+            ex.side_effect = lambda p: p == "/.dockerenv"
+            from app.utils.docker_helper import DockerProxyHelper
+
+            h = DockerProxyHelper()
+            assert h._detect_docker_environment() is True
+
+    def test_detect_network_mode_bridge_via_default_route(self):
+        with patch("app.utils.docker_helper.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="default via 172.17.0.1 dev eth0\n")
+            from app.utils.docker_helper import DockerProxyHelper
+
+            h = DockerProxyHelper()
+            h.is_docker = True
+            assert h._detect_network_mode() == "bridge"
+
+    def test_detect_network_mode_host_hint(self):
+        with patch("app.utils.docker_helper.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="default via 127.0.0.1 dev lo\n")
+            from app.utils.docker_helper import DockerProxyHelper
+
+            h = DockerProxyHelper()
+            h.is_docker = True
+            assert h._detect_network_mode() == "host"
+
+    def test_get_proxy_suggestions_bridge_with_realistic_host_ip(self):
+        from app.utils.docker_helper import DockerProxyHelper
+
+        h = DockerProxyHelper()
+        h.is_docker = True
+        h.network_mode = "bridge"
+        with patch.object(h, "_get_host_ip", return_value="192.168.88.5"):
+            sug = h.get_proxy_suggestions(port=7890)
+        addrs = [s["address"] for s in sug]
+        assert any("192.168.88.5" in a for a in addrs)
+
+    def test_get_proxy_suggestions_non_docker_uncommon_port_adds_extra(self):
+        from app.utils.docker_helper import DockerProxyHelper
+
+        h = DockerProxyHelper()
+        h.is_docker = False
+        sug = h.get_proxy_suggestions(port=9999)
+        assert len(sug) >= 3
+
+    def test_test_basic_connectivity_invalid_url(self):
+        from app.utils.docker_helper import DockerProxyHelper
+
+        h = DockerProxyHelper()
+        r = h._test_basic_connectivity("not-a-url")
+        assert r["success"] is False
+        assert "解析" in (r.get("error") or "")
+
+    def test_test_basic_connectivity_tcp_fail(self):
+        from app.utils.docker_helper import DockerProxyHelper
+
+        h = DockerProxyHelper()
+        with patch("socket.socket") as sock_cls:
+            inst = MagicMock()
+            inst.connect_ex.return_value = 1
+            sock_cls.return_value = inst
+            r = h._test_basic_connectivity("http://127.0.0.1:9")
+        assert r["success"] is False
+
+    def test_test_proxy_connectivity_connection_error(self):
+        import requests
+
+        from app.utils.docker_helper import DockerProxyHelper
+
+        with patch("app.utils.docker_helper.requests.get", side_effect=requests.exceptions.ConnectionError("refused")):
+            h = DockerProxyHelper()
+            with patch.object(
+                h, "_test_basic_connectivity", return_value={"success": True}
+            ):
+                r = h.test_proxy_connectivity("http://127.0.0.1:7890")
+        assert r["success"] is False
+        assert "连接错误" in (r.get("error") or "")
+
+    def test_test_proxy_connectivity_generic_error(self):
+        from app.utils.docker_helper import DockerProxyHelper
+
+        with patch("app.utils.docker_helper.requests.get", side_effect=RuntimeError("x")):
+            h = DockerProxyHelper()
+            with patch.object(
+                h, "_test_basic_connectivity", return_value={"success": True}
+            ):
+                r = h.test_proxy_connectivity("http://127.0.0.1:7890")
+        assert r["success"] is False
