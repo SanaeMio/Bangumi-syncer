@@ -1,13 +1,8 @@
 <p align="center">
-  <a href="https://github.com/SanaeMio/Bangumi-syncer">
-    <img alt="Bangumi-syncer Mascot‌" width="250" src="https://p.sda1.dev/32/17c7fd38960a757b65292bdbfd2526d9/mascot‌.png">
-  </a>
-  <a href="https://github.com/SanaeMio/Bangumi-syncer">
-    <img alt="Bangumi-syncer Logo" width="250" src="https://p.sda1.dev/16/7b48f7a38f0deb790f0fdc17390e0d93/logo.png">
-  </a>
+  <img alt="Bangumi-syncer Mascot‌" src="https://p.sda1.dev/32/57c4d1ba89f8ced86cf6becb8db4822b/mascot‌.png">
 </p>
 <p align="center">
- <a href="https://github.com/SanaeMio/Bangumi-syncer/releases"><img alt="release" src="https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer"/></a>
+  <a href="https://github.com/SanaeMio/Bangumi-syncer/releases"><img alt="release" src="https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer"/></a>
   <a href="https://www.python.org/downloads/"><img alt="python" src="https://img.shields.io/badge/python-3.9+-3776AB"/></a>
   <a href="https://hub.docker.com/r/sanaemio/bangumi-syncer"><img alt="docker pulls" src="https://img.shields.io/docker/pulls/sanaemio/bangumi-syncer"/></a>
   <a href="https://codecov.io/gh/SanaeMio/Bangumi-syncer"><img alt="codecov" src="https://img.shields.io/codecov/c/github/SanaeMio/Bangumi-syncer"/></a>
@@ -16,6 +11,7 @@
 
 ## 🔖目录
 - [🌟 简介](#-简介)
+- [✨ 特性](#-特性)
 - [🧰 安装](#-安装)
   - [Windows](#Windows)
   - [Docker](#Docker)
@@ -27,12 +23,12 @@
   - [方式三：Plex Webhooks](#Plex-Webhooks)
   - [方式四：Emby通知](#Emby通知)
   - [方式五：Jellyfin Webhook插件](#Jellyfin插件)
-  - [方式六：Trakt.tv定时同步](#Trakt.tv定时同步)
+  - [方式六：Trakt.tv定时同步](#trakttv定时同步)
 - [📖 计划](#-计划)
 - [😘 贡献](#-贡献)
 - [👏 鸣谢](#-鸣谢)
 - [📄 许可](#-许可)
-- [👥 贡献者](#-贡献者)
+- [❤️ 贡献者](#-贡献者)
 - [⭐ Star 历史](#-star-历史)
 
 ## 🌟 简介
@@ -41,6 +37,18 @@
 已适配Plex、Emby、Jellyfin。
 
 ![QQ%E5%9B%BE%E7%89%8720240319171758.png](https://p.sda1.dev/16/bd3803efe27dc9a27f85d01f7e771a06/QQ图片20240319171758.png)
+
+## ✨ 特性
+
+- **现代化 Web 管理界面**：仪表板汇总总同步次数、今日同步、成功率与失败次数；支持最近 7 天趋势与用户分布等可视化；表格展示最近同步记录。
+- **全流程在线配置**：配置项均可通过WEBUI修改生效，无需手改配置文件。
+- **多播放源接入**：内置 Plex / Emby / Jellyfin 等常见接入方式，并支持自定义 Webhook，将「看完一集」自动转为 Bangumi 打格子。
+- **Trakt.tv 同步**：支持按计划从 Trakt 拉取观看记录并写回 Bangumi，便于跨平台补全进度。
+- **多用户支持**：可按媒体服务器用户名路由到不同 Bangumi 账号；仪表板可按用户维度查看同步分布。
+- **映射与排障**：支持自定义指定id以处理自动匹配困难的条目；内置调试工具和日志管理便于定位失败原因与审计历史。
+- **安全与告警**：可选 Web 登录与会话、失败锁定等策略；同步时支持 Webhook / 邮件通知以适应各种场景。
+
+![Web 管理界面 - 仪表板](https://p.sda1.dev/32/fe437f70dccf5b749a21a48a88ca7c39/screenshot_dashboard.jpg)
 
 ## 🧰 安装
 
@@ -92,8 +100,8 @@ services:
 ```
 |            参数名            |      默认值       |                             说明                             |
 | :--------------------------: | :---------------: | :----------------------------------------------------------: |
-|             PUID             |         0         |                           用户 ID                            |
-|             PGID             |         0         |                            组 ID                             |
+|             PUID             |         1000      |                           用户 ID                            |
+|             PGID             |         1000      |                            组 ID                             |
 |              TZ              |   Asia/Shanghai   |                             时区                             |
 
 #### 群晖NAS
@@ -398,6 +406,7 @@ services:
 如果存在 bug 或想增加功能，欢迎 [提一个 Issue](https://github.com/SanaeMio/Bangumi-syncer/issues/new/choose) 或者提交一个 Pull Request。参与开发前请先阅读 [贡献指南](CONTRIBUTING.md)。
 
 ## 👏 鸣谢
+本项目受到以下项目思路的启发或使用过其中的内容，在此表示衷心的感谢！
 
 - [kjtsune/embyToLocalPlayer](https://github.com/kjtsune/embyToLocalPlayer)
 - [bangumi-data/bangumi-data](https://github.com/bangumi-data/bangumi-data)
