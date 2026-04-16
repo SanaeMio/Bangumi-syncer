@@ -249,6 +249,36 @@ async def test_update_trakt_api_config(app_with_auth, mock_config_manager):
 
 
 @pytest.mark.asyncio
+async def test_update_trakt_api_config_skips_empty_client_secret(
+    app_with_auth, mock_config_manager
+):
+    """client_secret 为空字符串时不应调用 set 覆盖已有密文。"""
+    mock_config_manager.reset_mock()
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.put(
+            "/api/trakt/config/api",
+            json={"client_id": "new_only", "client_secret": ""},
+        )
+
+    assert response.status_code == 200
+    secret_calls = [
+        c
+        for c in mock_config_manager.set.call_args_list
+        if len(c[0]) >= 2 and c[0][0] == "trakt" and c[0][1] == "client_secret"
+    ]
+    assert secret_calls == []
+    id_calls = [
+        c
+        for c in mock_config_manager.set.call_args_list
+        if len(c[0]) >= 2 and c[0][0] == "trakt" and c[0][1] == "client_id"
+    ]
+    assert len(id_calls) == 1
+    assert id_calls[0][0][2] == "new_only"
+
+
+@pytest.mark.asyncio
 async def test_get_trakt_sync_status(
     app_with_auth,
     mock_trakt_auth_service,

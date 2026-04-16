@@ -9,6 +9,10 @@ import time
 from typing import Any, Optional
 
 from .config import config_manager
+from .config_secret_crypto import (
+    encrypt_if_sensitive,
+    migrate_plaintext_sensitive_fields,
+)
 from .logging import logger
 
 
@@ -66,7 +70,11 @@ class SecurityManager:
             current_webhook_key = config.get("auth", "webhook_key", fallback="")
             if not current_webhook_key:
                 new_webhook_key = secrets.token_urlsafe(32)
-                config.set("auth", "webhook_key", new_webhook_key)
+                config.set(
+                    "auth",
+                    "webhook_key",
+                    encrypt_if_sensitive("auth", "webhook_key", new_webhook_key),
+                )
                 config_updated = True
                 logger.info("生成新的webhook密钥")
 
@@ -79,9 +87,10 @@ class SecurityManager:
                 config_updated = True
                 logger.info("密码已自动加密")
 
-            # 如果配置有更新，保存到文件
-            if config_updated:
+            migrated = migrate_plaintext_sensitive_fields(config)
+            if config_updated or migrated:
                 config_manager._save_config(config)
+            if config_updated:
                 auth_config = self.get_auth_config()
                 logger.info("==========================================")
                 logger.info("认证配置已初始化完成！")

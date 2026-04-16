@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from ..core.config_secret_crypto import encrypt_if_sensitive
 from ..core.logging import logger
 from ..utils.notifier import get_notifier
 from .deps import get_current_user_flexible
@@ -398,9 +399,7 @@ async def get_emails(current_user: dict = Depends(get_current_user_flexible)):
                     "smtp_server": section_config.get("smtp_server", ""),
                     "smtp_port": section_config.get("smtp_port", 587),
                     "smtp_username": section_config.get("smtp_username", ""),
-                    "smtp_password": "******"
-                    if section_config.get("smtp_password")
-                    else "",
+                    "smtp_password": section_config.get("smtp_password") or "",
                     "smtp_use_tls": section_config.get("smtp_use_tls", True),
                     "email_from": section_config.get("email_from", ""),
                     "email_to": section_config.get("email_to", ""),
@@ -451,7 +450,13 @@ async def create_email(
         config.set(section_name, "smtp_server", email_data.smtp_server)
         config.set(section_name, "smtp_port", str(email_data.smtp_port))
         config.set(section_name, "smtp_username", email_data.smtp_username)
-        config.set(section_name, "smtp_password", email_data.smtp_password)
+        config.set(
+            section_name,
+            "smtp_password",
+            encrypt_if_sensitive(
+                section_name, "smtp_password", email_data.smtp_password
+            ),
+        )
         config.set(section_name, "smtp_use_tls", str(email_data.smtp_use_tls))
         config.set(section_name, "email_from", email_data.email_from)
         config.set(section_name, "email_to", email_data.email_to)
@@ -473,7 +478,7 @@ async def create_email(
                 "smtp_server": email_data.smtp_server,
                 "smtp_port": email_data.smtp_port,
                 "smtp_username": email_data.smtp_username,
-                "smtp_password": "******",
+                "smtp_password": email_data.smtp_password,
                 "smtp_use_tls": email_data.smtp_use_tls,
                 "email_from": email_data.email_from,
                 "email_to": email_data.email_to,
@@ -519,7 +524,13 @@ async def update_email(
             and email_data.smtp_password.strip()
             and email_data.smtp_password != "******"
         ):
-            config.set(section_name, "smtp_password", email_data.smtp_password)
+            config.set(
+                section_name,
+                "smtp_password",
+                encrypt_if_sensitive(
+                    section_name, "smtp_password", email_data.smtp_password
+                ),
+            )
         if email_data.smtp_use_tls is not None:
             config.set(section_name, "smtp_use_tls", str(email_data.smtp_use_tls))
         if email_data.email_from is not None:
@@ -551,7 +562,7 @@ async def update_email(
                 "smtp_server": section_config.get("smtp_server", ""),
                 "smtp_port": section_config.get("smtp_port", 587),
                 "smtp_username": section_config.get("smtp_username", ""),
-                "smtp_password": "******",
+                "smtp_password": section_config.get("smtp_password") or "",
                 "smtp_use_tls": section_config.get("smtp_use_tls", True),
                 "email_from": section_config.get("email_from", ""),
                 "email_to": section_config.get("email_to", ""),
@@ -606,7 +617,13 @@ async def delete_email(
                 config.add_section(new_section_name)
                 # 复制所有配置项
                 for key, value in email["config"].items():
-                    config.set(new_section_name, key, str(value))
+                    if isinstance(value, bool):
+                        stored = str(value).lower()
+                    elif isinstance(value, int):
+                        stored = str(value)
+                    else:
+                        stored = encrypt_if_sensitive(new_section_name, key, str(value))
+                    config.set(new_section_name, key, stored)
                 # 更新ID
                 config.set(new_section_name, "id", str(new_id))
                 # 删除旧的配置段

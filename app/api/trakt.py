@@ -221,6 +221,7 @@ async def update_trakt_config(
 @router.put("/config/api", response_model=dict)
 async def update_trakt_api_config(
     update_request: TraktApiConfigUpdateRequest,
+    _current_user: dict = Depends(deps.get_current_user_flexible),
 ) -> dict:
     """更新 Trakt API 配置"""
     try:
@@ -233,8 +234,13 @@ async def update_trakt_api_config(
             config_manager.set("trakt", "client_id", update_request.client_id)
 
         if update_request.client_secret is not None:
-            trakt_config["client_secret"] = update_request.client_secret
-            config_manager.set("trakt", "client_secret", update_request.client_secret)
+            if str(update_request.client_secret).strip() == "":
+                pass
+            else:
+                trakt_config["client_secret"] = update_request.client_secret
+                config_manager.set(
+                    "trakt", "client_secret", update_request.client_secret
+                )
 
         if update_request.redirect_uri is not None:
             trakt_config["redirect_uri"] = update_request.redirect_uri
