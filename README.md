@@ -24,6 +24,7 @@
   - [方式四：Emby通知](#Emby通知)
   - [方式五：Jellyfin Webhook插件](#Jellyfin插件)
   - [方式六：Trakt.tv定时同步](#trakttv定时同步)
+  - [方式七：飞牛影视](#飞牛影视)
 - [📖 计划](#-计划)
 - [😘 贡献](#-贡献)
 - [👏 鸣谢](#-鸣谢)
@@ -44,6 +45,7 @@
 - **全流程在线配置**：配置项均可通过WEBUI修改生效，无需手改配置文件。
 - **多播放源接入**：内置 Plex / Emby / Jellyfin 等常见接入方式，并支持自定义 Webhook，将「看完一集」自动转为 Bangumi 打格子。
 - **Trakt.tv 同步**：支持按计划从 Trakt 拉取观看记录并写回 Bangumi，便于跨平台补全进度。
+- **飞牛影视同步**（可选）：只读读取飞牛 NAS 上 `trimmedia.db` 的观看进度，达到「已看完」或设定进度阈值后，走与 Webhook 相同的 Bangumi 匹配与打格逻辑；默认关闭，在「配置管理」中开启。
 - **多用户支持**：可按媒体服务器用户名路由到不同 Bangumi 账号；仪表板可按用户维度查看同步分布。
 - **映射与排障**：支持自定义指定id以处理自动匹配困难的条目；内置调试工具和日志管理便于定位失败原因与审计历史。
 - **安全与告警**：可选 Web 登录与会话、失败锁定等策略；同步时支持 Webhook / 邮件通知以适应各种场景。
@@ -92,6 +94,8 @@ services:
       - /docker/bangumi-syncer/config:/app/config
       - /docker/bangumi-syncer/logs:/app/logs
       - /docker/bangumi-syncer/data:/app/data
+      # 以下可选：仅在使用「飞牛影视」同步时挂载飞牛 trimmedia.db（只读）。不用飞牛则不要加。
+      # - /usr/local/apps/@appdata/trim.media/database:/app/data/feiniu-db:ro
     restart: unless-stopped
     environment:
       - PUID=1000
@@ -365,6 +369,28 @@ services:
 - 目前仅支持剧集（Episode）类型的观看历史，电影记录会被跳过
 - 增量同步基于最后同步时间，只获取新记录
 
+### 飞牛影视
+
+通过定时任务**只读**挂载其 SQLite 库，按配置间隔扫描「已看完」或达到进度阈值的单集，并提交到 Bangumi 同步。
+
+1. **准备**
+   - 在飞牛 NAS 上定位数据库文件，常见路径为：`/usr/local/apps/@appdata/trim.media/database/trimmedia.db`（以实际系统为准）。
+   - **Docker Compose**：飞牛卷挂载**仅在你启用飞牛同步时才需要**；不使用时不必挂载。请将目录或单个库文件**只读**映射进容器，并在「配置管理」里填写容器内路径（示例见上文 `docker-compose` 注释）。推荐挂到 `/app/data/feiniu-db:ro`。
+
+2. **在 WebUI「配置管理」中设置**
+   - 在 **通知配置** 区块下方找到 **飞牛影视**。
+   - 勾选 **启用飞牛同步** 并保存后，会以**保存时刻**为同步起点：只处理此后在飞牛库中有更新的观看记录，**不会**把启用前的历史存量一次性推到 Bangumi。再次关闭飞牛并保存会清除该起点；再次启用会重新从当前时刻起算。
+   - 填写 **数据库路径**（容器内路径，例如 `/app/data/feiniu-db/trimmedia.db`）。
+   - **视为看完的最低进度**：默认 85%，与飞牛「标记看完」类似，进度达到该百分比即参与同步。
+   - **飞牛用户**：填 `all` 或某一用户的 `guid`（可在已登录 Web 的情况下请求 `/api/feiniu/users` 查看列表）。
+   - **时间范围**：在起点水位之上，可再限制只处理最近一段时间内的播放更新。
+   - **定时 Cron**：默认每 15 分钟 `*/15 * * * *`。
+   - 保存配置后，飞牛定时任务会随配置热更新。
+
+3. **在 WebUI「调试工具」中手动同步测试（可选）**
+   - 在 **调试工具** 中找到 **飞牛同步测试**。
+   - 在飞牛端播放完成一集新的番剧，点击 **立即触发飞牛同步**。
+
 ## 📖 计划
 ✅ 支持自定义Webhook同步标记
 
@@ -377,8 +403,6 @@ services:
 ✅ 适配Emby通知
 
 ✅ 适配Jellyfin（需要jellyfin-plugin-webhook插件）
-
-✅ 支持Trakt.tv定时同步
 
 ✅ 支持通过 bangumi-data 匹配番剧 ID，减少 API 请求
 
@@ -396,7 +420,11 @@ services:
 
 ✅ 配置备份和恢复
 
-✅ 同步错误通知（Webhook/邮件）
+✅ 同步触发通知（Webhook/邮件）
+
+✅ 支持Trakt.tv定时同步
+
+✅ 支持飞牛影视定时同步
 
 ⬜️ ……
 
@@ -410,6 +438,7 @@ services:
 
 - [kjtsune/embyToLocalPlayer](https://github.com/kjtsune/embyToLocalPlayer)
 - [bangumi-data/bangumi-data](https://github.com/bangumi-data/bangumi-data)
+- [wabisabi525/fn-bangumi-sync](https://github.com/wabisabi525/fn-bangumi-sync)
 
 ## 📄 许可
 

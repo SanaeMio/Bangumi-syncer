@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..core.config import config_manager
+from ..core.database import database_manager
 from ..core.logging import logger
 from ..core.security import security_manager
 from .deps import get_current_user_flexible
@@ -108,6 +109,10 @@ async def update_config(
     try:
         data = await request.json()
 
+        old_feiniu_enabled = bool(
+            config_manager.get_feiniu_config().get("enabled", False)
+        )
+
         # 处理多账号配置
         multi_accounts = data.pop("multi_accounts", None)
 
@@ -149,6 +154,24 @@ async def update_config(
 
         # 保存配置
         config_manager.save_config()
+
+        new_feiniu_enabled = bool(
+            config_manager.get_feiniu_config().get("enabled", False)
+        )
+        if old_feiniu_enabled != new_feiniu_enabled:
+            if new_feiniu_enabled:
+                database_manager.set_feiniu_min_update_watermark_now()
+                logger.info("飞牛已启用：同步起点已设为当前时刻（不追溯历史观看记录）")
+            else:
+                database_manager.clear_feiniu_min_update_watermark()
+                logger.info("飞牛已关闭：已清除同步起点水位")
+
+        try:
+            from ..services.feiniu.scheduler import feiniu_scheduler
+
+            await feiniu_scheduler.apply_config_after_save()
+        except Exception as ex:
+            logger.debug("飞牛调度器随配置更新: %s", ex)
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:

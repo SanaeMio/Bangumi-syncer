@@ -272,3 +272,32 @@ class TestDatabaseManager:
             assert len(result1["records"]) == 5
             assert len(result2["records"]) == 5
             assert len(result3["records"]) == 5
+
+    def test_feiniu_sync_history(self, temp_dir, reset_singletons):
+        db_path = temp_dir / "fn.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+            assert db.is_feiniu_item_synced("u1", "it1") is False
+            assert db.save_feiniu_sync_history("u1", "it1", 12345) is True
+            assert db.is_feiniu_item_synced("u1", "it1") is True
+            assert db.is_feiniu_item_synced("u1", "it2") is False
+
+    def test_feiniu_watermark_meta(self, temp_dir, reset_singletons):
+        db_path = temp_dir / "fnwm.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+            db.clear_feiniu_min_update_watermark()
+            v1 = db.get_or_create_feiniu_min_update_watermark_ms()
+            v2 = db.get_or_create_feiniu_min_update_watermark_ms()
+            assert v1 == v2
+            db.set_feiniu_min_update_watermark_now()
+            v3 = db.get_or_create_feiniu_min_update_watermark_ms()
+            assert v3 >= v1
+            db.clear_feiniu_min_update_watermark()
+            from app.core.database import FEINIU_MIN_UPDATE_WATERMARK_META_KEY
+
+            assert db.get_feiniu_meta(FEINIU_MIN_UPDATE_WATERMARK_META_KEY) is None

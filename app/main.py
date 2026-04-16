@@ -12,6 +12,7 @@ from version import get_version, get_version_info, get_version_name
 
 from .api.auth import router as auth_router
 from .api.config import router as config_router
+from .api.feiniu import router as feiniu_router
 from .api.health import router as health_router
 from .api.logs import router as logs_router
 from .api.mappings import router as mappings_router
@@ -24,6 +25,8 @@ from .core.config import config_manager
 from .core.logging import logger
 from .core.public_url import get_public_base_path
 from .core.startup_info import startup_info
+from .services.feiniu.scheduler import feiniu_scheduler
+from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.mapping_service import mapping_service
 from .services.trakt.scheduler import trakt_scheduler
 
@@ -58,6 +61,7 @@ app.include_router(health_router)
 app.include_router(proxy_router)
 app.include_router(notification_router)
 app.include_router(trakt_router)
+app.include_router(feiniu_router)
 
 
 # 启动事件
@@ -84,6 +88,11 @@ async def startup_event():
 
     startup_info.print_separator()
 
+    try:
+        ensure_feiniu_startup_watermark()
+    except Exception as e:
+        logger.debug("飞牛启动水位检查: %s", e)
+
     # 启动 Trakt 调度器（延迟启动）
     try:
         scheduler_config = config_manager.get_scheduler_config()
@@ -101,6 +110,13 @@ async def startup_event():
                 logger.info("Trakt 调度器启动成功")
             else:
                 logger.error("Trakt 调度器启动失败")
+            fn_ok = await feiniu_scheduler.start()
+            if fn_ok:
+                logger.info(
+                    "飞牛定时同步：延迟启动阶段结束（未启用或无有效 db 时不会注册定时任务）"
+                )
+            else:
+                logger.error("飞牛调度器启动失败")
 
         asyncio.create_task(delayed_scheduler_start())
 
@@ -122,6 +138,12 @@ async def shutdown_event():
         logger.info("Trakt 调度器已停止")
     except Exception as e:
         logger.error(f"停止 Trakt 调度器失败: {e}")
+
+    try:
+        await feiniu_scheduler.stop()
+        logger.info("飞牛调度器已停止")
+    except Exception as e:
+        logger.error(f"停止飞牛调度器失败: {e}")
 
 
 if __name__ == "__main__":

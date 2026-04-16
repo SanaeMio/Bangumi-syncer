@@ -5,11 +5,15 @@
 import os
 import shutil
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 from .logging import logger
+
+# 飞牛「启用后不同步历史」水位键（sync_records.db / feiniu_meta）
+FEINIU_MIN_UPDATE_WATERMARK_META_KEY = "min_update_watermark_ms"
 
 
 def _env_flag(name: str) -> bool:
@@ -87,6 +91,25 @@ class DatabaseManager:
                 watched_at INTEGER NOT NULL,
                 synced_at INTEGER NOT NULL,
                 UNIQUE(user_id, trakt_item_id, watched_at)
+            )
+        """)
+
+        # 飞牛影视 trimmedia 同步去重表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS feiniu_sync_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fn_user_guid TEXT NOT NULL,
+                item_guid TEXT NOT NULL,
+                synced_at INTEGER NOT NULL,
+                update_time_snapshot INTEGER,
+                UNIQUE(fn_user_guid, item_guid)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS feiniu_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             )
         """)
 
@@ -611,6 +634,127 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"获取启用同步的 Trakt 配置失败: {e}")
             return []
+
+    # ===== 飞牛同步历史 =====
+
+    def save_feiniu_sync_history(
+        self,
+        fn_user_guid: str,
+        item_guid: str,
+        update_time_snapshot: Optional[int] = None,
+    ) -> bool:
+        """记录已提交的飞牛条目同步（去重用）"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO feiniu_sync_history
+                (fn_user_guid, item_guid, synced_at, update_time_snapshot)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    fn_user_guid,
+                    item_guid,
+                    int(datetime.now().timestamp()),
+                    update_time_snapshot,
+                ),
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"保存飞牛同步历史失败: {e}")
+            return False
+
+    def is_feiniu_item_synced(self, fn_user_guid: str, item_guid: str) -> bool:
+        """是否已为该飞牛用户与条目提交过同步"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT 1 FROM feiniu_sync_history
+                WHERE fn_user_guid = ? AND item_guid = ?
+                LIMIT 1
+                """,
+                (fn_user_guid, item_guid),
+            )
+            row = cursor.fetchone()
+            conn.close()
+            return row is not None
+        except Exception as e:
+            logger.warning(f"查询飞牛同步历史失败: {e}")
+            return False
+
+    def get_feiniu_meta(self, key: str) -> Optional[str]:
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT value FROM feiniu_meta WHERE key = ? LIMIT 1", (key,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+            return str(row[0]) if row else None
+        except Exception as e:
+            logger.warning(f"读取飞牛 meta 失败: {e}")
+            return None
+
+    def set_feiniu_meta(self, key: str, value: str) -> bool:
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO feiniu_meta (key, value) VALUES (?, ?)
+                """,
+                (key, value),
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"写入飞牛 meta 失败: {e}")
+            return False
+
+    def delete_feiniu_meta(self, key: str) -> bool:
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM feiniu_meta WHERE key = ?", (key,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"删除飞牛 meta 失败: {e}")
+            return False
+
+    def clear_feiniu_min_update_watermark(self) -> None:
+        """清除「启用后仅同步新进度」水位（飞牛关闭时调用）"""
+        self.delete_feiniu_meta(FEINIU_MIN_UPDATE_WATERMARK_META_KEY)
+
+    def set_feiniu_min_update_watermark_now(self) -> int:
+        """将同步起点设为当前时刻（Web 勾选启用并保存时调用，不追溯历史）"""
+        now_ms = int(time.time() * 1000)
+        self.set_feiniu_meta(FEINIU_MIN_UPDATE_WATERMARK_META_KEY, str(now_ms))
+        logger.info("飞牛：同步起点水位已设为当前时刻（仅此后库内更新的记录参与同步）")
+        return now_ms
+
+    def get_or_create_feiniu_min_update_watermark_ms(self) -> int:
+        """返回飞牛库 update_time 下限（毫秒）。首次调用时写入当前时刻，不追溯历史。"""
+        existing = self.get_feiniu_meta(FEINIU_MIN_UPDATE_WATERMARK_META_KEY)
+        if existing is not None:
+            try:
+                return int(existing)
+            except ValueError:
+                pass
+        now_ms = int(time.time() * 1000)
+        self.set_feiniu_meta(FEINIU_MIN_UPDATE_WATERMARK_META_KEY, str(now_ms))
+        logger.info(
+            "飞牛：已建立同步起点水位（仅此后在库中更新的观看记录会参与同步，不追溯启用前的存量）"
+        )
+        return now_ms
 
 
 # 全局数据库实例
