@@ -4,10 +4,13 @@ comment: false
 
 coverage:
   status:
+    # 覆盖率仅作参考，不作为合并门槛（对应检查为信息性，不挡 PR）
     project:
       default:
         target: auto
         threshold: 3%
+        informational: true
     patch:
       default:
         target: auto
+        informational: true
