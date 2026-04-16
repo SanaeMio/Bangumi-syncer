@@ -148,6 +148,12 @@ class ConfigManager:
             else:
                 result[key] = value
 
+        from .config_secret_crypto import decrypt_if_sensitive
+
+        for k, v in list(result.items()):
+            if isinstance(v, str):
+                result[k] = decrypt_if_sensitive(section, k, v)
+
         return result
 
     def get_config(self, section: str, key: str, fallback: Any = None) -> Any:
@@ -167,7 +173,10 @@ class ConfigManager:
         elif value.isdigit():
             return int(value)
         else:
-            return value
+            from .config_secret_crypto import decrypt_if_sensitive
+
+            out = decrypt_if_sensitive(section, key, value)
+            return out if isinstance(out, str) else value
 
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
         """获取配置值（别名）"""
@@ -179,7 +188,10 @@ class ConfigManager:
         if not config.has_section(section):
             config.add_section(section)
 
-        config.set(section, key, str(value))
+        from .config_secret_crypto import encrypt_if_sensitive
+
+        stored = encrypt_if_sensitive(section, key, str(value))
+        config.set(section, key, stored)
         self._save_config(config)
 
     def set(self, section: str, key: str, value: Any) -> None:

@@ -11,6 +11,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..core.config import config_manager
+from ..core.config_secret_crypto import (
+    decrypt_api_config_payload,
+    is_sensitive_ini_field,
+)
 from ..core.database import database_manager
 from ..core.logging import logger
 from ..core.security import security_manager
@@ -55,9 +59,17 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
             counter += 1
 
         # 创建配置段
+        from ..core.config_secret_crypto import encrypt_if_sensitive
+
         config.add_section(section_name)
         config.set(section_name, "username", account_config["username"])
-        config.set(section_name, "access_token", account_config["access_token"])
+        config.set(
+            section_name,
+            "access_token",
+            encrypt_if_sensitive(
+                section_name, "access_token", str(account_config["access_token"])
+            ),
+        )
         config.set(
             section_name,
             "media_server_username",
@@ -85,6 +97,7 @@ async def get_config(
     """获取配置信息"""
     try:
         config_data = config_manager.get_all_config()
+        decrypt_api_config_payload(config_data)
 
         # 处理敏感信息：不向前端返回加密的密码
         if "auth" in config_data and "password" in config_data["auth"]:
@@ -145,7 +158,14 @@ async def update_config(
                         # 已经是加密密码，直接保存
                         config_manager.set_config(normalized_section, key, value)
                 else:
-                    # 其他配置项正常保存
+                    if is_sensitive_ini_field(normalized_section, key) and (
+                        value is None or str(value).strip() == ""
+                    ):
+                        logger.debug(
+                            "跳过空敏感字段更新: %s.%s", normalized_section, key
+                        )
+                        continue
+                    # 其他配置项正常保存（敏感项在 set_config 中加密）
                     config_manager.set_config(normalized_section, key, value)
 
         # 处理多账号配置
