@@ -11,7 +11,10 @@ from app.services.trakt.client import TraktClient
 
 @pytest.fixture
 def client():
-    with patch("app.services.trakt.client.config_manager.get_trakt_config", return_value={"client_id": "cid"}):
+    with patch(
+        "app.services.trakt.client.config_manager.get_trakt_config",
+        return_value={"client_id": "cid"},
+    ):
         return TraktClient("access-token-xyz")
 
 
@@ -53,7 +56,9 @@ async def test_make_request_429_retries_then_ok(client):
     client._client.request = AsyncMock(side_effect=[r429, r200])
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
-            with patch("app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 out = await client._make_request("GET", "/sync/history")
     assert out == []
 
@@ -69,7 +74,9 @@ async def test_make_request_429_invalid_retry_after_uses_default(client):
     client._client.request = AsyncMock(side_effect=[r429, r200])
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
-            with patch("app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await client._make_request("GET", "/y")
 
 
@@ -82,18 +89,24 @@ async def test_make_request_other_status_retries_then_none(client):
     client.max_retries = 2
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
-            with patch("app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 assert await client._make_request("GET", "/z") is None
 
 
 @pytest.mark.asyncio
 async def test_make_request_request_error_retries(client):
     client._client = MagicMock()
-    client._client.request = AsyncMock(side_effect=httpx.RequestError("x", request=MagicMock()))
+    client._client.request = AsyncMock(
+        side_effect=httpx.RequestError("x", request=MagicMock())
+    )
     client.max_retries = 2
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
-            with patch("app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 assert await client._make_request("GET", "/e") is None
 
 
@@ -104,7 +117,9 @@ async def test_make_request_generic_exception_retries(client):
     client.max_retries = 2
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
-            with patch("app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "app.services.trakt.client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 assert await client._make_request("GET", "/g") is None
 
 
@@ -125,7 +140,10 @@ async def test_check_rate_limit_waits_when_low_quota(client):
 @pytest.mark.asyncio
 async def test_get_watched_history_skips_bad_items(client):
     with patch.object(
-        client, "_make_request", new_callable=AsyncMock, return_value=[{"invalid": True}]
+        client,
+        "_make_request",
+        new_callable=AsyncMock,
+        return_value=[{"invalid": True}],
     ):
         items = await client.get_watched_history()
     assert items == []

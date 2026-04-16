@@ -137,7 +137,11 @@ async def test_feiniu_reload_job_if_running_calls_schedule(tmp_path):
     db.write_bytes(b"a")
     with patch(
         "app.services.feiniu.scheduler.config_manager.get_feiniu_config",
-        return_value={"enabled": True, "db_path": str(db), "sync_interval": "*/15 * * * *"},
+        return_value={
+            "enabled": True,
+            "db_path": str(db),
+            "sync_interval": "*/15 * * * *",
+        },
     ):
         s = FeiniuScheduler()
         mock_sched = MagicMock()
@@ -155,7 +159,11 @@ async def test_feiniu_apply_config_after_save_starts_when_enabled(tmp_path):
     db.write_bytes(b"b")
     with patch(
         "app.services.feiniu.scheduler.config_manager.get_feiniu_config",
-        return_value={"enabled": True, "db_path": str(db), "sync_interval": "*/15 * * * *"},
+        return_value={
+            "enabled": True,
+            "db_path": str(db),
+            "sync_interval": "*/15 * * * *",
+        },
     ):
         s = FeiniuScheduler()
         with patch.object(s, "start", new_callable=AsyncMock, return_value=True) as st:
@@ -185,7 +193,11 @@ async def test_feiniu_run_sync_job_timeout(tmp_path):
     with (
         patch(
             "app.services.feiniu.scheduler.config_manager.get_feiniu_config",
-            return_value={"enabled": True, "db_path": str(db), "sync_interval": "*/15 * * * *"},
+            return_value={
+                "enabled": True,
+                "db_path": str(db),
+                "sync_interval": "*/15 * * * *",
+            },
         ),
         patch(
             "app.services.feiniu.scheduler.config_manager.get_scheduler_config",
@@ -206,7 +218,11 @@ async def test_feiniu_apply_config_refreshes_job_when_scheduler_running(tmp_path
     db.write_bytes(b"z")
     with patch(
         "app.services.feiniu.scheduler.config_manager.get_feiniu_config",
-        return_value={"enabled": True, "db_path": str(db), "sync_interval": "*/15 * * * *"},
+        return_value={
+            "enabled": True,
+            "db_path": str(db),
+            "sync_interval": "*/15 * * * *",
+        },
     ):
         s = FeiniuScheduler()
         mock_sched = MagicMock()
@@ -225,7 +241,11 @@ async def test_feiniu_run_sync_job_sync_raises(tmp_path):
     with (
         patch(
             "app.services.feiniu.scheduler.config_manager.get_feiniu_config",
-            return_value={"enabled": True, "db_path": str(db), "sync_interval": "*/15 * * * *"},
+            return_value={
+                "enabled": True,
+                "db_path": str(db),
+                "sync_interval": "*/15 * * * *",
+            },
         ),
         patch(
             "app.services.feiniu.scheduler.config_manager.get_scheduler_config",

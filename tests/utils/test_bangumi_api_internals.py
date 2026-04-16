@@ -40,7 +40,9 @@ class TestTryDirectConnection:
             mock_sess = MagicMock()
             bad = _session_resp(502)
             getattr(mock_sess, attr).return_value = bad
-            with patch("app.utils.bangumi_api.requests.Session", return_value=mock_sess):
+            with patch(
+                "app.utils.bangumi_api.requests.Session", return_value=mock_sess
+            ):
                 api = BangumiApi()
                 res = api._try_direct_connection(
                     method, "https://example.test/x", verify=True
@@ -101,7 +103,9 @@ class TestDiagnoseNetworkIssue:
         mock_sock.connect_ex.return_value = 1
         with patch(
             "app.utils.bangumi_api.socket.getaddrinfo",
-            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.1.1.1", 443))],
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.1.1.1", 443))
+            ],
         ):
             with patch("app.utils.bangumi_api.socket.socket", return_value=mock_sock):
                 api._diagnose_network_issue("https://example.test/")
@@ -160,11 +164,15 @@ class TestRequestWithRetry:
         ok = _session_resp(200)
         api.req.get = MagicMock(
             side_effect=[
-                requests.exceptions.ConnectionError("Temporary failure in name resolution"),
+                requests.exceptions.ConnectionError(
+                    "Temporary failure in name resolution"
+                ),
                 ok,
             ]
         )
-        res = api._request_with_retry("GET", api.req, "https://bgm.test/r", max_retries=3)
+        res = api._request_with_retry(
+            "GET", api.req, "https://bgm.test/r", max_retries=3
+        )
         assert res is ok
 
     @patch("app.utils.bangumi_api.time.sleep")
@@ -189,7 +197,9 @@ class TestRequestWithRetry:
             side_effect=requests.exceptions.ConnectionError("proxy dead")
         )
         with patch.object(api, "_try_direct_connection", return_value=ok):
-            res = api._request_with_retry("GET", api.req, "https://bgm.test/r", max_retries=0)
+            res = api._request_with_retry(
+                "GET", api.req, "https://bgm.test/r", max_retries=0
+            )
         assert res is ok
         assert api._proxy_failed is True
 

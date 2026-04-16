@@ -59,7 +59,9 @@ async def test_post_notification_test_all(app_notif):
         gn.return_value.test_notification.return_value = {"webhook": "ok"}
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            r = await ac.post("/api/notification/test", json={"notification_type": "all"})
+            r = await ac.post(
+                "/api/notification/test", json={"notification_type": "all"}
+            )
     assert r.status_code == 200
     assert r.json()["status"] == "success"
 
@@ -72,9 +74,7 @@ async def test_create_notification_webhook(app_notif):
     cfg.add_section = MagicMock()
     cfg.set = MagicMock()
 
-    with patch(
-        "app.core.config.config_manager.get_config_parser", return_value=cfg
-    ):
+    with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         with patch("app.core.config.config_manager._save_config"):
             transport = ASGITransport(app=app_notif)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -117,18 +117,25 @@ async def test_update_notification_webhook_success(app_notif):
     cfg = MagicMock()
     cfg.has_section.return_value = True
     cfg.set = MagicMock()
-    section = {"enabled": True, "url": "https://old", "method": "POST", "headers": "", "template": "", "types": "all"}
+    section = {
+        "enabled": True,
+        "url": "https://old",
+        "method": "POST",
+        "headers": "",
+        "template": "",
+        "types": "all",
+    }
 
-    with patch(
-        "app.core.config.config_manager.get_config_parser", return_value=cfg
-    ):
+    with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         with patch("app.core.config.config_manager._save_config"):
             with patch(
                 "app.core.config.config_manager.get_section",
                 return_value=section,
             ):
                 transport = ASGITransport(app=app_notif)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     r = await ac.put(
                         "/api/notification/webhooks/1",
                         json={"url": "https://new.example/hook"},
@@ -207,7 +214,9 @@ async def test_trakt_sync_status_with_records(app_trakt):
                 },
             ):
                 transport = ASGITransport(app=app_trakt)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     r = await ac.get("/api/trakt/sync/status")
     assert r.status_code == 200
     body = r.json()
@@ -387,7 +396,9 @@ async def test_update_notification_email_success(app_notif):
                 return_value=section,
             ):
                 transport = ASGITransport(app=app_notif)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     r = await ac.put(
                         "/api/notification/emails/1",
                         json={"smtp_server": "new.smtp"},
@@ -475,7 +486,9 @@ async def test_network_diagnose_dns_non_gaierror(app_logs_proxy):
         ):
             with patch("app.core.config.config_manager.get", return_value=""):
                 transport = ASGITransport(app=app_logs_proxy)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     r = await ac.post(
                         "/api/network/diagnose",
                         json={"url": "https://example.com/"},
@@ -511,7 +524,9 @@ async def test_network_diagnose_tcp_and_http_success(app_logs_proxy):
                     "app.utils.docker_helper.docker_helper.get_environment_info",
                     return_value={"is_docker": False},
                 ):
-                    with patch("app.core.config.config_manager.get", side_effect=fake_get):
+                    with patch(
+                        "app.core.config.config_manager.get", side_effect=fake_get
+                    ):
                         transport = ASGITransport(app=app_logs_proxy)
                         async with AsyncClient(
                             transport=transport, base_url="http://test"
@@ -632,7 +647,9 @@ async def test_post_notification_test_failure_returns_error(app_notif):
         gn.return_value.test_notification.side_effect = RuntimeError("boom")
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            r = await ac.post("/api/notification/test", json={"notification_type": "all"})
+            r = await ac.post(
+                "/api/notification/test", json={"notification_type": "all"}
+            )
     assert r.status_code == 200
     assert r.json()["status"] == "error"
     assert "boom" in r.json()["message"]
@@ -923,7 +940,9 @@ async def test_update_email_optional_fields_exercise_setters(app_notif):
                 return_value=section,
             ):
                 transport = ASGITransport(app=app_notif)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     r = await ac.put(
                         "/api/notification/emails/1",
                         json={
@@ -999,7 +1018,9 @@ async def test_network_diagnose_tcp_connect_ex_failed(app_logs_proxy):
         with patch("app.api.proxy.socket.socket", return_value=mock_sock):
             with patch("requests.get", return_value=mock_resp):
                 transport = ASGITransport(app=app_logs_proxy)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     r = await ac.post(
                         "/api/network/diagnose",
                         json={"url": "https://127.0.0.1:443/"},
@@ -1023,7 +1044,9 @@ async def test_network_diagnose_tcp_socket_raises(app_logs_proxy):
         ):
             with patch("requests.get", return_value=mock_resp):
                 transport = ASGITransport(app=app_logs_proxy)
-                async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
                     r = await ac.post(
                         "/api/network/diagnose",
                         json={"url": "https://127.0.0.1:443/"},

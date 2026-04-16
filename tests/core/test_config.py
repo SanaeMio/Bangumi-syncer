@@ -3,9 +3,7 @@ ConfigManager tests - Simplified version
 """
 
 import os
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 
 class TestConfigManagerSimple:
@@ -378,5 +376,7 @@ smtp_server = smtp.example.com
         cm = _config_manager_from_ini(tmp_path, "[sync]\nmode = single\n")
         cm.set_config("sync", "k_extra", "v99")
         cm.save_config()
-        cm2 = _config_manager_from_ini(tmp_path, cm.active_config_path.read_text(encoding="utf-8"))
+        cm2 = _config_manager_from_ini(
+            tmp_path, cm.active_config_path.read_text(encoding="utf-8")
+        )
         assert cm2.get("sync", "k_extra") == "v99"

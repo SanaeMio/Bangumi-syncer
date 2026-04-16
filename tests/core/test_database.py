@@ -3,7 +3,6 @@ DatabaseManager tests
 """
 
 import sqlite3
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -380,7 +379,9 @@ class TestDatabaseDockerAndTrakt:
             assert db.get_trakt_config("u1") is None
             assert db.delete_trakt_config("u1") is False
 
-    def test_trakt_configs_with_sync_enabled_and_history(self, temp_dir, reset_singletons):
+    def test_trakt_configs_with_sync_enabled_and_history(
+        self, temp_dir, reset_singletons
+    ):
         db_path = temp_dir / "t2.db"
         with patch("app.core.database.logger"):
             from app.core.database import DatabaseManager
@@ -468,7 +469,9 @@ class TestDatabaseDockerAndTrakt:
             from app.core.database import DatabaseManager
 
             db = DatabaseManager(str(db_path))
-        with patch("app.core.database.sqlite3.connect", side_effect=RuntimeError("bad")):
+        with patch(
+            "app.core.database.sqlite3.connect", side_effect=RuntimeError("bad")
+        ):
             with pytest.raises(RuntimeError, match="bad"):
                 db.get_sync_records()
 

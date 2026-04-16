@@ -820,8 +820,12 @@ def test_sync_custom_item_no_bgm_api_after_find_subject():
         with patch.object(svc, "_check_user_permission", return_value=True):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 with patch.object(svc, "_find_subject_id", return_value=("123", False)):
-                    with patch.object(svc, "_get_bangumi_api_for_user", return_value=None):
-                        r = svc.sync_custom_item(_branch_custom_item_for_find(), "custom")
+                    with patch.object(
+                        svc, "_get_bangumi_api_for_user", return_value=None
+                    ):
+                        r = svc.sync_custom_item(
+                            _branch_custom_item_for_find(), "custom"
+                        )
         assert r.status == "error"
         assert "bangumi" in r.message and "错误" in r.message
 
@@ -836,8 +840,12 @@ def test_sync_custom_item_get_target_season_value_error_auth_message():
         with patch.object(svc, "_check_user_permission", return_value=True):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 with patch.object(svc, "_find_subject_id", return_value=("1", False)):
-                    with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
-                        r = svc.sync_custom_item(_branch_custom_item_for_find(), "custom")
+                    with patch.object(
+                        svc, "_get_bangumi_api_for_user", return_value=bgm
+                    ):
+                        r = svc.sync_custom_item(
+                            _branch_custom_item_for_find(), "custom"
+                        )
         assert r.status == "error"
         assert "access_token" in r.message or "认证" in r.message
 

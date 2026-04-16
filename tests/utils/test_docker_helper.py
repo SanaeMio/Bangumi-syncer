@@ -175,7 +175,9 @@ class TestDockerProxyHelperSimple:
 
     def test_detect_network_mode_bridge_via_default_route(self):
         with patch("app.utils.docker_helper.subprocess.run") as run:
-            run.return_value = MagicMock(returncode=0, stdout="default via 172.17.0.1 dev eth0\n")
+            run.return_value = MagicMock(
+                returncode=0, stdout="default via 172.17.0.1 dev eth0\n"
+            )
             from app.utils.docker_helper import DockerProxyHelper
 
             h = DockerProxyHelper()
@@ -184,7 +186,9 @@ class TestDockerProxyHelperSimple:
 
     def test_detect_network_mode_host_hint(self):
         with patch("app.utils.docker_helper.subprocess.run") as run:
-            run.return_value = MagicMock(returncode=0, stdout="default via 127.0.0.1 dev lo\n")
+            run.return_value = MagicMock(
+                returncode=0, stdout="default via 127.0.0.1 dev lo\n"
+            )
             from app.utils.docker_helper import DockerProxyHelper
 
             h = DockerProxyHelper()
@@ -234,7 +238,10 @@ class TestDockerProxyHelperSimple:
 
         from app.utils.docker_helper import DockerProxyHelper
 
-        with patch("app.utils.docker_helper.requests.get", side_effect=requests.exceptions.ConnectionError("refused")):
+        with patch(
+            "app.utils.docker_helper.requests.get",
+            side_effect=requests.exceptions.ConnectionError("refused"),
+        ):
             h = DockerProxyHelper()
             with patch.object(
                 h, "_test_basic_connectivity", return_value={"success": True}
@@ -246,7 +253,9 @@ class TestDockerProxyHelperSimple:
     def test_test_proxy_connectivity_generic_error(self):
         from app.utils.docker_helper import DockerProxyHelper
 
-        with patch("app.utils.docker_helper.requests.get", side_effect=RuntimeError("x")):
+        with patch(
+            "app.utils.docker_helper.requests.get", side_effect=RuntimeError("x")
+        ):
             h = DockerProxyHelper()
             with patch.object(
                 h, "_test_basic_connectivity", return_value={"success": True}

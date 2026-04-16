@@ -335,7 +335,9 @@ async def test_start_user_sync_task_stores_result():
     mock_sync = AsyncMock(return_value=done)
     svc.sync_user_trakt_data = mock_sync
     try:
-        with patch("app.services.trakt.sync_service.asyncio.sleep", new_callable=AsyncMock):
+        with patch(
+            "app.services.trakt.sync_service.asyncio.sleep", new_callable=AsyncMock
+        ):
             tid = await svc.start_user_sync_task("u9", full_sync=False)
             inner_task = svc._active_syncs[tid]
             await asyncio.wait_for(inner_task, timeout=5.0)

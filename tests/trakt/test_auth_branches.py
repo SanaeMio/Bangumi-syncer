@@ -158,9 +158,12 @@ async def test_exchange_code_for_token_200_and_errors(svc):
                 "app.services.trakt.auth.httpx.AsyncClient",
                 return_value=_FakeAsyncClientCtx(ret_ok),
             ):
-                assert await svc._exchange_code_for_token("code") == {"access_token": "a"}
+                assert await svc._exchange_code_for_token("code") == {
+                    "access_token": "a"
+                }
 
     bad = MagicMock(status_code=400, text="err")
+
     async def ret_bad():
         return bad
 
@@ -191,6 +194,7 @@ async def test_exchange_code_for_token_200_and_errors(svc):
 async def test_refresh_access_token_paths(svc):
     ok = MagicMock(status_code=200)
     ok.json.return_value = {"access_token": "n"}
+
     async def ret_ok():
         return ok
 
@@ -318,9 +322,7 @@ async def test_refresh_token_branches(svc):
 async def test_handle_callback_exception_returns_message(svc):
     cb = TraktCallbackRequest(code="c", state="st")
     with patch.object(svc, "_validate_config", return_value=True):
-        with patch.object(
-            svc, "_verify_oauth_state", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(svc, "_verify_oauth_state", side_effect=RuntimeError("boom")):
             r = await svc.handle_callback(cb, "u")
             assert r.success is False
             assert "boom" in r.message
