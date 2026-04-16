@@ -36,6 +36,40 @@ def _sample_record(**kwargs) -> FeiniuWatchRecord:
     return FeiniuWatchRecord(**base)
 
 
+def test_ensure_feiniu_startup_watermark_disabled_noop():
+    from app.services.feiniu.sync_service import ensure_feiniu_startup_watermark
+
+    with patch("app.services.feiniu.sync_service.config_manager") as cm:
+        cm.get_feiniu_config.return_value = {"enabled": False, "db_path": "/x"}
+        with patch("app.services.feiniu.sync_service.database_manager") as dbm:
+            ensure_feiniu_startup_watermark()
+            dbm.get_feiniu_meta.assert_not_called()
+
+
+def test_ensure_feiniu_startup_watermark_no_db_path():
+    from app.services.feiniu.sync_service import ensure_feiniu_startup_watermark
+
+    with patch("app.services.feiniu.sync_service.config_manager") as cm:
+        cm.get_feiniu_config.return_value = {"enabled": True, "db_path": ""}
+        with patch("app.services.feiniu.sync_service.database_manager") as dbm:
+            ensure_feiniu_startup_watermark()
+            dbm.get_feiniu_meta.assert_not_called()
+
+
+def test_ensure_feiniu_startup_watermark_db_not_a_file():
+    from app.services.feiniu.sync_service import ensure_feiniu_startup_watermark
+
+    with patch("app.services.feiniu.sync_service.config_manager") as cm:
+        cm.get_feiniu_config.return_value = {"enabled": True, "db_path": "/nope.db"}
+        with patch("app.services.feiniu.sync_service.Path") as PC:
+            path_mock = MagicMock()
+            path_mock.is_file.return_value = False
+            PC.return_value = path_mock
+            with patch("app.services.feiniu.sync_service.database_manager") as dbm:
+                ensure_feiniu_startup_watermark()
+                dbm.get_feiniu_meta.assert_not_called()
+
+
 def test_ensure_feiniu_startup_watermark_when_missing():
     from app.services.feiniu.sync_service import ensure_feiniu_startup_watermark
 
@@ -135,6 +169,40 @@ async def test_run_sync_success_saves_history(tmp_path):
     dbm.save_feiniu_sync_history.assert_called_once_with(
         "u1", "it1", rec.update_time_ms
     )
+
+
+@pytest.mark.asyncio
+async def test_run_sync_to_thread_exception_counts_error(tmp_path):
+    dbf = tmp_path / "trim_exc.db"
+    dbf.write_bytes(b"")
+    rec = _sample_record()
+
+    async def boom(*_a, **_kw):
+        raise RuntimeError("sync thread failed")
+
+    with patch("app.services.feiniu.sync_service.config_manager") as cm:
+        cm.get_feiniu_config.return_value = _enabled_cfg(str(dbf))
+        with patch(
+            "app.services.feiniu.sync_service.fetch_completed_watch_records",
+            return_value=[rec],
+        ):
+            with patch("app.services.feiniu.sync_service.database_manager") as dbm:
+                dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
+                dbm.is_feiniu_item_synced.return_value = False
+                with patch(
+                    "app.services.feiniu.sync_service.asyncio.to_thread",
+                    side_effect=boom,
+                ):
+                    with patch(
+                        "app.services.feiniu.sync_service.asyncio.sleep",
+                        new_callable=AsyncMock,
+                    ):
+                        with patch("app.services.feiniu.sync_service.logger") as log:
+                            r = await feiniu_sync_service.run_sync()
+    assert r.error_count == 1
+    assert r.success is False
+    log.error.assert_called()
+    dbm.save_feiniu_sync_history.assert_not_called()
 
 
 @pytest.mark.asyncio

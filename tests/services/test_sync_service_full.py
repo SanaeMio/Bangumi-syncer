@@ -3,6 +3,7 @@
 使用 responses 和 mock 测试完整的同步流程
 """
 
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -468,6 +469,49 @@ def test_check_season_info_in_title(mock_config, mock_database):
     # 测试无季度信息
     assert service._check_season_info_in_title("Test Anime", 1) is False
 
+    assert service._check_season_info_in_title("某番第3季上半", 3) is True
+
+
+@contextmanager
+def _patched_sync_service_deps():
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+        with patch("app.services.sync_service.database_manager"):
+            with patch("app.services.sync_service.send_notify"):
+                with patch("app.services.sync_service.mapping_service"):
+                    yield mock_cfg
+
+
+def _branch_custom_item_for_find(**kwargs):
+    defaults = dict(
+        user_name="testuser",
+        title="番剧A",
+        ori_title="A",
+        season=1,
+        episode=1,
+        media_type="episode",
+        release_date="2024-01-15",
+        source=None,
+    )
+    defaults.update(kwargs)
+    return CustomItem(**defaults)
+
+
+def _find_subject_via_bangumi_data(mock_cfg, find_return, season=2):
+    def get_side_effect(section, key, fallback=None):
+        if section == "bangumi_data" and key == "enabled":
+            return True
+        return fallback
+
+    mock_cfg.get.side_effect = get_side_effect
+    service = SyncService()
+    mock_data = MagicMock()
+    mock_data.find_bangumi_id.return_value = find_return
+    with patch.object(service, "_load_custom_mappings", return_value={}):
+        with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+            return service._find_subject_id(
+                _branch_custom_item_for_find(season=season, title="T", ori_title="O")
+            )
+
 
 def test_find_subject_id_from_mapping(mock_config, mock_database):
     """测试从自定义映射查找 subject ID"""
@@ -675,3 +719,155 @@ def test_jellyfin_sync_item_not_played_completion(mock_config, mock_database):
     result = service.sync_jellyfin_item(jellyfin_data)
 
     assert result.status == "ignored"
+
+
+def test_find_subject_id_season_gt1_date_matched_sets_season_flag():
+    with _patched_sync_service_deps() as cfg:
+        sid, flag = _find_subject_via_bangumi_data(cfg, ("99", "标题", True), season=2)
+        assert sid == "99"
+        assert flag is True
+
+
+def test_find_subject_id_season_gt1_title_has_season_info():
+    with _patched_sync_service_deps() as cfg:
+        sid, flag = _find_subject_via_bangumi_data(
+            cfg, ("88", "某番 第2季", False), season=2
+        )
+        assert sid == "88"
+        assert flag is True
+
+
+def test_find_subject_id_season_gt1_no_date_no_season_keyword():
+    with _patched_sync_service_deps() as cfg:
+        sid, flag = _find_subject_via_bangumi_data(
+            cfg, ("77", "无季标", False), season=2
+        )
+        assert sid == "77"
+        assert flag is False
+
+
+def test_find_subject_id_season1_sets_season_matched_true():
+    with _patched_sync_service_deps() as cfg:
+        sid, flag = _find_subject_via_bangumi_data(
+            cfg, ("66", "第一季", False), season=1
+        )
+        assert sid == "66"
+        assert flag is True
+
+
+def test_find_subject_id_find_bangumi_id_exception_falls_through_to_api():
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return True
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.side_effect = RuntimeError("parse fail")
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [{"id": 42}]
+        with patch.object(service, "_load_custom_mappings", return_value={}):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag = service._find_subject_id(_branch_custom_item_for_find())
+        assert sid == 42 or sid == "42"
+        assert flag is False
+
+
+def test_find_subject_id_api_disabled_no_bgm_instance():
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        with patch.object(service, "_load_custom_mappings", return_value={}):
+            with patch.object(service, "_get_bangumi_api_for_user", return_value=None):
+                sid, flag = service._find_subject_id(_branch_custom_item_for_find())
+        assert sid is None
+        assert flag is False
+
+
+def test_find_subject_id_api_search_exception_returns_none():
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        bgm = MagicMock()
+        bgm.bgm_search.side_effect = OSError("net")
+        with patch.object(service, "_load_custom_mappings", return_value={}):
+            with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
+                sid, flag = service._find_subject_id(_branch_custom_item_for_find())
+        assert sid is None
+
+
+def test_sync_custom_item_no_bgm_api_after_find_subject():
+    with _patched_sync_service_deps():
+        svc = SyncService()
+        with patch.object(svc, "_check_user_permission", return_value=True):
+            with patch.object(svc, "_is_title_blocked", return_value=False):
+                with patch.object(svc, "_find_subject_id", return_value=("123", False)):
+                    with patch.object(
+                        svc, "_get_bangumi_api_for_user", return_value=None
+                    ):
+                        r = svc.sync_custom_item(
+                            _branch_custom_item_for_find(), "custom"
+                        )
+        assert r.status == "error"
+        assert "bangumi" in r.message and "错误" in r.message
+
+
+def test_sync_custom_item_get_target_season_value_error_auth_message():
+    with _patched_sync_service_deps():
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.get_target_season_episode_id.side_effect = ValueError(
+            "认证失败 access_token 过期"
+        )
+        with patch.object(svc, "_check_user_permission", return_value=True):
+            with patch.object(svc, "_is_title_blocked", return_value=False):
+                with patch.object(svc, "_find_subject_id", return_value=("1", False)):
+                    with patch.object(
+                        svc, "_get_bangumi_api_for_user", return_value=bgm
+                    ):
+                        r = svc.sync_custom_item(
+                            _branch_custom_item_for_find(), "custom"
+                        )
+        assert r.status == "error"
+        assert "access_token" in r.message or "认证" in r.message
+
+
+def test_sync_custom_item_mark_value_error_auth_message():
+    with _patched_sync_service_deps():
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.get_target_season_episode_id.return_value = ("1", "10")
+        bgm.mark_episode_watched.side_effect = ValueError("access_token 无效")
+        with patch.object(svc, "_find_subject_id", return_value=("1", False)):
+            with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
+                r = svc.sync_custom_item(_branch_custom_item_for_find(), "custom")
+        assert r.status == "error"
+
+
+def test_sync_custom_item_outer_exception_returns_error():
+    with _patched_sync_service_deps():
+        svc = SyncService()
+        with patch.object(
+            svc, "_check_user_permission", side_effect=RuntimeError("perm boom")
+        ):
+            r = svc.sync_custom_item(_branch_custom_item_for_find(), "custom")
+        assert r.status == "error"
+        assert "处理失败" in r.message

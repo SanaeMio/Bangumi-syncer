@@ -50,6 +50,12 @@ class TestExtractPlexJson:
         result = extract_plex_json(b"no json here")
         assert result is None
 
+    def test_extract_plex_json_no_closing_delimiter(self):
+        """有起始 \\r\\n{ 但缺少结尾 }\\r\\n 时返回 None"""
+        from app.utils.data_util import extract_plex_json
+
+        assert extract_plex_json(b'\r\n{"only": "open"}\n') is None
+
 
 class TestExtractPlexData:
     """测试 Plex 数据提取"""

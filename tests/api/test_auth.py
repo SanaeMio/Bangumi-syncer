@@ -276,3 +276,88 @@ def test_get_client_ip_direct():
 
     assert response.status_code == 200
     assert response.json()["ip"] == "testclient"
+
+
+def test_get_client_ip_unknown_when_no_client():
+    """request.client 为空时返回 unknown"""
+    from starlette.requests import Request
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "path": "/",
+        "raw_path": b"/",
+        "root_path": "",
+        "scheme": "http",
+        "query_string": b"",
+        "headers": [],
+        "client": None,
+        "server": ("testserver", 80),
+    }
+    req = Request(scope)
+    assert auth.get_client_ip(req) == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_login_wrong_password_401_with_remaining(mock_security_manager):
+    """登录失败且未锁 IP：返回 401 并带剩余次数"""
+    mock_security_manager.is_ip_locked.return_value = False
+    mock_security_manager.authenticate_user.return_value = False
+    mock_security_manager.get_login_attempts.return_value = {"attempts": 2}
+    mock_security_manager.get_auth_config.return_value = {"max_login_attempts": 5}
+
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(auth.router)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/login",
+            json={"username": "u", "password": "bad"},
+        )
+
+    assert response.status_code == 401
+    assert "剩余" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_login_invalid_json_returns_500():
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(auth.router)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/login",
+            content=b"not-json",
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_logout_remove_session_error_returns_500(mock_security_manager):
+    mock_security_manager.remove_session.side_effect = RuntimeError("db")
+
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(auth.router)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        cookies={"session_token": "tok"},
+    ) as client:
+        response = await client.post("/api/logout")
+
+    assert response.status_code == 500

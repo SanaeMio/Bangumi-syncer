@@ -98,6 +98,23 @@ async def test_feiniu_manual_success(tmp_path, app_feiniu):
 
 
 @pytest.mark.asyncio
+async def test_feiniu_manual_sync_raises_500(tmp_path, app_feiniu):
+    dbf = tmp_path / "e.db"
+    dbf.write_bytes(b"")
+    with patch("app.api.feiniu.config_manager") as m:
+        m.get_feiniu_config.return_value = _feiniu_cfg(enabled=True, db_path=str(dbf))
+        with patch(
+            "app.api.feiniu.feiniu_sync_service.run_sync", new_callable=AsyncMock
+        ) as rs:
+            rs.side_effect = RuntimeError("db locked")
+            transport = ASGITransport(app=app_feiniu)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                r = await ac.post("/api/feiniu/sync/manual")
+    assert r.status_code == 500
+    assert "db locked" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_feiniu_manual_with_user_query(tmp_path, app_feiniu):
     dbf = tmp_path / "t.db"
     dbf.write_bytes(b"")

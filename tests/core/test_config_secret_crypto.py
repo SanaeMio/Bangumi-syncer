@@ -1,7 +1,7 @@
 """config_secret_crypto 单元测试。"""
 
 from configparser import ConfigParser
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.core import config_secret_crypto as csc
 
@@ -44,6 +44,30 @@ def test_decrypt_none_returns_empty():
 
 def test_encrypt_empty():
     assert csc.encrypt("") == ""
+
+
+def test_encrypt_none_returns_empty():
+    assert csc.encrypt(None) == ""
+
+
+def test_decrypt_prefixed_without_master_logs_warning():
+    bad = csc.PREFIX + "not-decryptable-without-key"
+    with patch.object(csc, "_master_secret", return_value=""):
+        with patch("app.core.logging.logger.warning", MagicMock()) as warn:
+            out = csc.decrypt(bad)
+    assert out == bad
+    warn.assert_called()
+
+
+def test_decrypt_invalid_fernet_logs_warning():
+    with patch.object(csc, "_master_secret", return_value="k" * 20):
+        enc = csc.encrypt("secret")
+    tampered = enc[:-3] + "xxx"
+    with patch.object(csc, "_master_secret", return_value="k" * 20):
+        with patch("app.core.logging.logger.warning", MagicMock()) as warn:
+            out = csc.decrypt(tampered)
+    assert out == tampered
+    warn.assert_called()
 
 
 def test_encrypt_without_master_returns_plaintext():
@@ -172,6 +196,16 @@ def test_migrate_skips_empty_and_already_encrypted():
         enc = csc.encrypt("one")
         cfg.set("bangumi", "access_token", enc)
         assert csc.migrate_plaintext_sensitive_fields(cfg) is False
+
+
+def test_migrate_skips_whitespace_only_sensitive_value():
+    """敏感项仅为空白时不加密、不视为变更（覆盖 strip 分支）。"""
+    cfg = ConfigParser()
+    cfg.add_section("bangumi")
+    cfg.set("bangumi", "access_token", "   \t  ")
+    with patch.object(csc, "_master_secret", return_value="m" * 20):
+        assert csc.migrate_plaintext_sensitive_fields(cfg) is False
+    assert cfg.get("bangumi", "access_token") == "   \t  "
 
 
 def test_migrate_migrates_bangumi_dash_webhook_and_email_password():

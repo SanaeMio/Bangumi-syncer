@@ -1,0 +1,16 @@
+# https://docs.codecov.com/docs/codecov-yaml
+# PR 上不发布 Codecov 评论（仍会上传报告，网页与 badge 可用）
+comment: false
+
+coverage:
+  status:
+    # 覆盖率仅作参考，不作为合并门槛（对应检查为信息性，不挡 PR）
+    project:
+      default:
+        target: auto
+        threshold: 3%
+        informational: true
+    patch:
+      default:
+        target: auto
+        informational: true
