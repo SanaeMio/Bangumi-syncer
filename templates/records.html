@@ -43,6 +43,7 @@
                         <option value="plex">Plex</option>
                         <option value="emby">Emby</option>
                         <option value="jellyfin">Jellyfin</option>
+                        <option value="feiniu">飞牛</option>
                         <option value="test">测试</option>
                         <option value="retry">重试记录</option>
                     </select>
@@ -235,7 +236,8 @@ function getSourceColor(source) {
         case 'emby': return 'success';     // 绿色
         case 'jellyfin': return 'primary'; // 蓝色
         case 'custom': return 'secondary'; // 灰色
-        case 'test': return 'info';        // 浅蓝色
+        case 'feiniu': return 'info';      // 浅蓝色
+        case 'test': return 'secondary';   // 灰色
         default: return 'secondary';
     }
 }

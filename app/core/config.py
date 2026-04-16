@@ -94,6 +94,7 @@ class ConfigManager:
             ("dev", "script_proxy"): "HTTP_PROXY",
             ("dev", "debug"): "DEBUG_MODE",
             ("web", "base_path"): "APPLICATION_ROOT",
+            ("feiniu", "db_path"): "FEINIU_DB_PATH",
         }
 
         for (section, option), env_var in env_overrides.items():
@@ -297,6 +298,43 @@ class ConfigManager:
                     result_config[key] = default_value
 
         return result_config
+
+    def get_feiniu_config(self) -> dict[str, Any]:
+        """飞牛 trimmedia 同步配置（默认关闭）"""
+        defaults: dict[str, Any] = {
+            "enabled": False,
+            "db_path": "",
+            "min_percent": 85,
+            "user_filter": "all",
+            "time_range": "all",
+            "sync_interval": "*/15 * * * *",
+            "limit": 100,
+        }
+        raw = self.get_section("feiniu", {})
+        out: dict[str, Any] = {**defaults, **raw}
+        ev = out.get("enabled", False)
+        if isinstance(ev, str):
+            out["enabled"] = ev.strip().lower() in ("true", "1", "yes", "on")
+        else:
+            out["enabled"] = bool(ev)
+
+        try:
+            out["min_percent"] = int(out.get("min_percent", 85))
+        except (TypeError, ValueError):
+            out["min_percent"] = 85
+        try:
+            out["limit"] = int(out.get("limit", 100))
+        except (TypeError, ValueError):
+            out["limit"] = 100
+
+        out["db_path"] = str(out.get("db_path") or "").strip()
+        out["user_filter"] = str(out.get("user_filter") or "all").strip() or "all"
+        out["time_range"] = str(out.get("time_range") or "all").strip() or "all"
+        out["sync_interval"] = str(
+            out.get("sync_interval") or defaults["sync_interval"]
+        ).strip()
+
+        return out
 
     def get_all_config(self) -> dict[str, dict[str, Any]]:
         """获取所有配置"""

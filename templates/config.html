@@ -692,6 +692,120 @@
                 </div>
             </div>
         </div>
+        <!-- 飞牛影视 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-hdd-network me-2 text-secondary"></i>
+                            <h6 class="m-0 fw-semibold">飞牛影视</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-12">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="feiniu-enabled"
+                                           name="feiniu.enabled">
+                                    <label class="form-check-label fw-semibold" for="feiniu-enabled">
+                                        启用飞牛同步
+                                        <i class="bi bi-question-circle ms-1 text-muted"
+                                           data-bs-toggle="tooltip"
+                                           title="默认关闭。开启并保存后会写入同步起点水位，仅处理此后在飞牛库中有更新的观看记录，不会把启用前的历史存量批量推到 Bangumi。关闭并保存会清除水位。"></i>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-12">
+                                <label for="feiniu-db-path" class="form-label fw-semibold">
+                                    数据库路径 (trimmedia.db)
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="只读打开飞牛的 trimmedia.db，填本机或容器内可访问的绝对路径。Docker 常见为挂载后的路径（见 README 示例）。Windows 建议用正斜杠，如 D:/path/trimmedia.db。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="feiniu-db-path"
+                                       name="feiniu.db_path"
+                                       placeholder="/app/data/feiniu-db/trimmedia.db">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="feiniu-min-percent" class="form-label fw-semibold">
+                                    视为看完的最低进度 (%)
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="播放进度达到该百分比即参与同步；飞牛已标记看完视为 100%。默认 85%，与飞牛「标记看完」习惯类似。"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="feiniu-min-percent"
+                                       name="feiniu.min_percent"
+                                       min="1"
+                                       max="100"
+                                       value="85">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="feiniu-user-filter" class="form-label fw-semibold">
+                                    飞牛用户
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="填 all 表示不过滤；否则填飞牛用户的 guid。可在已登录 Web 时于调试页请求 GET /api/feiniu/users 查看列表。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="feiniu-user-filter"
+                                       name="feiniu.user_filter"
+                                       placeholder="all 或用户 guid">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="feiniu-time-range" class="form-label fw-semibold">
+                                    时间范围
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="在同步起点水位之上，再限制只处理最近一段时间内有更新的播放记录；选「全部」则不做该维度的过滤。"></i>
+                                </label>
+                                <select class="form-select" id="feiniu-time-range" name="feiniu.time_range">
+                                    <option value="all">全部</option>
+                                    <option value="1day">最近 1 天</option>
+                                    <option value="1week">最近 1 周</option>
+                                    <option value="1month">最近 1 月</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="feiniu-sync-interval" class="form-label fw-semibold">
+                                    定时 Cron
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="五段式 Cron，默认每 15 分钟扫描一次：*/15 * * * *"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="feiniu-sync-interval"
+                                       name="feiniu.sync_interval"
+                                       placeholder="*/15 * * * *">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="feiniu-limit" class="form-label fw-semibold">
+                                    单次扫描最大条数
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="单次定时任务从飞牛库中最多拉取多少条候选记录，用于控制单次扫描耗时与负载。"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="feiniu-limit"
+                                       name="feiniu.limit"
+                                       min="1"
+                                       max="500"
+                                       value="100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </form>
     <!-- 操作按钮 -->
     <div class="row">
@@ -1065,6 +1179,18 @@ function populateForm(config) {
     document.getElementById('cache-ttl').value = config.bangumi_data.cache_ttl_days || 7;
     document.getElementById('data-url').value = config.bangumi_data.data_url || 'https://unpkg.com/bangumi-data@0.3/dist/data.json';
     document.getElementById('local-cache-path').value = config.bangumi_data.local_cache_path || './bangumi_data_cache.json';
+
+    const fn = config.feiniu || {};
+    const fe = document.getElementById('feiniu-enabled');
+    if (fe) {
+        fe.checked = fn.enabled === true || fn.enabled === 'true' || String(fn.enabled).toLowerCase() === 'true';
+        document.getElementById('feiniu-db-path').value = fn.db_path || '';
+        document.getElementById('feiniu-min-percent').value = (fn.min_percent != null && fn.min_percent !== '') ? fn.min_percent : 85;
+        document.getElementById('feiniu-user-filter').value = fn.user_filter || 'all';
+        document.getElementById('feiniu-time-range').value = fn.time_range || 'all';
+        document.getElementById('feiniu-sync-interval').value = fn.sync_interval || '*/15 * * * *';
+        document.getElementById('feiniu-limit').value = (fn.limit != null && fn.limit !== '') ? fn.limit : 100;
+    }
     
     // 填充认证配置
     if (config.auth) {
@@ -1230,6 +1356,15 @@ async function saveConfig() {
                 cache_ttl_days: parseInt(document.getElementById('cache-ttl').value),
                 data_url: document.getElementById('data-url').value,
                 local_cache_path: document.getElementById('local-cache-path').value
+            },
+            feiniu: {
+                enabled: document.getElementById('feiniu-enabled').checked,
+                db_path: document.getElementById('feiniu-db-path').value.trim(),
+                min_percent: parseInt(document.getElementById('feiniu-min-percent').value, 10) || 85,
+                user_filter: document.getElementById('feiniu-user-filter').value.trim() || 'all',
+                time_range: document.getElementById('feiniu-time-range').value || 'all',
+                sync_interval: document.getElementById('feiniu-sync-interval').value.trim() || '*/15 * * * *',
+                limit: parseInt(document.getElementById('feiniu-limit').value, 10) || 100
             },
             auth: {
                 enabled: document.getElementById('auth-enabled').checked,

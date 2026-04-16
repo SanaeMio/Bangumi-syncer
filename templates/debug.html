@@ -103,6 +103,39 @@
             </div>
         </div>
     </div>
+    <!-- 飞牛同步测试 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-hdd-network me-2 text-secondary"></i>
+                        <h6 class="m-0 fw-semibold">飞牛同步测试</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                            <label for="feiniu-debug-user" class="form-label fw-semibold">飞牛用户 guid（可选）</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="feiniu-debug-user"
+                                   placeholder="留空则使用配置中的 飞牛用户 guid">
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button"
+                                    class="btn btn-secondary w-100"
+                                    id="feiniu-manual-sync-btn"
+                                    onclick="triggerFeiniuManualSync()">
+                                <i class="bi bi-arrow-repeat me-1"></i>立即触发飞牛同步
+                            </button>
+                        </div>
+                    </div>
+                    <div id="feiniu-sync-test-result" class="mt-3" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- 网络诊断工具 -->
     <div class="row">
         <div class="col-12">
@@ -422,6 +455,65 @@ async function testSync() {
         // 恢复按钮状态
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>开始测试';
+    }
+}
+
+// 飞牛：手动触发一次同步（与 POST /api/feiniu/sync/manual 一致）
+async function triggerFeiniuManualSync() {
+    const btn = document.getElementById('feiniu-manual-sync-btn');
+    const out = document.getElementById('feiniu-sync-test-result');
+    const user = document.getElementById('feiniu-debug-user').value.trim();
+    let url = appUrl('/api/feiniu/sync/manual');
+    if (user) {
+        url += '?user=' + encodeURIComponent(user);
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>同步中...';
+    out.style.display = 'block';
+    out.innerHTML = '<div class="alert alert-info mb-0"><i class="bi bi-hourglass-split me-2"></i>正在执行飞牛扫描与同步，请稍候…</div>';
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Accept': 'application/json' }
+        });
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = {};
+        }
+        if (!response.ok) {
+            const detail = data.detail != null
+                ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+                : (data.message || '请求失败');
+            out.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-x-circle me-2"></i><strong>无法执行</strong>（HTTP ${response.status}）<br>
+                    <span class="small">${detail}</span>
+                </div>`;
+            return;
+        }
+        const d = data.data || {};
+        const counts = `已提交 ${d.synced_count ?? 0}，跳过 ${d.skipped_count ?? 0}，失败 ${d.error_count ?? 0}`;
+        const ok = data.status === 'success';
+        out.innerHTML = `
+            <div class="alert alert-${ok ? 'success' : 'warning'} mb-0">
+                <i class="bi bi-${ok ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+                <strong>${ok ? '执行完成' : '执行结束（含失败项）'}</strong><br>
+                <span class="small">${data.message || ''}</span><br>
+                <span class="small text-muted">${counts}</span>
+            </div>`;
+    } catch (error) {
+        console.error('飞牛手动同步请求失败:', error);
+        out.innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-x-circle me-2"></i><strong>网络错误</strong><br>
+                <span class="small">${error.message || String(error)}</span>
+            </div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>立即触发飞牛同步';
     }
 }
 
