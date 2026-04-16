@@ -279,3 +279,117 @@ def test_api_auth_error():
 
     with pytest.raises(ValueError, match="认证失败"):
         api.get_me()
+
+
+@responses.activate
+def test_bgm_search_invalid_date_fallback():
+    """测试 bgm_search: 遇到无效日期时使用无日期搜索"""
+    api = BangumiApi()
+
+    # 模拟无日期搜索成功
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv//search/subject/%E6%B5%8B%E8%AF%95%E7%95%AA%E5%89%A7?type=2",
+        json={"list": [{"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}]},
+        status=200,
+    )
+
+    # 模拟获取条目详情
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv/v0/subjects/999",
+        json={"id": 999, "name": "Test Anime", "name_cn": "测试番剧"},
+        status=200,
+    )
+
+    # 传入空字符串作为首播日期
+    result = api.bgm_search(title="测试番剧", ori_title="", premiere_date="")
+
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["id"] == 999
+
+
+@responses.activate
+def test_bgm_search_alias_fallback_success():
+    """测试 bgm_search: 通过旧版接口与详情接口获取 infobox 别名进行匹配"""
+    api = BangumiApi()
+
+    # 模拟带日期搜索无结果
+    responses.add(
+        responses.POST,
+        "https://api.bgm.tv/v0/search/subjects",
+        json={"data": []},
+        status=200,
+    )
+
+    # 模拟无日期搜索返回简略信息（无 infobox）
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv//search/subject/%E5%85%B7%E8%B1%A1%E9%9D%A9%E5%91%BD%20%E8%B6%85%E4%BA%BA%E5%B9%BB%E6%83%B3?type=2",
+        json={
+            "list": [
+                {
+                    "id": 139022,
+                    "name": "Concrete Revolutio",
+                    "name_cn": "Concrete Revolutio 超人幻想",
+                }
+            ]
+        },
+        status=200,
+    )
+
+    # 模拟通过 ID 获取包含 infobox 别名的完整数据
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv/v0/subjects/139022",
+        json={
+            "id": 139022,
+            "name": "Concrete Revolutio",
+            "name_cn": "Concrete Revolutio 超人幻想",
+            "infobox": [
+                {"key": "放送开始", "value": "2015年10月4日"},
+                {
+                    "key": "别名",
+                    "value": [{"v": "具象革命 超人幻想"}, {"v": "コンレボ"}],
+                },
+            ],
+        },
+        status=200,
+    )
+
+    # 模拟传入单集日期与别名
+    result = api.bgm_search(
+        title="具象革命 超人幻想", ori_title="", premiere_date="2015-12-26"
+    )
+
+    # 断言匹配成功并返回正确的条目 ID
+    assert result is not None
+    assert len(result) == 1
+    assert result[0]["id"] == 139022
+
+
+def test_title_diff_ratio_infobox_extraction():
+    """测试 title_diff_ratio: 提取 infobox 别名并计算相似度"""
+    api = BangumiApi()
+
+    bgm_data_mock = {
+        "name": "Original Name",
+        "name_cn": "中文主标题",
+        "infobox": [
+            {"key": "其他信息", "value": "无关内容"},
+            {"key": "别名", "value": [{"v": "别名格式1"}, "纯字符串别名格式2"]},
+        ],
+    }
+
+    # 命中中文主标题
+    assert api.title_diff_ratio("中文主标题", "", bgm_data_mock) == 1.0
+
+    # 命中字典格式别名
+    assert api.title_diff_ratio("别名格式1", "", bgm_data_mock) == 1.0
+
+    # 命中字符串格式别名
+    assert api.title_diff_ratio("纯字符串别名格式2", "", bgm_data_mock) == 1.0
+
+    # 无关名称，相似度应低于阈值
+    assert api.title_diff_ratio("毫无关系的名称", "", bgm_data_mock) < 0.5
