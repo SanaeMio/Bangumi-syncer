@@ -2,6 +2,8 @@
 Bangumi 数据工具完整测试
 """
 
+from unittest.mock import patch
+
 from app.utils.bangumi_data import BangumiData
 
 
@@ -67,6 +69,43 @@ class TestBangumiDataMatching:
 
         result = data._is_date_close("2024-01-01", "2024-01-10")
         assert isinstance(result, bool)
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_optimized_date_override(
+        self, mock_parse_data, mock_preload
+    ):
+        """测试日期择优机制：当完全匹配的日期差距过大时，采用日期接近的部分匹配"""
+        data = BangumiData()
+
+        # 模拟内存中的 bangumi-data 数据流
+        mock_parse_data.return_value = [
+            {
+                "title": "玉响",
+                "titleTranslate": {"zh-Hans": ["玉响"]},
+                "begin": "2010-11-26",
+                "sites": [{"site": "bangumi", "id": "8452"}],
+            },
+            {
+                "title": "たまゆら～hitotose～",
+                "titleTranslate": {"zh-Hans": ["玉响～hitotose～", "玉响～1年～"]},
+                "begin": "2011-10-03",
+                "sites": [{"site": "bangumi", "id": "18605"}],
+            },
+        ]
+
+        # 模拟 Emby 传入的请求：标题完全等于 OVA，但给定的播出时间是正片第一季的时间
+        result = data._find_bangumi_id_optimized(
+            title="玉响", ori_title="", release_date="2011-10-02", season=1
+        )
+
+        # 断言：必须舍弃 ID 8452，返回正片第一季的 ID 18605
+        assert result is not None
+        assert result[0] == "18605"
+        # 断言：返回的应当是最佳中文匹配名
+        assert result[1] == "玉响～hitotose～"
+        # 断言：由于是严格依靠日期反杀的，可信度必须被标记为 True
+        assert result[2] is True
 
 
 class TestBangumiDataTitle:

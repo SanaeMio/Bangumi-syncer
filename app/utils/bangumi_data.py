@@ -365,44 +365,53 @@ class BangumiData:
             # 按匹配类型排序，优先使用中文翻译匹配
             exact_matches.sort(key=lambda x: x[2])
 
-            if release_date and len(exact_matches) > 1:
-                # 如果有多个相同类型的匹配，使用日期最接近的
-                match_type = exact_matches[0][2]
-                matches_of_same_type = [m for m in exact_matches if m[2] == match_type]
+            if release_date:
+                min_exact_diff = float("inf")
+                best_exact_match = None
 
-                if len(matches_of_same_type) > 1:
+                # 找到日期最近的完全匹配
+                for match_item, match_id, match_type in exact_matches:
+                    if "begin" in match_item:
+                        diff = self._date_diff(match_item["begin"], release_date)
+                        if diff < min_exact_diff:
+                            min_exact_diff = diff
+                            best_exact_match = (match_item, match_id, match_type)
+
+                # 当完全匹配的最佳日期相差大于 180 天时，检查部分匹配列表中是否存在日期更接近的条目
+                # 用于处理同名 OVA 或前传导致误判正片的情况
+                if min_exact_diff > 180 and partial_matches:
                     logger.debug(
-                        f"发现 {len(matches_of_same_type)} 个相同类型的匹配，使用日期进行进一步筛选"
+                        f"完全匹配的最佳日期误差高达 {min_exact_diff} 天，启动全局日期择优机制"
                     )
-                    closest_match = None
-                    min_diff = float("inf")
+                    min_partial_diff = float("inf")
+                    best_partial_match = None
 
-                    for match_item, match_id, _ in matches_of_same_type:
+                    for match_item, score, match_id in partial_matches:
                         if "begin" in match_item:
                             diff = self._date_diff(match_item["begin"], release_date)
-                            logger.debug(
-                                f"  候选: {match_item.get('title', '')} (ID: {match_id}), "
-                                f"日期: {match_item['begin']}, 与目标日期差距: {diff}天"
-                            )
-                            if diff < min_diff:
-                                min_diff = diff
-                                closest_match = (match_item, match_id)
+                            if diff < min_partial_diff:
+                                min_partial_diff = diff
+                                best_partial_match = (match_item, match_id, score)
 
-                    if closest_match:
-                        logger.debug(
-                            f"找到最佳日期匹配的番剧: {closest_match[0].get('title', '')}, "
-                            f"bangumi_id: {closest_match[1]}, 日期差距: {min_diff}天"
+                    # 若部分匹配中有日期误差小于等于 90 天的条目，优先采用该部分匹配条目
+                    if best_partial_match and min_partial_diff <= 90:
+                        matched_title = self._get_best_matched_title(
+                            best_partial_match[0]
                         )
-                        # 获取匹配到的标题
-                        matched_title = self._get_best_matched_title(closest_match[0])
-                        # 如果是通过日期匹配找到的，且是非第一季，标记为可信的季度ID
-                        date_matched = season > 1
-                        if date_matched:
-                            logger.info(
-                                f"通过日期匹配找到特定季度 (season={season})，"
-                                f"标记为可信的季度ID，跳过续集遍历"
-                            )
-                        return (closest_match[1], matched_title, date_matched)
+                        logger.info(
+                            f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title}， (日期差距 {min_partial_diff} 天)"
+                        )
+                        # 通过日期严格筛选，标记为可信季度ID (date_matched = True)
+                        return (best_partial_match[1], matched_title, True)
+
+                # 处理存在多个完全匹配的情况，返回日期最接近的条目
+                if len(exact_matches) > 1 and best_exact_match:
+                    logger.debug(
+                        f"从多个完全匹配中择优: {best_exact_match[0].get('title', '')}, 日期差距: {min_exact_diff}天"
+                    )
+                    matched_title = self._get_best_matched_title(best_exact_match[0])
+                    date_matched = season > 1
+                    return (best_exact_match[1], matched_title, date_matched)
 
             # 返回最高优先级的匹配结果
             result_item = exact_matches[0][0]
