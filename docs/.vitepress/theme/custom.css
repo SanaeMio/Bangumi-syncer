@@ -1,0 +1,418 @@
+/**
+ * 品牌色取自 Logo 中「Bangumi-syncer」文字主色（品红）及图标深紫辅色。
+ * 变量参考：https://github.com/vuejs/vitepress/blob/main/src/client/theme-default/styles/vars.css
+ */
+:root {
+  /* Logo 文字色 #B32161 为轴心 */
+  --vp-c-brand-1: #b32161;
+  --vp-c-brand-2: #c9437e;
+  --vp-c-brand-3: #d9669a;
+  --vp-c-brand-soft: rgba(179, 33, 97, 0.12);
+
+  --vp-button-brand-bg: var(--vp-c-brand-1);
+  --vp-button-brand-hover-bg: var(--vp-c-brand-2);
+  --vp-button-brand-active-bg: #951a50;
+
+  /* Logo 图标中的深紫 */
+  --vp-logo-accent: #4b2261;
+
+  /* 动效：时长与曲线统一，便于全站一致微调 */
+  --vp-motion-duration-xs: 0.14s;
+  --vp-motion-duration-sm: 0.2s;
+  --vp-motion-duration-md: 0.28s;
+  --vp-motion-duration-route: 0.42s;
+  --vp-motion-duration-route-slow: 0.52s;
+  --vp-motion-stagger-step: 44ms;
+  --vp-motion-ease-out: cubic-bezier(0.33, 1, 0.68, 1);
+  --vp-motion-ease-standard: cubic-bezier(0.45, 0, 0.55, 1);
+  --vp-motion-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(
+    120deg,
+    #b32161 0%,
+    #4b2261 100%
+  );
+
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(179, 33, 97, 0.32) 35%,
+    rgba(75, 34, 97, 0.22) 65%
+  );
+  --vp-home-hero-image-filter: blur(44px);
+}
+
+.dark {
+  --vp-c-brand-1: #e0669a;
+  --vp-c-brand-2: #d44d8a;
+  --vp-c-brand-3: #c43b7a;
+  --vp-c-brand-soft: rgba(224, 102, 154, 0.18);
+
+  --vp-button-brand-bg: var(--vp-c-brand-2);
+  --vp-button-brand-hover-bg: var(--vp-c-brand-1);
+  --vp-button-brand-active-bg: #b32161;
+
+  --vp-home-hero-name-background: linear-gradient(
+    120deg,
+    #f080b0 0%,
+    #8b6cb0 100%
+  );
+}
+
+.vp-doc a {
+  text-decoration-color: color-mix(in srgb, var(--vp-c-brand-1) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vp-doc a {
+    transition:
+      color var(--vp-motion-duration-xs) var(--vp-motion-ease-standard),
+      text-decoration-color var(--vp-motion-duration-xs) var(--vp-motion-ease-standard);
+  }
+}
+
+/* ---------- 路由切换：主内容区 ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .VPContent.vp-route-enter > * {
+    animation: vp-route-enter var(--vp-motion-duration-route) var(--vp-motion-ease-emphasized) both;
+  }
+
+  /* 首页：整块 VPHome 不再做一次位移，改为 Hero / Features / 正文分段错层 */
+  .VPContent.is-home.vp-route-enter > * {
+    animation: none;
+  }
+
+  .VPContent.is-home.vp-route-enter .VPHome > * {
+    animation: vp-route-enter var(--vp-motion-duration-route-slow) var(--vp-motion-ease-emphasized) both;
+  }
+
+  .VPContent.is-home.vp-route-enter .VPHome > *:nth-child(1) {
+    animation-delay: 0ms;
+  }
+
+  .VPContent.is-home.vp-route-enter .VPHome > *:nth-child(2) {
+    animation-delay: calc(var(--vp-motion-stagger-step) * 1);
+  }
+
+  .VPContent.is-home.vp-route-enter .VPHome > *:nth-child(3) {
+    animation-delay: calc(var(--vp-motion-stagger-step) * 2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .VPContent.vp-route-enter > *,
+  .VPContent.is-home.vp-route-enter .VPHome > * {
+    animation: none !important;
+  }
+}
+
+@keyframes vp-route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.996);
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ---------- 全站阅读体验：锚点滚动、目录、页脚 ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  .outline-link {
+    transition:
+      color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard),
+      transform var(--vp-motion-duration-sm) var(--vp-motion-ease-out);
+  }
+
+  .outline-link:hover {
+    transform: translateX(2px);
+  }
+
+  .outline-link.active {
+    color: var(--vp-c-brand-1);
+    font-weight: 500;
+  }
+
+  .VPDocFooter .pager-link {
+    transition:
+      border-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard),
+      box-shadow var(--vp-motion-duration-md) var(--vp-motion-ease-out),
+      transform var(--vp-motion-duration-sm) var(--vp-motion-ease-out),
+      background-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard);
+  }
+
+  .VPDocFooter .pager-link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--vp-c-brand-1) 12%, transparent);
+  }
+
+  .VPDocFooter .pager-link:active {
+    transform: translateY(0);
+    transition-duration: 0.08s;
+  }
+
+  .vp-doc .header-anchor {
+    transition:
+      opacity var(--vp-motion-duration-xs) var(--vp-motion-ease-standard),
+      color var(--vp-motion-duration-xs) var(--vp-motion-ease-standard);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .outline-link:hover {
+    transform: none;
+  }
+
+  .VPDocFooter .pager-link:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+/* ---------- 左侧栏：扁平 + 圆角条；层级在 level-0 / level-1+ 上微调 .item 与 .items ---------- */
+@media (min-width: 960px) {
+  .VPSidebar {
+    border-right: 1px solid var(--vp-c-divider);
+  }
+
+  .VPSidebar .nav {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--vp-c-text-3) 40%, transparent) transparent;
+  }
+
+  .VPSidebar .nav::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .VPSidebar .nav::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--vp-c-text-3) 35%, transparent);
+    border-radius: 99px;
+  }
+
+  .VPSidebar .nav::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--vp-c-text-3) 52%, transparent);
+  }
+}
+
+.VPSidebarItem .item {
+  box-sizing: border-box;
+  /*
+   * 全高「药丸」+ 左对齐短标题时，左弧容易顶字；改用略扁圆角条 + 略不对称内边距，
+   * 左侧多留一点，视觉上与侧栏正文列更一致。
+   */
+  border-radius: 11px;
+  padding-inline: 22px 14px;
+  margin-block: 3px;
+}
+
+/*
+ * 仅「顶层」侧栏行：每个 .group 下直接那一个 VPSidebarItem（depth=0）的 .item。
+ * 可折叠分组标题（快速开始）与真实一级行共用同一左缘。
+ */
+.VPSidebar .nav > .group > .VPSidebarItem > .item {
+  padding-inline: 14px 14px;
+}
+
+/*
+ * VitePress getSidebarGroups 会把连续「仅链接」项包进一个无 link 的 level-0 壳节点，
+ * 简介/特性等在 DOM 上变成 level-1，默认会跟「快速开始」下的二级同一缩进。
+ * 壳节点特征：level-0 + 有子项 + 非链接 + 非可折叠（getSidebarGroups 插入的 { items } 无 collapsed）。
+ * 只取消这一层的 .items 左缩进，并把其直接子项的 .item 左内边距拉回与顶层标题一致；
+ * 更深层仍走下方嵌套规则。勿用仅 :not(.is-link)，以免误伤无 link 但仍 collapsible 的文件夹。
+ */
+.VPSidebar .nav > .group > .VPSidebarItem.level-0:not(.is-link):not(.collapsible) > .items {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+  border-left: none !important;
+}
+
+.VPSidebar
+  .nav
+  > .group
+  > .VPSidebarItem.level-0:not(.is-link):not(.collapsible)
+  > .items
+  > .VPSidebarItem.level-1
+  > .item {
+  padding-inline: 14px 14px;
+}
+
+/* 壳下的二级菜单（若存在）：在已归零的 .items 上恢复与主题一致的递进缩进 */
+.VPSidebar
+  .nav
+  > .group
+  > .VPSidebarItem.level-0:not(.is-link):not(.collapsible)
+  > .items
+  .VPSidebarItem.level-1
+  .items {
+  padding-left: 16px !important;
+  margin-left: 0;
+  border-left: none !important;
+}
+
+/* 标题/链接内文字略内收，避免贴边（含无 link 的可折叠分组标题） */
+.VPSidebarItem .item .link .text,
+.VPSidebarItem .item > .text {
+  padding-inline: 1px 0;
+}
+
+.VPSidebarItem.collapsible > .item:hover {
+  background-color: var(--vp-c-default-soft);
+}
+
+.VPSidebarItem.is-link > .item:hover {
+  background-color: var(--vp-c-default-soft);
+}
+
+.VPSidebarItem.is-link.is-active > .item {
+  background-color: var(--vp-c-brand-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vp-c-brand-1) 20%, transparent);
+}
+
+.VPSidebarItem .caret:hover {
+  color: var(--vp-c-brand-1);
+}
+
+/*
+ * 侧栏层级：须写在本文件「通用 .VPSidebarItem .item」之后，否则会覆盖 padding。
+ * 一级 = level-0，二级及以下 = level-1+；不画左侧竖线，仅靠缩进与字重区分。
+ */
+.VPSidebar .nav > .group + .group {
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--vp-c-divider) 88%, transparent);
+}
+
+.VPSidebarItem.level-0.collapsible > .item .text {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 24px;
+  color: var(--vp-c-text-2);
+}
+
+/* 一级分组下的单链（非折叠）与上面对齐字号 */
+.VPSidebarItem.level-0.is-link:not(.collapsible) > .item .link .text {
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.VPSidebarItem.level-0 .items {
+  margin-top: 4px;
+  margin-bottom: 2px;
+  padding-left: 16px !important;
+}
+
+/* 去掉主题默认与子层上的左侧竖线（层级仅靠缩进 + 字重区分） */
+.VPSidebarItem.level-0 .items,
+.VPSidebarItem.level-1 .items,
+.VPSidebarItem.level-2 .items,
+.VPSidebarItem.level-3 .items,
+.VPSidebarItem.level-4 .items,
+.VPSidebarItem.level-5 .items {
+  border-left: none !important;
+}
+
+/* 任意嵌套在 .items 内的行（二级及以下）：与顶层 .item 区分，勿用过大 padding 顶到与一级对齐 */
+.VPSidebarItem .items .VPSidebarItem > .item {
+  padding-inline: 16px 12px;
+}
+
+.VPSidebarItem.level-1 .text,
+.VPSidebarItem.level-2 .text,
+.VPSidebarItem.level-3 .text,
+.VPSidebarItem.level-4 .text,
+.VPSidebarItem.level-5 .text {
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 26px;
+  color: var(--vp-c-text-2);
+}
+
+/* ---------- 导航 / 侧栏 / 通用微交互 ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .VPNavBarMenuLink,
+  .VPNavBarMenuGroup .button,
+  .VPSidebarItem .link,
+  .VPSidebarItem .items .VPSidebarItem .link {
+    transition:
+      color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard),
+      background-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard),
+      border-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard);
+  }
+
+  .VPSidebarItem .item {
+    transition:
+      background-color var(--vp-motion-duration-md) var(--vp-motion-ease-out),
+      box-shadow var(--vp-motion-duration-md) var(--vp-motion-ease-out);
+  }
+
+  .VPButton.brand,
+  .VPButton.alt {
+    transition:
+      transform var(--vp-motion-duration-sm) var(--vp-motion-ease-out),
+      box-shadow var(--vp-motion-duration-md) var(--vp-motion-ease-out),
+      background-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard),
+      border-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard);
+  }
+
+  .VPButton.brand:hover,
+  .VPButton.alt:hover {
+    transform: translateY(-1px);
+  }
+
+  .VPFeature .link {
+    transition:
+      border-color var(--vp-motion-duration-md) var(--vp-motion-ease-out),
+      background-color var(--vp-motion-duration-md) var(--vp-motion-ease-out),
+      box-shadow var(--vp-motion-duration-md) var(--vp-motion-ease-out);
+  }
+
+  .VPDocAsideOutline .outline-marker {
+    transition:
+      top var(--vp-motion-duration-md) var(--vp-motion-ease-out),
+      opacity var(--vp-motion-duration-sm) var(--vp-motion-ease-standard);
+  }
+
+  .DocSearch-Button,
+  .DocSearch-Button:hover {
+    transition:
+      border-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard),
+      background-color var(--vp-motion-duration-sm) var(--vp-motion-ease-standard),
+      box-shadow var(--vp-motion-duration-md) var(--vp-motion-ease-out);
+  }
+
+  .VPNavBarTitle .title {
+    transition: opacity var(--vp-motion-duration-sm) var(--vp-motion-ease-standard);
+  }
+
+  .VPNavBarTitle:hover .title {
+    opacity: 0.88;
+  }
+}
+
+/* ---------- 首页 Hero：XY 平移错层（--vp-hero-d* 由 Layout.vue 注入，无 Z、无旋转） ---------- */
+@media (min-width: 960px) and (prefers-reduced-motion: no-preference) {
+  .VPHero.has-image .image-container .image-bg {
+    transform: translate(-50%, -50%) translate(var(--vp-hero-dx-bg, 0px), var(--vp-hero-dy-bg, 0px));
+    transition: transform 0.2s var(--vp-motion-ease-out, cubic-bezier(0.33, 1, 0.68, 1));
+  }
+
+  .VPHero.has-image .image-container .image-src {
+    transform: translate(-50%, -50%) translate(var(--vp-hero-dx-img, 0px), var(--vp-hero-dy-img, 0px));
+    transition: transform 0.11s var(--vp-motion-ease-out, cubic-bezier(0.33, 1, 0.68, 1));
+  }
+}

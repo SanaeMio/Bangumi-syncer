@@ -57,3 +57,13 @@ uv run pytest tests/ --cov=app --cov-report=term
 - 保持与现有代码风格一致；不确定时以同目录邻近文件为准。
 - 避免无关格式化或大范围重命名，除非单独说明并与维护者达成一致。
 
+## 文档
+
+用户文档位于仓库根目录的 `docs/`，使用 [VitePress](https://vitepress.dev/) 构建。
+
+如果本次修改内容有配置项变更，或其他需要补充到文档里的内容，请同时更新对应md文件。
+
+文档内配图请放在 [`docs/public/images/`](docs/public/images/) 下，Markdown 使用根路径引用，例如 `![](/images/overview/xxx.png)`。
+
+PR合并到 `main` 后，工作流 [.github/workflows/docs.yml](.github/workflows/docs.yml) 会自动将站点更新部署到 [GitHub Pages](https://sanaemio.github.io/Bangumi-syncer/)。
+
