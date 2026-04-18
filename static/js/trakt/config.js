@@ -335,7 +335,7 @@ class TraktConfigPage {
         try {
             this.showLoading('sync-history-body', '正在加载同步历史...');
 
-            const response = await fetch(appUrl(`/api/records?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}`));
+            const response = await fetch(appUrl(`/api/records?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}&source=trakt`));
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
