@@ -138,6 +138,11 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# Node（VitePress 文档站）
+node_modules/
+docs/.vitepress/cache
+docs/.vitepress/dist
+
 # mypy
 .mypy_cache/
 .dmypy.json
