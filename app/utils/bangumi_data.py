@@ -393,16 +393,30 @@ class BangumiData:
                                 min_partial_diff = diff
                                 best_partial_match = (match_item, match_id, score)
 
-                    # 若部分匹配中有日期误差小于等于 90 天的条目，优先采用该部分匹配条目
+                    # 若部分匹配中有日期误差小于等于 90 天的条目，启动安全校验决定是否采用该部分匹配条目
                     if best_partial_match and min_partial_diff <= 90:
-                        matched_title = self._get_best_matched_title(
-                            best_partial_match[0]
+                        pm_item = best_partial_match[0]
+                        pm_score = best_partial_match[2]
+                        # 收集该条目的原名和所有中文翻译
+                        pm_all_names = [
+                            pm_item.get("title", "")
+                        ] + self._get_zh_hans_titles(pm_item)
+
+                        # 安全校验：搜索词必须被包含在候选名的其中之一里，或者模糊匹配相似度 > 0.8
+                        is_safe_to_override = pm_score >= 0.8 or any(
+                            title in name for name in pm_all_names
                         )
-                        logger.info(
-                            f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title}， (日期差距 {min_partial_diff} 天)"
-                        )
-                        # 通过日期严格筛选，标记为可信季度ID (date_matched = True)
-                        return (best_partial_match[1], matched_title, True)
+
+                        if is_safe_to_override:
+                            matched_title = self._get_best_matched_title(pm_item)
+                            logger.debug(
+                                f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title} (日期差距 {min_partial_diff} 天)"
+                            )
+                            return (best_partial_match[1], matched_title, True)
+                        else:
+                            logger.debug(
+                                f"拒绝日期择优: {pm_item.get('title', '')} 虽然日期接近，但名称差异过大"
+                            )
 
                 # 处理存在多个完全匹配的情况，返回日期最接近的条目
                 if len(exact_matches) > 1 and best_exact_match:
