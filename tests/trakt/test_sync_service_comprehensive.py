@@ -161,6 +161,45 @@ async def test_sync_user_trakt_data_outer_exception_from_history():
 
 
 @pytest.mark.asyncio
+async def test_sync_watched_history_movie_calls_sync_custom_item():
+    with (
+        patch("app.services.trakt.sync_service.bangumi_data") as bd,
+        patch("app.services.trakt.sync_service.sync_service") as ss,
+        patch("app.services.trakt.sync_service.database_manager") as mock_db,
+    ):
+        bd.get_title_by_tmdb_id.return_value = None
+        ss.sync_custom_item_async = AsyncMock(return_value="task-movie")
+        mock_db.get_trakt_sync_history.return_value = None
+        mock_db.save_trakt_sync_history.return_value = True
+
+        movie_item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="movie",
+            movie={"title": "Film X", "ids": {"tmdb": 100, "trakt": 10}},
+            show=None,
+            episode=None,
+        )
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[movie_item])
+        cfg = MagicMock()
+        cfg.last_sync_time = None
+
+        svc = TraktSyncService()
+        r = await svc._sync_watched_history("user1", client, cfg, True)
+        assert r.success
+        assert r.synced_count == 1
+        assert r.skipped_count == 0
+        ss.sync_custom_item_async.assert_awaited_once()
+        call_kw = ss.sync_custom_item_async.await_args.kwargs
+        assert call_kw.get("source") == "trakt"
+        ci = ss.sync_custom_item_async.await_args.args[0]
+        assert ci.media_type == "movie"
+        assert ci.title == "Film X"
+
+
+@pytest.mark.asyncio
 async def test_sync_user_trakt_data_empty_history_success():
     with (
         patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
@@ -250,7 +289,7 @@ def test_record_sync_history_exception_swallowed():
         svc._record_sync_history("u", item, "tid")
 
 
-def test_convert_trakt_history_non_episode_returns_none():
+def test_convert_trakt_history_movie_incomplete_returns_none():
     svc = TraktSyncService()
     item = TraktHistoryItem(
         id=1,
@@ -262,6 +301,61 @@ def test_convert_trakt_history_non_episode_returns_none():
         episode=None,
     )
     assert svc._convert_trakt_history_to_custom_item("u", item) is None
+
+
+def test_convert_trakt_history_movie_uses_trakt_title():
+    with patch("app.services.trakt.sync_service.bangumi_data") as bd:
+        bd.get_title_by_tmdb_id.return_value = None
+        svc = TraktSyncService()
+        item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-06-15T12:00:00Z",
+            action="scrobble",
+            type="movie",
+            movie={
+                "title": "Some Film",
+                "year": 2024,
+                "ids": {"tmdb": 555, "trakt": 1},
+            },
+            show=None,
+            episode=None,
+        )
+        out = svc._convert_trakt_history_to_custom_item("uid", item)
+        assert out is not None
+        assert out.media_type == "movie"
+        assert out.title == "Some Film"
+        assert out.season == 1 and out.episode == 1
+        assert out.user_name == "uid"
+        bd.get_title_by_tmdb_id.assert_called()
+
+
+def test_convert_trakt_history_movie_prefers_bangumi_title():
+    with patch("app.services.trakt.sync_service.bangumi_data") as bd:
+
+        def fake_lookup(key: str):
+            if key == "movie/777":
+                return "剧场版 中文"
+            return None
+
+        bd.get_title_by_tmdb_id.side_effect = fake_lookup
+        svc = TraktSyncService()
+        item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="movie",
+            movie={
+                "title": "English",
+                "released": "2024-03-01",
+                "ids": {"tmdb": 777, "trakt": 2},
+            },
+            show=None,
+            episode=None,
+        )
+        out = svc._convert_trakt_history_to_custom_item("u", item)
+        assert out is not None
+        assert out.title == "剧场版 中文"
+        assert out.release_date == "2024-03-01"
 
 
 def test_convert_trakt_history_missing_tmdb_returns_none():
