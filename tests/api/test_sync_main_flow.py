@@ -295,6 +295,33 @@ async def test_retry_sync_record_success_updates_db(app_root_and_api):
 
 
 @pytest.mark.asyncio
+async def test_retry_sync_record_movie_media_type_on_custom_item(app_root_and_api):
+    """重试失败记录时 DB 的 media_type=movie 应传入 sync_custom_item"""
+    with patch("app.api.sync.database_manager") as dbm:
+        dbm.get_sync_record_by_id.return_value = {
+            "id": 8,
+            "title": "剧场版 Y",
+            "ori_title": "",
+            "season": 1,
+            "episode": 1,
+            "status": "error",
+            "user_name": "u",
+            "source": "plex",
+            "media_type": "movie",
+        }
+        ok = SyncResponse(status="success", message="ok", data={})
+        with patch("app.api.sync.sync_service.sync_custom_item", return_value=ok) as sc:
+            transport = ASGITransport(app=app_root_and_api)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                r = await ac.post("/api/records/8/retry")
+    assert r.status_code == 200
+    sc.assert_called_once()
+    retry_item = sc.call_args[0][0]
+    assert retry_item.media_type == "movie"
+    assert retry_item.source == "retry-plex"
+
+
+@pytest.mark.asyncio
 async def test_get_sync_records_db_error(app_root_and_api):
     with patch(
         "app.api.sync.database_manager.get_sync_records", side_effect=RuntimeError("db")

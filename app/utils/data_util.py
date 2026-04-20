@@ -33,27 +33,47 @@ def extract_plex_json(s):
 def extract_plex_data(plex_data):
     """从Plex数据中提取CustomItem所需的字段"""
 
+    md = plex_data["Metadata"]
+    mtype = (md.get("type") or "episode").lower()
+
+    if mtype == "movie":
+        release_date = ""
+        if md.get("originallyAvailableAt"):
+            release_date = md["originallyAvailableAt"]
+        else:
+            logger.debug(
+                "未找到originallyAvailableAt字段，将尝试从bangumi-data获取日期信息"
+            )
+        title = (md.get("title") or "").strip()
+        ori = md.get("originalTitle")
+        return CustomItem(
+            media_type="movie",
+            title=title,
+            ori_title=ori if ori and str(ori).strip() else None,
+            season=1,
+            episode=1,
+            release_date=release_date,
+            user_name=plex_data["Account"]["title"],
+            source="plex",
+        )
+
     # 获取发行日期，如果不存在则设置为空字符串
     release_date = ""
-    if (
-        "originallyAvailableAt" in plex_data["Metadata"]
-        and plex_data["Metadata"]["originallyAvailableAt"]
-    ):
-        release_date = plex_data["Metadata"]["originallyAvailableAt"]
+    if md.get("originallyAvailableAt"):
+        release_date = md["originallyAvailableAt"]
     else:
         logger.debug(
             "未找到originallyAvailableAt字段，将尝试从bangumi-data获取日期信息"
         )
 
-    original_title = plex_data["Metadata"].get("originalTitle", " ")
+    original_title = md.get("originalTitle", " ")
 
-    # 重新组装数据
     return CustomItem(
-        media_type=plex_data["Metadata"]["type"],
-        title=plex_data["Metadata"]["grandparentTitle"],
+        media_type=md.get("type", "episode"),
+        title=md["grandparentTitle"],
         ori_title=original_title,
-        season=plex_data["Metadata"]["parentIndex"],
-        episode=plex_data["Metadata"]["index"],
+        season=md["parentIndex"],
+        episode=md["index"],
         release_date=release_date,
         user_name=plex_data["Account"]["title"],
         source="plex",
@@ -63,20 +83,39 @@ def extract_plex_data(plex_data):
 def extract_emby_data(emby_data):
     """从Emby数据中提取CustomItem所需的字段"""
 
-    # 获取发行日期，如果不存在则设置为空字符串
+    item = emby_data["Item"]
+    itype = (item.get("Type") or "episode").lower()
+
+    if itype == "movie":
+        release_date = ""
+        if item.get("PremiereDate"):
+            release_date = item["PremiereDate"][:10]
+        else:
+            logger.debug("未找到PremiereDate字段，将尝试从bangumi-data获取日期信息")
+        title = (item.get("Name") or "").strip()
+        return CustomItem(
+            media_type="movie",
+            title=title,
+            ori_title=None,
+            season=1,
+            episode=1,
+            release_date=release_date,
+            user_name=emby_data["User"]["Name"],
+            source="emby",
+        )
+
     release_date = ""
-    if "PremiereDate" in emby_data["Item"]:
-        release_date = emby_data["Item"]["PremiereDate"][:10]
+    if item.get("PremiereDate"):
+        release_date = item["PremiereDate"][:10]
     else:
         logger.debug("未找到PremiereDate字段，将尝试从bangumi-data获取日期信息")
 
-    # 重新组装数据
     return CustomItem(
-        media_type=emby_data["Item"]["Type"].lower(),
-        title=emby_data["Item"]["SeriesName"],
+        media_type=item["Type"].lower(),
+        title=item["SeriesName"],
         ori_title=" ",
-        season=emby_data["Item"]["ParentIndexNumber"],
-        episode=emby_data["Item"]["IndexNumber"],
+        season=item["ParentIndexNumber"],
+        episode=item["IndexNumber"],
         release_date=release_date,
         user_name=emby_data["User"]["Name"],
         source="emby",
@@ -86,14 +125,25 @@ def extract_emby_data(emby_data):
 def extract_jellyfin_data(jellyfin_data):
     """从Jellyfin数据中提取CustomItem所需的字段"""
 
-    # 获取发行日期，如果不存在则设置为空字符串
     release_date = ""
-    if "release_date" in jellyfin_data and jellyfin_data["release_date"]:
+    if jellyfin_data.get("release_date"):
         release_date = jellyfin_data["release_date"]
     else:
         logger.debug("未找到release_date字段，将尝试从bangumi-data获取日期信息")
 
-    # 重新组装数据
+    mtype = (jellyfin_data.get("media_type") or "episode").lower()
+    if mtype == "movie":
+        return CustomItem(
+            media_type="movie",
+            title=jellyfin_data["title"],
+            ori_title=jellyfin_data.get("ori_title"),
+            season=1,
+            episode=1,
+            release_date=release_date,
+            user_name=jellyfin_data["user_name"],
+            source="jellyfin",
+        )
+
     return CustomItem(
         media_type=jellyfin_data["media_type"].lower(),
         title=jellyfin_data["title"],

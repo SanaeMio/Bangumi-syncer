@@ -16,16 +16,27 @@
                     <form id="test-sync-form">
                         <div class="row g-3">
                             <div class="col-md-3">
+                                <label for="test-media-type" class="form-label fw-semibold">
+                                    <i class="bi bi-badge-hd me-1 text-warning"></i>媒体类型
+                                </label>
+                                <select class="form-select form-select-lg"
+                                        id="test-media-type"
+                                        onchange="onTestMediaTypeChange()">
+                                    <option value="episode" selected>剧集</option>
+                                    <option value="movie">电影</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
                                 <label for="test-title" class="form-label fw-semibold">
-                                    <i class="bi bi-film me-1 text-warning"></i>番剧标题
+                                    <i class="bi bi-film me-1 text-warning"></i>标题
                                 </label>
                                 <input type="text"
                                        class="form-control form-control-lg"
                                        id="test-title"
-                                       placeholder="测试番剧"
+                                       placeholder="番剧或剧场版名称"
                                        required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <label for="test-season" class="form-label fw-semibold">
                                     <i class="bi bi-calendar3 me-1 text-warning"></i>季度
                                 </label>
@@ -37,7 +48,7 @@
                                        max="20"
                                        required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <label for="test-episode" class="form-label fw-semibold">
                                     <i class="bi bi-collection-play me-1 text-warning"></i>集数
                                 </label>
@@ -49,7 +60,7 @@
                                        max="1000"
                                        required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <label for="test-user" class="form-label fw-semibold">
                                     <i class="bi bi-person me-1 text-warning"></i>用户名
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -297,6 +308,23 @@
         </div>
     </div>
     <script>
+function onTestMediaTypeChange() {
+    const sel = document.getElementById('test-media-type');
+    const isMovie = sel && sel.value === 'movie';
+    const seasonEl = document.getElementById('test-season');
+    const episodeEl = document.getElementById('test-episode');
+    if (!seasonEl || !episodeEl) return;
+    if (isMovie) {
+        seasonEl.value = '1';
+        episodeEl.value = '1';
+        seasonEl.setAttribute('readonly', 'readonly');
+        episodeEl.setAttribute('readonly', 'readonly');
+    } else {
+        seasonEl.removeAttribute('readonly');
+        episodeEl.removeAttribute('readonly');
+    }
+}
+
 // 测试同步功能
 async function testSync() {
     const btn = document.getElementById('test-sync-btn');
@@ -308,8 +336,9 @@ async function testSync() {
     
     // 获取表单数据
     const title = document.getElementById('test-title').value.trim();
-    const season = parseInt(document.getElementById('test-season').value);
-    const episode = parseInt(document.getElementById('test-episode').value);
+    const mediaType = (document.getElementById('test-media-type') || { value: 'episode' }).value || 'episode';
+    const season = parseInt(document.getElementById('test-season').value, 10);
+    const episode = parseInt(document.getElementById('test-episode').value, 10);
     const user = document.getElementById('test-user').value.trim();
     
     // 验证输入
@@ -329,11 +358,12 @@ async function testSync() {
             title: title,
             season: season,
             episode: episode,
-            user_name: user
+            user_name: user,
+            media_type: mediaType
         };
         
-        // 更新状态
-        statusSpan.textContent = `正在测试同步: ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
+        const locLabel = mediaType === 'movie' ? `电影 ${title} S01E01` : `${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
+        statusSpan.textContent = `正在测试同步: ${locLabel}`;
         
         const startTime = Date.now();
         
@@ -385,6 +415,7 @@ async function testSync() {
                             <span class="text-muted me-2">
                                 <i class="bi bi-film me-1"></i>${result.test_info?.title || title}
                             </span>
+                            <span class="badge bg-secondary me-2">${result.test_info?.media_type === 'movie' ? '电影' : '剧集'}</span>
                             <span class="badge bg-secondary me-2">${result.test_info?.episode || 'S' + season.toString().padStart(2, '0') + 'E' + episode.toString().padStart(2, '0')}</span>
                             ${result.data && (result.data.subject_id || result.data.episode_id) ? `
                                 ${result.data.subject_id ? `
@@ -424,7 +455,7 @@ async function testSync() {
                         <p class="mb-2">${result.message}</p>
                         <div class="row g-2 small text-muted">
                             <div class="col-md-8">
-                                <strong>番剧:</strong> ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}
+                                <strong>请求:</strong> ${mediaType === 'movie' ? '电影' : '剧集'} ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}
                             </div>
                             <div class="col-md-4">
                                 <strong>耗时:</strong> ${result.elapsed_time || actualTime + '秒'}
@@ -457,6 +488,8 @@ async function testSync() {
         btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>开始测试';
     }
 }
+
+document.addEventListener('DOMContentLoaded', onTestMediaTypeChange);
 
 // 飞牛：手动触发一次同步（与 POST /api/feiniu/sync/manual 一致）
 async function triggerFeiniuManualSync() {

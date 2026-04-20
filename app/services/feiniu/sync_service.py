@@ -18,6 +18,38 @@ from .reader import fetch_completed_watch_records
 FEINIU_SYNC_SOURCE = "feiniu"
 
 
+def _feiniu_rec_is_movie(rec: FeiniuWatchRecord) -> bool:
+    """是否按电影/剧场版走主同步 movie 分支。
+
+    优先读飞牛 item.type；否则：季号与集号在库中均有值
+    视为剧集；二者皆无则视为单条影片。
+    """
+    t = (rec.item_type or "").strip().lower()
+    if t:
+        if any(k in t for k in ("movie", "film", "电影")):
+            return True
+        if any(
+            k in t
+            for k in (
+                "episode",
+                "series",
+                "tv",
+                "show",
+                "剧集",
+                "电视剧",
+                "动漫",
+                "番剧",
+                "综艺",
+            )
+        ):
+            return False
+    if rec.episode_from_db and rec.season_from_db:
+        return False
+    if not rec.episode_from_db and not rec.season_from_db:
+        return True
+    return False
+
+
 def ensure_feiniu_startup_watermark() -> None:
     """仅手改 config.ini 启用飞牛时：启动进程若尚无水位则立即写入，避免等到首次定时同步。"""
     cfg = config_manager.get_feiniu_config()
@@ -45,6 +77,17 @@ class FeiniuSyncService:
         if rec.display_title.startswith("视频-"):
             return None
         ori = rec.original_title if rec.original_title else rec.display_title
+        if _feiniu_rec_is_movie(rec):
+            return CustomItem(
+                media_type="movie",
+                title=rec.display_title.strip(),
+                ori_title=ori if ori and str(ori).strip() else None,
+                season=1,
+                episode=1,
+                release_date=rec.release_date or "",
+                user_name=rec.username,
+                source=FEINIU_SYNC_SOURCE,
+            )
         return CustomItem(
             media_type="episode",
             title=rec.display_title,

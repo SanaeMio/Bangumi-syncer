@@ -6,7 +6,10 @@ import pytest
 
 from app.models.sync import SyncResponse
 from app.services.feiniu.models import FeiniuWatchRecord
-from app.services.feiniu.sync_service import feiniu_sync_service
+from app.services.feiniu.sync_service import (
+    _feiniu_rec_is_movie,
+    feiniu_sync_service,
+)
 
 
 def _enabled_cfg(db_path: str) -> dict:
@@ -34,6 +37,41 @@ def _sample_record(**kwargs) -> FeiniuWatchRecord:
     )
     base.update(kwargs)
     return FeiniuWatchRecord(**base)
+
+
+def test_feiniu_rec_is_movie_by_item_type():
+    assert _feiniu_rec_is_movie(
+        _sample_record(item_type="Movie", episode_from_db=False, season_from_db=False)
+    )
+    assert not _feiniu_rec_is_movie(
+        _sample_record(item_type="Episode", episode_from_db=True, season_from_db=False)
+    )
+
+
+def test_feiniu_rec_is_movie_fntv_style_no_season_ep_columns():
+    assert _feiniu_rec_is_movie(
+        _sample_record(item_type=None, episode_from_db=False, season_from_db=False)
+    )
+
+
+def test_feiniu_rec_is_episode_when_both_season_ep_from_db():
+    assert not _feiniu_rec_is_movie(
+        _sample_record(item_type=None, episode_from_db=True, season_from_db=True)
+    )
+
+
+def test_record_to_custom_item_movie_branch():
+    rec = _sample_record(
+        item_type="movie",
+        episode_from_db=False,
+        season_from_db=False,
+        display_title="某剧场版",
+    )
+    item = feiniu_sync_service._record_to_custom_item(rec)
+    assert item is not None
+    assert item.media_type == "movie"
+    assert item.season == 1 and item.episode == 1
+    assert item.title == "某剧场版"
 
 
 def test_ensure_feiniu_startup_watermark_disabled_noop():

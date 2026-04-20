@@ -212,22 +212,30 @@ class TraktSyncService:
 
             logger.info(f"获取到 {len(history_items)} 条观看历史记录")
 
-            # 过滤出剧集（只同步剧集，不同步电影）, 并检查数据完整性
-            episode_items = []
+            # 过滤：剧集需 episode+show；电影需 movie 且至少有标题或 TMDB（用于匹配 bangumi）
+            syncable_items: list[TraktHistoryItem] = []
             for item in history_items:
                 if item.type == "episode" and item.episode and item.show:
-                    episode_items.append(item)
+                    syncable_items.append(item)
+                elif item.type == "movie" and item.movie:
+                    m = item.movie
+                    has_title = bool((m.get("title") or "").strip())
+                    has_tmdb = m.get("ids", {}).get("tmdb") is not None
+                    if has_title or has_tmdb:
+                        syncable_items.append(item)
+                    else:
+                        logger.warning(f"跳过缺少标题与 TMDB 的电影记录: {item}")
                 else:
-                    logger.warning(f"跳过非剧集或数据不完整的记录: {item}")
-            skipped_count = len(history_items) - len(episode_items)
-            logger.info(f"过滤后得到 {len(episode_items)} 条剧集记录")
+                    logger.warning(f"跳过不支持的类型或数据不完整的记录: {item}")
+            skipped_count = len(history_items) - len(syncable_items)
+            logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
             # 转换为 CustomItem 并同步
             synced_count = 0
             error_count = 0
             details = []
 
-            for item in episode_items:
+            for item in syncable_items:
                 try:
                     # 检查是否已同步过（避免重复同步）
                     if not self._should_sync_item(user_id, item):
@@ -254,6 +262,7 @@ class TraktSyncService:
                     synced_count += 1
                     details.append(
                         {
+                            "media_type": custom_item.media_type,
                             "title": custom_item.title,
                             "season": custom_item.season,
                             "episode": custom_item.episode,
@@ -369,6 +378,9 @@ class TraktSyncService:
     ) -> Optional[CustomItem]:
         """将 Trakt 观看历史转换为 CustomItem"""
         try:
+            if item.type == "movie":
+                return self._trakt_movie_history_to_custom_item(user_id, item)
+
             if item.type != "episode" or not item.episode or not item.show:
                 logger.warning(f"非剧集类型或数据不完整: {item.type}")
                 return None
@@ -380,19 +392,12 @@ class TraktSyncService:
             # 获取剧集标题
             # 由于 Trakt 返回 title 名默认为英文, 通过 tmdb id 从 bangumi_data 获取更准确的标题
             title: Optional[str] = None
-            tmdb_id: Optional[str] = None
 
-            id = show.get("ids", {}).get("tmdb")
-            if item.type == "episode":
-                tmdb_id = f"tv/{id}"
-
-            # TODO 用于后续支持其他类型
-            # elif item.type == "movie":
-            #     tmdb_id = f"movie/{id}"
-
-            if not tmdb_id:
+            show_tmdb = show.get("ids", {}).get("tmdb")
+            if show_tmdb is None:
                 logger.warning(f"查询TMDB ID为空: {item.trakt_item_id}")
                 return None
+            tmdb_id = f"tv/{show_tmdb}"
 
             title = bangumi_data.get_title_by_tmdb_id(tmdb_id)
             if not title:
@@ -418,7 +423,7 @@ class TraktSyncService:
                 # 从 ISO 格式中提取日期部分
                 try:
                     release_date = item.watched_at.split("T")[0]
-                except:
+                except Exception:
                     release_date = ""
 
             # 构建 CustomItem
@@ -436,6 +441,53 @@ class TraktSyncService:
         except Exception as e:
             logger.error(f"转换 Trakt 历史记录失败: {e}, 数据: {item}")
             return None
+
+    def _trakt_movie_history_to_custom_item(
+        self, user_id: str, item: TraktHistoryItem
+    ) -> Optional[CustomItem]:
+        """将 Trakt 电影观看历史转为 CustomItem（剧场版 / 独立电影打格子）"""
+        if not item.movie:
+            logger.warning(f"电影数据缺失: {item.trakt_item_id}")
+            return None
+        movie = item.movie
+        ids = movie.get("ids") or {}
+        tmdb_num = ids.get("tmdb")
+
+        title: Optional[str] = None
+        if tmdb_num is not None:
+            title = bangumi_data.get_title_by_tmdb_id(f"movie/{tmdb_num}")
+            if not title:
+                title = bangumi_data.get_title_by_tmdb_id(str(tmdb_num))
+        if not title:
+            title = (movie.get("title") or "").strip()
+        if not title:
+            logger.warning(f"电影标题为空: {item.trakt_item_id}")
+            return None
+
+        ori_raw = movie.get("original_title") or movie.get("originalTitle") or title
+        ori_title = ori_raw if str(ori_raw).strip() else None
+
+        release_date = ""
+        if movie.get("released"):
+            release_date = str(movie["released"])[:10]
+        elif movie.get("year"):
+            release_date = f"{movie['year']}-01-01"
+        elif item.watched_at:
+            try:
+                release_date = item.watched_at.split("T")[0]
+            except Exception:
+                release_date = ""
+
+        return CustomItem(
+            media_type="movie",
+            title=title,
+            ori_title=ori_title,
+            season=1,
+            episode=1,
+            release_date=release_date,
+            user_name=user_id,
+            source="trakt",
+        )
 
     async def start_user_sync_task(self, user_id: str, full_sync: bool = False) -> str:
         """启动用户同步任务（异步执行）

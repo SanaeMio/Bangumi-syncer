@@ -10,7 +10,10 @@ from pydantic import BaseModel, Field
 class CustomItem(BaseModel):
     """自定义同步项目模型"""
 
-    media_type: str = Field(..., description="媒体类型")
+    media_type: str = Field(
+        "episode",
+        description="媒体类型 episode 或 movie；省略时按剧集处理（兼容旧版自定义 Webhook）",
+    )
     title: str = Field(..., description="番剧标题")
     ori_title: Optional[str] = Field(None, description="原始标题")
     season: int = Field(..., description="季度")
@@ -127,6 +130,7 @@ class SyncRecord(BaseModel):
     status: str
     message: str
     source: str
+    media_type: str = "episode"
 
 
 class SyncStats(BaseModel):
@@ -151,3 +155,4 @@ class TestSyncRequest(BaseModel):
     release_date: Optional[str] = Field(None, description="发行日期")
     user_name: str = Field("test_user", description="用户名")
     source: str = Field("test", description="来源")
+    media_type: str = Field("episode", description="媒体类型 episode 或 movie")

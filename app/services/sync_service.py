@@ -121,7 +121,7 @@ class SyncService:
             send_notify("request_received", item, actual_source)
 
             # 基本验证
-            if item.media_type != "episode":
+            if item.media_type not in ("episode", "movie"):
                 logger.error(f"同步类型{item.media_type}不支持，跳过")
                 return SyncResponse(
                     status="error", message=f"同步类型{item.media_type}不支持"
@@ -131,7 +131,7 @@ class SyncService:
                 logger.error("同步名称为空，跳过")
                 return SyncResponse(status="error", message="同步名称为空")
 
-            if item.season == 0:
+            if item.media_type == "episode" and item.season == 0:
                 logger.error("不支持SP标记同步，跳过")
                 return SyncResponse(status="error", message="不支持SP标记同步")
 
@@ -168,18 +168,23 @@ class SyncService:
                 logger.error(f"无法为用户 {item.user_name} 创建bangumi API实例")
                 return SyncResponse(status="error", message="bangumi配置错误")
 
-            # 查询bangumi番剧指定季度指定集数信息
+            # 查询 bangumi 章节：电影走短路径，剧集走季番解析
             try:
                 release_for_ep = None
                 if item.release_date and len(item.release_date) >= 8:
                     release_for_ep = item.release_date[:10]
-                bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
-                    subject_id=subject_id,
-                    target_season=item.season,
-                    target_ep=item.episode,
-                    is_season_subject_id=is_season_matched_id,
-                    release_date=release_for_ep,
-                )
+                if item.media_type == "movie":
+                    bgm_se_id, bgm_ep_id = bgm.get_movie_main_episode_id(
+                        subject_id, target_sort=item.episode
+                    )
+                else:
+                    bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
+                        subject_id=subject_id,
+                        target_season=item.season,
+                        target_ep=item.episode,
+                        is_season_subject_id=is_season_matched_id,
+                        release_date=release_for_ep,
+                    )
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
                 if "认证失败" in str(ve) or "access_token" in str(ve):
@@ -265,6 +270,23 @@ class SyncService:
                     episode_id=bgm_ep_id,
                 )
 
+            if item.media_type == "movie" and config_manager.get(
+                "sync", "movie_mark_subject_completed", fallback=True
+            ):
+                try:
+                    coll = bgm.get_subject_collection(str(bgm_se_id))
+                    if coll.get("type") == 2:
+                        logger.debug(
+                            "剧场版条目收藏状态已为「看过」，跳过条目标记: "
+                            f"subject_id={bgm_se_id}"
+                        )
+                    else:
+                        bgm.change_collection_state(subject_id=str(bgm_se_id), state=2)
+                except Exception as e:
+                    logger.warning(
+                        f"剧场版条目标记为看过失败（单集已处理）: subject_id={bgm_se_id} {e}"
+                    )
+
             # 记录同步成功到数据库
             database_manager.log_sync_record(
                 user_name=item.user_name,
@@ -277,6 +299,7 @@ class SyncService:
                 status="success",
                 message=result_message,
                 source=actual_source,
+                media_type=item.media_type,
             )
 
             return SyncResponse(
@@ -303,6 +326,7 @@ class SyncService:
                 status="error",
                 message=str(e),
                 source=actual_source if "actual_source" in locals() else source,
+                media_type=item.media_type if "item" in locals() else "episode",
             )
 
             send_notify(
@@ -483,6 +507,7 @@ class SyncService:
                 title=item.title,
                 ori_title=item.ori_title or "",
                 premiere_date=premiere_date or "",
+                is_movie=(item.media_type == "movie"),
             )
             if not bgm_data:
                 logger.error(
@@ -736,11 +761,17 @@ class SyncService:
                     status="ignored", message=f"事件类型{plex_data['event']}无需同步"
                 )
 
-            logger.debug(
-                f"接收到Plex同步请求：{plex_data['event']} {plex_data['Account']['title']} "
-                f"S{plex_data['Metadata']['parentIndex']:02d}E{plex_data['Metadata']['index']:02d} "
-                f"{plex_data['Metadata']['grandparentTitle']}"
-            )
+            md = plex_data["Metadata"]
+            if (md.get("type") or "").lower() == "movie":
+                logger.debug(
+                    f"接收到Plex同步请求：{plex_data['event']} "
+                    f"{plex_data['Account']['title']} 电影 {md.get('title', '')}"
+                )
+            else:
+                logger.debug(
+                    f"接收到Plex同步请求：{plex_data['event']} {plex_data['Account']['title']} "
+                    f"S{md['parentIndex']:02d}E{md['index']:02d} {md.get('grandparentTitle', '')}"
+                )
 
             # 提取数据并调用自定义同步
             custom_item = extract_plex_data(plex_data)
@@ -821,19 +852,27 @@ class SyncService:
                     status="ignored", message=f"事件类型{emby_data['Event']}无需同步"
                 )
 
-            # 检查Item中必要字段
-            item_required_fields = [
-                "Type",
-                "SeriesName",
-                "ParentIndexNumber",
-                "IndexNumber",
-            ]
-            for field in item_required_fields:
-                if field not in emby_data["Item"]:
-                    logger.error(f"Emby Item缺少必要字段: {field}")
+            emby_item = emby_data["Item"]
+            is_movie = emby_item.get("Type", "").lower() == "movie"
+            if is_movie:
+                if "Name" not in emby_item:
+                    logger.error("Emby 电影 Item 缺少 Name 字段")
                     return SyncResponse(
-                        status="error", message=f"Item缺少必要字段: {field}"
+                        status="error", message="Item缺少必要字段: Name"
                     )
+            else:
+                item_required_fields = [
+                    "Type",
+                    "SeriesName",
+                    "ParentIndexNumber",
+                    "IndexNumber",
+                ]
+                for field in item_required_fields:
+                    if field not in emby_item:
+                        logger.error(f"Emby Item缺少必要字段: {field}")
+                        return SyncResponse(
+                            status="error", message=f"Item缺少必要字段: {field}"
+                        )
 
             # 如果是播放停止事件,只有播放完成才判断为看过
             if emby_data["Event"] == "playback.stop":
@@ -847,9 +886,14 @@ class SyncService:
                     return SyncResponse(status="ignored", message="播放信息不完整")
 
                 if emby_data["PlaybackInfo"]["PlayedToCompletion"] is not True:
-                    logger.debug(
-                        f"{emby_data['Item']['SeriesName']} S{emby_data['Item']['ParentIndexNumber']:02d}E{emby_data['Item']['IndexNumber']:02d}未播放完成，跳过"
-                    )
+                    if is_movie:
+                        logger.debug(
+                            f"{emby_item.get('Name', '')} 电影未播放完成，跳过"
+                        )
+                    else:
+                        logger.debug(
+                            f"{emby_item['SeriesName']} S{emby_item['ParentIndexNumber']:02d}E{emby_item['IndexNumber']:02d}未播放完成，跳过"
+                        )
                     return SyncResponse(status="ignored", message="未播放完成")
 
             # 提取数据并调用自定义同步

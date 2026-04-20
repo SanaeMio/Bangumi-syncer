@@ -40,6 +40,19 @@ class TestSyncModels:
         assert item.ori_title is None
         assert item.source is None
 
+    def test_custom_item_default_media_type_episode(self):
+        """未传 media_type 时默认为 episode，兼容旧版自定义 Webhook"""
+        from app.models.sync import CustomItem
+
+        item = CustomItem(
+            title="测试动画",
+            season=1,
+            episode=12,
+            release_date="2024-01-01",
+            user_name="test_user",
+        )
+        assert item.media_type == "episode"
+
     def test_sync_response_model(self):
         """Test SyncResponse model"""
         from app.models.sync import SyncResponse

@@ -35,6 +35,17 @@ def _pick_episode_sql_column(cols: set[str]) -> str:
     return "NULL"
 
 
+def _season_number_present_in_row(row: sqlite3.Row, cols: set[str]) -> bool:
+    """item 表任一季号列在库中非空则视为「有季信息」。"""
+    row_keys = set(row.keys())
+    for key in ("season_number", "parent_index_number", "season_index"):
+        if key not in cols or key not in row_keys:
+            continue
+        if row[key] is not None:
+            return True
+    return False
+
+
 def _pick_season_value(row: sqlite3.Row, cols: set[str]) -> int:
     for key in ("season_number", "parent_index_number", "season_index"):
         if key in cols:
@@ -148,6 +159,16 @@ def fetch_completed_watch_records(
             if season_fragments
             else ""
         )
+        type_sql = (
+            "i.type AS feiniu_item_type,\n               "
+            if "type" in item_cols
+            else "NULL AS feiniu_item_type,\n               "
+        )
+        release_sql = (
+            "i.release_date AS item_release_date,\n               "
+            if "release_date" in item_cols
+            else "NULL AS item_release_date,\n               "
+        )
 
         query = f"""
         SELECT p.item_guid, p.user_guid, p.watched, p.ts, p.create_time, p.update_time,
@@ -155,7 +176,7 @@ def fetch_completed_watch_records(
                i.runtime AS runtime_mins,
                p1.title AS p1_title, p2.title AS p2_title,
                p1.runtime AS p1_runtime, p2.runtime AS p2_runtime,
-               {ep_col} AS ep_number,
+               {type_sql}{release_sql}{ep_col} AS ep_number,
                COALESCE(NULLIF(TRIM(u.username), ''), substr(p.user_guid, 1, 8)) AS feiniu_username
                {season_sql}
         FROM item_user_play p
@@ -213,23 +234,38 @@ def fetch_completed_watch_records(
             base_name = (r["media_title"] or r["media_original_title"] or "") or ""
             ep_num = 1
             en = r["ep_number"]
+            episode_from_db = False
             if en is not None:
                 try:
                     ep_num = max(1, int(en))
+                    episode_from_db = True
                 except (TypeError, ValueError):
                     ep_num = 1
             else:
                 m = _EPISODE_TITLE_RE.search(base_name)
                 if m:
                     ep_num = max(1, int(m.group(1)))
+                    episode_from_db = True
 
             real_name = _real_series_title(r, str(r["item_guid"]))
             season = _pick_season_value(r, item_cols)
+            season_from_db = _season_number_present_in_row(r, item_cols)
+
+            raw_item_type = r["feiniu_item_type"]
+            item_type_s = (
+                str(raw_item_type).strip() if raw_item_type is not None else None
+            )
 
             if wall_sec > 0:
                 release_date = datetime.fromtimestamp(wall_sec).strftime("%Y-%m-%d")
             else:
                 release_date = datetime.now().strftime("%Y-%m-%d")
+            rd_item = r["item_release_date"]
+            if rd_item and str(rd_item).strip():
+                try:
+                    release_date = str(rd_item).strip()[:10]
+                except Exception:
+                    pass
 
             ug = str(r["user_guid"])
             uname = str(r["feiniu_username"] or (ug[:8] if ug else "unknown"))
@@ -248,6 +284,9 @@ def fetch_completed_watch_records(
                     episode=ep_num,
                     release_date=release_date,
                     update_time_ms=int(ts_raw) if ts_raw else 0,
+                    item_type=item_type_s,
+                    episode_from_db=episode_from_db,
+                    season_from_db=season_from_db,
                 )
             )
 

@@ -307,6 +307,45 @@ class TestPlexSync:
                 r = svc.sync_plex_item(plex_data=plex)
             assert r.status == "error"
 
+    def test_sync_plex_item_movie_reaches_extract_and_sync(self):
+        """电影 scrobble 不应因日志访问 grandparentTitle 等剧集字段而崩溃"""
+        movie_item = CustomItem(
+            media_type="movie",
+            title="剧场版",
+            ori_title=None,
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+            source="plex",
+        )
+        with patched_sync_deps():
+            with patch(
+                "app.services.sync_service.extract_plex_data", return_value=movie_item
+            ) as ex:
+                from app.models.sync import SyncResponse
+                from app.services.sync_service import SyncService
+
+                svc = SyncService()
+                with patch.object(
+                    svc,
+                    "sync_custom_item",
+                    return_value=SyncResponse(status="success", message="ok"),
+                ) as sc:
+                    plex = {
+                        "event": "media.scrobble",
+                        "Account": {"title": "u"},
+                        "Metadata": {
+                            "type": "movie",
+                            "title": "剧场版 XYZ",
+                        },
+                    }
+                    r = svc.sync_plex_item(plex_data=plex)
+        assert ex.called
+        assert sc.called
+        assert r.status == "success"
+        assert r.message == "ok"
+
 
 class TestEmbySync:
     """测试 Emby 同步功能"""

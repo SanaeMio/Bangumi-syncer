@@ -370,3 +370,39 @@ async def test_test_sync(app_with_auth, mock_sync_service, mock_database_manager
 
         # 可能返回 200 或 202
         assert response.status_code in [200, 202]
+
+
+@pytest.mark.asyncio
+async def test_test_sync_movie_payload(app_with_auth, mock_database_manager):
+    """/api/test-sync 接受 media_type=movie 且不强制 ori/release_date"""
+    with patch("app.api.sync.sync_service") as mock_svc:
+        mock_result = MagicMock()
+        mock_result.status = "success"
+        mock_result.message = "已标记为看过"
+        mock_result.dict.return_value = {
+            "status": "success",
+            "message": "已标记为看过",
+            "data": {"subject_id": "1", "episode_id": "2"},
+        }
+        mock_svc.sync_custom_item.return_value = mock_result
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/test-sync?async_mode=false",
+                json={
+                    "title": "剧场版",
+                    "season": 1,
+                    "episode": 1,
+                    "user_name": "test_user",
+                    "media_type": "movie",
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["test_info"]["media_type"] == "movie"
+        item = mock_svc.sync_custom_item.call_args[0][0]
+        assert item.media_type == "movie"
+        assert item.release_date == ""

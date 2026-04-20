@@ -42,6 +42,24 @@ class DatabaseManager:
 
         self._init_database()
 
+    def _ensure_sync_records_media_type(self, cursor) -> None:
+        """旧库迁移：为 sync_records 增加 media_type（历史数据为 episode）。"""
+        cursor.execute("PRAGMA table_info(sync_records)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "media_type" in cols:
+            return
+        cursor.execute(
+            "ALTER TABLE sync_records ADD COLUMN media_type TEXT DEFAULT 'episode'"
+        )
+        cursor.execute(
+            """
+            UPDATE sync_records
+            SET media_type = 'episode'
+            WHERE media_type IS NULL OR TRIM(COALESCE(media_type, '')) = ''
+            """
+        )
+        logger.info("sync_records 已迁移：增加 media_type 列并回填 episode")
+
     def _init_database(self) -> None:
         """初始化数据库"""
         conn = sqlite3.connect(self.db_path)
@@ -61,9 +79,12 @@ class DatabaseManager:
                 episode_id TEXT,
                 status TEXT NOT NULL,
                 message TEXT,
-                source TEXT NOT NULL
+                source TEXT NOT NULL,
+                media_type TEXT NOT NULL DEFAULT 'episode'
             )
         """)
+
+        self._ensure_sync_records_media_type(cursor)
 
         # 创建 Trakt 配置表
         cursor.execute("""
@@ -129,11 +150,13 @@ class DatabaseManager:
         status: str = "success",
         message: str = "",
         source: str = "custom",
+        media_type: str = "episode",
     ) -> None:
         """记录同步日志到数据库"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            self._ensure_sync_records_media_type(cursor)
 
             # 使用本地时间而不是UTC时间
             local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -141,8 +164,8 @@ class DatabaseManager:
             cursor.execute(
                 """
                 INSERT INTO sync_records
-                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     local_time,
@@ -156,6 +179,7 @@ class DatabaseManager:
                     status,
                     message,
                     source,
+                    media_type or "episode",
                 ),
             )
 
@@ -177,6 +201,7 @@ class DatabaseManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            self._ensure_sync_records_media_type(cursor)
 
             # 构建查询条件
             where_conditions = []
@@ -207,10 +232,9 @@ class DatabaseManager:
             cursor.execute(count_query, params)
             total = cursor.fetchone()[0]
 
-            # 获取记录
             query = f"""
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                       subject_id, episode_id, status, message, source
+                       subject_id, episode_id, status, message, source, media_type
                 FROM sync_records{where_clause}
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
@@ -233,6 +257,7 @@ class DatabaseManager:
                         "status": row[9],
                         "message": row[10],
                         "source": row[11],
+                        "media_type": row[12] or "episode",
                     }
                 )
 
@@ -253,11 +278,12 @@ class DatabaseManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            self._ensure_sync_records_media_type(cursor)
 
             cursor.execute(
                 """
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                       subject_id, episode_id, status, message, source
+                       subject_id, episode_id, status, message, source, media_type
                 FROM sync_records
                 WHERE id = ?
             """,
@@ -281,6 +307,7 @@ class DatabaseManager:
                     "status": row[9],
                     "message": row[10],
                     "source": row[11],
+                    "media_type": row[12] or "episode",
                 }
             return None
         except Exception as e:
