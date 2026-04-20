@@ -23,3 +23,7 @@ class FeiniuWatchRecord:
     episode: int
     release_date: str
     update_time_ms: int
+    # 以下用于区分电影/剧场版与剧集
+    item_type: Optional[str] = None
+    episode_from_db: bool = True
+    season_from_db: bool = True
