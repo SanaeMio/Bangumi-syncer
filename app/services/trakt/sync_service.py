@@ -228,9 +228,7 @@ class TraktSyncService:
                 else:
                     logger.warning(f"跳过不支持的类型或数据不完整的记录: {item}")
             skipped_count = len(history_items) - len(syncable_items)
-            logger.info(
-                f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）"
-            )
+            logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
             # 转换为 CustomItem 并同步
             synced_count = 0
