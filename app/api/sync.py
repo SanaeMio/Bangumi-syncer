@@ -133,14 +133,18 @@ async def test_sync(
         if not data.get("title"):
             raise HTTPException(status_code=400, detail="标题不能为空")
 
+        media_type = (data.get("media_type") or "episode").lower()
+        if media_type not in ("episode", "movie"):
+            media_type = "episode"
+
         # 创建测试项目
         test_item = CustomItem(
-            media_type="episode",
+            media_type=media_type,
             title=data.get("title", ""),
-            ori_title=data.get("ori_title", ""),
-            season=data.get("season", 1),
-            episode=data.get("episode", 1),
-            release_date=data.get("release_date", ""),
+            ori_title=data.get("ori_title") or None,
+            season=int(data.get("season", 1)),
+            episode=int(data.get("episode", 1)),
+            release_date=data.get("release_date") or "",
             user_name=data.get("user_name", "test_user"),
             source=data.get("source", "test"),
         )
@@ -175,6 +179,7 @@ async def test_sync(
                     "title": test_item.title,
                     "episode": f"S{test_item.season:02d}E{test_item.episode:02d}",
                     "user": test_item.user_name,
+                    "media_type": test_item.media_type,
                 },
             }
         else:
@@ -191,6 +196,7 @@ async def test_sync(
                 "title": test_item.title,
                 "episode": f"S{test_item.season:02d}E{test_item.episode:02d}",
                 "user": test_item.user_name,
+                "media_type": test_item.media_type,
             }
 
             return response_data
@@ -277,10 +283,13 @@ async def retry_sync_record(
         )
 
         # 重新构建同步项目
+        retry_media = (record.get("media_type") or "episode").lower()
+        if retry_media not in ("episode", "movie"):
+            retry_media = "episode"
         retry_item = CustomItem(
-            media_type="episode",
+            media_type=retry_media,
             title=record.get("title", ""),
-            ori_title=record.get("ori_title", ""),
+            ori_title=record.get("ori_title") or None,
             season=record.get("season", 1),
             episode=record.get("episode", 1),
             release_date="",

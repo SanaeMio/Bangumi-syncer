@@ -508,6 +508,42 @@ class BangumiApi:
             ]
         return rows
 
+    def get_movie_main_episode_id(
+        self,
+        subject_id: Union[str, int],
+        target_sort: int = 1,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        剧场版 / 独立电影：在同一 subject 下解析本篇章节，不走续集链。
+        返回 (subject_id 字符串, episode_id 字符串)；无章节时 episode_id 为 None。
+        """
+        sid = str(subject_id)
+        episodes = self.get_episodes(subject_id)
+        ep_info: list = episodes.get("data") or []
+        if not ep_info:
+            logger.debug(
+                f"get_movie_main_episode_id: 无章节数据 subject_id={subject_id}"
+            )
+            return sid, None
+
+        has_type = any("type" in e for e in ep_info)
+        pool = [e for e in ep_info if e.get("type") == 0] if has_type else list(ep_info)
+        if not pool:
+            pool = list(ep_info)
+
+        rows = self._match_target_ep_rows(pool, target_sort)
+        if rows:
+            return sid, str(rows[0]["id"])
+
+        def _sort_key(e: dict) -> tuple:
+            s = e.get("sort")
+            return (s is None, s if s is not None else 9999)
+
+        pool_sorted = sorted(pool, key=_sort_key)
+        if pool_sorted:
+            return sid, str(pool_sorted[0]["id"])
+        return sid, None
+
     def _try_resolve_sequel_by_airdate(
         self,
         subject_id: Union[str, int],

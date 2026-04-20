@@ -109,6 +109,26 @@ class TestExtractPlexData:
 
         assert result.release_date == ""
 
+    def test_extract_plex_data_movie(self):
+        from app.utils.data_util import extract_plex_data
+
+        plex_data = {
+            "event": "media.scrobble",
+            "Account": {"title": "test_user"},
+            "Metadata": {
+                "type": "movie",
+                "title": "某剧场版",
+                "originalTitle": "Gekijouban",
+                "originallyAvailableAt": "2024-06-01",
+            },
+        }
+        result = extract_plex_data(plex_data)
+        assert result.media_type == "movie"
+        assert result.title == "某剧场版"
+        assert result.season == 1
+        assert result.episode == 1
+        assert result.release_date == "2024-06-01"
+
 
 class TestExtractEmbyData:
     """测试 Emby 数据提取"""
@@ -158,6 +178,25 @@ class TestExtractEmbyData:
         result = extract_emby_data(emby_data)
 
         assert result.release_date == ""
+
+    def test_extract_emby_data_movie(self):
+        from app.utils.data_util import extract_emby_data
+
+        emby_data = {
+            "Event": "item.markplayed",
+            "User": {"Name": "test_user"},
+            "Item": {
+                "Type": "Movie",
+                "Name": "剧场版 Y",
+                "PremiereDate": "2024-07-01T00:00:00.0000000Z",
+            },
+        }
+        result = extract_emby_data(emby_data)
+        assert result.media_type == "movie"
+        assert result.title == "剧场版 Y"
+        assert result.season == 1
+        assert result.episode == 1
+        assert result.release_date == "2024-07-01"
 
 
 class TestExtractJellyfinData:
@@ -209,3 +248,23 @@ class TestExtractJellyfinData:
         result = extract_jellyfin_data(jellyfin_data)
 
         assert result.release_date == ""
+
+    def test_extract_jellyfin_data_movie(self):
+        from app.utils.data_util import extract_jellyfin_data
+
+        jellyfin_data = {
+            "NotificationType": "PlaybackStop",
+            "PlayedToCompletion": "True",
+            "media_type": "Movie",
+            "title": "剧场版 Z",
+            "ori_title": "Z Movie",
+            "season": 0,
+            "episode": 3,
+            "user_name": "test_user",
+            "release_date": "2024-08-01",
+        }
+        result = extract_jellyfin_data(jellyfin_data)
+        assert result.media_type == "movie"
+        assert result.season == 1
+        assert result.episode == 1
+        assert result.title == "剧场版 Z"

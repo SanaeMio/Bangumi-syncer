@@ -186,3 +186,41 @@ class TestGetTargetSeasonEpisodeIdAirdate:
         assert sid == 500
         assert eid == 999
         api.get_related_subjects.assert_not_called()
+
+
+class TestGetMovieMainEpisodeId:
+    """get_movie_main_episode_id 剧场版短路径"""
+
+    def test_matches_sort_on_main_type(self):
+        api = BangumiApi()
+        api.get_episodes = MagicMock(
+            return_value={
+                "data": [
+                    {"id": 10, "sort": 1, "ep": 1, "type": 0},
+                    {"id": 11, "sort": 2, "ep": 2, "type": 0},
+                ],
+                "total": 2,
+            }
+        )
+        sid, eid = api.get_movie_main_episode_id(100, target_sort=2)
+        assert sid == "100"
+        assert eid == "11"
+
+    def test_falls_back_to_first_sorted_when_no_match(self):
+        api = BangumiApi()
+        api.get_episodes = MagicMock(
+            return_value={
+                "data": [{"id": 20, "sort": 3, "ep": 3, "type": 0}],
+                "total": 1,
+            }
+        )
+        sid, eid = api.get_movie_main_episode_id(200, target_sort=1)
+        assert sid == "200"
+        assert eid == "20"
+
+    def test_empty_episodes_returns_none_ep_id(self):
+        api = BangumiApi()
+        api.get_episodes = MagicMock(return_value={"data": [], "total": 0})
+        sid, eid = api.get_movie_main_episode_id(300)
+        assert sid == "300"
+        assert eid is None

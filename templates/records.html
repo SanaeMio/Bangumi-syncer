@@ -76,10 +76,10 @@
                 <table class="table table-bordered" id="records-table">
                     <thead>
                         <tr>
+                            <th>类型</th>
                             <th>时间</th>
                             <th>用户</th>
                             <th>番剧标题</th>
-                            <th>原始标题</th>
                             <th>季/集</th>
                             <th>状态</th>
                             <th>来源</th>
@@ -175,17 +175,19 @@ function displayRecords(records) {
     tbody.innerHTML = '';
     
     if (records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center">暂无记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无记录</td></tr>';
         return;
     }
     
     records.forEach(record => {
+        const mt = (record.media_type || 'episode').toLowerCase();
+        const typeLabel = mt === 'movie' ? '电影' : '剧集';
         const row = document.createElement('tr');
         row.innerHTML = `
+            <td><span class="badge bg-dark bg-opacity-75">${typeLabel}</span></td>
             <td>${new Date(record.timestamp).toLocaleString()}</td>
             <td>${record.user_name}</td>
             <td>${record.title}</td>
-            <td>${record.ori_title || '-'}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
             <td><span class="badge bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
             <td><span class="badge bg-${getSourceColor(record.source)}">${record.source}</span></td>
@@ -381,20 +383,24 @@ async function showRecordDetail(recordId) {
             detailContent.innerHTML = `
                 <div class="row">
                     <div class="col-md-6">
-                        <strong>时间:</strong> ${record.timestamp}
+                        <strong>类型:</strong> ${(record.media_type || 'episode').toLowerCase() === 'movie' ? '电影' : '剧集'}
                     </div>
                     <div class="col-md-6">
-                        <strong>用户:</strong> ${record.user_name}
+                        <strong>时间:</strong> ${record.timestamp}
                     </div>
                 </div>
                 <div class="row mt-2">
                     <div class="col-md-6">
-                        <strong>番剧标题:</strong> ${record.title}
+                        <strong>用户:</strong> ${record.user_name}
                     </div>
                     <div class="col-md-6">
-                        <strong>原始标题:</strong> ${record.ori_title || '无'}
+                        <strong>番剧标题:</strong> ${record.title}
                     </div>
                 </div>
+                <details class="mt-2">
+                    <summary class="text-muted small" style="cursor:pointer">原始标题（点击展开）</summary>
+                    <div class="mt-1 small">${record.ori_title && String(record.ori_title).trim() ? record.ori_title : '无'}</div>
+                </details>
                 <div class="row mt-2">
                     <div class="col-md-4">
                         <strong>季/集:</strong> S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}

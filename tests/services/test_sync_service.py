@@ -76,6 +76,7 @@ class TestSyncCustomItem:
                 ("sync", "mode"): "single",
                 ("sync", "single_username"): "test_user",
                 ("sync", "blocked_keywords"): "",
+                ("sync", "movie_mark_subject_completed"): True,
                 ("bangumi_data", "enabled"): False,
             }.get((section, key), fallback)
 
@@ -88,9 +89,11 @@ class TestSyncCustomItem:
 
             # Mock get_target_season_episode_id - returns (subject_id, episode_id)
             mock_api.get_target_season_episode_id.return_value = ("123456", "789012")
+            mock_api.get_movie_main_episode_id.return_value = ("123456", "789012")
 
             # Mock mark_episode_watched - returns 1 (marked as watched)
             mock_api.mark_episode_watched.return_value = 1
+            mock_api.get_subject_collection.return_value = {}
 
             # Mock mapping_service
             mock_mapping.load_custom_mappings.return_value = {}
@@ -114,10 +117,9 @@ class TestSyncCustomItem:
 
             service = SyncService()
 
-            # 测试不支持的媒体类型 - movie
             item = CustomItem(
-                media_type="movie",
-                title="测试电影",
+                media_type="music",
+                title="测试",
                 ori_title="",
                 season=1,
                 episode=1,
@@ -167,26 +169,37 @@ class TestSyncCustomItem:
             assert result.status == "ignored"
             assert "屏蔽关键词" in result.message
 
-    def test_sync_custom_item_invalid_media_type_with_fixture(self, mock_sync_service):
-        """测试不支持的媒体类型"""
+    def test_sync_custom_item_movie_success_with_fixture(self, mock_sync_service):
+        """电影同步成功（短路径 + 条目标看过）"""
         service, mock_config, mock_db, mock_notify = mock_sync_service
 
         from app.models.sync import CustomItem
 
-        item = CustomItem(
-            media_type="movie",  # 不支持的电影类型
-            title="测试电影",
-            ori_title="",
-            season=1,
-            episode=1,
-            release_date="2024-01-01",
-            user_name="test_user",
-        )
+        with patch.object(service, "_find_subject_id", return_value=("999", False)):
+            with patch.object(
+                service,
+                "_get_bangumi_config_for_user",
+                return_value={
+                    "username": "u",
+                    "access_token": "t",
+                    "private": True,
+                },
+            ):
+                item = CustomItem(
+                    media_type="movie",
+                    title="剧场版测试",
+                    ori_title=None,
+                    season=1,
+                    episode=1,
+                    release_date="",
+                    user_name="test_user",
+                )
+                result = service.sync_custom_item(item, source="custom")
 
-        result = service.sync_custom_item(item, source="custom")
-
-        assert result.status == "error"
-        assert "不支持" in result.message
+        assert result.status == "success"
+        mock_db.log_sync_record.assert_called()
+        _args, call_kw = mock_db.log_sync_record.call_args
+        assert call_kw.get("media_type") == "movie"
 
     def test_sync_custom_item_empty_title(self, mock_sync_service):
         """测试空标题"""

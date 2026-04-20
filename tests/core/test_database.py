@@ -54,6 +54,63 @@ class TestDatabaseManager:
             assert result["records"][0]["title"] == "测试动画"
             assert result["records"][0]["season"] == 1
             assert result["records"][0]["episode"] == 12
+            assert result["records"][0]["media_type"] == "episode"
+
+    def test_log_sync_record_movie_media_type(self, temp_dir, reset_singletons):
+        db_path = temp_dir / "movie.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+            db.log_sync_record(
+                user_name="u",
+                title="剧场版",
+                ori_title=None,
+                season=1,
+                episode=1,
+                status="success",
+                media_type="movie",
+            )
+            r = db.get_sync_record_by_id(1)
+            assert r["media_type"] == "movie"
+
+    def test_migrate_adds_media_type_column(self, temp_dir, reset_singletons):
+        """旧表无 media_type 时自动 ALTER 并回填"""
+        db_path = temp_dir / "legacy.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            """
+            CREATE TABLE sync_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                ori_title TEXT,
+                season INTEGER NOT NULL,
+                episode INTEGER NOT NULL,
+                subject_id TEXT,
+                episode_id TEXT,
+                status TEXT NOT NULL,
+                message TEXT,
+                source TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """INSERT INTO sync_records
+            (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source)
+            VALUES ('2020-01-01', 'u', 't', NULL, 1, 1, NULL, NULL, 'success', '', 'custom')
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+        row = db.get_sync_record_by_id(1)
+        assert row["media_type"] == "episode"
 
     def test_get_sync_records_basic(self, temp_dir, reset_singletons):
         """Test getting sync records basic"""

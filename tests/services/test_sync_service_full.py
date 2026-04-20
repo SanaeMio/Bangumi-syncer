@@ -24,7 +24,9 @@ def mock_config():
                 return "testuser"
             elif section == "sync" and key == "blocked_keywords":
                 return ""
-            return fallback or ""
+            elif section == "sync" and key == "movie_mark_subject_completed":
+                return True
+            return fallback
 
         mock_cm.get.side_effect = get_side_effect
         mock_cm.get_user_mappings.return_value = {}
@@ -77,6 +79,9 @@ def mock_bangumi_api():
         mock_instance.mark_episode_watched.return_value = 1
 
         mock_instance.get_target_season_episode_id.return_value = (123, 1)
+        mock_instance.get_movie_main_episode_id.return_value = ("123", 1)
+        # 剧场版条目标「看过」前会查询收藏；默认非「看过」以便断言会调用 change_collection_state
+        mock_instance.get_subject_collection.return_value = {}
 
         mock_api.return_value = mock_instance
         yield mock_api
@@ -262,11 +267,11 @@ def test_sync_custom_item_invalid_type(mock_config, mock_database):
 
     item = CustomItem(
         user_name="testuser",
-        title="Test Movie",
+        title="Test",
         ori_title="",
         season=1,
         episode=1,
-        media_type="movie",  # 不支持的类型
+        media_type="music",
         release_date="2024-01-01",
     )
 
@@ -274,6 +279,128 @@ def test_sync_custom_item_invalid_type(mock_config, mock_database):
 
     assert result.status == "error"
     assert "不支持" in result.message
+
+
+def test_sync_custom_item_movie_success_calls_movie_episode_path(
+    mock_config, mock_database, mock_bangumi_api
+):
+    """电影走 get_movie_main_episode_id 并可条目标看过"""
+    service = SyncService()
+    mock_instance = mock_bangumi_api.return_value
+
+    item = CustomItem(
+        user_name="testuser",
+        title="剧场版 X",
+        ori_title=None,
+        season=1,
+        episode=1,
+        media_type="movie",
+        release_date="",
+    )
+
+    with patch.object(service, "_find_subject_id", return_value=("456", False)):
+        with patch.object(
+            service,
+            "_get_bangumi_config_for_user",
+            return_value={
+                "username": "testuser",
+                "access_token": "test_token",
+                "private": True,
+            },
+        ):
+            result = service.sync_custom_item(item, "custom")
+
+    assert result.status == "success"
+    mock_instance.get_movie_main_episode_id.assert_called()
+    mock_instance.get_target_season_episode_id.assert_not_called()
+    mock_instance.change_collection_state.assert_called()
+
+
+def test_sync_custom_item_movie_skips_collection_when_subject_already_completed(
+    mock_config, mock_database, mock_bangumi_api
+):
+    """剧场版条目收藏已是「看过」时不再调用 change_collection_state"""
+    service = SyncService()
+    mock_instance = mock_bangumi_api.return_value
+    mock_instance.get_subject_collection.return_value = {"type": 2}
+
+    item = CustomItem(
+        user_name="testuser",
+        title="剧场版 X",
+        ori_title=None,
+        season=1,
+        episode=1,
+        media_type="movie",
+        release_date="",
+    )
+
+    with patch.object(service, "_find_subject_id", return_value=("456", False)):
+        with patch.object(
+            service,
+            "_get_bangumi_config_for_user",
+            return_value={
+                "username": "testuser",
+                "access_token": "test_token",
+                "private": True,
+            },
+        ):
+            result = service.sync_custom_item(item, "custom")
+
+    assert result.status == "success"
+    mock_instance.change_collection_state.assert_not_called()
+
+
+def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
+    mock_database, mock_bangumi_api
+):
+    """movie_mark_subject_completed 关闭时不查询收藏、不调 change_collection_state"""
+    service = SyncService()
+    mock_instance = mock_bangumi_api.return_value
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "sync" and key == "movie_mark_subject_completed":
+                return False
+            if section == "sync" and key == "mode":
+                return "single"
+            if section == "sync" and key == "single_username":
+                return "testuser"
+            if section == "sync" and key == "blocked_keywords":
+                return ""
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            return fallback
+
+        mock_cfg.get.side_effect = get_side_effect
+        mock_cfg.get_user_mappings.return_value = {}
+        mock_cfg.get_bangumi_configs.return_value = {}
+
+        item = CustomItem(
+            user_name="testuser",
+            title="剧场版 X",
+            ori_title=None,
+            season=1,
+            episode=1,
+            media_type="movie",
+            release_date="",
+        )
+
+        with patch.object(service, "_find_subject_id", return_value=("456", False)):
+            with patch.object(
+                service,
+                "_get_bangumi_config_for_user",
+                return_value={
+                    "username": "testuser",
+                    "access_token": "test_token",
+                    "private": True,
+                },
+            ):
+                result = service.sync_custom_item(item, "custom")
+
+    assert result.status == "success"
+    mock_instance.get_subject_collection.assert_not_called()
+    mock_instance.change_collection_state.assert_not_called()
 
 
 def test_sync_custom_item_empty_title(mock_config, mock_database):
@@ -535,6 +662,49 @@ def test_find_subject_id_from_mapping(mock_config, mock_database):
 
         assert result[0] == "12345"
         assert result[1] is False  # 自定义映射不视为特定季度ID
+
+
+def test_find_subject_id_movie_passes_is_movie_to_bgm_search(mock_database):
+    """电影走 API 搜索时向 bgm_search 传入 is_movie=True"""
+    service = SyncService()
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "mode":
+                return "single"
+            if section == "sync" and key == "single_username":
+                return "testuser"
+            return fallback
+
+        mock_cfg.get.side_effect = get_side_effect
+        mock_cfg.get_user_mappings.return_value = {}
+        mock_cfg.get_bangumi_configs.return_value = {}
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [{"id": 4242, "name_cn": "剧场版"}]
+
+        item = CustomItem(
+            user_name="testuser",
+            title="某剧场版",
+            ori_title=None,
+            season=1,
+            episode=1,
+            media_type="movie",
+            release_date="",
+            source="custom",
+        )
+
+        with patch.object(service, "_load_custom_mappings", return_value={}):
+            with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
+                sid, is_season = service._find_subject_id(item)
+
+    assert str(sid) == "4242"
+    assert is_season is False
+    bgm.bgm_search.assert_called_once()
+    assert bgm.bgm_search.call_args.kwargs.get("is_movie") is True
 
 
 def test_plex_sync_item_success(mock_config, mock_database, mock_bangumi_api):

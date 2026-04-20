@@ -122,6 +122,21 @@
                                        name="sync.blocked_keywords"
                                        placeholder="多个关键词用逗号分隔，如：物语系列,特典">
                             </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="movie-mark-subject-completed"
+                                           name="sync.movie_mark_subject_completed">
+                                    <label class="form-check-label fw-semibold"
+                                           for="movie-mark-subject-completed">
+                                        剧场版同步后自动将条目也标为看过
+                                        <i class="bi bi-question-circle ms-1 text-muted"
+                                           data-bs-toggle="tooltip"
+                                           title="仅当同步类型为剧场版（media_type=movie）时生效：单集打格子后，将条目收藏状态标为「看过」。关闭则只更新单集进度。"></i>
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1165,6 +1180,10 @@ function populateForm(config) {
     document.getElementById('sync-mode').value = config.sync.mode || 'single';
     document.getElementById('single-username').value = config.sync.single_username || '';
     document.getElementById('blocked-keywords').value = config.sync.blocked_keywords || '';
+    const movieMarkEl = document.getElementById('movie-mark-subject-completed');
+    if (movieMarkEl) {
+        movieMarkEl.checked = config.sync.movie_mark_subject_completed !== false;
+    }
     
     const webBase = document.getElementById('web-base-path');
     if (webBase) {
@@ -1340,7 +1359,8 @@ async function saveConfig() {
             sync: {
                 mode: document.getElementById('sync-mode').value,
                 single_username: document.getElementById('single-username').value,
-                blocked_keywords: document.getElementById('blocked-keywords').value
+                blocked_keywords: document.getElementById('blocked-keywords').value,
+                movie_mark_subject_completed: document.getElementById('movie-mark-subject-completed').checked
             },
             web: {
                 base_path: (document.getElementById('web-base-path') && document.getElementById('web-base-path').value.trim()) || ''
