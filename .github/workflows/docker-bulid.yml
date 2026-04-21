@@ -1,4 +1,4 @@
-name: Publish Docker image
+name: Docker Hub (release tags)
 
 on:
   push:
@@ -10,7 +10,7 @@ env:
 
 jobs:
   push_to_registry:
-    name: Push Docker image to Docker Hub
+    name: Push release image to Docker Hub
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repo
@@ -30,6 +30,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKERHUB_REPO }}
+          tags: |
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -40,7 +43,5 @@ jobs:
             linux/amd64
           file: ./Dockerfile
           push: true
-          tags: |
-            ${{ env.DOCKERHUB_REPO }}:latest
-            ${{ env.DOCKERHUB_REPO }}:${{ steps.meta.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
