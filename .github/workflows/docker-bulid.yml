@@ -31,7 +31,7 @@ jobs:
         with:
           images: ${{ env.DOCKERHUB_REPO }}
           tags: |
-            type=semver,pattern=v{{version}}
+            type=semver,pattern={{raw}}
             type=semver,pattern=latest
 
       - name: Build and push Docker image
