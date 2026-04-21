@@ -10,6 +10,7 @@
         <link href="{{ '/static/css/bootstrap.min.css' | p }}" rel="stylesheet">
         <link href="{{ '/static/css/bootstrap-icons.css' | p }}" rel="stylesheet">
         <link href="{{ '/static/css/style.css' | p }}" rel="stylesheet">
+        <link href="{{ '/static/css/version-banner.css' | p }}" rel="stylesheet">
         {% block head %}{% endblock %}
     </head>
     <body class="bg-light">
@@ -74,6 +75,22 @@
                             </a>
                         </li>
                     </ul>
+                    <div class="px-3 py-2 border-top d-md-none">
+                        <div class="app-version-banner">
+                            <div class="app-version-banner__row">
+                                <span class="app-version-banner__pill">
+                                    <i class="bi bi-cpu"></i>
+                                    <span class="js-app-version-pill-label">…</span>
+                                </span>
+                                <button type="button"
+                                        class="app-version-banner__update d-none js-app-update-pill"
+                                        aria-label="有新版本，点击查看发行说明">
+                                    <span class="js-app-update-pill-label">有新版本</span>
+                                </button>
+                            </div>
+                            <div class="small text-danger mt-1 d-none js-app-github-error"></div>
+                        </div>
+                    </div>
                     <ul class="navbar-nav">
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle"
@@ -163,6 +180,22 @@
                                 </a>
                             </li>
                         </ul>
+                        <div class="px-2 mt-3 border-top pt-2 d-none d-md-block">
+                            <div class="app-version-banner">
+                                <div class="app-version-banner__row">
+                                    <span class="app-version-banner__pill">
+                                        <i class="bi bi-cpu"></i>
+                                        <span class="js-app-version-pill-label">…</span>
+                                    </span>
+                                    <button type="button"
+                                            class="app-version-banner__update d-none js-app-update-pill"
+                                            aria-label="有新版本，点击查看发行说明">
+                                        <span class="js-app-update-pill-label">有新版本</span>
+                                    </button>
+                                </div>
+                                <div class="small text-danger mt-1 d-none js-app-github-error"></div>
+                            </div>
+                        </div>
                         <!-- 用户信息和登出 -->
                         <div class="px-2 mt-4 pt-3 border-top">
                             <div class="d-flex align-items-center mb-2">
@@ -200,9 +233,55 @@
         <div class="toast-container position-fixed top-0 end-0 p-3">
             <!-- Toast通知将在这里动态添加 -->
         </div>
+        <div class="modal fade release-notes-modal"
+             id="releaseNotesModal"
+             tabindex="-1"
+             aria-labelledby="releaseNotesModalLabel"
+             aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="releaseNotesModalLabel">发行说明</h5>
+                        <button type="button"
+                                class="btn-close"
+                                data-bs-dismiss="modal"
+                                aria-label="关闭"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="release-notes-current">
+                            <div class="release-notes-current__line">
+                                <span class="release-notes-tag release-notes-tag--running">当前运行</span>
+                                <strong id="releaseNotesCurrentVersion"
+                                        class="release-notes-current__version">—</strong>
+                                <span id="releaseNotesHeaderCurrentTag"
+                                      class="release-notes-tag release-notes-tag--current-after-title d-none"
+                                      aria-hidden="true">当前</span>
+                                <span id="releaseNotesBehindPill"
+                                      class="release-notes-tag release-notes-tag--behind d-none"></span>
+                            </div>
+                        </div>
+                        <div class="alert alert-warning small py-2 d-none mb-3"
+                             id="releaseNotesFetchWarn"
+                             role="status"></div>
+                        <div id="releaseNotesStack" class="release-notes-stack">
+                            <div class="release-notes-stack__loading text-muted small d-flex align-items-center gap-2 py-1">
+                                <span class="spinner-border spinner-border-sm text-secondary"
+                                      role="status"
+                                      aria-hidden="true"></span>
+                                <span>加载中…</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 pt-0">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         <script src="{{ '/static/js/bootstrap.bundle.min.js' | p }}"></script>
         <script src="{{ '/static/js/chart.js' | p }}"></script>
         <script src="{{ '/static/js/app.js' | p }}"></script>
+        <script src="{{ '/static/js/version-release.js' | p }}"></script>
         {% block scripts %}{% endblock %}
     </body>
 </html>

@@ -1,0 +1,58 @@
+# 打 v* tag 时生成带 release_manifest.json 的 zip 并上传到对应该 tag 的 GitHub Release
+name: Release zip
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  attach_zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Semver and artifact name
+        id: ver
+        run: |
+          REF="${GITHUB_REF_NAME}"
+          SEMVER="${REF#v}"
+          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
+          echo "zip_name=bangumi-syncer-v${SEMVER}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Write release_manifest.json
+        run: |
+          printf '%s\n' "{\"version\":\"${{ steps.ver.outputs.semver }}\",\"git_sha\":\"${{ github.sha }}\"}" > release_manifest.json
+
+      - name: Pack zip
+        run: |
+          zip -r "${{ steps.ver.outputs.zip_name }}" \
+            app \
+            templates \
+            static \
+            requirements.txt \
+            start.bat \
+            config.ini \
+            bangumi_mapping.json \
+            release_manifest.json \
+            README.md \
+            LICENSE \
+            pyproject.toml \
+            uv.lock \
+            CONTRIBUTING.md \
+            AGENTS.md
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ steps.ver.outputs.zip_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

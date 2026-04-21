@@ -3,6 +3,7 @@ name = "bangumi-syncer"
 version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = [
+    "bleach>=6.2.0",
     "cryptography>=42.0.0",
     "fastapi>=0.126.0",
     "ijson>=3.4.0.post0",
@@ -12,7 +13,9 @@ dependencies = [
     "requests>=2.32.5",
     "uvicorn[standard]>=0.38.0",
     "httpx>=0.25.0",
+    "markdown>=3.7",
     "APScheduler>=3.10.0",
+    "pymdown-extensions>=10.14",
 ]
 
 [dependency-groups]

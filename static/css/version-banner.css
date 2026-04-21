@@ -1,0 +1,437 @@
+/* 侧栏 / 移动导航：版本信息与发行说明 Modal */
+
+.app-version-banner {
+    padding: 0.35rem 0 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
+.app-version-banner__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.app-version-banner__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #495057;
+    background: #fff;
+    border: 1px solid #e9ecef;
+    border-radius: 999px;
+    padding: 0.25rem 0.65rem;
+    line-height: 1.2;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.app-version-banner__pill i {
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.app-version-banner--loading .app-version-banner__pill {
+    animation: app-version-banner-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes app-version-banner-pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.55;
+    }
+}
+
+/* 有新版本 */
+.app-version-banner__update {
+    border: 1px solid #b7e4c7;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    line-height: 1.2;
+    color: #0f5132;
+    background: #d1e7dd;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.app-version-banner__update:hover {
+    background: #badbcc;
+    border-color: #a3cfbb;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(25, 135, 84, 0.15);
+}
+
+.app-version-banner__update:active {
+    transform: translateY(0);
+}
+
+.app-version-banner__update:focus-visible {
+    outline: 2px solid #198754;
+    outline-offset: 2px;
+}
+
+/* Modal 外壳 */
+.release-notes-modal .modal-content {
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+
+.release-notes-modal .modal-header {
+    background: #fff;
+    border-bottom: 1px solid #e9ecef;
+    padding: 1rem 1.25rem;
+}
+
+.release-notes-modal .modal-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #212529;
+}
+
+.release-notes-modal .modal-dialog {
+    overflow-x: hidden;
+}
+
+.release-notes-modal .modal-body {
+    overflow-x: hidden;
+    background: #f8f9fa;
+    padding: 1rem 1.25rem 1.25rem;
+}
+
+.release-notes-modal .modal-footer {
+    background: #fff;
+    border-top: 1px solid #e9ecef;
+}
+
+.release-notes-stack__loading {
+    animation: release-notes-fade-in 0.35s ease both;
+}
+
+@keyframes release-notes-fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* 本机：当前运行 + 版本号（title）+「当前」+ 落后 */
+.release-notes-current {
+    padding: 0.65rem 0.85rem;
+    margin-bottom: 0.75rem;
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+    font-size: 0.875rem;
+    color: #495057;
+}
+
+.release-notes-current__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.5rem;
+}
+
+.release-notes-current__version {
+    color: #212529;
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.release-notes-tag {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.2em 0.55em;
+    border-radius: 999px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.release-notes-tag--running {
+    color: #0c5460;
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+}
+
+.release-notes-tag--current-after-title {
+    color: #495057;
+    background: #e9ecef;
+    border: 1px solid #dee2e6;
+}
+
+.release-notes-tag--behind {
+    color: #664d03;
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+}
+
+/* 每个版本一张卡片 */
+.release-notes-card {
+    background: #fff;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 0.85rem 1rem 1rem;
+    margin-bottom: 0.85rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.2s ease, box-shadow 0.25s ease, transform 0.25s ease;
+    animation: release-notes-card-enter 0.4s ease both;
+}
+
+@keyframes release-notes-card-enter {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.release-notes-card:last-child {
+    margin-bottom: 0;
+}
+
+.release-notes-card:hover {
+    border-color: #ced4da;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+}
+
+.release-notes-card:active {
+    transform: translateY(-1px);
+}
+
+.release-notes-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.release-notes-card__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #212529;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.release-notes-card__title-link {
+    color: #0d6efd;
+    text-decoration: none;
+    font-weight: 700;
+    word-break: break-word;
+    transition: color 0.15s ease;
+}
+
+.release-notes-card__title-link:hover {
+    color: #0a58ca;
+    text-decoration: underline;
+}
+
+.release-notes-card__title-tags {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    flex-shrink: 0;
+}
+
+.release-notes-card__title-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.15em 0.45em;
+    border-radius: 6px;
+    line-height: 1.2;
+}
+
+.release-notes-card__title-badge--latest {
+    color: #fff;
+    background: #198754;
+}
+
+.release-notes-card__meta {
+    font-size: 0.75rem;
+    color: #6c757d;
+    flex-shrink: 0;
+}
+
+.release-notes-card__body {
+    overflow-x: hidden;
+    margin-top: 0.95rem;
+}
+
+/* Markdown：图片不撑破 Modal */
+.release-notes-card .markdown-body {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: #495057;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+.release-notes-card .markdown-body > *:first-child {
+    margin-top: 0;
+}
+
+.release-notes-card .markdown-body > *:last-child {
+    margin-bottom: 0;
+}
+
+.release-notes-card .markdown-body ul.task-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0.5em 0;
+}
+
+.release-notes-card .markdown-body li.task-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    margin: 0.3em 0;
+}
+
+.release-notes-card .markdown-body li.task-list-item input[type='checkbox'] {
+    margin: 0.2rem 0 0;
+    flex-shrink: 0;
+    cursor: default;
+    pointer-events: none;
+}
+
+.release-notes-card .markdown-body img,
+.release-notes-card .markdown-body video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+    margin: 0.5em 0;
+}
+
+.release-notes-card .markdown-body h1,
+.release-notes-card .markdown-body h2,
+.release-notes-card .markdown-body h3 {
+    margin-top: 1em;
+    margin-bottom: 0.4em;
+    font-weight: 700;
+    color: #212529;
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 0.2em;
+}
+
+.release-notes-card .markdown-body h1 {
+    font-size: 1.05rem;
+}
+
+.release-notes-card .markdown-body h2 {
+    font-size: 0.98rem;
+}
+
+.release-notes-card .markdown-body h3 {
+    font-size: 0.92rem;
+    border-bottom: none;
+}
+
+.release-notes-card .markdown-body p {
+    margin: 0.5em 0;
+}
+
+.release-notes-card .markdown-body ul,
+.release-notes-card .markdown-body ol {
+    margin: 0.5em 0;
+    padding-left: 1.25em;
+}
+
+.release-notes-card .markdown-body code {
+    font-size: 0.8125em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: #f1f3f5;
+    color: #212529;
+}
+
+.release-notes-card .markdown-body pre {
+    max-width: 100%;
+    padding: 0.65rem 0.85rem;
+    border-radius: 8px;
+    background: #212529;
+    color: #e9ecef;
+    overflow-x: auto;
+    font-size: 0.8125rem;
+    margin: 0.65em 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.release-notes-card .markdown-body pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
+    white-space: pre;
+    word-wrap: normal;
+}
+
+.release-notes-card .markdown-body a {
+    color: #0d6efd;
+    text-decoration: none;
+    word-break: break-word;
+}
+
+.release-notes-card .markdown-body a:hover {
+    text-decoration: underline;
+}
+
+.release-notes-card .markdown-body table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    margin: 0.65em 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.release-notes-card .markdown-body th,
+.release-notes-card .markdown-body td {
+    border: 1px solid #e9ecef;
+    padding: 0.35rem 0.45rem;
+}
+
+.release-notes-card .markdown-body th {
+    background: #f8f9fa;
+    font-weight: 600;
+}
+
+.release-notes-card .markdown-body blockquote {
+    margin: 0.65em 0;
+    padding: 0.3rem 0 0.3rem 0.75rem;
+    border-left: 3px solid #ced4da;
+    color: #6c757d;
+}

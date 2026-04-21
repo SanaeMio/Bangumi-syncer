@@ -8,8 +8,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from version import get_version, get_version_info, get_version_name
-
+from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
 from .api.config import router as config_router
 from .api.feiniu import router as feiniu_router
@@ -21,6 +20,7 @@ from .api.pages import router as pages_router
 from .api.proxy import router as proxy_router
 from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
+from .core.app_version import get_version, get_version_info, get_version_name
 from .core.config import config_manager
 from .core.logging import logger
 from .core.public_url import get_public_base_path
@@ -58,6 +58,7 @@ app.include_router(mappings_router)
 app.include_router(logs_router)
 app.include_router(pages_router)
 app.include_router(health_router)
+app.include_router(app_release_router)
 app.include_router(proxy_router)
 app.include_router(notification_router)
 app.include_router(trakt_router)
