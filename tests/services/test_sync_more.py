@@ -20,10 +20,10 @@ class TestSyncServiceHelper:
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
-                ("sync", "single_username"): "admin",
                 ("sync", "blocked_keywords"): "",
                 ("bangumi_data", "enabled"): False,
             }.get((section, key), fallback)
+            mock_config.get_single_mode_media_usernames.return_value = ["admin"]
 
             from app.services.sync_service import SyncService
 

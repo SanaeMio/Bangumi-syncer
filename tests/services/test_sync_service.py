@@ -74,12 +74,12 @@ class TestSyncCustomItem:
             # Mock config
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
-                ("sync", "single_username"): "test_user",
                 ("sync", "blocked_keywords"): "",
                 ("sync", "movie_mark_subject_completed"): True,
                 ("bangumi_data", "enabled"): False,
             }.get((section, key), fallback)
 
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             mock_config.get_user_mappings.return_value = {}
             mock_config.get_bangumi_configs.return_value = {}
 
@@ -142,10 +142,10 @@ class TestSyncCustomItem:
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
-                ("sync", "single_username"): "test_user",
                 ("sync", "blocked_keywords"): "测试,广告",  # 包含屏蔽词
                 ("bangumi_data", "enabled"): False,
             }.get((section, key), fallback)
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             mock_config.get_user_mappings.return_value = {}
             mock_config.get_bangumi_configs.return_value = {}
 
@@ -275,10 +275,10 @@ class TestSyncCustomItem:
             # 配置为单用户模式，但请求用户名不匹配
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
-                ("sync", "single_username"): "admin",  # 配置的用户是 admin
                 ("sync", "blocked_keywords"): "",
                 ("bangumi_data", "enabled"): False,
             }.get((section, key), fallback)
+            mock_config.get_single_mode_media_usernames.return_value = ["admin"]
 
             from app.models.sync import CustomItem
 

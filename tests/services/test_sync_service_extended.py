@@ -54,8 +54,8 @@ class TestSyncServiceHelperMethods:
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
-                ("sync", "single_username"): "admin",
             }.get((section, key), fallback)
+            mock_config.get_single_mode_media_usernames.return_value = ["admin"]
 
             from app.services.sync_service import SyncService
 
@@ -69,18 +69,39 @@ class TestSyncServiceHelperMethods:
             result = service._check_user_permission("other_user")
             assert result is False
 
-    def test_check_user_permission_single_mode_missing_single_username(self):
-        """单用户模式未配置 single_username 时拒绝"""
+    def test_check_user_permission_single_mode_comma_separated(self):
+        """单用户模式 media_server_username 逗号分隔时多个名均通过"""
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = lambda section, key, fallback=None: {
+                ("sync", "mode"): "single",
+            }.get((section, key), fallback)
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "plex_u",
+                "emby_u",
+            ]
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+            assert service._check_user_permission("plex_u") is True
+            assert service._check_user_permission("emby_u") is True
+            assert service._check_user_permission("other") is False
+
+    def test_check_user_permission_single_mode_missing_media_usernames(self):
+        """单用户模式未配置 media_server_username（解析结果为空）时拒绝"""
         with patched_sync_deps() as cfg:
 
             def get_side_effect(section, key, fallback=None):
                 if section == "sync" and key == "mode":
                     return "single"
-                if section == "sync" and key == "single_username":
-                    return ""
                 return fallback
 
             cfg.get.side_effect = get_side_effect
+            cfg.get_single_mode_media_usernames.return_value = []
             from app.services.sync_service import SyncService
 
             svc = SyncService()

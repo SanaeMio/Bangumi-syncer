@@ -345,12 +345,14 @@ class SyncService:
         mode = config_manager.get("sync", "mode", fallback="single")
 
         if mode == "single":
-            single_username = config_manager.get("sync", "single_username", fallback="")
-            if single_username and user_name != single_username:
-                logger.debug(f"非配置同步用户：{user_name}，跳过")
+            allowed = config_manager.get_single_mode_media_usernames()
+            if not allowed:
+                logger.error(
+                    "未设置 Bangumi 配置中的 media_server_username（媒体服务器用户名），请检查配置"
+                )
                 return False
-            if not single_username:
-                logger.error("未设置同步用户single_username，请检查config.ini配置")
+            if user_name not in allowed:
+                logger.debug(f"非配置同步用户：{user_name}，跳过")
                 return False
         elif mode == "multi":
             # 多用户模式，检查用户是否在映射配置中

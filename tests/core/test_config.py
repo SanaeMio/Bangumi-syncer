@@ -60,6 +60,22 @@ class TestConfigManagerSimple:
 
             assert config.get("bangumi", "username") == "env_user"
 
+    def test_apply_env_single_username_sets_bangumi_media_server_username(
+        self, tmp_path
+    ):
+        """SINGLE_USERNAME 覆盖 [bangumi] media_server_username（支持逗号）。"""
+        from configparser import ConfigParser
+
+        from app.core.config import ConfigManager
+
+        with patch.object(ConfigManager, "__init__", lambda x: None):
+            cm = ConfigManager.__new__(ConfigManager)
+            config = ConfigParser()
+            config.read_string("[bangumi]\nusername = u\nmedia_server_username = old\n")
+            with patch.dict(os.environ, {"SINGLE_USERNAME": "plex1,plex2"}):
+                cm._apply_env_overrides(config)
+            assert config.get("bangumi", "media_server_username") == "plex1,plex2"
+
     def test_type_conversion(self, temp_dir):
         """Test type conversion in get_config"""
         from configparser import ConfigParser
@@ -380,3 +396,76 @@ smtp_server = smtp.example.com
             tmp_path, cm.active_config_path.read_text(encoding="utf-8")
         )
         assert cm2.get("sync", "k_extra") == "v99"
+
+
+class TestMediaServerUsernameParseAndMigration:
+    def test_parse_media_server_username_value(self):
+        from app.core.config import parse_media_server_username_value
+
+        assert parse_media_server_username_value("") == []
+        assert parse_media_server_username_value(None) == []
+        assert parse_media_server_username_value("a,b") == ["a", "b"]
+        assert parse_media_server_username_value("a，b") == ["a", "b"]
+        assert parse_media_server_username_value("  x  ,  y  ") == ["x", "y"]
+        assert parse_media_server_username_value(", , ") == []
+        assert parse_media_server_username_value("   ") == []
+
+    def test_migrate_single_username_to_bangumi(self, tmp_path):
+        ini = """[sync]
+mode = single
+single_username = legacy_u
+[bangumi]
+username =
+"""
+        cm = _config_manager_from_ini(tmp_path, ini)
+        assert cm.get("bangumi", "media_server_username") == "legacy_u"
+        assert not cm.get_config_parser().has_option("sync", "single_username")
+
+    def test_migrate_preserves_existing_bangumi_media_server_username(self, tmp_path):
+        """已有 bangumi.media_server_username 时不覆盖，仅删除废弃的 sync.single_username。"""
+        ini = """[sync]
+mode = single
+single_username = should_not_apply
+[bangumi]
+username = bgm
+media_server_username = keep_me
+"""
+        cm = _config_manager_from_ini(tmp_path, ini)
+        assert cm.get("bangumi", "media_server_username") == "keep_me"
+        assert not cm.get_config_parser().has_option("sync", "single_username")
+
+    def test_get_single_mode_media_usernames(self, tmp_path):
+        cm = _config_manager_from_ini(
+            tmp_path,
+            "[bangumi]\nmedia_server_username = u1,u2\n",
+        )
+        assert cm.get_single_mode_media_usernames() == ["u1", "u2"]
+
+    def test_get_user_mappings_expands_comma(self, tmp_path):
+        ini = """
+[bangumi-data]
+enabled = false
+[bangumi-main]
+username = u1
+access_token = t1
+media_server_username = alice,bob
+"""
+        cm = _config_manager_from_ini(tmp_path, ini)
+        m = cm.get_user_mappings()
+        assert m["alice"] == "bangumi-main"
+        assert m["bob"] == "bangumi-main"
+
+    def test_get_user_mappings_duplicate_last_section_wins(self, tmp_path):
+        ini = """
+[bangumi-a]
+username = ua
+access_token = ta
+media_server_username = dup
+[bangumi-b]
+username = ub
+access_token = tb
+media_server_username = dup
+"""
+        cm = _config_manager_from_ini(tmp_path, ini)
+        m = cm.get_user_mappings()
+        assert m["dup"] == "bangumi-b"

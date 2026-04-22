@@ -32,19 +32,6 @@
                                     <option value="multi">多用户模式</option>
                                 </select>
                             </div>
-                            <div class="col-md-6" id="single-username-container">
-                                <label for="single-username" class="form-label fw-semibold">
-                                    <i class="bi bi-person-check me-1 text-success"></i>单用户模式用户名
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="单用户模式用户名（Plex/Emby/Jellyfin中的用户名），用于跳过无需同步的用户提交的记录，只同步配置中的用户名产生的记录"></i>
-                                </label>
-                                <input type="text"
-                                       class="form-control form-control-lg"
-                                       id="single-username"
-                                       name="sync.single_username"
-                                       placeholder="输入媒体服务器用户名">
-                            </div>
                             <div class="col-12">
                                 <div class="form-check form-switch mb-3">
                                     <input class="form-check-input"
@@ -206,6 +193,19 @@
                                            name="bangumi.private">
                                     <label class="form-check-label" for="bangumi-private">启用</label>
                                 </div>
+                            </div>
+                            <div class="col-12">
+                                <label for="bangumi-media-server-username" class="form-label fw-semibold">
+                                    <i class="bi bi-person-check me-1 text-success"></i>媒体服务器用户名
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="Plex/Emby/Jellyfin 中的登录用户名。只同步这些用户产生的观看记录。多个服务器或不同用户名对应同一 Bangumi 账号时，可用英文逗号分隔，例如：plex_user,emby_user"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="bangumi-media-server-username"
+                                       name="bangumi.media_server_username"
+                                       placeholder="多个用户名用英文逗号分隔">
                             </div>
                         </div>
                     </div>
@@ -1176,9 +1176,12 @@ function populateForm(config) {
     document.getElementById('bangumi-username').value = config.bangumi.username || '';
     document.getElementById('bangumi-access-token').value = config.bangumi.access_token || '';
     document.getElementById('bangumi-private').checked = config.bangumi.private || false;
+    const bmsu = document.getElementById('bangumi-media-server-username');
+    if (bmsu) {
+        bmsu.value = (config.bangumi && config.bangumi.media_server_username) ? String(config.bangumi.media_server_username) : '';
+    }
     
     document.getElementById('sync-mode').value = config.sync.mode || 'single';
-    document.getElementById('single-username').value = config.sync.single_username || '';
     document.getElementById('blocked-keywords').value = config.sync.blocked_keywords || '';
     const movieMarkEl = document.getElementById('movie-mark-subject-completed');
     if (movieMarkEl) {
@@ -1239,18 +1242,15 @@ function populateForm(config) {
 
 function toggleSyncMode() {
     const mode = document.getElementById('sync-mode').value;
-    const singleContainer = document.getElementById('single-username-container');
     const singleBangumiSection = document.getElementById('single-user-bangumi-section');
     const multiSection = document.getElementById('multi-user-section');
     
     if (mode === 'single') {
-        // 单用户模式：显示单用户名输入框和Bangumi账号配置，隐藏多用户配置
-        singleContainer.style.display = 'block';
+        // 单用户模式：显示 Bangumi 账号配置，隐藏多用户配置
         singleBangumiSection.style.display = 'block';
         multiSection.style.display = 'none';
     } else {
-        // 多用户模式：隐藏单用户名输入框和Bangumi账号配置，显示多用户配置
-        singleContainer.style.display = 'none';
+        // 多用户模式：隐藏 Bangumi 单用户账号卡片，显示多用户配置
         singleBangumiSection.style.display = 'none';
         multiSection.style.display = 'block';
     }
@@ -1319,8 +1319,8 @@ function addBangumiAccount(accountName = '', accountConfig = {}) {
                 <input type="text" class="form-control bangumi-account-username" value="${accountConfig.username || ''}" placeholder="Bangumi用户名">
             </div>
             <div class="col-md-3">
-                <label class="form-label">媒体服务器用户名</label>
-                <input type="text" class="form-control bangumi-account-media-username" value="${accountConfig.media_server_username || ''}" placeholder="Plex/Emby/Jellyfin用户名">
+                <label class="form-label" title="Plex/Emby/Jellyfin 登录名，须与媒体服务器一致。多个用户名对应本 Bangumi 账号时可用英文逗号分隔。">媒体服务器用户名</label>
+                <input type="text" class="form-control bangumi-account-media-username" value="${accountConfig.media_server_username || ''}" placeholder="多个用英文逗号分隔">
             </div>
             <div class="col-md-3">
                 <label class="form-label">访问令牌</label>
@@ -1354,11 +1354,11 @@ async function saveConfig() {
             bangumi: {
                 username: document.getElementById('bangumi-username').value,
                 access_token: document.getElementById('bangumi-access-token').value,
-                private: document.getElementById('bangumi-private').checked
+                private: document.getElementById('bangumi-private').checked,
+                media_server_username: (document.getElementById('bangumi-media-server-username') && document.getElementById('bangumi-media-server-username').value) || ''
             },
             sync: {
                 mode: document.getElementById('sync-mode').value,
-                single_username: document.getElementById('single-username').value,
                 blocked_keywords: document.getElementById('blocked-keywords').value,
                 movie_mark_subject_completed: document.getElementById('movie-mark-subject-completed').checked
             },

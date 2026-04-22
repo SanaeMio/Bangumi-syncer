@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.config import config_manager
+from ..core.config import config_manager, parse_media_server_username_value
 from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
     is_sensitive_ini_field,
@@ -40,12 +40,16 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
 
     # 添加新的多账号配置
     for account_key, account_config in multi_accounts.items():
-        if (
-            not account_config.get("username")
-            or not account_config.get("access_token")
-            or not account_config.get("media_server_username")
-        ):
+        ms_raw = account_config.get("media_server_username")
+        if not account_config.get("username") or not account_config.get("access_token"):
             logger.warning(f"跳过不完整的账号配置: {account_key}")
+            continue
+        if not parse_media_server_username_value(
+            str(ms_raw) if ms_raw is not None else ""
+        ):
+            logger.warning(
+                f"跳过不完整的账号配置（媒体服务器用户名为空）: {account_key}"
+            )
             continue
 
         # 生成配置段名称，使用 bangumi- 前缀
