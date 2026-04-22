@@ -17,12 +17,11 @@
         <!-- 移动端顶部导航栏 -->
         <nav class="navbar navbar-expand-md navbar-light bg-white border-bottom d-md-none fixed-top">
             <div class="container-fluid">
-                <a class="navbar-brand d-flex align-items-center" href="{{ '/' | p }}">
+                <a class="navbar-brand d-flex align-items-center"
+                   href="{{ '/dashboard' | p }}">
                     <img src="{{ '/static/logo.png' | p }}"
                          alt="Bangumi-Syncer"
-                         style="height: 32px;
-                                width: auto;
-                                object-fit: contain">
+                         class="app-brand-logo">
                 </a>
                 <button class="navbar-toggler"
                         type="button"
@@ -33,8 +32,8 @@
                 <div class="collapse navbar-collapse" id="mobileNav">
                     <ul class="navbar-nav me-auto">
                         <li class="nav-item">
-                            <a class="nav-link {% if request.url.path == '/' %}active{% endif %}"
-                               href="{{ '/' | p }}">
+                            <a class="nav-link {% if request.url.path == '/dashboard' or request.url.path.endswith('/dashboard') %}active{% endif %}"
+                               href="{{ '/dashboard' | p }}">
                                 <i class="bi bi-house-door me-2"></i>仪表板
                             </a>
                         </li>
@@ -107,16 +106,18 @@
                 <nav class="col-md-3 col-lg-2 d-none d-md-block sidebar">
                     <div class="position-sticky pt-4">
                         <div class="text-center mb-4 px-3">
-                            <img src="{{ '/static/logo.png' | p }}"
-                                 alt="Bangumi-Syncer"
-                                 style="width: 175px;
-                                        height: 100px;
-                                        object-fit: contain">
+                            <a href="{{ '/dashboard' | p }}"
+                               class="d-inline-block text-decoration-none app-sidebar-brand-link"
+                               title="返回仪表板">
+                                <img src="{{ '/static/logo.png' | p }}"
+                                     alt="Bangumi-Syncer"
+                                     class="app-sidebar-logo">
+                            </a>
                         </div>
                         <ul class="nav flex-column px-2">
                             <li class="nav-item mb-1">
-                                <a class="nav-link {% if request.url.path == '/' %}active{% endif %}"
-                                   href="{{ '/' | p }}">
+                                <a class="nav-link {% if request.url.path == '/dashboard' or request.url.path.endswith('/dashboard') %}active{% endif %}"
+                                   href="{{ '/dashboard' | p }}">
                                     <i class="bi bi-house-door me-2"></i>
                                     仪表板
                                 </a>
@@ -184,7 +185,7 @@
                     </div>
                 </nav>
                 <!-- 主要内容 -->
-                <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 app-main">
                     <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-4 pb-3 mb-4">
                         <h1 class="h2 fw-bold text-dark">
                             {% block page_title %}{% endblock %}
@@ -236,9 +237,6 @@
                                 <span>加载中…</span>
                             </div>
                         </div>
-                    </div>
-                    <div class="modal-footer border-0 pt-0">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
                     </div>
                 </div>
             </div>

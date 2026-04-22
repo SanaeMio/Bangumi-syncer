@@ -4,11 +4,18 @@
 {% block head %}{% endblock %}
 {% block page_actions %}{% endblock %}
 {% block content %}
+    <nav class="card shadow-sm mb-3 config-page-toc d-none d-lg-block"
+         aria-label="配置页目录">
+        <div class="card-body py-2 px-3">
+            <div id="config-page-toc-links"
+                 class="d-flex flex-wrap align-items-center gap-2 small"></div>
+        </div>
+    </nav>
     <form id="config-form">
         <!-- 同步配置 -->
         <div class="row">
             <div class="col-12">
-                <div class="card shadow-sm mb-4 config-card">
+                <div id="config-section-sync" class="card shadow-sm mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-arrow-repeat me-2 text-success"></i>
@@ -151,7 +158,7 @@
         <!-- Bangumi账号配置（单用户模式） -->
         <div class="row" id="single-user-bangumi-section">
             <div class="col-12">
-                <div class="card shadow-sm mb-4 config-card">
+                <div id="config-section-bgm" class="card shadow-sm mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-person-circle me-2 text-primary"></i>
@@ -257,7 +264,7 @@
         <!-- 高级配置 -->
         <div class="row">
             <div class="col-12">
-                <div class="card shadow-sm mb-4">
+                <div id="config-section-advanced" class="card shadow-sm mb-4">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-sliders me-2 text-info"></i>
@@ -445,7 +452,7 @@
         <!-- Web认证配置 -->
         <div class="row">
             <div class="col-12">
-                <div class="card shadow-sm mb-4">
+                <div id="config-section-auth" class="card shadow-sm mb-4">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-shield-lock me-2 text-danger"></i>
@@ -576,7 +583,8 @@
         <!-- Bangumi-data配置 -->
         <div class="row">
             <div class="col-12">
-                <div class="card shadow-sm mb-4 config-card">
+                <div id="config-section-bangumi-data"
+                     class="card shadow-sm mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-hdd-stack me-2 text-primary"></i>
@@ -666,7 +674,7 @@
         <!-- 通知配置 -->
         <div class="row">
             <div class="col-12">
-                <div class="card shadow-sm mb-4 config-card">
+                <div id="config-section-notify" class="card shadow-sm mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center justify-content-between">
                             <div class="d-flex align-items-center">
@@ -729,7 +737,7 @@
         <!-- 飞牛影视 -->
         <div class="row">
             <div class="col-12">
-                <div class="card shadow-sm mb-4 config-card">
+                <div id="config-section-feiniu" class="card shadow-sm mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-hdd-network me-2 text-secondary"></i>
@@ -842,7 +850,7 @@
         </div>
     </form>
     <!-- 操作按钮 -->
-    <div class="row">
+    <div id="config-section-actions" class="row">
         <div class="col-12">
             <div class="card shadow-sm mb-4">
                 <div class="card-header py-3">
@@ -1104,7 +1112,54 @@ function getNotificationTypeCheckboxes(prefix) {
     return Array.from(document.querySelectorAll(`[id^="${prefix}"]:checked`)).map(cb => cb.value).join(',') || 'all';
 }
 
+/** 根据同步模式（单用户 / 多用户）生成本页目录，仅展示当前可见区块 */
+function refreshConfigPageToc() {
+    const wrap = document.getElementById('config-page-toc-links');
+    if (!wrap) {
+        return;
+    }
+    const modeSelect = document.getElementById('sync-mode');
+    const mode = modeSelect ? modeSelect.value : 'single';
+    wrap.replaceChildren();
+    const kicker = document.createElement('span');
+    kicker.className = 'config-page-toc__kicker text-muted fw-semibold text-uppercase me-1';
+    kicker.textContent = '本页跳转';
+    wrap.appendChild(kicker);
+    const items = [
+        { id: 'config-section-sync', label: '同步', mode: 'always' },
+        { id: 'config-section-bgm', label: 'Bangumi', mode: 'single' },
+        { id: 'multi-user-section', label: '多用户', mode: 'multi' },
+        { id: 'config-section-advanced', label: '高级', mode: 'always' },
+        { id: 'config-section-auth', label: 'Web 认证', mode: 'always' },
+        { id: 'config-section-bangumi-data', label: 'Data', mode: 'always' },
+        { id: 'config-section-notify', label: '通知', mode: 'always' },
+        { id: 'config-section-feiniu', label: '飞牛', mode: 'always' },
+        { id: 'config-section-actions', label: '保存区', mode: 'always', primary: true },
+    ];
+    items.forEach(function (item) {
+        const show =
+            item.mode === 'always' ||
+            (item.mode === 'single' && mode === 'single') ||
+            (item.mode === 'multi' && mode === 'multi');
+        if (!show) {
+            return;
+        }
+        const target = document.getElementById(item.id);
+        if (!target) {
+            return;
+        }
+        const a = document.createElement('a');
+        a.className =
+            'btn btn-sm rounded-pill ' +
+            (item.primary ? 'btn-outline-primary' : 'btn-outline-secondary');
+        a.href = '#' + item.id;
+        a.textContent = item.label;
+        wrap.appendChild(a);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    refreshConfigPageToc();
     // 初始化工具提示
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -1280,6 +1335,7 @@ function toggleSyncMode() {
         singleBangumiSection.style.display = 'none';
         multiSection.style.display = 'block';
     }
+    refreshConfigPageToc();
 }
 
 function toggleWebhookKeySection() {

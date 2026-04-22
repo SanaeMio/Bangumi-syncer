@@ -25,6 +25,127 @@
     line-height: 1.15;
 }
 
+/* 仪表板标题行：胶囊工具条（非卡片，贴近顶栏元数据样式） */
+.app-version-banner--header-chip {
+    padding: 0;
+}
+
+.app-version-banner__header-chip-track {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.55rem;
+    max-width: min(100%, 34rem);
+    padding: 0.3rem 0.65rem 0.3rem 0.35rem;
+    border-radius: 999px;
+    background: #eef1f4;
+    border: 1px solid #dee2e6;
+    transition: border-color 0.22s ease, background-color 0.22s ease, box-shadow 0.22s ease,
+        transform 0.22s ease;
+}
+
+.app-version-banner__header-chip-track:hover {
+    background: #e9ecef;
+    border-color: #ced4da;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+}
+
+.app-version-banner__header-chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    border-radius: 50%;
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.app-version-banner__header-chip-icon i {
+    color: inherit;
+}
+
+/* 获取中 */
+.app-version-banner__header-chip-icon--loading {
+    background: #868e96;
+    color: #fff;
+}
+
+.app-version-banner__header-chip-icon--spinning i {
+    display: block;
+    animation: app-version-header-chip-spin 0.85s linear infinite;
+}
+
+@keyframes app-version-header-chip-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 已是最新 */
+.app-version-banner__header-chip-icon--latest {
+    background: #198754;
+    color: #fff;
+}
+
+/* 有新版本 */
+.app-version-banner__header-chip-icon--upgrade {
+    background: #ffc107;
+    color: #664d03;
+}
+
+/* 未登录等 */
+.app-version-banner__header-chip-icon--neutral {
+    background: #adb5bd;
+    color: #fff;
+}
+
+/* 检查失败 / 网络错误 */
+.app-version-banner__header-chip-icon--error {
+    background: #dc3545;
+    color: #fff;
+}
+
+.app-version-banner__header-chip-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #868e96;
+    flex-shrink: 0;
+}
+
+.app-version-banner__header-chip-version {
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Menlo, Consolas, monospace;
+    color: #212529;
+    min-width: 0;
+    letter-spacing: -0.02em;
+}
+
+.app-version-banner__header-chip-divider {
+    width: 1px;
+    align-self: stretch;
+    min-height: 1.15rem;
+    margin: 0 0.05rem;
+    background: #ced4da;
+    flex-shrink: 0;
+}
+
+.app-version-banner__update--header-chip {
+    font-size: 0.7rem;
+    padding: 0.22rem 0.55rem;
+    line-height: 1.2;
+}
+
+.app-version-banner--header-chip .js-app-github-error {
+    max-width: 100%;
+}
+
 .app-version-banner__row {
     display: flex;
     flex-wrap: wrap;
@@ -79,8 +200,8 @@
     color: #0f5132;
     background: #d1e7dd;
     cursor: pointer;
-    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease,
-        box-shadow 0.2s ease;
+    transition: background-color 0.22s ease, border-color 0.22s ease,
+        transform 0.26s var(--app-ease-smooth, cubic-bezier(0.22, 1, 0.36, 1)), box-shadow 0.24s ease;
 }
 
 .app-version-banner__update:hover {
@@ -481,4 +602,33 @@
     padding: 0.3rem 0 0.3rem 0.75rem;
     border-left: 3px solid #ced4da;
     color: #6c757d;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-version-banner__header-chip-track {
+        transition: border-color 0.2s ease, background-color 0.2s ease;
+    }
+
+    .app-version-banner__header-chip-track:hover {
+        transform: none;
+        box-shadow: none;
+    }
+
+    .app-version-banner__header-chip-icon--spinning i {
+        animation: none !important;
+    }
+
+    .app-version-banner__update {
+        transition: none !important;
+    }
+
+    .app-version-banner__update:hover,
+    .app-version-banner__update:active {
+        transform: none !important;
+        box-shadow: none !important;
+    }
+
+    .app-version-banner--loading .app-version-banner__update.app-version-banner__update--busy {
+        animation: none !important;
+    }
 }

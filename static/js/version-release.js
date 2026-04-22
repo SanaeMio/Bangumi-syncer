@@ -81,6 +81,43 @@
         });
     }
 
+    var HEADER_CHIP_ICON_STATES = [
+        'loading',
+        'latest',
+        'upgrade',
+        'neutral',
+        'error',
+    ];
+
+    /** 仪表盘标题行胶囊：左侧状态圆标（绿勾 / 黄箭头等） */
+    function setHeaderChipVersionIcon(state) {
+        var wraps = document.querySelectorAll(
+            '.app-version-banner--header-chip .app-version-banner__header-chip-icon',
+        );
+        if (!wraps.length) {
+            return;
+        }
+        var iconByState = {
+            loading: 'bi-arrow-repeat',
+            latest: 'bi-check-lg',
+            upgrade: 'bi-arrow-up-circle-fill',
+            neutral: 'bi-cpu',
+            error: 'bi-exclamation-triangle-fill',
+        };
+        var iconClass = iconByState[state] || iconByState.neutral;
+        wraps.forEach(function (wrap) {
+            HEADER_CHIP_ICON_STATES.forEach(function (s) {
+                wrap.classList.remove('app-version-banner__header-chip-icon--' + s);
+            });
+            wrap.classList.toggle('app-version-banner__header-chip-icon--spinning', state === 'loading');
+            wrap.classList.add('app-version-banner__header-chip-icon--' + state);
+            var i = wrap.querySelector('i');
+            if (i) {
+                i.className = 'bi ' + iconClass;
+            }
+        });
+    }
+
     function setBannerLoading(on) {
         document.querySelectorAll('.app-version-banner').forEach(function (el) {
             el.classList.toggle('app-version-banner--loading', on);
@@ -318,6 +355,7 @@
                 btn.classList.add('app-version-banner__update--neutral');
             });
             setTextAll('.js-app-update-pill-label', '登录后检查');
+            setHeaderChipVersionIcon('neutral');
             return;
         }
         if (j.github_error) {
@@ -326,6 +364,7 @@
                 btn.classList.add('app-version-banner__update--danger');
             });
             setTextAll('.js-app-update-pill-label', '检查失败');
+            setHeaderChipVersionIcon('error');
             return;
         }
 
@@ -336,15 +375,18 @@
         setClassAll('.js-app-update-pill', 'd-none', false);
         if (hasNew) {
             setTextAll('.js-app-update-pill-label', '有新版本');
+            setHeaderChipVersionIcon('upgrade');
         } else {
             btns.forEach(function (btn) {
                 btn.classList.add('app-version-banner__update--neutral');
             });
             setTextAll('.js-app-update-pill-label', '已是最新');
+            setHeaderChipVersionIcon('latest');
         }
     }
 
     function setUpdatePillsFetching() {
+        setHeaderChipVersionIcon('loading');
         var btns = document.querySelectorAll('.js-app-update-pill');
         if (!btns.length) {
             return;
@@ -359,6 +401,7 @@
     }
 
     function setUpdatePillsRequestFailed(message) {
+        setHeaderChipVersionIcon('error');
         var btns = document.querySelectorAll('.js-app-update-pill');
         if (!btns.length) {
             return;
