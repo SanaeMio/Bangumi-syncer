@@ -9,6 +9,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 
+def parse_media_server_username_value(raw: Optional[str]) -> list[str]:
+    """解析 media_server_username 配置值（英文或中文逗号分隔）为去重前的用户名列表。"""
+    if raw is None:
+        return []
+    s = str(raw).strip().replace("，", ",")
+    if not s:
+        return []
+    return [p.strip() for p in s.split(",") if p.strip()]
+
+
 class ConfigManager:
     """配置管理器"""
 
@@ -73,6 +83,9 @@ class ConfigManager:
         # 读取配置文件
         config.read(self.active_config_path, encoding="utf-8-sig")
 
+        # 将旧版 sync.single_username 迁移到 bangumi.media_server_username
+        self._migrate_sync_single_username_to_bangumi(config)
+
         # 应用环境变量覆盖
         self._apply_env_overrides(config)
 
@@ -89,7 +102,7 @@ class ConfigManager:
         env_overrides = {
             ("bangumi", "username"): "BANGUMI_USERNAME",
             ("bangumi", "access_token"): "BANGUMI_ACCESS_TOKEN",
-            ("sync", "single_username"): "SINGLE_USERNAME",
+            ("bangumi", "media_server_username"): "SINGLE_USERNAME",
             ("bangumi", "private"): "BANGUMI_PRIVATE",
             ("dev", "script_proxy"): "HTTP_PROXY",
             ("dev", "debug"): "DEBUG_MODE",
@@ -227,16 +240,73 @@ class ConfigManager:
         return bangumi_configs
 
     def get_user_mappings(self) -> dict[str, str]:
-        """获取用户映射配置"""
-        bangumi_configs = self.get_bangumi_configs()
-        user_mappings = {}
+        """获取用户映射配置（media_server_username 支持逗号分隔多个媒体用户名）"""
+        from .logging import logger
 
-        for section_name, config in bangumi_configs.items():
-            media_server_username = config.get("media_server_username", "")
-            if media_server_username:
-                user_mappings[media_server_username] = section_name
+        bangumi_configs = self.get_bangumi_configs()
+        user_mappings: dict[str, str] = {}
+
+        for section_name, cfg in bangumi_configs.items():
+            raw = cfg.get("media_server_username", "")
+            if not raw:
+                continue
+            for name in parse_media_server_username_value(str(raw)):
+                prev = user_mappings.get(name)
+                if prev is not None and prev != section_name:
+                    logger.warning(
+                        "多用户映射中媒体服务器用户名 %r 重复：原指向配置段 %s，现被 %s 覆盖",
+                        name,
+                        prev,
+                        section_name,
+                    )
+                user_mappings[name] = section_name
 
         return user_mappings
+
+    def get_single_mode_media_usernames(self) -> list[str]:
+        """单用户模式下允许的媒体服务器用户名列表（来自 [bangumi] media_server_username）。"""
+        raw = self.get("bangumi", "media_server_username", fallback="")
+        return parse_media_server_username_value(str(raw) if raw is not None else "")
+
+    def _migrate_sync_single_username_to_bangumi(self, config: ConfigParser) -> None:
+        """将 [sync] single_username 迁移到 [bangumi] media_server_username 后删除旧键。"""
+        from .logging import logger
+
+        if not config.has_section("sync") or not config.has_option(
+            "sync", "single_username"
+        ):
+            return
+
+        old_val = config.get("sync", "single_username", fallback="").strip()
+        if not old_val:
+            config.remove_option("sync", "single_username")
+            self._save_config(config)
+            return
+
+        existing = ""
+        if config.has_section("bangumi") and config.has_option(
+            "bangumi", "media_server_username"
+        ):
+            existing = config.get(
+                "bangumi", "media_server_username", fallback=""
+            ).strip()
+
+        if existing:
+            config.remove_option("sync", "single_username")
+            self._save_config(config)
+            logger.info(
+                "配置迁移：已删除废弃项 sync.single_username（bangumi.media_server_username 已有值）"
+            )
+            return
+
+        if not config.has_section("bangumi"):
+            config.add_section("bangumi")
+        config.set("bangumi", "media_server_username", old_val)
+        config.remove_option("sync", "single_username")
+        self._save_config(config)
+        logger.info(
+            "配置迁移：已将 sync.single_username 写入 bangumi.media_server_username 并删除旧键"
+        )
 
     def get_trakt_config(self) -> dict[str, Any]:
         """获取 Trakt 配置"""

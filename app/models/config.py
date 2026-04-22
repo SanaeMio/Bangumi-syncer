@@ -13,13 +13,16 @@ class BangumiConfig(BaseModel):
     username: str = Field("", description="用户名")
     access_token: str = Field("", description="访问令牌")
     private: bool = Field(False, description="是否私有")
+    media_server_username: str = Field(
+        "",
+        description="媒体服务器用户名（Plex/Emby/Jellyfin），多个用英文逗号分隔",
+    )
 
 
 class SyncConfig(BaseModel):
     """同步配置模型"""
 
     mode: str = Field("single", description="同步模式")
-    single_username: str = Field("", description="单用户模式用户名")
     blocked_keywords: str = Field("", description="屏蔽关键词")
 
 

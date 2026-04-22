@@ -13,7 +13,7 @@ class TestSyncServiceFind:
     def test_find_subject_id(self):
         """测试查找 subject ID"""
         with (
-            patch("app.services.sync_service.config_manager"),
+            patch("app.services.sync_service.config_manager") as mock_cm,
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
@@ -27,13 +27,12 @@ class TestSyncServiceFind:
             }
             mock_bgm.return_value = mock_bgm_instance
 
-            mock_config = MagicMock()
-            mock_config.get.side_effect = lambda s, k, f=None: {
+            mock_cm.get.side_effect = lambda s, k, f=None: {
                 ("sync", "mode"): "single",
-                ("sync", "single_username"): "admin",
                 ("sync", "blocked_keywords"): "",
                 ("bangumi_data", "enabled"): False,
             }.get((s, k), f)
+            mock_cm.get_single_mode_media_usernames.return_value = ["admin"]
 
             from app.services.sync_service import SyncService
 

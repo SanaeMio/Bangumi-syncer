@@ -2,7 +2,7 @@
 配置API测试
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -128,6 +128,38 @@ async def test_update_config_with_empty_password(app_with_auth, mock_config_mana
         )
 
         assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_config_persists_bangumi_media_server_username(
+    app_with_auth, mock_config_manager, mock_security_manager
+):
+    """POST /api/config 将 bangumi.media_server_username 交给 set_config。"""
+    mock_config_manager.get_feiniu_config.return_value = {"enabled": False}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        with patch(
+            "app.services.feiniu.scheduler.feiniu_scheduler.apply_config_after_save",
+            new_callable=AsyncMock,
+        ):
+            response = await client.post(
+                "/api/config",
+                json={
+                    "bangumi": {
+                        "username": "bgm_u",
+                        "access_token": "tok",
+                        "private": False,
+                        "media_server_username": "plex_a,jelly_b",
+                    }
+                },
+            )
+
+    assert response.status_code == 200
+    mock_config_manager.set_config.assert_any_call(
+        "bangumi", "media_server_username", "plex_a,jelly_b"
+    )
 
 
 @pytest.mark.asyncio

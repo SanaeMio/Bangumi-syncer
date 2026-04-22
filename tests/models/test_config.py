@@ -14,6 +14,7 @@ class TestConfigModels:
         assert config.username == ""
         assert config.access_token == ""
         assert config.private is False
+        assert config.media_server_username == ""
 
     def test_bangumi_config_validation(self):
         """Test BangumiConfig validation"""
@@ -33,18 +34,14 @@ class TestConfigModels:
 
         config = SyncConfig()
         assert config.mode == "single"
-        assert config.single_username == ""
         assert config.blocked_keywords == ""
 
     def test_sync_config_with_values(self):
         """Test SyncConfig with values"""
         from app.models.config import SyncConfig
 
-        config = SyncConfig(
-            mode="multi", single_username="user1", blocked_keywords="adult"
-        )
+        config = SyncConfig(mode="multi", blocked_keywords="adult")
         assert config.mode == "multi"
-        assert config.single_username == "user1"
         assert config.blocked_keywords == "adult"
 
     def test_dev_config_defaults(self):

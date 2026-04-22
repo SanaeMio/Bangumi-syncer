@@ -20,8 +20,6 @@ def mock_config():
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "mode":
                 return "single"
-            elif section == "sync" and key == "single_username":
-                return "testuser"
             elif section == "sync" and key == "blocked_keywords":
                 return ""
             elif section == "sync" and key == "movie_mark_subject_completed":
@@ -29,6 +27,7 @@ def mock_config():
             return fallback
 
         mock_cm.get.side_effect = get_side_effect
+        mock_cm.get_single_mode_media_usernames.return_value = ["testuser"]
         mock_cm.get_user_mappings.return_value = {}
         mock_cm.get_bangumi_configs.return_value = {}
         yield mock_cm
@@ -364,8 +363,6 @@ def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
                 return False
             if section == "sync" and key == "mode":
                 return "single"
-            if section == "sync" and key == "single_username":
-                return "testuser"
             if section == "sync" and key == "blocked_keywords":
                 return ""
             if section == "bangumi_data" and key == "enabled":
@@ -373,6 +370,7 @@ def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
             return fallback
 
         mock_cfg.get.side_effect = get_side_effect
+        mock_cfg.get_single_mode_media_usernames.return_value = ["testuser"]
         mock_cfg.get_user_mappings.return_value = {}
         mock_cfg.get_bangumi_configs.return_value = {}
 
@@ -481,14 +479,13 @@ def test_sync_custom_item_blocked_keyword(mock_config, mock_database):
     def get_side_effect(section, key, fallback=None):
         if section == "sync" and key == "mode":
             return "single"
-        elif section == "sync" and key == "single_username":
-            return "testuser"
         elif section == "sync" and key == "blocked_keywords":
             return "blocked"
         return fallback or ""
 
     with patch("app.services.sync_service.config_manager") as cm:
         cm.get.side_effect = get_side_effect
+        cm.get_single_mode_media_usernames.return_value = ["testuser"]
         cm.get_user_mappings.return_value = {}
         cm.get_bangumi_configs.return_value = {}
         result = service.sync_custom_item(item, "custom")
@@ -675,11 +672,10 @@ def test_find_subject_id_movie_passes_is_movie_to_bgm_search(mock_database):
                 return False
             if section == "sync" and key == "mode":
                 return "single"
-            if section == "sync" and key == "single_username":
-                return "testuser"
             return fallback
 
         mock_cfg.get.side_effect = get_side_effect
+        mock_cfg.get_single_mode_media_usernames.return_value = ["testuser"]
         mock_cfg.get_user_mappings.return_value = {}
         mock_cfg.get_bangumi_configs.return_value = {}
 
