@@ -73,7 +73,8 @@
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered" id="records-table">
+                <table class="table table-bordered table-hover table-striped align-middle app-data-table"
+                       id="records-table">
                     <thead>
                         <tr>
                             <th>类型</th>
@@ -118,9 +119,6 @@
                     <div id="record-detail-content">
                         <!-- 动态填充 -->
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
                 </div>
             </div>
         </div>
@@ -184,13 +182,13 @@ function displayRecords(records) {
         const typeLabel = mt === 'movie' ? '电影' : '剧集';
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><span class="badge bg-dark bg-opacity-75">${typeLabel}</span></td>
+            <td><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
             <td>${new Date(record.timestamp).toLocaleString()}</td>
             <td>${record.user_name}</td>
             <td>${record.title}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
-            <td><span class="badge bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
-            <td><span class="badge bg-${getSourceColor(record.source)}">${record.source}</span></td>
+            <td><span class="badge rounded-pill bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
+            <td><span class="badge rounded-pill bg-${getSourceColor(record.source)}">${record.source}</span></td>
             <td class="text-truncate" style="max-width: 200px;" title="${record.message}">${record.message}</td>
             <td>
                 <button class="btn btn-sm btn-outline-primary" onclick="showRecordDetail(${record.id})">
@@ -406,10 +404,10 @@ async function showRecordDetail(recordId) {
                         <strong>季/集:</strong> S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}
                     </div>
                     <div class="col-md-4">
-                        <strong>状态:</strong> <span class="badge bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span>
+                        <strong>状态:</strong> <span class="badge rounded-pill bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span>
                     </div>
                     <div class="col-md-4">
-                        <strong>来源:</strong> <span class="badge bg-${getSourceColor(record.source)}">${record.source}</span>
+                        <strong>来源:</strong> <span class="badge rounded-pill bg-${getSourceColor(record.source)}">${record.source}</span>
                     </div>
                 </div>
                 ${(record.subject_id || record.episode_id) ? `

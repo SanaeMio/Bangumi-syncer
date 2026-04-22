@@ -1,9 +1,29 @@
 {% extends "base.html" %}
 {% block title %}仪表板 - Bangumi Syncer{% endblock %}
 {% block page_title %}仪表板{% endblock %}
+{% block page_actions %}
+    <div class="app-version-banner app-version-banner--header-chip w-100 w-md-auto min-w-0">
+        <div class="app-version-banner__header-chip-track">
+            <span class="app-version-banner__header-chip-icon app-version-banner__header-chip-icon--loading app-version-banner__header-chip-icon--spinning"
+                  aria-hidden="true">
+                <i class="bi bi-arrow-repeat"></i>
+            </span>
+            <span class="app-version-banner__header-chip-label">应用版本</span>
+            <span class="app-version-banner__header-chip-version text-truncate js-app-version-pill-label"
+                  title="{{ app_display_version }}">{{ app_display_version }}</span>
+            <span class="app-version-banner__header-chip-divider" aria-hidden="true"></span>
+            <button type="button"
+                    class="app-version-banner__update app-version-banner__update--busy app-version-banner__update--header-chip js-app-update-pill flex-shrink-0"
+                    aria-label="检查更新与发行说明">
+                <span class="js-app-update-pill-label">获取中…</span>
+            </button>
+        </div>
+        <div class="small text-danger mt-1 text-md-end d-none js-app-github-error"></div>
+    </div>
+{% endblock %}
 {% block content %}
     <!-- 统计卡片 -->
-    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-5 g-4 mb-4">
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-4 mb-4">
         <div class="col">
             <div class="card stats-card h-100">
                 <div class="card-body p-4">
@@ -63,33 +83,6 @@
                             <div class="text-muted fw-semibold text-uppercase mb-1"
                                  style="font-size: 0.75rem">失败次数</div>
                             <div class="h4 mb-0 fw-bold text-dark" id="error-syncs">-</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="app-version-banner app-version-banner--stats-card js-dashboard-version-banner">
-                        <div class="d-flex align-items-center">
-                            <div class="stats-icon me-3 flex-shrink-0 bg-warning-soft">
-                                <i class="bi bi-cpu"></i>
-                            </div>
-                            <div class="min-w-0 flex-grow-1">
-                                <div class="d-flex align-items-center justify-content-start flex-wrap gap-2 mb-1">
-                                    <span class="text-muted fw-semibold text-uppercase"
-                                          style="font-size: 0.75rem">应用版本</span>
-                                    <button type="button"
-                                            class="app-version-banner__update app-version-banner__update--busy js-app-update-pill flex-shrink-0"
-                                            aria-label="检查更新与发行说明">
-                                        <span class="js-app-update-pill-label">获取中…</span>
-                                    </button>
-                                </div>
-                                <div class="h4 mb-0 fw-bold text-dark text-truncate stats-version-value js-app-version-pill-label"
-                                     title="{{ app_display_version }}">{{ app_display_version }}</div>
-                                <div class="small text-danger mt-1 text-truncate d-none js-app-github-error"></div>
-                            </div>
                         </div>
                     </div>
                 </div>

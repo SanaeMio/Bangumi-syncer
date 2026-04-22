@@ -29,7 +29,8 @@
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered" id="mappings-table">
+                <table class="table table-bordered table-hover table-striped align-middle app-data-table"
+                       id="mappings-table">
                     <thead>
                         <tr>
                             <th>番剧名称</th>
@@ -256,12 +257,14 @@ function displayMappings(mappings) {
                 </a>
             </td>
             <td>
-                <button class="btn btn-sm btn-outline-secondary me-1" onclick="editMapping('${title}', '${id}')">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteMapping('${title}')">
-                    <i class="bi bi-trash"></i>
-                </button>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-secondary" onclick="editMapping('${title}', '${id}')">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="deleteMapping('${title}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);
