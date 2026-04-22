@@ -5,7 +5,7 @@ order: 10
 
 # 🖥️ Windows
 
-1. 下载最新版本的 zip 包并解压到任意文件夹👉[发布页](https://github.com/SanaeMio/Bangumi-syncer/releases)
+1. 下载最新版本的 zip 包并解压到任意文件夹：[点击下载](https://github.com/SanaeMio/Bangumi-syncer/releases/latest/download/Bangumi-syncer.zip)。
 
 2. 请保证 Python 版本 3.9 以上，并在项目根目录运行以下命令安装依赖：
 

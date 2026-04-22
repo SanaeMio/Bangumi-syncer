@@ -46,7 +46,7 @@ Bangumi-syncer 是一款把常见媒体库与 [Bangumi（番组计划）](https:
 
 ### 🖥️ Windows
 
-1. 从 [Releases](https://github.com/SanaeMio/Bangumi-syncer/releases) 下载最新 zip 并解压。
+1. 下载最新 zip：[Bangumi-syncer.zip](https://github.com/SanaeMio/Bangumi-syncer/releases/latest/download/Bangumi-syncer.zip) 并解压。
 2. 安装 **Python 3.9+**，在解压目录执行：`pip install -r requirements.txt`。
 3. 双击 `start.bat`，浏览器访问 `http://localhost:8000`。
 4. 默认用户名与密码均为 `admin`；登录后请在「配置管理」**立即修改密码**，并按 [配置说明](https://sanaemio.github.io/Bangumi-syncer/configuration) 配置相关内容。
