@@ -109,6 +109,122 @@ class SyncService:
         if old_tasks:
             logger.info(f"清理了 {len(old_tasks)} 个旧的同步任务记录")
 
+    def sync_movie_watching(
+        self, item: CustomItem, source: str = "custom"
+    ) -> SyncResponse:
+        """剧场版：仅将 Bangumi 条目收藏标为「在看」，不解析章节、不点单集。"""
+        try:
+            actual_source = item.source if item.source else source
+            logger.info(f"接收到剧场版在看请求：{item}")
+            send_notify("request_received", item, actual_source)
+
+            if not config_manager.get(
+                "sync", "movie_playback_start_mark_watching", fallback=True
+            ):
+                return SyncResponse(
+                    status="ignored",
+                    message="已在配置中关闭剧场版播放开始标记在看",
+                )
+
+            if item.media_type != "movie":
+                return SyncResponse(
+                    status="ignored", message="仅剧场版支持播放开始标记在看"
+                )
+
+            if not item.title:
+                logger.error("同步名称为空，跳过")
+                return SyncResponse(status="error", message="同步名称为空")
+
+            if not self._check_user_permission(item.user_name):
+                return SyncResponse(status="error", message="用户无权限同步")
+
+            if self._is_title_blocked(item.title, item.ori_title):
+                return SyncResponse(
+                    status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
+                )
+
+            subject_id, _ = self._find_subject_id(item)
+            if not subject_id:
+                send_notify(
+                    "anime_not_found",
+                    item,
+                    actual_source,
+                    error_message="未找到匹配的番剧",
+                )
+                return SyncResponse(status="error", message="未找到匹配的番剧")
+
+            bgm = self._get_bangumi_api_for_user(item.user_name)
+            if not bgm:
+                logger.error(f"无法为用户 {item.user_name} 创建bangumi API实例")
+                return SyncResponse(status="error", message="bangumi配置错误")
+
+            send_notify(
+                "bangumi_id_found", item, actual_source, subject_id=str(subject_id)
+            )
+
+            try:
+                mark_st = bgm.ensure_subject_watching(str(subject_id))
+            except ValueError as ve:
+                if "认证失败" in str(ve) or "access_token" in str(ve):
+                    return SyncResponse(status="error", message=str(ve))
+                raise ve
+
+            if mark_st == 0:
+                result_message = "条目已在看或已看过，无需变更"
+            else:
+                result_message = "播放开始：条目标记为在看"
+
+            logger.info(
+                f"bgm: {item.title} {result_message} https://bgm.tv/subject/{subject_id}"
+            )
+
+            database_manager.log_sync_record(
+                user_name=item.user_name,
+                title=item.title,
+                ori_title=item.ori_title or "",
+                season=item.season,
+                episode=item.episode,
+                subject_id=str(subject_id),
+                episode_id=None,
+                status="success",
+                message=result_message,
+                source=actual_source,
+                media_type=item.media_type,
+            )
+
+            return SyncResponse(
+                status="success",
+                message=result_message,
+                data={
+                    "title": item.title,
+                    "season": item.season,
+                    "episode": item.episode,
+                    "subject_id": str(subject_id),
+                },
+            )
+        except Exception as e:
+            logger.error(f"剧场版在看处理出错: {e}")
+            database_manager.log_sync_record(
+                user_name=item.user_name if "item" in locals() else "unknown",
+                title=item.title if "item" in locals() else "unknown",
+                ori_title=item.ori_title if "item" in locals() else "",
+                season=item.season if "item" in locals() else 0,
+                episode=item.episode if "item" in locals() else 0,
+                status="error",
+                message=str(e),
+                source=actual_source if "actual_source" in locals() else source,
+                media_type=item.media_type if "item" in locals() else "movie",
+            )
+            send_notify(
+                "mark_failed",
+                item if "item" in locals() else None,
+                actual_source if "actual_source" in locals() else source,
+                error_message=str(e),
+                error_type="sync_error",
+                additional_info=f"完整错误信息: {traceback.format_exc()}",
+            )
+            return SyncResponse(status="error", message=f"处理失败: {str(e)}")
+
     def sync_custom_item(
         self, item: CustomItem, source: str = "custom"
     ) -> SyncResponse:
@@ -116,6 +232,15 @@ class SyncService:
         try:
             # 如果item中包含source字段，优先使用item的source
             actual_source = item.source if item.source else source
+            sync_action = (item.sync_action or "").strip().lower()
+            if sync_action == "mark_watching":
+                if item.media_type == "movie":
+                    return self.sync_movie_watching(item, source)
+                return SyncResponse(
+                    status="ignored",
+                    message="仅支持剧场版标记在看",
+                )
+
             logger.info(f"接收到同步请求：{item}")
 
             send_notify("request_received", item, actual_source)
@@ -756,15 +881,21 @@ class SyncService:
     def sync_plex_item(self, plex_data: dict[str, Any]) -> SyncResponse:
         """处理Plex同步请求"""
         try:
-            # 检查同步类型是否为看过
-            if plex_data["event"] != "media.scrobble":
-                logger.debug(f"事件类型{plex_data['event']}无需同步，跳过")
-                return SyncResponse(
-                    status="ignored", message=f"事件类型{plex_data['event']}无需同步"
-                )
+            ev = plex_data["event"]
+            if ev not in ("media.play", "media.scrobble"):
+                logger.debug(f"事件类型{ev}无需同步，跳过")
+                return SyncResponse(status="ignored", message=f"事件类型{ev}无需同步")
 
             md = plex_data["Metadata"]
-            if (md.get("type") or "").lower() == "movie":
+            mtype = (md.get("type") or "").lower()
+            if ev == "media.play" and mtype != "movie":
+                logger.debug(f"事件类型{ev}非电影，无需同步")
+                return SyncResponse(
+                    status="ignored",
+                    message=f"事件类型{ev}非电影，无需同步",
+                )
+
+            if mtype == "movie":
                 logger.debug(
                     f"接收到Plex同步请求：{plex_data['event']} "
                     f"{plex_data['Account']['title']} 电影 {md.get('title', '')}"
@@ -779,6 +910,8 @@ class SyncService:
             custom_item = extract_plex_data(plex_data)
             logger.debug(f"Plex重新组装JSON报文：{custom_item}")
 
+            if ev == "media.play":
+                return self.sync_movie_watching(custom_item, source="plex")
             return self.sync_custom_item(custom_item, source="plex")
         except Exception as e:
             logger.error(f"Plex同步处理出错: {e}")
@@ -844,18 +977,21 @@ class SyncService:
                         status="error", message=f"请求缺少必要字段: {field}"
                     )
 
-            # 检查同步类型是否为看过
+            event = emby_data["Event"]
+            emby_item = emby_data["Item"]
+            is_movie = str(emby_item.get("Type") or "").lower() == "movie"
+            playback_start_movie = event == "playback.start" and is_movie
+
             if (
-                emby_data["Event"] != "item.markplayed"
-                and emby_data["Event"] != "playback.stop"
+                event != "item.markplayed"
+                and event != "playback.stop"
+                and not playback_start_movie
             ):
-                logger.debug(f"事件类型{emby_data['Event']}无需同步，跳过")
+                logger.debug(f"事件类型{event}无需同步，跳过")
                 return SyncResponse(
-                    status="ignored", message=f"事件类型{emby_data['Event']}无需同步"
+                    status="ignored", message=f"事件类型{event}无需同步"
                 )
 
-            emby_item = emby_data["Item"]
-            is_movie = emby_item.get("Type", "").lower() == "movie"
             if is_movie:
                 if "Name" not in emby_item:
                     logger.error("Emby 电影 Item 缺少 Name 字段")
@@ -877,7 +1013,7 @@ class SyncService:
                         )
 
             # 如果是播放停止事件,只有播放完成才判断为看过
-            if emby_data["Event"] == "playback.stop":
+            if event == "playback.stop":
                 if (
                     "PlaybackInfo" not in emby_data
                     or "PlayedToCompletion" not in emby_data["PlaybackInfo"]
@@ -902,6 +1038,8 @@ class SyncService:
             custom_item = extract_emby_data(emby_data)
             logger.debug(f"Emby重新组装JSON报文：{custom_item}")
 
+            if playback_start_movie:
+                return self.sync_movie_watching(custom_item, source="emby")
             return self.sync_custom_item(custom_item, source="emby")
         except Exception as e:
             logger.error(f"Emby同步处理出错: {e}")
@@ -958,27 +1096,32 @@ class SyncService:
         try:
             logger.debug(f"接收到Jellyfin同步请求：{jellyfin_data}")
 
-            # 检查事件类型是否为停止播放
-            if jellyfin_data["NotificationType"] != "PlaybackStop":
-                logger.debug(
-                    f"事件类型{jellyfin_data['NotificationType']}无需同步，跳过"
-                )
+            ntype = jellyfin_data.get("NotificationType", "")
+            mtype = (jellyfin_data.get("media_type") or "").lower()
+            playback_start_movie = ntype == "PlaybackStart" and mtype == "movie"
+
+            if ntype != "PlaybackStop" and not playback_start_movie:
+                logger.debug(f"事件类型{ntype}无需同步，跳过")
                 return SyncResponse(
                     status="ignored",
-                    message=f"事件类型{jellyfin_data['NotificationType']}无需同步",
+                    message=f"事件类型{ntype}无需同步",
                 )
 
-            # 检查同步类型是否为看过
-            if jellyfin_data["PlayedToCompletion"] == "False":
-                logger.debug(
-                    f"是否播完：{jellyfin_data['PlayedToCompletion']}，无需同步，跳过"
-                )
-                return SyncResponse(status="ignored", message="未播放完成，跳过同步")
+            if ntype == "PlaybackStop":
+                if jellyfin_data["PlayedToCompletion"] == "False":
+                    logger.debug(
+                        f"是否播完：{jellyfin_data['PlayedToCompletion']}，无需同步，跳过"
+                    )
+                    return SyncResponse(
+                        status="ignored", message="未播放完成，跳过同步"
+                    )
 
             # 提取数据并调用自定义同步
             custom_item = extract_jellyfin_data(jellyfin_data)
             logger.debug(f"Jellyfin重新组装JSON报文：{custom_item}")
 
+            if playback_start_movie:
+                return self.sync_movie_watching(custom_item, source="jellyfin")
             return self.sync_custom_item(custom_item, source="jellyfin")
         except Exception as e:
             logger.error(f"Jellyfin同步处理出错: {e}")

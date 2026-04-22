@@ -21,6 +21,10 @@ class CustomItem(BaseModel):
     release_date: str = Field(..., description="发行日期")
     user_name: str = Field(..., description="用户名")
     source: Optional[str] = Field(None, description="来源")
+    sync_action: Optional[str] = Field(
+        None,
+        description='可选：如 "mark_watching" 时仅将剧场版条目标为在看（用于 Tautulli 等 /Custom）',
+    )
 
 
 class SyncResponse(BaseModel):

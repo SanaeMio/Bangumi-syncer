@@ -54,6 +54,7 @@ class TestSyncServiceInit:
             assert hasattr(service, "sync_plex_item")
             assert hasattr(service, "sync_emby_item")
             assert hasattr(service, "sync_jellyfin_item")
+            assert hasattr(service, "sync_movie_watching")
             assert hasattr(service, "get_sync_task_status")
             assert hasattr(service, "cleanup_old_tasks")
 
@@ -76,6 +77,7 @@ class TestSyncCustomItem:
                 ("sync", "mode"): "single",
                 ("sync", "blocked_keywords"): "",
                 ("sync", "movie_mark_subject_completed"): True,
+                ("sync", "movie_playback_start_mark_watching"): True,
                 ("bangumi_data", "enabled"): False,
             }.get((section, key), fallback)
 
@@ -93,6 +95,7 @@ class TestSyncCustomItem:
 
             # Mock mark_episode_watched - returns 1 (marked as watched)
             mock_api.mark_episode_watched.return_value = 1
+            mock_api.ensure_subject_watching.return_value = 1
             mock_api.get_subject_collection.return_value = {}
 
             # Mock mapping_service
@@ -200,6 +203,57 @@ class TestSyncCustomItem:
         mock_db.log_sync_record.assert_called()
         _args, call_kw = mock_db.log_sync_record.call_args
         assert call_kw.get("media_type") == "movie"
+
+    def test_sync_custom_item_mark_watching_skips_episode_resolution(
+        self, mock_sync_service
+    ):
+        """mark_watching + 电影只调 ensure_subject_watching，不解析章节、不点已看"""
+        service, mock_config, mock_db, mock_notify = mock_sync_service
+        from app.models.sync import CustomItem
+
+        local_bgm = MagicMock()
+        local_bgm.ensure_subject_watching.return_value = 1
+        with patch.object(service, "_find_subject_id", return_value=("777", False)):
+            with patch.object(
+                service, "_get_bangumi_api_for_user", return_value=local_bgm
+            ):
+                item = CustomItem(
+                    media_type="movie",
+                    title="剧场版测试",
+                    ori_title=None,
+                    season=1,
+                    episode=1,
+                    release_date="2024-01-01",
+                    user_name="test_user",
+                    sync_action="mark_watching",
+                )
+                result = service.sync_custom_item(item, source="custom")
+
+        assert result.status == "success"
+        local_bgm.ensure_subject_watching.assert_called_once_with("777")
+        local_bgm.get_movie_main_episode_id.assert_not_called()
+        local_bgm.mark_episode_watched.assert_not_called()
+
+    def test_sync_custom_item_mark_watching_episode_ignored(self, mock_sync_service):
+        """mark_watching + 剧集不走 sync_movie_watching"""
+        service, mock_config, mock_db, mock_notify = mock_sync_service
+        from app.models.sync import CustomItem
+
+        item = CustomItem(
+            media_type="episode",
+            title="某番",
+            ori_title="",
+            season=1,
+            episode=1,
+            release_date="2024-01-01",
+            user_name="test_user",
+            sync_action="mark_watching",
+        )
+        with patch.object(service, "sync_movie_watching") as mock_watch:
+            r = service.sync_custom_item(item, source="custom")
+        assert r.status == "ignored"
+        assert "剧场版" in r.message
+        mock_watch.assert_not_called()
 
     def test_sync_custom_item_empty_title(self, mock_sync_service):
         """测试空标题"""
@@ -393,6 +447,310 @@ class TestCleanupOldTasks:
             assert "old_task_2" not in service._sync_tasks
 
 
+class TestSyncMovieWatching:
+    """sync_movie_watching 全分支（配置 / 权限 / 匹配 / Bangumi）"""
+
+    @staticmethod
+    def _cfg_get(
+        *, mark_watching_enabled: bool = True, blocked_keywords: str = ""
+    ):
+        def _get(section, key, fallback=None):
+            d = {
+                ("sync", "movie_playback_start_mark_watching"): mark_watching_enabled,
+                ("sync", "blocked_keywords"): blocked_keywords,
+                ("sync", "mode"): "single",
+            }
+            return d.get((section, key), fallback)
+
+        return _get
+
+    @staticmethod
+    def _movie_item(**kwargs):
+        from app.models.sync import CustomItem
+
+        base = {
+            "media_type": "movie",
+            "title": "剧场版测试",
+            "ori_title": None,
+            "season": 1,
+            "episode": 1,
+            "release_date": "2024-01-01",
+            "user_name": "test_user",
+        }
+        base.update(kwargs)
+        return CustomItem(**base)
+
+    def test_sync_movie_watching_config_disabled(self):
+        with (
+            patch(
+                "app.services.sync_service.config_manager"
+            ) as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get(
+                mark_watching_enabled=False
+            )
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            r = svc.sync_movie_watching(self._movie_item(), source="custom")
+        assert r.status == "ignored"
+        assert "关闭" in r.message
+
+    def test_sync_movie_watching_not_movie(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.models.sync import CustomItem
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            item = CustomItem(
+                media_type="episode",
+                title="番剧",
+                ori_title="",
+                season=1,
+                episode=1,
+                release_date="2024-01-01",
+                user_name="test_user",
+            )
+            r = svc.sync_movie_watching(item, source="custom")
+        assert r.status == "ignored"
+        assert "仅剧场版" in r.message
+
+    def test_sync_movie_watching_empty_title(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            r = svc.sync_movie_watching(
+                self._movie_item(title=""), source="custom"
+            )
+        assert r.status == "error"
+        assert "名称为空" in r.message
+
+    def test_sync_movie_watching_no_permission(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "other_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            r = svc.sync_movie_watching(self._movie_item(), source="custom")
+        assert r.status == "error"
+        assert "无权限" in r.message
+
+    def test_sync_movie_watching_blocked(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get(
+                blocked_keywords="广告,跳过"
+            )
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            r = svc.sync_movie_watching(
+                self._movie_item(title="内含广告词的剧场版"),
+                source="custom",
+            )
+        assert r.status == "ignored"
+        assert "屏蔽" in r.message
+
+    def test_sync_movie_watching_subject_not_found(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            with patch.object(
+                svc, "_find_subject_id", return_value=(None, False)
+            ):
+                r = svc.sync_movie_watching(self._movie_item(), source="custom")
+        assert r.status == "error"
+        assert "未找到" in r.message
+
+    def test_sync_movie_watching_no_bgm_api(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            with patch.object(
+                svc, "_find_subject_id", return_value=("888", False)
+            ):
+                with patch.object(
+                    svc, "_get_bangumi_api_for_user", return_value=None
+                ):
+                    r = svc.sync_movie_watching(
+                        self._movie_item(), source="custom"
+                    )
+        assert r.status == "error"
+        assert "bangumi" in r.message.lower()
+
+    def test_sync_movie_watching_ensure_auth_value_error(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            bgm = MagicMock()
+            bgm.ensure_subject_watching.side_effect = ValueError(
+                "认证失败: access_token 无效"
+            )
+            with patch.object(
+                svc, "_find_subject_id", return_value=("888", False)
+            ):
+                with patch.object(
+                    svc, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    r = svc.sync_movie_watching(
+                        self._movie_item(), source="custom"
+                    )
+        assert r.status == "error"
+        assert "认证" in r.message
+
+    def test_sync_movie_watching_ensure_other_value_error_wrapped(self):
+        """非认证类 ValueError 重新抛出后由外层捕获为处理失败"""
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            bgm = MagicMock()
+            bgm.ensure_subject_watching.side_effect = ValueError("other reason")
+            with patch.object(
+                svc, "_find_subject_id", return_value=("888", False)
+            ):
+                with patch.object(
+                    svc, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    r = svc.sync_movie_watching(
+                        self._movie_item(), source="custom"
+                    )
+        assert r.status == "error"
+        assert "处理失败" in r.message
+        assert "other reason" in r.message
+
+    def test_sync_movie_watching_ensure_returns_zero_success(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager") as mock_db,
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            bgm = MagicMock()
+            bgm.ensure_subject_watching.return_value = 0
+            with patch.object(
+                svc, "_find_subject_id", return_value=("888", False)
+            ):
+                with patch.object(
+                    svc, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    r = svc.sync_movie_watching(
+                        self._movie_item(), source="custom"
+                    )
+        assert r.status == "success"
+        assert "已在看" in r.message or "已看过" in r.message
+        mock_db.log_sync_record.assert_called()
+
+    def test_sync_movie_watching_ensure_unexpected_error(self):
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager") as mock_db,
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = [
+                "test_user"
+            ]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            bgm = MagicMock()
+            bgm.ensure_subject_watching.side_effect = RuntimeError("network")
+            with patch.object(
+                svc, "_find_subject_id", return_value=("888", False)
+            ):
+                with patch.object(
+                    svc, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    r = svc.sync_movie_watching(
+                        self._movie_item(), source="custom"
+                    )
+        assert r.status == "error"
+        assert "处理失败" in r.message
+        mock_db.log_sync_record.assert_called()
+
+
 class TestPlexSync:
     """测试 Plex 同步"""
 
@@ -418,6 +776,35 @@ class TestPlexSync:
             result = service.sync_plex_item(plex_data)
 
             assert result.status == "ignored"
+
+    def test_sync_plex_media_play_movie_delegates(self):
+        with (
+            patch("app.services.sync_service.config_manager"),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            from app.models.sync import SyncResponse
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+            plex_data = {
+                "event": "media.play",
+                "Account": {"title": "test_user"},
+                "Metadata": {
+                    "type": "movie",
+                    "title": "Film",
+                    "originallyAvailableAt": "2024-06-01",
+                },
+            }
+            with patch.object(service, "sync_movie_watching") as mock_watch:
+                mock_watch.return_value = SyncResponse(
+                    status="success", message="ok", data={}
+                )
+                result = service.sync_plex_item(plex_data)
+            assert result.status == "success"
+            mock_watch.assert_called_once()
+            assert mock_watch.call_args[0][0].media_type == "movie"
 
 
 class TestEmbySync:
@@ -472,6 +859,59 @@ class TestEmbySync:
 
             assert result.status == "ignored"
 
+    def test_sync_emby_playback_start_movie_delegates(self):
+        with (
+            patch("app.services.sync_service.config_manager"),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            from app.models.sync import SyncResponse
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+            emby_data = {
+                "Event": "playback.start",
+                "User": {"Name": "test_user"},
+                "Item": {
+                    "Type": "Movie",
+                    "Name": "Film",
+                    "PremiereDate": "2024-06-01T00:00:00.0000000Z",
+                },
+            }
+            with patch.object(service, "sync_movie_watching") as mock_watch:
+                mock_watch.return_value = SyncResponse(
+                    status="success", message="ok", data={}
+                )
+                result = service.sync_emby_item(emby_data)
+            assert result.status == "success"
+            mock_watch.assert_called_once()
+            assert mock_watch.call_args[0][0].media_type == "movie"
+
+    def test_sync_emby_playback_start_pascal_case_ignored(self):
+        """Emby 仅认 playback.start，不认 PlaybackStart"""
+        with (
+            patch("app.services.sync_service.config_manager"),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+            emby_data = {
+                "Event": "PlaybackStart",
+                "User": {"Name": "test_user"},
+                "Item": {
+                    "Type": "Movie",
+                    "Name": "Film",
+                },
+            }
+            with patch.object(service, "sync_movie_watching") as mock_watch:
+                r = service.sync_emby_item(emby_data)
+            assert r.status == "ignored"
+            mock_watch.assert_not_called()
+
 
 class TestJellyfinSync:
     """测试 Jellyfin 同步"""
@@ -496,6 +936,69 @@ class TestJellyfinSync:
             result = service.sync_jellyfin_item(jellyfin_data)
 
             assert result.status == "ignored"
+
+    def test_sync_jellyfin_missing_notification_type_ignored(self):
+        """无 NotificationType 时视为非 Stop / 非播放开始电影，忽略"""
+        with (
+            patch("app.services.sync_service.config_manager"),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+            r = service.sync_jellyfin_item({"media_type": "Movie"})
+            assert r.status == "ignored"
+
+    def test_sync_jellyfin_playback_stop_missing_played_to_completion_error(self):
+        """PlaybackStop 缺少 PlayedToCompletion 时进入异常处理"""
+        with (
+            patch("app.services.sync_service.config_manager"),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+            r = service.sync_jellyfin_item(
+                {"NotificationType": "PlaybackStop"}
+            )
+            assert r.status == "error"
+            assert "处理失败" in r.message
+
+    def test_sync_jellyfin_playback_start_movie_delegates(self):
+        with (
+            patch("app.services.sync_service.config_manager"),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            from app.models.sync import SyncResponse
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+            jellyfin_data = {
+                "NotificationType": "PlaybackStart",
+                "media_type": "Movie",
+                "title": "Film",
+                "ori_title": " ",
+                "season": 1,
+                "episode": 1,
+                "release_date": "2024-01-01",
+                "user_name": "test_user",
+            }
+            with patch.object(service, "sync_movie_watching") as mock_watch:
+                mock_watch.return_value = SyncResponse(
+                    status="success", message="ok", data={}
+                )
+                result = service.sync_jellyfin_item(jellyfin_data)
+            assert result.status == "success"
+            mock_watch.assert_called_once()
+            call_item = mock_watch.call_args[0][0]
+            assert call_item.media_type == "movie"
+            assert call_item.title == "Film"
 
     def test_sync_jellyfin_item_not_completed(self):
         """测试未播放完成"""

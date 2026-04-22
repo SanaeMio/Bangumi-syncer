@@ -39,6 +39,7 @@ class TestSyncModels:
         )
         assert item.ori_title is None
         assert item.source is None
+        assert item.sync_action is None
 
     def test_custom_item_default_media_type_episode(self):
         """未传 media_type 时默认为 episode，兼容旧版自定义 Webhook"""

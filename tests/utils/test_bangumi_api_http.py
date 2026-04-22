@@ -199,6 +199,66 @@ def test_mark_episode_watched_success():
 
 
 @responses.activate
+def test_ensure_subject_watching_not_collected():
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv/v0/users/testuser/collections/123",
+        json={},
+        status=404,
+    )
+    responses.add(
+        responses.POST,
+        "https://api.bgm.tv/v0/users/-/collections/123",
+        json={"status": "ok"},
+        status=200,
+    )
+    api = BangumiApi(username="testuser", access_token="test_token")
+    assert api.ensure_subject_watching("123") == 1
+
+
+@responses.activate
+def test_ensure_subject_watching_already_watching():
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv/v0/users/testuser/collections/123",
+        json={"type": 3, "subject_id": 123},
+        status=200,
+    )
+    api = BangumiApi(username="testuser", access_token="test_token")
+    assert api.ensure_subject_watching("123") == 0
+
+
+@responses.activate
+def test_ensure_subject_watching_completed():
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv/v0/users/testuser/collections/123",
+        json={"type": 2, "subject_id": 123},
+        status=200,
+    )
+    api = BangumiApi(username="testuser", access_token="test_token")
+    assert api.ensure_subject_watching("123") == 0
+
+
+@responses.activate
+def test_ensure_subject_watching_plan_to_watch():
+    responses.add(
+        responses.GET,
+        "https://api.bgm.tv/v0/users/testuser/collections/123",
+        json={"type": 1, "subject_id": 123},
+        status=200,
+    )
+    responses.add(
+        responses.POST,
+        "https://api.bgm.tv/v0/users/-/collections/123",
+        json={"status": "ok"},
+        status=200,
+    )
+    api = BangumiApi(username="testuser", access_token="test_token")
+    assert api.ensure_subject_watching("123") == 1
+
+
+@responses.activate
 def test_get_related_subjects():
     """测试获取关联条目"""
     responses.add(
