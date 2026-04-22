@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from version import get_version, get_version_name
+from .app_version import get_version, get_version_name
 
 
 class StartupInfo:

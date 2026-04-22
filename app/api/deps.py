@@ -96,3 +96,29 @@ async def get_current_user_flexible(
         detail="未提供有效的认证信息",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def get_current_user_optional(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> Optional[dict]:
+    """已登录返回会话；未登录返回 None。认证关闭时视为已登录（与 flexible 一致）。"""
+    auth_config = security_manager.get_auth_config()
+
+    if not auth_config["enabled"]:
+        return {"username": "admin", "auth_disabled": True}
+
+    security_manager.cleanup_expired_sessions()
+
+    token = request.cookies.get("session_token")
+    if token:
+        session = security_manager.validate_session(token)
+        if session:
+            return session
+
+    if credentials:
+        session = security_manager.validate_session(credentials.credentials)
+        if session:
+            return session
+
+    return None

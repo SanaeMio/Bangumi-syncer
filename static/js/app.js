@@ -424,6 +424,9 @@ async function logout() {
             });
             
             if (response.ok) {
+                if (typeof window.clearBgmReleaseInfoCache === 'function') {
+                    window.clearBgmReleaseInfoCache();
+                }
                 showAlert('登出成功', 'success', 2000);
                 // 延迟跳转到登录页面
                 setTimeout(() => {

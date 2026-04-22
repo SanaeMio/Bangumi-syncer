@@ -4,7 +4,7 @@
 
 from fastapi import APIRouter
 
-from version import get_version
+from ..core.app_version import get_version
 
 router = APIRouter(tags=["health"])
 

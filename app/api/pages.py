@@ -5,6 +5,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from ..core.app_version import get_display_version
 from ..core.public_url import redirect_public
 from ..core.web_templates import get_templates
 from .deps import get_current_user_from_cookie
@@ -29,7 +30,12 @@ async def dashboard(request: Request):
         return redirect_public("/login")
 
     return templates.TemplateResponse(
-        "dashboard.html", {"request": request, "user": user}
+        "dashboard.html",
+        {
+            "request": request,
+            "user": user,
+            "app_display_version": get_display_version(),
+        },
     )
 
 
