@@ -38,8 +38,8 @@ jobs:
         with:
           images: ${{ env.DOCKERHUB_REPO }}
           tags: |
-            type=semver,pattern={{raw}}
-            type=semver,pattern=latest
+            type=ref,event=tag
+            type=semver,pattern=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
