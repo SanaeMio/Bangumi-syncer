@@ -451,9 +451,7 @@ class TestSyncMovieWatching:
     """sync_movie_watching 全分支（配置 / 权限 / 匹配 / Bangumi）"""
 
     @staticmethod
-    def _cfg_get(
-        *, mark_watching_enabled: bool = True, blocked_keywords: str = ""
-    ):
+    def _cfg_get(*, mark_watching_enabled: bool = True, blocked_keywords: str = ""):
         def _get(section, key, fallback=None):
             d = {
                 ("sync", "movie_playback_start_mark_watching"): mark_watching_enabled,
@@ -482,16 +480,12 @@ class TestSyncMovieWatching:
 
     def test_sync_movie_watching_config_disabled(self):
         with (
-            patch(
-                "app.services.sync_service.config_manager"
-            ) as mock_config,
+            patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
         ):
-            mock_config.get.side_effect = self._cfg_get(
-                mark_watching_enabled=False
-            )
+            mock_config.get.side_effect = self._cfg_get(mark_watching_enabled=False)
             from app.services.sync_service import SyncService
 
             svc = SyncService()
@@ -507,9 +501,7 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.models.sync import CustomItem
             from app.services.sync_service import SyncService
 
@@ -538,9 +530,7 @@ class TestSyncMovieWatching:
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            r = svc.sync_movie_watching(
-                self._movie_item(title=""), source="custom"
-            )
+            r = svc.sync_movie_watching(self._movie_item(title=""), source="custom")
         assert r.status == "error"
         assert "名称为空" in r.message
 
@@ -552,9 +542,7 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "other_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["other_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
@@ -569,12 +557,8 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
         ):
-            mock_config.get.side_effect = self._cfg_get(
-                blocked_keywords="广告,跳过"
-            )
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get.side_effect = self._cfg_get(blocked_keywords="广告,跳过")
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
@@ -593,15 +577,11 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            with patch.object(
-                svc, "_find_subject_id", return_value=(None, False)
-            ):
+            with patch.object(svc, "_find_subject_id", return_value=(None, False)):
                 r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
         assert "未找到" in r.message
@@ -614,21 +594,13 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            with patch.object(
-                svc, "_find_subject_id", return_value=("888", False)
-            ):
-                with patch.object(
-                    svc, "_get_bangumi_api_for_user", return_value=None
-                ):
-                    r = svc.sync_movie_watching(
-                        self._movie_item(), source="custom"
-                    )
+            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+                with patch.object(svc, "_get_bangumi_api_for_user", return_value=None):
+                    r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
         assert "bangumi" in r.message.lower()
 
@@ -640,9 +612,7 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
@@ -650,15 +620,9 @@ class TestSyncMovieWatching:
             bgm.ensure_subject_watching.side_effect = ValueError(
                 "认证失败: access_token 无效"
             )
-            with patch.object(
-                svc, "_find_subject_id", return_value=("888", False)
-            ):
-                with patch.object(
-                    svc, "_get_bangumi_api_for_user", return_value=bgm
-                ):
-                    r = svc.sync_movie_watching(
-                        self._movie_item(), source="custom"
-                    )
+            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+                with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
+                    r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
         assert "认证" in r.message
 
@@ -671,23 +635,15 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
             bgm = MagicMock()
             bgm.ensure_subject_watching.side_effect = ValueError("other reason")
-            with patch.object(
-                svc, "_find_subject_id", return_value=("888", False)
-            ):
-                with patch.object(
-                    svc, "_get_bangumi_api_for_user", return_value=bgm
-                ):
-                    r = svc.sync_movie_watching(
-                        self._movie_item(), source="custom"
-                    )
+            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+                with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
+                    r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
         assert "处理失败" in r.message
         assert "other reason" in r.message
@@ -700,23 +656,15 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
             bgm = MagicMock()
             bgm.ensure_subject_watching.return_value = 0
-            with patch.object(
-                svc, "_find_subject_id", return_value=("888", False)
-            ):
-                with patch.object(
-                    svc, "_get_bangumi_api_for_user", return_value=bgm
-                ):
-                    r = svc.sync_movie_watching(
-                        self._movie_item(), source="custom"
-                    )
+            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+                with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
+                    r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "success"
         assert "已在看" in r.message or "已看过" in r.message
         mock_db.log_sync_record.assert_called()
@@ -729,23 +677,15 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
-            mock_config.get_single_mode_media_usernames.return_value = [
-                "test_user"
-            ]
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             from app.services.sync_service import SyncService
 
             svc = SyncService()
             bgm = MagicMock()
             bgm.ensure_subject_watching.side_effect = RuntimeError("network")
-            with patch.object(
-                svc, "_find_subject_id", return_value=("888", False)
-            ):
-                with patch.object(
-                    svc, "_get_bangumi_api_for_user", return_value=bgm
-                ):
-                    r = svc.sync_movie_watching(
-                        self._movie_item(), source="custom"
-                    )
+            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+                with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
+                    r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
         assert "处理失败" in r.message
         mock_db.log_sync_record.assert_called()
@@ -962,9 +902,7 @@ class TestJellyfinSync:
             from app.services.sync_service import SyncService
 
             service = SyncService()
-            r = service.sync_jellyfin_item(
-                {"NotificationType": "PlaybackStop"}
-            )
+            r = service.sync_jellyfin_item({"NotificationType": "PlaybackStop"})
             assert r.status == "error"
             assert "处理失败" in r.message
 
