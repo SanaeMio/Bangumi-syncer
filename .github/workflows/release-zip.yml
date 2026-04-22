@@ -18,13 +18,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Semver and artifact name
+      - name: Semver
         id: ver
         run: |
           REF="${GITHUB_REF_NAME}"
           SEMVER="${REF#v}"
           echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
-          echo "zip_name=bangumi-syncer-v${SEMVER}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Write release_manifest.json
         run: |
@@ -32,7 +31,7 @@ jobs:
 
       - name: Pack zip
         run: |
-          zip -r "${{ steps.ver.outputs.zip_name }}" \
+          zip -r "Bangumi-syncer.zip" \
             app \
             templates \
             static \
@@ -52,7 +51,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: ${{ steps.ver.outputs.zip_name }}
+          files: Bangumi-syncer.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
