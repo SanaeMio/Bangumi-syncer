@@ -110,18 +110,37 @@
                                        placeholder="多个关键词用逗号分隔，如：物语系列,特典">
                             </div>
                             <div class="col-12">
-                                <div class="form-check form-switch mt-2">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="movie-mark-subject-completed"
-                                           name="sync.movie_mark_subject_completed">
-                                    <label class="form-check-label fw-semibold"
-                                           for="movie-mark-subject-completed">
-                                        剧场版同步后自动将条目也标为看过
-                                        <i class="bi bi-question-circle ms-1 text-muted"
-                                           data-bs-toggle="tooltip"
-                                           title="仅当同步类型为剧场版（media_type=movie）时生效：单集打格子后，将条目收藏状态标为「看过」。关闭则只更新单集进度。"></i>
-                                    </label>
+                                <div class="row g-3 align-items-center mt-1">
+                                    <div class="col-12 col-md-6">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="movie-playback-start-mark-watching"
+                                                   name="sync.movie_playback_start_mark_watching">
+                                            <label class="form-check-label fw-semibold"
+                                                   for="movie-playback-start-mark-watching">
+                                                剧场版播放开始时将条目标为在看
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="开启后开始播放剧场版会自动将 Bangumi 条目收藏标为在看。关闭则不会标记在看。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="movie-mark-subject-completed"
+                                                   name="sync.movie_mark_subject_completed">
+                                            <label class="form-check-label fw-semibold"
+                                                   for="movie-mark-subject-completed">
+                                                剧场版同步后自动将条目也标为看过
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="仅当同步类型为剧场版时生效：单集打格子后，将条目收藏状态标为「看过」。关闭则只更新单集进度（方便手动标记完成写评论）。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1187,6 +1206,13 @@ function populateForm(config) {
     if (movieMarkEl) {
         movieMarkEl.checked = config.sync.movie_mark_subject_completed !== false;
     }
+    const moviePlaybackWatchingEl = document.getElementById(
+        'movie-playback-start-mark-watching'
+    );
+    if (moviePlaybackWatchingEl) {
+        moviePlaybackWatchingEl.checked =
+            config.sync.movie_playback_start_mark_watching !== false;
+    }
     
     const webBase = document.getElementById('web-base-path');
     if (webBase) {
@@ -1360,7 +1386,10 @@ async function saveConfig() {
             sync: {
                 mode: document.getElementById('sync-mode').value,
                 blocked_keywords: document.getElementById('blocked-keywords').value,
-                movie_mark_subject_completed: document.getElementById('movie-mark-subject-completed').checked
+                movie_mark_subject_completed: document.getElementById('movie-mark-subject-completed').checked,
+                movie_playback_start_mark_watching: document.getElementById(
+                    'movie-playback-start-mark-watching'
+                ).checked
             },
             web: {
                 base_path: (document.getElementById('web-base-path') && document.getElementById('web-base-path').value.trim()) || ''

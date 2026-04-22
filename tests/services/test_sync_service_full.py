@@ -24,6 +24,8 @@ def mock_config():
                 return ""
             elif section == "sync" and key == "movie_mark_subject_completed":
                 return True
+            elif section == "sync" and key == "movie_playback_start_mark_watching":
+                return True
             return fallback
 
         mock_cm.get.side_effect = get_side_effect
@@ -76,6 +78,7 @@ def mock_bangumi_api():
 
         # Mock mark_episode_watched 方法
         mock_instance.mark_episode_watched.return_value = 1
+        mock_instance.ensure_subject_watching.return_value = 1
 
         mock_instance.get_target_season_episode_id.return_value = (123, 1)
         mock_instance.get_movie_main_episode_id.return_value = ("123", 1)

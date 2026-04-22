@@ -129,6 +129,23 @@ class TestExtractPlexData:
         assert result.episode == 1
         assert result.release_date == "2024-06-01"
 
+    def test_extract_plex_data_movie_no_originally_available_at(self):
+        """电影无 originallyAvailableAt 时 release_date 为空并走缺省日志分支"""
+        from app.utils.data_util import extract_plex_data
+
+        plex_data = {
+            "event": "media.play",
+            "Account": {"title": "test_user"},
+            "Metadata": {
+                "type": "movie",
+                "title": "无日期剧场版",
+            },
+        }
+        result = extract_plex_data(plex_data)
+        assert result.media_type == "movie"
+        assert result.title == "无日期剧场版"
+        assert result.release_date == ""
+
 
 class TestExtractEmbyData:
     """测试 Emby 数据提取"""
@@ -197,6 +214,20 @@ class TestExtractEmbyData:
         assert result.season == 1
         assert result.episode == 1
         assert result.release_date == "2024-07-01"
+
+    def test_extract_emby_data_movie_no_premiere_date(self):
+        """电影无 PremiereDate 时 release_date 为空"""
+        from app.utils.data_util import extract_emby_data
+
+        emby_data = {
+            "Event": "playback.start",
+            "User": {"Name": "test_user"},
+            "Item": {"Type": "Movie", "Name": "剧场版 Z"},
+        }
+        result = extract_emby_data(emby_data)
+        assert result.media_type == "movie"
+        assert result.title == "剧场版 Z"
+        assert result.release_date == ""
 
 
 class TestExtractJellyfinData:

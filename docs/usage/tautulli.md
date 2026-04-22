@@ -44,7 +44,7 @@ order: 11
 
 ![](/images/usage/tautulli/step-02.jpg)
 
-3. `Triggers` 勾选 `Watched`。
+3. `Triggers` 勾选 `Watched` 和 `Playback Start`。
 
 ![](/images/usage/tautulli/step-03.jpg)
 
@@ -52,7 +52,16 @@ order: 11
 
 ![](/images/usage/tautulli/movie-step-04.jpg)
 
-5. `Data` 中展开 `Watched`，在 `JSON Data` 中填写如下通知模版，然后点击右下角 `Save` 保存设置：
+5. `Data` 中展开 `Watched`，在 `JSON Data` 中填写如下通知模版：
 
 ```json
 {"media_type": "{media_type}", "title": "{title}", "ori_title": " ", "season": "1", "episode": "1", "release_date": "{air_date}", "user_name": "{username}", "source": "plex"}
+```
+
+6. `Data` 中展开 `Playback Start`，在 `JSON Data` 中填写如下通知模版：
+
+```json
+{"media_type": "{media_type}", "title": "{title}", "ori_title": " ", "season": "1", "episode": "1", "release_date": "{air_date}", "user_name": "{username}", "source": "plex", "sync_action": "mark_watching"}
+```
+
+7. 点击右下角 `Save` 保存设置。

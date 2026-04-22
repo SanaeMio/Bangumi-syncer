@@ -15,7 +15,7 @@ order: 14
 
 ![](/images/usage/jellyfin/step-02.jpg)
 
-4. 展开下方的 `Generic`，`Webhook Name` 随便填，`Webhook Url` 输入 `http://{ip}:8000/Jellyfin`，`ip` 根据本机情况填写。`Notification Type` 只选中 `Playback Stop`，`Item Type` 选中 `Movies`和`Episodes`。`Template` 填写如下模版，然后点击 `Save` 保存设置：
+4. 展开下方的 `Generic`，`Webhook Name` 随便填，`Webhook Url` 输入 `http://{ip}:8000/Jellyfin`，`ip` 根据本机情况填写。`Notification Type` 只选中  `Playback Start`和`Playback Stop`，`Item Type` 选中 `Movies`和`Episodes`。`Template` 填写如下模版，然后点击 `Save` 保存设置：
 
 ```json
 {"media_type": "{{{ItemType}}}","title": "{{{SeriesName}}}","ori_title": " ","season": {{{SeasonNumber}}},"episode": {{{EpisodeNumber}}},"release_date": "{{{Year}}}-01-01","user_name": "{{{NotificationUsername}}}","NotificationType": "{{{NotificationType}}}","PlayedToCompletion": "{{{PlayedToCompletion}}}", "source": "jellyfin"}

@@ -790,6 +790,25 @@ class BangumiApi:
             res = {}
         return res
 
+    def ensure_subject_watching(self, subject_id):
+        """
+        仅将条目收藏置为「在看」(type=3)，不修改单集进度。
+
+        Returns:
+            0: 无需变更（已在看或已看过）
+            1: 已新增收藏为在看，或从想看/搁置改为在看
+        """
+        data = self.get_subject_collection(subject_id)
+        if not data:
+            self.add_collection_subject(subject_id=subject_id, state=3)
+            return 1
+        if data.get("type") == 2:
+            return 0
+        if data.get("type") in (1, 4):
+            self.change_collection_state(subject_id=subject_id, state=3)
+            return 1
+        return 0
+
     def mark_episode_watched(self, subject_id, ep_id):
         data = self.get_subject_collection(subject_id)
 
