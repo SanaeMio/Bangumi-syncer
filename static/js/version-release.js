@@ -1,5 +1,5 @@
 /**
- * 侧栏版本展示与「有新版本」说明 Modal（数据来自 /api/app/release-info）
+ * 仪表盘版本展示与发行说明 Modal（数据来自 /api/app/release-info）
  */
 (function () {
     'use strict';
@@ -64,6 +64,17 @@
         });
     }
 
+    function setDisplayedVersionText(text) {
+        document.querySelectorAll('.js-app-version-pill-label').forEach(function (el) {
+            el.textContent = text;
+            if (text && text !== '—') {
+                el.setAttribute('title', text);
+            } else {
+                el.removeAttribute('title');
+            }
+        });
+    }
+
     function setClassAll(selector, className, add) {
         document.querySelectorAll(selector).forEach(function (el) {
             el.classList.toggle(className, add);
@@ -114,63 +125,6 @@
         modal.show();
     }
 
-    /** 与 tag / semver 比较用：去首尾空白、去前缀 v、小写。 */
-    function normReleaseVersion(s) {
-        return String(s || '')
-            .trim()
-            .replace(/^v/i, '')
-            .toLowerCase();
-    }
-
-    /**
-     * 是否为本机当前版本对应发行：用 tag_name / semver / version_display 与运行版本比对
-     *（不用 title，避免标题里符号、文案干扰）。
-     */
-    function releaseTagMarksCurrent(item, curDisp, curRaw) {
-        var curNorms = [];
-        if (curRaw) {
-            curNorms.push(normReleaseVersion(curRaw));
-        }
-        if (curDisp) {
-            var d = normReleaseVersion(curDisp);
-            if (curNorms.indexOf(d) < 0) {
-                curNorms.push(d);
-            }
-        }
-        if (!curNorms.length) {
-            return false;
-        }
-
-        var sem = normReleaseVersion(item.semver);
-        var tag = normReleaseVersion(item.tag_name);
-        var vd = normReleaseVersion(item.version_display);
-
-        for (var i = 0; i < curNorms.length; i++) {
-            var c = curNorms[i];
-            if (!c) {
-                continue;
-            }
-            if (sem && sem === c) {
-                return true;
-            }
-            if (tag && tag === c) {
-                return true;
-            }
-            if (vd && vd === c) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    function setHeaderCurrentTagVisible(show) {
-        var el = document.getElementById('releaseNotesHeaderCurrentTag');
-        if (el) {
-            el.classList.toggle('d-none', !show);
-            el.setAttribute('aria-hidden', show ? 'false' : 'true');
-        }
-    }
-
     function setBehindPill(j, listLen) {
         var pill = document.getElementById('releaseNotesBehindPill');
         if (!pill) {
@@ -212,16 +166,18 @@
         }
 
         stackEl.innerHTML = '';
-        var list = j.newer_releases || [];
-        setBehindPill(j, list.length);
-
-        var curRaw = j.current_version || '';
-        var foundTagMatchesCurrent =
-            list.length > 0 &&
-            list.some(function (item) {
-                return releaseTagMarksCurrent(item, curDisp, curRaw);
-            });
-        setHeaderCurrentTagVisible(foundTagMatchesCurrent);
+        var rawNewer = j.newer_releases || [];
+        var list = rawNewer.slice();
+        if (
+            !list.length &&
+            j.release_history &&
+            j.release_history.length &&
+            j.remote_loaded !== false &&
+            !j.github_error
+        ) {
+            list = j.release_history.slice();
+        }
+        setBehindPill(j, rawNewer.length);
 
         if (!list.length) {
             var pillEmpty = document.getElementById('releaseNotesBehindPill');
@@ -319,23 +275,110 @@
     function wireUpdatePills() {
         document.querySelectorAll('.js-app-update-pill').forEach(function (btn) {
             btn.addEventListener('click', function () {
+                if (btn.disabled) {
+                    return;
+                }
                 openReleaseNotesModal();
             });
             btn.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    openReleaseNotesModal();
+                    if (!btn.disabled) {
+                        openReleaseNotesModal();
+                    }
                 }
             });
         });
     }
 
-    /** 将接口 JSON 应用到侧栏与 Modal（与是否来自网络或缓存无关）。 */
+    function resetUpdatePillVisual(btn) {
+        btn.classList.remove(
+            'app-version-banner__update--busy',
+            'app-version-banner__update--neutral',
+            'app-version-banner__update--danger',
+        );
+    }
+
+    /** 仪表盘「检查更新」按钮：与远端对比后的文案与样式（无按钮的页面直接跳过）。 */
+    function applyUpdatePillAfterResponse(j) {
+        var btns = document.querySelectorAll('.js-app-update-pill');
+        if (!btns.length) {
+            return;
+        }
+        setBannerLoading(false);
+        btns.forEach(function (btn) {
+            resetUpdatePillVisual(btn);
+            btn.disabled = false;
+        });
+
+        if (!j.remote_loaded) {
+            setClassAll('.js-app-github-error', 'd-none', true);
+            setClassAll('.js-app-update-pill', 'd-none', false);
+            btns.forEach(function (btn) {
+                btn.classList.add('app-version-banner__update--neutral');
+            });
+            setTextAll('.js-app-update-pill-label', '登录后检查');
+            return;
+        }
+        if (j.github_error) {
+            setClassAll('.js-app-update-pill', 'd-none', false);
+            btns.forEach(function (btn) {
+                btn.classList.add('app-version-banner__update--danger');
+            });
+            setTextAll('.js-app-update-pill-label', '检查失败');
+            return;
+        }
+
+        setClassAll('.js-app-github-error', 'd-none', true);
+        var hasNew =
+            j.update_available === true ||
+            (Array.isArray(j.newer_releases) && j.newer_releases.length > 0);
+        setClassAll('.js-app-update-pill', 'd-none', false);
+        if (hasNew) {
+            setTextAll('.js-app-update-pill-label', '有新版本');
+        } else {
+            btns.forEach(function (btn) {
+                btn.classList.add('app-version-banner__update--neutral');
+            });
+            setTextAll('.js-app-update-pill-label', '已是最新');
+        }
+    }
+
+    function setUpdatePillsFetching() {
+        var btns = document.querySelectorAll('.js-app-update-pill');
+        if (!btns.length) {
+            return;
+        }
+        btns.forEach(function (btn) {
+            resetUpdatePillVisual(btn);
+            btn.classList.add('app-version-banner__update--busy');
+            btn.disabled = true;
+        });
+        setClassAll('.js-app-update-pill', 'd-none', false);
+        setTextAll('.js-app-update-pill-label', '获取中…');
+    }
+
+    function setUpdatePillsRequestFailed(message) {
+        var btns = document.querySelectorAll('.js-app-update-pill');
+        if (!btns.length) {
+            return;
+        }
+        setBannerLoading(false);
+        btns.forEach(function (btn) {
+            resetUpdatePillVisual(btn);
+            btn.classList.add('app-version-banner__update--danger');
+            btn.disabled = false;
+        });
+        setClassAll('.js-app-update-pill', 'd-none', false);
+        setTextAll('.js-app-update-pill-label', message);
+    }
+
+    /** 将接口 JSON 应用到仪表盘与 Modal（与是否来自网络或缓存无关）。 */
     function applyReleaseInfoResponse(j) {
         var verDisp =
             j.current_version_display || j.current_version || '—';
 
-        setTextAll('.js-app-version-pill-label', verDisp);
+        setDisplayedVersionText(verDisp);
 
         if (!j.remote_loaded) {
             var pillNl = document.getElementById('releaseNotesBehindPill');
@@ -351,11 +394,11 @@
                 newer_releases: [],
                 updates_behind: 0,
             });
+            applyUpdatePillAfterResponse(j);
             return;
         }
 
         if (j.github_error) {
-            setHeaderCurrentTagVisible(false);
             setClassAll('.js-app-github-error', 'd-none', false);
             setTextAll('.js-app-github-error', j.github_error);
             var curGh = document.getElementById('releaseNotesCurrentVersion');
@@ -380,17 +423,12 @@
                 warnGh.classList.add('d-none');
                 warnGh.textContent = '';
             }
+            applyUpdatePillAfterResponse(j);
             return;
         }
 
         renderModal(j);
-
-        if (j.update_available === true) {
-            setClassAll('.js-app-update-pill', 'd-none', false);
-            setTextAll('.js-app-update-pill-label', '有新版本');
-        } else {
-            setClassAll('.js-app-update-pill', 'd-none', true);
-        }
+        applyUpdatePillAfterResponse(j);
     }
 
     /** 若有 sessionStorage 缓存则立刻渲染，不阻塞首屏。 */
@@ -411,8 +449,7 @@
         }
 
         setClassAll('.js-app-github-error', 'd-none', true);
-        setTextAll('.js-app-version-pill-label', '…');
-        setClassAll('.js-app-update-pill', 'd-none', true);
+        setUpdatePillsFetching();
         setBannerLoading(true);
 
         try {
@@ -422,17 +459,14 @@
                 headers: { Accept: 'application/json' },
             });
             if (!r.ok) {
-                setTextAll('.js-app-version-pill-label', '加载失败');
-                setBannerLoading(false);
+                setUpdatePillsRequestFailed('检查失败');
                 return;
             }
             var j = await r.json();
             writeCachedReleaseInfo(j);
             applyReleaseInfoResponse(j);
-            setBannerLoading(false);
         } catch (e) {
-            setTextAll('.js-app-version-pill-label', '网络错误');
-            setBannerLoading(false);
+            setUpdatePillsRequestFailed('网络错误');
         }
     }
 

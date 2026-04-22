@@ -7,6 +7,24 @@
     border-radius: 0;
 }
 
+/* 仪表盘第五张统计卡：标题行右侧为检查按钮，版本号单独一行（与其它统计卡 h4 对齐） */
+.app-version-banner--stats-card {
+    padding: 0;
+}
+
+.app-version-banner--stats-card .stats-version-value {
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-version-banner--stats-card .app-version-banner__update {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.48rem;
+    line-height: 1.15;
+}
+
 .app-version-banner__row {
     display: flex;
     flex-wrap: wrap;
@@ -35,7 +53,7 @@
     color: #6c757d;
 }
 
-.app-version-banner--loading .app-version-banner__pill {
+.app-version-banner--loading .app-version-banner__update.app-version-banner__update--busy {
     animation: app-version-banner-pulse 0.9s ease-in-out infinite;
 }
 
@@ -79,6 +97,41 @@
 .app-version-banner__update:focus-visible {
     outline: 2px solid #198754;
     outline-offset: 2px;
+}
+
+.app-version-banner__update--busy {
+    cursor: wait;
+    color: #495057;
+    background: #e9ecef;
+    border-color: #dee2e6;
+}
+
+.app-version-banner__update--busy:disabled {
+    opacity: 0.92;
+}
+
+.app-version-banner__update--neutral {
+    color: #495057;
+    background: #e9ecef;
+    border-color: #dee2e6;
+}
+
+.app-version-banner__update--neutral:hover {
+    background: #dee2e6;
+    border-color: #ced4da;
+    box-shadow: 0 2px 6px rgba(73, 80, 87, 0.12);
+}
+
+.app-version-banner__update--danger {
+    color: #842029;
+    background: #f8d7da;
+    border-color: #f1aeb5;
+}
+
+.app-version-banner__update--danger:hover {
+    background: #f1aeb5;
+    border-color: #ea868f;
+    box-shadow: 0 2px 6px rgba(132, 32, 41, 0.12);
 }
 
 /* Modal 外壳 */
@@ -130,7 +183,7 @@
     }
 }
 
-/* 本机：当前运行 + 版本号（title）+「当前」+ 落后 */
+/* 本机：当前运行 + 版本号 + 落后 */
 .release-notes-current {
     padding: 0.65rem 0.85rem;
     margin-bottom: 0.75rem;
@@ -167,12 +220,6 @@
     color: #0c5460;
     background: #d1ecf1;
     border: 1px solid #bee5eb;
-}
-
-.release-notes-tag--current-after-title {
-    color: #495057;
-    background: #e9ecef;
-    border: 1px solid #dee2e6;
 }
 
 .release-notes-tag--behind {

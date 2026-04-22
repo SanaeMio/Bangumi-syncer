@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from ..core.logging import logger
-from .semver_util import is_strictly_newer, version_tuple
+from .semver_util import is_strictly_newer, version_sort_key
 
 GITHUB_LATEST_URL = (
     "https://api.github.com/repos/SanaeMio/Bangumi-syncer/releases/latest"
@@ -249,5 +249,5 @@ async def fetch_newer_releases_than(
     for it in collected:
         by_sem[it.semver] = it
     uniq = list(by_sem.values())
-    uniq.sort(key=lambda x: version_tuple(x.semver), reverse=True)
+    uniq.sort(key=lambda x: version_sort_key(x.semver), reverse=True)
     return uniq, None
