@@ -9,8 +9,8 @@
 
 ## 开发环境
 
-- **Python**：3.9 及以上（与 `pyproject.toml` 中 `requires-python` 一致）。
-- **包管理**：推荐使用 [uv](https://docs.astral.sh/uv/)（与 CI 一致）。
+- **Python**：3.9 及以上。
+- **包管理**：推荐使用 [uv](https://docs.astral.sh/uv/)。
 
 ```bash
 # 安装 Python 3.9+ 后，在项目根目录执行
@@ -49,6 +49,12 @@ uv run pytest tests/ --cov=app --cov-report=term
 - **Ruff**：`lint` 工作流会对全仓库做 `ruff check` 与 `ruff format --check`；模板目录由 **djLint** 单独检查。
 - **测试**：`ci-tests` 工作流会跑 `pytest tests/` 并生成覆盖率 XML 上传 Codecov；本地至少应保证测试通过。
 - **Docker**：合并前 CI 还会构建镜像并跑集成脚本 `tests/integration/test_docker_perms.sh`；若你的改动涉及镜像权限或启动方式，可在本地用同仓库的 Dockerfile 构建后自行验证。
+
+**仅当本次 PR 修改了 `pyproject.toml` 中的运行时依赖时**：在 `uv lock` 更新锁文件之后，再执行下面命令重新生成根目录的 `requirements.txt`，并与改动一并提交，以免与 README、快速开始文档中的 `pip install -r requirements.txt` 不同步。
+
+```bash
+uv export --format requirements.txt --no-dev -o requirements.txt
+```
 
 ## 代码与协作习惯
 
