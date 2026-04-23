@@ -1,0 +1,51 @@
+name: 文档改进
+description: 纠错、补充说明或改进仓库与在线用户文档
+title: "[Docs] "
+labels:
+  - docs
+body:
+  - type: dropdown
+    id: doc_scope
+    attributes:
+      label: 文档范围
+      description: 主要涉及哪一类文档？
+      options:
+        - docs/（用户文档）
+        - README
+        - CONTRIBUTING / AGENTS 等协作说明
+        - 应用内文案或错误提示
+        - 其他 Markdown 或注释
+    validations:
+      required: true
+  - type: dropdown
+    id: doc_issue_type
+    attributes:
+      label: 问题类型
+      options:
+        - 纠错（事实或命令错误）
+        - 补充说明（缺步骤、缺参数说明等）
+        - 结构或导航优化
+        - 翻译或措辞
+    validations:
+      required: true
+  - type: textarea
+    id: current_state
+    attributes:
+      label: 现状
+      description: 请给出在线文档页面链接、仓库内文件路径，或引用当前有问题的段落大意。
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: 期望
+      description: 希望读者看到什么？理想情况下应如何表述或组织？
+    validations:
+      required: true
+  - type: checkboxes
+    id: willing_pr
+    attributes:
+      label: 贡献
+      options:
+        - label: 我愿意直接提交文档 PR
+          required: false
