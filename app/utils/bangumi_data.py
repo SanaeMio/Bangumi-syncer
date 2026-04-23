@@ -325,11 +325,14 @@ class BangumiData:
         for item in self._parse_data():
             processed_count += 1
 
-            # 快速预筛选：检查是否有中文翻译
-            if title and (
+            # 快速预筛选：默认要求有简中翻译；若提供了 ori_title，仍可对无 zh-Hans 的条目做日文原标题匹配
+            missing_zh = (
                 "titleTranslate" not in item or "zh-Hans" not in item["titleTranslate"]
-            ):
-                continue
+            )
+            if title and missing_zh:
+                ori_ok = ori_title and str(ori_title).strip() and item.get("title")
+                if not ori_ok:
+                    continue
 
             # 一次性计算所有相似度，避免重复计算
             match_info = self._calculate_match_info(

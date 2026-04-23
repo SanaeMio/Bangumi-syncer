@@ -144,6 +144,30 @@ class TestBangumiDataMatching:
         # 断言：由于防误判锁生效拒绝了日期择优，可信度必须退回到 False，交给后端去爬树
         assert result[2] is False
 
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_ori_title_without_zh_hans(
+        self, mock_parse_data, mock_preload
+    ):
+        """条目无简中翻译时，仍可用 ori_title 与日文 title 精确匹配（剧场版等）"""
+        data = BangumiData()
+        mock_parse_data.return_value = [
+            {
+                "title": "劇場版サンプル映画",
+                "begin": "2020-03-15",
+                "sites": [{"site": "bangumi", "id": "123456"}],
+            },
+        ]
+        result = data.find_bangumi_id(
+            title="某中文片名",
+            ori_title="劇場版サンプル映画",
+            release_date="2020-03-15",
+            season=1,
+        )
+        assert result is not None
+        assert result[0] == "123456"
+        assert result[1] == "劇場版サンプル映画"
+
 
 class TestBangumiDataTitle:
     """标题处理测试"""
