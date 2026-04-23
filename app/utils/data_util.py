@@ -93,10 +93,11 @@ def extract_emby_data(emby_data):
         else:
             logger.debug("未找到PremiereDate字段，将尝试从bangumi-data获取日期信息")
         title = (item.get("Name") or "").strip()
+        ori = item.get("OriginalTitle")
         return CustomItem(
             media_type="movie",
             title=title,
-            ori_title=None,
+            ori_title=ori if ori and str(ori).strip() else None,
             season=1,
             episode=1,
             release_date=release_date,

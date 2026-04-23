@@ -170,11 +170,33 @@ class TestExtractEmbyData:
 
         assert result.media_type == "episode"
         assert result.title == "测试番剧"
+        assert result.ori_title is None
         assert result.season == 2
         assert result.episode == 10
         assert result.release_date == "2024-01-15"
         assert result.user_name == "test_user"
         assert result.source == "emby"
+
+    def test_extract_emby_data_episode_does_not_use_original_title(self):
+        """Emby 剧集 OriginalTitle 为分集名，不作为 ori_title（避免条目匹配跑偏）"""
+        from app.utils.data_util import extract_emby_data
+
+        emby_data = {
+            "Event": "item.markplayed",
+            "User": {"Name": "test_user"},
+            "Item": {
+                "Type": "Episode",
+                "SeriesName": "某动画",
+                "SeriesOriginalTitle": "シリーズ原文",
+                "OriginalTitle": "第3話 サブタイトル",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 3,
+                "PremiereDate": "2024-02-01T00:00:00.0000000Z",
+            },
+        }
+        result = extract_emby_data(emby_data)
+        assert result.title == "某动画"
+        assert result.ori_title is None
 
     def test_extract_emby_data_no_premiere_date(self):
         """测试无发行日期"""
@@ -195,6 +217,7 @@ class TestExtractEmbyData:
         result = extract_emby_data(emby_data)
 
         assert result.release_date == ""
+        assert result.ori_title is None
 
     def test_extract_emby_data_movie(self):
         from app.utils.data_util import extract_emby_data
@@ -211,9 +234,47 @@ class TestExtractEmbyData:
         result = extract_emby_data(emby_data)
         assert result.media_type == "movie"
         assert result.title == "剧场版 Y"
+        assert result.ori_title is None
         assert result.season == 1
         assert result.episode == 1
         assert result.release_date == "2024-07-01"
+
+    def test_extract_emby_data_movie_original_title(self):
+        """Emby 电影应携带 OriginalTitle 作为 ori_title（剧场版等日文检索）"""
+        from app.utils.data_util import extract_emby_data
+
+        emby_data = {
+            "Event": "item.markplayed",
+            "User": {"Name": "test_user"},
+            "Item": {
+                "Type": "Movie",
+                "Name": "花开伊吕波剧场版：甜蜜的家",
+                "OriginalTitle": "劇場版 花咲くいろは HOME SWEET HOME",
+                "PremiereDate": "2013-03-08T16:00:00.0000000Z",
+            },
+        }
+        result = extract_emby_data(emby_data)
+        assert result.media_type == "movie"
+        assert result.title == "花开伊吕波剧场版：甜蜜的家"
+        assert result.ori_title == "劇場版 花咲くいろは HOME SWEET HOME"
+        assert result.release_date == "2013-03-08"
+
+    def test_extract_emby_data_movie_original_title_blank(self):
+        """OriginalTitle 为空或仅空白时 ori_title 为 None"""
+        from app.utils.data_util import extract_emby_data
+
+        emby_data = {
+            "Event": "item.markplayed",
+            "User": {"Name": "test_user"},
+            "Item": {
+                "Type": "Movie",
+                "Name": "剧场版 X",
+                "OriginalTitle": "   ",
+                "PremiereDate": "2024-01-01T00:00:00.0000000Z",
+            },
+        }
+        result = extract_emby_data(emby_data)
+        assert result.ori_title is None
 
     def test_extract_emby_data_movie_no_premiere_date(self):
         """电影无 PremiereDate 时 release_date 为空"""
@@ -228,6 +289,7 @@ class TestExtractEmbyData:
         assert result.media_type == "movie"
         assert result.title == "剧场版 Z"
         assert result.release_date == ""
+        assert result.ori_title is None
 
 
 class TestExtractJellyfinData:
