@@ -47,8 +47,9 @@ class TestSyncServiceFind:
                 user_name="admin",
             )
 
-            result = service._find_subject_id(item)
-            assert result is not None
+            sid, _flag, fail = service._find_subject_id(item)
+            assert sid is not None
+            assert fail == ""
 
 
 class TestSyncServiceMore:

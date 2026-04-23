@@ -178,7 +178,7 @@ class TestSyncCustomItem:
 
         from app.models.sync import CustomItem
 
-        with patch.object(service, "_find_subject_id", return_value=("999", False)):
+        with patch.object(service, "_find_subject_id", return_value=("999", False, "")):
             with patch.object(
                 service,
                 "_get_bangumi_config_for_user",
@@ -213,7 +213,7 @@ class TestSyncCustomItem:
 
         local_bgm = MagicMock()
         local_bgm.ensure_subject_watching.return_value = 1
-        with patch.object(service, "_find_subject_id", return_value=("777", False)):
+        with patch.object(service, "_find_subject_id", return_value=("777", False, "")):
             with patch.object(
                 service, "_get_bangumi_api_for_user", return_value=local_bgm
             ):
@@ -354,6 +354,37 @@ class TestSyncCustomItem:
 
             assert result.status == "error"
             assert "无权限" in result.message
+
+    def test_sync_custom_item_subject_not_found_logs_record(self, mock_sync_service):
+        """未找到番剧时写入同步记录"""
+        service, mock_config, mock_db, mock_notify = mock_sync_service
+        from app.models.sync import CustomItem
+
+        item = CustomItem(
+            media_type="episode",
+            title="未知番",
+            ori_title="X",
+            season=1,
+            episode=2,
+            release_date="2024-01-01",
+            user_name="test_user",
+            source="plex",
+        )
+        with patch.object(
+            service,
+            "_find_subject_id",
+            return_value=(None, False, "Bangumi 搜索无结果"),
+        ):
+            r = service.sync_custom_item(item, source="custom")
+        assert r.status == "error"
+        assert "未找到" in r.message
+        mock_db.log_sync_record.assert_called_once()
+        kw = mock_db.log_sync_record.call_args[1]
+        assert kw.get("status") == "error"
+        assert kw.get("source") == "plex"
+        assert "未查询到番剧信息，跳过" in (kw.get("message") or "")
+        assert "Bangumi 搜索无结果" in (kw.get("message") or "")
+        assert "premiere_date=2024-01-01" in (kw.get("message") or "")
 
 
 class TestSyncTaskStatus:
@@ -572,7 +603,7 @@ class TestSyncMovieWatching:
     def test_sync_movie_watching_subject_not_found(self):
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
-            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
         ):
@@ -581,10 +612,19 @@ class TestSyncMovieWatching:
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            with patch.object(svc, "_find_subject_id", return_value=(None, False)):
+            with patch.object(
+                svc,
+                "_find_subject_id",
+                return_value=(None, False, "Bangumi 搜索无结果"),
+            ):
                 r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
         assert "未找到" in r.message
+        mock_db.log_sync_record.assert_called_once()
+        _kw = mock_db.log_sync_record.call_args[1]
+        assert _kw.get("status") == "error"
+        assert "未查询到番剧信息，跳过" in (_kw.get("message") or "")
+        assert "Bangumi 搜索无结果" in (_kw.get("message") or "")
 
     def test_sync_movie_watching_no_bgm_api(self):
         with (
@@ -598,7 +638,7 @@ class TestSyncMovieWatching:
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+            with patch.object(svc, "_find_subject_id", return_value=("888", False, "")):
                 with patch.object(svc, "_get_bangumi_api_for_user", return_value=None):
                     r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
@@ -620,7 +660,7 @@ class TestSyncMovieWatching:
             bgm.ensure_subject_watching.side_effect = ValueError(
                 "认证失败: access_token 无效"
             )
-            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+            with patch.object(svc, "_find_subject_id", return_value=("888", False, "")):
                 with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
                     r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
@@ -641,7 +681,7 @@ class TestSyncMovieWatching:
             svc = SyncService()
             bgm = MagicMock()
             bgm.ensure_subject_watching.side_effect = ValueError("other reason")
-            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+            with patch.object(svc, "_find_subject_id", return_value=("888", False, "")):
                 with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
                     r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
@@ -662,7 +702,7 @@ class TestSyncMovieWatching:
             svc = SyncService()
             bgm = MagicMock()
             bgm.ensure_subject_watching.return_value = 0
-            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+            with patch.object(svc, "_find_subject_id", return_value=("888", False, "")):
                 with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
                     r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "success"
@@ -683,7 +723,7 @@ class TestSyncMovieWatching:
             svc = SyncService()
             bgm = MagicMock()
             bgm.ensure_subject_watching.side_effect = RuntimeError("network")
-            with patch.object(svc, "_find_subject_id", return_value=("888", False)):
+            with patch.object(svc, "_find_subject_id", return_value=("888", False, "")):
                 with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
                     r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
