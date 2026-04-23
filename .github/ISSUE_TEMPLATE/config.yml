@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 在线文档（使用与配置）
+    url: https://sanaemio.github.io/Bangumi-syncer/
+    about: 部署、接入媒体库、Bangumi 与多用户等说明；配置类问题建议先查文档再提 Issue。
+  - name: 贡献指南
+    url: https://github.com/SanaeMio/Bangumi-syncer/blob/main/CONTRIBUTING.md
+    about: 本地开发、测试与 PR 流程说明。

@@ -1,0 +1,35 @@
+name: 维护事项
+description: CI、依赖、工具链、Docker 与仓库卫生等非用户功能向的改动提议
+title: "[Chore] "
+labels:
+  - chore
+body:
+  - type: markdown
+    attributes:
+      value: |
+        用户可见的文档纠错或章节增补请优先使用 **「文档改进」** 模板；本模板面向工程维护类工作。
+  - type: dropdown
+    id: chore_category
+    attributes:
+      label: 维护类别
+      options:
+        - CI / GitHub Actions
+        - 依赖与锁文件（pyproject / uv / requirements 等）
+        - Ruff / djLint / 测试脚手架
+        - Dockerfile / entrypoint / 镜像构建
+        - 仓库元数据（Issue 模板、EditorConfig 等）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 动机
+      description: 为何现在要做？例如：修复 CI、安全更新、对齐上游工具链等。
+    validations:
+      required: true
+  - type: textarea
+    id: scope_risk
+    attributes:
+      label: 范围与风险（可选）
+      description: 影响面、是否需要同步更新 CONTRIBUTING 中的命令说明、对发布流程的影响等。

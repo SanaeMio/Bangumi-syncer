@@ -1,0 +1,81 @@
+name: Bug 报告
+description: 报告可复现的缺陷或错误行为
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量填写下列信息，便于定位问题。**请勿**在 Issue 中粘贴 Bangumi Token、登录密码、完整 Webhook 密钥等敏感信息；日志与截图请先脱敏。
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: 运行方式
+      description: 你如何运行本应用？
+      options:
+        - 本机 Python（uv / pip 等）
+        - Docker 容器
+        - 其他（请在下方说明）
+    validations:
+      required: true
+  - type: textarea
+    id: version_info
+    attributes:
+      label: 版本信息
+      description: 应用版本、Docker 镜像标签、Python 版本等。
+      placeholder: 例如：v1.x.x；镜像 sanaemio/bangumi-syncer:latest；Python 3.11
+    validations:
+      required: true
+  - type: input
+    id: os_browser
+    attributes:
+      label: 操作系统 / 浏览器（如与 Web 界面相关）
+      description: 可填写 OS 版本；若问题出在管理后台，请写浏览器及版本。
+      placeholder: 例如：Windows 11；Chrome 120
+  - type: checkboxes
+    id: media_stack
+    attributes:
+      label: 涉及的媒体库或接入方式（可多选）
+      options:
+        - label: Plex（Tautulli / 官方 Webhook）
+        - label: Emby
+        - label: Jellyfin
+        - label: Trakt
+        - label: 飞牛影视
+        - label: 自定义 Webhook
+        - label: 不涉及或未列出
+  - type: textarea
+    id: repro_steps
+    attributes:
+      label: 复现步骤
+      description: 从干净状态到出现问题的具体操作顺序，越具体越好。
+      placeholder: 1. …\n2. …\n3. …
+    validations:
+      required: true
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: 实际行为
+      description: 当前发生了什么？
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: 期望行为
+      description: 你期望的正确结果是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: logs_screenshots
+    attributes:
+      label: 日志或截图说明（可选）
+      description: 可粘贴脱敏后的日志片段，或说明已上传截图。**不要**包含 Token、密码、完整密钥。
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: 参与实现
+      options:
+        - label: 我愿意在讨论确定方案后尝试提交 PR 帮助修复问题
+          required: false

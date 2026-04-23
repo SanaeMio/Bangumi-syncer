@@ -1,0 +1,43 @@
+name: 优化建议
+description: 性能、Web 管理界面、同步链路等「做得更好」的体验与效率改进（不等同于全新功能规格）
+title: "[优化] "
+labels:
+  - perf
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本模板对应标签 **`perf`**，在本仓库中表示**优化大类**：可包含运行时性能、页面布局与交互、任务与错误提示体验等。明显偏代码结构拆分、无产品体验表述的议题，维护者可能会改标或追加 **`refactor`**。
+  - type: checkboxes
+    id: optimization_areas
+    attributes:
+      label: 优化方向（可多选）
+      options:
+        - label: 运行时性能（耗时、CPU、内存、并发等）
+        - label: Web 管理界面（布局、组件、交互、加载与反馈）
+        - label: 同步 / 任务链路体验（排队、错误提示、可观测性）
+        - label: 其他
+  - type: textarea
+    id: current_state
+    attributes:
+      label: 现状
+      description: 当前哪里不满意？如何复现或如何观察到？界面类问题可附上截图（在评论中上传即可）。
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: 期望
+      description: 改进后希望达到的体验或可衡量的目标（若有）。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境与版本（可选）
+      description: 部署方式、浏览器与版本、应用版本等。**请勿**粘贴 Token、密码或完整密钥。
+  - type: textarea
+    id: extra_data
+    attributes:
+      label: 补充数据（可选）
+      description: 例如粗略计时、开发者工具 Network 面板现象、大致数据量级等。非性能类优化可留空。
