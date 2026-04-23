@@ -143,13 +143,28 @@ class SyncService:
                     status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
                 )
 
-            subject_id, _ = self._find_subject_id(item)
+            subject_id, _, subject_find_error = self._find_subject_id(item)
             if not subject_id:
                 send_notify(
                     "anime_not_found",
                     item,
                     actual_source,
                     error_message="未找到匹配的番剧",
+                )
+                database_manager.log_sync_record(
+                    user_name=item.user_name,
+                    title=item.title,
+                    ori_title=item.ori_title or "",
+                    season=item.season,
+                    episode=item.episode,
+                    subject_id=None,
+                    episode_id=None,
+                    status="error",
+                    message=self._format_subject_not_found_message(
+                        item, subject_find_error
+                    ),
+                    source=actual_source,
+                    media_type=item.media_type,
                 )
                 return SyncResponse(status="error", message="未找到匹配的番剧")
 
@@ -277,13 +292,30 @@ class SyncService:
                 )
 
             # 查找番剧ID及其是否为特定季度ID的标记
-            subject_id, is_season_matched_id = self._find_subject_id(item)
+            subject_id, is_season_matched_id, subject_find_error = (
+                self._find_subject_id(item)
+            )
             if not subject_id:
                 send_notify(
                     "anime_not_found",
                     item,
                     actual_source,
                     error_message="未找到匹配的番剧",
+                )
+                database_manager.log_sync_record(
+                    user_name=item.user_name,
+                    title=item.title,
+                    ori_title=item.ori_title or "",
+                    season=item.season,
+                    episode=item.episode,
+                    subject_id=None,
+                    episode_id=None,
+                    status="error",
+                    message=self._format_subject_not_found_message(
+                        item, subject_find_error
+                    ),
+                    source=actual_source,
+                    media_type=item.media_type,
                 )
                 return SyncResponse(status="error", message="未找到匹配的番剧")
 
@@ -545,8 +577,21 @@ class SyncService:
 
         return False
 
-    def _find_subject_id(self, item: CustomItem) -> tuple[Optional[str], bool]:
-        """根据标题和日期查找番剧ID"""
+    def _format_subject_not_found_message(self, item: CustomItem, detail: str) -> str:
+        """同步记录用：未找到条目时的说明（与日志语义对齐）。"""
+        parts = ["未查询到番剧信息，跳过"]
+        if detail:
+            parts.append(detail)
+        if item.release_date and len(item.release_date) >= 8:
+            parts.append(f"premiere_date={item.release_date[:10]}")
+        return "；".join(parts)
+
+    def _find_subject_id(self, item: CustomItem) -> tuple[Optional[str], bool, str]:
+        """根据标题和日期查找番剧ID。
+
+        返回 (subject_id, is_season_matched_id, failure_detail)。
+        成功时 failure_detail 为空字符串；失败时为简短原因，供同步记录与日志使用。
+        """
         # 获取自定义映射
         custom_mappings = self._load_custom_mappings()
         mapping_subject_id = custom_mappings.get(item.title, "")
@@ -554,7 +599,7 @@ class SyncService:
         if mapping_subject_id:
             logger.debug(f"匹配到自定义映射：{item.title}={mapping_subject_id}")
             # 自定义映射的ID不视为特定季度的ID
-            return mapping_subject_id, False
+            return mapping_subject_id, False, ""
 
         # 标记是否通过bangumi-data获取的ID
         is_season_matched_id = False
@@ -614,17 +659,22 @@ class SyncService:
                         # 第一季总是返回True
                         is_season_matched_id = True
 
-                    return bangumi_data_id, is_season_matched_id
+                    return bangumi_data_id, is_season_matched_id, ""
             except Exception as e:
                 logger.error(f"bangumi-data 匹配出错: {e}")
 
         # 如果没有匹配到，使用 bangumi API 搜索
+        _ctx = (
+            f"user_name={item.user_name!r} source={item.source!r} "
+            f"S{item.season:02d}E{item.episode:02d} media_type={item.media_type!r} "
+            f"title={item.title!r} ori_title={item.ori_title!r}"
+        )
         try:
             # 使用对应用户的bangumi API实例进行搜索
             bgm = self._get_bangumi_api_for_user(item.user_name)
             if not bgm:
-                logger.error(f"无法为用户 {item.user_name} 创建bangumi API实例进行搜索")
-                return None, False
+                logger.error(f"bgm: 无法为用户创建 Bangumi API 实例进行搜索；{_ctx}")
+                return None, False, "无法创建 Bangumi API 实例，无法搜索条目"
 
             premiere_date = None
             if item.release_date and len(item.release_date) >= 8:
@@ -638,15 +688,17 @@ class SyncService:
             )
             if not bgm_data:
                 logger.error(
-                    f"bgm: 未查询到番剧信息，跳过\nbgm: {item.title=} {item.ori_title=} {premiere_date=}"
+                    "bgm: 未查询到番剧信息，跳过；"
+                    f"{_ctx} premiere_date={premiere_date!r}"
                 )
-                return None, False
+                return None, False, "Bangumi 搜索无结果"
 
             # API搜索得到的ID不视为特定季度的ID
-            return bgm_data[0]["id"], False
+            return bgm_data[0]["id"], False, ""
         except Exception as e:
-            logger.error(f"bgm API搜索出错: {e}")
-            return None, False
+            detail = f"Bangumi API 搜索出错: {e}"
+            logger.error(f"bgm: {detail}；{_ctx}")
+            return None, False, detail
 
     def _check_season_info_in_title(self, title: str, season: int) -> bool:
         """检查标题中是否包含季度信息"""

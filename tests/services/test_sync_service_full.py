@@ -300,7 +300,7 @@ def test_sync_custom_item_movie_success_calls_movie_episode_path(
         release_date="",
     )
 
-    with patch.object(service, "_find_subject_id", return_value=("456", False)):
+    with patch.object(service, "_find_subject_id", return_value=("456", False, "")):
         with patch.object(
             service,
             "_get_bangumi_config_for_user",
@@ -336,7 +336,7 @@ def test_sync_custom_item_movie_skips_collection_when_subject_already_completed(
         release_date="",
     )
 
-    with patch.object(service, "_find_subject_id", return_value=("456", False)):
+    with patch.object(service, "_find_subject_id", return_value=("456", False, "")):
         with patch.object(
             service,
             "_get_bangumi_config_for_user",
@@ -387,7 +387,7 @@ def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
             release_date="",
         )
 
-        with patch.object(service, "_find_subject_id", return_value=("456", False)):
+        with patch.object(service, "_find_subject_id", return_value=("456", False, "")):
             with patch.object(
                 service,
                 "_get_bangumi_config_for_user",
@@ -662,6 +662,7 @@ def test_find_subject_id_from_mapping(mock_config, mock_database):
 
         assert result[0] == "12345"
         assert result[1] is False  # 自定义映射不视为特定季度ID
+        assert result[2] == ""
 
 
 def test_find_subject_id_movie_passes_is_movie_to_bgm_search(mock_database):
@@ -698,7 +699,7 @@ def test_find_subject_id_movie_passes_is_movie_to_bgm_search(mock_database):
 
         with patch.object(service, "_load_custom_mappings", return_value={}):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
-                sid, is_season = service._find_subject_id(item)
+                sid, is_season, _ = service._find_subject_id(item)
 
     assert str(sid) == "4242"
     assert is_season is False
@@ -892,14 +893,16 @@ def test_jellyfin_sync_item_not_played_completion(mock_config, mock_database):
 
 def test_find_subject_id_season_gt1_date_matched_sets_season_flag():
     with _patched_sync_service_deps() as cfg:
-        sid, flag = _find_subject_via_bangumi_data(cfg, ("99", "标题", True), season=2)
+        sid, flag, _ = _find_subject_via_bangumi_data(
+            cfg, ("99", "标题", True), season=2
+        )
         assert sid == "99"
         assert flag is True
 
 
 def test_find_subject_id_season_gt1_title_has_season_info():
     with _patched_sync_service_deps() as cfg:
-        sid, flag = _find_subject_via_bangumi_data(
+        sid, flag, _ = _find_subject_via_bangumi_data(
             cfg, ("88", "某番 第2季", False), season=2
         )
         assert sid == "88"
@@ -908,7 +911,7 @@ def test_find_subject_id_season_gt1_title_has_season_info():
 
 def test_find_subject_id_season_gt1_no_date_no_season_keyword():
     with _patched_sync_service_deps() as cfg:
-        sid, flag = _find_subject_via_bangumi_data(
+        sid, flag, _ = _find_subject_via_bangumi_data(
             cfg, ("77", "无季标", False), season=2
         )
         assert sid == "77"
@@ -917,7 +920,7 @@ def test_find_subject_id_season_gt1_no_date_no_season_keyword():
 
 def test_find_subject_id_season1_sets_season_matched_true():
     with _patched_sync_service_deps() as cfg:
-        sid, flag = _find_subject_via_bangumi_data(
+        sid, flag, _ = _find_subject_via_bangumi_data(
             cfg, ("66", "第一季", False), season=1
         )
         assert sid == "66"
@@ -943,7 +946,9 @@ def test_find_subject_id_find_bangumi_id_exception_falls_through_to_api():
                 with patch.object(
                     service, "_get_bangumi_api_for_user", return_value=bgm
                 ):
-                    sid, flag = service._find_subject_id(_branch_custom_item_for_find())
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find()
+                    )
         assert sid == 42 or sid == "42"
         assert flag is False
 
@@ -960,9 +965,12 @@ def test_find_subject_id_api_disabled_no_bgm_instance():
         service = SyncService()
         with patch.object(service, "_load_custom_mappings", return_value={}):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=None):
-                sid, flag = service._find_subject_id(_branch_custom_item_for_find())
+                sid, flag, err = service._find_subject_id(
+                    _branch_custom_item_for_find()
+                )
         assert sid is None
         assert flag is False
+        assert err == "无法创建 Bangumi API 实例，无法搜索条目"
 
 
 def test_find_subject_id_api_search_exception_returns_none():
@@ -979,8 +987,11 @@ def test_find_subject_id_api_search_exception_returns_none():
         bgm.bgm_search.side_effect = OSError("net")
         with patch.object(service, "_load_custom_mappings", return_value={}):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
-                sid, flag = service._find_subject_id(_branch_custom_item_for_find())
+                sid, flag, err = service._find_subject_id(
+                    _branch_custom_item_for_find()
+                )
         assert sid is None
+        assert "Bangumi API 搜索出错" in err
 
 
 def test_sync_custom_item_no_bgm_api_after_find_subject():
@@ -988,7 +999,9 @@ def test_sync_custom_item_no_bgm_api_after_find_subject():
         svc = SyncService()
         with patch.object(svc, "_check_user_permission", return_value=True):
             with patch.object(svc, "_is_title_blocked", return_value=False):
-                with patch.object(svc, "_find_subject_id", return_value=("123", False)):
+                with patch.object(
+                    svc, "_find_subject_id", return_value=("123", False, "")
+                ):
                     with patch.object(
                         svc, "_get_bangumi_api_for_user", return_value=None
                     ):
@@ -1008,7 +1021,9 @@ def test_sync_custom_item_get_target_season_value_error_auth_message():
         )
         with patch.object(svc, "_check_user_permission", return_value=True):
             with patch.object(svc, "_is_title_blocked", return_value=False):
-                with patch.object(svc, "_find_subject_id", return_value=("1", False)):
+                with patch.object(
+                    svc, "_find_subject_id", return_value=("1", False, "")
+                ):
                     with patch.object(
                         svc, "_get_bangumi_api_for_user", return_value=bgm
                     ):
@@ -1025,7 +1040,7 @@ def test_sync_custom_item_mark_value_error_auth_message():
         bgm = MagicMock()
         bgm.get_target_season_episode_id.return_value = ("1", "10")
         bgm.mark_episode_watched.side_effect = ValueError("access_token 无效")
-        with patch.object(svc, "_find_subject_id", return_value=("1", False)):
+        with patch.object(svc, "_find_subject_id", return_value=("1", False, "")):
             with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
                 r = svc.sync_custom_item(_branch_custom_item_for_find(), "custom")
         assert r.status == "error"
