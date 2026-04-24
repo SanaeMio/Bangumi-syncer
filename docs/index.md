@@ -22,7 +22,7 @@ features:
     details: 无需被 Bangumi 中多季度条目与在线数据库的不匹配所困扰，全自动推理
   - icon: ✅
     title: 看完即同步
-    details: 调用官方 API，在媒体库看完后自动打格子，省去反复打开 Bangumi 手点
+    details: 调用官方 API，在媒体库看完后自动打格子，省去反复打开 Bangumi 手点，省时省力
   - icon: 🔌
     title: 常见媒体栈都能接
     details: 已适配 Plex、Emby、Jellyfin、Trakt.tv、飞牛与通用 Webhook，按需扩展
