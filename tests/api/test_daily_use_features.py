@@ -116,15 +116,13 @@ async def test_proxy_test_connectivity(app_auth):
 
 
 @pytest.mark.asyncio
-async def test_logs_api_when_log_file_missing_returns_empty(app_auth):
+async def test_logs_api_when_log_file_missing_returns_empty(app_auth, tmp_path):
     app_auth.include_router(logs.router)
-    with patch(
-        "app.api.logs.config_manager.get_config", return_value="./no_such_log.txt"
-    ):
-        with patch("app.api.logs.os.path.exists", return_value=False):
-            transport = ASGITransport(app=app_auth)
-            async with AsyncClient(transport=transport, base_url="http://test") as ac:
-                r = await ac.get("/api/logs")
+    ghost = tmp_path / "no_such_log.txt"
+    with patch("app.api.logs.resolved_dev_log_file_path", return_value=ghost):
+        transport = ASGITransport(app=app_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.get("/api/logs")
     assert r.status_code == 200
     payload = r.json()
     assert payload["data"]["content"] == ""

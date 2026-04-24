@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..core.config import config_manager
-from ..core.logging import logger
+from ..core.logging import logger, resolved_dev_log_file_path
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["logs"])
@@ -24,15 +24,17 @@ async def get_logs(
 ):
     """获取日志内容"""
     try:
-        # 从配置文件中获取日志文件路径
-        log_file_path = config_manager.get_config(
-            "dev", "log_file", fallback="./log.txt"
-        )
+        log_path = resolved_dev_log_file_path(config_manager)
+        if log_path is None:
+            return {
+                "status": "success",
+                "data": {
+                    "content": "",
+                    "stats": {"size": 0, "lines": 0, "modified": None, "errors": 0},
+                },
+            }
 
-        # 处理相对路径
-        if log_file_path.startswith("./"):
-            cwd = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            log_file_path = os.path.join(cwd, log_file_path.split("./", 1)[1])
+        log_file_path = os.fspath(log_path)
 
         if not os.path.exists(log_file_path):
             return {
@@ -95,15 +97,11 @@ async def clear_logs(
 ):
     """清空日志文件"""
     try:
-        # 从配置文件中获取日志文件路径
-        log_file_path = config_manager.get_config(
-            "dev", "log_file", fallback="./log.txt"
-        )
+        log_path = resolved_dev_log_file_path(config_manager)
+        if log_path is None:
+            return {"status": "success", "message": "日志清空成功"}
 
-        # 处理相对路径
-        if log_file_path.startswith("./"):
-            cwd = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            log_file_path = os.path.join(cwd, log_file_path.split("./", 1)[1])
+        log_file_path = os.fspath(log_path)
 
         if os.path.exists(log_file_path):
             # 清空日志文件
