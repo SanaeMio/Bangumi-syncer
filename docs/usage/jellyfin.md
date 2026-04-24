@@ -18,7 +18,7 @@ order: 14
 4. 展开下方的 `Generic`，`Webhook Name` 随便填，`Webhook Url` 输入 `http://{ip}:8000/Jellyfin`，`ip` 根据本机情况填写。`Notification Type` 只选中  `Playback Start`和`Playback Stop`，`Item Type` 选中 `Movies`和`Episodes`。`Template` 填写如下模版，然后点击 `Save` 保存设置：
 
 ```json
-{"media_type": "{{{ItemType}}}","title": "{{{SeriesName}}}","ori_title": " ","season": {{{SeasonNumber}}},"episode": {{{EpisodeNumber}}},"release_date": "{{{Year}}}-01-01","user_name": "{{{NotificationUsername}}}","NotificationType": "{{{NotificationType}}}","PlayedToCompletion": "{{{PlayedToCompletion}}}", "source": "jellyfin"}
+{"media_type": "{{{ItemType}}}",{{#if_equals ItemType 'Episode'}}"title": "{{{SeriesName}}}","season": {{{SeasonNumber}}},"episode": {{{EpisodeNumber}}}{{else}}"title": "{{{Name}}}","season": 1,"episode": 1{{/if_equals}},"ori_title": " ","release_date": "{{{Year}}}-01-01","user_name": "{{{NotificationUsername}}}","NotificationType": "{{{NotificationType}}}","PlayedToCompletion": "{{{PlayedToCompletion}}}", "source": "jellyfin"}
 ```
 
 5. 在 Jellyfin 播放完成后，可在 Web 界面「日志管理」页面查看同步结果。
