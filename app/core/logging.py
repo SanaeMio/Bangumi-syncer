@@ -4,8 +4,50 @@
 
 import datetime
 import os
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .config import ConfigManager
+
+# 与 config.ini / Web 日志 API 对齐的默认相对路径（相对项目根）
+DEFAULT_DEV_LOG_FILE = "./log.txt"
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def resolve_dev_log_file_path(raw: str) -> Path:
+    """将配置中的 log_file 转为绝对 Path（仅将以 ./ 开头的视为相对项目根）。"""
+    if raw.startswith("./"):
+        return _REPO_ROOT / raw.split("./", 1)[1]
+    return Path(raw)
+
+
+def effective_dev_log_file_raw(config_manager: "ConfigManager") -> Optional[str]:
+    """
+    返回将用于打开日志文件的原始配置字符串；None 表示显式留空、禁用文件日志。
+    缺键时使用 DEFAULT_DEV_LOG_FILE。
+    """
+    cfg = config_manager.get_config_parser()
+    if not cfg.has_section("dev"):
+        return DEFAULT_DEV_LOG_FILE
+    if not cfg.has_option("dev", "log_file"):
+        return DEFAULT_DEV_LOG_FILE
+    raw = str(cfg.get("dev", "log_file", fallback="")).strip()
+    if raw == "":
+        return None
+    return raw
+
+
+def resolved_dev_log_file_path(
+    config_manager: "ConfigManager",
+) -> Optional[Path]:
+    """当前配置下解析后的日志文件绝对路径；禁用时为 None。"""
+    raw = effective_dev_log_file_raw(config_manager)
+    if raw is None:
+        return None
+    return resolve_dev_log_file_path(raw).resolve()
 
 
 class Logger:
@@ -26,9 +68,10 @@ class Logger:
 
         # 延迟获取debug_mode，避免循环依赖
         self._debug_mode = None
-
-        # 初始化日志文件
-        self._setup_log_file()
+        self._log_file_path: Optional[Path] = None
+        # 不在 __init__ 中打开日志文件：模块执行 logger = Logger() 时，若此处导入
+        # config，而 config 初始化链又 import logger，会触发 partially initialized 循环依赖。
+        self._log_file_lazy_initialized = False
 
     def _get_safe_username(self) -> str:
         """安全地获取用户名"""
@@ -38,35 +81,75 @@ class Logger:
             # Docker环境或其他无法获取登录用户的环境
             return os.environ.get("USER", os.environ.get("USERNAME", "docker_user"))
 
+    def _close_log_file_handle(self) -> None:
+        if hasattr(self, "log_file"):
+            try:
+                self.log_file.close()
+            except OSError:
+                pass
+            del self.log_file
+        self._log_file_path = None
+
+    def _lazy_init_log_file_once(self) -> None:
+        """首次写日志前再绑定文件与 config（避免与 config 模块循环导入）。"""
+        if self._log_file_lazy_initialized:
+            return
+        self._log_file_lazy_initialized = True
+        self._setup_log_file()
+
     def _setup_log_file(self) -> None:
-        """设置日志文件"""
-        # 延迟导入，避免循环依赖
+        """设置日志文件（成功/跳过/失败均向 stderr 输出一行，便于排查）"""
+        self._close_log_file_handle()
+
         try:
             from .config import config_manager
-        except ImportError:
-            # 如果无法导入，跳过日志文件设置
+        except ImportError as e:
+            print(
+                f"文件日志未启用: 无法导入 config（{e!r}），仅输出到控制台",
+                file=sys.stderr,
+            )
             return
 
-        log_file_path = config_manager.get("dev", "log_file", fallback="")
-        if not log_file_path:
+        raw = effective_dev_log_file_raw(config_manager)
+        if raw is None:
+            print(
+                "文件日志已禁用: [dev] log_file 为空（留空则禁用）",
+                file=sys.stderr,
+            )
             return
 
-        # 处理相对路径
-        if log_file_path.startswith("./"):
-            cwd = Path(__file__).parent.parent.parent
-            log_file_path = cwd / log_file_path.split("./", 1)[1]
+        log_path = resolve_dev_log_file_path(raw)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            mode = "a"
+            if log_path.exists() and log_path.stat().st_size >= 10 * 1024 * 1024:
+                mode = "w"
+            self.log_file = open(log_path, mode, encoding="utf-8")
+            self._log_file_path = log_path.resolve()
+            print(
+                f"文件日志已启用: {self._log_file_path}",
+                file=sys.stderr,
+            )
+        except OSError as e:
+            print(
+                f"文件日志打开失败: {e!r} 路径={log_path}",
+                file=sys.stderr,
+            )
 
-        # 创建日志目录
-        log_path = Path(log_file_path)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 检查文件大小，超过10MB时重置
-        mode = "a"
-        if log_path.exists() and log_path.stat().st_size >= 10 * 1024 * 1024:
-            mode = "w"
-
-        # 打开日志文件
-        self.log_file = open(log_path, mode, encoding="utf-8")
+    def _ensure_log_file_for_write(self) -> None:
+        """若磁盘上日志路径已不存在，则关闭句柄并重新打开。"""
+        if not hasattr(self, "log_file") or self._log_file_path is None:
+            return
+        try:
+            exists = self._log_file_path.exists()
+        except OSError:
+            exists = False
+        if not exists:
+            print(
+                f"文件日志路径已丢失，尝试重新打开: {self._log_file_path}",
+                file=sys.stderr,
+            )
+            self._setup_log_file()
 
     @property
     def debug_mode(self) -> bool:
@@ -109,6 +192,8 @@ class Logger:
         if silence:
             return
 
+        self._lazy_init_log_file_once()
+
         # 根据日志级别添加对应的标识符
         level_prefix = f"[{level}]" if level else ""
 
@@ -126,6 +211,8 @@ class Logger:
         print(log_line, end=end)
 
         # 输出到日志文件
+        if hasattr(self, "log_file"):
+            self._ensure_log_file_for_write()
         if hasattr(self, "log_file"):
             self.log_file.write(log_line + end)
             self.log_file.flush()

@@ -2,6 +2,7 @@
 日志 API 完整测试
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -40,11 +41,26 @@ class TestLogsAPIComprehensive:
 
 
 @pytest.mark.asyncio
+async def test_get_logs_when_file_log_disabled(app_with_auth):
+    """[dev] log_file 留空禁用时 API 返回空内容"""
+    with patch("app.api.logs.resolved_dev_log_file_path", return_value=None):
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/logs")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["data"]["content"] == ""
+    assert data["data"]["stats"]["size"] == 0
+
+
+@pytest.mark.asyncio
 async def test_get_logs_file_not_found(app_with_auth):
     """测试获取日志文件不存在"""
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "/nonexistent/log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/nonexistent/log.txt"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=False):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth), base_url="http://test"
@@ -66,9 +82,10 @@ async def test_get_logs_with_content(app_with_auth):
 2024-01-01 10:00:02 WARNING Retry attempt 1
 """
 
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=True):
             with patch("app.api.logs.os.stat") as mock_stat:
                 mock_stat.return_value = MagicMock(
@@ -97,9 +114,10 @@ async def test_get_logs_with_level_filter(app_with_auth):
 2024-01-01 10:00:02 WARNING Retry attempt 1
 """
 
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=True):
             with patch("app.api.logs.os.stat") as mock_stat:
                 mock_stat.return_value = MagicMock(st_size=100, st_mtime=1234567890.0)
@@ -124,9 +142,10 @@ async def test_get_logs_with_search_filter(app_with_auth):
 2024-01-01 10:00:02 WARNING Retry attempt 1
 """
 
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=True):
             with patch("app.api.logs.os.stat") as mock_stat:
                 mock_stat.return_value = MagicMock(st_size=100, st_mtime=1234567890.0)
@@ -153,9 +172,10 @@ Line 4
 Line 5
 """
 
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=True):
             with patch("app.api.logs.os.stat") as mock_stat:
                 mock_stat.return_value = MagicMock(st_size=100, st_mtime=1234567890.0)
@@ -182,9 +202,10 @@ Line 2
 Line 3
 """
 
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=True):
             with patch("app.api.logs.os.stat") as mock_stat:
                 mock_stat.return_value = MagicMock(st_size=100, st_mtime=1234567890.0)
@@ -208,9 +229,10 @@ async def test_get_logs_invalid_limit(app_with_auth):
 Line 2
 """
 
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=True):
             with patch("app.api.logs.os.stat") as mock_stat:
                 mock_stat.return_value = MagicMock(st_size=100, st_mtime=1234567890.0)
@@ -229,9 +251,10 @@ Line 2
 @pytest.mark.asyncio
 async def test_get_logs_exception(app_with_auth):
     """测试获取日志异常"""
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", side_effect=Exception("Test error")):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth), base_url="http://test"
@@ -244,9 +267,10 @@ async def test_get_logs_exception(app_with_auth):
 @pytest.mark.asyncio
 async def test_clear_logs_success(app_with_auth):
     """测试清空日志成功"""
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=True):
             with patch("builtins.open", mock_open()) as _mock_file:
                 async with AsyncClient(
@@ -263,9 +287,10 @@ async def test_clear_logs_success(app_with_auth):
 @pytest.mark.asyncio
 async def test_clear_logs_file_not_exists(app_with_auth):
     """测试日志文件不存在时清空"""
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/missing.log"),
+    ):
         with patch("app.api.logs.os.path.exists", return_value=False):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth), base_url="http://test"
@@ -280,9 +305,10 @@ async def test_clear_logs_file_not_exists(app_with_auth):
 @pytest.mark.asyncio
 async def test_clear_logs_exception(app_with_auth):
     """测试清空日志异常"""
-    with patch("app.api.logs.config_manager") as mock_cm:
-        mock_cm.get_config.return_value = "./log.txt"
-
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
         with patch("app.api.logs.os.path.exists", side_effect=Exception("Test error")):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth), base_url="http://test"

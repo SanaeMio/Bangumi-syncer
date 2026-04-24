@@ -230,7 +230,7 @@ async def test_logs_clear_truncates_file(app_logs_proxy, tmp_path):
     log_f = tmp_path / "run.log"
     log_f.write_text("line1\nline2\n", encoding="utf-8")
 
-    with patch("app.api.logs.config_manager.get_config", return_value=str(log_f)):
+    with patch("app.api.logs.resolved_dev_log_file_path", return_value=log_f):
         transport = ASGITransport(app=app_logs_proxy)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post("/api/logs/clear")
