@@ -173,3 +173,8 @@ cython_debug/
 .idea/
 config_backups/
 sync_records.db
+sync_records.db-wal
+sync_records.db-shm
+
+# Claude Code
+.claude/

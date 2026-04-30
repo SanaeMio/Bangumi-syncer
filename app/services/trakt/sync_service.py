@@ -212,6 +212,9 @@ class TraktSyncService:
 
             logger.info(f"获取到 {len(history_items)} 条观看历史记录")
 
+            # 一次性加载已同步集合，后续 O(1) 查找（消除 N+1 查询）
+            synced_set = database_manager.get_trakt_synced_set(user_id)
+
             # 过滤：剧集需 episode+show；电影需 movie 且至少有标题或 TMDB（用于匹配 bangumi）
             syncable_items: list[TraktHistoryItem] = []
             for item in history_items:
@@ -237,8 +240,8 @@ class TraktSyncService:
 
             for item in syncable_items:
                 try:
-                    # 检查是否已同步过（避免重复同步）
-                    if not self._should_sync_item(user_id, item):
+                    # O(1) 查找：使用预加载的集合代替每条查库
+                    if (item.trakt_item_id, item.watched_timestamp) in synced_set:
                         skipped_count += 1
                         continue
 
@@ -326,30 +329,6 @@ class TraktSyncService:
             error_count=0,
             details={},
         )
-
-    def _should_sync_item(self, user_id: str, item: TraktHistoryItem) -> bool:
-        """检查是否需要同步该项目（避免重复）"""
-        try:
-            # 获取用户的同步历史（最多1000条）
-            history_data = database_manager.get_trakt_sync_history(
-                user_id=user_id, limit=1000
-            )
-
-            if not history_data or "records" not in history_data:
-                return True
-
-            # 检查是否已存在相同记录
-            for record in history_data["records"]:
-                if (
-                    record.get("trakt_item_id") == item.trakt_item_id
-                    and record.get("watched_at") == item.watched_timestamp
-                ):
-                    return False
-
-            return True
-        except Exception as e:
-            logger.warning(f"检查同步历史失败: {e}")
-            return True
 
     def _record_sync_history(
         self, user_id: str, item: TraktHistoryItem, task_id: str

@@ -124,7 +124,7 @@ class Logger:
             mode = "a"
             if log_path.exists() and log_path.stat().st_size >= 10 * 1024 * 1024:
                 mode = "w"
-            self.log_file = open(log_path, mode, encoding="utf-8")
+            self.log_file = open(log_path, mode, encoding="utf-8", buffering=1)
             self._log_file_path = log_path.resolve()
             print(
                 f"文件日志已启用: {self._log_file_path}",
@@ -215,7 +215,6 @@ class Logger:
             self._ensure_log_file_for_write()
         if hasattr(self, "log_file"):
             self.log_file.write(log_line + end)
-            self.log_file.flush()
 
     def info(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
         """INFO级别日志"""

@@ -190,7 +190,7 @@ async def test_run_sync_success_saves_history(tmp_path):
         ):
             with patch("app.services.feiniu.sync_service.database_manager") as dbm:
                 dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
-                dbm.is_feiniu_item_synced.return_value = False
+                dbm.get_feiniu_synced_set.return_value = set()
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
                     side_effect=fake_to_thread,
@@ -226,7 +226,7 @@ async def test_run_sync_to_thread_exception_counts_error(tmp_path):
         ):
             with patch("app.services.feiniu.sync_service.database_manager") as dbm:
                 dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
-                dbm.is_feiniu_item_synced.return_value = False
+                dbm.get_feiniu_synced_set.return_value = set()
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
                     side_effect=boom,
@@ -260,7 +260,7 @@ async def test_run_sync_error_does_not_save_history(tmp_path):
         ):
             with patch("app.services.feiniu.sync_service.database_manager") as dbm:
                 dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
-                dbm.is_feiniu_item_synced.return_value = False
+                dbm.get_feiniu_synced_set.return_value = set()
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
                     side_effect=fake_to_thread,
@@ -292,7 +292,7 @@ async def test_run_sync_ignored_counts_skipped(tmp_path):
         ):
             with patch("app.services.feiniu.sync_service.database_manager") as dbm:
                 dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
-                dbm.is_feiniu_item_synced.return_value = False
+                dbm.get_feiniu_synced_set.return_value = set()
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
                     side_effect=fake_to_thread,
@@ -325,7 +325,7 @@ async def test_run_sync_skips_video_placeholder_title(tmp_path):
         ):
             with patch("app.services.feiniu.sync_service.database_manager") as dbm:
                 dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
-                dbm.is_feiniu_item_synced.return_value = False
+                dbm.get_feiniu_synced_set.return_value = set()
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
                     side_effect=fail_to_thread,
@@ -353,7 +353,9 @@ async def test_run_sync_skip_already_in_history(tmp_path):
         ):
             with patch("app.services.feiniu.sync_service.database_manager") as dbm:
                 dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
-                dbm.is_feiniu_item_synced.return_value = True
+                dbm.get_feiniu_synced_set.return_value = {
+                    (rec.user_guid, rec.item_guid)
+                }
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
                 ) as tt:
@@ -393,7 +395,7 @@ async def test_run_sync_ignore_enabled_when_switch_off(tmp_path):
         ):
             with patch("app.services.feiniu.sync_service.database_manager") as dbm:
                 dbm.get_or_create_feiniu_min_update_watermark_ms.return_value = 0
-                dbm.is_feiniu_item_synced.return_value = False
+                dbm.get_feiniu_synced_set.return_value = set()
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
                     side_effect=fake_to_thread,

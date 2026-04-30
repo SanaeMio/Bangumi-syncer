@@ -132,9 +132,13 @@ class FeiniuSyncService:
             min_update_time_ms=wm_ms,
         )
 
+        # 一次性加载已同步集合，后续 O(1) 查找（消除 N+1 查询）
+        user_guids = list({rec.user_guid for rec in records})
+        synced_set = database_manager.get_feiniu_synced_set(user_guids)
+
         synced = skipped = errors = 0
         for rec in records:
-            if database_manager.is_feiniu_item_synced(rec.user_guid, rec.item_guid):
+            if (rec.user_guid, rec.item_guid) in synced_set:
                 skipped += 1
                 continue
 
@@ -144,7 +148,6 @@ class FeiniuSyncService:
                 continue
 
             try:
-                # 同步执行以便根据结果写入 feiniu_sync_history；未预期异常时由 sync_custom_item 的 except 写入 error 记录
                 result = await asyncio.to_thread(
                     sync_service.sync_custom_item, item, FEINIU_SYNC_SOURCE
                 )
@@ -158,6 +161,7 @@ class FeiniuSyncService:
                 database_manager.save_feiniu_sync_history(
                     rec.user_guid, rec.item_guid, rec.update_time_ms or None
                 )
+                synced_set.add((rec.user_guid, rec.item_guid))
                 synced += 1
             elif result.status == "ignored":
                 skipped += 1

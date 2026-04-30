@@ -331,16 +331,16 @@ class TestDatabaseManager:
             assert len(result2["records"]) == 5
             assert len(result3["records"]) == 5
 
-    def test_feiniu_sync_history(self, temp_dir, reset_singletons):
+    def test_feiniu_sync_history_save_and_batch_query(self, temp_dir, reset_singletons):
         db_path = temp_dir / "fn.db"
         with patch("app.core.database.logger"):
             from app.core.database import DatabaseManager
 
             db = DatabaseManager(str(db_path))
-            assert db.is_feiniu_item_synced("u1", "it1") is False
             assert db.save_feiniu_sync_history("u1", "it1", 12345) is True
-            assert db.is_feiniu_item_synced("u1", "it1") is True
-            assert db.is_feiniu_item_synced("u1", "it2") is False
+            synced = db.get_feiniu_synced_set(["u1"])
+            assert ("u1", "it1") in synced
+            assert ("u1", "it2") not in synced
 
     def test_feiniu_watermark_meta(self, temp_dir, reset_singletons):
         db_path = temp_dir / "fnwm.db"
@@ -510,6 +510,8 @@ class TestDatabaseDockerAndTrakt:
             from app.core.database import DatabaseManager
 
             db = DatabaseManager(str(db_path))
+        # 断开持久连接，让下次操作触发 sqlite3.connect 失败
+        db._conn = None
         with patch("app.core.database.sqlite3.connect", side_effect=OSError("disk")):
             db.log_sync_record(
                 user_name="u",
@@ -526,6 +528,8 @@ class TestDatabaseDockerAndTrakt:
             from app.core.database import DatabaseManager
 
             db = DatabaseManager(str(db_path))
+        # 断开持久连接，让下次操作触发 sqlite3.connect 失败
+        db._conn = None
         with patch(
             "app.core.database.sqlite3.connect", side_effect=RuntimeError("bad")
         ):
@@ -540,5 +544,6 @@ class TestDatabaseDockerAndTrakt:
             from app.core.database import DatabaseManager
 
             db = DatabaseManager(str(db_path))
+        db._conn = None
         with patch("app.core.database.sqlite3.connect", side_effect=OSError("x")):
             assert db.update_sync_record_status(1, "ok") is False

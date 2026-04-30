@@ -5,6 +5,7 @@
 import os
 import shutil
 import sqlite3
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -40,13 +41,44 @@ class DatabaseManager:
                 shutil.move(str(legacy), str(self.db_path))
                 logger.info(f"Docker: 已从旧路径迁移数据库 {legacy} -> {self.db_path}")
 
+        self._lock = threading.Lock()
+        self._conn: Optional[sqlite3.Connection] = None
+        self._media_type_migrated = False
         self._init_database()
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """获取持久化数据库连接（线程安全），自动重连"""
+        if self._conn is not None:
+            try:
+                self._conn.execute("SELECT 1")
+            except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+                try:
+                    self._conn.close()
+                except OSError:
+                    pass
+                self._conn = None
+        if self._conn is None:
+            conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            self._conn = conn
+        return self._conn
+
+    def _execute_with_lock(self, fn):
+        """在锁保护下执行数据库操作"""
+        with self._lock:
+            conn = self._get_connection()
+            return fn(conn)
 
     def _ensure_sync_records_media_type(self, cursor) -> None:
         """旧库迁移：为 sync_records 增加 media_type（历史数据为 episode）。"""
+        if self._media_type_migrated:
+            return
         cursor.execute("PRAGMA table_info(sync_records)")
         cols = [row[1] for row in cursor.fetchall()]
         if "media_type" in cols:
+            self._media_type_migrated = True
             return
         cursor.execute(
             "ALTER TABLE sync_records ADD COLUMN media_type TEXT DEFAULT 'episode'"
@@ -58,11 +90,12 @@ class DatabaseManager:
             WHERE media_type IS NULL OR TRIM(COALESCE(media_type, '')) = ''
             """
         )
+        self._media_type_migrated = True
         logger.info("sync_records 已迁移：增加 media_type 列并回填 episode")
 
     def _init_database(self) -> None:
         """初始化数据库"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
         # 创建同步记录表
@@ -134,8 +167,24 @@ class DatabaseManager:
             )
         """)
 
+        # 创建二级索引以加速常用查询
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_records_timestamp ON sync_records(timestamp)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_records_user_name ON sync_records(user_name)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_records_source ON sync_records(source)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_records_status ON sync_records(status)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trakt_sync_history_user_id ON trakt_sync_history(user_id)"
+        )
+
         conn.commit()
-        conn.close()
         logger.info(f"数据库初始化完成: {self.db_path}")
 
     def log_sync_record(
@@ -154,37 +203,34 @@ class DatabaseManager:
     ) -> None:
         """记录同步日志到数据库"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            self._ensure_sync_records_media_type(cursor)
 
-            # 使用本地时间而不是UTC时间
-            local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            def _write(conn):
+                self._ensure_sync_records_media_type(conn.cursor())
+                local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute(
+                    """
+                    INSERT INTO sync_records
+                    (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    (
+                        local_time,
+                        user_name,
+                        title,
+                        ori_title,
+                        season,
+                        episode,
+                        subject_id,
+                        episode_id,
+                        status,
+                        message,
+                        source,
+                        media_type or "episode",
+                    ),
+                )
+                conn.commit()
 
-            cursor.execute(
-                """
-                INSERT INTO sync_records
-                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    local_time,
-                    user_name,
-                    title,
-                    ori_title,
-                    season,
-                    episode,
-                    subject_id,
-                    episode_id,
-                    status,
-                    message,
-                    source,
-                    media_type or "episode",
-                ),
-            )
-
-            conn.commit()
-            conn.close()
+            self._execute_with_lock(_write)
         except Exception as e:
             logger.error(f"记录同步日志失败: {e}")
 
@@ -199,76 +245,77 @@ class DatabaseManager:
     ) -> dict[str, Any]:
         """获取同步记录"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            self._ensure_sync_records_media_type(cursor)
 
-            # 构建查询条件
-            where_conditions = []
-            params = []
+            def _read(conn):
+                self._ensure_sync_records_media_type(conn.cursor())
+                cursor = conn.cursor()
 
-            if status:
-                where_conditions.append("status = ?")
-                params.append(status)
+                where_conditions = []
+                params = []
 
-            if user_name:
-                where_conditions.append("user_name = ?")
-                params.append(user_name)
+                if status:
+                    where_conditions.append("status = ?")
+                    params.append(status)
 
-            if source:
-                where_conditions.append("source = ?")
-                params.append(source)
+                if user_name:
+                    where_conditions.append("user_name = ?")
+                    params.append(user_name)
 
-            if source_prefix:
-                where_conditions.append("source LIKE ?")
-                params.append(f"{source_prefix}%")
+                if source:
+                    where_conditions.append("source = ?")
+                    params.append(source)
 
-            where_clause = (
-                " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
-            )
+                if source_prefix:
+                    where_conditions.append("source LIKE ?")
+                    params.append(f"{source_prefix}%")
 
-            # 获取总数
-            count_query = f"SELECT COUNT(*) FROM sync_records{where_clause}"
-            cursor.execute(count_query, params)
-            total = cursor.fetchone()[0]
-
-            query = f"""
-                SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                       subject_id, episode_id, status, message, source, media_type
-                FROM sync_records{where_clause}
-                ORDER BY timestamp DESC
-                LIMIT ? OFFSET ?
-            """
-            cursor.execute(query, params + [limit, offset])
-
-            records = []
-            for row in cursor.fetchall():
-                records.append(
-                    {
-                        "id": row[0],
-                        "timestamp": row[1],
-                        "user_name": row[2],
-                        "title": row[3],
-                        "ori_title": row[4],
-                        "season": row[5],
-                        "episode": row[6],
-                        "subject_id": row[7],
-                        "episode_id": row[8],
-                        "status": row[9],
-                        "message": row[10],
-                        "source": row[11],
-                        "media_type": row[12] or "episode",
-                    }
+                where_clause = (
+                    " WHERE " + " AND ".join(where_conditions)
+                    if where_conditions
+                    else ""
                 )
 
-            conn.close()
+                count_query = f"SELECT COUNT(*) FROM sync_records{where_clause}"
+                cursor.execute(count_query, params)
+                total = cursor.fetchone()[0]
 
-            return {
-                "records": records,
-                "total": total,
-                "limit": limit,
-                "offset": offset,
-            }
+                query = f"""
+                    SELECT id, timestamp, user_name, title, ori_title, season, episode,
+                           subject_id, episode_id, status, message, source, media_type
+                    FROM sync_records{where_clause}
+                    ORDER BY timestamp DESC
+                    LIMIT ? OFFSET ?
+                """
+                cursor.execute(query, params + [limit, offset])
+
+                records = []
+                for row in cursor.fetchall():
+                    records.append(
+                        {
+                            "id": row[0],
+                            "timestamp": row[1],
+                            "user_name": row[2],
+                            "title": row[3],
+                            "ori_title": row[4],
+                            "season": row[5],
+                            "episode": row[6],
+                            "subject_id": row[7],
+                            "episode_id": row[8],
+                            "status": row[9],
+                            "message": row[10],
+                            "source": row[11],
+                            "media_type": row[12] or "episode",
+                        }
+                    )
+
+                return {
+                    "records": records,
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                }
+
+            return self._execute_with_lock(_read)
         except Exception as e:
             logger.error(f"获取同步记录失败: {e}")
             raise
@@ -276,23 +323,22 @@ class DatabaseManager:
     def get_sync_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
         """根据ID获取单个同步记录"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            self._ensure_sync_records_media_type(cursor)
 
-            cursor.execute(
-                """
-                SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                       subject_id, episode_id, status, message, source, media_type
-                FROM sync_records
-                WHERE id = ?
-            """,
-                (record_id,),
-            )
+            def _read(conn):
+                self._ensure_sync_records_media_type(conn.cursor())
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT id, timestamp, user_name, title, ori_title, season, episode,
+                           subject_id, episode_id, status, message, source, media_type
+                    FROM sync_records
+                    WHERE id = ?
+                """,
+                    (record_id,),
+                )
+                return cursor.fetchone()
 
-            row = cursor.fetchone()
-            conn.close()
-
+            row = self._execute_with_lock(_read)
             if row:
                 return {
                     "id": row[0],
@@ -319,22 +365,20 @@ class DatabaseManager:
     ) -> bool:
         """更新同步记录的状态"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            cursor.execute(
-                """
-                UPDATE sync_records
-                SET status = ?, message = ?
-                WHERE id = ?
-            """,
-                (status, message, record_id),
-            )
+            def _write(conn):
+                cursor = conn.execute(
+                    """
+                    UPDATE sync_records
+                    SET status = ?, message = ?
+                    WHERE id = ?
+                """,
+                    (status, message, record_id),
+                )
+                conn.commit()
+                return cursor.rowcount
 
-            conn.commit()
-            affected_rows = cursor.rowcount
-            conn.close()
-
+            affected_rows = self._execute_with_lock(_write)
             if affected_rows > 0:
                 return True
             else:
@@ -347,60 +391,59 @@ class DatabaseManager:
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            # 总同步次数
-            cursor.execute("SELECT COUNT(*) FROM sync_records")
-            total_syncs = cursor.fetchone()[0]
+            def _read(conn):
+                cursor = conn.cursor()
 
-            # 成功同步次数
-            cursor.execute("SELECT COUNT(*) FROM sync_records WHERE status = 'success'")
-            success_syncs = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM sync_records")
+                total_syncs = cursor.fetchone()[0]
 
-            # 失败同步次数
-            cursor.execute("SELECT COUNT(*) FROM sync_records WHERE status = 'error'")
-            error_syncs = cursor.fetchone()[0]
+                cursor.execute(
+                    "SELECT COUNT(*) FROM sync_records WHERE status = 'success'"
+                )
+                success_syncs = cursor.fetchone()[0]
 
-            # 今日同步次数
-            cursor.execute(
-                "SELECT COUNT(*) FROM sync_records WHERE DATE(timestamp) = DATE('now')"
-            )
-            today_syncs = cursor.fetchone()[0]
+                cursor.execute(
+                    "SELECT COUNT(*) FROM sync_records WHERE status = 'error'"
+                )
+                error_syncs = cursor.fetchone()[0]
 
-            # 用户统计
-            cursor.execute(
-                "SELECT user_name, COUNT(*) FROM sync_records GROUP BY user_name ORDER BY COUNT(*) DESC"
-            )
-            user_stats = [
-                {"user": row[0], "count": row[1]} for row in cursor.fetchall()
-            ]
+                cursor.execute(
+                    "SELECT COUNT(*) FROM sync_records WHERE DATE(timestamp) = DATE('now')"
+                )
+                today_syncs = cursor.fetchone()[0]
 
-            # 最近7天统计
-            cursor.execute("""
-                SELECT DATE(timestamp) as date, COUNT(*) as count
-                FROM sync_records
-                WHERE timestamp >= datetime('now', '-7 days')
-                GROUP BY DATE(timestamp)
-                ORDER BY date
-            """)
-            daily_stats = [
-                {"date": row[0], "count": row[1]} for row in cursor.fetchall()
-            ]
+                cursor.execute(
+                    "SELECT user_name, COUNT(*) FROM sync_records GROUP BY user_name ORDER BY COUNT(*) DESC"
+                )
+                user_stats = [
+                    {"user": row[0], "count": row[1]} for row in cursor.fetchall()
+                ]
 
-            conn.close()
+                cursor.execute("""
+                    SELECT DATE(timestamp) as date, COUNT(*) as count
+                    FROM sync_records
+                    WHERE timestamp >= datetime('now', '-7 days')
+                    GROUP BY DATE(timestamp)
+                    ORDER BY date
+                """)
+                daily_stats = [
+                    {"date": row[0], "count": row[1]} for row in cursor.fetchall()
+                ]
 
-            return {
-                "total_syncs": total_syncs,
-                "success_syncs": success_syncs,
-                "error_syncs": error_syncs,
-                "today_syncs": today_syncs,
-                "success_rate": round(success_syncs / total_syncs * 100, 2)
-                if total_syncs > 0
-                else 0,
-                "user_stats": user_stats,
-                "daily_stats": daily_stats,
-            }
+                return {
+                    "total_syncs": total_syncs,
+                    "success_syncs": success_syncs,
+                    "error_syncs": error_syncs,
+                    "today_syncs": today_syncs,
+                    "success_rate": round(success_syncs / total_syncs * 100, 2)
+                    if total_syncs > 0
+                    else 0,
+                    "user_stats": user_stats,
+                    "daily_stats": daily_stats,
+                }
+
+            return self._execute_with_lock(_read)
         except Exception as e:
             logger.error(f"获取统计信息失败: {e}")
             raise
@@ -410,64 +453,63 @@ class DatabaseManager:
     def save_trakt_config(self, config: dict) -> bool:
         """保存或更新 Trakt 配置"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            # 检查是否存在
-            cursor.execute(
-                "SELECT id FROM trakt_config WHERE user_id = ?", (config["user_id"],)
-            )
-            existing = cursor.fetchone()
-
-            if existing:
-                # 更新现有配置
+            def _write(conn):
+                cursor = conn.cursor()
                 cursor.execute(
-                    """
-                    UPDATE trakt_config SET
-                        access_token = ?,
-                        refresh_token = ?,
-                        expires_at = ?,
-                        enabled = ?,
-                        sync_interval = ?,
-                        last_sync_time = ?,
-                        updated_at = ?
-                    WHERE user_id = ?
-                """,
-                    (
-                        config["access_token"],
-                        config["refresh_token"],
-                        config["expires_at"],
-                        1 if config.get("enabled", True) else 0,
-                        config.get("sync_interval", "0 */6 * * *"),
-                        config.get("last_sync_time"),
-                        int(datetime.now().timestamp()),
-                        config["user_id"],
-                    ),
+                    "SELECT id FROM trakt_config WHERE user_id = ?",
+                    (config["user_id"],),
                 )
-            else:
-                # 插入新配置
-                cursor.execute(
-                    """
-                    INSERT INTO trakt_config
-                    (user_id, access_token, refresh_token, expires_at, enabled,
-                     sync_interval, last_sync_time, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        config["user_id"],
-                        config["access_token"],
-                        config["refresh_token"],
-                        config["expires_at"],
-                        1 if config.get("enabled", True) else 0,
-                        config.get("sync_interval", "0 */6 * * *"),
-                        config.get("last_sync_time"),
-                        config.get("created_at", int(datetime.now().timestamp())),
-                        int(datetime.now().timestamp()),
-                    ),
-                )
+                existing = cursor.fetchone()
 
-            conn.commit()
-            conn.close()
+                if existing:
+                    cursor.execute(
+                        """
+                        UPDATE trakt_config SET
+                            access_token = ?,
+                            refresh_token = ?,
+                            expires_at = ?,
+                            enabled = ?,
+                            sync_interval = ?,
+                            last_sync_time = ?,
+                            updated_at = ?
+                        WHERE user_id = ?
+                    """,
+                        (
+                            config["access_token"],
+                            config["refresh_token"],
+                            config["expires_at"],
+                            1 if config.get("enabled", True) else 0,
+                            config.get("sync_interval", "0 */6 * * *"),
+                            config.get("last_sync_time"),
+                            int(datetime.now().timestamp()),
+                            config["user_id"],
+                        ),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO trakt_config
+                        (user_id, access_token, refresh_token, expires_at, enabled,
+                         sync_interval, last_sync_time, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            config["user_id"],
+                            config["access_token"],
+                            config["refresh_token"],
+                            config["expires_at"],
+                            1 if config.get("enabled", True) else 0,
+                            config.get("sync_interval", "0 */6 * * *"),
+                            config.get("last_sync_time"),
+                            config.get("created_at", int(datetime.now().timestamp())),
+                            int(datetime.now().timestamp()),
+                        ),
+                    )
+
+                conn.commit()
+
+            self._execute_with_lock(_write)
             return True
         except Exception as e:
             logger.error(f"保存 Trakt 配置失败: {e}")
@@ -476,18 +518,18 @@ class DatabaseManager:
     def get_trakt_config(self, user_id: str) -> Optional[dict]:
         """获取用户的 Trakt 配置"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            cursor.execute("SELECT * FROM trakt_config WHERE user_id = ?", (user_id,))
-            row = cursor.fetchone()
+            def _read(conn):
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM trakt_config WHERE user_id = ?", (user_id,)
+                )
+                return cursor.fetchone()
 
-            conn.close()
-
+            row = self._execute_with_lock(_read)
             if not row:
                 return None
 
-            # 转换为字典
             columns = [
                 "id",
                 "user_id",
@@ -501,7 +543,6 @@ class DatabaseManager:
                 "updated_at",
             ]
             config = dict(zip(columns, row))
-            # 转换布尔值
             config["enabled"] = bool(config["enabled"])
             return config
         except Exception as e:
@@ -511,13 +552,16 @@ class DatabaseManager:
     def delete_trakt_config(self, user_id: str) -> bool:
         """删除用户的 Trakt 配置"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            cursor.execute("DELETE FROM trakt_config WHERE user_id = ?", (user_id,))
-            conn.commit()
-            conn.close()
-            return cursor.rowcount > 0
+            def _write(conn):
+                cursor = conn.execute(
+                    "DELETE FROM trakt_config WHERE user_id = ?", (user_id,)
+                )
+                conn.commit()
+                return cursor.rowcount
+
+            affected = self._execute_with_lock(_write)
+            return affected > 0
         except Exception as e:
             logger.error(f"删除 Trakt 配置失败: {e}")
             return False
@@ -525,27 +569,25 @@ class DatabaseManager:
     def save_trakt_sync_history(self, history: dict) -> bool:
         """保存 Trakt 同步历史记录"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            # 使用 INSERT OR REPLACE 来处理唯一约束冲突
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO trakt_sync_history
-                (user_id, trakt_item_id, media_type, watched_at, synced_at)
-                VALUES (?, ?, ?, ?, ?)
-            """,
-                (
-                    history["user_id"],
-                    history["trakt_item_id"],
-                    history["media_type"],
-                    history["watched_at"],
-                    history.get("synced_at", int(datetime.now().timestamp())),
-                ),
-            )
+            def _write(conn):
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO trakt_sync_history
+                    (user_id, trakt_item_id, media_type, watched_at, synced_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """,
+                    (
+                        history["user_id"],
+                        history["trakt_item_id"],
+                        history["media_type"],
+                        history["watched_at"],
+                        history.get("synced_at", int(datetime.now().timestamp())),
+                    ),
+                )
+                conn.commit()
 
-            conn.commit()
-            conn.close()
+            self._execute_with_lock(_write)
             return True
         except Exception as e:
             logger.error(f"保存 Trakt 同步历史失败: {e}")
@@ -556,48 +598,48 @@ class DatabaseManager:
     ) -> dict:
         """获取用户的 Trakt 同步历史"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            # 获取总数
-            cursor.execute(
-                "SELECT COUNT(*) FROM trakt_sync_history WHERE user_id = ?", (user_id,)
-            )
-            total = cursor.fetchone()[0]
+            def _read(conn):
+                cursor = conn.cursor()
 
-            # 获取记录
-            cursor.execute(
-                """
-                SELECT id, user_id, trakt_item_id, media_type, watched_at, synced_at
-                FROM trakt_sync_history
-                WHERE user_id = ?
-                ORDER BY watched_at DESC
-                LIMIT ? OFFSET ?
-            """,
-                (user_id, limit, offset),
-            )
+                cursor.execute(
+                    "SELECT COUNT(*) FROM trakt_sync_history WHERE user_id = ?",
+                    (user_id,),
+                )
+                total = cursor.fetchone()[0]
 
-            records = []
-            for row in cursor.fetchall():
-                records.append(
-                    {
-                        "id": row[0],
-                        "user_id": row[1],
-                        "trakt_item_id": row[2],
-                        "media_type": row[3],
-                        "watched_at": row[4],
-                        "synced_at": row[5],
-                    }
+                cursor.execute(
+                    """
+                    SELECT id, user_id, trakt_item_id, media_type, watched_at, synced_at
+                    FROM trakt_sync_history
+                    WHERE user_id = ?
+                    ORDER BY watched_at DESC
+                    LIMIT ? OFFSET ?
+                """,
+                    (user_id, limit, offset),
                 )
 
-            conn.close()
+                records = []
+                for row in cursor.fetchall():
+                    records.append(
+                        {
+                            "id": row[0],
+                            "user_id": row[1],
+                            "trakt_item_id": row[2],
+                            "media_type": row[3],
+                            "watched_at": row[4],
+                            "synced_at": row[5],
+                        }
+                    )
 
-            return {
-                "records": records,
-                "total": total,
-                "limit": limit,
-                "offset": offset,
-            }
+                return {
+                    "records": records,
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                }
+
+            return self._execute_with_lock(_read)
         except Exception as e:
             logger.error(f"获取 Trakt 同步历史失败: {e}")
             raise
@@ -605,19 +647,18 @@ class DatabaseManager:
     def get_last_sync_time(self, user_id: str) -> Optional[int]:
         """获取用户最后同步时间"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            cursor.execute(
-                """
-                SELECT MAX(watched_at) FROM trakt_sync_history WHERE user_id = ?
-            """,
-                (user_id,),
-            )
-            result = cursor.fetchone()[0]
+            def _read(conn):
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT MAX(watched_at) FROM trakt_sync_history WHERE user_id = ?
+                """,
+                    (user_id,),
+                )
+                return cursor.fetchone()[0]
 
-            conn.close()
-            return result
+            return self._execute_with_lock(_read)
         except Exception as e:
             logger.error(f"获取最后同步时间失败: {e}")
             return None
@@ -625,20 +666,18 @@ class DatabaseManager:
     def get_trakt_configs_with_sync_enabled(self) -> list[dict]:
         """获取所有启用同步的 Trakt 配置"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT * FROM trakt_config WHERE enabled = 1
-            """)
-            rows = cursor.fetchall()
+            def _read(conn):
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT * FROM trakt_config WHERE enabled = 1
+                """)
+                return cursor.fetchall()
 
-            conn.close()
-
+            rows = self._execute_with_lock(_read)
             if not rows:
                 return []
 
-            # 转换为字典列表
             columns = [
                 "id",
                 "user_id",
@@ -672,57 +711,39 @@ class DatabaseManager:
     ) -> bool:
         """记录已提交的飞牛条目同步（去重用）"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO feiniu_sync_history
-                (fn_user_guid, item_guid, synced_at, update_time_snapshot)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    fn_user_guid,
-                    item_guid,
-                    int(datetime.now().timestamp()),
-                    update_time_snapshot,
-                ),
-            )
-            conn.commit()
-            conn.close()
+
+            def _write(conn):
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO feiniu_sync_history
+                    (fn_user_guid, item_guid, synced_at, update_time_snapshot)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        fn_user_guid,
+                        item_guid,
+                        int(datetime.now().timestamp()),
+                        update_time_snapshot,
+                    ),
+                )
+                conn.commit()
+
+            self._execute_with_lock(_write)
             return True
         except Exception as e:
             logger.error(f"保存飞牛同步历史失败: {e}")
             return False
 
-    def is_feiniu_item_synced(self, fn_user_guid: str, item_guid: str) -> bool:
-        """是否已为该飞牛用户与条目提交过同步"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT 1 FROM feiniu_sync_history
-                WHERE fn_user_guid = ? AND item_guid = ?
-                LIMIT 1
-                """,
-                (fn_user_guid, item_guid),
-            )
-            row = cursor.fetchone()
-            conn.close()
-            return row is not None
-        except Exception as e:
-            logger.warning(f"查询飞牛同步历史失败: {e}")
-            return False
-
     def get_feiniu_meta(self, key: str) -> Optional[str]:
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT value FROM feiniu_meta WHERE key = ? LIMIT 1", (key,)
-            )
-            row = cursor.fetchone()
-            conn.close()
+
+            def _read(conn):
+                cursor = conn.execute(
+                    "SELECT value FROM feiniu_meta WHERE key = ? LIMIT 1", (key,)
+                )
+                return cursor.fetchone()
+
+            row = self._execute_with_lock(_read)
             return str(row[0]) if row else None
         except Exception as e:
             logger.warning(f"读取飞牛 meta 失败: {e}")
@@ -730,16 +751,17 @@ class DatabaseManager:
 
     def set_feiniu_meta(self, key: str, value: str) -> bool:
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO feiniu_meta (key, value) VALUES (?, ?)
-                """,
-                (key, value),
-            )
-            conn.commit()
-            conn.close()
+
+            def _write(conn):
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO feiniu_meta (key, value) VALUES (?, ?)
+                    """,
+                    (key, value),
+                )
+                conn.commit()
+
+            self._execute_with_lock(_write)
             return True
         except Exception as e:
             logger.error(f"写入飞牛 meta 失败: {e}")
@@ -747,15 +769,54 @@ class DatabaseManager:
 
     def delete_feiniu_meta(self, key: str) -> bool:
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM feiniu_meta WHERE key = ?", (key,))
-            conn.commit()
-            conn.close()
+
+            def _write(conn):
+                conn.execute("DELETE FROM feiniu_meta WHERE key = ?", (key,))
+                conn.commit()
+
+            self._execute_with_lock(_write)
             return True
         except Exception as e:
             logger.error(f"删除飞牛 meta 失败: {e}")
             return False
+
+    def get_feiniu_synced_set(self, user_guids: list[str]) -> set[tuple[str, str]]:
+        """批量获取已同步的飞牛条目集合，用于 O(1) 去重查找"""
+        try:
+
+            def _read(conn):
+                cursor = conn.cursor()
+                result = set()
+                for guid in user_guids:
+                    cursor.execute(
+                        "SELECT fn_user_guid, item_guid FROM feiniu_sync_history WHERE fn_user_guid = ?",
+                        (guid,),
+                    )
+                    for row in cursor.fetchall():
+                        result.add((row[0], row[1]))
+                return result
+
+            return self._execute_with_lock(_read)
+        except Exception as e:
+            logger.warning(f"批量查询飞牛同步历史失败: {e}")
+            return set()
+
+    def get_trakt_synced_set(self, user_id: str) -> set[tuple[str, int]]:
+        """批量获取已同步的 Trakt 条目集合，用于 O(1) 去重查找"""
+        try:
+
+            def _read(conn):
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT trakt_item_id, watched_at FROM trakt_sync_history WHERE user_id = ?",
+                    (user_id,),
+                )
+                return {(row[0], row[1]) for row in cursor.fetchall()}
+
+            return self._execute_with_lock(_read)
+        except Exception as e:
+            logger.warning(f"批量查询 Trakt 同步历史失败: {e}")
+            return set()
 
     def clear_feiniu_min_update_watermark(self) -> None:
         """清除「启用后仅同步新进度」水位（飞牛关闭时调用）"""
