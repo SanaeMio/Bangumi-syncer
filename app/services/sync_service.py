@@ -32,9 +32,14 @@ class SyncService:
         self._cached_mappings: dict[str, str] = {}
         self._mapping_file_path: Optional[str] = None
         self._last_modified_time: float = 0
-        # 线程池用于异步处理同步任务
+        # 线程池大小从配置读取
+        try:
+            scheduler_cfg = config_manager.get_scheduler_config()
+            max_workers = max(1, int(scheduler_cfg.get("max_concurrent_syncs", 3)))
+        except (TypeError, ValueError, KeyError):
+            max_workers = 3
         self._executor = ThreadPoolExecutor(
-            max_workers=3, thread_name_prefix="sync_worker"
+            max_workers=max_workers, thread_name_prefix="sync_worker"
         )
         # 同步任务状态跟踪
         self._sync_tasks = {}

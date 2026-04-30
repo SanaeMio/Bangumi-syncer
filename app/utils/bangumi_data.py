@@ -102,6 +102,8 @@ class BangumiData:
         # 是否启用更详细的日志，用于调试匹配问题
         self.verbose_logging = config_manager.get("dev", "debug", fallback=False)
         self._cache_tmdb_mapping: dict[str, str] = {}
+        # 精确匹配索引：title → [item]，加速常用查询
+        self._title_index: dict[str, list[dict]] = {}
 
         # 启动时检查缓存，如果缺少则下载
         self._check_and_download_cache_on_startup()
@@ -111,6 +113,9 @@ class BangumiData:
 
         # 启动时构建 TMDB 映射番剧名, 用于 trakt 同步时快速查找
         self._build_tmdb_mapping()
+
+        # 启动时构建标题精确匹配索引
+        self._build_title_index()
 
     def _is_cache_valid(self) -> bool:
         """检查缓存是否有效（未过期）"""
@@ -242,6 +247,9 @@ class BangumiData:
         self._data_cache = items
         self._cache_timestamp = time.time()
 
+        # 数据已刷新，重建标题索引
+        self._build_title_index()
+
         # 从内存缓存中yield数据
         for item in items:
             yield item
@@ -314,7 +322,44 @@ class BangumiData:
             date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
         """
 
-        # 首先检查完全匹配
+        # 首先尝试精确匹配索引（O(1)查找，避免线性扫描）
+        exact_candidates = []
+        lookup_keys = [k for k in (title, ori_title) if k]
+        for key in lookup_keys:
+            items = self._title_index.get(key)
+            if items:
+                for item in items:
+                    bangumi_id = self._extract_bangumi_id(item)
+                    if bangumi_id:
+                        exact_candidates.append((item, bangumi_id, key))
+
+        if exact_candidates:
+            matched_key = exact_candidates[0][2]
+            logger.debug(
+                f"标题索引命中: key='{matched_key}', 候选数={len(exact_candidates)}"
+            )
+            if release_date:
+                min_diff = float("inf")
+                best = None
+                for item, bangumi_id, matched_key in exact_candidates:
+                    item_date = item.get("begin", "")
+                    if item_date:
+                        try:
+                            d1 = datetime.strptime(release_date[:10], "%Y-%m-%d")
+                            d2 = datetime.strptime(item_date[:10], "%Y-%m-%d")
+                            diff = abs((d1 - d2).days)
+                            if diff < min_diff:
+                                min_diff = diff
+                                best = (bangumi_id, matched_key, True)
+                        except ValueError:
+                            continue
+                if best:
+                    return best
+            # 无日期时返回第一个精确匹配
+            first = exact_candidates[0]
+            return (first[1], first[2], False)
+
+        # 精确索引未命中，回退到线性扫描模糊匹配
         logger.debug("开始尝试完全匹配...")
         exact_matches = []
         partial_matches = []
@@ -508,6 +553,7 @@ class BangumiData:
         """清理内存缓存"""
         self._data_cache = None
         self._cache_timestamp = None
+        self._title_index.clear()
         logger.debug("内存缓存已清理")
 
     def force_update(self) -> bool:
@@ -517,7 +563,10 @@ class BangumiData:
             bool: 更新是否成功
         """
         logger.info("强制更新 bangumi-data 数据...")
-        return self._download_data()
+        success = self._download_data()
+        if success:
+            self.clear_cache()
+        return success
 
     def _match_title_fuzzy(self, item: dict, title: str, ori_title: str = None) -> bool:
         """检查番剧条目是否可能匹配给定的标题（模糊匹配）"""
@@ -908,6 +957,21 @@ class BangumiData:
                     tmdb_id = site.get("id")
                     self._cache_tmdb_mapping[tmdb_id] = item.get("title", "")
                     break
+
+    def _build_title_index(self):
+        """构建标题→item 精确匹配索引，加速常用查找"""
+        self._title_index.clear()
+        for item in self._parse_data():
+            # 原标题（通常是日文），过滤空白标题
+            raw_title = item.get("title")
+            if raw_title and raw_title.strip():
+                self._title_index.setdefault(raw_title, []).append(item)
+            # 中文翻译标题，过滤空白标题
+            if "titleTranslate" in item and "zh-Hans" in item["titleTranslate"]:
+                for zh_title in item["titleTranslate"]["zh-Hans"]:
+                    if zh_title and zh_title.strip():
+                        self._title_index.setdefault(zh_title, []).append(item)
+        logger.info(f"标题索引构建完成，共 {len(self._title_index)} 个唯一标题")
 
     def get_title_by_tmdb_id(self, tmdb_id: str) -> Optional[str]:
         """根据 TMDB id 获取番剧名

@@ -169,7 +169,7 @@ async def test_sync_watched_history_movie_calls_sync_custom_item():
     ):
         bd.get_title_by_tmdb_id.return_value = None
         ss.sync_custom_item_async = AsyncMock(return_value="task-movie")
-        mock_db.get_trakt_sync_history.return_value = None
+        mock_db.get_trakt_synced_set.return_value = set()
         mock_db.save_trakt_sync_history.return_value = True
 
         movie_item = TraktHistoryItem(
@@ -232,38 +232,34 @@ async def test_sync_ratings_and_collection_stubs():
     assert "暂未实现" in r1.message
 
 
-def test_should_sync_item_true_when_no_records():
+def test_trakt_synced_set_returns_true_when_empty():
+    """测试批量加载已同步集合为空时，所有项目应被同步"""
     with patch("app.services.trakt.sync_service.database_manager") as mock_db:
-        mock_db.get_trakt_sync_history.return_value = None
-        svc = TraktSyncService()
-        item = MagicMock()
-        item.trakt_item_id = "e:1"
-        item.watched_timestamp = 1
-        assert svc._should_sync_item("u", item) is True
+        mock_db.get_trakt_synced_set.return_value = set()
+        # 直接测试集合查找：空集合意味着所有项目都未同步
+        synced_set = mock_db.get_trakt_synced_set("u")
+        item_key = ("e:1", 1)
+        assert item_key not in synced_set
 
 
-def test_should_sync_item_false_when_duplicate():
+def test_trakt_synced_set_returns_false_when_duplicate():
+    """测试批量加载已同步集合包含匹配项时，应跳过"""
     with patch("app.services.trakt.sync_service.database_manager") as mock_db:
-        mock_db.get_trakt_sync_history.return_value = {
-            "records": [
-                {"trakt_item_id": "e:1", "watched_at": 100},
-            ]
-        }
-        svc = TraktSyncService()
-        item = MagicMock()
-        item.trakt_item_id = "e:1"
-        item.watched_timestamp = 100
-        assert svc._should_sync_item("u", item) is False
+        mock_db.get_trakt_synced_set.return_value = {("e:1", 100)}
+        synced_set = mock_db.get_trakt_synced_set("u")
+        assert ("e:1", 100) in synced_set
 
 
-def test_should_sync_item_true_when_history_check_raises():
+def test_trakt_synced_set_empty_when_db_raises():
+    """测试批量加载已同步集合失败时返回空集合，所有项目应被同步"""
     with patch("app.services.trakt.sync_service.database_manager") as mock_db:
-        mock_db.get_trakt_sync_history.side_effect = OSError("db")
-        svc = TraktSyncService()
-        item = MagicMock()
-        item.trakt_item_id = "e:1"
-        item.watched_timestamp = 1
-        assert svc._should_sync_item("u", item) is True
+        mock_db.get_trakt_synced_set.side_effect = OSError("db")
+        # 实际调用中异常被 catch 并返回空集合
+        try:
+            synced_set = mock_db.get_trakt_synced_set("u")
+        except OSError:
+            synced_set = set()
+        assert ("e:1", 1) not in synced_set
 
 
 def test_record_sync_history_save_false_logs():

@@ -4,6 +4,7 @@ import os
 import socket
 import time
 import warnings
+from collections import OrderedDict
 from typing import Optional, Union
 
 import requests
@@ -34,14 +35,16 @@ class BangumiApi:
         # 代理失败标记：一旦代理失败，后续请求都直接使用直连
         self._proxy_failed = False
 
-        # 实例级别的缓存字典，避免使用 lru_cache 导致内存泄漏
+        # 实例级别的带大小限制缓存，避免无限增长
+        _MAX_CACHE_SIZE = 200
         self._cache = {
-            "search": {},
-            "search_old": {},
-            "get_subject": {},
-            "get_related_subjects": {},
-            "get_episodes": {},
+            "search": OrderedDict(),
+            "search_old": OrderedDict(),
+            "get_subject": OrderedDict(),
+            "get_related_subjects": OrderedDict(),
+            "get_episodes": OrderedDict(),
         }
+        self._max_cache_size = _MAX_CACHE_SIZE
 
         # 如果禁用SSL验证，抑制urllib3的警告
         if not ssl_verify:
@@ -57,6 +60,14 @@ class BangumiApi:
             f"BangumiApi 初始化 - 代理参数: {http_proxy if http_proxy else '无'}, SSL验证: {ssl_verify}"
         )
         self.init()
+
+    def _put_cache(self, category: str, key, value) -> None:
+        """写入缓存并淘汰超限条目（LRU）"""
+        cache = self._cache[category]
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > self._max_cache_size:
+            cache.popitem(last=False)
 
     def init(self):
         for r in self.req, self._req_not_auth:
@@ -378,7 +389,7 @@ class BangumiApi:
             res = {"data": []}
 
         result = res.get("data", []) if list_only else res
-        self._cache["search"][cache_key] = result
+        self._put_cache("search", cache_key, result)
         return result
 
     def search_old(self, title, list_only=True):
@@ -404,7 +415,7 @@ class BangumiApi:
             res = {"results": 0, "list": []}
 
         result = res.get("list", []) if list_only else res
-        self._cache["search_old"][cache_key] = result
+        self._put_cache("search_old", cache_key, result)
         return result
 
     def get_subject(self, subject_id):
@@ -423,7 +434,7 @@ class BangumiApi:
             logger.error(f"get_subject JSON解析失败: {e}")
             res = {}
 
-        self._cache["get_subject"][subject_id] = res
+        self._put_cache("get_subject", subject_id, res)
         return res
 
     def get_related_subjects(self, subject_id):
@@ -444,7 +455,7 @@ class BangumiApi:
             logger.error(f"get_related_subjects JSON解析失败: {e}")
             res = []
 
-        self._cache["get_related_subjects"][subject_id] = res
+        self._put_cache("get_related_subjects", subject_id, res)
         return res
 
     def get_episodes(self, subject_id, _type=0):
@@ -472,7 +483,7 @@ class BangumiApi:
             logger.error(f"get_episodes JSON解析失败: {e}")
             res = {"data": [], "total": 0}
 
-        self._cache["get_episodes"][cache_key] = res
+        self._put_cache("get_episodes", cache_key, res)
         return res
 
     @staticmethod
