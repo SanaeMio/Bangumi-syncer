@@ -620,7 +620,7 @@ class TestSyncUserData:
                 "refresh_token": "refresh_token",
                 "token_expires_at": 1,  # 已过期
             }
-            mock_auth.refresh_token.return_value = False
+            mock_auth.refresh_token = AsyncMock(return_value=False)
 
             scheduler = TraktScheduler()
             await scheduler.sync_user_data("user1")
@@ -721,3 +721,386 @@ class TestSyncUserDataWrapper:
             await scheduler._sync_user_data_wrapper("user1")
 
             # 异常应该被捕获
+
+    @pytest.mark.asyncio
+    async def test_sync_user_data_wrapper_success(self):
+        """测试同步成功路径"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager") as mock_cm,
+            patch("app.services.trakt.scheduler.database_manager"),
+            patch.object(
+                TraktScheduler, "sync_user_data", new_callable=AsyncMock
+            ) as mock_sync,
+        ):
+            mock_cm.get_scheduler_config.return_value = {"job_timeout": 300}
+
+            scheduler = TraktScheduler()
+            await scheduler._sync_user_data_wrapper("user1")
+
+            mock_sync.assert_awaited_once_with("user1")
+
+
+class TestAddUserJobExtra:
+    """添加用户任务额外测试"""
+
+    def test_add_user_job_invalid_cron_fallback(self):
+        """无效Cron表达式时使用默认触发器"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            mock_scheduler = MagicMock()
+            mock_scheduler.running = True
+            scheduler.scheduler = mock_scheduler
+
+            mock_job = MagicMock()
+            mock_job.id = "job_1"
+            mock_job.next_run_time = None
+            mock_scheduler.add_job.return_value = mock_job
+
+            result = scheduler.add_user_job("user1", "bad cron expression")
+
+            assert result is True
+
+    def test_add_user_job_scheduler_none_after_start(self):
+        """启动后调度器仍为None"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            # scheduler is None, start() is async (returns coroutine, not awaited)
+            # so success=coroutine (truthy), code proceeds to line 138
+            # where self.scheduler is still None → returns False
+            scheduler.scheduler = None
+
+            result = scheduler.add_user_job("user1", "0 * * * *")
+
+            assert result is False
+
+    def test_add_user_job_exception(self):
+        """添加任务时发生异常"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            mock_scheduler = MagicMock()
+            mock_scheduler.running = True
+            mock_scheduler.add_job.side_effect = RuntimeError("scheduler error")
+            scheduler.scheduler = mock_scheduler
+
+            result = scheduler.add_user_job("user1", "0 * * * *")
+
+            assert result is False
+
+
+class TestRemoveUserJobExtra:
+    """移除用户任务额外测试"""
+
+    def test_remove_user_job_exception(self):
+        """移除任务时发生异常"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            mock_scheduler = MagicMock()
+            mock_scheduler.remove_job.side_effect = RuntimeError("remove error")
+            scheduler.scheduler = mock_scheduler
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.remove_user_job("user1")
+
+            assert result is False
+
+
+class TestSyncUserDataExtra:
+    """用户数据同步额外测试"""
+
+    @pytest.mark.asyncio
+    async def test_sync_user_data_invalid_config(self):
+        """配置无效（from_dict返回None）"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager") as mock_db,
+            patch("app.services.trakt.scheduler.trakt_auth_service"),
+            patch("app.services.trakt.scheduler.trakt_sync_service"),
+            patch("app.services.trakt.scheduler.TraktConfig") as mock_config,
+        ):
+            mock_db.get_trakt_config.return_value = {"user_id": "user1"}
+            mock_config.from_dict.return_value = None
+
+            scheduler = TraktScheduler()
+            await scheduler.sync_user_data("user1")
+
+    @pytest.mark.asyncio
+    async def test_sync_user_data_token_refresh_success(self):
+        """令牌过期但刷新成功"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager") as mock_db,
+            patch("app.services.trakt.scheduler.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.scheduler.trakt_sync_service") as mock_sync,
+            patch("app.services.trakt.scheduler.TraktConfig") as mock_config,
+        ):
+            expired_config = MagicMock()
+            expired_config.enabled = True
+            expired_config.is_token_expired.return_value = True
+
+            valid_config = MagicMock()
+            valid_config.enabled = True
+            valid_config.is_token_expired.return_value = False
+
+            mock_config.from_dict.side_effect = [expired_config, valid_config]
+            mock_db.get_trakt_config.side_effect = [
+                {"user_id": "user1", "enabled": True},
+                {"user_id": "user1", "enabled": True},
+            ]
+            mock_auth.refresh_token = AsyncMock(return_value=True)
+
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.message = "ok"
+            mock_sync.sync_user_trakt_data.return_value = mock_result
+
+            scheduler = TraktScheduler()
+            await scheduler.sync_user_data("user1")
+
+            mock_auth.refresh_token.assert_awaited_once_with("user1")
+
+    @pytest.mark.asyncio
+    async def test_sync_user_data_token_refresh_no_config_after(self):
+        """令牌刷新成功但重新获取配置为空"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager") as mock_db,
+            patch("app.services.trakt.scheduler.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.scheduler.trakt_sync_service"),
+            patch("app.services.trakt.scheduler.TraktConfig") as mock_config,
+        ):
+            expired_config = MagicMock()
+            expired_config.enabled = True
+            expired_config.is_token_expired.return_value = True
+
+            mock_config.from_dict.return_value = expired_config
+            mock_db.get_trakt_config.side_effect = [
+                {"user_id": "user1", "enabled": True},
+                None,
+            ]
+            mock_auth.refresh_token = AsyncMock(return_value=True)
+
+            scheduler = TraktScheduler()
+            await scheduler.sync_user_data("user1")
+
+    @pytest.mark.asyncio
+    async def test_sync_user_data_sync_fails(self):
+        """同步返回失败结果"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager") as mock_db,
+            patch("app.services.trakt.scheduler.trakt_auth_service"),
+            patch("app.services.trakt.scheduler.trakt_sync_service") as mock_sync,
+            patch("app.services.trakt.scheduler.TraktConfig") as mock_config,
+        ):
+            config = MagicMock()
+            config.enabled = True
+            config.is_token_expired.return_value = False
+            mock_config.from_dict.return_value = config
+            mock_db.get_trakt_config.return_value = {
+                "user_id": "user1",
+                "enabled": True,
+            }
+
+            mock_result = MagicMock()
+            mock_result.success = False
+            mock_result.message = "sync failed"
+            mock_sync.sync_user_trakt_data.return_value = mock_result
+
+            scheduler = TraktScheduler()
+            await scheduler.sync_user_data("user1")
+
+
+class TestGetUserJobStatusExtra:
+    """获取用户任务状态额外测试"""
+
+    def test_get_user_job_status_next_run_time_none(self):
+        """next_run_time为None"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+
+            mock_job = MagicMock()
+            mock_job.id = "job_123"
+            mock_job.name = "Test Job"
+            mock_job.next_run_time = None
+            mock_job.trigger = MagicMock()
+            mock_job.pending = False
+            scheduler.scheduler.get_job.return_value = mock_job
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.get_user_job_status("user1")
+
+            assert result is not None
+            assert result["next_run_time"] is None
+
+    def test_get_user_job_status_exception(self):
+        """获取状态时发生异常"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+            scheduler.scheduler.get_job.side_effect = RuntimeError("error")
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.get_user_job_status("user1")
+
+            assert result is None
+
+
+class TestGetAllJobsStatus:
+    """获取所有任务状态测试"""
+
+    def test_get_all_jobs_status_empty(self):
+        """没有任务时返回空字典"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            result = scheduler.get_all_jobs_status()
+            assert result == {}
+
+    def test_get_all_jobs_status_with_jobs(self):
+        """有任务时返回状态"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler._user_jobs = {"user1": "job1"}
+
+            with patch.object(
+                TraktScheduler,
+                "get_user_job_status",
+                return_value={"job_id": "job1", "name": "test"},
+            ):
+                result = scheduler.get_all_jobs_status()
+
+            assert "user1" in result
+
+
+class TestTriggerUserSyncExtra:
+    """触发用户同步额外测试"""
+
+    def test_trigger_user_sync_exception(self):
+        """触发同步时发生异常"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+            scheduler.scheduler.get_job.side_effect = RuntimeError("error")
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.trigger_user_sync("user1")
+
+            assert result is False
+
+
+class TestPauseResumeUserJobExtra:
+    """暂停和恢复任务额外测试"""
+
+    def test_pause_user_job_job_not_found(self):
+        """暂停不存在的job"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+            scheduler.scheduler.get_job.return_value = None
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.pause_user_job("user1")
+
+            assert result is False
+
+    def test_pause_user_job_exception(self):
+        """暂停任务时发生异常"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+            scheduler.scheduler.get_job.side_effect = RuntimeError("error")
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.pause_user_job("user1")
+
+            assert result is False
+
+    def test_resume_user_job_no_scheduler(self):
+        """恢复任务调度器不存在"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = None
+
+            result = scheduler.resume_user_job("user1")
+
+            assert result is False
+
+    def test_resume_user_job_no_job_id(self):
+        """恢复任务时没有job_id"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+            scheduler._user_jobs = {}
+
+            result = scheduler.resume_user_job("user1")
+
+            assert result is False
+
+    def test_resume_user_job_job_not_found(self):
+        """恢复的job不存在"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+            scheduler.scheduler.get_job.return_value = None
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.resume_user_job("user1")
+
+            assert result is False
+
+    def test_resume_user_job_exception(self):
+        """恢复任务时发生异常"""
+        with (
+            patch("app.services.trakt.scheduler.config_manager"),
+            patch("app.services.trakt.scheduler.database_manager"),
+        ):
+            scheduler = TraktScheduler()
+            scheduler.scheduler = MagicMock()
+            scheduler.scheduler.get_job.side_effect = RuntimeError("error")
+            scheduler._user_jobs = {"user1": "job_123"}
+
+            result = scheduler.resume_user_job("user1")
+
+            assert result is False

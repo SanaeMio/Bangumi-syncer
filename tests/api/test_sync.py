@@ -20,15 +20,12 @@ def app_with_auth():
     app.include_router(sync.root_router)
     app.include_router(sync.router)
 
-    # 覆盖认证依赖
     async def mock_get_current_user(request=None, credentials=None):
         return {"username": "testuser", "id": 1}
 
     app.dependency_overrides[deps.get_current_user_flexible] = mock_get_current_user
 
     yield app
-
-    # 清理覆盖
     app.dependency_overrides.clear()
 
 
@@ -36,10 +33,8 @@ def app_with_auth():
 def mock_sync_service():
     """模拟同步服务"""
     with patch("app.api.sync.sync_service") as mock_service:
-        # 模拟异步任务
         mock_service.sync_custom_item_async = AsyncMock(return_value="test_task_123")
 
-        # 模拟同步结果
         mock_result = MagicMock()
         mock_result.status = "success"
         mock_result.dict.return_value = {
@@ -48,15 +43,12 @@ def mock_sync_service():
         }
         mock_service.sync_custom_item.return_value = mock_result
 
-        # 模拟任务状态
         mock_service.get_sync_task_status.return_value = {
             "task_id": "test_task_123",
             "status": "completed",
         }
 
-        # 模拟任务列表
         mock_service._sync_tasks = {"task_1": {}, "task_2": {}}
-
         mock_service.cleanup_old_tasks = MagicMock()
 
         yield mock_service
@@ -96,6 +88,9 @@ def mock_database_manager():
         yield mock_db
 
 
+# ========== 基础功能测试 ==========
+
+
 @pytest.mark.asyncio
 async def test_custom_sync_async_mode(
     app_with_auth, mock_sync_service, mock_database_manager
@@ -118,11 +113,38 @@ async def test_custom_sync_async_mode(
             json=item.model_dump(),
             params={"async_mode": "true"},
         )
-
         assert response.status_code == 202
         data = response.json()
         assert data["status"] == "accepted"
         assert "task_id" in data
+
+
+@pytest.mark.asyncio
+async def test_custom_sync_with_key(mock_sync_service, mock_database_manager):
+    """测试带密钥的自定义同步接口"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+    app.include_router(sync.router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=True
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Custom/test_key",
+                json={
+                    "media_type": "episode",
+                    "title": "Test",
+                    "season": 1,
+                    "episode": 1,
+                    "release_date": "2024-01-01",
+                    "user_name": "user",
+                },
+                params={"async_mode": "true"},
+            )
+            assert response.status_code == 202
 
 
 @pytest.mark.asyncio
@@ -132,7 +154,6 @@ async def test_get_sync_status(app_with_auth, mock_sync_service, mock_database_m
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/sync/status/test_task_123")
-
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
@@ -149,8 +170,21 @@ async def test_get_sync_status_not_found(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/sync/status/nonexistent")
-
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_sync_status_exception(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试获取同步任务状态时抛出异常"""
+    mock_sync_service.get_sync_task_status.side_effect = RuntimeError("db error")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/sync/status/test")
+        assert response.status_code == 500
 
 
 @pytest.mark.asyncio
@@ -160,11 +194,24 @@ async def test_list_sync_tasks(app_with_auth, mock_sync_service, mock_database_m
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/sync/tasks")
-
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
         assert "tasks" in data["data"]
+
+
+@pytest.mark.asyncio
+async def test_list_sync_tasks_exception(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试列出同步任务时抛出异常"""
+    mock_sync_service.cleanup_old_tasks.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/sync/tasks")
+        assert response.status_code == 500
 
 
 @pytest.mark.asyncio
@@ -176,7 +223,6 @@ async def test_get_sync_records(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/records")
-
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
@@ -191,7 +237,6 @@ async def test_get_sync_record_by_id(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/records/1")
-
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
@@ -208,8 +253,21 @@ async def test_get_sync_record_not_found(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/records/999")
-
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_sync_record_exception(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试获取记录详情时抛出异常"""
+    mock_database_manager.get_sync_record_by_id.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/records/1")
+        assert response.status_code == 500
 
 
 @pytest.mark.asyncio
@@ -219,10 +277,26 @@ async def test_get_sync_stats(app_with_auth, mock_sync_service, mock_database_ma
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/stats")
-
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_get_sync_stats_exception(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试获取同步统计时抛出异常"""
+    mock_database_manager.get_sync_stats.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/stats")
+        assert response.status_code == 500
+
+
+# ========== Webhook 测试 ==========
 
 
 @pytest.mark.asyncio
@@ -243,7 +317,6 @@ async def test_plex_webhook(mock_sync_service):
         },
     }
 
-    # 模拟 extract_plex_json
     with patch("app.api.sync.extract_plex_json") as mock_extract:
         mock_extract.return_value = json.dumps(plex_data)
 
@@ -255,10 +328,85 @@ async def test_plex_webhook(mock_sync_service):
                 content=json.dumps(plex_data),
                 headers={"Content-Type": "application/json"},
             )
-
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_plex_webhook_with_key(mock_sync_service):
+    """测试带密钥的 Plex webhook"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with (
+        patch(
+            "app.api.sync._verify_webhook_auth",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch("app.api.sync.extract_plex_json", return_value='{"event":"play"}'),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Plex/test_key",
+                content='{"event":"play"}',
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_plex_webhook_auth_failure():
+    """测试 Plex webhook 认证失败"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=False
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Plex/bad_key",
+                content=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_plex_webhook_exception(mock_sync_service):
+    """测试 Plex webhook 处理异常"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with (
+        patch(
+            "app.api.sync._verify_webhook_auth",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "app.api.sync.extract_plex_json", side_effect=RuntimeError("parse error")
+        ),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Plex/test_key",
+                content=b"bad",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -287,10 +435,129 @@ async def test_emby_webhook(mock_sync_service):
             content=json.dumps(emby_data),
             headers={"Content-Type": "application/json"},
         )
-
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_emby_webhook_with_key(mock_sync_service):
+    """测试带密钥的 Emby webhook"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=True
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Emby/test_key",
+                content=json.dumps({"EventType": "play", "Item": {"Name": "test"}}),
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_emby_webhook_auth_failure():
+    """测试 Emby webhook 认证失败"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=False
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Emby/bad_key",
+                content=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_emby_webhook_invalid_body():
+    """测试 Emby webhook 无效请求体"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=True
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # Body 不以 { 开头
+            response = await client.post(
+                "/Emby",
+                content=b"not json at all",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_emby_webhook_malformed_dict():
+    """测试 Emby webhook 无法解析的字典格式"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=True
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Emby",
+                content=b"{not_valid_python}",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_emby_webhook_fallback_failure():
+    """测试 Emby 异步和同步都失败"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with (
+        patch(
+            "app.api.sync._verify_webhook_auth",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch("app.api.sync.sync_service") as mock_svc,
+    ):
+        mock_svc.sync_emby_item_async = AsyncMock(
+            side_effect=RuntimeError("async fail")
+        )
+        mock_svc.sync_emby_item.side_effect = RuntimeError("sync fail")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Emby",
+                content=json.dumps({"EventType": "play", "Item": {"Name": "test"}}),
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "accepted"
+            assert "错误" in data["message"]
 
 
 @pytest.mark.asyncio
@@ -319,19 +586,187 @@ async def test_jellyfin_webhook(mock_sync_service):
             content=json.dumps(jellyfin_data),
             headers={"Content-Type": "application/json"},
         )
-
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "accepted"
 
 
 @pytest.mark.asyncio
-async def test_retry_sync_record(
-    app_with_auth, mock_sync_service, mock_database_manager
-):
-    """测试重试同步记录 - 跳过复杂测试"""
-    # 简化测试 - 跳过复杂场景
-    pass
+async def test_jellyfin_webhook_with_key(mock_sync_service):
+    """测试带密钥的 Jellyfin webhook"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=True
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Jellyfin/test_key",
+                content=json.dumps({"EventType": "play", "Item": {"Name": "test"}}),
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_jellyfin_webhook_auth_failure():
+    """测试 Jellyfin webhook 认证失败"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=False
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Jellyfin/bad_key",
+                content=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_jellyfin_webhook_exception():
+    """测试 Jellyfin webhook JSON 解析失败"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with patch(
+        "app.api.sync._verify_webhook_auth", new_callable=AsyncMock, return_value=True
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Jellyfin",
+                content=b"not json",
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_jellyfin_webhook_fallback_failure():
+    """测试 Jellyfin 异步和同步都失败"""
+    app = FastAPI()
+    app.include_router(sync.root_router)
+
+    with (
+        patch(
+            "app.api.sync._verify_webhook_auth",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch("app.api.sync.sync_service") as mock_svc,
+    ):
+        mock_svc.sync_jellyfin_item_async = AsyncMock(
+            side_effect=RuntimeError("async fail")
+        )
+        mock_svc.sync_jellyfin_item.side_effect = RuntimeError("sync fail")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/Jellyfin",
+                content=json.dumps({"EventType": "play", "Item": {"Name": "test"}}),
+                headers={"Content-Type": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "accepted"
+            assert "错误" in data["message"]
+
+
+# ========== 自定义同步特殊路径 ==========
+
+
+@pytest.mark.asyncio
+async def test_custom_sync_exception(app_with_auth, mock_sync_service):
+    """测试自定义同步异常"""
+    mock_sync_service.sync_custom_item_async = AsyncMock(
+        side_effect=RuntimeError("boom")
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/Custom",
+            json={
+                "media_type": "episode",
+                "title": "Test",
+                "season": 1,
+                "episode": 1,
+                "release_date": "2024-01-01",
+                "user_name": "user",
+            },
+            params={"async_mode": "true"},
+        )
+        assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_custom_sync_ignored_status(app_with_auth, mock_sync_service):
+    """测试自定义同步忽略状态"""
+    mock_result = MagicMock()
+    mock_result.status = "ignored"
+    mock_result.dict.return_value = {"status": "ignored", "message": "已忽略"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/Custom?async_mode=false",
+            json={
+                "media_type": "episode",
+                "title": "Test",
+                "season": 1,
+                "episode": 1,
+                "release_date": "2024-01-01",
+                "user_name": "user",
+            },
+        )
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_custom_sync_error_status(app_with_auth, mock_sync_service):
+    """测试自定义同步错误状态"""
+    mock_result = MagicMock()
+    mock_result.status = "error"
+    mock_result.dict.return_value = {"status": "error", "message": "失败"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/Custom?async_mode=false",
+            json={
+                "media_type": "episode",
+                "title": "Test",
+                "season": 1,
+                "episode": 1,
+                "release_date": "2024-01-01",
+                "user_name": "user",
+            },
+        )
+        assert response.status_code == 500
+
+
+# ========== 重试记录测试 ==========
 
 
 @pytest.mark.asyncio
@@ -341,35 +776,182 @@ async def test_retry_sync_record_not_failed(
     """测试重试非失败状态的记录"""
     mock_database_manager.get_sync_record_by_id.return_value = {
         "id": 1,
-        "status": "success",  # 不是失败状态
+        "status": "success",
     }
 
     async with AsyncClient(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.post("/api/records/1/retry")
-
         assert response.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_test_sync(app_with_auth, mock_sync_service, mock_database_manager):
-    """测试同步功能"""
+async def test_retry_sync_record_not_found(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试重试不存在的记录"""
+    mock_database_manager.get_sync_record_by_id.return_value = None
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/999/retry")
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_retry_sync_record_success(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试重试失败记录成功"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "error",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.dict.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_retry_sync_record_ignored(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试重试被忽略"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "error",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "emby",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "ignored"
+    mock_result.message = "已看过"
+    mock_result.dict.return_value = {"status": "ignored", "message": "已看过"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+        mock_database_manager.update_sync_record_status.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_sync_record_exception(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试重试记录时抛出异常"""
+    mock_database_manager.get_sync_record_by_id.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_retry_sync_record_invalid_media_type(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试重试时无效 media_type 回退为 episode"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "error",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "custom",
+        "user_name": "user",
+        "media_type": "invalid_type",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.dict.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+
+# ========== 测试同步特殊路径 ==========
+
+
+@pytest.mark.asyncio
+async def test_test_sync_no_title(app_with_auth, mock_sync_service):
+    """测试同步缺少标题"""
     async with AsyncClient(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.post(
             "/api/test-sync",
-            json={
-                "title": "Test Show",
-                "ori_title": "Test Show Original",
-                "season": 1,
-                "episode": 5,
-            },
+            json={"title": ""},
         )
+        assert response.status_code == 400
 
-        # 可能返回 200 或 202
-        assert response.status_code in [200, 202]
+
+@pytest.mark.asyncio
+async def test_test_sync_invalid_media_type(app_with_auth, mock_database_manager):
+    """测试同步无效 media_type 回退为 episode"""
+    with patch("app.api.sync.sync_service") as mock_svc:
+        mock_result = MagicMock()
+        mock_result.status = "success"
+        mock_result.dict.return_value = {"status": "success", "message": "ok"}
+        mock_svc.sync_custom_item.return_value = mock_result
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/test-sync?async_mode=false",
+                json={"title": "Test", "media_type": "invalid"},
+            )
+        assert response.status_code == 200
+        item = mock_svc.sync_custom_item.call_args[0][0]
+        assert item.media_type == "episode"
+
+
+@pytest.mark.asyncio
+async def test_test_sync_exception(app_with_auth, mock_sync_service):
+    """测试同步时抛出异常"""
+    mock_sync_service.sync_custom_item_async = AsyncMock(
+        side_effect=RuntimeError("boom")
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/test-sync",
+            json={"title": "Test"},
+        )
+        assert response.status_code == 500
 
 
 @pytest.mark.asyncio
