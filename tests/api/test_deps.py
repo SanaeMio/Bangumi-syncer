@@ -126,3 +126,59 @@ async def test_get_current_user_flexible_no_auth_raises(mock_security):
         await deps.get_current_user_flexible(req, credentials=None)
     assert ei.value.status_code == 401
     assert "有效" in ei.value.detail
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_auth_disabled(mock_security):
+    """认证禁用时返回admin用户"""
+    mock_security.get_auth_config.return_value = {"enabled": False}
+    req = MagicMock()
+    out = await deps.get_current_user_optional(req, credentials=None)
+    assert out == {"username": "admin", "auth_disabled": True}
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_cookie_valid(mock_security):
+    """Cookie有效时返回会话"""
+    mock_security.get_auth_config.return_value = {"enabled": True}
+    req = MagicMock()
+    req.cookies.get.return_value = "valid_token"
+    mock_security.validate_session.return_value = {"uid": "1"}
+    out = await deps.get_current_user_optional(req, credentials=None)
+    assert out == {"uid": "1"}
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_bearer_valid(mock_security):
+    """Bearer token有效时返回会话"""
+    mock_security.get_auth_config.return_value = {"enabled": True}
+    req = MagicMock()
+    req.cookies.get.return_value = None
+    cred = HTTPAuthorizationCredentials(scheme="Bearer", credentials="valid")
+    mock_security.validate_session.return_value = {"uid": "2"}
+    out = await deps.get_current_user_optional(req, cred)
+    assert out == {"uid": "2"}
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_no_auth_returns_none(mock_security):
+    """无有效认证时返回None"""
+    mock_security.get_auth_config.return_value = {"enabled": True}
+    req = MagicMock()
+    req.cookies.get.return_value = None
+    out = await deps.get_current_user_optional(req, credentials=None)
+    assert out is None
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_cookie_invalid_bearer_valid(mock_security):
+    """Cookie无效但Bearer有效时返回Bearer会话"""
+    mock_security.get_auth_config.return_value = {"enabled": True}
+    req = MagicMock()
+    req.cookies.get.return_value = "invalid"
+    cred = HTTPAuthorizationCredentials(scheme="Bearer", credentials="valid")
+    mock_security.validate_session.side_effect = lambda t: (
+        None if t == "invalid" else {"via": "bearer"}
+    )
+    out = await deps.get_current_user_optional(req, cred)
+    assert out == {"via": "bearer"}

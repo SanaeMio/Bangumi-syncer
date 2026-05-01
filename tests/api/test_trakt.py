@@ -17,15 +17,12 @@ def app_with_auth():
     app = FastAPI()
     app.include_router(trakt.router)
 
-    # 覆盖认证依赖
     async def mock_get_current_user(request=None, credentials=None):
         return {"username": "testuser", "id": 1}
 
     app.dependency_overrides[deps.get_current_user_flexible] = mock_get_current_user
 
     yield app
-
-    # 清理覆盖
     app.dependency_overrides.clear()
 
 
@@ -123,7 +120,6 @@ async def test_init_trakt_auth(
             "/api/trakt/auth/init",
             json={"user_id": "test_user"},
         )
-
         assert response.status_code == 200
 
 
@@ -145,7 +141,27 @@ async def test_init_trakt_auth_failure(
             "/api/trakt/auth/init",
             json={"user_id": "test_user"},
         )
+        assert response.status_code == 500
 
+
+@pytest.mark.asyncio
+async def test_init_trakt_auth_exception(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_trakt_sync_service,
+    mock_config_manager,
+):
+    """测试初始化 Trakt 授权抛出异常"""
+    mock_trakt_auth_service.init_oauth = AsyncMock(side_effect=RuntimeError("boom"))
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/trakt/auth/init",
+            json={"user_id": "test_user"},
+        )
         assert response.status_code == 500
 
 
@@ -161,7 +177,6 @@ async def test_get_trakt_config(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/trakt/config")
-
         assert response.status_code == 200
         data = response.json()
         assert "client_id" in data
@@ -181,10 +196,26 @@ async def test_get_trakt_config_no_config(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/trakt/config")
-
         assert response.status_code == 200
         data = response.json()
         assert data["is_connected"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_trakt_config_exception(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+):
+    """测试获取 Trakt 配置时抛出异常"""
+    mock_trakt_auth_service.get_user_trakt_config.side_effect = RuntimeError("db error")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/config")
+        assert response.status_code == 500
 
 
 @pytest.mark.asyncio
@@ -203,7 +234,6 @@ async def test_update_trakt_config(
             "/api/trakt/config",
             json={"enabled": True, "sync_interval": "0 */6 * * *"},
         )
-
         assert response.status_code == 200
 
 
@@ -225,8 +255,49 @@ async def test_update_trakt_config_not_found(
             "/api/trakt/config",
             json={"enabled": True, "sync_interval": "0 */6 * * *"},
         )
-
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_config_save_failure(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """测试更新 Trakt 配置保存失败"""
+    mock_database_manager.save_trakt_config.return_value = False
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.put(
+            "/api/trakt/config",
+            json={"enabled": True, "sync_interval": "0 */6 * * *"},
+        )
+        assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_config_exception(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """测试更新 Trakt 配置时抛出异常"""
+    mock_trakt_auth_service.get_user_trakt_config.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.put(
+            "/api/trakt/config",
+            json={"enabled": True},
+        )
+        assert response.status_code == 500
 
 
 @pytest.mark.asyncio
@@ -242,7 +313,6 @@ async def test_update_trakt_api_config(app_with_auth, mock_config_manager):
                 "client_secret": "new_client_secret",
             },
         )
-
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
@@ -279,6 +349,39 @@ async def test_update_trakt_api_config_skips_empty_client_secret(
 
 
 @pytest.mark.asyncio
+async def test_update_trakt_api_config_with_redirect_uri(
+    app_with_auth, mock_config_manager
+):
+    """测试更新 redirect_uri"""
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.put(
+            "/api/trakt/config/api",
+            json={"redirect_uri": "https://example.com/callback"},
+        )
+    assert response.status_code == 200
+    mock_config_manager.set.assert_any_call(
+        "trakt", "redirect_uri", "https://example.com/callback"
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_api_config_exception(app_with_auth, mock_config_manager):
+    """测试更新 Trakt API 配置时抛出异常"""
+    mock_config_manager.get_trakt_config.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.put(
+            "/api/trakt/config/api",
+            json={"client_id": "new"},
+        )
+        assert response.status_code == 500
+
+
+@pytest.mark.asyncio
 async def test_get_trakt_sync_status(
     app_with_auth,
     mock_trakt_auth_service,
@@ -291,7 +394,6 @@ async def test_get_trakt_sync_status(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/trakt/sync/status")
-
         assert response.status_code == 200
         data = response.json()
         assert "success_count" in data
@@ -312,10 +414,48 @@ async def test_get_trakt_sync_status_no_config(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.get("/api/trakt/sync/status")
-
         assert response.status_code == 200
         data = response.json()
         assert data["is_running"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_trakt_sync_status_exception(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """测试获取 Trakt 同步状态时抛出异常"""
+    mock_trakt_auth_service.get_user_trakt_config.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/sync/status")
+        assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_get_trakt_sync_status_no_job(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """测试无调度作业时的同步状态"""
+    mock_trakt_scheduler.get_user_job_status.return_value = None
+    mock_database_manager.get_sync_records.return_value = None
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/sync/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["next_sync_time"] is None
 
 
 @pytest.mark.asyncio
@@ -334,10 +474,32 @@ async def test_manual_trakt_sync(
             "/api/trakt/sync/manual",
             json={"user_id": "test_user", "full_sync": False},
         )
-
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_manual_trakt_sync_exception(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_trakt_sync_service,
+    mock_config_manager,
+):
+    """测试手动触发 Trakt 同步时抛出异常"""
+    mock_trakt_sync_service.start_user_sync_task = AsyncMock(
+        side_effect=RuntimeError("sync fail")
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/trakt/sync/manual",
+            json={"user_id": "test_user", "full_sync": True},
+        )
+        assert response.status_code == 500
 
 
 @pytest.mark.asyncio
@@ -352,7 +514,6 @@ async def test_disconnect_trakt(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.delete("/api/trakt/disconnect")
-
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
@@ -372,5 +533,78 @@ async def test_disconnect_trakt_failure(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.delete("/api/trakt/disconnect")
-
         assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_disconnect_trakt_exception(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+):
+    """测试断开 Trakt 连接时抛出异常"""
+    mock_trakt_auth_service.disconnect_trakt.side_effect = RuntimeError("fail")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.delete("/api/trakt/disconnect")
+        assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_trakt_auth_callback_no_state(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+):
+    """测试 callback 缺少 state 参数"""
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/auth/callback?code=test_code")
+        assert response.status_code == 302  # redirect
+
+
+@pytest.mark.asyncio
+async def test_trakt_auth_callback_failure(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+):
+    """测试 callback 处理失败"""
+    mock_trakt_auth_service.handle_callback = AsyncMock(
+        return_value=MagicMock(success=False, message="Auth failed")
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/trakt/auth/callback?code=test_code&state=test_state"
+        )
+        assert response.status_code == 302
+
+
+@pytest.mark.asyncio
+async def test_trakt_auth_callback_exception(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+):
+    """测试 callback 处理时抛出异常"""
+    mock_trakt_auth_service.extract_user_id_from_state.side_effect = RuntimeError(
+        "bad state"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/trakt/auth/callback?code=test_code&state=test_state"
+        )
+        assert response.status_code == 302

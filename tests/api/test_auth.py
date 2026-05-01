@@ -326,6 +326,51 @@ async def test_login_wrong_password_401_with_remaining(mock_security_manager):
 
 
 @pytest.mark.asyncio
+async def test_login_failure_triggers_lockout(mock_security_manager):
+    """登录失败后检查IP是否被锁定 (lines 82-89)"""
+    mock_security_manager.authenticate_user.return_value = False
+    mock_security_manager.is_ip_locked.side_effect = [False, True]
+    mock_security_manager.get_lockout_info.return_value = {"locked_until": 9999999999}
+
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(auth.router)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/login",
+            json={"username": "u", "password": "bad"},
+        )
+
+    assert response.status_code == 423
+    assert "锁定" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_auth_status_not_authenticated_with_auth_enabled():
+    """认证开启但未认证时返回 401"""
+    from fastapi import FastAPI
+
+    with patch("app.api.deps.security_manager") as mock_sm:
+        mock_sm.get_auth_config.return_value = {"enabled": True}
+        mock_sm.validate_session.return_value = None
+        mock_sm.cleanup_expired_sessions.return_value = None
+
+        app = FastAPI()
+        app.include_router(auth.router)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/auth/status")
+
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_login_invalid_json_returns_500():
     from fastapi import FastAPI
 

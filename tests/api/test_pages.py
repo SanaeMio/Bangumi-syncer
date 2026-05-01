@@ -2,6 +2,8 @@
 页面路由测试
 """
 
+from unittest.mock import patch
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -121,3 +123,83 @@ class TestPages:
         response = client.get("/trakt/auth/success")
 
         assert response.status_code == 200
+
+
+class TestPagesAuthenticated:
+    """测试已认证用户的页面渲染"""
+
+    @staticmethod
+    def _make_app():
+        app = FastAPI()
+        app.include_router(pages.router)
+        return app
+
+    def test_dashboard_authenticated(self):
+        """已认证用户访问仪表板"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/dashboard", follow_redirects=False)
+        assert r.status_code == 200
+
+    def test_config_authenticated(self):
+        """已认证用户访问配置页"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/config", follow_redirects=False)
+        assert r.status_code == 200
+
+    def test_records_authenticated(self):
+        """已认证用户访问记录页"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/records", follow_redirects=False)
+        assert r.status_code == 200
+
+    def test_mappings_authenticated(self):
+        """已认证用户访问映射页"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/mappings", follow_redirects=False)
+        assert r.status_code == 200
+
+    def test_debug_authenticated(self):
+        """已认证用户访问调试页"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/debug", follow_redirects=False)
+        assert r.status_code == 200
+
+    def test_logs_authenticated(self):
+        """已认证用户访问日志页"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/logs", follow_redirects=False)
+        assert r.status_code == 200
+
+    def test_trakt_config_authenticated(self):
+        """已认证用户访问Trakt配置页"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/trakt/config", follow_redirects=False)
+        assert r.status_code == 200
