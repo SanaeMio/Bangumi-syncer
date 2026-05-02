@@ -1,5 +1,4 @@
 import datetime
-import difflib
 import os
 import socket
 import time
@@ -8,6 +7,7 @@ from collections import OrderedDict
 from typing import Optional, Union
 
 import requests
+from rapidfuzz import fuzz
 
 from ..core.logging import logger
 
@@ -978,10 +978,8 @@ class BangumiApi:
             if not candidate:
                 continue
 
-            ratio_title = difflib.SequenceMatcher(None, candidate, title).quick_ratio()
-            ratio_ori = difflib.SequenceMatcher(
-                None, candidate, ori_title
-            ).quick_ratio()
+            ratio_title = fuzz.ratio(candidate, title) / 100.0
+            ratio_ori = fuzz.ratio(candidate, ori_title) / 100.0
             max_ratio = max(max_ratio, ratio_title, ratio_ori)
 
             # 若发现完全匹配，提前返回

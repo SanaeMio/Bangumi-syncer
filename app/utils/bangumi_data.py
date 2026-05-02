@@ -4,11 +4,11 @@ import time
 import warnings
 from collections.abc import Generator
 from datetime import datetime, timedelta
-from difflib import SequenceMatcher
 from typing import Optional
 
 import ijson
 import requests
+from rapidfuzz import fuzz
 
 from ..core.config import config_manager
 from ..core.logging import logger
@@ -582,7 +582,7 @@ class BangumiData:
                     if title in zh_title or zh_title in title:
                         return True
                     # 检查高度相似（相似度>0.7）
-                    similarity = SequenceMatcher(None, zh_title, title).ratio()
+                    similarity = fuzz.ratio(zh_title, title) / 100.0
                     if similarity > 0.7:
                         return True
 
@@ -678,7 +678,7 @@ class BangumiData:
 
         # 检查关键字符的相似度
         if len(key1) > 3 and len(key2) > 3:
-            similarity = SequenceMatcher(None, key1, key2).ratio()
+            similarity = fuzz.ratio(key1, key2) / 100.0
             return similarity > 0.9  # 90%相似度认为匹配
 
         return False
@@ -716,7 +716,7 @@ class BangumiData:
                     return result
 
                 # 计算相似度
-                similarity = SequenceMatcher(None, zh_title, title).ratio()
+                similarity = fuzz.ratio(zh_title, title) / 100.0
                 if similarity > result["best_zh_score"]:
                     result["best_zh_score"] = similarity
                     result["best_zh_title"] = zh_title
@@ -772,7 +772,7 @@ class BangumiData:
 
         # 原标题匹配得分
         if ori_title and "title" in item:
-            similarity = SequenceMatcher(None, item["title"], ori_title).ratio()
+            similarity = fuzz.ratio(item["title"], ori_title) / 100.0
             score += similarity * 0.3
 
             if ori_title in item["title"] or item["title"] in ori_title:
@@ -780,7 +780,7 @@ class BangumiData:
 
         # 用中文标题匹配原始标题
         if title and "title" in item and not ori_title:
-            similarity = SequenceMatcher(None, item["title"], title).ratio()
+            similarity = fuzz.ratio(item["title"], title) / 100.0
             score += similarity * 0.2
 
             if title in item["title"] or item["title"] in title:
