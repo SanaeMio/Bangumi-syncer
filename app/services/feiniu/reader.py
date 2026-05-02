@@ -61,8 +61,10 @@ def _pick_season_value(row: sqlite3.Row, cols: set[str]) -> int:
 def list_feiniu_users(db_path: str) -> list[FeiniuUser]:
     if not db_path or not Path(db_path).is_file():
         return []
+    conn = None
     try:
         conn = sqlite3.connect(_sqlite_ro_uri(db_path), uri=True)
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(
@@ -78,11 +80,13 @@ def list_feiniu_users(db_path: str) -> list[FeiniuUser]:
             )
             for r in cur.fetchall()
         ]
-        conn.close()
         return users
     except Exception as e:
         logger.warning(f"读取飞牛用户列表失败: {e}")
         return []
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _time_range_cutoff_ms(time_range: str) -> int | None:
@@ -144,8 +148,10 @@ def fetch_completed_watch_records(
     if not db_path or not Path(db_path).is_file():
         return []
 
+    conn = None
     try:
         conn = sqlite3.connect(_sqlite_ro_uri(db_path), uri=True)
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         item_cols = _table_columns(cur, "item")
@@ -290,8 +296,10 @@ def fetch_completed_watch_records(
                 )
             )
 
-        conn.close()
         return rows_out
     except Exception as e:
         logger.error(f"读取飞牛观看记录失败: {e}")
         return []
+    finally:
+        if conn is not None:
+            conn.close()

@@ -4,6 +4,7 @@
 
 import os
 import platform
+import threading
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Any, Optional
@@ -21,6 +22,8 @@ def parse_media_server_username_value(raw: Optional[str]) -> list[str]:
 
 class ConfigManager:
     """配置管理器"""
+
+    _lock = threading.Lock()
 
     def __init__(self):
         self.platform = platform.system()
@@ -128,20 +131,29 @@ class ConfigManager:
 
         return False
 
-    def get_config_parser(self) -> ConfigParser:
-        """获取配置对象"""
+    def _get_config_parser_nolock(self) -> ConfigParser:
+        """获取配置对象（内部调用，需已持有锁或单线程上下文）"""
         if self._check_config_updated():
             self._load_config()
-
         return self._config_cache
 
+    def get_config_parser(self) -> ConfigParser:
+        """获取配置对象（线程安全）"""
+        with self._lock:
+            return self._get_config_parser_nolock()
+
     def reload_config(self) -> None:
-        """重新加载配置"""
-        self._load_config()
+        """重新加载配置（线程安全）"""
+        with self._lock:
+            self._load_config()
 
     def reload(self) -> None:
         """重新加载配置（别名）"""
         self.reload_config()
+
+    def _get_master_secret(self, config: ConfigParser) -> str:
+        """从配置中提取 master secret（不加锁，需已持有锁或外部调用）"""
+        return str(config.get("auth", "secret_key", fallback="") or "")
 
     def get_section(
         self, section: str, fallback: dict[str, Any] = None
@@ -163,9 +175,10 @@ class ConfigManager:
 
         from .config_secret_crypto import decrypt_if_sensitive
 
+        master = self._get_master_secret(config)
         for k, v in list(result.items()):
             if isinstance(v, str):
-                result[k] = decrypt_if_sensitive(section, k, v)
+                result[k] = decrypt_if_sensitive(section, k, v, master=master)
 
         return result
 
@@ -188,7 +201,8 @@ class ConfigManager:
         else:
             from .config_secret_crypto import decrypt_if_sensitive
 
-            out = decrypt_if_sensitive(section, key, value)
+            master = self._get_master_secret(config)
+            out = decrypt_if_sensitive(section, key, value, master=master)
             return out if isinstance(out, str) else value
 
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
@@ -196,25 +210,37 @@ class ConfigManager:
         return self.get_config(section, key, fallback)
 
     def set_config(self, section: str, key: str, value: Any) -> None:
-        """设置配置值"""
-        config = self.get_config_parser()
-        if not config.has_section(section):
-            config.add_section(section)
+        """设置配置值（线程安全）"""
+        with self._lock:
+            config = self._get_config_parser_nolock()
+            if not config.has_section(section):
+                config.add_section(section)
 
-        from .config_secret_crypto import encrypt_if_sensitive
+            from .config_secret_crypto import encrypt_if_sensitive
 
-        stored = encrypt_if_sensitive(section, key, str(value))
-        config.set(section, key, stored)
-        self._save_config(config)
+            master = self._get_master_secret(config)
+            stored = encrypt_if_sensitive(section, key, str(value), master=master)
+            config.set(section, key, stored)
+            self._save_config(config)
 
     def set(self, section: str, key: str, value: Any) -> None:
         """设置配置值（别名）"""
         self.set_config(section, key, value)
 
     def _save_config(self, config: ConfigParser) -> None:
-        """保存配置文件"""
-        with open(self.active_config_path, "w", encoding="utf-8") as f:
-            config.write(f)
+        """保存配置文件（原子写入，需在锁内调用）"""
+        tmp_path = self.active_config_path.with_suffix(".tmp")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                config.write(f)
+            os.replace(str(tmp_path), str(self.active_config_path))
+        except OSError:
+            # 写入失败时清理临时文件
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
         # 更新缓存
         self._config_cache = config

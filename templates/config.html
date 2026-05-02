@@ -1246,42 +1246,46 @@ async function loadConfig(showToast = true) {
 }
 
 function populateForm(config) {
+    const sync = config.sync || {};
+    const dev = config.dev || {};
+    const bd = config.bangumi_data || {};
+
     // 填充基本配置
-    document.getElementById('bangumi-username').value = config.bangumi.username || '';
-    document.getElementById('bangumi-access-token').value = config.bangumi.access_token || '';
-    document.getElementById('bangumi-private').checked = config.bangumi.private || false;
+    document.getElementById('bangumi-username').value = (config.bangumi && config.bangumi.username) || '';
+    document.getElementById('bangumi-access-token').value = (config.bangumi && config.bangumi.access_token) || '';
+    document.getElementById('bangumi-private').checked = (config.bangumi && config.bangumi.private) || false;
     const bmsu = document.getElementById('bangumi-media-server-username');
     if (bmsu) {
         bmsu.value = (config.bangumi && config.bangumi.media_server_username) ? String(config.bangumi.media_server_username) : '';
     }
-    
-    document.getElementById('sync-mode').value = config.sync.mode || 'single';
-    document.getElementById('blocked-keywords').value = config.sync.blocked_keywords || '';
+
+    document.getElementById('sync-mode').value = sync.mode || 'single';
+    document.getElementById('blocked-keywords').value = sync.blocked_keywords || '';
     const movieMarkEl = document.getElementById('movie-mark-subject-completed');
     if (movieMarkEl) {
-        movieMarkEl.checked = config.sync.movie_mark_subject_completed !== false;
+        movieMarkEl.checked = sync.movie_mark_subject_completed !== false;
     }
     const moviePlaybackWatchingEl = document.getElementById(
         'movie-playback-start-mark-watching'
     );
     if (moviePlaybackWatchingEl) {
         moviePlaybackWatchingEl.checked =
-            config.sync.movie_playback_start_mark_watching !== false;
+            sync.movie_playback_start_mark_watching !== false;
     }
-    
+
     const webBase = document.getElementById('web-base-path');
     if (webBase) {
         webBase.value = (config.web && config.web.base_path) ? String(config.web.base_path) : '';
     }
-    document.getElementById('script-proxy').value = config.dev.script_proxy || '';
-    document.getElementById('ssl-verify').checked = Boolean(config.dev.ssl_verify);
-    document.getElementById('debug-mode').checked = Boolean(config.dev.debug);
-    
-    document.getElementById('bangumi-data-enabled').checked = config.bangumi_data.enabled !== false;
-    document.getElementById('bangumi-data-cache').checked = config.bangumi_data.use_cache !== false;
-    document.getElementById('cache-ttl').value = config.bangumi_data.cache_ttl_days || 7;
-    document.getElementById('data-url').value = config.bangumi_data.data_url || 'https://unpkg.com/bangumi-data@0.3/dist/data.json';
-    document.getElementById('local-cache-path').value = config.bangumi_data.local_cache_path || './bangumi_data_cache.json';
+    document.getElementById('script-proxy').value = dev.script_proxy || '';
+    document.getElementById('ssl-verify').checked = Boolean(dev.ssl_verify);
+    document.getElementById('debug-mode').checked = Boolean(dev.debug);
+
+    document.getElementById('bangumi-data-enabled').checked = bd.enabled !== false;
+    document.getElementById('bangumi-data-cache').checked = bd.use_cache !== false;
+    document.getElementById('cache-ttl').value = bd.cache_ttl_days || 7;
+    document.getElementById('data-url').value = bd.data_url || 'https://unpkg.com/bangumi-data@0.3/dist/data.json';
+    document.getElementById('local-cache-path').value = bd.local_cache_path || './bangumi_data_cache.json';
 
     const fn = config.feiniu || {};
     const fe = document.getElementById('feiniu-enabled');
@@ -1316,7 +1320,7 @@ function populateForm(config) {
     toggleSyncMode();
     
     // 填充多用户配置
-    if (config.sync.mode === 'multi') {
+    if (sync.mode === 'multi') {
         populateMultiUserConfig(config.multi_accounts, config.user_mappings);
     }
 }

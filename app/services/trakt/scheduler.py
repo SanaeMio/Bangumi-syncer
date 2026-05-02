@@ -103,13 +103,10 @@ class TraktScheduler:
     def add_user_job(self, user_id: str, cron_expression: str) -> bool:
         """为用户添加定时任务"""
         try:
-            # 如果调度器未初始化或未运行，尝试启动
+            # 如果调度器未初始化或未运行，直接返回失败
             if not self.scheduler or not self.scheduler.running:
-                logger.warning("调度器未运行，尝试启动...")
-                success = self.start()
-                if not success:
-                    logger.error("调度器启动失败，无法添加定时任务")
-                    return False
+                logger.error("调度器未运行，无法添加定时任务（请先启动调度器）")
+                return False
 
             # 如果用户已有任务，先移除
             if user_id in self._user_jobs:
