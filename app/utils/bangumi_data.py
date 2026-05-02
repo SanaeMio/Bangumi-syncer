@@ -30,11 +30,10 @@ def _request_with_retry(
     for attempt in range(max_retries + 1):
         try:
             response = requests.get(
-                url, proxies=proxies, stream=stream, verify=ssl_verify
+                url, proxies=proxies, stream=stream, verify=ssl_verify, timeout=30
             )
-            response.raise_for_status()
 
-            # 检查是否需要重试的状态码
+            # 先检查是否需要重试的状态码，再决定是否抛异常
             if response.status_code in [429, 500, 502, 503, 504]:
                 if attempt < max_retries:
                     delay = 2**attempt  # 指数退避: 2, 4, 8秒
@@ -48,6 +47,7 @@ def _request_with_retry(
                         f"HTTP {response.status_code} 错误，已达到最大重试次数 {max_retries}"
                     )
 
+            response.raise_for_status()
             return response
 
         except (

@@ -375,7 +375,7 @@ async def test_plex_webhook_auth_failure():
                 content=b"{}",
                 headers={"Content-Type": "application/json"},
             )
-            assert response.status_code == 200
+            assert response.status_code == 401
             data = response.json()
             assert data["status"] == "error"
 
@@ -477,7 +477,7 @@ async def test_emby_webhook_auth_failure():
                 content=b"{}",
                 headers={"Content-Type": "application/json"},
             )
-            assert response.status_code == 200
+            assert response.status_code == 401
             data = response.json()
             assert data["status"] == "error"
 
@@ -556,8 +556,8 @@ async def test_emby_webhook_fallback_failure():
             )
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "accepted"
-            assert "错误" in data["message"]
+            assert data["status"] == "error"
+            assert "失败" in data["message"]
 
 
 @pytest.mark.asyncio
@@ -628,7 +628,7 @@ async def test_jellyfin_webhook_auth_failure():
                 content=b"{}",
                 headers={"Content-Type": "application/json"},
             )
-            assert response.status_code == 200
+            assert response.status_code == 401
             data = response.json()
             assert data["status"] == "error"
 
@@ -684,8 +684,8 @@ async def test_jellyfin_webhook_fallback_failure():
             )
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "accepted"
-            assert "错误" in data["message"]
+            assert data["status"] == "error"
+            assert "失败" in data["message"]
 
 
 # ========== 自定义同步特殊路径 ==========

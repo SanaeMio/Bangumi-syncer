@@ -112,7 +112,7 @@ async def test_custom_webhook_auth_failed(app_root_and_api):
         transport = ASGITransport(app=app_root_and_api)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post("/Custom", json=item.model_dump())
-    assert r.status_code == 202
+    assert r.status_code == 401
     assert r.json()["status"] == "error"
 
 
@@ -163,7 +163,9 @@ async def test_plex_webhook_async_and_sync_both_fail_still_accepted(
                 ) as ac:
                     r = await ac.post("/Plex", content=raw)
     assert r.status_code == 200
-    assert "错误" in r.json().get("message", "")
+    body = r.json()
+    assert body.get("status") == "error"
+    assert "失败" in body.get("message", "")
 
 
 @pytest.mark.asyncio

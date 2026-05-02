@@ -46,6 +46,16 @@ class DatabaseManager:
         self._media_type_migrated = False
         self._init_database()
 
+    def close(self) -> None:
+        """关闭数据库连接"""
+        with self._lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except OSError:
+                    pass
+                self._conn = None
+
     def _get_connection(self) -> sqlite3.Connection:
         """获取持久化数据库连接（线程安全），自动重连"""
         if self._conn is not None:

@@ -55,6 +55,7 @@ async def _handle_custom_sync(
     """处理自定义同步请求的内部函数"""
     if not await _verify_webhook_auth(webhook_key):
         logger.warning("Custom webhook 认证失败，无效的 key")
+        response.status_code = 401
         return {"status": "error", "message": "认证失败"}
     try:
         if async_mode:
@@ -107,10 +108,8 @@ async def get_sync_status(
 async def list_sync_tasks(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有同步任务列表"""
     try:
-        # 清理旧任务
         sync_service.cleanup_old_tasks()
-
-        tasks = sync_service._sync_tasks
+        tasks = sync_service.get_all_sync_tasks()
         return {"status": "success", "data": {"tasks": tasks, "total": len(tasks)}}
     except Exception as e:
         logger.error(f"获取同步任务列表失败: {e}")
@@ -356,19 +355,20 @@ async def _handle_plex_sync(plex_request: Request, webhook_key: str = ""):
     """处理Plex同步请求的内部函数"""
     if not await _verify_webhook_auth(webhook_key):
         logger.warning("Plex webhook 认证失败，无效的 key")
-        return {"status": "error", "message": "认证失败"}
+        return Response(
+            content='{"status": "error", "message": "认证失败"}',
+            status_code=401,
+            media_type="application/json",
+        )
 
     try:
         json_str = await plex_request.body()
         plex_data = json.loads(extract_plex_json(json_str))
 
         # 异步调用同步服务（不阻塞webhook响应）
-        # 对于webhook，我们立即返回成功响应，同步在后台进行
         try:
-            # 提交到异步队列处理
             task_id = await sync_service.sync_plex_item_async(plex_data)
             logger.info(f"Plex webhook已提交异步任务: {task_id}")
-            # 对于webhook，立即返回成功响应
             return {
                 "status": "accepted",
                 "message": "Plex同步请求已接收",
@@ -386,8 +386,8 @@ async def _handle_plex_sync(plex_request: Request, webhook_key: str = ""):
             except Exception as fallback_error:
                 logger.error(f"Plex同步回退模式也失败: {fallback_error}")
                 return {
-                    "status": "accepted",
-                    "message": "Plex同步请求已接收，但处理时出现错误",
+                    "status": "error",
+                    "message": f"Plex同步处理失败: {fallback_error}",
                 }
 
     except Exception as e:
@@ -411,7 +411,11 @@ async def _handle_emby_sync(emby_request: Request, webhook_key: str = ""):
     """处理Emby同步请求的内部函数"""
     if not await _verify_webhook_auth(webhook_key):
         logger.warning("Emby webhook 认证失败，无效的 key")
-        return {"status": "error", "message": "认证失败"}
+        return Response(
+            content='{"status": "error", "message": "认证失败"}',
+            status_code=401,
+            media_type="application/json",
+        )
 
     try:
         # 获取请求内容
@@ -457,8 +461,8 @@ async def _handle_emby_sync(emby_request: Request, webhook_key: str = ""):
             except Exception as fallback_error:
                 logger.error(f"Emby同步回退模式也失败: {fallback_error}")
                 return {
-                    "status": "accepted",
-                    "message": "Emby同步请求已接收，但处理时出现错误",
+                    "status": "error",
+                    "message": f"Emby同步处理失败: {fallback_error}",
                 }
     except Exception as e:
         logger.error(f"Emby同步处理出错: {e}")
@@ -482,7 +486,11 @@ async def _handle_jellyfin_sync(jellyfin_request: Request, webhook_key: str = ""
     """处理Jellyfin同步请求的内部函数"""
     if not await _verify_webhook_auth(webhook_key):
         logger.warning("Jellyfin webhook 认证失败，无效的 key")
-        return {"status": "error", "message": "认证失败"}
+        return Response(
+            content='{"status": "error", "message": "认证失败"}',
+            status_code=401,
+            media_type="application/json",
+        )
 
     try:
         json_str = await jellyfin_request.body()
@@ -512,8 +520,8 @@ async def _handle_jellyfin_sync(jellyfin_request: Request, webhook_key: str = ""
             except Exception as fallback_error:
                 logger.error(f"Jellyfin同步回退模式也失败: {fallback_error}")
                 return {
-                    "status": "accepted",
-                    "message": "Jellyfin同步请求已接收，但处理时出现错误",
+                    "status": "error",
+                    "message": f"Jellyfin同步处理失败: {fallback_error}",
                 }
 
     except Exception as e:

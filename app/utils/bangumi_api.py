@@ -188,6 +188,7 @@ class BangumiApi:
 
     def _request_with_retry(self, method, session, url, max_retries=3, **kwargs):
         """带重试机制的请求方法（支持代理失败后直连重试）"""
+        kwargs.setdefault("timeout", 15)
         dns_error_occurred = False
 
         # 如果之前代理已经失败过，直接使用直连

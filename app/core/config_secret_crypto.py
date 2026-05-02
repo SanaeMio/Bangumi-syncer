@@ -57,26 +57,30 @@ def _master_secret() -> str:
     return str(config_manager.get("auth", "secret_key", fallback="") or "")
 
 
-def encrypt(plaintext: str) -> str:
+def encrypt(plaintext: str, *, master: str | None = None) -> str:
     if plaintext is None or plaintext == "":
         return ""
     if plaintext.startswith(PREFIX):
         return plaintext
-    f = _fernet_for_master(_master_secret())
+    if master is None:
+        master = _master_secret()
+    f = _fernet_for_master(master)
     if f is None:
         return plaintext
     token = f.encrypt(plaintext.encode("utf-8")).decode("ascii")
     return PREFIX + token
 
 
-def decrypt(stored: Any) -> str:
+def decrypt(stored: Any, *, master: str | None = None) -> str:
     if stored is None:
         return ""
     s = str(stored)
     if not s.startswith(PREFIX):
         return s
     token = s[len(PREFIX) :]
-    f = _fernet_for_master(_master_secret())
+    if master is None:
+        master = _master_secret()
+    f = _fernet_for_master(master)
     if f is None:
         if s.startswith(PREFIX):
             from .logging import logger
@@ -97,18 +101,22 @@ def decrypt(stored: Any) -> str:
         return s
 
 
-def encrypt_if_sensitive(section: str, option: str, value: str) -> str:
+def encrypt_if_sensitive(
+    section: str, option: str, value: str, *, master: str | None = None
+) -> str:
     if not is_sensitive_ini_field(section, option):
         return value
-    return encrypt(value)
+    return encrypt(value, master=master)
 
 
-def decrypt_if_sensitive(section: str, option: str, value: Any) -> Any:
+def decrypt_if_sensitive(
+    section: str, option: str, value: Any, *, master: str | None = None
+) -> Any:
     if not is_sensitive_ini_field(section, option):
         return value
     if not isinstance(value, str):
         return value
-    return decrypt(value)
+    return decrypt(value, master=master)
 
 
 def migrate_plaintext_sensitive_fields(config: ConfigParser) -> bool:

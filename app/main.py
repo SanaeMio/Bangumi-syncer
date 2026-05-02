@@ -2,6 +2,7 @@
 主应用文件
 """
 
+import asyncio
 import os
 
 import uvicorn
@@ -22,13 +23,17 @@ from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
 from .core.app_version import get_version, get_version_info, get_version_name
 from .core.config import config_manager
+from .core.database import database_manager
 from .core.logging import logger
 from .core.public_url import get_public_base_path
 from .core.startup_info import startup_info
 from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.mapping_service import mapping_service
+from .services.sync_service import sync_service
 from .services.trakt.scheduler import trakt_scheduler
+
+_background_tasks: set[asyncio.Task] = set()
 
 # 创建FastAPI应用（root_path 便于反代子路径下 OpenAPI 等）
 _app_kw: dict = {
@@ -101,25 +106,31 @@ async def startup_event():
 
         logger.info(f"Trakt 调度器将在 {startup_delay} 秒后启动...")
 
-        # 使用异步任务延迟启动调度器
-        import asyncio
-
         async def delayed_scheduler_start():
             await asyncio.sleep(startup_delay)
-            success = await trakt_scheduler.start()
-            if success:
-                logger.info("Trakt 调度器启动成功")
-            else:
-                logger.error("Trakt 调度器启动失败")
-            fn_ok = await feiniu_scheduler.start()
-            if fn_ok:
-                logger.info(
-                    "飞牛定时同步：延迟启动阶段结束（未启用或无有效 db 时不会注册定时任务）"
-                )
-            else:
-                logger.error("飞牛调度器启动失败")
+            # 两个调度器独立启动，互不影响
+            try:
+                success = await trakt_scheduler.start()
+                if success:
+                    logger.info("Trakt 调度器启动成功")
+                else:
+                    logger.error("Trakt 调度器启动失败")
+            except Exception as e:
+                logger.error(f"Trakt 调度器启动异常: {e}")
+            try:
+                fn_ok = await feiniu_scheduler.start()
+                if fn_ok:
+                    logger.info(
+                        "飞牛定时同步：延迟启动阶段结束（未启用或无有效 db 时不会注册定时任务）"
+                    )
+                else:
+                    logger.error("飞牛调度器启动失败")
+            except Exception as e:
+                logger.error(f"飞牛调度器启动异常: {e}")
 
-        asyncio.create_task(delayed_scheduler_start())
+        task = asyncio.create_task(delayed_scheduler_start())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
     except Exception as e:
         logger.error(f"启动 Trakt 调度器失败: {e}")
@@ -133,7 +144,11 @@ async def shutdown_event():
     """应用关闭事件"""
     logger.info("Bangumi-Syncer 正在关闭...")
 
-    # 停止 Trakt 调度器
+    # 取消尚未完成的后台任务
+    for task in _background_tasks:
+        task.cancel()
+
+    # 停止调度器
     try:
         await trakt_scheduler.stop()
         logger.info("Trakt 调度器已停止")
@@ -145,6 +160,20 @@ async def shutdown_event():
         logger.info("飞牛调度器已停止")
     except Exception as e:
         logger.error(f"停止飞牛调度器失败: {e}")
+
+    # 关闭同步服务线程池
+    try:
+        sync_service.shutdown()
+        logger.info("同步服务线程池已关闭")
+    except Exception as e:
+        logger.error(f"关闭同步服务线程池失败: {e}")
+
+    # 关闭数据库连接
+    try:
+        database_manager.close()
+        logger.info("数据库连接已关闭")
+    except Exception as e:
+        logger.error(f"关闭数据库连接失败: {e}")
 
 
 if __name__ == "__main__":
