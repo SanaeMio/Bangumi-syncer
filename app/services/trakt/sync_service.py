@@ -241,7 +241,11 @@ class TraktSyncService:
             for item in syncable_items:
                 try:
                     # O(1) 查找：使用预加载的集合代替每条查库
-                    if (item.trakt_item_id, item.watched_timestamp) in synced_set:
+                    if (
+                        # 全量同步忽略历史记录
+                        not full_sync
+                        and (item.trakt_item_id, item.watched_timestamp) in synced_set
+                    ):
                         skipped_count += 1
                         continue
 
