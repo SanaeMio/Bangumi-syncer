@@ -354,10 +354,16 @@ class BangumiData:
                         except ValueError:
                             continue
                 if best:
-                    return best
-            # 无日期时返回第一个精确匹配
-            first = exact_candidates[0]
-            return (first[1], first[2], False)
+                    if min_diff <= 180:
+                        return best
+                    # 日期差>180天，fall through 到线性扫描检查部分匹配
+                    logger.debug(
+                        f"标题索引命中但日期差 {min_diff} 天 > 180，回退线性扫描检查部分匹配"
+                    )
+            else:
+                # 无日期时返回第一个精确匹配
+                first = exact_candidates[0]
+                return (first[1], first[2], False)
 
         # 精确索引未命中，回退到线性扫描模糊匹配
         logger.debug("开始尝试完全匹配...")

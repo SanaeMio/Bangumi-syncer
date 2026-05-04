@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 import socket
 import time
 import warnings
@@ -509,6 +510,42 @@ class BangumiApi:
             return None
         return nxt[0]["id"]
 
+    _CN_NUM = {
+        "一": 1,
+        "二": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+        "十": 10,
+    }
+
+    def _extract_season_number(self, name: str, name_cn: str) -> Optional[int]:
+        """从名称中提取季度编号，用于续集链季度去重计数"""
+        text = f"{name} {name_cn}"
+        # "第X期" / "第X季"（阿拉伯数字）
+        m = re.search(r"第\s*(\d+)\s*[期季]", text)
+        if m:
+            return int(m.group(1))
+        # "第X期" / "第X季"（中文数字）
+        m = re.search(r"第\s*([一二三四五六七八九十]+)\s*[期季]", text)
+        if m:
+            cn = m.group(1)
+            if len(cn) == 1:
+                return self._CN_NUM.get(cn)
+            # "十一"~"十九"
+            if cn.startswith("十"):
+                return 10 + self._CN_NUM.get(cn[1], 0)
+            return self._CN_NUM.get(cn)
+        # "Xnd/Xrd/Xth season"
+        m = re.search(r"(\d+)(?:st|nd|rd|th)\s+season", text, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+        return None
+
     def _match_target_ep_rows(self, ep_info: list, target_ep: int):
         """与 target_season>1 分支一致的章节匹配规则。"""
         rows = [i for i in ep_info if i.get("sort") == target_ep]
@@ -702,18 +739,15 @@ class BangumiApi:
             return None, None if target_ep else None
 
         # Plex 季数与 Bangumi 多期/续集计数不一致时，用播出日 + 章节 airdate 择优
-        if (
-            release_date
-            and not is_season_subject_id
-            and target_season > 1
-            and target_ep
-        ):
+        # is_season_subject_id=True 但直接匹配失败时（如多 part 季度），也应回退到 airdate
+        if release_date and target_season > 1 and target_ep:
             air_pick = self._try_resolve_sequel_by_airdate(
                 subject_id, target_ep, release_date
             )
             if air_pick is not None:
                 return air_pick[0], air_pick[1]
 
+        last_season_num = None
         while True:
             related = self.get_related_subjects(current_id)
             # 处理related可能是列表或字典的情况
@@ -738,26 +772,30 @@ class BangumiApi:
                 # 修复死循环：如果获取不到剧集信息，应该跳出循环而不是继续
                 break
             logger.debug(ep_info)
-            normal_season = (
-                True
-                if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
-                else False
-            )
             sort_rows = [i for i in ep_info if i.get("sort") == target_ep]
             _target_ep = self._match_target_ep_rows(ep_info, target_ep)
             logger.debug(_target_ep)
-            # 兼容存在多季情况下，第一集的sort不为1的场景
-            if not sort_rows:
-                if (
-                    target_ep
-                    and _target_ep
-                    and "第2部分" not in current_info.get("name_cn", "")
-                ):
-                    season_num += 1
-                logger.debug(_target_ep)
             ep_found = True if target_ep and _target_ep else False
-            if normal_season:
+
+            # 通过季度标识去重计数，避免 split-cour 被重复计数
+            sn = self._extract_season_number(
+                current_info.get("name", ""), current_info.get("name_cn", "")
+            )
+            if sn is not None and sn != last_season_num:
                 season_num += 1
+                last_season_num = sn
+            elif sn is None:
+                # 兼容 sort 不从 1 开始的续集（如无职转生 S1 sort=0，S2 sort 从 12 开始）
+                if not sort_rows:
+                    if (
+                        target_ep
+                        and _target_ep
+                        and "第2部分" not in current_info.get("name_cn", "")
+                    ):
+                        season_num += 1
+                elif any(ep.get("sort") == 1 for ep in ep_info):
+                    season_num += 1
+                    last_season_num = None
             if season_num > target_season:
                 break
             if season_num == target_season:
