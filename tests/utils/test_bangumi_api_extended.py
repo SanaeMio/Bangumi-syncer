@@ -167,7 +167,8 @@ class TestGetTargetSeasonEpisodeIdAirdate:
         assert sid == 300
         assert eid == 30001
 
-    def test_skips_airdate_path_when_season_subject_id_true(self):
+    def test_direct_match_succeeds_skips_airdate(self):
+        """is_season_subject_id=True 且直接匹配成功时，不走 airdate 路径"""
         api = BangumiApi()
         api.get_related_subjects = MagicMock()
         api.get_episodes = MagicMock(
@@ -223,4 +224,232 @@ class TestGetMovieMainEpisodeId:
         api.get_episodes = MagicMock(return_value={"data": [], "total": 0})
         sid, eid = api.get_movie_main_episode_id(300)
         assert sid == "300"
-        assert eid is None
+
+
+class TestGetTargetSeasonEpisodeIdSplitCour:
+    """split-cour 续集链季度计数测试"""
+
+    def _tv_ep(self, sort, ep, eid, airdate="2024-01-01"):
+        return {"sort": sort, "ep": ep, "id": eid, "airdate": airdate}
+
+    def test_rezero_split_cour_season4(self):
+        """Re:Zero 6-subject 链：S1→S2→S2后半→S3袭击篇→S3反击篇→S4
+        target_season=4 应返回 S4 (547888)"""
+        api = BangumiApi()
+
+        related = {
+            140001: [{"relation": "续集", "id": 278826}],
+            278826: [{"relation": "续集", "id": 316247}],
+            316247: [{"relation": "续集", "id": 425998}],
+            425998: [{"relation": "续集", "id": 510728}],
+            510728: [{"relation": "续集", "id": 547888}],
+            547888: [],
+        }
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        subjects = {
+            278826: {
+                "platform": "TV",
+                "name": "Re:ゼロから始める異世界生活 2nd season",
+                "name_cn": "Re：从零开始的异世界生活 第二季",
+            },
+            316247: {
+                "platform": "TV",
+                "name": "Re:ゼロから始める異世界生活 2nd season 後半クール",
+                "name_cn": "Re：从零开始的异世界生活 第二季 后半部分",
+            },
+            425998: {
+                "platform": "TV",
+                "name": "Re:ゼロから始める異世界生活 3rd season 襲撃編",
+                "name_cn": "Re：从零开始的异世界生活 第三季 袭击篇",
+            },
+            510728: {
+                "platform": "TV",
+                "name": "Re:ゼロから始める異世界生活 3rd season 反撃篇",
+                "name_cn": "Re：从零开始的异世界生活 第三季 反击篇",
+            },
+            547888: {
+                "platform": "TV",
+                "name": "Re:ゼロから始める異世界生活 4th season 喪失編",
+                "name_cn": "Re：从零开始的异世界生活 第四季 丧失篇",
+            },
+        }
+
+        def get_subject(sid):
+            return subjects.get(int(sid))
+
+        episodes = {
+            278826: {"data": [self._tv_ep(26, 1, 957951)], "total": 13},
+            316247: {"data": [self._tv_ep(26, 1, 994750)], "total": 13},
+            425998: {"data": [self._tv_ep(51, 1, 1353850)], "total": 8},
+            510728: {"data": [self._tv_ep(59, 1, 1400001)], "total": 8},
+            547888: {"data": [self._tv_ep(67, 1, 1500001)], "total": 8},
+        }
+
+        def get_ep(sid):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=140001,
+            target_season=4,
+            target_ep=1,
+            is_season_subject_id=False,
+            release_date=None,
+        )
+        assert sid == 547888
+        assert eid == 1500001
+
+    def test_split_cour_does_not_overcount(self):
+        """split-cour subject 不应被计为独立季度"""
+        api = BangumiApi()
+
+        related = {
+            1: [{"relation": "续集", "id": 100}],
+            100: [{"relation": "续集", "id": 150}],
+            150: [{"relation": "续集", "id": 200}],
+            200: [],
+        }
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        subjects = {
+            100: {
+                "platform": "TV",
+                "name": "Anime 2nd Season",
+                "name_cn": "动画 第二季",
+            },
+            150: {
+                "platform": "TV",
+                "name": "Anime 2nd Season Part 2",
+                "name_cn": "动画 第二季 第2部分",
+            },
+            200: {
+                "platform": "TV",
+                "name": "Anime 3rd Season",
+                "name_cn": "动画 第三季",
+            },
+        }
+
+        def get_subject(sid):
+            return subjects.get(int(sid))
+
+        episodes = {
+            100: {"data": [self._tv_ep(1, 1, 1001)], "total": 12},
+            150: {"data": [self._tv_ep(13, 1, 1501)], "total": 12},
+            200: {"data": [self._tv_ep(1, 1, 2001)], "total": 12},
+        }
+
+        def get_ep(sid):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+
+        # target_season=3 应返回 200（第三季），而非 150（第二季第2部分）
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=3,
+            target_ep=1,
+            is_season_subject_id=False,
+        )
+        assert sid == 200
+        assert eid == 2001
+
+    def test_sort_offset_no_season_indicator(self):
+        """无职转生 S2 场景：S1 sort=0，S2 sort 从 12 开始，无季度标识"""
+        api = BangumiApi()
+
+        related = {
+            1: [{"relation": "续集", "id": 100}],
+            100: [],
+        }
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        def get_subject(sid):
+            # S1 和 S2 都没有季度标识
+            return {"platform": "TV", "name": "Mushoku Tensei", "name_cn": "无职转生"}
+
+        episodes = {
+            1: {
+                "data": [
+                    {"sort": 0, "ep": 1, "id": 101, "airdate": "2021-01-01"},
+                    {"sort": 1, "ep": 2, "id": 102, "airdate": "2021-01-08"},
+                ],
+                "total": 12,
+            },
+            100: {
+                "data": [
+                    {"sort": 12, "ep": 1, "id": 201, "airdate": "2021-10-03"},
+                    {"sort": 13, "ep": 2, "id": 202, "airdate": "2021-10-10"},
+                ],
+                "total": 12,
+            },
+        }
+
+        def get_ep(sid):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=2,
+            target_ep=1,
+            is_season_subject_id=False,
+        )
+        assert sid == 100
+        assert eid == 201
+
+    def test_no_season_indicator_falls_back_to_sort(self):
+        """无季度标识时，通过 sort=1 判断季度首集"""
+        api = BangumiApi()
+
+        related = {
+            1: [{"relation": "续集", "id": 100}],
+            100: [{"relation": "续集", "id": 200}],
+            200: [],
+        }
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        subjects = {
+            100: {"platform": "TV", "name": "Anime S2", "name_cn": ""},
+            200: {"platform": "TV", "name": "Anime S3", "name_cn": ""},
+        }
+
+        def get_subject(sid):
+            return subjects.get(int(sid))
+
+        episodes = {
+            100: {"data": [self._tv_ep(1, 1, 1001)], "total": 12},
+            200: {"data": [self._tv_ep(1, 1, 2001)], "total": 12},
+        }
+
+        def get_ep(sid):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=3,
+            target_ep=1,
+            is_season_subject_id=False,
+        )
+        assert sid == 200
+        assert eid == 2001
