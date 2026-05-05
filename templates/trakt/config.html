@@ -9,8 +9,12 @@
         .card { margin-bottom: 1.5rem; }
         .sync-history-table { max-height: 400px; overflow-y: auto; overflow-x: auto; }
         .sync-history-table table { min-width: 800px; }
-        .sync-history-table th:first-child,
-        .sync-history-table td:first-child { min-width: 150px; white-space: nowrap; }
+        .sync-history-table th,
+        .sync-history-table td { white-space: nowrap; }
+        .sync-history-table th:nth-child(3),
+        .sync-history-table td:nth-child(3) { white-space: normal; min-width: 120px; }
+        .sync-history-table th:nth-child(6),
+        .sync-history-table td:nth-child(6) { white-space: normal; max-width: 250px; }
         .loading-spinner {
             display: inline-block;
             width: 1rem;
@@ -222,8 +226,8 @@
                 <table class="table table-hover table-sm">
                     <thead>
                         <tr>
-                            <th>时间</th>
                             <th>类型</th>
+                            <th>时间</th>
                             <th>标题</th>
                             <th>季/集</th>
                             <th>状态</th>
