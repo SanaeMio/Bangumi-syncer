@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
+from .app_version import get_version
 from .public_url import get_public_base_path, join_public
 
 _templates: Jinja2Templates | None = None
@@ -25,6 +26,14 @@ def get_templates() -> Jinja2Templates:
         _templates = Jinja2Templates(directory=_templates_dir())
         env = _templates.env
         env.filters["p"] = join_public
+        _ver = get_version()
+
+        def _static_v(path: str) -> str:
+            base = join_public(path)
+            sep = "&" if "?" in base else "?"
+            return f"{base}{sep}v={_ver}"
+
+        env.filters["static_v"] = _static_v
         env.globals["get_public_base_path"] = get_public_base_path
 
         def public_base_path_json() -> Markup:

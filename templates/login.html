@@ -5,9 +5,11 @@
         <script>window.__APP_BASE_PATH__ = {{ public_base_path_json() }};</script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>登录 - Bangumi-Syncer</title>
-        <link href="{{ '/static/css/bootstrap.min.css' | p }}" rel="stylesheet">
-        <link href="{{ '/static/css/bootstrap-icons.css' | p }}" rel="stylesheet">
-        <link href="{{ '/static/css/style.css' | p }}" rel="stylesheet">
+        <link href="{{ '/static/css/bootstrap.min.css' | static_v }}"
+              rel="stylesheet">
+        <link href="{{ '/static/css/bootstrap-icons.css' | static_v }}"
+              rel="stylesheet">
+        <link href="{{ '/static/css/style.css' | static_v }}" rel="stylesheet">
     </head>
     <body class="bg-light">
         <div class="container-fluid vh-100 d-flex align-items-center justify-content-center px-3">
@@ -17,7 +19,7 @@
                         <div class="card-body p-4">
                             <!-- Logo 和标题 -->
                             <div class="text-center mb-4">
-                                <img src="{{ '/static/logo.png' | p }}"
+                                <img src="{{ '/static/logo.png' | static_v }}"
                                      alt="Bangumi-Syncer"
                                      class="login-logo mb-3 d-block mx-auto">
                                 <p class="text-muted mb-0">请登录以访问管理界面</p>
@@ -65,7 +67,7 @@
                 </div>
             </div>
         </div>
-        <script src="{{ '/static/js/bootstrap.bundle.min.js' | p }}"></script>
-        <script src="{{ '/static/js/app.js' | p }}"></script>
+        <script src="{{ '/static/js/bootstrap.bundle.min.js' | static_v }}"></script>
+        <script src="{{ '/static/js/app.js' | static_v }}"></script>
     </body>
 </html>

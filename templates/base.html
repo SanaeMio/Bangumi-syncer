@@ -7,10 +7,13 @@
         <title>
             {% block title %}Bangumi Syncer{% endblock %}
         </title>
-        <link href="{{ '/static/css/bootstrap.min.css' | p }}" rel="stylesheet">
-        <link href="{{ '/static/css/bootstrap-icons.css' | p }}" rel="stylesheet">
-        <link href="{{ '/static/css/style.css' | p }}" rel="stylesheet">
-        <link href="{{ '/static/css/version-banner.css' | p }}" rel="stylesheet">
+        <link href="{{ '/static/css/bootstrap.min.css' | static_v }}"
+              rel="stylesheet">
+        <link href="{{ '/static/css/bootstrap-icons.css' | static_v }}"
+              rel="stylesheet">
+        <link href="{{ '/static/css/style.css' | static_v }}" rel="stylesheet">
+        <link href="{{ '/static/css/version-banner.css' | static_v }}"
+              rel="stylesheet">
         {% block head %}{% endblock %}
     </head>
     <body class="bg-light">
@@ -19,7 +22,7 @@
             <div class="container-fluid">
                 <a class="navbar-brand d-flex align-items-center"
                    href="{{ '/dashboard' | p }}">
-                    <img src="{{ '/static/logo.png' | p }}"
+                    <img src="{{ '/static/logo.png' | static_v }}"
                          alt="Bangumi-Syncer"
                          class="app-brand-logo">
                 </a>
@@ -109,7 +112,7 @@
                             <a href="{{ '/dashboard' | p }}"
                                class="d-inline-block text-decoration-none app-sidebar-brand-link"
                                title="返回仪表板">
-                                <img src="{{ '/static/logo.png' | p }}"
+                                <img src="{{ '/static/logo.png' | static_v }}"
                                      alt="Bangumi-Syncer"
                                      class="app-sidebar-logo">
                             </a>
@@ -241,10 +244,10 @@
                 </div>
             </div>
         </div>
-        <script src="{{ '/static/js/bootstrap.bundle.min.js' | p }}"></script>
-        <script src="{{ '/static/js/chart.js' | p }}"></script>
-        <script src="{{ '/static/js/app.js' | p }}"></script>
-        <script src="{{ '/static/js/version-release.js' | p }}"></script>
+        <script src="{{ '/static/js/bootstrap.bundle.min.js' | static_v }}"></script>
+        <script src="{{ '/static/js/chart.js' | static_v }}"></script>
+        <script src="{{ '/static/js/app.js' | static_v }}"></script>
+        <script src="{{ '/static/js/version-release.js' | static_v }}"></script>
         {% block scripts %}{% endblock %}
     </body>
 </html>
