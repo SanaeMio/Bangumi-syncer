@@ -408,13 +408,15 @@ class TraktConfigPage {
                                record.status === 'error' ? 'text-danger' : 'text-warning';
             const statusIcon = record.status === 'success' ? 'bi-check-circle-fill' :
                               record.status === 'error' ? 'bi-x-circle-fill' : 'bi-exclamation-circle-fill';
+            const mt = (record.media_type || 'episode').toLowerCase();
+            const typeLabel = mt === 'movie' ? '电影' : '剧集';
 
             rows += `
                 <tr>
+                    <td><span class="badge bg-secondary">${typeLabel}</span></td>
                     <td>${record.timestamp}</td>
-                    <td><span class="badge bg-secondary">${record.source || 'unknown'}</span></td>
-                    <td>${this.escapeHtml(record.title)}</td>
-                    <td>S${record.season}E${record.episode}</td>
+                    <td>${this.escapeHtml(record.title || record.ori_title || '—')}</td>
+                    <td>S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}</td>
                     <td class="${statusClass}">
                         <i class="bi ${statusIcon} me-1"></i>
                         ${record.status}
