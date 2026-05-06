@@ -21,6 +21,7 @@ from .api.pages import router as pages_router
 from .api.proxy import router as proxy_router
 from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
+from .api.upgrade import router as upgrade_router
 from .core.app_version import get_version, get_version_info, get_version_name
 from .core.config import config_manager
 from .core.database import database_manager
@@ -68,6 +69,7 @@ app.include_router(proxy_router)
 app.include_router(notification_router)
 app.include_router(trakt_router)
 app.include_router(feiniu_router)
+app.include_router(upgrade_router)
 
 
 # 启动事件

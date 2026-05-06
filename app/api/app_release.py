@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ..core.app_version import get_display_version, get_version
+from ..services.upgrade_service import upgrade_service
 from ..utils.github_release import (
     ReleaseListItem,
     fetch_latest_release,
@@ -98,6 +99,16 @@ class ReleaseInfoResponse(BaseModel):
         description="分页拉取 /releases 失败时的说明；若仍能展示 latest 合并结果，列表可能不完整",
     )
 
+    environment: str = Field(
+        default="direct",
+        description="运行环境：docker 或 direct",
+    )
+
+    upgrade_available: bool = Field(
+        default=False,
+        description="当前环境是否支持一键升级（仅直装模式）",
+    )
+
 
 def _merge_latest_if_missing(
     items: list[ReleaseListItem],
@@ -146,11 +157,17 @@ async def release_info(
 
     cur_disp = get_display_version(current)
 
+    from ..utils.docker_helper import docker_helper
+
+    env = "docker" if docker_helper.is_docker else "direct"
+
     if user is None:
         return ReleaseInfoResponse(
             current_version=current,
             current_version_display=cur_disp,
             remote_loaded=False,
+            environment=env,
+            upgrade_available=upgrade_service.is_upgrade_capable(),
         )
 
     gh = await fetch_latest_release()
@@ -161,6 +178,8 @@ async def release_info(
             current_version_display=cur_disp,
             remote_loaded=True,
             github_error=gh.error,
+            environment=env,
+            upgrade_available=upgrade_service.is_upgrade_capable(),
         )
 
     latest = strip_tag_for_semver(gh.tag_name or "")
@@ -240,4 +259,6 @@ async def release_info(
         newer_releases=newer_models,
         release_history=release_history_models,
         releases_fetch_error=list_err,
+        environment=env,
+        upgrade_available=upgrade_service.is_upgrade_capable(),
     )

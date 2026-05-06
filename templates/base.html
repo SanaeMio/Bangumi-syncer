@@ -227,6 +227,53 @@
                                         class="release-notes-current__version">—</strong>
                                 <span id="releaseNotesBehindPill"
                                       class="release-notes-tag release-notes-tag--behind d-none"></span>
+                                <!-- 一键升级按钮 -->
+                                <button type="button"
+                                        id="upgradeBtn"
+                                        class="release-notes-upgrade-btn d-none"
+                                        onclick="startUpgrade()">
+                                    <i class="bi bi-arrow-up-circle"></i>
+                                    <span id="upgradeBtnText">一键升级</span>
+                                </button>
+                                <!-- 重启按钮 -->
+                                <button type="button"
+                                        id="upgradeRestartBtn"
+                                        class="release-notes-upgrade-btn release-notes-upgrade-btn--restart d-none"
+                                        onclick="triggerRestart()">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                    <span>立即重启</span>
+                                </button>
+                            </div>
+                            <!-- Docker 模式提示 -->
+                            <div id="upgradeDockerHint" class="d-none mt-2">
+                                <div class="alert alert-info small py-2 mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Docker 用户请手动升级：
+                                    <code>docker pull sanaemio/bangumi-syncer && docker compose up -d</code>
+                                </div>
+                            </div>
+                            <!-- 升级进度 -->
+                            <div id="upgradeProgress" class="d-none mt-2">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span id="upgradeSpinner"
+                                          class="spinner-border spinner-border-sm text-primary"></span>
+                                    <span id="upgradeStatusText" class="small">准备中...</span>
+                                    <span id="upgradePercentText" class="small text-muted ms-auto">0%</span>
+                                </div>
+                                <div class="progress" style="height: 8px;">
+                                    <div id="upgradeProgressBar"
+                                         class="progress-bar progress-bar-striped progress-bar-animated"
+                                         role="progressbar"
+                                         style="width: 0%;
+                                                transition: width 0.6s ease"></div>
+                                </div>
+                            </div>
+                            <!-- 升级错误 -->
+                            <div id="upgradeError" class="d-none mt-2">
+                                <div class="alert alert-danger small py-2 mb-0">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                    <span id="upgradeErrorMessage"></span>
+                                </div>
                             </div>
                         </div>
                         <div class="alert alert-warning small py-2 d-none mb-3"
@@ -248,6 +295,8 @@
         <script src="{{ '/static/js/chart.js' | static_v }}"></script>
         <script src="{{ '/static/js/app.js' | static_v }}"></script>
         <script src="{{ '/static/js/version-release.js' | static_v }}"></script>
-        {% block scripts %}{% endblock %}
+        <script src="{{ '/static/js/upgrade.js' | static_v }}"></script>
+        {% block scripts %}
+        {% endblock %}
     </body>
 </html>
