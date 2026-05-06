@@ -438,6 +438,7 @@
                 updates_behind: 0,
             });
             applyUpdatePillAfterResponse(j);
+            if (window.initUpgradeUI) window.initUpgradeUI(j);
             return;
         }
 
@@ -467,11 +468,13 @@
                 warnGh.textContent = '';
             }
             applyUpdatePillAfterResponse(j);
+            if (window.initUpgradeUI) window.initUpgradeUI(j);
             return;
         }
 
         renderModal(j);
         applyUpdatePillAfterResponse(j);
+        if (window.initUpgradeUI) window.initUpgradeUI(j);
     }
 
     /** 若有 sessionStorage 缓存则立刻渲染，不阻塞首屏。 */

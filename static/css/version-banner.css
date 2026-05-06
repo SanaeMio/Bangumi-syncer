@@ -349,6 +349,61 @@
     border: 1px solid #ffe69c;
 }
 
+/* 一键升级按钮 */
+.release-notes-upgrade-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2em 0.7em;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: #fff;
+    background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%);
+    border: 1px solid #0a58ca;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(13, 110, 253, 0.25);
+    vertical-align: middle;
+}
+
+.release-notes-upgrade-btn:hover {
+    background: linear-gradient(135deg, #0b5ed7 0%, #0a53be 100%);
+    box-shadow: 0 2px 6px rgba(13, 110, 253, 0.35);
+    transform: translateY(-1px);
+    color: #fff;
+}
+
+.release-notes-upgrade-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(13, 110, 253, 0.2);
+}
+
+.release-notes-upgrade-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.release-notes-upgrade-btn i {
+    font-size: 0.8rem;
+}
+
+.release-notes-upgrade-btn--restart {
+    background: linear-gradient(135deg, #198754 0%, #157347 100%);
+    border-color: #146c43;
+    box-shadow: 0 1px 3px rgba(25, 135, 84, 0.25);
+}
+
+.release-notes-upgrade-btn--restart:hover {
+    background: linear-gradient(135deg, #157347 0%, #146c43 100%);
+    box-shadow: 0 2px 6px rgba(25, 135, 84, 0.35);
+    color: #fff;
+}
+
 /* 每个版本一张卡片 */
 .release-notes-card {
     background: #fff;

@@ -82,6 +82,8 @@ dependencies = [
     { name = "rapidfuzz", version = "3.13.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "rapidfuzz", version = "3.14.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "requests" },
+    { name = "sse-starlette", version = "3.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "sse-starlette", version = "3.4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "uvicorn", version = "0.39.0", source = { registry = "https://pypi.org/simple" }, extra = ["standard"], marker = "python_full_version < '3.10'" },
     { name = "uvicorn", version = "0.41.0", source = { registry = "https://pypi.org/simple" }, extra = ["standard"], marker = "python_full_version >= '3.10'" },
 ]
@@ -114,6 +116,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rapidfuzz", specifier = ">=3.0.0" },
     { name = "requests", specifier = ">=2.32.5" },
+    { name = "sse-starlette", specifier = ">=2.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0" },
 ]
 
@@ -2341,6 +2344,38 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "sse-starlette"
+version = "3.3.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.10'",
+]
+dependencies = [
+    { name = "anyio", marker = "python_full_version < '3.10'" },
+    { name = "starlette", version = "0.49.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/5a/a1b3e05da1de8dd17fcbe2d6e66725bff6a8d96293db53cd0d89eac84f81/sse_starlette-3.3.0.tar.gz", hash = "sha256:fdf4a84e2230b12daa3a5a4a1a651586debdefd6eb2fbf812554490d01326896", size = 32679, upload-time = "2026-02-28T08:30:33.178Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b6/7a/e3ff499eaee52cf4c78bbf483a3ec536b0b04290e482d5a740cd2729fdcb/sse_starlette-3.3.0-py3-none-any.whl", hash = "sha256:eb5acdac069c7c8b2ce2d3c447b58016da9737ff8a8f475438d88397d49883ef", size = 14276, upload-time = "2026-02-28T08:30:31.771Z" },
+]
+
+[[package]]
+name = "sse-starlette"
+version = "3.4.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.10'",
+]
+dependencies = [
+    { name = "anyio", marker = "python_full_version >= '3.10'" },
+    { name = "starlette", version = "0.52.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/9a/f35932a8c0eb6b2287b66fa65a0321df8c84e4e355a659c1841a37c39fdb/sse_starlette-3.4.1.tar.gz", hash = "sha256:f780bebcf6c8997fe514e3bd8e8c648d8284976b391c8bed0bcb1f611632b555", size = 35127, upload-time = "2026-04-26T13:32:32.292Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/07/45c21ed03d708c477367305726b89919b020a3a2a01f72aaf5ad941caf35/sse_starlette-3.4.1-py3-none-any.whl", hash = "sha256:6b43cf21f1d574d582a6e1b0cfbde1c94dc86a32a701a7168c99c4475c6bd1d0", size = 16487, upload-time = "2026-04-26T13:32:30.819Z" },
 ]
 
 [[package]]

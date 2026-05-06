@@ -13,6 +13,7 @@ anyio==4.12.1 \
     --hash=sha256:d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c
     # via
     #   httpx
+    #   sse-starlette
     #   starlette
     #   watchfiles
 apscheduler==3.11.2 \
@@ -983,14 +984,26 @@ requests==2.32.5 \
     --hash=sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6 \
     --hash=sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf
     # via bangumi-syncer
+sse-starlette==3.3.0 ; python_full_version < '3.10' \
+    --hash=sha256:eb5acdac069c7c8b2ce2d3c447b58016da9737ff8a8f475438d88397d49883ef \
+    --hash=sha256:fdf4a84e2230b12daa3a5a4a1a651586debdefd6eb2fbf812554490d01326896
+    # via bangumi-syncer
+sse-starlette==3.4.1 ; python_full_version >= '3.10' \
+    --hash=sha256:6b43cf21f1d574d582a6e1b0cfbde1c94dc86a32a701a7168c99c4475c6bd1d0 \
+    --hash=sha256:f780bebcf6c8997fe514e3bd8e8c648d8284976b391c8bed0bcb1f611632b555
+    # via bangumi-syncer
 starlette==0.49.3 ; python_full_version < '3.10' \
     --hash=sha256:1c14546f299b5901a1ea0e34410575bc33bbd741377a10484a54445588d00284 \
     --hash=sha256:b579b99715fdc2980cf88c8ec96d3bf1ce16f5a8051a7c2b84ef9b1cdecaea2f
-    # via fastapi
+    # via
+    #   fastapi
+    #   sse-starlette
 starlette==0.52.1 ; python_full_version >= '3.10' \
     --hash=sha256:0029d43eb3d273bc4f83a08720b4912ea4b071087a3b48db01b7c839f7954d74 \
     --hash=sha256:834edd1b0a23167694292e94f597773bc3f89f362be6effee198165a35d62933
-    # via fastapi
+    # via
+    #   fastapi
+    #   sse-starlette
 typing-extensions==4.15.0 \
     --hash=sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466 \
     --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
