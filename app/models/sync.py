@@ -149,6 +149,13 @@ class SyncStats(BaseModel):
     daily_stats: list
 
 
+class HeatmapDay(BaseModel):
+    """热力图单日数据"""
+
+    date: str
+    count: int
+
+
 class TestSyncRequest(BaseModel):
     """测试同步请求模型"""
 

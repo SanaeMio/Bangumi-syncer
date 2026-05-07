@@ -72,19 +72,19 @@
             </div>
         </div>
         <div class="card-body">
-            <div class="table-responsive">
+            <div>
                 <table class="table table-bordered table-hover table-striped align-middle app-data-table"
                        id="records-table">
                     <thead>
                         <tr>
-                            <th>类型</th>
-                            <th>时间</th>
-                            <th>用户</th>
+                            <th class="col-hide-sm">类型</th>
+                            <th class="col-hide-sm">时间</th>
+                            <th class="col-hide-sm">用户</th>
                             <th>番剧标题</th>
                             <th>季/集</th>
                             <th>状态</th>
-                            <th>来源</th>
-                            <th>消息</th>
+                            <th class="col-hide-sm">来源</th>
+                            <th class="col-hide-sm">消息</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -182,21 +182,21 @@ function displayRecords(records) {
         const typeLabel = mt === 'movie' ? '电影' : '剧集';
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
-            <td>${new Date(record.timestamp).toLocaleString()}</td>
-            <td>${record.user_name}</td>
+            <td class="col-hide-sm"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
+            <td class="col-hide-sm">${new Date(record.timestamp).toLocaleString()}</td>
+            <td class="col-hide-sm">${record.user_name}</td>
             <td>${record.title}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
             <td><span class="badge rounded-pill bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
-            <td><span class="badge rounded-pill bg-${getSourceColor(record.source)}">${record.source}</span></td>
-            <td class="text-truncate" style="max-width: 200px;" title="${record.message}">${record.message}</td>
-            <td>
-                <button class="btn btn-sm btn-outline-primary" onclick="showRecordDetail(${record.id})">
+            <td class="col-hide-sm"><span class="badge rounded-pill tl-source--${getSourceTlClass(record.source)}">${record.source}</span></td>
+            <td class="col-hide-sm text-truncate" style="max-width: 200px;" title="${record.message}">${record.message}</td>
+            <td class="text-nowrap">
+                <button class="btn btn-action btn-outline-primary" onclick="showRecordDetail(${record.id})" title="查看详情">
                     <i class="bi bi-eye"></i>
                 </button>
-                ${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-sm btn-outline-primary ms-1" title="查看Bangumi番剧页面"><i class="bi bi-collection"></i></a>` : ''}
-                ${record.episode_id ? `<a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="查看Bangumi剧集页面"><i class="bi bi-play-circle"></i></a>` : ''}
-                ${record.status === 'error' ? `<button class="btn btn-sm btn-outline-warning btn-retry ms-1" onclick="retrySync(${record.id})" title="重试同步"><i class="bi bi-arrow-clockwise"></i></button>` : ''}
+                ${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-action btn-outline-secondary" title="Bangumi番剧"><i class="bi bi-collection"></i></a>` : ''}
+                ${record.episode_id ? `<a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="btn btn-action btn-outline-secondary" title="Bangumi剧集"><i class="bi bi-play-circle"></i></a>` : ''}
+                ${record.status === 'error' ? `<button class="btn btn-action btn-outline-warning" onclick="retrySync(${record.id})" title="重试同步"><i class="bi bi-arrow-clockwise"></i></button>` : ''}
             </td>
         `;
         tbody.appendChild(row);
@@ -225,21 +225,23 @@ function getStatusText(status) {
 
 function getSourceColor(source) {
     const sourceLower = source.toLowerCase();
-    
-    // 处理重试来源
-    if (sourceLower.startsWith('retry-')) {
-        return 'purple';  // 重试记录用紫色标识
-    }
-    
+    if (sourceLower.startsWith('retry-')) return 'purple';
     switch (sourceLower) {
-        case 'plex': return 'warning';     // 黄色
-        case 'emby': return 'success';     // 绿色
-        case 'jellyfin': return 'primary'; // 蓝色
-        case 'custom': return 'secondary'; // 灰色
-        case 'feiniu': return 'info';      // 浅蓝色
-        case 'test': return 'secondary';   // 灰色
+        case 'plex': return 'warning';
+        case 'emby': return 'success';
+        case 'jellyfin': return 'primary';
+        case 'custom': return 'secondary';
+        case 'feiniu': return 'info';
+        case 'test': return 'secondary';
         default: return 'secondary';
     }
+}
+
+function getSourceTlClass(source) {
+    const s = source.toLowerCase();
+    if (s.startsWith('retry-')) return 'retry';
+    if (['plex', 'emby', 'jellyfin', 'custom', 'feiniu', 'test'].indexOf(s) !== -1) return s;
+    return 'custom';
 }
 
 function updatePagination(total, currentPage, limit) {
@@ -434,7 +436,7 @@ async function showRecordDetail(recordId) {
                 <div class="row mt-2">
                     <div class="col-12">
                         <strong>消息:</strong>
-                        <div class="border rounded p-2 mt-1" style="background-color: #f8f9fa;">
+                        <div class="border rounded p-2 mt-1" style="background-color: var(--app-bg-card-header); color: var(--app-text-muted);">
                             ${record.message}
                         </div>
                     </div>

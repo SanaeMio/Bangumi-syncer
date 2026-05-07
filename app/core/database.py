@@ -44,6 +44,8 @@ class DatabaseManager:
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
         self._media_type_migrated = False
+        self._heatmap_cache: Optional[list] = None
+        self._heatmap_cache_time: float = 0
         self._init_database()
 
     def close(self) -> None:
@@ -252,6 +254,7 @@ class DatabaseManager:
         user_name: Optional[str] = None,
         source: Optional[str] = None,
         source_prefix: Optional[str] = None,
+        skip_count: bool = False,
     ) -> dict[str, Any]:
         """获取同步记录"""
         try:
@@ -285,9 +288,12 @@ class DatabaseManager:
                     else ""
                 )
 
-                count_query = f"SELECT COUNT(*) FROM sync_records{where_clause}"
-                cursor.execute(count_query, params)
-                total = cursor.fetchone()[0]
+                if skip_count:
+                    total = -1
+                else:
+                    count_query = f"SELECT COUNT(*) FROM sync_records{where_clause}"
+                    cursor.execute(count_query, params)
+                    total = cursor.fetchone()[0]
 
                 query = f"""
                     SELECT id, timestamp, user_name, title, ori_title, season, episode,
@@ -405,30 +411,22 @@ class DatabaseManager:
             def _read(conn):
                 cursor = conn.cursor()
 
-                cursor.execute("SELECT COUNT(*) FROM sync_records")
-                total_syncs = cursor.fetchone()[0]
-
-                cursor.execute(
-                    "SELECT COUNT(*) FROM sync_records WHERE status = 'success'"
-                )
-                success_syncs = cursor.fetchone()[0]
-
-                cursor.execute(
-                    "SELECT COUNT(*) FROM sync_records WHERE status = 'error'"
-                )
-                error_syncs = cursor.fetchone()[0]
-
-                cursor.execute(
-                    "SELECT COUNT(*) FROM sync_records WHERE DATE(timestamp) = DATE('now')"
-                )
-                today_syncs = cursor.fetchone()[0]
+                # 合并 3 条 COUNT 查询为 1 条，减少数据库往返
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) AS total,
+                        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+                        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+                        SUM(CASE WHEN DATE(timestamp) = DATE('now') THEN 1 ELSE 0 END) AS today
+                    FROM sync_records
+                """)
+                row = cursor.fetchone()
+                total_syncs, success_syncs, error_syncs, today_syncs = row
 
                 cursor.execute(
                     "SELECT user_name, COUNT(*) FROM sync_records GROUP BY user_name ORDER BY COUNT(*) DESC"
                 )
-                user_stats = [
-                    {"user": row[0], "count": row[1]} for row in cursor.fetchall()
-                ]
+                user_stats = [{"user": r[0], "count": r[1]} for r in cursor.fetchall()]
 
                 cursor.execute("""
                     SELECT DATE(timestamp) as date, COUNT(*) as count
@@ -437,9 +435,7 @@ class DatabaseManager:
                     GROUP BY DATE(timestamp)
                     ORDER BY date
                 """)
-                daily_stats = [
-                    {"date": row[0], "count": row[1]} for row in cursor.fetchall()
-                ]
+                daily_stats = [{"date": r[0], "count": r[1]} for r in cursor.fetchall()]
 
                 return {
                     "total_syncs": total_syncs,
@@ -456,6 +452,35 @@ class DatabaseManager:
             return self._execute_with_lock(_read)
         except Exception as e:
             logger.error(f"获取统计信息失败: {e}")
+            raise
+
+    def get_heatmap_stats(self) -> list[dict[str, Any]]:
+        """获取热力图数据（过去365天每天同步数），带5分钟缓存"""
+        now = time.time()
+        if self._heatmap_cache is not None and now - self._heatmap_cache_time < 300:
+            return self._heatmap_cache
+
+        try:
+
+            def _read(conn):
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT DATE(timestamp) as date, COUNT(*) as count
+                    FROM sync_records
+                    WHERE timestamp >= datetime('now', '-365 days')
+                    GROUP BY DATE(timestamp)
+                    ORDER BY date
+                    """
+                )
+                return [{"date": row[0], "count": row[1]} for row in cursor.fetchall()]
+
+            result = self._execute_with_lock(_read)
+            self._heatmap_cache = result
+            self._heatmap_cache_time = now
+            return result
+        except Exception as e:
+            logger.error(f"获取热力图数据失败: {e}")
             raise
 
     # ===== Trakt 配置相关方法 =====

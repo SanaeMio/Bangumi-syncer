@@ -217,6 +217,7 @@ async def get_sync_records(
     user_name: Optional[str] = None,
     source: Optional[str] = None,
     source_prefix: Optional[str] = None,
+    skip_count: bool = Query(False),
     current_user: dict = Depends(get_current_user_flexible),
 ):
     """获取同步记录"""
@@ -228,6 +229,7 @@ async def get_sync_records(
             user_name=user_name,
             source=source,
             source_prefix=source_prefix,
+            skip_count=skip_count,
         )
 
         return {"status": "success", "data": result}
@@ -339,6 +341,19 @@ async def get_sync_stats(
     except Exception as e:
         logger.error(f"获取统计信息失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取统计信息失败: {str(e)}")
+
+
+@router.get("/stats/heatmap")
+async def get_heatmap_stats(
+    request: Request, current_user: dict = Depends(get_current_user_flexible)
+):
+    """获取热力图数据（过去365天每天同步数）"""
+    try:
+        result = database_manager.get_heatmap_stats()
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"获取热力图数据失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取热力图数据失败: {str(e)}")
 
 
 # ========== 媒体服务器专用接口 ==========

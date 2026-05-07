@@ -77,7 +77,7 @@
                         <div class="row mt-4">
                             <div class="col-12">
                                 <button type="button"
-                                        class="btn btn-warning px-3"
+                                        class="btn btn-primary px-3"
                                         id="test-sync-btn"
                                         onclick="testSync()">
                                     <i class="bi bi-play-circle me-2"></i>开始测试
@@ -91,7 +91,7 @@
                                         <span id="test-sync-status">正在测试同步...</span>
                                     </div>
                                     <div class="progress mt-2" style="height: 6px;">
-                                        <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated"
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated"
                                              role="progressbar"
                                              style="width: 100%"></div>
                                     </div>
@@ -135,7 +135,7 @@
                         </div>
                         <div class="col-md-4">
                             <button type="button"
-                                    class="btn btn-secondary w-100"
+                                    class="btn btn-primary w-100"
                                     id="feiniu-manual-sync-btn"
                                     onclick="triggerFeiniuManualSync()">
                                 <i class="bi bi-arrow-repeat me-1"></i>立即触发飞牛同步
@@ -160,7 +160,7 @@
                 <div class="card-body">
                     <!-- Bangumi网络诊断 -->
                     <div class="card border-light mb-4">
-                        <div class="card-header py-2 bg-light">
+                        <div class="card-header py-2 ">
                             <h6 class="mb-0 fw-semibold">
                                 <i class="bi bi-search me-2 text-info"></i>Bangumi API诊断
                             </h6>
@@ -175,7 +175,7 @@
                                        readonly>
                             </div>
                             <button type="button"
-                                    class="btn btn-info"
+                                    class="btn btn-primary"
                                     onclick="diagnoseBangumiNetwork()"
                                     id="diagnose-bangumi-btn">
                                 <i class="bi bi-search me-1"></i>开始诊断
@@ -187,7 +187,7 @@
                     </div>
                     <!-- 自定义主机连通性测试 -->
                     <div class="card border-light">
-                        <div class="card-header py-2 bg-light">
+                        <div class="card-header py-2 ">
                             <h6 class="mb-0 fw-semibold">
                                 <i class="bi bi-hdd-network me-2 text-success"></i>主机连通性测试
                             </h6>
@@ -223,7 +223,7 @@
                             </div>
                             <div class="d-flex gap-2">
                                 <button type="button"
-                                        class="btn btn-success"
+                                        class="btn btn-primary"
                                         onclick="testHostConnectivity()"
                                         id="test-host-btn">
                                     <i class="bi bi-play-circle me-1"></i>测试连接
@@ -263,7 +263,7 @@
                         <!-- Webhook 测试 -->
                         <div class="col-md-6">
                             <div class="card border-light">
-                                <div class="card-header py-2 bg-light">
+                                <div class="card-header py-2 ">
                                     <h6 class="mb-0 fw-semibold">
                                         <i class="bi bi-webhook me-2 text-primary"></i>Webhook 通知
                                     </h6>
@@ -284,14 +284,14 @@
                         <!-- 邮件测试 -->
                         <div class="col-md-6">
                             <div class="card border-light">
-                                <div class="card-header py-2 bg-light">
+                                <div class="card-header py-2 ">
                                     <h6 class="mb-0 fw-semibold">
                                         <i class="bi bi-envelope me-2 text-success"></i>邮件通知
                                     </h6>
                                 </div>
                                 <div class="card-body">
                                     <button type="button"
-                                            class="btn btn-success w-100"
+                                            class="btn btn-primary w-100"
                                             onclick="testEmailNotification()"
                                             id="test-email-btn">
                                         <i class="bi bi-send me-1"></i>测试邮件

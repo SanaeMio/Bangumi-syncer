@@ -16,7 +16,8 @@
 
 </div>
 
-![Web 管理界面 - 仪表板](docs/public/images/overview/dashboard.jpg)
+![Web 管理界面 - 仪表板](docs/public/images/overview/screenshot.png#gh-light-mode-only)
+![Web 管理界面 - 仪表板](docs/public/images/overview/screenshot-dark.png#gh-dark-mode-only)
 
 ## 📖 简介
 

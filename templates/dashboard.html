@@ -2,7 +2,7 @@
 {% block title %}仪表板 - Bangumi Syncer{% endblock %}
 {% block page_title %}仪表板{% endblock %}
 {% block page_actions %}
-    <div class="app-version-banner app-version-banner--header-chip w-100 w-md-auto min-w-0">
+    <div class="app-version-banner app-version-banner--header-chip min-w-0 flex-shrink-0">
         <div class="app-version-banner__header-chip-track">
             <span class="app-version-banner__header-chip-icon app-version-banner__header-chip-icon--loading app-version-banner__header-chip-icon--spinning"
                   aria-hidden="true">
@@ -34,7 +34,9 @@
                         <div>
                             <div class="text-muted fw-semibold text-uppercase mb-1"
                                  style="font-size: 0.75rem">总同步次数</div>
-                            <div class="h4 mb-0 fw-bold text-dark" id="total-syncs">-</div>
+                            <div class="h4 mb-0 fw-bold"
+                                 style="color: var(--app-text)"
+                                 id="total-syncs">-</div>
                         </div>
                     </div>
                 </div>
@@ -44,13 +46,15 @@
             <div class="card stats-card h-100">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-info-soft">
+                        <div class="stats-icon me-3 bg-primary-soft">
                             <i class="bi bi-calendar-day"></i>
                         </div>
                         <div>
                             <div class="text-muted fw-semibold text-uppercase mb-1"
                                  style="font-size: 0.75rem">今日同步</div>
-                            <div class="h4 mb-0 fw-bold text-dark" id="today-syncs">-</div>
+                            <div class="h4 mb-0 fw-bold"
+                                 style="color: var(--app-text)"
+                                 id="today-syncs">-</div>
                         </div>
                     </div>
                 </div>
@@ -60,13 +64,15 @@
             <div class="card stats-card h-100">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-success-soft">
+                        <div class="stats-icon me-3 bg-primary-soft">
                             <i class="bi bi-check-circle"></i>
                         </div>
                         <div>
                             <div class="text-muted fw-semibold text-uppercase mb-1"
                                  style="font-size: 0.75rem">成功率</div>
-                            <div class="h4 mb-0 fw-bold text-dark" id="success-rate">-</div>
+                            <div class="h4 mb-0 fw-bold"
+                                 style="color: var(--app-text)"
+                                 id="success-rate">-</div>
                         </div>
                     </div>
                 </div>
@@ -76,78 +82,98 @@
             <div class="card stats-card h-100">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-danger-soft">
+                        <div class="stats-icon me-3 bg-primary-soft">
                             <i class="bi bi-exclamation-triangle"></i>
                         </div>
                         <div>
                             <div class="text-muted fw-semibold text-uppercase mb-1"
                                  style="font-size: 0.75rem">失败次数</div>
-                            <div class="h4 mb-0 fw-bold text-dark" id="error-syncs">-</div>
+                            <div class="h4 mb-0 fw-bold"
+                                 style="color: var(--app-text)"
+                                 id="error-syncs">-</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+    <!-- 时间线 + 热力图 + 图表 -->
     <div class="row g-4 mb-4">
-        <!-- 最近7天同步趋势 -->
-        <div class="col-xl-8 col-lg-7">
-            <div class="card shadow-sm h-100">
+        <!-- 左侧：最近同步时间线 -->
+        <div class="col-xl-5 col-lg-6 d-flex">
+            <div class="card shadow-sm flex-fill">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-graph-up me-2 text-primary"></i>
-                        <h6 class="m-0 fw-semibold">最近7天同步趋势</h6>
+                        <i class="bi bi-clock-history me-2" style="color: var(--app-primary)"></i>
+                        <h6 class="m-0 fw-semibold">最近同步</h6>
                     </div>
                 </div>
-                <div class="card-body p-4 d-flex align-items-center">
+                <div class="card-body p-3">
+                    <div class="sync-timeline" id="sync-timeline">
+                        <div class="text-center py-4" style="color: var(--app-text-muted)">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                            <div class="mt-2 small">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 右侧：热力图 + 折线图 垂直堆叠 -->
+        <div class="col-xl-7 col-lg-6 d-flex flex-column">
+            <!-- 热力图 -->
+            <div class="card shadow-sm heatmap-card mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-grid-3x3-gap me-2" style="color: var(--app-primary)"></i>
+                            <h6 class="m-0 fw-semibold">同步热力图</h6>
+                        </div>
+                        <div class="heatmap-legend">
+                            <span>少</span>
+                            <div class="heatmap-legend__cell heatmap-legend__cell--l0"></div>
+                            <div class="heatmap-legend__cell heatmap-legend__cell--l1"></div>
+                            <div class="heatmap-legend__cell heatmap-legend__cell--l2"></div>
+                            <div class="heatmap-legend__cell heatmap-legend__cell--l3"></div>
+                            <div class="heatmap-legend__cell heatmap-legend__cell--l4"></div>
+                            <span>多</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body px-3 pt-2 pb-2">
+                    <div class="heatmap-container" id="heatmap-container">
+                        <div class="text-center py-3" style="color: var(--app-text-muted)">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 折线图 -->
+            <div class="card shadow-sm flex-grow-1">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-graph-up me-2" style="color: var(--app-primary)"></i>
+                        <h6 class="m-0 fw-semibold">最近7天趋势</h6>
+                    </div>
+                </div>
+                <div class="card-body p-4 d-flex align-items-center flex-grow-1">
                     <div class="chart-area w-100">
                         <canvas id="dailyChart"></canvas>
                     </div>
                 </div>
             </div>
         </div>
-        <!-- 用户同步统计 -->
-        <div class="col-xl-4 col-lg-5">
-            <div class="card shadow-sm h-100">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-pie-chart me-2 text-info"></i>
-                        <h6 class="m-0 fw-semibold">用户同步统计</h6>
-                    </div>
-                </div>
-                <div class="card-body p-4 d-flex align-items-center">
-                    <div class="chart-pie pt-2 pb-2 w-100">
-                        <canvas id="userChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
-    <!-- 最近同步记录 -->
-    <div class="card shadow-sm">
-        <div class="card-header py-3">
-            <div class="d-flex align-items-center">
-                <i class="bi bi-clock-history me-2 text-secondary"></i>
-                <h6 class="m-0 fw-semibold">最近同步记录</h6>
-            </div>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0" id="recent-records">
-                    <thead>
-                        <tr>
-                            <th>时间</th>
-                            <th>用户</th>
-                            <th>番剧</th>
-                            <th>季/集</th>
-                            <th>状态</th>
-                            <th>来源</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- 动态加载 -->
-                    </tbody>
-                </table>
+    <!-- 记录详情模态框 -->
+    <div class="modal fade" id="recordDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">同步记录详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="record-detail-content"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -156,40 +182,191 @@
     <script>
 // 全局图表实例
 let dailyChartInstance = null;
-let userChartInstance = null;
+let recordDetailModal;
+
+// 海报缓存
+const posterCache = {};
+
+// 缓存数据用于 resize 重绘
+let cachedHeatmapData = null;
+let cachedDailyStats = null;
+
 
 document.addEventListener('DOMContentLoaded', function() {
+    recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
     loadDashboardData();
+
+    // 主题变更时重新绘制图表
+    if (window.themeManager) {
+        themeManager.onChange(function() {
+            if (cachedDailyStats) drawDailyChart(cachedDailyStats);
+            if (cachedHeatmapData) renderHeatmap(cachedHeatmapData);
+        });
+    }
+
+    // 热力图 tooltip：事件委托（只绑定 2 个监听器）
+    var hmContainer = document.getElementById('heatmap-container');
+    var hmTip = null;
+    function getHmTip() {
+        if (!hmTip) {
+            hmTip = document.createElement('div');
+            hmTip.id = 'hm-tip';
+            hmTip.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:1;display:none';
+            hmTip.className = 'app-tooltip';
+            hmTip.innerHTML = '<div class="tooltip-inner"></div>';
+            document.body.appendChild(hmTip);
+        }
+        return hmTip;
+    }
+    hmContainer.addEventListener('mouseover', function(e) {
+        var cell = e.target.closest('.heatmap-cell');
+        if (!cell) return;
+        var tipText = cell.getAttribute('data-tip');
+        if (!tipText) return;
+        var el = getHmTip();
+        el.querySelector('.tooltip-inner').textContent = tipText;
+        el.style.display = 'block';
+        var rect = cell.getBoundingClientRect();
+        el.style.left = (rect.left + rect.width / 2) + 'px';
+        el.style.top = (rect.top - 8) + 'px';
+        el.style.transform = 'translate(-50%, -100%)';
+    });
+    hmContainer.addEventListener('mouseout', function(e) {
+        if (!e.relatedTarget || !hmContainer.contains(e.relatedTarget)) {
+            if (hmTip) hmTip.style.display = 'none';
+        }
+    });
+
+    // 窗口 resize 时重绘热力图和图表
+    var resizeTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function() {
+            if (cachedHeatmapData) renderHeatmap(cachedHeatmapData);
+            if (cachedDailyStats) drawDailyChart(cachedDailyStats);
+        }, 200);
+    });
 });
+
+// ========== 记录详情 ==========
+
+function getStatusColor(status) {
+    switch (status) {
+        case 'success': return 'success';
+        case 'error': return 'danger';
+        case 'ignored': return 'warning';
+        case 'retried': return 'success';
+        default: return 'secondary';
+    }
+}
+
+function getStatusText(status) {
+    switch (status) {
+        case 'success': return '成功';
+        case 'error': return '失败';
+        case 'ignored': return '已忽略';
+        case 'retried': return '已重试';
+        default: return status;
+    }
+}
+
+function getSourceColor(source) {
+    const sourceLower = source.toLowerCase();
+    if (sourceLower.startsWith('retry-')) return 'purple';
+    switch (sourceLower) {
+        case 'plex': return 'warning';
+        case 'emby': return 'success';
+        case 'jellyfin': return 'primary';
+        case 'custom': return 'secondary';
+        case 'feiniu': return 'info';
+        case 'test': return 'secondary';
+        default: return 'secondary';
+    }
+}
+
+async function showRecordDetail(recordId) {
+    try {
+        const response = await fetch(appUrl('/api/records/' + recordId), {
+            method: 'GET',
+            credentials: 'include'
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const result = await response.json();
+        if (result.status === 'success' && result.data) {
+            const record = result.data;
+            const isMovie = (record.media_type || 'episode').toLowerCase() === 'movie';
+            const epHtml = isMovie
+                ? '<span class="badge bg-info">剧场版</span>'
+                : 'S' + String(record.season).padStart(2, '0') + 'E' + String(record.episode).padStart(2, '0');
+
+            const detailContent = document.getElementById('record-detail-content');
+            detailContent.innerHTML = ''
+                + '<div class="row">'
+                + '  <div class="col-md-6"><strong>类型:</strong> ' + (isMovie ? '电影' : '剧集') + '</div>'
+                + '  <div class="col-md-6"><strong>时间:</strong> ' + record.timestamp + '</div>'
+                + '</div>'
+                + '<div class="row mt-2">'
+                + '  <div class="col-md-6"><strong>用户:</strong> ' + escapeHtml(record.user_name) + '</div>'
+                + '  <div class="col-md-6"><strong>番剧标题:</strong> ' + escapeHtml(record.title) + '</div>'
+                + '</div>'
+                + '<details class="mt-2">'
+                + '  <summary style="color: var(--app-text-muted); cursor:pointer; font-size:0.875rem">原始标题（点击展开）</summary>'
+                + '  <div class="mt-1 small">' + (record.ori_title && String(record.ori_title).trim() ? escapeHtml(record.ori_title) : '无') + '</div>'
+                + '</details>'
+                + '<div class="row mt-2">'
+                + '  <div class="col-md-4"><strong>季/集:</strong> ' + epHtml + '</div>'
+                + '  <div class="col-md-4"><strong>状态:</strong> <span class="badge rounded-pill bg-' + getStatusColor(record.status) + '">' + getStatusText(record.status) + '</span></div>'
+                + '  <div class="col-md-4"><strong>来源:</strong> <span class="badge rounded-pill bg-' + getSourceColor(record.source) + '">' + escapeHtml(record.source) + '</span></div>'
+                + '</div>'
+                + ((record.subject_id || record.episode_id) ? ''
+                + '<div class="row mt-2"><div class="col-12"><strong>Bangumi链接:</strong><div class="mt-1">'
+                + (record.subject_id ? '<a href="https://bgm.tv/subject/' + record.subject_id + '" target="_blank" class="btn btn-sm btn-outline-primary me-2"><i class="bi bi-collection me-1"></i>番剧 ' + record.subject_id + ' <i class="bi bi-box-arrow-up-right ms-1"></i></a>' : '')
+                + (record.episode_id ? '<a href="https://bgm.tv/ep/' + record.episode_id + '" target="_blank" class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle me-1"></i>剧集 ' + record.episode_id + ' <i class="bi bi-box-arrow-up-right ms-1"></i></a>' : '')
+                + '</div></div></div>' : '')
+                + '<div class="row mt-2"><div class="col-12"><strong>消息:</strong>'
+                + '<div class="border rounded p-2 mt-1" style="background-color: var(--app-bg-card-header); color: var(--app-text-muted);">'
+                + escapeHtml(record.message || '无')
+                + '</div></div></div>';
+
+            recordDetailModal.show();
+        } else {
+            throw new Error('获取记录数据失败');
+        }
+    } catch (error) {
+        console.error('显示记录详情失败:', error);
+        showAlert('获取记录详情失败', 'danger');
+    }
+}
 
 async function loadDashboardData() {
     try {
-        // 加载统计数据
-        const statsResponse = await fetch(appUrl('/api/stats'), {
-            credentials: 'include'
-        });
-        const statsData = await statsResponse.json();
-        
+        const [statsRes, recordsRes, heatmapRes] = await Promise.all([
+            fetch(appUrl('/api/stats'), { credentials: 'include' }),
+            fetch(appUrl('/api/records?limit=6&skip_count=true'), { credentials: 'include' }),
+            fetch(appUrl('/api/stats/heatmap'), { credentials: 'include' })
+        ]);
+
+        const statsData = await statsRes.json();
+        const recordsData = await recordsRes.json();
+        const heatmapData = await heatmapRes.json();
+
         if (statsData.status === 'success') {
             const stats = statsData.data;
             document.getElementById('total-syncs').textContent = stats.total_syncs;
             document.getElementById('success-rate').textContent = stats.success_rate + '%';
             document.getElementById('today-syncs').textContent = stats.today_syncs;
             document.getElementById('error-syncs').textContent = stats.error_syncs;
-            
-            // 绘制图表
-            drawDailyChart(stats.daily_stats);
-            drawUserChart(stats.user_stats);
+            cachedDailyStats = stats.daily_stats;
+            drawDailyChart(cachedDailyStats);
         }
-        
-        // 加载最近记录
-        const recordsResponse = await fetch(appUrl('/api/records?limit=10'), {
-            credentials: 'include'
-        });
-        const recordsData = await recordsResponse.json();
-        
+
         if (recordsData.status === 'success') {
-            displayRecentRecords(recordsData.data.records);
+            renderTimeline(recordsData.data.records);
+        }
+
+        if (heatmapData.status === 'success') {
+            cachedHeatmapData = heatmapData.data;
+            renderHeatmap(cachedHeatmapData, true);
         }
     } catch (error) {
         console.error('加载仪表板数据失败:', error);
@@ -197,41 +374,318 @@ async function loadDashboardData() {
     }
 }
 
-function drawDailyChart(dailyStats) {
-    // 销毁旧的图表实例
-    if (dailyChartInstance) {
-        dailyChartInstance.destroy();
+// ========== 时间线 ==========
+
+function formatRelativeTime(timestamp) {
+    const now = Date.now();
+    const diff = now - new Date(timestamp).getTime();
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return '刚刚';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + '分钟前';
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + '小时前';
+    const days = Math.floor(hours / 24);
+    if (days < 7) return days + '天前';
+    const weeks = Math.floor(days / 7);
+    return weeks + '周前';
+}
+
+function renderTimeline(records) {
+    const container = document.getElementById('sync-timeline');
+    if (!records || records.length === 0) {
+        container.innerHTML = '<div class="text-center py-4" style="color: var(--app-text-muted)"><i class="bi bi-inbox fs-3 d-block mb-2"></i><div>暂无同步记录</div></div>';
+        return;
     }
-    
-    const ctx = document.getElementById('dailyChart').getContext('2d');
-    
-    // 准备最近7天的数据
+
+    const statusMap = {
+        'success': { text: '成功', class: 'success', icon: 'bi-check-circle-fill' },
+        'error': { text: '失败', class: 'error', icon: 'bi-x-circle-fill' },
+        'ignored': { text: '忽略', class: 'ignored', icon: 'bi-skip-circle-fill' },
+        'retried': { text: '已重试', class: 'retried', icon: 'bi-arrow-repeat' }
+    };
+
+    const sourceClassMap = {
+        'plex': 'tl-source--plex',
+        'emby': 'tl-source--emby',
+        'jellyfin': 'tl-source--jellyfin',
+        'custom': 'tl-source--custom',
+        'feiniu': 'tl-source--feiniu',
+        'test': 'tl-source--test'
+    };
+
+    let html = '<div class="tl-track">';
+    records.forEach(function(record, index) {
+        const status = statusMap[record.status] || { text: record.status, class: 'error', icon: 'bi-question-circle' };
+        const src = record.source.toLowerCase();
+        const sourceClass = src.startsWith('retry-') ? 'tl-source--retry' : (sourceClassMap[src] || 'tl-source--custom');
+
+        const time = new Date(record.timestamp);
+        const timeStr = time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        const relativeTime = formatRelativeTime(record.timestamp);
+
+        const titleText = escapeHtml(record.title);
+
+        const isMovie = record.media_type === 'movie';
+        let epHtml;
+        if (isMovie) {
+            epHtml = '<span class="tl-episode-text tl-episode-movie"><i class="bi bi-film me-1"></i>剧场版</span>';
+        } else {
+            const epText = 'S' + String(record.season).padStart(2, '0') + 'E' + String(record.episode).padStart(2, '0');
+            epHtml = '<span class="tl-episode-text">' + epText + '</span>';
+        }
+
+        const posterHtml = record.subject_id
+            ? '<div class="timeline-poster timeline-poster--loading"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-sid="' + record.subject_id + '" data-idx="' + index + '" alt="" loading="lazy"></div>'
+            : '<div class="timeline-poster timeline-poster--placeholder"><i class="bi bi-film"></i></div>';
+
+        // 消息
+        let msgHtml = '';
+        if (record.message) {
+            if (record.status === 'error') {
+                msgHtml = '<div class="tl-msg tl-msg--error" title="' + escapeHtml(record.message) + '"><i class="bi bi-exclamation-triangle-fill me-1"></i>' + escapeHtml(record.message) + '</div>';
+            } else if (record.status === 'success' || record.status === 'retried') {
+                msgHtml = '<div class="tl-msg tl-msg--success" title="' + escapeHtml(record.message) + '"><i class="bi bi-check-circle-fill me-1"></i>' + escapeHtml(record.message) + '</div>';
+            } else if (record.status === 'ignored') {
+                msgHtml = '<div class="tl-msg tl-msg--warn" title="' + escapeHtml(record.message) + '"><i class="bi bi-info-circle-fill me-1"></i>' + escapeHtml(record.message) + '</div>';
+            }
+        }
+
+        html += '<div class="tl-item tl-item--clickable" style="animation-delay:' + (index * 0.06) + 's" data-record-id="' + record.id + '" onclick="showRecordDetail(' + record.id + ')">'
+            + '<div class="tl-dot-wrap"><div class="tl-dot tl-dot--' + status.class + '"></div></div>'
+            + posterHtml
+            + '<div class="tl-body">'
+            + '<div class="tl-title">' + titleText + '</div>'
+            + '<div class="tl-meta">'
+            + epHtml
+            + '<span class="tl-status tl-status--' + status.class + '"><span class="tl-status-dot"></span>' + status.text + '</span>'
+            + '<span class="tl-source ' + sourceClass + '">' + escapeHtml(record.source) + '</span>'
+            + '<span class="tl-time"><span class="tl-relative-time">' + relativeTime + '</span> · ' + timeStr + '</span>'
+            + '</div>'
+            + msgHtml
+            + '</div>'
+            + '</div>';
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+
+    // 异步加载海报
+    records.forEach(function(record) {
+        if (record.subject_id) {
+            loadPoster(record.subject_id);
+        }
+    });
+}
+
+async function fetchPosterFromApi(subjectId) {
+    const resp = await fetch('https://api.bgm.tv/v0/subjects/' + subjectId, {
+        headers: { 'Accept': 'application/json' }
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const imgUrl = data.images && data.images.large;
+    if (!imgUrl) throw new Error('no image');
+    return imgUrl;
+}
+
+async function loadPoster(subjectId, retry) {
+    if (posterCache[subjectId]) {
+        applyPoster(subjectId, posterCache[subjectId]);
+        return;
+    }
+
+    try {
+        const cached = localStorage.getItem('poster_' + subjectId);
+        if (cached) {
+            posterCache[subjectId] = cached;
+            applyPoster(subjectId, cached);
+            return;
+        }
+    } catch (e) {}
+
+    try {
+        const imgUrl = await fetchPosterFromApi(subjectId);
+        posterCache[subjectId] = imgUrl;
+        try { localStorage.setItem('poster_' + subjectId, imgUrl); } catch (e) {}
+        applyPoster(subjectId, imgUrl);
+    } catch (e) {
+        // 首次失败后延迟重试一次（应对首次登录时序问题）
+        if (!retry) {
+            setTimeout(function() { loadPoster(subjectId, true); }, 2000);
+        }
+    }
+}
+
+// 修复：querySelectorAll 确保同一 subject_id 的所有记录都设置海报
+function applyPoster(subjectId, url) {
+    document.querySelectorAll('.timeline-poster img[data-sid="' + subjectId + '"]').forEach(function(img) {
+        img.onload = function() {
+            img.classList.add('loaded');
+            var poster = img.closest('.timeline-poster');
+            if (poster) poster.classList.remove('timeline-poster--loading');
+        };
+        img.onerror = function() {
+            var poster = img.closest('.timeline-poster');
+            if (poster) poster.classList.remove('timeline-poster--loading');
+        };
+        img.src = url;
+    });
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace ( />/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ========== 热力图 ==========
+
+function renderHeatmap(data, animate) {
+    const container = document.getElementById('heatmap-container');
+    if (!data) {
+        container.innerHTML = '<div class="text-center text-muted py-3">无数据</div>';
+        return;
+    }
+
+    const countMap = {};
+    data.forEach(function(d) { countMap[d.date] = d.count; });
+
+    const today = new Date();
+    const endDate = new Date(today);
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - 364);
+
+    const startDay = startDate.getDay();
+    const gridStart = new Date(startDate);
+    gridStart.setDate(gridStart.getDate() - startDay);
+
+    // 生成所有格子数据
+    const cells = [];
+    const d = new Date(gridStart);
+    while (d <= endDate || d.getDay() !== 0) {
+        const dateStr = d.toISOString().split('T')[0];
+        const count = countMap[dateStr] || 0;
+        const level = count === 0 ? 0 : count <= 3 ? 1 : count <= 6 ? 2 : count <= 9 ? 3 : 4;
+        const isCurrentYear = d >= startDate && d <= endDate;
+        cells.push({
+            date: dateStr,
+            count: count,
+            level: isCurrentYear ? level : 0,
+            dim: !isCurrentYear
+        });
+        d.setDate(d.getDate() + 1);
+        if (cells.length > 400) break;
+    }
+
+    // 计算自适应尺寸：根据容器宽度决定格子大小
+    const containerWidth = container.offsetWidth - 16;
+    const totalCols = Math.ceil(cells.length / 7);
+    const totalRows = 7;
+    const gap = 2;
+
+    let cellSize = Math.floor((containerWidth - (totalCols - 1) * gap) / totalCols);
+    if (cellSize < 4) cellSize = 4;
+    if (cellSize > 14) cellSize = 14;
+
+    // 渲染网格（先构建 DOM，再批量设置动画延迟）
+    let html = '<div class="heatmap-grid" style="grid-template-rows:repeat(' + totalRows + ',' + cellSize + 'px);grid-auto-columns:' + cellSize + 'px;gap:' + gap + 'px;">';
+
+    cells.forEach(function(cell) {
+        const opacity = cell.dim ? '0.3' : '1';
+        html += '<div class="heatmap-cell heatmap-cell--level-' + cell.level + '" style="opacity:' + opacity + ';width:' + cellSize + 'px;height:' + cellSize + 'px" data-tip="' + cell.date + ' · ' + cell.count + ' 次同步"></div>';
+    });
+    html += '</div>';
+
+    requestAnimationFrame(function() {
+        container.innerHTML = html;
+        var cellEls = container.querySelectorAll('.heatmap-cell');
+        if (animate) {
+            container.classList.add('heatmap-animate');
+            for (var i = 0; i < cellEls.length; i++) {
+                cellEls[i].style.animationDelay = (Math.floor(i / 7) * 5) + 'ms';
+            }
+        } else {
+            container.classList.remove('heatmap-animate');
+        }
+        updateHeatmapLegend();
+    });
+}
+
+function updateHeatmapLegend() {
+    const primary = themeManager ? themeManager.getPrimaryColor() : '#3b82f6';
+    const rgb = hexToRgb(primary);
+    if (!rgb) return;
+
+    const style = document.createElement('style');
+    style.id = 'heatmap-dynamic-colors';
+    style.textContent = '.heatmap-legend__cell--l1{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.25)}'
+        + '.heatmap-legend__cell--l2{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.5)}'
+        + '.heatmap-legend__cell--l3{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.75)}'
+        + '.heatmap-legend__cell--l4{background-color:' + primary + '}';
+
+    const existing = document.getElementById('heatmap-dynamic-colors');
+    if (existing) existing.remove();
+    document.head.appendChild(style);
+}
+
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+    } : null;
+}
+
+// ========== 图表 ==========
+
+function getChartColors() {
+    const primary = themeManager ? themeManager.getPrimaryColor() : '#3b82f6';
+    const rgb = hexToRgb(primary) || { r: 59, g: 130, b: 246 };
+    return { primary, rgb };
+}
+
+function buildChartData(dailyStats) {
+    const { primary, rgb } = getChartColors();
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const dates = [];
     const counts = [];
-    
-    for (let i = 6; i >= 0; i--) {
-        const date = new Date();
+    for (var i = 6; i >= 0; i--) {
+        var date = new Date();
         date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        dates.push(dateStr);
-        
-        const found = dailyStats.find(item => item.date === dateStr);
+        var dateStr = date.toISOString().split('T')[0];
+        dates.push(new Date(date).toLocaleDateString());
+        var found = dailyStats.find(function(item) { return item.date === dateStr; });
         counts.push(found ? found.count : 0);
     }
-    
+    return { dates: dates, counts: counts, primary: primary, rgb: rgb, isDark: isDark,
+             gridColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)',
+             textColor: isDark ? '#909296' : '#6c757d',
+             pointBorder: isDark ? '#25262b' : 'white' };
+}
+
+function drawDailyChart(dailyStats) {
+    var c = buildChartData(dailyStats);
+
+    if (dailyChartInstance) {
+        dailyChartInstance.destroy();
+        dailyChartInstance = null;
+    }
+
+    var ctx = document.getElementById('dailyChart').getContext('2d');
     dailyChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: dates.map(date => new Date(date).toLocaleDateString()),
+            labels: c.dates,
             datasets: [{
                 label: '同步次数',
-                data: counts,
-                borderColor: '#0d6efd',
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                data: c.counts,
+                borderColor: c.primary,
+                backgroundColor: 'rgba(' + c.rgb.r + ',' + c.rgb.g + ',' + c.rgb.b + ',0.1)',
                 tension: 0.4,
                 fill: true,
-                pointBackgroundColor: '#0d6efd',
-                pointBorderColor: 'white',
+                pointBackgroundColor: c.primary,
+                pointBorderColor: c.pointBorder,
                 pointBorderWidth: 2,
                 pointRadius: 6
             }]
@@ -239,140 +693,15 @@ function drawDailyChart(dailyStats) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
+            animation: { duration: 200 },
+            plugins: { legend: { display: false } },
             scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.1)'
-                    }
-                },
-                x: {
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.1)'
-                    }
-                }
+                y: { beginAtZero: true, grid: { color: c.gridColor }, ticks: { color: c.textColor } },
+                x: { grid: { color: c.gridColor }, ticks: { color: c.textColor } }
             }
         }
     });
 }
 
-function drawUserChart(userStats) {
-    // 销毁旧的图表实例
-    if (userChartInstance) {
-        userChartInstance.destroy();
-    }
-    
-    const ctx = document.getElementById('userChart').getContext('2d');
-    
-    const labels = userStats.slice(0, 5).map(item => item.user);
-    const data = userStats.slice(0, 5).map(item => item.count);
-    
-    userChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: [
-                    '#0d6efd',
-                    '#198754',
-                    '#0dcaf0',
-                    '#fd7e14',
-                    '#dc3545'
-                ],
-                borderWidth: 0,
-                hoverOffset: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 20,
-                        usePointStyle: true,
-                        pointStyle: 'circle'
-                    }
-                }
-            }
-        }
-    });
-}
-
-function displayRecentRecords(records) {
-    const tbody = document.querySelector('#recent-records tbody');
-    tbody.innerHTML = '';
-    
-    records.forEach(record => {
-        // 状态显示映射
-        const statusMap = {
-            'success': '成功',
-            'error': '失败',
-            'ignored': '忽略',
-            'retried': '已重试'
-        };
-        
-        const statusText = statusMap[record.status] || record.status;
-        const statusClass = record.status === 'success' ? 'success' : 
-                          record.status === 'ignored' ? 'warning' : 
-                          record.status === 'retried' ? 'success' : 'danger';
-        
-        // 来源颜色映射
-        const sourceColorMap = {
-            'plex': 'warning',     // 黄色
-            'emby': 'success',     // 绿色
-            'jellyfin': 'primary', // 蓝色
-            'custom': 'secondary', // 灰色
-            'feiniu': 'info',      // 浅蓝色
-            'test': 'secondary'    // 灰色
-        };
-        
-        // 处理重试来源（retry-xxx）
-        let sourceClass = 'secondary';
-        const sourceLower = record.source.toLowerCase();
-        if (sourceLower.startsWith('retry-')) {
-            sourceClass = 'purple';  // 重试记录用紫色标识
-        } else {
-            sourceClass = sourceColorMap[sourceLower] || 'secondary';
-        }
-        
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${new Date(record.timestamp).toLocaleString()}</td>
-            <td><span class="fw-semibold">${record.user_name}</span></td>
-            <td>
-                ${record.subject_id ? `
-                <a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="text-decoration-none text-primary fw-semibold" title="点击打开Bangumi番剧页面">
-                    ${record.title}
-                </a>
-                ` : `<span class="text-primary">${record.title}</span>`}
-            </td>
-            <td>
-                ${record.episode_id ? `
-                <a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="badge bg-info text-decoration-none" title="点击打开Bangumi剧集页面">
-                    S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}
-                </a>
-                ` : `<span class="badge bg-info">S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</span>`}
-            </td>
-            <td class="align-middle">
-                <span class="badge bg-${statusClass}">${statusText}</span>
-                ${record.status === 'error' ? `
-                <button class="badge-retry-btn ms-1" onclick="retrySync(${record.id})" title="重试同步">
-                    <i class="bi bi-arrow-clockwise"></i>
-                </button>
-                ` : ''}
-            </td>
-            <td><span class="badge bg-${sourceClass}">${record.source}</span></td>
-        `;
-        tbody.appendChild(row);
-    });
-}
     </script>
 {% endblock %}

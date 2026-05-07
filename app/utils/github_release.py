@@ -28,6 +28,11 @@ _cache_body: dict[str, Any] | None = None
 _cache_expires_monotonic: float = 0.0
 _cache_etag: str | None = None
 
+# fetch_newer_releases_than 缓存
+_releases_cache_key: str | None = None
+_releases_cache_data: tuple[list[ReleaseListItem], str | None] | None = None
+_releases_cache_expires: float = 0.0
+
 
 @dataclass
 class LatestReleaseResult:
@@ -94,6 +99,8 @@ async def fetch_latest_release() -> LatestReleaseResult:
 
     if r.status_code == 403:
         logger.warning("GitHub releases/latest 403: %s", r.text[:200])
+        # 缓存 403 结果 10 分钟，避免反复触发限流
+        _cache_expires_monotonic = time.monotonic() + 600.0
         return LatestReleaseResult(
             ok=False, error="GitHub API 拒绝访问（可能触发限流）"
         )
@@ -154,9 +161,13 @@ def _build_result_from_payload(
 def clear_github_release_cache() -> None:
     """测试用。"""
     global _cache_body, _cache_expires_monotonic, _cache_etag
+    global _releases_cache_key, _releases_cache_data, _releases_cache_expires
     _cache_body = None
     _cache_expires_monotonic = 0.0
     _cache_etag = None
+    _releases_cache_key = None
+    _releases_cache_data = None
+    _releases_cache_expires = 0.0
 
 
 def strip_tag_for_semver(tag_name: str) -> str:
@@ -198,6 +209,15 @@ async def fetch_newer_releases_than(
     拉取 GitHub releases 分页列表，返回 semver **严格大于** current_semver 的条目，
     按版本号从新到旧排序（与 GitHub 默认时间排序不同，以 semver 为准）。
     """
+    global _releases_cache_key, _releases_cache_data, _releases_cache_expires
+    now = time.monotonic()
+    if (
+        _releases_cache_key == current_semver
+        and _releases_cache_data is not None
+        and now < _releases_cache_expires
+    ):
+        return _releases_cache_data
+
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": GITHUB_USER_AGENT,
@@ -250,4 +270,8 @@ async def fetch_newer_releases_than(
         by_sem[it.semver] = it
     uniq = list(by_sem.values())
     uniq.sort(key=lambda x: version_sort_key(x.semver), reverse=True)
-    return uniq, None
+    result = (uniq, None)
+    _releases_cache_key = current_semver
+    _releases_cache_data = result
+    _releases_cache_expires = time.monotonic() + CACHE_TTL_SEC
+    return result
