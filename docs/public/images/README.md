@@ -1,6 +1,9 @@
 # 文档配图目录（`docs/public/images`）
 
-构建后可通过站点根路径引用，例如 Markdown 中：`![](/images/overview/dashboard.jpg)`。
+构建后可通过站点根路径引用。明暗模式截图分别为 `screenshot.png` 和 `screenshot-dark.png`。
+
+- GitHub README：用 `#gh-light-mode-only` / `#gh-dark-mode-only` fragment
+- 文档站点：用 `<picture>` + `<source media="(prefers-color-scheme: ...)">`
 
 建议子目录：
 

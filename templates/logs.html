@@ -13,55 +13,73 @@
 {% endblock %}
 {% block content %}
     <!-- 日志统计 -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="stats-card p-4 text-center">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-1" id="log-size">-</h5>
-                        <small class="text-muted">日志大小</small>
-                    </div>
-                    <div class="stats-icon bg-primary-soft">
-                        <i class="bi bi-file-earmark-text"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="stats-card p-4 text-center">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-1" id="log-lines">-</h5>
-                        <small class="text-muted">日志行数</small>
-                    </div>
-                    <div class="stats-icon bg-success-soft">
-                        <i class="bi bi-list-ol"></i>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-4 mb-4">
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-file-earmark-text"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">日志大小</div>
+                            <div class="h4 mb-0 fw-bold" style="color: var(--app-text)" id="log-size">-</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="stats-card p-4 text-center">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-1" id="log-modified">-</h5>
-                        <small class="text-muted">最后修改</small>
-                    </div>
-                    <div class="stats-icon bg-info-soft">
-                        <i class="bi bi-clock"></i>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-list-ol"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">日志行数</div>
+                            <div class="h4 mb-0 fw-bold" style="color: var(--app-text)" id="log-lines">-</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="stats-card p-4 text-center">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-1" id="log-errors">-</h5>
-                        <small class="text-muted">错误数量</small>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-clock"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">最后修改</div>
+                            <div class="h4 mb-0 fw-bold"
+                                 style="color: var(--app-text);
+                                        font-size: 0.95rem;
+                                        word-break: break-all"
+                                 id="log-modified">-</div>
+                        </div>
                     </div>
-                    <div class="stats-icon bg-danger-soft">
-                        <i class="bi bi-exclamation-triangle"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1"
+                                 style="font-size: 0.75rem">错误数量</div>
+                            <div class="h4 mb-0 fw-bold"
+                                 style="color: var(--app-text)"
+                                 id="log-errors">-</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -71,7 +89,7 @@
     <div class="card shadow mb-4">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
-                <i class="bi bi-funnel me-2 text-primary"></i>
+                <i class="bi bi-funnel me-2" style="color: var(--app-primary)"></i>
                 <h6 class="m-0 fw-semibold">日志筛选</h6>
             </div>
         </div>
@@ -217,7 +235,8 @@ async function loadLogs() {
 function displayLogStats(stats) {
     document.getElementById('log-size').textContent = formatFileSize(stats.size);
     document.getElementById('log-lines').textContent = stats.lines.toLocaleString();
-    document.getElementById('log-modified').textContent = new Date(stats.modified).toLocaleString();
+    var modDate = new Date(stats.modified);
+    document.getElementById('log-modified').textContent = (modDate.getMonth()+1) + '/' + modDate.getDate() + ' ' + modDate.toTimeString().slice(0,5);
     document.getElementById('log-errors').textContent = stats.errors.toLocaleString();
 }
 

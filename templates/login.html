@@ -3,6 +3,16 @@
     <head>
         <meta charset="UTF-8">
         <script>window.__APP_BASE_PATH__ = {{ public_base_path_json() }};</script>
+        <script>
+        (function(){
+            var t=localStorage.getItem('app-theme');
+            if(!t) t=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+            var c=localStorage.getItem('app-color')||'sapphire';
+            document.documentElement.setAttribute('data-theme',t);
+            document.documentElement.setAttribute('data-color',c);
+            document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
+        })();
+        </script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>登录 - Bangumi-Syncer</title>
         <link href="{{ '/static/css/bootstrap.min.css' | static_v }}"
@@ -11,7 +21,7 @@
               rel="stylesheet">
         <link href="{{ '/static/css/style.css' | static_v }}" rel="stylesheet">
     </head>
-    <body class="bg-light">
+    <body style="background-color: var(--app-bg);">
         <div class="container-fluid vh-100 d-flex align-items-center justify-content-center px-3">
             <div class="row w-100 justify-content-center">
                 <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-4 col-xxl-3">

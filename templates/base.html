@@ -3,6 +3,17 @@
     <head>
         <meta charset="UTF-8">
         <script>window.__APP_BASE_PATH__ = {{ public_base_path_json() }};</script>
+        <!-- 防闪烁：在渲染前设置主题 -->
+        <script>
+        (function(){
+            var t=localStorage.getItem('app-theme');
+            if(!t) t=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+            var c=localStorage.getItem('app-color')||'sapphire';
+            document.documentElement.setAttribute('data-theme',t);
+            document.documentElement.setAttribute('data-color',c);
+            document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
+        })();
+        </script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>
             {% block title %}Bangumi Syncer{% endblock %}
@@ -16,9 +27,10 @@
               rel="stylesheet">
         {% block head %}{% endblock %}
     </head>
-    <body class="bg-light">
+    <body style="background-color: var(--app-bg);">
         <!-- 移动端顶部导航栏 -->
-        <nav class="navbar navbar-expand-md navbar-light bg-white border-bottom d-md-none fixed-top">
+        <nav class="navbar navbar-expand-md navbar-light border-bottom d-md-none fixed-top"
+             style="background-color: var(--app-bg-card)">
             <div class="container-fluid">
                 <a class="navbar-brand d-flex align-items-center"
                    href="{{ '/dashboard' | p }}">
@@ -169,10 +181,11 @@
                             </li>
                         </ul>
                         <!-- 用户信息和登出 -->
-                        <div class="px-2 mt-4 pt-3 border-top">
+                        <div class="px-2 mt-2 pt-3 border-top"
+                             style="border-color: var(--app-border) !important">
                             <div class="d-flex align-items-center mb-2">
-                                <i class="bi bi-person-circle me-2 text-muted"></i>
-                                <small class="text-muted">
+                                <i class="bi bi-person-circle me-2" style="color: var(--app-text-muted)"></i>
+                                <small style="color: var(--app-text-muted)">
                                     {% if user and user.username %}
                                         {{ user.username }}
                                     {% else %}
@@ -190,10 +203,83 @@
                 <!-- 主要内容 -->
                 <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 app-main">
                     <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-4 pb-3 mb-4">
-                        <h1 class="h2 fw-bold text-dark">
+                        <h1 class="h2 fw-bold" style="color: var(--app-text)">
                             {% block page_title %}{% endblock %}
                         </h1>
-                        <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-toolbar mb-2 mb-md-0 align-items-center gap-2 flex-nowrap">
+                            <!-- 主题切换（仅仪表盘页面） -->
+                            {% if request.url.path == '/dashboard' or request.url.path.endswith('/dashboard') %}
+                                <div class="header-theme-switcher" id="headerThemeSwitcher">
+                                    <button class="theme-toggle-capsule"
+                                            id="themeToggleCapsule"
+                                            onclick="themeManager.toggleTheme(this)"
+                                            title="切换明暗模式">
+                                        <span class="theme-toggle-capsule__track">
+                                            <i class="bi bi-sun theme-toggle-capsule__icon theme-toggle-capsule__icon--sun"></i>
+                                            <i class="bi bi-moon theme-toggle-capsule__icon theme-toggle-capsule__icon--moon"></i>
+                                            <span class="theme-toggle-capsule__thumb"></span>
+                                        </span>
+                                    </button>
+                                    <div class="header-theme-palette-wrap">
+                                        <button class="header-theme-color-btn"
+                                                id="themeColorBtn"
+                                                onclick="toggleThemeColors()"
+                                                title="切换主题色">
+                                            <span class="header-theme-color-indicator" id="themeColorIndicator"></span>
+                                        </button>
+                                        <div class="header-theme-colors" id="headerThemeColors">
+                                            <div class="theme-color-dot"
+                                                 data-color="sakura"
+                                                 style="background:#ec4899"
+                                                 title="少女粉"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('sakura', this)">
+                                            </div>
+                                            <div class="theme-color-dot"
+                                                 data-color="amber"
+                                                 style="background:#f97316"
+                                                 title="琥珀橙"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('amber', this)">
+                                            </div>
+                                            <div class="theme-color-dot"
+                                                 data-color="eggyolk"
+                                                 style="background:#eab308"
+                                                 title="咸蛋黄"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('eggyolk', this)">
+                                            </div>
+                                            <div class="theme-color-dot"
+                                                 data-color="sanae"
+                                                 style="background:#10b981"
+                                                 title="早苗绿"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('sanae', this)">
+                                            </div>
+                                            <div class="theme-color-dot"
+                                                 data-color="hatsune"
+                                                 style="background:#14b8a6"
+                                                 title="初音绿"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('hatsune', this)">
+                                            </div>
+                                            <div class="theme-color-dot"
+                                                 data-color="tianyi"
+                                                 style="background:#0ea5e9"
+                                                 title="天依蓝"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('tianyi', this)">
+                                            </div>
+                                            <div class="theme-color-dot"
+                                                 data-color="sapphire"
+                                                 style="background:#3b82f6"
+                                                 title="宝石蓝"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('sapphire', this)">
+                                            </div>
+                                            <div class="theme-color-dot"
+                                                 data-color="violet"
+                                                 style="background:#8b5cf6"
+                                                 title="罗兰紫"
+                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('violet', this)">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endif %}
                             {% block page_actions %}{% endblock %}
                         </div>
                     </div>
@@ -292,10 +378,44 @@
             </div>
         </div>
         <script src="{{ '/static/js/bootstrap.bundle.min.js' | static_v }}"></script>
-        <script src="{{ '/static/js/chart.js' | static_v }}"></script>
         <script src="{{ '/static/js/app.js' | static_v }}"></script>
-        <script src="{{ '/static/js/version-release.js' | static_v }}"></script>
-        <script src="{{ '/static/js/upgrade.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/chart.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/version-release.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/upgrade.js' | static_v }}"></script>
+        <script>
+        function updateThemeToggleUI() {
+            var theme = themeManager.getTheme();
+            var color = themeManager.getColor();
+            // 胶囊开关状态
+            var capsule = document.getElementById('themeToggleCapsule');
+            if (capsule) capsule.classList.toggle('theme-toggle-capsule--dark', theme === 'dark');
+            document.querySelectorAll('.theme-color-dot').forEach(function(dot) {
+                dot.classList.toggle('theme-color-dot--active', dot.getAttribute('data-color') === color);
+            });
+            var indicator = document.getElementById('themeColorIndicator');
+            if (indicator) indicator.style.backgroundColor = themeManager.getPrimaryColor();
+            document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
+        }
+
+        function toggleThemeColors() {
+            var el = document.getElementById('headerThemeColors');
+            if (el) el.classList.toggle('show');
+        }
+
+        // 点击外部关闭色盘
+        document.addEventListener('click', function(e) {
+            var colors = document.getElementById('headerThemeColors');
+            var btn = document.getElementById('themeColorBtn');
+            if (colors && btn && !colors.contains(e.target) && !btn.contains(e.target)) {
+                colors.classList.remove('show');
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updateThemeToggleUI();
+            themeManager.onChange(updateThemeToggleUI);
+        });
+        </script>
         {% block scripts %}
         {% endblock %}
     </body>
