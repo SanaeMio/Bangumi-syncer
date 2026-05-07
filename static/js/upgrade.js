@@ -45,7 +45,9 @@
 
     function applyUpgradeUI(releaseInfo, env, capable) {
         if (env === 'docker') {
-            showElement('upgradeDockerHint', true);
+            if (releaseInfo.update_available !== false) {
+                showElement('upgradeDockerHint', true);
+            }
             showElement('upgradeBtn', false);
             return;
         }
@@ -64,6 +66,13 @@
      */
     window.initUpgradeUI = function (releaseInfo) {
         if (!releaseInfo) return;
+
+        // 当已确认无新版本时，不显示升级相关 UI
+        if (releaseInfo.update_available === false) {
+            showElement('upgradeBtn', false);
+            showElement('upgradeDockerHint', false);
+            return;
+        }
 
         // 缓存数据可能缺少新字段，回退到 API
         if (releaseInfo.environment === undefined || releaseInfo.upgrade_available === undefined) {
