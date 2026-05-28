@@ -349,7 +349,7 @@ def test_bgm_search_invalid_date_fallback():
     # 模拟无日期搜索成功
     responses.add(
         responses.GET,
-        "https://api.bgm.tv//search/subject/%E6%B5%8B%E8%AF%95%E7%95%AA%E5%89%A7?type=2",
+        "https://api.bgm.tv/search/subject/%E6%B5%8B%E8%AF%95%E7%95%AA%E5%89%A7?type=2",
         json={"list": [{"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}]},
         status=200,
     )
@@ -386,7 +386,7 @@ def test_bgm_search_alias_fallback_success():
     # 模拟无日期搜索返回简略信息（无 infobox）
     responses.add(
         responses.GET,
-        "https://api.bgm.tv//search/subject/%E5%85%B7%E8%B1%A1%E9%9D%A9%E5%91%BD%20%E8%B6%85%E4%BA%BA%E5%B9%BB%E6%83%B3?type=2",
+        "https://api.bgm.tv/search/subject/%E5%85%B7%E8%B1%A1%E9%9D%A9%E5%91%BD%20%E8%B6%85%E4%BA%BA%E5%B9%BB%E6%83%B3?type=2",
         json={
             "list": [
                 {

@@ -15,6 +15,8 @@ class TestBangumiApi:
 
     def test_init_default(self):
         api = BangumiApi()
+        assert api.api_base == "https://api.bgm.tv"
+        assert api.next_base == "https://next.bgm.tv"
         assert api.host == "https://api.bgm.tv/v0"
         assert api.username is None
         assert api.access_token is None
@@ -28,12 +30,17 @@ class TestBangumiApi:
             private=False,
             http_proxy="http://proxy:8080",
             ssl_verify=False,
+            bgm_api_proxy="https://proxy.bgm.tv",
+            bgm_next_proxy="https://next-proxy.bgm.tv",
         )
         assert api.username == "testuser"
         assert api.access_token == "test_token"
         assert api.private is False
         assert api.http_proxy == "http://proxy:8080"
         assert api.ssl_verify is False
+        assert api.api_base == "https://proxy.bgm.tv"
+        assert api.next_base == "https://next-proxy.bgm.tv"
+        assert api.host == "https://proxy.bgm.tv/v0"
 
     def test_init_sets_cache(self):
         api = BangumiApi()
