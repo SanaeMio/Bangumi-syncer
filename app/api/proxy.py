@@ -289,13 +289,18 @@ async def diagnose_network(
 ):
     """网络连接诊断"""
     try:
-        parsed = urlparse(request.url)
-        hostname = parsed.hostname
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-
         # 检测环境信息
         from ..core.config import config_manager
         from ..utils.docker_helper import docker_helper
+
+        target_url = request.url
+        bgm_api_proxy = config_manager.get("dev", "bgm_api_proxy", fallback="")
+        if bgm_api_proxy and "api.bgm.tv" in target_url:
+            target_url = bgm_api_proxy.rstrip("/")
+
+        parsed = urlparse(target_url)
+        hostname = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
         env_info = docker_helper.get_environment_info()
 
@@ -306,11 +311,12 @@ async def diagnose_network(
             proxies = {"http": proxy_config, "https": proxy_config}
 
         result = {
-            "url": request.url,
+            "url": target_url,
             "hostname": hostname,
             "port": port,
             "dns_servers": get_system_dns_servers(),
             "proxy_config": proxy_config or "未配置代理",
+            "bgm_api_proxy": bgm_api_proxy or None,
             "environment": {
                 "is_docker": env_info.get("is_docker", False),
                 "network_mode": env_info.get("network_mode", "unknown")

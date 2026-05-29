@@ -23,8 +23,17 @@ class BangumiApi:
         private=True,
         http_proxy=None,
         ssl_verify=True,
+        bgm_api_proxy=None,
+        bgm_next_proxy=None,
     ):
-        self.host = "https://api.bgm.tv/v0"
+        self.api_base = (
+            bgm_api_proxy.rstrip("/") if bgm_api_proxy else "https://api.bgm.tv"
+        )
+        self.next_base = (
+            bgm_next_proxy.rstrip("/") if bgm_next_proxy else "https://next.bgm.tv"
+        )
+
+        self.host = f"{self.api_base}/v0"
         self.username = username
         self.access_token = access_token
         self.private = private
@@ -356,7 +365,7 @@ class BangumiApi:
                 error_message="BangumiApi: 未授权, access_token不正确或未设置",
             )
             if os.name == "nt":
-                os.startfile("https://next.bgm.tv/demo/access-token")
+                os.startfile(f"{self.next_base}/demo/access-token")
             raise ValueError("BangumiApi: 未授权, access_token不正确或未设置")
         return res.json()
 
@@ -403,7 +412,7 @@ class BangumiApi:
         res = self._request_with_retry(
             "GET",
             self.req,
-            f"{self.host[:-2]}/search/subject/{title}",
+            f"{self.api_base}/search/subject/{title}",
             params={"type": 2},
         )
         try:

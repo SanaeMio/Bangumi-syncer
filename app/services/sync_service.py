@@ -896,6 +896,8 @@ class SyncService:
             private=bangumi_config["private"],
             http_proxy=config_manager.get("dev", "script_proxy", fallback=""),
             ssl_verify=config_manager.get("dev", "ssl_verify", fallback=True),
+            bgm_api_proxy=config_manager.get("dev", "bgm_api_proxy", fallback=""),
+            bgm_next_proxy=config_manager.get("dev", "bgm_next_proxy", fallback=""),
         )
 
     def _get_bangumi_data(self) -> BangumiData:

@@ -412,6 +412,32 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="col-md-6 mt-2">
+                                <label for="bgm-api-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi API 反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://api.bgm.tv，留空则使用默认地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="bgm-api-proxy"
+                                       name="dev.bgm_api_proxy"
+                                       placeholder="留空则使用默认地址">
+                            </div>
+                            <div class="col-md-6 mt-2">
+                                <label for="bgm-next-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi Next 反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://next.bgm.tv，留空则使用默认地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="bgm-next-proxy"
+                                       name="dev.bgm_next_proxy"
+                                       placeholder="留空则使用默认地址">
+                            </div>
                         </div>
                         <div class="row g-3 mt-2">
                             <div class="col-6">
@@ -1278,6 +1304,8 @@ function populateForm(config) {
         webBase.value = (config.web && config.web.base_path) ? String(config.web.base_path) : '';
     }
     document.getElementById('script-proxy').value = dev.script_proxy || '';
+	document.getElementById('bgm-api-proxy').value = dev.bgm_api_proxy || '';
+    document.getElementById('bgm-next-proxy').value = dev.bgm_next_proxy || '';
     document.getElementById('ssl-verify').checked = Boolean(dev.ssl_verify);
     document.getElementById('debug-mode').checked = Boolean(dev.debug);
 
@@ -1456,6 +1484,8 @@ async function saveConfig() {
             },
             dev: {
                 script_proxy: document.getElementById('script-proxy').value,
+                bgm_api_proxy: document.getElementById('bgm-api-proxy').value.trim(),
+                bgm_next_proxy: document.getElementById('bgm-next-proxy').value.trim(),
                 ssl_verify: document.getElementById('ssl-verify').checked,
                 debug: document.getElementById('debug-mode').checked
             },

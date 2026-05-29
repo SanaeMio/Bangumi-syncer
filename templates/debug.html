@@ -649,6 +649,12 @@ function displayBangumiDiagnosisResult(data) {
                         '<small class="text-muted d-block mt-1">将使用直接连接进行测试</small>' : 
                         '<small class="text-success d-block mt-1">HTTP连接测试将使用此代理</small>'
                     }
+                    ${data.bgm_api_proxy ? `
+                    <div class="mt-2 pt-2 border-top border-light">
+                        <code class="text-info">已配置反代</code>
+                        <small class="text-info d-block mt-1">将使用反代连接进行测试</small>
+                    </div>
+                    ` : ''}
                 </div>
             </div>
             ` : ''}
