@@ -667,7 +667,7 @@ class BangumiApi:
         season_num = 1
         current_id = subject_id
 
-        if target_season > 5 or (target_ep and target_ep > 99):
+        if target_season > 10 or (target_ep and target_ep > 99):
             return None, None if target_ep else None
 
         # 如果已经是目标季数的ID，直接尝试匹配集数

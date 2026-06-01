@@ -716,8 +716,18 @@ class SyncService:
                 )
                 return None, False, "Bangumi 搜索无结果"
 
-            # API搜索得到的ID不视为特定季度的ID
-            return bgm_data[0]["id"], False, ""
+            # 校验返回结果的标题是否包含目标季度信息，确认是否精准命中季度本体
+            is_api_season_matched = False
+            if item.season > 1:
+                returned_name = bgm_data[0].get("name", "")
+                returned_name_cn = bgm_data[0].get("name_cn", "")
+
+                if self._check_season_info_in_title(
+                    returned_name, item.season
+                ) or self._check_season_info_in_title(returned_name_cn, item.season):
+                    is_api_season_matched = True
+
+            return bgm_data[0]["id"], is_api_season_matched, ""
         except Exception as e:
             detail = f"Bangumi API 搜索出错: {e}"
             logger.error(f"bgm: {detail}；{_ctx}")
