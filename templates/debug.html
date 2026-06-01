@@ -60,6 +60,15 @@
                                        max="1000"
                                        required>
                             </div>
+                            <div class="col-md-3">
+                                <label for="test-release-date" class="form-label fw-semibold">
+                                    <i class="bi bi-calendar-event me-1 text-warning"></i>发布日期 <small class="text-muted fw-normal">(可选)</small>
+                                </label>
+                                <input type="date"
+                                       class="form-control form-control-lg"
+                                       id="test-release-date"
+                                       placeholder="YYYY-MM-DD">
+                            </div>
                             <div class="col-md-2">
                                 <label for="test-user" class="form-label fw-semibold">
                                     <i class="bi bi-person me-1 text-warning"></i>用户名
@@ -339,6 +348,7 @@ async function testSync() {
     const mediaType = (document.getElementById('test-media-type') || { value: 'episode' }).value || 'episode';
     const season = parseInt(document.getElementById('test-season').value, 10);
     const episode = parseInt(document.getElementById('test-episode').value, 10);
+    const releaseDate = document.getElementById('test-release-date').value;
     const user = document.getElementById('test-user').value.trim();
     
     // 验证输入
@@ -358,6 +368,7 @@ async function testSync() {
             title: title,
             season: season,
             episode: episode,
+            release_date: releaseDate,
             user_name: user,
             media_type: mediaType
         };

@@ -1055,3 +1055,65 @@ def test_sync_custom_item_outer_exception_returns_error():
             r = svc.sync_custom_item(_branch_custom_item_for_find(), "custom")
         assert r.status == "error"
         assert "处理失败" in r.message
+
+
+def test_find_subject_id_api_search_season_gt1_title_matched():
+    """测试 API 搜索返回结果标题包含季度信息时，正确设置 is_season_matched_id = True"""
+    with _patched_sync_service_deps() as cfg:
+        # 强制禁用本地 bangumi-data，确保代码走进 API 搜索分支
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        bgm = MagicMock()
+
+        # 模拟 API 搜索完美命中了包含季度信息的标题
+        bgm.bgm_search.return_value = [
+            {
+                "id": 451757,
+                "name": "Rick and Morty Season 9",
+                "name_cn": "瑞克和莫蒂 第九季",
+            }
+        ]
+
+        with patch.object(service, "_load_custom_mappings", return_value={}):
+            with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
+                sid, flag, err = service._find_subject_id(
+                    _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")
+                )
+
+    assert sid == 451757
+    assert flag is True  # 核心断言：智能判定成功生效，阻止后续的链式爬取
+    assert err == ""
+
+
+def test_find_subject_id_api_search_season_gt1_title_not_matched():
+    """测试 API 搜索返回结果标题不包含季度信息时，保留 is_season_matched_id = False"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        bgm = MagicMock()
+
+        # 模拟 API 搜索由于模糊匹配，只返回了第一季的条目（标题中不含 Season 9）
+        bgm.bgm_search.return_value = [
+            {"id": 146457, "name": "Rick and Morty", "name_cn": "瑞克和莫蒂"}
+        ]
+
+        with patch.object(service, "_load_custom_mappings", return_value={}):
+            with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
+                sid, flag, err = service._find_subject_id(
+                    _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")
+                )
+
+    assert sid == 146457
+    assert flag is False  # 核心断言：智能判定未生效，安全地回退给后续的关系链爬虫去处理
+    assert err == ""
