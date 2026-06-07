@@ -467,6 +467,37 @@ class SyncService:
                         f"剧场版条目标记为看过失败（单集已处理）: subject_id={bgm_se_id} {e}"
                     )
 
+            if item.media_type != "movie" and config_manager.get(
+                "sync", "anime_mark_subject_completed", fallback=False
+            ):
+                try:
+                    coll = bgm.get_subject_collection(str(bgm_se_id))
+                    if coll.get("type") == 2:
+                        logger.debug(
+                            "TV画格同步：条目状态已为「看过」，跳过自动归档: "
+                            f"subject_id={bgm_se_id}"
+                        )
+                    else:
+                        # 获取番剧的总集数，如果已看集数等于或多于总集数，则自动归档为「看过」
+                        subject_info = bgm.get_subject(bgm_se_id)
+                        total_eps = subject_info.get("eps", 0)
+                        watched_eps = coll.get("ep_status", 0) or 0
+                        logger.info(
+                            f"[DEBUG_COMPLETION] Subject: {bgm_se_id}, total_eps: {total_eps}, watched_eps: {watched_eps}, coll: {coll}"
+                        )
+                        if total_eps > 0:
+                            if watched_eps >= total_eps:
+                                bgm.change_collection_state(
+                                    subject_id=str(bgm_se_id), state=2
+                                )
+                                logger.info(
+                                    f"bgm: {item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"
+                                )
+                except Exception as e:
+                    logger.warning(
+                        f"TV番剧自动归档为「看过」失败（单集已处理）: subject_id={bgm_se_id} {e}"
+                    )
+
             # 记录同步成功到数据库
             database_manager.log_sync_record(
                 user_name=item.user_name,
