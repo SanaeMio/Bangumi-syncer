@@ -148,6 +148,21 @@
                                             </label>
                                         </div>
                                     </div>
+                                    <div class="col-12 col-md-6">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="anime-mark-subject-completed"
+                                                   name="sync.anime_mark_subject_completed">
+                                            <label class="form-check-label fw-semibold"
+                                                   for="anime-mark-subject-completed">
+                                                TV系列同步后自动将整部番标为看过
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="当同步类型为TV系列，并且你已经看完该番剧下的所有正片格子时：将条目收藏状态自动标记为「看过」。关闭则不自动处理。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1291,6 +1306,10 @@ function populateForm(config) {
     if (movieMarkEl) {
         movieMarkEl.checked = sync.movie_mark_subject_completed !== false;
     }
+    const animeMarkEl = document.getElementById('anime-mark-subject-completed');
+    if (animeMarkEl) {
+        animeMarkEl.checked = Boolean(sync.anime_mark_subject_completed);
+    }
     const moviePlaybackWatchingEl = document.getElementById(
         'movie-playback-start-mark-watching'
     );
@@ -1475,6 +1494,7 @@ async function saveConfig() {
                 mode: document.getElementById('sync-mode').value,
                 blocked_keywords: document.getElementById('blocked-keywords').value,
                 movie_mark_subject_completed: document.getElementById('movie-mark-subject-completed').checked,
+                anime_mark_subject_completed: document.getElementById('anime-mark-subject-completed').checked,
                 movie_playback_start_mark_watching: document.getElementById(
                     'movie-playback-start-mark-watching'
                 ).checked

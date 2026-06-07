@@ -404,6 +404,59 @@ def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
     mock_instance.change_collection_state.assert_not_called()
 
 
+def test_sync_custom_item_anime_completes_collection(mock_database, mock_bangumi_api):
+    """TV番剧所有剧集看完时自动归档为看过"""
+    service = SyncService()
+    mock_instance = mock_bangumi_api.return_value
+    mock_instance.get_subject_collection.return_value = {"type": 3, "ep_status": 12}
+    mock_instance.get_subject.return_value = {"eps": 12}
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "sync" and key == "anime_mark_subject_completed":
+                return True
+            if section == "sync" and key == "mode":
+                return "single"
+            if section == "sync" and key == "blocked_keywords":
+                return ""
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            return fallback
+
+        mock_cfg.get.side_effect = get_side_effect
+        mock_cfg.get_single_mode_media_usernames.return_value = ["testuser"]
+        mock_cfg.get_user_mappings.return_value = {}
+        mock_cfg.get_bangumi_configs.return_value = {}
+
+        item = CustomItem(
+            user_name="testuser",
+            title="TV Anime X",
+            ori_title=None,
+            season=1,
+            episode=12,
+            media_type="episode",
+            release_date="",
+        )
+
+        with patch.object(service, "_find_subject_id", return_value=("456", False, "")):
+            with patch.object(
+                service,
+                "_get_bangumi_config_for_user",
+                return_value={
+                    "username": "testuser",
+                    "access_token": "***",
+                    "private": True,
+                },
+            ):
+                result = service.sync_custom_item(item, "custom")
+
+    assert result.status == "success"
+    mock_instance.change_collection_state.assert_called_once_with(
+        subject_id="123", state=2
+    )
+
+
 def test_sync_custom_item_empty_title(mock_config, mock_database):
     """测试同步 - 空标题"""
     service = SyncService()
