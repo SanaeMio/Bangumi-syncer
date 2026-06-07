@@ -474,7 +474,7 @@ class SyncService:
                     coll = bgm.get_subject_collection(str(bgm_se_id))
                     if coll.get("type") == 2:
                         logger.debug(
-                            "TV画格同步：条目状态已为「看过」，跳过自动归档: "
+                            "TV条目收藏状态已为「看过」，跳过条目标记: "
                             f"subject_id={bgm_se_id}"
                         )
                     else:
@@ -482,8 +482,8 @@ class SyncService:
                         subject_info = bgm.get_subject(bgm_se_id)
                         total_eps = subject_info.get("eps", 0)
                         watched_eps = coll.get("ep_status", 0) or 0
-                        logger.info(
-                            f"[DEBUG_COMPLETION] Subject: {bgm_se_id}, total_eps: {total_eps}, watched_eps: {watched_eps}, coll: {coll}"
+                        logger.debug(
+                            f"获取到Subject: {bgm_se_id}, 总ep: {total_eps}, 已观看: {watched_eps}, coll: {coll}"
                         )
                         if total_eps > 0:
                             if watched_eps >= total_eps:
