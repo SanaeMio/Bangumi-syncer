@@ -794,7 +794,6 @@ class BangumiApi:
         max_season, max_episode = self._get_episode_sync_limits()
 
         # 获取根条目的 subject type，续集链遍历时仅放行相同媒体类型的条目
-        # type=2 动画与 type=6 三次元电视剧互不为续集，可避免跨界匹配
         root_info = self.get_subject(subject_id)
         root_type = root_info.get("type") if root_info else None
 
