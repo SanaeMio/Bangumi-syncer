@@ -388,6 +388,10 @@ async function testSync() {
         });
         
         const result = await response.json();
+        if (!response.ok) {
+            result.message = result.detail || result.message || '请求失败';
+            result.status = 'error';
+        }
         const endTime = Date.now();
         const actualTime = ((endTime - startTime) / 1000).toFixed(2);
         
@@ -395,18 +399,15 @@ async function testSync() {
         progressDiv.style.display = 'none';
         resultDiv.style.display = 'block';
         
-        // 判断是否为连接成功（包括成功同步和已看过状态）
-        const isConnectionSuccess = result.success || 
-                                   (result.message && (
-                                       result.message.includes('已看过') || 
-                                       result.message.includes('已标记') ||
-                                       result.message.includes('重复') ||
-                                       result.message.includes('已存在')
-                                   ));
+        const isSuccess = result.status === 'success';
+        const isSkipped = isSuccess && result.message && (
+            result.message.includes('不再重复标记') ||
+            result.message.includes('无需变更')
+        );
         
-        if (isConnectionSuccess) {
+        if (isSuccess) {
             // 根据是否真正同步成功来决定显示内容
-            const isActualSync = result.success;
+            const isActualSync = !isSkipped;
             const statusText = isActualSync ? '测试同步成功！' : '连接测试成功！';
             const statusIcon = isActualSync ? 'bi-check-circle-fill' : 'bi-info-circle-fill';
             const statusColor = isActualSync ? 'success' : 'info';
