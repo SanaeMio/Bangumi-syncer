@@ -14,6 +14,9 @@ from ..core.logging import logger
 
 # 使用全局logger实例
 
+_EPISODES_PAGE_LIMIT = 200
+_LONG_SERIES_AIRDATE_MIN_TOTAL = 100
+
 
 class BangumiApi:
     def __init__(
@@ -469,40 +472,159 @@ class BangumiApi:
         self._put_cache("get_related_subjects", subject_id, res)
         return res
 
-    def get_episodes(self, subject_id, _type=0):
-        # 使用实例缓存避免内存泄漏
-        cache_key = (subject_id, _type)
-        if cache_key in self._cache["get_episodes"]:
-            return self._cache["get_episodes"][cache_key]
+    @staticmethod
+    def _get_episode_sync_limits() -> tuple[int, int]:
+        try:
+            from ..core.config import config_manager
 
+            return config_manager.get_episode_sync_limits()
+        except Exception:
+            return 100, 9999
+
+    def _fetch_episodes_page(
+        self,
+        subject_id,
+        _type: int = 0,
+        *,
+        limit: int = _EPISODES_PAGE_LIMIT,
+        offset: int = 0,
+    ) -> dict:
+        """单次分页请求章节列表（不写入实例缓存）。"""
         res = self.get(
             "episodes",
             params={
                 "subject_id": subject_id,
                 "type": _type,
+                "limit": limit,
+                "offset": offset,
             },
         )
         try:
-            res = res.json()
-            # 确保返回的是字典类型
-            if not isinstance(res, dict):
+            payload = res.json()
+            if not isinstance(payload, dict):
                 logger.error(
-                    f"get_episodes API返回非字典类型: {type(res)}, 内容: {res}"
+                    f"get_episodes API返回非字典类型: {type(payload)}, 内容: {payload}"
                 )
-                res = {"data": [], "total": 0}
+                return {"data": [], "total": 0}
+            return payload
         except Exception as e:
             logger.error(f"get_episodes JSON解析失败: {e}")
-            res = {"data": [], "total": 0}
+            return {"data": [], "total": 0}
 
-        self._put_cache("get_episodes", cache_key, res)
-        return res
+    def get_episodes(self, subject_id, _type=0, fetch_all: bool = False):
+        # 使用实例缓存避免内存泄漏
+        cache_key = (subject_id, _type, fetch_all)
+        if cache_key in self._cache["get_episodes"]:
+            return self._cache["get_episodes"][cache_key]
+
+        if not fetch_all:
+            result = self._fetch_episodes_page(subject_id, _type)
+        else:
+            all_data: list = []
+            offset = 0
+            total = 0
+            while True:
+                page = self._fetch_episodes_page(
+                    subject_id, _type, limit=_EPISODES_PAGE_LIMIT, offset=offset
+                )
+                batch = page.get("data") or []
+                all_data.extend(batch)
+                total = int(page.get("total") or len(all_data))
+                if len(batch) < _EPISODES_PAGE_LIMIT or len(all_data) >= total:
+                    break
+                offset += _EPISODES_PAGE_LIMIT
+            result = {"data": all_data, "total": total}
+
+        self._put_cache("get_episodes", cache_key, result)
+        return result
+
+    def _find_episode_by_sort(
+        self, subject_id, target_sort: int, _type: int = 0
+    ) -> Optional[dict]:
+        """在 subject 内按 sort/ep 规则查找章节；ep>99 时优先 offset 快速路径。"""
+        if target_sort > 99:
+            page = self._fetch_episodes_page(
+                subject_id, _type, limit=1, offset=target_sort - 1
+            )
+            data = page.get("data") or []
+            if data and data[0].get("sort") == target_sort:
+                logger.debug(
+                    f"offset 快速路径命中 sort={target_sort} subject_id={subject_id}"
+                )
+                return data[0]
+
+        episodes = self.get_episodes(subject_id, _type, fetch_all=target_sort > 99)
+        ep_info = episodes.get("data") or []
+        rows = self._match_target_ep_rows(ep_info, target_sort)
+        return rows[0] if rows else None
+
+    def _resolve_episode_by_airdate_in_subject(
+        self,
+        subject_id: Union[str, int],
+        release_date: str,
+        max_days_diff: int = 120,
+        min_total: int = _LONG_SERIES_AIRDATE_MIN_TOTAL,
+    ) -> Optional[tuple[Union[str, int], Union[str, int]]]:
+        """
+        在同一 Bangumi subject 内按 airdate 与 release_date 择优（TVDB 多季 + Bangumi 单条目）。
+        仅在条目章节总数达到 min_total 时启用，避免误用于普通季番。
+        """
+        target_day = self._parse_iso_date_ymd(release_date)
+        if not target_day:
+            return None
+
+        episodes = self.get_episodes(subject_id, fetch_all=True)
+        total = int(episodes.get("total") or 0)
+        if total < min_total:
+            return None
+
+        ep_info = episodes.get("data") or []
+        candidates: list[tuple[dict, int]] = []
+        for ep in ep_info:
+            if ep.get("type", 0) != 0 and "type" in ep:
+                continue
+            air_raw = (ep.get("airdate") or "").strip()
+            ep_day = self._parse_iso_date_ymd(air_raw)
+            if not ep_day:
+                continue
+            diff_days = abs((ep_day - target_day).days)
+            if diff_days <= max_days_diff:
+                candidates.append((ep, diff_days))
+
+        if not candidates:
+            return None
+
+        best_ep, best_diff = min(candidates, key=lambda x: x[1])
+        logger.debug(
+            f"单条目 airdate 择优: subject_id={subject_id} ep_id={best_ep['id']} "
+            f"与播出日相差 {best_diff} 天"
+        )
+        return subject_id, best_ep["id"]
+
+    def _episode_lookup_failed(
+        self,
+        subject_id,
+        target_ep: int,
+        release_date: Optional[str],
+    ):
+        """季集匹配失败后的统一回退：单条目 airdate 择优。"""
+        if release_date and target_ep:
+            air_pick = self._resolve_episode_by_airdate_in_subject(
+                subject_id, release_date
+            )
+            if air_pick is not None:
+                return air_pick
+        return None, None if target_ep else None
 
     @staticmethod
     def _parse_iso_date_ymd(value: Optional[str]) -> Optional[datetime.date]:
-        if not value or len(value) < 10:
+        if not value:
+            return None
+        m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", value.strip())
+        if not m:
             return None
         try:
-            return datetime.datetime.strptime(value[:10], "%Y-%m-%d").date()
+            return datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             return None
 
@@ -666,8 +788,9 @@ class BangumiApi:
     ):
         season_num = 1
         current_id = subject_id
+        max_season, max_episode = self._get_episode_sync_limits()
 
-        if target_season > 10 or (target_ep and target_ep > 99):
+        if target_season > max_season or (target_ep and target_ep > max_episode):
             return None, None if target_ep else None
 
         # 如果已经是目标季数的ID，直接尝试匹配集数
@@ -678,33 +801,14 @@ class BangumiApi:
             if not target_ep:
                 return current_id
 
-            episodes = self.get_episodes(current_id)
-            ep_info = episodes.get("data", [])
-            logger.debug(ep_info)
+            found = self._find_episode_by_sort(current_id, target_ep)
+            if found:
+                return current_id, found["id"]
 
-            if not ep_info:
-                logger.debug(f"未获取到剧集信息: {subject_id}")
-                return None, None if target_ep else None
-
-            # 先尝试完全匹配sort字段
-            _target_ep = [i for i in ep_info if i.get("sort") == target_ep]
-
-            # 如果完全匹配失败，尝试匹配ep字段
-            if not _target_ep:
-                _target_ep = [
-                    i
-                    for i in ep_info
-                    if i.get("ep") == target_ep and i.get("ep", 0) <= i.get("sort", 0)
-                ]
-
-            if _target_ep:
-                return current_id, _target_ep[0]["id"]
-            else:
-                logger.debug(
-                    f"在指定季度ID中未找到匹配的集数: {subject_id}, 目标集数: {target_ep}"
-                )
-                # 失败后回退到传统方法
-                logger.debug("回退到传统方式查找集数")
+            logger.debug(
+                f"在指定季度ID中未找到匹配的集数: {subject_id}, 目标集数: {target_ep}"
+            )
+            logger.debug("回退到传统方式查找集数")
 
         if target_season == 1:
             if not target_ep:
@@ -715,15 +819,14 @@ class BangumiApi:
                     current_info = self.get_subject(current_id)
                     if not current_info or current_info.get("platform") != "TV":
                         continue
+                found = self._find_episode_by_sort(current_id, target_ep)
+                if found:
+                    return current_id, found["id"]
                 episodes = self.get_episodes(current_id)
                 ep_info = episodes.get("data", [])
                 if not ep_info:
                     logger.debug(f"未获取到剧集信息: {current_id}")
-                    # 修复死循环：如果获取不到剧集信息，应该跳出循环而不是继续
                     break
-                _target_ep = [i for i in ep_info if i.get("sort") == target_ep]
-                if _target_ep:
-                    return current_id, _target_ep[0]["id"]
                 normal_season = (
                     True
                     if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
@@ -732,11 +835,9 @@ class BangumiApi:
                 if not fist_part and normal_season:
                     break
                 related = self.get_related_subjects(current_id)
-                # 处理related可能是列表或字典的情况
                 if isinstance(related, list):
                     next_id = [i for i in related if i.get("relation") == "续集"]
                 elif isinstance(related, dict):
-                    # 如果是字典，可能包含data字段
                     related_list = related.get("data", [])
                     next_id = [i for i in related_list if i.get("relation") == "续集"]
                 else:
@@ -745,10 +846,9 @@ class BangumiApi:
                     break
                 current_id = next_id[0]["id"]
                 fist_part = False
-            return None, None if target_ep else None
+            return self._episode_lookup_failed(subject_id, target_ep, release_date)
 
         # Plex 季数与 Bangumi 多期/续集计数不一致时，用播出日 + 章节 airdate 择优
-        # is_season_subject_id=True 但直接匹配失败时（如多 part 季度），也应回退到 airdate
         if release_date and target_season > 1 and target_ep:
             air_pick = self._try_resolve_sequel_by_airdate(
                 subject_id, target_ep, release_date
@@ -759,11 +859,9 @@ class BangumiApi:
         last_season_num = None
         while True:
             related = self.get_related_subjects(current_id)
-            # 处理related可能是列表或字典的情况
             if isinstance(related, list):
                 next_id = [i for i in related if i.get("relation") == "续集"]
             elif isinstance(related, dict):
-                # 如果是字典，可能包含data字段
                 related_list = related.get("data", [])
                 next_id = [i for i in related_list if i.get("relation") == "续集"]
             else:
@@ -778,7 +876,6 @@ class BangumiApi:
             ep_info = episodes.get("data", [])
             if not ep_info:
                 logger.debug(f"未获取到剧集信息: {current_id}")
-                # 修复死循环：如果获取不到剧集信息，应该跳出循环而不是继续
                 break
             logger.debug(ep_info)
             sort_rows = [i for i in ep_info if i.get("sort") == target_ep]
@@ -786,7 +883,6 @@ class BangumiApi:
             logger.debug(_target_ep)
             ep_found = True if target_ep and _target_ep else False
 
-            # 通过季度标识去重计数，避免 split-cour 被重复计数
             sn = self._extract_season_number(
                 current_info.get("name", ""), current_info.get("name_cn", "")
             )
@@ -794,7 +890,6 @@ class BangumiApi:
                 season_num += 1
                 last_season_num = sn
             elif sn is None:
-                # 兼容 sort 不从 1 开始的续集（如无职转生 S1 sort=0，S2 sort 从 12 开始）
                 if not sort_rows:
                     if (
                         target_ep
@@ -810,10 +905,14 @@ class BangumiApi:
             if season_num == target_season:
                 if not target_ep:
                     return current_id
+                if target_ep > 99:
+                    found = self._find_episode_by_sort(current_id, target_ep)
+                    if found:
+                        return current_id, found["id"]
                 if not ep_found:
                     continue
                 return current_id, _target_ep[0]["id"]
-        return None, None if target_ep else None
+        return self._episode_lookup_failed(subject_id, target_ep, release_date)
 
     def get_subject_collection(self, subject_id):
         res = self.get(f"users/{self.username}/collections/{subject_id}")
