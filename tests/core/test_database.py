@@ -547,3 +547,173 @@ class TestDatabaseDockerAndTrakt:
         db._conn = None
         with patch("app.core.database.sqlite3.connect", side_effect=OSError("x")):
             assert db.update_sync_record_status(1, "ok") is False
+
+    def test_error_sync_record_creates_in_app_notification(
+        self, temp_dir, reset_singletons
+    ):
+        db_path = temp_dir / "inbox_notify.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        record_id = db.log_sync_record(
+            user_name="tester",
+            title="测试番剧",
+            ori_title=None,
+            season=1,
+            episode=5,
+            status="error",
+            message="未找到番剧",
+            source="custom",
+        )
+        assert record_id == 1
+
+        notifs = db.list_in_app_notifications()
+        assert len(notifs) == 1
+        assert notifs[0]["type"] == "sync_failed"
+        assert "测试番剧" in notifs[0]["title"]
+        assert notifs[0]["ref_id"] == 1
+        assert notifs[0]["read_at"] is None
+
+    def test_inbox_read_state(self, temp_dir, reset_singletons):
+        db_path = temp_dir / "inbox_read.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="A",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="error",
+            message="e",
+            source="test",
+        )
+        assert db.count_unread_notifications() == 1
+
+        notif_id = db.list_in_app_notifications()[0]["id"]
+        assert db.mark_notification_read(notif_id) is True
+        assert db.count_unread_notifications() == 0
+
+        assert db.mark_announcement_read("ann-a") is True
+        assert "ann-a" in db.get_read_announcement_ids()
+        assert db.mark_all_announcements_read(["ann-b", "ann-c"]) == 2
+
+        db.log_sync_record(
+            user_name="u",
+            title="B",
+            ori_title=None,
+            season=1,
+            episode=2,
+            status="error",
+            message="e2",
+            source="test",
+        )
+        assert db.mark_all_notifications_read() == 1
+        assert db.count_unread_notifications() == 0
+
+    def test_backfill_historical_error_notifications_read(
+        self, temp_dir, reset_singletons
+    ):
+        import sqlite3
+
+        from app.core.database import (
+            INBOX_ERROR_BACKFILL_META_KEY,
+            DatabaseManager,
+        )
+
+        db_path = temp_dir / "inbox_backfill.db"
+        with patch("app.core.database.logger"):
+            db = DatabaseManager(str(db_path))
+
+        db.delete_feiniu_meta(INBOX_ERROR_BACKFILL_META_KEY)
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO sync_records
+                (timestamp, user_name, title, ori_title, season, episode,
+                 subject_id, episode_id, status, message, source, media_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2026-01-01 10:00:00",
+                    "u",
+                    "旧番剧",
+                    None,
+                    1,
+                    3,
+                    None,
+                    None,
+                    "error",
+                    "历史失败",
+                    "test",
+                    "episode",
+                ),
+            )
+            conn.commit()
+
+        assert db.backfill_historical_error_notifications() == 1
+        notifs = db.list_in_app_notifications()
+        assert len(notifs) == 1
+        assert notifs[0]["read_at"] is not None
+        assert notifs[0]["ref_id"] == 1
+        assert db.backfill_historical_error_notifications() == 0
+
+    def test_update_sync_record_status_marks_notification_read(
+        self, temp_dir, reset_singletons
+    ):
+        db_path = temp_dir / "inbox_link.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        record_id = db.log_sync_record(
+            user_name="u",
+            title="联动番剧",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="error",
+            message="fail",
+            source="test",
+        )
+        assert db.count_unread_notifications() == 1
+        assert db.update_sync_record_status(record_id, "success", "ok") is True
+        assert db.count_unread_notifications() == 0
+
+    def test_mark_notification_group_read(self, temp_dir, reset_singletons):
+        db_path = temp_dir / "inbox_group.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="组内番剧",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="error",
+            message="e1",
+            source="test",
+        )
+        db.log_sync_record(
+            user_name="u",
+            title="组内番剧",
+            ori_title=None,
+            season=1,
+            episode=2,
+            status="error",
+            message="e2",
+            source="test",
+        )
+        assert db.count_unread_notifications() == 2
+        first_id = db.list_in_app_notifications()[0]["id"]
+        assert db.mark_notification_group_read(first_id) == 2
+        assert db.count_unread_notifications() == 0
