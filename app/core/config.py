@@ -444,6 +444,20 @@ class ConfigManager:
 
         return out
 
+    def get_episode_sync_limits(self) -> tuple[int, int]:
+        """季/集同步上限，用于超长连载番（默认 season≤100、episode≤9999）。"""
+        max_season = self.get("sync", "max_sync_season", fallback=100)
+        max_episode = self.get("sync", "max_sync_episode", fallback=9999)
+        try:
+            max_season = int(max_season)
+        except (TypeError, ValueError):
+            max_season = 100
+        try:
+            max_episode = int(max_episode)
+        except (TypeError, ValueError):
+            max_episode = 9999
+        return max_season, max_episode
+
     def get_all_config(self) -> dict[str, dict[str, Any]]:
         """获取所有配置"""
         config = self.get_config_parser()

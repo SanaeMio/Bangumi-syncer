@@ -663,8 +663,29 @@ class TestGetEpisodes:
 
     def test_cache_hit(self):
         api = BangumiApi()
-        api._cache["get_episodes"][("123", 0)] = {"data": []}
+        api._cache["get_episodes"][("123", 0, False)] = {"data": []}
         assert api.get_episodes("123") == {"data": []}
+
+    def test_fetch_all_pagination(self):
+        api = BangumiApi()
+        page1 = {
+            "data": [{"id": i, "sort": i} for i in range(1, 201)],
+            "total": 250,
+        }
+        page2 = {
+            "data": [{"id": i, "sort": i} for i in range(201, 251)],
+            "total": 250,
+        }
+
+        with patch.object(
+            api, "_fetch_episodes_page", side_effect=[page1, page2]
+        ) as mock_fetch:
+            result = api.get_episodes("899", fetch_all=True)
+
+        assert mock_fetch.call_count == 2
+        assert result["total"] == 250
+        assert len(result["data"]) == 250
+        assert result["data"][-1]["sort"] == 250
 
     def test_non_dict_response(self):
         api = BangumiApi()
@@ -967,15 +988,28 @@ class TestGetMovieMainEpisodeId:
 class TestGetTargetSeasonEpisodeId:
     """测试 get_target_season_episode_id"""
 
-    def test_season_gt_5_returns_none(self):
+    def test_season_gt_limit_returns_none(self):
         api = BangumiApi()
-        result = api.get_target_season_episode_id("123", 6, 1)
+        with patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)):
+            result = api.get_target_season_episode_id("123", 101, 1)
         assert result == (None, None)
 
-    def test_ep_gt_99_returns_none(self):
+    def test_ep_gt_limit_returns_none(self):
         api = BangumiApi()
-        result = api.get_target_season_episode_id("123", 1, 100)
+        with patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)):
+            result = api.get_target_season_episode_id("123", 1, 10000)
         assert result == (None, None)
+
+    def test_ep_100_season1_uses_long_series_path(self):
+        api = BangumiApi()
+        with patch.object(
+            api,
+            "_find_episode_by_sort",
+            return_value={"id": "ep100", "sort": 100},
+        ) as mock_find:
+            result = api.get_target_season_episode_id("899", 1, 100)
+        mock_find.assert_called_once_with("899", 100)
+        assert result == ("899", "ep100")
 
     def test_is_season_subject_id_no_target_ep(self):
         api = BangumiApi()
@@ -1199,6 +1233,16 @@ class TestParseIsoDateYmd:
     def test_invalid_format(self):
         assert BangumiApi._parse_iso_date_ymd("2024-13-01") is None
 
+    def test_bangumi_unpadded_month_day(self):
+        d = BangumiApi._parse_iso_date_ymd("1996-01-8")
+        assert d.year == 1996 and d.month == 1 and d.day == 8
+        d2 = BangumiApi._parse_iso_date_ymd("2008-3-17")
+        assert d2.year == 2008 and d2.month == 3 and d2.day == 17
+
+    def test_iso_datetime_prefix(self):
+        d = BangumiApi._parse_iso_date_ymd("2024-06-15T12:00:00")
+        assert d.year == 2024 and d.month == 6 and d.day == 15
+
 
 class TestTryResolveSequelByAirdate:
     """测试 _try_resolve_sequel_by_airdate"""
@@ -1262,3 +1306,72 @@ class TestTryResolveSequelByAirdate:
         ):
             result = api._try_resolve_sequel_by_airdate("123", 1, "2024-01-15")
             assert result is None
+
+
+class TestLongSeriesEpisodeSync:
+    """超长连载番剧章节匹配"""
+
+    def test_find_episode_by_sort_offset_fast_path(self):
+        api = BangumiApi()
+        page = {"data": [{"id": 20606, "sort": 500, "ep": 500}], "total": 1328}
+        with patch.object(api, "_fetch_episodes_page", return_value=page):
+            found = api._find_episode_by_sort("899", 500)
+        assert found is not None
+        assert found["id"] == 20606
+
+    def test_find_episode_by_sort_offset_mismatch_falls_back(self):
+        api = BangumiApi()
+        bad_page = {"data": [{"id": 1, "sort": 12, "ep": 12}], "total": 1328}
+        full_eps = {
+            "data": [{"id": 999, "sort": 500, "ep": 500}],
+            "total": 1328,
+        }
+        with (
+            patch.object(api, "_fetch_episodes_page", return_value=bad_page),
+            patch.object(api, "get_episodes", return_value=full_eps),
+        ):
+            found = api._find_episode_by_sort("899", 500)
+        assert found is not None
+        assert found["id"] == 999
+
+    def test_resolve_episode_by_airdate_in_subject(self):
+        api = BangumiApi()
+        episodes = {
+            "total": 1328,
+            "data": [
+                {"id": 1, "sort": 1, "type": 0, "airdate": "1996-01-8"},
+                {"id": 350, "sort": 350, "type": 0, "airdate": "2008-3-17"},
+            ],
+        }
+        with patch.object(api, "get_episodes", return_value=episodes):
+            result = api._resolve_episode_by_airdate_in_subject("899", "2008-03-17")
+        assert result == ("899", 350)
+
+    def test_resolve_episode_by_airdate_skips_short_series(self):
+        api = BangumiApi()
+        episodes = {
+            "total": 12,
+            "data": [{"id": 1, "sort": 1, "airdate": "2024-01-01"}],
+        }
+        with patch.object(api, "get_episodes", return_value=episodes):
+            result = api._resolve_episode_by_airdate_in_subject("123", "2024-01-01")
+        assert result is None
+
+    def test_tvdb_multi_season_airdate_fallback(self):
+        api = BangumiApi()
+        with (
+            patch.object(api, "get_related_subjects", return_value=[]),
+            patch.object(
+                api,
+                "_resolve_episode_by_airdate_in_subject",
+                return_value=("899", 350),
+            ) as mock_air,
+        ):
+            result = api.get_target_season_episode_id(
+                "899",
+                15,
+                12,
+                release_date="2008-05-20",
+            )
+        mock_air.assert_called_once_with("899", "2008-05-20")
+        assert result == ("899", 350)
