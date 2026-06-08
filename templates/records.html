@@ -134,7 +134,15 @@ let recordDetailModal;
 
 document.addEventListener('DOMContentLoaded', function() {
     recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
-    loadRecords();
+    loadRecords().then(function() {
+        var openId = new URLSearchParams(window.location.search).get('open');
+        if (openId) {
+            var rid = parseInt(openId, 10);
+            if (!isNaN(rid) && rid > 0) {
+                showRecordDetail(rid);
+            }
+        }
+    });
 });
 
 async function loadRecords(page = 1, limit = 50) {

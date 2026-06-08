@@ -2,6 +2,73 @@
 {% block title %}仪表板 - Bangumi Syncer{% endblock %}
 {% block page_title %}仪表板{% endblock %}
 {% block page_actions %}
+    <div class="dropdown inbox-dropdown flex-shrink-0" id="inboxDropdownWrap">
+        <button type="button"
+                class="inbox-header-chip"
+                id="inboxBellBtn"
+                data-bs-toggle="dropdown"
+                data-bs-auto-close="outside"
+                aria-expanded="false"
+                title="公告与通知">
+            <span class="inbox-header-chip__track">
+                <span class="inbox-header-chip__icon" aria-hidden="true">
+                    <i class="bi bi-bell"></i>
+                </span>
+                <span class="inbox-header-chip__label">收件箱</span>
+                <span class="inbox-header-chip__badge badge rounded-pill bg-danger d-none"
+                      id="inboxBadge">0</span>
+            </span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end inbox-panel p-0 shadow"
+             id="inboxPanel">
+            <div class="inbox-panel__header px-3 pt-3 pb-2">
+                <div class="inbox-panel__alert alert alert-warning py-2 px-2 mb-2 small d-none"
+                     id="inboxRemoteAlert"
+                     role="alert">
+                    <i class="bi bi-cloud-slash me-1" aria-hidden="true"></i>
+                    <span id="inboxRemoteAlertText"></span>
+                </div>
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="fw-semibold">收件箱</span>
+                    <button type="button"
+                            class="btn btn-link btn-sm inbox-read-all-btn p-0"
+                            id="inboxReadAllBtn">全部已读</button>
+                </div>
+                <ul class="nav nav-tabs inbox-tabs mt-2" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active"
+                                id="inboxTabAnnouncements"
+                                data-bs-toggle="tab"
+                                data-bs-target="#inboxPaneAnnouncements"
+                                type="button"
+                                role="tab">公告</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link"
+                                id="inboxTabNotifications"
+                                data-bs-toggle="tab"
+                                data-bs-target="#inboxPaneNotifications"
+                                type="button"
+                                role="tab">通知</button>
+                    </li>
+                </ul>
+            </div>
+            <div class="tab-content inbox-panel__body">
+                <div class="tab-pane fade show active"
+                     id="inboxPaneAnnouncements"
+                     role="tabpanel">
+                    <div class="inbox-list" id="inboxAnnouncementsList">
+                        <div class="inbox-list__empty text-muted small px-3 py-4 text-center">加载中…</div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="inboxPaneNotifications" role="tabpanel">
+                    <div class="inbox-list" id="inboxNotificationsList">
+                        <div class="inbox-list__empty text-muted small px-3 py-4 text-center">加载中…</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="app-version-banner app-version-banner--header-chip min-w-0 flex-shrink-0">
         <div class="app-version-banner__header-chip-track">
             <span class="app-version-banner__header-chip-icon app-version-banner__header-chip-icon--loading app-version-banner__header-chip-icon--spinning"
@@ -177,8 +244,52 @@
             </div>
         </div>
     </div>
+    <div class="modal fade release-notes-modal inbox-announcement-modal"
+         id="inboxAnnouncementModal"
+         tabindex="-1"
+         aria-labelledby="inboxAnnouncementModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header inbox-announcement-modal__header">
+                    <div class="inbox-announcement-modal__head">
+                        <h5 class="modal-title inbox-announcement-modal__title"
+                            id="inboxAnnouncementModalLabel">公告</h5>
+                        <div class="inbox-announcement-modal__meta">
+                            <span class="badge rounded-pill inbox-level-badge"
+                                  id="inboxAnnouncementLevel">info</span>
+                            <span class="inbox-announcement-modal__time" id="inboxAnnouncementTimeWrap">
+                                <i class="bi bi-calendar3" aria-hidden="true"></i>
+                                <time id="inboxAnnouncementTimeAbs"></time>
+                                <span class="inbox-announcement-modal__time-dot" aria-hidden="true">·</span>
+                                <span class="inbox-announcement-modal__time-rel"
+                                      id="inboxAnnouncementTimeRel"></span>
+                            </span>
+                        </div>
+                    </div>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="关闭"></button>
+                </div>
+                <div class="modal-body inbox-announcement-modal__body">
+                    <div class="release-notes-card inbox-announcement-modal__card">
+                        <div class="release-notes-card__body markdown-body inbox-announcement-body"
+                             id="inboxAnnouncementBody"></div>
+                    </div>
+                </div>
+                <div class="modal-footer inbox-announcement-modal__footer">
+                    <button type="button"
+                            class="btn btn-primary btn-sm inbox-announcement-modal__dismiss"
+                            id="inboxAnnouncementDismissBtn"
+                            data-bs-dismiss="modal">知道了</button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 {% block scripts %}
+    <script defer src="{{ '/static/js/inbox.js' | static_v }}"></script>
     <script>
 // 全局图表实例
 let dailyChartInstance = null;

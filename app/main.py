@@ -14,6 +14,7 @@ from .api.auth import router as auth_router
 from .api.config import router as config_router
 from .api.feiniu import router as feiniu_router
 from .api.health import router as health_router
+from .api.inbox import router as inbox_router
 from .api.logs import router as logs_router
 from .api.mappings import router as mappings_router
 from .api.notification import router as notification_router
@@ -67,6 +68,7 @@ app.include_router(health_router)
 app.include_router(app_release_router)
 app.include_router(proxy_router)
 app.include_router(notification_router)
+app.include_router(inbox_router)
 app.include_router(trakt_router)
 app.include_router(feiniu_router)
 app.include_router(upgrade_router)
