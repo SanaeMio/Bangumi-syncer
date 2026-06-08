@@ -731,6 +731,7 @@ class BangumiApi:
         release_date: str,
         max_hops: int = 15,
         max_days_diff: int = 120,
+        root_type: Optional[int] = None,
     ) -> Optional[tuple[Union[str, int], Union[str, int]]]:
         """
         沿「续集」链查找与 release_date 最接近的 target_ep 章节（用于 Plex 季数与 Bangumi 分段不一致）。
@@ -750,7 +751,9 @@ class BangumiApi:
                 break
             current_id = nxt
             current_info = self.get_subject(current_id)
-            if not current_info or current_info.get("platform") != "TV":
+            if not current_info:
+                continue
+            if root_type is not None and current_info.get("type") != root_type:
                 continue
             episodes = self.get_episodes(current_id)
             ep_info = episodes.get("data", [])
@@ -790,6 +793,11 @@ class BangumiApi:
         current_id = subject_id
         max_season, max_episode = self._get_episode_sync_limits()
 
+        # 获取根条目的 subject type，续集链遍历时仅放行相同媒体类型的条目
+        # type=2 动画与 type=6 三次元电视剧互不为续集，可避免跨界匹配
+        root_info = self.get_subject(subject_id)
+        root_type = root_info.get("type") if root_info else None
+
         if target_season > max_season or (target_ep and target_ep > max_episode):
             return None, None if target_ep else None
 
@@ -817,7 +825,9 @@ class BangumiApi:
             while True:
                 if not fist_part:
                     current_info = self.get_subject(current_id)
-                    if not current_info or current_info.get("platform") != "TV":
+                    if not current_info:
+                        continue
+                    if root_type is not None and current_info.get("type") != root_type:
                         continue
                 found = self._find_episode_by_sort(current_id, target_ep)
                 if found:
@@ -851,7 +861,7 @@ class BangumiApi:
         # Plex 季数与 Bangumi 多期/续集计数不一致时，用播出日 + 章节 airdate 择优
         if release_date and target_season > 1 and target_ep:
             air_pick = self._try_resolve_sequel_by_airdate(
-                subject_id, target_ep, release_date
+                subject_id, target_ep, release_date, root_type=root_type
             )
             if air_pick is not None:
                 return air_pick[0], air_pick[1]
@@ -870,7 +880,9 @@ class BangumiApi:
                 break
             current_id = next_id[0]["id"]
             current_info = self.get_subject(current_id)
-            if not current_info or current_info.get("platform") != "TV":
+            if not current_info:
+                continue
+            if root_type is not None and current_info.get("type") != root_type:
                 continue
             episodes = self.get_episodes(current_id)
             ep_info = episodes.get("data", [])
