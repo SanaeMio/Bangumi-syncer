@@ -453,3 +453,112 @@ class TestGetTargetSeasonEpisodeIdSplitCour:
         )
         assert sid == 200
         assert eid == 2001
+
+    def test_type6_subject_sequel_chain(self):
+        """根条目 type=6（三次元电视剧）时续集链仅放行同 type 条目"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        related = {
+            1: [{"relation": "续集", "id": 100}],
+            100: [],
+        }
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        subjects = {
+            1: {
+                "type": 6,
+                "platform": "欧美剧",
+                "name": "Friends: Season 1",
+                "name_cn": "老友记 第一季",
+            },
+            100: {
+                "type": 6,
+                "platform": "欧美剧",
+                "name": "Friends: Season 2",
+                "name_cn": "老友记 第二季",
+            },
+        }
+
+        def get_subject(sid):
+            return subjects.get(int(sid))
+
+        episodes = {
+            100: {"data": [self._tv_ep(2, 2, 49497)], "total": 24},
+        }
+
+        def get_ep(sid):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=2,
+            target_ep=2,
+            is_season_subject_id=False,
+        )
+        assert sid == 100
+        assert eid == 49497
+
+    def test_type2_root_skips_type6_in_sequel_chain(self):
+        """根条目 type=2 时续集链中的 type=6 条目被跳过"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        related = {
+            1: [{"relation": "续集", "id": 100}],
+            100: [{"relation": "续集", "id": 200}],
+            200: [],
+        }
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        subjects = {
+            1: {
+                "type": 2,
+                "platform": "TV",
+                "name": "Anime S1",
+                "name_cn": "动画 第一季",
+            },
+            100: {
+                "type": 6,
+                "platform": "电影",
+                "name": "Anime Movie",
+                "name_cn": "动画 真人版",
+            },
+            200: {
+                "type": 2,
+                "platform": "TV",
+                "name": "Anime S2",
+                "name_cn": "动画 第二季",
+            },
+        }
+
+        def get_subject(sid):
+            return subjects.get(int(sid))
+
+        episodes = {
+            200: {"data": [self._tv_ep(1, 1, 20001)], "total": 12},
+        }
+
+        def get_ep(sid):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=2,
+            target_ep=1,
+            is_season_subject_id=False,
+        )
+        assert sid == 200
+        assert eid == 20001
