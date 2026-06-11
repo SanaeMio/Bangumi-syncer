@@ -399,6 +399,24 @@ class TraktClient:
             logger.error(f"测试 Trakt 连接失败: {e}")
             return False
 
+    async def get_show_details(self, trakt_id: str) -> Optional[dict]:
+        """获取节目完整元数据（包含 original_title 等精简接口不返回的字段）
+
+        Args:
+            trakt_id: Trakt 节目 ID 或 slug
+
+        Returns:
+            节目详情 dict，失败时返回 None
+        """
+        try:
+            endpoint = f"/shows/{trakt_id}"
+            params = {"extended": "full"}
+            data = await self._make_request("GET", endpoint, params)
+            return data if isinstance(data, dict) else None
+        except Exception as e:
+            logger.debug(f"获取节目 {trakt_id} 详情失败: {e}")
+            return None
+
 
 # ===== 客户端工厂 =====
 
