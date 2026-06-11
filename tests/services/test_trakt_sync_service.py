@@ -360,7 +360,7 @@ class TestConvertTraktHistoryToCustomItem:
         assert result is None
 
     def test_episode_no_tmdb(self):
-        """episode show 无 TMDB ID"""
+        """episode show 无 TMDB ID 时降级使用 Trakt 自带标题"""
         service = _make_service()
         item = TraktHistoryItem(
             id=1,
@@ -371,16 +371,18 @@ class TestConvertTraktHistoryToCustomItem:
             episode={"season": 1, "number": 1},
         )
         result = service._convert_trakt_history_to_custom_item("u", item)
-        assert result is None
+        assert result is not None
+        assert result.title == "S"
 
     def test_episode_no_title_in_bangumi(self):
-        """TMDB 查不到标题"""
+        """bangumi_data 未收录时降级使用 Trakt 自带标题"""
         service = _make_service()
         item = _make_episode_item()
         with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
             mock_bd.get_title_by_tmdb_id.return_value = None
             result = service._convert_trakt_history_to_custom_item("u", item)
-            assert result is None
+            assert result is not None
+            assert result.title == "Test Show"
 
     def test_episode_with_first_aired(self):
         """覆盖 line 396: episode.first_aired"""

@@ -373,21 +373,26 @@ class TraktSyncService:
             episode = item.episode
 
             # 获取剧集标题
-            # 由于 Trakt 返回 title 名默认为英文, 通过 tmdb id 从 bangumi_data 获取更准确的标题
+            # 优先从 bangumi_data 获取中文标题；未收录时降级使用 Trakt 自带标题
             title: Optional[str] = None
 
             show_tmdb = show.get("ids", {}).get("tmdb")
-            if show_tmdb is None:
-                logger.warning(f"查询TMDB ID为空: {item.trakt_item_id}")
-                return None
-            tmdb_id = f"tv/{show_tmdb}"
+            if show_tmdb is not None:
+                title = bangumi_data.get_title_by_tmdb_id(f"tv/{show_tmdb}")
 
-            title = bangumi_data.get_title_by_tmdb_id(tmdb_id)
+            if not title:
+                # bangumi_data 未收录时，按日文原名 → 英文标题顺序降级
+                title = (
+                    show.get("original_title")
+                    or show.get("originalTitle")
+                    or show.get("title")
+                )
+
             if not title:
                 logger.warning(f"剧集标题为空: {item.trakt_item_id}")
                 return None
 
-            # 获取原始标题
+            # 获取原始标题，优先使用 Trakt 返回的日文原名
             ori_title = show.get("original_title") or show.get("originalTitle") or title
 
             # 获取季和集数

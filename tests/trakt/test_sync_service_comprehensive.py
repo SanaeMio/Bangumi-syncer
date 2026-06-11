@@ -355,6 +355,7 @@ def test_convert_trakt_history_movie_prefers_bangumi_title():
 
 
 def test_convert_trakt_history_missing_tmdb_returns_none():
+    """无 TMDB ID 时降级使用 Trakt 自带标题并成功返回"""
     svc = TraktSyncService()
     item = TraktHistoryItem(
         id=1,
@@ -365,10 +366,13 @@ def test_convert_trakt_history_missing_tmdb_returns_none():
         show={"ids": {}, "title": "S"},
         episode={"ids": {"trakt": 9}, "season": 1, "number": 1},
     )
-    assert svc._convert_trakt_history_to_custom_item("u", item) is None
+    result = svc._convert_trakt_history_to_custom_item("u", item)
+    assert result is not None
+    assert result.title == "S"
 
 
 def test_convert_trakt_history_no_bangumi_title_returns_none():
+    """bangumi_data 未收录时降级使用 Trakt 自带标题并成功返回"""
     with patch("app.services.trakt.sync_service.bangumi_data") as bd:
         bd.get_title_by_tmdb_id.return_value = None
         svc = TraktSyncService()
@@ -381,7 +385,9 @@ def test_convert_trakt_history_no_bangumi_title_returns_none():
             show={"ids": {"tmdb": 42}, "title": "S", "original_title": "S"},
             episode={"ids": {"trakt": 9}, "season": 1, "number": 1},
         )
-        assert svc._convert_trakt_history_to_custom_item("u", item) is None
+        result = svc._convert_trakt_history_to_custom_item("u", item)
+        assert result is not None
+        assert result.title == "S"
 
 
 def test_convert_trakt_history_success():
