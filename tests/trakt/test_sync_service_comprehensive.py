@@ -453,3 +453,68 @@ def test_get_active_sync_tasks_running_only():
     assert svc.get_active_sync_tasks() == {"a": "running"}
     t.done.return_value = True
     assert svc.get_active_sync_tasks() == {}
+
+
+def test_convert_trakt_history_uses_show_original_titles_cache():
+    """预取的 show_original_titles 缓存应被用于 original_title 降级"""
+    svc = TraktSyncService()
+    item = TraktHistoryItem(
+        id=1,
+        watched_at="2024-01-01T00:00:00Z",
+        action="scrobble",
+        type="episode",
+        movie=None,
+        show={"ids": {"trakt": 200000}, "title": "English Title"},
+        episode={"ids": {"trakt": 9}, "season": 1, "number": 1},
+    )
+    cache = {"200000": "日本語タイトル"}
+    result = svc._convert_trakt_history_to_custom_item("u", item, cache)
+    assert result is not None
+    assert result.title == "日本語タイトル"
+
+
+def test_convert_trakt_history_all_fallback_fail_returns_none():
+    """所有标题来源均不可用时返回 None"""
+    svc = TraktSyncService()
+    item = TraktHistoryItem(
+        id=1,
+        watched_at="2024-01-01T00:00:00Z",
+        action="scrobble",
+        type="episode",
+        movie=None,
+        show={"ids": {}, "title": ""},
+        episode={"ids": {"trakt": 9}, "season": 1, "number": 1},
+    )
+    with patch("app.services.trakt.sync_service.bangumi_data") as bd:
+        bd.get_title_by_tmdb_id.return_value = None
+        result = svc._convert_trakt_history_to_custom_item("u", item)
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_show_details_returns_original_title():
+    """get_show_details 应返回包含 original_title 的完整节目数据"""
+    from app.services.trakt.client import TraktClient
+
+    client = TraktClient("fake_token")
+    mock_resp = {
+        "title": "Attack on Titan",
+        "year": 2013,
+        "ids": {"trakt": 1396},
+        "original_title": "進撃の巨人",
+    }
+    with patch.object(client, "_make_request", new=AsyncMock(return_value=mock_resp)):
+        result = await client.get_show_details("1396")
+        assert result is not None
+        assert result["original_title"] == "進撃の巨人"
+
+
+@pytest.mark.asyncio
+async def test_get_show_details_returns_none_on_failure():
+    """get_show_details 在请求失败时应返回 None"""
+    from app.services.trakt.client import TraktClient
+
+    client = TraktClient("fake_token")
+    with patch.object(client, "_make_request", new=AsyncMock(return_value=None)):
+        result = await client.get_show_details("999999")
+        assert result is None
