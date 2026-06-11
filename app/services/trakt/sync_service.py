@@ -233,6 +233,21 @@ class TraktSyncService:
             skipped_count = len(history_items) - len(syncable_items)
             logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
+            # 预先收集 sync/history 不包含 original_title 的节目，
+            # 通过 /shows/:id?extended=full 获取日语原名
+            show_original_titles: dict[str, str] = {}
+            for item in syncable_items:
+                if item.type == "episode" and item.show:
+                    show = item.show
+                    if not show.get("original_title") and not show.get("originalTitle"):
+                        trakt_id = show.get("ids", {}).get("trakt")
+                        if trakt_id and trakt_id not in show_original_titles:
+                            details_resp = await client.get_show_details(str(trakt_id))
+                            if details_resp:
+                                ot = details_resp.get("original_title")
+                                if ot:
+                                    show_original_titles[str(trakt_id)] = ot
+
             # 转换为 CustomItem 并同步
             synced_count = 0
             error_count = 0
@@ -251,7 +266,7 @@ class TraktSyncService:
 
                     # 转换为 CustomItem
                     custom_item = self._convert_trakt_history_to_custom_item(
-                        user_id, item
+                        user_id, item, show_original_titles
                     )
 
                     if not custom_item:
@@ -357,7 +372,10 @@ class TraktSyncService:
             logger.error(f"记录同步历史失败: {e}")
 
     def _convert_trakt_history_to_custom_item(
-        self, user_id: str, item: TraktHistoryItem
+        self,
+        user_id: str,
+        item: TraktHistoryItem,
+        show_original_titles: Optional[dict[str, str]] = None,
     ) -> Optional[CustomItem]:
         """将 Trakt 观看历史转换为 CustomItem"""
         try:
@@ -373,21 +391,29 @@ class TraktSyncService:
             episode = item.episode
 
             # 获取剧集标题
-            # 由于 Trakt 返回 title 名默认为英文, 通过 tmdb id 从 bangumi_data 获取更准确的标题
+            # 优先从 bangumi_data 获取中文标题；未收录时降级使用 Trakt 自带标题
             title: Optional[str] = None
 
             show_tmdb = show.get("ids", {}).get("tmdb")
-            if show_tmdb is None:
-                logger.warning(f"查询TMDB ID为空: {item.trakt_item_id}")
-                return None
-            tmdb_id = f"tv/{show_tmdb}"
+            if show_tmdb is not None:
+                title = bangumi_data.get_title_by_tmdb_id(f"tv/{show_tmdb}")
 
-            title = bangumi_data.get_title_by_tmdb_id(tmdb_id)
+            if not title:
+                # bangumi_data 未收录时，按日文原名 → 预取原文 → 英文标题顺序降级
+                title = (
+                    show.get("original_title")
+                    or show.get("originalTitle")
+                    or (show_original_titles or {}).get(
+                        str(show.get("ids", {}).get("trakt", ""))
+                    )
+                    or show.get("title")
+                )
+
             if not title:
                 logger.warning(f"剧集标题为空: {item.trakt_item_id}")
                 return None
 
-            # 获取原始标题
+            # 获取原始标题，优先使用 Trakt 返回的日文原名
             ori_title = show.get("original_title") or show.get("originalTitle") or title
 
             # 获取季和集数
