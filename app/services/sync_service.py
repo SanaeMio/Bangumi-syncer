@@ -563,7 +563,7 @@ class SyncService:
                 )
                 return False
             if user_name not in allowed:
-                logger.debug(f"非配置同步用户：{user_name}，跳过")
+                logger.warning(f"非配置同步用户：{user_name}，跳过")
                 return False
         elif mode == "multi":
             # 多用户模式，检查用户是否在映射配置中
