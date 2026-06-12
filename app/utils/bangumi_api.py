@@ -793,12 +793,12 @@ class BangumiApi:
         current_id = subject_id
         max_season, max_episode = self._get_episode_sync_limits()
 
+        if target_season > max_season or (target_ep and target_ep > max_episode):
+            return None, None if target_ep else None
+
         # 获取根条目的 subject type，续集链遍历时仅放行相同媒体类型的条目
         root_info = self.get_subject(subject_id)
         root_type = root_info.get("type") if root_info else None
-
-        if target_season > max_season or (target_ep and target_ep > max_episode):
-            return None, None if target_ep else None
 
         # 如果已经是目标季数的ID，直接尝试匹配集数
         if is_season_subject_id:

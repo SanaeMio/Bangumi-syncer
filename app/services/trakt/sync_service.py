@@ -5,7 +5,7 @@ Trakt 数据同步服务
 import asyncio
 import time
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from app.utils.bangumi_data import bangumi_data
 
@@ -13,6 +13,7 @@ from ...core.database import database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
 from ...services.sync_service import sync_service
+from ...utils.notifier import send_notify
 from .auth import trakt_auth_service
 from .client import TraktClient, TraktClientFactory
 from .models import TraktHistoryItem, TraktSyncResult, TraktSyncStats
@@ -217,6 +218,8 @@ class TraktSyncService:
 
             # 过滤：剧集需 episode+show；电影需 movie 且至少有标题或 TMDB（用于匹配 bangumi）
             syncable_items: list[TraktHistoryItem] = []
+            skipped_count = 0
+            error_count = 0
             for item in history_items:
                 if item.type == "episode" and item.episode and item.show:
                     syncable_items.append(item)
@@ -228,9 +231,15 @@ class TraktSyncService:
                         syncable_items.append(item)
                     else:
                         logger.warning(f"跳过缺少标题与 TMDB 的电影记录: {item}")
+                        self._report_preconvert_failure(
+                            user_id,
+                            item,
+                            "电影记录缺少标题与 TMDB ID，无法转为同步条目",
+                        )
+                        error_count += 1
                 else:
                     logger.warning(f"跳过不支持的类型或数据不完整的记录: {item}")
-            skipped_count = len(history_items) - len(syncable_items)
+                    skipped_count += 1
             logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
             # 预先收集 sync/history 不包含 original_title 的节目，
@@ -250,7 +259,6 @@ class TraktSyncService:
 
             # 转换为 CustomItem 并同步
             synced_count = 0
-            error_count = 0
             details = []
 
             for item in syncable_items:
@@ -270,7 +278,12 @@ class TraktSyncService:
                     )
 
                     if not custom_item:
-                        skipped_count += 1
+                        self._report_preconvert_failure(
+                            user_id,
+                            item,
+                            "Trakt 记录缺少可用标题，无法转为同步条目",
+                        )
+                        error_count += 1
                         continue
 
                     # 调用现有同步服务
@@ -347,6 +360,83 @@ class TraktSyncService:
             skipped_count=0,
             error_count=0,
             details={},
+        )
+
+    def _trakt_item_failure_context(
+        self, user_id: str, item: TraktHistoryItem, reason: str
+    ) -> dict[str, Any]:
+        """从 Trakt 历史条目提取失败通知与 sync_records 共用字段。"""
+        title = "unknown"
+        ori_title = ""
+        season = 0
+        episode = 0
+        media_type = "episode"
+
+        if item.type == "episode" and item.show:
+            show = item.show
+            ep = item.episode or {}
+            title = (
+                show.get("title")
+                or show.get("original_title")
+                or show.get("originalTitle")
+                or item.trakt_item_id
+                or "unknown"
+            )
+            ori_raw = show.get("original_title") or show.get("originalTitle") or ""
+            ori_title = ori_raw if str(ori_raw).strip() else ""
+            season = int(ep.get("season") or 0)
+            episode = int(ep.get("number") or 0)
+            media_type = "episode"
+        elif item.type == "movie" and item.movie:
+            movie = item.movie
+            raw_title = (movie.get("title") or "").strip()
+            title = raw_title or item.trakt_item_id or "unknown"
+            ori_raw = movie.get("original_title") or movie.get("originalTitle") or ""
+            ori_title = ori_raw if str(ori_raw).strip() else ""
+            season = 1
+            episode = 1
+            media_type = "movie"
+        else:
+            title = item.trakt_item_id or "unknown"
+
+        return {
+            "user_name": user_id,
+            "title": str(title),
+            "ori_title": ori_title,
+            "season": season,
+            "episode": episode,
+            "media_type": media_type,
+            "source": "trakt",
+            "error_message": reason,
+        }
+
+    def _report_preconvert_failure(
+        self, user_id: str, item: TraktHistoryItem, reason: str
+    ) -> None:
+        """Trakt 转 CustomItem 前失败：webhook/邮件 + 应用内 sync_records。"""
+        ctx = self._trakt_item_failure_context(user_id, item, reason)
+        send_notify(
+            "mark_failed",
+            item=None,
+            source="trakt",
+            error_type="trakt_title_unresolved",
+            user_name=ctx["user_name"],
+            title=ctx["title"],
+            ori_title=ctx["ori_title"],
+            season=ctx["season"],
+            episode=ctx["episode"],
+            error_message=reason,
+        )
+        database_manager.log_sync_record(
+            user_name=ctx["user_name"],
+            title=ctx["title"],
+            ori_title=ctx["ori_title"],
+            season=ctx["season"],
+            episode=ctx["episode"],
+            status="error",
+            message=reason,
+            source="trakt",
+            media_type=ctx["media_type"],
         )
 
     def _record_sync_history(
