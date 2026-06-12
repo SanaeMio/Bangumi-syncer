@@ -170,6 +170,7 @@ class TestGetTargetSeasonEpisodeIdAirdate:
     def test_direct_match_succeeds_skips_airdate(self):
         """is_season_subject_id=True 且直接匹配成功时，不走 airdate 路径"""
         api = BangumiApi()
+        api.get_subject = MagicMock(return_value={"type": 2, "name_cn": ""})
         api.get_related_subjects = MagicMock()
         api.get_episodes = MagicMock(
             return_value={

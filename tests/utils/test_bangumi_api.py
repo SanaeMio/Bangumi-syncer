@@ -988,6 +988,8 @@ class TestGetMovieMainEpisodeId:
 class TestGetTargetSeasonEpisodeId:
     """测试 get_target_season_episode_id"""
 
+    _MOCK_SUBJECT = {"id": 123, "type": 2, "name": "test", "name_cn": ""}
+
     def test_season_gt_limit_returns_none(self):
         api = BangumiApi()
         with patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)):
@@ -1002,28 +1004,35 @@ class TestGetTargetSeasonEpisodeId:
 
     def test_ep_100_season1_uses_long_series_path(self):
         api = BangumiApi()
-        with patch.object(
-            api,
-            "_find_episode_by_sort",
-            return_value={"id": "ep100", "sort": 100},
-        ) as mock_find:
+        with (
+            patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
+            patch.object(
+                api,
+                "_find_episode_by_sort",
+                return_value={"id": "ep100", "sort": 100},
+            ) as mock_find,
+        ):
             result = api.get_target_season_episode_id("899", 1, 100)
         mock_find.assert_called_once_with("899", 100)
         assert result == ("899", "ep100")
 
     def test_is_season_subject_id_no_target_ep(self):
         api = BangumiApi()
-        result = api.get_target_season_episode_id(
-            "123", 1, 0, is_season_subject_id=True
-        )
+        with patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT):
+            result = api.get_target_season_episode_id(
+                "123", 1, 0, is_season_subject_id=True
+            )
         assert result == "123"
 
     def test_is_season_subject_id_match_sort(self):
         api = BangumiApi()
-        with patch.object(
-            api,
-            "get_episodes",
-            return_value={"data": [{"sort": 3, "id": "ep3"}, {"sort": 1, "id": "ep1"}]},
+        with (
+            patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
+            patch.object(
+                api,
+                "_find_episode_by_sort",
+                return_value={"sort": 3, "id": "ep3"},
+            ),
         ):
             result = api.get_target_season_episode_id(
                 "123", 1, 3, is_season_subject_id=True
@@ -1032,10 +1041,13 @@ class TestGetTargetSeasonEpisodeId:
 
     def test_is_season_subject_id_match_ep(self):
         api = BangumiApi()
-        with patch.object(
-            api,
-            "get_episodes",
-            return_value={"data": [{"ep": 3, "sort": 3, "id": "ep3"}]},
+        with (
+            patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
+            patch.object(
+                api,
+                "_find_episode_by_sort",
+                return_value={"ep": 3, "sort": 3, "id": "ep3"},
+            ),
         ):
             result = api.get_target_season_episode_id(
                 "123", 1, 3, is_season_subject_id=True
@@ -1045,10 +1057,11 @@ class TestGetTargetSeasonEpisodeId:
     def test_is_season_subject_id_no_match_fallback(self):
         """指定季度ID未匹配到集数，回退到传统方法"""
         api = BangumiApi()
-        with patch.object(
-            api,
-            "get_episodes",
-            return_value={"data": []},
+        with (
+            patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
+            patch.object(api, "_find_episode_by_sort", return_value=None),
+            patch.object(api, "get_episodes", return_value={"data": []}),
+            patch.object(api, "get_related_subjects", return_value=[]),
         ):
             result = api.get_target_season_episode_id(
                 "123", 1, 5, is_season_subject_id=True
@@ -1058,7 +1071,8 @@ class TestGetTargetSeasonEpisodeId:
 
     def test_season1_no_ep(self):
         api = BangumiApi()
-        result = api.get_target_season_episode_id("123", 1, 0)
+        with patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT):
+            result = api.get_target_season_episode_id("123", 1, 0)
         assert result == "123"
 
 
@@ -1360,6 +1374,11 @@ class TestLongSeriesEpisodeSync:
     def test_tvdb_multi_season_airdate_fallback(self):
         api = BangumiApi()
         with (
+            patch.object(
+                api,
+                "get_subject",
+                return_value={"id": 899, "type": 2, "name": "test", "name_cn": ""},
+            ),
             patch.object(api, "get_related_subjects", return_value=[]),
             patch.object(
                 api,
