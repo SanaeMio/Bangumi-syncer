@@ -510,16 +510,16 @@ class TraktSyncService:
             season = episode.get("season", 1)
             episode_num = episode.get("number", 1)
 
-            # 获取发行日期（从剧集或剧中获取）
+            # 获取发行日期（优先剧集/剧集首播日期，其次播出年份，最后用户观看日期）
             release_date = ""
             if episode.get("first_aired"):
                 release_date = episode["first_aired"]
             elif show.get("first_aired"):
                 release_date = show["first_aired"]
+            elif show.get("year"):
+                release_date = f"{show['year']}-01-01"
 
-            # 如果没有发行日期，使用观看日期
             if not release_date and item.watched_at:
-                # 从 ISO 格式中提取日期部分
                 try:
                     release_date = item.watched_at.split("T")[0]
                 except Exception:
