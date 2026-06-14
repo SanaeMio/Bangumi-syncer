@@ -168,6 +168,61 @@ class TestBangumiDataMatching:
         assert result[0] == "123456"
         assert result[1] == "劇場版サンプル映画"
 
+    def test_contains_cjk_zh_hans(self):
+        """zh-Hans 包含中文时返回 True"""
+        item = {"titleTranslate": {"zh-Hans": ["偶像活动Friends"]}}
+        assert BangumiData._contains_cjk(item) is True
+
+    def test_contains_cjk_title(self):
+        """title 包含日文假名时返回 True"""
+        item = {"title": "たまゆら～hitotose～"}
+        assert BangumiData._contains_cjk(item) is True
+
+    def test_contains_cjk_pure_english(self):
+        """纯英文标题返回 False"""
+        item = {"title": "Friends"}
+        assert BangumiData._contains_cjk(item) is False
+
+    def test_is_token_contained_cjk_attached_rejected(self):
+        """CJK 字符粘附在查询词前时拒绝匹配"""
+        item = {"titleTranslate": {"zh-Hans": ["偶像活动Friends"]}}
+        assert BangumiData._is_token_contained("Friends", item) is False
+
+    def test_is_token_contained_space_separated_accepted(self):
+        """空格分隔时通过匹配"""
+        item = {"titleTranslate": {"zh-Hans": ["Aikatsu Friends!"]}}
+        assert BangumiData._is_token_contained("Friends", item) is True
+
+    def test_is_token_contained_exact_match_accepted(self):
+        """完全相同时通过匹配"""
+        item = {"titleTranslate": {"zh-Hans": ["Friends"]}}
+        assert BangumiData._is_token_contained("Friends", item) is True
+
+    def test_is_token_contained_symbol_separated_accepted(self):
+        """符号分隔时通过匹配"""
+        item = {"titleTranslate": {"zh-Hans": ["Surgical Friends～"]}}
+        assert BangumiData._is_token_contained("Friends", item) is True
+
+    def test_is_token_contained_slash_separated_accepted(self):
+        """斜杠分隔时通过匹配"""
+        item = {"title": "Fate/stay night"}
+        assert BangumiData._is_token_contained("Fate", item) is True
+
+    def test_is_token_contained_mid_word_rejected(self):
+        """嵌在单词中间时拒绝匹配"""
+        item = {"titleTranslate": {"zh-Hans": ["SchoolGirl"]}}
+        assert BangumiData._is_token_contained("Girl", item) is False
+
+    def test_is_token_contained_not_found(self):
+        """不包含查询词时返回 False"""
+        item = {"titleTranslate": {"zh-Hans": ["進撃の巨人"]}}
+        assert BangumiData._is_token_contained("Attack", item) is False
+
+    def test_is_token_contained_item_title(self):
+        """查询词作为独立 token 出现在 item.title 中"""
+        item = {"title": "Sword Art Online"}
+        assert BangumiData._is_token_contained("Sword", item) is True
+
 
 class TestBangumiDataTitle:
     """标题处理测试"""
