@@ -193,7 +193,7 @@ function displayRecords(records) {
             <td class="col-hide-sm"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
             <td class="col-hide-sm">${new Date(record.timestamp).toLocaleString()}</td>
             <td class="col-hide-sm">${record.user_name}</td>
-            <td>${record.title}</td>
+            <td>${record.bgm_title || record.title}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
             <td><span class="badge rounded-pill bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
             <td class="col-hide-sm"><span class="badge rounded-pill tl-source--${getSourceTlClass(record.source)}">${record.source}</span></td>
@@ -402,13 +402,18 @@ async function showRecordDetail(recordId) {
                         <strong>用户:</strong> ${record.user_name}
                     </div>
                     <div class="col-md-6">
-                        <strong>番剧标题:</strong> ${record.title}
+                        <strong>番剧标题:</strong> ${record.bgm_title || record.title}
                     </div>
                 </div>
-                <details class="mt-2">
-                    <summary class="text-muted small" style="cursor:pointer">原始标题（点击展开）</summary>
-                    <div class="mt-1 small">${record.ori_title && String(record.ori_title).trim() ? record.ori_title : '无'}</div>
-                </details>
+                <div class="row mt-2">
+                    <div class="col-md-6">
+                        <strong>接收标题:</strong> ${record.title}
+                    </div>
+                    ${record.ori_title && String(record.ori_title).trim() ? `
+                    <div class="col-md-6">
+                        <strong>原始标题:</strong> ${record.ori_title}
+                    </div>` : ''}
+                </div>
                 <div class="row mt-2">
                     <div class="col-md-4">
                         <strong>季/集:</strong> S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}
