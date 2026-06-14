@@ -166,11 +166,13 @@ async def test_sync_watched_history_movie_calls_sync_custom_item():
         patch("app.services.trakt.sync_service.bangumi_data") as bd,
         patch("app.services.trakt.sync_service.sync_service") as ss,
         patch("app.services.trakt.sync_service.database_manager") as mock_db,
+        patch("app.services.trakt.sync_service.mapping_service") as mock_mapping,
     ):
         bd.get_title_by_tmdb_id.return_value = None
         ss.sync_custom_item_async = AsyncMock(return_value="task-movie")
         mock_db.get_trakt_synced_set.return_value = set()
         mock_db.save_trakt_sync_history.return_value = True
+        mock_mapping.load_custom_mappings.return_value = {}
 
         movie_item = TraktHistoryItem(
             id=1,
@@ -183,6 +185,7 @@ async def test_sync_watched_history_movie_calls_sync_custom_item():
         )
         client = MagicMock()
         client.get_all_watched_history = AsyncMock(return_value=[movie_item])
+        client.get_movie_info = AsyncMock(return_value=None)
         cfg = MagicMock()
         cfg.last_sync_time = None
 
@@ -518,3 +521,221 @@ async def test_get_show_details_returns_none_on_failure():
     with patch.object(client, "_make_request", new=AsyncMock(return_value=None)):
         result = await client.get_show_details("999999")
         assert result is None
+
+
+# ===== genre 类型过滤测试 =====
+
+
+@pytest.mark.asyncio
+async def test_genre_filter_skips_non_anime_episode():
+    """genre 过滤开启时，非动画剧集应被跳过"""
+    with (
+        patch("app.services.trakt.sync_service.bangumi_data") as bd,
+        patch("app.services.trakt.sync_service.sync_service") as ss,
+        patch("app.services.trakt.sync_service.database_manager") as mock_db,
+        patch("app.services.trakt.sync_service.mapping_service") as mock_mapping,
+    ):
+        bd.get_title_by_tmdb_id.return_value = None
+        ss.sync_custom_item_async = AsyncMock(return_value="task-1")
+        mock_db.get_trakt_synced_set.return_value = set()
+        mock_db.save_trakt_sync_history.return_value = True
+        mock_mapping.load_custom_mappings.return_value = {}
+
+        episode_item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="episode",
+            show={
+                "title": "Severance",
+                "ids": {"trakt": 100, "tmdb": 200},
+            },
+            episode={"season": 1, "number": 1},
+            movie=None,
+        )
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[episode_item])
+        # get_show_details 返回非动画 genre
+        client.get_show_details = AsyncMock(
+            return_value={"genres": ["science-fiction", "mystery", "drama"]}
+        )
+        cfg = MagicMock()
+        cfg.last_sync_time = None
+        cfg.sync_filter_enabled = True
+
+        svc = TraktSyncService()
+        r = await svc._sync_watched_history("user1", client, cfg, True)
+        assert r.success
+        assert r.synced_count == 0
+        assert r.skipped_count == 1
+        ss.sync_custom_item_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_genre_filter_allows_anime_episode():
+    """genre 过滤开启时，动画剧集应通过"""
+    with (
+        patch("app.services.trakt.sync_service.bangumi_data") as bd,
+        patch("app.services.trakt.sync_service.sync_service") as ss,
+        patch("app.services.trakt.sync_service.database_manager") as mock_db,
+        patch("app.services.trakt.sync_service.mapping_service") as mock_mapping,
+    ):
+        bd.get_title_by_tmdb_id.return_value = None
+        ss.sync_custom_item_async = AsyncMock(return_value="task-1")
+        mock_db.get_trakt_synced_set.return_value = set()
+        mock_db.save_trakt_sync_history.return_value = True
+        mock_mapping.load_custom_mappings.return_value = {}
+
+        episode_item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="episode",
+            show={
+                "title": "Attack on Titan",
+                "ids": {"trakt": 100, "tmdb": 200},
+            },
+            episode={"season": 1, "number": 1},
+            movie=None,
+        )
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[episode_item])
+        client.get_show_details = AsyncMock(
+            return_value={
+                "genres": ["anime", "action", "fantasy"],
+                "original_title": "進撃の巨人",
+            }
+        )
+        cfg = MagicMock()
+        cfg.last_sync_time = None
+        cfg.sync_filter_enabled = True
+
+        svc = TraktSyncService()
+        r = await svc._sync_watched_history("user1", client, cfg, True)
+        assert r.success
+        assert r.synced_count == 1
+        assert r.skipped_count == 0
+        ss.sync_custom_item_async.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_genre_filter_disabled_allows_non_anime():
+    """genre 过滤关闭时，非动画条目应正常通过"""
+    with (
+        patch("app.services.trakt.sync_service.bangumi_data") as bd,
+        patch("app.services.trakt.sync_service.sync_service") as ss,
+        patch("app.services.trakt.sync_service.database_manager") as mock_db,
+        patch("app.services.trakt.sync_service.mapping_service") as mock_mapping,
+    ):
+        bd.get_title_by_tmdb_id.return_value = None
+        ss.sync_custom_item_async = AsyncMock(return_value="task-1")
+        mock_db.get_trakt_synced_set.return_value = set()
+        mock_db.save_trakt_sync_history.return_value = True
+        mock_mapping.load_custom_mappings.return_value = {}
+
+        episode_item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="episode",
+            show={
+                "title": "Severance",
+                "ids": {"trakt": 100, "tmdb": 200},
+            },
+            episode={"season": 1, "number": 1},
+            movie=None,
+        )
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[episode_item])
+        client.get_show_details = AsyncMock(return_value=None)
+        cfg = MagicMock()
+        cfg.last_sync_time = None
+        cfg.sync_filter_enabled = False
+
+        svc = TraktSyncService()
+        r = await svc._sync_watched_history("user1", client, cfg, True)
+        assert r.success
+        assert r.synced_count == 1
+        assert r.skipped_count == 0
+
+
+@pytest.mark.asyncio
+async def test_genre_filter_mapping_bypass():
+    """genre 过滤开启时，命中自定义映射的非动画条目应放行"""
+    with (
+        patch("app.services.trakt.sync_service.bangumi_data") as bd,
+        patch("app.services.trakt.sync_service.sync_service") as ss,
+        patch("app.services.trakt.sync_service.database_manager") as mock_db,
+        patch("app.services.trakt.sync_service.mapping_service") as mock_mapping,
+    ):
+        bd.get_title_by_tmdb_id.return_value = None
+        ss.sync_custom_item_async = AsyncMock(return_value="task-1")
+        mock_db.get_trakt_synced_set.return_value = set()
+        mock_db.save_trakt_sync_history.return_value = True
+        mock_mapping.load_custom_mappings.return_value = {"Severance": "123456"}
+
+        episode_item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="episode",
+            show={
+                "title": "Severance",
+                "ids": {"trakt": 100, "tmdb": 200},
+            },
+            episode={"season": 1, "number": 1},
+            movie=None,
+        )
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[episode_item])
+        client.get_show_details = AsyncMock(
+            return_value={"genres": ["science-fiction", "mystery"]}
+        )
+        cfg = MagicMock()
+        cfg.last_sync_time = None
+        cfg.sync_filter_enabled = True
+
+        svc = TraktSyncService()
+        r = await svc._sync_watched_history("user1", client, cfg, True)
+        assert r.success
+        assert r.synced_count == 1
+        assert r.skipped_count == 0
+
+
+@pytest.mark.asyncio
+async def test_genre_filter_empty_genres_passes():
+    """genre 数据为空时不拦截条目（安全默认）"""
+    with (
+        patch("app.services.trakt.sync_service.bangumi_data") as bd,
+        patch("app.services.trakt.sync_service.sync_service") as ss,
+        patch("app.services.trakt.sync_service.database_manager") as mock_db,
+        patch("app.services.trakt.sync_service.mapping_service") as mock_mapping,
+    ):
+        bd.get_title_by_tmdb_id.return_value = None
+        ss.sync_custom_item_async = AsyncMock(return_value="task-1")
+        mock_db.get_trakt_synced_set.return_value = set()
+        mock_db.save_trakt_sync_history.return_value = True
+        mock_mapping.load_custom_mappings.return_value = {}
+
+        # Movie item — get_movie_info 返回 None（fetch 失败模拟）
+        movie_item = TraktHistoryItem(
+            id=2,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="movie",
+            show=None,
+            episode=None,
+            movie={"title": "Inception", "ids": {"tmdb": 100, "trakt": 10}},
+        )
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[movie_item])
+        client.get_movie_info = AsyncMock(return_value=None)
+        cfg = MagicMock()
+        cfg.last_sync_time = None
+        cfg.sync_filter_enabled = True
+
+        svc = TraktSyncService()
+        r = await svc._sync_watched_history("user1", client, cfg, True)
+        assert r.success
+        assert r.synced_count == 1
+        assert r.skipped_count == 0
