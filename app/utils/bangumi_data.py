@@ -399,7 +399,9 @@ class BangumiData:
                     # 如果找到完全匹配，可以提前退出（除非需要检查日期）
                     if not release_date or len(exact_matches) >= 3:
                         break
-            elif match_info["score"] > 0.4:
+            elif match_info["score"] > (
+                0.7 if match_info.get("english_cjk_match") else 0.4
+            ):
                 # 部分匹配
                 bangumi_id = self._extract_bangumi_id(item)
                 if bangumi_id:
@@ -689,6 +691,38 @@ class BangumiData:
 
         return False
 
+    @staticmethod
+    def _contains_cjk(item: dict) -> bool:
+        """检查条目标题或中文翻译是否包含 CJK 字符"""
+        if "title" in item and re.search(
+            r"[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]", item["title"]
+        ):
+            return True
+        if "titleTranslate" in item and "zh-Hans" in item["titleTranslate"]:
+            for zh in item["titleTranslate"]["zh-Hans"]:
+                if re.search(r"[\u4e00-\u9fff]", zh):
+                    return True
+        return False
+
+    @staticmethod
+    def _is_token_contained(query: str, item: dict) -> bool:
+        """检查查询词是否作为独立 token（非粘附在 CJK 字符后）出现在条目标题中"""
+        q = query.lower()
+        targets: list[str] = []
+        if "titleTranslate" in item and "zh-Hans" in item["titleTranslate"]:
+            targets.extend(item["titleTranslate"]["zh-Hans"])
+        if "title" in item:
+            targets.append(item["title"])
+        for t in targets:
+            idx = t.lower().find(q)
+            if idx == -1:
+                continue
+            before_ok = idx == 0 or not t[idx - 1].isalpha()
+            after_ok = (idx + len(q)) == len(t) or not t[idx + len(q)].isalpha()
+            if before_ok and after_ok:
+                return True
+        return False
+
     def _date_diff(self, date1: str, date2: str) -> int:
         """计算两个日期之间的天数差"""
         try:
@@ -751,6 +785,20 @@ class BangumiData:
 
         # 如果没有完全匹配，计算模糊匹配分数
         score = 0.0
+
+        # 纯英文/数字搜索词对含 CJK 字符的标题做模糊匹配时，
+        # 仅因子串出现就会被包含检查和 fuzz.ratio 误判为匹配——
+        # 例如 "Friends" 是 "偶像活动Friends" 的粘附子串。
+        # 要求查询词作为独立 token（前后为非字母字符或起止位置）出现，
+        # 才能继续模糊匹配；否则返回 score=0 交由 API 搜索处理。
+        title_is_alphanumeric = bool(
+            re.fullmatch(r"[a-zA-Z0-9 ]+", (title or "").strip())
+        )
+        if title_is_alphanumeric and self._contains_cjk(item):
+            if not self._is_token_contained(title, item):
+                result["score"] = 0.0
+                return result
+            result["english_cjk_match"] = True
 
         # 中文翻译匹配得分
         if result["best_zh_score"] > 0:
