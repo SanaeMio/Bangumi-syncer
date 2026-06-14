@@ -17,6 +17,7 @@ class TraktConfig(BaseModel):
     expires_at: Optional[int] = Field(None, description="令牌过期时间戳")
     enabled: bool = Field(True, description="是否启用 Trakt 同步")
     sync_interval: str = Field("0 */6 * * *", description="同步间隔 (Cron 表达式)")
+    sync_filter_enabled: bool = Field(True, description="仅同步动画类型，除非命中映射")
     last_sync_time: Optional[int] = Field(None, description="最后同步时间戳")
     created_at: int = Field(
         default_factory=lambda: int(datetime.now().timestamp()),
@@ -49,6 +50,7 @@ class TraktConfig(BaseModel):
             "expires_at": self.expires_at,
             "enabled": 1 if self.enabled else 0,
             "sync_interval": self.sync_interval,
+            "sync_filter_enabled": 1 if self.sync_filter_enabled else 0,
             "last_sync_time": self.last_sync_time,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -62,6 +64,11 @@ class TraktConfig(BaseModel):
 
         # 转换数据库中的布尔值
         enabled = bool(data.get("enabled")) if data.get("enabled") is not None else True
+        sync_filter_enabled = (
+            bool(data.get("sync_filter_enabled"))
+            if data.get("sync_filter_enabled") is not None
+            else True
+        )
 
         return cls(
             user_id=data["user_id"],
@@ -70,6 +77,7 @@ class TraktConfig(BaseModel):
             expires_at=data.get("expires_at"),
             enabled=enabled,
             sync_interval=data.get("sync_interval", "0 */6 * * *"),
+            sync_filter_enabled=sync_filter_enabled,
             last_sync_time=data.get("last_sync_time"),
             created_at=data.get("created_at", int(datetime.now().timestamp())),
             updated_at=data.get("updated_at", int(datetime.now().timestamp())),
@@ -146,6 +154,7 @@ class TraktConfigResponse(BaseModel):
     user_id: str = Field(..., description="用户ID")
     enabled: bool = Field(..., description="是否启用")
     sync_interval: str = Field(..., description="同步间隔")
+    sync_filter_enabled: bool = Field(True, description="是否启用类型过滤")
     last_sync_time: Optional[int] = Field(None, description="最后同步时间")
     is_connected: bool = Field(..., description="是否已连接 Trakt")
     token_expires_at: Optional[int] = Field(None, description="令牌过期时间")
@@ -159,6 +168,7 @@ class TraktConfigUpdateRequest(BaseModel):
 
     enabled: Optional[bool] = Field(None, description="是否启用")
     sync_interval: Optional[str] = Field(None, description="同步间隔")
+    sync_filter_enabled: Optional[bool] = Field(None, description="是否启用类型过滤")
 
 
 class TraktApiConfigUpdateRequest(BaseModel):

@@ -12,6 +12,7 @@ from app.utils.bangumi_data import bangumi_data
 from ...core.database import database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ...services.mapping_service import mapping_service
 from ...services.sync_service import sync_service
 from ...utils.notifier import send_notify
 from .auth import trakt_auth_service
@@ -243,19 +244,41 @@ class TraktSyncService:
             logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
             # 预先收集 sync/history 不包含 original_title 的节目，
-            # 通过 /shows/:id?extended=full 获取日语原名
+            # 通过 /shows/:id?extended=full 获取日语原名；
+            # 同时收集 genre 用于类型过滤
             show_original_titles: dict[str, str] = {}
+            show_genres: dict[str, list[str]] = {}
+            sync_filter_enabled = getattr(config, "sync_filter_enabled", True)
+            custom_mappings = (
+                mapping_service.load_custom_mappings() if sync_filter_enabled else {}
+            )
+
             for item in syncable_items:
+                trakt_id = None
+                need_details = sync_filter_enabled
                 if item.type == "episode" and item.show:
                     show = item.show
+                    trakt_id = show.get("ids", {}).get("trakt")
                     if not show.get("original_title") and not show.get("originalTitle"):
-                        trakt_id = show.get("ids", {}).get("trakt")
-                        if trakt_id and trakt_id not in show_original_titles:
-                            details_resp = await client.get_show_details(str(trakt_id))
-                            if details_resp:
-                                ot = details_resp.get("original_title")
-                                if ot:
-                                    show_original_titles[str(trakt_id)] = ot
+                        need_details = True
+                elif item.type == "movie" and item.movie:
+                    trakt_id = item.movie.get("ids", {}).get("trakt")
+                if not trakt_id:
+                    continue
+                tid = str(trakt_id)
+                if need_details and tid not in show_original_titles:
+                    if item.type == "episode":
+                        details_resp = await client.get_show_details(tid)
+                        if details_resp:
+                            ot = details_resp.get("original_title")
+                            if ot:
+                                show_original_titles[tid] = ot
+                            if sync_filter_enabled:
+                                show_genres[tid] = details_resp.get("genres", [])
+                    elif item.type == "movie":
+                        details_resp = await client.get_movie_info(trakt_id)
+                        if details_resp and sync_filter_enabled:
+                            show_genres[tid] = details_resp.get("genres", [])
 
             # 转换为 CustomItem 并同步
             synced_count = 0
@@ -271,6 +294,29 @@ class TraktSyncService:
                     ):
                         skipped_count += 1
                         continue
+
+                    # 类型过滤：仅同步动画类型，除非命中映射
+                    if sync_filter_enabled:
+                        if item.type == "episode":
+                            show = item.show
+                            item_title = (show or {}).get("title", "")
+                            trakt_id = (show or {}).get("ids", {}).get("trakt")
+                        else:
+                            m = item.movie or {}
+                            item_title = m.get("title", "")
+                            trakt_id = m.get("ids", {}).get("trakt")
+                        tid = str(trakt_id) if trakt_id else ""
+                        genres = show_genres.get(tid, []) if tid else []
+                        if genres and not (
+                            any(g in genres for g in ("anime", "donghua", "animation"))
+                            or item_title in custom_mappings
+                        ):
+                            logger.debug(
+                                f"Trakt 类型过滤——跳过非动画条目: {item_title} "
+                                f"(genres={genres})"
+                            )
+                            skipped_count += 1
+                            continue
 
                     # 转换为 CustomItem
                     custom_item = self._convert_trakt_history_to_custom_item(

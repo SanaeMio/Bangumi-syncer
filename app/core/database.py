@@ -46,6 +46,7 @@ class DatabaseManager:
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
         self._media_type_migrated = False
+        self._trakt_filter_migrated = False
         self._heatmap_cache: Optional[list] = None
         self._heatmap_cache_time: float = 0
         self._init_database()
@@ -107,6 +108,21 @@ class DatabaseManager:
         self._media_type_migrated = True
         logger.info("sync_records 已迁移：增加 media_type 列并回填 episode")
 
+    def _ensure_trakt_config_sync_filter(self, cursor) -> None:
+        """旧库迁移：为 trakt_config 增加 sync_filter_enabled（默认开启）。"""
+        if self._trakt_filter_migrated:
+            return
+        cursor.execute("PRAGMA table_info(trakt_config)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "sync_filter_enabled" in cols:
+            self._trakt_filter_migrated = True
+            return
+        cursor.execute(
+            "ALTER TABLE trakt_config ADD COLUMN sync_filter_enabled BOOLEAN DEFAULT 1"
+        )
+        self._trakt_filter_migrated = True
+        logger.info("trakt_config 已迁移：增加 sync_filter_enabled 列")
+
     def _init_database(self) -> None:
         """初始化数据库"""
         conn = self._get_connection()
@@ -143,6 +159,7 @@ class DatabaseManager:
                 expires_at INTEGER,
                 enabled BOOLEAN DEFAULT 1,
                 sync_interval TEXT DEFAULT '0 */6 * * *',
+                sync_filter_enabled BOOLEAN DEFAULT 1,
                 last_sync_time INTEGER,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
@@ -613,6 +630,7 @@ class DatabaseManager:
         try:
 
             def _write(conn):
+                self._ensure_trakt_config_sync_filter(conn.cursor())
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT id FROM trakt_config WHERE user_id = ?",
@@ -629,6 +647,7 @@ class DatabaseManager:
                             expires_at = ?,
                             enabled = ?,
                             sync_interval = ?,
+                            sync_filter_enabled = ?,
                             last_sync_time = ?,
                             updated_at = ?
                         WHERE user_id = ?
@@ -639,6 +658,7 @@ class DatabaseManager:
                             config["expires_at"],
                             1 if config.get("enabled", True) else 0,
                             config.get("sync_interval", "0 */6 * * *"),
+                            1 if config.get("sync_filter_enabled", True) else 0,
                             config.get("last_sync_time"),
                             int(datetime.now().timestamp()),
                             config["user_id"],
@@ -649,8 +669,8 @@ class DatabaseManager:
                         """
                         INSERT INTO trakt_config
                         (user_id, access_token, refresh_token, expires_at, enabled,
-                         sync_interval, last_sync_time, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         sync_interval, sync_filter_enabled, last_sync_time, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             config["user_id"],
@@ -659,6 +679,7 @@ class DatabaseManager:
                             config["expires_at"],
                             1 if config.get("enabled", True) else 0,
                             config.get("sync_interval", "0 */6 * * *"),
+                            1 if config.get("sync_filter_enabled", True) else 0,
                             config.get("last_sync_time"),
                             config.get("created_at", int(datetime.now().timestamp())),
                             int(datetime.now().timestamp()),
@@ -678,9 +699,15 @@ class DatabaseManager:
         try:
 
             def _read(conn):
+                self._ensure_trakt_config_sync_filter(conn.cursor())
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT * FROM trakt_config WHERE user_id = ?", (user_id,)
+                    """SELECT id, user_id, access_token, refresh_token,
+                              expires_at, enabled, sync_interval,
+                              sync_filter_enabled, last_sync_time,
+                              created_at, updated_at
+                       FROM trakt_config WHERE user_id = ?""",
+                    (user_id,),
                 )
                 return cursor.fetchone()
 
@@ -696,12 +723,14 @@ class DatabaseManager:
                 "expires_at",
                 "enabled",
                 "sync_interval",
+                "sync_filter_enabled",
                 "last_sync_time",
                 "created_at",
                 "updated_at",
             ]
             config = dict(zip(columns, row))
             config["enabled"] = bool(config["enabled"])
+            config["sync_filter_enabled"] = bool(config["sync_filter_enabled"])
             return config
         except Exception as e:
             logger.error(f"获取 Trakt 配置失败: {e}")
@@ -826,10 +855,15 @@ class DatabaseManager:
         try:
 
             def _read(conn):
+                self._ensure_trakt_config_sync_filter(conn.cursor())
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM trakt_config WHERE enabled = 1
-                """)
+                cursor.execute(
+                    """SELECT id, user_id, access_token, refresh_token,
+                              expires_at, enabled, sync_interval,
+                              sync_filter_enabled, last_sync_time,
+                              created_at, updated_at
+                       FROM trakt_config WHERE enabled = 1"""
+                )
                 return cursor.fetchall()
 
             rows = self._execute_with_lock(_read)
@@ -844,6 +878,7 @@ class DatabaseManager:
                 "expires_at",
                 "enabled",
                 "sync_interval",
+                "sync_filter_enabled",
                 "last_sync_time",
                 "created_at",
                 "updated_at",
@@ -852,6 +887,7 @@ class DatabaseManager:
             for row in rows:
                 config = dict(zip(columns, row))
                 config["enabled"] = bool(config["enabled"])
+                config["sync_filter_enabled"] = bool(config["sync_filter_enabled"])
                 configs.append(config)
 
             return configs
