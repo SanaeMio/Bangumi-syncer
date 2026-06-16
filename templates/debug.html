@@ -425,7 +425,7 @@ async function testSync() {
                         </div>
                         <div class="mb-3">
                             <span class="text-muted me-2">
-                                <i class="bi bi-film me-1"></i>${result.test_info?.title || title}
+                                <i class="bi bi-film me-1"></i>${result.data?.bgm_title || result.test_info?.title || title}
                             </span>
                             <span class="badge bg-secondary me-2">${result.test_info?.media_type === 'movie' ? '电影' : '剧集'}</span>
                             <span class="badge bg-secondary me-2">${result.test_info?.episode || 'S' + season.toString().padStart(2, '0') + 'E' + episode.toString().padStart(2, '0')}</span>

@@ -46,6 +46,7 @@ class DatabaseManager:
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
         self._media_type_migrated = False
+        self._bgm_title_migrated = False
         self._trakt_filter_migrated = False
         self._heatmap_cache: Optional[list] = None
         self._heatmap_cache_time: float = 0
@@ -108,6 +109,19 @@ class DatabaseManager:
         self._media_type_migrated = True
         logger.info("sync_records 已迁移：增加 media_type 列并回填 episode")
 
+    def _ensure_sync_records_bgm_title(self, cursor) -> None:
+        """旧库迁移：为 sync_records 增加 bgm_title（Bangumi 平台标题）。"""
+        if self._bgm_title_migrated:
+            return
+        cursor.execute("PRAGMA table_info(sync_records)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "bgm_title" in cols:
+            self._bgm_title_migrated = True
+            return
+        cursor.execute("ALTER TABLE sync_records ADD COLUMN bgm_title TEXT DEFAULT ''")
+        self._bgm_title_migrated = True
+        logger.info("sync_records 已迁移：增加 bgm_title 列")
+
     def _ensure_trakt_config_sync_filter(self, cursor) -> None:
         """旧库迁移：为 trakt_config 增加 sync_filter_enabled（默认开启）。"""
         if self._trakt_filter_migrated:
@@ -143,7 +157,8 @@ class DatabaseManager:
                 status TEXT NOT NULL,
                 message TEXT,
                 source TEXT NOT NULL,
-                media_type TEXT NOT NULL DEFAULT 'episode'
+                media_type TEXT NOT NULL DEFAULT 'episode',
+                bgm_title TEXT DEFAULT ''
             )
         """)
 
@@ -254,18 +269,20 @@ class DatabaseManager:
         message: str = "",
         source: str = "custom",
         media_type: str = "episode",
+        bgm_title: str = "",
     ) -> Optional[int]:
         """记录同步日志到数据库，返回新记录 id（失败时 None）"""
         try:
 
             def _write(conn):
                 self._ensure_sync_records_media_type(conn.cursor())
+                self._ensure_sync_records_bgm_title(conn.cursor())
                 local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 cursor = conn.execute(
                     """
                     INSERT INTO sync_records
-                    (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type, bgm_title)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         local_time,
@@ -280,6 +297,7 @@ class DatabaseManager:
                         message,
                         source,
                         media_type or "episode",
+                        bgm_title or "",
                     ),
                 )
                 record_id = cursor.lastrowid
@@ -327,6 +345,7 @@ class DatabaseManager:
 
             def _read(conn):
                 self._ensure_sync_records_media_type(conn.cursor())
+                self._ensure_sync_records_bgm_title(conn.cursor())
                 cursor = conn.cursor()
 
                 where_conditions = []
@@ -363,7 +382,7 @@ class DatabaseManager:
 
                 query = f"""
                     SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                           subject_id, episode_id, status, message, source, media_type
+                           subject_id, episode_id, status, message, source, media_type, bgm_title
                     FROM sync_records{where_clause}
                     ORDER BY timestamp DESC
                     LIMIT ? OFFSET ?
@@ -387,6 +406,7 @@ class DatabaseManager:
                             "message": row[10],
                             "source": row[11],
                             "media_type": row[12] or "episode",
+                            "bgm_title": row[13] or "",
                         }
                     )
 
@@ -408,11 +428,12 @@ class DatabaseManager:
 
             def _read(conn):
                 self._ensure_sync_records_media_type(conn.cursor())
+                self._ensure_sync_records_bgm_title(conn.cursor())
                 cursor = conn.cursor()
                 cursor.execute(
                     """
                     SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                           subject_id, episode_id, status, message, source, media_type
+                           subject_id, episode_id, status, message, source, media_type, bgm_title
                     FROM sync_records
                     WHERE id = ?
                 """,
@@ -436,6 +457,7 @@ class DatabaseManager:
                     "message": row[10],
                     "source": row[11],
                     "media_type": row[12] or "episode",
+                    "bgm_title": row[13] or "",
                 }
             return None
         except Exception as e:
