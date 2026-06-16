@@ -6,8 +6,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from ..core.app_version import get_display_version
+from ..core.config import config_manager
 from ..core.public_url import redirect_public
 from ..core.web_templates import get_templates
+from ..utils.bgm_image_url import build_poster_cache_namespace
 from .deps import get_current_user_from_cookie
 
 templates = get_templates()
@@ -35,6 +37,10 @@ async def dashboard(request: Request):
             "request": request,
             "user": user,
             "app_display_version": get_display_version(),
+            "poster_cache_ns": build_poster_cache_namespace(
+                config_manager.get("dev", "bgm_api_proxy", fallback=""),
+                config_manager.get("dev", "bgm_image_proxy", fallback=""),
+            ),
         },
     )
 

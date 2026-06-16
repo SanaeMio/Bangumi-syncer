@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
+from .api.bgm_poster import router as bgm_poster_router
 from .api.config import router as config_router
 from .api.feiniu import router as feiniu_router
 from .api.health import router as health_router
@@ -61,6 +62,7 @@ app.include_router(sync_router)
 app.include_router(root_router)  # 无前缀的同步接口（包含媒体服务器接口）
 app.include_router(auth_router)
 app.include_router(config_router)
+app.include_router(bgm_poster_router)
 app.include_router(mappings_router)
 app.include_router(logs_router)
 app.include_router(pages_router)

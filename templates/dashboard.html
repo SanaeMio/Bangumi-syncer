@@ -291,13 +291,34 @@
 {% endblock %}
 {% block scripts %}
     <script defer src="{{ '/static/js/inbox.js' | static_v }}"></script>
+    <script>window.__POSTER_CACHE_NS__ = {{ poster_cache_ns | tojson }};</script>
     <script>
 // 全局图表实例
 let dailyChartInstance = null;
 let recordDetailModal;
 
-// 海报缓存
+// 海报缓存（命名空间随 Bangumi API / 图片反代配置变化而失效）
 const posterCache = {};
+
+function posterStorageKey(subjectId) {
+    const ns = typeof window.__POSTER_CACHE_NS__ === 'string' ? window.__POSTER_CACHE_NS__ : '';
+    return 'poster_' + ns + '_' + subjectId;
+}
+
+function pruneStalePosterCache() {
+    const ns = typeof window.__POSTER_CACHE_NS__ === 'string' ? window.__POSTER_CACHE_NS__ : '';
+    if (!ns) return;
+    const currentPrefix = 'poster_' + ns + '_';
+    try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith('poster_')) continue;
+            if (!key.startsWith(currentPrefix)) {
+                localStorage.removeItem(key);
+            }
+        }
+    } catch (e) {}
+}
 
 // 缓存数据用于 resize 重绘
 let cachedHeatmapData = null;
@@ -305,6 +326,7 @@ let cachedDailyStats = null;
 
 
 document.addEventListener('DOMContentLoaded', function() {
+    pruneStalePosterCache();
     recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
     loadDashboardData();
 
@@ -593,12 +615,12 @@ function renderTimeline(records) {
 }
 
 async function fetchPosterFromApi(subjectId) {
-    const resp = await fetch('https://api.bgm.tv/v0/subjects/' + subjectId, {
-        headers: { 'Accept': 'application/json' }
+    const resp = await fetch(appUrl('/api/bgm/subjects/' + subjectId + '/poster'), {
+        credentials: 'include'
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    const imgUrl = data.images && data.images.large;
+    const imgUrl = data.url;
     if (!imgUrl) throw new Error('no image');
     return imgUrl;
 }
@@ -610,7 +632,7 @@ async function loadPoster(subjectId, retry) {
     }
 
     try {
-        const cached = localStorage.getItem('poster_' + subjectId);
+        const cached = localStorage.getItem(posterStorageKey(subjectId));
         if (cached) {
             posterCache[subjectId] = cached;
             applyPoster(subjectId, cached);
@@ -621,7 +643,7 @@ async function loadPoster(subjectId, retry) {
     try {
         const imgUrl = await fetchPosterFromApi(subjectId);
         posterCache[subjectId] = imgUrl;
-        try { localStorage.setItem('poster_' + subjectId, imgUrl); } catch (e) {}
+        try { localStorage.setItem(posterStorageKey(subjectId), imgUrl); } catch (e) {}
         applyPoster(subjectId, imgUrl);
     } catch (e) {
         // 首次失败后延迟重试一次（应对首次登录时序问题）
