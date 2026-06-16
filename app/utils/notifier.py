@@ -1238,7 +1238,7 @@ def send_notify(
         if item is not None:
             data["user_name"] = getattr(item, "user_name", "unknown")
             data["title"] = getattr(item, "title", "unknown")
-            data["ori_title"] = getattr(item, "ori_title", "")
+            data["ori_title"] = getattr(item, "ori_title", "") or ""
             data["season"] = getattr(item, "season", 0)
             data["episode"] = getattr(item, "episode", 0)
             data["source"] = getattr(item, "source", "")

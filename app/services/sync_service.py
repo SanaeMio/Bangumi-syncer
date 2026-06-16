@@ -385,13 +385,27 @@ class SyncService:
                 )
                 return SyncResponse(status="error", message="未找到对应的剧集")
 
+            # 通过实例缓存获取 Bangumi 平台标题（无额外 API 调用）
+            subject_info = bgm.get_subject(bgm_se_id)
+            bgm_title = ""
+            if subject_info:
+                bgm_title = (
+                    subject_info.get("name_cn") or subject_info.get("name") or ""
+                )
+
             logger.debug(
-                f"bgm: 查询到 {item.title} (https://bgm.tv/subject/{bgm_se_id}) "
+                f"bgm: 查询到 {bgm_title or item.title} (https://bgm.tv/subject/{bgm_se_id}) "
                 f"S{item.season:02d}E{item.episode:02d} (https://bgm.tv/ep/{bgm_ep_id})"
             )
 
             # 发送匹配成功的通知，使用解析后的正确季度ID
-            send_notify("bangumi_id_found", item, actual_source, subject_id=bgm_se_id)
+            send_notify(
+                "bangumi_id_found",
+                item,
+                actual_source,
+                subject_id=bgm_se_id,
+                bgm_title=bgm_title,
+            )
 
             # 标记为看过
             try:
@@ -408,7 +422,7 @@ class SyncService:
             if mark_status == 0:
                 result_message = "已看过，不再重复标记"
                 logger.info(
-                    f"bgm: {item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
+                    f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
                 )
 
                 send_notify(
@@ -417,12 +431,13 @@ class SyncService:
                     actual_source,
                     subject_id=bgm_se_id,
                     episode_id=bgm_ep_id,
+                    bgm_title=bgm_title,
                 )
 
             elif mark_status == 1:
                 result_message = "已标记为看过"
                 logger.info(
-                    f"bgm: {item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
+                    f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
                 )
 
                 send_notify(
@@ -431,15 +446,16 @@ class SyncService:
                     actual_source,
                     subject_id=bgm_se_id,
                     episode_id=bgm_ep_id,
+                    bgm_title=bgm_title,
                 )
 
             else:
                 result_message = "已添加到收藏并标记为看过"
                 logger.info(
-                    f"bgm: {item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}"
+                    f"bgm: {bgm_title or item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}"
                 )
                 logger.info(
-                    f"bgm: {item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
+                    f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
                 )
 
                 send_notify(
@@ -448,6 +464,7 @@ class SyncService:
                     actual_source,
                     subject_id=bgm_se_id,
                     episode_id=bgm_ep_id,
+                    bgm_title=bgm_title,
                 )
 
             if item.media_type == "movie" and config_manager.get(
@@ -491,7 +508,7 @@ class SyncService:
                                     subject_id=str(bgm_se_id), state=2
                                 )
                                 logger.info(
-                                    f"bgm: {item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"
+                                    f"bgm: {bgm_title or item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"
                                 )
                 except Exception as e:
                     logger.warning(
@@ -511,6 +528,7 @@ class SyncService:
                 message=result_message,
                 source=actual_source,
                 media_type=item.media_type,
+                bgm_title=bgm_title,
             )
 
             return SyncResponse(
@@ -518,6 +536,7 @@ class SyncService:
                 message=result_message,
                 data={
                     "title": item.title,
+                    "bgm_title": bgm_title,
                     "season": item.season,
                     "episode": item.episode,
                     "subject_id": bgm_se_id,

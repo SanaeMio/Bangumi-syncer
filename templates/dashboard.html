@@ -418,12 +418,14 @@ async function showRecordDetail(recordId) {
                 + '</div>'
                 + '<div class="row mt-2">'
                 + '  <div class="col-md-6"><strong>用户:</strong> ' + escapeHtml(record.user_name) + '</div>'
-                + '  <div class="col-md-6"><strong>番剧标题:</strong> ' + escapeHtml(record.title) + '</div>'
+                + '  <div class="col-md-6"><strong>番剧标题:</strong> ' + escapeHtml(record.bgm_title || record.title) + '</div>'
                 + '</div>'
-                + '<details class="mt-2">'
-                + '  <summary style="color: var(--app-text-muted); cursor:pointer; font-size:0.875rem">原始标题（点击展开）</summary>'
-                + '  <div class="mt-1 small">' + (record.ori_title && String(record.ori_title).trim() ? escapeHtml(record.ori_title) : '无') + '</div>'
-                + '</details>'
+                + '<div class="row mt-2">'
+                + '  <div class="col-md-6"><strong>接收标题:</strong> ' + escapeHtml(record.title) + '</div>'
+                + (record.ori_title && String(record.ori_title).trim()
+                    ? '  <div class="col-md-6"><strong>原始标题:</strong> ' + escapeHtml(record.ori_title) + '</div>'
+                    : '')
+                + '</div>'
                 + '<div class="row mt-2">'
                 + '  <div class="col-md-4"><strong>季/集:</strong> ' + epHtml + '</div>'
                 + '  <div class="col-md-4"><strong>状态:</strong> <span class="badge rounded-pill bg-' + getStatusColor(record.status) + '">' + getStatusText(record.status) + '</span></div>'
@@ -535,7 +537,7 @@ function renderTimeline(records) {
         const timeStr = time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
         const relativeTime = formatRelativeTime(record.timestamp);
 
-        const titleText = escapeHtml(record.title);
+        const titleText = escapeHtml(record.bgm_title || record.title);
 
         const isMovie = record.media_type === 'movie';
         let epHtml;
