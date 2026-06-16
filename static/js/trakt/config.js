@@ -269,6 +269,10 @@ class TraktConfigPage {
         syncEnabled.checked = config.enabled;
         syncInterval.value = config.sync_interval || '0 */6 * * *';
         
+        const syncFilterEnabled = document.getElementById('sync-filter-enabled');
+        if (syncFilterEnabled) {
+            syncFilterEnabled.checked = config.sync_filter_enabled !== false;
+        }
         clientId.value = config.client_id || '';
         clientSecret.value = config.client_secret || '';
         redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
@@ -459,7 +463,8 @@ class TraktConfigPage {
 
         const config = {
             enabled: formData.get('enabled') === 'on',
-            sync_interval: formData.get('sync_interval')
+            sync_interval: formData.get('sync_interval'),
+            sync_filter_enabled: formData.get('sync_filter_enabled') === 'on'
         };
 
         try {

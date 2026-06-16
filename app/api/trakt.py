@@ -128,6 +128,7 @@ async def get_trakt_config(
                 user_id=user_id,
                 enabled=False,
                 sync_interval="0 */6 * * *",
+                sync_filter_enabled=True,
                 last_sync_time=None,
                 is_connected=False,
                 token_expires_at=None,
@@ -145,6 +146,7 @@ async def get_trakt_config(
             user_id=config.user_id,
             enabled=config.enabled,
             sync_interval=config.sync_interval,
+            sync_filter_enabled=config.sync_filter_enabled,
             last_sync_time=config.last_sync_time,
             is_connected=is_connected,
             token_expires_at=config.expires_at,
@@ -182,6 +184,7 @@ async def update_trakt_config(
 
         enable = update_request.enabled
         sync_interval = update_request.sync_interval
+        sync_filter_enabled = update_request.sync_filter_enabled
 
         # 更新配置
         if enable is not None:
@@ -189,6 +192,9 @@ async def update_trakt_config(
 
         if sync_interval is not None:
             config.sync_interval = sync_interval
+
+        if sync_filter_enabled is not None:
+            config.sync_filter_enabled = sync_filter_enabled
 
         # 保存到数据库
         success = database_manager.save_trakt_config(config.to_dict())
@@ -214,6 +220,7 @@ async def update_trakt_config(
             user_id=config.user_id,
             enabled=config.enabled,
             sync_interval=config.sync_interval,
+            sync_filter_enabled=config.sync_filter_enabled,
             last_sync_time=config.last_sync_time,
             is_connected=is_connected,
             token_expires_at=config.expires_at,
