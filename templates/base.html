@@ -397,9 +397,34 @@
             document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
         }
 
+        function resetThemeColorsPosition() {
+            var el = document.getElementById('headerThemeColors');
+            if (el) el.style.transform = '';
+        }
+
         function toggleThemeColors() {
             var el = document.getElementById('headerThemeColors');
-            if (el) el.classList.toggle('show');
+            var btn = document.getElementById('themeColorBtn');
+            if (!el) return;
+            var willShow = !el.classList.contains('show');
+            el.classList.toggle('show');
+            resetThemeColorsPosition();
+            if (willShow && btn && window.matchMedia('(max-width: 767.98px)').matches) {
+                requestAnimationFrame(function () {
+                    var pad = 12;
+                    var panelRect = el.getBoundingClientRect();
+                    var shift = 0;
+                    if (panelRect.right > window.innerWidth - pad) {
+                        shift += window.innerWidth - pad - panelRect.right;
+                    }
+                    if (panelRect.left + shift < pad) {
+                        shift += pad - (panelRect.left + shift);
+                    }
+                    if (shift !== 0) {
+                        el.style.transform = 'translateX(' + shift + 'px)';
+                    }
+                });
+            }
         }
 
         // 点击外部关闭色盘
@@ -408,6 +433,7 @@
             var btn = document.getElementById('themeColorBtn');
             if (colors && btn && !colors.contains(e.target) && !btn.contains(e.target)) {
                 colors.classList.remove('show');
+                resetThemeColorsPosition();
             }
         });
 
