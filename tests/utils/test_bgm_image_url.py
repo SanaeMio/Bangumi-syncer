@@ -55,9 +55,13 @@ def test_rewrite_bgm_image_url_non_lain_unchanged():
 
 
 def test_build_poster_cache_namespace_stable():
-    ns = build_poster_cache_namespace("https://api.example.com", "https://img.example.com")
+    ns = build_poster_cache_namespace(
+        "https://api.example.com", "https://img.example.com"
+    )
     assert len(ns) == 12
-    assert ns == build_poster_cache_namespace("https://api.example.com", "https://img.example.com")
+    assert ns == build_poster_cache_namespace(
+        "https://api.example.com", "https://img.example.com"
+    )
 
 
 def test_build_poster_cache_namespace_changes_with_proxy():
