@@ -43,9 +43,9 @@ Bangumi-syncer 是一款把常见媒体库与 [Bangumi（番组计划）](https:
 | **Plex** | 官方Webhooks(需Plex Pass) | ✅ | ✅ | ✅ |
 | **Emby** | 服务器自带通知 | ✅ | ✅ | ✅ |
 | **Jellyfin** | Webhook 插件 | ✅ | ✅ | ✅ |
-| **Infuse** | 借助Trakt同步 | ✅ | ❌ | ✅ |
 | **Trakt** | 定时任务拉取账户播放历史 | ✅ | ❌ | ✅ |
 | **飞牛** | 定时只读数据库 | ✅ | ❌ | ✅ |
+| **任意支持Trakt同步的播放器** | 借助Trakt同步 | ✅ | ❌ | ✅ |
 | **任意支持Webhook的播放器** | 自定义 Webhook | ✅ | ✅ | ✅ |
 
 更多说明见 [接入使用总览](https://sanaemio.github.io/Bangumi-syncer/usage/)。
