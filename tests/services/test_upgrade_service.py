@@ -677,19 +677,21 @@ class TestInstallDeps:
     """_install_deps 测试"""
 
     def test_install_deps_success(self, upgrade_service, tmp_path, monkeypatch):
-        """依赖安装成功"""
+        """依赖安装成功，并记录运行时 Python 路径"""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "requirements.txt").write_text("fastapi")
 
         with (
             patch("app.services.upgrade_service.subprocess.run") as mock_run,
             patch("app.services.upgrade_service.config_manager") as mock_config,
+            patch("app.utils.runtime_python.persist_runtime_python") as mock_persist,
         ):
             mock_run.return_value = MagicMock(returncode=0, stderr="")
             mock_config.get.return_value = ""
 
-            # 不应抛出异常
             upgrade_service._install_deps()
+
+        mock_persist.assert_called_once()
 
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
@@ -853,7 +855,9 @@ class TestRestartApplication:
     ):
         """Windows 下有 start.bat 时应优先使用"""
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "start.bat").write_text("uvicorn app.main:app --port 9000\npause")
+        (tmp_path / "start.bat").write_text(
+            "python -m uvicorn app.main:app --port 9000\npause"
+        )
 
         with (
             patch("app.services.upgrade_service.database_manager") as mock_db,
