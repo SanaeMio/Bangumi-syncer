@@ -519,6 +519,14 @@ class UpgradeService:
 
     def _install_deps(self):
         """安装 Python 依赖"""
+        from ..utils.runtime_python import persist_runtime_python
+
+        # 写入当前解释器路径，供 start.bat 在升级重启时使用同一 Python
+        try:
+            persist_runtime_python()
+        except Exception as e:
+            logger.warning(f"[升级] 记录运行时 Python 路径失败: {e}")
+
         proxy = self._get_proxy()
         cmd = [
             sys.executable,
@@ -626,8 +634,8 @@ class UpgradeService:
 def restart_application():
     """重启应用进程
 
-    Windows 优先使用 start.bat（保留用户自定义端口等配置），
-    不存在时回退到 python -m uvicorn。
+    Windows 优先使用 start.bat（与手动启动一致），
+    依赖 data/runtime_python.txt 确保与 pip 安装使用同一解释器。
     Linux/macOS 使用 os.execv 替换当前进程。
     """
     logger.info("正在重启应用...")
