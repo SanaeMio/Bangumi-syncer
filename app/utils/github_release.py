@@ -11,7 +11,12 @@ from typing import Any
 import httpx
 
 from ..core.logging import logger
-from .semver_util import is_strictly_newer, version_sort_key
+from .semver_util import (
+    is_strictly_newer,
+    minor_version_line,
+    same_minor_line,
+    version_sort_key,
+)
 
 GITHUB_LATEST_URL = (
     "https://api.github.com/repos/SanaeMio/Bangumi-syncer/releases/latest"
@@ -32,6 +37,11 @@ _cache_etag: str | None = None
 _releases_cache_key: str | None = None
 _releases_cache_data: tuple[list[ReleaseListItem], str | None] | None = None
 _releases_cache_expires: float = 0.0
+
+# fetch_releases_in_minor_line 缓存
+_minor_line_cache_key: str | None = None
+_minor_line_cache_data: tuple[list[ReleaseListItem], str | None] | None = None
+_minor_line_cache_expires: float = 0.0
 
 
 @dataclass
@@ -162,12 +172,16 @@ def clear_github_release_cache() -> None:
     """测试用。"""
     global _cache_body, _cache_expires_monotonic, _cache_etag
     global _releases_cache_key, _releases_cache_data, _releases_cache_expires
+    global _minor_line_cache_key, _minor_line_cache_data, _minor_line_cache_expires
     _cache_body = None
     _cache_expires_monotonic = 0.0
     _cache_etag = None
     _releases_cache_key = None
     _releases_cache_data = None
     _releases_cache_expires = 0.0
+    _minor_line_cache_key = None
+    _minor_line_cache_data = None
+    _minor_line_cache_expires = 0.0
 
 
 def strip_tag_for_semver(tag_name: str) -> str:
@@ -274,4 +288,92 @@ async def fetch_newer_releases_than(
     _releases_cache_key = current_semver
     _releases_cache_data = result
     _releases_cache_expires = time.monotonic() + CACHE_TTL_SEC
+    return result
+
+
+def _minor_line_cache_storage_key(reference_semver: str) -> str:
+    maj, mino = minor_version_line(reference_semver)
+    return f"minor:{maj}.{mino}"
+
+
+def _dedupe_and_sort_releases(items: list[ReleaseListItem]) -> list[ReleaseListItem]:
+    by_sem: dict[str, ReleaseListItem] = {}
+    for it in items:
+        by_sem[it.semver] = it
+    uniq = list(by_sem.values())
+    uniq.sort(key=lambda x: version_sort_key(x.semver), reverse=True)
+    return uniq
+
+
+async def fetch_releases_in_minor_line(
+    reference_semver: str,
+    *,
+    max_pages: int = 5,
+    per_page: int = 30,
+) -> tuple[list[ReleaseListItem], str | None]:
+    """
+    拉取 GitHub releases 分页列表，返回与 reference 同 minor 线（如 3.11.x）的条目，
+    按版本号从新到旧排序。
+    """
+    global _minor_line_cache_key, _minor_line_cache_data, _minor_line_cache_expires
+    cache_key = _minor_line_cache_storage_key(reference_semver)
+    now = time.monotonic()
+    if (
+        _minor_line_cache_key == cache_key
+        and _minor_line_cache_data is not None
+        and now < _minor_line_cache_expires
+    ):
+        return _minor_line_cache_data
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": GITHUB_USER_AGENT,
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    collected: list[ReleaseListItem] = []
+    try:
+        async with httpx.AsyncClient(timeout=RELEASES_LIST_TIMEOUT) as client:
+            for page in range(1, max_pages + 1):
+                r = await client.get(
+                    GITHUB_RELEASES_URL,
+                    headers=headers,
+                    params={"page": page, "per_page": per_page},
+                )
+                if r.status_code == 403:
+                    return (
+                        collected,
+                        "无法拉取发行列表（可能触发 GitHub API 限流）",
+                    )
+                if r.status_code != 200:
+                    return (
+                        collected,
+                        f"发行列表请求失败（HTTP {r.status_code}）",
+                    )
+                try:
+                    arr = r.json()
+                except ValueError:
+                    return collected, "发行列表响应不是合法 JSON"
+                if not isinstance(arr, list) or not arr:
+                    break
+                for row in arr:
+                    item = _parse_release_row(row)
+                    if item is None:
+                        continue
+                    try:
+                        if same_minor_line(item.semver, reference_semver):
+                            collected.append(item)
+                    except Exception:
+                        continue
+                if len(arr) < per_page:
+                    break
+    except httpx.TimeoutException:
+        return collected, "拉取发行列表超时"
+    except httpx.RequestError as e:
+        return collected, f"拉取发行列表网络错误: {e}"
+
+    uniq = _dedupe_and_sort_releases(collected)
+    result = (uniq, None)
+    _minor_line_cache_key = cache_key
+    _minor_line_cache_data = result
+    _minor_line_cache_expires = time.monotonic() + CACHE_TTL_SEC
     return result

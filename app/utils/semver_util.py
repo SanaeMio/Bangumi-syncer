@@ -95,3 +95,14 @@ def is_less_than(a: str, b: str) -> bool:
 def is_strictly_newer(remote: str, base: str) -> bool:
     """若 remote 严格晚于 base（即 base < remote）。"""
     return is_less_than(base, remote)
+
+
+def minor_version_line(v: str) -> tuple[int, int]:
+    """主.次 号段，用于判断同 minor 线（如 3.11.x）。"""
+    maj, mino, _ = version_tuple(v)
+    return (maj, mino)
+
+
+def same_minor_line(a: str, b: str) -> bool:
+    """两版本是否处于同一 minor 线（忽略 patch 与预发布）。"""
+    return minor_version_line(a) == minor_version_line(b)
