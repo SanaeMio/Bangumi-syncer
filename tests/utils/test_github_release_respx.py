@@ -405,3 +405,95 @@ async def test_fetch_newer_releases_than_connect_error():
     items, err = await github_release.fetch_newer_releases_than("1.0.0")
     assert items == []
     assert err and "网络错误" in err
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_releases_in_minor_line_filters_and_orders():
+    rel_json = [
+        {
+            "tag_name": "v3.12.0",
+            "draft": False,
+            "html_url": "https://example.com/3120",
+            "name": "3120",
+            "body": "",
+            "published_at": None,
+        },
+        {
+            "tag_name": "v3.11.1",
+            "draft": False,
+            "html_url": "https://example.com/3111",
+            "name": "3111",
+            "body": "",
+            "published_at": None,
+        },
+        {
+            "tag_name": "v3.11.0",
+            "draft": False,
+            "html_url": "https://example.com/3110",
+            "name": "3110",
+            "body": "",
+            "published_at": None,
+        },
+        {
+            "tag_name": "v3.10.5",
+            "draft": False,
+            "html_url": "https://example.com/3105",
+            "name": "3105",
+            "body": "",
+            "published_at": None,
+        },
+    ]
+    respx.get(url=re.compile(r".*/Bangumi-syncer/releases\?.*")).mock(
+        return_value=httpx.Response(200, json=rel_json)
+    )
+    items, err = await github_release.fetch_releases_in_minor_line("3.11.1")
+    assert err is None
+    assert [x.semver for x in items] == ["3.11.1", "3.11.0"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_releases_in_minor_line_403_returns_partial_error():
+    respx.get(url=re.compile(r".*/Bangumi-syncer/releases\?.*")).mock(
+        return_value=httpx.Response(403)
+    )
+    items, err = await github_release.fetch_releases_in_minor_line("3.11.1")
+    assert items == []
+    assert err and "限流" in err
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_releases_in_minor_line_timeout():
+    respx.get(url=re.compile(r".*/Bangumi-syncer/releases\?.*")).mock(
+        side_effect=httpx.TimeoutException("t")
+    )
+    items, err = await github_release.fetch_releases_in_minor_line("3.11.1")
+    assert items == []
+    assert err and "超时" in err
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_releases_in_minor_line_second_call_uses_cache():
+    route = respx.get(url=re.compile(r".*/Bangumi-syncer/releases\?.*")).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "tag_name": "v3.11.1",
+                    "draft": False,
+                    "html_url": "https://example.com/a",
+                    "name": "a",
+                    "body": "",
+                    "published_at": None,
+                }
+            ],
+        )
+    )
+    r1, _ = await github_release.fetch_releases_in_minor_line("3.11.1")
+    r2, _ = await github_release.fetch_releases_in_minor_line("3.11.0")
+    assert len(r1) == 1
+    assert len(r2) == 1
+    assert route.call_count == 1

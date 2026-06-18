@@ -98,3 +98,11 @@ def test_split_core_prerelease_trailing_hyphen_returns_full_string():
 
 def test_prerelease_segment_key_empty_segment():
     assert semver_util._prerelease_segment_key("") == (1, "")
+
+
+def test_minor_version_line_and_same_minor_line():
+    assert semver_util.minor_version_line("3.11.1") == (3, 11)
+    assert semver_util.minor_version_line("v3.11.0-rc.1") == (3, 11)
+    assert semver_util.same_minor_line("3.11.1", "3.11.0") is True
+    assert semver_util.same_minor_line("3.11.1", "3.10.5") is False
+    assert semver_util.same_minor_line("3.11.1", "3.12.0") is False

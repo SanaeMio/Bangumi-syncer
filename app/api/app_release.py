@@ -16,9 +16,11 @@ from pydantic import BaseModel, Field
 from ..core.app_version import get_display_version, get_version
 from ..services.upgrade_service import upgrade_service
 from ..utils.github_release import (
+    LatestReleaseResult,
     ReleaseListItem,
     fetch_latest_release,
     fetch_newer_releases_than,
+    fetch_releases_in_minor_line,
     strip_tag_for_semver,
 )
 from ..utils.release_markdown import markdown_to_safe_html
@@ -91,7 +93,7 @@ class ReleaseInfoResponse(BaseModel):
 
     release_history: list[NewerReleaseItem] = Field(
         default_factory=list,
-        description="当 newer_releases 为空（已是最新）时，仅含远端 latest 一条发行说明",
+        description="当 newer_releases 为空（已是最新）时，含同 minor 线（如 3.11.x）全部发行说明",
     )
 
     releases_fetch_error: Optional[str] = Field(
@@ -146,6 +148,79 @@ def _merge_latest_if_missing(
             published_at=gh_published,
         )
     )
+
+
+def _to_newer_models(items: list[ReleaseListItem]) -> list[NewerReleaseItem]:
+    return [
+        NewerReleaseItem(
+            semver=it.semver,
+            version_display=get_display_version(it.semver),
+            tag_name=it.tag_name,
+            title=it.name,
+            body_html=markdown_to_safe_html(it.body),
+            html_url=it.html_url,
+            published_at=it.published_at,
+        )
+        for it in items
+    ]
+
+
+def _ensure_latest_in_list(
+    items: list[ReleaseListItem],
+    *,
+    latest_sem: str,
+    gh_tag: str | None,
+    gh_html: str | None,
+    gh_name: str | None,
+    gh_body: str | None,
+    gh_published: str | None,
+) -> None:
+    """当 minor 线列表分页未包含 latest 时，用 releases/latest 补一条。"""
+
+    if not latest_sem or not gh_tag:
+        return
+
+    if any(x.semver == latest_sem for x in items):
+        return
+
+    items.append(
+        ReleaseListItem(
+            tag_name=gh_tag,
+            semver=latest_sem,
+            html_url=gh_html,
+            name=gh_name,
+            body=gh_body,
+            published_at=gh_published,
+        )
+    )
+    items.sort(key=lambda x: version_sort_key(x.semver), reverse=True)
+
+
+def _single_latest_history_item(
+    gh: LatestReleaseResult,
+    *,
+    latest: str,
+    latest_disp: str | None,
+) -> list[NewerReleaseItem]:
+    tag_name = gh.tag_name or ""
+    if not tag_name.strip():
+        return []
+
+    sem = (latest or "").strip() or strip_tag_for_semver(tag_name)
+    if not sem:
+        sem = tag_name.strip().lstrip("vV") or "unknown"
+    disp = latest_disp or get_display_version(sem)
+    return [
+        NewerReleaseItem(
+            semver=sem,
+            version_display=disp,
+            tag_name=tag_name.strip(),
+            title=gh.name,
+            body_html=markdown_to_safe_html(gh.body),
+            html_url=gh.html_url,
+            published_at=gh.published_at,
+        )
+    ]
 
 
 @router.get("/app/release-info", response_model=ReleaseInfoResponse)
@@ -212,36 +287,36 @@ async def release_info(
 
     newer_raw.sort(key=lambda x: version_sort_key(x.semver), reverse=True)
 
-    newer_models = [
-        NewerReleaseItem(
-            semver=it.semver,
-            version_display=get_display_version(it.semver),
-            tag_name=it.tag_name,
-            title=it.name,
-            body_html=markdown_to_safe_html(it.body),
-            html_url=it.html_url,
-            published_at=it.published_at,
-        )
-        for it in newer_raw
-    ]
+    newer_models = _to_newer_models(newer_raw)
 
     release_history_models: list[NewerReleaseItem] = []
+    history_fetch_err: str | None = None
     if not newer_models and (gh.tag_name or "").strip():
-        sem = (latest or "").strip() or strip_tag_for_semver(gh.tag_name or "")
-        if not sem:
-            sem = (gh.tag_name or "").strip().lstrip("vV") or "unknown"
-        disp = latest_disp or get_display_version(sem)
-        release_history_models = [
-            NewerReleaseItem(
-                semver=sem,
-                version_display=disp,
-                tag_name=(gh.tag_name or "").strip(),
-                title=gh.name,
-                body_html=markdown_to_safe_html(gh.body),
-                html_url=gh.html_url,
-                published_at=gh.published_at,
+        reference = (latest or "").strip() or current_cmp
+        history_raw: list[ReleaseListItem] = []
+        if reference:
+            history_raw, history_fetch_err = await fetch_releases_in_minor_line(
+                reference
             )
-        ]
+            _ensure_latest_in_list(
+                history_raw,
+                latest_sem=latest,
+                gh_tag=gh.tag_name,
+                gh_html=gh.html_url,
+                gh_name=gh.name,
+                gh_body=gh.body,
+                gh_published=gh.published_at,
+            )
+        if history_raw:
+            release_history_models = _to_newer_models(history_raw)
+        else:
+            release_history_models = _single_latest_history_item(
+                gh, latest=latest, latest_disp=latest_disp
+            )
+
+    releases_fetch_error = (
+        history_fetch_err or list_err if not newer_models else list_err
+    )
 
     return ReleaseInfoResponse(
         current_version=current,
@@ -258,7 +333,7 @@ async def release_info(
         updates_behind=len(newer_models),
         newer_releases=newer_models,
         release_history=release_history_models,
-        releases_fetch_error=list_err,
+        releases_fetch_error=releases_fetch_error,
         environment=env,
         upgrade_available=upgrade_service.is_upgrade_capable(),
     )
