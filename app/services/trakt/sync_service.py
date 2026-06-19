@@ -268,7 +268,7 @@ class TraktSyncService:
                 tid = str(trakt_id)
                 if need_details and tid not in show_original_titles:
                     if item.type == "episode":
-                        details_resp = await client.get_show_details(tid)
+                        details_resp = await client.get_show_info(tid)
                         if details_resp:
                             ot = details_resp.get("original_title")
                             if ot:
