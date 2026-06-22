@@ -243,6 +243,18 @@ class TraktSyncService:
                     skipped_count += 1
             logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
+            # 增量同步时先过滤已同步记录，减少后续 API 请求
+            pending_items: list[TraktHistoryItem] = []
+            for item in syncable_items:
+                if (
+                    not full_sync
+                    and (item.trakt_item_id, item.watched_timestamp) in synced_set
+                ):
+                    skipped_count += 1
+                else:
+                    pending_items.append(item)
+            logger.info(f"去重后剩余 {len(pending_items)} 条待同步记录")
+
             # 预先收集 sync/history 不包含 original_title 的节目，
             # 通过 /shows/:id?extended=full 获取日语原名；
             # 同时收集 genre 用于类型过滤
@@ -253,7 +265,7 @@ class TraktSyncService:
                 mapping_service.load_custom_mappings() if sync_filter_enabled else {}
             )
 
-            for item in syncable_items:
+            for item in pending_items:
                 trakt_id = None
                 need_details = sync_filter_enabled
                 if item.type == "episode" and item.show:
@@ -288,17 +300,8 @@ class TraktSyncService:
             synced_count = 0
             details = []
 
-            for item in syncable_items:
+            for item in pending_items:
                 try:
-                    # O(1) 查找：使用预加载的集合代替每条查库
-                    if (
-                        # 全量同步忽略历史记录
-                        not full_sync
-                        and (item.trakt_item_id, item.watched_timestamp) in synced_set
-                    ):
-                        skipped_count += 1
-                        continue
-
                     # 类型过滤：仅同步动画类型，除非命中映射
                     if sync_filter_enabled:
                         if item.type == "episode":
