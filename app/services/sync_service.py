@@ -667,7 +667,9 @@ class SyncService:
         """
         # 获取自定义映射
         custom_mappings = self._load_custom_mappings()
-        mapping_subject_id = custom_mappings.get(item.title, "")
+        mapping_subject_id = custom_mappings.get(item.title, "") or custom_mappings.get(
+            item.ori_title or "", ""
+        )
 
         if mapping_subject_id:
             logger.debug(f"匹配到自定义映射：{item.title}={mapping_subject_id}")

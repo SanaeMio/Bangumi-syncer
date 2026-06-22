@@ -243,6 +243,18 @@ class TraktSyncService:
                     skipped_count += 1
             logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
+            # 增量同步时先过滤已同步记录，减少后续 API 请求
+            pending_items: list[TraktHistoryItem] = []
+            for item in syncable_items:
+                if (
+                    not full_sync
+                    and (item.trakt_item_id, item.watched_timestamp) in synced_set
+                ):
+                    skipped_count += 1
+                else:
+                    pending_items.append(item)
+            logger.info(f"去重后剩余 {len(pending_items)} 条待同步记录")
+
             # 预先收集 sync/history 不包含 original_title 的节目，
             # 通过 /shows/:id?extended=full 获取日语原名；
             # 同时收集 genre 用于类型过滤
@@ -253,7 +265,7 @@ class TraktSyncService:
                 mapping_service.load_custom_mappings() if sync_filter_enabled else {}
             )
 
-            for item in syncable_items:
+            for item in pending_items:
                 trakt_id = None
                 need_details = sync_filter_enabled
                 if item.type == "episode" and item.show:
@@ -277,24 +289,19 @@ class TraktSyncService:
                                 show_genres[tid] = details_resp.get("genres", [])
                     elif item.type == "movie":
                         details_resp = await client.get_movie_info(trakt_id)
-                        if details_resp and sync_filter_enabled:
-                            show_genres[tid] = details_resp.get("genres", [])
+                        if details_resp:
+                            ot = details_resp.get("original_title")
+                            if ot:
+                                show_original_titles[tid] = ot
+                            if sync_filter_enabled:
+                                show_genres[tid] = details_resp.get("genres", [])
 
             # 转换为 CustomItem 并同步
             synced_count = 0
             details = []
 
-            for item in syncable_items:
+            for item in pending_items:
                 try:
-                    # O(1) 查找：使用预加载的集合代替每条查库
-                    if (
-                        # 全量同步忽略历史记录
-                        not full_sync
-                        and (item.trakt_item_id, item.watched_timestamp) in synced_set
-                    ):
-                        skipped_count += 1
-                        continue
-
                     # 类型过滤：仅同步动画类型，除非命中映射
                     if sync_filter_enabled:
                         if item.type == "episode":
@@ -307,9 +314,11 @@ class TraktSyncService:
                             trakt_id = m.get("ids", {}).get("trakt")
                         tid = str(trakt_id) if trakt_id else ""
                         genres = show_genres.get(tid, []) if tid else []
+                        ori_title = show_original_titles.get(tid, "")
                         if genres and not (
                             any(g in genres for g in ("anime", "donghua", "animation"))
                             or item_title in custom_mappings
+                            or ori_title in custom_mappings
                         ):
                             logger.debug(
                                 f"Trakt 类型过滤——跳过非动画条目: {item_title} "
@@ -549,8 +558,8 @@ class TraktSyncService:
                 logger.warning(f"剧集标题为空: {item.trakt_item_id}")
                 return None
 
-            # 获取原始标题，优先使用 Trakt 返回的日文原名
-            ori_title = show.get("original_title") or show.get("originalTitle") or title
+            # 获取原始标题，填入 Trakt 英文标题供自定义映射与 bangumi-data 备选匹配
+            ori_title = show.get("title") or title
 
             # 获取季和集数
             season = episode.get("season", 1)
@@ -609,8 +618,7 @@ class TraktSyncService:
             logger.warning(f"电影标题为空: {item.trakt_item_id}")
             return None
 
-        ori_raw = movie.get("original_title") or movie.get("originalTitle") or title
-        ori_title = ori_raw if str(ori_raw).strip() else None
+        ori_title = movie.get("title") or title
 
         release_date = ""
         if movie.get("released"):

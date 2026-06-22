@@ -122,7 +122,7 @@ class Logger:
         try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             mode = "a"
-            if log_path.exists() and log_path.stat().st_size >= 10 * 1024 * 1024:
+            if log_path.exists() and log_path.stat().st_size >= 2 * 1024 * 1024:
                 mode = "w"
             self.log_file = open(log_path, mode, encoding="utf-8", buffering=1)
             self._log_file_path = log_path.resolve()

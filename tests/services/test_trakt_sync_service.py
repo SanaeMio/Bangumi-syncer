@@ -521,15 +521,17 @@ class TestTraktMovieHistoryToCustomItem:
             assert result is not None
             assert "2024-08-20" in result.release_date
 
-    def test_movie_original_title(self):
-        """original_title 被保留"""
+    def test_movie_ori_title_uses_trakt_english_title(self):
+        """电影转换时 ori_title 填入 Trakt 英文标题"""
         service = _make_service()
-        item = _make_movie_item(original_title="Original")
+        item = _make_movie_item(
+            title="Kamen Rider ZEZTZ", original_title="仮面ライダーゼッツ"
+        )
         with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
             mock_bd.get_title_by_tmdb_id.return_value = "标题"
             result = service._trakt_movie_history_to_custom_item("u", item)
             assert result is not None
-            assert result.ori_title == "Original"
+            assert result.ori_title == "Kamen Rider ZEZTZ"
 
 
 class TestTraktPreconvertFailure:
