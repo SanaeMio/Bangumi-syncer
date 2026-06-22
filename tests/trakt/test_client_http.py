@@ -151,7 +151,7 @@ async def test_get_collection(mock_config):
 @respx.mock
 async def test_get_movie_info(mock_config):
     """测试获取电影信息"""
-    mock_route = respx.get("https://api.trakt.tv/movies/123").mock(
+    mock_route = respx.get("https://api.trakt.tv/movies/123?extended=full").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -179,8 +179,8 @@ async def test_get_movie_info(mock_config):
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_show_info(mock_config):
-    """测试获取剧集信息"""
-    mock_route = respx.get("https://api.trakt.tv/shows/123").mock(
+    """测试获取剧集完整信息"""
+    mock_route = respx.get("https://api.trakt.tv/shows/123?extended=full").mock(
         return_value=httpx.Response(
             200,
             json={

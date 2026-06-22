@@ -353,26 +353,32 @@ class TraktClient:
         """获取电影详细信息"""
         try:
             endpoint = f"/movies/{trakt_id}"
-
-            data = await self._make_request("GET", endpoint)
+            params = {"extended": "full"}
+            data = await self._make_request("GET", endpoint, params)
 
             return data if isinstance(data, dict) else None
 
         except Exception as e:
-            logger.error(f"获取电影信息失败: {e}")
+            logger.error(f"获取电影 {trakt_id} 信息失败: {e}")
             return None
 
-    async def get_show_info(self, trakt_id: int) -> Optional[dict]:
-        """获取剧集详细信息"""
+    async def get_show_info(self, trakt_id: str) -> Optional[dict]:
+        """获取剧集完整元数据（包含 original_title、genres 等精简接口不返回的字段）
+
+        Args:
+            trakt_id: Trakt 剧集 ID 或 slug
+
+        Returns:
+            剧集详情 dict，失败时返回 None
+        """
         try:
             endpoint = f"/shows/{trakt_id}"
-
-            data = await self._make_request("GET", endpoint)
+            params = {"extended": "full"}
+            data = await self._make_request("GET", endpoint, params)
 
             return data if isinstance(data, dict) else None
-
         except Exception as e:
-            logger.error(f"获取剧集信息失败: {e}")
+            logger.error(f"获取剧集 {trakt_id} 信息失败: {e}")
             return None
 
     async def get_episode_info(
@@ -398,24 +404,6 @@ class TraktClient:
         except Exception as e:
             logger.error(f"测试 Trakt 连接失败: {e}")
             return False
-
-    async def get_show_details(self, trakt_id: str) -> Optional[dict]:
-        """获取节目完整元数据（包含 original_title 等精简接口不返回的字段）
-
-        Args:
-            trakt_id: Trakt 节目 ID 或 slug
-
-        Returns:
-            节目详情 dict，失败时返回 None
-        """
-        try:
-            endpoint = f"/shows/{trakt_id}"
-            params = {"extended": "full"}
-            data = await self._make_request("GET", endpoint, params)
-            return data if isinstance(data, dict) else None
-        except Exception as e:
-            logger.debug(f"获取节目 {trakt_id} 详情失败: {e}")
-            return None
 
 
 # ===== 客户端工厂 =====

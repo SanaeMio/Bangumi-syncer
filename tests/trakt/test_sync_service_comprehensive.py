@@ -495,8 +495,8 @@ def test_convert_trakt_history_all_fallback_fail_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_get_show_details_returns_original_title():
-    """get_show_details 应返回包含 original_title 的完整节目数据"""
+async def test_get_show_info_returns_original_title():
+    """get_show_info 应返回包含 original_title 的完整节目数据"""
     from app.services.trakt.client import TraktClient
 
     client = TraktClient("fake_token")
@@ -507,19 +507,19 @@ async def test_get_show_details_returns_original_title():
         "original_title": "進撃の巨人",
     }
     with patch.object(client, "_make_request", new=AsyncMock(return_value=mock_resp)):
-        result = await client.get_show_details("1396")
+        result = await client.get_show_info("1396")
         assert result is not None
         assert result["original_title"] == "進撃の巨人"
 
 
 @pytest.mark.asyncio
-async def test_get_show_details_returns_none_on_failure():
-    """get_show_details 在请求失败时应返回 None"""
+async def test_get_show_info_returns_none_on_failure():
+    """get_show_info 在请求失败时应返回 None"""
     from app.services.trakt.client import TraktClient
 
     client = TraktClient("fake_token")
     with patch.object(client, "_make_request", new=AsyncMock(return_value=None)):
-        result = await client.get_show_details("999999")
+        result = await client.get_show_info("999999")
         assert result is None
 
 
@@ -555,8 +555,8 @@ async def test_genre_filter_skips_non_anime_episode():
         )
         client = MagicMock()
         client.get_all_watched_history = AsyncMock(return_value=[episode_item])
-        # get_show_details 返回非动画 genre
-        client.get_show_details = AsyncMock(
+        # get_show_info 返回非动画 genre
+        client.get_show_info = AsyncMock(
             return_value={"genres": ["science-fiction", "mystery", "drama"]}
         )
         cfg = MagicMock()
@@ -600,7 +600,7 @@ async def test_genre_filter_allows_anime_episode():
         )
         client = MagicMock()
         client.get_all_watched_history = AsyncMock(return_value=[episode_item])
-        client.get_show_details = AsyncMock(
+        client.get_show_info = AsyncMock(
             return_value={
                 "genres": ["anime", "action", "fantasy"],
                 "original_title": "進撃の巨人",
@@ -647,7 +647,7 @@ async def test_genre_filter_disabled_allows_non_anime():
         )
         client = MagicMock()
         client.get_all_watched_history = AsyncMock(return_value=[episode_item])
-        client.get_show_details = AsyncMock(return_value=None)
+        client.get_show_info = AsyncMock(return_value=None)
         cfg = MagicMock()
         cfg.last_sync_time = None
         cfg.sync_filter_enabled = False
@@ -688,7 +688,7 @@ async def test_genre_filter_mapping_bypass():
         )
         client = MagicMock()
         client.get_all_watched_history = AsyncMock(return_value=[episode_item])
-        client.get_show_details = AsyncMock(
+        client.get_show_info = AsyncMock(
             return_value={"genres": ["science-fiction", "mystery"]}
         )
         cfg = MagicMock()
