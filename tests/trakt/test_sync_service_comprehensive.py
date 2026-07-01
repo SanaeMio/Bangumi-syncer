@@ -874,3 +874,45 @@ async def test_incremental_sync_skips_prefetch_for_synced_items():
         assert r.synced_count == 0
         assert r.skipped_count == 1
         client.get_show_info.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_bangumidata_hit_skips_trakt_detail_request():
+    """bangumi_data 命中 TMDB 时跳过 get_show_info / get_movie_info 请求"""
+    with (
+        patch("app.services.trakt.sync_service.bangumi_data") as bd,
+        patch("app.services.trakt.sync_service.sync_service") as ss,
+        patch("app.services.trakt.sync_service.database_manager") as mock_db,
+        patch("app.services.trakt.sync_service.mapping_service") as mock_mapping,
+    ):
+        bd.get_title_by_tmdb_id.return_value = "攻殻機動隊"
+        ss.sync_custom_item_async = AsyncMock(return_value="task-1")
+        mock_db.get_trakt_synced_set.return_value = set()
+        mock_db.save_trakt_sync_history.return_value = True
+        mock_mapping.load_custom_mappings.return_value = {}
+
+        episode_item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T00:00:00Z",
+            action="scrobble",
+            type="episode",
+            show={
+                "title": "Ghost in the Shell",
+                "ids": {"trakt": 100, "tmdb": 200},
+            },
+            episode={"season": 1, "number": 1},
+            movie=None,
+        )
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[episode_item])
+        client.get_show_info = AsyncMock()
+        cfg = MagicMock()
+        cfg.last_sync_time = None
+        cfg.sync_filter_enabled = True
+
+        svc = TraktSyncService()
+        r = await svc._sync_watched_history("user1", client, cfg, True)
+        assert r.success
+        assert r.synced_count == 1
+        assert r.skipped_count == 0
+        client.get_show_info.assert_not_called()

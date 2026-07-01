@@ -279,6 +279,28 @@ class TraktSyncService:
                     continue
                 tid = str(trakt_id)
                 if need_details and tid not in show_original_titles:
+                    # bangumi_data 仅收录动画条目，TMDB 命中则确认为动画，跳过 Trakt 详情请求
+                    if sync_filter_enabled:
+                        if item.type == "episode" and item.show:
+                            tmdb_id = item.show.get("ids", {}).get("tmdb")
+                            if tmdb_id and bangumi_data.get_title_by_tmdb_id(
+                                f"tv/{tmdb_id}"
+                            ):
+                                logger.debug(
+                                    f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: tv/{tmdb_id}"
+                                )
+                                show_genres[tid] = ["anime"]
+                                continue
+                        elif item.type == "movie" and item.movie:
+                            tmdb_id = item.movie.get("ids", {}).get("tmdb")
+                            if tmdb_id and bangumi_data.get_title_by_tmdb_id(
+                                f"movie/{tmdb_id}"
+                            ):
+                                logger.debug(
+                                    f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: movie/{tmdb_id}"
+                                )
+                                show_genres[tid] = ["anime"]
+                                continue
                     if item.type == "episode":
                         details_resp = await client.get_show_info(tid)
                         if details_resp:
