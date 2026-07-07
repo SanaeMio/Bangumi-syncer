@@ -456,9 +456,14 @@ class BangumiData:
                             pm_item.get("title", "")
                         ] + self._get_zh_hans_titles(pm_item)
 
-                        # 安全校验：搜索词必须被包含在候选名的其中之一里，或者模糊匹配相似度 > 0.8
-                        is_safe_to_override = pm_score >= 0.8 or any(
-                            title in name for name in pm_all_names
+                        # 安全校验：搜索词必须被包含在候选名的其中之一里，模糊匹配相似度 > 0.8，或关键字符一致
+                        is_safe_to_override = (
+                            pm_score >= 0.8
+                            or any(title in name for name in pm_all_names)
+                            or any(
+                                self._check_key_characters(title, name)
+                                for name in pm_all_names
+                            )
                         )
 
                         if is_safe_to_override:
@@ -478,7 +483,7 @@ class BangumiData:
                         f"从多个完全匹配中择优: {best_exact_match[0].get('title', '')}, 日期差距: {min_exact_diff}天"
                     )
                     matched_title = self._get_best_matched_title(best_exact_match[0])
-                    date_matched = season > 1
+                    date_matched = season > 1 and min_exact_diff <= 180
                     return (best_exact_match[1], matched_title, date_matched)
 
             # 返回最高优先级的匹配结果

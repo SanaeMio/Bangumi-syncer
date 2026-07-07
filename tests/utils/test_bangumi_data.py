@@ -1073,6 +1073,72 @@ class TestFindBangumiIdOptimizedTitleIndex:
         assert result[0] == "444557"
         assert result[2] is True  # date_matched=True
 
+    def test_mushoku_tensei_s3_episode_1_returns_correct_id(self):
+        """无职转生 S03E01 (2026-07-04) Plex 冒号标题应匹配到 S3 (ID=501963)"""
+        data = _make_data()
+        data._title_index = {
+            "无职转生：到了异世界就拿出真本事": [
+                {
+                    "title": "無職転生～異世界行ったら本気だす～",
+                    "begin": "2021-01-10T15:00:00.000Z",
+                    "titleTranslate": {
+                        "zh-Hans": ["无职转生～到了异世界就拿出真本事～"]
+                    },
+                    "sites": [{"site": "bangumi", "id": "277554"}],
+                }
+            ]
+        }
+        all_items = [
+            {
+                "title": "無職転生～異世界行ったら本気だす～",
+                "begin": "2021-01-10T15:00:00.000Z",
+                "titleTranslate": {"zh-Hans": ["无职转生～到了异世界就拿出真本事～"]},
+                "sites": [{"site": "bangumi", "id": "277554"}],
+            },
+            {
+                "title": "無職転生Ⅱ ～異世界行ったら本気だす～",
+                "begin": "2023-07-02T15:00:00.000Z",
+                "titleTranslate": {
+                    "zh-Hans": [
+                        "无职转生Ⅱ ～到了异世界就拿出真本事～",
+                        "无职转生 ～在异世界认真地活下去～ 第二季",
+                    ]
+                },
+                "sites": [{"site": "bangumi", "id": "373247"}],
+            },
+            {
+                "title": "無職転生Ⅱ ～異世界行ったら本気だす～(第2クール)",
+                "begin": "2024-04-07T15:00:00.000Z",
+                "titleTranslate": {
+                    "zh-Hans": [
+                        "无职转生Ⅱ ～到了异世界就拿出真本事～ 第2部分",
+                        "无职转生 ～在异世界认真地活下去～ 第二季 第2部分",
+                    ]
+                },
+                "sites": [{"site": "bangumi", "id": "444557"}],
+            },
+            {
+                "title": "無職転生Ⅲ ～異世界行ったら本気だす～",
+                "begin": "2026-07-04T15:00:00.000Z",
+                "titleTranslate": {
+                    "zh-Hans": [
+                        "无职转生Ⅲ ～到了异世界就拿出真本事～",
+                        "无职转生 ～在异世界认真地活下去～ 第三季",
+                    ]
+                },
+                "sites": [{"site": "bangumi", "id": "501963"}],
+            },
+        ]
+        with patch.object(data, "_parse_data", return_value=all_items):
+            result = data._find_bangumi_id_optimized(
+                "无职转生：到了异世界就拿出真本事",
+                release_date="2026-07-04",
+                season=3,
+            )
+        assert result is not None
+        assert result[0] == "501963"
+        assert result[2] is True
+
     def test_oshi_no_ko_s3_matches_517057(self):
         """【我推的孩子】 S03E01 (2026-01-14) 应匹配到 S3 (ID=517057)"""
         data = _make_data()
