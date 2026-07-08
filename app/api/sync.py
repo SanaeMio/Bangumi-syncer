@@ -218,6 +218,7 @@ async def get_sync_records(
     source: Optional[str] = None,
     source_prefix: Optional[str] = None,
     skip_count: bool = Query(False),
+    include_poster: bool = Query(False),
     current_user: dict = Depends(get_current_user_flexible),
 ):
     """获取同步记录"""
@@ -231,6 +232,19 @@ async def get_sync_records(
             source_prefix=source_prefix,
             skip_count=skip_count,
         )
+
+        if include_poster and result.get("records"):
+            from ..utils.bgm_poster_service import get_poster_urls, normalize_subject_id
+
+            subject_ids = [
+                sid
+                for r in result["records"]
+                if (sid := normalize_subject_id(r.get("subject_id"))) is not None
+            ]
+            poster_map = await get_poster_urls(subject_ids)
+            for record in result["records"]:
+                sid = normalize_subject_id(record.get("subject_id"))
+                record["poster_url"] = poster_map.get(sid) if sid else None
 
         return {"status": "success", "data": result}
     except Exception as e:

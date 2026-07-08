@@ -17,6 +17,33 @@ def test_extract_poster_url_prefers_large():
     assert extract_poster_url(subject) == "https://lain.bgm.tv/pic/cover/l/a/b/c.jpg"
 
 
+def test_extract_poster_url_prefers_small_for_timeline():
+    subject = {
+        "images": {
+            "large": "https://lain.bgm.tv/pic/cover/l/a/b/c.jpg",
+            "small": "https://lain.bgm.tv/pic/cover/s/a/b/c.jpg",
+            "grid": "https://lain.bgm.tv/pic/cover/g/a/b/c.jpg",
+        }
+    }
+    assert (
+        extract_poster_url(subject, prefer_sizes=("small", "grid", "medium", "large"))
+        == "https://lain.bgm.tv/pic/cover/s/a/b/c.jpg"
+    )
+
+
+def test_extract_poster_url_falls_back_to_grid_when_no_small():
+    subject = {
+        "images": {
+            "large": "https://lain.bgm.tv/pic/cover/l/a/b/c.jpg",
+            "grid": "https://lain.bgm.tv/pic/cover/g/a/b/c.jpg",
+        }
+    }
+    assert (
+        extract_poster_url(subject, prefer_sizes=("small", "grid", "large"))
+        == "https://lain.bgm.tv/pic/cover/g/a/b/c.jpg"
+    )
+
+
 def test_extract_poster_url_falls_back_to_medium():
     subject = {"images": {"medium": "https://lain.bgm.tv/pic/cover/m/a/b/c.jpg"}}
     assert extract_poster_url(subject) == "https://lain.bgm.tv/pic/cover/m/a/b/c.jpg"
