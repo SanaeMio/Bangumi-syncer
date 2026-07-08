@@ -5,14 +5,14 @@
       "title": "首页时间线番剧封面不显示时可配置图片反代",
       "level": "info",
       "published_at": "2026-06-16T18:00:00+08:00",
-      "body": "> **背景**：Bangumi 持续被墙，导致首页时间线番剧封面显示空白。可配置Bangumi图片反代以恢复封面正常显示。\n\n## 如何配置\n\n进入 **配置管理** → **高级配置** → 填写 **Bangumi 图片反向代理**，填入下方任一 API 地址后保存即可。\n\n## 公共反代（可直接使用）\n\n| 类型 | 地址 | 提供者 |\n|------|------|--------|\n| 图片 | `https://lain.bangumi.one` | [桜色](https://bangumi.one/group/topic/462456) |\n| 图片 | `https://bgmimg.anibt.net` | [anibt.net](https://www.nodeseek.com/post-753175-1) |"
+      "body": "> **背景**：Bangumi 持续被墙，导致首页时间线番剧封面显示空白。可配置Bangumi图片反代以恢复封面正常显示。\n\n## 如何配置\n\n进入 **配置管理** → **高级配置** → 填写 **Bangumi 图片反向代理**，填入下方任一 API 地址后保存即可。\n\n## 公共反代（可直接使用）\n\n| 类型 | 地址 | 提供者 |\n|------|------|--------|\n| 图片 | `https://lain.bangumi.lol` | [桜色](https://bangumi.lol/group/topic/462456) |\n| 图片 | `https://bgmimg.anibt.net` | [anibt.net](https://www.nodeseek.com/post-753175-1) |"
     },
     {
       "id": "20260608-bgm-api-proxy",
       "title": "Bangumi API 反向代理说明",
       "level": "important",
       "published_at": "2026-06-08T12:00:00+08:00",
-      "body": "> **背景**：Bangumi 近期持续被墙。如您不方便使用HTTP代理，可在本工具中配置 API 反代，继续正常同步。\n\n## 如何配置\n\n进入 **配置管理** → **高级配置** → 填写 **Bangumi API 反向代理**，填入下方任一 API 地址后保存即可。\n\n## 公共反代（可直接使用）\n\n| 类型 | 地址 | 提供者 |\n|------|------|--------|\n| API | `https://api.bangumi.one` | [桜色](https://bangumi.one/group/topic/462456) |\n| API | `https://bgmapi.anibt.net` | [anibt.net](https://www.nodeseek.com/post-753175-1) |\n\n## 自建反代（更注重隐私时）\n\n- **[mirrox](https://github.com/mirrox-dev/mirrox)** — Rust 反向代理，适合做 Bangumi 镜像\n- **[bahamut-api-proxy](https://github.com/wan0ge/bahamut-api-proxy)** — Netlify 反代思路，可类比部署 Bangumi API\n\n---\n\n**使用第三方反代时存在理论上的账号隐私安全，有条件建议优先自建。**"
+      "body": "> **背景**：Bangumi 近期持续被墙。如您不方便使用HTTP代理，可在本工具中配置 API 反代，继续正常同步。\n\n## 如何配置\n\n进入 **配置管理** → **高级配置** → 填写 **Bangumi API 反向代理**，填入下方任一 API 地址后保存即可。\n\n## 公共反代（可直接使用）\n\n| 类型 | 地址 | 提供者 |\n|------|------|--------|\n| API | `https://api.bangumi.lol` | [桜色](https://bangumi.lol/group/topic/462456) |\n| API | `https://bgmapi.anibt.net` | [anibt.net](https://www.nodeseek.com/post-753175-1) |\n\n## 自建反代（更注重隐私时）\n\n- **[mirrox](https://github.com/mirrox-dev/mirrox)** — Rust 反向代理，适合做 Bangumi 镜像\n- **[bahamut-api-proxy](https://github.com/wan0ge/bahamut-api-proxy)** — Netlify 反代思路，可类比部署 Bangumi API\n\n---\n\n**使用第三方反代时存在理论上的账号隐私安全，有条件建议优先自建。**"
     }
   ]
 }
