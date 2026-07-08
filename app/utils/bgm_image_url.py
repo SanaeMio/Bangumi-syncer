@@ -7,7 +7,8 @@ from typing import Any
 
 LAIN_BGM_TV_PREFIX = "https://lain.bgm.tv"
 
-_POSTER_SIZE_ORDER = ("large", "medium", "common", "small", "grid")
+_DEFAULT_POSTER_SIZE_ORDER = ("large", "medium", "common", "small", "grid")
+_TIMELINE_POSTER_SIZE_ORDER = ("small", "grid", "medium", "common", "large")
 
 
 def build_poster_cache_namespace(
@@ -18,16 +19,25 @@ def build_poster_cache_namespace(
     return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()[:12]
 
 
-def extract_poster_url(subject: dict[str, Any]) -> str | None:
+def extract_poster_url(
+    subject: dict[str, Any],
+    prefer_sizes: tuple[str, ...] | None = None,
+) -> str | None:
     """从 get_subject 响应中选取最佳可用封面 URL。"""
     images = subject.get("images")
     if not isinstance(images, dict):
         return None
-    for key in _POSTER_SIZE_ORDER:
+    size_order = prefer_sizes or _DEFAULT_POSTER_SIZE_ORDER
+    for key in size_order:
         url = images.get(key)
         if url:
             return str(url)
     return None
+
+
+def timeline_poster_size_order() -> tuple[str, ...]:
+    """仪表板时间线缩略图尺寸优先级（small 优先于 grid）。"""
+    return _TIMELINE_POSTER_SIZE_ORDER
 
 
 def rewrite_bgm_image_url(url: str, image_proxy: str) -> str:

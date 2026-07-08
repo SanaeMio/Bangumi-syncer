@@ -226,6 +226,55 @@ async def test_get_sync_records(
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
+        assert "poster_url" not in data["data"]["records"][0]
+
+
+@pytest.mark.asyncio
+async def test_get_sync_records_include_poster(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试 records 批量附带 poster_url"""
+    mock_database_manager.get_sync_records.return_value = {
+        "records": [
+            {
+                "id": 1,
+                "title": "Test Show",
+                "season": 1,
+                "episode": 5,
+                "status": "success",
+                "subject_id": 123,
+            },
+            {
+                "id": 2,
+                "title": "No Subject",
+                "season": 1,
+                "episode": 1,
+                "status": "success",
+                "subject_id": None,
+            },
+        ],
+        "total": 2,
+    }
+
+    with patch(
+        "app.utils.bgm_poster_service.get_poster_urls",
+        new_callable=AsyncMock,
+        return_value={123: "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg"},
+    ) as mock_posters:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/records?include_poster=true")
+
+    assert response.status_code == 200
+    data = response.json()
+    records = data["data"]["records"]
+    assert (
+        records[0]["poster_url"]
+        == "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg"
+    )
+    assert records[1]["poster_url"] is None
+    mock_posters.assert_awaited_once_with([123])
 
 
 @pytest.mark.asyncio

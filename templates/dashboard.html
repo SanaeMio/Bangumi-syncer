@@ -475,39 +475,50 @@ async function showRecordDetail(recordId) {
 }
 
 async function loadDashboardData() {
-    try {
-        const [statsRes, recordsRes, heatmapRes] = await Promise.all([
-            fetch(appUrl('/api/stats'), { credentials: 'include' }),
-            fetch(appUrl('/api/records?limit=6&skip_count=true'), { credentials: 'include' }),
-            fetch(appUrl('/api/stats/heatmap'), { credentials: 'include' })
-        ]);
+    const fetchOpts = { credentials: 'include' };
 
-        const statsData = await statsRes.json();
-        const recordsData = await recordsRes.json();
-        const heatmapData = await heatmapRes.json();
+    fetch(appUrl('/api/stats'), fetchOpts)
+        .then(function(res) { return res.json(); })
+        .then(function(statsData) {
+            if (statsData.status === 'success') {
+                const stats = statsData.data;
+                document.getElementById('total-syncs').textContent = stats.total_syncs;
+                document.getElementById('success-rate').textContent = stats.success_rate + '%';
+                document.getElementById('today-syncs').textContent = stats.today_syncs;
+                document.getElementById('error-syncs').textContent = stats.error_syncs;
+                cachedDailyStats = stats.daily_stats;
+                drawDailyChart(cachedDailyStats);
+            }
+        })
+        .catch(function(error) {
+            console.error('加载统计数据失败:', error);
+            showAlert('加载数据失败', 'danger');
+        });
 
-        if (statsData.status === 'success') {
-            const stats = statsData.data;
-            document.getElementById('total-syncs').textContent = stats.total_syncs;
-            document.getElementById('success-rate').textContent = stats.success_rate + '%';
-            document.getElementById('today-syncs').textContent = stats.today_syncs;
-            document.getElementById('error-syncs').textContent = stats.error_syncs;
-            cachedDailyStats = stats.daily_stats;
-            drawDailyChart(cachedDailyStats);
-        }
+    fetch(appUrl('/api/records?limit=6&skip_count=true&include_poster=true'), fetchOpts)
+        .then(function(res) { return res.json(); })
+        .then(function(recordsData) {
+            if (recordsData.status === 'success') {
+                renderTimeline(recordsData.data.records);
+            }
+        })
+        .catch(function(error) {
+            console.error('加载同步记录失败:', error);
+            showAlert('加载数据失败', 'danger');
+        });
 
-        if (recordsData.status === 'success') {
-            renderTimeline(recordsData.data.records);
-        }
-
-        if (heatmapData.status === 'success') {
-            cachedHeatmapData = heatmapData.data;
-            renderHeatmap(cachedHeatmapData, true);
-        }
-    } catch (error) {
-        console.error('加载仪表板数据失败:', error);
-        showAlert('加载数据失败', 'danger');
-    }
+    fetch(appUrl('/api/stats/heatmap'), fetchOpts)
+        .then(function(res) { return res.json(); })
+        .then(function(heatmapData) {
+            if (heatmapData.status === 'success') {
+                cachedHeatmapData = heatmapData.data;
+                renderHeatmap(cachedHeatmapData, true);
+            }
+        })
+        .catch(function(error) {
+            console.error('加载热力图失败:', error);
+            showAlert('加载数据失败', 'danger');
+        });
 }
 
 // ========== 时间线 ==========
@@ -606,9 +617,14 @@ function renderTimeline(records) {
 
     container.innerHTML = html;
 
-    // 异步加载海报
+    // 异步加载海报（优先使用 records 响应中的 poster_url）
     records.forEach(function(record) {
-        if (record.subject_id) {
+        if (!record.subject_id) return;
+        if (record.poster_url) {
+            posterCache[record.subject_id] = record.poster_url;
+            try { localStorage.setItem(posterStorageKey(record.subject_id), record.poster_url); } catch (e) {}
+            applyPoster(record.subject_id, record.poster_url);
+        } else {
             loadPoster(record.subject_id);
         }
     });

@@ -1,6 +1,6 @@
 """Bangumi 仪表板封面 API 测试。"""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -25,36 +25,29 @@ def app_bgm_poster():
 
 @pytest.mark.asyncio
 async def test_get_subject_poster_success(app_bgm_poster):
-    mock_bgm = MagicMock()
-    mock_bgm.get_subject.return_value = {
-        "id": 123,
-        "images": {"large": "https://lain.bgm.tv/pic/cover/l/a/b/c.jpg"},
-    }
-
-    def fake_get(section, key, fallback=""):
-        if section == "dev" and key == "bgm_image_proxy":
-            return "https://img-proxy.example.com"
-        return fallback
-
-    with patch("app.api.bgm_poster._get_public_bangumi_api", return_value=mock_bgm):
-        with patch("app.api.bgm_poster.config_manager.get", side_effect=fake_get):
-            transport = ASGITransport(app=app_bgm_poster)
-            async with AsyncClient(transport=transport, base_url="http://test") as ac:
-                r = await ac.get("/api/bgm/subjects/123/poster")
+    with patch(
+        "app.api.bgm_poster.get_poster_urls",
+        new_callable=AsyncMock,
+        return_value={123: "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg"},
+    ) as mock_get:
+        transport = ASGITransport(app=app_bgm_poster)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.get("/api/bgm/subjects/123/poster")
 
     assert r.status_code == 200
     data = r.json()
     assert data["status"] == "success"
-    assert data["url"] == "https://img-proxy.example.com/pic/cover/l/a/b/c.jpg"
-    mock_bgm.get_subject.assert_called_once_with(123)
+    assert data["url"] == "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg"
+    mock_get.assert_awaited_once_with([123])
 
 
 @pytest.mark.asyncio
 async def test_get_subject_poster_no_image(app_bgm_poster):
-    mock_bgm = MagicMock()
-    mock_bgm.get_subject.return_value = {"id": 123, "images": {}}
-
-    with patch("app.api.bgm_poster._get_public_bangumi_api", return_value=mock_bgm):
+    with patch(
+        "app.api.bgm_poster.get_poster_urls",
+        new_callable=AsyncMock,
+        return_value={},
+    ):
         transport = ASGITransport(app=app_bgm_poster)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.get("/api/bgm/subjects/123/poster")
@@ -63,16 +56,17 @@ async def test_get_subject_poster_no_image(app_bgm_poster):
 
 
 @pytest.mark.asyncio
-async def test_get_subject_poster_not_found(app_bgm_poster):
-    mock_bgm = MagicMock()
-    mock_bgm.get_subject.return_value = {}
-
-    with patch("app.api.bgm_poster._get_public_bangumi_api", return_value=mock_bgm):
+async def test_get_subject_poster_service_error(app_bgm_poster):
+    with patch(
+        "app.api.bgm_poster.get_poster_urls",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("boom"),
+    ):
         transport = ASGITransport(app=app_bgm_poster)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.get("/api/bgm/subjects/123/poster")
 
-    assert r.status_code == 404
+    assert r.status_code == 502
 
 
 @pytest.mark.asyncio
