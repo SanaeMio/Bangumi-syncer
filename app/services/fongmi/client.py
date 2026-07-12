@@ -23,8 +23,8 @@ from .models import FongmiDevice, FongmiWatchRecord
 PORT_START = 9978
 PORT_END = 9998
 _DEFAULT_PORT = 9978
-_HTTP_TIMEOUT = 3.0        # /media 请求超时
-_PROBE_TIMEOUT = 0.3       # /device 探测超时（局域网内足够）
+_HTTP_TIMEOUT = 3.0  # /media 请求超时
+_PROBE_TIMEOUT = 0.3  # /device 探测超时（局域网内足够）
 _DISCOVER_SEMAPHORE = 100  # 网段扫描并发上限
 
 # 直播流标记（Long.MIN_VALUE）
@@ -47,8 +47,18 @@ _BRACKET_EP_RE = re.compile(r"[\[【(]\s*0*(\d{1,3})\s*[\]】)]")
 # 季号标记（仅当 N>1 时才视为多季）
 _SEASON_CN_RE = re.compile(r"第\s*([一二三四五六七八九十2-9])\s*[季期]")
 _SEASON_EN_RE = re.compile(r"[Ss]eason\s*0*([2-9]\d?)", re.IGNORECASE)
-_CN_NUM_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-               "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+_CN_NUM_MAP = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
 
 # 文件名清理用正则
 _BRACKET_RE = re.compile(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|【[^】]*】|《[^》]*》")
@@ -187,6 +197,7 @@ async def _probe_ports(
     client: httpx.AsyncClient, ip: str, ports: list[int]
 ) -> tuple[int, dict] | None:
     """并行探测指定 IP 的多个端口，返回第一个命中的 (port, info)"""
+
     async def _one(p: int) -> tuple[int, dict | None]:
         return p, await _probe_device(client, ip, p)
 

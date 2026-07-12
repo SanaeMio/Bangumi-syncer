@@ -129,7 +129,10 @@ class FongmiSyncService:
         return FongmiSyncResult(
             ok,
             f"fongmi 同步: 已提交 {synced}, 跳过 {skipped}, 失败 {errors}",
-            synced, skipped, errors, len(devices),
+            synced,
+            skipped,
+            errors,
+            len(devices),
         )
 
     async def debug_scan(self) -> dict:
@@ -154,8 +157,11 @@ class FongmiSyncService:
         返回 {before: FongMi 解析结果, after: Bangumi 匹配+标记结果}。
         """
         device = FongmiDevice(
-            ip=device_ip, port=device_port, uuid="",
-            name=device_name or device_ip, device_type=0,
+            ip=device_ip,
+            port=device_port,
+            uuid="",
+            name=device_name or device_ip,
+            device_type=0,
         )
 
         async with httpx.AsyncClient() as client:
@@ -170,7 +176,10 @@ class FongmiSyncService:
         rec = media_to_record(device, media)
         if not rec:
             return {
-                "before": {"device_ip": device_ip, "title": (media.get("title") or "").strip()},
+                "before": {
+                    "device_ip": device_ip,
+                    "title": (media.get("title") or "").strip(),
+                },
                 "after": {"status": "error", "message": "无法解析播放记录（标题为空）"},
             }
 
@@ -193,7 +202,10 @@ class FongmiSyncService:
             )
         except Exception as e:
             logger.error(f"fongmi 调试同步执行失败: {e}")
-            return {"before": before, "after": {"status": "error", "message": f"同步异常: {e}"}}
+            return {
+                "before": before,
+                "after": {"status": "error", "message": f"同步异常: {e}"},
+            }
 
         after = {
             "status": result.status,

@@ -46,9 +46,7 @@ async def fongmi_manual_sync(
 ) -> dict[str, Any]:
     cfg = config_manager.get_fongmi_config()
     if not cfg.get("enabled"):
-        raise HTTPException(
-            status_code=400, detail="fongmi 同步未启用，请在配置中开启"
-        )
+        raise HTTPException(status_code=400, detail="fongmi 同步未启用，请在配置中开启")
 
     try:
         result: FongmiSyncResult = await fongmi_sync_service.run_sync(
@@ -79,9 +77,7 @@ async def fongmi_debug_scan(
     服务端 20 秒超时，避免网段扫描无响应时长时间挂起。
     """
     try:
-        data = await asyncio.wait_for(
-            fongmi_sync_service.debug_scan(), timeout=20.0
-        )
+        data = await asyncio.wait_for(fongmi_sync_service.debug_scan(), timeout=20.0)
         return {
             "status": "success",
             "message": f"发现 {data['discovered_devices']} 台设备",
