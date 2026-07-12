@@ -197,6 +197,13 @@ async def update_config(
         except Exception as ex:
             logger.debug("飞牛调度器随配置更新: %s", ex)
 
+        try:
+            from ..services.fongmi.scheduler import fongmi_scheduler
+
+            await fongmi_scheduler.apply_config_after_save()
+        except Exception as ex:
+            logger.debug("fongmi 调度器随配置更新: %s", ex)
+
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:
             security_manager._init_auth_config()

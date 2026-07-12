@@ -111,6 +111,12 @@ class ConfigManager:
             ("dev", "debug"): "DEBUG_MODE",
             ("web", "base_path"): "APPLICATION_ROOT",
             ("feiniu", "db_path"): "FEINIU_DB_PATH",
+            ("fongmi", "enabled"): "FONGMI_ENABLED",
+            ("fongmi", "devices"): "FONGMI_DEVICES",
+            ("fongmi", "subnet"): "FONGMI_SUBNET",
+            ("fongmi", "auto_scan"): "FONGMI_AUTO_SCAN",
+            ("fongmi", "sync_interval"): "FONGMI_SYNC_INTERVAL",
+            ("fongmi", "min_percent"): "FONGMI_MIN_PERCENT",
         }
 
         for (section, option), env_var in env_overrides.items():
@@ -438,6 +444,48 @@ class ConfigManager:
         out["db_path"] = str(out.get("db_path") or "").strip()
         out["user_filter"] = str(out.get("user_filter") or "all").strip() or "all"
         out["time_range"] = str(out.get("time_range") or "all").strip() or "all"
+        out["sync_interval"] = str(
+            out.get("sync_interval") or defaults["sync_interval"]
+        ).strip()
+
+        return out
+
+    def get_fongmi_config(self) -> dict[str, Any]:
+        """fongmi 局域网轮询同步配置（默认关闭）
+
+        与 feiniu 驱动不同，fongmi 不依赖本地数据库，而是通过局域网 HTTP
+        轮询设备的 /media 端点获取播放状态。
+        """
+        defaults: dict[str, Any] = {
+            "enabled": False,
+            "devices": "",
+            "subnet": "",
+            "auto_scan": True,
+            "sync_interval": "*/3 * * * *",
+            "min_percent": 80,
+        }
+        raw = self.get_section("fongmi", {})
+        out: dict[str, Any] = {**defaults, **raw}
+
+        ev = out.get("enabled", False)
+        if isinstance(ev, str):
+            out["enabled"] = ev.strip().lower() in ("true", "1", "yes", "on")
+        else:
+            out["enabled"] = bool(ev)
+
+        av = out.get("auto_scan", True)
+        if isinstance(av, str):
+            out["auto_scan"] = av.strip().lower() in ("true", "1", "yes", "on")
+        else:
+            out["auto_scan"] = bool(av)
+
+        try:
+            out["min_percent"] = int(out.get("min_percent", 80))
+        except (TypeError, ValueError):
+            out["min_percent"] = 80
+
+        out["devices"] = str(out.get("devices") or "").strip()
+        out["subnet"] = str(out.get("subnet") or "").strip()
         out["sync_interval"] = str(
             out.get("sync_interval") or defaults["sync_interval"]
         ).strip()

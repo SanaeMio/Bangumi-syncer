@@ -156,6 +156,39 @@
             </div>
         </div>
     </div>
+    <!-- fongmi 同步测试 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-tv me-2 text-secondary"></i>
+                        <h6 class="m-0 fw-semibold">fongmi 同步测试</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">说明</label>
+                            <div class="form-text">
+                                点击下方按钮将搜寻所有配置的 fongmi 设备并拉取当前 <code>/media</code> 状态，
+                                <strong>不管观看进度如何</strong>，用于验证设备发现、API 拉取、集数解析是否正常。
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button"
+                                    class="btn btn-primary w-100"
+                                    id="fongmi-debug-scan-btn"
+                                    onclick="triggerFongmiDebugScan()">
+                                <i class="bi bi-search me-1"></i>搜寻设备并拉取状态
+                            </button>
+                        </div>
+                    </div>
+                    <div id="fongmi-scan-result" class="mt-3" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- 网络诊断工具 -->
     <div class="row">
         <div class="col-12">
@@ -559,6 +592,223 @@ async function triggerFeiniuManualSync() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>立即触发飞牛同步';
+    }
+}
+
+// fongmi：搜寻设备并拉取当前 /media 状态（调试用，不过滤完成）
+async function triggerFongmiDebugScan() {
+    const btn = document.getElementById('fongmi-debug-scan-btn');
+    const out = document.getElementById('fongmi-scan-result');
+    const url = appUrl('/api/fongmi/debug/scan');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>搜寻中...';
+    out.style.display = 'block';
+    out.innerHTML = '<div class="alert alert-info mb-0"><i class="bi bi-hourglass-split me-2"></i>正在搜寻设备并拉取状态，请稍候…</div>';
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Accept': 'application/json' }
+        });
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = {};
+        }
+        if (!response.ok) {
+            const detail = data.detail != null
+                ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+                : (data.message || '请求失败');
+            out.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-x-circle me-2"></i><strong>无法执行</strong>（HTTP ${response.status}）<br>
+                    <span class="small">${detail}</span>
+                </div>`;
+            return;
+        }
+        const d = data.data || {};
+        const devices = d.devices || [];
+        const foundCount = d.discovered_devices ?? 0;
+        if (foundCount === 0) {
+            out.innerHTML = `
+                <div class="alert alert-warning mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i><strong>未发现设备</strong><br>
+                    <span class="small">请检查配置中的设备 IP 或自动扫描网段是否正确，以及 fongmi APP 是否正在运行。</span>
+                </div>`;
+            return;
+        }
+        let rows = '';
+        devices.forEach(function (dev, idx) {
+            const m = dev.media;
+            if (!m) {
+                rows += `
+                    <tr>
+                        <td>${dev.device_name || dev.device_ip}</td>
+                        <td>${dev.device_ip}:${dev.device_port}</td>
+                        <td colspan="7" class="text-muted text-center">无播放信息</td>
+                    </tr>`;
+                return;
+            }
+            const progress = m.percent != null ? m.percent.toFixed(1) + '%' : '-';
+            const title = m.title || '<span class="text-muted">无</span>';
+            const safeIp = dev.device_ip.replace(/'/g, "\\'");
+            const safeName = (dev.device_name || dev.device_ip || '').replace(/'/g, "\\'");
+            rows += `
+                <tr id="fongmi-row-${idx}">
+                    <td>${dev.device_name || dev.device_ip}</td>
+                    <td><small>${dev.device_ip}:${dev.device_port}</small></td>
+                    <td>${title}</td>
+                    <td class="text-center">S${m.parsed_season}E${m.parsed_episode}</td>
+                    <td><small class="text-break">${m.url || ''}</small></td>
+                    <td><small class="text-break">${m.artist || ''}</small></td>
+                    <td class="text-center">${progress}</td>
+                    <td class="text-center">${m.state ?? '-'}</td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary" onclick="fongmiDebugSync(${idx}, '${safeIp}', ${dev.device_port}, '${safeName}')">
+                            <i class="bi bi-cloud-arrow-up me-1"></i>同步
+                        </button>
+                    </td>
+                </tr>
+                <tr id="fongmi-result-${idx}" style="display:none;">
+                    <td colspan="9" class="bg-light p-2"></td>
+                </tr>`;
+        });
+        out.innerHTML = `
+            <div class="alert alert-success mb-2">
+                <i class="bi bi-check-circle me-2"></i>
+                <strong>发现 ${foundCount} 台设备</strong>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>设备名</th>
+                            <th>地址</th>
+                            <th>标题</th>
+                            <th class="text-center">解析集号</th>
+                            <th>URL</th>
+                            <th>Artist</th>
+                            <th class="text-center">进度</th>
+                            <th class="text-center">state</th>
+                            <th class="text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+    } catch (error) {
+        console.error('fongmi 调试扫描请求失败:', error);
+        out.innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-x-circle me-2"></i><strong>网络错误</strong><br>
+                <span class="small">${error.message || String(error)}</span>
+            </div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-search me-1"></i>搜寻设备并拉取状态';
+    }
+}
+
+// fongmi：对指定设备执行单次 Bangumi 同步并展示前后对比
+async function fongmiDebugSync(idx, deviceIp, devicePort, deviceName) {
+    const btn = document.querySelector(`#fongmi-row-${idx} button`);
+    const resultRow = document.getElementById(`fongmi-result-${idx}`);
+    if (!btn || !resultRow) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>同步中';
+    resultRow.style.display = 'table-row';
+    resultRow.querySelector('td').innerHTML =
+        '<div class="alert alert-info mb-0"><i class="bi bi-hourglass-split me-2"></i>正在拉取 /media 并同步到 Bangumi，请稍候…</div>';
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
+    try {
+        const response = await fetch(appUrl('/api/fongmi/debug/sync'), {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                device_ip: deviceIp,
+                device_port: devicePort,
+                device_name: deviceName
+            }),
+            signal: controller.signal
+        });
+        let data = {};
+        try { data = await response.json(); } catch (_) { data = {}; }
+        if (!response.ok) {
+            const detail = data.detail != null
+                ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+                : (data.message || '请求失败');
+            resultRow.querySelector('td').innerHTML =
+                `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i><strong>同步失败</strong>（HTTP ${response.status}）<br><span class="small">${detail}</span></div>`;
+            return;
+        }
+        const d = data.data || {};
+        const before = d.before || {};
+        const after = d.after || {};
+        const afterData = after.data || {};
+        const status = after.status || 'unknown';
+        const statusColor = status === 'success' ? 'success'
+            : status === 'ignored' ? 'secondary'
+            : 'danger';
+        const statusIcon = status === 'success' ? 'check-circle'
+            : status === 'ignored' ? 'dash-circle'
+            : 'x-circle';
+
+        // before
+        const beforeHtml = `
+            <div class="small">
+                <div><span class="text-muted">设备：</span>${before.device_name || ''} (${before.device_ip || ''})</div>
+                <div><span class="text-muted">标题：</span>${before.title || '-'}</div>
+                <div><span class="text-muted">解析：</span>S${before.season ?? '?'}E${before.episode ?? '?'}</div>
+                <div><span class="text-muted">URL：</span><span class="text-break">${before.url || '-'}</span></div>
+                <div><span class="text-muted">Artist：</span><span class="text-break">${before.artist || '-'}</span></div>
+            </div>`;
+
+        // after
+        let afterHtml = '';
+        if (status === 'success' && afterData.subject_id) {
+            const bgmTitle = afterData.bgm_title || before.title || '';
+            const subjectUrl = `https://bgm.tv/subject/${afterData.subject_id}`;
+            const epUrl = afterData.episode_id ? `https://bgm.tv/ep/${afterData.episode_id}` : '';
+            afterHtml = `
+                <div class="small">
+                    <div><span class="text-muted">Bangumi 标题：</span>${bgmTitle}</div>
+                    <div><span class="text-muted">条目：</span><a href="${subjectUrl}" target="_blank">${subjectUrl}</a></div>
+                    ${epUrl ? `<div><span class="text-muted">章节：</span><a href="${epUrl}" target="_blank">${epUrl}</a></div>` : ''}
+                    <div><span class="text-muted">结果：</span>${after.message || ''}</div>
+                </div>`;
+        } else {
+            afterHtml = `
+                <div class="small">
+                    <div><span class="text-muted">结果：</span><span class="text-${statusColor}">${after.message || '-'}</span></div>
+                </div>`;
+        }
+
+        resultRow.querySelector('td').innerHTML = `
+            <div class="d-flex gap-3 flex-wrap">
+                <div class="flex-grow-1">
+                    <div class="fw-bold mb-1 text-muted"><i class="bi bi-arrow-bar-right me-1"></i>FongMi 解析（同步前）</div>
+                    ${beforeHtml}
+                </div>
+                <div class="flex-grow-1">
+                    <div class="fw-bold mb-1 text-muted"><i class="bi bi-arrow-bar-left me-1"></i>Bangumi 匹配（同步后）
+                        <span class="badge bg-${statusColor} ms-1"><i class="bi bi-${statusIcon} me-1"></i>${status}</span>
+                    </div>
+                    ${afterHtml}
+                </div>
+            </div>`;
+    } catch (error) {
+        const isTimeout = error.name === 'AbortError';
+        resultRow.querySelector('td').innerHTML =
+            `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i><strong>${isTimeout ? '请求超时' : '网络错误'}</strong><br><span class="small">${isTimeout ? '同步超过 35 秒未完成。' : (error.message || String(error))}</span></div>`;
+    } finally {
+        clearTimeout(timeoutId);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>同步';
     }
 }
 
