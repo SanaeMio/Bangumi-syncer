@@ -12,6 +12,7 @@ import httpx
 
 from ...core.config import config_manager
 from ...core.logging import logger
+from ...utils.http_client import create_async_client
 
 # ===== 数据模型导入 =====
 from .models import TraktCollectionItem, TraktHistoryItem, TraktRatingItem
@@ -57,7 +58,7 @@ class TraktClient:
     async def _ensure_client(self) -> None:
         """确保 HTTP 客户端已初始化"""
         if self._client is None:
-            self._client = httpx.AsyncClient(
+            self._client = create_async_client(
                 headers=self.headers,
                 timeout=30.0,
                 follow_redirects=True,

@@ -19,6 +19,7 @@ from ...models.trakt import (
     TraktCallbackResponse,
     TraktConfig,
 )
+from ...utils.http_client import create_async_client
 
 
 class TraktAuthService:
@@ -207,7 +208,7 @@ class TraktAuthService:
                 "grant_type": "authorization_code",
             }
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with create_async_client(timeout=30.0) as client:
                 response = await client.post(self.token_url, json=data)
 
                 if response.status_code == 200:
@@ -242,7 +243,7 @@ class TraktAuthService:
                 "grant_type": "refresh_token",
             }
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with create_async_client(timeout=30.0) as client:
                 response = await client.post(self.token_url, json=data)
 
                 if response.status_code == 200:

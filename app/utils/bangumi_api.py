@@ -10,6 +10,7 @@ import httpx
 from rapidfuzz import fuzz
 
 from ..core.logging import logger
+from .http_client import create_sync_client
 
 # 使用全局logger实例
 
@@ -41,12 +42,13 @@ class BangumiApi:
         self.private = private
         self.http_proxy = http_proxy
         self.ssl_verify = ssl_verify
-        # httpx 0.28+ 使用 proxy（单数）替代 proxies
-        client_kwargs: dict = {"verify": ssl_verify}
-        if http_proxy:
-            client_kwargs["proxy"] = http_proxy
-        self.req = httpx.Client(**client_kwargs)
-        self._req_not_auth = httpx.Client(**client_kwargs)
+        # 统一使用工厂函数创建 httpx.Client（proxy/verify 在构造时设置）
+        self.req = create_sync_client(
+            proxy=http_proxy, verify=ssl_verify, follow_redirects=True
+        )
+        self._req_not_auth = create_sync_client(
+            proxy=http_proxy, verify=ssl_verify, follow_redirects=True
+        )
 
         # 代理失败标记：一旦代理失败，后续请求都直接使用直连
         self._proxy_failed = False
@@ -104,7 +106,7 @@ class BangumiApi:
         logger.info(f"🔄 尝试直连: {url}")
 
         # 创建一个临时的 httpx.Client，不使用代理
-        temp_session = httpx.Client(verify=self.ssl_verify)
+        temp_session = create_sync_client(verify=self.ssl_verify)
         temp_session.headers.update(
             {
                 "Accept": "application/json",

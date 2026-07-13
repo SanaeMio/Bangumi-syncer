@@ -12,6 +12,7 @@ from rapidfuzz import fuzz
 
 from ..core.config import config_manager
 from ..core.logging import logger
+from .http_client import create_sync_client
 
 # 使用全局logger实例
 
@@ -79,14 +80,12 @@ def _request_with_retry(
     if proxies:
         proxy_url = proxies.get("https") or proxies.get("http")
 
-    client_kwargs: dict = {"verify": ssl_verify, "timeout": 30.0}
-    if proxy_url:
-        client_kwargs["proxy"] = proxy_url
-
     response = None
     for attempt in range(max_retries + 1):
         try:
-            with httpx.Client(**client_kwargs) as client:
+            with create_sync_client(
+                proxy=proxy_url, verify=ssl_verify, timeout=30.0
+            ) as client:
                 response = client.get(url)
 
                 # 先检查是否需要重试的状态码，再决定是否抛异常

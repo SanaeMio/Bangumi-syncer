@@ -9,10 +9,12 @@ import time
 from typing import Optional
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from ..core.logging import logger
+from ..utils.http_client import create_sync_client
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api")
@@ -399,23 +401,19 @@ async def diagnose_network(
 
         # HTTP连接测试（使用配置的代理）
         try:
-            import httpx
-
             ssl_verify = config_manager.get("dev", "ssl_verify", fallback=True)
 
             test_url = f"{parsed.scheme}://{hostname}:{port}"
             start_time = time.time()
 
-            # httpx 0.28+ 通过 proxy 参数传代理
+            # 统一使用工厂函数创建 httpx.Client
             proxy_url = proxies.get("https") or proxies.get("http") if proxies else None
-            client_kwargs: dict = {
-                "verify": ssl_verify,
-                "timeout": 10.0,
-                "follow_redirects": False,
-            }
-            if proxy_url:
-                client_kwargs["proxy"] = proxy_url
-            with httpx.Client(**client_kwargs) as client:
+            with create_sync_client(
+                proxy=proxy_url,
+                verify=ssl_verify,
+                timeout=10.0,
+                follow_redirects=False,
+            ) as client:
                 response = client.get(test_url)
 
             end_time = time.time()

@@ -9,6 +9,7 @@ from typing import Optional
 import httpx
 
 from ..core.logging import logger
+from .http_client import create_sync_client
 
 
 class DockerProxyHelper:
@@ -270,8 +271,10 @@ class DockerProxyHelper:
                 result["error"] = f"基础连通性失败: {basic_connectivity['error']}"
                 return result
 
-            # 使用代理访问一个简单的HTTP服务（httpx 0.28+ 通过 proxy 参数传代理）
-            with httpx.Client(proxy=proxy_url, verify=False, timeout=timeout) as client:
+            # 使用代理访问一个简单的HTTP服务
+            with create_sync_client(
+                proxy=proxy_url, verify=False, timeout=timeout
+            ) as client:
                 response = client.get("http://httpbin.org/ip")  # 测试时不验证SSL
 
             if response.status_code == 200:
