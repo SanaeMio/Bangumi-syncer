@@ -17,6 +17,8 @@ services:
     network_mode: bridge
     ports:
       - "8000:8000"
+    # fongmi 驱动的自动扫描局域网设备，需使用 `host` 网络模式
+    # network_mode: host
     volumes:
       - /docker/bangumi-syncer/config:/app/config
       - /docker/bangumi-syncer/logs:/app/logs
@@ -46,3 +48,8 @@ services:
    - 登录后请立即在「配置管理」页面修改默认密码
 
 3. 点击「配置管理」进行在线配置
+
+::: 注意：如果你使用 fongmi 驱动，推荐使用 `host` 网络模式
+fongmi 驱动的自动扫描局域网设备，需使用 `host` 网络模式，
+`bridge` 网络模式下容器只能扫描到 `172.x.x.x` 网段，无法发现局域网设备。
+:::

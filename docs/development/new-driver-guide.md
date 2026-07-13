@@ -1,6 +1,6 @@
 ---
 title: 新驱动接入指南
-order: 1
+order: 2
 ---
 
 # 新驱动接入指南
@@ -58,7 +58,7 @@ app/services/mydriver/
 
 ```python
 """MyDriver 数据模型"""
-from typing import Any, Optional
+from typing import Any
 from pydantic import BaseModel, Field
 
 
