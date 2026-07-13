@@ -3,4 +3,4 @@ title: 🤖 AGENTS.md
 order: 3
 ---
 
-<!-- @include: ../../AGENTS.md -->
+<!-- @include: ./_includes/AGENTS.md -->

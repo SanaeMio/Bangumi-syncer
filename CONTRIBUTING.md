@@ -99,7 +99,7 @@ uv export --format requirements.txt --no-dev -o requirements.txt
 
 如果本次修改内容有配置项变更，或其他需要补充到文档里的内容，请同时更新对应md文件。
 
-文档内配图请放在 [`docs/public/images/`](docs/public/images/) 下，Markdown 使用根路径引用，例如 `![](/images/overview/xxx.png)`。
+文档内配图请放在 [`docs/public/images/`](https://github.com/SanaeMio/Bangumi-syncer/tree/main/docs/public/images) 下，Markdown 使用根路径引用，例如 `![](/images/overview/xxx.png)`。
 
-PR合并到 `main` 后，工作流 [.github/workflows/docs.yml](.github/workflows/docs.yml) 会自动将站点更新部署到 [GitHub Pages](https://sanaemio.github.io/Bangumi-syncer/)。
+PR合并到 `main` 后，工作流 [.github/workflows/docs.yml](https://github.com/SanaeMio/Bangumi-syncer/blob/main/.github/workflows/docs.yml) 会自动将站点更新部署到 [GitHub Pages](https://sanaemio.github.io/Bangumi-syncer/)。
 

@@ -79,7 +79,7 @@ export default defineConfig(
         'community.md',
         'development',
       ],
-      excludeByGlobPattern: ['**/public/**', '**/.vitepress/**'],
+      excludeByGlobPattern: ['**/public/**', '**/.vitepress/**', '**/_includes/**'],
     },
   ),
 )
