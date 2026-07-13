@@ -14,6 +14,7 @@ from .api.auth import router as auth_router
 from .api.bgm_poster import router as bgm_poster_router
 from .api.config import router as config_router
 from .api.feiniu import router as feiniu_router
+from .api.fongmi import router as fongmi_router
 from .api.health import router as health_router
 from .api.inbox import router as inbox_router
 from .api.logs import router as logs_router
@@ -32,6 +33,7 @@ from .core.public_url import get_public_base_path
 from .core.startup_info import startup_info
 from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
+from .services.fongmi.scheduler import fongmi_scheduler
 from .services.mapping_service import mapping_service
 from .services.sync_service import sync_service
 from .services.trakt.scheduler import trakt_scheduler
@@ -73,6 +75,7 @@ app.include_router(notification_router)
 app.include_router(inbox_router)
 app.include_router(trakt_router)
 app.include_router(feiniu_router)
+app.include_router(fongmi_router)
 app.include_router(upgrade_router)
 
 
@@ -133,6 +136,16 @@ async def startup_event():
                     logger.error("飞牛调度器启动失败")
             except Exception as e:
                 logger.error(f"飞牛调度器启动异常: {e}")
+            try:
+                fm_ok = await fongmi_scheduler.start()
+                if fm_ok:
+                    logger.info(
+                        "fongmi 定时同步：延迟启动阶段结束（未启用时不会注册定时任务）"
+                    )
+                else:
+                    logger.error("fongmi 调度器启动失败")
+            except Exception as e:
+                logger.error(f"fongmi 调度器启动异常: {e}")
 
         task = asyncio.create_task(delayed_scheduler_start())
         _background_tasks.add(task)
@@ -166,6 +179,12 @@ async def shutdown_event():
         logger.info("飞牛调度器已停止")
     except Exception as e:
         logger.error(f"停止飞牛调度器失败: {e}")
+
+    try:
+        await fongmi_scheduler.stop()
+        logger.info("fongmi 调度器已停止")
+    except Exception as e:
+        logger.error(f"停止 fongmi 调度器失败: {e}")
 
     # 关闭同步服务线程池
     try:

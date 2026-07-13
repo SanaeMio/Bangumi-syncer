@@ -44,6 +44,7 @@
                         <option value="emby">Emby</option>
                         <option value="jellyfin">Jellyfin</option>
                         <option value="feiniu">飞牛</option>
+                        <option value="fongmi">fongmi</option>
                         <option value="test">测试</option>
                         <option value="retry">重试记录</option>
                     </select>
@@ -240,6 +241,7 @@ function getSourceColor(source) {
         case 'jellyfin': return 'primary';
         case 'custom': return 'secondary';
         case 'feiniu': return 'info';
+        case 'fongmi': return 'primary';
         case 'test': return 'secondary';
         default: return 'secondary';
     }
@@ -248,7 +250,7 @@ function getSourceColor(source) {
 function getSourceTlClass(source) {
     const s = source.toLowerCase();
     if (s.startsWith('retry-')) return 'retry';
-    if (['plex', 'emby', 'jellyfin', 'custom', 'feiniu', 'test'].indexOf(s) !== -1) return s;
+    if (['plex', 'emby', 'jellyfin', 'custom', 'feiniu', 'fongmi', 'test'].indexOf(s) !== -1) return s;
     return 'custom';
 }
 

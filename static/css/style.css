@@ -2221,6 +2221,12 @@ main.app-main > *:nth-child(12) {
     border: 1px solid rgba(20, 184, 166, 0.2);
 }
 
+.tl-source--fongmi {
+    background-color: rgba(59, 130, 246, 0.12);
+    color: #2563eb;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
 .tl-source--test {
     background-color: rgba(108, 117, 125, 0.12);
     color: var(--app-text-muted);
@@ -2251,6 +2257,11 @@ main.app-main > *:nth-child(12) {
 [data-theme="dark"] .tl-source--feiniu {
     background-color: rgba(20, 184, 166, 0.15);
     color: #14b8a6;
+}
+
+[data-theme="dark"] .tl-source--fongmi {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
 }
 
 .tl-time {

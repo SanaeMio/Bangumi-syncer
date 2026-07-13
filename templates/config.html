@@ -902,6 +902,115 @@
                 </div>
             </div>
         </div>
+        <!-- fongmi -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-fongmi" class="card shadow-sm mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-tv me-2 text-secondary"></i>
+                            <h6 class="m-0 fw-semibold">fongmi 局域网同步</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="fongmi-enabled"
+                                           name="fongmi.enabled">
+                                    <label class="form-check-label fw-semibold" for="fongmi-enabled">
+                                        <i class="bi bi-tv me-1 text-secondary"></i>启用 fongmi 同步
+                                        <i class="bi bi-question-circle ms-1 text-muted"
+                                           data-bs-toggle="tooltip"
+                                           title="默认关闭。开启后会定时轮询局域网内 fongmi 设备的 /media 端点，检测「看完」的剧集并提交到 Bangumi。仅支持 fongmi 及其 fork（TV-K、OK影视、WebHomeTV 等），原版 TVBoxOSC 不支持。"></i>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label for="fongmi-devices" class="form-label fw-semibold">
+                                    <i class="bi bi-list-stars me-1 text-primary"></i>设备列表
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="手动指定 fongmi 设备 IP，多个用英文逗号分隔，可带端口。例如：192.168.1.100 或 192.168.1.100:9979。留空则依赖自动扫描。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="fongmi-devices"
+                                       name="fongmi.devices"
+                                       placeholder="如：192.168.1.100, 192.168.1.101:9979">
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="fongmi-auto-scan"
+                                           name="fongmi.auto_scan"
+                                           checked>
+                                    <label class="form-check-label fw-semibold" for="fongmi-auto-scan">
+                                        <i class="bi bi-wifi me-1 text-info"></i>自动扫描网段
+                                        <i class="bi bi-question-circle ms-1 text-muted"
+                                           data-bs-toggle="tooltip"
+                                           title="开启后会扫描下方网段的 9978 端口自动发现 fongmi 设备。单台设备时建议关闭，直接填设备 IP。"></i>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="fongmi-subnet" class="form-label fw-semibold">
+                                    <i class="bi bi-diagram-3 me-1 text-success"></i>网段
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="自动扫描的网段，如 192.168.1（不含最后一段）"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="fongmi-subnet"
+                                       name="fongmi.subnet"
+                                       placeholder="如：192.168.1">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="fongmi-min-percent" class="form-label fw-semibold">
+                                    <i class="bi bi-percent me-1 text-warning"></i>完成阈值（%）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="播放进度达到此百分比视为「看完」，默认 80"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="fongmi-min-percent"
+                                       name="fongmi.min_percent"
+                                       min="1"
+                                       max="100"
+                                       value="80">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="fongmi-sync-interval" class="form-label fw-semibold">
+                                    <i class="bi bi-clock me-1 text-primary"></i>同步频率（Cron）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="轮询 fongmi 设备的 cron 表达式，默认每 3 分钟"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="fongmi-sync-interval"
+                                       name="fongmi.sync_interval"
+                                       value="*/3 * * * *">
+                            </div>
+                            <div class="col-12">
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <strong>提示：</strong>需先在 fongmi APP
+                                    中开启局域网控制（设置 → 关于 → 本地地址），可访问
+                                    <code>http://设备IP:9978/media</code> 确认返回 JSON。Docker
+                                    部署需使用 <code>network_mode: host</code>，否则无法扫描到局域网设备。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </form>
     <!-- 操作按钮 -->
     <div id="config-section-actions" class="row">
@@ -1188,6 +1297,7 @@ function refreshConfigPageToc() {
         { id: 'config-section-bangumi-data', label: 'Data', mode: 'always' },
         { id: 'config-section-notify', label: '通知', mode: 'always' },
         { id: 'config-section-feiniu', label: '飞牛', mode: 'always' },
+        { id: 'config-section-fongmi', label: 'fongmi', mode: 'always' },
         { id: 'config-section-actions', label: '保存区', mode: 'always', primary: true },
     ];
     items.forEach(function (item) {
@@ -1360,6 +1470,18 @@ function populateForm(config) {
         document.getElementById('feiniu-limit').value = (fn.limit != null && fn.limit !== '') ? fn.limit : 100;
     }
     
+    // 填充 fongmi 配置
+    const fm = config.fongmi || {};
+    const fmEnabled = document.getElementById('fongmi-enabled');
+    if (fmEnabled) {
+        fmEnabled.checked = fm.enabled === true || fm.enabled === 'true' || String(fm.enabled).toLowerCase() === 'true';
+        document.getElementById('fongmi-devices').value = fm.devices || '';
+        document.getElementById('fongmi-auto-scan').checked = fm.auto_scan === true || fm.auto_scan === 'true' || String(fm.auto_scan).toLowerCase() === 'true';
+        document.getElementById('fongmi-subnet').value = fm.subnet || '';
+        document.getElementById('fongmi-min-percent').value = (fm.min_percent != null && fm.min_percent !== '') ? fm.min_percent : 80;
+        document.getElementById('fongmi-sync-interval').value = fm.sync_interval || '*/3 * * * *';
+    }
+
     // 填充认证配置
     if (config.auth) {
         document.getElementById('auth-enabled').checked = config.auth.enabled !== false;
@@ -1539,6 +1661,14 @@ async function saveConfig() {
                 time_range: document.getElementById('feiniu-time-range').value || 'all',
                 sync_interval: document.getElementById('feiniu-sync-interval').value.trim() || '*/15 * * * *',
                 limit: parseInt(document.getElementById('feiniu-limit').value, 10) || 100
+            },
+            fongmi: {
+                enabled: document.getElementById('fongmi-enabled').checked,
+                devices: document.getElementById('fongmi-devices').value.trim(),
+                auto_scan: document.getElementById('fongmi-auto-scan').checked,
+                subnet: document.getElementById('fongmi-subnet').value.trim(),
+                min_percent: parseInt(document.getElementById('fongmi-min-percent').value, 10) || 80,
+                sync_interval: document.getElementById('fongmi-sync-interval').value.trim() || '*/3 * * * *'
             },
             auth: {
                 enabled: document.getElementById('auth-enabled').checked,
