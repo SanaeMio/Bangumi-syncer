@@ -50,6 +50,36 @@ uv run pytest tests/ --cov=app --cov-report=term
 - **测试**：`ci-tests` 工作流会跑 `pytest tests/` 并生成覆盖率 XML 上传 Codecov；本地至少应保证测试通过。
 - **Docker**：合并前 CI 还会构建镜像并跑集成脚本 `tests/integration/test_docker_perms.sh`；若你的改动涉及镜像权限或启动方式，可在本地用同仓库的 Dockerfile 构建后自行验证。
 
+### 本地 pre-commit 钩子（推荐）
+
+仓库内置了 `.githooks/pre-commit`，安装后每次 `git commit` 都会自动执行 `ruff check`、`ruff format --check` 和全量 `pytest`，失败则阻止提交，避免把破坏 CI 的代码推到远端。同时会在测试运行污染 `config.ini` 时自动恢复。
+
+安装方式（任选其一，仅需执行一次）：
+
+```bash
+# 方式 A：手动配置（跨平台）
+git config core.hooksPath .githooks
+
+# 方式 B：使用安装脚本
+bash .githooks/install.sh          # Linux / macOS / Git for Windows
+.githooks\install.bat              # Windows CMD / PowerShell
+```
+
+安装后每次提交会看到类似输出：
+
+```
+==> [pre-commit] ruff check（仅暂存的 .py 文件）
+==> [pre-commit] ruff format --check（仅暂存的 .py 文件）
+==> [pre-commit] 运行单元测试
+✅ pre-commit 检查全部通过
+```
+
+紧急情况下可用 `git commit --no-verify` 跳过（请在 commit message 注明跳过原因）。需要加速测试时，可通过环境变量 `PRECOMMIT_TEST_ARGS` 传入额外参数，例如：
+
+```bash
+PRECOMMIT_TEST_ARGS="-x tests/services" git commit
+```
+
 **仅当本次 PR 修改了 `pyproject.toml` 中的运行时依赖时**：在 `uv lock` 更新锁文件之后，再执行下面命令重新生成根目录的 `requirements.txt`，并与改动一并提交，以免与 README、快速开始文档中的 `pip install -r requirements.txt` 不同步。
 
 ```bash

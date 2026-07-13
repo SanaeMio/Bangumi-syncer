@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# pre-commit hook：提交前强制执行 ruff 检查与单元测试
+#
+# 安装方式（任选其一）：
+#   1. git config core.hooksPath .githooks
+#   2. bash .githooks/install.sh
+#
+# 跳过方式（仅紧急情况，请在 commit message 注明原因）：
+#   git commit --no-verify
+
+set -euo pipefail
+
+# 切换到仓库根目录
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# ===== 环境探测 =====
+# 优先使用 uv（与 CI 一致），找不到则回退到 .venv，再回退到系统 python
+if command -v uv >/dev/null 2>&1; then
+    PY_RUN="uv run"
+elif [ -f ".venv/Scripts/python.exe" ]; then
+    PY_RUN=".venv/Scripts/python.exe -m"
+elif [ -f ".venv/bin/python" ]; then
+    PY_RUN=".venv/bin/python -m"
+else
+    PY_RUN="python -m"
+fi
+
+echo "==> [pre-commit] 使用执行器: $PY_RUN"
+
+# ===== 1. 保护 config.ini 不被测试污染带入提交 =====
+# 仅当 config.ini 有 staged 改动时才校验
+if git diff --cached --name-only -- config.ini | grep -q .; then
+    echo "==> [pre-commit] 检测到 config.ini 暂存改动，运行测试前置校验"
+    # 运行测试前先记录 config.ini 哈希，测试后若被污染则恢复
+    CONFIG_HASH_BEFORE="$(git -C "$REPO_ROOT" show :config.ini | git hash-object --stdin)"
+fi
+
+# ===== 2. Ruff 静态检查（仅检查暂存文件以加速）=====
+STAGED_PY_FILES="$(git diff --cached --name-only --diff-filter=ACM -- '*.py')"
+if [ -n "$STAGED_PY_FILES" ]; then
+    echo "==> [pre-commit] ruff check（仅暂存的 .py 文件）"
+    # shellcheck disable=SC2086
+    $PY_RUN ruff check $STAGED_PY_FILES || {
+        echo "❌ ruff check 失败，请修复后再提交（或使用 git commit --no-verify 跳过）"
+        exit 1
+    }
+    echo "==> [pre-commit] ruff format --check（仅暂存的 .py 文件）"
+    # shellcheck disable=SC2086
+    $PY_RUN ruff format --check $STAGED_PY_FILES || {
+        echo "❌ ruff format 检查失败，请执行 ruff format 后再提交"
+        exit 1
+    }
+else
+    echo "==> [pre-commit] 无 .py 文件改动，跳过 ruff"
+fi
+
+# ===== 3. 单元测试 =====
+# 默认全量测试；如需加速可通过 PRECOMMIT_TEST_ARGS 环境变量传入额外参数
+# 例如：PRECOMMIT_TEST_ARGS="-x tests/services" git commit
+TEST_ARGS="${PRECOMMIT_TEST_ARGS:-}"
+echo "==> [pre-commit] 运行单元测试（参数: $TEST_ARGS）"
+# -p no:cacheprovider 避免缓存干扰；--tb=short 精简失败输出
+if ! $PY_RUN pytest tests/ -p no:cacheprovider --tb=short -q $TEST_ARGS; then
+    echo "❌ 单元测试失败，提交已阻止（或使用 git commit --no-verify 跳过）"
+    exit 1
+fi
+
+# ===== 4. 测试后恢复 config.ini（若被测试污染）=====
+if [ -n "${CONFIG_HASH_BEFORE:-}" ]; then
+    CONFIG_HASH_AFTER="$(git hash-object config.ini)"
+    if [ "$CONFIG_HASH_BEFORE" != "$CONFIG_HASH_AFTER" ]; then
+        echo "⚠️  检测到 config.ini 被测试运行污染，已自动从暂存区恢复"
+        git checkout -- config.ini
+    fi
+fi
+
+echo "✅ pre-commit 检查全部通过"
+exit 0
