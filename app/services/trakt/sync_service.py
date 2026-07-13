@@ -17,7 +17,7 @@ from ...services.sync_service import sync_service
 from ...utils.notifier import send_notify
 from .auth import trakt_auth_service
 from .client import TraktClient, TraktClientFactory
-from .models import TraktHistoryItem, TraktSyncResult, TraktSyncStats
+from .models import TraktHistoryItem, TraktSyncResult
 
 
 class TraktSyncService:
@@ -107,20 +107,12 @@ class TraktSyncService:
             )
 
         try:
-            stats = TraktSyncStats(
-                total_items=0,
-                movies=0,
-                episodes=0,
-                start_time=time.time(),
-                end_time=None,
-                duration=None,
-            )
             synced_count = 0
             skipped_count = 0
             error_count = 0
             details = {}
 
-            # 根据配置决定同步哪些类型
+            # 同步观看历史（评分与收藏同步暂未实现）
             if "history" in sync_types:
                 logger.info(f"开始同步用户 {user_id} 的 Trakt 观看历史")
                 history_result = await self._sync_watched_history(
@@ -131,36 +123,10 @@ class TraktSyncService:
                 error_count += history_result.error_count
                 details["history"] = history_result.details
 
-            # if "ratings" in sync_types:
-            #     logger.info(f"开始同步用户 {user_id} 的 Trakt 评分")
-            #     ratings_result = await self._sync_ratings(
-            #         user_id, client, config, full_sync
-            #     )
-            #     synced_count += ratings_result.synced_count
-            #     skipped_count += ratings_result.skipped_count
-            #     error_count += ratings_result.error_count
-            #     details["ratings"] = ratings_result.details
-
-            # if "collection" in sync_types:
-            #     logger.info(f"开始同步用户 {user_id} 的 Trakt 收藏")
-            #     collection_result = await self._sync_collection(
-            #         user_id, client, config, full_sync
-            #     )
-            #     synced_count += collection_result.synced_count
-            #     skipped_count += collection_result.skipped_count
-            #     error_count += collection_result.error_count
-            #     details["collection"] = collection_result.details
-
             # 更新最后同步时间（只要没有错误就更新）
             if error_count == 0 and config is not None:
                 config.last_sync_time = int(time.time())
                 database_manager.save_trakt_config(config.to_dict())
-
-            stats.end_time = time.time()
-            # 确保 start_time 不为 None
-            assert stats.start_time is not None
-            stats.duration = stats.end_time - stats.start_time
-            stats.total_items = synced_count + skipped_count + error_count
 
             success = error_count == 0
 
@@ -408,36 +374,6 @@ class TraktSyncService:
                 skipped_count=0,
                 details={},
             )
-
-    async def _sync_ratings(
-        self, user_id: str, client: TraktClient, config, full_sync: bool
-    ) -> TraktSyncResult:
-        """同步评分"""
-        # TODO: 实现评分同步
-        logger.info(f"用户 {user_id} 的评分同步暂未实现")
-        return TraktSyncResult(
-            success=True,
-            message="评分同步暂未实现",
-            synced_count=0,
-            skipped_count=0,
-            error_count=0,
-            details={},
-        )
-
-    async def _sync_collection(
-        self, user_id: str, client: TraktClient, config, full_sync: bool
-    ) -> TraktSyncResult:
-        """同步收藏"""
-        # TODO: 实现收藏同步
-        logger.info(f"用户 {user_id} 的收藏同步暂未实现")
-        return TraktSyncResult(
-            success=True,
-            message="收藏同步暂未实现",
-            synced_count=0,
-            skipped_count=0,
-            error_count=0,
-            details={},
-        )
 
     def _trakt_item_failure_context(
         self, user_id: str, item: TraktHistoryItem, reason: str

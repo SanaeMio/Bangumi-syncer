@@ -89,14 +89,3 @@ class TraktSyncResult(BaseModel):
     skipped_count: int = Field(0, description="跳过数量")
     error_count: int = Field(0, description="错误数量")
     details: Optional[dict] = Field(None, description="详细结果")
-
-
-class TraktSyncStats(BaseModel):
-    """Trakt 同步统计"""
-
-    total_items: int = Field(0, description="总项目数")
-    movies: int = Field(0, description="电影数量")
-    episodes: int = Field(0, description="剧集数量")
-    start_time: Optional[float] = Field(None, description="开始时间")
-    end_time: Optional[float] = Field(None, description="结束时间")
-    duration: Optional[float] = Field(None, description="持续时间（秒）")

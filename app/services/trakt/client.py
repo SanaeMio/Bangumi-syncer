@@ -37,8 +37,6 @@ class TraktClient:
         # 速率限制控制
         self.rate_limit_remaining: int = 1000
         self.rate_limit_reset: int = 0
-        self._request_queue: asyncio.Queue = asyncio.Queue()
-        self._semaphore = asyncio.Semaphore(5)  # 限制并发请求数
 
         # 重试配置
         self.max_retries = 3

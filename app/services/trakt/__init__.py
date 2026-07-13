@@ -9,7 +9,6 @@ from .models import (
     TraktHistoryItem,
     TraktRatingItem,
     TraktSyncResult,
-    TraktSyncStats,
 )
 from .scheduler import trakt_scheduler
 from .sync_service import trakt_sync_service
@@ -24,5 +23,4 @@ __all__ = [
     "TraktRatingItem",
     "TraktCollectionItem",
     "TraktSyncResult",
-    "TraktSyncStats",
 ]

@@ -7,7 +7,6 @@ from app.services.trakt.models import (
     TraktHistoryItem,
     TraktRatingItem,
     TraktSyncResult,
-    TraktSyncStats,
 )
 
 
@@ -98,6 +97,5 @@ def test_trakt_rating_and_collection_media_type():
     assert c.media_type == "episode"
 
 
-def test_trakt_sync_result_and_stats_models():
+def test_trakt_sync_result_model():
     TraktSyncResult(success=True, message="ok", synced_count=1)
-    TraktSyncStats(total_items=10, movies=3, episodes=7, start_time=1.0, end_time=2.0)
