@@ -63,7 +63,9 @@ class PlexSyncService:
             logger.debug(f"Plex重新组装JSON报文：{custom_item}")
 
             if ev == "media.play":
-                return sync_svc.sync_movie_watching(custom_item, source=PLEX_SYNC_SOURCE)
+                return sync_svc.sync_movie_watching(
+                    custom_item, source=PLEX_SYNC_SOURCE
+                )
             return sync_svc.sync_custom_item(custom_item, source=PLEX_SYNC_SOURCE)
         except Exception as e:
             logger.error(f"Plex同步处理出错: {e}")

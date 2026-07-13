@@ -4,8 +4,8 @@ Bangumi API 工具测试
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
-import requests
 
 from app.utils.bangumi_api import BangumiApi
 
@@ -61,14 +61,13 @@ class TestBangumiApi:
 
     def test_init_proxy_sets_proxies(self):
         api = BangumiApi(http_proxy="http://proxy:8080")
-        assert api.req.proxies == {
-            "http": "http://proxy:8080",
-            "https": "http://proxy:8080",
-        }
+        # httpx 0.28+ 通过构造函数 proxy 参数设置代理，存储在 api.http_proxy
+        assert api.http_proxy == "http://proxy:8080"
 
     def test_init_no_auth_header_on_not_auth_session(self):
         api = BangumiApi(access_token="test_token")
-        assert "Authorization" not in api._req_not_auth.headers
+        # httpx Headers 大小写不敏感，用 lower 比较
+        assert "authorization" not in {k.lower() for k in api._req_not_auth.headers}
 
     def test_cache_clear(self):
         api = BangumiApi()
@@ -140,7 +139,7 @@ class TestTryDirectConnection:
         api = BangumiApi()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             mock_session.get.return_value = mock_resp
             MockSession.return_value = mock_session
@@ -151,7 +150,7 @@ class TestTryDirectConnection:
         api = BangumiApi()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             mock_session.post.return_value = mock_resp
             MockSession.return_value = mock_session
@@ -162,7 +161,7 @@ class TestTryDirectConnection:
         api = BangumiApi()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             mock_session.put.return_value = mock_resp
             MockSession.return_value = mock_session
@@ -173,7 +172,7 @@ class TestTryDirectConnection:
         api = BangumiApi()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             mock_session.patch.return_value = mock_resp
             MockSession.return_value = mock_session
@@ -182,7 +181,7 @@ class TestTryDirectConnection:
 
     def test_unsupported_method(self):
         api = BangumiApi()
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             MockSession.return_value = mock_session
             with pytest.raises(ValueError, match="不支持的HTTP方法"):
@@ -192,7 +191,7 @@ class TestTryDirectConnection:
         api = BangumiApi()
         mock_resp = MagicMock()
         mock_resp.status_code = 500
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             mock_session.get.return_value = mock_resp
             MockSession.return_value = mock_session
@@ -201,7 +200,7 @@ class TestTryDirectConnection:
 
     def test_exception_reraises(self):
         api = BangumiApi()
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             mock_session.get.side_effect = ConnectionError("fail")
             MockSession.return_value = mock_session
@@ -212,7 +211,7 @@ class TestTryDirectConnection:
         api = BangumiApi()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("app.utils.bangumi_api.requests.Session") as MockSession:
+        with patch("app.utils.bangumi_api.httpx.Client") as MockSession:
             mock_session = MagicMock()
             mock_session.get.return_value = mock_resp
             MockSession.return_value = mock_session
@@ -325,7 +324,7 @@ class TestRequestWithRetry:
         mock_session.get.return_value = mock_resp
         with (
             patch("app.utils.bangumi_api.time.sleep"),
-            pytest.raises(requests.exceptions.HTTPError),
+            pytest.raises(httpx.HTTPStatusError),
         ):
             api._request_with_retry(
                 "GET", mock_session, "https://example.com", max_retries=0
@@ -337,7 +336,7 @@ class TestRequestWithRetry:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_session.get.side_effect = [
-            requests.exceptions.ConnectionError("fail"),
+            httpx.ConnectError("fail"),
             mock_resp,
         ]
         with patch("app.utils.bangumi_api.time.sleep"):
@@ -349,10 +348,10 @@ class TestRequestWithRetry:
     def test_connection_error_exhausted_no_proxy(self):
         api = BangumiApi()
         mock_session = self._mock_session()
-        mock_session.get.side_effect = requests.exceptions.ConnectionError("fail")
+        mock_session.get.side_effect = httpx.ConnectError("fail")
         with (
             patch("app.utils.bangumi_api.time.sleep"),
-            pytest.raises(requests.exceptions.ConnectionError),
+            pytest.raises(httpx.ConnectError),
         ):
             api._request_with_retry(
                 "GET", mock_session, "https://example.com", max_retries=0
@@ -361,7 +360,7 @@ class TestRequestWithRetry:
     def test_proxy_fallback_to_direct(self):
         api = BangumiApi(http_proxy="http://proxy:8080")
         mock_session = self._mock_session()
-        mock_session.get.side_effect = requests.exceptions.ConnectionError("proxy fail")
+        mock_session.get.side_effect = httpx.ConnectError("proxy fail")
         mock_direct = MagicMock()
         mock_direct.status_code = 200
         with (
@@ -377,7 +376,7 @@ class TestRequestWithRetry:
     def test_proxy_fallback_direct_fails(self):
         api = BangumiApi(http_proxy="http://proxy:8080")
         mock_session = self._mock_session()
-        mock_session.get.side_effect = requests.exceptions.ConnectionError("proxy fail")
+        mock_session.get.side_effect = httpx.ConnectError("proxy fail")
         with (
             patch("app.utils.bangumi_api.time.sleep"),
             patch.object(
@@ -385,7 +384,7 @@ class TestRequestWithRetry:
                 "_try_direct_connection",
                 side_effect=ConnectionError("direct fail"),
             ),
-            pytest.raises(requests.exceptions.ConnectionError),
+            pytest.raises(httpx.ConnectError),
         ):
             api._request_with_retry(
                 "GET", mock_session, "https://example.com", max_retries=0
@@ -418,13 +417,13 @@ class TestRequestWithRetry:
     def test_dns_error_triggers_diagnosis(self):
         api = BangumiApi()
         mock_session = self._mock_session()
-        mock_session.get.side_effect = requests.exceptions.ConnectionError(
+        mock_session.get.side_effect = httpx.ConnectError(
             "Failed to resolve 'bad.host'"
         )
         with (
             patch("app.utils.bangumi_api.time.sleep"),
             patch.object(api, "_diagnose_network_issue") as mock_diag,
-            pytest.raises(requests.exceptions.ConnectionError),
+            pytest.raises(httpx.ConnectError),
         ):
             api._request_with_retry(
                 "GET", mock_session, "https://bad.host", max_retries=0
@@ -479,7 +478,7 @@ class TestCheckAuthError:
         mock_resp = MagicMock()
         mock_resp.status_code = 401
         with (
-            patch("app.utils.bangumi_api.requests.Session"),
+            patch("app.utils.bangumi_api.httpx.Client"),
             pytest.raises(ValueError, match="认证失败"),
         ):
             api._check_auth_error(mock_resp)

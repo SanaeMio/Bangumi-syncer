@@ -342,7 +342,8 @@ class TestPlexSync:
         )
         with patched_sync_deps():
             with patch(
-                "app.services.plex.sync_service.extract_plex_data", return_value=movie_item
+                "app.services.plex.sync_service.extract_plex_data",
+                return_value=movie_item,
             ) as ex:
                 from app.models.sync import SyncResponse
                 from app.services.sync_service import SyncService

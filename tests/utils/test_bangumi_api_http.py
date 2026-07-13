@@ -1,393 +1,347 @@
 """
 Bangumi API HTTP Mock 测试
-使用 responses 库模拟外部 API 调用
+使用 unittest.mock 模拟 httpx 调用
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-import responses
 
 from app.utils.bangumi_api import BangumiApi
 
 
-@responses.activate
+def _mock_response(status_code=200, json_data=None):
+    """创建模拟的 httpx 响应对象"""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = json_data if json_data is not None else {}
+    resp.headers = {}
+    resp.text = ""
+    resp.request = MagicMock()
+    return resp
+
+
 def test_search_success():
     """测试搜索成功"""
-    responses.add(
-        responses.POST,
-        "https://api.bgm.tv/v0/search/subjects",
-        json={"data": [{"id": 1, "name": "Test Anime", "name_cn": "测试动画"}]},
-        status=200,
+    mock_resp = _mock_response(
+        200, {"data": [{"id": 1, "name": "Test Anime", "name_cn": "测试动画"}]}
     )
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.post.return_value = mock_resp
 
-    api = BangumiApi()
-    result = api.search("test", "2024-01-01", "2024-12-31")
+        api = BangumiApi()
+        result = api.search("test", "2024-01-01", "2024-12-31")
 
-    assert len(result) == 1
-    assert result[0]["id"] == 1
-    assert result[0]["name"] == "Test Anime"
+        assert len(result) == 1
+        assert result[0]["id"] == 1
+        assert result[0]["name"] == "Test Anime"
 
 
-@responses.activate
 def test_search_empty_result():
     """测试搜索无结果"""
-    responses.add(
-        responses.POST,
-        "https://api.bgm.tv/v0/search/subjects",
-        json={"data": []},
-        status=200,
-    )
+    mock_resp = _mock_response(200, {"data": []})
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.post.return_value = mock_resp
 
-    api = BangumiApi()
-    result = api.search("nonexistent", "2024-01-01", "2024-12-31")
+        api = BangumiApi()
+        result = api.search("nonexistent", "2024-01-01", "2024-12-31")
 
-    assert result == []
+        assert result == []
 
 
-@responses.activate
 def test_get_subject():
     """测试获取条目详情"""
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/subjects/123",
-        json={
+    mock_resp = _mock_response(
+        200,
+        {
             "id": 123,
             "name": "Test Anime",
             "name_cn": "测试动画",
             "type": 2,
             "eps": 12,
         },
-        status=200,
     )
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_resp
 
-    api = BangumiApi()
-    result = api.get_subject(123)
+        api = BangumiApi()
+        result = api.get_subject(123)
 
-    assert result["id"] == 123
-    assert result["name_cn"] == "测试动画"
-    assert result["eps"] == 12
+        assert result["id"] == 123
+        assert result["name_cn"] == "测试动画"
+        assert result["eps"] == 12
 
 
-@responses.activate
 def test_get_episodes():
     """测试获取剧集列表"""
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/episodes",
-        json={
+    mock_resp = _mock_response(
+        200,
+        {
             "data": [
                 {"id": 1, "ep": 1, "sort": 1, "name": "第1话"},
                 {"id": 2, "ep": 2, "sort": 2, "name": "第2话"},
             ],
             "total": 2,
         },
-        status=200,
     )
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_resp
 
-    api = BangumiApi()
-    result = api.get_episodes(123)
+        api = BangumiApi()
+        result = api.get_episodes(123)
 
-    assert result["total"] == 2
-    assert len(result["data"]) == 2
-    assert result["data"][0]["ep"] == 1
+        assert result["total"] == 2
+        assert len(result["data"]) == 2
+        assert result["data"][0]["ep"] == 1
 
 
-@responses.activate
 def test_mark_episode_watched_add_collection():
     """测试标记观看 - 未收藏情况"""
-    # Mock get_subject_collection 返回空（未收藏）
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={},
-        status=404,
-    )
-    # Mock add_collection_subject
-    responses.add(
-        responses.POST,
-        "https://api.bgm.tv/v0/users/-/collections/123",
-        json={"status": "ok"},
-        status=200,
-    )
-    # Mock change_episode_state
-    responses.add(
-        responses.PUT,
-        "https://api.bgm.tv/v0/users/-/collections/-/episodes/1",
-        json={"status": "ok"},
-        status=200,
-    )
+    # get_subject_collection 返回 404（未收藏）
+    mock_get_404 = _mock_response(404, {})
+    # add_collection_subject 返回 200
+    mock_post_200 = _mock_response(200, {"status": "ok"})
+    # change_episode_state 返回 200
+    mock_put_200 = _mock_response(200, {"status": "ok"})
 
-    api = BangumiApi(username="testuser", access_token="test_token")
-    result = api.mark_episode_watched("123", "1")
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_get_404
+        mock_client.post.return_value = mock_post_200
+        mock_client.put.return_value = mock_put_200
 
-    # 返回 2 表示添加到收藏并标记为看过
-    assert result == 2
+        api = BangumiApi(username="testuser", access_token="test_token")
+        result = api.mark_episode_watched("123", "1")
+
+        # 返回 2 表示添加到收藏并标记为看过
+        assert result == 2
 
 
-@responses.activate
 def test_mark_episode_watched_already_watched():
     """测试标记观看 - 已看过"""
-    # Mock get_subject_collection 返回已看过
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={"type": 2, "subject_id": 123},
-        status=200,
-    )
+    # get_subject_collection 返回已看过
+    mock_get_200 = _mock_response(200, {"type": 2, "subject_id": 123})
 
-    api = BangumiApi(username="testuser", access_token="test_token")
-    result = api.mark_episode_watched("123", "1")
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_get_200
 
-    # 返回 0 表示已看过，跳过
-    assert result == 0
+        api = BangumiApi(username="testuser", access_token="test_token")
+        result = api.mark_episode_watched("123", "1")
+
+        # 返回 0 表示已看过，跳过
+        assert result == 0
 
 
-@responses.activate
 def test_mark_episode_watched_already_episode_watched():
     """测试标记观看 - 单集已看过"""
-    # Mock get_subject_collection 返回在 看
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={"type": 3, "subject_id": 123},
-        status=200,
-    )
-    # Mock get_ep_collection 返回已看过
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/-/collections/-/episodes/1",
-        json={"type": 2, "episode_id": 1},
-        status=200,
-    )
+    # get_subject_collection 返回在看
+    mock_collection = _mock_response(200, {"type": 3, "subject_id": 123})
+    # get_ep_collection 返回已看过
+    mock_ep = _mock_response(200, {"type": 2, "episode_id": 1})
 
-    api = BangumiApi(username="testuser", access_token="test_token")
-    result = api.mark_episode_watched("123", "1")
+    def get_side_effect(url, **kwargs):
+        if "episodes/1" in url:
+            return mock_ep
+        return mock_collection
 
-    # 返回 0 表示已看过，跳过
-    assert result == 0
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.side_effect = get_side_effect
+
+        api = BangumiApi(username="testuser", access_token="test_token")
+        result = api.mark_episode_watched("123", "1")
+
+        # 返回 0 表示已看过，跳过
+        assert result == 0
 
 
-@responses.activate
 def test_mark_episode_watched_success():
     """测试标记观看 - 成功标记"""
-    # Mock get_subject_collection 返回在 看
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={"type": 3, "subject_id": 123},
-        status=200,
-    )
-    # Mock get_ep_collection 返回未看过
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/-/collections/-/episodes/1",
-        json={},
-        status=404,
-    )
-    # Mock change_episode_state
-    responses.add(
-        responses.PUT,
-        "https://api.bgm.tv/v0/users/-/collections/-/episodes/1",
-        json={"status": "ok"},
-        status=200,
-    )
+    # get_subject_collection 返回在看
+    mock_collection = _mock_response(200, {"type": 3, "subject_id": 123})
+    # get_ep_collection 返回未看过
+    mock_ep_404 = _mock_response(404, {})
+    # change_episode_state 返回 200
+    mock_put_200 = _mock_response(200, {"status": "ok"})
 
-    api = BangumiApi(username="testuser", access_token="test_token")
-    result = api.mark_episode_watched("123", "1")
+    def get_side_effect(url, **kwargs):
+        if "episodes/1" in url:
+            return mock_ep_404
+        return mock_collection
 
-    # 返回 1 表示成功标记
-    assert result == 1
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.side_effect = get_side_effect
+        mock_client.put.return_value = mock_put_200
+
+        api = BangumiApi(username="testuser", access_token="test_token")
+        result = api.mark_episode_watched("123", "1")
+
+        # 返回 1 表示成功标记
+        assert result == 1
 
 
-@responses.activate
 def test_ensure_subject_watching_not_collected():
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={},
-        status=404,
-    )
-    responses.add(
-        responses.POST,
-        "https://api.bgm.tv/v0/users/-/collections/123",
-        json={"status": "ok"},
-        status=200,
-    )
-    api = BangumiApi(username="testuser", access_token="test_token")
-    assert api.ensure_subject_watching("123") == 1
+    mock_get_404 = _mock_response(404, {})
+    mock_post_200 = _mock_response(200, {"status": "ok"})
+
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_get_404
+        mock_client.post.return_value = mock_post_200
+
+        api = BangumiApi(username="testuser", access_token="test_token")
+        assert api.ensure_subject_watching("123") == 1
 
 
-@responses.activate
 def test_ensure_subject_watching_already_watching():
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={"type": 3, "subject_id": 123},
-        status=200,
-    )
-    api = BangumiApi(username="testuser", access_token="test_token")
-    assert api.ensure_subject_watching("123") == 0
+    mock_get_200 = _mock_response(200, {"type": 3, "subject_id": 123})
+
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_get_200
+
+        api = BangumiApi(username="testuser", access_token="test_token")
+        assert api.ensure_subject_watching("123") == 0
 
 
-@responses.activate
 def test_ensure_subject_watching_completed():
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={"type": 2, "subject_id": 123},
-        status=200,
-    )
-    api = BangumiApi(username="testuser", access_token="test_token")
-    assert api.ensure_subject_watching("123") == 0
+    mock_get_200 = _mock_response(200, {"type": 2, "subject_id": 123})
+
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_get_200
+
+        api = BangumiApi(username="testuser", access_token="test_token")
+        assert api.ensure_subject_watching("123") == 0
 
 
-@responses.activate
 def test_ensure_subject_watching_plan_to_watch():
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={"type": 1, "subject_id": 123},
-        status=200,
-    )
-    responses.add(
-        responses.POST,
-        "https://api.bgm.tv/v0/users/-/collections/123",
-        json={"status": "ok"},
-        status=200,
-    )
-    api = BangumiApi(username="testuser", access_token="test_token")
-    assert api.ensure_subject_watching("123") == 1
+    mock_get_200 = _mock_response(200, {"type": 1, "subject_id": 123})
+    mock_post_200 = _mock_response(200, {"status": "ok"})
+
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_get_200
+        mock_client.post.return_value = mock_post_200
+
+        api = BangumiApi(username="testuser", access_token="test_token")
+        assert api.ensure_subject_watching("123") == 1
 
 
-@responses.activate
 def test_get_related_subjects():
     """测试获取关联条目"""
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/subjects/123/subjects",
-        json=[
-            {"id": 456, "relation": "续集", "name": "Test Anime Season 2"},
-        ],
-        status=200,
+    mock_resp = _mock_response(
+        200, [{"id": 456, "relation": "续集", "name": "Test Anime Season 2"}]
     )
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_resp
 
-    api = BangumiApi()
-    result = api.get_related_subjects(123)
+        api = BangumiApi()
+        result = api.get_related_subjects(123)
 
-    assert len(result) == 1
-    assert result[0]["relation"] == "续集"
+        assert len(result) == 1
+        assert result[0]["relation"] == "续集"
 
 
-@responses.activate
 def test_get_subject_collection():
     """测试获取条目收藏状态"""
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/testuser/collections/123",
-        json={"type": 3, "subject_id": 123, "private": False},
-        status=200,
-    )
+    mock_resp = _mock_response(200, {"type": 3, "subject_id": 123, "private": False})
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_resp
 
-    api = BangumiApi(username="testuser", access_token="test_token")
-    result = api.get_subject_collection("123")
+        api = BangumiApi(username="testuser", access_token="test_token")
+        result = api.get_subject_collection("123")
 
-    assert result["type"] == 3
+        assert result["type"] == 3
 
 
-@responses.activate
 def test_get_ep_collection():
     """测试获取单集收藏状态"""
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/users/-/collections/-/episodes/1",
-        json={"type": 2, "episode_id": 1},
-        status=200,
-    )
+    mock_resp = _mock_response(200, {"type": 2, "episode_id": 1})
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_resp
 
-    api = BangumiApi(username="testuser", access_token="test_token")
-    result = api.get_ep_collection("1")
+        api = BangumiApi(username="testuser", access_token="test_token")
+        result = api.get_ep_collection("1")
 
-    assert result["type"] == 2
+        assert result["type"] == 2
 
 
-@responses.activate
 def test_get_me():
     """测试获取当前用户信息"""
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/me",
-        json={"id": 1, "username": "testuser", "nickname": "Test"},
-        status=200,
+    mock_resp = _mock_response(
+        200, {"id": 1, "username": "testuser", "nickname": "Test"}
     )
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_resp
 
-    api = BangumiApi(username="testuser", access_token="test_token")
-    result = api.get_me()
+        api = BangumiApi(username="testuser", access_token="test_token")
+        result = api.get_me()
 
-    assert result["username"] == "testuser"
+        assert result["username"] == "testuser"
 
 
-@responses.activate
 def test_api_auth_error():
     """测试 API 认证错误"""
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/me",
-        json={"error": "Unauthorized"},
-        status=401,
-    )
+    mock_resp = _mock_response(401, {"error": "Unauthorized"})
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.return_value = mock_resp
 
-    api = BangumiApi(username="testuser", access_token="invalid_token")
+        api = BangumiApi(username="testuser", access_token="invalid_token")
 
-    with pytest.raises(ValueError, match="认证失败"):
-        api.get_me()
+        with pytest.raises(ValueError, match="认证失败"):
+            api.get_me()
 
 
-@responses.activate
 def test_bgm_search_invalid_date_fallback():
     """测试 bgm_search: 遇到无效日期时使用无日期搜索"""
-    api = BangumiApi()
-
     # 模拟无日期搜索成功
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/search/subject/%E6%B5%8B%E8%AF%95%E7%95%AA%E5%89%A7?type=2",
-        json={"list": [{"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}]},
-        status=200,
+    mock_search_old = _mock_response(
+        200, {"list": [{"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}]}
     )
-
     # 模拟获取条目详情
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/subjects/999",
-        json={"id": 999, "name": "Test Anime", "name_cn": "测试番剧"},
-        status=200,
+    mock_subject = _mock_response(
+        200, {"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}
     )
 
-    # 传入空字符串作为首播日期
-    result = api.bgm_search(title="测试番剧", ori_title="", premiere_date="")
+    def get_side_effect(url, **kwargs):
+        if "search/subject" in url:
+            return mock_search_old
+        return mock_subject
 
-    assert result is not None
-    assert len(result) == 1
-    assert result[0]["id"] == 999
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.get.side_effect = get_side_effect
+
+        api = BangumiApi()
+        # 传入空字符串作为首播日期
+        result = api.bgm_search(title="测试番剧", ori_title="", premiere_date="")
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["id"] == 999
 
 
-@responses.activate
 def test_bgm_search_alias_fallback_success():
     """测试 bgm_search: 通过旧版接口与详情接口获取 infobox 别名进行匹配"""
-    api = BangumiApi()
-
     # 模拟带日期搜索无结果
-    responses.add(
-        responses.POST,
-        "https://api.bgm.tv/v0/search/subjects",
-        json={"data": []},
-        status=200,
-    )
+    mock_post_resp = _mock_response(200, {"data": []})
 
     # 模拟无日期搜索返回简略信息（无 infobox）
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/search/subject/%E5%85%B7%E8%B1%A1%E9%9D%A9%E5%91%BD%20%E8%B6%85%E4%BA%BA%E5%B9%BB%E6%83%B3?type=2",
-        json={
+    mock_search_old = _mock_response(
+        200,
+        {
             "list": [
                 {
                     "id": 139022,
@@ -396,14 +350,12 @@ def test_bgm_search_alias_fallback_success():
                 }
             ]
         },
-        status=200,
     )
 
     # 模拟通过 ID 获取包含 infobox 别名的完整数据
-    responses.add(
-        responses.GET,
-        "https://api.bgm.tv/v0/subjects/139022",
-        json={
+    mock_subject = _mock_response(
+        200,
+        {
             "id": 139022,
             "name": "Concrete Revolutio",
             "name_cn": "Concrete Revolutio 超人幻想",
@@ -415,18 +367,28 @@ def test_bgm_search_alias_fallback_success():
                 },
             ],
         },
-        status=200,
     )
 
-    # 模拟传入单集日期与别名
-    result = api.bgm_search(
-        title="具象革命 超人幻想", ori_title="", premiere_date="2015-12-26"
-    )
+    def get_side_effect(url, **kwargs):
+        if "search/subject" in url:
+            return mock_search_old
+        return mock_subject
 
-    # 断言匹配成功并返回正确的条目 ID
-    assert result is not None
-    assert len(result) == 1
-    assert result[0]["id"] == 139022
+    with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.post.return_value = mock_post_resp
+        mock_client.get.side_effect = get_side_effect
+
+        api = BangumiApi()
+        # 模拟传入单集日期与别名
+        result = api.bgm_search(
+            title="具象革命 超人幻想", ori_title="", premiere_date="2015-12-26"
+        )
+
+        # 断言匹配成功并返回正确的条目 ID
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["id"] == 139022
 
 
 def test_title_diff_ratio_infobox_extraction():

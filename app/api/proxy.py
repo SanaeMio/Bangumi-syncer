@@ -399,20 +399,24 @@ async def diagnose_network(
 
         # HTTP连接测试（使用配置的代理）
         try:
-            import requests
+            import httpx
 
             ssl_verify = config_manager.get("dev", "ssl_verify", fallback=True)
 
             test_url = f"{parsed.scheme}://{hostname}:{port}"
             start_time = time.time()
 
-            response = requests.get(
-                test_url,
-                proxies=proxies,
-                verify=ssl_verify,
-                timeout=10,
-                allow_redirects=False,
-            )
+            # httpx 0.28+ 通过 proxy 参数传代理
+            proxy_url = proxies.get("https") or proxies.get("http") if proxies else None
+            client_kwargs: dict = {
+                "verify": ssl_verify,
+                "timeout": 10.0,
+                "follow_redirects": False,
+            }
+            if proxy_url:
+                client_kwargs["proxy"] = proxy_url
+            with httpx.Client(**client_kwargs) as client:
+                response = client.get(test_url)
 
             end_time = time.time()
             response_time = int((end_time - start_time) * 1000)  # 毫秒
@@ -427,7 +431,7 @@ async def diagnose_network(
                 }
             )
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             result["diagnosis"].append(
                 {
                     "test": "HTTP连接",

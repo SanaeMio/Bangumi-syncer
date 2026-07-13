@@ -55,7 +55,7 @@ class TestBangumiApiComprehensive:
 class TestBangumiApiMocked:
     """Bangumi API 模拟测试"""
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_api_with_session(self, mock_session):
         """测试带 Session 的 API"""
         api = BangumiApi()

@@ -1,12 +1,11 @@
 """
 通知器 HTTP Mock 测试
-使用 responses 库模拟 Webhook 和邮件发送
+使用 unittest.mock 模拟 Webhook 和邮件发送
 """
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-import responses
 
 from app.utils.notifier import Notifier
 
@@ -69,37 +68,33 @@ def mock_config_with_email():
     return config
 
 
-@responses.activate
 def test_webhook_notification_success(mock_config_with_webhook):
     """测试 Webhook 通知成功"""
-    responses.add(
-        responses.POST,
-        "https://webhook.example.com/notify",
-        json={"success": True},
-        status=200,
-    )
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch(
+        "app.utils.notifier.httpx.post", return_value=mock_response
+    ) as mock_post:
+        notifier = Notifier(mock_config_with_webhook)
+        _result = notifier.send_notification_by_type(
+            "mark_success",
+            {
+                "timestamp": "2024-01-01 12:00:00",
+                "user_name": "testuser",
+                "title": "Test Anime",
+                "season": 1,
+                "episode": 1,
+                "source": "test",
+                "subject_id": "123",
+                "episode_id": "456",
+            },
+        )
 
-    notifier = Notifier(mock_config_with_webhook)
-    _result = notifier.send_notification_by_type(
-        "mark_success",
-        {
-            "timestamp": "2024-01-01 12:00:00",
-            "user_name": "testuser",
-            "title": "Test Anime",
-            "season": 1,
-            "episode": 1,
-            "source": "test",
-            "subject_id": "123",
-            "episode_id": "456",
-        },
-    )
-
-    # 由于 send_notification_by_type 没有返回值，检查是否有请求发出
-    assert len(responses.calls) == 1
-    assert responses.calls[0].request.url == "https://webhook.example.com/notify"
+        # 由于 send_notification_by_type 没有返回值，检查是否有请求发出
+        assert mock_post.call_count == 1
+        assert mock_post.call_args[0][0] == "https://webhook.example.com/notify"
 
 
-@responses.activate
 def test_webhook_notification_with_template(mock_config_with_webhook):
     """测试带自定义模板的 Webhook"""
     # Mock 带 template 的 webhook 配置
@@ -119,30 +114,27 @@ def test_webhook_notification_with_template(mock_config_with_webhook):
     config.get_section.return_value = webhook_config
     config.get_config_parser.return_value = config_parser
 
-    responses.add(
-        responses.POST,
-        "https://webhook.example.com/notify",
-        json={"success": True},
-        status=200,
-    )
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch(
+        "app.utils.notifier.httpx.post", return_value=mock_response
+    ) as mock_post:
+        notifier = Notifier(config)
+        notifier.send_notification_by_type(
+            "mark_success",
+            {
+                "timestamp": "2024-01-01 12:00:00",
+                "user_name": "testuser",
+                "title": "Test Anime",
+                "season": 1,
+                "episode": 1,
+                "source": "test",
+            },
+        )
 
-    notifier = Notifier(config)
-    notifier.send_notification_by_type(
-        "mark_success",
-        {
-            "timestamp": "2024-01-01 12:00:00",
-            "user_name": "testuser",
-            "title": "Test Anime",
-            "season": 1,
-            "episode": 1,
-            "source": "test",
-        },
-    )
-
-    assert len(responses.calls) == 1
+        assert mock_post.call_count == 1
 
 
-@responses.activate
 def test_webhook_get_request(mock_config_with_webhook):
     """测试 GET 请求的 Webhook"""
     # Mock GET 方法的 webhook
@@ -161,58 +153,49 @@ def test_webhook_get_request(mock_config_with_webhook):
     config.get_section.return_value = webhook_config
     config.get_config_parser.return_value = config_parser
 
-    responses.add(
-        responses.GET,
-        "https://webhook.example.com/notify",
-        json={"success": True},
-        status=200,
-    )
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch("app.utils.notifier.httpx.get", return_value=mock_response) as mock_get:
+        notifier = Notifier(config)
+        notifier.send_notification_by_type(
+            "mark_success",
+            {
+                "timestamp": "2024-01-01 12:00:00",
+                "user_name": "testuser",
+                "title": "Test Anime",
+                "season": 1,
+                "episode": 1,
+                "source": "test",
+            },
+        )
 
-    notifier = Notifier(config)
-    notifier.send_notification_by_type(
-        "mark_success",
-        {
-            "timestamp": "2024-01-01 12:00:00",
-            "user_name": "testuser",
-            "title": "Test Anime",
-            "season": 1,
-            "episode": 1,
-            "source": "test",
-        },
-    )
-
-    assert len(responses.calls) == 1
-    assert responses.calls[0].request.method == "GET"
+        assert mock_get.call_count == 1
 
 
-@responses.activate
 def test_webhook_notification_failure(mock_config_with_webhook):
     """测试 Webhook 通知失败"""
-    responses.add(
-        responses.POST,
-        "https://webhook.example.com/notify",
-        json={"error": "Server error"},
-        status=500,
-    )
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    with patch(
+        "app.utils.notifier.httpx.post", return_value=mock_response
+    ) as mock_post:
+        notifier = Notifier(mock_config_with_webhook)
+        notifier.send_notification_by_type(
+            "mark_success",
+            {
+                "timestamp": "2024-01-01 12:00:00",
+                "user_name": "testuser",
+                "title": "Test Anime",
+                "season": 1,
+                "episode": 1,
+                "source": "test",
+            },
+        )
 
-    notifier = Notifier(mock_config_with_webhook)
-    notifier.send_notification_by_type(
-        "mark_success",
-        {
-            "timestamp": "2024-01-01 12:00:00",
-            "user_name": "testuser",
-            "title": "Test Anime",
-            "season": 1,
-            "episode": 1,
-            "source": "test",
-        },
-    )
-
-    # 即使失败也会有请求
-    assert len(responses.calls) == 1
+        # 即使失败也会有请求
+        assert mock_post.call_count == 1
 
 
-@responses.activate
 def test_webhook_filter_by_type(mock_config_with_webhook):
     """测试 Webhook 按类型过滤"""
     # 配置只接收 mark_success 类型
@@ -231,32 +214,29 @@ def test_webhook_filter_by_type(mock_config_with_webhook):
     config.get_section.return_value = webhook_config
     config.get_config_parser.return_value = config_parser
 
-    responses.add(
-        responses.POST,
-        "https://webhook.example.com/notify",
-        json={"success": True},
-        status=200,
-    )
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch(
+        "app.utils.notifier.httpx.post", return_value=mock_response
+    ) as mock_post:
+        notifier = Notifier(config)
 
-    notifier = Notifier(config)
+        # 发送成功通知 - 应该发送
+        notifier.send_notification_by_type(
+            "mark_success",
+            {"timestamp": "2024-01-01 12:00:00"},
+        )
+        assert mock_post.call_count == 1
 
-    # 发送成功通知 - 应该发送
-    notifier.send_notification_by_type(
-        "mark_success",
-        {"timestamp": "2024-01-01 12:00:00"},
-    )
-    assert len(responses.calls) == 1
-
-    # 发送失败通知 - 不应该发送
-    notifier.send_notification_by_type(
-        "mark_failed",
-        {"timestamp": "2024-01-01 12:00:00"},
-    )
-    # 没有新的请求
-    assert len(responses.calls) == 1
+        # 发送失败通知 - 不应该发送
+        notifier.send_notification_by_type(
+            "mark_failed",
+            {"timestamp": "2024-01-01 12:00:00"},
+        )
+        # 没有新的请求
+        assert mock_post.call_count == 1
 
 
-@responses.activate
 def test_webhook_disabled(mock_config_with_webhook):
     """测试禁用的 Webhook"""
     # 配置禁用 - 使用布尔值 False
@@ -275,13 +255,20 @@ def test_webhook_disabled(mock_config_with_webhook):
     config.get_section.return_value = webhook_config
     config.get_config_parser.return_value = config_parser
 
-    notifier = Notifier(config)
-    _result = notifier.send_notification_by_type(
-        "mark_success",
-        {"timestamp": "2024-01-01 12:00:00"},
-    )
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch(
+        "app.utils.notifier.httpx.post", return_value=mock_response
+    ) as mock_post:
+        notifier = Notifier(config)
+        _result = notifier.send_notification_by_type(
+            "mark_success",
+            {"timestamp": "2024-01-01 12:00:00"},
+        )
 
-    # 没有请求发出 - 当 enabled=False 时，_get_webhook_configs 应该过滤掉
+        # 没有请求发出 - 当 enabled=False 时，_get_webhook_configs 应该过滤掉
+        assert mock_post.call_count == 0
+
     configs = notifier._get_webhook_configs()
     # 验证所有配置都是禁用的
     enabled_configs = [c for c in configs if c.get("enabled")]
@@ -342,7 +329,7 @@ def test_email_notification_success(mock_smtp, mock_config_with_email):
 
 
 @patch("smtplib.SMTP")
-def test_email_notification_no_recipient(mock_config_with_email):
+def test_email_notification_no_recipient(mock_smtp, mock_config_with_email):
     """测试邮件通知 - 无收件人"""
     # 修改配置，移除收件人
     config = MagicMock()

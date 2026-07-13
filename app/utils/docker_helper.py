@@ -6,7 +6,7 @@ import os
 import subprocess
 from typing import Optional
 
-import requests
+import httpx
 
 from ..core.logging import logger
 
@@ -270,11 +270,9 @@ class DockerProxyHelper:
                 result["error"] = f"基础连通性失败: {basic_connectivity['error']}"
                 return result
 
-            # 使用代理访问一个简单的HTTP服务
-            proxies = {"http": proxy_url, "https": proxy_url}
-            response = requests.get(
-                "http://httpbin.org/ip", proxies=proxies, timeout=timeout, verify=False
-            )  # 测试时不验证SSL
+            # 使用代理访问一个简单的HTTP服务（httpx 0.28+ 通过 proxy 参数传代理）
+            with httpx.Client(proxy=proxy_url, verify=False, timeout=timeout) as client:
+                response = client.get("http://httpbin.org/ip")  # 测试时不验证SSL
 
             if response.status_code == 200:
                 result["success"] = True
@@ -292,9 +290,9 @@ class DockerProxyHelper:
             else:
                 result["error"] = f"HTTP {response.status_code}"
 
-        except requests.exceptions.ConnectTimeout:
+        except httpx.ConnectTimeout:
             result["error"] = "连接超时"
-        except requests.exceptions.ConnectionError as e:
+        except httpx.ConnectError as e:
             result["error"] = f"连接错误: {str(e)}"
         except Exception as e:
             result["error"] = f"测试失败: {str(e)}"

@@ -107,7 +107,9 @@ class EmbySyncService:
             logger.debug(f"Emby重新组装JSON报文：{custom_item}")
 
             if playback_start_movie:
-                return sync_svc.sync_movie_watching(custom_item, source=EMBY_SYNC_SOURCE)
+                return sync_svc.sync_movie_watching(
+                    custom_item, source=EMBY_SYNC_SOURCE
+                )
             return sync_svc.sync_custom_item(custom_item, source=EMBY_SYNC_SOURCE)
         except Exception as e:
             logger.error(f"Emby同步处理出错: {e}")

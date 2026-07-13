@@ -28,12 +28,12 @@ class TestBangumiData:
         data = BangumiData()
         assert data is not None
 
-    @patch("app.utils.bangumi_data.requests.get")
-    def test_fetch_data(self, mock_get):
+    @patch("app.utils.bangumi_data.httpx.Client")
+    def test_fetch_data(self, mock_client):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json = MagicMock(return_value={"data": []})
-        mock_get.return_value = mock_response
+        mock_client.return_value.__enter__.return_value.get.return_value = mock_response
         data = BangumiData()
         assert data is not None
 
@@ -1716,39 +1716,44 @@ class TestFindBangumiIdOptimizedTitleIndex:
 class TestRequestWithRetry:
     """测试带重试的请求"""
 
-    @patch("app.utils.bangumi_data.requests.get")
-    def test_request_with_retry_success(self, mock_get):
+    @patch("app.utils.bangumi_data.httpx.Client")
+    def test_request_with_retry_success(self, mock_client_cls):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
-        mock_get.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
+            mock_response
+        )
         from app.utils.bangumi_data import _request_with_retry
 
         result = _request_with_retry("https://example.com")
         assert result.status_code == 200
 
     @patch("app.utils.bangumi_data.time.sleep")
-    @patch("app.utils.bangumi_data.requests.get")
-    def test_request_with_retry_server_error(self, mock_get, mock_sleep):
+    @patch("app.utils.bangumi_data.httpx.Client")
+    def test_request_with_retry_server_error(self, mock_client_cls, mock_sleep):
         mock_response1 = MagicMock()
         mock_response1.status_code = 500
         mock_response1.raise_for_status = MagicMock()
         mock_response2 = MagicMock()
         mock_response2.status_code = 200
         mock_response2.raise_for_status = MagicMock()
-        mock_get.side_effect = [mock_response1, mock_response2]
+        mock_client_cls.return_value.__enter__.return_value.get.side_effect = [
+            mock_response1,
+            mock_response2,
+        ]
         from app.utils.bangumi_data import _request_with_retry
 
         result = _request_with_retry("https://example.com", max_retries=1)
         assert result.status_code == 200
 
     @patch("app.utils.bangumi_data.time.sleep")
-    @patch("app.utils.bangumi_data.requests.get")
-    def test_request_with_retry_connection_error(self, mock_get, mock_sleep):
-        import requests as req
+    @patch("app.utils.bangumi_data.httpx.Client")
+    def test_request_with_retry_connection_error(self, mock_client_cls, mock_sleep):
+        import httpx
 
-        mock_get.side_effect = [
-            req.exceptions.ConnectionError("Connection failed"),
+        mock_client_cls.return_value.__enter__.return_value.get.side_effect = [
+            httpx.ConnectError("Connection failed"),
             MagicMock(status_code=200, raise_for_status=MagicMock()),
         ]
         from app.utils.bangumi_data import _request_with_retry
@@ -1756,26 +1761,30 @@ class TestRequestWithRetry:
         result = _request_with_retry("https://example.com", max_retries=1)
         assert result.status_code == 200
 
-    @patch("app.utils.bangumi_data.requests.get")
-    def test_request_with_retry_ssl_disabled(self, mock_get):
+    @patch("app.utils.bangumi_data.httpx.Client")
+    def test_request_with_retry_ssl_disabled(self, mock_client_cls):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
-        mock_get.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
+            mock_response
+        )
         from app.utils.bangumi_data import _request_with_retry
 
         _request_with_retry("https://example.com", ssl_verify=False)
-        mock_get.assert_called_once()
-        call_kwargs = mock_get.call_args[1]
+        mock_client_cls.assert_called_once()
+        call_kwargs = mock_client_cls.call_args[1]
         assert call_kwargs["verify"] is False
 
     @patch("app.utils.bangumi_data.time.sleep")
-    @patch("app.utils.bangumi_data.requests.get")
-    def test_request_with_retry_exhausted(self, mock_get, mock_sleep):
-        import requests as req
+    @patch("app.utils.bangumi_data.httpx.Client")
+    def test_request_with_retry_exhausted(self, mock_client_cls, mock_sleep):
+        import httpx
 
-        mock_get.side_effect = req.exceptions.ConnectionError("fail")
+        mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
+            httpx.ConnectError("fail")
+        )
         from app.utils.bangumi_data import _request_with_retry
 
-        with pytest.raises(req.exceptions.ConnectionError):
+        with pytest.raises(httpx.ConnectError):
             _request_with_retry("https://example.com", max_retries=0)

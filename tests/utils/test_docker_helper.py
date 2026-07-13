@@ -114,12 +114,14 @@ class TestDockerProxyHelperSimple:
     def test_test_proxy_connectivity_success(self):
         """Test proxy connectivity success"""
 
-        with patch("app.utils.docker_helper.requests.get") as mock_get:
+        with patch("app.utils.docker_helper.httpx.Client") as mock_client_cls:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.headers = {"content-type": "application/json"}
             mock_response.json.return_value = {"origin": "1.2.3.4"}
-            mock_get.return_value = mock_response
+            mock_client_cls.return_value.__enter__.return_value.get.return_value = (
+                mock_response
+            )
 
             from app.utils.docker_helper import DockerProxyHelper
 
@@ -133,10 +135,12 @@ class TestDockerProxyHelperSimple:
 
     def test_test_proxy_connectivity_timeout(self):
         """Test proxy connectivity timeout"""
-        import requests
+        import httpx
 
-        with patch("app.utils.docker_helper.requests.get") as mock_get:
-            mock_get.side_effect = requests.exceptions.ConnectTimeout()
+        with patch("app.utils.docker_helper.httpx.Client") as mock_client_cls:
+            mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
+                httpx.ConnectTimeout("timeout")
+            )
 
             from app.utils.docker_helper import DockerProxyHelper
 
@@ -236,14 +240,14 @@ class TestDockerProxyHelperSimple:
         assert r["success"] is False
 
     def test_test_proxy_connectivity_connection_error(self):
-        import requests
+        import httpx
 
         from app.utils.docker_helper import DockerProxyHelper
 
-        with patch(
-            "app.utils.docker_helper.requests.get",
-            side_effect=requests.exceptions.ConnectionError("refused"),
-        ):
+        with patch("app.utils.docker_helper.httpx.Client") as mock_client_cls:
+            mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
+                httpx.ConnectError("refused")
+            )
             h = DockerProxyHelper()
             with patch.object(
                 h, "_test_basic_connectivity", return_value={"success": True}
@@ -255,9 +259,10 @@ class TestDockerProxyHelperSimple:
     def test_test_proxy_connectivity_generic_error(self):
         from app.utils.docker_helper import DockerProxyHelper
 
-        with patch(
-            "app.utils.docker_helper.requests.get", side_effect=RuntimeError("x")
-        ):
+        with patch("app.utils.docker_helper.httpx.Client") as mock_client_cls:
+            mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
+                RuntimeError("x")
+            )
             h = DockerProxyHelper()
             with patch.object(
                 h, "_test_basic_connectivity", return_value={"success": True}
@@ -598,14 +603,16 @@ class TestDockerProxyHelperGetProxySuggestionsExtended:
 class TestDockerProxyHelperTestProxyConnectivityExtended:
     """扩展的代理连通性测试"""
 
-    @patch("app.utils.notifier.requests.get")
-    def test_test_proxy_connectivity_non_json_response(self, mock_get):
+    @patch("app.utils.docker_helper.httpx.Client")
+    def test_test_proxy_connectivity_non_json_response(self, mock_client_cls):
         """非JSON响应"""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers = {"content-type": "text/html"}
         mock_response.text = "<html>OK</html>"
-        mock_get.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
+            mock_response
+        )
 
         from app.utils.docker_helper import DockerProxyHelper
 

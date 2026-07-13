@@ -10,7 +10,7 @@ from app.utils.bangumi_api import BangumiApi
 class TestBangumiApiReal:
     """Tests that actually call methods"""
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_search_with_cache(self, mock_session):
         """Test search with caching"""
         api = BangumiApi()
@@ -22,7 +22,7 @@ class TestBangumiApiReal:
         assert "test_query" in api._cache["search"]
         assert api._cache["search"]["test_query"][0]["id"] == 1
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_cache_update(self, mock_session):
         """Test cache update"""
         api = BangumiApi()

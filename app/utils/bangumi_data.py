@@ -1,13 +1,13 @@
+import io
 import os
 import re
 import time
-import warnings
 from collections.abc import Generator
 from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
 import ijson
-import requests
 from rapidfuzz import fuzz
 
 from ..core.config import config_manager
@@ -16,44 +16,101 @@ from ..core.logging import logger
 # 使用全局logger实例
 
 
+class _BufferedResponse:
+    """包装 httpx.Response，兼容旧 requests 风格的 iter_content / raw / with 上下文。
+
+    httpx 同步流式需在 client 存活期间消费；这里在构造时一次性 read() 到
+    response.content（bangumi-data 约 5MB，内存可接受），从而解绑 client 生命周期，
+    并提供 iter_content / raw 兼容旧调用方。
+    """
+
+    def __init__(self, response: httpx.Response):
+        self._response = response
+        # 确保内容已读取到内存（解绑 client 连接池）
+        response.read()
+        self.content = response.content
+        self.status_code = response.status_code
+        self.headers = response.headers
+
+    @property
+    def raw(self):
+        """兼容 requests 的 response.raw（ijson 增量解析使用）"""
+        return io.BytesIO(self.content)
+
+    def iter_content(self, chunk_size=8192):
+        """兼容 requests 的 iter_content"""
+        with io.BytesIO(self.content) as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+    def raise_for_status(self):
+        self._response.raise_for_status()
+
+    def json(self):
+        return self._response.json()
+
+    @property
+    def text(self):
+        return self._response.text
+
+    def close(self):
+        self._response.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
 def _request_with_retry(
     url, proxies=None, stream=False, max_retries=3, ssl_verify=True
 ):
-    """带重试机制的HTTP请求方法"""
-    # 如果禁用SSL验证，抑制urllib3的警告
-    if not ssl_verify:
-        warnings.filterwarnings("ignore", message="Unverified HTTPS request")
-        from urllib3.exceptions import InsecureRequestWarning
+    """带重试机制的HTTP请求方法（基于 httpx 同步客户端）
 
-        warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+    proxies 参数兼容旧 requests 风格的 dict，内部转换为 httpx 代理字符串。
+    返回 _BufferedResponse（兼容旧调用方的 iter_content / raw / with 上下文）。
+    """
+    # 将 requests 风格的 proxies dict 转换为 httpx 代理字符串
+    proxy_url = None
+    if proxies:
+        proxy_url = proxies.get("https") or proxies.get("http")
 
+    client_kwargs: dict = {"verify": ssl_verify, "timeout": 30.0}
+    if proxy_url:
+        client_kwargs["proxy"] = proxy_url
+
+    response = None
     for attempt in range(max_retries + 1):
         try:
-            response = requests.get(
-                url, proxies=proxies, stream=stream, verify=ssl_verify, timeout=30
-            )
+            with httpx.Client(**client_kwargs) as client:
+                response = client.get(url)
 
-            # 先检查是否需要重试的状态码，再决定是否抛异常
-            if response.status_code in [429, 500, 502, 503, 504]:
-                if attempt < max_retries:
-                    delay = 2**attempt  # 指数退避: 2, 4, 8秒
-                    logger.error(
-                        f"HTTP {response.status_code} 错误，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
-                    )
-                    time.sleep(delay)
-                    continue
-                else:
-                    logger.error(
-                        f"HTTP {response.status_code} 错误，已达到最大重试次数 {max_retries}"
-                    )
+                # 先检查是否需要重试的状态码，再决定是否抛异常
+                if response.status_code in [429, 500, 502, 503, 504]:
+                    if attempt < max_retries:
+                        delay = 2**attempt  # 指数退避: 2, 4, 8秒
+                        logger.error(
+                            f"HTTP {response.status_code} 错误，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
+                        )
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(
+                            f"HTTP {response.status_code} 错误，已达到最大重试次数 {max_retries}"
+                        )
 
-            response.raise_for_status()
-            return response
+                response.raise_for_status()
+                # 包装为兼容旧 requests 风格的响应对象
+                return _BufferedResponse(response)
 
         except (
-            requests.exceptions.Timeout,
-            requests.exceptions.ConnectionError,
-            requests.exceptions.RequestException,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            httpx.HTTPError,
         ) as e:
             if attempt < max_retries:
                 delay = 2**attempt  # 指数退避: 2, 4, 8秒
@@ -66,7 +123,7 @@ def _request_with_retry(
                 logger.error(f"请求异常: {str(e)}，已达到最大重试次数 {max_retries}")
                 raise e
 
-    return response
+    return _BufferedResponse(response)  # type: ignore[arg-type]
 
 
 class BangumiData:

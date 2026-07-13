@@ -3,11 +3,10 @@ import os
 import re
 import socket
 import time
-import warnings
 from collections import OrderedDict
 from typing import Optional, Union
 
-import requests
+import httpx
 from rapidfuzz import fuzz
 
 from ..core.logging import logger
@@ -42,8 +41,12 @@ class BangumiApi:
         self.private = private
         self.http_proxy = http_proxy
         self.ssl_verify = ssl_verify
-        self.req = requests.Session()
-        self._req_not_auth = requests.Session()
+        # httpx 0.28+ 使用 proxy（单数）替代 proxies
+        client_kwargs: dict = {"verify": ssl_verify}
+        if http_proxy:
+            client_kwargs["proxy"] = http_proxy
+        self.req = httpx.Client(**client_kwargs)
+        self._req_not_auth = httpx.Client(**client_kwargs)
 
         # 代理失败标记：一旦代理失败，后续请求都直接使用直连
         self._proxy_failed = False
@@ -59,12 +62,8 @@ class BangumiApi:
         }
         self._max_cache_size = _MAX_CACHE_SIZE
 
-        # 如果禁用SSL验证，抑制urllib3的警告
+        # 如果禁用SSL验证，输出警告（httpx 无需抑制 urllib3 警告）
         if not ssl_verify:
-            warnings.filterwarnings("ignore", message="Unverified HTTPS request")
-            from urllib3.exceptions import InsecureRequestWarning
-
-            warnings.filterwarnings("ignore", category=InsecureRequestWarning)
             logger.warning(
                 "SSL证书验证已禁用，这会降低安全性。建议仅在代理环境下出现SSL错误时使用。"
             )
@@ -92,18 +91,20 @@ class BangumiApi:
             )
             if self.access_token:
                 r.headers.update({"Authorization": f"Bearer {self.access_token}"})
-            if self.http_proxy:
-                r.proxies = {"http": self.http_proxy, "https": self.http_proxy}
+        # httpx.Client.headers 是可变的，直接重新赋值即可
+        # httpx 存储的 header key 为小写，需大小写不敏感地过滤
         self._req_not_auth.headers = {
-            k: v for k, v in self._req_not_auth.headers.items() if k != "Authorization"
+            k: v
+            for k, v in self._req_not_auth.headers.items()
+            if k.lower() != "authorization"
         }
 
     def _try_direct_connection(self, method, url, **kwargs):
         """尝试直连（不使用代理）"""
         logger.info(f"🔄 尝试直连: {url}")
 
-        # 创建一个临时的session，不使用代理
-        temp_session = requests.Session()
+        # 创建一个临时的 httpx.Client，不使用代理
+        temp_session = httpx.Client(verify=self.ssl_verify)
         temp_session.headers.update(
             {
                 "Accept": "application/json",
@@ -116,10 +117,7 @@ class BangumiApi:
                 {"Authorization": f"Bearer {self.access_token}"}
             )
 
-        # 明确设置不使用代理
-        temp_session.proxies = {}
-
-        # 移除kwargs中可能存在的代理设置
+        # 移除kwargs中可能存在的代理设置（httpx 通过构造函数传代理）
         kwargs_copy = kwargs.copy()
         if "proxies" in kwargs_copy:
             del kwargs_copy["proxies"]
@@ -215,8 +213,10 @@ class BangumiApi:
 
         for attempt in range(max_retries + 1):
             try:
-                # 添加SSL验证配置
-                kwargs["verify"] = self.ssl_verify
+                # httpx.Client 在构造时已设置 verify 和 proxies，
+                # 需从 kwargs 中移除这些参数（requests 风格的逐请求传参）
+                kwargs.pop("verify", None)
+                kwargs.pop("proxies", None)
 
                 if method.upper() == "GET":
                     res = session.get(url, **kwargs)
@@ -253,16 +253,18 @@ class BangumiApi:
                             error_message=f"HTTP {res.status_code} 错误，已达到最大重试次数 {max_retries}",
                             retry_count=attempt + 1,
                         )
-                        raise requests.exceptions.HTTPError(
-                            f"HTTP {res.status_code} 错误，已达到最大重试次数"
+                        raise httpx.HTTPStatusError(
+                            f"HTTP {res.status_code} 错误，已达到最大重试次数",
+                            request=res.request,
+                            response=res,
                         )
 
                 return res
 
             except (
-                requests.exceptions.Timeout,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.RequestException,
+                httpx.TimeoutException,
+                httpx.ConnectError,
+                httpx.HTTPError,
             ) as e:
                 # 检查是否是DNS解析错误
                 if "Failed to resolve" in str(
@@ -327,7 +329,7 @@ class BangumiApi:
 
     def get(self, path, params=None):
         logger.debug(
-            f"BangumiApi GET请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else '无'}"
+            f"BangumiApi GET请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
         res = self._request_with_retry(
             "GET", self.req, f"{self.host}/{path}", params=params
@@ -336,7 +338,7 @@ class BangumiApi:
 
     def post(self, path, _json, params=None):
         logger.debug(
-            f"BangumiApi POST请求: {self.host}/{path}, 代理: {self.req.proxies if self.req.proxies else '无'}"
+            f"BangumiApi POST请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
         res = self._request_with_retry(
             "POST", self.req, f"{self.host}/{path}", json=_json, params=params

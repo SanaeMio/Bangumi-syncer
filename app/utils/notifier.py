@@ -12,7 +12,7 @@ from email.mime.text import MIMEText
 from email.utils import formatdate
 from typing import Any, Optional
 
-import requests
+import httpx
 
 from ..core.logging import logger
 
@@ -357,9 +357,9 @@ class Notifier:
             logger.info(f"📤 发送 {notification_type} 通知到: {url}")
 
             if method == "POST":
-                response = requests.post(url, json=payload, headers=headers, timeout=10)
+                response = httpx.post(url, json=payload, headers=headers, timeout=10)
             else:  # GET
-                response = requests.get(
+                response = httpx.get(
                     url,
                     params=payload if isinstance(payload, dict) else None,
                     headers=headers,

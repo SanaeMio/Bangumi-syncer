@@ -2,51 +2,58 @@
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
-import requests
 
 from app.utils import bangumi_data
 
 
 @patch("app.utils.bangumi_data.time.sleep")
-@patch("app.utils.bangumi_data.requests.get")
-def test_module_request_with_retry_raises_after_exhausted(mock_get, _sleep):
-    mock_get.side_effect = requests.exceptions.ConnectionError("down")
-    with pytest.raises(requests.exceptions.ConnectionError):
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_raises_after_exhausted(mock_client_cls, _sleep):
+    mock_client = mock_client_cls.return_value.__enter__.return_value
+    mock_client.get.side_effect = httpx.ConnectError("down")
+    with pytest.raises(httpx.ConnectError):
         bangumi_data._request_with_retry(
             "https://example.test/data.json", max_retries=1, ssl_verify=True
         )
-    assert mock_get.call_count == 2
+    assert mock_client.get.call_count == 2
 
 
 @patch("app.utils.bangumi_data.time.sleep")
-@patch("app.utils.bangumi_data.requests.get")
-def test_module_request_with_retry_connection_error_then_success(mock_get, _sleep):
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_connection_error_then_success(
+    mock_client_cls, _sleep
+):
     ok = MagicMock()
     ok.status_code = 200
     ok.raise_for_status = MagicMock()
-    mock_get.side_effect = [
-        requests.exceptions.ConnectionError("down"),
+    mock_client = mock_client_cls.return_value.__enter__.return_value
+    mock_client.get.side_effect = [
+        httpx.ConnectError("down"),
         ok,
     ]
     out = bangumi_data._request_with_retry(
         "https://example.test/retry.json", max_retries=2, ssl_verify=True
     )
-    assert out is ok
-    assert mock_get.call_count == 2
+    assert out.status_code == 200
+    assert mock_client.get.call_count == 2
 
 
 @patch("app.utils.bangumi_data.time.sleep")
-@patch("app.utils.bangumi_data.requests.get")
-def test_module_request_with_retry_ssl_verify_false_sets_warnings(mock_get, _sleep):
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_ssl_verify_false_sets_warnings(
+    mock_client_cls, _sleep
+):
     ok = MagicMock()
     ok.status_code = 200
     ok.raise_for_status = MagicMock()
-    mock_get.return_value = ok
+    mock_client = mock_client_cls.return_value.__enter__.return_value
+    mock_client.get.return_value = ok
     bangumi_data._request_with_retry(
         "https://example.test/x", max_retries=0, ssl_verify=False
     )
-    mock_get.assert_called_once()
+    mock_client_cls.assert_called_once()
 
 
 @patch.object(bangumi_data.BangumiData, "_build_tmdb_mapping", lambda self: None)
@@ -72,6 +79,6 @@ class TestBangumiDataCacheHelpers:
         data = bangumi_data.BangumiData()
         with patch(
             "app.utils.bangumi_data._request_with_retry",
-            side_effect=requests.exceptions.RequestException("fail"),
+            side_effect=httpx.HTTPError("fail"),
         ):
             assert data._download_data() is False

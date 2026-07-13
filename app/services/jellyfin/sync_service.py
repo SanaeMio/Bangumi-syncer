@@ -59,7 +59,9 @@ class JellyfinSyncService:
             logger.debug(f"Jellyfin重新组装JSON报文：{custom_item}")
 
             if playback_start_movie:
-                return sync_svc.sync_movie_watching(custom_item, source=JELLYFIN_SYNC_SOURCE)
+                return sync_svc.sync_movie_watching(
+                    custom_item, source=JELLYFIN_SYNC_SOURCE
+                )
             return sync_svc.sync_custom_item(custom_item, source=JELLYFIN_SYNC_SOURCE)
         except Exception as e:
             logger.error(f"Jellyfin同步处理出错: {e}")

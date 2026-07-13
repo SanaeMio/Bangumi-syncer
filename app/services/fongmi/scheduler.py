@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-from ..base.scheduler import BaseScheduler
 from ...core.config import config_manager
 from ...core.logging import logger
+from ..base.scheduler import BaseScheduler
 from .sync_service import fongmi_sync_service
 
 
