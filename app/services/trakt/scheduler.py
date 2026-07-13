@@ -49,7 +49,7 @@ class TraktScheduler:
                 jobstores=jobstores,
                 executors=executors,
                 job_defaults=job_defaults,
-                timezone="Asia/Shanghai",  # 使用中国时区
+                timezone=self.scheduler_config.get("timezone", "Asia/Shanghai"),
             )
 
             # 启动调度器

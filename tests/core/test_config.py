@@ -245,10 +245,39 @@ access_token = t2
         s = cm.get_scheduler_config()
         assert s["startup_delay"] == 30
         assert s["job_timeout"] == 120
+        assert s["timezone"] == "Asia/Shanghai"
 
     def test_get_scheduler_config_empty(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
-        assert cm.get_scheduler_config() == {}
+        # 没有 [scheduler] 段时，仍返回 timezone 默认值
+        s = cm.get_scheduler_config()
+        assert s.get("timezone") == "Asia/Shanghai"
+
+    def test_get_scheduler_config_timezone_from_config(self, tmp_path):
+        cm = _config_manager_from_ini(
+            tmp_path,
+            "[scheduler]\ntimezone = America/New_York\n",
+        )
+        s = cm.get_scheduler_config()
+        assert s["timezone"] == "America/New_York"
+
+    def test_get_scheduler_config_timezone_from_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TZ", "Europe/London")
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        s = cm.get_scheduler_config()
+        assert s["timezone"] == "Europe/London"
+
+    def test_get_scheduler_config_timezone_config_overrides_env(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("TZ", "Europe/London")
+        cm = _config_manager_from_ini(
+            tmp_path,
+            "[scheduler]\ntimezone = UTC\n",
+        )
+        s = cm.get_scheduler_config()
+        # config.ini 优先级高于 TZ 环境变量
+        assert s["timezone"] == "UTC"
 
     def test_get_feiniu_config_coercions(self, tmp_path):
         cm = _config_manager_from_ini(

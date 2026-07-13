@@ -385,7 +385,9 @@ class ConfigManager:
 
         # 检查 scheduler 节是否存在
         if not config.has_section("scheduler"):
-            return {}
+            # 即使没有 scheduler 段，也返回 timezone 默认值（含 TZ 环境变量覆盖）
+            tz = os.environ.get("TZ") or "Asia/Shanghai"
+            return {"timezone": tz}
 
         scheduler_config = self.get_section("scheduler")
 
@@ -410,6 +412,10 @@ class ConfigManager:
                     result_config[key] = int(value)
                 except (ValueError, TypeError):
                     result_config[key] = default_value
+
+        # 时区配置（字符串类型）：优先 config.ini，其次 TZ 环境变量，兜底 Asia/Shanghai
+        tz = scheduler_config.get("timezone") or os.environ.get("TZ") or "Asia/Shanghai"
+        result_config["timezone"] = tz.strip() or "Asia/Shanghai"
 
         return result_config
 

@@ -45,6 +45,7 @@ order: 20
 - **Bangumi 图片反向代理**：仪表板时间线封面图使用（用于替代 `https://lain.bgm.tv`），留空则返回 API 原始图片地址。
 - **SSL 证书验证**：一般保持开启。仅当使用代理后出现证书报错、且你确认环境可信时，再考虑关闭（会降低连接校验强度）。
 - **调试模式**：打开后会打出更多运行细节，方便排查问题；日常使用建议关闭。
+- **调度器时区**：定时任务（飞牛/fongmi/Trakt）使用的时区，IANA 格式（如 `Asia/Shanghai`、`America/New_York`、`UTC`）。在 `config.ini` 的 `[scheduler]` 段 `timezone` 项配置。Docker 部署也可通过 `TZ` 环境变量覆盖，优先级：`config.ini` > `TZ` 环境变量 > 默认值 `Asia/Shanghai`。
 
 ## Web 认证配置
 

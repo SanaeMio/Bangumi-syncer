@@ -54,7 +54,7 @@ class FongmiScheduler:
                 jobstores=jobstores,
                 executors=executors,
                 job_defaults=job_defaults,
-                timezone="Asia/Shanghai",
+                timezone=self._scheduler_config.get("timezone", "Asia/Shanghai"),
             )
             self.scheduler.start()
             self._schedule_or_refresh_job()
