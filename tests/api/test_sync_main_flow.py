@@ -59,7 +59,7 @@ async def test_custom_sync_sync_mode_returns_result(app_root_and_api, verify_ok)
         user_name="u",
     )
     result = SyncResponse(status="success", message="ok", data={})
-    with patch("app.api.sync.sync_service.sync_custom_item", return_value=result) as sc:
+    with patch("app.api.sync.custom_sync_service.sync_item", return_value=result) as sc:
         transport = ASGITransport(app=app_root_and_api)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post(
@@ -85,7 +85,7 @@ async def test_custom_sync_sync_mode_error_sets_500(app_root_and_api, verify_ok)
         user_name="u",
     )
     err = SyncResponse(status="error", message="bad", data=None)
-    with patch("app.api.sync.sync_service.sync_custom_item", return_value=err):
+    with patch("app.api.sync.custom_sync_service.sync_item", return_value=err):
         transport = ASGITransport(app=app_root_and_api)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post(

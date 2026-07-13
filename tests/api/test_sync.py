@@ -55,6 +55,23 @@ def mock_sync_service():
 
 
 @pytest.fixture
+def mock_custom_sync_service():
+    """模拟自定义 Webhook 同步服务"""
+    with patch("app.api.sync.custom_sync_service") as mock_service:
+        mock_service.sync_item_async = AsyncMock(return_value="test_task_123")
+
+        mock_result = MagicMock()
+        mock_result.status = "success"
+        mock_result.dict.return_value = {
+            "status": "success",
+            "message": "同步成功",
+        }
+        mock_service.sync_item.return_value = mock_result
+
+        yield mock_service
+
+
+@pytest.fixture
 def mock_database_manager():
     """模拟数据库管理器"""
     with patch("app.api.sync.database_manager") as mock_db:
@@ -93,7 +110,7 @@ def mock_database_manager():
 
 @pytest.mark.asyncio
 async def test_custom_sync_async_mode(
-    app_with_auth, mock_sync_service, mock_database_manager
+    app_with_auth, mock_custom_sync_service, mock_database_manager
 ):
     """测试自定义同步异步模式"""
     item = CustomItem(
@@ -120,7 +137,7 @@ async def test_custom_sync_async_mode(
 
 
 @pytest.mark.asyncio
-async def test_custom_sync_with_key(mock_sync_service, mock_database_manager):
+async def test_custom_sync_with_key(mock_custom_sync_service, mock_database_manager):
     """测试带密钥的自定义同步接口"""
     app = FastAPI()
     app.include_router(sync.root_router)
@@ -741,9 +758,9 @@ async def test_jellyfin_webhook_fallback_failure():
 
 
 @pytest.mark.asyncio
-async def test_custom_sync_exception(app_with_auth, mock_sync_service):
+async def test_custom_sync_exception(app_with_auth, mock_custom_sync_service):
     """测试自定义同步异常"""
-    mock_sync_service.sync_custom_item_async = AsyncMock(
+    mock_custom_sync_service.sync_item_async = AsyncMock(
         side_effect=RuntimeError("boom")
     )
 
@@ -766,12 +783,12 @@ async def test_custom_sync_exception(app_with_auth, mock_sync_service):
 
 
 @pytest.mark.asyncio
-async def test_custom_sync_ignored_status(app_with_auth, mock_sync_service):
+async def test_custom_sync_ignored_status(app_with_auth, mock_custom_sync_service):
     """测试自定义同步忽略状态"""
     mock_result = MagicMock()
     mock_result.status = "ignored"
     mock_result.dict.return_value = {"status": "ignored", "message": "已忽略"}
-    mock_sync_service.sync_custom_item.return_value = mock_result
+    mock_custom_sync_service.sync_item.return_value = mock_result
 
     async with AsyncClient(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
@@ -791,12 +808,12 @@ async def test_custom_sync_ignored_status(app_with_auth, mock_sync_service):
 
 
 @pytest.mark.asyncio
-async def test_custom_sync_error_status(app_with_auth, mock_sync_service):
+async def test_custom_sync_error_status(app_with_auth, mock_custom_sync_service):
     """测试自定义同步错误状态"""
     mock_result = MagicMock()
     mock_result.status = "error"
     mock_result.dict.return_value = {"status": "error", "message": "失败"}
-    mock_sync_service.sync_custom_item.return_value = mock_result
+    mock_custom_sync_service.sync_item.return_value = mock_result
 
     async with AsyncClient(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"

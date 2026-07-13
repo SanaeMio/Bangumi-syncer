@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from ..core.database import database_manager
 from ..core.logging import logger
 from ..models.sync import CustomItem
+from ..services.custom import custom_sync_service
 from ..services.sync_service import sync_service
 from ..utils.data_util import extract_plex_json
 from .deps import get_current_user_flexible
@@ -52,7 +53,10 @@ async def _handle_custom_sync(
     source: str = "custom",
     async_mode: bool = True,
 ):
-    """处理自定义同步请求的内部函数"""
+    """处理自定义同步请求的内部函数
+
+    鉴权在 API 层完成，同步逻辑委托给 custom_sync_service。
+    """
     if not await _verify_webhook_auth(webhook_key):
         logger.warning("Custom webhook 认证失败，无效的 key")
         response.status_code = 401
@@ -60,7 +64,7 @@ async def _handle_custom_sync(
     try:
         if async_mode:
             # 异步处理模式
-            task_id = await sync_service.sync_custom_item_async(item, source)
+            task_id = await custom_sync_service.sync_item_async(item, source)
             response.status_code = 202  # Accepted
             return {
                 "status": "accepted",
@@ -70,7 +74,7 @@ async def _handle_custom_sync(
             }
         else:
             # 同步处理模式（保持向后兼容）
-            result = sync_service.sync_custom_item(item, source)
+            result = custom_sync_service.sync_item(item, source)
 
             # 根据结果设置响应状态码
             if result.status == "error":
