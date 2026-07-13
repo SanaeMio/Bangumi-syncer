@@ -270,7 +270,7 @@ class TestPlexSync:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
-            patch("app.services.sync_service.extract_plex_data"),
+            patch("app.services.plex.sync_service.extract_plex_data"),
         ):
             from app.services.sync_service import SyncService
 
@@ -310,7 +310,7 @@ class TestPlexSync:
     def test_sync_plex_item_extract_raises_returns_error(self):
         with patched_sync_deps():
             with patch(
-                "app.services.sync_service.extract_plex_data",
+                "app.services.plex.sync_service.extract_plex_data",
                 side_effect=RuntimeError("parse"),
             ):
                 from app.services.sync_service import SyncService
@@ -342,7 +342,7 @@ class TestPlexSync:
         )
         with patched_sync_deps():
             with patch(
-                "app.services.sync_service.extract_plex_data", return_value=movie_item
+                "app.services.plex.sync_service.extract_plex_data", return_value=movie_item
             ) as ex:
                 from app.models.sync import SyncResponse
                 from app.services.sync_service import SyncService
@@ -486,7 +486,7 @@ class TestEmbySync:
     def test_sync_emby_item_extract_raises_returns_error(self):
         with patched_sync_deps():
             with patch(
-                "app.services.sync_service.extract_emby_data",
+                "app.services.emby.sync_service.extract_emby_data",
                 side_effect=OSError("emby ex"),
             ):
                 from app.services.sync_service import SyncService
@@ -535,7 +535,7 @@ class TestJellyfinSync:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
-            patch("app.services.sync_service.extract_jellyfin_data"),
+            patch("app.services.jellyfin.sync_service.extract_jellyfin_data"),
         ):
             from app.services.sync_service import SyncService
 
@@ -556,7 +556,7 @@ class TestJellyfinSync:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
-            patch("app.services.sync_service.extract_jellyfin_data"),
+            patch("app.services.jellyfin.sync_service.extract_jellyfin_data"),
         ):
             from app.services.sync_service import SyncService
 
@@ -574,7 +574,7 @@ class TestJellyfinSync:
     def test_sync_jellyfin_item_extract_raises_returns_error(self):
         with patched_sync_deps():
             with patch(
-                "app.services.sync_service.extract_jellyfin_data",
+                "app.services.jellyfin.sync_service.extract_jellyfin_data",
                 side_effect=ValueError("jf"),
             ):
                 from app.services.sync_service import SyncService
@@ -655,7 +655,7 @@ class TestAsyncMethods:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
-            patch("app.services.sync_service.extract_plex_data") as mock_extract,
+            patch("app.services.plex.sync_service.extract_plex_data") as mock_extract,
             patch(
                 "app.services.sync_service.SyncService.sync_custom_item"
             ) as mock_sync,

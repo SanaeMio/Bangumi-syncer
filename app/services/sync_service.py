@@ -16,11 +16,6 @@ from ..core.logging import logger
 from ..models.sync import CustomItem, SyncResponse
 from ..utils.bangumi_api import BangumiApi
 from ..utils.bangumi_data import BangumiData, bangumi_data
-from ..utils.data_util import (
-    extract_emby_data,
-    extract_jellyfin_data,
-    extract_plex_data,
-)
 from ..utils.notifier import send_notify
 from .mapping_service import mapping_service
 
@@ -999,43 +994,10 @@ class SyncService:
             return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
 
     def sync_plex_item(self, plex_data: dict[str, Any]) -> SyncResponse:
-        """处理Plex同步请求"""
-        try:
-            ev = plex_data["event"]
-            if ev not in ("media.play", "media.scrobble"):
-                logger.debug(f"事件类型{ev}无需同步，跳过")
-                return SyncResponse(status="ignored", message=f"事件类型{ev}无需同步")
+        """处理Plex同步请求（委托至 plex 子包）"""
+        from .plex.sync_service import plex_sync_service
 
-            md = plex_data["Metadata"]
-            mtype = (md.get("type") or "").lower()
-            if ev == "media.play" and mtype != "movie":
-                logger.debug(f"事件类型{ev}非电影，无需同步")
-                return SyncResponse(
-                    status="ignored",
-                    message=f"事件类型{ev}非电影，无需同步",
-                )
-
-            if mtype == "movie":
-                logger.debug(
-                    f"接收到Plex同步请求：{plex_data['event']} "
-                    f"{plex_data['Account']['title']} 电影 {md.get('title', '')}"
-                )
-            else:
-                logger.debug(
-                    f"接收到Plex同步请求：{plex_data['event']} {plex_data['Account']['title']} "
-                    f"S{md['parentIndex']:02d}E{md['index']:02d} {md.get('grandparentTitle', '')}"
-                )
-
-            # 提取数据并调用自定义同步
-            custom_item = extract_plex_data(plex_data)
-            logger.debug(f"Plex重新组装JSON报文：{custom_item}")
-
-            if ev == "media.play":
-                return self.sync_movie_watching(custom_item, source="plex")
-            return self.sync_custom_item(custom_item, source="plex")
-        except Exception as e:
-            logger.error(f"Plex同步处理出错: {e}")
-            return SyncResponse(status="error", message=f"处理失败: {str(e)}")
+        return plex_sync_service.sync_item(plex_data, self)
 
     async def sync_emby_item_async(self, emby_data: dict[str, Any]) -> str:
         """异步同步Emby项目，返回任务ID"""
@@ -1064,88 +1026,10 @@ class SyncService:
             return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
 
     def sync_emby_item(self, emby_data: dict[str, Any]) -> SyncResponse:
-        """处理Emby同步请求"""
-        try:
-            # 记录接收到的数据
-            logger.debug(f"接收到Emby同步请求：{emby_data}")
+        """处理Emby同步请求（委托至 emby 子包）"""
+        from .emby.sync_service import emby_sync_service
 
-            # 验证必要字段是否存在
-            required_fields = ["Event", "Item", "User"]
-            for field in required_fields:
-                if field not in emby_data:
-                    logger.error(f"Emby请求缺少必要字段: {field}")
-                    return SyncResponse(
-                        status="error", message=f"请求缺少必要字段: {field}"
-                    )
-
-            event = emby_data["Event"]
-            emby_item = emby_data["Item"]
-            is_movie = str(emby_item.get("Type") or "").lower() == "movie"
-            playback_start_movie = event == "playback.start" and is_movie
-
-            if (
-                event != "item.markplayed"
-                and event != "playback.stop"
-                and not playback_start_movie
-            ):
-                logger.debug(f"事件类型{event}无需同步，跳过")
-                return SyncResponse(
-                    status="ignored", message=f"事件类型{event}无需同步"
-                )
-
-            if is_movie:
-                if "Name" not in emby_item:
-                    logger.error("Emby 电影 Item 缺少 Name 字段")
-                    return SyncResponse(
-                        status="error", message="Item缺少必要字段: Name"
-                    )
-            else:
-                item_required_fields = [
-                    "Type",
-                    "SeriesName",
-                    "ParentIndexNumber",
-                    "IndexNumber",
-                ]
-                for field in item_required_fields:
-                    if field not in emby_item:
-                        logger.error(f"Emby Item缺少必要字段: {field}")
-                        return SyncResponse(
-                            status="error", message=f"Item缺少必要字段: {field}"
-                        )
-
-            # 如果是播放停止事件,只有播放完成才判断为看过
-            if event == "playback.stop":
-                if (
-                    "PlaybackInfo" not in emby_data
-                    or "PlayedToCompletion" not in emby_data["PlaybackInfo"]
-                ):
-                    logger.debug(
-                        "播放停止事件缺少PlaybackInfo.PlayedToCompletion字段，跳过"
-                    )
-                    return SyncResponse(status="ignored", message="播放信息不完整")
-
-                if emby_data["PlaybackInfo"]["PlayedToCompletion"] is not True:
-                    if is_movie:
-                        logger.debug(
-                            f"{emby_item.get('Name', '')} 电影未播放完成，跳过"
-                        )
-                    else:
-                        logger.debug(
-                            f"{emby_item['SeriesName']} S{emby_item['ParentIndexNumber']:02d}E{emby_item['IndexNumber']:02d}未播放完成，跳过"
-                        )
-                    return SyncResponse(status="ignored", message="未播放完成")
-
-            # 提取数据并调用自定义同步
-            custom_item = extract_emby_data(emby_data)
-            logger.debug(f"Emby重新组装JSON报文：{custom_item}")
-
-            if playback_start_movie:
-                return self.sync_movie_watching(custom_item, source="emby")
-            return self.sync_custom_item(custom_item, source="emby")
-        except Exception as e:
-            logger.error(f"Emby同步处理出错: {e}")
-            logger.error(traceback.format_exc())
-            return SyncResponse(status="error", message=f"处理失败: {str(e)}")
+        return emby_sync_service.sync_item(emby_data, self)
 
     async def sync_jellyfin_item_async(self, jellyfin_data: dict[str, Any]) -> str:
         """异步同步Jellyfin项目，返回任务ID"""
@@ -1174,40 +1058,10 @@ class SyncService:
             return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
 
     def sync_jellyfin_item(self, jellyfin_data: dict[str, Any]) -> SyncResponse:
-        """处理Jellyfin同步请求"""
-        try:
-            logger.debug(f"接收到Jellyfin同步请求：{jellyfin_data}")
+        """处理Jellyfin同步请求（委托至 jellyfin 子包）"""
+        from .jellyfin.sync_service import jellyfin_sync_service
 
-            ntype = jellyfin_data.get("NotificationType", "")
-            mtype = (jellyfin_data.get("media_type") or "").lower()
-            playback_start_movie = ntype == "PlaybackStart" and mtype == "movie"
-
-            if ntype != "PlaybackStop" and not playback_start_movie:
-                logger.debug(f"事件类型{ntype}无需同步，跳过")
-                return SyncResponse(
-                    status="ignored",
-                    message=f"事件类型{ntype}无需同步",
-                )
-
-            if ntype == "PlaybackStop":
-                if jellyfin_data["PlayedToCompletion"] == "False":
-                    logger.debug(
-                        f"是否播完：{jellyfin_data['PlayedToCompletion']}，无需同步，跳过"
-                    )
-                    return SyncResponse(
-                        status="ignored", message="未播放完成，跳过同步"
-                    )
-
-            # 提取数据并调用自定义同步
-            custom_item = extract_jellyfin_data(jellyfin_data)
-            logger.debug(f"Jellyfin重新组装JSON报文：{custom_item}")
-
-            if playback_start_movie:
-                return self.sync_movie_watching(custom_item, source="jellyfin")
-            return self.sync_custom_item(custom_item, source="jellyfin")
-        except Exception as e:
-            logger.error(f"Jellyfin同步处理出错: {e}")
-            return SyncResponse(status="error", message=f"处理失败: {str(e)}")
+        return jellyfin_sync_service.sync_item(jellyfin_data, self)
 
 
 # 全局同步服务实例
