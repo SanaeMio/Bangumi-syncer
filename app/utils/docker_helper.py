@@ -379,7 +379,7 @@ class DockerProxyHelper:
             s.connect(("8.8.8.8", 80))
             diagnosis["container_ip"] = s.getsockname()[0]
             s.close()
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         try:
@@ -397,7 +397,7 @@ class DockerProxyHelper:
                             if len(parts) >= 3:
                                 diagnosis["gateway"] = parts[2]
                 diagnosis["routes"] = routes
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         try:
@@ -407,7 +407,7 @@ class DockerProxyHelper:
                     if line.startswith("nameserver"):
                         dns_server = line.split()[1]
                         diagnosis["dns_servers"].append(dns_server)
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         try:
@@ -436,7 +436,7 @@ class DockerProxyHelper:
                         if ip_match:
                             current_interface["ips"].append(ip_match.group(1))
                 diagnosis["network_interfaces"] = interfaces
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         return diagnosis
@@ -485,7 +485,7 @@ class DockerProxyHelper:
                         "success": False,
                         "error": ping_result.stderr,
                     }
-            except:
+            except (OSError, ValueError, subprocess.SubprocessError):
                 result["details"]["ping_test"] = {
                     "success": False,
                     "error": "ping命令不可用或无权限",

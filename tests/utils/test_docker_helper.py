@@ -306,7 +306,7 @@ class TestDockerProxyHelperNetworkDiagnosis:
         helper = DockerProxyHelper()
 
         with patch("socket.socket") as mock_socket_cls:
-            mock_socket_cls.side_effect = Exception("Socket error")
+            mock_socket_cls.side_effect = OSError("Socket error")
             diagnosis = helper._get_network_diagnosis()
             assert diagnosis["container_ip"] is None
 

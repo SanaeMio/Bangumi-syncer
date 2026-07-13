@@ -398,8 +398,8 @@ class UpgradeService:
         try:
             # 关闭现有连接
             database_manager.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("database_manager.close 失败: %s", e)
 
         try:
             shutil.copy2(db_backup, db_path)
@@ -641,8 +641,8 @@ def restart_application():
     logger.info("正在重启应用...")
     try:
         database_manager.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("database_manager.close 失败: %s", e)
 
     if sys.platform == "win32":
         start_bat = Path("start.bat")

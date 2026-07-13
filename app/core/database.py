@@ -998,19 +998,18 @@ class DatabaseManager:
 
     def get_feiniu_synced_set(self, user_guids: list[str]) -> set[tuple[str, str]]:
         """批量获取已同步的飞牛条目集合，用于 O(1) 去重查找"""
+        if not user_guids:
+            return set()
         try:
 
             def _read(conn):
                 cursor = conn.cursor()
-                result = set()
-                for guid in user_guids:
-                    cursor.execute(
-                        "SELECT fn_user_guid, item_guid FROM feiniu_sync_history WHERE fn_user_guid = ?",
-                        (guid,),
-                    )
-                    for row in cursor.fetchall():
-                        result.add((row[0], row[1]))
-                return result
+                placeholders = ",".join("?" * len(user_guids))
+                cursor.execute(
+                    f"SELECT fn_user_guid, item_guid FROM feiniu_sync_history WHERE fn_user_guid IN ({placeholders})",
+                    user_guids,
+                )
+                return {(row[0], row[1]) for row in cursor.fetchall()}
 
             return self._execute_with_lock(_read)
         except Exception as e:

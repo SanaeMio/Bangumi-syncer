@@ -115,9 +115,9 @@ def get_system_dns_servers():
 
             if os.path.exists("/.dockerenv") or os.environ.get("DOCKER_CONTAINER"):
                 is_docker = True
-        except:
+        except Exception:
             pass
-    except:
+    except Exception:
         pass
 
     try:
@@ -158,7 +158,7 @@ def get_system_dns_servers():
                         encoding="utf-8",
                     )
                     # 处理类似逻辑...
-                except:
+                except (OSError, subprocess.SubprocessError):
                     pass
 
             # 如果ipconfig没有获取到，尝试使用nslookup作为备用方案
@@ -180,7 +180,7 @@ def get_system_dns_servers():
                                 and "." in dns_server
                             ):
                                 dns_servers.append(dns_server)
-                except:
+                except (OSError, subprocess.SubprocessError):
                     pass
 
         elif system == "linux":
@@ -209,7 +209,7 @@ def get_system_dns_servers():
                                 or "127.0.0.11" in content
                             ):
                                 dns_servers.append("Docker内置DNS: 127.0.0.11")
-                    except:
+                    except (OSError, subprocess.SubprocessError):
                         pass
 
                     # 尝试从宿主机获取真实DNS（如果可能）
@@ -223,7 +223,7 @@ def get_system_dns_servers():
                         # 添加关于Docker网络的说明
                         if "127.0.0.11" in result.stdout:
                             dns_servers.append("注意: Docker使用内置DNS转发")
-                    except:
+                    except (OSError, subprocess.SubprocessError):
                         pass
 
             except FileNotFoundError:
@@ -253,7 +253,7 @@ def get_system_dns_servers():
                 socket.getaddrinfo("google.com", 80)
                 # 如果成功，说明DNS工作正常，但我们无法直接获取DNS服务器地址
                 dns_servers.append("系统默认DNS（无法直接获取地址）")
-            except:
+            except (OSError, subprocess.SubprocessError):
                 pass
 
     except Exception as e:

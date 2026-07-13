@@ -258,6 +258,217 @@ class SyncService:
             )
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
 
+    def _normalize_custom_item_params(self, item: CustomItem) -> Optional[SyncResponse]:
+        """校验自定义条目参数。返回 SyncResponse 表示应立即返回该响应；None 表示校验通过。"""
+        # 基本验证
+        if item.media_type not in ("episode", "movie"):
+            logger.error(f"同步类型{item.media_type}不支持，跳过")
+            return SyncResponse(
+                status="error", message=f"同步类型{item.media_type}不支持"
+            )
+
+        if not item.title:
+            logger.error("同步名称为空，跳过")
+            return SyncResponse(status="error", message="同步名称为空")
+
+        if item.media_type == "episode" and item.season == 0:
+            logger.error("不支持SP标记同步，跳过")
+            return SyncResponse(status="error", message="不支持SP标记同步")
+
+        if item.episode == 0:
+            logger.error(f"集数{item.episode}不能为0，跳过")
+            return SyncResponse(status="error", message=f"集数{item.episode}不能为0")
+
+        # 检查用户权限
+        if not self._check_user_permission(item.user_name):
+            return SyncResponse(status="error", message="用户无权限同步")
+
+        # 检查是否包含屏蔽关键词
+        if self._is_title_blocked(item.title, item.ori_title):
+            return SyncResponse(
+                status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
+            )
+
+        return None
+
+    def _find_matching_subject(
+        self, item: CustomItem, actual_source: str
+    ) -> tuple[Optional[str], bool, Optional[SyncResponse]]:
+        """查找匹配的 Bangumi 条目。
+
+        返回 (subject_id, is_season_matched_id, error_response)：
+        - 成功：(id, flag, None)
+        - 失败：(None, False, 应立即返回的 SyncResponse)
+        """
+        # 查找番剧ID及其是否为特定季度ID的标记
+        subject_id, is_season_matched_id, subject_find_error = self._find_subject_id(
+            item
+        )
+        if subject_id:
+            return subject_id, is_season_matched_id, None
+
+        send_notify(
+            "anime_not_found",
+            item,
+            actual_source,
+            error_message="未找到匹配的番剧",
+        )
+        database_manager.log_sync_record(
+            user_name=item.user_name,
+            title=item.title,
+            ori_title=item.ori_title or "",
+            season=item.season,
+            episode=item.episode,
+            subject_id=None,
+            episode_id=None,
+            status="error",
+            message=self._format_subject_not_found_message(item, subject_find_error),
+            source=actual_source,
+            media_type=item.media_type,
+        )
+        return None, False, SyncResponse(status="error", message="未找到匹配的番剧")
+
+    def _resolve_season_episode(
+        self,
+        bgm: BangumiApi,
+        item: CustomItem,
+        subject_id: str,
+        is_season_matched_id: bool,
+    ) -> tuple[str, str]:
+        """根据 media_type 解析 Bangumi 季度与集数 ID。
+
+        返回 (bgm_se_id, bgm_ep_id)；可能抛出 ValueError（认证错误由调用方处理）。
+        """
+        release_for_ep = None
+        if item.release_date and len(item.release_date) >= 8:
+            release_for_ep = item.release_date[:10]
+        # 电影走短路径，剧集走季番解析
+        if item.media_type == "movie":
+            return bgm.get_movie_main_episode_id(subject_id, target_sort=item.episode)
+        return bgm.get_target_season_episode_id(
+            subject_id=subject_id,
+            target_season=item.season,
+            target_ep=item.episode,
+            is_season_subject_id=is_season_matched_id,
+            release_date=release_for_ep,
+        )
+
+    def _apply_sync_status(
+        self,
+        item: CustomItem,
+        actual_source: str,
+        bgm_se_id: str,
+        bgm_ep_id: str,
+        bgm_title: str,
+        mark_status: int,
+    ) -> str:
+        """根据标记结果构建结果消息并发送通知。返回 result_message。"""
+        if mark_status == 0:
+            result_message = "已看过，不再重复标记"
+            logger.info(
+                f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
+            )
+
+            send_notify(
+                "mark_skipped",
+                item,
+                actual_source,
+                subject_id=bgm_se_id,
+                episode_id=bgm_ep_id,
+                bgm_title=bgm_title,
+            )
+
+        elif mark_status == 1:
+            result_message = "已标记为看过"
+            logger.info(
+                f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
+            )
+
+            send_notify(
+                "mark_success",
+                item,
+                actual_source,
+                subject_id=bgm_se_id,
+                episode_id=bgm_ep_id,
+                bgm_title=bgm_title,
+            )
+
+        else:
+            result_message = "已添加到收藏并标记为看过"
+            logger.info(
+                f"bgm: {bgm_title or item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}"
+            )
+            logger.info(
+                f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
+            )
+
+            send_notify(
+                "mark_success",
+                item,
+                actual_source,
+                subject_id=bgm_se_id,
+                episode_id=bgm_ep_id,
+                bgm_title=bgm_title,
+            )
+
+        return result_message
+
+    def _mark_subject_completed_if_needed(
+        self,
+        item: CustomItem,
+        bgm: BangumiApi,
+        bgm_se_id: str,
+        bgm_title: str,
+    ) -> None:
+        """根据配置在单集标记后尝试将条目归档为「看过」（仅副作用，无返回值）。"""
+        if item.media_type == "movie" and config_manager.get(
+            "sync", "movie_mark_subject_completed", fallback=True
+        ):
+            try:
+                coll = bgm.get_subject_collection(str(bgm_se_id))
+                if coll.get("type") == 2:
+                    logger.debug(
+                        "剧场版条目收藏状态已为「看过」，跳过条目标记: "
+                        f"subject_id={bgm_se_id}"
+                    )
+                else:
+                    bgm.change_collection_state(subject_id=str(bgm_se_id), state=2)
+            except Exception as e:
+                logger.warning(
+                    f"剧场版条目标记为看过失败（单集已处理）: subject_id={bgm_se_id} {e}"
+                )
+
+        if item.media_type != "movie" and config_manager.get(
+            "sync", "anime_mark_subject_completed", fallback=False
+        ):
+            try:
+                coll = bgm.get_subject_collection(str(bgm_se_id))
+                if coll.get("type") == 2:
+                    logger.debug(
+                        "TV条目收藏状态已为「看过」，跳过条目标记: "
+                        f"subject_id={bgm_se_id}"
+                    )
+                else:
+                    # 获取番剧的总集数，如果已看集数等于或多于总集数，则自动归档为「看过」
+                    subject_info = bgm.get_subject(bgm_se_id)
+                    total_eps = subject_info.get("eps", 0)
+                    watched_eps = coll.get("ep_status", 0) or 0
+                    logger.debug(
+                        f"获取到Subject: {bgm_se_id}, 总ep: {total_eps}, 已观看: {watched_eps}, coll: {coll}"
+                    )
+                    if total_eps > 0:
+                        if watched_eps >= total_eps:
+                            bgm.change_collection_state(
+                                subject_id=str(bgm_se_id), state=2
+                            )
+                            logger.info(
+                                f"bgm: {bgm_title or item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"
+                            )
+            except Exception as e:
+                logger.warning(
+                    f"TV番剧自动归档为「看过」失败（单集已处理）: subject_id={bgm_se_id} {e}"
+                )
+
     def sync_custom_item(
         self, item: CustomItem, source: str = "custom"
     ) -> SyncResponse:
@@ -278,64 +489,17 @@ class SyncService:
 
             send_notify("request_received", item, actual_source)
 
-            # 基本验证
-            if item.media_type not in ("episode", "movie"):
-                logger.error(f"同步类型{item.media_type}不支持，跳过")
-                return SyncResponse(
-                    status="error", message=f"同步类型{item.media_type}不支持"
-                )
-
-            if not item.title:
-                logger.error("同步名称为空，跳过")
-                return SyncResponse(status="error", message="同步名称为空")
-
-            if item.media_type == "episode" and item.season == 0:
-                logger.error("不支持SP标记同步，跳过")
-                return SyncResponse(status="error", message="不支持SP标记同步")
-
-            if item.episode == 0:
-                logger.error(f"集数{item.episode}不能为0，跳过")
-                return SyncResponse(
-                    status="error", message=f"集数{item.episode}不能为0"
-                )
-
-            # 检查用户权限
-            if not self._check_user_permission(item.user_name):
-                return SyncResponse(status="error", message="用户无权限同步")
-
-            # 检查是否包含屏蔽关键词
-            if self._is_title_blocked(item.title, item.ori_title):
-                return SyncResponse(
-                    status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
-                )
+            # 参数校验
+            validation_error = self._normalize_custom_item_params(item)
+            if validation_error is not None:
+                return validation_error
 
             # 查找番剧ID及其是否为特定季度ID的标记
-            subject_id, is_season_matched_id, subject_find_error = (
-                self._find_subject_id(item)
+            subject_id, is_season_matched_id, subject_error_response = (
+                self._find_matching_subject(item, actual_source)
             )
-            if not subject_id:
-                send_notify(
-                    "anime_not_found",
-                    item,
-                    actual_source,
-                    error_message="未找到匹配的番剧",
-                )
-                database_manager.log_sync_record(
-                    user_name=item.user_name,
-                    title=item.title,
-                    ori_title=item.ori_title or "",
-                    season=item.season,
-                    episode=item.episode,
-                    subject_id=None,
-                    episode_id=None,
-                    status="error",
-                    message=self._format_subject_not_found_message(
-                        item, subject_find_error
-                    ),
-                    source=actual_source,
-                    media_type=item.media_type,
-                )
-                return SyncResponse(status="error", message="未找到匹配的番剧")
+            if subject_error_response is not None:
+                return subject_error_response
 
             # 获取对应用户的bangumi API实例
             bgm = self._get_bangumi_api_for_user(item.user_name)
@@ -345,21 +509,9 @@ class SyncService:
 
             # 查询 bangumi 章节：电影走短路径，剧集走季番解析
             try:
-                release_for_ep = None
-                if item.release_date and len(item.release_date) >= 8:
-                    release_for_ep = item.release_date[:10]
-                if item.media_type == "movie":
-                    bgm_se_id, bgm_ep_id = bgm.get_movie_main_episode_id(
-                        subject_id, target_sort=item.episode
-                    )
-                else:
-                    bgm_se_id, bgm_ep_id = bgm.get_target_season_episode_id(
-                        subject_id=subject_id,
-                        target_season=item.season,
-                        target_ep=item.episode,
-                        is_season_subject_id=is_season_matched_id,
-                        release_date=release_for_ep,
-                    )
+                bgm_se_id, bgm_ep_id = self._resolve_season_episode(
+                    bgm, item, subject_id, is_season_matched_id
+                )
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
                 if "认证失败" in str(ve) or "access_token" in str(ve):
@@ -412,103 +564,11 @@ class SyncService:
                 else:
                     raise ve
 
-            result_message = ""
+            result_message = self._apply_sync_status(
+                item, actual_source, bgm_se_id, bgm_ep_id, bgm_title, mark_status
+            )
 
-            if mark_status == 0:
-                result_message = "已看过，不再重复标记"
-                logger.info(
-                    f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
-                )
-
-                send_notify(
-                    "mark_skipped",
-                    item,
-                    actual_source,
-                    subject_id=bgm_se_id,
-                    episode_id=bgm_ep_id,
-                    bgm_title=bgm_title,
-                )
-
-            elif mark_status == 1:
-                result_message = "已标记为看过"
-                logger.info(
-                    f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
-                )
-
-                send_notify(
-                    "mark_success",
-                    item,
-                    actual_source,
-                    subject_id=bgm_se_id,
-                    episode_id=bgm_ep_id,
-                    bgm_title=bgm_title,
-                )
-
-            else:
-                result_message = "已添加到收藏并标记为看过"
-                logger.info(
-                    f"bgm: {bgm_title or item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}"
-                )
-                logger.info(
-                    f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
-                )
-
-                send_notify(
-                    "mark_success",
-                    item,
-                    actual_source,
-                    subject_id=bgm_se_id,
-                    episode_id=bgm_ep_id,
-                    bgm_title=bgm_title,
-                )
-
-            if item.media_type == "movie" and config_manager.get(
-                "sync", "movie_mark_subject_completed", fallback=True
-            ):
-                try:
-                    coll = bgm.get_subject_collection(str(bgm_se_id))
-                    if coll.get("type") == 2:
-                        logger.debug(
-                            "剧场版条目收藏状态已为「看过」，跳过条目标记: "
-                            f"subject_id={bgm_se_id}"
-                        )
-                    else:
-                        bgm.change_collection_state(subject_id=str(bgm_se_id), state=2)
-                except Exception as e:
-                    logger.warning(
-                        f"剧场版条目标记为看过失败（单集已处理）: subject_id={bgm_se_id} {e}"
-                    )
-
-            if item.media_type != "movie" and config_manager.get(
-                "sync", "anime_mark_subject_completed", fallback=False
-            ):
-                try:
-                    coll = bgm.get_subject_collection(str(bgm_se_id))
-                    if coll.get("type") == 2:
-                        logger.debug(
-                            "TV条目收藏状态已为「看过」，跳过条目标记: "
-                            f"subject_id={bgm_se_id}"
-                        )
-                    else:
-                        # 获取番剧的总集数，如果已看集数等于或多于总集数，则自动归档为「看过」
-                        subject_info = bgm.get_subject(bgm_se_id)
-                        total_eps = subject_info.get("eps", 0)
-                        watched_eps = coll.get("ep_status", 0) or 0
-                        logger.debug(
-                            f"获取到Subject: {bgm_se_id}, 总ep: {total_eps}, 已观看: {watched_eps}, coll: {coll}"
-                        )
-                        if total_eps > 0:
-                            if watched_eps >= total_eps:
-                                bgm.change_collection_state(
-                                    subject_id=str(bgm_se_id), state=2
-                                )
-                                logger.info(
-                                    f"bgm: {bgm_title or item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"
-                                )
-                except Exception as e:
-                    logger.warning(
-                        f"TV番剧自动归档为「看过」失败（单集已处理）: subject_id={bgm_se_id} {e}"
-                    )
+            self._mark_subject_completed_if_needed(item, bgm, bgm_se_id, bgm_title)
 
             # 记录同步成功到数据库
             database_manager.log_sync_record(

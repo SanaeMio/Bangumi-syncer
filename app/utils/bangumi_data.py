@@ -363,22 +363,17 @@ class BangumiData:
             return result
         return None
 
-    def _find_bangumi_id_optimized(
+    def _try_exact_match(
         self,
         title: str,
-        ori_title: str = None,
-        release_date: str = None,
-        original_title: str = None,
-        season: int = 1,
+        ori_title: str,
+        release_date: str,
     ) -> Optional[tuple[str, str, bool]]:
-        """优化的番剧ID查找算法，避免重复计算相似度
+        """尝试通过标题索引进行精确匹配（O(1)查找，避免线性扫描）
 
         Returns:
-            Optional[tuple[str, str, bool]]: (bangumi_id, matched_title, date_matched) 或 None
-            date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
+            匹配结果或 None（None 表示需要回退到线性扫描）
         """
-
-        # 首先尝试精确匹配索引（O(1)查找，避免线性扫描）
         exact_candidates = []
         lookup_keys = [k for k in (title, ori_title) if k]
         for key in lookup_keys:
@@ -421,14 +416,24 @@ class BangumiData:
                 first = exact_candidates[0]
                 return (first[1], first[2], False)
 
-        # 精确索引未命中，回退到线性扫描模糊匹配
-        logger.debug("开始尝试完全匹配...")
+        return None
+
+    def _scan_candidates(
+        self,
+        title: str,
+        ori_title: str,
+        release_date: str,
+    ) -> tuple[list, list, int]:
+        """线性扫描数据，收集精确匹配与部分匹配候选
+
+        Returns:
+            (exact_matches, partial_matches, processed_count)
+        """
         exact_matches = []
         partial_matches = []
-
-        # 优化：先进行快速预筛选
         processed_count = 0
 
+        # 优化：先进行快速预筛选
         for item in self._parse_data():
             processed_count += 1
 
@@ -465,124 +470,183 @@ class BangumiData:
                     if len(partial_matches) >= 10:
                         break
 
+        return exact_matches, partial_matches, processed_count
+
+    def _select_from_exact_matches(
+        self,
+        title: str,
+        exact_matches: list,
+        partial_matches: list,
+        release_date: str,
+        season: int,
+    ) -> Optional[tuple[str, str, bool]]:
+        """从完全匹配结果中选择最佳匹配
+
+        Returns:
+            匹配结果或 None
+        """
+        # 按匹配类型排序，优先使用中文翻译匹配
+        exact_matches.sort(key=lambda x: x[2])
+
+        if release_date:
+            min_exact_diff = float("inf")
+            best_exact_match = None
+
+            # 找到日期最近的完全匹配
+            for match_item, match_id, match_type in exact_matches:
+                if "begin" in match_item:
+                    diff = self._date_diff(match_item["begin"], release_date)
+                    if diff < min_exact_diff:
+                        min_exact_diff = diff
+                        best_exact_match = (match_item, match_id, match_type)
+
+            # 当完全匹配的最佳日期相差大于 180 天时，检查部分匹配列表中是否存在日期更接近的条目
+            # 用于处理同名 OVA 或前传导致误判正片的情况
+            if min_exact_diff > 180 and partial_matches:
+                logger.debug(
+                    f"完全匹配的最佳日期误差高达 {min_exact_diff} 天，启动全局日期择优机制"
+                )
+                min_partial_diff = float("inf")
+                best_partial_match = None
+
+                for match_item, score, match_id in partial_matches:
+                    if "begin" in match_item:
+                        diff = self._date_diff(match_item["begin"], release_date)
+                        if diff < min_partial_diff:
+                            min_partial_diff = diff
+                            best_partial_match = (match_item, match_id, score)
+
+                # 若部分匹配中有日期误差小于等于 90 天的条目，启动安全校验决定是否采用该部分匹配条目
+                if best_partial_match and min_partial_diff <= 90:
+                    pm_item = best_partial_match[0]
+                    pm_score = best_partial_match[2]
+                    # 收集该条目的原名和所有中文翻译
+                    pm_all_names = [
+                        pm_item.get("title", "")
+                    ] + self._get_zh_hans_titles(pm_item)
+
+                    # 安全校验：搜索词必须被包含在候选名的其中之一里，模糊匹配相似度 > 0.8，或关键字符一致
+                    is_safe_to_override = (
+                        pm_score >= 0.8
+                        or any(title in name for name in pm_all_names)
+                        or any(
+                            self._check_key_characters(title, name)
+                            for name in pm_all_names
+                        )
+                    )
+
+                    if is_safe_to_override:
+                        matched_title = self._get_best_matched_title(pm_item)
+                        logger.debug(
+                            f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title} (日期差距 {min_partial_diff} 天)"
+                        )
+                        return (best_partial_match[1], matched_title, True)
+                    else:
+                        logger.debug(
+                            f"拒绝日期择优: {pm_item.get('title', '')} 虽然日期接近，但名称差异过大"
+                        )
+
+            # 处理存在多个完全匹配的情况，返回日期最接近的条目
+            if len(exact_matches) > 1 and best_exact_match:
+                logger.debug(
+                    f"从多个完全匹配中择优: {best_exact_match[0].get('title', '')}, 日期差距: {min_exact_diff}天"
+                )
+                matched_title = self._get_best_matched_title(best_exact_match[0])
+                date_matched = season > 1 and min_exact_diff <= 180
+                return (best_exact_match[1], matched_title, date_matched)
+
+        # 返回最高优先级的匹配结果
+        result_item = exact_matches[0][0]
+        zh_hans = result_item.get("titleTranslate", {}).get("zh-Hans", [])
+        zh_hans_str = ", ".join(zh_hans) if zh_hans else ""
+        logger.debug(
+            f"找到匹配的番剧: {result_item.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {exact_matches[0][1]}, 匹配方式: {exact_matches[0][2]}"
+        )
+        # 获取匹配到的标题
+        matched_title = self._get_best_matched_title(result_item)
+        # 没有通过日期筛选，标记为非日期匹配
+        return (exact_matches[0][1], matched_title, False)
+
+    def _select_from_partial_matches(
+        self,
+        partial_matches: list,
+    ) -> Optional[tuple[str, str, bool]]:
+        """从部分匹配结果中选择最佳匹配（模糊匹配）
+
+        Returns:
+            匹配结果或 None
+        """
+        logger.debug("没有找到完全匹配的番剧，尝试进行模糊匹配...")
+
+        # 按匹配度排序
+        partial_matches.sort(key=lambda x: x[1], reverse=True)
+
+        if self.verbose_logging:
+            logger.debug(f"找到 {len(partial_matches)} 个可能的匹配项:")
+            for i, (item, score, _) in enumerate(partial_matches[:5]):
+                zh_hans = item.get("titleTranslate", {}).get("zh-Hans", [])
+                zh_hans_str = ", ".join(zh_hans) if zh_hans else ""
+                logger.debug(
+                    f"  {i + 1}. {item.get('title', '')}, 中文翻译: {zh_hans_str}, 匹配度: {score}"
+                )
+
+        if partial_matches[0][1] >= 0.6:
+            best_match = partial_matches[0][0]
+            highest_score = partial_matches[0][1]
+            bangumi_id = partial_matches[0][2]
+            zh_hans = best_match.get("titleTranslate", {}).get("zh-Hans", [])
+            zh_hans_str = ", ".join(zh_hans) if zh_hans else ""
+            logger.debug(
+                f"找到最佳匹配的番剧: {best_match.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配度: {highest_score}"
+            )
+            # 获取匹配到的标题
+            matched_title = self._get_best_matched_title(best_match)
+            # 模糊匹配标记为非日期匹配
+            return (bangumi_id, matched_title, False)
+
+        return None
+
+    def _find_bangumi_id_optimized(
+        self,
+        title: str,
+        ori_title: str = None,
+        release_date: str = None,
+        original_title: str = None,
+        season: int = 1,
+    ) -> Optional[tuple[str, str, bool]]:
+        """优化的番剧ID查找算法，避免重复计算相似度
+
+        Returns:
+            Optional[tuple[str, str, bool]]: (bangumi_id, matched_title, date_matched) 或 None
+            date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
+        """
+        # 首先尝试精确匹配索引（O(1)查找，避免线性扫描）
+        result = self._try_exact_match(title, ori_title, release_date)
+        if result:
+            return result
+
+        # 精确索引未命中，回退到线性扫描模糊匹配
+        logger.debug("开始尝试完全匹配...")
+        exact_matches, partial_matches, processed_count = self._scan_candidates(
+            title, ori_title, release_date
+        )
+
         if self.verbose_logging:
             logger.debug(
                 f"处理了 {processed_count} 个项目，找到 {len(exact_matches)} 个完全匹配，{len(partial_matches)} 个部分匹配"
             )
 
         # 处理完全匹配
-        if len(exact_matches) > 0:
-            # 按匹配类型排序，优先使用中文翻译匹配
-            exact_matches.sort(key=lambda x: x[2])
-
-            if release_date:
-                min_exact_diff = float("inf")
-                best_exact_match = None
-
-                # 找到日期最近的完全匹配
-                for match_item, match_id, match_type in exact_matches:
-                    if "begin" in match_item:
-                        diff = self._date_diff(match_item["begin"], release_date)
-                        if diff < min_exact_diff:
-                            min_exact_diff = diff
-                            best_exact_match = (match_item, match_id, match_type)
-
-                # 当完全匹配的最佳日期相差大于 180 天时，检查部分匹配列表中是否存在日期更接近的条目
-                # 用于处理同名 OVA 或前传导致误判正片的情况
-                if min_exact_diff > 180 and partial_matches:
-                    logger.debug(
-                        f"完全匹配的最佳日期误差高达 {min_exact_diff} 天，启动全局日期择优机制"
-                    )
-                    min_partial_diff = float("inf")
-                    best_partial_match = None
-
-                    for match_item, score, match_id in partial_matches:
-                        if "begin" in match_item:
-                            diff = self._date_diff(match_item["begin"], release_date)
-                            if diff < min_partial_diff:
-                                min_partial_diff = diff
-                                best_partial_match = (match_item, match_id, score)
-
-                    # 若部分匹配中有日期误差小于等于 90 天的条目，启动安全校验决定是否采用该部分匹配条目
-                    if best_partial_match and min_partial_diff <= 90:
-                        pm_item = best_partial_match[0]
-                        pm_score = best_partial_match[2]
-                        # 收集该条目的原名和所有中文翻译
-                        pm_all_names = [
-                            pm_item.get("title", "")
-                        ] + self._get_zh_hans_titles(pm_item)
-
-                        # 安全校验：搜索词必须被包含在候选名的其中之一里，模糊匹配相似度 > 0.8，或关键字符一致
-                        is_safe_to_override = (
-                            pm_score >= 0.8
-                            or any(title in name for name in pm_all_names)
-                            or any(
-                                self._check_key_characters(title, name)
-                                for name in pm_all_names
-                            )
-                        )
-
-                        if is_safe_to_override:
-                            matched_title = self._get_best_matched_title(pm_item)
-                            logger.debug(
-                                f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title} (日期差距 {min_partial_diff} 天)"
-                            )
-                            return (best_partial_match[1], matched_title, True)
-                        else:
-                            logger.debug(
-                                f"拒绝日期择优: {pm_item.get('title', '')} 虽然日期接近，但名称差异过大"
-                            )
-
-                # 处理存在多个完全匹配的情况，返回日期最接近的条目
-                if len(exact_matches) > 1 and best_exact_match:
-                    logger.debug(
-                        f"从多个完全匹配中择优: {best_exact_match[0].get('title', '')}, 日期差距: {min_exact_diff}天"
-                    )
-                    matched_title = self._get_best_matched_title(best_exact_match[0])
-                    date_matched = season > 1 and min_exact_diff <= 180
-                    return (best_exact_match[1], matched_title, date_matched)
-
-            # 返回最高优先级的匹配结果
-            result_item = exact_matches[0][0]
-            zh_hans = result_item.get("titleTranslate", {}).get("zh-Hans", [])
-            zh_hans_str = ", ".join(zh_hans) if zh_hans else ""
-            logger.debug(
-                f"找到匹配的番剧: {result_item.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {exact_matches[0][1]}, 匹配方式: {exact_matches[0][2]}"
+        if exact_matches:
+            return self._select_from_exact_matches(
+                title, exact_matches, partial_matches, release_date, season
             )
-            # 获取匹配到的标题
-            matched_title = self._get_best_matched_title(result_item)
-            # 没有通过日期筛选，标记为非日期匹配
-            return (exact_matches[0][1], matched_title, False)
 
         # 处理部分匹配
         if partial_matches:
-            logger.debug("没有找到完全匹配的番剧，尝试进行模糊匹配...")
-
-            # 按匹配度排序
-            partial_matches.sort(key=lambda x: x[1], reverse=True)
-
-            if self.verbose_logging:
-                logger.debug(f"找到 {len(partial_matches)} 个可能的匹配项:")
-                for i, (item, score, _) in enumerate(partial_matches[:5]):
-                    zh_hans = item.get("titleTranslate", {}).get("zh-Hans", [])
-                    zh_hans_str = ", ".join(zh_hans) if zh_hans else ""
-                    logger.debug(
-                        f"  {i + 1}. {item.get('title', '')}, 中文翻译: {zh_hans_str}, 匹配度: {score}"
-                    )
-
-            if partial_matches[0][1] >= 0.6:
-                best_match = partial_matches[0][0]
-                highest_score = partial_matches[0][1]
-                bangumi_id = partial_matches[0][2]
-                zh_hans = best_match.get("titleTranslate", {}).get("zh-Hans", [])
-                zh_hans_str = ", ".join(zh_hans) if zh_hans else ""
-                logger.debug(
-                    f"找到最佳匹配的番剧: {best_match.get('title', '')}, 中文翻译: {zh_hans_str}, bangumi_id: {bangumi_id}, 匹配度: {highest_score}"
-                )
-                # 获取匹配到的标题
-                matched_title = self._get_best_matched_title(best_match)
-                # 模糊匹配标记为非日期匹配
-                return (bangumi_id, matched_title, False)
+            result = self._select_from_partial_matches(partial_matches)
+            if result:
+                return result
 
         # 如果处理过标题，再用原始标题尝试一次
         if original_title and original_title != title:

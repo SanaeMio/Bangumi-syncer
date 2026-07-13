@@ -65,8 +65,8 @@ class BaseScheduler(abc.ABC):
                 else:
                     try:
                         self.scheduler.remove_job(self.JOB_ID)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("remove_job 失败: %s", e)
                 return True
 
             if not self._is_enabled():
@@ -139,8 +139,8 @@ class BaseScheduler(abc.ABC):
 
         try:
             self.scheduler.remove_job(self.JOB_ID)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("remove_job 失败: %s", e)
 
         self.scheduler.add_job(
             func=self._run_sync_job,

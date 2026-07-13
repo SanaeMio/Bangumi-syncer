@@ -270,8 +270,8 @@ def fetch_completed_watch_records(
             if rd_item and str(rd_item).strip():
                 try:
                     release_date = str(rd_item).strip()[:10]
-                except Exception:
-                    pass
+                except (ValueError, TypeError) as e:
+                    logger.debug("发布日期解析失败: %s", e)
 
             ug = str(r["user_guid"])
             uname = str(r["feiniu_username"] or (ug[:8] if ug else "unknown"))

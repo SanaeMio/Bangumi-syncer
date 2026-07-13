@@ -463,7 +463,7 @@ class Notifier:
                 except Exception as e:
                     try:
                         server.quit()
-                    except:
+                    except Exception:
                         pass
                     raise e
             else:
@@ -480,7 +480,7 @@ class Notifier:
                 except Exception as e:
                     try:
                         server.quit()
-                    except:
+                    except Exception:
                         pass
                     raise e
 

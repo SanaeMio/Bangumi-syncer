@@ -64,7 +64,7 @@ class StartupInfo:
                     return True
                 # 默认CMD不支持，返回False
                 return False
-            except:
+            except (OSError, ValueError):
                 return False
 
         # Unix/Linux/macOS 通常支持
