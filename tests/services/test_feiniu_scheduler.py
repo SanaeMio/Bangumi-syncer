@@ -78,7 +78,7 @@ async def test_feiniu_start_when_already_running_refreshes_job():
     mock_sched.running = True
     mock_sched.remove_job = MagicMock(side_effect=Exception("no job"))
     s.scheduler = mock_sched
-    with patch.object(s, "_feiniu_enabled_with_db", return_value=True):
+    with patch.object(s, "_is_enabled", return_value=True):
         with patch.object(s, "_schedule_or_refresh_job") as m:
             ok = await s.start()
     assert ok is True
@@ -111,7 +111,7 @@ async def test_feiniu_start_constructor_raises_returns_false():
         ),
         patch("pathlib.Path.is_file", return_value=True),
         patch(
-            "app.services.feiniu.scheduler.AsyncIOScheduler",
+            "app.services.base.scheduler.AsyncIOScheduler",
             side_effect=RuntimeError("boom"),
         ),
     ):

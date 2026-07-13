@@ -14,6 +14,7 @@ import httpx
 from ...core.config import config_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ..base.models import BaseSyncResult
 from ..sync_service import sync_service
 from .client import (
     discover_devices,
@@ -30,12 +31,9 @@ FONGMI_SYNC_SOURCE = "fongmi"
 
 
 @dataclass
-class FongmiSyncResult:
-    success: bool
-    message: str
-    synced_count: int
-    skipped_count: int
-    error_count: int
+class FongmiSyncResult(BaseSyncResult):
+    """fongmi 同步结果（继承 BaseSyncResult，扩展发现设备数）"""
+
     discovered_devices: int = 0
 
 

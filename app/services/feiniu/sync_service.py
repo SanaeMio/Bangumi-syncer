@@ -10,6 +10,7 @@ from ...core.config import config_manager
 from ...core.database import FEINIU_MIN_UPDATE_WATERMARK_META_KEY, database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ..base.models import BaseSyncResult
 from ..sync_service import sync_service
 from .models import FeiniuWatchRecord
 from .reader import fetch_completed_watch_records
@@ -64,12 +65,8 @@ def ensure_feiniu_startup_watermark() -> None:
 
 
 @dataclass
-class FeiniuSyncResult:
-    success: bool
-    message: str
-    synced_count: int
-    skipped_count: int
-    error_count: int
+class FeiniuSyncResult(BaseSyncResult):
+    """飞牛同步结果（继承 BaseSyncResult，无扩展字段）"""
 
 
 class FeiniuSyncService:
