@@ -166,9 +166,11 @@ class TestConfigManagerBranches:
         cm = _config_manager_from_ini(tmp_path, "[a]\nx = 1\n")
         first = cm.get_config_parser()
         assert first.get("a", "x") == "1"
-        # 触盘更新 mtime
+        # 触盘更新 mtime（显式推进，避免文件系统精度不足导致 flaky）
         p = tmp_path / "config.ini"
         p.write_text("[a]\nx = 2\n", encoding="utf-8")
+        future = cm._last_modified + 2
+        os.utime(p, (future, future))
         second = cm.get_config_parser()
         assert second.get("a", "x") == "2"
 
