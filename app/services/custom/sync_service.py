@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from ...core.logging import logger
 from ...models.sync import CustomItem, SyncResponse
-from ..sync_service import sync_service
 
 CUSTOM_SYNC_SOURCE = "custom"
 
@@ -43,6 +42,8 @@ class CustomSyncService:
             SyncResponse: 同步结果
         """
         if sync_svc is None:
+            from ..sync_service import sync_service
+
             sync_svc = sync_service
 
         logger.debug(
@@ -67,6 +68,8 @@ class CustomSyncService:
             str: 异步任务 ID
         """
         if sync_svc is None:
+            from ..sync_service import sync_service
+
             sync_svc = sync_service
 
         logger.debug(

@@ -2,25 +2,28 @@
 同步服务模块
 """
 
-import asyncio
-import re
+# time/asyncio 重新导出以兼容测试 patch（app.services.sync_service.time.sleep 等）
+import asyncio  # noqa: F401
 import threading
-import time
+import time  # noqa: F401
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
-from ..core.config import config_manager
-from ..core.database import database_manager
-from ..core.logging import logger
-from ..models.sync import CustomItem, SyncResponse
-from ..utils.bangumi_api import BangumiApi
-from ..utils.bangumi_data import BangumiData, bangumi_data
-from ..utils.notifier import send_notify
-from .mapping_service import mapping_service
+from ...core.config import config_manager
+from ...core.database import database_manager
+from ...core.logging import logger
+from ...models.sync import CustomItem, SyncResponse
+from ...utils.bangumi_api import BangumiApi
+from ...utils.bangumi_data import BangumiData, bangumi_data
+from ...utils.notifier import send_notify
+from ..mapping_service import mapping_service
+from .retry import RetryMixin
+from .season_info import SeasonInfoMixin
+from .task_manager import TaskManagerMixin
 
 
-class SyncService:
+class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
     """同步服务"""
 
     def __init__(self):
@@ -88,87 +91,6 @@ class SyncService:
     def get_heatmap_stats(self) -> list[dict[str, Any]]:
         """获取热力图数据（过去365天每天同步数）"""
         return database_manager.get_heatmap_stats()
-
-    def _register_task(self, task_id: str, item_data: Any, source: str) -> None:
-        """注册新任务到状态跟踪（需持有锁）"""
-        self._sync_tasks[task_id] = {
-            "status": "pending",
-            "item": item_data,
-            "source": source,
-            "created_at": time.time(),
-            "result": None,
-            "error": None,
-        }
-
-    def _update_task_status(
-        self, task_id: str, status: str, result: Any = None, error: str = None
-    ) -> None:
-        """更新任务状态（线程安全）"""
-        with self._tasks_lock:
-            if task_id in self._sync_tasks:
-                self._sync_tasks[task_id]["status"] = status
-                if result is not None:
-                    self._sync_tasks[task_id]["result"] = result
-                if error is not None:
-                    self._sync_tasks[task_id]["error"] = error
-
-    async def sync_custom_item_async(
-        self, item: CustomItem, source: str = "custom"
-    ) -> str:
-        """异步同步自定义项目，返回任务ID"""
-        self.cleanup_old_tasks()
-        with self._tasks_lock:
-            self._task_counter += 1
-            task_id = f"sync_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, item.dict(), source)
-
-        # 提交到线程池异步执行
-        self._executor.submit(self._sync_custom_item_sync, item, source, task_id)
-
-        # 不等待结果，立即返回任务ID
-        logger.info(f"同步任务 {task_id} 已提交到异步队列")
-        return task_id
-
-    def _sync_custom_item_sync(
-        self, item: CustomItem, source: str, task_id: str
-    ) -> SyncResponse:
-        """同步执行的内部方法"""
-        try:
-            self._update_task_status(task_id, "running")
-            result = self.sync_custom_item(item, source)
-            self._update_task_status(task_id, "completed", result=result.dict())
-            return result
-        except Exception as e:
-            self._update_task_status(task_id, "failed", error=str(e))
-            logger.error(f"异步同步任务 {task_id} 失败: {e}")
-            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
-
-    def get_sync_task_status(self, task_id: str) -> Optional[dict]:
-        """获取任务状态（线程安全）"""
-        with self._tasks_lock:
-            return self._sync_tasks.get(task_id)
-
-    def get_all_sync_tasks(self) -> dict:
-        """获取所有任务快照（线程安全）"""
-        with self._tasks_lock:
-            return dict(self._sync_tasks)
-
-    def cleanup_old_tasks(self, max_age_hours: int = 24):
-        """清理旧的任务记录（线程安全）"""
-        current_time = time.time()
-        cutoff_time = current_time - (max_age_hours * 3600)
-
-        with self._tasks_lock:
-            old_tasks = [
-                task_id
-                for task_id, task_info in self._sync_tasks.items()
-                if task_info["created_at"] < cutoff_time
-            ]
-            for task_id in old_tasks:
-                del self._sync_tasks[task_id]
-
-        if old_tasks:
-            logger.info(f"清理了 {len(old_tasks)} 个旧的同步任务记录")
 
     def sync_movie_watching(
         self, item: CustomItem, source: str = "custom"
@@ -883,136 +805,6 @@ class SyncService:
             logger.error(f"bgm: {detail}；{_ctx}")
             return None, False, detail
 
-    def _check_season_info_in_title(self, title: str, season: int) -> bool:
-        """检查标题中是否包含季度信息"""
-        # 中文数字映射
-        chinese_numbers = {
-            1: "一",
-            2: "二",
-            3: "三",
-            4: "四",
-            5: "五",
-            6: "六",
-            7: "七",
-            8: "八",
-            9: "九",
-            10: "十",
-        }
-
-        # 数字形式
-        season_keywords = [
-            f"第{season}季",
-            f"第{season}期",
-            f"{season}期",
-            f"{season}季",
-            f"Season {season}",
-            f"S{season}",
-        ]
-
-        # 中文数字形式
-        if season in chinese_numbers:
-            chinese_num = chinese_numbers[season]
-            season_keywords.extend(
-                [
-                    f"第{chinese_num}季",
-                    f"第{chinese_num}期",
-                    f"{chinese_num}期",
-                    f"{chinese_num}季",
-                ]
-            )
-
-        # 检查基本季度关键词
-        for keyword in season_keywords:
-            if keyword in title:
-                logger.debug(f'匹配标题 "{title}" 包含季度信息: {keyword}')
-                return True
-
-        # 检查更复杂的格式
-        chinese_num = chinese_numbers.get(season, "")
-
-        # 基础模式：第X季 或 X季
-        base_patterns = [rf"第{season}季", rf"{season}季"]
-
-        # 如果有中文数字，添加中文数字模式
-        if chinese_num:
-            base_patterns.extend([rf"第{chinese_num}季", rf"{chinese_num}季"])
-
-        # 部分标识符
-        part_indicators = [r"\s+上半", r"\s+下半", r"\s+第2部分", r"\s+第二部分"]
-
-        # 组合所有模式
-        for base_pattern in base_patterns:
-            for indicator in part_indicators:
-                full_pattern = base_pattern + indicator
-                if re.search(full_pattern, title):
-                    logger.debug(f'匹配标题 "{title}" 包含复杂季度信息: {full_pattern}')
-                    return True
-
-        return False
-
-    def _retry_mark_episode(
-        self, bgm_api: BangumiApi, subject_id: str, ep_id: str, max_retries: int = 3
-    ) -> int:
-        """带重试机制的标记剧集方法（优化版，减少阻塞时间）"""
-        for attempt in range(max_retries + 1):
-            try:
-                mark_status = bgm_api.mark_episode_watched(
-                    subject_id=subject_id, ep_id=ep_id
-                )
-                if attempt > 0:
-                    logger.info(f"重试成功，第 {attempt + 1} 次尝试标记成功")
-                return mark_status
-            except Exception as e:
-                if attempt < max_retries:
-                    # 优化延迟策略：减少最大延迟时间
-                    delay = min(2**attempt, 3)  # 最大延迟3秒: 1, 2, 3秒
-                    logger.error(
-                        f"标记剧集失败: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
-                    )
-
-                    # 使用非阻塞方式等待（在线程池中执行时不会阻塞主线程）
-                    time.sleep(delay)
-                    continue
-                else:
-                    logger.error(
-                        f"标记剧集失败，已达到最大重试次数 {max_retries}: {str(e)}"
-                    )
-                    raise e
-        # This line should never be reached due to the loop logic
-        return 0  # pragma: no cover
-
-    async def _retry_mark_episode_async(
-        self, bgm_api: BangumiApi, subject_id: str, ep_id: str, max_retries: int = 3
-    ) -> int:
-        """异步版本的重试标记剧集方法"""
-        for attempt in range(max_retries + 1):
-            try:
-                # 在线程池中执行同步操作
-                loop = asyncio.get_running_loop()
-                mark_status = await loop.run_in_executor(
-                    self._executor, bgm_api.mark_episode_watched, subject_id, ep_id
-                )
-                if attempt > 0:
-                    logger.info(f"异步重试成功，第 {attempt + 1} 次尝试标记成功")
-                return mark_status
-            except Exception as e:
-                if attempt < max_retries:
-                    delay = min(2**attempt, 3)  # 最大延迟3秒
-                    logger.error(
-                        f"异步标记剧集失败: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
-                    )
-
-                    # 使用异步等待，不阻塞事件循环
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    logger.error(
-                        f"异步标记剧集失败，已达到最大重试次数 {max_retries}: {str(e)}"
-                    )
-                    raise e
-        # This line should never be reached due to the loop logic
-        return 0  # pragma: no cover
-
     def _get_bangumi_config_for_user(self, user_name: str) -> Optional[dict[str, str]]:
         """根据媒体服务器用户名获取对应的bangumi配置"""
         mode = config_manager.get("sync", "mode", fallback="single")
@@ -1069,102 +861,6 @@ class SyncService:
     def _load_custom_mappings(self) -> dict[str, str]:
         """从外部JSON文件读取自定义映射配置"""
         return mapping_service.load_custom_mappings()
-
-    async def sync_plex_item_async(self, plex_data: dict[str, Any]) -> str:
-        """异步同步Plex项目，返回任务ID"""
-        self.cleanup_old_tasks()
-        with self._tasks_lock:
-            self._task_counter += 1
-            task_id = f"plex_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, plex_data, "plex")
-
-        self._executor.submit(self._sync_plex_item_sync, plex_data, task_id)
-        logger.info(f"Plex同步任务 {task_id} 已提交到异步队列")
-        return task_id
-
-    def _sync_plex_item_sync(
-        self, plex_data: dict[str, Any], task_id: str
-    ) -> SyncResponse:
-        """同步执行Plex同步的内部方法"""
-        try:
-            self._update_task_status(task_id, "running")
-            result = self.sync_plex_item(plex_data)
-            self._update_task_status(task_id, "completed", result=result.dict())
-            return result
-        except Exception as e:
-            self._update_task_status(task_id, "failed", error=str(e))
-            logger.error(f"异步Plex同步任务 {task_id} 失败: {e}")
-            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
-
-    def sync_plex_item(self, plex_data: dict[str, Any]) -> SyncResponse:
-        """处理Plex同步请求（委托至 plex 子包）"""
-        from .plex.sync_service import plex_sync_service
-
-        return plex_sync_service.sync_item(plex_data, self)
-
-    async def sync_emby_item_async(self, emby_data: dict[str, Any]) -> str:
-        """异步同步Emby项目，返回任务ID"""
-        self.cleanup_old_tasks()
-        with self._tasks_lock:
-            self._task_counter += 1
-            task_id = f"emby_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, emby_data, "emby")
-
-        self._executor.submit(self._sync_emby_item_sync, emby_data, task_id)
-        logger.info(f"Emby同步任务 {task_id} 已提交到异步队列")
-        return task_id
-
-    def _sync_emby_item_sync(
-        self, emby_data: dict[str, Any], task_id: str
-    ) -> SyncResponse:
-        """同步执行Emby同步的内部方法"""
-        try:
-            self._update_task_status(task_id, "running")
-            result = self.sync_emby_item(emby_data)
-            self._update_task_status(task_id, "completed", result=result.dict())
-            return result
-        except Exception as e:
-            self._update_task_status(task_id, "failed", error=str(e))
-            logger.error(f"异步Emby同步任务 {task_id} 失败: {e}")
-            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
-
-    def sync_emby_item(self, emby_data: dict[str, Any]) -> SyncResponse:
-        """处理Emby同步请求（委托至 emby 子包）"""
-        from .emby.sync_service import emby_sync_service
-
-        return emby_sync_service.sync_item(emby_data, self)
-
-    async def sync_jellyfin_item_async(self, jellyfin_data: dict[str, Any]) -> str:
-        """异步同步Jellyfin项目，返回任务ID"""
-        self.cleanup_old_tasks()
-        with self._tasks_lock:
-            self._task_counter += 1
-            task_id = f"jellyfin_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, jellyfin_data, "jellyfin")
-
-        self._executor.submit(self._sync_jellyfin_item_sync, jellyfin_data, task_id)
-        logger.info(f"Jellyfin同步任务 {task_id} 已提交到异步队列")
-        return task_id
-
-    def _sync_jellyfin_item_sync(
-        self, jellyfin_data: dict[str, Any], task_id: str
-    ) -> SyncResponse:
-        """同步执行Jellyfin同步的内部方法"""
-        try:
-            self._update_task_status(task_id, "running")
-            result = self.sync_jellyfin_item(jellyfin_data)
-            self._update_task_status(task_id, "completed", result=result.dict())
-            return result
-        except Exception as e:
-            self._update_task_status(task_id, "failed", error=str(e))
-            logger.error(f"异步Jellyfin同步任务 {task_id} 失败: {e}")
-            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
-
-    def sync_jellyfin_item(self, jellyfin_data: dict[str, Any]) -> SyncResponse:
-        """处理Jellyfin同步请求（委托至 jellyfin 子包）"""
-        from .jellyfin.sync_service import jellyfin_sync_service
-
-        return jellyfin_sync_service.sync_item(jellyfin_data, self)
 
 
 # 全局同步服务实例（懒加载：首次访问 sync_service 时才创建实例与线程池）

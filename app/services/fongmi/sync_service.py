@@ -15,7 +15,6 @@ from ...core.config import config_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
 from ..base.models import BaseSyncResult
-from ..sync_service import sync_service
 from .client import (
     discover_devices,
     fetch_all_media_status,
@@ -97,6 +96,8 @@ class FongmiSyncService:
 
         min_percent = int(cfg.get("min_percent") or 95)
         records = await fetch_completed_records(devices, min_percent)
+
+        from ..sync_service import sync_service  # 延迟导入避免循环依赖
 
         synced = skipped = errors = 0
         for rec in records:
@@ -194,6 +195,8 @@ class FongmiSyncService:
         }
 
         item = self._record_to_custom_item(rec)
+        from ..sync_service import sync_service  # 延迟导入避免循环依赖
+
         try:
             result = await asyncio.to_thread(
                 sync_service.sync_custom_item, item, FONGMI_SYNC_SOURCE

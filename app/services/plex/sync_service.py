@@ -10,7 +10,6 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import SyncResponse
-from ..sync_service import sync_service
 from .extractor import extract_plex_data
 
 PLEX_SYNC_SOURCE = "plex"
@@ -32,6 +31,8 @@ class PlexSyncService:
                       未传入时使用模块级单例。
         """
         if sync_svc is None:
+            from ..sync_service import sync_service
+
             sync_svc = sync_service
         try:
             ev = plex_data["event"]

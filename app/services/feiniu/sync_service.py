@@ -11,7 +11,6 @@ from ...core.database import FEINIU_MIN_UPDATE_WATERMARK_META_KEY, database_mana
 from ...core.logging import logger
 from ...models.sync import CustomItem
 from ..base.models import BaseSyncResult
-from ..sync_service import sync_service
 from .models import FeiniuWatchRecord
 from .reader import fetch_completed_watch_records
 
@@ -121,6 +120,8 @@ class FeiniuSyncService:
         if isinstance(prepared, FeiniuSyncResult):
             return prepared
         records, synced_set = prepared
+
+        from ..sync_service import sync_service  # 延迟导入避免循环依赖
 
         synced = skipped = errors = 0
         for rec in records:

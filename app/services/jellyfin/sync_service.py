@@ -10,7 +10,6 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import SyncResponse
-from ..sync_service import sync_service
 from .extractor import extract_jellyfin_data
 
 JELLYFIN_SYNC_SOURCE = "jellyfin"
@@ -31,6 +30,8 @@ class JellyfinSyncService:
             sync_svc: 共享 SyncService 实例。未传入时使用模块级单例。
         """
         if sync_svc is None:
+            from ..sync_service import sync_service
+
             sync_svc = sync_service
         try:
             logger.debug(f"接收到Jellyfin同步请求：{jellyfin_data}")
