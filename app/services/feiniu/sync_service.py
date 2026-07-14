@@ -110,28 +110,17 @@ class FeiniuSyncService:
         if not db_path:
             return FeiniuSyncResult(False, "未配置飞牛数据库路径 db_path", 0, 0, 1)
 
-        if not Path(db_path).is_file():
-            return FeiniuSyncResult(False, f"数据库文件不存在: {db_path}", 0, 0, 1)
-
         uf = (
             user_filter
             if user_filter is not None
             else (cfg.get("user_filter") or "all")
         )
-        # 仅同步水位建立之后（含首次运行写入时刻）在库中更新的记录，不追溯启用前存量
-        wm_ms = database_manager.get_or_create_feiniu_min_update_watermark_ms()
-        records = fetch_completed_watch_records(
-            db_path,
-            user_guid=str(uf),
-            time_range=str(cfg.get("time_range") or "all"),
-            limit=int(cfg.get("limit") or 100),
-            min_percent=int(cfg.get("min_percent") or 85),
-            min_update_time_ms=wm_ms,
-        )
 
-        # 一次性加载已同步集合，后续 O(1) 查找（消除 N+1 查询）
-        user_guids = list({rec.user_guid for rec in records})
-        synced_set = database_manager.get_feiniu_synced_set(user_guids)
+        # 前置阻塞 I/O（文件校验 + SQLite 水位 + 跨库读取 + 已同步集合）合并到线程执行
+        prepared = await asyncio.to_thread(self._prepare_sync_data, db_path, uf, cfg)
+        if isinstance(prepared, FeiniuSyncResult):
+            return prepared
+        records, synced_set = prepared
 
         synced = skipped = errors = 0
         for rec in records:
@@ -155,8 +144,12 @@ class FeiniuSyncService:
                 continue
 
             if result.status == "success":
-                database_manager.save_feiniu_sync_history(
-                    rec.user_guid, rec.item_guid, rec.update_time_ms or None
+                # SQLite 写入放入线程避免阻塞事件循环
+                await asyncio.to_thread(
+                    database_manager.save_feiniu_sync_history,
+                    rec.user_guid,
+                    rec.item_guid,
+                    rec.update_time_ms or None,
                 )
                 synced_set.add((rec.user_guid, rec.item_guid))
                 synced += 1
@@ -174,6 +167,37 @@ class FeiniuSyncService:
             skipped,
             errors,
         )
+
+    def _prepare_sync_data(
+        self, db_path: str, uf: str, cfg: dict
+    ) -> tuple[list, set] | FeiniuSyncResult:
+        """同步执行前置数据准备（阻塞 I/O，需在线程中调用）。
+
+        - 校验数据库文件存在性
+        - 读取/创建飞牛水位
+        - 跨库读取飞牛观看记录
+        - 加载已同步集合
+
+        返回 (records, synced_set) 或出错时返回 FeiniuSyncResult。
+        """
+        if not Path(db_path).is_file():
+            return FeiniuSyncResult(False, f"数据库文件不存在: {db_path}", 0, 0, 1)
+
+        # 仅同步水位建立之后（含首次运行写入时刻）在库中更新的记录，不追溯启用前存量
+        wm_ms = database_manager.get_or_create_feiniu_min_update_watermark_ms()
+        records = fetch_completed_watch_records(
+            db_path,
+            user_guid=str(uf),
+            time_range=str(cfg.get("time_range") or "all"),
+            limit=int(cfg.get("limit") or 100),
+            min_percent=int(cfg.get("min_percent") or 85),
+            min_update_time_ms=wm_ms,
+        )
+
+        # 一次性加载已同步集合，后续 O(1) 查找（消除 N+1 查询）
+        user_guids = list({rec.user_guid for rec in records})
+        synced_set = database_manager.get_feiniu_synced_set(user_guids)
+        return records, synced_set
 
     # ------------------------------------------------------------------
     # 飞牛水位管理（API 层入口，避免跨层直访数据库）

@@ -47,7 +47,9 @@ class TraktSyncService:
             sync_types = ["history"]  # 默认只同步观看历史
 
         # 获取用户的 Trakt 配置
-        config = trakt_auth_service.get_user_trakt_config(user_id)
+        config = await asyncio.to_thread(
+            trakt_auth_service.get_user_trakt_config, user_id
+        )
         if config is None:
             return TraktSyncResult(
                 success=False,
@@ -82,7 +84,9 @@ class TraktSyncService:
                     details={},
                 )
             # 刷新后重新获取配置
-            config = trakt_auth_service.get_user_trakt_config(user_id)
+            config = await asyncio.to_thread(
+                trakt_auth_service.get_user_trakt_config, user_id
+            )
 
         # 创建 Trakt 客户端
         if config is None:
@@ -126,7 +130,9 @@ class TraktSyncService:
             # 更新最后同步时间（只要没有错误就更新）
             if error_count == 0 and config is not None:
                 config.last_sync_time = int(time.time())
-                database_manager.save_trakt_config(config.to_dict())
+                await asyncio.to_thread(
+                    database_manager.save_trakt_config, config.to_dict()
+                )
 
             success = error_count == 0
 
@@ -341,7 +347,8 @@ class TraktSyncService:
                 )
 
                 if not custom_item:
-                    self._report_preconvert_failure(
+                    await asyncio.to_thread(
+                        self._report_preconvert_failure,
                         user_id,
                         item,
                         "Trakt 记录缺少可用标题，无法转为同步条目",
@@ -355,7 +362,9 @@ class TraktSyncService:
                 )
 
                 # 记录同步历史
-                self._record_sync_history(user_id, item, task_id)
+                await asyncio.to_thread(
+                    self._record_sync_history, user_id, item, task_id
+                )
 
                 synced_count += 1
                 details.append(
@@ -406,7 +415,9 @@ class TraktSyncService:
             logger.info(f"获取到 {len(history_items)} 条观看历史记录")
 
             # 一次性加载已同步集合，后续 O(1) 查找（消除 N+1 查询）
-            synced_set = database_manager.get_trakt_synced_set(user_id)
+            synced_set = await asyncio.to_thread(
+                database_manager.get_trakt_synced_set, user_id
+            )
 
             # 过滤：剧集需 episode+show；电影需 movie 且至少有标题或 TMDB（用于匹配 bangumi）
             syncable_items: list[TraktHistoryItem] = []
@@ -447,7 +458,9 @@ class TraktSyncService:
             show_genres: dict[str, list[str]] = {}
             sync_filter_enabled = getattr(config, "sync_filter_enabled", True)
             custom_mappings = (
-                mapping_service.load_custom_mappings() if sync_filter_enabled else {}
+                await asyncio.to_thread(mapping_service.load_custom_mappings)
+                if sync_filter_enabled
+                else {}
             )
 
             # 第一阶段：TMDB 过滤 + 收集需要 API 请求的 tid

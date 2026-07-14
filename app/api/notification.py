@@ -2,6 +2,7 @@
 通知API
 """
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -89,9 +90,10 @@ async def test_notification(
 
         # 根据类型测试特定的通知方式
         if notification_type == "all":
-            results = notifier.test_notification()
+            results = await asyncio.to_thread(notifier.test_notification)
         else:
-            results = notifier.test_notification(
+            results = await asyncio.to_thread(
+                notifier.test_notification,
                 notification_type=notification_type,
                 webhook_id=request.webhook_id,
                 email_id=request.email_id,
@@ -221,7 +223,7 @@ async def create_webhook(
         config.set(section_name, "types", webhook_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"创建webhook配置成功: ID={new_id}")
 
@@ -275,7 +277,7 @@ async def update_webhook(
             config.set(section_name, "types", webhook_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"更新webhook配置成功: ID={webhook_id}")
 
@@ -350,7 +352,7 @@ async def delete_webhook(
                 config.set(old_section_name, "id", str(new_id))
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"删除webhook配置成功: ID={webhook_id}，已重新索引")
 
@@ -367,8 +369,10 @@ async def test_webhook(
     """测试指定的webhook配置"""
     try:
         notifier = get_notifier()
-        results = notifier.test_notification(
-            notification_type="webhook", webhook_id=webhook_id
+        results = await asyncio.to_thread(
+            notifier.test_notification,
+            notification_type="webhook",
+            webhook_id=webhook_id,
         )
 
         return {"status": "success", "data": results}
@@ -465,7 +469,7 @@ async def create_email(
         config.set(section_name, "types", email_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"创建邮件配置成功: ID={new_id}")
 
@@ -547,7 +551,7 @@ async def update_email(
             config.set(section_name, "types", email_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"更新邮件配置成功: ID={email_id}")
 
@@ -633,7 +637,7 @@ async def delete_email(
                 config.set(old_section_name, "id", str(new_id))
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"删除邮件配置成功: ID={email_id}，已重新索引")
 
@@ -650,8 +654,10 @@ async def test_email(
     """测试指定的邮件配置"""
     try:
         notifier = get_notifier()
-        results = notifier.test_notification(
-            notification_type="email", email_id=email_id
+        results = await asyncio.to_thread(
+            notifier.test_notification,
+            notification_type="email",
+            email_id=email_id,
         )
 
         return {"status": "success", "data": results}
