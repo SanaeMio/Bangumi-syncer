@@ -2,6 +2,8 @@
 配置相关API
 """
 
+from __future__ import annotations
+
 import asyncio
 import shutil
 import time
@@ -199,7 +201,7 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
 @router.get("/config")
 async def get_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取配置信息"""
     try:
         config_data = config_manager.get_all_config()
@@ -223,7 +225,7 @@ async def get_config(
 @router.post("/config")
 async def update_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """更新配置信息"""
     try:
         data = await request.json()
@@ -316,7 +318,7 @@ async def update_config(
 @router.get("/config/backups")
 async def get_config_backups(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取配置备份列表"""
     try:
         backups = await asyncio.to_thread(_list_config_backups)
@@ -331,7 +333,7 @@ async def get_config_backup(
     filename: str,
     request: Request,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """获取特定配置备份内容"""
     try:
         content = await asyncio.to_thread(_read_config_backup, filename)
@@ -348,7 +350,7 @@ async def delete_config_backup(
     filename: str,
     request: Request,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """删除配置备份文件"""
     try:
         await asyncio.to_thread(_delete_config_backup, filename)
@@ -363,7 +365,7 @@ async def delete_config_backup(
 @router.post("/config/backup")
 async def create_config_backup(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """创建配置备份"""
     try:
         backup_filename = await asyncio.to_thread(_create_config_backup)
@@ -382,7 +384,7 @@ async def restore_config_backup(
     filename: str,
     request: Request,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """恢复配置备份"""
     try:
         await asyncio.to_thread(_restore_config_backup, filename)
@@ -397,7 +399,7 @@ async def restore_config_backup(
 @router.post("/config/backups/cleanup")
 async def cleanup_config_backups(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """清理配置备份"""
     try:
         data = await request.json()
@@ -417,7 +419,7 @@ async def cleanup_config_backups(
 @router.post("/config/auth/refresh-webhook-key")
 async def refresh_webhook_key(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """刷新webhook密钥"""
     try:
         new_webhook_key = await asyncio.to_thread(security_manager.refresh_webhook_key)

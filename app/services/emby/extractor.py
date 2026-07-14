@@ -1,10 +1,14 @@
 """Emby Webhook 数据提取"""
 
+from __future__ import annotations
+
+from typing import Any
+
 from ...core.logging import logger
 from ...models.sync import CustomItem
 
 
-def extract_emby_data(emby_data):
+def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
     """从Emby数据中提取CustomItem所需的字段"""
 
     item = emby_data["Item"]

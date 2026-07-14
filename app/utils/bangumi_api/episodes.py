@@ -1,8 +1,10 @@
 """BangumiApi 章集解析（mixin）"""
 
+from __future__ import annotations
+
 import datetime
 import re
-from typing import Optional, Union
+from typing import Any
 
 from ...core.config import config_manager
 from ...core.logging import logger
@@ -36,7 +38,7 @@ class EpisodesMixin:
 
     def _fetch_episodes_page(
         self,
-        subject_id,
+        subject_id: int,
         _type: int = 0,
         *,
         limit: int = _EPISODES_PAGE_LIMIT,
@@ -64,7 +66,12 @@ class EpisodesMixin:
             logger.error(f"get_episodes JSON解析失败: {e}")
             return {"data": [], "total": 0}
 
-    def get_episodes(self, subject_id, _type=0, fetch_all: bool = False):
+    def get_episodes(
+        self,
+        subject_id: int,
+        _type: int = 0,
+        fetch_all: bool = False,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         # 使用实例缓存避免内存泄漏
         cache_key = (subject_id, _type, fetch_all)
         if cache_key in self._cache["get_episodes"]:
@@ -92,8 +99,8 @@ class EpisodesMixin:
         return result
 
     def _find_episode_by_sort(
-        self, subject_id, target_sort: int, _type: int = 0
-    ) -> Optional[dict]:
+        self, subject_id: int, target_sort: int, _type: int = 0
+    ) -> dict | None:
         """在 subject 内按 sort/ep 规则查找章节；ep>99 时优先 offset 快速路径。"""
         if target_sort > 99:
             page = self._fetch_episodes_page(
@@ -113,11 +120,11 @@ class EpisodesMixin:
 
     def _resolve_episode_by_airdate_in_subject(
         self,
-        subject_id: Union[str, int],
+        subject_id: str | int,
         release_date: str,
         max_days_diff: int = 120,
         min_total: int = _LONG_SERIES_AIRDATE_MIN_TOTAL,
-    ) -> Optional[tuple[Union[str, int], Union[str, int]]]:
+    ) -> tuple[str | int, str | int] | None:
         """
         在同一 Bangumi subject 内按 airdate 与 release_date 择优（TVDB 多季 + Bangumi 单条目）。
         仅在条目章节总数达到 min_total 时启用，避免误用于普通季番。
@@ -156,10 +163,10 @@ class EpisodesMixin:
 
     def _episode_lookup_failed(
         self,
-        subject_id,
+        subject_id: int,
         target_ep: int,
-        release_date: Optional[str],
-    ):
+        release_date: str | None,
+    ) -> int | None:
         """季集匹配失败后的统一回退：单条目 airdate 择优。"""
         if release_date and target_ep:
             air_pick = self._resolve_episode_by_airdate_in_subject(
@@ -170,7 +177,7 @@ class EpisodesMixin:
         return None, None if target_ep else None
 
     @staticmethod
-    def _parse_iso_date_ymd(value: Optional[str]) -> Optional[datetime.date]:
+    def _parse_iso_date_ymd(value: str | None) -> datetime.date | None:
         if not value:
             return None
         m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", value.strip())
@@ -181,7 +188,7 @@ class EpisodesMixin:
         except ValueError:
             return None
 
-    def _sequel_next_tv_subject_id(self, current_id: Union[str, int]) -> Optional[int]:
+    def _sequel_next_tv_subject_id(self, current_id: str | int) -> int | None:
         related = self.get_related_subjects(current_id)
         if isinstance(related, list):
             nxt = [i for i in related if i.get("relation") == "续集"]
@@ -194,7 +201,7 @@ class EpisodesMixin:
             return None
         return nxt[0]["id"]
 
-    def _extract_season_number(self, name: str, name_cn: str) -> Optional[int]:
+    def _extract_season_number(self, name: str, name_cn: str) -> int | None:
         """从名称中提取季度编号，用于续集链季度去重计数"""
         text = f"{name} {name_cn}"
         # "第X期" / "第X季"（阿拉伯数字）
@@ -217,7 +224,9 @@ class EpisodesMixin:
             return int(m.group(1))
         return None
 
-    def _match_target_ep_rows(self, ep_info: list, target_ep: int):
+    def _match_target_ep_rows(
+        self, ep_info: list, target_ep: int
+    ) -> dict[str, Any] | None:
         """与 target_season>1 分支一致的章节匹配规则。"""
         rows = [i for i in ep_info if i.get("sort") == target_ep]
         if not rows:
@@ -230,9 +239,9 @@ class EpisodesMixin:
 
     def get_movie_main_episode_id(
         self,
-        subject_id: Union[str, int],
+        subject_id: str | int,
         target_sort: int = 1,
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None]:
         """
         剧场版 / 独立电影：在同一 subject 下解析本篇章节，不走续集链。
         返回 (subject_id 字符串, episode_id 字符串)；无章节时 episode_id 为 None。
@@ -266,13 +275,13 @@ class EpisodesMixin:
 
     def _try_resolve_sequel_by_airdate(
         self,
-        subject_id: Union[str, int],
+        subject_id: str | int,
         target_ep: int,
         release_date: str,
         max_hops: int = 15,
         max_days_diff: int = 120,
-        root_type: Optional[int] = None,
-    ) -> Optional[tuple[Union[str, int], Union[str, int]]]:
+        root_type: int | None = None,
+    ) -> tuple[str | int, str | int] | None:
         """
         沿「续集」链查找与 release_date 最接近的 target_ep 章节（用于 Plex 季数与 Bangumi 分段不一致）。
         仅在存在有效 airdate 且与播出日差距不超过 max_days_diff 时返回。
@@ -282,9 +291,9 @@ class EpisodesMixin:
             return None
 
         candidates: list[
-            tuple[Union[str, int], Union[str, int], int, int]
+            tuple[str | int, str | int, int, int]
         ] = []  # sid, ep_id, diff_days, hop
-        current_id: Union[str, int] = subject_id
+        current_id: str | int = subject_id
         for hop in range(max_hops):
             nxt = self._sequel_next_tv_subject_id(current_id)
             if nxt is None:
@@ -323,12 +332,12 @@ class EpisodesMixin:
 
     def get_target_season_episode_id(
         self,
-        subject_id,
+        subject_id: int,
         target_season: int,
         target_ep: int,
         is_season_subject_id: bool = False,
-        release_date: Optional[str] = None,
-    ):
+        release_date: str | None = None,
+    ) -> int | None:
         max_season, max_episode = self._get_episode_sync_limits()
 
         if target_season > max_season or (target_ep and target_ep > max_episode):
@@ -374,7 +383,7 @@ class EpisodesMixin:
             subject_id, target_season, target_ep, root_type, release_date
         )
 
-    def _find_next_sequel_id(self, current_id) -> Optional[int]:
+    def _find_next_sequel_id(self, current_id: int) -> int | None:
         """从关联条目中查找续集 subject_id，无则返回 None"""
         related = self.get_related_subjects(current_id)
         if isinstance(related, list):
@@ -388,10 +397,10 @@ class EpisodesMixin:
 
     def _find_season_one_episode(
         self,
-        subject_id,
+        subject_id: int,
         target_ep: int,
-        root_type,
-        release_date: Optional[str],
+        root_type: int,
+        release_date: str | None,
     ):
         """在第一季中查找目标集数（遍历续集链）"""
         current_id = subject_id
@@ -427,11 +436,11 @@ class EpisodesMixin:
 
     def _find_multi_season_episode(
         self,
-        subject_id,
+        subject_id: int,
         target_season: int,
         target_ep: int,
-        root_type,
-        release_date: Optional[str],
+        root_type: int,
+        release_date: str | None,
     ):
         """在多季中查找目标集数（遍历续集链并追踪季数）"""
         current_id = subject_id

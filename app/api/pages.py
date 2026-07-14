@@ -2,6 +2,8 @@
 页面路由模块
 """
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
@@ -19,7 +21,7 @@ router = APIRouter(tags=["pages"])
 
 
 @router.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+async def root(request: Request) -> HTMLResponse:
     """根路径重定向到仪表板"""
     return redirect_public("/dashboard")
 
@@ -46,7 +48,7 @@ async def dashboard(request: Request):
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(request: Request) -> HTMLResponse:
     """登录页面"""
     # 如果已经登录，直接跳转到主页
     user = get_current_user_from_cookie(request)
@@ -57,7 +59,7 @@ async def login_page(request: Request):
 
 
 @router.get("/config", response_class=HTMLResponse)
-async def config_page(request: Request):
+async def config_page(request: Request) -> HTMLResponse:
     """配置管理页面"""
     user = get_current_user_from_cookie(request)
     if not user:
@@ -111,7 +113,7 @@ async def logs_page(request: Request):
 
 
 @router.get("/trakt/config", response_class=HTMLResponse)
-async def trakt_config_page(request: Request):
+async def trakt_config_page(request: Request) -> HTMLResponse:
     """Trakt 配置页面"""
     user = get_current_user_from_cookie(request)
     if not user:
@@ -123,13 +125,13 @@ async def trakt_config_page(request: Request):
 
 
 @router.get("/trakt/auth/success", response_class=HTMLResponse)
-async def trakt_auth_success_page(request: Request):
+async def trakt_auth_success_page(request: Request) -> HTMLResponse:
     """Trakt 授权成功页面（不需要认证）"""
     return templates.TemplateResponse("trakt/auth_success.html", {"request": request})
 
 
 @router.get("/trakt/auth", response_class=HTMLResponse)
-async def trakt_auth_error_page(request: Request):
+async def trakt_auth_error_page(request: Request) -> HTMLResponse:
     """Trakt 授权错误页面（不需要认证）"""
     status = request.query_params.get("status", "")
     message = request.query_params.get("message", "")

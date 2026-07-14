@@ -84,7 +84,7 @@ class TaskManagerMixin:
         with self._tasks_lock:
             return dict(self._sync_tasks)
 
-    def cleanup_old_tasks(self, max_age_hours: int = 24):
+    def cleanup_old_tasks(self, max_age_hours: int = 24) -> None:
         """清理旧的任务记录（线程安全）"""
         current_time = time.time()
         cutoff_time = current_time - (max_age_hours * 3600)

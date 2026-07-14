@@ -14,7 +14,7 @@ from ...core.logging import logger
 class IndexMixin:
     """索引构建与查询相关方法"""
 
-    def _build_tmdb_mapping(self):
+    def _build_tmdb_mapping(self) -> None:
         """构建 TMDB id 到番剧名的映射"""
 
         for item in self._parse_data():
@@ -25,7 +25,7 @@ class IndexMixin:
                     self._cache_tmdb_mapping[tmdb_id] = item.get("title", "")
                     break
 
-    def _build_title_index(self):
+    def _build_title_index(self) -> None:
         """构建标题→item 精确匹配索引，加速常用查找"""
         self._title_index.clear()
         for item in self._parse_data():

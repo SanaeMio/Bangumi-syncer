@@ -479,7 +479,7 @@ class MatchingMixin:
             return False
 
         # 提取关键字符（去除常见的无意义字符）
-        def extract_key_chars(text):
+        def extract_key_chars(text: str) -> str:
             # 去除空格、标点符号等
             text = re.sub(r"[^\u4e00-\u9fff\w]", "", text)
             return text.lower()

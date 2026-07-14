@@ -747,7 +747,7 @@ class TraktSyncService:
         """
         task_id = f"trakt_sync_{user_id}_{int(time.time())}"
 
-        async def sync_task():
+        async def sync_task() -> None:
             try:
                 result = await self.sync_user_trakt_data(user_id, full_sync)
                 self._sync_results[task_id] = result

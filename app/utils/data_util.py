@@ -6,13 +6,15 @@ extract_plex_data / extract_emby_data / extract_jellyfin_data:
     已迁移至各驱动子包的 extractor.py，此处重新导出以向后兼容。
 """
 
+from __future__ import annotations
+
 # ===== 以下函数已迁移至各驱动子包，此处重新导出以向后兼容 =====
 from ..services.emby.extractor import extract_emby_data  # noqa: F401
 from ..services.jellyfin.extractor import extract_jellyfin_data  # noqa: F401
 from ..services.plex.extractor import extract_plex_data  # noqa: F401
 
 
-def extract_plex_json(s):
+def extract_plex_json(s: str | bytes) -> str | None:
     # 检查输入是否是字节串，如果不是，则将其转换为字节串
     if isinstance(s, str):
         s = s.encode("utf-8")  # 假设字符串是 UTF-8 编码的

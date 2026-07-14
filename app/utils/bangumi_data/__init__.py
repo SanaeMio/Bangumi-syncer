@@ -30,7 +30,7 @@ from .matching import MatchingMixin
 class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
     """处理 bangumi-data 数据的类"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.data_url = config_manager.get(
             "bangumi-data",
             "data_url",

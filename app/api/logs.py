@@ -4,7 +4,7 @@
 
 import asyncio
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -82,7 +82,7 @@ async def get_logs(
     search: Optional[str] = None,
     limit: str = Query("100"),
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """获取日志内容"""
     try:
         log_path = resolved_dev_log_file_path(config_manager)
@@ -111,7 +111,7 @@ async def get_logs(
 @router.post("/logs/clear")
 async def clear_logs(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """清空日志文件"""
     try:
         log_path = resolved_dev_log_file_path(config_manager)

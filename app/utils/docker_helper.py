@@ -15,7 +15,7 @@ from .http_client import create_sync_client
 class DockerProxyHelper:
     """Docker代理配置助手"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.is_docker = self._detect_docker_environment()
         self.network_mode = self._detect_network_mode()
 

@@ -25,7 +25,7 @@ from ...utils.http_client import create_async_client
 class TraktAuthService:
     """Trakt OAuth2 认证服务"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.base_url = "https://api.trakt.tv"
         self.auth_url = "https://trakt.tv/oauth/authorize"
         self.token_url = "https://api.trakt.tv/oauth/token"

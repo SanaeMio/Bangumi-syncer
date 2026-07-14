@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import abc
 import asyncio
+from collections.abc import Coroutine
+from typing import Any
 
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -166,7 +168,7 @@ class BaseScheduler(abc.ABC):
         else:
             await self.stop()
 
-    def _run_sync_with_timeout(self, coro) -> None:
+    def _run_sync_with_timeout(self, coro: Coroutine[Any, Any, Any]) -> None:
         """带超时执行同步任务的辅助方法（供子类 _run_sync_job 调用）
 
         用法：
@@ -177,7 +179,7 @@ class BaseScheduler(abc.ABC):
         """
         timeout = self._scheduler_config.get("job_timeout", 300)
 
-        async def _wrapper():
+        async def _wrapper() -> None:
             try:
                 await asyncio.wait_for(coro, timeout=timeout)
             except asyncio.TimeoutError:

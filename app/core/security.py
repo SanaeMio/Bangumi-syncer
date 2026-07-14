@@ -20,7 +20,7 @@ from .logging import logger
 class SecurityManager:
     """安全管理器"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_sessions: dict[str, dict[str, Any]] = {}  # token -> session_info
         self.login_attempts: dict[
             str, dict[str, Any]

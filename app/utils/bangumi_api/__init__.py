@@ -2,10 +2,13 @@
 Bangumi API 客户端
 """
 
+from __future__ import annotations
+
 # httpx/socket/time 重新导出以兼容测试 patch（app.utils.bangumi_api.httpx.Client 等）
 import socket  # noqa: F401
 import time  # noqa: F401
 from collections import OrderedDict
+from typing import Any
 
 import httpx  # noqa: F401
 
@@ -22,14 +25,14 @@ class BangumiApi(
 ):
     def __init__(
         self,
-        username=None,
-        access_token=None,
-        private=True,
-        http_proxy=None,
-        ssl_verify=True,
-        bgm_api_proxy=None,
-        bgm_next_proxy=None,
-    ):
+        username: str | None = None,
+        access_token: str | None = None,
+        private: bool = True,
+        http_proxy: str | None = None,
+        ssl_verify: bool = True,
+        bgm_api_proxy: str | None = None,
+        bgm_next_proxy: str | None = None,
+    ) -> None:
         self.api_base = (
             bgm_api_proxy.rstrip("/") if bgm_api_proxy else "https://api.bgm.tv"
         )
@@ -76,7 +79,7 @@ class BangumiApi(
         )
         self.init()
 
-    def _put_cache(self, category: str, key, value) -> None:
+    def _put_cache(self, category: str, key: Any, value: Any) -> None:
         """写入缓存并淘汰超限条目（LRU）"""
         cache = self._cache[category]
         cache[key] = value
@@ -84,7 +87,7 @@ class BangumiApi(
         while len(cache) > self._max_cache_size:
             cache.popitem(last=False)
 
-    def init(self):
+    def init(self) -> None:
         for r in self.req, self._req_not_auth:
             r.headers.update(
                 {
@@ -102,7 +105,7 @@ class BangumiApi(
             if k.lower() != "authorization"
         }
 
-    def get(self, path, params=None):
+    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         logger.debug(
             f"BangumiApi GET请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
@@ -111,7 +114,12 @@ class BangumiApi(
         )
         return self._check_auth_error(res)
 
-    def post(self, path, _json, params=None):
+    def post(
+        self,
+        path: str,
+        _json: dict[str, Any],
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         logger.debug(
             f"BangumiApi POST请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
@@ -120,13 +128,23 @@ class BangumiApi(
         )
         return self._check_auth_error(res)
 
-    def put(self, path, _json, params=None):
+    def put(
+        self,
+        path: str,
+        _json: dict[str, Any],
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         res = self._request_with_retry(
             "PUT", self.req, f"{self.host}/{path}", json=_json, params=params
         )
         return self._check_auth_error(res)
 
-    def patch(self, path, _json, params=None):
+    def patch(
+        self,
+        path: str,
+        _json: dict[str, Any],
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         res = self._request_with_retry(
             "PATCH", self.req, f"{self.host}/{path}", json=_json, params=params
         )

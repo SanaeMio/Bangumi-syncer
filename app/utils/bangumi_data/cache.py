@@ -194,7 +194,7 @@ class CacheMixin:
             else 0,
         }
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """清理内存缓存"""
         self._data_cache = None
         self._cache_timestamp = None
@@ -215,7 +215,7 @@ class CacheMixin:
 
     # ----- 启动时检查与预加载 -----
 
-    def _check_and_download_cache_on_startup(self):
+    def _check_and_download_cache_on_startup(self) -> None:
         """启动时检查缓存，如果缺少则下载
 
         这个方法在类初始化时被调用，确保缓存文件存在且有效
@@ -241,7 +241,7 @@ class CacheMixin:
         else:
             logger.debug("缓存文件存在且有效，无需下载")
 
-    def _preload_data_to_memory(self):
+    def _preload_data_to_memory(self) -> None:
         """初始化时预加载数据到内存"""
         try:
             logger.info("初始化时预加载 bangumi-data 到内存...")

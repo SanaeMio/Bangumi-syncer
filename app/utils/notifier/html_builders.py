@@ -1,5 +1,7 @@
 """通知邮件 HTML 内容构建（mixin）"""
 
+from __future__ import annotations
+
 import os
 from typing import Any, Callable
 
@@ -25,7 +27,7 @@ class EmailHtmlMixin:
             # 使用正则表达式匹配所有 {variable} 格式的占位符
             pattern = r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}"
 
-            def replace_match(match):
+            def replace_match(match: Any) -> str:
                 key = match.group(1)
                 # 如果键存在，使用其值；否则使用空字符串
                 return str(data.get(key, ""))

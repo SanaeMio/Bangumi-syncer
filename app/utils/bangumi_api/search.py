@@ -1,7 +1,10 @@
 """BangumiApi 搜索与匹配（mixin）"""
 
+from __future__ import annotations
+
 import datetime
 import os
+from typing import Any
 
 from rapidfuzz import fuzz
 
@@ -11,7 +14,7 @@ from ...core.logging import logger
 class SearchMixin:
     """搜索与匹配相关方法（供 BangumiApi 组合）"""
 
-    def get_me(self):
+    def get_me(self) -> dict[str, Any]:
         res = self.get("me")
         if 400 <= res.status_code < 500:
             # 发送API认证失败通知
@@ -28,7 +31,14 @@ class SearchMixin:
             raise ValueError("BangumiApi: 未授权, access_token不正确或未设置")
         return res.json()
 
-    def search(self, title, start_date, end_date, limit=5, list_only=True):
+    def search(
+        self,
+        title: str,
+        start_date: str,
+        end_date: str,
+        limit: int = 5,
+        list_only: bool = True,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         # 使用实例缓存避免内存泄漏
         cache_key = (title, start_date, end_date, limit, list_only)
         if cache_key in self._cache["search"]:
@@ -62,7 +72,9 @@ class SearchMixin:
         self._put_cache("search", cache_key, result)
         return result
 
-    def search_old(self, title, list_only=True):
+    def search_old(
+        self, title: str, list_only: bool = True
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         # 使用实例缓存避免内存泄漏
         cache_key = (title, list_only)
         if cache_key in self._cache["search_old"]:
@@ -88,7 +100,7 @@ class SearchMixin:
         self._put_cache("search_old", cache_key, result)
         return result
 
-    def get_subject(self, subject_id):
+    def get_subject(self, subject_id: int) -> dict[str, Any]:
         # 使用实例缓存避免内存泄漏
         if subject_id in self._cache["get_subject"]:
             return self._cache["get_subject"][subject_id]
@@ -107,7 +119,9 @@ class SearchMixin:
         self._put_cache("get_subject", subject_id, res)
         return res
 
-    def get_related_subjects(self, subject_id):
+    def get_related_subjects(
+        self, subject_id: int
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         # 使用实例缓存避免内存泄漏
         if subject_id in self._cache["get_related_subjects"]:
             return self._cache["get_related_subjects"][subject_id]
@@ -128,7 +142,13 @@ class SearchMixin:
         self._put_cache("get_related_subjects", subject_id, res)
         return res
 
-    def bgm_search(self, title, ori_title, premiere_date: str, is_movie=False):
+    def bgm_search(
+        self,
+        title: str,
+        ori_title: str | None,
+        premiere_date: str,
+        is_movie: bool = False,
+    ) -> list[dict[str, Any]] | None:
         bgm_data = None
         start_date_str = "无日期"
         end_date_str = "无日期"
@@ -207,7 +227,9 @@ class SearchMixin:
         return bgm_data
 
     @staticmethod
-    def title_diff_ratio(title, ori_title, bgm_data):
+    def title_diff_ratio(
+        title: str, ori_title: str | None, bgm_data: dict[str, Any]
+    ) -> float:
         ori_title = ori_title or title
         candidates = []
 

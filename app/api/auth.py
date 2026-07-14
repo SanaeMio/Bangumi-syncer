@@ -2,7 +2,10 @@
 认证相关API
 """
 
+from __future__ import annotations
+
 import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
@@ -30,7 +33,7 @@ def get_client_ip(request: Request) -> str:
 
 
 @router.post("/login")
-async def login(request: Request, response: Response):
+async def login(request: Request, response: Response) -> dict[str, Any]:
     """用户登录"""
     try:
         data = await request.json()
@@ -112,7 +115,7 @@ async def login(request: Request, response: Response):
 
 
 @router.post("/logout")
-async def logout(request: Request, response: Response):
+async def logout(request: Request, response: Response) -> dict[str, Any]:
     """用户登出"""
     try:
         # 获取当前会话token
@@ -134,7 +137,7 @@ async def logout(request: Request, response: Response):
 @router.get("/auth/status")
 async def auth_status(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取认证状态"""
     if current_user:
         return {

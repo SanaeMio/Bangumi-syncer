@@ -1,5 +1,9 @@
 """Bangumi 条目封面（仪表板时间线海报）API。"""
 
+from __future__ import annotations
+
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..core.logging import logger
@@ -13,7 +17,7 @@ router = APIRouter(prefix="/api/bgm", tags=["bgm"])
 async def get_subject_poster(
     subject_id: int,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """返回条目封面图 URL（服务端取元数据，可选图片 CDN 反代改写）。"""
     if subject_id < 1:
         raise HTTPException(status_code=400, detail="无效的条目 ID")

@@ -6,7 +6,7 @@ import ast
 import json
 import time
 import traceback
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
@@ -451,7 +451,7 @@ async def _parse_plex_body(request: Request) -> dict:
     return json.loads(extract_plex_json(json_str))
 
 
-async def _handle_plex_sync(plex_request: Request, webhook_key: str = ""):
+async def _handle_plex_sync(plex_request: Request, webhook_key: str = "") -> dict[str, Any]:
     """处理Plex同步请求的内部函数"""
     return await _dispatch_media_server_webhook(
         plex_request,
@@ -464,13 +464,13 @@ async def _handle_plex_sync(plex_request: Request, webhook_key: str = ""):
 
 
 @root_router.post("/Plex/{webhook_key}")
-async def plex_sync(plex_request: Request, webhook_key: str):
+async def plex_sync(plex_request: Request, webhook_key: str) -> dict[str, Any]:
     """Plex同步接口（带密钥）"""
     return await _handle_plex_sync(plex_request, webhook_key)
 
 
 @root_router.post("/Plex")
-async def plex_sync_no_key(plex_request: Request):
+async def plex_sync_no_key(plex_request: Request) -> dict[str, Any]:
     """Plex同步接口（无密钥）"""
     return await _handle_plex_sync(plex_request, "")
 
@@ -496,7 +496,7 @@ async def _parse_emby_body(request: Request) -> dict:
         raise ValueError("无效的请求格式")
 
 
-async def _handle_emby_sync(emby_request: Request, webhook_key: str = ""):
+async def _handle_emby_sync(emby_request: Request, webhook_key: str = "") -> dict[str, Any]:
     """处理Emby同步请求的内部函数"""
     try:
         return await _dispatch_media_server_webhook(
@@ -517,13 +517,13 @@ async def _handle_emby_sync(emby_request: Request, webhook_key: str = ""):
 
 
 @root_router.post("/Emby/{webhook_key}")
-async def emby_sync(emby_request: Request, webhook_key: str):
+async def emby_sync(emby_request: Request, webhook_key: str) -> dict[str, Any]:
     """Emby同步接口（带密钥）"""
     return await _handle_emby_sync(emby_request, webhook_key)
 
 
 @root_router.post("/Emby")
-async def emby_sync_no_key(emby_request: Request):
+async def emby_sync_no_key(emby_request: Request) -> dict[str, Any]:
     """Emby同步接口（无密钥）"""
     return await _handle_emby_sync(emby_request, "")
 
@@ -536,7 +536,7 @@ async def _parse_jellyfin_body(request: Request) -> dict:
     return json.loads(json_str)
 
 
-async def _handle_jellyfin_sync(jellyfin_request: Request, webhook_key: str = ""):
+async def _handle_jellyfin_sync(jellyfin_request: Request, webhook_key: str = "") -> dict[str, Any]:
     """处理Jellyfin同步请求的内部函数"""
     return await _dispatch_media_server_webhook(
         jellyfin_request,
@@ -549,12 +549,12 @@ async def _handle_jellyfin_sync(jellyfin_request: Request, webhook_key: str = ""
 
 
 @root_router.post("/Jellyfin/{webhook_key}")
-async def jellyfin_sync(jellyfin_request: Request, webhook_key: str):
+async def jellyfin_sync(jellyfin_request: Request, webhook_key: str) -> dict[str, Any]:
     """Jellyfin同步接口（带密钥）"""
     return await _handle_jellyfin_sync(jellyfin_request, webhook_key)
 
 
 @root_router.post("/Jellyfin")
-async def jellyfin_sync_no_key(jellyfin_request: Request):
+async def jellyfin_sync_no_key(jellyfin_request: Request) -> dict[str, Any]:
     """Jellyfin同步接口（无密钥）"""
     return await _handle_jellyfin_sync(jellyfin_request, "")

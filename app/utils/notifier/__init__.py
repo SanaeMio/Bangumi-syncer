@@ -2,8 +2,10 @@
 通知模块 - 支持 Webhook 和邮件通知
 """
 
+from __future__ import annotations
+
 import time
-from typing import Any, Optional
+from typing import Any
 
 from ...core.config import config_manager
 from ...core.logging import logger
@@ -16,7 +18,7 @@ from .webhook import WebhookMixin
 class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin):
     """通知管理器（组合各 mixin，提供通知发送能力）"""
 
-    def __init__(self, config_manager):
+    def __init__(self, config_manager: Any) -> None:
         self.config_manager = config_manager
         self._last_notification_time = {}
         self._notification_cooldown = 60  # 同一类型通知的冷却时间（秒）
@@ -113,10 +115,10 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
 
 
 # 全局通知器实例（延迟初始化）
-_notifier_instance: Optional[Notifier] = None
+_notifier_instance: Notifier | None = None
 
 
-def get_notifier():
+def get_notifier() -> Notifier:
     """获取通知器实例"""
     global _notifier_instance
     if _notifier_instance is None:
@@ -125,7 +127,7 @@ def get_notifier():
 
 
 def send_notify(
-    notification_type: str, item=None, source: str = None, **kwargs
+    notification_type: str, item: Any = None, source: str = None, **kwargs
 ) -> bool:
     """
     安全发送通知的便捷函数

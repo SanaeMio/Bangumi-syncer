@@ -62,7 +62,7 @@ class UpgradeProgress:
 
 
 class UpgradeService:
-    def __init__(self):
+    def __init__(self) -> None:
         self._progress: dict[str, UpgradeProgress] = {}
         self._queues: dict[str, asyncio.Queue] = {}
         self._lock = asyncio.Lock()
@@ -108,7 +108,7 @@ class UpgradeService:
         percent: int = 0,
         message: str = "",
         error: Optional[str] = None,
-    ):
+    ) -> None:
         p = self._progress.get(upgrade_id)
         if p:
             p.stage = stage
@@ -506,7 +506,7 @@ class UpgradeService:
 
         return app_backup_dir
 
-    def _rollback_files(self, backup_dir: Path, replace_dirs: list[str]):
+    def _rollback_files(self, backup_dir: Path, replace_dirs: list[str]) -> None:
         """从备份目录回滚应用文件"""
         project_root = Path(".")
         for d in replace_dirs:
@@ -630,7 +630,7 @@ class UpgradeService:
             logger.info(f"已从备份恢复: {', '.join(restored)}")
 
 
-def restart_application():
+def restart_application() -> None:
     """重启应用进程
 
     Windows 优先使用 start.bat（与手动启动一致），

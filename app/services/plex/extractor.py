@@ -1,10 +1,14 @@
 """Plex Webhook 数据提取"""
 
+from __future__ import annotations
+
+from typing import Any
+
 from ...core.logging import logger
 from ...models.sync import CustomItem
 
 
-def extract_plex_data(plex_data):
+def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
     """从Plex数据中提取CustomItem所需的字段"""
 
     md = plex_data["Metadata"]

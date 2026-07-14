@@ -115,7 +115,7 @@ async def startup_event():
 
         logger.info(f"Trakt 调度器将在 {startup_delay} 秒后启动...")
 
-        async def delayed_scheduler_start():
+        async def delayed_scheduler_start() -> None:
             await asyncio.sleep(startup_delay)
             # 两个调度器独立启动，互不影响
             try:
@@ -159,7 +159,7 @@ async def startup_event():
 
 # 关闭事件
 @app.on_event("shutdown")
-async def shutdown_event():
+async def shutdown_event() -> None:
     """应用关闭事件"""
     logger.info("Bangumi-Syncer 正在关闭...")
 

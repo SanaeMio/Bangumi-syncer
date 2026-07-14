@@ -1,10 +1,14 @@
 """Jellyfin Webhook 数据提取"""
 
+from __future__ import annotations
+
+from typing import Any
+
 from ...core.logging import logger
 from ...models.sync import CustomItem
 
 
-def extract_jellyfin_data(jellyfin_data):
+def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
     """从Jellyfin数据中提取CustomItem所需的字段"""
 
     release_date = ""

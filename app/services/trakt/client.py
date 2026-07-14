@@ -5,7 +5,7 @@ Trakt.tv API 异步客户端
 import asyncio
 import time
 from datetime import datetime
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from urllib.parse import urlencode
 
 import httpx
@@ -22,7 +22,7 @@ from .models import TraktCollectionItem, TraktHistoryItem, TraktRatingItem
 class TraktClient:
     """Trakt.tv API 异步客户端"""
 
-    def __init__(self, access_token: str):
+    def __init__(self, access_token: str) -> None:
         self.access_token = access_token
         self.base_url = "https://api.trakt.tv"
         self.client_id = config_manager.get_trakt_config().get("client_id", "")
@@ -46,12 +46,12 @@ class TraktClient:
         # HTTP 客户端
         self._client: Optional[httpx.AsyncClient] = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "TraktClient":
         """异步上下文管理器入口"""
         await self._ensure_client()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """异步上下文管理器出口"""
         await self.close()
 

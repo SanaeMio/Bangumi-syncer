@@ -29,7 +29,7 @@ class ConfigManager:
 
     _lock = threading.Lock()
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.platform = platform.system()
         self.cwd = Path(__file__).parent.parent.parent
 

@@ -10,6 +10,8 @@ iter_content / raw / with 上下文；_request_with_retry 提供带重试的同�
 from __future__ import annotations
 
 import io
+from collections.abc import Iterator
+from typing import Any
 
 import httpx
 
@@ -25,7 +27,7 @@ class _BufferedResponse:
     并提供 iter_content / raw 兼容旧调用方。
     """
 
-    def __init__(self, response: httpx.Response):
+    def __init__(self, response: httpx.Response) -> None:
         self._response = response
         # 确保内容已读取到内存（解绑 client 连接池）
         response.read()
@@ -34,11 +36,11 @@ class _BufferedResponse:
         self.headers = response.headers
 
     @property
-    def raw(self):
+    def raw(self) -> io.BytesIO:
         """兼容 requests 的 response.raw（ijson 增量解析使用）"""
         return io.BytesIO(self.content)
 
-    def iter_content(self, chunk_size=8192):
+    def iter_content(self, chunk_size: int = 8192) -> Iterator[bytes]:
         """兼容 requests 的 iter_content"""
         with io.BytesIO(self.content) as f:
             while True:
@@ -47,29 +49,33 @@ class _BufferedResponse:
                     break
                 yield chunk
 
-    def raise_for_status(self):
+    def raise_for_status(self) -> None:
         self._response.raise_for_status()
 
-    def json(self):
+    def json(self) -> Any:
         return self._response.json()
 
     @property
-    def text(self):
+    def text(self) -> str:
         return self._response.text
 
-    def close(self):
+    def close(self) -> None:
         self._response.close()
 
-    def __enter__(self):
+    def __enter__(self) -> _BufferedResponse:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.close()
 
 
 def _request_with_retry(
-    url, proxies=None, stream=False, max_retries=3, ssl_verify=True
-):
+    url: str,
+    proxies: dict[str, str] | None = None,
+    stream: bool = False,
+    max_retries: int = 3,
+    ssl_verify: bool = True,
+) -> _BufferedResponse:
     """带重试机制的HTTP请求方法（基于 httpx 同步客户端）
 
     proxies 参数兼容旧 requests 风格的 dict，内部转换为 httpx 代理字符串。
@@ -80,7 +86,7 @@ def _request_with_retry(
     if proxies:
         proxy_url = proxies.get("https") or proxies.get("http")
 
-    def _do_request():
+    def _do_request() -> httpx.Response:
         with create_sync_client(
             proxy=proxy_url, verify=ssl_verify, timeout=30.0
         ) as client:

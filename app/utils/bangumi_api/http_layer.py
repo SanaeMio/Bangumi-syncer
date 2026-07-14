@@ -1,7 +1,10 @@
 """BangumiApi HTTP 层：直连/重试/诊断（mixin）"""
 
+from __future__ import annotations
+
 import socket
 import time
+from typing import Any
 
 import httpx
 
@@ -13,7 +16,9 @@ from ..retry import RETRY_STATUS_CODES, compute_backoff_delay
 class HttpLayerMixin:
     """HTTP 请求层相关方法（供 BangumiApi 组合）"""
 
-    def _try_direct_connection(self, method, url, **kwargs):
+    def _try_direct_connection(
+        self, method: str, url: str, **kwargs: Any
+    ) -> httpx.Response | None:
         """尝试直连（不使用代理）"""
         logger.info(f"🔄 尝试直连: {url}")
 
@@ -65,7 +70,7 @@ class HttpLayerMixin:
         finally:
             temp_session.close()
 
-    def _diagnose_network_issue(self, url):
+    def _diagnose_network_issue(self, url: str) -> None:
         """诊断网络连接问题"""
         from urllib.parse import urlparse
 
@@ -111,7 +116,14 @@ class HttpLayerMixin:
         except OSError as e:
             logger.error(f"❌ TCP连接测试异常: {e}")
 
-    def _request_with_retry(self, method, session, url, max_retries=3, **kwargs):
+    def _request_with_retry(
+        self,
+        method: str,
+        session: httpx.Client,
+        url: str,
+        max_retries: int = 3,
+        **kwargs: Any,
+    ) -> httpx.Response:
         """带重试机制的请求方法（支持代理失败后直连重试）"""
         kwargs.setdefault("timeout", 15)
         dns_error_occurred = False
@@ -222,7 +234,7 @@ class HttpLayerMixin:
 
                     raise e
 
-    def _check_auth_error(self, res):
+    def _check_auth_error(self, res: httpx.Response) -> httpx.Response:
         """统一检查认证错误"""
         if res.status_code == 401:
             error_msg = "Bangumi API 认证失败: access_token可能已过期（有效期1年）或无效，请更新token"

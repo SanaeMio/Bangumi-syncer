@@ -23,7 +23,7 @@ class EmbySyncService:
     异步任务跟踪仍由 SyncService 负责。
     """
 
-    def sync_item(self, emby_data: dict[str, Any], sync_svc=None) -> SyncResponse:
+    def sync_item(self, emby_data: dict[str, Any], sync_svc: Any = None) -> SyncResponse:
         """处理 Emby 同步请求（核心逻辑）
 
         Args:

@@ -23,7 +23,7 @@ from .sync_service import trakt_sync_service
 class TraktScheduler:
     """Trakt 数据同步调度器"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.scheduler_config = config_manager.get_scheduler_config()
         self._user_jobs: dict[str, str] = {}  # user_id -> job_id

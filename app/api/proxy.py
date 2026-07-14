@@ -6,7 +6,7 @@ import platform
 import socket
 import subprocess
 import time
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -31,7 +31,7 @@ async def get_proxy_suggestions(
     request: Request,
     port: Optional[int] = 7890,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """获取代理配置建议"""
     try:
         # 获取环境信息

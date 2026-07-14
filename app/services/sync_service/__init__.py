@@ -45,7 +45,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         self._sync_tasks = {}
         self._task_counter = 0
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """关闭线程池，等待正在执行的任务完成"""
         self._executor.shutdown(wait=True)
 
@@ -867,7 +867,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
 _sync_service: Optional[SyncService] = None
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """模块级懒加载，避免 import 时即创建 ThreadPoolExecutor。"""
     global _sync_service
     if name == "sync_service":

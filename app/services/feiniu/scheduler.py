@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from apscheduler.triggers.cron import CronTrigger
+
 from ...core.config import config_manager
 from ...core.logging import logger
 from ..base.scheduler import BaseScheduler
@@ -35,7 +37,7 @@ class FeiniuScheduler(BaseScheduler):
     def _feiniu_enabled_with_db(self) -> bool:
         return self._is_enabled()
 
-    def _default_feiniu_cron_trigger(self):
+    def _default_feiniu_cron_trigger(self) -> CronTrigger:
         """兼容旧测试"""
         return self._default_cron_trigger()
 

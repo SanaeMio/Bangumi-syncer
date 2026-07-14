@@ -3,7 +3,7 @@
 """
 
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -83,7 +83,7 @@ class EmailConfigUpdate(BaseModel):
 async def test_notification(
     request: NotificationTestRequest,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """测试通知功能"""
     try:
         notifier = get_notifier()
@@ -109,7 +109,7 @@ async def test_notification(
 @router.get("/notification/status")
 async def get_notification_status(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取通知配置状态"""
     try:
         # 获取webhook配置数量
@@ -190,7 +190,7 @@ async def get_webhooks(current_user: dict = Depends(get_current_user_flexible)):
 async def create_webhook(
     webhook_data: WebhookConfigCreate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """创建新的webhook配置"""
     try:
         config = config_manager.get_config_parser()
@@ -245,7 +245,7 @@ async def update_webhook(
     webhook_id: int,
     webhook_data: WebhookConfigUpdate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """更新webhook配置"""
     try:
         section_name = f"webhook-{webhook_id}"
@@ -297,7 +297,7 @@ async def update_webhook(
 @router.delete("/notification/webhooks/{webhook_id}")
 async def delete_webhook(
     webhook_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """删除webhook配置"""
     try:
         section_name = f"webhook-{webhook_id}"
@@ -356,7 +356,7 @@ async def delete_webhook(
 @router.post("/notification/webhooks/{webhook_id}/test")
 async def test_webhook(
     webhook_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """测试指定的webhook配置"""
     try:
         notifier = get_notifier()
@@ -417,7 +417,7 @@ async def get_emails(current_user: dict = Depends(get_current_user_flexible)):
 async def create_email(
     email_data: EmailConfigCreate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """创建新的邮件配置"""
     try:
         config = config_manager.get_config_parser()
@@ -488,7 +488,7 @@ async def update_email(
     email_id: int,
     email_data: EmailConfigUpdate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """更新邮件配置"""
     try:
         section_name = f"email-{email_id}"
@@ -568,7 +568,7 @@ async def update_email(
 @router.delete("/notification/emails/{email_id}")
 async def delete_email(
     email_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """删除邮件配置"""
     try:
         section_name = f"email-{email_id}"
@@ -633,7 +633,7 @@ async def delete_email(
 @router.post("/notification/emails/{email_id}/test")
 async def test_email(
     email_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """测试指定的邮件配置"""
     try:
         notifier = get_notifier()

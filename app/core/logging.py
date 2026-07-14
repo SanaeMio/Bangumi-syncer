@@ -59,7 +59,7 @@ class Logger:
     WARNING = "WARNING"
     ERROR = "ERROR"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.need_mix = True
         self.api_key = "_hide_api_key_"
         self.netloc = "_mix_netloc_"
