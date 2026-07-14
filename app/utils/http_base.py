@@ -63,6 +63,7 @@ class HttpClientBase:
         self._failure_msg: Callable[[Exception, str], str] | None = None
         self._success_tpl: str = "请求成功"
         self._failure_tpl: str = "请求失败"
+        self._silent_failure: bool = False
 
     # ===== 链式配置方法 =====
 
@@ -89,6 +90,11 @@ class HttpClientBase:
     def on_failure(self, fn: Callable[[Exception, str], str]) -> HttpClientBase:
         """回调模式：fn(error, url) -> str，完全控制失败日志内容"""
         self._failure_msg = fn
+        return self
+
+    def silent_failure(self, enabled: bool = True) -> HttpClientBase:
+        """静默失败日志（用于批量探测/扫描场景，由调用方统一记录汇总日志）"""
+        self._silent_failure = enabled
         return self
 
     # ===== 日志格式化 =====
@@ -170,7 +176,9 @@ class HttpClientBase:
         logger.debug("\n".join(parts))
 
     def _log_failure(self, error: Exception, method: str, url: str) -> None:
-        """INFO: 自定义消息 + 技术摘要"""
+        """INFO: 自定义消息 + 技术摘要；silent_failure 时静默"""
+        if self._silent_failure:
+            return
         # INFO: 自定义简短消息
         msg = self._format_failure(error, url)
         logger.info(f"{self._prefix}{msg}")

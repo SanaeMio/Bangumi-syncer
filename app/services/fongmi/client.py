@@ -245,11 +245,16 @@ async def discover_devices(
         return []
 
     own_client = base_client is None
-    client = base_client or AsyncHttpClient(
-        label="Fongmi",
-        limits=httpx.Limits(max_connections=300, max_keepalive_connections=50),
-        max_retries=0,
-    ).prefix("📡")
+    client = (
+        base_client
+        or AsyncHttpClient(
+            label="Fongmi",
+            limits=httpx.Limits(max_connections=300, max_keepalive_connections=50),
+            max_retries=0,
+        )
+        .prefix("📡")
+        .silent_failure()
+    )
     found: list[FongmiDevice] = []
     failures: list[str] = []  # 收集失败 IP 的原因，用于 debug 汇总
 
@@ -320,7 +325,10 @@ async def parse_device_entry(
             port = int(port_str)
 
     own_client = base_client is None
-    client = base_client or AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡")
+    client = (
+        base_client
+        or AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡").silent_failure()
+    )
     try:
         # 指定端口或默认端口 9978：单次探测
         target_port = port or _DEFAULT_PORT
