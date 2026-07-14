@@ -7,14 +7,15 @@ from datetime import datetime
 from typing import Optional
 
 from ..logging import logger
+from .base_repository import BaseRepository
 from .connection import FEINIU_MIN_UPDATE_WATERMARK_META_KEY
 
 
-class FeiniuRepository:
+class FeiniuRepository(BaseRepository):
     """飞牛同步历史与 meta 的增删改查"""
 
     def __init__(self, conn):
-        self._conn = conn
+        super().__init__(conn)
 
     def save_feiniu_sync_history(
         self,
@@ -23,95 +24,68 @@ class FeiniuRepository:
         update_time_snapshot: Optional[int] = None,
     ) -> bool:
         """记录已提交的飞牛条目同步（去重用）"""
-        try:
-
-            def _write(conn):
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO feiniu_sync_history
-                    (fn_user_guid, item_guid, synced_at, update_time_snapshot)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (
-                        fn_user_guid,
-                        item_guid,
-                        int(datetime.now().timestamp()),
-                        update_time_snapshot,
-                    ),
-                )
-                conn.commit()
-
-            self._conn._execute_with_lock(_write)
+        def _write(conn):
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO feiniu_sync_history
+                (fn_user_guid, item_guid, synced_at, update_time_snapshot)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    fn_user_guid,
+                    item_guid,
+                    int(datetime.now().timestamp()),
+                    update_time_snapshot,
+                ),
+            )
             return True
-        except Exception as e:
-            logger.error(f"保存飞牛同步历史失败: {e}")
-            return False
+
+        return self._run_write(_write, error_msg="保存飞牛同步历史失败", default=False)
 
     def get_feiniu_synced_set(self, user_guids: list[str]) -> set[tuple[str, str]]:
         """批量获取已同步的飞牛条目集合，用于 O(1) 去重查找"""
         if not user_guids:
             return set()
-        try:
 
-            def _read(conn):
-                cursor = conn.cursor()
-                placeholders = ",".join("?" * len(user_guids))
-                cursor.execute(
-                    f"SELECT fn_user_guid, item_guid FROM feiniu_sync_history WHERE fn_user_guid IN ({placeholders})",
-                    user_guids,
-                )
-                return {(row[0], row[1]) for row in cursor.fetchall()}
+        def _read(conn):
+            cursor = conn.cursor()
+            placeholders = ",".join("?" * len(user_guids))
+            cursor.execute(
+                f"SELECT fn_user_guid, item_guid FROM feiniu_sync_history WHERE fn_user_guid IN ({placeholders})",
+                user_guids,
+            )
+            return {(row[0], row[1]) for row in cursor.fetchall()}
 
-            return self._conn._execute_with_lock(_read)
-        except Exception as e:
-            logger.warning(f"批量查询飞牛同步历史失败: {e}")
-            return set()
+        return self._run_read(_read, error_msg="批量查询飞牛同步历史失败", default=set())
 
     def get_feiniu_meta(self, key: str) -> Optional[str]:
-        try:
+        def _read(conn):
+            cursor = conn.execute(
+                "SELECT value FROM feiniu_meta WHERE key = ? LIMIT 1", (key,)
+            )
+            return cursor.fetchone()
 
-            def _read(conn):
-                cursor = conn.execute(
-                    "SELECT value FROM feiniu_meta WHERE key = ? LIMIT 1", (key,)
-                )
-                return cursor.fetchone()
-
-            row = self._conn._execute_with_lock(_read)
-            return str(row[0]) if row else None
-        except Exception as e:
-            logger.warning(f"读取飞牛 meta 失败: {e}")
-            return None
+        row = self._run_read(_read, error_msg="读取飞牛 meta 失败", default=None)
+        return str(row[0]) if row else None
 
     def set_feiniu_meta(self, key: str, value: str) -> bool:
-        try:
-
-            def _write(conn):
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO feiniu_meta (key, value) VALUES (?, ?)
-                    """,
-                    (key, value),
-                )
-                conn.commit()
-
-            self._conn._execute_with_lock(_write)
+        def _write(conn):
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO feiniu_meta (key, value) VALUES (?, ?)
+                """,
+                (key, value),
+            )
             return True
-        except Exception as e:
-            logger.error(f"写入飞牛 meta 失败: {e}")
-            return False
+
+        return self._run_write(_write, error_msg="写入飞牛 meta 失败", default=False)
 
     def delete_feiniu_meta(self, key: str) -> bool:
-        try:
-
-            def _write(conn):
-                conn.execute("DELETE FROM feiniu_meta WHERE key = ?", (key,))
-                conn.commit()
-
-            self._conn._execute_with_lock(_write)
+        def _write(conn):
+            conn.execute("DELETE FROM feiniu_meta WHERE key = ?", (key,))
             return True
-        except Exception as e:
-            logger.error(f"删除飞牛 meta 失败: {e}")
-            return False
+
+        return self._run_write(_write, error_msg="删除飞牛 meta 失败", default=False)
 
     def clear_feiniu_min_update_watermark(self) -> None:
         """清除「启用后仅同步新进度」水位（飞牛关闭时调用）"""

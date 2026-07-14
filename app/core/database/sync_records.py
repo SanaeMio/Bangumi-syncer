@@ -7,13 +7,14 @@ from datetime import datetime
 from typing import Any, Optional
 
 from ..logging import logger
+from .base_repository import BaseRepository
 
 
-class SyncRecordsRepository:
+class SyncRecordsRepository(BaseRepository):
     """同步记录的增删改查"""
 
     def __init__(self, conn, inbox_repository=None):
-        self._conn = conn
+        super().__init__(conn)
         self._inbox = inbox_repository
         self._heatmap_cache: Optional[list] = None
         self._heatmap_cache_time: float = 0
@@ -34,63 +35,65 @@ class SyncRecordsRepository:
         bgm_title: str = "",
     ) -> Optional[int]:
         """记录同步日志到数据库，返回新记录 id（失败时 None）"""
-        try:
 
-            def _write(conn):
-                self._conn._ensure_sync_records_media_type(conn.cursor())
-                self._conn._ensure_sync_records_bgm_title(conn.cursor())
-                local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                cursor = conn.execute(
+        def _ensure_schema(cursor):
+            self._conn._ensure_sync_records_media_type(cursor)
+            self._conn._ensure_sync_records_bgm_title(cursor)
+
+        def _write(conn):
+            local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor = conn.execute(
+                """
+                INSERT INTO sync_records
+                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type, bgm_title)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    local_time,
+                    user_name,
+                    title,
+                    ori_title,
+                    season,
+                    episode,
+                    subject_id,
+                    episode_id,
+                    status,
+                    message,
+                    source,
+                    media_type or "episode",
+                    bgm_title or "",
+                ),
+            )
+            record_id = cursor.lastrowid
+            if status == "error" and record_id:
+                ep_label = (
+                    f"S{season}E{episode}"
+                    if (media_type or "episode") == "episode"
+                    else "剧场版"
+                )
+                notif_title = f"同步失败：{title} {ep_label}"
+                conn.execute(
                     """
-                    INSERT INTO sync_records
-                    (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type, bgm_title)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                    INSERT INTO in_app_notifications
+                    (type, title, body, ref_id, created_at, read_at)
+                    VALUES (?, ?, ?, ?, ?, NULL)
+                    """,
                     (
+                        "sync_failed",
+                        notif_title,
+                        message or "",
+                        record_id,
                         local_time,
-                        user_name,
-                        title,
-                        ori_title,
-                        season,
-                        episode,
-                        subject_id,
-                        episode_id,
-                        status,
-                        message,
-                        source,
-                        media_type or "episode",
-                        bgm_title or "",
                     ),
                 )
-                record_id = cursor.lastrowid
-                if status == "error" and record_id:
-                    ep_label = (
-                        f"S{season}E{episode}"
-                        if (media_type or "episode") == "episode"
-                        else "剧场版"
-                    )
-                    notif_title = f"同步失败：{title} {ep_label}"
-                    conn.execute(
-                        """
-                        INSERT INTO in_app_notifications
-                        (type, title, body, ref_id, created_at, read_at)
-                        VALUES (?, ?, ?, ?, ?, NULL)
-                        """,
-                        (
-                            "sync_failed",
-                            notif_title,
-                            message or "",
-                            record_id,
-                            local_time,
-                        ),
-                    )
-                conn.commit()
-                return record_id
+            return record_id
 
-            return self._conn._execute_with_lock(_write)
-        except Exception as e:
-            logger.error(f"记录同步日志失败: {e}")
-            return None
+        return self._run_write(
+            _write,
+            error_msg="记录同步日志失败",
+            default=None,
+            ensure_schema=_ensure_schema,
+        )
 
     def get_sync_records(
         self,
@@ -103,208 +106,213 @@ class SyncRecordsRepository:
         skip_count: bool = False,
     ) -> dict[str, Any]:
         """获取同步记录"""
-        try:
 
-            def _read(conn):
-                self._conn._ensure_sync_records_media_type(conn.cursor())
-                self._conn._ensure_sync_records_bgm_title(conn.cursor())
-                cursor = conn.cursor()
+        def _ensure_schema(cursor):
+            self._conn._ensure_sync_records_media_type(cursor)
+            self._conn._ensure_sync_records_bgm_title(cursor)
 
-                where_conditions = []
-                params = []
+        def _read(conn):
+            cursor = conn.cursor()
 
-                if status:
-                    where_conditions.append("status = ?")
-                    params.append(status)
+            where_conditions = []
+            params = []
 
-                if user_name:
-                    where_conditions.append("user_name = ?")
-                    params.append(user_name)
+            if status:
+                where_conditions.append("status = ?")
+                params.append(status)
 
-                if source:
-                    where_conditions.append("source = ?")
-                    params.append(source)
+            if user_name:
+                where_conditions.append("user_name = ?")
+                params.append(user_name)
 
-                if source_prefix:
-                    where_conditions.append("source LIKE ?")
-                    params.append(f"{source_prefix}%")
+            if source:
+                where_conditions.append("source = ?")
+                params.append(source)
 
-                where_clause = (
-                    " WHERE " + " AND ".join(where_conditions)
-                    if where_conditions
-                    else ""
+            if source_prefix:
+                where_conditions.append("source LIKE ?")
+                params.append(f"{source_prefix}%")
+
+            where_clause = (
+                " WHERE " + " AND ".join(where_conditions)
+                if where_conditions
+                else ""
+            )
+
+            if skip_count:
+                total = -1
+            else:
+                count_query = f"SELECT COUNT(*) FROM sync_records{where_clause}"
+                cursor.execute(count_query, params)
+                total = cursor.fetchone()[0]
+
+            query = f"""
+                SELECT id, timestamp, user_name, title, ori_title, season, episode,
+                       subject_id, episode_id, status, message, source, media_type, bgm_title
+                FROM sync_records{where_clause}
+                ORDER BY timestamp DESC
+                LIMIT ? OFFSET ?
+            """
+            cursor.execute(query, params + [limit, offset])
+
+            records = []
+            for row in cursor.fetchall():
+                records.append(
+                    {
+                        "id": row[0],
+                        "timestamp": row[1],
+                        "user_name": row[2],
+                        "title": row[3],
+                        "ori_title": row[4],
+                        "season": row[5],
+                        "episode": row[6],
+                        "subject_id": row[7],
+                        "episode_id": row[8],
+                        "status": row[9],
+                        "message": row[10],
+                        "source": row[11],
+                        "media_type": row[12] or "episode",
+                        "bgm_title": row[13] or "",
+                    }
                 )
 
-                if skip_count:
-                    total = -1
-                else:
-                    count_query = f"SELECT COUNT(*) FROM sync_records{where_clause}"
-                    cursor.execute(count_query, params)
-                    total = cursor.fetchone()[0]
+            return {
+                "records": records,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
 
-                query = f"""
-                    SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                           subject_id, episode_id, status, message, source, media_type, bgm_title
-                    FROM sync_records{where_clause}
-                    ORDER BY timestamp DESC
-                    LIMIT ? OFFSET ?
-                """
-                cursor.execute(query, params + [limit, offset])
-
-                records = []
-                for row in cursor.fetchall():
-                    records.append(
-                        {
-                            "id": row[0],
-                            "timestamp": row[1],
-                            "user_name": row[2],
-                            "title": row[3],
-                            "ori_title": row[4],
-                            "season": row[5],
-                            "episode": row[6],
-                            "subject_id": row[7],
-                            "episode_id": row[8],
-                            "status": row[9],
-                            "message": row[10],
-                            "source": row[11],
-                            "media_type": row[12] or "episode",
-                            "bgm_title": row[13] or "",
-                        }
-                    )
-
-                return {
-                    "records": records,
-                    "total": total,
-                    "limit": limit,
-                    "offset": offset,
-                }
-
-            return self._conn._execute_with_lock(_read)
-        except Exception as e:
-            logger.error(f"获取同步记录失败: {e}")
-            raise
+        return self._run_read(
+            _read,
+            error_msg="获取同步记录失败",
+            reraise=True,
+            ensure_schema=_ensure_schema,
+        )
 
     def get_sync_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
         """根据ID获取单个同步记录"""
-        try:
 
-            def _read(conn):
-                self._conn._ensure_sync_records_media_type(conn.cursor())
-                self._conn._ensure_sync_records_bgm_title(conn.cursor())
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                           subject_id, episode_id, status, message, source, media_type, bgm_title
-                    FROM sync_records
-                    WHERE id = ?
-                """,
-                    (record_id,),
-                )
-                return cursor.fetchone()
+        def _ensure_schema(cursor):
+            self._conn._ensure_sync_records_media_type(cursor)
+            self._conn._ensure_sync_records_bgm_title(cursor)
 
-            row = self._conn._execute_with_lock(_read)
-            if row:
-                return {
-                    "id": row[0],
-                    "timestamp": row[1],
-                    "user_name": row[2],
-                    "title": row[3],
-                    "ori_title": row[4],
-                    "season": row[5],
-                    "episode": row[6],
-                    "subject_id": row[7],
-                    "episode_id": row[8],
-                    "status": row[9],
-                    "message": row[10],
-                    "source": row[11],
-                    "media_type": row[12] or "episode",
-                    "bgm_title": row[13] or "",
-                }
-            return None
-        except Exception as e:
-            logger.error(f"获取同步记录详情失败: {e}")
-            raise
+        def _read(conn):
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, timestamp, user_name, title, ori_title, season, episode,
+                       subject_id, episode_id, status, message, source, media_type, bgm_title
+                FROM sync_records
+                WHERE id = ?
+            """,
+                (record_id,),
+            )
+            return cursor.fetchone()
+
+        row = self._run_read(
+            _read,
+            error_msg="获取同步记录详情失败",
+            reraise=True,
+            ensure_schema=_ensure_schema,
+        )
+        if row:
+            return {
+                "id": row[0],
+                "timestamp": row[1],
+                "user_name": row[2],
+                "title": row[3],
+                "ori_title": row[4],
+                "season": row[5],
+                "episode": row[6],
+                "subject_id": row[7],
+                "episode_id": row[8],
+                "status": row[9],
+                "message": row[10],
+                "source": row[11],
+                "media_type": row[12] or "episode",
+                "bgm_title": row[13] or "",
+            }
+        return None
 
     def update_sync_record_status(
         self, record_id: int, status: str, message: str = ""
     ) -> bool:
         """更新同步记录的状态"""
-        try:
 
-            def _write(conn):
-                cursor = conn.execute(
-                    """
-                    UPDATE sync_records
-                    SET status = ?, message = ?
-                    WHERE id = ?
-                """,
-                    (status, message, record_id),
-                )
-                conn.commit()
-                return cursor.rowcount
+        def _write(conn):
+            cursor = conn.execute(
+                """
+                UPDATE sync_records
+                SET status = ?, message = ?
+                WHERE id = ?
+            """,
+                (status, message, record_id),
+            )
+            return cursor.rowcount
 
-            affected_rows = self._conn._execute_with_lock(_write)
-            if affected_rows > 0:
-                if status in ("success", "retried"):
-                    self._inbox.mark_notifications_read_by_ref_id(record_id)
-                return True
-            else:
-                logger.warning(f"记录 {record_id} 不存在，无法更新")
-                return False
-        except Exception as e:
-            logger.error(f"更新同步记录状态失败: {e}")
+        affected_rows = self._run_write(
+            _write,
+            error_msg="更新同步记录状态失败",
+            default=False,
+        )
+        if affected_rows > 0:
+            if status in ("success", "retried"):
+                self._inbox.mark_notifications_read_by_ref_id(record_id)
+            return True
+        else:
+            logger.warning(f"记录 {record_id} 不存在，无法更新")
             return False
 
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""
-        try:
 
-            def _read(conn):
-                cursor = conn.cursor()
+        def _read(conn):
+            cursor = conn.cursor()
 
-                # 合并 3 条 COUNT 查询为 1 条，减少数据库往返
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) AS total,
-                        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
-                        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
-                        SUM(CASE WHEN DATE(timestamp) = DATE('now') THEN 1 ELSE 0 END) AS today
-                    FROM sync_records
-                """)
-                row = cursor.fetchone()
-                total_syncs, success_syncs, error_syncs, today_syncs = row
+            # 合并 3 条 COUNT 查询为 1 条，减少数据库往返
+            cursor.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+                    SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+                    SUM(CASE WHEN DATE(timestamp) = DATE('now') THEN 1 ELSE 0 END) AS today
+                FROM sync_records
+            """)
+            row = cursor.fetchone()
+            total_syncs, success_syncs, error_syncs, today_syncs = row
 
-                cursor.execute(
-                    "SELECT user_name, COUNT(*) FROM sync_records GROUP BY user_name ORDER BY COUNT(*) DESC"
-                )
-                user_stats = [{"user": r[0], "count": r[1]} for r in cursor.fetchall()]
+            cursor.execute(
+                "SELECT user_name, COUNT(*) FROM sync_records GROUP BY user_name ORDER BY COUNT(*) DESC"
+            )
+            user_stats = [{"user": r[0], "count": r[1]} for r in cursor.fetchall()]
 
-                cursor.execute("""
-                    SELECT DATE(timestamp) as date, COUNT(*) as count
-                    FROM sync_records
-                    WHERE timestamp >= datetime('now', '-7 days')
-                    GROUP BY DATE(timestamp)
-                    ORDER BY date
-                """)
-                daily_stats = [{"date": r[0], "count": r[1]} for r in cursor.fetchall()]
+            cursor.execute("""
+                SELECT DATE(timestamp) as date, COUNT(*) as count
+                FROM sync_records
+                WHERE timestamp >= datetime('now', '-7 days')
+                GROUP BY DATE(timestamp)
+                ORDER BY date
+            """)
+            daily_stats = [{"date": r[0], "count": r[1]} for r in cursor.fetchall()]
 
-                return {
-                    "total_syncs": total_syncs,
-                    "success_syncs": success_syncs,
-                    "error_syncs": error_syncs,
-                    "today_syncs": today_syncs,
-                    "success_rate": round(success_syncs / total_syncs * 100, 2)
-                    if total_syncs > 0
-                    else 0,
-                    "user_stats": user_stats,
-                    "daily_stats": daily_stats,
-                }
+            return {
+                "total_syncs": total_syncs,
+                "success_syncs": success_syncs,
+                "error_syncs": error_syncs,
+                "today_syncs": today_syncs,
+                "success_rate": round(success_syncs / total_syncs * 100, 2)
+                if total_syncs > 0
+                else 0,
+                "user_stats": user_stats,
+                "daily_stats": daily_stats,
+            }
 
-            return self._conn._execute_with_lock(_read)
-        except Exception as e:
-            logger.error(f"获取统计信息失败: {e}")
-            raise
+        return self._run_read(
+            _read,
+            error_msg="获取统计信息失败",
+            reraise=True,
+        )
 
     def get_heatmap_stats(self) -> list[dict[str, Any]]:
         """获取热力图数据（过去365天每天同步数），带5分钟缓存"""
@@ -312,25 +320,24 @@ class SyncRecordsRepository:
         if self._heatmap_cache is not None and now - self._heatmap_cache_time < 300:
             return self._heatmap_cache
 
-        try:
+        def _read(conn):
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT DATE(timestamp) as date, COUNT(*) as count
+                FROM sync_records
+                WHERE timestamp >= datetime('now', '-365 days')
+                GROUP BY DATE(timestamp)
+                ORDER BY date
+                """
+            )
+            return [{"date": row[0], "count": row[1]} for row in cursor.fetchall()]
 
-            def _read(conn):
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT DATE(timestamp) as date, COUNT(*) as count
-                    FROM sync_records
-                    WHERE timestamp >= datetime('now', '-365 days')
-                    GROUP BY DATE(timestamp)
-                    ORDER BY date
-                    """
-                )
-                return [{"date": row[0], "count": row[1]} for row in cursor.fetchall()]
-
-            result = self._conn._execute_with_lock(_read)
-            self._heatmap_cache = result
-            self._heatmap_cache_time = now
-            return result
-        except Exception as e:
-            logger.error(f"获取热力图数据失败: {e}")
-            raise
+        result = self._run_read(
+            _read,
+            error_msg="获取热力图数据失败",
+            reraise=True,
+        )
+        self._heatmap_cache = result
+        self._heatmap_cache_time = now
+        return result
