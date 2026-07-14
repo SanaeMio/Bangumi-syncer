@@ -4,7 +4,7 @@ Docker环境检测和代理配置助手
 
 import os
 import subprocess
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -254,7 +254,7 @@ class DockerProxyHelper:
 
     def test_proxy_connectivity(
         self, proxy_url: str, timeout: int = 5
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试代理连通性"""
         result = {"success": False, "response_time": None, "error": None, "details": {}}
 
@@ -307,7 +307,7 @@ class DockerProxyHelper:
 
     def _test_basic_connectivity(
         self, proxy_url: str, timeout: int = 3
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试基础网络连通性（不通过代理）"""
         result = {"success": False, "error": None, "host": None, "port": None}
 
@@ -350,7 +350,7 @@ class DockerProxyHelper:
 
         return result
 
-    def get_environment_info(self) -> dict[str, any]:
+    def get_environment_info(self) -> dict[str, Any]:
         """获取环境信息"""
         return {
             "is_docker": self.is_docker,
@@ -361,7 +361,7 @@ class DockerProxyHelper:
             "network_diagnosis": self._get_network_diagnosis(),
         }
 
-    def _get_network_diagnosis(self) -> dict[str, any]:
+    def _get_network_diagnosis(self) -> dict[str, Any]:
         """获取网络诊断信息"""
         diagnosis = {
             "container_ip": None,
@@ -443,7 +443,7 @@ class DockerProxyHelper:
 
     def test_host_connectivity(
         self, host: str, port: int = 80, timeout: int = 3
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试到指定主机的连通性"""
         result = {
             "success": False,
@@ -498,7 +498,7 @@ class DockerProxyHelper:
 
     def _test_tcp_connection(
         self, host: str, port: int, timeout: int = 3
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试TCP连接"""
         result = {"success": False, "error": None, "host": host, "port": port}
 
