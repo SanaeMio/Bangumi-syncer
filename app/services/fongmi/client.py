@@ -288,19 +288,16 @@ async def discover_devices(
     if found:
         device_list = ", ".join(f"{d.ip}:{d.port}({d.name})" for d in found)
         logger.info(
-            "fongmi 设备发现：网段 %s.0/24 扫描完成，找到 %d 台设备 → %s",
-            subnet,
-            len(found),
-            device_list,
+            f"fongmi 设备发现：网段 {subnet}.0/24 扫描完成，"
+            f"找到 {len(found)} 台设备 → {device_list}"
         )
     else:
-        logger.info("fongmi 设备发现：网段 %s.0/24 扫描完成，未发现设备", subnet)
+        logger.info(f"fongmi 设备发现：网段 {subnet}.0/24 扫描完成，未发现设备")
 
     if failures:
+        failure_detail = "\n  ".join(failures)
         logger.debug(
-            "fongmi 设备发现：以下 %d 个目标探测失败（详情）：\n  %s",
-            len(failures),
-            "\n  ".join(failures),
+            f"fongmi 设备发现：以下 {len(failures)} 个目标探测失败（详情）：\n  {failure_detail}"
         )
     return found
 
@@ -334,25 +331,22 @@ async def parse_device_entry(
         target_port = port or _DEFAULT_PORT
         info, err = await _probe_device(client, host, target_port)
         if info:
-            logger.debug("fongmi 设备探测成功：%s:%d", host, target_port)
+            logger.debug(f"fongmi 设备探测成功：{host}:{target_port}")
             return _build_device(host, target_port, info)
         if port:
-            logger.debug("fongmi 设备探测失败：%s:%d → %s", host, target_port, err)
+            logger.debug(f"fongmi 设备探测失败：{host}:{target_port} → {err}")
             return None
 
         # 默认端口未命中，并行探测其余端口
         logger.debug(
-            "fongmi 设备默认端口未命中：%s:%d → %s，开始扫描其余端口",
-            host,
-            target_port,
-            err,
+            f"fongmi 设备默认端口未命中：{host}:{target_port} → {err}，开始扫描其余端口"
         )
         other_ports = [p for p in range(PORT_START, PORT_END + 1) if p != _DEFAULT_PORT]
         hit = await _probe_ports(client, host, other_ports)
         if hit:
-            logger.debug("fongmi 设备探测成功（非标端口）：%s:%d", host, hit[0])
+            logger.debug(f"fongmi 设备探测成功（非标端口）：{host}:{hit[0]}")
             return _build_device(host, hit[0], hit[1])
-        logger.debug("fongmi 设备探测失败：端口 %d-%d 全部未命中", PORT_START, PORT_END)
+        logger.debug(f"fongmi 设备探测失败：端口 {PORT_START}-{PORT_END} 全部未命中")
     finally:
         if own_client:
             await client.aclose()

@@ -207,15 +207,12 @@ class TestSyncHttpClient:
         with patch("app.utils.http_base.create_sync_client") as mc:
             mc.return_value = _mock_sync_httpx(response=resp)
             with patch("app.utils.http_base.logger") as ml:
-                client = (
-                    SyncHttpClient(label="T", max_retries=0)
-                    .prefix("🔔")
-                    .success_tpl("推送成功")
-                )
+                client = SyncHttpClient(label="T", max_retries=0).prefix("🔔")
                 client.request("GET", "http://example.com")
-                infos = [str(c) for c in ml.info.call_args_list]
-                assert any("推送成功" in m for m in infos)
-                assert any("[T]" in m and "GET" in m and "200" in m for m in infos)
+                assert ml.info.call_count == 1
+                info_msg = str(ml.info.call_args[0][0])
+                assert "🔔" in info_msg
+                assert "[T]" in info_msg and "GET" in info_msg and "200" in info_msg
                 ml.debug.assert_called()
 
     def test_request_failure_logs(self):
@@ -223,15 +220,12 @@ class TestSyncHttpClient:
         with patch("app.utils.http_base.create_sync_client") as mc:
             mc.return_value = _mock_sync_httpx(side_effect=err)
             with patch("app.utils.http_base.logger") as ml:
-                client = (
-                    SyncHttpClient(label="T", max_retries=0)
-                    .prefix("🔔")
-                    .failure_tpl("推送失败: {error_type}")
-                )
+                client = SyncHttpClient(label="T", max_retries=0).prefix("🔔")
                 with pytest.raises(httpx.ConnectError):
                     client.request("GET", "http://example.com")
-                infos = [str(c) for c in ml.info.call_args_list]
-                assert any("推送失败" in m and "ConnectError" in m for m in infos)
+                assert ml.info.call_count == 1
+                info_msg = str(ml.info.call_args[0][0])
+                assert "ConnectError" in info_msg
 
     def test_request_retries_on_status(self):
         r429 = _mock_response(status_code=429)
@@ -473,7 +467,7 @@ class TestLogging:
         client = SyncHttpClient(label="T").prefix("🚀").success_tpl("成功")
         with patch("app.utils.http_base.logger") as ml:
             client._log_success(resp, "GET", "http://example.com")
-            assert ml.info.call_count == 2
+            assert ml.info.call_count == 1
             ml.debug.assert_called_once()
 
     def test_log_failure_info(self):
@@ -482,9 +476,9 @@ class TestLogging:
         )
         with patch("app.utils.http_base.logger") as ml:
             client._log_failure(ValueError("bad"), "GET", "http://example.com")
-            assert ml.info.call_count == 2
-            infos = [str(c) for c in ml.info.call_args_list]
-            assert any("失败" in m and "ValueError" in m for m in infos)
+            assert ml.info.call_count == 1
+            info_msg = str(ml.info.call_args[0][0])
+            assert "ValueError" in info_msg
 
     def test_log_retry_warning(self):
         client = SyncHttpClient(label="T")

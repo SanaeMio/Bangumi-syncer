@@ -154,15 +154,11 @@ class HttpClientBase:
         logger.debug("\n".join(parts))
 
     def _log_success(self, response: httpx.Response, method: str, url: str) -> None:
-        """INFO: 自定义消息 + 技术摘要; DEBUG: 响应详情"""
-        # INFO: 自定义简短消息
-        msg = self._format_success(response, url)
-        logger.info(f"{self._prefix}{msg}")
-
-        # INFO: 技术摘要
+        """INFO: 合并摘要（prefix + 技术信息）; DEBUG: 响应详情"""
         elapsed = response.elapsed.total_seconds()
+        # INFO: 合并为单条日志
         logger.info(
-            f"[{self._label}] {method.upper()} {url} "
+            f"{self._prefix}[{self._label}] {method.upper()} {url} "
             f"→ {response.status_code} ({elapsed:.2f}s)"
         )
 
@@ -176,16 +172,12 @@ class HttpClientBase:
         logger.debug("\n".join(parts))
 
     def _log_failure(self, error: Exception, method: str, url: str) -> None:
-        """INFO: 自定义消息 + 技术摘要；silent_failure 时静默"""
+        """INFO: 合并摘要；silent_failure 时静默"""
         if self._silent_failure:
             return
-        # INFO: 自定义简短消息
-        msg = self._format_failure(error, url)
-        logger.info(f"{self._prefix}{msg}")
-
-        # INFO: 技术摘要
         logger.info(
-            f"[{self._label}] {method.upper()} {url} → {type(error).__name__}: {error}"
+            f"{self._prefix}[{self._label}] {method.upper()} {url} "
+            f"→ {type(error).__name__}: {error}"
         )
 
     def _log_retry(self, attempt: int, reason: str, delay: float) -> None:
