@@ -105,31 +105,60 @@ class TaskManagerMixin:
     # 媒体服务器同步委托
     # ------------------------------------------------------------------
 
-    async def sync_plex_item_async(self, plex_data: dict[str, Any]) -> str:
-        """异步同步Plex项目，返回任务ID"""
+    def _submit_media_server_task(
+        self, data: dict[str, Any], *, source: str, sync_method_name: str
+    ) -> str:
+        """提交媒体服务器同步任务到线程池，返回任务ID
+
+        Args:
+            data: webhook 报文
+            source: 源名称（plex/emby/jellyfin），用于任务ID前缀和日志
+            sync_method_name: 同步方法名（如 "sync_plex_item"），线程内通过
+                              getattr 解析以支持 patch.object 生效
+        """
         self.cleanup_old_tasks()
         with self._tasks_lock:
             self._task_counter += 1
-            task_id = f"plex_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, plex_data, "plex")
+            task_id = f"{source}_{self._task_counter}_{int(time.time())}"
+            self._register_task(task_id, data, source)
 
-        self._executor.submit(self._sync_plex_item_sync, plex_data, task_id)
-        logger.info(f"Plex同步任务 {task_id} 已提交到异步队列")
+        self._executor.submit(
+            self._run_media_server_task, data, task_id, source, sync_method_name
+        )
+        logger.info(f"{source.capitalize()}同步任务 {task_id} 已提交到异步队列")
         return task_id
+
+    def _run_media_server_task(
+        self,
+        data: dict[str, Any],
+        task_id: str,
+        source: str,
+        sync_method_name: str,
+    ) -> SyncResponse:
+        """媒体服务器同步任务的线程池执行体"""
+        try:
+            self._update_task_status(task_id, "running")
+            result = getattr(self, sync_method_name)(data)
+            self._update_task_status(task_id, "completed", result=result.dict())
+            return result
+        except Exception as e:
+            self._update_task_status(task_id, "failed", error=str(e))
+            logger.error(f"异步{source.capitalize()}同步任务 {task_id} 失败: {e}")
+            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+
+    async def sync_plex_item_async(self, plex_data: dict[str, Any]) -> str:
+        """异步同步Plex项目，返回任务ID"""
+        return self._submit_media_server_task(
+            plex_data, source="plex", sync_method_name="sync_plex_item"
+        )
 
     def _sync_plex_item_sync(
         self, plex_data: dict[str, Any], task_id: str
     ) -> SyncResponse:
         """同步执行Plex同步的内部方法"""
-        try:
-            self._update_task_status(task_id, "running")
-            result = self.sync_plex_item(plex_data)
-            self._update_task_status(task_id, "completed", result=result.dict())
-            return result
-        except Exception as e:
-            self._update_task_status(task_id, "failed", error=str(e))
-            logger.error(f"异步Plex同步任务 {task_id} 失败: {e}")
-            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+        return self._run_media_server_task(
+            plex_data, task_id, "plex", "sync_plex_item"
+        )
 
     def sync_plex_item(self, plex_data: dict[str, Any]) -> SyncResponse:
         """处理Plex同步请求（委托至 plex 子包）"""
@@ -139,29 +168,17 @@ class TaskManagerMixin:
 
     async def sync_emby_item_async(self, emby_data: dict[str, Any]) -> str:
         """异步同步Emby项目，返回任务ID"""
-        self.cleanup_old_tasks()
-        with self._tasks_lock:
-            self._task_counter += 1
-            task_id = f"emby_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, emby_data, "emby")
-
-        self._executor.submit(self._sync_emby_item_sync, emby_data, task_id)
-        logger.info(f"Emby同步任务 {task_id} 已提交到异步队列")
-        return task_id
+        return self._submit_media_server_task(
+            emby_data, source="emby", sync_method_name="sync_emby_item"
+        )
 
     def _sync_emby_item_sync(
         self, emby_data: dict[str, Any], task_id: str
     ) -> SyncResponse:
         """同步执行Emby同步的内部方法"""
-        try:
-            self._update_task_status(task_id, "running")
-            result = self.sync_emby_item(emby_data)
-            self._update_task_status(task_id, "completed", result=result.dict())
-            return result
-        except Exception as e:
-            self._update_task_status(task_id, "failed", error=str(e))
-            logger.error(f"异步Emby同步任务 {task_id} 失败: {e}")
-            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+        return self._run_media_server_task(
+            emby_data, task_id, "emby", "sync_emby_item"
+        )
 
     def sync_emby_item(self, emby_data: dict[str, Any]) -> SyncResponse:
         """处理Emby同步请求（委托至 emby 子包）"""
@@ -171,29 +188,17 @@ class TaskManagerMixin:
 
     async def sync_jellyfin_item_async(self, jellyfin_data: dict[str, Any]) -> str:
         """异步同步Jellyfin项目，返回任务ID"""
-        self.cleanup_old_tasks()
-        with self._tasks_lock:
-            self._task_counter += 1
-            task_id = f"jellyfin_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, jellyfin_data, "jellyfin")
-
-        self._executor.submit(self._sync_jellyfin_item_sync, jellyfin_data, task_id)
-        logger.info(f"Jellyfin同步任务 {task_id} 已提交到异步队列")
-        return task_id
+        return self._submit_media_server_task(
+            jellyfin_data, source="jellyfin", sync_method_name="sync_jellyfin_item"
+        )
 
     def _sync_jellyfin_item_sync(
         self, jellyfin_data: dict[str, Any], task_id: str
     ) -> SyncResponse:
         """同步执行Jellyfin同步的内部方法"""
-        try:
-            self._update_task_status(task_id, "running")
-            result = self.sync_jellyfin_item(jellyfin_data)
-            self._update_task_status(task_id, "completed", result=result.dict())
-            return result
-        except Exception as e:
-            self._update_task_status(task_id, "failed", error=str(e))
-            logger.error(f"异步Jellyfin同步任务 {task_id} 失败: {e}")
-            return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
+        return self._run_media_server_task(
+            jellyfin_data, task_id, "jellyfin", "sync_jellyfin_item"
+        )
 
     def sync_jellyfin_item(self, jellyfin_data: dict[str, Any]) -> SyncResponse:
         """处理Jellyfin同步请求（委托至 jellyfin 子包）"""
