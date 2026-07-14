@@ -1,314 +1,29 @@
-import io
-import os
-import re
-import time
-from collections.abc import Generator
-from datetime import datetime, timedelta
-from typing import Optional
+"""BangumiData 标题匹配 Mixin
 
-import httpx
-import ijson
+职责：
+- 根据标题/原始标题/发布日期/季度查找 bangumi_id
+- 精确索引匹配 + 线性扫描模糊匹配
+- 标题相似度计算、日期差异、关键字符校验
+- 搜索调试接口
+
+所有方法通过 self. 访问其他 mixin（CacheMixin 提供 _parse_data 等），
+由 __init__.py 中的 BangumiData 组合类统一持有实例状态。
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import datetime
+
 from rapidfuzz import fuzz
 
-from ..core.config import config_manager
-from ..core.logging import logger
-from .http_client import create_sync_client
-
-# 使用全局logger实例
+from ...core.logging import logger
 
 
-class _BufferedResponse:
-    """包装 httpx.Response，兼容旧 requests 风格的 iter_content / raw / with 上下文。
+class MatchingMixin:
+    """标题匹配与番剧 ID 查找相关方法"""
 
-    httpx 同步流式需在 client 存活期间消费；这里在构造时一次性 read() 到
-    response.content（bangumi-data 约 5MB，内存可接受），从而解绑 client 生命周期，
-    并提供 iter_content / raw 兼容旧调用方。
-    """
-
-    def __init__(self, response: httpx.Response):
-        self._response = response
-        # 确保内容已读取到内存（解绑 client 连接池）
-        response.read()
-        self.content = response.content
-        self.status_code = response.status_code
-        self.headers = response.headers
-
-    @property
-    def raw(self):
-        """兼容 requests 的 response.raw（ijson 增量解析使用）"""
-        return io.BytesIO(self.content)
-
-    def iter_content(self, chunk_size=8192):
-        """兼容 requests 的 iter_content"""
-        with io.BytesIO(self.content) as f:
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                yield chunk
-
-    def raise_for_status(self):
-        self._response.raise_for_status()
-
-    def json(self):
-        return self._response.json()
-
-    @property
-    def text(self):
-        return self._response.text
-
-    def close(self):
-        self._response.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
-
-
-def _request_with_retry(
-    url, proxies=None, stream=False, max_retries=3, ssl_verify=True
-):
-    """带重试机制的HTTP请求方法（基于 httpx 同步客户端）
-
-    proxies 参数兼容旧 requests 风格的 dict，内部转换为 httpx 代理字符串。
-    返回 _BufferedResponse（兼容旧调用方的 iter_content / raw / with 上下文）。
-    """
-    # 将 requests 风格的 proxies dict 转换为 httpx 代理字符串
-    proxy_url = None
-    if proxies:
-        proxy_url = proxies.get("https") or proxies.get("http")
-
-    response = None
-    for attempt in range(max_retries + 1):
-        try:
-            with create_sync_client(
-                proxy=proxy_url, verify=ssl_verify, timeout=30.0
-            ) as client:
-                response = client.get(url)
-
-                # 先检查是否需要重试的状态码，再决定是否抛异常
-                if response.status_code in [429, 500, 502, 503, 504]:
-                    if attempt < max_retries:
-                        delay = 2**attempt  # 指数退避: 2, 4, 8秒
-                        logger.error(
-                            f"HTTP {response.status_code} 错误，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
-                        )
-                        time.sleep(delay)
-                        continue
-                    else:
-                        logger.error(
-                            f"HTTP {response.status_code} 错误，已达到最大重试次数 {max_retries}"
-                        )
-
-                response.raise_for_status()
-                # 包装为兼容旧 requests 风格的响应对象
-                return _BufferedResponse(response)
-
-        except (
-            httpx.TimeoutException,
-            httpx.ConnectError,
-            httpx.HTTPError,
-        ) as e:
-            if attempt < max_retries:
-                delay = 2**attempt  # 指数退避: 2, 4, 8秒
-                logger.error(
-                    f"请求异常: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
-                )
-                time.sleep(delay)
-                continue
-            else:
-                logger.error(f"请求异常: {str(e)}，已达到最大重试次数 {max_retries}")
-                raise e
-
-    return _BufferedResponse(response)  # type: ignore[arg-type]
-
-
-class BangumiData:
-    """处理 bangumi-data 数据的类"""
-
-    def __init__(self):
-        self.data_url = config_manager.get(
-            "bangumi-data",
-            "data_url",
-            fallback="https://unpkg.com/bangumi-data@0.3/dist/data.json",
-        )
-        self.local_cache_path = config_manager.get(
-            "bangumi-data", "local_cache_path", fallback="./bangumi_data_cache.json"
-        )
-        self.http_proxy = config_manager.get(
-            "bangumi-data",
-            "http_proxy",
-            fallback=config_manager.get("dev", "script_proxy", fallback=""),
-        )
-        self.ssl_verify = config_manager.get("dev", "ssl_verify", fallback=True)
-        self.use_cache = config_manager.get("bangumi-data", "use_cache", fallback=True)
-        # 缓存有效期（天），默认7天
-        self.cache_ttl_days = config_manager.get(
-            "bangumi-data", "cache_ttl_days", fallback=7
-        )
-        self._cached_data = None
-        self._cache_items = None
-        # 内存缓存，避免重复解析文件
-        self._data_cache = None
-        self._cache_timestamp = None
-        self._cache_hit_count = 0  # 缓存命中次数
-        self._cache_miss_count = 0  # 缓存未命中次数
-        # 是否启用更详细的日志，用于调试匹配问题
-        self.verbose_logging = config_manager.get("dev", "debug", fallback=False)
-        self._cache_tmdb_mapping: dict[str, str] = {}
-        # 精确匹配索引：title → [item]，加速常用查询
-        self._title_index: dict[str, list[dict]] = {}
-
-        # 启动时检查缓存，如果缺少则下载
-        self._check_and_download_cache_on_startup()
-
-        # 启动时预加载数据到内存
-        self._preload_data_to_memory()
-
-        # 启动时构建 TMDB 映射番剧名, 用于 trakt 同步时快速查找
-        self._build_tmdb_mapping()
-
-        # 启动时构建标题精确匹配索引
-        self._build_title_index()
-
-    def _is_cache_valid(self) -> bool:
-        """检查缓存是否有效（未过期）"""
-        if not os.path.exists(self.local_cache_path):
-            return False
-
-        try:
-            # 获取文件最后修改时间
-            mtime = os.path.getmtime(self.local_cache_path)
-            last_modified = datetime.fromtimestamp(mtime)
-            now = datetime.now()
-
-            # 如果缓存时间小于设定的TTL，则缓存有效
-            return (now - last_modified) < timedelta(days=self.cache_ttl_days)
-        except Exception as e:
-            logger.error(f"检查缓存有效期时出错: {e}")
-            return False
-
-    def _download_data(self) -> bool:
-        """从远程下载 bangumi-data 数据
-
-        返回:
-            bool: 下载是否成功
-        """
-        logger.debug(f"正在从 {self.data_url} 下载 bangumi-data...")
-
-        proxies = {}
-        if self.http_proxy:
-            proxies = {"http": self.http_proxy, "https": self.http_proxy}
-
-        try:
-            response = _request_with_retry(
-                self.data_url, proxies=proxies, stream=True, ssl_verify=self.ssl_verify
-            )
-
-            # 确保缓存目录存在
-            cache_dir = os.path.dirname(self.local_cache_path)
-            if cache_dir and not os.path.exists(cache_dir):
-                os.makedirs(cache_dir, exist_ok=True)
-
-            # 如果设置了使用缓存，则保存到本地
-            if self.use_cache:
-                with open(self.local_cache_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                logger.debug(f"bangumi-data 已缓存到 {self.local_cache_path}")
-
-            return True
-        except Exception as e:
-            logger.error(f"下载 bangumi-data 失败: {e}")
-            return False
-
-    def _ensure_fresh_data(self) -> bool:
-        """确保数据是最新的
-
-        如果缓存不存在或已过期，则重新下载
-
-        返回:
-            bool: 是否成功确保数据最新
-        """
-        if not self.use_cache:
-            return True
-
-        if not self._is_cache_valid():
-            logger.debug("缓存不存在或已过期，正在重新下载数据...")
-            return self._download_data()
-
-        return True
-
-    def _parse_data(self) -> Generator[dict, None, None]:
-        """解析数据，以生成器方式返回，使用内存缓存避免重复解析"""
-        # 首先确保数据是最新的
-        self._ensure_fresh_data()
-
-        # 检查内存缓存是否有效
-        if self._data_cache is not None:
-            self._cache_hit_count += 1
-            logger.debug(f"使用内存缓存数据 (命中次数: {self._cache_hit_count})")
-            for item in self._data_cache:
-                yield item
-            return
-
-        self._cache_miss_count += 1
-        logger.debug(f"缓存未命中，重新解析数据 (未命中次数: {self._cache_miss_count})")
-
-        # 如果没有缓存，先解析数据到内存
-        logger.debug("解析数据到内存缓存")
-        items = []
-
-        if self.use_cache and os.path.exists(self.local_cache_path):
-            # 从缓存文件中解析
-            try:
-                with open(self.local_cache_path, "rb") as f:
-                    for item in ijson.items(f, "items.item"):
-                        items.append(item)
-            except Exception as e:
-                logger.error(f"从缓存解析 bangumi-data 失败: {e}")
-
-                # 如果缓存文件解析失败，尝试重新下载
-                if self._download_data():
-                    with open(self.local_cache_path, "rb") as f:
-                        for item in ijson.items(f, "items.item"):
-                            items.append(item)
-        else:
-            # 从网络直接解析
-            try:
-                proxies = {}
-                if self.http_proxy:
-                    proxies = {"http": self.http_proxy, "https": self.http_proxy}
-
-                with _request_with_retry(
-                    self.data_url,
-                    proxies=proxies,
-                    stream=True,
-                    ssl_verify=self.ssl_verify,
-                ) as response:
-                    for item in ijson.items(response.raw, "items.item", use_float=True):
-                        items.append(item)
-            except Exception as e:
-                logger.error(f"流式解析 bangumi-data 失败: {e}")
-                # 如果网络请求失败，但有缓存文件，尝试使用缓存
-                if os.path.exists(self.local_cache_path):
-                    logger.debug(f"尝试使用缓存文件 {self.local_cache_path}")
-                    with open(self.local_cache_path, "rb") as f:
-                        for item in ijson.items(f, "items.item"):
-                            items.append(item)
-
-        # 更新内存缓存
-        self._data_cache = items
-        self._cache_timestamp = time.time()
-
-        # 数据已刷新，重建标题索引
-        self._build_title_index()
-
-        # 从内存缓存中yield数据
-        for item in items:
-            yield item
+    # ----- 公开查找入口 -----
 
     def find_bangumi_id(
         self,
@@ -316,7 +31,7 @@ class BangumiData:
         ori_title: str = None,
         release_date: str = None,
         season: int = 1,
-    ) -> Optional[tuple[str, str, bool]]:
+    ) -> tuple[str, str, bool] | None:
         """
         根据标题和其他信息查找 bangumi id
 
@@ -363,12 +78,14 @@ class BangumiData:
             return result
         return None
 
+    # ----- 精确索引匹配 -----
+
     def _try_exact_match(
         self,
         title: str,
         ori_title: str,
         release_date: str,
-    ) -> Optional[tuple[str, str, bool]]:
+    ) -> tuple[str, str, bool] | None:
         """尝试通过标题索引进行精确匹配（O(1)查找，避免线性扫描）
 
         Returns:
@@ -417,6 +134,8 @@ class BangumiData:
                 return (first[1], first[2], False)
 
         return None
+
+    # ----- 线性扫描 -----
 
     def _scan_candidates(
         self,
@@ -472,6 +191,8 @@ class BangumiData:
 
         return exact_matches, partial_matches, processed_count
 
+    # ----- 选择最佳匹配 -----
+
     def _select_from_exact_matches(
         self,
         title: str,
@@ -479,7 +200,7 @@ class BangumiData:
         partial_matches: list,
         release_date: str,
         season: int,
-    ) -> Optional[tuple[str, str, bool]]:
+    ) -> tuple[str, str, bool] | None:
         """从完全匹配结果中选择最佳匹配
 
         Returns:
@@ -570,7 +291,7 @@ class BangumiData:
     def _select_from_partial_matches(
         self,
         partial_matches: list,
-    ) -> Optional[tuple[str, str, bool]]:
+    ) -> tuple[str, str, bool] | None:
         """从部分匹配结果中选择最佳匹配（模糊匹配）
 
         Returns:
@@ -606,6 +327,8 @@ class BangumiData:
 
         return None
 
+    # ----- 优化查找主流程 -----
+
     def _find_bangumi_id_optimized(
         self,
         title: str,
@@ -613,7 +336,7 @@ class BangumiData:
         release_date: str = None,
         original_title: str = None,
         season: int = 1,
-    ) -> Optional[tuple[str, str, bool]]:
+    ) -> tuple[str, str, bool] | None:
         """优化的番剧ID查找算法，避免重复计算相似度
 
         Returns:
@@ -658,46 +381,7 @@ class BangumiData:
         logger.debug("未找到匹配的番剧 ID")
         return None
 
-    def get_cache_stats(self) -> dict:
-        """获取缓存统计信息
-
-        返回:
-            Dict: 包含缓存统计信息的字典
-        """
-        total_requests = self._cache_hit_count + self._cache_miss_count
-        hit_rate = (
-            (self._cache_hit_count / total_requests * 100) if total_requests > 0 else 0
-        )
-
-        return {
-            "cache_hits": self._cache_hit_count,
-            "cache_misses": self._cache_miss_count,
-            "total_requests": total_requests,
-            "hit_rate": hit_rate,
-            "cache_size": len(self._data_cache) if self._data_cache else 0,
-            "cache_age_minutes": (time.time() - self._cache_timestamp) / 60
-            if self._cache_timestamp
-            else 0,
-        }
-
-    def clear_cache(self):
-        """清理内存缓存"""
-        self._data_cache = None
-        self._cache_timestamp = None
-        self._title_index.clear()
-        logger.debug("内存缓存已清理")
-
-    def force_update(self) -> bool:
-        """强制更新 bangumi-data 数据
-
-        返回:
-            bool: 更新是否成功
-        """
-        logger.info("强制更新 bangumi-data 数据...")
-        success = self._download_data()
-        if success:
-            self.clear_cache()
-        return success
+    # ----- 标题匹配辅助 -----
 
     def _match_title_fuzzy(self, item: dict, title: str, ori_title: str = None) -> bool:
         """检查番剧条目是否可能匹配给定的标题（模糊匹配）"""
@@ -731,7 +415,7 @@ class BangumiData:
 
     def _match_title(
         self, item: dict, title: str, ori_title: str = None
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         检查番剧条目是否匹配给定的标题
 
@@ -934,7 +618,7 @@ class BangumiData:
         match_info = self._calculate_match_info(item, title, ori_title, release_date)
         return match_info["score"]
 
-    def _extract_bangumi_id(self, item: dict) -> Optional[str]:
+    def _extract_bangumi_id(self, item: dict) -> str | None:
         """从番剧条目中提取 bangumi id"""
         if not item or "sites" not in item:
             return None
@@ -946,6 +630,8 @@ class BangumiData:
                     return site_id
 
         return None
+
+    # ----- 调试用搜索 -----
 
     def search_title(self, title: str) -> list[dict]:
         """
@@ -995,126 +681,3 @@ class BangumiData:
                     )
 
         return results
-
-    def _check_and_download_cache_on_startup(self):
-        """启动时检查缓存，如果缺少则下载
-
-        这个方法在类初始化时被调用，确保缓存文件存在且有效
-        """
-        if not self.use_cache:
-            logger.debug("缓存功能已禁用，跳过缓存检查")
-            return
-
-        if not os.path.exists(self.local_cache_path):
-            logger.info(f"缓存文件不存在: {self.local_cache_path}，正在下载...")
-            success = self._download_data()
-            if success:
-                logger.info("缓存文件下载成功")
-            else:
-                logger.warning("缓存文件下载失败，将在需要时尝试从网络获取数据")
-        elif not self._is_cache_valid():
-            logger.info(f"缓存文件已过期（超过 {self.cache_ttl_days} 天），正在更新...")
-            success = self._download_data()
-            if success:
-                logger.info("缓存文件更新成功")
-            else:
-                logger.warning("缓存文件更新失败，将使用现有缓存文件")
-        else:
-            logger.debug("缓存文件存在且有效，无需下载")
-
-    def _preload_data_to_memory(self):
-        """初始化时预加载数据到内存"""
-        try:
-            logger.info("初始化时预加载 bangumi-data 到内存...")
-            start_time = time.time()
-
-            # 确保数据是最新的
-            self._ensure_fresh_data()
-
-            # 解析数据到内存
-            items = []
-            if self.use_cache and os.path.exists(self.local_cache_path):
-                # 从缓存文件中解析
-                try:
-                    with open(self.local_cache_path, "rb") as f:
-                        for item in ijson.items(f, "items.item"):
-                            items.append(item)
-                except Exception as e:
-                    logger.error(f"预加载时从缓存解析 bangumi-data 失败: {e}")
-                    return
-            else:
-                # 从网络直接解析
-                try:
-                    proxies = {}
-                    if self.http_proxy:
-                        proxies = {"http": self.http_proxy, "https": self.http_proxy}
-
-                    with _request_with_retry(
-                        self.data_url,
-                        proxies=proxies,
-                        stream=True,
-                        ssl_verify=self.ssl_verify,
-                    ) as response:
-                        for item in ijson.items(
-                            response.raw, "items.item", use_float=True
-                        ):
-                            items.append(item)
-                except Exception as e:
-                    logger.error(f"预加载时流式解析 bangumi-data 失败: {e}")
-                    return
-
-            # 更新内存缓存
-            self._data_cache = items
-            self._cache_timestamp = time.time()
-
-            end_time = time.time()
-            logger.info(
-                f"预加载完成，共加载 {len(items)} 个项目，耗时 {end_time - start_time:.2f}秒"
-            )
-
-        except Exception as e:
-            logger.error(f"预加载 bangumi-data 到内存失败: {e}")
-            # 预加载失败不影响后续使用，会在第一次调用时重新加载
-
-    def _build_tmdb_mapping(self):
-        """构建 TMDB id 到番剧名的映射"""
-
-        for item in self._parse_data():
-            tmdb_id = None
-
-            # 提取 TMDB id
-            for site in item.get("sites", []):
-                if site.get("site") == "tmdb":
-                    tmdb_id = site.get("id")
-                    self._cache_tmdb_mapping[tmdb_id] = item.get("title", "")
-                    break
-
-    def _build_title_index(self):
-        """构建标题→item 精确匹配索引，加速常用查找"""
-        self._title_index.clear()
-        for item in self._parse_data():
-            # 原标题（通常是日文），过滤空白标题
-            raw_title = item.get("title")
-            if raw_title and raw_title.strip():
-                self._title_index.setdefault(raw_title, []).append(item)
-            # 中文翻译标题，过滤空白标题
-            if "titleTranslate" in item and "zh-Hans" in item["titleTranslate"]:
-                for zh_title in item["titleTranslate"]["zh-Hans"]:
-                    if zh_title and zh_title.strip():
-                        self._title_index.setdefault(zh_title, []).append(item)
-        logger.info(f"标题索引构建完成，共 {len(self._title_index)} 个唯一标题")
-
-    def get_title_by_tmdb_id(self, tmdb_id: str) -> Optional[str]:
-        """根据 TMDB id 获取番剧名
-
-        Args:
-            tmdb_id: TMDB id
-
-        Returns:
-            番剧名或 None
-        """
-        return self._cache_tmdb_mapping.get(tmdb_id, None)
-
-
-# 全局 bangumi_data 实例
-bangumi_data = BangumiData()
