@@ -73,7 +73,7 @@ def test_webhook_notification_success(mock_config_with_webhook):
     mock_response = MagicMock()
     mock_response.status_code = 200
     with patch(
-        "app.utils.notifier.httpx.post", return_value=mock_response
+        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
     ) as mock_post:
         notifier = Notifier(mock_config_with_webhook)
         _result = notifier.send_notification_by_type(
@@ -117,7 +117,7 @@ def test_webhook_notification_with_template(mock_config_with_webhook):
     mock_response = MagicMock()
     mock_response.status_code = 200
     with patch(
-        "app.utils.notifier.httpx.post", return_value=mock_response
+        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
     ) as mock_post:
         notifier = Notifier(config)
         notifier.send_notification_by_type(
@@ -155,7 +155,7 @@ def test_webhook_get_request(mock_config_with_webhook):
 
     mock_response = MagicMock()
     mock_response.status_code = 200
-    with patch("app.utils.notifier.httpx.get", return_value=mock_response) as mock_get:
+    with patch("app.utils.notifier.webhook.httpx.get", return_value=mock_response) as mock_get:
         notifier = Notifier(config)
         notifier.send_notification_by_type(
             "mark_success",
@@ -177,7 +177,7 @@ def test_webhook_notification_failure(mock_config_with_webhook):
     mock_response = MagicMock()
     mock_response.status_code = 500
     with patch(
-        "app.utils.notifier.httpx.post", return_value=mock_response
+        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
     ) as mock_post:
         notifier = Notifier(mock_config_with_webhook)
         notifier.send_notification_by_type(
@@ -217,7 +217,7 @@ def test_webhook_filter_by_type(mock_config_with_webhook):
     mock_response = MagicMock()
     mock_response.status_code = 200
     with patch(
-        "app.utils.notifier.httpx.post", return_value=mock_response
+        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
     ) as mock_post:
         notifier = Notifier(config)
 
@@ -258,7 +258,7 @@ def test_webhook_disabled(mock_config_with_webhook):
     mock_response = MagicMock()
     mock_response.status_code = 200
     with patch(
-        "app.utils.notifier.httpx.post", return_value=mock_response
+        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
     ) as mock_post:
         notifier = Notifier(config)
         _result = notifier.send_notification_by_type(

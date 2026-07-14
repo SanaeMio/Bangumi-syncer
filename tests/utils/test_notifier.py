@@ -270,7 +270,7 @@ class TestNotifierBuildSimpleEmailHtml:
 class TestNotifierSendWebhookByConfig:
     """测试webhook发送"""
 
-    @patch("app.utils.notifier.httpx.post")
+    @patch("app.utils.notifier.webhook.httpx.post")
     def test_send_webhook_post_success(self, mock_post):
         """测试POST webhook成功"""
         mock_response = MagicMock()
@@ -292,7 +292,7 @@ class TestNotifierSendWebhookByConfig:
         assert result is True
         mock_post.assert_called_once()
 
-    @patch("app.utils.notifier.httpx.get")
+    @patch("app.utils.notifier.webhook.httpx.get")
     def test_send_webhook_get_success(self, mock_get):
         """测试GET webhook成功"""
         mock_response = MagicMock()
@@ -313,7 +313,7 @@ class TestNotifierSendWebhookByConfig:
         result = notifier._send_webhook_by_config(webhook_config, "mark_success", data)
         assert result is True
 
-    @patch("app.utils.notifier.httpx.post")
+    @patch("app.utils.notifier.webhook.httpx.post")
     def test_send_webhook_failure_status(self, mock_post):
         """测试webhook返回非成功状态"""
         mock_response = MagicMock()
@@ -332,7 +332,7 @@ class TestNotifierSendWebhookByConfig:
         result = notifier._send_webhook_by_config(webhook_config, "mark_success", data)
         assert result is False
 
-    @patch("app.utils.notifier.httpx.post")
+    @patch("app.utils.notifier.webhook.httpx.post")
     def test_send_webhook_exception(self, mock_post):
         """测试webhook异常"""
         mock_post.side_effect = Exception("Network error")
@@ -352,8 +352,8 @@ class TestNotifierSendWebhookByConfig:
 class TestNotifierSendEmailByConfig:
     """测试邮件发送"""
 
-    @patch("app.utils.notifier.smtplib.SMTP")
-    @patch("app.utils.notifier.os.path.exists", return_value=False)
+    @patch("app.utils.notifier.email_sender.smtplib.SMTP")
+    @patch("app.utils.notifier.html_builders.os.path.exists", return_value=False)
     def test_send_email_starttls_success(self, mock_exists, mock_smtp):
         """测试STARTTLS邮件发送成功"""
         mock_server = MagicMock()
@@ -380,8 +380,8 @@ class TestNotifierSendEmailByConfig:
         mock_server.starttls.assert_called_once()
         mock_server.login.assert_called_once()
 
-    @patch("app.utils.notifier.smtplib.SMTP_SSL")
-    @patch("app.utils.notifier.os.path.exists", return_value=False)
+    @patch("app.utils.notifier.email_sender.smtplib.SMTP_SSL")
+    @patch("app.utils.notifier.html_builders.os.path.exists", return_value=False)
     def test_send_email_ssl_success(self, mock_exists, mock_smtp_ssl):
         """测试SSL邮件发送成功"""
         mock_server = MagicMock()
@@ -404,7 +404,7 @@ class TestNotifierSendEmailByConfig:
         result = notifier._send_email_by_config(email_config, "mark_success", data)
         assert result is True
 
-    @patch("app.utils.notifier.os.path.exists", return_value=False)
+    @patch("app.utils.notifier.html_builders.os.path.exists", return_value=False)
     def test_send_email_no_to_address(self, mock_exists):
         """测试无收件人地址"""
         mock_config = MagicMock()
@@ -422,8 +422,8 @@ class TestNotifierSendEmailByConfig:
         result = notifier._send_email_by_config(email_config, "mark_success", data)
         assert result is False
 
-    @patch("app.utils.notifier.smtplib.SMTP")
-    @patch("app.utils.notifier.os.path.exists", return_value=False)
+    @patch("app.utils.notifier.email_sender.smtplib.SMTP")
+    @patch("app.utils.notifier.html_builders.os.path.exists", return_value=False)
     def test_send_email_auth_error(self, mock_exists, mock_smtp):
         """测试邮件认证失败"""
         mock_server = MagicMock()
@@ -700,7 +700,7 @@ class TestNotifierParseHeaders:
 class TestNotifierTestNotification:
     """测试通知测试功能"""
 
-    @patch("app.utils.notifier.httpx.post")
+    @patch("app.utils.notifier.webhook.httpx.post")
     def test_test_notification_webhook(self, mock_post):
         """测试webhook通知测试"""
         mock_response = MagicMock()
@@ -842,7 +842,7 @@ class TestNotifierGetConfigs:
 class TestNotifierSendNotificationByType:
     """测试按类型发送通知"""
 
-    @patch("app.utils.notifier.httpx.post")
+    @patch("app.utils.notifier.webhook.httpx.post")
     def test_send_notification_by_type_webhook(self, mock_post):
         """测试按类型发送webhook通知"""
         mock_response = MagicMock()
@@ -880,7 +880,7 @@ class TestNotifierSendNotificationByType:
 class TestNotifierIntegration:
     """通知集成测试"""
 
-    @patch("app.utils.notifier.httpx.post")
+    @patch("app.utils.notifier.webhook.httpx.post")
     def test_send_webhook_success(self, mock_post):
         """测试发送 webhook 成功"""
         mock_response = MagicMock()
@@ -898,7 +898,7 @@ class TestNotifierIntegration:
         # 注意：这里需要调用实际的 send_notification 方法
         # 但由于方法可能不存在，我们测试基本功能
 
-    @patch("app.utils.notifier.httpx.post")
+    @patch("app.utils.notifier.webhook.httpx.post")
     def test_send_webhook_failure(self, mock_post):
         """测试发送 webhook 失败"""
         mock_post.side_effect = Exception("Network error")
