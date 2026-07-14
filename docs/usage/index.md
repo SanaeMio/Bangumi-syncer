@@ -12,5 +12,6 @@ order: 30
 - [Plex Webhooks](./plex-webhooks)
 - [Emby 通知](./emby)
 - [Jellyfin Webhook 插件](./jellyfin)
-- [Trakt.tv 定时同步](./trakt)
+- [Trakt定时同步](./trakt)
 - [飞牛定时同步](./feiniu)
+- [fongmi定时同步](./fongmi)
