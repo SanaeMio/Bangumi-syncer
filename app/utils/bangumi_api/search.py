@@ -54,7 +54,7 @@ class SearchMixin:
             if not isinstance(res, dict):
                 logger.error(f"search API返回非字典类型: {type(res)}, 内容: {res}")
                 res = {"data": []}
-        except Exception as e:
+        except ValueError as e:
             logger.error(f"search JSON解析失败: {e}")
             res = {"data": []}
 
@@ -100,7 +100,7 @@ class SearchMixin:
             if not isinstance(res, dict):
                 logger.error(f"get_subject API返回非字典类型: {type(res)}, 内容: {res}")
                 res = {}
-        except Exception as e:
+        except ValueError as e:
             logger.error(f"get_subject JSON解析失败: {e}")
             res = {}
 

@@ -271,7 +271,7 @@ class TestSearchAndSubjectJsonBranches:
         with patch.object(api, "get", return_value=raw):
             assert api.get_subject(1) == {}
         raw2 = MagicMock(status_code=200)
-        raw2.json.side_effect = OSError("read")
+        raw2.json.side_effect = ValueError("read")
         with patch.object(api, "get", return_value=raw2):
             assert api.get_subject(2) == {}
 

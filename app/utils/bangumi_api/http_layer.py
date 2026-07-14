@@ -108,7 +108,7 @@ class HttpLayerMixin:
                 logger.info("   1. 防火墙设置")
                 logger.info("   2. 网络代理配置")
                 logger.info("   3. 是否需要VPN或其他网络工具")
-        except Exception as e:
+        except OSError as e:
             logger.error(f"❌ TCP连接测试异常: {e}")
 
     def _request_with_retry(self, method, session, url, max_retries=3, **kwargs):
@@ -212,7 +212,7 @@ class HttpLayerMixin:
                                 self._proxy_failed = True
                                 logger.info("✅ 直连成功！已成功绕过代理问题")
                                 return direct_result
-                        except Exception as direct_error:
+                        except (httpx.HTTPError, ValueError) as direct_error:
                             logger.error(f"❌ 直连也失败了: {str(direct_error)}")
 
                     # 如果是DNS错误，进行网络诊断

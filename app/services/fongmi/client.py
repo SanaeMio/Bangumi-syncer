@@ -188,7 +188,7 @@ async def _probe_device(client: httpx.AsyncClient, ip: str, port: int) -> dict |
             info = resp.json()
             if isinstance(info, dict) and _is_fongmi_device_info(info):
                 return info
-    except Exception as e:
+    except (httpx.HTTPError, ValueError) as e:
         logger.debug("设备探测失败: %s", e)
     return None
 

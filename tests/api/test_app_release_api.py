@@ -237,7 +237,7 @@ def test_merge_latest_if_missing_noop_when_current_not_less_than_latest():
 
 def test_merge_latest_if_missing_skips_when_compare_raises():
     items: list[ReleaseListItem] = []
-    with patch("app.api.app_release.is_less_than", side_effect=RuntimeError("x")):
+    with patch("app.api.app_release.is_less_than", side_effect=ValueError("x")):
         _merge_latest_if_missing(
             items,
             latest_sem="2.0.0",

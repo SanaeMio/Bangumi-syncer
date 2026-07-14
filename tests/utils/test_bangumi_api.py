@@ -270,7 +270,7 @@ class TestDiagnoseNetworkIssue:
         ):
             mock_dns.return_value = [(None, None, None, None, ("1.2.3.4", 443))]
             mock_sock = MagicMock()
-            mock_sock.connect_ex.side_effect = RuntimeError("sock err")
+            mock_sock.connect_ex.side_effect = OSError("sock err")
             MockSocket.return_value = mock_sock
             api._diagnose_network_issue("https://example.com")
 
@@ -382,7 +382,7 @@ class TestRequestWithRetry:
             patch.object(
                 api,
                 "_try_direct_connection",
-                side_effect=ConnectionError("direct fail"),
+                side_effect=httpx.ConnectError("direct fail"),
             ),
             pytest.raises(httpx.ConnectError),
         ):

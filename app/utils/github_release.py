@@ -362,7 +362,7 @@ async def fetch_releases_in_minor_line(
                     try:
                         if same_minor_line(item.semver, reference_semver):
                             collected.append(item)
-                    except Exception:
+                    except (ValueError, TypeError):
                         continue
                 if len(arr) < per_page:
                     break

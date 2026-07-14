@@ -136,7 +136,7 @@ def _merge_latest_if_missing(
         if not is_less_than(current_cmp, latest_sem):
             return
 
-    except Exception:
+    except (ValueError, TypeError):
         return
 
     items.append(
