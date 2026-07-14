@@ -83,7 +83,7 @@ async def _handle_custom_sync(
             elif result.status == "ignored":
                 response.status_code = 200
 
-            return result.dict()
+            return result.model_dump()
     except Exception as e:
         logger.error(f"自定义同步API处理出错: {e}")
         response.status_code = 500
@@ -194,7 +194,7 @@ async def test_sync(
             elapsed_time = round(time.time() - start_time, 2)
 
             # 精简返回信息
-            response_data = result.dict()
+            response_data = result.model_dump()
             response_data["elapsed_time"] = f"{elapsed_time}秒"
             response_data["test_info"] = {
                 "title": test_item.title,
@@ -337,7 +337,7 @@ async def retry_sync_record(
             )
         # 如果重试仍然失败，保持原状态不变
 
-        return {"status": "success", "message": "重试完成", "data": result.dict()}
+        return {"status": "success", "message": "重试完成", "data": result.model_dump()}
 
     except HTTPException:
         raise
@@ -451,7 +451,9 @@ async def _parse_plex_body(request: Request) -> dict:
     return json.loads(extract_plex_json(json_str))
 
 
-async def _handle_plex_sync(plex_request: Request, webhook_key: str = "") -> dict[str, Any]:
+async def _handle_plex_sync(
+    plex_request: Request, webhook_key: str = ""
+) -> dict[str, Any]:
     """处理Plex同步请求的内部函数"""
     return await _dispatch_media_server_webhook(
         plex_request,
@@ -496,7 +498,9 @@ async def _parse_emby_body(request: Request) -> dict:
         raise ValueError("无效的请求格式")
 
 
-async def _handle_emby_sync(emby_request: Request, webhook_key: str = "") -> dict[str, Any]:
+async def _handle_emby_sync(
+    emby_request: Request, webhook_key: str = ""
+) -> dict[str, Any]:
     """处理Emby同步请求的内部函数"""
     try:
         return await _dispatch_media_server_webhook(
@@ -536,7 +540,9 @@ async def _parse_jellyfin_body(request: Request) -> dict:
     return json.loads(json_str)
 
 
-async def _handle_jellyfin_sync(jellyfin_request: Request, webhook_key: str = "") -> dict[str, Any]:
+async def _handle_jellyfin_sync(
+    jellyfin_request: Request, webhook_key: str = ""
+) -> dict[str, Any]:
     """处理Jellyfin同步请求的内部函数"""
     return await _dispatch_media_server_webhook(
         jellyfin_request,
