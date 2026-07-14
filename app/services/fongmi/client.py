@@ -198,17 +198,23 @@ def _build_device(ip: str, port: int, info: dict) -> FongmiDevice:
     )
 
 
-async def _probe_device(client: AsyncHttpClient, ip: str, port: int) -> dict | None:
-    """探测单个 ip:port 的 /device 端点"""
+async def _probe_device(
+    client: AsyncHttpClient, ip: str, port: int
+) -> tuple[dict | None, str | None]:
+    """探测单个 ip:port 的 /device 端点。
+
+    返回 (info, error)：成功时 (info, None)，失败时 (None, 原因)。
+    """
     try:
         resp = await client.get(f"http://{ip}:{port}/device", timeout=_PROBE_TIMEOUT)
-        if resp.status_code == 200:
-            info = resp.json()
-            if isinstance(info, dict) and _is_fongmi_device_info(info):
-                return info
+        if resp.status_code != 200:
+            return None, f"HTTP {resp.status_code}"
+        info = resp.json()
+        if isinstance(info, dict) and _is_fongmi_device_info(info):
+            return info, None
+        return None, "非 fongmi 设备"
     except (httpx.HTTPError, ValueError) as e:
-        logger.debug("设备探测失败: %s", e)
-    return None
+        return None, str(e) or type(e).__name__
 
 
 async def _probe_ports(
@@ -217,7 +223,8 @@ async def _probe_ports(
     """并行探测指定 IP 的多个端口，返回第一个命中的 (port, info)"""
 
     async def _one(p: int) -> tuple[int, dict | None]:
-        return p, await _probe_device(client, ip, p)
+        info, _ = await _probe_device(client, ip, p)
+        return p, info
 
     tasks = [asyncio.create_task(_one(p)) for p in ports]
     for result in await asyncio.gather(*tasks, return_exceptions=True):
@@ -232,6 +239,7 @@ async def discover_devices(
     """扫描网段（如 192.168.1）的默认端口 9978，发现 fongmi 设备。
 
     只探测 9978（254 次），不扫全端口范围。非标端口设备请在 devices 配置中指定 ip:port。
+    日志策略：info 仅输出汇总 + 成功设备列表；debug 额外输出失败 IP 详情。
     """
     if not subnet:
         return []
@@ -243,10 +251,15 @@ async def discover_devices(
         max_retries=0,
     ).prefix("📡")
     found: list[FongmiDevice] = []
+    failures: list[str] = []  # 收集失败 IP 的原因，用于 debug 汇总
 
     async def _check(ip: str) -> FongmiDevice | None:
-        info = await _probe_device(client, ip, _DEFAULT_PORT)
-        return _build_device(ip, _DEFAULT_PORT, info) if info else None
+        info, err = await _probe_device(client, ip, _DEFAULT_PORT)
+        if info:
+            return _build_device(ip, _DEFAULT_PORT, info)
+        if err:
+            failures.append(f"{ip}:{_DEFAULT_PORT} → {err}")
+        return None
 
     try:
         sem = asyncio.Semaphore(_DISCOVER_SEMAPHORE)
@@ -260,11 +273,30 @@ async def discover_devices(
         for r in results:
             if isinstance(r, FongmiDevice):
                 found.append(r)
+            elif isinstance(r, Exception):
+                failures.append(f"未知异常: {r}")
     finally:
         if own_client:
             await client.aclose()
 
-    logger.debug(f"fongmi 设备发现：网段 {subnet}.0/24 共找到 {len(found)} 台设备")
+    # ===== 合并日志输出 =====
+    if found:
+        device_list = ", ".join(f"{d.ip}:{d.port}({d.name})" for d in found)
+        logger.info(
+            "fongmi 设备发现：网段 %s.0/24 扫描完成，找到 %d 台设备 → %s",
+            subnet,
+            len(found),
+            device_list,
+        )
+    else:
+        logger.info("fongmi 设备发现：网段 %s.0/24 扫描完成，未发现设备", subnet)
+
+    if failures:
+        logger.debug(
+            "fongmi 设备发现：以下 %d 个目标探测失败（详情）：\n  %s",
+            len(failures),
+            "\n  ".join(failures),
+        )
     return found
 
 
@@ -292,17 +324,27 @@ async def parse_device_entry(
     try:
         # 指定端口或默认端口 9978：单次探测
         target_port = port or _DEFAULT_PORT
-        info = await _probe_device(client, host, target_port)
+        info, err = await _probe_device(client, host, target_port)
         if info:
+            logger.debug("fongmi 设备探测成功：%s:%d", host, target_port)
             return _build_device(host, target_port, info)
         if port:
+            logger.debug("fongmi 设备探测失败：%s:%d → %s", host, target_port, err)
             return None
 
         # 默认端口未命中，并行探测其余端口
+        logger.debug(
+            "fongmi 设备默认端口未命中：%s:%d → %s，开始扫描其余端口",
+            host,
+            target_port,
+            err,
+        )
         other_ports = [p for p in range(PORT_START, PORT_END + 1) if p != _DEFAULT_PORT]
         hit = await _probe_ports(client, host, other_ports)
         if hit:
+            logger.debug("fongmi 设备探测成功（非标端口）：%s:%d", host, hit[0])
             return _build_device(host, hit[0], hit[1])
+        logger.debug("fongmi 设备探测失败：端口 %d-%d 全部未命中", PORT_START, PORT_END)
     finally:
         if own_client:
             await client.aclose()
