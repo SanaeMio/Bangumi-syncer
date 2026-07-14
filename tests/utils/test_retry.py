@@ -223,9 +223,7 @@ class TestHttpRetrySyncExceptions:
     def test_retry_on_timeout_then_success(self, mock_sleep):
         """TimeoutException 后重试成功"""
         ok_resp = _make_response(200)
-        do_request = MagicMock(
-            side_effect=[httpx.TimeoutException("timeout"), ok_resp]
-        )
+        do_request = MagicMock(side_effect=[httpx.TimeoutException("timeout"), ok_resp])
 
         result = http_retry_sync(do_request, max_retries=3)
 
@@ -251,9 +249,7 @@ class TestHttpRetrySyncExceptions:
     def test_retry_on_http_error_then_success(self, mock_sleep):
         """HTTPError 后重试成功"""
         ok_resp = _make_response(200)
-        do_request = MagicMock(
-            side_effect=[httpx.HTTPError("http error"), ok_resp]
-        )
+        do_request = MagicMock(side_effect=[httpx.HTTPError("http error"), ok_resp])
 
         result = http_retry_sync(do_request, max_retries=3)
 
@@ -322,9 +318,7 @@ class TestHttpRetrySyncLabel:
     def test_custom_label_with_exception(self, mock_sleep):
         """自定义 label 在异常重试时不影响逻辑"""
         ok_resp = _make_response(200)
-        do_request = MagicMock(
-            side_effect=[httpx.TimeoutException("timeout"), ok_resp]
-        )
+        do_request = MagicMock(side_effect=[httpx.TimeoutException("timeout"), ok_resp])
 
         result = http_retry_sync(do_request, max_retries=3, label="BGM API")
 
@@ -363,9 +357,7 @@ class TestHttpRetrySyncSleepSequence:
             side_effect=[retry_resp, retry_resp, retry_resp, ok_resp]
         )
 
-        result = http_retry_sync(
-            do_request, max_retries=3, backoff_cap=3.0
-        )
+        result = http_retry_sync(do_request, max_retries=3, backoff_cap=3.0)
 
         assert result is ok_resp
         # attempt 0→1.0, 1→2.0, 2→4.0 但被 cap 限制为 3.0

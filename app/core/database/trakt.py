@@ -16,6 +16,7 @@ class TraktRepository(BaseRepository):
 
     def save_trakt_config(self, config: dict) -> bool:
         """保存或更新 Trakt 配置"""
+
         def _write(conn):
             cursor = conn.cursor()
             cursor.execute(
@@ -82,6 +83,7 @@ class TraktRepository(BaseRepository):
 
     def get_trakt_config(self, user_id: str) -> Optional[dict]:
         """获取用户的 Trakt 配置"""
+
         def _read(conn):
             cursor = conn.cursor()
             cursor.execute(
@@ -123,6 +125,7 @@ class TraktRepository(BaseRepository):
 
     def delete_trakt_config(self, user_id: str) -> bool:
         """删除用户的 Trakt 配置"""
+
         def _write(conn):
             cursor = conn.execute(
                 "DELETE FROM trakt_config WHERE user_id = ?", (user_id,)
@@ -136,6 +139,7 @@ class TraktRepository(BaseRepository):
 
     def save_trakt_sync_history(self, history: dict) -> bool:
         """保存 Trakt 同步历史记录"""
+
         def _write(conn):
             conn.execute(
                 """
@@ -161,6 +165,7 @@ class TraktRepository(BaseRepository):
         self, user_id: str, limit: int = 100, offset: int = 0
     ) -> dict:
         """获取用户的 Trakt 同步历史"""
+
         def _read(conn):
             cursor = conn.cursor()
 
@@ -201,12 +206,11 @@ class TraktRepository(BaseRepository):
                 "offset": offset,
             }
 
-        return self._run_read(
-            _read, error_msg="获取 Trakt 同步历史失败", reraise=True
-        )
+        return self._run_read(_read, error_msg="获取 Trakt 同步历史失败", reraise=True)
 
     def get_last_sync_time(self, user_id: str) -> Optional[int]:
         """获取用户最后同步时间"""
+
         def _read(conn):
             cursor = conn.cursor()
             cursor.execute(
@@ -217,12 +221,11 @@ class TraktRepository(BaseRepository):
             )
             return cursor.fetchone()[0]
 
-        return self._run_read(
-            _read, error_msg="获取最后同步时间失败", default=None
-        )
+        return self._run_read(_read, error_msg="获取最后同步时间失败", default=None)
 
     def get_trakt_configs_with_sync_enabled(self) -> list[dict]:
         """获取所有启用同步的 Trakt 配置"""
+
         def _read(conn):
             cursor = conn.cursor()
             cursor.execute(
@@ -267,6 +270,7 @@ class TraktRepository(BaseRepository):
 
     def get_trakt_synced_set(self, user_id: str) -> set[tuple[str, int]]:
         """批量获取已同步的 Trakt 条目集合，用于 O(1) 去重查找"""
+
         def _read(conn):
             cursor = conn.cursor()
             cursor.execute(

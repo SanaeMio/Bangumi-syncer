@@ -413,9 +413,7 @@ class MatchingMixin:
 
         return False
 
-    def _match_title(
-        self, item: dict, title: str, ori_title: str = None
-    ) -> str | None:
+    def _match_title(self, item: dict, title: str, ori_title: str = None) -> str | None:
         """
         检查番剧条目是否匹配给定的标题
 

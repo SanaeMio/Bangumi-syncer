@@ -24,6 +24,7 @@ class FeiniuRepository(BaseRepository):
         update_time_snapshot: Optional[int] = None,
     ) -> bool:
         """记录已提交的飞牛条目同步（去重用）"""
+
         def _write(conn):
             conn.execute(
                 """
@@ -56,7 +57,9 @@ class FeiniuRepository(BaseRepository):
             )
             return {(row[0], row[1]) for row in cursor.fetchall()}
 
-        return self._run_read(_read, error_msg="批量查询飞牛同步历史失败", default=set())
+        return self._run_read(
+            _read, error_msg="批量查询飞牛同步历史失败", default=set()
+        )
 
     def get_feiniu_meta(self, key: str) -> Optional[str]:
         def _read(conn):

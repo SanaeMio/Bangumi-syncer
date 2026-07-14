@@ -79,7 +79,9 @@ class StartupInfo:
         color_code = self.COLORS.get(color, "")
         return f"{color_code}{text}{self.COLORS['reset']}"
 
-    def print_banner(self, title: str | None = None, version: str | None = None) -> None:
+    def print_banner(
+        self, title: str | None = None, version: str | None = None
+    ) -> None:
         """打印应用横幅"""
         if title is None:
             title = get_version_name()

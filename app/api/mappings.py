@@ -1,5 +1,4 @@
-"""映射相关API
-"""
+"""映射相关API"""
 
 from __future__ import annotations
 

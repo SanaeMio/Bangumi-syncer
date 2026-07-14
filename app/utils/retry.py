@@ -40,7 +40,7 @@ def compute_backoff_delay(
     Returns:
         延迟秒数
     """
-    delay = float(base ** attempt)
+    delay = float(base**attempt)
     if cap is not None:
         delay = min(delay, cap)
     return delay

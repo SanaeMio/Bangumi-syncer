@@ -134,9 +134,7 @@ class SyncRecordsRepository(BaseRepository):
                 params.append(f"{source_prefix}%")
 
             where_clause = (
-                " WHERE " + " AND ".join(where_conditions)
-                if where_conditions
-                else ""
+                " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
             )
 
             if skip_count:

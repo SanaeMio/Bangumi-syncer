@@ -76,9 +76,7 @@ class InboxRepository(BaseRepository):
             )
             return cursor.rowcount > 0
 
-        return self._run_write(
-            _write, error_msg="标记通知已读失败", default=False
-        )
+        return self._run_write(_write, error_msg="标记通知已读失败", default=False)
 
     def mark_notifications_read_by_ref_id(self, ref_id: int) -> int:
         """同步记录恢复成功时，将关联通知标为已读。"""
@@ -132,9 +130,7 @@ class InboxRepository(BaseRepository):
                 )
             return len(ids)
 
-        return self._run_write(
-            _write, error_msg="按组标记通知已读失败", default=0
-        )
+        return self._run_write(_write, error_msg="按组标记通知已读失败", default=0)
 
     def mark_all_notifications_read(self) -> int:
         local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -150,9 +146,7 @@ class InboxRepository(BaseRepository):
             )
             return cursor.rowcount
 
-        return self._run_write(
-            _write, error_msg="全部通知已读失败", default=0
-        )
+        return self._run_write(_write, error_msg="全部通知已读失败", default=0)
 
     def count_unread_notifications(self) -> int:
 
@@ -167,14 +161,10 @@ class InboxRepository(BaseRepository):
     def get_read_announcement_ids(self) -> set[str]:
 
         def _read(conn):
-            cursor = conn.execute(
-                "SELECT announcement_id FROM announcement_read_state"
-            )
+            cursor = conn.execute("SELECT announcement_id FROM announcement_read_state")
             return {row[0] for row in cursor.fetchall()}
 
-        return self._run_read(
-            _read, error_msg="获取公告已读状态失败", default=set()
-        )
+        return self._run_read(_read, error_msg="获取公告已读状态失败", default=set())
 
     def mark_announcement_read(self, announcement_id: str) -> bool:
         local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -189,9 +179,7 @@ class InboxRepository(BaseRepository):
             )
             return True
 
-        return self._run_write(
-            _write, error_msg="标记公告已读失败", default=False
-        )
+        return self._run_write(_write, error_msg="标记公告已读失败", default=False)
 
     def mark_all_announcements_read(self, announcement_ids: list[str]) -> int:
         if not announcement_ids:
@@ -212,9 +200,7 @@ class InboxRepository(BaseRepository):
                     count += 1
             return count
 
-        return self._run_write(
-            _write, error_msg="全部公告已读失败", default=0
-        )
+        return self._run_write(_write, error_msg="全部公告已读失败", default=0)
 
     def backfill_historical_error_notifications(self) -> int:
         """将历史 error 同步记录回填为已读通知（仅执行一次）。"""
@@ -251,9 +237,7 @@ class InboxRepository(BaseRepository):
                 mt = media_type or "episode"
                 ep_label = f"S{season}E{episode}" if mt == "episode" else "剧场版"
                 notif_title = f"同步失败：{title} {ep_label}"
-                created_at = timestamp or datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
+                created_at = timestamp or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 conn.execute(
                     """
                     INSERT INTO in_app_notifications
@@ -278,9 +262,7 @@ class InboxRepository(BaseRepository):
             )
             return inserted
 
-        count = self._run_write(
-            _write, error_msg="历史同步失败通知回填失败", default=0
-        )
+        count = self._run_write(_write, error_msg="历史同步失败通知回填失败", default=0)
         if count:
             logger.info(f"历史同步失败通知已回填（已读）: {count} 条")
         return count
