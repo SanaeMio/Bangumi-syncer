@@ -10,7 +10,7 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import httpx
 
@@ -647,50 +647,32 @@ IP地址: {data.get("ip", "")}
         Returns:
             HTML内容字符串
         """
-        content = ""
+        builders: dict[str, Callable[[dict[str, Any]], str]] = {
+            "request_received": self._build_request_received_html,
+            "bangumi_id_found": self._build_bangumi_id_found_html,
+            "mark_success": self._build_mark_success_html,
+            "mark_failed": self._build_mark_failed_html,
+            "mark_skipped": self._build_mark_skipped_html,
+            "anime_not_found": self._build_anime_not_found_html,
+            "episode_not_found": self._build_episode_not_found_html,
+            "config_error": self._build_config_error_html,
+            "api_auth_error": self._build_api_auth_error_html,
+            "api_error": self._build_api_error_html,
+            "api_retry_failed": self._build_api_retry_failed_html,
+            "ip_locked": self._build_ip_locked_html,
+        }
+        builder = builders.get(notification_type)
+        return builder(data) if builder else ""
 
-        # 根据不同的通知类型生成不同的内容
-        if notification_type in [
-            "request_received",
-            "bangumi_id_found",
-            "mark_success",
-            "mark_failed",
-            "mark_skipped",
-        ]:
-            # 番剧相关通知
-            if notification_type == "mark_failed":
-                content += f"""
-            <div class="info-box error">
-                <div class="title"><span class="emoji">❌</span> 错误详情</div>
-                <div class="message">{data.get("error_message", "")}</div>
-            </div>"""
-            elif notification_type == "mark_success":
-                content += """
-            <div class="info-box success">
-                <div class="title"><span class="emoji">✅</span> 同步成功</div>
-                <div class="message">番剧已成功标记为已看</div>
-            </div>"""
-            elif notification_type == "mark_skipped":
-                content += """
-            <div class="info-box">
-                <div class="title"><span class="emoji">⏭️</span> 已看过</div>
-                <div class="message">该集已经标记为已看，跳过标记</div>
-            </div>"""
-            elif notification_type == "bangumi_id_found":
-                content += """
-            <div class="info-box">
-                <div class="title"><span class="emoji">🔍</span> 匹配到番剧</div>
-                <div class="message">成功匹配到 Bangumi 番剧信息</div>
-            </div>"""
-            elif notification_type == "request_received":
-                content += f"""
-            <div class="info-box">
-                <div class="title"><span class="emoji">📥</span> 收到同步请求</div>
-                <div class="message">收到来自 {data.get("source", "")} 的同步请求</div>
-            </div>"""
-
-            # 番剧信息
-            content += f"""
+    def _build_anime_section_html(
+        self,
+        data: dict[str, Any],
+        *,
+        with_subject_id: bool = False,
+        with_episode_id: bool = False,
+    ) -> str:
+        """构建番剧信息区块 HTML（供 bangumi 事件类型共享）"""
+        content = f"""
             <div class="anime-section">
                 <div class="section-title"><span class="emoji">📺</span> 番剧信息</div>
                 <div class="anime-info">
@@ -698,22 +680,69 @@ IP地址: {data.get("ip", "")}
                     <div><strong>集数:</strong> 第 {data.get("season", 0)} 季 第 {data.get("episode", 0)} 集</div>
                     <div><strong>用户:</strong> {data.get("user_name", "")}</div>
                     <div><strong>来源:</strong> {data.get("source", "")}</div>"""
-            if notification_type in [
-                "mark_success",
-                "mark_skipped",
-                "bangumi_id_found",
-            ]:
-                content += f"""
+        if with_subject_id:
+            content += f"""
                     <div><strong>Subject ID:</strong> {data.get("subject_id", "")}</div>"""
-            if notification_type in ["mark_success", "mark_skipped"]:
-                content += f"""
+        if with_episode_id:
+            content += f"""
                     <div><strong>Episode ID:</strong> {data.get("episode_id", "")}</div>"""
-            content += """
+        content += """
                 </div>
             </div>"""
+        return content
 
-        elif notification_type == "anime_not_found":
-            content += f"""
+    def _build_request_received_html(self, data: dict[str, Any]) -> str:
+        """构建 request_received 通知 HTML"""
+        content = f"""
+            <div class="info-box">
+                <div class="title"><span class="emoji">📥</span> 收到同步请求</div>
+                <div class="message">收到来自 {data.get("source", "")} 的同步请求</div>
+            </div>"""
+        return content + self._build_anime_section_html(data)
+
+    def _build_bangumi_id_found_html(self, data: dict[str, Any]) -> str:
+        """构建 bangumi_id_found 通知 HTML"""
+        content = """
+            <div class="info-box">
+                <div class="title"><span class="emoji">🔍</span> 匹配到番剧</div>
+                <div class="message">成功匹配到 Bangumi 番剧信息</div>
+            </div>"""
+        return content + self._build_anime_section_html(data, with_subject_id=True)
+
+    def _build_mark_success_html(self, data: dict[str, Any]) -> str:
+        """构建 mark_success 通知 HTML"""
+        content = """
+            <div class="info-box success">
+                <div class="title"><span class="emoji">✅</span> 同步成功</div>
+                <div class="message">番剧已成功标记为已看</div>
+            </div>"""
+        return content + self._build_anime_section_html(
+            data, with_subject_id=True, with_episode_id=True
+        )
+
+    def _build_mark_failed_html(self, data: dict[str, Any]) -> str:
+        """构建 mark_failed 通知 HTML"""
+        content = f"""
+            <div class="info-box error">
+                <div class="title"><span class="emoji">❌</span> 错误详情</div>
+                <div class="message">{data.get("error_message", "")}</div>
+            </div>"""
+        return content + self._build_anime_section_html(data)
+
+    def _build_mark_skipped_html(self, data: dict[str, Any]) -> str:
+        """构建 mark_skipped 通知 HTML"""
+        content = """
+            <div class="info-box">
+                <div class="title"><span class="emoji">⏭️</span> 已看过</div>
+                <div class="message">该集已经标记为已看，跳过标记</div>
+            </div>"""
+        return content + self._build_anime_section_html(
+            data, with_subject_id=True, with_episode_id=True
+        )
+
+    def _build_anime_not_found_html(self, data: dict[str, Any]) -> str:
+        """构建 anime_not_found 通知 HTML"""
+        return f"""
             <div class="info-box error">
                 <div class="title"><span class="emoji">🔍</span> 未找到番剧</div>
                 <div class="message">
@@ -733,8 +762,9 @@ IP地址: {data.get("ip", "")}
                 </div>
             </div>"""
 
-        elif notification_type == "episode_not_found":
-            content += f"""
+    def _build_episode_not_found_html(self, data: dict[str, Any]) -> str:
+        """构建 episode_not_found 通知 HTML"""
+        return f"""
             <div class="info-box error">
                 <div class="title"><span class="emoji">🔍</span> 未找到剧集</div>
                 <div class="message">
@@ -752,8 +782,9 @@ IP地址: {data.get("ip", "")}
                 </div>
             </div>"""
 
-        elif notification_type == "config_error":
-            content += f"""
+    def _build_config_error_html(self, data: dict[str, Any]) -> str:
+        """构建 config_error 通知 HTML"""
+        return f"""
             <div class="info-box error">
                 <div class="title"><span class="emoji">⚙️</span> 配置错误</div>
                 <div class="message">
@@ -769,8 +800,9 @@ IP地址: {data.get("ip", "")}
                 </div>
             </div>"""
 
-        elif notification_type == "api_auth_error":
-            content += f"""
+    def _build_api_auth_error_html(self, data: dict[str, Any]) -> str:
+        """构建 api_auth_error 通知 HTML"""
+        return f"""
             <div class="info-box error">
                 <div class="title"><span class="emoji">🔐</span> API认证失败</div>
                 <div class="message">
@@ -793,8 +825,9 @@ IP地址: {data.get("ip", "")}
                 </div>
             </div>"""
 
-        elif notification_type == "api_error":
-            content += f"""
+    def _build_api_error_html(self, data: dict[str, Any]) -> str:
+        """构建 api_error 通知 HTML"""
+        return f"""
             <div class="info-box error">
                 <div class="title"><span class="emoji">🌐</span> API错误</div>
                 <div class="message">
@@ -821,8 +854,9 @@ IP地址: {data.get("ip", "")}
                 </div>
             </div>"""
 
-        elif notification_type == "api_retry_failed":
-            content += f"""
+    def _build_api_retry_failed_html(self, data: dict[str, Any]) -> str:
+        """构建 api_retry_failed 通知 HTML"""
+        return f"""
             <div class="info-box error">
                 <div class="title"><span class="emoji">🔄</span> API重试失败</div>
                 <div class="message">
@@ -845,8 +879,9 @@ IP地址: {data.get("ip", "")}
                 </div>
             </div>"""
 
-        elif notification_type == "ip_locked":
-            content += f"""
+    def _build_ip_locked_html(self, data: dict[str, Any]) -> str:
+        """构建 ip_locked 通知 HTML"""
+        return f"""
             <div class="info-box error">
                 <div class="title"><span class="emoji">🔒</span> IP被锁定</div>
                 <div class="message">
@@ -868,8 +903,6 @@ IP地址: {data.get("ip", "")}
                     <div class="info-value">{data.get("attempt_count", 0)} / {data.get("max_attempts", 0)}</div>
                 </div>
             </div>"""
-
-        return content
 
     def _build_payload_by_type(
         self, notification_type: str, data: dict[str, Any], template: str
@@ -1074,7 +1107,7 @@ IP地址: {data.get("ip", "")}
         Returns:
             测试结果字典
         """
-        results = {
+        results: dict[str, Any] = {
             "webhook": {
                 "enabled": False,
                 "success": False,
@@ -1084,7 +1117,20 @@ IP地址: {data.get("ip", "")}
             "email": {"enabled": False, "success": False, "message": "", "emails": []},
         }
 
-        test_data = {
+        test_data = self._build_test_notification_data()
+
+        if notification_type in (None, "webhook", "all"):
+            self._test_webhook_channels(results, test_data, webhook_id)
+
+        if notification_type in (None, "email", "all"):
+            self._test_email_channels(results, test_data, email_id)
+
+        return results
+
+    @staticmethod
+    def _build_test_notification_data() -> dict[str, Any]:
+        """构建测试通知数据"""
+        return {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_name": "TestUser",
             "title": "测试番剧",
@@ -1094,101 +1140,97 @@ IP地址: {data.get("ip", "")}
             "error_message": "这是一条测试通知",
         }
 
-        # 测试webhook
-        if notification_type in (None, "webhook", "all"):
-            webhook_configs = self._get_webhook_configs()
+    def _test_webhook_channels(
+        self,
+        results: dict[str, Any],
+        test_data: dict[str, Any],
+        webhook_id: Optional[int],
+    ) -> None:
+        """测试所有 webhook 通道"""
+        webhook_configs = self._get_webhook_configs()
+        if webhook_id:
+            webhook_configs = [w for w in webhook_configs if w.get("id") == webhook_id]
 
-            if webhook_id:
-                # 测试指定的webhook
-                webhook_configs = [
-                    w for w in webhook_configs if w.get("id") == webhook_id
-                ]
-
-            for webhook_config in webhook_configs:
-                webhook_result = {
-                    "id": webhook_config.get("id"),
-                    "url": webhook_config.get("url", ""),
-                    "enabled": webhook_config.get("enabled", False),
-                    "success": False,
-                    "message": "",
-                }
-
-                if webhook_config.get("enabled", False):
-                    webhook_result["enabled"] = True
-                    try:
-                        success = self._send_webhook_by_config(
-                            webhook_config,
-                            "mark_success",  # 测试使用成功通知类型
-                            test_data,
-                        )
-                        if success:
-                            webhook_result["success"] = True
-                            webhook_result["message"] = (
-                                f"Webhook {webhook_config['id']} 测试成功"
-                            )
-                        else:
-                            webhook_result["message"] = (
-                                f"Webhook {webhook_config['id']} 测试失败"
-                            )
-                    except Exception as e:
+        for webhook_config in webhook_configs:
+            webhook_result: dict[str, Any] = {
+                "id": webhook_config.get("id"),
+                "url": webhook_config.get("url", ""),
+                "enabled": webhook_config.get("enabled", False),
+                "success": False,
+                "message": "",
+            }
+            if webhook_config.get("enabled", False):
+                webhook_result["enabled"] = True
+                try:
+                    success = self._send_webhook_by_config(
+                        webhook_config, "mark_success", test_data
+                    )
+                    if success:
+                        webhook_result["success"] = True
                         webhook_result["message"] = (
-                            f"Webhook {webhook_config['id']} 测试失败: {str(e)}"
+                            f"Webhook {webhook_config['id']} 测试成功"
                         )
-                else:
-                    webhook_result["message"] = f"Webhook {webhook_config['id']} 未启用"
-
-                results["webhook"]["webhooks"].append(webhook_result)
-
-            results["webhook"]["enabled"] = len(webhook_configs) > 0
-            results["webhook"]["message"] = f"测试了 {len(webhook_configs)} 个webhook"
-
-        # 测试邮件
-        if notification_type in (None, "email", "all"):
-            email_configs = self._get_email_configs()
-
-            if email_id:
-                # 测试指定的email
-                email_configs = [e for e in email_configs if e.get("id") == email_id]
-
-            for email_config in email_configs:
-                email_result = {
-                    "id": email_config.get("id"),
-                    "email_to": email_config.get("email_to", ""),
-                    "enabled": email_config.get("enabled", False),
-                    "success": False,
-                    "message": "",
-                }
-
-                if email_config.get("enabled", False):
-                    email_result["enabled"] = True
-                    try:
-                        success = self._send_email_by_config(
-                            email_config,
-                            "mark_success",  # 测试使用成功通知类型
-                            test_data,
+                    else:
+                        webhook_result["message"] = (
+                            f"Webhook {webhook_config['id']} 测试失败"
                         )
-                        if success:
-                            email_result["success"] = True
-                            email_result["message"] = (
-                                f"邮件配置 {email_config['id']} 测试成功"
-                            )
-                        else:
-                            email_result["message"] = (
-                                f"邮件配置 {email_config['id']} 测试失败"
-                            )
-                    except Exception as e:
+                except Exception as e:
+                    webhook_result["message"] = (
+                        f"Webhook {webhook_config['id']} 测试失败: {str(e)}"
+                    )
+            else:
+                webhook_result["message"] = f"Webhook {webhook_config['id']} 未启用"
+
+            results["webhook"]["webhooks"].append(webhook_result)
+
+        results["webhook"]["enabled"] = len(webhook_configs) > 0
+        results["webhook"]["message"] = f"测试了 {len(webhook_configs)} 个webhook"
+
+    def _test_email_channels(
+        self,
+        results: dict[str, Any],
+        test_data: dict[str, Any],
+        email_id: Optional[int],
+    ) -> None:
+        """测试所有邮件通道"""
+        email_configs = self._get_email_configs()
+        if email_id:
+            email_configs = [e for e in email_configs if e.get("id") == email_id]
+
+        for email_config in email_configs:
+            email_result: dict[str, Any] = {
+                "id": email_config.get("id"),
+                "email_to": email_config.get("email_to", ""),
+                "enabled": email_config.get("enabled", False),
+                "success": False,
+                "message": "",
+            }
+            if email_config.get("enabled", False):
+                email_result["enabled"] = True
+                try:
+                    success = self._send_email_by_config(
+                        email_config, "mark_success", test_data
+                    )
+                    if success:
+                        email_result["success"] = True
                         email_result["message"] = (
-                            f"邮件配置 {email_config['id']} 测试失败: {str(e)}"
+                            f"邮件配置 {email_config['id']} 测试成功"
                         )
-                else:
-                    email_result["message"] = f"邮件配置 {email_config['id']} 未启用"
+                    else:
+                        email_result["message"] = (
+                            f"邮件配置 {email_config['id']} 测试失败"
+                        )
+                except Exception as e:
+                    email_result["message"] = (
+                        f"邮件配置 {email_config['id']} 测试失败: {str(e)}"
+                    )
+            else:
+                email_result["message"] = f"邮件配置 {email_config['id']} 未启用"
 
-                results["email"]["emails"].append(email_result)
+            results["email"]["emails"].append(email_result)
 
-            results["email"]["enabled"] = len(email_configs) > 0
-            results["email"]["message"] = f"测试了 {len(email_configs)} 个邮件配置"
-
-        return results
+        results["email"]["enabled"] = len(email_configs) > 0
+        results["email"]["message"] = f"测试了 {len(email_configs)} 个邮件配置"
 
 
 # 全局通知器实例（延迟初始化）

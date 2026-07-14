@@ -792,8 +792,6 @@ class BangumiApi:
         is_season_subject_id: bool = False,
         release_date: Optional[str] = None,
     ):
-        season_num = 1
-        current_id = subject_id
         max_season, max_episode = self._get_episode_sync_limits()
 
         if target_season > max_season or (target_ep and target_ep > max_episode):
@@ -809,11 +807,11 @@ class BangumiApi:
                 f"直接尝试从指定季度ID匹配集数: {subject_id}, 目标季度: {target_season}, 目标集数: {target_ep}"
             )
             if not target_ep:
-                return current_id
+                return subject_id
 
-            found = self._find_episode_by_sort(current_id, target_ep)
+            found = self._find_episode_by_sort(subject_id, target_ep)
             if found:
-                return current_id, found["id"]
+                return subject_id, found["id"]
 
             logger.debug(
                 f"在指定季度ID中未找到匹配的集数: {subject_id}, 目标集数: {target_ep}"
@@ -822,43 +820,10 @@ class BangumiApi:
 
         if target_season == 1:
             if not target_ep:
-                return current_id
-            fist_part = True
-            while True:
-                if not fist_part:
-                    current_info = self.get_subject(current_id)
-                    if not current_info:
-                        continue
-                    if root_type is not None and current_info.get("type") != root_type:
-                        continue
-                found = self._find_episode_by_sort(current_id, target_ep)
-                if found:
-                    return current_id, found["id"]
-                episodes = self.get_episodes(current_id)
-                ep_info = episodes.get("data", [])
-                if not ep_info:
-                    logger.debug(f"未获取到剧集信息: {current_id}")
-                    break
-                normal_season = (
-                    True
-                    if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
-                    else False
-                )
-                if not fist_part and normal_season:
-                    break
-                related = self.get_related_subjects(current_id)
-                if isinstance(related, list):
-                    next_id = [i for i in related if i.get("relation") == "续集"]
-                elif isinstance(related, dict):
-                    related_list = related.get("data", [])
-                    next_id = [i for i in related_list if i.get("relation") == "续集"]
-                else:
-                    next_id = []
-                if not next_id:
-                    break
-                current_id = next_id[0]["id"]
-                fist_part = False
-            return self._episode_lookup_failed(subject_id, target_ep, release_date)
+                return subject_id
+            return self._find_season_one_episode(
+                subject_id, target_ep, root_type, release_date
+            )
 
         # Plex 季数与 Bangumi 多期/续集计数不一致时，用播出日 + 章节 airdate 择优
         if release_date and target_season > 1 and target_ep:
@@ -868,19 +833,78 @@ class BangumiApi:
             if air_pick is not None:
                 return air_pick[0], air_pick[1]
 
-        last_season_num = None
+        return self._find_multi_season_episode(
+            subject_id, target_season, target_ep, root_type, release_date
+        )
+
+    def _find_next_sequel_id(self, current_id) -> Optional[int]:
+        """从关联条目中查找续集 subject_id，无则返回 None"""
+        related = self.get_related_subjects(current_id)
+        if isinstance(related, list):
+            next_id = [i for i in related if i.get("relation") == "续集"]
+        elif isinstance(related, dict):
+            related_list = related.get("data", [])
+            next_id = [i for i in related_list if i.get("relation") == "续集"]
+        else:
+            next_id = []
+        return next_id[0]["id"] if next_id else None
+
+    def _find_season_one_episode(
+        self,
+        subject_id,
+        target_ep: int,
+        root_type,
+        release_date: Optional[str],
+    ):
+        """在第一季中查找目标集数（遍历续集链）"""
+        current_id = subject_id
+        first_part = True
         while True:
-            related = self.get_related_subjects(current_id)
-            if isinstance(related, list):
-                next_id = [i for i in related if i.get("relation") == "续集"]
-            elif isinstance(related, dict):
-                related_list = related.get("data", [])
-                next_id = [i for i in related_list if i.get("relation") == "续集"]
-            else:
-                next_id = []
+            if not first_part:
+                current_info = self.get_subject(current_id)
+                if not current_info:
+                    continue
+                if root_type is not None and current_info.get("type") != root_type:
+                    continue
+            found = self._find_episode_by_sort(current_id, target_ep)
+            if found:
+                return current_id, found["id"]
+            episodes = self.get_episodes(current_id)
+            ep_info = episodes.get("data", [])
+            if not ep_info:
+                logger.debug(f"未获取到剧集信息: {current_id}")
+                break
+            normal_season = (
+                True
+                if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
+                else False
+            )
+            if not first_part and normal_season:
+                break
+            next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
-            current_id = next_id[0]["id"]
+            current_id = next_id
+            first_part = False
+        return self._episode_lookup_failed(subject_id, target_ep, release_date)
+
+    def _find_multi_season_episode(
+        self,
+        subject_id,
+        target_season: int,
+        target_ep: int,
+        root_type,
+        release_date: Optional[str],
+    ):
+        """在多季中查找目标集数（遍历续集链并追踪季数）"""
+        current_id = subject_id
+        season_num = 1
+        last_season_num = None
+        while True:
+            next_id = self._find_next_sequel_id(current_id)
+            if not next_id:
+                break
+            current_id = next_id
             current_info = self.get_subject(current_id)
             if not current_info:
                 continue

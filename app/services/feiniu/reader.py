@@ -155,147 +155,16 @@ def fetch_completed_watch_records(
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         item_cols = _table_columns(cur, "item")
-        ep_col = _pick_episode_sql_column(item_cols)
-        season_fragments: list[str] = []
-        for c in ("season_number", "parent_index_number", "season_index"):
-            if c in item_cols:
-                season_fragments.append(f"i.{c} AS {c}")
-        season_sql = (
-            (",\n               " + ",\n               ".join(season_fragments))
-            if season_fragments
-            else ""
+        query, params = _build_watch_records_query(
+            cur, item_cols, user_guid, time_range, min_update_time_ms, limit
         )
-        type_sql = (
-            "i.type AS feiniu_item_type,\n               "
-            if "type" in item_cols
-            else "NULL AS feiniu_item_type,\n               "
-        )
-        release_sql = (
-            "i.release_date AS item_release_date,\n               "
-            if "release_date" in item_cols
-            else "NULL AS item_release_date,\n               "
-        )
-
-        query = f"""
-        SELECT p.item_guid, p.user_guid, p.watched, p.ts, p.create_time, p.update_time,
-               i.title AS media_title, i.original_title AS media_original_title,
-               i.runtime AS runtime_mins,
-               p1.title AS p1_title, p2.title AS p2_title,
-               p1.runtime AS p1_runtime, p2.runtime AS p2_runtime,
-               {type_sql}{release_sql}{ep_col} AS ep_number,
-               COALESCE(NULLIF(TRIM(u.username), ''), substr(p.user_guid, 1, 8)) AS feiniu_username
-               {season_sql}
-        FROM item_user_play p
-        LEFT JOIN item i ON p.item_guid = i.guid
-        LEFT JOIN item p1 ON i.parent_guid = p1.guid
-        LEFT JOIN item p2 ON p1.parent_guid = p2.guid
-        LEFT JOIN user u ON p.user_guid = u.guid
-        WHERE p.visible = 1
-        """
-        params: list[Any] = []
-
-        if user_guid and user_guid != "all":
-            query += " AND p.user_guid = ?"
-            params.append(user_guid)
-
-        cutoffs: list[int] = []
-        tr_cutoff = _time_range_cutoff_ms(time_range)
-        if tr_cutoff is not None:
-            cutoffs.append(int(tr_cutoff))
-        if min_update_time_ms is not None:
-            cutoffs.append(int(min_update_time_ms))
-        if cutoffs:
-            query += " AND p.update_time >= ?"
-            params.append(max(cutoffs))
-
-        query += " ORDER BY p.update_time DESC LIMIT ?"
-        params.append(limit)
-
         cur.execute(query, params)
+
         rows_out: list[FeiniuWatchRecord] = []
-
         for r in cur.fetchall():
-            ts_raw = r["update_time"] or r["create_time"] or 0
-            wall_sec = _normalize_to_epoch_seconds(ts_raw)
-            play_sec = int(r["ts"] or 0)
-            watched = int(r["watched"] or 0) == 1
-
-            runtime_mins = r["runtime_mins"]
-            if not runtime_mins:
-                runtime_mins = r["p1_runtime"]
-            if not runtime_mins:
-                runtime_mins = r["p2_runtime"]
-            runtime_mins = int(runtime_mins or 24)
-            total_sec = max(runtime_mins * 60, 1)
-
-            if watched:
-                percent = 100.0
-            else:
-                percent = round(max(0.0, min(100.0, (play_sec / total_sec) * 100.0)), 1)
-
-            finished = watched or percent >= float(min_percent)
-            if not finished:
-                continue
-
-            base_name = (r["media_title"] or r["media_original_title"] or "") or ""
-            ep_num = 1
-            en = r["ep_number"]
-            episode_from_db = False
-            if en is not None:
-                try:
-                    ep_num = max(1, int(en))
-                    episode_from_db = True
-                except (TypeError, ValueError):
-                    ep_num = 1
-            else:
-                m = _EPISODE_TITLE_RE.search(base_name)
-                if m:
-                    ep_num = max(1, int(m.group(1)))
-                    episode_from_db = True
-
-            real_name = _real_series_title(r, str(r["item_guid"]))
-            season = _pick_season_value(r, item_cols)
-            season_from_db = _season_number_present_in_row(r, item_cols)
-
-            raw_item_type = r["feiniu_item_type"]
-            item_type_s = (
-                str(raw_item_type).strip() if raw_item_type is not None else None
-            )
-
-            if wall_sec > 0:
-                release_date = datetime.fromtimestamp(wall_sec).strftime("%Y-%m-%d")
-            else:
-                release_date = datetime.now().strftime("%Y-%m-%d")
-            rd_item = r["item_release_date"]
-            if rd_item and str(rd_item).strip():
-                try:
-                    release_date = str(rd_item).strip()[:10]
-                except (ValueError, TypeError) as e:
-                    logger.debug("发布日期解析失败: %s", e)
-
-            ug = str(r["user_guid"])
-            uname = str(r["feiniu_username"] or (ug[:8] if ug else "unknown"))
-
-            ori = r["media_original_title"]
-            ori_s = str(ori) if ori else None
-
-            rows_out.append(
-                FeiniuWatchRecord(
-                    item_guid=str(r["item_guid"]),
-                    user_guid=ug,
-                    username=uname,
-                    display_title=real_name,
-                    original_title=ori_s,
-                    season=season,
-                    episode=ep_num,
-                    release_date=release_date,
-                    update_time_ms=int(ts_raw) if ts_raw else 0,
-                    item_type=item_type_s,
-                    episode_from_db=episode_from_db,
-                    season_from_db=season_from_db,
-                )
-            )
-
+            record = _parse_watch_record_row(r, item_cols, min_percent)
+            if record is not None:
+                rows_out.append(record)
         return rows_out
     except Exception as e:
         logger.error(f"读取飞牛观看记录失败: {e}")
@@ -303,3 +172,152 @@ def fetch_completed_watch_records(
     finally:
         if conn is not None:
             conn.close()
+
+
+def _build_watch_records_query(
+    cur: sqlite3.Cursor,
+    item_cols: set[str],
+    user_guid: str,
+    time_range: str,
+    min_update_time_ms: int | None,
+    limit: int,
+) -> tuple[str, list[Any]]:
+    """构建观看记录查询 SQL 及参数"""
+    ep_col = _pick_episode_sql_column(item_cols)
+    season_fragments: list[str] = []
+    for c in ("season_number", "parent_index_number", "season_index"):
+        if c in item_cols:
+            season_fragments.append(f"i.{c} AS {c}")
+    season_sql = (
+        (",\n               " + ",\n               ".join(season_fragments))
+        if season_fragments
+        else ""
+    )
+    type_sql = (
+        "i.type AS feiniu_item_type,\n               "
+        if "type" in item_cols
+        else "NULL AS feiniu_item_type,\n               "
+    )
+    release_sql = (
+        "i.release_date AS item_release_date,\n               "
+        if "release_date" in item_cols
+        else "NULL AS item_release_date,\n               "
+    )
+
+    query = f"""
+    SELECT p.item_guid, p.user_guid, p.watched, p.ts, p.create_time, p.update_time,
+           i.title AS media_title, i.original_title AS media_original_title,
+           i.runtime AS runtime_mins,
+           p1.title AS p1_title, p2.title AS p2_title,
+           p1.runtime AS p1_runtime, p2.runtime AS p2_runtime,
+           {type_sql}{release_sql}{ep_col} AS ep_number,
+           COALESCE(NULLIF(TRIM(u.username), ''), substr(p.user_guid, 1, 8)) AS feiniu_username
+           {season_sql}
+    FROM item_user_play p
+    LEFT JOIN item i ON p.item_guid = i.guid
+    LEFT JOIN item p1 ON i.parent_guid = p1.guid
+    LEFT JOIN item p2 ON p1.parent_guid = p2.guid
+    LEFT JOIN user u ON p.user_guid = u.guid
+    WHERE p.visible = 1
+    """
+    params: list[Any] = []
+
+    if user_guid and user_guid != "all":
+        query += " AND p.user_guid = ?"
+        params.append(user_guid)
+
+    cutoffs: list[int] = []
+    tr_cutoff = _time_range_cutoff_ms(time_range)
+    if tr_cutoff is not None:
+        cutoffs.append(int(tr_cutoff))
+    if min_update_time_ms is not None:
+        cutoffs.append(int(min_update_time_ms))
+    if cutoffs:
+        query += " AND p.update_time >= ?"
+        params.append(max(cutoffs))
+
+    query += " ORDER BY p.update_time DESC LIMIT ?"
+    params.append(limit)
+    return query, params
+
+
+def _parse_watch_record_row(
+    r: sqlite3.Row, item_cols: set[str], min_percent: int
+) -> FeiniuWatchRecord | None:
+    """将单行 SQL 结果转换为 FeiniuWatchRecord，不满足条件返回 None"""
+    ts_raw = r["update_time"] or r["create_time"] or 0
+    wall_sec = _normalize_to_epoch_seconds(ts_raw)
+    play_sec = int(r["ts"] or 0)
+    watched = int(r["watched"] or 0) == 1
+
+    runtime_mins = r["runtime_mins"]
+    if not runtime_mins:
+        runtime_mins = r["p1_runtime"]
+    if not runtime_mins:
+        runtime_mins = r["p2_runtime"]
+    runtime_mins = int(runtime_mins or 24)
+    total_sec = max(runtime_mins * 60, 1)
+
+    if watched:
+        percent = 100.0
+    else:
+        percent = round(max(0.0, min(100.0, (play_sec / total_sec) * 100.0)), 1)
+
+    finished = watched or percent >= float(min_percent)
+    if not finished:
+        return None
+
+    base_name = (r["media_title"] or r["media_original_title"] or "") or ""
+    ep_num = 1
+    en = r["ep_number"]
+    episode_from_db = False
+    if en is not None:
+        try:
+            ep_num = max(1, int(en))
+            episode_from_db = True
+        except (TypeError, ValueError):
+            ep_num = 1
+    else:
+        m = _EPISODE_TITLE_RE.search(base_name)
+        if m:
+            ep_num = max(1, int(m.group(1)))
+            episode_from_db = True
+
+    real_name = _real_series_title(r, str(r["item_guid"]))
+    season = _pick_season_value(r, item_cols)
+    season_from_db = _season_number_present_in_row(r, item_cols)
+
+    raw_item_type = r["feiniu_item_type"]
+    item_type_s = str(raw_item_type).strip() if raw_item_type is not None else None
+
+    if wall_sec > 0:
+        release_date = datetime.fromtimestamp(wall_sec).strftime("%Y-%m-%d")
+    else:
+        release_date = datetime.now().strftime("%Y-%m-%d")
+    rd_item = r["item_release_date"]
+    if rd_item and str(rd_item).strip():
+        try:
+            release_date = str(rd_item).strip()[:10]
+        except (ValueError, TypeError) as e:
+            logger.debug("发布日期解析失败: %s", e)
+
+    ug = str(r["user_guid"])
+    uname = str(r["feiniu_username"] or (ug[:8] if ug else "unknown"))
+
+    ori = r["media_original_title"]
+    ori_s = str(ori) if ori else None
+
+    return FeiniuWatchRecord(
+        item_guid=str(r["item_guid"]),
+        user_guid=ug,
+        username=uname,
+        display_title=real_name,
+        original_title=ori_s,
+        season=season,
+        episode=ep_num,
+        release_date=release_date,
+        update_time_ms=int(ts_raw) if ts_raw else 0,
+        item_type=item_type_s,
+        episode_from_db=episode_from_db,
+        season_from_db=season_from_db,
+    )
