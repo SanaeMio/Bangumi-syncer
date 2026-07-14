@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Bangumi-syncer
   text: 
-  tagline: 享受动画，解放双手 🎬
+  tagline: 自在追番，同步随心 🎬
   image:
     src: /images/branding/mascot.png
     alt: Bangumi-syncer
@@ -25,7 +25,7 @@ features:
     details: 调用官方 API，在媒体库看完后自动打格子，省去反复打开 Bangumi 手点，省时省力
   - icon: 🔌
     title: 常见媒体栈都能接
-    details: 已适配 Plex、Emby、Jellyfin、Trakt.tv、飞牛与通用 Webhook，按需扩展
+    details: 已适配 Plex、Emby、Jellyfin、Trakt、飞牛、fongmi与通用 Webhook，按需扩展
   - icon: 🌐
     title: Web 控制台
     details: 在浏览器里可以方便地修改配置、测试同步、查看日志与统计数据

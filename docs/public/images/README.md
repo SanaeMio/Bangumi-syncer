@@ -7,7 +7,7 @@
 
 建议子目录：
 
-- `branding/`：Logo、吉祥物等
+- `branding/`：Logo、吉祥物、Bangumi 官方图标（`bangumi-icon.png`）等
 - `overview/`：简介、总览类截图
 - `usage/<功能名>/`：各接入方式的分步截图（文件名建议 `step-01.jpg` 递增）
 
