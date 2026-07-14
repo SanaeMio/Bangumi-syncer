@@ -193,7 +193,10 @@ async def test_fongmi_debug_scan_timeout(app_fongmi):
     ) as ds:
         ds.side_effect = _hang
         # 缩短 wait_for 超时以加速测试
-        with patch("app.api.fongmi.asyncio.wait_for", AsyncMock(side_effect=asyncio.TimeoutError())):
+        with patch(
+            "app.api.fongmi.asyncio.wait_for",
+            AsyncMock(side_effect=asyncio.TimeoutError()),
+        ):
             transport = ASGITransport(app=app_fongmi)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 r = await ac.post("/api/fongmi/debug/scan")
@@ -255,7 +258,10 @@ async def test_fongmi_debug_sync_one_timeout(app_fongmi):
         "app.api.fongmi.fongmi_sync_service.debug_sync_one", new_callable=AsyncMock
     ) as ds:
         ds.side_effect = _hang
-        with patch("app.api.fongmi.asyncio.wait_for", AsyncMock(side_effect=asyncio.TimeoutError())):
+        with patch(
+            "app.api.fongmi.asyncio.wait_for",
+            AsyncMock(side_effect=asyncio.TimeoutError()),
+        ):
             transport = ASGITransport(app=app_fongmi)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 r = await ac.post(
@@ -291,6 +297,7 @@ async def test_fongmi_debug_sync_one_invalid_body(app_fongmi):
     assert r.status_code == 422
 
 
+@pytest.mark.filterwarnings("ignore:coroutine .*:RuntimeWarning")
 @pytest.mark.asyncio
 async def test_fongmi_debug_sync_one_default_port(app_fongmi):
     """未传 device_port 时使用默认 9978。"""

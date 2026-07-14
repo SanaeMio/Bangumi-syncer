@@ -238,11 +238,17 @@ class TestRestartEndpoint:
     @pytest.mark.asyncio
     async def test_restart_returns_restarting(self, auth_transport):
         """应返回 restarting 状态"""
-        with patch("app.api.upgrade.asyncio"):
+        with (
+            patch("app.api.upgrade.restart_application"),
+            patch("app.api.upgrade.asyncio.create_task") as mock_ct,
+        ):
             async with AsyncClient(
                 transport=auth_transport, base_url="http://test"
             ) as ac:
                 r = await ac.post("/api/app/upgrade/restart")
+        # 关闭未 await 的 delayed_restart 协程，避免 RuntimeWarning
+        if mock_ct.call_args and mock_ct.call_args.args:
+            mock_ct.call_args.args[0].close()
 
         assert r.status_code == 200
         assert r.json()["status"] == "restarting"

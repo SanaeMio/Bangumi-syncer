@@ -409,7 +409,12 @@ def _diagnose_http_connection(
     parsed, hostname: str, port: int, proxies, proxy_config: str, result: dict
 ) -> None:
     """HTTP连接测试（使用配置的代理）"""
-    ssl_verify = config_manager.get("dev", "ssl_verify", fallback=True)
+    ssl_verify_raw = config_manager.get("dev", "ssl_verify", fallback=True)
+    ssl_verify = (
+        ssl_verify_raw
+        if isinstance(ssl_verify_raw, bool)
+        else str(ssl_verify_raw).strip().lower() not in ("false", "0", "no", "off", "")
+    )
     try:
         test_url = f"{parsed.scheme}://{hostname}:{port}"
         start_time = time.time()
