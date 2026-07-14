@@ -44,7 +44,7 @@ def mock_sync_service():
 
         mock_result = MagicMock()
         mock_result.status = "success"
-        mock_result.dict.return_value = {
+        mock_result.model_dump.return_value = {
             "status": "success",
             "message": "同步成功",
         }
@@ -78,7 +78,7 @@ def mock_custom_sync_service():
 
         mock_result = MagicMock()
         mock_result.status = "success"
-        mock_result.dict.return_value = {
+        mock_result.model_dump.return_value = {
             "status": "success",
             "message": "同步成功",
         }
@@ -803,7 +803,7 @@ async def test_custom_sync_ignored_status(app_with_auth, mock_custom_sync_servic
     """测试自定义同步忽略状态"""
     mock_result = MagicMock()
     mock_result.status = "ignored"
-    mock_result.dict.return_value = {"status": "ignored", "message": "已忽略"}
+    mock_result.model_dump.return_value = {"status": "ignored", "message": "已忽略"}
     mock_custom_sync_service.sync_item.return_value = mock_result
 
     async with AsyncClient(
@@ -828,7 +828,7 @@ async def test_custom_sync_error_status(app_with_auth, mock_custom_sync_service)
     """测试自定义同步错误状态"""
     mock_result = MagicMock()
     mock_result.status = "error"
-    mock_result.dict.return_value = {"status": "error", "message": "失败"}
+    mock_result.model_dump.return_value = {"status": "error", "message": "失败"}
     mock_custom_sync_service.sync_item.return_value = mock_result
 
     async with AsyncClient(
@@ -900,7 +900,7 @@ async def test_retry_sync_record_success(
 
     mock_result = MagicMock()
     mock_result.status = "success"
-    mock_result.dict.return_value = {"status": "success"}
+    mock_result.model_dump.return_value = {"status": "success"}
     mock_sync_service.sync_custom_item.return_value = mock_result
 
     async with AsyncClient(
@@ -929,7 +929,7 @@ async def test_retry_sync_record_ignored(
     mock_result = MagicMock()
     mock_result.status = "ignored"
     mock_result.message = "已看过"
-    mock_result.dict.return_value = {"status": "ignored", "message": "已看过"}
+    mock_result.model_dump.return_value = {"status": "ignored", "message": "已看过"}
     mock_sync_service.sync_custom_item.return_value = mock_result
 
     async with AsyncClient(
@@ -972,7 +972,7 @@ async def test_retry_sync_record_invalid_media_type(
 
     mock_result = MagicMock()
     mock_result.status = "success"
-    mock_result.dict.return_value = {"status": "success"}
+    mock_result.model_dump.return_value = {"status": "success"}
     mock_sync_service.sync_custom_item.return_value = mock_result
 
     async with AsyncClient(
@@ -1004,7 +1004,7 @@ async def test_test_sync_invalid_media_type(app_with_auth, mock_database_manager
     with patch("app.api.sync.sync_service") as mock_svc:
         mock_result = MagicMock()
         mock_result.status = "success"
-        mock_result.dict.return_value = {"status": "success", "message": "ok"}
+        mock_result.model_dump.return_value = {"status": "success", "message": "ok"}
         mock_svc.sync_custom_item.return_value = mock_result
 
         async with AsyncClient(
@@ -1043,7 +1043,7 @@ async def test_test_sync_movie_payload(app_with_auth, mock_database_manager):
         mock_result = MagicMock()
         mock_result.status = "success"
         mock_result.message = "已标记为看过"
-        mock_result.dict.return_value = {
+        mock_result.model_dump.return_value = {
             "status": "success",
             "message": "已标记为看过",
             "data": {"subject_id": "1", "episode_id": "2"},

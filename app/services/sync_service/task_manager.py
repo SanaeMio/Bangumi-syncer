@@ -51,7 +51,7 @@ class TaskManagerMixin:
         with self._tasks_lock:
             self._task_counter += 1
             task_id = f"sync_{self._task_counter}_{int(time.time())}"
-            self._register_task(task_id, item.dict(), source)
+            self._register_task(task_id, item.model_dump(), source)
 
         # 提交到线程池异步执行
         self._executor.submit(self._sync_custom_item_sync, item, source, task_id)
@@ -67,7 +67,7 @@ class TaskManagerMixin:
         try:
             self._update_task_status(task_id, "running")
             result = self.sync_custom_item(item, source)
-            self._update_task_status(task_id, "completed", result=result.dict())
+            self._update_task_status(task_id, "completed", result=result.model_dump())
             return result
         except Exception as e:
             self._update_task_status(task_id, "failed", error=str(e))
@@ -139,7 +139,7 @@ class TaskManagerMixin:
         try:
             self._update_task_status(task_id, "running")
             result = getattr(self, sync_method_name)(data)
-            self._update_task_status(task_id, "completed", result=result.dict())
+            self._update_task_status(task_id, "completed", result=result.model_dump())
             return result
         except Exception as e:
             self._update_task_status(task_id, "failed", error=str(e))
@@ -156,9 +156,7 @@ class TaskManagerMixin:
         self, plex_data: dict[str, Any], task_id: str
     ) -> SyncResponse:
         """同步执行Plex同步的内部方法"""
-        return self._run_media_server_task(
-            plex_data, task_id, "plex", "sync_plex_item"
-        )
+        return self._run_media_server_task(plex_data, task_id, "plex", "sync_plex_item")
 
     def sync_plex_item(self, plex_data: dict[str, Any]) -> SyncResponse:
         """处理Plex同步请求（委托至 plex 子包）"""
@@ -176,9 +174,7 @@ class TaskManagerMixin:
         self, emby_data: dict[str, Any], task_id: str
     ) -> SyncResponse:
         """同步执行Emby同步的内部方法"""
-        return self._run_media_server_task(
-            emby_data, task_id, "emby", "sync_emby_item"
-        )
+        return self._run_media_server_task(emby_data, task_id, "emby", "sync_emby_item")
 
     def sync_emby_item(self, emby_data: dict[str, Any]) -> SyncResponse:
         """处理Emby同步请求（委托至 emby 子包）"""

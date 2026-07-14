@@ -12,20 +12,26 @@ class EmbyWebhookData(BaseModel):
     model_config = {"extra": "allow"}
 
     # 核心必需字段
-    Event: str = Field(..., description="事件类型", example="item.markplayed")
+    Event: str = Field(
+        ..., description="事件类型", json_schema_extra={"example": "item.markplayed"}
+    )
     User: dict[str, Any] = Field(
-        ..., description="用户信息", example={"Name": "用户名", "Id": "user-id"}
+        ...,
+        description="用户信息",
+        json_schema_extra={"example": {"Name": "用户名", "Id": "user-id"}},
     )
     Item: dict[str, Any] = Field(
         ...,
         description="媒体项目信息",
-        example={
-            "Type": "Episode",
-            "SeriesName": "番剧名称",
-            "ParentIndexNumber": 1,
-            "IndexNumber": 1,
-            "PremiereDate": "2024-01-01T00:00:00.0000000Z",
-            "Name": "剧集名称",
+        json_schema_extra={
+            "example": {
+                "Type": "Episode",
+                "SeriesName": "番剧名称",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+                "PremiereDate": "2024-01-01T00:00:00.0000000Z",
+                "Name": "剧集名称",
+            }
         },
     )
 
@@ -35,5 +41,7 @@ class EmbyWebhookData(BaseModel):
     Date: Optional[str] = Field(None, description="通知日期")
     Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
     PlaybackInfo: Optional[dict[str, Any]] = Field(
-        None, description="播放信息", example={"PlayedToCompletion": True}
+        None,
+        description="播放信息",
+        json_schema_extra={"example": {"PlayedToCompletion": True}},
     )

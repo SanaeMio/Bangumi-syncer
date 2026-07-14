@@ -11,21 +11,27 @@ class PlexWebhookData(BaseModel):
     # 允许额外字段
     model_config = {"extra": "allow"}
 
-    event: str = Field(..., description="事件类型", example="media.scrobble")
+    event: str = Field(
+        ..., description="事件类型", json_schema_extra={"example": "media.scrobble"}
+    )
     Account: dict[str, Any] = Field(
-        ..., description="账户信息", example={"title": "用户名"}
+        ...,
+        description="账户信息",
+        json_schema_extra={"example": {"title": "用户名"}},
     )
     Metadata: dict[str, Any] = Field(
         ...,
         description="媒体元数据",
-        example={
-            "type": "episode",
-            "title": "第01话",
-            "grandparentTitle": "番剧名称",
-            "originalTitle": "Original Title",
-            "parentIndex": 1,
-            "index": 1,
-            "originallyAvailableAt": "2024-01-01",
+        json_schema_extra={
+            "example": {
+                "type": "episode",
+                "title": "第01话",
+                "grandparentTitle": "番剧名称",
+                "originalTitle": "Original Title",
+                "parentIndex": 1,
+                "index": 1,
+                "originallyAvailableAt": "2024-01-01",
+            }
         },
     )
 
