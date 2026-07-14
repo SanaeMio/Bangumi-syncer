@@ -11,9 +11,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from ..core.logging import logger
+from ..core.security import security_manager
 from ..models.sync import CustomItem
 from ..services.custom import custom_sync_service
 from ..services.sync_service import sync_service
+from ..utils.bgm_poster_service import get_poster_urls, normalize_subject_id
 from ..utils.data_util import extract_plex_json
 from .deps import get_current_user_flexible
 
@@ -237,8 +239,6 @@ async def get_sync_records(
         )
 
         if include_poster and result.get("records"):
-            from ..utils.bgm_poster_service import get_poster_urls, normalize_subject_id
-
             subject_ids = [
                 sid
                 for r in result["records"]
@@ -378,8 +378,6 @@ async def get_heatmap_stats(
 
 async def _verify_webhook_auth(webhook_key: str) -> bool:
     """验证webhook认证"""
-    from ..core.security import security_manager
-
     return security_manager.verify_webhook_key(webhook_key)
 
 

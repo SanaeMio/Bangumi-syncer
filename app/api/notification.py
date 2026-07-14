@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from ..core.config import config_manager
 from ..core.config_secret_crypto import encrypt_if_sensitive
 from ..core.logging import logger
 from ..utils.notifier import get_notifier
@@ -111,8 +112,6 @@ async def get_notification_status(
 ):
     """获取通知配置状态"""
     try:
-        from ..core.config import config_manager
-
         # 获取webhook配置数量
         webhook_count = 0
         webhook_enabled_count = 0
@@ -160,8 +159,6 @@ async def get_notification_status(
 async def get_webhooks(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有webhook配置"""
     try:
-        from ..core.config import config_manager
-
         webhook_configs = []
         config = config_manager.get_config_parser()
 
@@ -196,8 +193,6 @@ async def create_webhook(
 ):
     """创建新的webhook配置"""
     try:
-        from ..core.config import config_manager
-
         config = config_manager.get_config_parser()
 
         # 计算当前webhook配置的数量
@@ -253,8 +248,6 @@ async def update_webhook(
 ):
     """更新webhook配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"webhook-{webhook_id}"
         config = config_manager.get_config_parser()
 
@@ -307,8 +300,6 @@ async def delete_webhook(
 ):
     """删除webhook配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"webhook-{webhook_id}"
         config = config_manager.get_config_parser()
 
@@ -388,8 +379,6 @@ async def test_webhook(
 async def get_emails(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有邮件配置"""
     try:
-        from ..core.config import config_manager
-
         email_configs = []
         config = config_manager.get_config_parser()
 
@@ -431,8 +420,6 @@ async def create_email(
 ):
     """创建新的邮件配置"""
     try:
-        from ..core.config import config_manager
-
         config = config_manager.get_config_parser()
 
         # 计算当前邮件配置的数量
@@ -504,8 +491,6 @@ async def update_email(
 ):
     """更新邮件配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"email-{email_id}"
         config = config_manager.get_config_parser()
 
@@ -586,8 +571,6 @@ async def delete_email(
 ):
     """删除邮件配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"email-{email_id}"
         config = config_manager.get_config_parser()
 

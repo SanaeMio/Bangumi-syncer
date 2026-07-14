@@ -14,11 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..core.config import config_manager, parse_media_server_username_value
 from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
+    encrypt_if_sensitive,
     is_sensitive_ini_field,
 )
 from ..core.logging import logger
 from ..core.security import security_manager
+from ..services.feiniu.scheduler import feiniu_scheduler
 from ..services.feiniu.sync_service import feiniu_sync_service
+from ..services.fongmi.scheduler import fongmi_scheduler
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -164,8 +167,6 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
             counter += 1
 
         # 创建配置段
-        from ..core.config_secret_crypto import encrypt_if_sensitive
-
         config.add_section(section_name)
         config.set(section_name, "username", account_config["username"])
         config.set(
@@ -292,15 +293,11 @@ async def update_config(
                 logger.info("飞牛已关闭：已清除同步起点水位")
 
         try:
-            from ..services.feiniu.scheduler import feiniu_scheduler
-
             await feiniu_scheduler.apply_config_after_save()
         except Exception as ex:
             logger.debug("飞牛调度器随配置更新: %s", ex)
 
         try:
-            from ..services.fongmi.scheduler import fongmi_scheduler
-
             await fongmi_scheduler.apply_config_after_save()
         except Exception as ex:
             logger.debug("fongmi 调度器随配置更新: %s", ex)

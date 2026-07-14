@@ -26,7 +26,7 @@ def test_handle_multi_accounts_config_encrypts_access_token():
     with (
         patch.object(config_api, "config_manager", mock_cm),
         patch(
-            "app.core.config_secret_crypto.encrypt_if_sensitive",
+            "app.api.config.encrypt_if_sensitive",
             return_value="BGS1:from-test",
         ) as enc_mock,
     ):
@@ -90,7 +90,7 @@ def test_handle_multi_accounts_skips_empty_but_adds_valid_account():
     with (
         patch.object(config_api, "config_manager", mock_cm),
         patch(
-            "app.core.config_secret_crypto.encrypt_if_sensitive",
+            "app.api.config.encrypt_if_sensitive",
             side_effect=lambda _sec, _k, v: v,
         ),
     ):

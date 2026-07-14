@@ -290,7 +290,7 @@ async def test_get_sync_records_include_poster(
     }
 
     with patch(
-        "app.utils.bgm_poster_service.get_poster_urls",
+        "app.api.sync.get_poster_urls",
         new_callable=AsyncMock,
         return_value={123: "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg"},
     ) as mock_posters:

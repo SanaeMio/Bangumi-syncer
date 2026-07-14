@@ -299,5 +299,15 @@ class DatabaseManager:
         return self._inbox.backfill_historical_error_notifications()
 
 
-# 全局数据库实例
-database_manager = DatabaseManager()
+# 全局数据库实例（懒加载：首次访问 database_manager 时才创建实例并打开数据库）
+_database_manager: Optional[DatabaseManager] = None
+
+
+def __getattr__(name: str):
+    """模块级懒加载，避免 import 时即打开 SQLite 连接。"""
+    global _database_manager
+    if name == "database_manager":
+        if _database_manager is None:
+            _database_manager = DatabaseManager()
+        return _database_manager
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

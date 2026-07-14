@@ -313,7 +313,7 @@ async def test_update_config_with_multi_accounts(
 
     with (
         patch(
-            "app.core.config_secret_crypto.encrypt_if_sensitive",
+            "app.api.config.encrypt_if_sensitive",
             side_effect=lambda *a: a[2],
         ),
         patch(

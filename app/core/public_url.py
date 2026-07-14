@@ -8,6 +8,8 @@ import os
 
 from fastapi.responses import RedirectResponse
 
+from .config import config_manager
+
 
 def normalize_public_base_path(raw: str) -> str:
     """规范化前缀：空、无尾斜杠、以 / 开头、URL 内统一为正斜杠。"""
@@ -33,8 +35,6 @@ def get_public_base_path() -> str:
     if env_raw:
         return normalize_public_base_path(env_raw)
     try:
-        from .config import config_manager
-
         ini = config_manager.get("web", "base_path", fallback="") or ""
         return normalize_public_base_path(str(ini).strip())
     except Exception:

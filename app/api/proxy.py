@@ -13,7 +13,9 @@ import httpx
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from ..core.config import config_manager
 from ..core.logging import logger
+from ..utils.docker_helper import docker_helper
 from ..utils.http_client import create_sync_client
 from .deps import get_current_user_flexible
 
@@ -32,9 +34,6 @@ async def get_proxy_suggestions(
 ):
     """获取代理配置建议"""
     try:
-        # 导入docker_helper
-        from ..utils.docker_helper import docker_helper
-
         # 获取环境信息
         env_info = docker_helper.get_environment_info()
 
@@ -56,9 +55,6 @@ async def test_proxy_connectivity(
 ):
     """测试代理连通性"""
     try:
-        # 导入docker_helper
-        from ..utils.docker_helper import docker_helper
-
         # 测试代理连通性
         result = docker_helper.test_proxy_connectivity(request.proxy_url)
 
@@ -74,9 +70,6 @@ async def get_environment_info(
 ):
     """获取环境信息"""
     try:
-        # 导入docker_helper
-        from ..utils.docker_helper import docker_helper
-
         env_info = docker_helper.get_environment_info()
 
         return {"status": "success", "data": env_info}
@@ -273,8 +266,6 @@ async def test_host_connectivity(
 ):
     """测试到指定主机的连通性"""
     try:
-        from ..utils.docker_helper import docker_helper
-
         result = docker_helper.test_host_connectivity(
             request.host, request.port, request.timeout
         )
@@ -292,8 +283,6 @@ async def diagnose_network(
     """网络连接诊断"""
     try:
         # 检测环境信息
-        from ..core.config import config_manager
-        from ..utils.docker_helper import docker_helper
 
         target_url = request.url
         bgm_api_proxy = config_manager.get("dev", "bgm_api_proxy", fallback="")

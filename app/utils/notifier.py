@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 import httpx
 
+from ..core.config import config_manager
 from ..core.logging import logger
 
 
@@ -1198,8 +1199,6 @@ def get_notifier():
     """获取通知器实例"""
     global _notifier_instance
     if _notifier_instance is None:
-        from ..core.config import config_manager
-
         _notifier_instance = Notifier(config_manager)
     return _notifier_instance
 

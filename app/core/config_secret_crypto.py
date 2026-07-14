@@ -12,6 +12,8 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .logging import logger
+
 PREFIX = "BGS1:"
 _HKDF_SALT = b"bangumi-syncer-config-v1"
 _HKDF_INFO = b"config-secret-fernet-v1"
@@ -83,8 +85,6 @@ def decrypt(stored: Any, *, master: str | None = None) -> str:
     f = _fernet_for_master(master)
     if f is None:
         if s.startswith(PREFIX):
-            from .logging import logger
-
             logger.warning(
                 "敏感配置项无法解密：[auth] secret_key 为空，请设置 secret_key 后重新保存 token"
             )
@@ -92,8 +92,6 @@ def decrypt(stored: Any, *, master: str | None = None) -> str:
     try:
         return f.decrypt(token.encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError, TypeError):
-        from .logging import logger
-
         logger.warning(
             "敏感配置密文解密失败（secret_key 是否与加密时一致？）。"
             "若 Bangumi 等 API 报 token 无效，请检查 secret_key 或在 Web 中重新填写 token"

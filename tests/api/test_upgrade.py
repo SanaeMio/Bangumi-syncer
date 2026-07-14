@@ -56,7 +56,7 @@ class TestUpgradeStatus:
             mock_service.is_upgrade_capable.return_value = True
             mock_service.is_upgrade_in_progress = False
 
-            with patch("app.utils.docker_helper.docker_helper") as mock_docker:
+            with patch("app.api.upgrade.docker_helper") as mock_docker:
                 mock_docker.is_docker = False
 
                 with patch("app.api.upgrade.get_version", return_value="1.0.0"):
@@ -79,7 +79,7 @@ class TestUpgradeStatus:
             mock_service.is_upgrade_capable.return_value = False
             mock_service.is_upgrade_in_progress = False
 
-            with patch("app.utils.docker_helper.docker_helper") as mock_docker:
+            with patch("app.api.upgrade.docker_helper") as mock_docker:
                 mock_docker.is_docker = True
 
                 with patch("app.api.upgrade.get_version", return_value="1.0.0"):

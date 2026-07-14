@@ -191,16 +191,12 @@ class TestConfigManagerBranches:
 
     def test_get_config_decrypt_returns_non_str_uses_raw(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[x]\ny = enc\n")
-        with patch(
-            "app.core.config_secret_crypto.decrypt_if_sensitive", return_value=42
-        ):
+        with patch("app.core.config.decrypt_if_sensitive", return_value=42):
             assert cm.get_config("x", "y") == "enc"
 
     def test_get_section_decrypt_if_sensitive(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[x]\na = v\n")
-        with patch(
-            "app.core.config_secret_crypto.decrypt_if_sensitive", return_value="dec"
-        ):
+        with patch("app.core.config.decrypt_if_sensitive", return_value="dec"):
             d = cm.get_section("x")
             assert d.get("a") == "dec"
 
@@ -311,7 +307,7 @@ base_path = /
             tmp_path,
             "[bangumi-main]\nusername=u\naccess_token=t\n",
         )
-        with patch("app.core.logging.logger") as mock_log:
+        with patch("app.core.config.logger") as mock_log:
             cm.reload_multi_account_configs()
         mock_log.info.assert_called()
 

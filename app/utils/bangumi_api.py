@@ -9,6 +9,7 @@ from typing import Optional, Union
 import httpx
 from rapidfuzz import fuzz
 
+from ..core.config import config_manager
 from ..core.logging import logger
 from .http_client import create_sync_client
 
@@ -479,8 +480,6 @@ class BangumiApi:
     @staticmethod
     def _get_episode_sync_limits() -> tuple[int, int]:
         try:
-            from ..core.config import config_manager
-
             return config_manager.get_episode_sync_limits()
         except Exception:
             return 100, 9999

@@ -11,6 +11,7 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import SyncResponse
+from ..sync_service import sync_service
 from .extractor import extract_emby_data
 
 EMBY_SYNC_SOURCE = "emby"
@@ -31,7 +32,7 @@ class EmbySyncService:
             sync_svc: 共享 SyncService 实例。未传入时使用模块级单例。
         """
         if sync_svc is None:
-            from ..sync_service import sync_service as sync_svc
+            sync_svc = sync_service
         try:
             # 记录接收到的数据
             logger.debug(f"接收到Emby同步请求：{emby_data}")

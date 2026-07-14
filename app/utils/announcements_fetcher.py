@@ -91,8 +91,6 @@ def _resolve_local_path(path_str: str) -> Path:
     path = Path(path_str)
     if path.is_absolute():
         return path
-    from ..core.config import config_manager
-
     return config_manager.cwd / path_str
 
 

@@ -5,6 +5,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
+from ...utils.inbox_notifications import notification_group_key
 from ..logging import logger
 from .connection import INBOX_ERROR_BACKFILL_META_KEY
 
@@ -113,8 +114,6 @@ class InboxRepository:
 
     def mark_notification_group_read(self, notification_id: int) -> int:
         """将同一番剧聚合组内的未读通知全部标为已读。"""
-        from ...utils.inbox_notifications import notification_group_key
-
         row = self.get_in_app_notification_by_id(notification_id)
         if not row:
             return 0

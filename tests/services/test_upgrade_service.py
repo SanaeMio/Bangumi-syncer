@@ -684,7 +684,9 @@ class TestInstallDeps:
         with (
             patch("app.services.upgrade_service.subprocess.run") as mock_run,
             patch("app.services.upgrade_service.config_manager") as mock_config,
-            patch("app.utils.runtime_python.persist_runtime_python") as mock_persist,
+            patch(
+                "app.services.upgrade_service.persist_runtime_python"
+            ) as mock_persist,
         ):
             mock_run.return_value = MagicMock(returncode=0, stderr="")
             mock_config.get.return_value = ""

@@ -238,7 +238,7 @@ class TestSecurityManagerExtended:
         assert result is True
         assert sm.login_attempts["192.168.1.100"]["attempts"] == 0
 
-    @patch("app.utils.notifier.send_notify")
+    @patch("app.core.security.send_notify")
     @patch("app.core.security.config_manager")
     def test_record_login_failure_no_lockout(self, mock_config, mock_notify):
         """测试记录登录失败 - 未达到锁定阈值"""
@@ -257,7 +257,7 @@ class TestSecurityManagerExtended:
         assert "locked_until" not in sm.login_attempts["192.168.1.100"]
         mock_notify.assert_not_called()
 
-    @patch("app.utils.notifier.send_notify")
+    @patch("app.core.security.send_notify")
     @patch("app.core.security.config_manager")
     def test_record_login_failure_triggers_lockout(self, mock_config, mock_notify):
         """测试记录登录失败 - 触发锁定"""

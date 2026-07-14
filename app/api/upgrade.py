@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from ..core.app_version import get_version
-from ..services.upgrade_service import upgrade_service
+from ..services.upgrade_service import restart_application, upgrade_service
+from ..utils.docker_helper import docker_helper
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["app"])
@@ -55,8 +56,6 @@ async def upgrade_status(
     user: dict = Depends(get_current_user_flexible),
 ):
     """获取升级状态"""
-    from ..utils.docker_helper import docker_helper
-
     env = "docker" if docker_helper.is_docker else "direct"
     return UpgradeStatusResponse(
         environment=env,
@@ -144,8 +143,6 @@ async def restart_after_upgrade(
 
     async def delayed_restart():
         await asyncio.sleep(1)
-        from ..services.upgrade_service import restart_application
-
         restart_application()
 
     asyncio.create_task(delayed_restart())

@@ -28,6 +28,7 @@ from ..core.config import config_manager
 from ..core.database import database_manager
 from ..core.logging import logger
 from ..utils.docker_helper import docker_helper
+from ..utils.runtime_python import persist_runtime_python
 
 DOWNLOAD_URL = "https://github.com/SanaeMio/Bangumi-syncer/releases/latest/download/Bangumi-syncer.zip"
 DOWNLOAD_TIMEOUT = 300.0
@@ -519,8 +520,6 @@ class UpgradeService:
 
     def _install_deps(self):
         """安装 Python 依赖"""
-        from ..utils.runtime_python import persist_runtime_python
-
         # 写入当前解释器路径，供 start.bat 在升级重启时使用同一 Python
         try:
             persist_runtime_python()

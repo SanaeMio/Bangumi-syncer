@@ -1167,5 +1167,15 @@ class SyncService:
         return jellyfin_sync_service.sync_item(jellyfin_data, self)
 
 
-# 全局同步服务实例
-sync_service = SyncService()
+# 全局同步服务实例（懒加载：首次访问 sync_service 时才创建实例与线程池）
+_sync_service: Optional[SyncService] = None
+
+
+def __getattr__(name: str):
+    """模块级懒加载，避免 import 时即创建 ThreadPoolExecutor。"""
+    global _sync_service
+    if name == "sync_service":
+        if _sync_service is None:
+            _sync_service = SyncService()
+        return _sync_service
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
