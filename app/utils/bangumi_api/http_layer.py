@@ -7,6 +7,7 @@ import httpx
 
 from ...core.logging import logger
 from ..http_client import create_sync_client
+from ..retry import RETRY_STATUS_CODES, compute_backoff_delay
 
 
 class HttpLayerMixin:
@@ -143,9 +144,9 @@ class HttpLayerMixin:
                     raise ValueError(f"不支持的HTTP方法: {method}")
 
                 # 检查是否需要重试的状态码
-                if res.status_code in [429, 500, 502, 503, 504]:
+                if res.status_code in RETRY_STATUS_CODES:
                     if attempt < max_retries:
-                        delay = 2**attempt  # 指数退避: 2, 4, 8秒
+                        delay = compute_backoff_delay(attempt)
                         logger.error(
                             f"HTTP {res.status_code} 错误，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
                         )
@@ -186,7 +187,7 @@ class HttpLayerMixin:
                     dns_error_occurred = True
 
                 if attempt < max_retries:
-                    delay = 2**attempt  # 指数退避: 2, 4, 8秒
+                    delay = compute_backoff_delay(attempt)
                     logger.error(
                         f"请求异常: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
                     )
