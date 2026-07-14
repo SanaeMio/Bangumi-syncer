@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 
 
@@ -27,6 +29,7 @@ def create_sync_client(
     timeout: float = 30.0,
     follow_redirects: bool = True,
     headers: dict | None = None,
+    **extra: Any,
 ) -> httpx.Client:
     """创建同步 httpx.Client
 
@@ -36,6 +39,7 @@ def create_sync_client(
         timeout: 请求超时时间（秒）
         follow_redirects: 是否跟随重定向
         headers: 自定义请求头
+        **extra: 透传给 httpx.Client 的额外参数（如 limits）
 
     Returns:
         httpx.Client 实例
@@ -49,6 +53,7 @@ def create_sync_client(
         kwargs["proxy"] = proxy
     if headers:
         kwargs["headers"] = headers
+    kwargs.update(extra)
     return httpx.Client(**kwargs)
 
 
@@ -59,6 +64,7 @@ def create_async_client(
     timeout: float = 30.0,
     follow_redirects: bool = True,
     headers: dict | None = None,
+    **extra: Any,
 ) -> httpx.AsyncClient:
     """创建异步 httpx.AsyncClient
 
@@ -68,6 +74,7 @@ def create_async_client(
         timeout: 请求超时时间（秒）
         follow_redirects: 是否跟随重定向
         headers: 自定义请求头
+        **extra: 透传给 httpx.AsyncClient 的额外参数（如 limits）
 
     Returns:
         httpx.AsyncClient 实例
@@ -81,4 +88,5 @@ def create_async_client(
         kwargs["proxy"] = proxy
     if headers:
         kwargs["headers"] = headers
+    kwargs.update(extra)
     return httpx.AsyncClient(**kwargs)

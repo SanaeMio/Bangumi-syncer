@@ -11,13 +11,13 @@ from app.utils import bangumi_data
 @patch("app.utils.bangumi_data.time.sleep")
 @patch("app.utils.bangumi_data.httpx.Client")
 def test_module_request_with_retry_raises_after_exhausted(mock_client_cls, _sleep):
-    mock_client = mock_client_cls.return_value.__enter__.return_value
-    mock_client.get.side_effect = httpx.ConnectError("down")
+    mock_client = mock_client_cls.return_value
+    mock_client.request.side_effect = httpx.ConnectError("down")
     with pytest.raises(httpx.ConnectError):
         bangumi_data._request_with_retry(
             "https://example.test/data.json", max_retries=1, ssl_verify=True
         )
-    assert mock_client.get.call_count == 2
+    assert mock_client.request.call_count == 2
 
 
 @patch("app.utils.bangumi_data.time.sleep")
@@ -28,8 +28,11 @@ def test_module_request_with_retry_connection_error_then_success(
     ok = MagicMock()
     ok.status_code = 200
     ok.raise_for_status = MagicMock()
-    mock_client = mock_client_cls.return_value.__enter__.return_value
-    mock_client.get.side_effect = [
+    ok.elapsed.total_seconds.return_value = 0.01
+    ok.headers = {}
+    ok.text = ""
+    mock_client = mock_client_cls.return_value
+    mock_client.request.side_effect = [
         httpx.ConnectError("down"),
         ok,
     ]
@@ -37,7 +40,7 @@ def test_module_request_with_retry_connection_error_then_success(
         "https://example.test/retry.json", max_retries=2, ssl_verify=True
     )
     assert out.status_code == 200
-    assert mock_client.get.call_count == 2
+    assert mock_client.request.call_count == 2
 
 
 @patch("app.utils.bangumi_data.time.sleep")
@@ -48,8 +51,11 @@ def test_module_request_with_retry_ssl_verify_false_sets_warnings(
     ok = MagicMock()
     ok.status_code = 200
     ok.raise_for_status = MagicMock()
-    mock_client = mock_client_cls.return_value.__enter__.return_value
-    mock_client.get.return_value = ok
+    ok.elapsed.total_seconds.return_value = 0.01
+    ok.headers = {}
+    ok.text = ""
+    mock_client = mock_client_cls.return_value
+    mock_client.request.return_value = ok
     bangumi_data._request_with_retry(
         "https://example.test/x", max_retries=0, ssl_verify=False
     )

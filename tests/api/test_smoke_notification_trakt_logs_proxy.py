@@ -504,6 +504,9 @@ async def test_network_diagnose_tcp_and_http_success(app_logs_proxy):
     mock_sock.connect_ex.return_value = 0
     mock_resp = MagicMock()
     mock_resp.status_code = 204
+    mock_resp.elapsed.total_seconds.return_value = 0.01
+    mock_resp.headers = {}
+    mock_resp.text = ""
 
     def fake_get(section, key, fallback=None):
         if key == "ssl_verify":
@@ -520,9 +523,7 @@ async def test_network_diagnose_tcp_and_http_success(app_logs_proxy):
     ):
         with patch("app.api.proxy.socket.socket", return_value=mock_sock):
             with patch("httpx.Client") as mock_client_cls:
-                mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-                    mock_resp
-                )
+                mock_client_cls.return_value.request.return_value = mock_resp
                 with patch(
                     "app.utils.docker_helper.docker_helper.get_environment_info",
                     return_value={"is_docker": False},
@@ -1015,14 +1016,15 @@ async def test_network_diagnose_tcp_connect_ex_failed(app_logs_proxy):
     mock_sock.connect_ex.return_value = 61
     mock_resp = MagicMock()
     mock_resp.status_code = 200
+    mock_resp.elapsed.total_seconds.return_value = 0.01
+    mock_resp.headers = {}
+    mock_resp.text = ""
 
     p_gai, p_docker, p_cfg = _patch_network_diagnose_dns_ok_no_proxy()
     with p_gai, p_docker, p_cfg:
         with patch("app.api.proxy.socket.socket", return_value=mock_sock):
             with patch("httpx.Client") as mock_client_cls:
-                mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-                    mock_resp
-                )
+                mock_client_cls.return_value.request.return_value = mock_resp
                 transport = ASGITransport(app=app_logs_proxy)
                 async with AsyncClient(
                     transport=transport, base_url="http://test"
@@ -1041,6 +1043,9 @@ async def test_network_diagnose_tcp_connect_ex_failed(app_logs_proxy):
 async def test_network_diagnose_tcp_socket_raises(app_logs_proxy):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
+    mock_resp.elapsed.total_seconds.return_value = 0.01
+    mock_resp.headers = {}
+    mock_resp.text = ""
 
     p_gai, p_docker, p_cfg = _patch_network_diagnose_dns_ok_no_proxy()
     with p_gai, p_docker, p_cfg:
@@ -1049,9 +1054,7 @@ async def test_network_diagnose_tcp_socket_raises(app_logs_proxy):
             side_effect=OSError("socket factory"),
         ):
             with patch("httpx.Client") as mock_client_cls:
-                mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-                    mock_resp
-                )
+                mock_client_cls.return_value.request.return_value = mock_resp
                 transport = ASGITransport(app=app_logs_proxy)
                 async with AsyncClient(
                     transport=transport, base_url="http://test"
@@ -1083,8 +1086,8 @@ async def test_network_diagnose_http_request_exception(app_logs_proxy):
         with patch("app.core.config.config_manager.get", side_effect=fake_get):
             with patch("app.api.proxy.socket.socket", return_value=mock_sock):
                 with patch("httpx.Client") as mock_client_cls:
-                    mock_client_cls.return_value.__enter__.return_value.get.side_effect = httpx.ConnectError(
-                        "refused"
+                    mock_client_cls.return_value.request.side_effect = (
+                        httpx.ConnectError("refused")
                     )
                     transport = ASGITransport(app=app_logs_proxy)
                     async with AsyncClient(
@@ -1117,7 +1120,7 @@ async def test_network_diagnose_http_non_request_exception(app_logs_proxy):
         with patch("app.core.config.config_manager.get", side_effect=fake_get):
             with patch("app.api.proxy.socket.socket", return_value=mock_sock):
                 with patch("httpx.Client") as mock_client_cls:
-                    mock_client_cls.return_value.__enter__.return_value.get.side_effect = ValueError(
+                    mock_client_cls.return_value.request.side_effect = ValueError(
                         "unexpected"
                     )
                     transport = ASGITransport(app=app_logs_proxy)

@@ -13,16 +13,14 @@ from typing import Any
 import httpx  # noqa: F401
 
 from ...core.logging import logger
-from ..http_client import create_sync_client
+from ..http_base import SyncHttpClient
 from .collection import CollectionMixin
 from .episodes import EpisodesMixin
 from .http_layer import HttpLayerMixin
 from .search import SearchMixin
 
 
-class BangumiApi(
-    HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin
-):
+class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
     def __init__(
         self,
         username: str | None = None,
@@ -46,12 +44,31 @@ class BangumiApi(
         self.private = private
         self.http_proxy = http_proxy
         self.ssl_verify = ssl_verify
-        # 统一使用工厂函数创建 httpx.Client（proxy/verify 在构造时设置）
-        self.req = create_sync_client(
-            proxy=http_proxy, verify=ssl_verify, follow_redirects=True
+        # 使用 SyncHttpClient 封装 httpx.Client（统一日志/重试）
+        # max_retries=3：重试由 SyncHttpClient 内置处理，_request_with_retry 仅负责代理回退
+        self.req = (
+            SyncHttpClient(
+                label="Bangumi",
+                proxy=http_proxy,
+                verify=ssl_verify,
+                follow_redirects=True,
+                max_retries=3,
+            )
+            .prefix("📚")
+            .success_tpl("Bangumi 请求成功")
+            .failure_tpl("Bangumi 请求失败")
         )
-        self._req_not_auth = create_sync_client(
-            proxy=http_proxy, verify=ssl_verify, follow_redirects=True
+        self._req_not_auth = (
+            SyncHttpClient(
+                label="Bangumi",
+                proxy=http_proxy,
+                verify=ssl_verify,
+                follow_redirects=True,
+                max_retries=3,
+            )
+            .prefix("📚")
+            .success_tpl("Bangumi 请求成功")
+            .failure_tpl("Bangumi 请求失败")
         )
 
         # 代理失败标记：一旦代理失败，后续请求都直接使用直连
@@ -89,19 +106,21 @@ class BangumiApi(
 
     def init(self) -> None:
         for r in self.req, self._req_not_auth:
-            r.headers.update(
+            r.client.headers.update(
                 {
                     "Accept": "application/json",
                     "User-Agent": "SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)",
                 }
             )
             if self.access_token:
-                r.headers.update({"Authorization": f"Bearer {self.access_token}"})
+                r.client.headers.update(
+                    {"Authorization": f"Bearer {self.access_token}"}
+                )
         # httpx.Client.headers 是可变的，直接重新赋值即可
         # httpx 存储的 header key 为小写，需大小写不敏感地过滤
-        self._req_not_auth.headers = {
+        self._req_not_auth.client.headers = {
             k: v
-            for k, v in self._req_not_auth.headers.items()
+            for k, v in self._req_not_auth.client.headers.items()
             if k.lower() != "authorization"
         }
 

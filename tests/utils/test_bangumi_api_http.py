@@ -17,6 +17,7 @@ def _mock_response(status_code=200, json_data=None):
     resp.json.return_value = json_data if json_data is not None else {}
     resp.headers = {}
     resp.text = ""
+    resp.elapsed.total_seconds.return_value = 0.01
     resp.request = MagicMock()
     return resp
 
@@ -28,7 +29,7 @@ def test_search_success():
     )
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.post.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi()
         result = api.search("test", "2024-01-01", "2024-12-31")
@@ -43,7 +44,7 @@ def test_search_empty_result():
     mock_resp = _mock_response(200, {"data": []})
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.post.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi()
         result = api.search("nonexistent", "2024-01-01", "2024-12-31")
@@ -65,7 +66,7 @@ def test_get_subject():
     )
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi()
         result = api.get_subject(123)
@@ -89,7 +90,7 @@ def test_get_episodes():
     )
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi()
         result = api.get_episodes(123)
@@ -108,11 +109,16 @@ def test_mark_episode_watched_add_collection():
     # change_episode_state 返回 200
     mock_put_200 = _mock_response(200, {"status": "ok"})
 
+    def request_side_effect(method, url, **kwargs):
+        if method == "POST":
+            return mock_post_200
+        if method == "PUT":
+            return mock_put_200
+        return mock_get_404
+
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_get_404
-        mock_client.post.return_value = mock_post_200
-        mock_client.put.return_value = mock_put_200
+        mock_client.request.side_effect = request_side_effect
 
         api = BangumiApi(username="testuser", access_token="test_token")
         result = api.mark_episode_watched("123", "1")
@@ -128,7 +134,7 @@ def test_mark_episode_watched_already_watched():
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_get_200
+        mock_client.request.return_value = mock_get_200
 
         api = BangumiApi(username="testuser", access_token="test_token")
         result = api.mark_episode_watched("123", "1")
@@ -144,14 +150,14 @@ def test_mark_episode_watched_already_episode_watched():
     # get_ep_collection 返回已看过
     mock_ep = _mock_response(200, {"type": 2, "episode_id": 1})
 
-    def get_side_effect(url, **kwargs):
+    def request_side_effect(method, url, **kwargs):
         if "episodes/1" in url:
             return mock_ep
         return mock_collection
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.side_effect = get_side_effect
+        mock_client.request.side_effect = request_side_effect
 
         api = BangumiApi(username="testuser", access_token="test_token")
         result = api.mark_episode_watched("123", "1")
@@ -169,15 +175,16 @@ def test_mark_episode_watched_success():
     # change_episode_state 返回 200
     mock_put_200 = _mock_response(200, {"status": "ok"})
 
-    def get_side_effect(url, **kwargs):
+    def request_side_effect(method, url, **kwargs):
+        if method == "PUT":
+            return mock_put_200
         if "episodes/1" in url:
             return mock_ep_404
         return mock_collection
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.side_effect = get_side_effect
-        mock_client.put.return_value = mock_put_200
+        mock_client.request.side_effect = request_side_effect
 
         api = BangumiApi(username="testuser", access_token="test_token")
         result = api.mark_episode_watched("123", "1")
@@ -190,10 +197,14 @@ def test_ensure_subject_watching_not_collected():
     mock_get_404 = _mock_response(404, {})
     mock_post_200 = _mock_response(200, {"status": "ok"})
 
+    def request_side_effect(method, url, **kwargs):
+        if method == "POST":
+            return mock_post_200
+        return mock_get_404
+
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_get_404
-        mock_client.post.return_value = mock_post_200
+        mock_client.request.side_effect = request_side_effect
 
         api = BangumiApi(username="testuser", access_token="test_token")
         assert api.ensure_subject_watching("123") == 1
@@ -204,7 +215,7 @@ def test_ensure_subject_watching_already_watching():
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_get_200
+        mock_client.request.return_value = mock_get_200
 
         api = BangumiApi(username="testuser", access_token="test_token")
         assert api.ensure_subject_watching("123") == 0
@@ -215,7 +226,7 @@ def test_ensure_subject_watching_completed():
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_get_200
+        mock_client.request.return_value = mock_get_200
 
         api = BangumiApi(username="testuser", access_token="test_token")
         assert api.ensure_subject_watching("123") == 0
@@ -225,10 +236,14 @@ def test_ensure_subject_watching_plan_to_watch():
     mock_get_200 = _mock_response(200, {"type": 1, "subject_id": 123})
     mock_post_200 = _mock_response(200, {"status": "ok"})
 
+    def request_side_effect(method, url, **kwargs):
+        if method == "POST":
+            return mock_post_200
+        return mock_get_200
+
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_get_200
-        mock_client.post.return_value = mock_post_200
+        mock_client.request.side_effect = request_side_effect
 
         api = BangumiApi(username="testuser", access_token="test_token")
         assert api.ensure_subject_watching("123") == 1
@@ -241,7 +256,7 @@ def test_get_related_subjects():
     )
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi()
         result = api.get_related_subjects(123)
@@ -255,7 +270,7 @@ def test_get_subject_collection():
     mock_resp = _mock_response(200, {"type": 3, "subject_id": 123, "private": False})
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi(username="testuser", access_token="test_token")
         result = api.get_subject_collection("123")
@@ -268,7 +283,7 @@ def test_get_ep_collection():
     mock_resp = _mock_response(200, {"type": 2, "episode_id": 1})
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi(username="testuser", access_token="test_token")
         result = api.get_ep_collection("1")
@@ -283,7 +298,7 @@ def test_get_me():
     )
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi(username="testuser", access_token="test_token")
         result = api.get_me()
@@ -296,7 +311,7 @@ def test_api_auth_error():
     mock_resp = _mock_response(401, {"error": "Unauthorized"})
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.return_value = mock_resp
+        mock_client.request.return_value = mock_resp
 
         api = BangumiApi(username="testuser", access_token="invalid_token")
 
@@ -315,14 +330,14 @@ def test_bgm_search_invalid_date_fallback():
         200, {"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}
     )
 
-    def get_side_effect(url, **kwargs):
+    def request_side_effect(method, url, **kwargs):
         if "search/subject" in url:
             return mock_search_old
         return mock_subject
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.get.side_effect = get_side_effect
+        mock_client.request.side_effect = request_side_effect
 
         api = BangumiApi()
         # 传入空字符串作为首播日期
@@ -369,15 +384,16 @@ def test_bgm_search_alias_fallback_success():
         },
     )
 
-    def get_side_effect(url, **kwargs):
+    def request_side_effect(method, url, **kwargs):
+        if method == "POST":
+            return mock_post_resp
         if "search/subject" in url:
             return mock_search_old
         return mock_subject
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
-        mock_client.post.return_value = mock_post_resp
-        mock_client.get.side_effect = get_side_effect
+        mock_client.request.side_effect = request_side_effect
 
         api = BangumiApi()
         # 模拟传入单集日期与别名

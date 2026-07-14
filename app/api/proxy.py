@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from ..core.config import config_manager
 from ..core.logging import logger
 from ..utils.docker_helper import docker_helper
-from ..utils.http_client import create_sync_client
+from ..utils.http_base import SyncHttpClient
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api")
@@ -415,11 +415,13 @@ def _diagnose_http_connection(
         start_time = time.time()
 
         proxy_url = proxies.get("https") or proxies.get("http") if proxies else None
-        with create_sync_client(
+        with SyncHttpClient(
+            label="Diag",
             proxy=proxy_url,
             verify=ssl_verify,
             timeout=10.0,
             follow_redirects=False,
+            max_retries=0,
         ) as client:
             response = client.get(test_url)
 

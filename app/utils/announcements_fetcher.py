@@ -14,6 +14,7 @@ import httpx
 
 from ..core.config import config_manager
 from ..core.logging import logger
+from .http_base import AsyncHttpClient
 
 ANNOUNCEMENTS_RAW_URL = "https://raw.githubusercontent.com/SanaeMio/Bangumi-syncer/main/docs/announcements.json"
 _GH_PROXY_MIRRORS = (
@@ -139,7 +140,9 @@ async def _fetch_url(url: str, proxy: str | None) -> httpx.Response:
     }
     if proxy:
         kwargs["proxy"] = proxy
-    async with httpx.AsyncClient(**kwargs) as client:
+    async with AsyncHttpClient(label="Announce", max_retries=0, **kwargs).prefix(
+        "📢"
+    ) as client:
         return await client.get(url)
 
 

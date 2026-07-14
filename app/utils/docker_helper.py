@@ -9,7 +9,7 @@ from typing import Any, Optional
 import httpx
 
 from ..core.logging import logger
-from .http_client import create_sync_client
+from .http_base import SyncHttpClient
 
 
 class DockerProxyHelper:
@@ -272,8 +272,12 @@ class DockerProxyHelper:
                 return result
 
             # 使用代理访问一个简单的HTTP服务
-            with create_sync_client(
-                proxy=proxy_url, verify=False, timeout=timeout
+            with SyncHttpClient(
+                label="Proxy",
+                proxy=proxy_url,
+                verify=False,
+                timeout=timeout,
+                max_retries=0,
             ) as client:
                 response = client.get("http://httpbin.org/ip")  # 测试时不验证SSL
 

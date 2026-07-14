@@ -72,9 +72,16 @@ def test_webhook_notification_success(mock_config_with_webhook):
     """测试 Webhook 通知成功"""
     mock_response = MagicMock()
     mock_response.status_code = 200
-    with patch(
-        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
-    ) as mock_post:
+    mock_response.elapsed.total_seconds.return_value = 0.01
+    mock_response.headers = {}
+    mock_response.text = ""
+    with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
+
         notifier = Notifier(mock_config_with_webhook)
         _result = notifier.send_notification_by_type(
             "mark_success",
@@ -91,8 +98,10 @@ def test_webhook_notification_success(mock_config_with_webhook):
         )
 
         # 由于 send_notification_by_type 没有返回值，检查是否有请求发出
-        assert mock_post.call_count == 1
-        assert mock_post.call_args[0][0] == "https://webhook.example.com/notify"
+        assert mock_instance.post.call_count == 1
+        assert (
+            mock_instance.post.call_args[0][0] == "https://webhook.example.com/notify"
+        )
 
 
 def test_webhook_notification_with_template(mock_config_with_webhook):
@@ -116,9 +125,16 @@ def test_webhook_notification_with_template(mock_config_with_webhook):
 
     mock_response = MagicMock()
     mock_response.status_code = 200
-    with patch(
-        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
-    ) as mock_post:
+    mock_response.elapsed.total_seconds.return_value = 0.01
+    mock_response.headers = {}
+    mock_response.text = ""
+    with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
+
         notifier = Notifier(config)
         notifier.send_notification_by_type(
             "mark_success",
@@ -132,7 +148,7 @@ def test_webhook_notification_with_template(mock_config_with_webhook):
             },
         )
 
-        assert mock_post.call_count == 1
+        assert mock_instance.post.call_count == 1
 
 
 def test_webhook_get_request(mock_config_with_webhook):
@@ -155,7 +171,16 @@ def test_webhook_get_request(mock_config_with_webhook):
 
     mock_response = MagicMock()
     mock_response.status_code = 200
-    with patch("app.utils.notifier.webhook.httpx.get", return_value=mock_response) as mock_get:
+    mock_response.elapsed.total_seconds.return_value = 0.01
+    mock_response.headers = {}
+    mock_response.text = ""
+    with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.get.return_value = mock_response
+
         notifier = Notifier(config)
         notifier.send_notification_by_type(
             "mark_success",
@@ -169,16 +194,23 @@ def test_webhook_get_request(mock_config_with_webhook):
             },
         )
 
-        assert mock_get.call_count == 1
+        assert mock_instance.get.call_count == 1
 
 
 def test_webhook_notification_failure(mock_config_with_webhook):
     """测试 Webhook 通知失败"""
     mock_response = MagicMock()
     mock_response.status_code = 500
-    with patch(
-        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
-    ) as mock_post:
+    mock_response.elapsed.total_seconds.return_value = 0.01
+    mock_response.headers = {}
+    mock_response.text = ""
+    with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
+
         notifier = Notifier(mock_config_with_webhook)
         notifier.send_notification_by_type(
             "mark_success",
@@ -193,7 +225,7 @@ def test_webhook_notification_failure(mock_config_with_webhook):
         )
 
         # 即使失败也会有请求
-        assert mock_post.call_count == 1
+        assert mock_instance.post.call_count == 1
 
 
 def test_webhook_filter_by_type(mock_config_with_webhook):
@@ -216,9 +248,16 @@ def test_webhook_filter_by_type(mock_config_with_webhook):
 
     mock_response = MagicMock()
     mock_response.status_code = 200
-    with patch(
-        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
-    ) as mock_post:
+    mock_response.elapsed.total_seconds.return_value = 0.01
+    mock_response.headers = {}
+    mock_response.text = ""
+    with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
+
         notifier = Notifier(config)
 
         # 发送成功通知 - 应该发送
@@ -226,7 +265,7 @@ def test_webhook_filter_by_type(mock_config_with_webhook):
             "mark_success",
             {"timestamp": "2024-01-01 12:00:00"},
         )
-        assert mock_post.call_count == 1
+        assert mock_instance.post.call_count == 1
 
         # 发送失败通知 - 不应该发送
         notifier.send_notification_by_type(
@@ -234,7 +273,7 @@ def test_webhook_filter_by_type(mock_config_with_webhook):
             {"timestamp": "2024-01-01 12:00:00"},
         )
         # 没有新的请求
-        assert mock_post.call_count == 1
+        assert mock_instance.post.call_count == 1
 
 
 def test_webhook_disabled(mock_config_with_webhook):
@@ -257,9 +296,16 @@ def test_webhook_disabled(mock_config_with_webhook):
 
     mock_response = MagicMock()
     mock_response.status_code = 200
-    with patch(
-        "app.utils.notifier.webhook.httpx.post", return_value=mock_response
-    ) as mock_post:
+    mock_response.elapsed.total_seconds.return_value = 0.01
+    mock_response.headers = {}
+    mock_response.text = ""
+    with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
+
         notifier = Notifier(config)
         _result = notifier.send_notification_by_type(
             "mark_success",
@@ -267,7 +313,7 @@ def test_webhook_disabled(mock_config_with_webhook):
         )
 
         # 没有请求发出 - 当 enabled=False 时，_get_webhook_configs 应该过滤掉
-        assert mock_post.call_count == 0
+        assert mock_instance.post.call_count == 0
 
     configs = notifier._get_webhook_configs()
     # 验证所有配置都是禁用的

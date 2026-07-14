@@ -321,7 +321,7 @@ def test_ensure_client(mock_config):
 
     try:
         loop.run_until_complete(client._ensure_client())
-        assert client._client is not None
+        assert client._http is not None
     finally:
         loop.run_until_complete(client.close())
         loop.close()
@@ -338,10 +338,10 @@ def test_close_client(mock_config):
 
     try:
         loop.run_until_complete(client._ensure_client())
-        assert client._client is not None
+        assert client._http is not None
 
         loop.run_until_complete(client.close())
-        assert client._client is None
+        assert client._http is None
     finally:
         loop.close()
 

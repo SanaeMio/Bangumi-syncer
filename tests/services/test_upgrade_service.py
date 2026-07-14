@@ -462,8 +462,7 @@ class TestDownloadZip:
 
         mock_client = MagicMock()
         mock_client.stream.return_value = _AsyncContextManager(mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.aclose = AsyncMock()
 
         with patch(
             "app.services.upgrade_service.httpx.AsyncClient", return_value=mock_client
@@ -485,8 +484,7 @@ class TestDownloadZip:
 
         mock_client = MagicMock()
         mock_client.stream.return_value = _AsyncContextManager(mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.aclose = AsyncMock()
 
         with patch(
             "app.services.upgrade_service.httpx.AsyncClient", return_value=mock_client
@@ -522,8 +520,7 @@ class TestDownloadZip:
                 client.stream.side_effect = httpx.ConnectError("connection failed")
             else:
                 client.stream.return_value = _AsyncContextManager(mock_response)
-            client.__aenter__ = AsyncMock(return_value=client)
-            client.__aexit__ = AsyncMock(return_value=False)
+            client.aclose = AsyncMock()
             return client
 
         with (
@@ -547,8 +544,7 @@ class TestDownloadZip:
 
         mock_client = MagicMock()
         mock_client.stream.side_effect = httpx.ConnectError("connection refused")
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.aclose = AsyncMock()
 
         with (
             patch(
@@ -573,8 +569,7 @@ class TestDownloadZip:
 
         mock_client = MagicMock()
         mock_client.stream.side_effect = httpx.ConnectError("timeout")
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.aclose = AsyncMock()
 
         with (
             patch(

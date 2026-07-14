@@ -134,6 +134,9 @@ class _FakeAsyncClientCtx:
     def __init__(self, post_coro):
         self._post = post_coro
 
+    def prefix(self, text):
+        return self
+
     async def __aenter__(self):
         return self
 
@@ -155,7 +158,7 @@ async def test_exchange_code_for_token_200_and_errors(svc):
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
             with patch(
-                "app.services.trakt.auth.httpx.AsyncClient",
+                "app.services.trakt.auth.AsyncHttpClient",
                 return_value=_FakeAsyncClientCtx(ret_ok),
             ):
                 assert await svc._exchange_code_for_token("code") == {
@@ -170,7 +173,7 @@ async def test_exchange_code_for_token_200_and_errors(svc):
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
             with patch(
-                "app.services.trakt.auth.httpx.AsyncClient",
+                "app.services.trakt.auth.AsyncHttpClient",
                 return_value=_FakeAsyncClientCtx(ret_bad),
             ):
                 assert await svc._exchange_code_for_token("c") is None
@@ -184,7 +187,7 @@ async def test_exchange_code_for_token_200_and_errors(svc):
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
             with patch(
-                "app.services.trakt.auth.httpx.AsyncClient",
+                "app.services.trakt.auth.AsyncHttpClient",
                 return_value=_FakeAsyncClientCtx(boom),
             ):
                 assert await svc._exchange_code_for_token("c") is None
@@ -201,7 +204,7 @@ async def test_refresh_access_token_paths(svc):
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
             with patch(
-                "app.services.trakt.auth.httpx.AsyncClient",
+                "app.services.trakt.auth.AsyncHttpClient",
                 return_value=_FakeAsyncClientCtx(ret_ok),
             ):
                 assert await svc._refresh_access_token("rt") == {"access_token": "n"}
@@ -212,7 +215,7 @@ async def test_refresh_access_token_paths(svc):
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
             with patch(
-                "app.services.trakt.auth.httpx.AsyncClient",
+                "app.services.trakt.auth.AsyncHttpClient",
                 return_value=_FakeAsyncClientCtx(boom),
             ):
                 assert await svc._refresh_access_token("rt") is None

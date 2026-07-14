@@ -9,11 +9,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-import httpx
-
 from ...core.config import config_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ...utils.http_base import AsyncHttpClient
 from ..base.models import BaseSyncResult
 from .client import (
     discover_devices,
@@ -47,7 +46,7 @@ class FongmiSyncService:
 
     def _record_to_custom_item(self, rec: FongmiWatchRecord) -> CustomItem:
         return CustomItem(
-            media_type="episode",
+            media_type="movie" if rec.is_movie else "episode",
             title=rec.title,
             ori_title=None,
             season=rec.season,
@@ -163,7 +162,9 @@ class FongmiSyncService:
             device_type=0,
         )
 
-        async with httpx.AsyncClient() as client:
+        async with AsyncHttpClient(label="Fongmi", max_retries=0).prefix(
+            "📡"
+        ) as client:
             media = await fetch_media(device, client)
 
         if not media:
@@ -188,6 +189,7 @@ class FongmiSyncService:
             "title": rec.title,
             "season": rec.season,
             "episode": rec.episode,
+            "is_movie": rec.is_movie,
             "url": rec.episode_url,
             "artist": rec.artist,
             "duration": media.get("duration", 0),

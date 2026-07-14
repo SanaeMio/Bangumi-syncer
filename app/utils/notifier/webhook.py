@@ -2,9 +2,8 @@
 
 from typing import Any
 
-import httpx
-
 from ...core.logging import logger
+from ..http_base import SyncHttpClient
 
 
 class WebhookMixin:
@@ -36,27 +35,29 @@ class WebhookMixin:
             # 发送请求
             logger.info(f"📤 发送 {notification_type} 通知到: {url}")
 
+            client = (
+                SyncHttpClient(label="Webhook", timeout=10.0, max_retries=0)
+                .prefix("🔔")
+                .success_tpl("通知发送成功")
+                .failure_tpl("通知发送失败")
+            )
+
             if method == "POST":
-                response = httpx.post(url, json=payload, headers=headers, timeout=10)
+                response = client.post(url, json=payload, headers=headers)
             else:  # GET
-                response = httpx.get(
+                response = client.get(
                     url,
                     params=payload if isinstance(payload, dict) else None,
                     headers=headers,
-                    timeout=10,
                 )
 
             if response.status_code < 300:
-                logger.info(
-                    f"✅ Webhook通知发送成功，响应状态码: {response.status_code}"
-                )
                 return True
             else:
                 logger.warning(f"⚠️  Webhook返回非成功状态码: {response.status_code}")
                 return False
 
-        except Exception as e:
-            logger.error(f"❌ Webhook通知发送失败: {str(e)}")
+        except Exception:
             return False
 
     def _build_payload_by_type(

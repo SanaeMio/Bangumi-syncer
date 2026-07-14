@@ -12,7 +12,7 @@ import httpx
 
 from ...core.config import config_manager
 from ...core.logging import logger
-from ...utils.http_client import create_async_client
+from ...utils.http_base import AsyncHttpClient
 
 # ===== 数据模型导入 =====
 from .models import TraktCollectionItem, TraktHistoryItem, TraktRatingItem
@@ -44,7 +44,7 @@ class TraktClient:
         self.retry_delay = 1.0
 
         # HTTP 客户端
-        self._client: Optional[httpx.AsyncClient] = None
+        self._http: Optional[AsyncHttpClient] = None
 
     async def __aenter__(self) -> "TraktClient":
         """异步上下文管理器入口"""
@@ -57,18 +57,25 @@ class TraktClient:
 
     async def _ensure_client(self) -> None:
         """确保 HTTP 客户端已初始化"""
-        if self._client is None:
-            self._client = create_async_client(
-                headers=self.headers,
-                timeout=30.0,
-                follow_redirects=True,
+        if self._http is None:
+            self._http = (
+                AsyncHttpClient(
+                    label="Trakt",
+                    headers=self.headers,
+                    timeout=30.0,
+                    follow_redirects=True,
+                    max_retries=0,
+                )
+                .prefix("🎬")
+                .success_tpl("Trakt API [{status_code}]")
+                .failure_tpl("Trakt API 失败: {error_type}")
             )
 
     async def close(self) -> None:
         """关闭 HTTP 客户端"""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        if self._http:
+            await self._http.aclose()
+            self._http = None
 
     async def _make_request(
         self,
@@ -79,7 +86,7 @@ class TraktClient:
     ) -> Optional[dict]:
         """发送 HTTP 请求，处理速率限制和重试"""
         await self._ensure_client()
-        assert self._client is not None
+        assert self._http is not None
 
         # 检查速率限制
         await self._check_rate_limit()
@@ -90,7 +97,7 @@ class TraktClient:
 
         for attempt in range(self.max_retries):
             try:
-                response = await self._client.request(
+                response = await self._http.request(
                     method=method,
                     url=url,
                     json=data,

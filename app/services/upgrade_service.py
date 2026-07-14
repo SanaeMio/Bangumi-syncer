@@ -28,6 +28,7 @@ from ..core.config import config_manager
 from ..core.database import database_manager
 from ..core.logging import logger
 from ..utils.docker_helper import docker_helper
+from ..utils.http_base import AsyncHttpClient
 from ..utils.runtime_python import persist_runtime_python
 
 DOWNLOAD_URL = "https://github.com/SanaeMio/Bangumi-syncer/releases/latest/download/Bangumi-syncer.zip"
@@ -283,11 +284,13 @@ class UpgradeService:
                     )
 
                 try:
-                    async with httpx.AsyncClient(
+                    async with AsyncHttpClient(
+                        label="Upgrade",
                         timeout=DOWNLOAD_TIMEOUT,
                         proxy=proxy,
                         follow_redirects=True,
-                    ) as client:
+                        max_retries=0,
+                    ).prefix("⬆️") as client:
                         async with client.stream("GET", url) as resp:
                             if resp.status_code != 200:
                                 raise RuntimeError(f"下载失败: HTTP {resp.status_code}")

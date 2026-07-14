@@ -278,7 +278,7 @@ async def test_diagnose_network_tcp_success(app_with_auth):
 
                     # Mock httpx.Client to raise exception
                     with patch("httpx.Client") as mock_client_cls:
-                        mock_client_cls.return_value.__enter__.return_value.get.side_effect = Exception(
+                        mock_client_cls.return_value.request.side_effect = Exception(
                             "Request failed"
                         )
 
@@ -320,7 +320,12 @@ async def test_diagnose_network_with_proxy(app_with_auth):
                     with patch("httpx.Client") as mock_client_cls:
                         mock_response = MagicMock()
                         mock_response.status_code = 200
-                        mock_client_cls.return_value.__enter__.return_value.get.return_value = mock_response
+                        mock_response.elapsed.total_seconds.return_value = 0.01
+                        mock_response.headers = {}
+                        mock_response.text = ""
+                        mock_client_cls.return_value.request.return_value = (
+                            mock_response
+                        )
 
                         async with AsyncClient(
                             transport=ASGITransport(app=app_with_auth),

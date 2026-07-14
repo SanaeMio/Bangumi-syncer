@@ -119,9 +119,9 @@ class TestDockerProxyHelperSimple:
             mock_response.status_code = 200
             mock_response.headers = {"content-type": "application/json"}
             mock_response.json.return_value = {"origin": "1.2.3.4"}
-            mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-                mock_response
-            )
+            mock_response.elapsed.total_seconds.return_value = 0.01
+            mock_response.text = ""
+            mock_client_cls.return_value.request.return_value = mock_response
 
             from app.utils.docker_helper import DockerProxyHelper
 
@@ -138,8 +138,8 @@ class TestDockerProxyHelperSimple:
         import httpx
 
         with patch("app.utils.docker_helper.httpx.Client") as mock_client_cls:
-            mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
-                httpx.ConnectTimeout("timeout")
+            mock_client_cls.return_value.request.side_effect = httpx.ConnectTimeout(
+                "timeout"
             )
 
             from app.utils.docker_helper import DockerProxyHelper
@@ -245,8 +245,8 @@ class TestDockerProxyHelperSimple:
         from app.utils.docker_helper import DockerProxyHelper
 
         with patch("app.utils.docker_helper.httpx.Client") as mock_client_cls:
-            mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
-                httpx.ConnectError("refused")
+            mock_client_cls.return_value.request.side_effect = httpx.ConnectError(
+                "refused"
             )
             h = DockerProxyHelper()
             with patch.object(
@@ -260,9 +260,7 @@ class TestDockerProxyHelperSimple:
         from app.utils.docker_helper import DockerProxyHelper
 
         with patch("app.utils.docker_helper.httpx.Client") as mock_client_cls:
-            mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
-                RuntimeError("x")
-            )
+            mock_client_cls.return_value.request.side_effect = RuntimeError("x")
             h = DockerProxyHelper()
             with patch.object(
                 h, "_test_basic_connectivity", return_value={"success": True}
@@ -610,9 +608,8 @@ class TestDockerProxyHelperTestProxyConnectivityExtended:
         mock_response.status_code = 200
         mock_response.headers = {"content-type": "text/html"}
         mock_response.text = "<html>OK</html>"
-        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-            mock_response
-        )
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_client_cls.return_value.request.return_value = mock_response
 
         from app.utils.docker_helper import DockerProxyHelper
 

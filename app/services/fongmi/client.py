@@ -17,6 +17,7 @@ import re
 import httpx
 
 from ...core.logging import logger
+from ...utils.http_base import AsyncHttpClient
 from .models import FongmiDevice, FongmiWatchRecord
 
 # 端口与超时
@@ -68,6 +69,12 @@ _RESOLUTION_RE = re.compile(
 )
 _RANGE_RE = re.compile(r"\b\d{1,4}\s*-\s*\d{1,4}\b")
 _FIRST_NUM_RE = re.compile(r"\d{1,3}")
+
+# 剧场版/电影关键词（URL 或 artist 命中即视为单条影片）
+_MOVIE_KEYWORD_RE = re.compile(
+    r"剧场版|劇場版|电影|電影|\bMovie\b|\bFilm\b",
+    re.IGNORECASE,
+)
 
 
 def _extract_episode_from_filename(text: str) -> int:
@@ -160,6 +167,17 @@ def parse_episode_info(url: str, artist: str) -> tuple[int, int]:
     return season, episode
 
 
+def _is_movie(url: str, artist: str | None) -> bool:
+    """判断是否为剧场版/电影。
+
+    命中关键词（剧场版/劇場版/电影/電影/Movie/Film）即视为单条影片。
+    """
+    for text in (url or "", artist or ""):
+        if text and _MOVIE_KEYWORD_RE.search(text):
+            return True
+    return False
+
+
 # ===== 设备发现与探测 =====
 
 
@@ -180,7 +198,7 @@ def _build_device(ip: str, port: int, info: dict) -> FongmiDevice:
     )
 
 
-async def _probe_device(client: httpx.AsyncClient, ip: str, port: int) -> dict | None:
+async def _probe_device(client: AsyncHttpClient, ip: str, port: int) -> dict | None:
     """探测单个 ip:port 的 /device 端点"""
     try:
         resp = await client.get(f"http://{ip}:{port}/device", timeout=_PROBE_TIMEOUT)
@@ -194,7 +212,7 @@ async def _probe_device(client: httpx.AsyncClient, ip: str, port: int) -> dict |
 
 
 async def _probe_ports(
-    client: httpx.AsyncClient, ip: str, ports: list[int]
+    client: AsyncHttpClient, ip: str, ports: list[int]
 ) -> tuple[int, dict] | None:
     """并行探测指定 IP 的多个端口，返回第一个命中的 (port, info)"""
 
@@ -209,7 +227,7 @@ async def _probe_ports(
 
 
 async def discover_devices(
-    subnet: str, base_client: httpx.AsyncClient | None = None
+    subnet: str, base_client: AsyncHttpClient | None = None
 ) -> list[FongmiDevice]:
     """扫描网段（如 192.168.1）的默认端口 9978，发现 fongmi 设备。
 
@@ -219,9 +237,11 @@ async def discover_devices(
         return []
 
     own_client = base_client is None
-    client = base_client or httpx.AsyncClient(
-        limits=httpx.Limits(max_connections=300, max_keepalive_connections=50)
-    )
+    client = base_client or AsyncHttpClient(
+        label="Fongmi",
+        limits=httpx.Limits(max_connections=300, max_keepalive_connections=50),
+        max_retries=0,
+    ).prefix("📡")
     found: list[FongmiDevice] = []
 
     async def _check(ip: str) -> FongmiDevice | None:
@@ -249,7 +269,7 @@ async def discover_devices(
 
 
 async def parse_device_entry(
-    entry: str, base_client: httpx.AsyncClient | None = None
+    entry: str, base_client: AsyncHttpClient | None = None
 ) -> FongmiDevice | None:
     """解析手动配置的单个设备入口（ip 或 ip:port），查询 /device 补全信息。
 
@@ -268,7 +288,7 @@ async def parse_device_entry(
             port = int(port_str)
 
     own_client = base_client is None
-    client = base_client or httpx.AsyncClient()
+    client = base_client or AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡")
     try:
         # 指定端口或默认端口 9978：单次探测
         target_port = port or _DEFAULT_PORT
@@ -292,7 +312,7 @@ async def parse_device_entry(
 # ===== /media 拉取与解析 =====
 
 
-async def fetch_media(device: FongmiDevice, client: httpx.AsyncClient) -> dict | None:
+async def fetch_media(device: FongmiDevice, client: AsyncHttpClient) -> dict | None:
     """获取单台设备的 /media 播放状态"""
     try:
         resp = await client.get(
@@ -325,14 +345,21 @@ def media_is_complete(media: dict, min_percent: int) -> bool:
 
 
 def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | None:
-    """将 /media 转为 FongmiWatchRecord（仅提取字段，不判断是否完成）"""
+    """将 /media 转为 FongmiWatchRecord（仅提取字段，不判断是否完成）
+
+    剧场版/电影：season=1, episode=1，is_movie=True。
+    """
     title = (media.get("title") or "").strip()
     if not title:
         return None
     url = str(media.get("url") or "")
     artist = media.get("artist")
     artist_s = str(artist) if artist else None
-    season, episode = parse_episode_info(url, artist_s or "")
+    is_movie = _is_movie(url, artist_s)
+    if is_movie:
+        season, episode = 1, 1
+    else:
+        season, episode = parse_episode_info(url, artist_s or "")
     return FongmiWatchRecord(
         device_ip=device.ip,
         device_name=device.name,
@@ -342,6 +369,7 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
         episode_url=url,
         artist=artist_s,
         release_date="",
+        is_movie=is_movie,
     )
 
 
@@ -358,7 +386,11 @@ def media_to_debug_dict(device: FongmiDevice, media: dict | None) -> dict:
     url = str(media.get("url") or "")
     artist = media.get("artist")
     artist_s = str(artist) if artist else ""
-    season, episode = parse_episode_info(url, artist_s)
+    is_movie = _is_movie(url, artist_s or None)
+    if is_movie:
+        season, episode = 1, 1
+    else:
+        season, episode = parse_episode_info(url, artist_s)
     duration = media.get("duration", 0) or 0
     position = media.get("position", 0) or 0
     percent = 0.0
@@ -374,6 +406,7 @@ def media_to_debug_dict(device: FongmiDevice, media: dict | None) -> dict:
             "duration": duration,
             "position": position,
             "percent": percent,
+            "is_movie": is_movie,
             "parsed_season": season,
             "parsed_episode": episode,
         },
@@ -387,7 +420,7 @@ async def fetch_completed_records(
     if not devices:
         return []
     records: list[FongmiWatchRecord] = []
-    async with httpx.AsyncClient() as client:
+    async with AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡") as client:
         tasks = [fetch_media(d, client) for d in devices]
         media_list = await asyncio.gather(*tasks, return_exceptions=True)
         for device, media in zip(devices, media_list):
@@ -405,7 +438,7 @@ async def fetch_all_media_status(devices: list[FongmiDevice]) -> list[dict]:
     """并行拉取所有设备的 /media 当前状态（不过滤完成），返回调试展示用 dict 列表"""
     if not devices:
         return []
-    async with httpx.AsyncClient() as client:
+    async with AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡") as client:
         tasks = [fetch_media(d, client) for d in devices]
         media_list = await asyncio.gather(*tasks, return_exceptions=True)
     return [

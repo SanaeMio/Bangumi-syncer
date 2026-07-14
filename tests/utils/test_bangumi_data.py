@@ -33,7 +33,10 @@ class TestBangumiData:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json = MagicMock(return_value={"data": []})
-        mock_client.return_value.__enter__.return_value.get.return_value = mock_response
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+        mock_client.return_value.request.return_value = mock_response
         data = BangumiData()
         assert data is not None
 
@@ -1721,9 +1724,10 @@ class TestRequestWithRetry:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
-        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-            mock_response
-        )
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+        mock_client_cls.return_value.request.return_value = mock_response
         from app.utils.bangumi_data import _request_with_retry
 
         result = _request_with_retry("https://example.com")
@@ -1738,7 +1742,10 @@ class TestRequestWithRetry:
         mock_response2 = MagicMock()
         mock_response2.status_code = 200
         mock_response2.raise_for_status = MagicMock()
-        mock_client_cls.return_value.__enter__.return_value.get.side_effect = [
+        mock_response2.elapsed.total_seconds.return_value = 0.01
+        mock_response2.headers = {}
+        mock_response2.text = ""
+        mock_client_cls.return_value.request.side_effect = [
             mock_response1,
             mock_response2,
         ]
@@ -1752,9 +1759,13 @@ class TestRequestWithRetry:
     def test_request_with_retry_connection_error(self, mock_client_cls, mock_sleep):
         import httpx
 
-        mock_client_cls.return_value.__enter__.return_value.get.side_effect = [
+        ok = MagicMock(status_code=200, raise_for_status=MagicMock())
+        ok.elapsed.total_seconds.return_value = 0.01
+        ok.headers = {}
+        ok.text = ""
+        mock_client_cls.return_value.request.side_effect = [
             httpx.ConnectError("Connection failed"),
-            MagicMock(status_code=200, raise_for_status=MagicMock()),
+            ok,
         ]
         from app.utils.bangumi_data import _request_with_retry
 
@@ -1766,9 +1777,10 @@ class TestRequestWithRetry:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
-        mock_client_cls.return_value.__enter__.return_value.get.return_value = (
-            mock_response
-        )
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+        mock_client_cls.return_value.request.return_value = mock_response
         from app.utils.bangumi_data import _request_with_retry
 
         _request_with_retry("https://example.com", ssl_verify=False)
@@ -1781,9 +1793,7 @@ class TestRequestWithRetry:
     def test_request_with_retry_exhausted(self, mock_client_cls, mock_sleep):
         import httpx
 
-        mock_client_cls.return_value.__enter__.return_value.get.side_effect = (
-            httpx.ConnectError("fail")
-        )
+        mock_client_cls.return_value.request.side_effect = httpx.ConnectError("fail")
         from app.utils.bangumi_data import _request_with_retry
 
         with pytest.raises(httpx.ConnectError):

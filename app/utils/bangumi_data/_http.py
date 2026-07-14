@@ -15,8 +15,7 @@ from typing import Any
 
 import httpx
 
-from ..http_client import create_sync_client
-from ..retry import http_retry_sync
+from ..http_base import SyncHttpClient
 
 
 class _BufferedResponse:
@@ -86,14 +85,20 @@ def _request_with_retry(
     if proxies:
         proxy_url = proxies.get("https") or proxies.get("http")
 
-    def _do_request() -> httpx.Response:
-        with create_sync_client(
-            proxy=proxy_url, verify=ssl_verify, timeout=30.0
-        ) as client:
-            return client.get(url)
-
-    response = http_retry_sync(
-        _do_request, max_retries=max_retries, label="请求"
+    client = (
+        SyncHttpClient(
+            label="BangumiData",
+            proxy=proxy_url,
+            verify=ssl_verify,
+            timeout=30.0,
+            max_retries=max_retries,
+        )
+        .prefix("📦")
+        .success_tpl("数据下载成功")
+        .failure_tpl("数据下载失败")
     )
+    with client:
+        response = client.get(url)
+
     response.raise_for_status()
     return _BufferedResponse(response)

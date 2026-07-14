@@ -1,16 +1,19 @@
-"""BangumiApi HTTP 层：直连/重试/诊断（mixin）"""
+"""BangumiApi HTTP 层：直连/诊断/状态码通知（mixin）
+
+重试逻辑由 SyncHttpClient 内置 max_retries 统一处理，
+本模块仅负责代理失败后直连回退、DNS 诊断和重试耗尽通知。
+"""
 
 from __future__ import annotations
 
 import socket
-import time
 from typing import Any
 
 import httpx
 
 from ...core.logging import logger
-from ..http_client import create_sync_client
-from ..retry import RETRY_STATUS_CODES, compute_backoff_delay
+from ..http_base import SyncHttpClient
+from ..retry import RETRY_EXCEPTIONS, RETRY_STATUS_CODES
 
 
 class HttpLayerMixin:
@@ -22,9 +25,18 @@ class HttpLayerMixin:
         """尝试直连（不使用代理）"""
         logger.info(f"🔄 尝试直连: {url}")
 
-        # 创建一个临时的 httpx.Client，不使用代理
-        temp_session = create_sync_client(verify=self.ssl_verify)
-        temp_session.headers.update(
+        # 创建一个临时的 SyncHttpClient，不使用代理
+        temp_session = (
+            SyncHttpClient(
+                label="Bangumi-直连",
+                verify=self.ssl_verify,
+                max_retries=0,
+            )
+            .prefix("📚")
+            .success_tpl("直连请求成功")
+            .failure_tpl("直连请求失败")
+        )
+        temp_session.client.headers.update(
             {
                 "Accept": "application/json",
                 "User-Agent": "SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)",
@@ -32,7 +44,7 @@ class HttpLayerMixin:
         )
 
         if self.access_token:
-            temp_session.headers.update(
+            temp_session.client.headers.update(
                 {"Authorization": f"Bearer {self.access_token}"}
             )
 
@@ -46,16 +58,7 @@ class HttpLayerMixin:
             kwargs_copy["timeout"] = 15
 
         try:
-            if method.upper() == "GET":
-                res = temp_session.get(url, **kwargs_copy)
-            elif method.upper() == "POST":
-                res = temp_session.post(url, **kwargs_copy)
-            elif method.upper() == "PUT":
-                res = temp_session.put(url, **kwargs_copy)
-            elif method.upper() == "PATCH":
-                res = temp_session.patch(url, **kwargs_copy)
-            else:
-                raise ValueError(f"不支持的HTTP方法: {method}")
+            res = temp_session.request(method, url, **kwargs_copy)
 
             # 检查响应状态
             if res.status_code < 400:
@@ -119,120 +122,73 @@ class HttpLayerMixin:
     def _request_with_retry(
         self,
         method: str,
-        session: httpx.Client,
+        session: SyncHttpClient,
         url: str,
-        max_retries: int = 3,
         **kwargs: Any,
     ) -> httpx.Response:
-        """带重试机制的请求方法（支持代理失败后直连重试）"""
+        """请求方法（重试由 SyncHttpClient 内置 max_retries 处理）
+
+        本方法仅负责：
+        - 代理失败后直连回退
+        - DNS 错误网络诊断
+        - 重试耗尽后的状态码通知
+        """
         kwargs.setdefault("timeout", 15)
-        dns_error_occurred = False
+        # httpx.Client 在构造时已设置 verify 和 proxy，移除 per-request 残留
+        kwargs.pop("verify", None)
+        kwargs.pop("proxies", None)
 
         # 如果之前代理已经失败过，直接使用直连
         if self.http_proxy and self._proxy_failed:
             logger.info("💡 检测到代理之前已失败，本次请求直接使用直连")
-            try:
-                return self._try_direct_connection(method, url, **kwargs)
-            except Exception as e:
-                logger.error(f"直连请求失败: {str(e)}")
-                raise e
+            return self._try_direct_connection(method, url, **kwargs)
 
-        for attempt in range(max_retries + 1):
-            try:
-                # httpx.Client 在构造时已设置 verify 和 proxies，
-                # 需从 kwargs 中移除这些参数（requests 风格的逐请求传参）
-                kwargs.pop("verify", None)
-                kwargs.pop("proxies", None)
+        try:
+            res = session.request(method, url, **kwargs)
+        except RETRY_EXCEPTIONS as e:
+            # SyncHttpClient 重试耗尽后仍抛出异常
+            dns_error = "Failed to resolve" in str(
+                e
+            ) or "Temporary failure in name resolution" in str(e)
 
-                if method.upper() == "GET":
-                    res = session.get(url, **kwargs)
-                elif method.upper() == "POST":
-                    res = session.post(url, **kwargs)
-                elif method.upper() == "PUT":
-                    res = session.put(url, **kwargs)
-                elif method.upper() == "PATCH":
-                    res = session.patch(url, **kwargs)
-                else:
-                    raise ValueError(f"不支持的HTTP方法: {method}")
+            # 如果配置了代理且重试失败，尝试直连
+            if self.http_proxy:
+                logger.warning("⚠️  代理请求失败，尝试抛弃代理直连...")
+                try:
+                    direct_result = self._try_direct_connection(method, url, **kwargs)
+                    if direct_result:
+                        self._proxy_failed = True
+                        logger.info("✅ 直连成功！已成功绕过代理问题")
+                        return direct_result
+                except (httpx.HTTPError, ValueError) as direct_error:
+                    logger.error(f"❌ 直连也失败了: {str(direct_error)}")
 
-                # 检查是否需要重试的状态码
-                if res.status_code in RETRY_STATUS_CODES:
-                    if attempt < max_retries:
-                        delay = compute_backoff_delay(attempt)
-                        logger.error(
-                            f"HTTP {res.status_code} 错误，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
-                        )
-                        time.sleep(delay)
-                        continue
-                    else:
-                        logger.error(
-                            f"HTTP {res.status_code} 错误，已达到最大重试次数 {max_retries}"
-                        )
-                        # 发送API错误通知
-                        from ..notifier import send_notify
+            # 如果是DNS错误，进行网络诊断
+            if dns_error:
+                logger.warning("⚠️  检测到DNS解析问题，开始网络诊断...")
+                self._diagnose_network_issue(url)
 
-                        send_notify(
-                            "api_error",
-                            status_code=res.status_code,
-                            url=url,
-                            method=method,
-                            error_message=f"HTTP {res.status_code} 错误，已达到最大重试次数 {max_retries}",
-                            retry_count=attempt + 1,
-                        )
-                        raise httpx.HTTPStatusError(
-                            f"HTTP {res.status_code} 错误，已达到最大重试次数",
-                            request=res.request,
-                            response=res,
-                        )
+            raise e
 
-                return res
+        # 重试耗尽后仍返回重试状态码（429/500/502/503/504）
+        if res.status_code in RETRY_STATUS_CODES:
+            from ..notifier import send_notify
 
-            except (
-                httpx.TimeoutException,
-                httpx.ConnectError,
-                httpx.HTTPError,
-            ) as e:
-                # 检查是否是DNS解析错误
-                if "Failed to resolve" in str(
-                    e
-                ) or "Temporary failure in name resolution" in str(e):
-                    dns_error_occurred = True
+            send_notify(
+                "api_error",
+                status_code=res.status_code,
+                url=url,
+                method=method,
+                error_message=f"HTTP {res.status_code} 错误，已达到最大重试次数",
+                retry_count=session._max_retries,
+            )
+            raise httpx.HTTPStatusError(
+                f"HTTP {res.status_code} 错误，已达到最大重试次数",
+                request=res.request,
+                response=res,
+            )
 
-                if attempt < max_retries:
-                    delay = compute_backoff_delay(attempt)
-                    logger.error(
-                        f"请求异常: {str(e)}，第 {attempt + 1}/{max_retries} 次重试，{delay}秒后重试"
-                    )
-                    time.sleep(delay)
-                    continue
-                else:
-                    logger.error(
-                        f"请求异常: {str(e)}，已达到最大重试次数 {max_retries}"
-                    )
-
-                    # 如果配置了代理且重试失败，尝试直连
-                    if self.http_proxy:
-                        logger.warning("⚠️  代理请求失败，尝试抛弃代理直连...")
-
-                        # 尝试直连（不使用代理）
-                        try:
-                            direct_result = self._try_direct_connection(
-                                method, url, **kwargs
-                            )
-                            if direct_result:
-                                # 标记代理已失败，后续请求直接使用直连
-                                self._proxy_failed = True
-                                logger.info("✅ 直连成功！已成功绕过代理问题")
-                                return direct_result
-                        except (httpx.HTTPError, ValueError) as direct_error:
-                            logger.error(f"❌ 直连也失败了: {str(direct_error)}")
-
-                    # 如果是DNS错误，进行网络诊断
-                    if dns_error_occurred:
-                        logger.warning("⚠️  检测到DNS解析问题，开始网络诊断...")
-                        self._diagnose_network_issue(url)
-
-                    raise e
+        return res
 
     def _check_auth_error(self, res: httpx.Response) -> httpx.Response:
         """统一检查认证错误"""

@@ -270,12 +270,20 @@ class TestNotifierBuildSimpleEmailHtml:
 class TestNotifierSendWebhookByConfig:
     """测试webhook发送"""
 
-    @patch("app.utils.notifier.webhook.httpx.post")
-    def test_send_webhook_post_success(self, mock_post):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_send_webhook_post_success(self, mock_cls):
         """测试POST webhook成功"""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_post.return_value = mock_response
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
 
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
@@ -290,14 +298,22 @@ class TestNotifierSendWebhookByConfig:
 
         result = notifier._send_webhook_by_config(webhook_config, "mark_success", data)
         assert result is True
-        mock_post.assert_called_once()
+        mock_instance.post.assert_called_once()
 
-    @patch("app.utils.notifier.webhook.httpx.get")
-    def test_send_webhook_get_success(self, mock_get):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_send_webhook_get_success(self, mock_cls):
         """测试GET webhook成功"""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_get.return_value = mock_response
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.get.return_value = mock_response
 
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
@@ -313,12 +329,20 @@ class TestNotifierSendWebhookByConfig:
         result = notifier._send_webhook_by_config(webhook_config, "mark_success", data)
         assert result is True
 
-    @patch("app.utils.notifier.webhook.httpx.post")
-    def test_send_webhook_failure_status(self, mock_post):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_send_webhook_failure_status(self, mock_cls):
         """测试webhook返回非成功状态"""
         mock_response = MagicMock()
         mock_response.status_code = 500
-        mock_post.return_value = mock_response
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
 
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
@@ -332,10 +356,14 @@ class TestNotifierSendWebhookByConfig:
         result = notifier._send_webhook_by_config(webhook_config, "mark_success", data)
         assert result is False
 
-    @patch("app.utils.notifier.webhook.httpx.post")
-    def test_send_webhook_exception(self, mock_post):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_send_webhook_exception(self, mock_cls):
         """测试webhook异常"""
-        mock_post.side_effect = Exception("Network error")
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.side_effect = Exception("Network error")
 
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
@@ -700,12 +728,20 @@ class TestNotifierParseHeaders:
 class TestNotifierTestNotification:
     """测试通知测试功能"""
 
-    @patch("app.utils.notifier.webhook.httpx.post")
-    def test_test_notification_webhook(self, mock_post):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_test_notification_webhook(self, mock_cls):
         """测试webhook通知测试"""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_post.return_value = mock_response
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
 
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
@@ -842,12 +878,20 @@ class TestNotifierGetConfigs:
 class TestNotifierSendNotificationByType:
     """测试按类型发送通知"""
 
-    @patch("app.utils.notifier.webhook.httpx.post")
-    def test_send_notification_by_type_webhook(self, mock_post):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_send_notification_by_type_webhook(self, mock_cls):
         """测试按类型发送webhook通知"""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_post.return_value = mock_response
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
 
         mock_config_parser = MagicMock()
         mock_config_parser.sections.return_value = ["webhook-1"]
@@ -864,7 +908,7 @@ class TestNotifierSendNotificationByType:
         notifier._last_notification_time = {}  # 清除冷却
         data = {"title": "测试", "timestamp": "2024-01-01"}
         notifier.send_notification_by_type("mark_success", data)
-        mock_post.assert_called_once()
+        mock_instance.post.assert_called_once()
 
     def test_send_notification_by_type_cooldown(self):
         """测试通知冷却"""
@@ -880,12 +924,20 @@ class TestNotifierSendNotificationByType:
 class TestNotifierIntegration:
     """通知集成测试"""
 
-    @patch("app.utils.notifier.webhook.httpx.post")
-    def test_send_webhook_success(self, mock_post):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_send_webhook_success(self, mock_cls):
         """测试发送 webhook 成功"""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_post.return_value = mock_response
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.return_value = mock_response
 
         mock_config = MagicMock()
         mock_config.get_notification_config.return_value = {
@@ -898,10 +950,14 @@ class TestNotifierIntegration:
         # 注意：这里需要调用实际的 send_notification 方法
         # 但由于方法可能不存在，我们测试基本功能
 
-    @patch("app.utils.notifier.webhook.httpx.post")
-    def test_send_webhook_failure(self, mock_post):
+    @patch("app.utils.notifier.webhook.SyncHttpClient")
+    def test_send_webhook_failure(self, mock_cls):
         """测试发送 webhook 失败"""
-        mock_post.side_effect = Exception("Network error")
+        mock_instance = mock_cls.return_value
+        mock_instance.prefix.return_value = mock_instance
+        mock_instance.success_tpl.return_value = mock_instance
+        mock_instance.failure_tpl.return_value = mock_instance
+        mock_instance.post.side_effect = Exception("Network error")
 
         mock_config = MagicMock()
         _notifier = Notifier(mock_config)
