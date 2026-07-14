@@ -12,7 +12,7 @@ from ..core.logging import logger
 class MappingService:
     """映射服务"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._cached_mappings: dict[str, str] = {}
         self._mapping_file_path: Optional[str] = None
         self._last_modified_time: float = 0

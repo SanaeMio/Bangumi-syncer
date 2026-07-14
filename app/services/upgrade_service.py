@@ -28,6 +28,8 @@ from ..core.config import config_manager
 from ..core.database import database_manager
 from ..core.logging import logger
 from ..utils.docker_helper import docker_helper
+from ..utils.http_base import AsyncHttpClient
+from ..utils.runtime_python import persist_runtime_python
 
 DOWNLOAD_URL = "https://github.com/SanaeMio/Bangumi-syncer/releases/latest/download/Bangumi-syncer.zip"
 DOWNLOAD_TIMEOUT = 300.0
@@ -61,7 +63,7 @@ class UpgradeProgress:
 
 
 class UpgradeService:
-    def __init__(self):
+    def __init__(self) -> None:
         self._progress: dict[str, UpgradeProgress] = {}
         self._queues: dict[str, asyncio.Queue] = {}
         self._lock = asyncio.Lock()
@@ -107,7 +109,7 @@ class UpgradeService:
         percent: int = 0,
         message: str = "",
         error: Optional[str] = None,
-    ):
+    ) -> None:
         p = self._progress.get(upgrade_id)
         if p:
             p.stage = stage
@@ -282,11 +284,13 @@ class UpgradeService:
                     )
 
                 try:
-                    async with httpx.AsyncClient(
+                    async with AsyncHttpClient(
+                        label="Upgrade",
                         timeout=DOWNLOAD_TIMEOUT,
                         proxy=proxy,
                         follow_redirects=True,
-                    ) as client:
+                        max_retries=0,
+                    ).prefix("⬆️") as client:
                         async with client.stream("GET", url) as resp:
                             if resp.status_code != 200:
                                 raise RuntimeError(f"下载失败: HTTP {resp.status_code}")
@@ -398,8 +402,8 @@ class UpgradeService:
         try:
             # 关闭现有连接
             database_manager.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("database_manager.close 失败: %s", e)
 
         try:
             shutil.copy2(db_backup, db_path)
@@ -505,7 +509,7 @@ class UpgradeService:
 
         return app_backup_dir
 
-    def _rollback_files(self, backup_dir: Path, replace_dirs: list[str]):
+    def _rollback_files(self, backup_dir: Path, replace_dirs: list[str]) -> None:
         """从备份目录回滚应用文件"""
         project_root = Path(".")
         for d in replace_dirs:
@@ -519,8 +523,6 @@ class UpgradeService:
 
     def _install_deps(self):
         """安装 Python 依赖"""
-        from ..utils.runtime_python import persist_runtime_python
-
         # 写入当前解释器路径，供 start.bat 在升级重启时使用同一 Python
         try:
             persist_runtime_python()
@@ -631,7 +633,7 @@ class UpgradeService:
             logger.info(f"已从备份恢复: {', '.join(restored)}")
 
 
-def restart_application():
+def restart_application() -> None:
     """重启应用进程
 
     Windows 优先使用 start.bat（与手动启动一致），
@@ -641,8 +643,8 @@ def restart_application():
     logger.info("正在重启应用...")
     try:
         database_manager.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("database_manager.close 失败: %s", e)
 
     if sys.platform == "win32":
         start_bat = Path("start.bat")

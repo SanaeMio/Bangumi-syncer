@@ -45,6 +45,7 @@ order: 20
 - **Bangumi 图片反向代理**：仪表板时间线封面图使用（用于替代 `https://lain.bgm.tv`），留空则返回 API 原始图片地址。
 - **SSL 证书验证**：一般保持开启。仅当使用代理后出现证书报错、且你确认环境可信时，再考虑关闭（会降低连接校验强度）。
 - **调试模式**：打开后会打出更多运行细节，方便排查问题；日常使用建议关闭。
+- **调度器时区**：定时任务（飞牛/fongmi/Trakt）使用的时区，IANA 格式（如 `Asia/Shanghai`、`America/New_York`、`UTC`）。在 `config.ini` 的 `[scheduler]` 段 `timezone` 项配置。Docker 部署也可通过 `TZ` 环境变量覆盖，优先级：`config.ini` > `TZ` 环境变量 > 默认值 `Asia/Shanghai`。
 
 ## Web 认证配置
 
@@ -83,3 +84,14 @@ order: 20
 - **时间范围**：在启用同步的前提下，可再限制「只关心最近多久内有更新的记录」，减少无关条目。
 - **定时扫描间隔**：隔多久自动检查一次飞牛上的观看进度，界面里有默认间隔，不熟悉可保持不动。
 - **单次扫描最大条数**：每次最多处理多少条候选记录，数字越大单次负担越重，一般保持默认即可。
+
+## 接下来
+
+配置完成后，按你的播放端接入媒体源：
+
+- Plex：[Tautulli](/usage/tautulli) / [原生 Webhook](/usage/plex-webhooks)
+- [Emby 通知](/usage/emby) / [Jellyfin Webhook](/usage/jellyfin)
+- [自定义 Webhook](/usage/custom-webhook)
+- [Trakt.tv 定时同步](/usage/trakt) / [飞牛定时同步](/usage/feiniu) / [fongmi 局域网同步](/usage/fongmi)
+
+标题对不上 Bangumi 条目时，可使用 [自定义映射](/mapping) 手动指定。

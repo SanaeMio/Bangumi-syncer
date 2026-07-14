@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-本文件为 **Claude Code** 的通用行为补充，与本仓库 **[AGENTS.md](AGENTS.md)** 一并阅读。
+本文件为 **Claude Code** 的通用行为补充，与本仓库 **[AGENTS.md](https://github.com/SanaeMio/Bangumi-syncer/blob/main/AGENTS.md)** 一并阅读。
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 

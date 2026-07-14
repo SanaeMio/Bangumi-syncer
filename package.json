@@ -5,7 +5,9 @@
   "scripts": {
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "predocs:dev": "node scripts/sync-dev-docs.mjs",
+    "predocs:build": "node scripts/sync-dev-docs.mjs"
   },
   "devDependencies": {
     "vitepress": "^1.6.4",

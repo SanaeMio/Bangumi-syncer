@@ -44,7 +44,7 @@ class TestProxyAPICOMPREHENSIVE:
 async def test_get_proxy_suggestions_success(app_with_auth):
     """测试获取代理建议成功"""
     # docker_helper is imported inside the function, need to patch at source
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.return_value = {
             "is_docker": False,
             "network_mode": "native",
@@ -67,7 +67,7 @@ async def test_get_proxy_suggestions_success(app_with_auth):
 @pytest.mark.asyncio
 async def test_get_proxy_suggestions_exception(app_with_auth):
     """测试获取代理建议异常"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.side_effect = Exception("Test error")
 
         async with AsyncClient(
@@ -83,7 +83,7 @@ async def test_get_proxy_suggestions_exception(app_with_auth):
 @pytest.mark.asyncio
 async def test_test_proxy_connectivity_success(app_with_auth):
     """测试代理连通性成功"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.test_proxy_connectivity.return_value = {
             "success": True,
             "message": "Connection successful",
@@ -104,7 +104,7 @@ async def test_test_proxy_connectivity_success(app_with_auth):
 @pytest.mark.asyncio
 async def test_test_proxy_connectivity_exception(app_with_auth):
     """测试代理连通性异常"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.test_proxy_connectivity.side_effect = Exception("Test error")
 
         async with AsyncClient(
@@ -122,7 +122,7 @@ async def test_test_proxy_connectivity_exception(app_with_auth):
 @pytest.mark.asyncio
 async def test_get_environment_info_success(app_with_auth):
     """测试获取环境信息成功"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.return_value = {
             "is_docker": True,
             "network_mode": "bridge",
@@ -142,7 +142,7 @@ async def test_get_environment_info_success(app_with_auth):
 @pytest.mark.asyncio
 async def test_get_environment_info_exception(app_with_auth):
     """测试获取环境信息异常"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.side_effect = Exception("Test error")
 
         async with AsyncClient(
@@ -158,7 +158,7 @@ async def test_get_environment_info_exception(app_with_auth):
 @pytest.mark.asyncio
 async def test_test_host_connectivity_success(app_with_auth):
     """测试主机连通性成功"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.test_host_connectivity.return_value = {
             "success": True,
             "message": "Connection successful",
@@ -180,7 +180,7 @@ async def test_test_host_connectivity_success(app_with_auth):
 @pytest.mark.asyncio
 async def test_test_host_connectivity_exception(app_with_auth):
     """测试主机连通性异常"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.test_host_connectivity.side_effect = Exception("Test error")
 
         async with AsyncClient(
@@ -199,10 +199,10 @@ async def test_test_host_connectivity_exception(app_with_auth):
 @pytest.mark.asyncio
 async def test_diagnose_network_success_dns_fail(app_with_auth):
     """测试网络诊断 DNS 解析失败"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.return_value = {"is_docker": False}
 
-        with patch("app.core.config.config_manager") as mock_cm:
+        with patch("app.api.proxy.config_manager") as mock_cm:
             mock_cm.get.return_value = ""
 
             with patch(
@@ -226,10 +226,10 @@ async def test_diagnose_network_tcp_fail(app_with_auth):
     """测试网络诊断 TCP 连接失败"""
     mock_env_info = {"is_docker": False}
 
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.return_value = mock_env_info
 
-        with patch("app.core.config.config_manager") as mock_cm:
+        with patch("app.api.proxy.config_manager") as mock_cm:
             mock_cm.get.return_value = ""
 
             # Mock socket.getaddrinfo to return a valid IP
@@ -260,10 +260,10 @@ async def test_diagnose_network_tcp_success(app_with_auth):
     """测试网络诊断 TCP 连接成功"""
     mock_env_info = {"is_docker": False}
 
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.return_value = mock_env_info
 
-        with patch("app.core.config.config_manager") as mock_cm:
+        with patch("app.api.proxy.config_manager") as mock_cm:
             mock_cm.get.return_value = ""
 
             with patch("app.api.proxy.socket.getaddrinfo") as mock_getaddrinfo:
@@ -276,9 +276,11 @@ async def test_diagnose_network_tcp_success(app_with_auth):
                     mock_sock_instance.connect_ex.return_value = 0  # Success
                     mock_socket.return_value = mock_sock_instance
 
-                    # Mock requests.get to raise exception
-                    with patch("requests.get") as mock_requests:
-                        mock_requests.side_effect = Exception("Request failed")
+                    # Mock httpx.Client to raise exception
+                    with patch("httpx.Client") as mock_client_cls:
+                        mock_client_cls.return_value.request.side_effect = Exception(
+                            "Request failed"
+                        )
 
                         async with AsyncClient(
                             transport=ASGITransport(app=app_with_auth),
@@ -297,10 +299,10 @@ async def test_diagnose_network_with_proxy(app_with_auth):
     """测试使用代理的网络诊断"""
     mock_env_info = {"is_docker": False}
 
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.return_value = mock_env_info
 
-        with patch("app.core.config.config_manager") as mock_cm:
+        with patch("app.api.proxy.config_manager") as mock_cm:
             mock_cm.get.side_effect = lambda *args, **kwargs: (
                 "http://proxy:7890" if args[1] == "script_proxy" else True
             )
@@ -315,10 +317,15 @@ async def test_diagnose_network_with_proxy(app_with_auth):
                     mock_sock_instance.connect_ex.return_value = 0
                     mock_socket.return_value = mock_sock_instance
 
-                    with patch("requests.get") as mock_requests:
+                    with patch("httpx.Client") as mock_client_cls:
                         mock_response = MagicMock()
                         mock_response.status_code = 200
-                        mock_requests.return_value = mock_response
+                        mock_response.elapsed.total_seconds.return_value = 0.01
+                        mock_response.headers = {}
+                        mock_response.text = ""
+                        mock_client_cls.return_value.request.return_value = (
+                            mock_response
+                        )
 
                         async with AsyncClient(
                             transport=ASGITransport(app=app_with_auth),
@@ -337,7 +344,7 @@ async def test_diagnose_network_with_proxy(app_with_auth):
 @pytest.mark.asyncio
 async def test_diagnose_network_exception(app_with_auth):
     """测试网络诊断异常"""
-    with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+    with patch("app.api.proxy.docker_helper") as mock_dh:
         mock_dh.get_environment_info.side_effect = Exception("Test error")
 
         async with AsyncClient(

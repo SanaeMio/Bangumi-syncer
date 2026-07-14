@@ -8,6 +8,7 @@ import secrets
 import time
 from typing import Any, Optional
 
+from ..utils.notifier import send_notify
 from .config import config_manager
 from .config_secret_crypto import (
     encrypt_if_sensitive,
@@ -19,7 +20,7 @@ from .logging import logger
 class SecurityManager:
     """安全管理器"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_sessions: dict[str, dict[str, Any]] = {}  # token -> session_info
         self.login_attempts: dict[
             str, dict[str, Any]
@@ -233,8 +234,6 @@ class SecurityManager:
             logger.warning(f"IP {ip} 因登录失败次数过多被锁定至 {lockout_time_str}")
 
             # 发送IP锁定通知
-            from ..utils.notifier import send_notify
-
             send_notify(
                 "ip_locked",
                 ip=ip,

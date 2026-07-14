@@ -1,3 +1,11 @@
 # 告诉 GitHub 这是一个自动生成的文件，默认折叠，且不计入语言统计
 uv.lock linguist-generated
 requirements.txt linguist-generated
+
+# Shell 脚本强制使用 LF（Windows 上 CRLF 会导致 bash 无法执行）
+*.sh           text eol=lf
+.githooks/*    text eol=lf
+
+# Windows 批处理使用 CRLF
+*.bat          text eol=crlf
+*.cmd          text eol=crlf

@@ -2,7 +2,7 @@
 同步相关数据模型
 """
 
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,88 +35,10 @@ class SyncResponse(BaseModel):
     data: Optional[dict] = Field(None, description="数据")
 
 
-class PlexWebhookData(BaseModel):
-    """Plex Webhook数据模型"""
-
-    # 允许额外字段
-    model_config = {"extra": "allow"}
-
-    event: str = Field(..., description="事件类型", example="media.scrobble")
-    Account: dict[str, Any] = Field(
-        ..., description="账户信息", example={"title": "用户名"}
-    )
-    Metadata: dict[str, Any] = Field(
-        ...,
-        description="媒体元数据",
-        example={
-            "type": "episode",
-            "title": "第01话",
-            "grandparentTitle": "番剧名称",
-            "originalTitle": "Original Title",
-            "parentIndex": 1,
-            "index": 1,
-            "originallyAvailableAt": "2024-01-01",
-        },
-    )
-
-    # 可选字段
-    user: Optional[bool] = Field(None, description="是否为用户事件")
-    owner: Optional[bool] = Field(None, description="是否为所有者事件")
-    Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
-    Player: Optional[dict[str, Any]] = Field(None, description="播放器信息")
-
-
-class EmbyWebhookData(BaseModel):
-    """Emby通知数据模型"""
-
-    # 使用model_config来允许额外字段
-    model_config = {"extra": "allow"}
-
-    # 核心必需字段
-    Event: str = Field(..., description="事件类型", example="item.markplayed")
-    User: dict[str, Any] = Field(
-        ..., description="用户信息", example={"Name": "用户名", "Id": "user-id"}
-    )
-    Item: dict[str, Any] = Field(
-        ...,
-        description="媒体项目信息",
-        example={
-            "Type": "Episode",
-            "SeriesName": "番剧名称",
-            "ParentIndexNumber": 1,
-            "IndexNumber": 1,
-            "PremiereDate": "2024-01-01T00:00:00.0000000Z",
-            "Name": "剧集名称",
-        },
-    )
-
-    # 可选字段
-    Title: Optional[str] = Field(None, description="通知标题")
-    Description: Optional[str] = Field(None, description="通知描述")
-    Date: Optional[str] = Field(None, description="通知日期")
-    Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
-    PlaybackInfo: Optional[dict[str, Any]] = Field(
-        None, description="播放信息", example={"PlayedToCompletion": True}
-    )
-
-
-class JellyfinWebhookData(BaseModel):
-    """Jellyfin Webhook数据模型"""
-
-    # 允许额外字段
-    model_config = {"extra": "allow"}
-
-    NotificationType: str = Field(..., description="通知类型", example="PlaybackStop")
-    PlayedToCompletion: str = Field(..., description="是否播放完成", example="True")
-    media_type: str = Field(..., description="媒体类型", example="episode")
-    title: str = Field(..., description="番剧标题", example="番剧名称")
-    ori_title: str = Field(..., description="原始标题", example="Original Title")
-    season: int = Field(..., description="季数", example=1)
-    episode: int = Field(..., description="集数", example=1)
-    user_name: str = Field(..., description="用户名", example="用户名")
-    release_date: Optional[str] = Field(
-        None, description="发行日期", example="2024-01-01"
-    )
+# ===== Webhook 数据模型已迁移至各驱动子包，此处重新导出以向后兼容 =====
+from ..services.emby.models import EmbyWebhookData  # noqa: E402, F401
+from ..services.jellyfin.models import JellyfinWebhookData  # noqa: E402, F401
+from ..services.plex.models import PlexWebhookData  # noqa: E402, F401
 
 
 class SyncRecord(BaseModel):

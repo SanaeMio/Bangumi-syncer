@@ -9,7 +9,7 @@ order: 50
 
 如果存在 bug 或想增加功能，欢迎 [提一个 Issue](https://github.com/SanaeMio/Bangumi-syncer/issues/new/choose) 或者提交一个 Pull Request。
 
-参与开发前请先阅读仓库内的 [贡献指南](https://github.com/SanaeMio/Bangumi-syncer/blob/main/CONTRIBUTING.md)。
+参与开发前请先阅读 [贡献指南](/development/contributing)。想为新媒体服务器编写驱动，可参考 [新驱动接入指南](/development/new-driver-guide)。
 
 # 👏 鸣谢
 

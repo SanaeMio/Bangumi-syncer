@@ -2,6 +2,9 @@
 配置相关API
 """
 
+from __future__ import annotations
+
+import asyncio
 import shutil
 import time
 from datetime import datetime
@@ -13,14 +16,117 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..core.config import config_manager, parse_media_server_username_value
 from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
+    encrypt_if_sensitive,
     is_sensitive_ini_field,
 )
-from ..core.database import database_manager
 from ..core.logging import logger
 from ..core.security import security_manager
+from ..services.feiniu.scheduler import feiniu_scheduler
+from ..services.feiniu.sync_service import feiniu_sync_service
+from ..services.fongmi.scheduler import fongmi_scheduler
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["config"])
+
+
+# ------------------------------------------------------------------
+# 配置备份 I/O 辅助函数（同步阻塞，需通过 asyncio.to_thread 调用）
+# ------------------------------------------------------------------
+
+
+def _list_config_backups() -> list[dict]:
+    """扫描 config_backups 目录，返回备份列表"""
+    backup_dir = Path("config_backups")
+    if not backup_dir.exists():
+        return []
+
+    backups = []
+    for file in backup_dir.glob("*.ini"):
+        stat = file.stat()
+        backups.append(
+            {
+                "filename": file.name,
+                "size": stat.st_size,
+                "modified": stat.st_mtime * 1000,  # 转换为毫秒
+                "created": datetime.fromtimestamp(stat.st_ctime).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+            }
+        )
+
+    # 按修改时间排序
+    backups.sort(key=lambda x: x["modified"], reverse=True)
+    return backups
+
+
+def _read_config_backup(filename: str) -> str:
+    """读取指定备份文件内容，不存在则抛 HTTPException"""
+    backup_path = Path("config_backups") / filename
+    if not backup_path.exists():
+        raise HTTPException(status_code=404, detail="备份文件不存在")
+    with open(backup_path, encoding="utf-8") as f:
+        return f.read()
+
+
+def _delete_config_backup(filename: str) -> None:
+    """删除指定备份文件，不存在则抛 HTTPException"""
+    backup_path = Path("config_backups") / filename
+    if not backup_path.exists():
+        raise HTTPException(status_code=404, detail="备份文件不存在")
+    backup_path.unlink()
+
+
+def _create_config_backup() -> str:
+    """创建配置备份，返回备份文件名"""
+    backup_dir = Path("config_backups")
+    backup_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_filename = f"config_backup_{timestamp}.ini"
+    backup_path = backup_dir / backup_filename
+    shutil.copy2(config_manager.active_config_path, backup_path)
+    return backup_filename
+
+
+def _restore_config_backup(filename: str) -> None:
+    """从指定备份恢复配置，不存在则抛 HTTPException"""
+    backup_path = Path("config_backups") / filename
+    if not backup_path.exists():
+        raise HTTPException(status_code=404, detail="备份文件不存在")
+    shutil.copy2(backup_path, config_manager.active_config_path)
+    config_manager.reload_config()
+
+
+def _cleanup_config_backups(strategy: str, data: dict) -> int:
+    """按策略清理配置备份，返回删除数量"""
+    backup_dir = Path("config_backups")
+    if not backup_dir.exists():
+        return 0
+
+    backup_files = list(backup_dir.glob("*.ini"))
+    if not backup_files:
+        return 0
+
+    deleted_count = 0
+
+    if strategy == "all":
+        for file in backup_files:
+            file.unlink()
+            deleted_count += 1
+    elif strategy == "recent":
+        keep_count = data.get("keep_count", 10)
+        backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        for file in backup_files[keep_count:]:
+            file.unlink()
+            deleted_count += 1
+    elif strategy == "date":
+        keep_days = data.get("keep_days", 30)
+        cutoff_time = time.time() - (keep_days * 24 * 60 * 60)
+        for file in backup_files:
+            if file.stat().st_mtime < cutoff_time:
+                file.unlink()
+                deleted_count += 1
+
+    return deleted_count
 
 
 def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> None:
@@ -63,8 +169,6 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
             counter += 1
 
         # 创建配置段
-        from ..core.config_secret_crypto import encrypt_if_sensitive
-
         config.add_section(section_name)
         config.set(section_name, "username", account_config["username"])
         config.set(
@@ -97,7 +201,7 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
 @router.get("/config")
 async def get_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取配置信息"""
     try:
         config_data = config_manager.get_all_config()
@@ -121,7 +225,7 @@ async def get_config(
 @router.post("/config")
 async def update_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """更新配置信息"""
     try:
         data = await request.json()
@@ -184,29 +288,25 @@ async def update_config(
         )
         if old_feiniu_enabled != new_feiniu_enabled:
             if new_feiniu_enabled:
-                database_manager.set_feiniu_min_update_watermark_now()
+                feiniu_sync_service.set_min_update_watermark_now()
                 logger.info("飞牛已启用：同步起点已设为当前时刻（不追溯历史观看记录）")
             else:
-                database_manager.clear_feiniu_min_update_watermark()
+                feiniu_sync_service.clear_min_update_watermark()
                 logger.info("飞牛已关闭：已清除同步起点水位")
 
         try:
-            from ..services.feiniu.scheduler import feiniu_scheduler
-
             await feiniu_scheduler.apply_config_after_save()
         except Exception as ex:
             logger.debug("飞牛调度器随配置更新: %s", ex)
 
         try:
-            from ..services.fongmi.scheduler import fongmi_scheduler
-
             await fongmi_scheduler.apply_config_after_save()
         except Exception as ex:
             logger.debug("fongmi 调度器随配置更新: %s", ex)
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:
-            security_manager._init_auth_config()
+            await asyncio.to_thread(security_manager._init_auth_config)
             logger.info("密码更新完成，认证配置已重新加载")
 
         return {"status": "success", "message": "配置更新成功"}
@@ -218,30 +318,10 @@ async def update_config(
 @router.get("/config/backups")
 async def get_config_backups(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取配置备份列表"""
     try:
-        backup_dir = Path("config_backups")
-        if not backup_dir.exists():
-            return {"status": "success", "data": {"backups": []}}
-
-        backups = []
-        for file in backup_dir.glob("*.ini"):
-            stat = file.stat()
-            backups.append(
-                {
-                    "filename": file.name,
-                    "size": stat.st_size,
-                    "modified": stat.st_mtime * 1000,  # 转换为毫秒
-                    "created": datetime.fromtimestamp(stat.st_ctime).strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    ),
-                }
-            )
-
-        # 按修改时间排序
-        backups.sort(key=lambda x: x["modified"], reverse=True)
-
+        backups = await asyncio.to_thread(_list_config_backups)
         return {"status": "success", "data": {"backups": backups}}
     except Exception as e:
         logger.error(f"获取配置备份列表失败: {e}")
@@ -253,18 +333,10 @@ async def get_config_backup(
     filename: str,
     request: Request,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """获取特定配置备份内容"""
     try:
-        backup_path = Path("config_backups") / filename
-
-        if not backup_path.exists():
-            raise HTTPException(status_code=404, detail="备份文件不存在")
-
-        # 读取备份文件内容
-        with open(backup_path, encoding="utf-8") as f:
-            content = f.read()
-
+        content = await asyncio.to_thread(_read_config_backup, filename)
         return {"status": "success", "data": {"filename": filename, "content": content}}
     except HTTPException:
         raise
@@ -278,17 +350,10 @@ async def delete_config_backup(
     filename: str,
     request: Request,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """删除配置备份文件"""
     try:
-        backup_path = Path("config_backups") / filename
-
-        if not backup_path.exists():
-            raise HTTPException(status_code=404, detail="备份文件不存在")
-
-        # 删除备份文件
-        backup_path.unlink()
-
+        await asyncio.to_thread(_delete_config_backup, filename)
         return {"status": "success", "message": "备份文件删除成功"}
     except HTTPException:
         raise
@@ -300,20 +365,10 @@ async def delete_config_backup(
 @router.post("/config/backup")
 async def create_config_backup(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """创建配置备份"""
     try:
-        backup_dir = Path("config_backups")
-        backup_dir.mkdir(exist_ok=True)
-
-        # 生成备份文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_filename = f"config_backup_{timestamp}.ini"
-        backup_path = backup_dir / backup_filename
-
-        # 复制当前配置文件
-        shutil.copy2(config_manager.active_config_path, backup_path)
-
+        backup_filename = await asyncio.to_thread(_create_config_backup)
         return {
             "status": "success",
             "message": "配置备份创建成功",
@@ -329,20 +384,10 @@ async def restore_config_backup(
     filename: str,
     request: Request,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """恢复配置备份"""
     try:
-        backup_path = Path("config_backups") / filename
-
-        if not backup_path.exists():
-            raise HTTPException(status_code=404, detail="备份文件不存在")
-
-        # 恢复配置文件
-        shutil.copy2(backup_path, config_manager.active_config_path)
-
-        # 重新加载配置
-        config_manager.reload_config()
-
+        await asyncio.to_thread(_restore_config_backup, filename)
         return {"status": "success", "message": "配置恢复成功"}
     except HTTPException:
         raise
@@ -354,45 +399,14 @@ async def restore_config_backup(
 @router.post("/config/backups/cleanup")
 async def cleanup_config_backups(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """清理配置备份"""
     try:
         data = await request.json()
         strategy = data.get("strategy", "recent")
-
-        backup_dir = Path("config_backups")
-        if not backup_dir.exists():
+        deleted_count = await asyncio.to_thread(_cleanup_config_backups, strategy, data)
+        if deleted_count == 0:
             return {"status": "success", "message": "没有备份文件需要清理"}
-
-        # 获取所有备份文件
-        backup_files = list(backup_dir.glob("*.ini"))
-
-        if not backup_files:
-            return {"status": "success", "message": "没有备份文件需要清理"}
-
-        deleted_count = 0
-
-        if strategy == "all":
-            # 删除所有备份文件
-            for file in backup_files:
-                file.unlink()
-                deleted_count += 1
-        elif strategy == "recent":
-            # 按数量保留最新的备份
-            keep_count = data.get("keep_count", 10)
-            backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-            for file in backup_files[keep_count:]:
-                file.unlink()
-                deleted_count += 1
-        elif strategy == "date":
-            # 按日期删除旧备份
-            keep_days = data.get("keep_days", 30)
-            cutoff_time = time.time() - (keep_days * 24 * 60 * 60)
-            for file in backup_files:
-                if file.stat().st_mtime < cutoff_time:
-                    file.unlink()
-                    deleted_count += 1
-
         return {
             "status": "success",
             "message": f"清理完成，删除了 {deleted_count} 个备份文件",
@@ -405,10 +419,10 @@ async def cleanup_config_backups(
 @router.post("/config/auth/refresh-webhook-key")
 async def refresh_webhook_key(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """刷新webhook密钥"""
     try:
-        new_webhook_key = security_manager.refresh_webhook_key()
+        new_webhook_key = await asyncio.to_thread(security_manager.refresh_webhook_key)
         return {
             "status": "success",
             "message": "webhook密钥刷新成功",

@@ -225,14 +225,27 @@ async def test_sync_user_trakt_data_empty_history_success():
 
 
 @pytest.mark.asyncio
-async def test_sync_ratings_and_collection_stubs():
-    svc = TraktSyncService()
-    client = MagicMock()
-    cfg = MagicMock()
-    r1 = await svc._sync_ratings("u", client, cfg, False)
-    r2 = await svc._sync_collection("u", client, cfg, False)
-    assert r1.success and r2.success
-    assert "暂未实现" in r1.message
+async def test_sync_user_trakt_data_history_only():
+    """测试 sync_user_trakt_data 仅同步观看历史（评分与收藏已移除）"""
+    with (
+        patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+        patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+        patch("app.services.trakt.sync_service.database_manager"),
+    ):
+        cfg = MagicMock()
+        cfg.access_token = "tok"
+        cfg.is_token_expired.return_value = False
+        cfg.sync_types = ["history"]
+        cfg.last_sync_time = None
+        mock_auth.get_user_trakt_config.return_value = cfg
+        client = MagicMock()
+        client.get_all_watched_history = AsyncMock(return_value=[])
+        client.close = AsyncMock()
+        mock_factory.create_client = AsyncMock(return_value=client)
+
+        svc = TraktSyncService()
+        r = await svc.sync_user_trakt_data("u1")
+        assert r.success is True
 
 
 def test_trakt_synced_set_returns_true_when_empty():

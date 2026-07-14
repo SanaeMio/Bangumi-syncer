@@ -85,8 +85,10 @@ def _main_lifespan_mocks(**replace: object):
         },
         "app.main.trakt_scheduler.start": {"new": AsyncMock(return_value=True)},
         "app.main.feiniu_scheduler.start": {"new": AsyncMock(return_value=True)},
+        "app.main.fongmi_scheduler.start": {"new": AsyncMock(return_value=True)},
         "app.main.trakt_scheduler.stop": {"new": AsyncMock()},
         "app.main.feiniu_scheduler.stop": {"new": AsyncMock()},
+        "app.main.fongmi_scheduler.stop": {"new": AsyncMock()},
         "asyncio.sleep": {"new": AsyncMock()},
     }
     merged = {**defaults, **replace}

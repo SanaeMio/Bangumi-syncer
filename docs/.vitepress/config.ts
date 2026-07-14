@@ -70,14 +70,16 @@ export default defineConfig(
       manualSortFileNameByPriority: [
         'intro.md',
         'features.md',
+        'getting-started.md',
         'quick-start',
         'configuration.md',
         'mapping.md',
         'usage',
         'roadmap.md',
         'community.md',
+        'development',
       ],
-      excludeByGlobPattern: ['**/public/**', '**/.vitepress/**'],
+      excludeByGlobPattern: ['**/public/**', '**/.vitepress/**', '**/_includes/**'],
     },
   ),
 )

@@ -25,8 +25,8 @@ async def test_make_request_200_and_204(client):
     ok.headers = httpx.Headers({})
     no_content = MagicMock(status_code=204)
     no_content.headers = httpx.Headers({})
-    client._client = MagicMock()
-    client._client.request = AsyncMock(side_effect=[ok, no_content])
+    client._http = MagicMock()
+    client._http.request = AsyncMock(side_effect=[ok, no_content])
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
             assert await client._make_request("GET", "/a") == {"x": 1}
@@ -37,8 +37,8 @@ async def test_make_request_200_and_204(client):
 async def test_make_request_401_raises(client):
     resp = MagicMock(status_code=401)
     resp.headers = httpx.Headers({})
-    client._client = MagicMock()
-    client._client.request = AsyncMock(return_value=resp)
+    client._http = MagicMock()
+    client._http.request = AsyncMock(return_value=resp)
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
             with pytest.raises(ValueError, match="认证失败"):
@@ -52,8 +52,8 @@ async def test_make_request_429_retries_then_ok(client):
     r200 = MagicMock(status_code=200)
     r200.json.return_value = []
     r200.headers = httpx.Headers({})
-    client._client = MagicMock()
-    client._client.request = AsyncMock(side_effect=[r429, r200])
+    client._http = MagicMock()
+    client._http.request = AsyncMock(side_effect=[r429, r200])
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
             with patch(
@@ -70,8 +70,8 @@ async def test_make_request_429_invalid_retry_after_uses_default(client):
     r200 = MagicMock(status_code=200)
     r200.json.return_value = {}
     r200.headers = httpx.Headers({})
-    client._client = MagicMock()
-    client._client.request = AsyncMock(side_effect=[r429, r200])
+    client._http = MagicMock()
+    client._http.request = AsyncMock(side_effect=[r429, r200])
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
             with patch(
@@ -84,8 +84,8 @@ async def test_make_request_429_invalid_retry_after_uses_default(client):
 async def test_make_request_other_status_retries_then_none(client):
     r500 = MagicMock(status_code=500, text="err")
     r500.headers = httpx.Headers({})
-    client._client = MagicMock()
-    client._client.request = AsyncMock(return_value=r500)
+    client._http = MagicMock()
+    client._http.request = AsyncMock(return_value=r500)
     client.max_retries = 2
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
@@ -97,8 +97,8 @@ async def test_make_request_other_status_retries_then_none(client):
 
 @pytest.mark.asyncio
 async def test_make_request_request_error_retries(client):
-    client._client = MagicMock()
-    client._client.request = AsyncMock(
+    client._http = MagicMock()
+    client._http.request = AsyncMock(
         side_effect=httpx.RequestError("x", request=MagicMock())
     )
     client.max_retries = 2
@@ -112,8 +112,8 @@ async def test_make_request_request_error_retries(client):
 
 @pytest.mark.asyncio
 async def test_make_request_generic_exception_retries(client):
-    client._client = MagicMock()
-    client._client.request = AsyncMock(side_effect=RuntimeError("oops"))
+    client._http = MagicMock()
+    client._http.request = AsyncMock(side_effect=RuntimeError("oops"))
     client.max_retries = 2
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):

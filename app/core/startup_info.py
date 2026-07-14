@@ -3,6 +3,8 @@
 提供统一的跨平台启动信息显示
 """
 
+from __future__ import annotations
+
 import os
 import platform
 import subprocess
@@ -34,7 +36,7 @@ class StartupInfo:
         "bg_red": "\033[41m",
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.supports_color = self._check_color_support()
 
     def _check_color_support(self) -> bool:
@@ -64,7 +66,7 @@ class StartupInfo:
                     return True
                 # 默认CMD不支持，返回False
                 return False
-            except:
+            except (OSError, ValueError):
                 return False
 
         # Unix/Linux/macOS 通常支持
@@ -77,7 +79,9 @@ class StartupInfo:
         color_code = self.COLORS.get(color, "")
         return f"{color_code}{text}{self.COLORS['reset']}"
 
-    def print_banner(self, title: str = None, version: str = None):
+    def print_banner(
+        self, title: str | None = None, version: str | None = None
+    ) -> None:
         """打印应用横幅"""
         if title is None:
             title = get_version_name()
@@ -102,7 +106,7 @@ class StartupInfo:
         print(self.colorize(bottom_border, "cyan"))
         print()
 
-    def print_system_info(self, config_path: Path):
+    def print_system_info(self, config_path: Path) -> None:
         """打印系统信息"""
         print(self.colorize("🔧 系统信息", "bold"))
         print(self.colorize("─" * 40, "dim"))
@@ -128,7 +132,7 @@ class StartupInfo:
         print(f"  {work_dir}")
         print()
 
-    def print_startup_progress(self, step: int, total: int, message: str):
+    def print_startup_progress(self, step: int, total: int, message: str) -> None:
         """打印启动进度"""
         progress_bar_width = 30
         filled_width = int(progress_bar_width * step / total)
@@ -138,27 +142,27 @@ class StartupInfo:
         progress_text = f"[{bar}] {percentage:3d}% {message}"
         print(self.colorize(progress_text, "green"))
 
-    def print_success(self, message: str):
+    def print_success(self, message: str) -> None:
         """打印成功信息"""
         print(self.colorize(f"✅ {message}", "green"))
 
-    def print_warning(self, message: str):
+    def print_warning(self, message: str) -> None:
         """打印警告信息"""
         print(self.colorize(f"⚠️  {message}", "yellow"))
 
-    def print_error(self, message: str):
+    def print_error(self, message: str) -> None:
         """打印错误信息"""
         print(self.colorize(f"❌ {message}", "red"))
 
-    def print_info(self, message: str):
+    def print_info(self, message: str) -> None:
         """打印信息"""
         print(self.colorize(f"ℹ️ {message}", "blue"))
 
-    def print_separator(self):
+    def print_separator(self) -> None:
         """打印分隔线"""
         print(self.colorize("─" * 50, "dim"))
 
-    def print_startup_complete(self, host: str = "0.0.0.0", port: int = 8000):
+    def print_startup_complete(self, host: str = "0.0.0.0", port: int = 8000) -> None:
         """打印启动完成信息"""
         print()
         print(self.colorize("🎉 启动完成!", "bold"))

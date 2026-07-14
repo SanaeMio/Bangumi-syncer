@@ -17,7 +17,7 @@ from ...services.sync_service import sync_service
 from ...utils.notifier import send_notify
 from .auth import trakt_auth_service
 from .client import TraktClient, TraktClientFactory
-from .models import TraktHistoryItem, TraktSyncResult, TraktSyncStats
+from .models import TraktHistoryItem, TraktSyncResult
 
 
 class TraktSyncService:
@@ -47,7 +47,9 @@ class TraktSyncService:
             sync_types = ["history"]  # 默认只同步观看历史
 
         # 获取用户的 Trakt 配置
-        config = trakt_auth_service.get_user_trakt_config(user_id)
+        config = await asyncio.to_thread(
+            trakt_auth_service.get_user_trakt_config, user_id
+        )
         if config is None:
             return TraktSyncResult(
                 success=False,
@@ -82,7 +84,9 @@ class TraktSyncService:
                     details={},
                 )
             # 刷新后重新获取配置
-            config = trakt_auth_service.get_user_trakt_config(user_id)
+            config = await asyncio.to_thread(
+                trakt_auth_service.get_user_trakt_config, user_id
+            )
 
         # 创建 Trakt 客户端
         if config is None:
@@ -107,20 +111,12 @@ class TraktSyncService:
             )
 
         try:
-            stats = TraktSyncStats(
-                total_items=0,
-                movies=0,
-                episodes=0,
-                start_time=time.time(),
-                end_time=None,
-                duration=None,
-            )
             synced_count = 0
             skipped_count = 0
             error_count = 0
             details = {}
 
-            # 根据配置决定同步哪些类型
+            # 同步观看历史（评分与收藏同步暂未实现）
             if "history" in sync_types:
                 logger.info(f"开始同步用户 {user_id} 的 Trakt 观看历史")
                 history_result = await self._sync_watched_history(
@@ -131,36 +127,12 @@ class TraktSyncService:
                 error_count += history_result.error_count
                 details["history"] = history_result.details
 
-            # if "ratings" in sync_types:
-            #     logger.info(f"开始同步用户 {user_id} 的 Trakt 评分")
-            #     ratings_result = await self._sync_ratings(
-            #         user_id, client, config, full_sync
-            #     )
-            #     synced_count += ratings_result.synced_count
-            #     skipped_count += ratings_result.skipped_count
-            #     error_count += ratings_result.error_count
-            #     details["ratings"] = ratings_result.details
-
-            # if "collection" in sync_types:
-            #     logger.info(f"开始同步用户 {user_id} 的 Trakt 收藏")
-            #     collection_result = await self._sync_collection(
-            #         user_id, client, config, full_sync
-            #     )
-            #     synced_count += collection_result.synced_count
-            #     skipped_count += collection_result.skipped_count
-            #     error_count += collection_result.error_count
-            #     details["collection"] = collection_result.details
-
             # 更新最后同步时间（只要没有错误就更新）
             if error_count == 0 and config is not None:
                 config.last_sync_time = int(time.time())
-                database_manager.save_trakt_config(config.to_dict())
-
-            stats.end_time = time.time()
-            # 确保 start_time 不为 None
-            assert stats.start_time is not None
-            stats.duration = stats.end_time - stats.start_time
-            stats.total_items = synced_count + skipped_count + error_count
+                await asyncio.to_thread(
+                    database_manager.save_trakt_config, config.to_dict()
+                )
 
             success = error_count == 0
 
@@ -185,6 +157,234 @@ class TraktSyncService:
             )
         finally:
             await client.close()
+
+    def _filter_already_synced(
+        self,
+        syncable_items: list[TraktHistoryItem],
+        full_sync: bool,
+        synced_set: set,
+    ) -> tuple[list[TraktHistoryItem], int]:
+        """增量同步时过滤已同步记录，减少后续 API 请求。
+
+        返回 (pending_items, skipped_count_increment)。
+        """
+        pending_items: list[TraktHistoryItem] = []
+        skipped_count = 0
+        for item in syncable_items:
+            if (
+                not full_sync
+                and (item.trakt_item_id, item.watched_timestamp) in synced_set
+            ):
+                skipped_count += 1
+            else:
+                pending_items.append(item)
+        logger.info(f"去重后剩余 {len(pending_items)} 条待同步记录")
+        return pending_items, skipped_count
+
+    def _collect_detail_fetch_tasks(
+        self,
+        pending_items: list[TraktHistoryItem],
+        sync_filter_enabled: bool,
+        show_original_titles: dict[str, str],
+        show_genres: dict[str, list[str]],
+    ) -> list[tuple[str, str, int]]:
+        """第一阶段：TMDB 过滤 + 收集需要 API 请求的 tid。
+
+        返回 fetch_tasks 列表 (tid, item_type, trakt_id_int)。
+        命中 bangumi_data TMDB ID 的条目会直接写入 show_genres。
+        """
+        fetch_tasks: list[tuple[str, str, int]] = []  # (tid, item_type, trakt_id_int)
+        for item in pending_items:
+            trakt_id = None
+            need_details = sync_filter_enabled
+            if item.type == "episode" and item.show:
+                show = item.show
+                trakt_id = show.get("ids", {}).get("trakt")
+                if not show.get("original_title") and not show.get("originalTitle"):
+                    need_details = True
+            elif item.type == "movie" and item.movie:
+                trakt_id = item.movie.get("ids", {}).get("trakt")
+            if not trakt_id:
+                continue
+            tid = str(trakt_id)
+            if need_details and tid not in show_original_titles:
+                # bangumi_data 仅收录动画条目，TMDB 命中则确认为动画，跳过 Trakt 详情请求
+                if sync_filter_enabled:
+                    if item.type == "episode" and item.show:
+                        tmdb_id = item.show.get("ids", {}).get("tmdb")
+                        if tmdb_id and bangumi_data.get_title_by_tmdb_id(
+                            f"tv/{tmdb_id}"
+                        ):
+                            logger.debug(
+                                f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: tv/{tmdb_id}"
+                            )
+                            show_genres[tid] = ["anime"]
+                            continue
+                    elif item.type == "movie" and item.movie:
+                        tmdb_id = item.movie.get("ids", {}).get("tmdb")
+                        if tmdb_id and bangumi_data.get_title_by_tmdb_id(
+                            f"movie/{tmdb_id}"
+                        ):
+                            logger.debug(
+                                f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: movie/{tmdb_id}"
+                            )
+                            show_genres[tid] = ["anime"]
+                            continue
+                fetch_tasks.append((tid, item.type, trakt_id))
+        return fetch_tasks
+
+    async def _fetch_details_batch(
+        self,
+        fetch_tasks: list[tuple[str, str, int]],
+        client: TraktClient,
+        sync_filter_enabled: bool,
+        show_original_titles: dict[str, str],
+        show_genres: dict[str, list[str]],
+    ) -> None:
+        """第二阶段：并发获取详情（Semaphore 控制并发避免触发速率限制）。
+
+        将结果写入 show_original_titles 与 show_genres。
+        """
+        if not fetch_tasks:
+            return
+        sem = asyncio.Semaphore(5)
+
+        async def _fetch_one(
+            tid: str, item_type: str, trakt_id_int: int
+        ) -> tuple[str, Optional[dict]]:
+            async with sem:
+                if item_type == "episode":
+                    resp = await client.get_show_info(tid)
+                else:
+                    resp = await client.get_movie_info(trakt_id_int)
+                return tid, resp
+
+        results = await asyncio.gather(
+            *[_fetch_one(t, it, tid_int) for t, it, tid_int in fetch_tasks],
+            return_exceptions=True,
+        )
+        for tid, resp in results:
+            if isinstance(resp, Exception):
+                logger.debug(f"获取 Trakt 详情失败: {resp}")
+                continue
+            if resp:
+                ot = resp.get("original_title")
+                if ot:
+                    show_original_titles[tid] = ot
+                if sync_filter_enabled:
+                    show_genres[tid] = resp.get("genres", [])
+
+    def _apply_genre_filter(
+        self,
+        item: TraktHistoryItem,
+        sync_filter_enabled: bool,
+        show_genres: dict[str, list[str]],
+        show_original_titles: dict[str, str],
+        custom_mappings: dict,
+    ) -> bool:
+        """类型过滤：仅同步动画类型，除非命中映射。
+
+        返回 True 表示应跳过该条目。
+        """
+        if not sync_filter_enabled:
+            return False
+        if item.type == "episode":
+            show = item.show
+            item_title = (show or {}).get("title", "")
+            trakt_id = (show or {}).get("ids", {}).get("trakt")
+        else:
+            m = item.movie or {}
+            item_title = m.get("title", "")
+            trakt_id = m.get("ids", {}).get("trakt")
+        tid = str(trakt_id) if trakt_id else ""
+        genres = show_genres.get(tid, []) if tid else []
+        ori_title = show_original_titles.get(tid, "") if tid else ""
+        if genres and not (
+            any(g in genres for g in ("anime", "donghua", "animation"))
+            or item_title in custom_mappings
+            or ori_title in custom_mappings
+        ):
+            logger.debug(
+                f"Trakt 类型过滤——跳过非动画条目: {item_title} (genres={genres})"
+            )
+            return True
+        return False
+
+    async def _convert_and_sync_items(
+        self,
+        user_id: str,
+        pending_items: list[TraktHistoryItem],
+        sync_filter_enabled: bool,
+        show_genres: dict[str, list[str]],
+        show_original_titles: dict[str, str],
+        custom_mappings: dict,
+    ) -> tuple[int, int, int, list[dict]]:
+        """转换为 CustomItem 并同步。
+
+        返回 (synced_count, skipped_count, error_count, details)。
+        """
+        synced_count = 0
+        skipped_count = 0
+        error_count = 0
+        details: list[dict] = []
+
+        for item in pending_items:
+            try:
+                # 类型过滤：仅同步动画类型，除非命中映射
+                if self._apply_genre_filter(
+                    item,
+                    sync_filter_enabled,
+                    show_genres,
+                    show_original_titles,
+                    custom_mappings,
+                ):
+                    skipped_count += 1
+                    continue
+
+                # 转换为 CustomItem
+                custom_item = self._convert_trakt_history_to_custom_item(
+                    user_id, item, show_original_titles
+                )
+
+                if not custom_item:
+                    await asyncio.to_thread(
+                        self._report_preconvert_failure,
+                        user_id,
+                        item,
+                        "Trakt 记录缺少可用标题，无法转为同步条目",
+                    )
+                    error_count += 1
+                    continue
+
+                # 调用现有同步服务
+                task_id = await sync_service.sync_custom_item_async(
+                    custom_item, source="trakt"
+                )
+
+                # 记录同步历史
+                await asyncio.to_thread(
+                    self._record_sync_history, user_id, item, task_id
+                )
+
+                synced_count += 1
+                details.append(
+                    {
+                        "media_type": custom_item.media_type,
+                        "title": custom_item.title,
+                        "season": custom_item.season,
+                        "episode": custom_item.episode,
+                        "task_id": task_id,
+                    }
+                )
+
+                # 小延迟避免请求过快
+                await asyncio.sleep(0.05)
+
+            except Exception as e:
+                logger.error(f"同步单个观看历史失败: {e}")
+                error_count += 1
+
+        return synced_count, skipped_count, error_count, details
 
     async def _sync_watched_history(
         self, user_id: str, client: TraktClient, config, full_sync: bool
@@ -215,7 +415,9 @@ class TraktSyncService:
             logger.info(f"获取到 {len(history_items)} 条观看历史记录")
 
             # 一次性加载已同步集合，后续 O(1) 查找（消除 N+1 查询）
-            synced_set = database_manager.get_trakt_synced_set(user_id)
+            synced_set = await asyncio.to_thread(
+                database_manager.get_trakt_synced_set, user_id
+            )
 
             # 过滤：剧集需 episode+show；电影需 movie 且至少有标题或 TMDB（用于匹配 bangumi）
             syncable_items: list[TraktHistoryItem] = []
@@ -244,16 +446,10 @@ class TraktSyncService:
             logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
 
             # 增量同步时先过滤已同步记录，减少后续 API 请求
-            pending_items: list[TraktHistoryItem] = []
-            for item in syncable_items:
-                if (
-                    not full_sync
-                    and (item.trakt_item_id, item.watched_timestamp) in synced_set
-                ):
-                    skipped_count += 1
-                else:
-                    pending_items.append(item)
-            logger.info(f"去重后剩余 {len(pending_items)} 条待同步记录")
+            pending_items, dedup_skipped = self._filter_already_synced(
+                syncable_items, full_sync, synced_set
+            )
+            skipped_count += dedup_skipped
 
             # 预先收集 sync/history 不包含 original_title 的节目，
             # 通过 /shows/:id?extended=full 获取日语原名；
@@ -262,132 +458,41 @@ class TraktSyncService:
             show_genres: dict[str, list[str]] = {}
             sync_filter_enabled = getattr(config, "sync_filter_enabled", True)
             custom_mappings = (
-                mapping_service.load_custom_mappings() if sync_filter_enabled else {}
+                await asyncio.to_thread(mapping_service.load_custom_mappings)
+                if sync_filter_enabled
+                else {}
             )
 
-            for item in pending_items:
-                trakt_id = None
-                need_details = sync_filter_enabled
-                if item.type == "episode" and item.show:
-                    show = item.show
-                    trakt_id = show.get("ids", {}).get("trakt")
-                    if not show.get("original_title") and not show.get("originalTitle"):
-                        need_details = True
-                elif item.type == "movie" and item.movie:
-                    trakt_id = item.movie.get("ids", {}).get("trakt")
-                if not trakt_id:
-                    continue
-                tid = str(trakt_id)
-                if need_details and tid not in show_original_titles:
-                    # bangumi_data 仅收录动画条目，TMDB 命中则确认为动画，跳过 Trakt 详情请求
-                    if sync_filter_enabled:
-                        if item.type == "episode" and item.show:
-                            tmdb_id = item.show.get("ids", {}).get("tmdb")
-                            if tmdb_id and bangumi_data.get_title_by_tmdb_id(
-                                f"tv/{tmdb_id}"
-                            ):
-                                logger.debug(
-                                    f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: tv/{tmdb_id}"
-                                )
-                                show_genres[tid] = ["anime"]
-                                continue
-                        elif item.type == "movie" and item.movie:
-                            tmdb_id = item.movie.get("ids", {}).get("tmdb")
-                            if tmdb_id and bangumi_data.get_title_by_tmdb_id(
-                                f"movie/{tmdb_id}"
-                            ):
-                                logger.debug(
-                                    f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: movie/{tmdb_id}"
-                                )
-                                show_genres[tid] = ["anime"]
-                                continue
-                    if item.type == "episode":
-                        details_resp = await client.get_show_info(tid)
-                        if details_resp:
-                            ot = details_resp.get("original_title")
-                            if ot:
-                                show_original_titles[tid] = ot
-                            if sync_filter_enabled:
-                                show_genres[tid] = details_resp.get("genres", [])
-                    elif item.type == "movie":
-                        details_resp = await client.get_movie_info(trakt_id)
-                        if details_resp:
-                            ot = details_resp.get("original_title")
-                            if ot:
-                                show_original_titles[tid] = ot
-                            if sync_filter_enabled:
-                                show_genres[tid] = details_resp.get("genres", [])
+            # 第一阶段：TMDB 过滤 + 收集需要 API 请求的 tid
+            fetch_tasks = self._collect_detail_fetch_tasks(
+                pending_items, sync_filter_enabled, show_original_titles, show_genres
+            )
+
+            # 第二阶段：并发获取详情（Semaphore 控制并发避免触发速率限制）
+            await self._fetch_details_batch(
+                fetch_tasks,
+                client,
+                sync_filter_enabled,
+                show_original_titles,
+                show_genres,
+            )
 
             # 转换为 CustomItem 并同步
-            synced_count = 0
-            details = []
-
-            for item in pending_items:
-                try:
-                    # 类型过滤：仅同步动画类型，除非命中映射
-                    if sync_filter_enabled:
-                        if item.type == "episode":
-                            show = item.show
-                            item_title = (show or {}).get("title", "")
-                            trakt_id = (show or {}).get("ids", {}).get("trakt")
-                        else:
-                            m = item.movie or {}
-                            item_title = m.get("title", "")
-                            trakt_id = m.get("ids", {}).get("trakt")
-                        tid = str(trakt_id) if trakt_id else ""
-                        genres = show_genres.get(tid, []) if tid else []
-                        ori_title = show_original_titles.get(tid, "")
-                        if genres and not (
-                            any(g in genres for g in ("anime", "donghua", "animation"))
-                            or item_title in custom_mappings
-                            or ori_title in custom_mappings
-                        ):
-                            logger.debug(
-                                f"Trakt 类型过滤——跳过非动画条目: {item_title} "
-                                f"(genres={genres})"
-                            )
-                            skipped_count += 1
-                            continue
-
-                    # 转换为 CustomItem
-                    custom_item = self._convert_trakt_history_to_custom_item(
-                        user_id, item, show_original_titles
-                    )
-
-                    if not custom_item:
-                        self._report_preconvert_failure(
-                            user_id,
-                            item,
-                            "Trakt 记录缺少可用标题，无法转为同步条目",
-                        )
-                        error_count += 1
-                        continue
-
-                    # 调用现有同步服务
-                    task_id = await sync_service.sync_custom_item_async(
-                        custom_item, source="trakt"
-                    )
-
-                    # 记录同步历史
-                    self._record_sync_history(user_id, item, task_id)
-
-                    synced_count += 1
-                    details.append(
-                        {
-                            "media_type": custom_item.media_type,
-                            "title": custom_item.title,
-                            "season": custom_item.season,
-                            "episode": custom_item.episode,
-                            "task_id": task_id,
-                        }
-                    )
-
-                    # 小延迟避免请求过快
-                    await asyncio.sleep(0.05)
-
-                except Exception as e:
-                    logger.error(f"同步单个观看历史失败: {e}")
-                    error_count += 1
+            (
+                synced_count,
+                sync_skipped,
+                sync_error,
+                details,
+            ) = await self._convert_and_sync_items(
+                user_id,
+                pending_items,
+                sync_filter_enabled,
+                show_genres,
+                show_original_titles,
+                custom_mappings,
+            )
+            skipped_count += sync_skipped
+            error_count += sync_error
 
             return TraktSyncResult(
                 success=error_count == 0,
@@ -408,36 +513,6 @@ class TraktSyncService:
                 skipped_count=0,
                 details={},
             )
-
-    async def _sync_ratings(
-        self, user_id: str, client: TraktClient, config, full_sync: bool
-    ) -> TraktSyncResult:
-        """同步评分"""
-        # TODO: 实现评分同步
-        logger.info(f"用户 {user_id} 的评分同步暂未实现")
-        return TraktSyncResult(
-            success=True,
-            message="评分同步暂未实现",
-            synced_count=0,
-            skipped_count=0,
-            error_count=0,
-            details={},
-        )
-
-    async def _sync_collection(
-        self, user_id: str, client: TraktClient, config, full_sync: bool
-    ) -> TraktSyncResult:
-        """同步收藏"""
-        # TODO: 实现收藏同步
-        logger.info(f"用户 {user_id} 的收藏同步暂未实现")
-        return TraktSyncResult(
-            success=True,
-            message="收藏同步暂未实现",
-            synced_count=0,
-            skipped_count=0,
-            error_count=0,
-            details={},
-        )
 
     def _trakt_item_failure_context(
         self, user_id: str, item: TraktHistoryItem, reason: str
@@ -672,7 +747,7 @@ class TraktSyncService:
         """
         task_id = f"trakt_sync_{user_id}_{int(time.time())}"
 
-        async def sync_task():
+        async def sync_task() -> None:
             try:
                 result = await self.sync_user_trakt_data(user_id, full_sync)
                 self._sync_results[task_id] = result

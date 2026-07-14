@@ -2,6 +2,8 @@
 页面路由模块
 """
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
@@ -19,7 +21,7 @@ router = APIRouter(tags=["pages"])
 
 
 @router.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+async def root(request: Request) -> HTMLResponse:
     """根路径重定向到仪表板"""
     return redirect_public("/dashboard")
 
@@ -32,9 +34,9 @@ async def dashboard(request: Request):
         return redirect_public("/login")
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
-            "request": request,
             "user": user,
             "app_display_version": get_display_version(),
             "poster_cache_ns": build_poster_cache_namespace(
@@ -46,24 +48,24 @@ async def dashboard(request: Request):
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(request: Request) -> HTMLResponse:
     """登录页面"""
     # 如果已经登录，直接跳转到主页
     user = get_current_user_from_cookie(request)
     if user:
         return redirect_public("/dashboard")
 
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 
 @router.get("/config", response_class=HTMLResponse)
-async def config_page(request: Request):
+async def config_page(request: Request) -> HTMLResponse:
     """配置管理页面"""
     user = get_current_user_from_cookie(request)
     if not user:
         return redirect_public("/login")
 
-    return templates.TemplateResponse("config.html", {"request": request, "user": user})
+    return templates.TemplateResponse(request, "config.html", {"user": user})
 
 
 @router.get("/records", response_class=HTMLResponse)
@@ -73,9 +75,7 @@ async def records_page(request: Request):
     if not user:
         return redirect_public("/login")
 
-    return templates.TemplateResponse(
-        "records.html", {"request": request, "user": user}
-    )
+    return templates.TemplateResponse(request, "records.html", {"user": user})
 
 
 @router.get("/mappings", response_class=HTMLResponse)
@@ -85,9 +85,7 @@ async def mappings_page(request: Request):
     if not user:
         return redirect_public("/login")
 
-    return templates.TemplateResponse(
-        "mappings.html", {"request": request, "user": user}
-    )
+    return templates.TemplateResponse(request, "mappings.html", {"user": user})
 
 
 @router.get("/debug", response_class=HTMLResponse)
@@ -97,7 +95,7 @@ async def debug_page(request: Request):
     if not user:
         return redirect_public("/login")
 
-    return templates.TemplateResponse("debug.html", {"request": request, "user": user})
+    return templates.TemplateResponse(request, "debug.html", {"user": user})
 
 
 @router.get("/logs", response_class=HTMLResponse)
@@ -107,34 +105,33 @@ async def logs_page(request: Request):
     if not user:
         return redirect_public("/login")
 
-    return templates.TemplateResponse("logs.html", {"request": request, "user": user})
+    return templates.TemplateResponse(request, "logs.html", {"user": user})
 
 
 @router.get("/trakt/config", response_class=HTMLResponse)
-async def trakt_config_page(request: Request):
+async def trakt_config_page(request: Request) -> HTMLResponse:
     """Trakt 配置页面"""
     user = get_current_user_from_cookie(request)
     if not user:
         return redirect_public("/login")
 
-    return templates.TemplateResponse(
-        "trakt/config.html", {"request": request, "user": user}
-    )
+    return templates.TemplateResponse(request, "trakt/config.html", {"user": user})
 
 
 @router.get("/trakt/auth/success", response_class=HTMLResponse)
-async def trakt_auth_success_page(request: Request):
+async def trakt_auth_success_page(request: Request) -> HTMLResponse:
     """Trakt 授权成功页面（不需要认证）"""
-    return templates.TemplateResponse("trakt/auth_success.html", {"request": request})
+    return templates.TemplateResponse(request, "trakt/auth_success.html")
 
 
 @router.get("/trakt/auth", response_class=HTMLResponse)
-async def trakt_auth_error_page(request: Request):
+async def trakt_auth_error_page(request: Request) -> HTMLResponse:
     """Trakt 授权错误页面（不需要认证）"""
     status = request.query_params.get("status", "")
     message = request.query_params.get("message", "")
 
     return templates.TemplateResponse(
+        request,
         "trakt/auth_error.html",
-        {"request": request, "status": status, "message": message},
+        {"status": status, "message": message},
     )

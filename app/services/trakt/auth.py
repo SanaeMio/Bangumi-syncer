@@ -19,12 +19,13 @@ from ...models.trakt import (
     TraktCallbackResponse,
     TraktConfig,
 )
+from ...utils.http_base import AsyncHttpClient
 
 
 class TraktAuthService:
     """Trakt OAuth2 认证服务"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.base_url = "https://api.trakt.tv"
         self.auth_url = "https://trakt.tv/oauth/authorize"
         self.token_url = "https://api.trakt.tv/oauth/token"
@@ -207,7 +208,9 @@ class TraktAuthService:
                 "grant_type": "authorization_code",
             }
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with AsyncHttpClient(
+                label="Trakt-Auth", timeout=30.0, max_retries=0
+            ).prefix("🔑") as client:
                 response = await client.post(self.token_url, json=data)
 
                 if response.status_code == 200:
@@ -242,7 +245,9 @@ class TraktAuthService:
                 "grant_type": "refresh_token",
             }
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with AsyncHttpClient(
+                label="Trakt-Auth", timeout=30.0, max_retries=0
+            ).prefix("🔑") as client:
                 response = await client.post(self.token_url, json=data)
 
                 if response.status_code == 200:
@@ -343,6 +348,10 @@ class TraktAuthService:
             return None
 
         return TraktConfig.from_dict(config_dict)
+
+    def save_config(self, config: TraktConfig) -> bool:
+        """保存或更新 Trakt 配置（API 层入口，避免跨层直访数据库）"""
+        return database_manager.save_trakt_config(config.to_dict())
 
     def disconnect_trakt(self, user_id: str) -> bool:
         """断开 Trakt 连接，删除配置"""

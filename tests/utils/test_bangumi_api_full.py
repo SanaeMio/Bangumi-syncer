@@ -10,19 +10,19 @@ from app.utils.bangumi_api import BangumiApi
 class TestBangumiApiMethods:
     """Bangumi API 方法测试"""
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_init_no_proxy(self, mock_session):
         """测试无代理初始化"""
         api = BangumiApi(http_proxy=None)
         assert api.http_proxy is None
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_init_with_ssl_verify(self, mock_session):
         """测试 SSL 验证设置"""
         api = BangumiApi(ssl_verify=True)
         assert api.ssl_verify is True
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_cache_operations(self, mock_session):
         """测试缓存操作"""
         api = BangumiApi()
@@ -39,7 +39,7 @@ class TestBangumiApiMethods:
 class TestBangumiApiCache:
     """Bangumi API 缓存测试"""
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_cache_clear_all(self, mock_session):
         """测试清除所有缓存"""
         api = BangumiApi()
@@ -57,7 +57,7 @@ class TestBangumiApiCache:
         assert len(api._cache["search_old"]) == 0
         assert len(api._cache["get_subject"]) == 0
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_cache_types(self, mock_session):
         """测试缓存类型"""
         api = BangumiApi()

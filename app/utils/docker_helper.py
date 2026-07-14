@@ -4,17 +4,18 @@ Docker环境检测和代理配置助手
 
 import os
 import subprocess
-from typing import Optional
+from typing import Any, Optional
 
-import requests
+import httpx
 
 from ..core.logging import logger
+from .http_base import SyncHttpClient
 
 
 class DockerProxyHelper:
     """Docker代理配置助手"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.is_docker = self._detect_docker_environment()
         self.network_mode = self._detect_network_mode()
 
@@ -253,7 +254,7 @@ class DockerProxyHelper:
 
     def test_proxy_connectivity(
         self, proxy_url: str, timeout: int = 5
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试代理连通性"""
         result = {"success": False, "response_time": None, "error": None, "details": {}}
 
@@ -271,10 +272,14 @@ class DockerProxyHelper:
                 return result
 
             # 使用代理访问一个简单的HTTP服务
-            proxies = {"http": proxy_url, "https": proxy_url}
-            response = requests.get(
-                "http://httpbin.org/ip", proxies=proxies, timeout=timeout, verify=False
-            )  # 测试时不验证SSL
+            with SyncHttpClient(
+                label="Proxy",
+                proxy=proxy_url,
+                verify=False,
+                timeout=timeout,
+                max_retries=0,
+            ) as client:
+                response = client.get("http://httpbin.org/ip")  # 测试时不验证SSL
 
             if response.status_code == 200:
                 result["success"] = True
@@ -292,9 +297,9 @@ class DockerProxyHelper:
             else:
                 result["error"] = f"HTTP {response.status_code}"
 
-        except requests.exceptions.ConnectTimeout:
+        except httpx.ConnectTimeout:
             result["error"] = "连接超时"
-        except requests.exceptions.ConnectionError as e:
+        except httpx.ConnectError as e:
             result["error"] = f"连接错误: {str(e)}"
         except Exception as e:
             result["error"] = f"测试失败: {str(e)}"
@@ -306,7 +311,7 @@ class DockerProxyHelper:
 
     def _test_basic_connectivity(
         self, proxy_url: str, timeout: int = 3
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试基础网络连通性（不通过代理）"""
         result = {"success": False, "error": None, "host": None, "port": None}
 
@@ -349,7 +354,7 @@ class DockerProxyHelper:
 
         return result
 
-    def get_environment_info(self) -> dict[str, any]:
+    def get_environment_info(self) -> dict[str, Any]:
         """获取环境信息"""
         return {
             "is_docker": self.is_docker,
@@ -360,7 +365,7 @@ class DockerProxyHelper:
             "network_diagnosis": self._get_network_diagnosis(),
         }
 
-    def _get_network_diagnosis(self) -> dict[str, any]:
+    def _get_network_diagnosis(self) -> dict[str, Any]:
         """获取网络诊断信息"""
         diagnosis = {
             "container_ip": None,
@@ -378,7 +383,7 @@ class DockerProxyHelper:
             s.connect(("8.8.8.8", 80))
             diagnosis["container_ip"] = s.getsockname()[0]
             s.close()
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         try:
@@ -396,7 +401,7 @@ class DockerProxyHelper:
                             if len(parts) >= 3:
                                 diagnosis["gateway"] = parts[2]
                 diagnosis["routes"] = routes
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         try:
@@ -406,7 +411,7 @@ class DockerProxyHelper:
                     if line.startswith("nameserver"):
                         dns_server = line.split()[1]
                         diagnosis["dns_servers"].append(dns_server)
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         try:
@@ -435,14 +440,14 @@ class DockerProxyHelper:
                         if ip_match:
                             current_interface["ips"].append(ip_match.group(1))
                 diagnosis["network_interfaces"] = interfaces
-        except:
+        except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
         return diagnosis
 
     def test_host_connectivity(
         self, host: str, port: int = 80, timeout: int = 3
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试到指定主机的连通性"""
         result = {
             "success": False,
@@ -484,7 +489,7 @@ class DockerProxyHelper:
                         "success": False,
                         "error": ping_result.stderr,
                     }
-            except:
+            except (OSError, ValueError, subprocess.SubprocessError):
                 result["details"]["ping_test"] = {
                     "success": False,
                     "error": "ping命令不可用或无权限",
@@ -497,7 +502,7 @@ class DockerProxyHelper:
 
     def _test_tcp_connection(
         self, host: str, port: int, timeout: int = 3
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """测试TCP连接"""
         result = {"success": False, "error": None, "host": host, "port": port}
 

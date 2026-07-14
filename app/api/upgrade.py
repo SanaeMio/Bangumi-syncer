@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Optional
+from collections.abc import AsyncGenerator
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from ..core.app_version import get_version
-from ..services.upgrade_service import upgrade_service
+from ..services.upgrade_service import restart_application, upgrade_service
+from ..utils.docker_helper import docker_helper
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["app"])
@@ -55,8 +57,6 @@ async def upgrade_status(
     user: dict = Depends(get_current_user_flexible),
 ):
     """获取升级状态"""
-    from ..utils.docker_helper import docker_helper
-
     env = "docker" if docker_helper.is_docker else "direct"
     return UpgradeStatusResponse(
         environment=env,
@@ -70,7 +70,7 @@ async def upgrade_status(
 async def trigger_upgrade(
     req: UpgradeRequest,
     user: dict = Depends(get_current_user_flexible),
-):
+) -> UpgradeTriggerResponse:
     """触发一键升级"""
     if not upgrade_service.is_upgrade_capable():
         raise HTTPException(
@@ -102,7 +102,7 @@ async def upgrade_progress(
             raise HTTPException(status_code=404, detail="升级任务不存在")
 
         # 任务已结束，直接返回最终状态
-        async def final_event():
+        async def final_event() -> AsyncGenerator[dict[str, Any], None]:
             data = {
                 "stage": progress.stage.value,
                 "percent": progress.percent,
@@ -142,10 +142,8 @@ async def restart_after_upgrade(
 ):
     """升级完成后重启应用"""
 
-    async def delayed_restart():
+    async def delayed_restart() -> None:
         await asyncio.sleep(1)
-        from ..services.upgrade_service import restart_application
-
         restart_application()
 
     asyncio.create_task(delayed_restart())

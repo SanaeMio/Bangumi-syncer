@@ -45,6 +45,7 @@ Bangumi-syncer 是一款把常见媒体库与 [Bangumi（番组计划）](https:
 | **Jellyfin** | Webhook 插件 | ✅ | ✅ | ✅ |
 | **Trakt** | 定时任务拉取账户播放历史 | ✅ | ❌ | ✅ |
 | **飞牛** | 定时只读数据库 | ✅ | ❌ | ✅ |
+| **fongmi** | 定时读取app信息 | ✅ | ❌ | ✅ |
 | **任意支持Trakt同步的播放器** | 借助Trakt同步 | ✅ | ❌ | ✅ |
 | **任意支持Webhook的播放器** | 自定义 Webhook | ✅ | ✅ | ✅ |
 
@@ -56,7 +57,7 @@ Bangumi-syncer 是一款把常见媒体库与 [Bangumi（番组计划）](https:
 
 如果存在 bug 或想增加功能，欢迎 [提一个 Issue](https://github.com/SanaeMio/Bangumi-syncer/issues/new/choose) 或者提交一个 Pull Request。
 
-参与开发前请先阅读仓库内的 [贡献指南](https://github.com/SanaeMio/Bangumi-syncer/blob/main/CONTRIBUTING.md)。
+参与开发前请先阅读仓库内的 [贡献指南](https://github.com/SanaeMio/Bangumi-syncer/blob/main/CONTRIBUTING.md)，想接入新媒体服务器驱动，可参考 [新驱动接入指南](https://sanaemio.github.io/Bangumi-syncer/development/new-driver-guide)。
 
 ## 👏 鸣谢
 本项目受到以下项目思路的启发或使用过其中的内容，在此表示衷心的感谢！

@@ -76,7 +76,7 @@ class TestTraktClientAsync:
             client = TraktClient(access_token="test_token")
             await client._ensure_client()
 
-            assert client._client is not None
+            assert client._http is not None
 
     @pytest.mark.asyncio
     async def test_close(self):
@@ -88,12 +88,12 @@ class TestTraktClientAsync:
 
             client = TraktClient(access_token="test_token")
             mock_client = AsyncMock()
-            client._client = mock_client
+            client._http = mock_client
 
             await client.close()
 
             mock_client.aclose.assert_called_once()
-            assert client._client is None
+            assert client._http is None
 
 
 class TestTraktClientMethods:
@@ -114,10 +114,12 @@ class TestTraktClientMethods:
         ):
             mock_config.get_trakt_config.return_value = {"client_id": "test_id"}
 
-            mock_response = AsyncMock()
+            mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_response.json = AsyncMock(return_value=[])
-            mock_response.raise_for_status = MagicMock()
+            mock_response.json = MagicMock(return_value=[])
+            mock_response.elapsed.total_seconds.return_value = 0.01
+            mock_response.headers = {}
+            mock_response.text = ""
 
             mock_client = AsyncMock()
             mock_client.request = AsyncMock(return_value=mock_response)

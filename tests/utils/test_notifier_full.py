@@ -137,7 +137,7 @@ class TestNotifierSendEmail:
         }
 
         with (
-            patch("app.utils.notifier.smtplib.SMTP_SSL") as mock_smtp_ssl,
+            patch("app.utils.notifier.email_sender.smtplib.SMTP_SSL") as mock_smtp_ssl,
             patch.object(notifier, "_load_email_template", return_value=None),
             patch.object(
                 notifier, "_build_simple_email_html", return_value="<html></html>"
@@ -173,7 +173,7 @@ class TestNotifierSendEmail:
         }
 
         with (
-            patch("app.utils.notifier.smtplib.SMTP") as mock_smtp,
+            patch("app.utils.notifier.email_sender.smtplib.SMTP") as mock_smtp,
             patch.object(notifier, "_load_email_template", return_value=None),
             patch.object(
                 notifier, "_build_simple_email_html", return_value="<html></html>"
@@ -227,7 +227,7 @@ class TestNotifierSendEmail:
         }
 
         with (
-            patch("app.utils.notifier.smtplib.SMTP") as mock_smtp,
+            patch("app.utils.notifier.email_sender.smtplib.SMTP") as mock_smtp,
             patch.object(notifier, "_load_email_template", return_value=None),
             patch.object(
                 notifier, "_build_simple_email_html", return_value="<html></html>"
@@ -261,7 +261,7 @@ class TestNotifierSendEmail:
         }
 
         with (
-            patch("app.utils.notifier.smtplib.SMTP") as mock_smtp,
+            patch("app.utils.notifier.email_sender.smtplib.SMTP") as mock_smtp,
             patch.object(notifier, "_load_email_template", return_value=None),
             patch.object(
                 notifier, "_build_simple_email_html", return_value="<html></html>"
@@ -292,7 +292,7 @@ class TestNotifierSendEmail:
 
         with (
             patch(
-                "app.utils.notifier.smtplib.SMTP",
+                "app.utils.notifier.email_sender.smtplib.SMTP",
                 side_effect=RuntimeError("connection error"),
             ),
             patch.object(notifier, "_load_email_template", return_value=None),

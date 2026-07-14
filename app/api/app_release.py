@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from ..core.app_version import get_display_version, get_version
 from ..services.upgrade_service import upgrade_service
+from ..utils.docker_helper import docker_helper
 from ..utils.github_release import (
     LatestReleaseResult,
     ReleaseListItem,
@@ -135,7 +136,7 @@ def _merge_latest_if_missing(
         if not is_less_than(current_cmp, latest_sem):
             return
 
-    except Exception:
+    except (ValueError, TypeError):
         return
 
     items.append(
@@ -231,8 +232,6 @@ async def release_info(
     current = get_version()
 
     cur_disp = get_display_version(current)
-
-    from ..utils.docker_helper import docker_helper
 
     env = "docker" if docker_helper.is_docker else "direct"
 

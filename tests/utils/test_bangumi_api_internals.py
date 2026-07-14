@@ -3,8 +3,8 @@
 import socket
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
-import requests
 
 from app.utils.bangumi_api import BangumiApi
 
@@ -12,6 +12,9 @@ from app.utils.bangumi_api import BangumiApi
 def _session_resp(status=200, json_body=None, json_exc=None):
     r = MagicMock()
     r.status_code = status
+    r.elapsed.total_seconds.return_value = 0.01
+    r.headers = {}
+    r.text = ""
     if json_exc:
         r.json.side_effect = json_exc
     else:
@@ -23,52 +26,53 @@ class TestTryDirectConnection:
     def test_get_success_adds_timeout_and_no_proxy(self):
         mock_sess = MagicMock()
         out = _session_resp(200, {})
-        mock_sess.get.return_value = out
+        mock_sess.request.return_value = out
 
-        with patch("app.utils.bangumi_api.requests.Session", return_value=mock_sess):
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
             api = BangumiApi(access_token="tok")
             res = api._try_direct_connection("GET", "https://example.test/api")
 
         assert res is out
-        call_kw = mock_sess.get.call_args.kwargs
+        call_kw = mock_sess.request.call_args.kwargs
         assert call_kw["timeout"] == 15
         assert call_kw.get("proxies") is None
         mock_sess.close.assert_called_once()
 
     def test_post_put_patch_and_high_status_returns_none(self):
-        for method, attr in (("POST", "post"), ("PUT", "put"), ("PATCH", "patch")):
+        for method in ("POST", "PUT", "PATCH"):
             mock_sess = MagicMock()
             bad = _session_resp(502)
-            getattr(mock_sess, attr).return_value = bad
-            with patch(
-                "app.utils.bangumi_api.requests.Session", return_value=mock_sess
-            ):
+            mock_sess.request.return_value = bad
+            with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
                 api = BangumiApi()
                 res = api._try_direct_connection(
                     method, "https://example.test/x", verify=True
                 )
             assert res is None
 
-    def test_unsupported_method_raises(self):
+    def test_unsupported_method_passes_through(self):
         mock_sess = MagicMock()
-        with patch("app.utils.bangumi_api.requests.Session", return_value=mock_sess):
+        ok = _session_resp(200)
+        mock_sess.request.return_value = ok
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
             api = BangumiApi()
-            with pytest.raises(ValueError, match="不支持的HTTP方法"):
-                api._try_direct_connection("DELETE", "https://example.test/x")
+            res = api._try_direct_connection("DELETE", "https://example.test/x")
+        assert res is ok
+        mock_sess.request.assert_called_once()
 
     def test_exception_reraises_after_close(self):
         mock_sess = MagicMock()
-        mock_sess.get.side_effect = requests.exceptions.Timeout("t")
-        with patch("app.utils.bangumi_api.requests.Session", return_value=mock_sess):
+        mock_sess.request.side_effect = httpx.TimeoutException("t")
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
             api = BangumiApi()
-            with pytest.raises(requests.exceptions.Timeout):
+            with pytest.raises(httpx.TimeoutException):
                 api._try_direct_connection("GET", "https://example.test/x")
         mock_sess.close.assert_called_once()
 
     def test_strips_proxies_from_kwargs(self):
         mock_sess = MagicMock()
-        mock_sess.get.return_value = _session_resp(200)
-        with patch("app.utils.bangumi_api.requests.Session", return_value=mock_sess):
+        mock_sess.request.return_value = _session_resp(200)
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
             api = BangumiApi()
             api._try_direct_connection(
                 "GET",
@@ -76,8 +80,8 @@ class TestTryDirectConnection:
                 proxies={"http": "bad"},
                 timeout=99,
             )
-        assert "proxies" not in mock_sess.get.call_args.kwargs
-        assert mock_sess.get.call_args.kwargs["timeout"] == 99
+        assert "proxies" not in mock_sess.request.call_args.kwargs
+        assert mock_sess.request.call_args.kwargs["timeout"] == 99
 
 
 class TestDiagnoseNetworkIssue:
@@ -130,76 +134,52 @@ class TestRequestWithRetry:
                 api._request_with_retry("GET", api.req, "https://bgm.test/me")
 
     def test_session_post_put_patch_paths(self):
-        for method, name in (("POST", "post"), ("PUT", "put"), ("PATCH", "patch")):
+        for method in ("POST", "PUT", "PATCH"):
             api = BangumiApi()
             m = MagicMock(return_value=_session_resp(200))
-            setattr(api.req, name, m)
+            api.req.request = m
             api._request_with_retry(
                 method, api.req, "https://bgm.test/x", json={"a": 1}
             )
             m.assert_called_once()
 
-    def test_unsupported_method_in_retry_raises(self):
+    def test_unsupported_method_passes_through(self):
         api = BangumiApi()
-        with pytest.raises(ValueError, match="不支持的HTTP方法"):
-            api._request_with_retry("DELETE", api.req, "https://bgm.test/x")
+        m = MagicMock(return_value=_session_resp(200))
+        api.req.request = m
+        res = api._request_with_retry("DELETE", api.req, "https://bgm.test/x")
+        assert res.status_code == 200
+        m.assert_called_once()
 
     @patch("app.utils.notifier.send_notify")
-    @patch("app.utils.bangumi_api.time.sleep")
-    def test_http_500_exhausts_retries_and_notifies(
-        self, _sleep, _notify, max_retries=2
-    ):
+    def test_http_500_exhausts_retries_and_notifies(self, _notify):
+        """重试耗尽后（SyncHttpClient 内部处理），503 触发通知和 HTTPStatusError"""
         api = BangumiApi()
         bad = _session_resp(500)
-        api.req.get = MagicMock(return_value=bad)
-        with pytest.raises(requests.exceptions.HTTPError):
-            api._request_with_retry(
-                "GET", api.req, "https://bgm.test/r", max_retries=max_retries
-            )
-        assert api.req.get.call_count == max_retries + 1
+        api.req.request = MagicMock(return_value=bad)
+        with pytest.raises(httpx.HTTPStatusError):
+            api._request_with_retry("GET", api.req, "https://bgm.test/r")
+        _notify.assert_called_once()
 
-    @patch("app.utils.bangumi_api.time.sleep")
-    def test_connection_error_then_success(self, _sleep):
-        api = BangumiApi()
-        ok = _session_resp(200)
-        api.req.get = MagicMock(
-            side_effect=[
-                requests.exceptions.ConnectionError(
-                    "Temporary failure in name resolution"
-                ),
-                ok,
-            ]
-        )
-        res = api._request_with_retry(
-            "GET", api.req, "https://bgm.test/r", max_retries=3
-        )
-        assert res is ok
-
-    @patch("app.utils.bangumi_api.time.sleep")
     @patch.object(BangumiApi, "_diagnose_network_issue")
     @patch.object(BangumiApi, "_try_direct_connection", return_value=None)
     def test_dns_style_error_falls_through_to_diagnose_when_no_proxy(
-        self, _direct, diag, _sleep
+        self, _direct, diag
     ):
         api = BangumiApi(http_proxy=None)
-        api.req.get = MagicMock(
-            side_effect=requests.exceptions.ConnectionError("Failed to resolve 'x'")
+        api.req.request = MagicMock(
+            side_effect=httpx.ConnectError("Failed to resolve 'x'")
         )
-        with pytest.raises(requests.exceptions.ConnectionError):
-            api._request_with_retry("GET", api.req, "https://bgm.test/r", max_retries=0)
+        with pytest.raises(httpx.ConnectError):
+            api._request_with_retry("GET", api.req, "https://bgm.test/r")
         diag.assert_called_once()
 
-    @patch("app.utils.bangumi_api.time.sleep")
-    def test_proxy_retry_then_direct_success_sets_flag(self, _sleep):
+    def test_proxy_retry_then_direct_success_sets_flag(self):
         api = BangumiApi(http_proxy="http://127.0.0.1:9")
         ok = _session_resp(200)
-        api.req.get = MagicMock(
-            side_effect=requests.exceptions.ConnectionError("proxy dead")
-        )
+        api.req.request = MagicMock(side_effect=httpx.ConnectError("proxy dead"))
         with patch.object(api, "_try_direct_connection", return_value=ok):
-            res = api._request_with_retry(
-                "GET", api.req, "https://bgm.test/r", max_retries=0
-            )
+            res = api._request_with_retry("GET", api.req, "https://bgm.test/r")
         assert res is ok
         assert api._proxy_failed is True
 
@@ -279,7 +259,7 @@ class TestSearchAndSubjectJsonBranches:
         with patch.object(api, "get", return_value=raw):
             assert api.get_subject(1) == {}
         raw2 = MagicMock(status_code=200)
-        raw2.json.side_effect = OSError("read")
+        raw2.json.side_effect = ValueError("read")
         with patch.object(api, "get", return_value=raw2):
             assert api.get_subject(2) == {}
 

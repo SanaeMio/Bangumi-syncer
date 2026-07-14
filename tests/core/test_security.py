@@ -165,7 +165,7 @@ class TestSecurityManager:
                     "lockout_duration": 900,
                 },
             ),
-            patch("app.utils.notifier.send_notify"),
+            patch("app.core.security.send_notify"),
         ):
             manager.login_attempts["192.168.1.1"] = {"attempts": 1}
             manager.record_login_failure("192.168.1.1")

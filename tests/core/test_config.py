@@ -166,9 +166,11 @@ class TestConfigManagerBranches:
         cm = _config_manager_from_ini(tmp_path, "[a]\nx = 1\n")
         first = cm.get_config_parser()
         assert first.get("a", "x") == "1"
-        # 触盘更新 mtime
+        # 触盘更新 mtime（显式推进，避免文件系统精度不足导致 flaky）
         p = tmp_path / "config.ini"
         p.write_text("[a]\nx = 2\n", encoding="utf-8")
+        future = cm._last_modified + 2
+        os.utime(p, (future, future))
         second = cm.get_config_parser()
         assert second.get("a", "x") == "2"
 
@@ -191,16 +193,12 @@ class TestConfigManagerBranches:
 
     def test_get_config_decrypt_returns_non_str_uses_raw(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[x]\ny = enc\n")
-        with patch(
-            "app.core.config_secret_crypto.decrypt_if_sensitive", return_value=42
-        ):
+        with patch("app.core.config.decrypt_if_sensitive", return_value=42):
             assert cm.get_config("x", "y") == "enc"
 
     def test_get_section_decrypt_if_sensitive(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[x]\na = v\n")
-        with patch(
-            "app.core.config_secret_crypto.decrypt_if_sensitive", return_value="dec"
-        ):
+        with patch("app.core.config.decrypt_if_sensitive", return_value="dec"):
             d = cm.get_section("x")
             assert d.get("a") == "dec"
 
@@ -245,10 +243,39 @@ access_token = t2
         s = cm.get_scheduler_config()
         assert s["startup_delay"] == 30
         assert s["job_timeout"] == 120
+        assert s["timezone"] == "Asia/Shanghai"
 
     def test_get_scheduler_config_empty(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
-        assert cm.get_scheduler_config() == {}
+        # 没有 [scheduler] 段时，仍返回 timezone 默认值
+        s = cm.get_scheduler_config()
+        assert s.get("timezone") == "Asia/Shanghai"
+
+    def test_get_scheduler_config_timezone_from_config(self, tmp_path):
+        cm = _config_manager_from_ini(
+            tmp_path,
+            "[scheduler]\ntimezone = America/New_York\n",
+        )
+        s = cm.get_scheduler_config()
+        assert s["timezone"] == "America/New_York"
+
+    def test_get_scheduler_config_timezone_from_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TZ", "Europe/London")
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        s = cm.get_scheduler_config()
+        assert s["timezone"] == "Europe/London"
+
+    def test_get_scheduler_config_timezone_config_overrides_env(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("TZ", "Europe/London")
+        cm = _config_manager_from_ini(
+            tmp_path,
+            "[scheduler]\ntimezone = UTC\n",
+        )
+        s = cm.get_scheduler_config()
+        # config.ini 优先级高于 TZ 环境变量
+        assert s["timezone"] == "UTC"
 
     def test_get_feiniu_config_coercions(self, tmp_path):
         cm = _config_manager_from_ini(
@@ -282,7 +309,7 @@ base_path = /
             tmp_path,
             "[bangumi-main]\nusername=u\naccess_token=t\n",
         )
-        with patch("app.core.logging.logger") as mock_log:
+        with patch("app.core.config.logger") as mock_log:
             cm.reload_multi_account_configs()
         mock_log.info.assert_called()
 

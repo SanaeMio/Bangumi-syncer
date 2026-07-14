@@ -15,7 +15,6 @@ dependencies = [
     "pydantic>=2.12.5",
     "python-multipart>=0.0.20",
     "rapidfuzz>=3.0.0",
-    "requests>=2.32.5",
     "sse-starlette>=2.0.0",
     "uvicorn[standard]>=0.38.0",
 ]
@@ -87,6 +86,12 @@ log_cli_level = "INFO"
 
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"  # 消除新版 pytest-asyncio 的 Scope 警告
+
+# Python 3.9 已知误报：AsyncMock + asyncio.wait_for / Task 取消时 GC 先于协程清理
+filterwarnings = [
+    "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
+    "ignore:coroutine 'lifespan.<locals>.delayed_scheduler_start' was never awaited:RuntimeWarning",
+]
 
 # ✅ 新增：注册自定义标记，消除 PytestUnknownMarkWarning
 markers = [

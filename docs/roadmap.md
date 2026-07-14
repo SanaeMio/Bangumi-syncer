@@ -39,4 +39,11 @@ order: 40
 
 ✅ 支持飞牛影视定时同步
 
+✅ 支持 fongmi 定时同步
+
 以上能力已陆续实现，如果您有好的功能建议，欢迎提一个 [Issues](https://github.com/SanaeMio/Bangumi-syncer/issues) 进行交流。
+
+## 接下来
+
+- 想参与贡献？看 [贡献、鸣谢与许可](/community) 与 [🛠️ 开发文档](/development/)。
+- 想接入新驱动？看 [新驱动接入指南](/development/new-driver-guide)。

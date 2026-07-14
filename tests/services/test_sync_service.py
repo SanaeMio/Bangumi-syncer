@@ -741,7 +741,7 @@ class TestPlexSync:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
             patch("app.services.sync_service.mapping_service"),
-            patch("app.services.sync_service.extract_plex_data"),
+            patch("app.services.plex.sync_service.extract_plex_data"),
         ):
             from app.services.sync_service import SyncService
 

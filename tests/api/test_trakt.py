@@ -90,8 +90,13 @@ def mock_config_manager():
 
 @pytest.fixture
 def mock_database_manager():
-    """模拟数据库管理器"""
-    with patch("app.api.trakt.database_manager") as mock_db:
+    """模拟数据库管理器
+
+    save_trakt_config 经由 trakt_auth_service.save_config 调用，
+    get_sync_records 经由 sync_service.get_sync_records 调用，
+    因此需要同时 patch 两个服务模块的 database_manager 引用。
+    """
+    with patch("app.services.trakt.auth.database_manager") as mock_db:
         mock_db.save_trakt_config.return_value = True
         mock_db.get_sync_records.return_value = {
             "records": [
@@ -100,8 +105,8 @@ def mock_database_manager():
                 {"status": "error"},
             ]
         }
-
-        yield mock_db
+        with patch("app.services.sync_service.database_manager", mock_db):
+            yield mock_db
 
 
 @pytest.mark.asyncio
@@ -267,7 +272,7 @@ async def test_update_trakt_config_save_failure(
     mock_database_manager,
 ):
     """测试更新 Trakt 配置保存失败"""
-    mock_database_manager.save_trakt_config.return_value = False
+    mock_trakt_auth_service.save_config.return_value = False
 
     async with AsyncClient(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"

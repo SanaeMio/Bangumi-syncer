@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from ..core.logging import logger
+from .http_base import AsyncHttpClient
 from .semver_util import (
     is_strictly_newer,
     minor_version_line,
@@ -95,7 +96,9 @@ async def fetch_latest_release() -> LatestReleaseResult:
         headers["If-None-Match"] = _cache_etag
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        async with AsyncHttpClient(
+            label="GitHub", timeout=REQUEST_TIMEOUT, max_retries=0
+        ).prefix("🐙") as client:
             r = await client.get(GITHUB_LATEST_URL, headers=headers)
     except httpx.TimeoutException:
         logger.warning("GitHub releases/latest 请求超时")
@@ -239,7 +242,9 @@ async def fetch_newer_releases_than(
     }
     collected: list[ReleaseListItem] = []
     try:
-        async with httpx.AsyncClient(timeout=RELEASES_LIST_TIMEOUT) as client:
+        async with AsyncHttpClient(
+            label="GitHub", timeout=RELEASES_LIST_TIMEOUT, max_retries=0
+        ).prefix("🐙") as client:
             for page in range(1, max_pages + 1):
                 r = await client.get(
                     GITHUB_RELEASES_URL,
@@ -332,7 +337,9 @@ async def fetch_releases_in_minor_line(
     }
     collected: list[ReleaseListItem] = []
     try:
-        async with httpx.AsyncClient(timeout=RELEASES_LIST_TIMEOUT) as client:
+        async with AsyncHttpClient(
+            label="GitHub", timeout=RELEASES_LIST_TIMEOUT, max_retries=0
+        ).prefix("🐙") as client:
             for page in range(1, max_pages + 1):
                 r = await client.get(
                     GITHUB_RELEASES_URL,
@@ -362,7 +369,7 @@ async def fetch_releases_in_minor_line(
                     try:
                         if same_minor_line(item.semver, reference_semver):
                             collected.append(item)
-                    except Exception:
+                    except (ValueError, TypeError):
                         continue
                 if len(arr) < per_page:
                     break

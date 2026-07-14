@@ -179,8 +179,11 @@ async def test_run_sync_success_saves_history(tmp_path):
     dbf.write_bytes(b"")
     rec = _sample_record()
 
-    async def fake_to_thread(*_a, **_kw):
-        return SyncResponse(status="success", message="已标记为看过")
+    async def fake_to_thread(func, *args, **kwargs):
+        # 仅 sync_custom_item 返回 mock，其他（_prepare_sync_data、save_feiniu_sync_history）实际执行
+        if getattr(func, "__name__", "") == "sync_custom_item":
+            return SyncResponse(status="success", message="已标记为看过")
+        return func(*args, **kwargs)
 
     with patch("app.services.feiniu.sync_service.config_manager") as cm:
         cm.get_feiniu_config.return_value = _enabled_cfg(str(dbf))
@@ -215,8 +218,10 @@ async def test_run_sync_to_thread_exception_counts_error(tmp_path):
     dbf.write_bytes(b"")
     rec = _sample_record()
 
-    async def boom(*_a, **_kw):
-        raise RuntimeError("sync thread failed")
+    async def boom(func, *args, **kwargs):
+        if getattr(func, "__name__", "") == "sync_custom_item":
+            raise RuntimeError("sync thread failed")
+        return func(*args, **kwargs)
 
     with patch("app.services.feiniu.sync_service.config_manager") as cm:
         cm.get_feiniu_config.return_value = _enabled_cfg(str(dbf))
@@ -249,8 +254,10 @@ async def test_run_sync_error_does_not_save_history(tmp_path):
     dbf.write_bytes(b"")
     rec = _sample_record()
 
-    async def fake_to_thread(*_a, **_kw):
-        return SyncResponse(status="error", message="未找到匹配的番剧")
+    async def fake_to_thread(func, *args, **kwargs):
+        if getattr(func, "__name__", "") == "sync_custom_item":
+            return SyncResponse(status="error", message="未找到匹配的番剧")
+        return func(*args, **kwargs)
 
     with patch("app.services.feiniu.sync_service.config_manager") as cm:
         cm.get_feiniu_config.return_value = _enabled_cfg(str(dbf))
@@ -281,8 +288,10 @@ async def test_run_sync_ignored_counts_skipped(tmp_path):
     dbf.write_bytes(b"")
     rec = _sample_record()
 
-    async def fake_to_thread(*_a, **_kw):
-        return SyncResponse(status="ignored", message="屏蔽关键词")
+    async def fake_to_thread(func, *args, **kwargs):
+        if getattr(func, "__name__", "") == "sync_custom_item":
+            return SyncResponse(status="ignored", message="屏蔽关键词")
+        return func(*args, **kwargs)
 
     with patch("app.services.feiniu.sync_service.config_manager") as cm:
         cm.get_feiniu_config.return_value = _enabled_cfg(str(dbf))
@@ -314,8 +323,10 @@ async def test_run_sync_skips_video_placeholder_title(tmp_path):
     dbf.write_bytes(b"")
     rec = _sample_record(display_title="视频-deadbeef", item_guid="vid1")
 
-    async def fail_to_thread(*_a, **_kw):
-        raise AssertionError("不应调用 Bangumi 同步")
+    async def fail_to_thread(func, *args, **kwargs):
+        if getattr(func, "__name__", "") == "sync_custom_item":
+            raise AssertionError("不应调用 Bangumi 同步")
+        return func(*args, **kwargs)
 
     with patch("app.services.feiniu.sync_service.config_manager") as cm:
         cm.get_feiniu_config.return_value = _enabled_cfg(str(dbf))
@@ -356,8 +367,13 @@ async def test_run_sync_skip_already_in_history(tmp_path):
                 dbm.get_feiniu_synced_set.return_value = {
                     (rec.user_guid, rec.item_guid)
                 }
+
+                async def _passthrough(func, *a, **kw):
+                    return func(*a, **kw)
+
                 with patch(
                     "app.services.feiniu.sync_service.asyncio.to_thread",
+                    side_effect=_passthrough,
                 ) as tt:
                     with patch(
                         "app.services.feiniu.sync_service.asyncio.sleep",
@@ -367,7 +383,8 @@ async def test_run_sync_skip_already_in_history(tmp_path):
     assert r.success is True
     assert r.skipped_count == 1
     assert r.synced_count == 0
-    tt.assert_not_called()
+    # _prepare_sync_data 会调用 to_thread 一次，但 sync_custom_item 不应被调用
+    assert tt.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -377,8 +394,10 @@ async def test_run_sync_ignore_enabled_when_switch_off(tmp_path):
     dbf.write_bytes(b"")
     rec = _sample_record()
 
-    async def fake_to_thread(*_a, **_kw):
-        return SyncResponse(status="success", message="ok")
+    async def fake_to_thread(func, *args, **kwargs):
+        if getattr(func, "__name__", "") == "sync_custom_item":
+            return SyncResponse(status="success", message="ok")
+        return func(*args, **kwargs)
 
     with patch("app.services.feiniu.sync_service.config_manager") as cm:
         cm.get_feiniu_config.return_value = {

@@ -9,6 +9,10 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Any, Optional
 
+from .config_secret_crypto import decrypt_if_sensitive, encrypt_if_sensitive
+from .logging import logger
+from .startup_info import startup_info
+
 
 def parse_media_server_username_value(raw: Optional[str]) -> list[str]:
     """解析 media_server_username 配置值（英文或中文逗号分隔）为去重前的用户名列表。"""
@@ -25,7 +29,7 @@ class ConfigManager:
 
     _lock = threading.Lock()
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.platform = platform.system()
         self.cwd = Path(__file__).parent.parent.parent
 
@@ -48,8 +52,6 @@ class ConfigManager:
             self._load_config()
 
         # 立即输出启动信息（在模块导入时）
-        from .startup_info import startup_info
-
         startup_info.print_banner()
         startup_info.print_system_info(self.active_config_path)
 
@@ -179,8 +181,6 @@ class ConfigManager:
             else:
                 result[key] = value
 
-        from .config_secret_crypto import decrypt_if_sensitive
-
         master = self._get_master_secret(config)
         for k, v in list(result.items()):
             if isinstance(v, str):
@@ -205,8 +205,6 @@ class ConfigManager:
         elif value.isdigit():
             return int(value)
         else:
-            from .config_secret_crypto import decrypt_if_sensitive
-
             master = self._get_master_secret(config)
             out = decrypt_if_sensitive(section, key, value, master=master)
             return out if isinstance(out, str) else value
@@ -221,8 +219,6 @@ class ConfigManager:
             config = self._get_config_parser_nolock()
             if not config.has_section(section):
                 config.add_section(section)
-
-            from .config_secret_crypto import encrypt_if_sensitive
 
             master = self._get_master_secret(config)
             stored = encrypt_if_sensitive(section, key, str(value), master=master)
@@ -273,8 +269,6 @@ class ConfigManager:
 
     def get_user_mappings(self) -> dict[str, str]:
         """获取用户映射配置（media_server_username 支持逗号分隔多个媒体用户名）"""
-        from .logging import logger
-
         bangumi_configs = self.get_bangumi_configs()
         user_mappings: dict[str, str] = {}
 
@@ -302,8 +296,6 @@ class ConfigManager:
 
     def _migrate_sync_single_username_to_bangumi(self, config: ConfigParser) -> None:
         """将 [sync] single_username 迁移到 [bangumi] media_server_username 后删除旧键。"""
-        from .logging import logger
-
         if not config.has_section("sync") or not config.has_option(
             "sync", "single_username"
         ):
@@ -385,7 +377,9 @@ class ConfigManager:
 
         # 检查 scheduler 节是否存在
         if not config.has_section("scheduler"):
-            return {}
+            # 即使没有 scheduler 段，也返回 timezone 默认值（含 TZ 环境变量覆盖）
+            tz = os.environ.get("TZ") or "Asia/Shanghai"
+            return {"timezone": tz}
 
         scheduler_config = self.get_section("scheduler")
 
@@ -410,6 +404,10 @@ class ConfigManager:
                     result_config[key] = int(value)
                 except (ValueError, TypeError):
                     result_config[key] = default_value
+
+        # 时区配置（字符串类型）：优先 config.ini，其次 TZ 环境变量，兜底 Asia/Shanghai
+        tz = scheduler_config.get("timezone") or os.environ.get("TZ") or "Asia/Shanghai"
+        result_config["timezone"] = tz.strip() or "Asia/Shanghai"
 
         return result_config
 
@@ -542,8 +540,6 @@ class ConfigManager:
 
     def reload_multi_account_configs(self) -> None:
         """强制重新加载多账号配置"""
-        from .logging import logger
-
         # 清除缓存
         self._config_cache = None
         self._last_modified = 0
@@ -586,8 +582,6 @@ class ConfigManager:
 
     def _migrate_webhook_config(self) -> None:
         """将旧的webhook配置迁移到新的多webhook结构"""
-        from .logging import logger
-
         config = self.get_config_parser()
 
         # 读取旧的webhook配置
@@ -639,8 +633,6 @@ class ConfigManager:
 
     def _migrate_email_config(self) -> None:
         """将旧的邮件配置迁移到新的多邮件结构"""
-        from .logging import logger
-
         config = self.get_config_parser()
 
         # 读取旧的邮件配置

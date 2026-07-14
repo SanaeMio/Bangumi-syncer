@@ -5,13 +5,14 @@ Trakt.tv API 异步客户端
 import asyncio
 import time
 from datetime import datetime
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from urllib.parse import urlencode
 
 import httpx
 
 from ...core.config import config_manager
 from ...core.logging import logger
+from ...utils.http_base import AsyncHttpClient
 
 # ===== 数据模型导入 =====
 from .models import TraktCollectionItem, TraktHistoryItem, TraktRatingItem
@@ -21,7 +22,7 @@ from .models import TraktCollectionItem, TraktHistoryItem, TraktRatingItem
 class TraktClient:
     """Trakt.tv API 异步客户端"""
 
-    def __init__(self, access_token: str):
+    def __init__(self, access_token: str) -> None:
         self.access_token = access_token
         self.base_url = "https://api.trakt.tv"
         self.client_id = config_manager.get_trakt_config().get("client_id", "")
@@ -37,39 +38,44 @@ class TraktClient:
         # 速率限制控制
         self.rate_limit_remaining: int = 1000
         self.rate_limit_reset: int = 0
-        self._request_queue: asyncio.Queue = asyncio.Queue()
-        self._semaphore = asyncio.Semaphore(5)  # 限制并发请求数
 
         # 重试配置
         self.max_retries = 3
         self.retry_delay = 1.0
 
         # HTTP 客户端
-        self._client: Optional[httpx.AsyncClient] = None
+        self._http: Optional[AsyncHttpClient] = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "TraktClient":
         """异步上下文管理器入口"""
         await self._ensure_client()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """异步上下文管理器出口"""
         await self.close()
 
     async def _ensure_client(self) -> None:
         """确保 HTTP 客户端已初始化"""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                headers=self.headers,
-                timeout=30.0,
-                follow_redirects=True,
+        if self._http is None:
+            self._http = (
+                AsyncHttpClient(
+                    label="Trakt",
+                    headers=self.headers,
+                    timeout=30.0,
+                    follow_redirects=True,
+                    max_retries=0,
+                )
+                .prefix("🎬")
+                .success_tpl("Trakt API [{status_code}]")
+                .failure_tpl("Trakt API 失败: {error_type}")
             )
 
     async def close(self) -> None:
         """关闭 HTTP 客户端"""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        if self._http:
+            await self._http.aclose()
+            self._http = None
 
     async def _make_request(
         self,
@@ -80,7 +86,7 @@ class TraktClient:
     ) -> Optional[dict]:
         """发送 HTTP 请求，处理速率限制和重试"""
         await self._ensure_client()
-        assert self._client is not None
+        assert self._http is not None
 
         # 检查速率限制
         await self._check_rate_limit()
@@ -91,7 +97,7 @@ class TraktClient:
 
         for attempt in range(self.max_retries):
             try:
-                response = await self._client.request(
+                response = await self._http.request(
                     method=method,
                     url=url,
                     json=data,

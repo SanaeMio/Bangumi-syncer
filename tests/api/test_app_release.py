@@ -307,7 +307,7 @@ async def test_release_info_environment_direct(_app_with_anon):
     transport = ASGITransport(app=_app_with_anon)
 
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+        with patch("app.api.app_release.docker_helper") as mock_dh:
             mock_dh.is_docker = False
 
             with patch("app.api.app_release.upgrade_service") as mock_us:
@@ -328,7 +328,7 @@ async def test_release_info_environment_docker(_app_with_anon):
     transport = ASGITransport(app=_app_with_anon)
 
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+        with patch("app.api.app_release.docker_helper") as mock_dh:
             mock_dh.is_docker = True
 
             with patch("app.api.app_release.upgrade_service") as mock_us:
@@ -357,7 +357,7 @@ async def test_release_info_with_login_has_environment(_app_with_auth):
 
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         with patch("app.api.app_release.get_version", return_value="1.0.0"):
-            with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+            with patch("app.api.app_release.docker_helper") as mock_dh:
                 mock_dh.is_docker = False
 
                 with patch("app.api.app_release.upgrade_service") as mock_us:
@@ -384,7 +384,7 @@ async def test_release_info_github_error_has_environment(_app_with_auth):
 
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         with patch("app.api.app_release.get_version", return_value="3.0.0"):
-            with patch("app.utils.docker_helper.docker_helper") as mock_dh:
+            with patch("app.api.app_release.docker_helper") as mock_dh:
                 mock_dh.is_docker = False
 
                 with patch("app.api.app_release.upgrade_service") as mock_us:

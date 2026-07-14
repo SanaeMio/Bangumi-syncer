@@ -2,11 +2,13 @@
 通知API
 """
 
-from typing import Optional
+import asyncio
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from ..core.config import config_manager
 from ..core.config_secret_crypto import encrypt_if_sensitive
 from ..core.logging import logger
 from ..utils.notifier import get_notifier
@@ -81,7 +83,7 @@ class EmailConfigUpdate(BaseModel):
 async def test_notification(
     request: NotificationTestRequest,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """测试通知功能"""
     try:
         notifier = get_notifier()
@@ -89,9 +91,10 @@ async def test_notification(
 
         # 根据类型测试特定的通知方式
         if notification_type == "all":
-            results = notifier.test_notification()
+            results = await asyncio.to_thread(notifier.test_notification)
         else:
-            results = notifier.test_notification(
+            results = await asyncio.to_thread(
+                notifier.test_notification,
                 notification_type=notification_type,
                 webhook_id=request.webhook_id,
                 email_id=request.email_id,
@@ -106,11 +109,9 @@ async def test_notification(
 @router.get("/notification/status")
 async def get_notification_status(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取通知配置状态"""
     try:
-        from ..core.config import config_manager
-
         # 获取webhook配置数量
         webhook_count = 0
         webhook_enabled_count = 0
@@ -158,8 +159,6 @@ async def get_notification_status(
 async def get_webhooks(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有webhook配置"""
     try:
-        from ..core.config import config_manager
-
         webhook_configs = []
         config = config_manager.get_config_parser()
 
@@ -191,11 +190,9 @@ async def get_webhooks(current_user: dict = Depends(get_current_user_flexible)):
 async def create_webhook(
     webhook_data: WebhookConfigCreate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """创建新的webhook配置"""
     try:
-        from ..core.config import config_manager
-
         config = config_manager.get_config_parser()
 
         # 计算当前webhook配置的数量
@@ -221,7 +218,7 @@ async def create_webhook(
         config.set(section_name, "types", webhook_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"创建webhook配置成功: ID={new_id}")
 
@@ -248,11 +245,9 @@ async def update_webhook(
     webhook_id: int,
     webhook_data: WebhookConfigUpdate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """更新webhook配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"webhook-{webhook_id}"
         config = config_manager.get_config_parser()
 
@@ -275,7 +270,7 @@ async def update_webhook(
             config.set(section_name, "types", webhook_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"更新webhook配置成功: ID={webhook_id}")
 
@@ -302,11 +297,9 @@ async def update_webhook(
 @router.delete("/notification/webhooks/{webhook_id}")
 async def delete_webhook(
     webhook_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """删除webhook配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"webhook-{webhook_id}"
         config = config_manager.get_config_parser()
 
@@ -350,7 +343,7 @@ async def delete_webhook(
                 config.set(old_section_name, "id", str(new_id))
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"删除webhook配置成功: ID={webhook_id}，已重新索引")
 
@@ -363,12 +356,14 @@ async def delete_webhook(
 @router.post("/notification/webhooks/{webhook_id}/test")
 async def test_webhook(
     webhook_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """测试指定的webhook配置"""
     try:
         notifier = get_notifier()
-        results = notifier.test_notification(
-            notification_type="webhook", webhook_id=webhook_id
+        results = await asyncio.to_thread(
+            notifier.test_notification,
+            notification_type="webhook",
+            webhook_id=webhook_id,
         )
 
         return {"status": "success", "data": results}
@@ -384,8 +379,6 @@ async def test_webhook(
 async def get_emails(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有邮件配置"""
     try:
-        from ..core.config import config_manager
-
         email_configs = []
         config = config_manager.get_config_parser()
 
@@ -424,11 +417,9 @@ async def get_emails(current_user: dict = Depends(get_current_user_flexible)):
 async def create_email(
     email_data: EmailConfigCreate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """创建新的邮件配置"""
     try:
-        from ..core.config import config_manager
-
         config = config_manager.get_config_parser()
 
         # 计算当前邮件配置的数量
@@ -465,7 +456,7 @@ async def create_email(
         config.set(section_name, "types", email_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"创建邮件配置成功: ID={new_id}")
 
@@ -497,11 +488,9 @@ async def update_email(
     email_id: int,
     email_data: EmailConfigUpdate,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """更新邮件配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"email-{email_id}"
         config = config_manager.get_config_parser()
 
@@ -547,7 +536,7 @@ async def update_email(
             config.set(section_name, "types", email_data.types)
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"更新邮件配置成功: ID={email_id}")
 
@@ -579,11 +568,9 @@ async def update_email(
 @router.delete("/notification/emails/{email_id}")
 async def delete_email(
     email_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """删除邮件配置"""
     try:
-        from ..core.config import config_manager
-
         section_name = f"email-{email_id}"
         config = config_manager.get_config_parser()
 
@@ -633,7 +620,7 @@ async def delete_email(
                 config.set(old_section_name, "id", str(new_id))
 
         # 保存配置
-        config_manager._save_config(config)
+        await asyncio.to_thread(config_manager._save_config, config)
 
         logger.info(f"删除邮件配置成功: ID={email_id}，已重新索引")
 
@@ -646,12 +633,14 @@ async def delete_email(
 @router.post("/notification/emails/{email_id}/test")
 async def test_email(
     email_id: int, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """测试指定的邮件配置"""
     try:
         notifier = get_notifier()
-        results = notifier.test_notification(
-            notification_type="email", email_id=email_id
+        results = await asyncio.to_thread(
+            notifier.test_notification,
+            notification_type="email",
+            email_id=email_id,
         )
 
         return {"status": "success", "data": results}

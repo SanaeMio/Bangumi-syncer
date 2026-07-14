@@ -17,6 +17,7 @@ import re
 import httpx
 
 from ...core.logging import logger
+from ...utils.http_base import AsyncHttpClient
 from .models import FongmiDevice, FongmiWatchRecord
 
 # 端口与超时
@@ -68,6 +69,12 @@ _RESOLUTION_RE = re.compile(
 )
 _RANGE_RE = re.compile(r"\b\d{1,4}\s*-\s*\d{1,4}\b")
 _FIRST_NUM_RE = re.compile(r"\d{1,3}")
+
+# 剧场版/电影关键词（URL 或 artist 命中即视为单条影片）
+_MOVIE_KEYWORD_RE = re.compile(
+    r"剧场版|劇場版|电影|電影|\bMovie\b|\bFilm\b",
+    re.IGNORECASE,
+)
 
 
 def _extract_episode_from_filename(text: str) -> int:
@@ -160,6 +167,17 @@ def parse_episode_info(url: str, artist: str) -> tuple[int, int]:
     return season, episode
 
 
+def _is_movie(url: str, artist: str | None) -> bool:
+    """判断是否为剧场版/电影。
+
+    命中关键词（剧场版/劇場版/电影/電影/Movie/Film）即视为单条影片。
+    """
+    for text in (url or "", artist or ""):
+        if text and _MOVIE_KEYWORD_RE.search(text):
+            return True
+    return False
+
+
 # ===== 设备发现与探测 =====
 
 
@@ -180,26 +198,33 @@ def _build_device(ip: str, port: int, info: dict) -> FongmiDevice:
     )
 
 
-async def _probe_device(client: httpx.AsyncClient, ip: str, port: int) -> dict | None:
-    """探测单个 ip:port 的 /device 端点"""
+async def _probe_device(
+    client: AsyncHttpClient, ip: str, port: int
+) -> tuple[dict | None, str | None]:
+    """探测单个 ip:port 的 /device 端点。
+
+    返回 (info, error)：成功时 (info, None)，失败时 (None, 原因)。
+    """
     try:
         resp = await client.get(f"http://{ip}:{port}/device", timeout=_PROBE_TIMEOUT)
-        if resp.status_code == 200:
-            info = resp.json()
-            if isinstance(info, dict) and _is_fongmi_device_info(info):
-                return info
-    except Exception:
-        pass
-    return None
+        if resp.status_code != 200:
+            return None, f"HTTP {resp.status_code}"
+        info = resp.json()
+        if isinstance(info, dict) and _is_fongmi_device_info(info):
+            return info, None
+        return None, "非 fongmi 设备"
+    except (httpx.HTTPError, ValueError) as e:
+        return None, str(e) or type(e).__name__
 
 
 async def _probe_ports(
-    client: httpx.AsyncClient, ip: str, ports: list[int]
+    client: AsyncHttpClient, ip: str, ports: list[int]
 ) -> tuple[int, dict] | None:
     """并行探测指定 IP 的多个端口，返回第一个命中的 (port, info)"""
 
     async def _one(p: int) -> tuple[int, dict | None]:
-        return p, await _probe_device(client, ip, p)
+        info, _ = await _probe_device(client, ip, p)
+        return p, info
 
     tasks = [asyncio.create_task(_one(p)) for p in ports]
     for result in await asyncio.gather(*tasks, return_exceptions=True):
@@ -209,24 +234,37 @@ async def _probe_ports(
 
 
 async def discover_devices(
-    subnet: str, base_client: httpx.AsyncClient | None = None
+    subnet: str, base_client: AsyncHttpClient | None = None
 ) -> list[FongmiDevice]:
     """扫描网段（如 192.168.1）的默认端口 9978，发现 fongmi 设备。
 
     只探测 9978（254 次），不扫全端口范围。非标端口设备请在 devices 配置中指定 ip:port。
+    日志策略：info 仅输出汇总 + 成功设备列表；debug 额外输出失败 IP 详情。
     """
     if not subnet:
         return []
 
     own_client = base_client is None
-    client = base_client or httpx.AsyncClient(
-        limits=httpx.Limits(max_connections=300, max_keepalive_connections=50)
+    client = (
+        base_client
+        or AsyncHttpClient(
+            label="Fongmi",
+            limits=httpx.Limits(max_connections=300, max_keepalive_connections=50),
+            max_retries=0,
+        )
+        .prefix("📡")
+        .silent_failure()
     )
     found: list[FongmiDevice] = []
+    failures: list[str] = []  # 收集失败 IP 的原因，用于 debug 汇总
 
     async def _check(ip: str) -> FongmiDevice | None:
-        info = await _probe_device(client, ip, _DEFAULT_PORT)
-        return _build_device(ip, _DEFAULT_PORT, info) if info else None
+        info, err = await _probe_device(client, ip, _DEFAULT_PORT)
+        if info:
+            return _build_device(ip, _DEFAULT_PORT, info)
+        if err:
+            failures.append(f"{ip}:{_DEFAULT_PORT} → {err}")
+        return None
 
     try:
         sem = asyncio.Semaphore(_DISCOVER_SEMAPHORE)
@@ -240,16 +278,32 @@ async def discover_devices(
         for r in results:
             if isinstance(r, FongmiDevice):
                 found.append(r)
+            elif isinstance(r, Exception):
+                failures.append(f"未知异常: {r}")
     finally:
         if own_client:
             await client.aclose()
 
-    logger.info(f"fongmi 设备发现：网段 {subnet}.0/24 共找到 {len(found)} 台设备")
+    # ===== 合并日志输出 =====
+    if found:
+        device_list = ", ".join(f"{d.ip}:{d.port}({d.name})" for d in found)
+        logger.info(
+            f"fongmi 设备发现：网段 {subnet}.0/24 扫描完成，"
+            f"找到 {len(found)} 台设备 → {device_list}"
+        )
+    else:
+        logger.info(f"fongmi 设备发现：网段 {subnet}.0/24 扫描完成，未发现设备")
+
+    if failures:
+        failure_detail = "\n  ".join(failures)
+        logger.debug(
+            f"fongmi 设备发现：以下 {len(failures)} 个目标探测失败（详情）：\n  {failure_detail}"
+        )
     return found
 
 
 async def parse_device_entry(
-    entry: str, base_client: httpx.AsyncClient | None = None
+    entry: str, base_client: AsyncHttpClient | None = None
 ) -> FongmiDevice | None:
     """解析手动配置的单个设备入口（ip 或 ip:port），查询 /device 补全信息。
 
@@ -268,21 +322,31 @@ async def parse_device_entry(
             port = int(port_str)
 
     own_client = base_client is None
-    client = base_client or httpx.AsyncClient()
+    client = (
+        base_client
+        or AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡").silent_failure()
+    )
     try:
         # 指定端口或默认端口 9978：单次探测
         target_port = port or _DEFAULT_PORT
-        info = await _probe_device(client, host, target_port)
+        info, err = await _probe_device(client, host, target_port)
         if info:
+            logger.debug(f"fongmi 设备探测成功：{host}:{target_port}")
             return _build_device(host, target_port, info)
         if port:
+            logger.debug(f"fongmi 设备探测失败：{host}:{target_port} → {err}")
             return None
 
         # 默认端口未命中，并行探测其余端口
+        logger.debug(
+            f"fongmi 设备默认端口未命中：{host}:{target_port} → {err}，开始扫描其余端口"
+        )
         other_ports = [p for p in range(PORT_START, PORT_END + 1) if p != _DEFAULT_PORT]
         hit = await _probe_ports(client, host, other_ports)
         if hit:
+            logger.debug(f"fongmi 设备探测成功（非标端口）：{host}:{hit[0]}")
             return _build_device(host, hit[0], hit[1])
+        logger.debug(f"fongmi 设备探测失败：端口 {PORT_START}-{PORT_END} 全部未命中")
     finally:
         if own_client:
             await client.aclose()
@@ -292,7 +356,7 @@ async def parse_device_entry(
 # ===== /media 拉取与解析 =====
 
 
-async def fetch_media(device: FongmiDevice, client: httpx.AsyncClient) -> dict | None:
+async def fetch_media(device: FongmiDevice, client: AsyncHttpClient) -> dict | None:
     """获取单台设备的 /media 播放状态"""
     try:
         resp = await client.get(
@@ -325,14 +389,21 @@ def media_is_complete(media: dict, min_percent: int) -> bool:
 
 
 def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | None:
-    """将 /media 转为 FongmiWatchRecord（仅提取字段，不判断是否完成）"""
+    """将 /media 转为 FongmiWatchRecord（仅提取字段，不判断是否完成）
+
+    剧场版/电影：season=1, episode=1，is_movie=True。
+    """
     title = (media.get("title") or "").strip()
     if not title:
         return None
     url = str(media.get("url") or "")
     artist = media.get("artist")
     artist_s = str(artist) if artist else None
-    season, episode = parse_episode_info(url, artist_s or "")
+    is_movie = _is_movie(url, artist_s)
+    if is_movie:
+        season, episode = 1, 1
+    else:
+        season, episode = parse_episode_info(url, artist_s or "")
     return FongmiWatchRecord(
         device_ip=device.ip,
         device_name=device.name,
@@ -342,6 +413,7 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
         episode_url=url,
         artist=artist_s,
         release_date="",
+        is_movie=is_movie,
     )
 
 
@@ -358,7 +430,11 @@ def media_to_debug_dict(device: FongmiDevice, media: dict | None) -> dict:
     url = str(media.get("url") or "")
     artist = media.get("artist")
     artist_s = str(artist) if artist else ""
-    season, episode = parse_episode_info(url, artist_s)
+    is_movie = _is_movie(url, artist_s or None)
+    if is_movie:
+        season, episode = 1, 1
+    else:
+        season, episode = parse_episode_info(url, artist_s)
     duration = media.get("duration", 0) or 0
     position = media.get("position", 0) or 0
     percent = 0.0
@@ -374,6 +450,7 @@ def media_to_debug_dict(device: FongmiDevice, media: dict | None) -> dict:
             "duration": duration,
             "position": position,
             "percent": percent,
+            "is_movie": is_movie,
             "parsed_season": season,
             "parsed_episode": episode,
         },
@@ -387,7 +464,7 @@ async def fetch_completed_records(
     if not devices:
         return []
     records: list[FongmiWatchRecord] = []
-    async with httpx.AsyncClient() as client:
+    async with AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡") as client:
         tasks = [fetch_media(d, client) for d in devices]
         media_list = await asyncio.gather(*tasks, return_exceptions=True)
         for device, media in zip(devices, media_list):
@@ -405,7 +482,7 @@ async def fetch_all_media_status(devices: list[FongmiDevice]) -> list[dict]:
     """并行拉取所有设备的 /media 当前状态（不过滤完成），返回调试展示用 dict 列表"""
     if not devices:
         return []
-    async with httpx.AsyncClient() as client:
+    async with AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡") as client:
         tasks = [fetch_media(d, client) for d in devices]
         media_list = await asyncio.gather(*tasks, return_exceptions=True)
     return [

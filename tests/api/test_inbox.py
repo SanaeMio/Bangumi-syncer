@@ -54,7 +54,7 @@ async def test_inbox_summary_skips_markdown_render(
             "app.api.inbox.fetch_announcements",
             AsyncMock(return_value=mock_announcements),
         ),
-        patch("app.api.inbox.database_manager", db),
+        patch("app.services.inbox_service.database_manager", db),
         patch("app.api.inbox.markdown_to_safe_html") as mock_md,
     ):
         transport = ASGITransport(app=app_with_auth)
@@ -90,7 +90,7 @@ async def test_inbox_summary(
             "app.api.inbox.fetch_announcements",
             AsyncMock(return_value=mock_announcements),
         ),
-        patch("app.api.inbox.database_manager", db),
+        patch("app.services.inbox_service.database_manager", db),
     ):
         transport = ASGITransport(app=app_with_auth)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -127,7 +127,7 @@ async def test_inbox_list_and_read_all(
             "app.api.inbox.fetch_announcements",
             AsyncMock(return_value=mock_announcements),
         ),
-        patch("app.api.inbox.database_manager", db),
+        patch("app.services.inbox_service.database_manager", db),
     ):
         transport = ASGITransport(app=app_with_auth)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -175,7 +175,7 @@ async def test_mark_single_read(
             "app.api.inbox.fetch_announcements",
             AsyncMock(return_value=mock_announcements),
         ),
-        patch("app.api.inbox.database_manager", db),
+        patch("app.services.inbox_service.database_manager", db),
     ):
         transport = ASGITransport(app=app_with_auth)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -208,7 +208,7 @@ async def test_inbox_remote_error_hint(app_with_auth, temp_dir, reset_singletons
             "app.api.inbox.fetch_announcements",
             AsyncMock(return_value=failed),
         ),
-        patch("app.api.inbox.database_manager", db),
+        patch("app.services.inbox_service.database_manager", db),
     ):
         transport = ASGITransport(app=app_with_auth)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -243,7 +243,7 @@ async def test_inbox_notification_aggregation(
             "app.api.inbox.fetch_announcements",
             AsyncMock(return_value=mock_announcements),
         ),
-        patch("app.api.inbox.database_manager", db),
+        patch("app.services.inbox_service.database_manager", db),
     ):
         transport = ASGITransport(app=app_with_auth)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -282,7 +282,7 @@ async def test_inbox_read_all_by_category(
             "app.api.inbox.fetch_announcements",
             AsyncMock(return_value=mock_announcements),
         ),
-        patch("app.api.inbox.database_manager", db),
+        patch("app.services.inbox_service.database_manager", db),
     ):
         transport = ASGITransport(app=app_with_auth)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:

@@ -4,16 +4,31 @@ Trakt 测试配置和 fixture
 
 import asyncio
 import os
+import shutil
 import sqlite3
 import tempfile
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-import pytest
+# ===== 在导入 app 模块前重定向 CONFIG_FILE =====
+# 防止 SecurityManager / ConfigManager 单例在模块导入时
+# 初始化并写回工作区 config.ini（_init_auth_config / _migrate_config）
+_REPO_ROOT = Path(__file__).parent.parent
+_ORIG_CONFIG_INI = _REPO_ROOT / "config.ini"
+_TEST_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="bs_test_config_"))
+_TEST_CONFIG_INI = _TEST_CONFIG_DIR / "config.ini"
+if _ORIG_CONFIG_INI.exists():
+    shutil.copy2(_ORIG_CONFIG_INI, _TEST_CONFIG_INI)
+else:
+    _TEST_CONFIG_INI.write_text("[bangumi]\n", encoding="utf-8")
+os.environ["CONFIG_FILE"] = str(_TEST_CONFIG_INI)
 
-from app.core.config import config_manager
-from app.core.database import database_manager
-from app.models.trakt import TraktConfig
+import pytest  # noqa: E402
+
+from app.core.config import config_manager  # noqa: E402
+from app.core.database import database_manager  # noqa: E402
+from app.models.trakt import TraktConfig  # noqa: E402
 
 
 @pytest.fixture

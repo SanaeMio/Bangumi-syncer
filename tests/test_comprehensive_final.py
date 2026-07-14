@@ -70,7 +70,7 @@ class TestNotifierBasics:
 class TestBangumiApiBasics:
     """Basic Bangumi API tests"""
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_api_init(self, mock_session):
         """Test API can be created"""
         from app.utils.bangumi_api import BangumiApi
@@ -78,7 +78,7 @@ class TestBangumiApiBasics:
         api = BangumiApi()
         assert api is not None
 
-    @patch("app.utils.bangumi_api.requests.Session")
+    @patch("app.utils.bangumi_api.httpx.Client")
     def test_api_host(self, mock_session):
         """Test API has correct host"""
         from app.utils.bangumi_api import BangumiApi

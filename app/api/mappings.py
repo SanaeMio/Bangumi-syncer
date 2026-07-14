@@ -1,6 +1,8 @@
-"""
-映射相关API
-"""
+"""映射相关API"""
+
+from __future__ import annotations
+
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -14,7 +16,7 @@ router = APIRouter(prefix="/api", tags=["mappings"])
 @router.get("/mappings")
 async def get_custom_mappings(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """获取自定义映射"""
     try:
         mappings = mapping_service.get_all_mappings()
@@ -27,7 +29,7 @@ async def get_custom_mappings(
 @router.post("/mappings")
 async def update_custom_mappings(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
-):
+) -> dict[str, Any]:
     """更新自定义映射"""
     try:
         data = await request.json()
@@ -47,7 +49,7 @@ async def delete_custom_mapping(
     title: str,
     request: Request,
     current_user: dict = Depends(get_current_user_flexible),
-):
+) -> dict[str, Any]:
     """删除单个自定义映射"""
     try:
         # 获取当前所有映射

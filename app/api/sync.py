@@ -6,14 +6,16 @@ import ast
 import json
 import time
 import traceback
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
-from ..core.database import database_manager
 from ..core.logging import logger
+from ..core.security import security_manager
 from ..models.sync import CustomItem
+from ..services.custom import custom_sync_service
 from ..services.sync_service import sync_service
+from ..utils.bgm_poster_service import get_poster_urls, normalize_subject_id
 from ..utils.data_util import extract_plex_json
 from .deps import get_current_user_flexible
 
@@ -52,7 +54,10 @@ async def _handle_custom_sync(
     source: str = "custom",
     async_mode: bool = True,
 ):
-    """处理自定义同步请求的内部函数"""
+    """处理自定义同步请求的内部函数
+
+    鉴权在 API 层完成，同步逻辑委托给 custom_sync_service。
+    """
     if not await _verify_webhook_auth(webhook_key):
         logger.warning("Custom webhook 认证失败，无效的 key")
         response.status_code = 401
@@ -60,7 +65,7 @@ async def _handle_custom_sync(
     try:
         if async_mode:
             # 异步处理模式
-            task_id = await sync_service.sync_custom_item_async(item, source)
+            task_id = await custom_sync_service.sync_item_async(item, source)
             response.status_code = 202  # Accepted
             return {
                 "status": "accepted",
@@ -70,7 +75,7 @@ async def _handle_custom_sync(
             }
         else:
             # 同步处理模式（保持向后兼容）
-            result = sync_service.sync_custom_item(item, source)
+            result = custom_sync_service.sync_item(item, source)
 
             # 根据结果设置响应状态码
             if result.status == "error":
@@ -78,7 +83,7 @@ async def _handle_custom_sync(
             elif result.status == "ignored":
                 response.status_code = 200
 
-            return result.dict()
+            return result.model_dump()
     except Exception as e:
         logger.error(f"自定义同步API处理出错: {e}")
         response.status_code = 500
@@ -189,7 +194,7 @@ async def test_sync(
             elapsed_time = round(time.time() - start_time, 2)
 
             # 精简返回信息
-            response_data = result.dict()
+            response_data = result.model_dump()
             response_data["elapsed_time"] = f"{elapsed_time}秒"
             response_data["test_info"] = {
                 "title": test_item.title,
@@ -223,7 +228,7 @@ async def get_sync_records(
 ):
     """获取同步记录"""
     try:
-        result = database_manager.get_sync_records(
+        result = sync_service.get_sync_records(
             limit=limit,
             offset=offset,
             status=status,
@@ -234,8 +239,6 @@ async def get_sync_records(
         )
 
         if include_poster and result.get("records"):
-            from ..utils.bgm_poster_service import get_poster_urls, normalize_subject_id
-
             subject_ids = [
                 sid
                 for r in result["records"]
@@ -260,7 +263,7 @@ async def get_sync_record(
 ):
     """获取单个同步记录详情"""
     try:
-        result = database_manager.get_sync_record_by_id(record_id)
+        result = sync_service.get_sync_record_by_id(record_id)
 
         if not result:
             raise HTTPException(status_code=404, detail="记录不存在")
@@ -282,7 +285,7 @@ async def retry_sync_record(
     """重试同步记录"""
     try:
         # 获取原始记录
-        record = database_manager.get_sync_record_by_id(record_id)
+        record = sync_service.get_sync_record_by_id(record_id)
 
         if not record:
             raise HTTPException(status_code=404, detail="记录不存在")
@@ -321,20 +324,20 @@ async def retry_sync_record(
 
         # 如果重试成功，更新原记录的状态
         if result.status == "success":
-            database_manager.update_sync_record_status(
+            sync_service.update_sync_record_status(
                 record_id=record_id,
                 status="retried",  # 标记为已重试
                 message=f"已重试成功: {result.message}",
             )
         elif result.status == "ignored":
-            database_manager.update_sync_record_status(
+            sync_service.update_sync_record_status(
                 record_id=record_id,
                 status="retried",
                 message=f"重试被忽略: {result.message}",
             )
         # 如果重试仍然失败，保持原状态不变
 
-        return {"status": "success", "message": "重试完成", "data": result.dict()}
+        return {"status": "success", "message": "重试完成", "data": result.model_dump()}
 
     except HTTPException:
         raise
@@ -349,7 +352,7 @@ async def get_sync_stats(
 ):
     """获取同步统计信息"""
     try:
-        result = database_manager.get_sync_stats()
+        result = sync_service.get_sync_stats()
 
         return {"status": "success", "data": result}
     except Exception as e:
@@ -363,7 +366,7 @@ async def get_heatmap_stats(
 ):
     """获取热力图数据（过去365天每天同步数）"""
     try:
-        result = database_manager.get_heatmap_stats()
+        result = sync_service.get_heatmap_stats()
         return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"获取热力图数据失败: {e}")
@@ -375,15 +378,32 @@ async def get_heatmap_stats(
 
 async def _verify_webhook_auth(webhook_key: str) -> bool:
     """验证webhook认证"""
-    from ..core.security import security_manager
-
     return security_manager.verify_webhook_key(webhook_key)
 
 
-async def _handle_plex_sync(plex_request: Request, webhook_key: str = ""):
-    """处理Plex同步请求的内部函数"""
+async def _dispatch_media_server_webhook(
+    request: Request,
+    webhook_key: str,
+    *,
+    source_name: str,
+    parse_body,
+    async_fn,
+    sync_fn,
+):
+    """媒体服务器 webhook 通用分发
+
+    统一处理鉴权、body 解析、异步提交+同步回退、异常包装。
+
+    Args:
+        request: FastAPI Request
+        webhook_key: webhook 密钥（空字符串表示无密钥路由）
+        source_name: 源名称（如 "Plex"），用于日志和响应消息
+        parse_body: async callable(request) -> dict，解析请求体
+        async_fn: async callable(data) -> str，异步同步方法
+        sync_fn: callable(data) -> SyncResponse，同步回退方法
+    """
     if not await _verify_webhook_auth(webhook_key):
-        logger.warning("Plex webhook 认证失败，无效的 key")
+        logger.warning(f"{source_name} webhook 认证失败，无效的 key")
         return Response(
             content='{"status": "error", "message": "认证失败"}',
             status_code=401,
@@ -391,108 +411,109 @@ async def _handle_plex_sync(plex_request: Request, webhook_key: str = ""):
         )
 
     try:
-        json_str = await plex_request.body()
-        plex_data = json.loads(extract_plex_json(json_str))
+        data = await parse_body(request)
 
         # 异步调用同步服务（不阻塞webhook响应）
         try:
-            task_id = await sync_service.sync_plex_item_async(plex_data)
-            logger.info(f"Plex webhook已提交异步任务: {task_id}")
+            task_id = await async_fn(data)
+            logger.info(f"{source_name} webhook已提交异步任务: {task_id}")
             return {
                 "status": "accepted",
-                "message": "Plex同步请求已接收",
+                "message": f"{source_name}同步请求已接收",
                 "task_id": task_id,
             }
         except Exception as sync_error:
-            logger.error(f"Plex同步服务调用失败: {sync_error}")
+            logger.error(f"{source_name}同步服务调用失败: {sync_error}")
             # 如果异步提交失败，回退到同步模式
             try:
-                sync_service.sync_plex_item(plex_data)
+                sync_fn(data)
                 return {
                     "status": "accepted",
-                    "message": "Plex同步请求已接收（同步模式）",
+                    "message": f"{source_name}同步请求已接收（同步模式）",
                 }
             except Exception as fallback_error:
-                logger.error(f"Plex同步回退模式也失败: {fallback_error}")
+                logger.error(f"{source_name}同步回退模式也失败: {fallback_error}")
                 return {
                     "status": "error",
-                    "message": f"Plex同步处理失败: {fallback_error}",
+                    "message": f"{source_name}同步处理失败: {fallback_error}",
                 }
 
     except Exception as e:
-        logger.error(f"Plex同步处理出错: {e}")
+        logger.error(f"{source_name}同步处理出错: {e}")
         return {"status": "error", "message": f"处理失败: {str(e)}"}
 
 
+# ===== Plex =====
+
+
+async def _parse_plex_body(request: Request) -> dict:
+    json_str = await request.body()
+    return json.loads(extract_plex_json(json_str))
+
+
+async def _handle_plex_sync(
+    plex_request: Request, webhook_key: str = ""
+) -> dict[str, Any]:
+    """处理Plex同步请求的内部函数"""
+    return await _dispatch_media_server_webhook(
+        plex_request,
+        webhook_key,
+        source_name="Plex",
+        parse_body=_parse_plex_body,
+        async_fn=sync_service.sync_plex_item_async,
+        sync_fn=sync_service.sync_plex_item,
+    )
+
+
 @root_router.post("/Plex/{webhook_key}")
-async def plex_sync(plex_request: Request, webhook_key: str):
+async def plex_sync(plex_request: Request, webhook_key: str) -> dict[str, Any]:
     """Plex同步接口（带密钥）"""
     return await _handle_plex_sync(plex_request, webhook_key)
 
 
 @root_router.post("/Plex")
-async def plex_sync_no_key(plex_request: Request):
+async def plex_sync_no_key(plex_request: Request) -> dict[str, Any]:
     """Plex同步接口（无密钥）"""
     return await _handle_plex_sync(plex_request, "")
 
 
-async def _handle_emby_sync(emby_request: Request, webhook_key: str = ""):
-    """处理Emby同步请求的内部函数"""
-    if not await _verify_webhook_auth(webhook_key):
-        logger.warning("Emby webhook 认证失败，无效的 key")
-        return Response(
-            content='{"status": "error", "message": "认证失败"}',
-            status_code=401,
-            media_type="application/json",
-        )
+# ===== Emby =====
 
-    try:
-        # 获取请求内容
-        body = await emby_request.body()
-        body_str = body.decode("utf-8")
 
-        # 检查内容格式并进行相应处理
-        if body_str.startswith("{") and body_str.endswith("}"):
-            try:
-                # 尝试作为JSON解析
-                emby_data = json.loads(body_str)
-            except json.JSONDecodeError:
-                # 如果JSON解析失败，尝试作为Python字典字符串解析
-                try:
-                    emby_data = ast.literal_eval(body_str)
-                except (SyntaxError, ValueError) as e:
-                    logger.error(f"无法解析Emby请求数据: {e}")
-                    return {"status": "error", "message": f"数据格式错误: {str(e)}"}
-        else:
-            logger.error(f"Emby请求数据格式无效: {body_str[:100]}...")
-            return {"status": "error", "message": "无效的请求格式"}
+async def _parse_emby_body(request: Request) -> dict:
+    body = await request.body()
+    body_str = body.decode("utf-8")
 
-        # 异步调用同步服务（不阻塞webhook响应）
+    if body_str.startswith("{") and body_str.endswith("}"):
         try:
-            # 提交到异步队列处理
-            task_id = await sync_service.sync_emby_item_async(emby_data)
-            logger.info(f"Emby webhook已提交异步任务: {task_id}")
-            # 对于webhook，立即返回成功响应
-            return {
-                "status": "accepted",
-                "message": "Emby同步请求已接收",
-                "task_id": task_id,
-            }
-        except Exception as sync_error:
-            logger.error(f"Emby同步服务调用失败: {sync_error}")
-            # 如果异步提交失败，回退到同步模式
+            return json.loads(body_str)
+        except json.JSONDecodeError:
             try:
-                sync_service.sync_emby_item(emby_data)
-                return {
-                    "status": "accepted",
-                    "message": "Emby同步请求已接收（同步模式）",
-                }
-            except Exception as fallback_error:
-                logger.error(f"Emby同步回退模式也失败: {fallback_error}")
-                return {
-                    "status": "error",
-                    "message": f"Emby同步处理失败: {fallback_error}",
-                }
+                return ast.literal_eval(body_str)
+            except (SyntaxError, ValueError) as e:
+                logger.error(f"无法解析Emby请求数据: {e}")
+                raise ValueError(f"数据格式错误: {str(e)}")
+    else:
+        logger.error(f"Emby请求数据格式无效: {body_str[:100]}...")
+        raise ValueError("无效的请求格式")
+
+
+async def _handle_emby_sync(
+    emby_request: Request, webhook_key: str = ""
+) -> dict[str, Any]:
+    """处理Emby同步请求的内部函数"""
+    try:
+        return await _dispatch_media_server_webhook(
+            emby_request,
+            webhook_key,
+            source_name="Emby",
+            parse_body=_parse_emby_body,
+            async_fn=sync_service.sync_emby_item_async,
+            sync_fn=sync_service.sync_emby_item,
+        )
+    except ValueError as e:
+        # _parse_emby_body 可能抛出 ValueError（格式错误），需单独处理
+        return {"status": "error", "message": str(e)}
     except Exception as e:
         logger.error(f"Emby同步处理出错: {e}")
         logger.error(traceback.format_exc())
@@ -500,71 +521,46 @@ async def _handle_emby_sync(emby_request: Request, webhook_key: str = ""):
 
 
 @root_router.post("/Emby/{webhook_key}")
-async def emby_sync(emby_request: Request, webhook_key: str):
+async def emby_sync(emby_request: Request, webhook_key: str) -> dict[str, Any]:
     """Emby同步接口（带密钥）"""
     return await _handle_emby_sync(emby_request, webhook_key)
 
 
 @root_router.post("/Emby")
-async def emby_sync_no_key(emby_request: Request):
+async def emby_sync_no_key(emby_request: Request) -> dict[str, Any]:
     """Emby同步接口（无密钥）"""
     return await _handle_emby_sync(emby_request, "")
 
 
-async def _handle_jellyfin_sync(jellyfin_request: Request, webhook_key: str = ""):
+# ===== Jellyfin =====
+
+
+async def _parse_jellyfin_body(request: Request) -> dict:
+    json_str = await request.body()
+    return json.loads(json_str)
+
+
+async def _handle_jellyfin_sync(
+    jellyfin_request: Request, webhook_key: str = ""
+) -> dict[str, Any]:
     """处理Jellyfin同步请求的内部函数"""
-    if not await _verify_webhook_auth(webhook_key):
-        logger.warning("Jellyfin webhook 认证失败，无效的 key")
-        return Response(
-            content='{"status": "error", "message": "认证失败"}',
-            status_code=401,
-            media_type="application/json",
-        )
-
-    try:
-        json_str = await jellyfin_request.body()
-        jellyfin_data = json.loads(json_str)
-
-        # 异步调用同步服务（不阻塞webhook响应）
-        # 对于webhook，我们立即返回成功响应，同步在后台进行
-        try:
-            # 提交到异步队列处理
-            task_id = await sync_service.sync_jellyfin_item_async(jellyfin_data)
-            logger.info(f"Jellyfin webhook已提交异步任务: {task_id}")
-            # 对于webhook，立即返回成功响应
-            return {
-                "status": "accepted",
-                "message": "Jellyfin同步请求已接收",
-                "task_id": task_id,
-            }
-        except Exception as sync_error:
-            logger.error(f"Jellyfin同步服务调用失败: {sync_error}")
-            # 如果异步提交失败，回退到同步模式
-            try:
-                sync_service.sync_jellyfin_item(jellyfin_data)
-                return {
-                    "status": "accepted",
-                    "message": "Jellyfin同步请求已接收（同步模式）",
-                }
-            except Exception as fallback_error:
-                logger.error(f"Jellyfin同步回退模式也失败: {fallback_error}")
-                return {
-                    "status": "error",
-                    "message": f"Jellyfin同步处理失败: {fallback_error}",
-                }
-
-    except Exception as e:
-        logger.error(f"Jellyfin同步处理出错: {e}")
-        return {"status": "error", "message": f"处理失败: {str(e)}"}
+    return await _dispatch_media_server_webhook(
+        jellyfin_request,
+        webhook_key,
+        source_name="Jellyfin",
+        parse_body=_parse_jellyfin_body,
+        async_fn=sync_service.sync_jellyfin_item_async,
+        sync_fn=sync_service.sync_jellyfin_item,
+    )
 
 
 @root_router.post("/Jellyfin/{webhook_key}")
-async def jellyfin_sync(jellyfin_request: Request, webhook_key: str):
+async def jellyfin_sync(jellyfin_request: Request, webhook_key: str) -> dict[str, Any]:
     """Jellyfin同步接口（带密钥）"""
     return await _handle_jellyfin_sync(jellyfin_request, webhook_key)
 
 
 @root_router.post("/Jellyfin")
-async def jellyfin_sync_no_key(jellyfin_request: Request):
+async def jellyfin_sync_no_key(jellyfin_request: Request) -> dict[str, Any]:
     """Jellyfin同步接口（无密钥）"""
     return await _handle_jellyfin_sync(jellyfin_request, "")
