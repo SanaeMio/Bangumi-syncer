@@ -46,6 +46,49 @@ class SyncService:
         """关闭线程池，等待正在执行的任务完成"""
         self._executor.shutdown(wait=True)
 
+    # ------------------------------------------------------------------
+    # 同步记录查询（API 层通过本服务访问数据库，避免跨层直访）
+    # ------------------------------------------------------------------
+
+    def get_sync_records(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: Optional[str] = None,
+        user_name: Optional[str] = None,
+        source: Optional[str] = None,
+        source_prefix: Optional[str] = None,
+        skip_count: bool = False,
+    ) -> dict[str, Any]:
+        """获取同步记录列表"""
+        return database_manager.get_sync_records(
+            limit=limit,
+            offset=offset,
+            status=status,
+            user_name=user_name,
+            source=source,
+            source_prefix=source_prefix,
+            skip_count=skip_count,
+        )
+
+    def get_sync_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
+        """根据 ID 获取单个同步记录"""
+        return database_manager.get_sync_record_by_id(record_id)
+
+    def update_sync_record_status(
+        self, record_id: int, status: str, message: str = ""
+    ) -> bool:
+        """更新同步记录的状态"""
+        return database_manager.update_sync_record_status(record_id, status, message)
+
+    def get_sync_stats(self) -> dict[str, Any]:
+        """获取同步统计信息"""
+        return database_manager.get_sync_stats()
+
+    def get_heatmap_stats(self) -> list[dict[str, Any]]:
+        """获取热力图数据（过去365天每天同步数）"""
+        return database_manager.get_heatmap_stats()
+
     def _register_task(self, task_id: str, item_data: Any, source: str) -> None:
         """注册新任务到状态跟踪（需持有锁）"""
         self._sync_tasks[task_id] = {

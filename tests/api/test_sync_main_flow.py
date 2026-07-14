@@ -274,7 +274,7 @@ async def test_test_sync_invalid_json_500(app_root_and_api):
 
 @pytest.mark.asyncio
 async def test_retry_sync_record_success_updates_db(app_root_and_api):
-    with patch("app.api.sync.database_manager") as dbm:
+    with patch("app.services.sync_service.database_manager") as dbm:
         dbm.get_sync_record_by_id.return_value = {
             "id": 7,
             "title": "Retry Show",
@@ -292,14 +292,14 @@ async def test_retry_sync_record_success_updates_db(app_root_and_api):
                 r = await ac.post("/api/records/7/retry")
     assert r.status_code == 200
     dbm.update_sync_record_status.assert_called_once()
-    call_kw = dbm.update_sync_record_status.call_args[1]
-    assert call_kw["status"] == "retried"
+    call_args = dbm.update_sync_record_status.call_args[0]
+    assert call_args[1] == "retried"
 
 
 @pytest.mark.asyncio
 async def test_retry_sync_record_movie_media_type_on_custom_item(app_root_and_api):
     """重试失败记录时 DB 的 media_type=movie 应传入 sync_custom_item"""
-    with patch("app.api.sync.database_manager") as dbm:
+    with patch("app.services.sync_service.database_manager") as dbm:
         dbm.get_sync_record_by_id.return_value = {
             "id": 8,
             "title": "剧场版 Y",
@@ -326,7 +326,8 @@ async def test_retry_sync_record_movie_media_type_on_custom_item(app_root_and_ap
 @pytest.mark.asyncio
 async def test_get_sync_records_db_error(app_root_and_api):
     with patch(
-        "app.api.sync.database_manager.get_sync_records", side_effect=RuntimeError("db")
+        "app.services.sync_service.database_manager.get_sync_records",
+        side_effect=RuntimeError("db"),
     ):
         transport = ASGITransport(app=app_root_and_api)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:

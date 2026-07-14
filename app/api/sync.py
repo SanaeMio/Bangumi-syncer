@@ -10,7 +10,6 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
-from ..core.database import database_manager
 from ..core.logging import logger
 from ..models.sync import CustomItem
 from ..services.custom import custom_sync_service
@@ -227,7 +226,7 @@ async def get_sync_records(
 ):
     """获取同步记录"""
     try:
-        result = database_manager.get_sync_records(
+        result = sync_service.get_sync_records(
             limit=limit,
             offset=offset,
             status=status,
@@ -264,7 +263,7 @@ async def get_sync_record(
 ):
     """获取单个同步记录详情"""
     try:
-        result = database_manager.get_sync_record_by_id(record_id)
+        result = sync_service.get_sync_record_by_id(record_id)
 
         if not result:
             raise HTTPException(status_code=404, detail="记录不存在")
@@ -286,7 +285,7 @@ async def retry_sync_record(
     """重试同步记录"""
     try:
         # 获取原始记录
-        record = database_manager.get_sync_record_by_id(record_id)
+        record = sync_service.get_sync_record_by_id(record_id)
 
         if not record:
             raise HTTPException(status_code=404, detail="记录不存在")
@@ -325,13 +324,13 @@ async def retry_sync_record(
 
         # 如果重试成功，更新原记录的状态
         if result.status == "success":
-            database_manager.update_sync_record_status(
+            sync_service.update_sync_record_status(
                 record_id=record_id,
                 status="retried",  # 标记为已重试
                 message=f"已重试成功: {result.message}",
             )
         elif result.status == "ignored":
-            database_manager.update_sync_record_status(
+            sync_service.update_sync_record_status(
                 record_id=record_id,
                 status="retried",
                 message=f"重试被忽略: {result.message}",
@@ -353,7 +352,7 @@ async def get_sync_stats(
 ):
     """获取同步统计信息"""
     try:
-        result = database_manager.get_sync_stats()
+        result = sync_service.get_sync_stats()
 
         return {"status": "success", "data": result}
     except Exception as e:
@@ -367,7 +366,7 @@ async def get_heatmap_stats(
 ):
     """获取热力图数据（过去365天每天同步数）"""
     try:
-        result = database_manager.get_heatmap_stats()
+        result = sync_service.get_heatmap_stats()
         return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"获取热力图数据失败: {e}")

@@ -204,7 +204,7 @@ async def test_trakt_sync_status_with_records(app_trakt):
             return_value=None,
         ):
             with patch(
-                "app.api.trakt.database_manager.get_sync_records",
+                "app.services.sync_service.database_manager.get_sync_records",
                 return_value={
                     "records": [
                         {"status": "success"},

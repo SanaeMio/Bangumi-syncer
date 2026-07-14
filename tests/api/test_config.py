@@ -236,7 +236,7 @@ async def test_update_config_feiniu_enabled_toggle(
     ]
 
     with (
-        patch("app.api.config.database_manager") as mock_db,
+        patch("app.services.feiniu.sync_service.database_manager") as mock_db,
         patch(
             "app.services.feiniu.scheduler.feiniu_scheduler.apply_config_after_save",
             new_callable=AsyncMock,
@@ -262,7 +262,7 @@ async def test_update_config_feiniu_disabled_toggle(app_with_auth, mock_config_m
     ]
 
     with (
-        patch("app.api.config.database_manager") as mock_db,
+        patch("app.services.feiniu.sync_service.database_manager") as mock_db,
         patch(
             "app.services.feiniu.scheduler.feiniu_scheduler.apply_config_after_save",
             new_callable=AsyncMock,

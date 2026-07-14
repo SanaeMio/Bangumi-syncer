@@ -31,7 +31,14 @@ def app_with_auth():
 
 @pytest.fixture
 def mock_sync_service():
-    """模拟同步服务"""
+    """模拟同步服务
+
+    同步业务方法（sync_custom_item 等）使用 mock；
+    查询方法（get_sync_records 等）透传到真实 sync_service 实例，
+    以便与 mock_database_manager 配合验证数据库调用。
+    """
+    from app.services.sync_service import sync_service as real_sync_service
+
     with patch("app.api.sync.sync_service") as mock_service:
         mock_service.sync_custom_item_async = AsyncMock(return_value="test_task_123")
 
@@ -50,6 +57,15 @@ def mock_sync_service():
 
         mock_service._sync_tasks = {"task_1": {}, "task_2": {}}
         mock_service.cleanup_old_tasks = MagicMock()
+
+        # 查询方法透传到真实实例（真实实例内部调用 mock_database_manager）
+        mock_service.get_sync_records = real_sync_service.get_sync_records
+        mock_service.get_sync_record_by_id = real_sync_service.get_sync_record_by_id
+        mock_service.update_sync_record_status = (
+            real_sync_service.update_sync_record_status
+        )
+        mock_service.get_sync_stats = real_sync_service.get_sync_stats
+        mock_service.get_heatmap_stats = real_sync_service.get_heatmap_stats
 
         yield mock_service
 
@@ -74,7 +90,7 @@ def mock_custom_sync_service():
 @pytest.fixture
 def mock_database_manager():
     """模拟数据库管理器"""
-    with patch("app.api.sync.database_manager") as mock_db:
+    with patch("app.services.sync_service.database_manager") as mock_db:
         mock_db.get_sync_records.return_value = {
             "records": [
                 {

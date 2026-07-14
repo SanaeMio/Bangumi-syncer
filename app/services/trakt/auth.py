@@ -345,6 +345,10 @@ class TraktAuthService:
 
         return TraktConfig.from_dict(config_dict)
 
+    def save_config(self, config: TraktConfig) -> bool:
+        """保存或更新 Trakt 配置（API 层入口，避免跨层直访数据库）"""
+        return database_manager.save_trakt_config(config.to_dict())
+
     def disconnect_trakt(self, user_id: str) -> bool:
         """断开 Trakt 连接，删除配置"""
         success = database_manager.delete_trakt_config(user_id)

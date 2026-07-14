@@ -10,7 +10,6 @@ from fastapi.responses import RedirectResponse
 
 from ..api import deps
 from ..core.config import config_manager
-from ..core.database import database_manager
 from ..core.logging import logger
 from ..core.public_url import redirect_public
 from ..models.trakt import (
@@ -24,6 +23,7 @@ from ..models.trakt import (
     TraktManualSyncResponse,
     TraktSyncStatusResponse,
 )
+from ..services.sync_service import sync_service
 from ..services.trakt.auth import trakt_auth_service
 from ..services.trakt.scheduler import trakt_scheduler
 from ..services.trakt.sync_service import trakt_sync_service
@@ -197,7 +197,7 @@ async def update_trakt_config(
             config.sync_filter_enabled = sync_filter_enabled
 
         # 保存到数据库
-        success = database_manager.save_trakt_config(config.to_dict())
+        success = trakt_auth_service.save_config(config)
 
         if not success:
             raise HTTPException(
@@ -316,7 +316,7 @@ async def get_trakt_sync_status(
         # 从数据库获取同步统计信息
         # 查询该用户的 Trakt 同步记录
         # TODO: 应该做分页查询,直到获取全量的记录进行统计
-        sync_stats = database_manager.get_sync_records(
+        sync_stats = sync_service.get_sync_records(
             limit=1000,  # 获取足够多的记录以统计
             user_name=user_id,  # 注意：user_name 字段可能需要映射
             source_prefix="trakt",

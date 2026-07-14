@@ -175,5 +175,17 @@ class FeiniuSyncService:
             errors,
         )
 
+    # ------------------------------------------------------------------
+    # 飞牛水位管理（API 层入口，避免跨层直访数据库）
+    # ------------------------------------------------------------------
+
+    def set_min_update_watermark_now(self) -> int:
+        """将同步起点设为当前时刻（Web 勾选启用并保存时调用，不追溯历史）"""
+        return database_manager.set_feiniu_min_update_watermark_now()
+
+    def clear_min_update_watermark(self) -> None:
+        """清除「启用后仅同步新进度」水位（飞牛关闭时调用）"""
+        database_manager.clear_feiniu_min_update_watermark()
+
 
 feiniu_sync_service = FeiniuSyncService()

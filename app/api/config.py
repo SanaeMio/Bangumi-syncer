@@ -15,9 +15,9 @@ from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
     is_sensitive_ini_field,
 )
-from ..core.database import database_manager
 from ..core.logging import logger
 from ..core.security import security_manager
+from ..services.feiniu.sync_service import feiniu_sync_service
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -184,10 +184,10 @@ async def update_config(
         )
         if old_feiniu_enabled != new_feiniu_enabled:
             if new_feiniu_enabled:
-                database_manager.set_feiniu_min_update_watermark_now()
+                feiniu_sync_service.set_min_update_watermark_now()
                 logger.info("飞牛已启用：同步起点已设为当前时刻（不追溯历史观看记录）")
             else:
-                database_manager.clear_feiniu_min_update_watermark()
+                feiniu_sync_service.clear_min_update_watermark()
                 logger.info("飞牛已关闭：已清除同步起点水位")
 
         try:
