@@ -176,3 +176,82 @@ def test_media_to_record_no_title_returns_none():
 def test_media_to_record_empty_title_returns_none():
     media = {"title": "  ", "url": "http://x", "duration": 100, "position": 99}
     assert media_to_record(_device(), media) is None
+
+
+# ===== 剧场版/电影识别 =====
+
+
+@pytest.mark.parametrize(
+    "url,artist,expect_movie",
+    [
+        # 命中关键词 → 剧场版
+        ("http://x/剧场版/君の名は.mp4", "", True),
+        ("http://x/劇場版/鬼滅の刃.mp4", "", True),
+        ("http://x/电影/流浪地球.mkv", "", True),
+        ("http://x/電影/悲情城市.mkv", "", True),
+        ("http://x/My Movie (2024).mp4", "", True),
+        ("http://x/Film.Title.2023.mkv", "", True),
+        # artist 命中也算
+        ("http://x/video.mp4", "[2GB] 剧场版 4K.mp4", True),
+        ("", "[1.5GB] Movie 1080p.mkv", True),
+        # 普通剧集 → 非剧场版
+        ("http://x/S01E05.mp4", "", False),
+        ("http://x/番剧/第3集.mp4", "", False),
+        ("http://x/12.mp4", "", False),
+        ("http://x/普通番剧/EP05.mkv", "", False),
+        ("", "", False),
+    ],
+)
+def test_is_movie(url, artist, expect_movie):
+    from app.services.fongmi.client import _is_movie
+
+    assert _is_movie(url, artist or None) is expect_movie
+
+
+def test_media_to_record_movie_sets_is_movie():
+    """剧场版记录：is_movie=True, season=1, episode=1"""
+    media = {
+        "title": "你的名字",
+        "url": "http://x/夸父盘/你的名字.剧场版.mp4",
+        "artist": "[2.5GB] 君の名は 剧场版 4K.mp4",
+        "duration": 6000000,
+        "position": 5800000,
+    }
+    rec = media_to_record(_device(), media)
+    assert rec is not None
+    assert rec.is_movie is True
+    assert rec.season == 1
+    assert rec.episode == 1
+
+
+def test_media_to_record_episode_not_movie():
+    """普通剧集记录：is_movie=False, 集号正常解析"""
+    media = {
+        "title": "凡人修仙传",
+        "url": "http://x/夸父盘/凡人修仙传/F.S01E003.mp4",
+        "artist": "[1.63GB] 001-4K F.S01E003.mp4",
+        "duration": 1400000,
+        "position": 1380000,
+    }
+    rec = media_to_record(_device(), media)
+    assert rec is not None
+    assert rec.is_movie is False
+    assert rec.season == 1
+    assert rec.episode == 3
+
+
+def test_media_to_debug_dict_includes_is_movie():
+    """调试输出应包含 is_movie 字段"""
+    from app.services.fongmi.client import media_to_debug_dict
+
+    media = {
+        "title": "鬼灭之刃 剧场版",
+        "url": "http://x/剧场版/鬼灭之刃.mkv",
+        "artist": "",
+        "duration": 100000,
+        "position": 99000,
+    }
+    d = media_to_debug_dict(_device(), media)
+    assert d["media"]["is_movie"] is True
+    assert d["media"]["parsed_season"] == 1
+    assert d["media"]["parsed_episode"] == 1

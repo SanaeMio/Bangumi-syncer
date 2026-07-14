@@ -24,6 +24,9 @@ class FongmiWatchRecord:
     fongmi 的 /media 端点无直接集数字段，集号需从 url/artist 解析，
     解析失败时回退为 1。release_date 在 /media 中也无可信来源，统一传空串，
     让 SyncService 侧按标题/季/集匹配。
+
+    is_movie 标识剧场版/电影：此时 season=1, episode=1，由 SyncService
+    走 movie 分支（标记 Bangumi 条目为在看/看过）。
     """
 
     device_ip: str
@@ -34,3 +37,4 @@ class FongmiWatchRecord:
     episode_url: str
     artist: str | None = None
     release_date: str = ""
+    is_movie: bool = False
