@@ -170,7 +170,8 @@ async def test_run_sync_error_counts():
                             r = await fongmi_sync_service.run_sync()
     assert r.success is False
     assert r.error_count == 1
-    log.error.assert_called()
+    # 失败时汇总日志使用 warning
+    log.warning.assert_called()
 
 
 @pytest.mark.asyncio

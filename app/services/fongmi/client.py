@@ -264,7 +264,7 @@ async def discover_devices(
         if own_client:
             await client.aclose()
 
-    logger.info(f"fongmi 设备发现：网段 {subnet}.0/24 共找到 {len(found)} 台设备")
+    logger.debug(f"fongmi 设备发现：网段 {subnet}.0/24 共找到 {len(found)} 台设备")
     return found
 
 

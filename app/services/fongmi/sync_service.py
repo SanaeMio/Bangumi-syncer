@@ -59,6 +59,7 @@ class FongmiSyncService:
     async def _resolve_devices(self, cfg: dict) -> list[FongmiDevice]:
         """根据配置解析要轮询的设备列表（手动配置优先，可选网段扫描）"""
         devices: list[FongmiDevice] = []
+        device_logs: list[str] = []  # debug 详情
         raw_devices = (cfg.get("devices") or "").strip()
         if raw_devices:
             entries = [s.strip() for s in raw_devices.split(",") if s.strip()]
@@ -68,12 +69,12 @@ class FongmiSyncService:
             )
             for entry, res in zip(entries, results):
                 if isinstance(res, Exception):
-                    logger.warning(f"fongmi 设备连接异常: {entry} - {res}")
+                    device_logs.append(f"  ✗ {entry} 连接异常: {res}")
                 elif res:
                     devices.append(res)
-                    logger.info(f"fongmi 设备已连接: {res.name} ({res.ip}:{res.port})")
+                    device_logs.append(f"  ✓ {res.name} ({res.ip}:{res.port})")
                 else:
-                    logger.warning(f"fongmi 设备连接失败: {entry}")
+                    device_logs.append(f"  ✗ {entry} 连接失败")
 
         if cfg.get("auto_scan") and (cfg.get("subnet") or "").strip():
             found = await discover_devices(str(cfg["subnet"]).strip())
@@ -81,6 +82,9 @@ class FongmiSyncService:
             for d in found:
                 if d.ip not in existing_ips:
                     devices.append(d)
+
+        if device_logs:
+            logger.debug("fongmi 设备连接详情:\n%s", "\n".join(device_logs))
 
         return devices
 
@@ -99,10 +103,14 @@ class FongmiSyncService:
         from ..sync_service import sync_service  # 延迟导入避免循环依赖
 
         synced = skipped = errors = 0
+        sync_logs: list[str] = []  # debug 详情
         for rec in records:
             key = (rec.device_ip, rec.episode_url)
             if key in self._synced_keys:
                 skipped += 1
+                sync_logs.append(
+                    f"  ⊙ 跳过(已同步): {rec.title} 第{rec.episode}集 [{rec.device_name}]"
+                )
                 continue
 
             item = self._record_to_custom_item(rec)
@@ -111,22 +119,41 @@ class FongmiSyncService:
                     sync_service.sync_custom_item, item, FONGMI_SYNC_SOURCE
                 )
             except Exception as e:
-                logger.error(f"fongmi 单条同步执行失败: {e}")
                 errors += 1
+                sync_logs.append(
+                    f"  ✗ 同步异常: {rec.title} 第{rec.episode}集 [{rec.device_name}] - {e}"
+                )
                 continue
 
             if result.status == "success":
                 self._synced_keys.add(key)
                 synced += 1
+                sync_logs.append(
+                    f"  ✓ 已同步: {rec.title} 第{rec.episode}集 [{rec.device_name}]"
+                )
             elif result.status == "ignored":
                 skipped += 1
+                sync_logs.append(
+                    f"  ⊙ 已忽略: {rec.title} 第{rec.episode}集 [{rec.device_name}] - {result.message}"
+                )
             else:
                 errors += 1
+                sync_logs.append(
+                    f"  ✗ 同步失败: {rec.title} 第{rec.episode}集 [{rec.device_name}] - {result.message}"
+                )
+
+        if sync_logs:
+            logger.debug("fongmi 同步明细:\n%s", "\n".join(sync_logs))
 
         ok = errors == 0
+        msg = f"fongmi 同步: 已同步 {synced}, 跳过 {skipped}, 失败 {errors}, 设备 {len(devices)}"
+        if ok:
+            logger.info(f"✓ {msg}")
+        else:
+            logger.warning(f"✗ {msg}")
         return FongmiSyncResult(
             ok,
-            f"fongmi 同步: 已提交 {synced}, 跳过 {skipped}, 失败 {errors}",
+            msg,
             synced,
             skipped,
             errors,
