@@ -572,8 +572,13 @@ async function handleLoginSubmit(e) {
             `;
             
             // 延迟跳转以显示成功信息
+            const params = new URLSearchParams(window.location.search);
+            const next = params.get('next');
+            // 只允许站内路径跳转，防止开放重定向
+            const target = next && next.startsWith('/') && !next.startsWith('//')
+                ? next : '/dashboard';
             setTimeout(() => {
-                window.location.href = appUrl('/');
+                window.location.href = appUrl(target);
             }, 1000);
         } else {
             // 登录失败
