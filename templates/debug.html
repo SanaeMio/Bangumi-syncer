@@ -5,11 +5,11 @@
     <!-- 测试同步 -->
     <div class="row">
         <div class="col-12">
-            <div class="card shadow-sm mb-4">
+            <div class="card mb-4">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-play-circle me-2 text-warning"></i>
-                        <h6 class="m-0 fw-semibold">番剧同步测试</h6>
+                        <i class="bi bi-play-circle me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">番剧同步测试</h6>
                     </div>
                 </div>
                 <div class="card-body">
@@ -19,57 +19,57 @@
                                 <label for="test-media-type" class="form-label fw-semibold">
                                     <i class="bi bi-badge-hd me-1 text-warning"></i>媒体类型
                                 </label>
-                                <select class="form-select form-select-lg"
+                                <select class="form-select"
                                         id="test-media-type"
                                         onchange="onTestMediaTypeChange()">
                                     <option value="episode" selected>剧集</option>
                                     <option value="movie">电影</option>
                                 </select>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-5">
                                 <label for="test-title" class="form-label fw-semibold">
                                     <i class="bi bi-film me-1 text-warning"></i>标题
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="test-title"
                                        placeholder="番剧或剧场版名称"
                                        required>
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-md-4">
+                                <label for="test-release-date" class="form-label fw-semibold">
+                                    <i class="bi bi-calendar-event me-1 text-warning"></i>发布日期 <small class="text-muted fw-normal">(可选)</small>
+                                </label>
+                                <input type="date"
+                                       class="form-control"
+                                       id="test-release-date"
+                                       placeholder="YYYY-MM-DD">
+                            </div>
+                            <div class="col-6 col-md-2">
                                 <label for="test-season" class="form-label fw-semibold">
                                     <i class="bi bi-calendar3 me-1 text-warning"></i>季度
                                 </label>
                                 <input type="number"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="test-season"
                                        value="1"
                                        min="1"
                                        max="20"
                                        required>
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-6 col-md-2">
                                 <label for="test-episode" class="form-label fw-semibold">
                                     <i class="bi bi-collection-play me-1 text-warning"></i>集数
                                 </label>
                                 <input type="number"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="test-episode"
                                        value="1"
                                        min="1"
                                        max="1000"
                                        required>
                             </div>
-                            <div class="col-md-3">
-                                <label for="test-release-date" class="form-label fw-semibold">
-                                    <i class="bi bi-calendar-event me-1 text-warning"></i>发布日期 <small class="text-muted fw-normal">(可选)</small>
-                                </label>
-                                <input type="date"
-                                       class="form-control form-control-lg"
-                                       id="test-release-date"
-                                       placeholder="YYYY-MM-DD">
-                            </div>
-                            <div class="col-md-2">
+                            <div class="col-md-8">
                                 <label for="test-user" class="form-label fw-semibold">
                                     <i class="bi bi-person me-1 text-warning"></i>用户名
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -77,7 +77,7 @@
                                        title="媒体服务器中的用户名（Plex/Emby/Jellyfin用户名）"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="test-user"
                                        placeholder="媒体服务器用户名"
                                        required>
@@ -93,8 +93,7 @@
                                 </button>
                                 <div class="mt-3" id="test-sync-progress" style="display: none;">
                                     <div class="d-flex align-items-center">
-                                        <div class="spinner-border spinner-border-sm text-warning me-2"
-                                             role="status">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status">
                                             <span class="visually-hidden">Loading...</span>
                                         </div>
                                         <span id="test-sync-status">正在测试同步...</span>
@@ -123,26 +122,26 @@
             </div>
         </div>
     </div>
-    <!-- 飞牛同步测试 -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm mb-4">
+    <!-- 飞牛 / fongmi 同步测试 -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-lg-6">
+            <div class="card h-100 mb-0">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-hdd-network me-2 text-secondary"></i>
-                        <h6 class="m-0 fw-semibold">飞牛同步测试</h6>
+                        <i class="bi bi-hdd-network me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">飞牛同步测试</h6>
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-8">
+                    <div class="row g-3">
+                        <div class="col-12">
                             <label for="feiniu-debug-user" class="form-label fw-semibold">飞牛用户 guid（可选）</label>
                             <input type="text"
                                    class="form-control"
                                    id="feiniu-debug-user"
                                    placeholder="留空则使用配置中的 飞牛用户 guid">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-12">
                             <button type="button"
                                     class="btn btn-primary w-100"
                                     id="feiniu-manual-sync-btn"
@@ -155,27 +154,24 @@
                 </div>
             </div>
         </div>
-    </div>
-    <!-- fongmi 同步测试 -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm mb-4">
+        <div class="col-12 col-lg-6">
+            <div class="card h-100 mb-0">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-tv me-2 text-secondary"></i>
-                        <h6 class="m-0 fw-semibold">fongmi 同步测试</h6>
+                        <i class="bi bi-tv me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">fongmi 同步测试</h6>
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-8">
+                    <div class="row g-3">
+                        <div class="col-12">
                             <label class="form-label fw-semibold">说明</label>
                             <div class="form-text">
                                 点击下方按钮将搜寻所有配置的 fongmi 设备并拉取当前 <code>/media</code> 状态，
                                 <strong>不管观看进度如何</strong>，用于验证设备发现、API 拉取、集数解析是否正常。
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-12">
                             <button type="button"
                                     class="btn btn-primary w-100"
                                     id="fongmi-debug-scan-btn"
@@ -192,16 +188,16 @@
     <!-- 网络诊断工具 -->
     <div class="row">
         <div class="col-12">
-            <div class="card shadow-sm mb-4">
+            <div class="card mb-4">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-wifi me-2 text-info"></i>
-                        <h6 class="m-0 fw-semibold">网络诊断工具</h6>
+                        <i class="bi bi-wifi me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">网络诊断工具</h6>
                     </div>
                 </div>
                 <div class="card-body">
                     <!-- Bangumi网络诊断 -->
-                    <div class="card border-light mb-4">
+                    <div class="card app-subcard mb-4">
                         <div class="card-header py-2 ">
                             <h6 class="mb-0 fw-semibold">
                                 <i class="bi bi-search me-2 text-info"></i>Bangumi API诊断
@@ -228,15 +224,15 @@
                         </div>
                     </div>
                     <!-- 自定义主机连通性测试 -->
-                    <div class="card border-light">
+                    <div class="card app-subcard">
                         <div class="card-header py-2 ">
                             <h6 class="mb-0 fw-semibold">
                                 <i class="bi bi-hdd-network me-2 text-success"></i>主机连通性测试
                             </h6>
                         </div>
                         <div class="card-body">
-                            <div class="row g-3 mb-3">
-                                <div class="col-8">
+                            <div class="row g-3 align-items-end mb-3">
+                                <div class="col-md-5">
                                     <label for="test-host" class="form-label fw-semibold">主机地址</label>
                                     <input type="text"
                                            class="form-control"
@@ -244,7 +240,7 @@
                                            placeholder="如：192.168.1.100"
                                            value="">
                                 </div>
-                                <div class="col-4">
+                                <div class="col-md-3">
                                     <label for="test-port" class="form-label fw-semibold">端口</label>
                                     <input type="number"
                                            class="form-control"
@@ -253,23 +249,27 @@
                                            min="1"
                                            max="65535">
                                 </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="test-timeout" class="form-label fw-semibold">超时时间(秒)</label>
-                                <input type="number"
-                                       class="form-control"
-                                       id="test-timeout"
-                                       value="5"
-                                       min="1"
-                                       max="30">
+                                <div class="col-md-2">
+                                    <label for="test-timeout" class="form-label fw-semibold">超时(秒)</label>
+                                    <input type="number"
+                                           class="form-control"
+                                           id="test-timeout"
+                                           value="5"
+                                           min="1"
+                                           max="30">
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="d-grid">
+                                        <button type="button"
+                                                class="btn btn-primary"
+                                                onclick="testHostConnectivity()"
+                                                id="test-host-btn">
+                                            <i class="bi bi-play-circle me-1"></i>测试
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div class="d-flex gap-2">
-                                <button type="button"
-                                        class="btn btn-primary"
-                                        onclick="testHostConnectivity()"
-                                        id="test-host-btn">
-                                    <i class="bi bi-play-circle me-1"></i>测试连接
-                                </button>
                                 <button type="button"
                                         class="btn btn-outline-secondary btn-sm"
                                         onclick="autoFillHostAddress()"
@@ -279,69 +279,6 @@
                             </div>
                             <div id="host-test-result" class="mt-3" style="display: none;">
                                 <!-- 测试结果将显示在这里 -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- 通知测试 -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-bell me-2 text-warning"></i>
-                        <h6 class="m-0 fw-semibold">通知测试</h6>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        测试当前配置的通知功能是否正常工作。如需配置通知，请前往「配置管理」页面。
-                    </div>
-                    <div class="row g-3">
-                        <!-- Webhook 测试 -->
-                        <div class="col-md-6">
-                            <div class="card border-light">
-                                <div class="card-header py-2 ">
-                                    <h6 class="mb-0 fw-semibold">
-                                        <i class="bi bi-webhook me-2 text-primary"></i>Webhook 通知
-                                    </h6>
-                                </div>
-                                <div class="card-body">
-                                    <button type="button"
-                                            class="btn btn-primary w-100"
-                                            onclick="testWebhookNotification()"
-                                            id="test-webhook-btn">
-                                        <i class="bi bi-send me-1"></i>测试 Webhook
-                                    </button>
-                                    <div id="webhook-test-result" class="mt-3" style="display: none;">
-                                        <!-- 测试结果将显示在这里 -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- 邮件测试 -->
-                        <div class="col-md-6">
-                            <div class="card border-light">
-                                <div class="card-header py-2 ">
-                                    <h6 class="mb-0 fw-semibold">
-                                        <i class="bi bi-envelope me-2 text-success"></i>邮件通知
-                                    </h6>
-                                </div>
-                                <div class="card-body">
-                                    <button type="button"
-                                            class="btn btn-primary w-100"
-                                            onclick="testEmailNotification()"
-                                            id="test-email-btn">
-                                        <i class="bi bi-send me-1"></i>测试邮件
-                                    </button>
-                                    <div id="email-test-result" class="mt-3" style="display: none;">
-                                        <!-- 测试结果将显示在这里 -->
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -826,7 +763,7 @@ async function diagnoseBangumiNetwork() {
     resultDiv.innerHTML = `
         <div class="alert alert-info">
             <div class="d-flex align-items-center">
-                <div class="spinner-border spinner-border-sm text-info me-3" role="status">
+                <div class="spinner-border spinner-border-sm me-3" role="status">
                     <span class="visually-hidden">诊断中...</span>
                 </div>
                 <div>
@@ -1142,7 +1079,7 @@ async function testHostConnectivity() {
     resultDiv.innerHTML = `
         <div class="alert alert-info">
             <div class="d-flex align-items-center">
-                <div class="spinner-border spinner-border-sm text-info me-3" role="status">
+                <div class="spinner-border spinner-border-sm me-3" role="status">
                     <span class="visually-hidden">测试中...</span>
                 </div>
                 <div>
@@ -1370,112 +1307,6 @@ function showAlert(message, type = 'info', duration = 3000) {
     toast.addEventListener('hidden.bs.toast', () => {
         toast.remove();
     });
-}
-
-// 测试 Webhook 通知
-async function testWebhookNotification() {
-    await testNotificationByType('webhook', 'test-webhook-btn', 'webhook-test-result');
-}
-
-// 测试邮件通知
-async function testEmailNotification() {
-    await testNotificationByType('email', 'test-email-btn', 'email-test-result');
-}
-
-// 通用通知测试函数
-async function testNotificationByType(type, btnId, resultDivId) {
-    const btn = document.getElementById(btnId);
-    const resultDiv = document.getElementById(resultDivId);
-    
-    // 禁用按钮
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
-    
-    // 显示结果区域
-    resultDiv.style.display = 'block';
-    resultDiv.innerHTML = `
-        <div class="alert alert-info mb-0">
-            <div class="d-flex align-items-center">
-                <div class="spinner-border spinner-border-sm me-2"></div>
-                <span>正在发送测试通知...</span>
-            </div>
-        </div>
-    `;
-    
-    try {
-        const response = await fetch(appUrl('/api/notification/test'), {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                notification_type: type
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.status === 'success') {
-            const result = data.data[type];
-            
-            if (!result.enabled) {
-                resultDiv.innerHTML = `
-                    <div class="alert alert-warning mb-0">
-                        <h6 class="alert-heading mb-2"><i class="bi bi-exclamation-triangle me-2"></i>未启用</h6>
-                        <p class="mb-0 small">该通知方式未启用，请前往「配置管理」页面配置。</p>
-                    </div>
-                `;
-                showAlert(`${type === 'webhook' ? 'Webhook' : '邮件'}通知未启用`, 'warning');
-            } else if (result.success) {
-                resultDiv.innerHTML = `
-                    <div class="alert alert-success mb-0">
-                        <h6 class="alert-heading mb-2"><i class="bi bi-check-circle me-2"></i>测试成功</h6>
-                        <p class="mb-0 small">${result.message}</p>
-                    </div>
-                `;
-                showAlert(`${type === 'webhook' ? 'Webhook' : '邮件'}通知测试成功！`, 'success');
-            } else {
-                resultDiv.innerHTML = `
-                    <div class="alert alert-danger mb-0">
-                        <h6 class="alert-heading mb-2"><i class="bi bi-x-circle me-2"></i>测试失败</h6>
-                        <p class="mb-2 small">${result.message}</p>
-                        <hr class="my-2">
-                        <small class="text-muted">
-                            <i class="bi bi-lightbulb me-1"></i>
-                            请检查配置是否正确，网络是否连通。
-                        </small>
-                    </div>
-                `;
-                showAlert(`${type === 'webhook' ? 'Webhook' : '邮件'}通知测试失败`, 'danger');
-            }
-        } else {
-            resultDiv.innerHTML = `
-                <div class="alert alert-danger mb-0">
-                    <h6 class="alert-heading mb-2"><i class="bi bi-x-circle me-2"></i>测试失败</h6>
-                    <p class="mb-0">${data.message || '未知错误'}</p>
-                </div>
-            `;
-            showAlert('通知测试失败', 'danger');
-        }
-    } catch (error) {
-        console.error('测试通知失败:', error);
-        resultDiv.innerHTML = `
-            <div class="alert alert-danger mb-0">
-                <h6 class="alert-heading mb-2"><i class="bi bi-x-circle me-2"></i>测试失败</h6>
-                <p class="mb-0">网络错误: ${error.message}</p>
-            </div>
-        `;
-        showAlert('通知测试失败: 网络错误', 'danger');
-    } finally {
-        // 恢复按钮
-        btn.disabled = false;
-        if (type === 'webhook') {
-            btn.innerHTML = '<i class="bi bi-send me-1"></i>测试 Webhook';
-        } else {
-            btn.innerHTML = '<i class="bi bi-send me-1"></i>测试邮件';
-        }
-    }
 }
     </script>
 {% endblock %}

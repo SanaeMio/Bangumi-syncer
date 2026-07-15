@@ -20,7 +20,7 @@
                       id="inboxBadge">0</span>
             </span>
         </button>
-        <div class="dropdown-menu dropdown-menu-end inbox-panel p-0 shadow"
+        <div class="dropdown-menu dropdown-menu-end inbox-panel p-0"
              id="inboxPanel">
             <div class="inbox-panel__header px-3 pt-3 pb-2">
                 <div class="inbox-panel__alert alert alert-warning py-2 px-2 mb-2 small d-none"
@@ -100,11 +100,8 @@
                             <i class="bi bi-arrow-repeat"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">总同步次数</div>
-                            <div class="h4 mb-0 fw-bold"
-                                 style="color: var(--app-text)"
-                                 id="total-syncs">-</div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">总同步次数</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="total-syncs">-</div>
                         </div>
                     </div>
                 </div>
@@ -118,11 +115,8 @@
                             <i class="bi bi-calendar-day"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">今日同步</div>
-                            <div class="h4 mb-0 fw-bold"
-                                 style="color: var(--app-text)"
-                                 id="today-syncs">-</div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">今日同步</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="today-syncs">-</div>
                         </div>
                     </div>
                 </div>
@@ -136,11 +130,8 @@
                             <i class="bi bi-check-circle"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">成功率</div>
-                            <div class="h4 mb-0 fw-bold"
-                                 style="color: var(--app-text)"
-                                 id="success-rate">-</div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">成功率</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="success-rate">-</div>
                         </div>
                     </div>
                 </div>
@@ -154,11 +145,8 @@
                             <i class="bi bi-exclamation-triangle"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">失败次数</div>
-                            <div class="h4 mb-0 fw-bold"
-                                 style="color: var(--app-text)"
-                                 id="error-syncs">-</div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">失败次数</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="error-syncs">-</div>
                         </div>
                     </div>
                 </div>
@@ -169,16 +157,16 @@
     <div class="row g-4 mb-4">
         <!-- 左侧：最近同步时间线 -->
         <div class="col-xl-5 col-lg-6 d-flex">
-            <div class="card shadow-sm flex-fill">
+            <div class="card flex-fill">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-clock-history me-2" style="color: var(--app-primary)"></i>
-                        <h6 class="m-0 fw-semibold">最近同步</h6>
+                        <i class="bi bi-clock-history me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">最近同步</h6>
                     </div>
                 </div>
                 <div class="card-body p-3">
                     <div class="sync-timeline" id="sync-timeline">
-                        <div class="text-center py-4" style="color: var(--app-text-muted)">
+                        <div class="text-center py-4 app-text-muted-block">
                             <div class="spinner-border spinner-border-sm" role="status"></div>
                             <div class="mt-2 small">加载中...</div>
                         </div>
@@ -189,12 +177,12 @@
         <!-- 右侧：热力图 + 折线图 垂直堆叠 -->
         <div class="col-xl-7 col-lg-6 d-flex flex-column">
             <!-- 热力图 -->
-            <div class="card shadow-sm heatmap-card mb-4">
+            <div class="card heatmap-card mb-4">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center justify-content-between">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-grid-3x3-gap me-2" style="color: var(--app-primary)"></i>
-                            <h6 class="m-0 fw-semibold">同步热力图</h6>
+                            <i class="bi bi-grid-3x3-gap me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">同步热力图</h6>
                         </div>
                         <div class="heatmap-legend">
                             <span>少</span>
@@ -209,18 +197,18 @@
                 </div>
                 <div class="card-body px-3 pt-2 pb-2">
                     <div class="heatmap-container" id="heatmap-container">
-                        <div class="text-center py-3" style="color: var(--app-text-muted)">
+                        <div class="text-center py-3 app-text-muted-block">
                             <div class="spinner-border spinner-border-sm" role="status"></div>
                         </div>
                     </div>
                 </div>
             </div>
             <!-- 折线图 -->
-            <div class="card shadow-sm flex-grow-1">
+            <div class="card flex-grow-1">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-graph-up me-2" style="color: var(--app-primary)"></i>
-                        <h6 class="m-0 fw-semibold">最近7天趋势</h6>
+                        <i class="bi bi-graph-up me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">最近7天趋势</h6>
                     </div>
                 </div>
                 <div class="card-body p-4 d-flex align-items-center flex-grow-1">
@@ -461,7 +449,7 @@ async function showRecordDetail(recordId) {
                 + (record.episode_id ? '<a href="https://bgm.tv/ep/' + record.episode_id + '" target="_blank" class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle me-1"></i>剧集 ' + record.episode_id + ' <i class="bi bi-box-arrow-up-right ms-1"></i></a>' : '')
                 + '</div></div></div>' : '')
                 + '<div class="row mt-2"><div class="col-12"><strong>消息:</strong>'
-                + '<div class="border rounded p-2 mt-1" style="background-color: var(--app-bg-card-header); color: var(--app-text-muted);">'
+                + '<div class="border rounded p-2 mt-1 app-detail-box">'
                 + escapeHtml(record.message || '无')
                 + '</div></div></div>';
 
@@ -542,7 +530,7 @@ function formatRelativeTime(timestamp) {
 function renderTimeline(records) {
     const container = document.getElementById('sync-timeline');
     if (!records || records.length === 0) {
-        container.innerHTML = '<div class="text-center py-4" style="color: var(--app-text-muted)"><i class="bi bi-inbox fs-3 d-block mb-2"></i><div>暂无同步记录</div></div>';
+        container.innerHTML = '<div class="app-empty-state"><i class="bi bi-inbox app-empty-state__icon"></i><div>暂无同步记录</div></div>';
         return;
     }
 
@@ -766,16 +754,21 @@ function renderHeatmap(data, animate) {
 }
 
 function updateHeatmapLegend() {
-    const primary = themeManager ? themeManager.getPrimaryColor() : '#3b82f6';
+    const primary = themeManager ? themeManager.getPrimaryColor() : '#f09199';
     const rgb = hexToRgb(primary);
     if (!rgb) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const opacities = isDark ? [0.12, 0.24, 0.38] : [0.25, 0.5, 0.75];
+    const level4 = isDark
+        ? 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.54)'
+        : primary;
 
     const style = document.createElement('style');
     style.id = 'heatmap-dynamic-colors';
-    style.textContent = '.heatmap-legend__cell--l1{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.25)}'
-        + '.heatmap-legend__cell--l2{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.5)}'
-        + '.heatmap-legend__cell--l3{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.75)}'
-        + '.heatmap-legend__cell--l4{background-color:' + primary + '}';
+    style.textContent = '.heatmap-legend__cell--l1{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + opacities[0] + ')}'
+        + '.heatmap-legend__cell--l2{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + opacities[1] + ')}'
+        + '.heatmap-legend__cell--l3{background-color:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + opacities[2] + ')}'
+        + '.heatmap-legend__cell--l4{background-color:' + level4 + '}';
 
     const existing = document.getElementById('heatmap-dynamic-colors');
     if (existing) existing.remove();
@@ -783,18 +776,26 @@ function updateHeatmapLegend() {
 }
 
 function hexToRgb(hex) {
+    if (!hex) return null;
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : null;
+    if (result) {
+        return {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        };
+    }
+    const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(hex);
+    if (rgb) {
+        return { r: +rgb[1], g: +rgb[2], b: +rgb[3] };
+    }
+    return null;
 }
 
 // ========== 图表 ==========
 
 function getChartColors() {
-    const primary = themeManager ? themeManager.getPrimaryColor() : '#3b82f6';
+    const primary = themeManager ? themeManager.getPrimaryColor() : '#f09199';
     const rgb = hexToRgb(primary) || { r: 59, g: 130, b: 246 };
     return { primary, rgb };
 }
@@ -815,7 +816,7 @@ function buildChartData(dailyStats) {
     return { dates: dates, counts: counts, primary: primary, rgb: rgb, isDark: isDark,
              gridColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)',
              textColor: isDark ? '#909296' : '#6c757d',
-             pointBorder: isDark ? '#25262b' : 'white' };
+             pointBorder: isDark ? '#24262f' : 'white' };
 }
 
 function drawDailyChart(dailyStats) {
@@ -835,7 +836,7 @@ function drawDailyChart(dailyStats) {
                 label: '同步次数',
                 data: c.counts,
                 borderColor: c.primary,
-                backgroundColor: 'rgba(' + c.rgb.r + ',' + c.rgb.g + ',' + c.rgb.b + ',0.1)',
+                backgroundColor: 'rgba(' + c.rgb.r + ',' + c.rgb.g + ',' + c.rgb.b + ',' + (c.isDark ? '0.06' : '0.1') + ')',
                 tension: 0.4,
                 fill: true,
                 pointBackgroundColor: c.primary,

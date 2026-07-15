@@ -536,7 +536,7 @@ async function handleLoginSubmit(e) {
     
     const loginBtn = document.getElementById('loginBtn');
     const loginText = loginBtn.querySelector('.login-text');
-    const loadingSpinner = loginBtn.querySelector('.loading-spinner');
+    const loadingSpinner = loginBtn.querySelector('.login-btn-status');
     const alertContainer = document.getElementById('alert-container');
     
     // 显示加载状态
@@ -698,23 +698,39 @@ class ThemeManager {
         this.THEME_KEY = 'app-theme';
         this.COLOR_KEY = 'app-color';
         this.COLORS = {
-            sakura:    '#ec4899',
-            amber:     '#f97316',
-            eggyolk:   '#eab308',
-            sanae:     '#10b981',
-            hatsune:   '#14b8a6',
-            tianyi:    '#0ea5e9',
-            sapphire:  '#3b82f6',
-            violet:    '#8b5cf6'
+            sakura:    '#f09199',
+            amber:     '#f78c50',
+            sakuragi:  '#e9485e',
+            sanae:     '#8cb48c',
+            hatsune:   '#39C5BB',
+            tianyi:    '#00a2ff',
+            violet:    '#a682e6'
         };
+        this._deprecatedColors = { eggyolk: 'sakura', sapphire: 'sakura' };
         this._listeners = [];
         this._systemDark = window.matchMedia('(prefers-color-scheme: dark)');
         var self = this;
+        this._migrateDeprecatedColor();
         this._systemDark.addEventListener('change', function() {
             if (!localStorage.getItem(self.THEME_KEY)) {
                 self._apply(self._systemDark.matches ? 'dark' : 'light');
             }
         });
+    }
+
+    _migrateDeprecatedColor() {
+        var stored = localStorage.getItem(this.COLOR_KEY);
+        if (!stored) return;
+        var migrated = this._deprecatedColors[stored];
+        if (migrated) {
+            localStorage.setItem(this.COLOR_KEY, migrated);
+            document.documentElement.setAttribute('data-color', migrated);
+            return;
+        }
+        if (!this.COLORS[stored]) {
+            localStorage.setItem(this.COLOR_KEY, 'sakura');
+            document.documentElement.setAttribute('data-color', 'sakura');
+        }
     }
 
     /** 实际生效的主题（含系统跟随） */
@@ -820,7 +836,7 @@ class ThemeManager {
     }
 
     getColor() {
-        return localStorage.getItem(this.COLOR_KEY) || 'sapphire';
+        return localStorage.getItem(this.COLOR_KEY) || 'sakura';
     }
 
     setColor(color) {
@@ -881,7 +897,9 @@ class ThemeManager {
     }
 
     getPrimaryColor() {
-        return this.COLORS[this.getColor()] || this.COLORS.sapphire;
+        var css = getComputedStyle(document.documentElement).getPropertyValue('--app-primary').trim();
+        if (css) return css;
+        return this.COLORS[this.getColor()] || this.COLORS.sakura;
     }
 
     getColors() {
