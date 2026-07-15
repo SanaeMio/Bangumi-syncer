@@ -22,9 +22,8 @@
                             <i class="bi bi-file-earmark-text"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">日志大小</div>
-                            <div class="h4 mb-0 fw-bold" style="color: var(--app-text)" id="log-size">-</div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">日志大小</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="log-size">-</div>
                         </div>
                     </div>
                 </div>
@@ -38,9 +37,8 @@
                             <i class="bi bi-list-ol"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">日志行数</div>
-                            <div class="h4 mb-0 fw-bold" style="color: var(--app-text)" id="log-lines">-</div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">日志行数</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="log-lines">-</div>
                         </div>
                     </div>
                 </div>
@@ -54,12 +52,8 @@
                             <i class="bi bi-clock"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">最后修改</div>
-                            <div class="h4 mb-0 fw-bold"
-                                 style="color: var(--app-text);
-                                        font-size: 0.95rem;
-                                        word-break: break-all"
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">最后修改</div>
+                            <div class="h4 mb-0 fw-bold stats-value stats-value--compact"
                                  id="log-modified">-</div>
                         </div>
                     </div>
@@ -74,11 +68,8 @@
                             <i class="bi bi-exclamation-triangle"></i>
                         </div>
                         <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1"
-                                 style="font-size: 0.75rem">错误数量</div>
-                            <div class="h4 mb-0 fw-bold"
-                                 style="color: var(--app-text)"
-                                 id="log-errors">-</div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">错误数量</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="log-errors">-</div>
                         </div>
                     </div>
                 </div>
@@ -86,15 +77,15 @@
         </div>
     </div>
     <!-- 日志筛选 -->
-    <div class="card shadow mb-4">
+    <div class="card mb-4 filter-card">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
-                <i class="bi bi-funnel me-2" style="color: var(--app-primary)"></i>
-                <h6 class="m-0 fw-semibold">日志筛选</h6>
+                <i class="bi bi-funnel me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">日志筛选</h6>
             </div>
         </div>
         <div class="card-body">
-            <div class="row">
+            <div class="row g-3">
                 <div class="col-md-3">
                     <label for="log-level" class="form-label">日志级别</label>
                     <select class="form-select" id="log-level">
@@ -132,11 +123,11 @@
         </div>
     </div>
     <!-- 日志内容 -->
-    <div class="card shadow mb-4">
+    <div class="card mb-4">
         <div class="card-header py-3 d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center">
-                <i class="bi bi-terminal me-2 text-success"></i>
-                <h6 class="m-0 fw-semibold">日志内容</h6>
+                <i class="bi bi-terminal me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">日志内容</h6>
             </div>
             <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
@@ -145,11 +136,11 @@
         </div>
         <div class="card-body p-0">
             <div id="log-content" class="log-viewer">
-                <div class="text-center p-4">
+                <div class="app-loading-state">
                     <div class="spinner-border" role="status">
                         <span class="visually-hidden">加载中...</span>
                     </div>
-                    <p class="mt-2 text-muted">正在加载日志...</p>
+                    <p class="mt-2 mb-0">正在加载日志...</p>
                 </div>
             </div>
         </div>

@@ -37,18 +37,23 @@
     gap: 0.4rem 0.55rem;
     max-width: min(100%, 34rem);
     padding: 0.3rem 0.65rem 0.3rem 0.35rem;
-    border-radius: 999px;
-    background: var(--app-bg-card-header, #eef1f4);
-    border: 1px solid var(--app-border, #dee2e6);
-    transition: border-color 0.22s ease, background-color 0.22s ease, box-shadow 0.22s ease,
-        transform 0.22s ease;
+    border-radius: var(--app-radius-pill, 999px);
+    background: var(--app-bg-card, #fff);
+    border: 1px solid var(--app-glass-border, rgba(30, 30, 36, 0.06));
+    transition: border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-theme="dark"] .app-version-banner__header-chip-track {
+    background: var(--app-bg-card, #24262f);
+    border-color: var(--app-glass-border, rgba(255, 255, 255, 0.1));
 }
 
 .app-version-banner__header-chip-track:hover {
-    background: var(--app-bg-hover, #e9ecef);
-    border-color: var(--app-border-strong, #ced4da);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-    transform: translateY(-1px);
+    background: rgba(var(--app-primary-rgb), 0.08);
+    border-color: rgba(var(--app-primary-rgb), 0.18);
+    transform: none;
+    box-shadow: none;
 }
 
 .app-version-banner__header-chip-icon {
@@ -269,10 +274,13 @@
 
 /* Modal 外壳 */
 .release-notes-modal .modal-content {
-    border: 1px solid var(--app-border, #e9ecef);
-    border-radius: 12px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--app-glass-border, var(--app-border));
+    border-radius: 24px;
+    box-shadow: var(--app-shadow-elevated, 0 18px 45px rgba(0, 0, 0, 0.12));
     overflow: hidden;
+    background: var(--app-glass-bg, var(--app-bg-card));
+  backdrop-filter: var(--app-blur);
+  -webkit-backdrop-filter: var(--app-blur);
 }
 
 .release-notes-modal .modal-header {

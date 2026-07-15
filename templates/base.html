@@ -8,7 +8,8 @@
         (function(){
             var t=localStorage.getItem('app-theme');
             if(!t) t=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
-            var c=localStorage.getItem('app-color')||'sapphire';
+            var c=localStorage.getItem('app-color')||'sakura';
+            if(c==='eggyolk'||c==='sapphire')c='sakura';
             document.documentElement.setAttribute('data-theme',t);
             document.documentElement.setAttribute('data-color',c);
             document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
@@ -27,10 +28,9 @@
               rel="stylesheet">
         {% block head %}{% endblock %}
     </head>
-    <body style="background-color: var(--app-bg);">
+    <body class="app-body">
         <!-- 移动端顶部导航栏 -->
-        <nav class="navbar navbar-expand-md navbar-light border-bottom d-md-none fixed-top"
-             style="background-color: var(--app-bg-card)">
+        <nav class="navbar navbar-expand-md navbar-light border-bottom d-md-none fixed-top app-mobile-navbar">
             <div class="container-fluid">
                 <a class="navbar-brand d-flex align-items-center"
                    href="{{ '/dashboard' | p }}">
@@ -115,8 +115,8 @@
                 </div>
             </div>
         </nav>
-        <div class="container-fluid">
-            <div class="row">
+        <div class="app-shell">
+            <div class="row g-0 app-shell__layout">
                 <!-- 侧边栏 -->
                 <nav class="col-md-3 col-lg-2 d-none d-md-block sidebar">
                     <div class="position-sticky pt-4">
@@ -181,11 +181,10 @@
                             </li>
                         </ul>
                         <!-- 用户信息和登出 -->
-                        <div class="px-2 mt-2 pt-3 border-top"
-                             style="border-color: var(--app-border) !important">
+                        <div class="px-2 mt-2 pt-3 border-top sidebar-user-block">
                             <div class="d-flex align-items-center mb-2">
-                                <i class="bi bi-person-circle me-2" style="color: var(--app-text-muted)"></i>
-                                <small style="color: var(--app-text-muted)">
+                                <i class="bi bi-person-circle me-2 sidebar-user-text"></i>
+                                <small class="sidebar-user-text">
                                     {% if user and user.username %}
                                         {{ user.username }}
                                     {% else %}
@@ -201,12 +200,12 @@
                     </div>
                 </nav>
                 <!-- 主要内容 -->
-                <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 app-main">
+                <main class="col-12 col-md-9 col-lg-10 px-md-4 app-main">
                     <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-4 pb-3 mb-4">
-                        <h1 class="h2 fw-bold" style="color: var(--app-text)">
+                        <h1 class="h2 fw-bold app-page-title">
                             {% block page_title %}{% endblock %}
                         </h1>
-                        <div class="btn-toolbar mb-2 mb-md-0 align-items-center gap-2 flex-nowrap">
+                        <div class="btn-toolbar mb-2 mb-md-0 align-items-center gap-2 flex-wrap flex-md-nowrap">
                             <!-- 主题切换（仅仪表盘页面） -->
                             {% if request.url.path == '/dashboard' or request.url.path.endswith('/dashboard') %}
                                 <div class="header-theme-switcher" id="headerThemeSwitcher">
@@ -223,59 +222,70 @@
                                     <div class="header-theme-palette-wrap">
                                         <button class="header-theme-color-btn"
                                                 id="themeColorBtn"
+                                                type="button"
+                                                aria-expanded="false"
+                                                aria-haspopup="true"
                                                 onclick="toggleThemeColors()"
                                                 title="切换主题色">
                                             <span class="header-theme-color-indicator" id="themeColorIndicator"></span>
                                         </button>
                                         <div class="header-theme-colors" id="headerThemeColors">
-                                            <div class="theme-color-dot"
-                                                 data-color="sakura"
-                                                 style="background:#ec4899"
-                                                 title="少女粉"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('sakura', this)">
-                                            </div>
-                                            <div class="theme-color-dot"
-                                                 data-color="amber"
-                                                 style="background:#f97316"
-                                                 title="琥珀橙"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('amber', this)">
-                                            </div>
-                                            <div class="theme-color-dot"
-                                                 data-color="eggyolk"
-                                                 style="background:#eab308"
-                                                 title="咸蛋黄"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('eggyolk', this)">
-                                            </div>
-                                            <div class="theme-color-dot"
-                                                 data-color="sanae"
-                                                 style="background:#10b981"
-                                                 title="早苗绿"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('sanae', this)">
-                                            </div>
-                                            <div class="theme-color-dot"
-                                                 data-color="hatsune"
-                                                 style="background:#14b8a6"
-                                                 title="初音绿"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('hatsune', this)">
-                                            </div>
-                                            <div class="theme-color-dot"
-                                                 data-color="tianyi"
-                                                 style="background:#0ea5e9"
-                                                 title="天依蓝"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('tianyi', this)">
-                                            </div>
-                                            <div class="theme-color-dot"
-                                                 data-color="sapphire"
-                                                 style="background:#3b82f6"
-                                                 title="宝石蓝"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('sapphire', this)">
-                                            </div>
-                                            <div class="theme-color-dot"
-                                                 data-color="violet"
-                                                 style="background:#8b5cf6"
-                                                 title="罗兰紫"
-                                                 onclick="event.stopPropagation(); themeManager.setColorAnimated('violet', this)">
-                                            </div>
+                                            <button type="button"
+                                                    class="theme-color-item"
+                                                    data-color="sakura"
+                                                    title="班娘粉"
+                                                    onclick="event.stopPropagation(); themeManager.setColorAnimated('sakura', this)">
+                                                <span class="theme-color-dot"></span>
+                                                <span class="theme-color-item__label">班娘粉</span>
+                                            </button>
+                                            <button type="button"
+                                                    class="theme-color-item"
+                                                    data-color="amber"
+                                                    title="LCL 橘"
+                                                    onclick="event.stopPropagation(); themeManager.setColorAnimated('amber', this)">
+                                                <span class="theme-color-dot"></span>
+                                                <span class="theme-color-item__label">LCL 橘</span>
+                                            </button>
+                                            <button type="button"
+                                                    class="theme-color-item"
+                                                    data-color="sakuragi"
+                                                    title="樱木红"
+                                                    onclick="event.stopPropagation(); themeManager.setColorAnimated('sakuragi', this)">
+                                                <span class="theme-color-dot"></span>
+                                                <span class="theme-color-item__label">樱木红</span>
+                                            </button>
+                                            <button type="button"
+                                                    class="theme-color-item"
+                                                    data-color="sanae"
+                                                    title="早苗绿"
+                                                    onclick="event.stopPropagation(); themeManager.setColorAnimated('sanae', this)">
+                                                <span class="theme-color-dot"></span>
+                                                <span class="theme-color-item__label">早苗绿</span>
+                                            </button>
+                                            <button type="button"
+                                                    class="theme-color-item"
+                                                    data-color="hatsune"
+                                                    title="初音绿"
+                                                    onclick="event.stopPropagation(); themeManager.setColorAnimated('hatsune', this)">
+                                                <span class="theme-color-dot"></span>
+                                                <span class="theme-color-item__label">初音绿</span>
+                                            </button>
+                                            <button type="button"
+                                                    class="theme-color-item"
+                                                    data-color="tianyi"
+                                                    title="天依蓝"
+                                                    onclick="event.stopPropagation(); themeManager.setColorAnimated('tianyi', this)">
+                                                <span class="theme-color-dot"></span>
+                                                <span class="theme-color-item__label">天依蓝</span>
+                                            </button>
+                                            <button type="button"
+                                                    class="theme-color-item"
+                                                    data-color="violet"
+                                                    title="罗兰紫"
+                                                    onclick="event.stopPropagation(); themeManager.setColorAnimated('violet', this)">
+                                                <span class="theme-color-dot"></span>
+                                                <span class="theme-color-item__label">罗兰紫</span>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -389,17 +399,48 @@
             // 胶囊开关状态
             var capsule = document.getElementById('themeToggleCapsule');
             if (capsule) capsule.classList.toggle('theme-toggle-capsule--dark', theme === 'dark');
-            document.querySelectorAll('.theme-color-dot').forEach(function(dot) {
-                dot.classList.toggle('theme-color-dot--active', dot.getAttribute('data-color') === color);
+            document.querySelectorAll('.theme-color-item').forEach(function(item) {
+                var isActive = item.getAttribute('data-color') === color;
+                item.classList.toggle('theme-color-item--active', isActive);
             });
             var indicator = document.getElementById('themeColorIndicator');
-            if (indicator) indicator.style.backgroundColor = themeManager.getPrimaryColor();
+            if (indicator) {
+                indicator.style.backgroundColor = '';
+            }
             document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
+        }
+
+        function positionThemeColorsPanel() {
+            var el = document.getElementById('headerThemeColors');
+            var btn = document.getElementById('themeColorBtn');
+            if (!el || !btn || !el.classList.contains('show')) return;
+            var rect = btn.getBoundingClientRect();
+            var pad = 8;
+            el.style.position = 'fixed';
+            el.style.top = (rect.bottom + 6) + 'px';
+            el.style.right = 'auto';
+            el.style.left = Math.max(pad, rect.right - el.offsetWidth) + 'px';
+            var panelRect = el.getBoundingClientRect();
+            if (panelRect.right > window.innerWidth - pad) {
+                el.style.left = (window.innerWidth - pad - el.offsetWidth) + 'px';
+            }
+            if (panelRect.left < pad) {
+                el.style.left = pad + 'px';
+            }
+            if (panelRect.bottom > window.innerHeight - pad) {
+                el.style.top = Math.max(pad, rect.top - el.offsetHeight - 6) + 'px';
+            }
         }
 
         function resetThemeColorsPosition() {
             var el = document.getElementById('headerThemeColors');
-            if (el) el.style.transform = '';
+            if (el) {
+                el.style.position = '';
+                el.style.top = '';
+                el.style.right = '';
+                el.style.left = '';
+                el.style.transform = '';
+            }
         }
 
         function toggleThemeColors() {
@@ -408,21 +449,11 @@
             if (!el) return;
             var willShow = !el.classList.contains('show');
             el.classList.toggle('show');
+            if (btn) btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
             resetThemeColorsPosition();
-            if (willShow && btn && window.matchMedia('(max-width: 767.98px)').matches) {
+            if (willShow) {
                 requestAnimationFrame(function () {
-                    var pad = 12;
-                    var panelRect = el.getBoundingClientRect();
-                    var shift = 0;
-                    if (panelRect.right > window.innerWidth - pad) {
-                        shift += window.innerWidth - pad - panelRect.right;
-                    }
-                    if (panelRect.left + shift < pad) {
-                        shift += pad - (panelRect.left + shift);
-                    }
-                    if (shift !== 0) {
-                        el.style.transform = 'translateX(' + shift + 'px)';
-                    }
+                    positionThemeColorsPanel();
                 });
             }
         }
@@ -433,9 +464,13 @@
             var btn = document.getElementById('themeColorBtn');
             if (colors && btn && !colors.contains(e.target) && !btn.contains(e.target)) {
                 colors.classList.remove('show');
+                btn.setAttribute('aria-expanded', 'false');
                 resetThemeColorsPosition();
             }
         });
+
+        window.addEventListener('resize', positionThemeColorsPanel);
+        window.addEventListener('scroll', positionThemeColorsPanel, true);
 
         document.addEventListener('DOMContentLoaded', function() {
             updateThemeToggleUI();

@@ -10,15 +10,15 @@
 {% endblock %}
 {% block content %}
     <!-- 筛选条件 -->
-    <div class="card shadow mb-4">
+    <div class="card mb-4 filter-card">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
-                <i class="bi bi-funnel me-2 text-primary"></i>
-                <h6 class="m-0 fw-semibold">筛选条件</h6>
+                <i class="bi bi-funnel me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">筛选条件</h6>
             </div>
         </div>
         <div class="card-body">
-            <div class="row">
+            <div class="row g-3">
                 <div class="col-md-3">
                     <label for="filter-status" class="form-label">状态</label>
                     <select class="form-select" id="filter-status">
@@ -65,16 +65,16 @@
         </div>
     </div>
     <!-- 记录表格 -->
-    <div class="card shadow mb-4">
+    <div class="card mb-4">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
-                <i class="bi bi-journal-text me-2 text-success"></i>
-                <h6 class="m-0 fw-semibold">同步记录</h6>
+                <i class="bi bi-journal-text me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">同步记录</h6>
             </div>
         </div>
         <div class="card-body">
-            <div>
-                <table class="table table-bordered table-hover table-striped align-middle app-data-table"
+            <div id="records-table-wrap" class="records-table-wrap">
+                <table class="table table-hover table-striped align-middle app-data-table"
                        id="records-table">
                     <thead>
                         <tr>
@@ -86,7 +86,7 @@
                             <th>状态</th>
                             <th class="col-hide-sm">来源</th>
                             <th class="col-hide-sm">消息</th>
-                            <th>操作</th>
+                            <th class="col-hide-sm">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -95,13 +95,14 @@
                 </table>
             </div>
             <!-- 分页 -->
-            <nav aria-label="分页导航">
-                <ul class="pagination justify-content-center" id="pagination">
+            <nav class="app-pagination" id="pagination-nav" aria-label="分页导航">
+                <ul class="pagination app-pagination__list mb-0" id="pagination">
                     <!-- 动态生成分页 -->
                 </ul>
+                <div class="app-pagination__summary text-muted" id="pagination-summary"></div>
             </nav>
             <!-- 加载状态 -->
-            <div id="loading" class="text-center" style="display: none;">
+            <div id="loading" class="app-loading-state is-hidden">
                 <div class="spinner-border" role="status">
                     <span class="visually-hidden">加载中...</span>
                 </div>
@@ -128,13 +129,22 @@
 {% block scripts %}
     <script>
 let currentPage = 1;
-let currentLimit = 50;
+let currentLimit = 10;
 let currentFilters = {};
 let allUsers = new Set();
 let recordDetailModal;
 
 document.addEventListener('DOMContentLoaded', function() {
     recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
+    document.querySelector('#records-table tbody').addEventListener('click', function(e) {
+        if (!window.matchMedia('(max-width: 767.98px)').matches) return;
+        const row = e.target.closest('tr[data-record-id]');
+        if (!row) return;
+        const rid = parseInt(row.dataset.recordId, 10);
+        if (!isNaN(rid) && rid > 0) {
+            showRecordDetail(rid);
+        }
+    });
     loadRecords().then(function() {
         var openId = new URLSearchParams(window.location.search).get('open');
         if (openId) {
@@ -146,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-async function loadRecords(page = 1, limit = 50) {
+async function loadRecords(page = 1, limit = 10) {
     currentPage = page;
     currentLimit = limit;
     
@@ -182,14 +192,21 @@ function displayRecords(records) {
     tbody.innerHTML = '';
     
     if (records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无记录</td></tr>';
+        const emptyRow = document.createElement('tr');
+        emptyRow.classList.add('records-table-row--enter');
+        emptyRow.innerHTML = '<td colspan="9"><div class="app-empty-state"><i class="bi bi-inbox app-empty-state__icon"></i><div>暂无同步记录</div></div></td>';
+        tbody.appendChild(emptyRow);
+        replayRecordsTableAnimation();
         return;
     }
     
-    records.forEach(record => {
+    records.forEach(function(record, index) {
         const mt = (record.media_type || 'episode').toLowerCase();
         const typeLabel = mt === 'movie' ? '电影' : '剧集';
         const row = document.createElement('tr');
+        row.dataset.recordId = String(record.id);
+        row.classList.add('records-table-row--enter');
+        row.style.animationDelay = `${Math.min(index * 0.04, 0.36)}s`;
         row.innerHTML = `
             <td class="col-hide-sm"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
             <td class="col-hide-sm">${new Date(record.timestamp).toLocaleString()}</td>
@@ -198,8 +215,8 @@ function displayRecords(records) {
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
             <td><span class="badge rounded-pill bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
             <td class="col-hide-sm"><span class="badge rounded-pill tl-source--${getSourceTlClass(record.source)}">${record.source}</span></td>
-            <td class="col-hide-sm text-truncate" style="max-width: 200px;" title="${record.message}">${record.message}</td>
-            <td class="text-nowrap">
+            <td class="col-hide-sm text-truncate text-truncate-cell" title="${record.message}">${record.message}</td>
+            <td class="col-hide-sm text-nowrap records-table-actions">
                 <button class="btn btn-action btn-outline-primary" onclick="showRecordDetail(${record.id})" title="查看详情">
                     <i class="bi bi-eye"></i>
                 </button>
@@ -210,6 +227,23 @@ function displayRecords(records) {
         `;
         tbody.appendChild(row);
     });
+    replayRecordsTableAnimation();
+}
+
+function replayRecordsTableAnimation() {
+    const wrap = document.getElementById('records-table-wrap');
+    if (!wrap) return;
+    wrap.classList.remove('records-table-wrap--enter');
+    void wrap.offsetWidth;
+    wrap.classList.add('records-table-wrap--enter');
+}
+
+function replayRecordsPaginationAnimation() {
+    const nav = document.getElementById('pagination-nav');
+    if (!nav || nav.classList.contains('is-hidden')) return;
+    nav.classList.remove('records-pagination--enter');
+    void nav.offsetWidth;
+    nav.classList.add('records-pagination--enter');
 }
 
 function getStatusColor(status) {
@@ -257,60 +291,75 @@ function getSourceTlClass(source) {
 function updatePagination(total, currentPage, limit) {
     const totalPages = Math.ceil(total / limit);
     const pagination = document.getElementById('pagination');
+    const summary = document.getElementById('pagination-summary');
+    const nav = document.getElementById('pagination-nav');
     pagination.innerHTML = '';
-    
-    if (totalPages <= 1) return;
-    
-    // 上一页
+
+    if (total <= 0) {
+        if (summary) summary.textContent = '';
+        if (nav) nav.classList.add('is-hidden');
+        return;
+    }
+
+    if (summary) {
+        summary.textContent = totalPages <= 1
+            ? `共 ${total} 条记录`
+            : `第 ${currentPage} / ${totalPages} 页，共 ${total} 条`;
+    }
+
+    if (totalPages <= 1) {
+        if (nav) nav.classList.remove('is-hidden');
+        replayRecordsPaginationAnimation();
+        return;
+    }
+
+    if (nav) nav.classList.remove('is-hidden');
+
     const prevLi = document.createElement('li');
-    prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
-    prevLi.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${currentPage - 1})">上一页</a>`;
+    prevLi.className = `page-item page-item--nav ${currentPage === 1 ? 'disabled' : ''}`;
+    prevLi.innerHTML = `<a class="page-link" href="#" aria-label="上一页" onclick="event.preventDefault(); loadRecords(${currentPage - 1})"><i class="bi bi-chevron-left" aria-hidden="true"></i><span class="d-none d-sm-inline">上一页</span></a>`;
     pagination.appendChild(prevLi);
-    
-    // 页码
+
     const startPage = Math.max(1, currentPage - 2);
     const endPage = Math.min(totalPages, currentPage + 2);
-    
+
     if (startPage > 1) {
-        const firstLi = document.createElement('li');
-        firstLi.className = 'page-item';
-        firstLi.innerHTML = '<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(1)">1</a>';
-        pagination.appendChild(firstLi);
-        
+        pagination.appendChild(createPageItem(1, currentPage));
         if (startPage > 2) {
-            const ellipsisLi = document.createElement('li');
-            ellipsisLi.className = 'page-item disabled';
-            ellipsisLi.innerHTML = '<span class="page-link">...</span>';
-            pagination.appendChild(ellipsisLi);
+            pagination.appendChild(createEllipsisItem());
         }
     }
-    
+
     for (let i = startPage; i <= endPage; i++) {
-        const li = document.createElement('li');
-        li.className = `page-item ${i === currentPage ? 'active' : ''}`;
-        li.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${i})">${i}</a>`;
-        pagination.appendChild(li);
+        pagination.appendChild(createPageItem(i, currentPage));
     }
-    
+
     if (endPage < totalPages) {
         if (endPage < totalPages - 1) {
-            const ellipsisLi = document.createElement('li');
-            ellipsisLi.className = 'page-item disabled';
-            ellipsisLi.innerHTML = '<span class="page-link">...</span>';
-            pagination.appendChild(ellipsisLi);
+            pagination.appendChild(createEllipsisItem());
         }
-        
-        const lastLi = document.createElement('li');
-        lastLi.className = 'page-item';
-        lastLi.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${totalPages})">${totalPages}</a>`;
-        pagination.appendChild(lastLi);
+        pagination.appendChild(createPageItem(totalPages, currentPage));
     }
-    
-    // 下一页
+
     const nextLi = document.createElement('li');
-    nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
-    nextLi.innerHTML = `<a class="page-link" href="#" onclick="event.preventDefault(); loadRecords(${currentPage + 1})">下一页</a>`;
+    nextLi.className = `page-item page-item--nav ${currentPage === totalPages ? 'disabled' : ''}`;
+    nextLi.innerHTML = `<a class="page-link" href="#" aria-label="下一页" onclick="event.preventDefault(); loadRecords(${currentPage + 1})"><span class="d-none d-sm-inline">下一页</span><i class="bi bi-chevron-right" aria-hidden="true"></i></a>`;
     pagination.appendChild(nextLi);
+    replayRecordsPaginationAnimation();
+}
+
+function createPageItem(page, currentPage) {
+    const li = document.createElement('li');
+    li.className = `page-item page-item--num ${page === currentPage ? 'active' : ''}`;
+    li.innerHTML = `<a class="page-link" href="#" aria-label="第 ${page} 页" aria-current="${page === currentPage ? 'page' : 'false'}" onclick="event.preventDefault(); loadRecords(${page})">${page}</a>`;
+    return li;
+}
+
+function createEllipsisItem() {
+    const li = document.createElement('li');
+    li.className = 'page-item page-item--ellipsis disabled';
+    li.innerHTML = '<span class="page-link" aria-hidden="true">…</span>';
+    return li;
 }
 
 function updateUserFilter(records) {
@@ -451,11 +500,20 @@ async function showRecordDetail(recordId) {
                 <div class="row mt-2">
                     <div class="col-12">
                         <strong>消息:</strong>
-                        <div class="border rounded p-2 mt-1" style="background-color: var(--app-bg-card-header); color: var(--app-text-muted);">
+                        <div class="border rounded p-2 mt-1 app-detail-box">
                             ${record.message}
                         </div>
                     </div>
                 </div>
+                ${record.status === 'error' ? `
+                <div class="row mt-3">
+                    <div class="col-12 d-grid d-sm-block">
+                        <button type="button" class="btn btn-outline-warning" onclick="retrySync(${record.id})">
+                            <i class="bi bi-arrow-clockwise me-1"></i>重试同步
+                        </button>
+                    </div>
+                </div>
+                ` : ''}
             `;
             
             recordDetailModal.show();
@@ -470,14 +528,14 @@ async function showRecordDetail(recordId) {
 
 function showLoading(show) {
     const loading = document.getElementById('loading');
-    const table = document.getElementById('records-table');
+    const tableWrap = document.getElementById('records-table-wrap');
     
     if (show) {
-        loading.style.display = 'block';
-        table.style.opacity = '0.5';
+        loading.classList.remove('is-hidden');
+        tableWrap.classList.add('app-table-wrap--loading');
     } else {
-        loading.style.display = 'none';
-        table.style.opacity = '1';
+        loading.classList.add('is-hidden');
+        tableWrap.classList.remove('app-table-wrap--loading');
     }
 }
     </script>

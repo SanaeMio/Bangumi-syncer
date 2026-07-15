@@ -7,7 +7,8 @@
         (function(){
             var t=localStorage.getItem('app-theme');
             if(!t) t=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
-            var c=localStorage.getItem('app-color')||'sapphire';
+            var c=localStorage.getItem('app-color')||'sakura';
+            if(c==='eggyolk'||c==='sapphire')c='sakura';
             document.documentElement.setAttribute('data-theme',t);
             document.documentElement.setAttribute('data-color',c);
             document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
@@ -21,11 +22,11 @@
               rel="stylesheet">
         <link href="{{ '/static/css/style.css' | static_v }}" rel="stylesheet">
     </head>
-    <body style="background-color: var(--app-bg);">
+    <body class="app-body">
         <div class="container-fluid vh-100 d-flex align-items-center justify-content-center px-3">
             <div class="row w-100 justify-content-center">
                 <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-4 col-xxl-3">
-                    <div class="card shadow-sm border-0 login-card">
+                    <div class="card border-0 login-card">
                         <div class="card-body p-4">
                             <!-- Logo 和标题 -->
                             <div class="text-center mb-4">
@@ -43,7 +44,7 @@
                                         <i class="bi bi-person me-1 text-primary"></i>用户名
                                     </label>
                                     <input type="text"
-                                           class="form-control form-control-lg"
+                                           class="form-control"
                                            id="username"
                                            name="username"
                                            placeholder="输入用户名"
@@ -54,7 +55,7 @@
                                         <i class="bi bi-lock me-1 text-primary"></i>密码
                                     </label>
                                     <input type="password"
-                                           class="form-control form-control-lg"
+                                           class="form-control"
                                            id="password"
                                            name="password"
                                            placeholder="输入密码"
@@ -64,7 +65,7 @@
                                     <span class="login-text">
                                         <i class="bi bi-box-arrow-in-right me-2"></i>登录
                                     </span>
-                                    <span class="loading-spinner d-none">
+                                    <span class="login-btn-status d-none">
                                         <span class="spinner-border spinner-border-sm me-2"
                                               role="status"
                                               aria-hidden="true"></span>

@@ -20,16 +20,16 @@
         <strong>自定义映射说明：</strong>当程序无法自动匹配番剧时，可以手动添加映射关系。映射格式为"番剧名 → Bangumi ID"，其中Bangumi ID可以从番剧页面URL中获取。
     </div>
     <!-- 映射列表 -->
-    <div class="card shadow mb-4">
+    <div class="card mb-4">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
-                <i class="bi bi-diagram-3 me-2 text-info"></i>
-                <h6 class="m-0 fw-semibold">自定义映射列表</h6>
+                <i class="bi bi-diagram-3 me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">自定义映射列表</h6>
             </div>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-hover table-striped align-middle app-data-table"
+                <table class="table table-hover align-middle app-data-table"
                        id="mappings-table">
                     <thead>
                         <tr>
@@ -45,13 +45,13 @@
                 </table>
             </div>
             <!-- 空状态 -->
-            <div id="empty-state" class="text-center py-5" style="display: none;">
-                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+            <div id="empty-state" class="app-empty-state is-hidden">
+                <i class="bi bi-inbox app-empty-state__icon"></i>
                 <h5 class="text-muted mt-3">暂无自定义映射</h5>
-                <p class="text-muted">点击上方"添加映射"按钮来创建第一个映射</p>
+                <p class="text-muted mb-0">点击上方"添加映射"按钮来创建第一个映射</p>
             </div>
             <!-- 加载状态 -->
-            <div id="loading" class="text-center" style="display: none;">
+            <div id="loading" class="app-loading-state is-hidden">
                 <div class="spinner-border" role="status">
                     <span class="visually-hidden">加载中...</span>
                 </div>
@@ -93,7 +93,7 @@
                                 <input type="text" class="form-control" id="preview-id" readonly>
                             </div>
                             <div class="form-text">
-                                <a id="preview-link" href="#" target="_blank" style="display: none;">点击查看Bangumi页面</a>
+                                <a id="preview-link" href="#" target="_blank" class="is-hidden">点击查看Bangumi页面</a>
                             </div>
                         </div>
                     </form>
@@ -158,7 +158,7 @@
         </div>
     </div>
     <!-- 额外操作按钮 -->
-    <div class="card shadow">
+    <div class="card">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
                 <i class="bi bi-tools me-2 text-warning"></i>
@@ -238,13 +238,13 @@ function displayMappings(mappings) {
     tbody.innerHTML = '';
     
     if (Object.keys(mappings).length === 0) {
-        table.style.display = 'none';
-        emptyState.style.display = 'block';
+        table.classList.add('is-hidden');
+        emptyState.classList.remove('is-hidden');
         return;
     }
-    
-    table.style.display = 'table';
-    emptyState.style.display = 'none';
+
+    table.classList.remove('is-hidden');
+    emptyState.classList.add('is-hidden');
     
     Object.entries(mappings).forEach(([title, id]) => {
         const row = document.createElement('tr');
@@ -275,7 +275,7 @@ function showAddMappingModal() {
     document.getElementById('mappingModalTitle').textContent = '添加映射';
     document.getElementById('mapping-form').reset();
     document.getElementById('preview-id').value = '';
-    document.getElementById('preview-link').style.display = 'none';
+    document.getElementById('preview-link').classList.add('is-hidden');
     editingTitle = null;
     mappingModal.show();
 }
@@ -298,9 +298,9 @@ function updatePreview() {
     
     if (id) {
         previewLink.href = `https://bgm.tv/subject/${id}`;
-        previewLink.style.display = 'inline';
+        previewLink.classList.remove('is-hidden');
     } else {
-        previewLink.style.display = 'none';
+        previewLink.classList.add('is-hidden');
     }
 }
 
@@ -503,11 +503,11 @@ function showLoading(show) {
     const emptyState = document.getElementById('empty-state');
     
     if (show) {
-        loading.style.display = 'block';
-        table.style.display = 'none';
-        emptyState.style.display = 'none';
+        loading.classList.remove('is-hidden');
+        table.classList.add('is-hidden');
+        emptyState.classList.add('is-hidden');
     } else {
-        loading.style.display = 'none';
+        loading.classList.add('is-hidden');
     }
 }
     </script>

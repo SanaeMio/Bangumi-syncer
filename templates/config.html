@@ -4,22 +4,22 @@
 {% block head %}{% endblock %}
 {% block page_actions %}{% endblock %}
 {% block content %}
-    <nav class="card shadow-sm mb-3 config-page-toc d-none d-lg-block"
+    <nav class="card mb-3 config-page-toc d-none d-lg-block"
          aria-label="配置页目录">
         <div class="card-body py-2 px-3">
             <div id="config-page-toc-links"
                  class="d-flex flex-wrap align-items-center gap-2 small"></div>
         </div>
     </nav>
-    <form id="config-form">
+    <form id="config-form" class="config-form">
         <!-- 同步配置 -->
         <div class="row">
             <div class="col-12">
-                <div id="config-section-sync" class="card shadow-sm mb-4 config-card">
+                <div id="config-section-sync" class="card mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-arrow-repeat me-2 text-success"></i>
-                            <h6 class="m-0 fw-semibold">同步配置</h6>
+                            <i class="bi bi-arrow-repeat me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">同步配置</h6>
                         </div>
                     </div>
                     <div class="card-body">
@@ -31,7 +31,7 @@
                                        data-bs-toggle="tooltip"
                                        title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
                                 </label>
-                                <select class="form-select form-select-lg"
+                                <select class="form-select"
                                         id="sync-mode"
                                         name="sync.mode"
                                         onchange="toggleSyncMode()">
@@ -39,19 +39,20 @@
                                     <option value="multi">多用户模式</option>
                                 </select>
                             </div>
-                            <div class="col-12">
-                                <div class="form-check form-switch mb-3">
-                                    <input class="form-check-input"
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-lock me-1 text-warning"></i>启用Webhook认证
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="开启后需要提供密钥才能访问webhook接口，关闭后可直接访问无需密钥"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center mb-0">
+                                    <input class="form-check-input me-2"
                                            type="checkbox"
                                            id="webhook-auth-enabled"
                                            name="auth.webhook_auth_enabled"
                                            onchange="toggleWebhookKeySection()">
-                                    <label class="form-check-label fw-semibold" for="webhook-auth-enabled">
-                                        <i class="bi bi-shield-lock me-1 text-warning"></i>启用Webhook认证
-                                        <i class="bi bi-question-circle ms-1 text-muted"
-                                           data-bs-toggle="tooltip"
-                                           title="开启后需要提供密钥才能访问webhook接口，关闭后可直接访问无需密钥"></i>
-                                    </label>
+                                    <label class="form-check-label" for="webhook-auth-enabled">启用</label>
                                 </div>
                             </div>
                             <div class="col-12" id="webhook-key-section">
@@ -63,7 +64,7 @@
                                 </label>
                                 <div class="input-group">
                                     <input type="text"
-                                           class="form-control form-control-lg"
+                                           class="form-control"
                                            id="webhook-key"
                                            readonly
                                            placeholder="加载中...">
@@ -111,21 +112,20 @@
                                        title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="blocked-keywords"
                                        name="sync.blocked_keywords"
                                        placeholder="多个关键词用逗号分隔，如：物语系列,特典">
                             </div>
                             <div class="col-12">
                                 <div class="row g-3 align-items-center mt-1">
-                                    <div class="col-12 col-md-6">
+                                    <div class="col-12 col-md-4">
                                         <div class="form-check form-switch mb-0">
                                             <input class="form-check-input"
                                                    type="checkbox"
                                                    id="movie-playback-start-mark-watching"
                                                    name="sync.movie_playback_start_mark_watching">
-                                            <label class="form-check-label fw-semibold"
-                                                   for="movie-playback-start-mark-watching">
+                                            <label class="form-check-label" for="movie-playback-start-mark-watching">
                                                 剧场版播放开始时将条目标为在看
                                                 <i class="bi bi-question-circle ms-1 text-muted"
                                                    data-bs-toggle="tooltip"
@@ -133,14 +133,13 @@
                                             </label>
                                         </div>
                                     </div>
-                                    <div class="col-12 col-md-6">
+                                    <div class="col-12 col-md-4">
                                         <div class="form-check form-switch mb-0">
                                             <input class="form-check-input"
                                                    type="checkbox"
                                                    id="movie-mark-subject-completed"
                                                    name="sync.movie_mark_subject_completed">
-                                            <label class="form-check-label fw-semibold"
-                                                   for="movie-mark-subject-completed">
+                                            <label class="form-check-label" for="movie-mark-subject-completed">
                                                 剧场版同步后自动将条目也标为看过
                                                 <i class="bi bi-question-circle ms-1 text-muted"
                                                    data-bs-toggle="tooltip"
@@ -148,14 +147,13 @@
                                             </label>
                                         </div>
                                     </div>
-                                    <div class="col-12 col-md-6">
+                                    <div class="col-12 col-md-4">
                                         <div class="form-check form-switch mb-0">
                                             <input class="form-check-input"
                                                    type="checkbox"
                                                    id="anime-mark-subject-completed"
                                                    name="sync.anime_mark_subject_completed">
-                                            <label class="form-check-label fw-semibold"
-                                                   for="anime-mark-subject-completed">
+                                            <label class="form-check-label" for="anime-mark-subject-completed">
                                                 TV系列同步后自动将整部番标为看过
                                                 <i class="bi bi-question-circle ms-1 text-muted"
                                                    data-bs-toggle="tooltip"
@@ -173,11 +171,11 @@
         <!-- Bangumi账号配置（单用户模式） -->
         <div class="row" id="single-user-bangumi-section">
             <div class="col-12">
-                <div id="config-section-bgm" class="card shadow-sm mb-4 config-card">
+                <div id="config-section-bgm" class="card mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-person-circle me-2 text-primary"></i>
-                            <h6 class="m-0 fw-semibold">Bangumi账号配置</h6>
+                            <i class="bi bi-person-circle me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">Bangumi账号配置</h6>
                         </div>
                     </div>
                     <div class="card-body">
@@ -190,7 +188,7 @@
                                        title="Bangumi 的用户名或 UID。如果设置了用户名，只能填用户名。UID 就是个人资料页里 @123456 或者网址 bgm.tv/user/123456 的数字部分"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="bangumi-username"
                                        name="bangumi.username"
                                        placeholder="输入Bangumi用户名或UID">
@@ -209,7 +207,7 @@
                                 </label>
                                 <div class="position-relative">
                                     <input type="password"
-                                           class="form-control form-control-lg pe-5"
+                                           class="form-control pe-5"
                                            id="bangumi-access-token"
                                            name="bangumi.access_token"
                                            placeholder="输入Bangumi访问令牌">
@@ -220,14 +218,14 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="col-12">
+                            <div class="col-md-6">
                                 <label class="form-label fw-semibold">
                                     <i class="bi bi-eye-slash me-1 text-warning"></i>观看记录仅自己可见
                                     <i class="bi bi-question-circle ms-1 text-muted"
                                        data-bs-toggle="tooltip"
                                        title="观看记录是否仅自己可见。启用后观看记录只有自己能看到，不启用则为公开"></i>
                                 </label>
-                                <div class="form-check form-switch d-flex align-items-center">
+                                <div class="form-check form-switch d-flex align-items-center mb-0">
                                     <input class="form-check-input me-2"
                                            type="checkbox"
                                            id="bangumi-private"
@@ -235,7 +233,7 @@
                                     <label class="form-check-label" for="bangumi-private">启用</label>
                                 </div>
                             </div>
-                            <div class="col-12">
+                            <div class="col-md-6">
                                 <label for="bangumi-media-server-username" class="form-label fw-semibold">
                                     <i class="bi bi-person-check me-1 text-success"></i>媒体服务器用户名
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -243,7 +241,7 @@
                                        title="Plex/Emby/Jellyfin 中的登录用户名。只同步这些用户产生的观看记录。多个服务器或不同用户名对应同一 Bangumi 账号时，可用英文逗号分隔，例如：plex_user,emby_user"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="bangumi-media-server-username"
                                        name="bangumi.media_server_username"
                                        placeholder="多个用户名用英文逗号分隔">
@@ -256,11 +254,11 @@
         <!-- 多用户配置 -->
         <div class="row" id="multi-user-section" style="display: none;">
             <div class="col-12">
-                <div class="card shadow-sm mb-4">
+                <div class="card mb-4">
                     <div class="card-header py-3 d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-people me-2 text-secondary"></i>
-                            <h6 class="m-0 fw-semibold">多用户配置</h6>
+                            <i class="bi bi-people me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">多用户配置</h6>
                         </div>
                         <button type="button"
                                 class="btn btn-sm btn-primary"
@@ -279,16 +277,16 @@
         <!-- 高级配置 -->
         <div class="row">
             <div class="col-12">
-                <div id="config-section-advanced" class="card shadow-sm mb-4">
+                <div id="config-section-advanced" class="card mb-4">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-sliders me-2 text-info"></i>
-                            <h6 class="m-0 fw-semibold">高级配置</h6>
+                            <i class="bi bi-sliders me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">高级配置</h6>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
-                            <div class="col-12">
+                            <div class="col-md-6">
                                 <label for="web-base-path" class="form-label fw-semibold">
                                     <i class="bi bi-link-45deg me-1 text-primary"></i>Web 对外路径前缀（子路径反代）
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -296,11 +294,50 @@
                                        title="部署在反向代理子路径下时才需要填写，例如 /Bangumi，须与 Nginx location 一致；根路径访问请留空。修改后需要重启服务才生效。"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="web-base-path"
                                        name="web.base_path"
                                        placeholder="除非你知道自己在做什么，否则留空，修改后需要重启服务才生效"
                                        autocomplete="off">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bgm-api-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi API 反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://api.bgm.tv，留空则使用默认地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bgm-api-proxy"
+                                       name="dev.bgm_api_proxy"
+                                       placeholder="留空则使用默认地址">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bgm-next-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi Next 反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://next.bgm.tv，留空则使用默认地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bgm-next-proxy"
+                                       name="dev.bgm_next_proxy"
+                                       placeholder="留空则使用默认地址">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bgm-image-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-image me-1 text-primary"></i>Bangumi 图片反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://lain.bgm.tv，仪表板时间线封面使用；留空则使用 API 返回的原始图片地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bgm-image-proxy"
+                                       name="dev.bgm_image_proxy"
+                                       placeholder="留空则使用默认图片 CDN 地址">
                             </div>
                             <div class="col-12">
                                 <label for="script-proxy" class="form-label fw-semibold">
@@ -311,7 +348,7 @@
                                 </label>
                                 <div class="input-group">
                                     <input type="text"
-                                           class="form-control form-control-lg"
+                                           class="form-control"
                                            id="script-proxy"
                                            name="dev.script_proxy"
                                            placeholder="如：http://127.0.0.1:7890">
@@ -378,7 +415,7 @@
                                                     <div class="col-md-4">
                                                         <label for="test-host" class="form-label">主机地址</label>
                                                         <input type="text"
-                                                               class="form-control form-control-sm"
+                                                               class="form-control"
                                                                id="test-host"
                                                                placeholder="如：192.168.1.100"
                                                                value="">
@@ -386,7 +423,7 @@
                                                     <div class="col-md-3">
                                                         <label for="test-port" class="form-label">端口</label>
                                                         <input type="number"
-                                                               class="form-control form-control-sm"
+                                                               class="form-control"
                                                                id="test-port"
                                                                value="7890"
                                                                min="1"
@@ -395,7 +432,7 @@
                                                     <div class="col-md-3">
                                                         <label for="test-timeout" class="form-label">超时(秒)</label>
                                                         <input type="number"
-                                                               class="form-control form-control-sm"
+                                                               class="form-control"
                                                                id="test-timeout"
                                                                value="5"
                                                                min="1"
@@ -427,48 +464,9 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-6 mt-2">
-                                <label for="bgm-api-proxy" class="form-label fw-semibold">
-                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi API 反向代理
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="用于反代 https://api.bgm.tv，留空则使用默认地址"></i>
-                                </label>
-                                <input type="text"
-                                       class="form-control form-control-lg"
-                                       id="bgm-api-proxy"
-                                       name="dev.bgm_api_proxy"
-                                       placeholder="留空则使用默认地址">
-                            </div>
-                            <div class="col-md-6 mt-2">
-                                <label for="bgm-next-proxy" class="form-label fw-semibold">
-                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi Next 反向代理
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="用于反代 https://next.bgm.tv，留空则使用默认地址"></i>
-                                </label>
-                                <input type="text"
-                                       class="form-control form-control-lg"
-                                       id="bgm-next-proxy"
-                                       name="dev.bgm_next_proxy"
-                                       placeholder="留空则使用默认地址">
-                            </div>
-                            <div class="col-md-6 mt-2">
-                                <label for="bgm-image-proxy" class="form-label fw-semibold">
-                                    <i class="bi bi-image me-1 text-primary"></i>Bangumi 图片反向代理
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="用于反代 https://lain.bgm.tv，仪表板时间线封面使用；留空则使用 API 返回的原始图片地址"></i>
-                                </label>
-                                <input type="text"
-                                       class="form-control form-control-lg"
-                                       id="bgm-image-proxy"
-                                       name="dev.bgm_image_proxy"
-                                       placeholder="留空则使用默认图片 CDN 地址">
-                            </div>
                         </div>
                         <div class="row g-3 mt-2">
-                            <div class="col-6">
+                            <div class="col-6 col-md-3">
                                 <label class="form-label fw-semibold">
                                     <i class="bi bi-shield-check me-1 text-success"></i>SSL证书验证
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -483,7 +481,7 @@
                                     <label class="form-check-label" for="ssl-verify">启用SSL验证</label>
                                 </div>
                             </div>
-                            <div class="col-6">
+                            <div class="col-6 col-md-3">
                                 <label class="form-label fw-semibold">
                                     <i class="bi bi-bug me-1 text-warning"></i>调试模式
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -506,11 +504,11 @@
         <!-- Web认证配置 -->
         <div class="row">
             <div class="col-12">
-                <div id="config-section-auth" class="card shadow-sm mb-4">
+                <div id="config-section-auth" class="card mb-4">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-shield-lock me-2 text-danger"></i>
-                            <h6 class="m-0 fw-semibold">Web认证配置</h6>
+                            <i class="bi bi-shield-lock me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">Web认证配置</h6>
                         </div>
                     </div>
                     <div class="card-body">
@@ -538,7 +536,7 @@
                                        title="Web管理界面的登录用户名"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="auth-username"
                                        name="auth.username"
                                        placeholder="admin">
@@ -552,7 +550,7 @@
                                 </label>
                                 <div class="position-relative">
                                     <input type="password"
-                                           class="form-control form-control-lg pe-5"
+                                           class="form-control pe-5"
                                            id="auth-password"
                                            name="auth.password"
                                            placeholder="留空表示不修改密码">
@@ -571,7 +569,7 @@
                                        title="登录会话的超时时间（秒），默认3600秒（1小时）"></i>
                                 </label>
                                 <input type="number"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="session-timeout"
                                        name="auth.session_timeout"
                                        placeholder="3600"
@@ -603,7 +601,7 @@
                                        title="单个IP地址的最大登录失败次数，超过后将被锁定"></i>
                                 </label>
                                 <input type="number"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="max-login-attempts"
                                        name="auth.max_login_attempts"
                                        placeholder="5"
@@ -618,7 +616,7 @@
                                        title="IP被锁定的时间长度（秒），默认900秒（15分钟）"></i>
                                 </label>
                                 <input type="number"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="lockout-duration"
                                        name="auth.lockout_duration"
                                        placeholder="900"
@@ -637,12 +635,11 @@
         <!-- Bangumi-data配置 -->
         <div class="row">
             <div class="col-12">
-                <div id="config-section-bangumi-data"
-                     class="card shadow-sm mb-4 config-card">
+                <div id="config-section-bangumi-data" class="card mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-hdd-stack me-2 text-primary"></i>
-                            <h6 class="m-0 fw-semibold">Bangumi-data配置</h6>
+                            <i class="bi bi-hdd-stack me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">Bangumi-data配置</h6>
                         </div>
                     </div>
                     <div class="card-body">
@@ -685,7 +682,7 @@
                                        title="缓存有效期（天），超过此时间后会自动更新缓存。设置为0表示每次启动都会更新缓存"></i>
                                 </label>
                                 <input type="number"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="cache-ttl"
                                        name="bangumi_data.cache_ttl_days"
                                        placeholder="7"
@@ -702,7 +699,7 @@
                                        title="bangumi-data数据源的URL地址，默认使用官方CDN地址。如果官方地址无法访问，可以替换为其他镜像地址"></i>
                                 </label>
                                 <input type="url"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="data-url"
                                        name="bangumi_data.data_url"
                                        placeholder="https://unpkg.com/bangumi-data@0.3/dist/data.json">
@@ -715,7 +712,7 @@
                                        title="bangumi-data本地缓存文件的存储路径，默认为当前目录下的bangumi_data_cache.json文件"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="local-cache-path"
                                        name="bangumi_data.local_cache_path"
                                        placeholder="./bangumi_data_cache.json">
@@ -728,61 +725,71 @@
         <!-- 通知配置 -->
         <div class="row">
             <div class="col-12">
-                <div id="config-section-notify" class="card shadow-sm mb-4 config-card">
+                <div id="config-section-notify" class="card mb-4 config-card">
                     <div class="card-header py-3">
-                        <div class="d-flex align-items-center justify-content-between">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-bell me-2 text-warning"></i>
-                                <h6 class="m-0 fw-semibold">通知配置</h6>
-                            </div>
-                            <button type="button"
-                                    class="btn btn-primary btn-sm"
-                                    onclick="showAddWebhookModal()">
-                                <i class="bi bi-plus-lg me-1"></i>添加 Webhook 配置
-                            </button>
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-bell me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">通知配置</h6>
                         </div>
                     </div>
                     <div class="card-body">
-                        <!-- Webhook 配置列表 -->
-                        <div id="webhook-configs-container">
-                            <div class="text-center py-5">
-                                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                                <p class="text-muted mt-3">暂无 Webhook 配置</p>
-                                <button type="button"
-                                        class="btn btn-outline-primary"
-                                        onclick="showAddWebhookModal()">
-                                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                                </button>
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <div class="notify-config-panel h-100">
+                                    <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+                                        <div class="d-flex align-items-center min-w-0">
+                                            <i class="bi bi-send me-2 card-header-icon"></i>
+                                            <h6 class="m-0 fw-semibold card-header-title">Webhook 通知</h6>
+                                        </div>
+                                        <button type="button"
+                                                class="btn btn-primary btn-sm flex-shrink-0"
+                                                onclick="showAddWebhookModal()">
+                                            <i class="bi bi-plus-lg me-1"></i>添加配置
+                                        </button>
+                                    </div>
+                                    <div id="webhook-configs-container">
+                                        <div class="app-empty-state app-empty-state--sm">
+                                            <i class="bi bi-inbox app-empty-state__icon"></i>
+                                            <p class="text-muted mt-3 mb-0">暂无 Webhook 配置</p>
+                                            <button type="button"
+                                                    class="btn btn-outline-primary btn-sm"
+                                                    onclick="showAddWebhookModal()">
+                                                <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="notify-config-panel h-100">
+                                    <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+                                        <div class="d-flex align-items-center min-w-0">
+                                            <i class="bi bi-envelope me-2 text-success"></i>
+                                            <h6 class="m-0 fw-semibold card-header-title">邮件通知</h6>
+                                        </div>
+                                        <button type="button"
+                                                class="btn btn-primary btn-sm flex-shrink-0"
+                                                onclick="showAddEmailModal()">
+                                            <i class="bi bi-plus-lg me-1"></i>添加配置
+                                        </button>
+                                    </div>
+                                    <div id="email-configs-container">
+                                        <div class="app-empty-state app-empty-state--sm">
+                                            <i class="bi bi-inbox app-empty-state__icon"></i>
+                                            <p class="text-muted mt-3 mb-0">暂无邮件配置</p>
+                                            <button type="button"
+                                                    class="btn btn-outline-primary btn-sm"
+                                                    onclick="showAddEmailModal()">
+                                                <i class="bi bi-plus-lg me-1"></i>添加第一个配置
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <hr class="my-4">
-                        <!-- 邮件通知配置 -->
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-envelope text-success me-2"></i>
-                                <h6 class="m-0 fw-semibold">邮件通知配置</h6>
-                            </div>
-                            <button type="button"
-                                    class="btn btn-primary btn-sm"
-                                    onclick="showAddEmailModal()">
-                                <i class="bi bi-plus-lg me-1"></i>添加邮件配置
-                            </button>
-                        </div>
-                        <!-- 邮件配置列表 -->
-                        <div id="email-configs-container">
-                            <div class="text-center py-5">
-                                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                                <p class="text-muted mt-3">暂无邮件配置</p>
-                                <button type="button"
-                                        class="btn btn-outline-primary"
-                                        onclick="showAddEmailModal()">
-                                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                                </button>
-                            </div>
-                        </div>
-                        <div class="alert alert-info mt-4">
+                        <div class="alert alert-info mt-4 mb-0">
                             <i class="bi bi-info-circle me-2"></i>
-                            <strong>提示：</strong>配置完成后，也可以在「调试工具」页面测试全部通知项功能。特定事件发生时会自动发送通知（60秒冷却时间）。
+                            <strong>提示：</strong>可在各条配置旁使用「测试」按钮验证通知是否正常。特定事件发生时会自动发送通知（60秒冷却时间）。
                         </div>
                     </div>
                 </div>
@@ -791,11 +798,11 @@
         <!-- 飞牛影视 -->
         <div class="row">
             <div class="col-12">
-                <div id="config-section-feiniu" class="card shadow-sm mb-4 config-card">
+                <div id="config-section-feiniu" class="card mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-hdd-network me-2 text-secondary"></i>
-                            <h6 class="m-0 fw-semibold">飞牛影视</h6>
+                            <i class="bi bi-hdd-network me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">飞牛影视</h6>
                         </div>
                     </div>
                     <div class="card-body">
@@ -822,7 +829,7 @@
                                        title="只读打开飞牛的 trimmedia.db，填本机或容器内可访问的绝对路径。Docker 常见为挂载后的路径（见 README 示例）。Windows 建议用正斜杠，如 D:/path/trimmedia.db。"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="feiniu-db-path"
                                        name="feiniu.db_path"
                                        placeholder="/app/data/feiniu-db/trimmedia.db">
@@ -905,27 +912,44 @@
         <!-- fongmi -->
         <div class="row">
             <div class="col-12">
-                <div id="config-section-fongmi" class="card shadow-sm mb-4 config-card">
+                <div id="config-section-fongmi" class="card mb-4 config-card">
                     <div class="card-header py-3">
                         <div class="d-flex align-items-center">
-                            <i class="bi bi-tv me-2 text-secondary"></i>
-                            <h6 class="m-0 fw-semibold">fongmi 局域网同步</h6>
+                            <i class="bi bi-tv me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">fongmi 局域网同步</h6>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
-                            <div class="col-12">
-                                <div class="form-check form-switch mb-3">
-                                    <input class="form-check-input"
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-tv me-1 text-secondary"></i>启用 fongmi 同步
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="默认关闭。开启后会定时轮询局域网内 fongmi 设备的 /media 端点，检测「看完」的剧集并提交到 Bangumi。仅支持 fongmi 及其 fork（TV-K、OK影视、WebHomeTV 等），原版 TVBoxOSC 不支持。"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center mb-0">
+                                    <input class="form-check-input me-2"
                                            type="checkbox"
                                            id="fongmi-enabled"
                                            name="fongmi.enabled">
-                                    <label class="form-check-label fw-semibold" for="fongmi-enabled">
-                                        <i class="bi bi-tv me-1 text-secondary"></i>启用 fongmi 同步
-                                        <i class="bi bi-question-circle ms-1 text-muted"
-                                           data-bs-toggle="tooltip"
-                                           title="默认关闭。开启后会定时轮询局域网内 fongmi 设备的 /media 端点，检测「看完」的剧集并提交到 Bangumi。仅支持 fongmi 及其 fork（TV-K、OK影视、WebHomeTV 等），原版 TVBoxOSC 不支持。"></i>
-                                    </label>
+                                    <label class="form-check-label" for="fongmi-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-wifi me-1 text-info"></i>自动扫描网段
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="开启后会扫描下方网段的 9978 端口自动发现 fongmi 设备。单台设备时建议关闭，直接填设备 IP。"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center mb-0">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="fongmi-auto-scan"
+                                           name="fongmi.auto_scan"
+                                           checked>
+                                    <label class="form-check-label" for="fongmi-auto-scan">启用</label>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -936,27 +960,12 @@
                                        title="手动指定 fongmi 设备 IP，多个用英文逗号分隔，可带端口。例如：192.168.1.100 或 192.168.1.100:9979。留空则依赖自动扫描。"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="fongmi-devices"
                                        name="fongmi.devices"
                                        placeholder="如：192.168.1.100, 192.168.1.101:9979">
                             </div>
-                            <div class="col-12">
-                                <div class="form-check form-switch mb-3">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="fongmi-auto-scan"
-                                           name="fongmi.auto_scan"
-                                           checked>
-                                    <label class="form-check-label fw-semibold" for="fongmi-auto-scan">
-                                        <i class="bi bi-wifi me-1 text-info"></i>自动扫描网段
-                                        <i class="bi bi-question-circle ms-1 text-muted"
-                                           data-bs-toggle="tooltip"
-                                           title="开启后会扫描下方网段的 9978 端口自动发现 fongmi 设备。单台设备时建议关闭，直接填设备 IP。"></i>
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label for="fongmi-subnet" class="form-label fw-semibold">
                                     <i class="bi bi-diagram-3 me-1 text-success"></i>网段
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -964,12 +973,12 @@
                                        title="自动扫描的网段，如 192.168.1（不含最后一段）"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="fongmi-subnet"
                                        name="fongmi.subnet"
                                        placeholder="如：192.168.1">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label for="fongmi-min-percent" class="form-label fw-semibold">
                                     <i class="bi bi-percent me-1 text-warning"></i>完成阈值（%）
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -977,14 +986,14 @@
                                        title="播放进度达到此百分比视为「看完」，默认 80"></i>
                                 </label>
                                 <input type="number"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="fongmi-min-percent"
                                        name="fongmi.min_percent"
                                        min="1"
                                        max="100"
                                        value="80">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label for="fongmi-sync-interval" class="form-label fw-semibold">
                                     <i class="bi bi-clock me-1 text-primary"></i>同步频率（Cron）
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -992,7 +1001,7 @@
                                        title="轮询 fongmi 设备的 cron 表达式，默认每 3 分钟"></i>
                                 </label>
                                 <input type="text"
-                                       class="form-control form-control-lg"
+                                       class="form-control"
                                        id="fongmi-sync-interval"
                                        name="fongmi.sync_interval"
                                        value="*/3 * * * *">
@@ -1015,11 +1024,11 @@
     <!-- 操作按钮 -->
     <div id="config-section-actions" class="row">
         <div class="col-12">
-            <div class="card shadow-sm mb-4">
+            <div class="card mb-4">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
-                        <i class="bi bi-gear me-2 text-primary"></i>
-                        <h6 class="m-0 fw-semibold">配置操作</h6>
+                        <i class="bi bi-gear me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">配置操作</h6>
                     </div>
                 </div>
                 <div class="card-body text-center py-4">
@@ -1052,7 +1061,7 @@
     <!-- 调试工具导航 -->
     <div class="row">
         <div class="col-12">
-            <div class="card shadow-sm mb-4 border-info border-opacity-25">
+            <div class="card mb-4 border-info border-opacity-25">
                 <div class="card-body text-center py-4">
                     <div class="mb-3">
                         <i class="bi bi-bug display-4 text-info"></i>
@@ -1173,7 +1182,7 @@
                             </div>
                             <div class="mt-2 ms-4">
                                 <label for="keepCount" class="form-label">保留数量：</label>
-                                <select class="form-select form-select-sm" id="keepCount">
+                                <select class="form-select" id="keepCount">
                                     <option value="3">3个</option>
                                     <option value="5" selected>5个</option>
                                     <option value="10">10个</option>
@@ -1195,7 +1204,7 @@
                             </div>
                             <div class="mt-2 ms-4">
                                 <label for="keepDays" class="form-label">保留天数：</label>
-                                <select class="form-select form-select-sm" id="keepDays">
+                                <select class="form-select" id="keepDays">
                                     <option value="7">7天</option>
                                     <option value="30" selected>30天</option>
                                     <option value="90">90天</option>
@@ -1275,6 +1284,39 @@ function getNotificationTypeCheckboxes(prefix) {
     return Array.from(document.querySelectorAll(`[id^="${prefix}"]:checked`)).map(cb => cb.value).join(',') || 'all';
 }
 
+function scrollConfigSection(targetId) {
+    const el = document.getElementById(targetId);
+    if (!el) {
+        return;
+    }
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const behavior = smooth ? 'smooth' : 'auto';
+    const offset = parseFloat(getComputedStyle(el).scrollMarginTop) || 16;
+    const shell = document.querySelector('.app-shell');
+    const useShellScroller =
+        shell &&
+        window.matchMedia('(min-width: 768px)').matches &&
+        shell.scrollHeight > shell.clientHeight;
+
+    if (useShellScroller) {
+        const top =
+            shell.scrollTop +
+            el.getBoundingClientRect().top -
+            shell.getBoundingClientRect().top -
+            offset;
+        shell.scrollTo({ top: Math.max(0, top), behavior: behavior });
+    } else {
+        const top = window.scrollY + el.getBoundingClientRect().top - offset;
+        window.scrollTo({ top: Math.max(0, top), behavior: behavior });
+    }
+
+    if (history.replaceState) {
+        history.replaceState(null, '', '#' + targetId);
+    } else {
+        location.hash = targetId;
+    }
+}
+
 /** 根据同步模式（单用户 / 多用户）生成本页目录，仅展示当前可见区块 */
 function refreshConfigPageToc() {
     const wrap = document.getElementById('config-page-toc-links');
@@ -1318,6 +1360,10 @@ function refreshConfigPageToc() {
             (item.primary ? 'btn-outline-primary' : 'btn-outline-secondary');
         a.href = '#' + item.id;
         a.textContent = item.label;
+        a.addEventListener('click', function (event) {
+            event.preventDefault();
+            scrollConfigSection(item.id);
+        });
         wrap.appendChild(a);
     });
 }
@@ -1598,9 +1644,10 @@ function addBangumiAccount(accountName = '', accountConfig = {}) {
         </div>
         <div class="row mt-2">
             <div class="col-md-4">
-                <div class="form-check">
-                    <input class="form-check-input bangumi-account-private" type="checkbox" ${accountConfig.private ? 'checked' : ''}>
-                    <label class="form-check-label">观看记录仅自己可见</label>
+                <label class="form-label">观看记录仅自己可见</label>
+                <div class="form-check form-switch d-flex align-items-center mb-0">
+                    <input class="form-check-input me-2 bangumi-account-private" type="checkbox" id="bangumi-account-private-${id}" ${accountConfig.private ? 'checked' : ''}>
+                    <label class="form-check-label" for="bangumi-account-private-${id}">启用</label>
                 </div>
             </div>
         </div>
@@ -1849,7 +1896,7 @@ async function loadBackupFiles() {
         } else {
             backupFilesList.innerHTML = `
                 <div class="text-center p-3">
-                    <i class="bi bi-inbox text-muted" style="font-size: 2rem;"></i>
+                    <i class="bi bi-inbox app-empty-state__icon app-empty-state--sm"></i>
                     <p class="mt-2 mb-0 text-muted">暂无备份文件</p>
                     <small class="text-muted">点击"备份配置"创建第一个备份</small>
                 </div>
@@ -1859,7 +1906,7 @@ async function loadBackupFiles() {
         console.error('加载备份文件失败:', error);
         document.getElementById('backup-files-list').innerHTML = `
             <div class="text-center p-3">
-                <i class="bi bi-exclamation-triangle text-warning" style="font-size: 2rem;"></i>
+                <i class="bi bi-exclamation-triangle app-empty-state__icon app-empty-state--sm text-warning"></i>
                 <p class="mt-2 mb-0 text-muted">加载备份文件失败</p>
             </div>
         `;
@@ -2445,10 +2492,10 @@ function renderWebhookConfigs(webhooks) {
 
     if (!webhooks || webhooks.length === 0) {
         container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                <p class="text-muted mt-3">暂无 Webhook 配置</p>
-                <button type="button" class="btn btn-outline-primary" onclick="showAddWebhookModal()">
+            <div class="app-empty-state app-empty-state--sm">
+                <i class="bi bi-inbox app-empty-state__icon"></i>
+                <p class="text-muted mt-3 mb-0">暂无 Webhook 配置</p>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="showAddWebhookModal()">
                     <i class="bi bi-plus-lg me-1"></i>添加第一个配置
                 </button>
             </div>
@@ -2463,7 +2510,7 @@ function renderWebhookConfigs(webhooks) {
             : webhook.types.split(',').map(t => `<span class="badge bg-secondary">${t.trim()}</span>`).join(' ');
 
         html += `
-            <div class="col-md-6">
+            <div class="col-12">
                 <div class="card border ${webhook.enabled ? 'border-primary' : 'border-secondary'}">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start mb-2">
@@ -3274,10 +3321,10 @@ function renderEmailConfigs(emails) {
 
     if (!emails || emails.length === 0) {
         container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                <p class="text-muted mt-3">暂无邮件配置</p>
-                <button type="button" class="btn btn-outline-primary" onclick="showAddEmailModal()">
+            <div class="app-empty-state app-empty-state--sm">
+                <i class="bi bi-inbox app-empty-state__icon"></i>
+                <p class="text-muted mt-3 mb-0">暂无邮件配置</p>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="showAddEmailModal()">
                     <i class="bi bi-plus-lg me-1"></i>添加第一个配置
                 </button>
             </div>
@@ -3292,7 +3339,7 @@ function renderEmailConfigs(emails) {
             : email.types.split(',').map(t => `<span class="badge bg-secondary">${t.trim()}</span>`).join(' ');
 
         html += `
-            <div class="col-md-6">
+            <div class="col-12">
                 <div class="card border ${email.enabled ? 'border-success' : 'border-secondary'}">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start mb-2">
