@@ -287,6 +287,9 @@ let recordDetailModal;
 
 // 海报缓存（命名空间随 Bangumi API / 图片反代配置变化而失效）
 const posterCache = {};
+let posterTrackTotal = 0;
+const posterPending = new Set();
+const posterFailed = new Set();
 
 function posterStorageKey(subjectId) {
     const ns = typeof window.__POSTER_CACHE_NS__ === 'string' ? window.__POSTER_CACHE_NS__ : '';
@@ -484,7 +487,7 @@ async function loadDashboardData() {
             showAlert('加载数据失败', 'danger');
         });
 
-    fetch(appUrl('/api/records?limit=6&skip_count=true&include_poster=true'), fetchOpts)
+    fetch(appUrl('/api/records?limit=6&skip_count=true'), fetchOpts)
         .then(function(res) { return res.json(); })
         .then(function(recordsData) {
             if (recordsData.status === 'success') {
@@ -607,56 +610,121 @@ function renderTimeline(records) {
 
     container.innerHTML = html;
 
-    // 异步加载海报（优先使用 records 响应中的 poster_url）
-    records.forEach(function(record) {
-        if (!record.subject_id) return;
-        if (record.poster_url) {
-            posterCache[record.subject_id] = record.poster_url;
-            try { localStorage.setItem(posterStorageKey(record.subject_id), record.poster_url); } catch (e) {}
-            applyPoster(record.subject_id, record.poster_url);
-        } else {
-            loadPoster(record.subject_id);
-        }
-    });
+    loadTimelinePosters(records);
 }
 
-async function fetchPosterFromApi(subjectId) {
-    const resp = await fetch(appUrl('/api/bgm/subjects/' + subjectId + '/poster'), {
-        credentials: 'include'
-    });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    const imgUrl = data.url;
-    if (!imgUrl) throw new Error('no image');
-    return imgUrl;
+function removePosterHint() {
+    const hint = document.getElementById('timeline-poster-hint');
+    if (hint) hint.remove();
 }
 
-async function loadPoster(subjectId, retry) {
-    if (posterCache[subjectId]) {
-        applyPoster(subjectId, posterCache[subjectId]);
-        return;
+function showPosterHintBanner() {
+    const timeline = document.getElementById('sync-timeline');
+    if (!timeline || document.getElementById('timeline-poster-hint')) return;
+
+    const hint = document.createElement('div');
+    hint.id = 'timeline-poster-hint';
+    hint.className = 'timeline-poster-hint alert alert-warning py-2 px-3 mb-3 small';
+    hint.innerHTML = '番剧封面无法加载。请前往 <a href="' + appUrl('/config') + '">配置管理</a> 设置 <strong>HTTP 代理</strong>，或配置 <strong>Bangumi API / 图片反代</strong>。详见 <a href="#" id="timeline-poster-hint-announcement">收件箱公告</a>。';
+    timeline.parentNode.insertBefore(hint, timeline);
+
+    const announcementLink = document.getElementById('timeline-poster-hint-announcement');
+    if (announcementLink) {
+        announcementLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (window.BangumiInbox && window.BangumiInbox.openAnnouncementById) {
+                window.BangumiInbox.openAnnouncementById('20260616-bgm-image-proxy');
+            }
+        });
     }
+}
 
-    try {
-        const cached = localStorage.getItem(posterStorageKey(subjectId));
-        if (cached) {
-            posterCache[subjectId] = cached;
-            applyPoster(subjectId, cached);
+function maybeShowPosterHint() {
+    if (posterPending.size > 0 || posterTrackTotal === 0) return;
+    if (posterFailed.size < posterTrackTotal) return;
+    showPosterHintBanner();
+}
+
+function markPosterFailed(subjectId) {
+    document.querySelectorAll('.timeline-poster img[data-sid="' + subjectId + '"]').forEach(function(img) {
+        const poster = img.closest('.timeline-poster');
+        if (!poster) return;
+        poster.classList.remove('timeline-poster--loading');
+        poster.classList.add('timeline-poster--placeholder');
+        poster.innerHTML = '<i class="bi bi-film"></i>';
+    });
+}
+
+function finishPoster(subjectId, success) {
+    const key = String(subjectId);
+    posterPending.delete(key);
+    if (!success) {
+        posterFailed.add(key);
+        markPosterFailed(subjectId);
+    }
+    maybeShowPosterHint();
+}
+
+function loadTimelinePosters(records) {
+    const subjectIds = [];
+    const seen = {};
+    records.forEach(function(record) {
+        if (!record.subject_id || seen[record.subject_id]) return;
+        seen[record.subject_id] = true;
+        subjectIds.push(record.subject_id);
+    });
+    if (subjectIds.length === 0) return;
+
+    posterTrackTotal = subjectIds.length;
+    posterPending.clear();
+    posterFailed.clear();
+    subjectIds.forEach(function(sid) { posterPending.add(String(sid)); });
+    removePosterHint();
+
+    const needFetch = [];
+    subjectIds.forEach(function(sid) {
+        if (posterCache[sid]) {
+            applyPoster(sid, posterCache[sid]);
             return;
         }
-    } catch (e) {}
+        try {
+            const cached = localStorage.getItem(posterStorageKey(sid));
+            if (cached) {
+                posterCache[sid] = cached;
+                applyPoster(sid, cached);
+                return;
+            }
+        } catch (e) {}
+        needFetch.push(sid);
+    });
 
-    try {
-        const imgUrl = await fetchPosterFromApi(subjectId);
-        posterCache[subjectId] = imgUrl;
-        try { localStorage.setItem(posterStorageKey(subjectId), imgUrl); } catch (e) {}
-        applyPoster(subjectId, imgUrl);
-    } catch (e) {
-        // 首次失败后延迟重试一次（应对首次登录时序问题）
-        if (!retry) {
-            setTimeout(function() { loadPoster(subjectId, true); }, 2000);
-        }
-    }
+    if (needFetch.length === 0) return;
+
+    const params = new URLSearchParams();
+    needFetch.forEach(function(sid) { params.append('subject_ids', sid); });
+
+    fetch(appUrl('/api/bgm/subjects/posters?' + params.toString()), {
+        credentials: 'include'
+    })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.status !== 'success') throw new Error('bad response');
+            const posters = data.posters || {};
+            needFetch.forEach(function(sid) {
+                const url = posters[String(sid)];
+                if (url) {
+                    posterCache[sid] = url;
+                    try { localStorage.setItem(posterStorageKey(sid), url); } catch (e) {}
+                    applyPoster(sid, url);
+                } else {
+                    finishPoster(sid, false);
+                }
+            });
+        })
+        .catch(function(error) {
+            console.error('批量加载封面失败:', error);
+            needFetch.forEach(function(sid) { finishPoster(sid, false); });
+        });
 }
 
 // 修复：querySelectorAll 确保同一 subject_id 的所有记录都设置海报
@@ -664,12 +732,12 @@ function applyPoster(subjectId, url) {
     document.querySelectorAll('.timeline-poster img[data-sid="' + subjectId + '"]').forEach(function(img) {
         img.onload = function() {
             img.classList.add('loaded');
-            var poster = img.closest('.timeline-poster');
+            const poster = img.closest('.timeline-poster');
             if (poster) poster.classList.remove('timeline-poster--loading');
+            finishPoster(subjectId, true);
         };
         img.onerror = function() {
-            var poster = img.closest('.timeline-poster');
-            if (poster) poster.classList.remove('timeline-poster--loading');
+            finishPoster(subjectId, false);
         };
         img.src = url;
     });

@@ -3227,6 +3227,10 @@ main.app-main > *:nth-child(12) {
     font-size: 1.1rem;
 }
 
+.timeline-poster-hint a {
+    font-weight: 600;
+}
+
 /* 信息区域 */
 .tl-body {
     flex: 1;

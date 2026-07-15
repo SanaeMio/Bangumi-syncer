@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..core.logging import logger
-from ..utils.bgm_poster_service import get_poster_urls
+from ..utils.bgm_poster_service import get_poster_urls, normalize_subject_id
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/bgm", tags=["bgm"])
@@ -33,3 +33,30 @@ async def get_subject_poster(
         raise HTTPException(status_code=404, detail="该条目无封面图")
 
     return {"status": "success", "url": poster_url}
+
+
+@router.get("/subjects/posters")
+async def get_subjects_posters(
+    subject_ids: list[int] = Query(default=[]),
+    current_user: dict = Depends(get_current_user_flexible),
+) -> dict[str, Any]:
+    """批量返回条目封面图 URL（缺失条目不出现在 posters 中）。"""
+    ids: list[int] = []
+    seen: set[int] = set()
+    for raw_id in subject_ids:
+        subject_id = normalize_subject_id(raw_id)
+        if subject_id is not None and subject_id not in seen:
+            seen.add(subject_id)
+            ids.append(subject_id)
+
+    if not ids:
+        return {"status": "success", "posters": {}}
+
+    try:
+        poster_map = await get_poster_urls(ids)
+    except Exception as e:
+        logger.warning("批量获取封面失败: %s", e)
+        raise HTTPException(status_code=502, detail="获取条目信息失败") from e
+
+    posters = {str(subject_id): url for subject_id, url in poster_map.items()}
+    return {"status": "success", "posters": posters}
