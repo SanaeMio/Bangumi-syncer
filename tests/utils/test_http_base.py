@@ -202,18 +202,18 @@ class TestSyncHttpClient:
             client = SyncHttpClient(label="T", max_retries=0)
             assert client.request("GET", "http://example.com") is resp
 
-    def test_request_logs_info_success(self):
+    def test_request_logs_debug_success(self):
         resp = _mock_response(status_code=200, text="hello")
         with patch("app.utils.http_base.create_sync_client") as mc:
             mc.return_value = _mock_sync_httpx(response=resp)
             with patch("app.utils.http_base.logger") as ml:
                 client = SyncHttpClient(label="T", max_retries=0).prefix("🔔")
                 client.request("GET", "http://example.com")
-                assert ml.info.call_count == 1
-                info_msg = str(ml.info.call_args[0][0])
-                assert "🔔" in info_msg
-                assert "[T]" in info_msg and "GET" in info_msg and "200" in info_msg
-                ml.debug.assert_called()
+                assert ml.info.call_count == 0
+                debug_msgs = [str(c[0][0]) for c in ml.debug.call_args_list]
+                summary = next(m for m in debug_msgs if "→ 200" in m)
+                assert "🔔" in summary
+                assert "[T]" in summary and "GET" in summary
 
     def test_request_failure_logs(self):
         err = httpx.ConnectError("conn refused")
@@ -462,13 +462,13 @@ class TestLogging:
             msg = ml.debug.call_args[0][0]
             assert "Body(Form)" in msg
 
-    def test_log_success_info_and_debug(self):
+    def test_log_success_debug_only(self):
         resp = _mock_response(status_code=200, text="hello", headers={"X": "1"})
         client = SyncHttpClient(label="T").prefix("🚀").success_tpl("成功")
         with patch("app.utils.http_base.logger") as ml:
             client._log_success(resp, "GET", "http://example.com")
-            assert ml.info.call_count == 1
-            ml.debug.assert_called_once()
+            assert ml.info.call_count == 0
+            assert ml.debug.call_count == 2
 
     def test_log_failure_info(self):
         client = (
