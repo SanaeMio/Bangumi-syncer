@@ -14,7 +14,7 @@ Bangumi-Syncer (BS) 是一个将媒体服务器（Plex/Emby/Jellyfin/Trakt/Feini
 
 1. **构建 LLM 基础模块** (`app/services/llm/`) — 独立 service package，provider 抽象，重试/日志
 2. **基于 LLM 模块构建追番总结** (`app/services/summary/`) — 多用户适配，综合 webhook/定时任务/database
-3. **前后端配套** — LLM 配置融入 config.html，Summary Job CRUD 独立页面，Dashboard 集成用量统计，交叉链接
+3. **前后端配套** — LLM 配置和 Summary Job CRUD 全在 `config.html` 内（一站式管理），不新增页面，Dashboard 集成用量统计
 
 ## Architecture
 
@@ -75,16 +75,37 @@ app/utils/notifier/        通知（现有 package，修改 3 个文件）
 | `user_prompt_template` | string | (中文默认) | 用户提示词模板，变量：`{date_from}`, `{date_to}`, `{records}`, `{record_count}`, `{lookback_days}` |
 | `max_records` | int | `200` | 最大记录数，超出截断 |
 
-默认 prompt：
-```
-system_prompt: 你是一个友好的追番助手。请根据提供的观影记录，用中文生成一个简洁的追番总结。内容包括：观看的番剧列表、观看进度、以及轻松有趣的评论。保持亲切自然的口吻。
+### 默认 Prompt 设计
 
-user_prompt_template: 以下是 {date_from} 到 {date_to} 的观影记录（共 {record_count} 条）：
+**设计原则：**
+1. 角色明确、口吻自然——避免机械的"以下是您的数据"风格
+2. 结构清晰——骨架固定，LLM 负责填充内容
+3. Token 经济——prompt 本身尽量简洁，把 token 预算留给 records
+4. 多用户感知——records 中自带 `user_name`，LLM 应自然地按用户分组描述
+5. 空记录兜底——如果 `{record_count}` 为 0，LLM 应友好地告知 "今天还没有追番记录"
+
+**默认 system_prompt：**
+
+```
+你是一个轻松有趣的追番助手。用户会给你一段观影记录，请你用亲切自然的中文生成追番总结。
+
+规则：
+1. 如果记录为 0 条，友好地告知用户"今天还没有追番记录哦~"
+2. 按番剧分组，简要描述观看进度（如"《芙莉莲》追到 S1E10"）
+3. 如果涉及多用户（记录中 user_name 不同），按用户分开描述
+4. 加一两句轻松评论，语气像朋友聊天，不要太正式
+5. 限制在 300 字以内
+```
+
+**默认 user_prompt_template：**
+
+```
+{date_from} 至 {date_to} 观影记录（共 {record_count} 条）：
 
 {records}
-
-请根据以上记录生成追番总结。
 ```
+
+**为什么 user_prompt_template 这么简单？** 结构化的指令全部放在 system_prompt 中（role + rules），user_prompt_template 只负责"塞数据"——{records} 是格式化的纯文本表格。这个分工让用户自定义时也更清晰：改 system_prompt 调整风格/规则，改 user_prompt_template 调整数据呈现方式。
 
 ## Key Design Decisions
 
@@ -116,67 +137,58 @@ class ChatResponse(BaseModel):
     usage: Usage | None = None  # prompt_tokens, completion_tokens, total_tokens
 ```
 
-### 2. webhook 路由：动态 notification type（利用现有 `types` 匹配）
+### 2. webhook 路由：watching_summary 是一种普通通知类型
 
-summary job 发送通知时，notification type 根据 `user_name` 动态拼接：
-
-```python
-# SummaryService.execute_job()
-user_name = job_config.get("user_name", "")
-notif_type = f"watching_summary_{user_name}" if user_name else "watching_summary"
-notifier.send_notification_by_type(notif_type, data)
-```
-
-用户通过现有 webhook `types` 字段精确控制接收范围（完全利用现有字符串包含匹配机制，`notifier.py:275`）：
+`watching_summary` 与现有的 `mark_success`、`mark_failed`、`request_received` 等完全平级——用户通过在 webhook/email 配置的 `types` 字段中勾选来订阅。
 
 ```ini
+# 现有 webhook，新增 watching_summary 类型即可
 [webhook-1]
-types = watching_summary_dad               # 只收爸爸的总结
+types = mark_failed,watching_summary    # 收失败通知 + AI 追番总结
 
 [webhook-2]
-types = watching_summary,watching_summary_kid  # 全家总结 + 孩子专属
+types = watching_summary_dad             # 只收爸爸的总结
 ```
 
-Notifier 只需改一处：`_build_payload_by_type` 中对 `watching_summary` 的判断改为子串包含（`"watching_summary" in notification_type`），与现有 `types` 字段的 `in` 匹配逻辑一致。`"watching_summary"` 不会出现在任何现有 notification type 名中，零冲突。
+**零新增配置机制。** 不需要 `webhook_ids` 过滤、不需要新的 UI 控件——完全复用现有 webhook/email CRUD 的 `types` 多选框（在 webhook/email Modal 中加一个 checkbox）。用户名级别的路由通过动态 notification type（`watching_summary_{user_name}`）自然实现。
 
-### 3. UI 布局：LLM 配置融入 config.html，Summary CRUD 独立页面，交叉链接
+### 3. UI 布局：全在 config.html，不新增页面
 
 ```
-config.html                          /summary 页面
-┌────────────────────────┐          ┌──────────────────────────┐
-│ ... 现有 sections ...  │          │ 📊 追番总结                 │
-│                        │          │                          │
-│ 🔔 通知配置             │          │ 🤖 LLM 状态                │
-│  Webhook 管理 [卡片]    │          │ model: gpt-4o-mini ✅      │
-│  Email 管理 [卡片]      │          │ [修改 LLM 配置 → /config]  │
-│                        │  ╭──→   │                          │
-│ 🆕 AI 追番总结 ────────→╯  │      │ 📋 Summary Jobs            │
-│  管理定时总结任务 →       │  │      │ [+ 新建]                  │
-│                        │  │      │ ┌────────────────────┐    │
-│ ... 飞牛/Fongmi ...    │  │      │ │ Job 1: 爸爸日报  ✅  │    │
-│                        │  │      │ │ cron: 0 21 * * *   │    │
-│ 🤖 LLM 配置 [新增]      │  │      │ │ user: dad          │    │
-│  api_base, api_key,    │←─╯      │ │ [测试][触发][编辑]  │    │
-│  model, max_tokens ... │          │ └────────────────────┘    │
-│  [测试连接]             │          │ ┌────────────────────┐    │
-└────────────────────────┘          │ │ Job 2: 孩子周报  ✅  │    │
-                                    │ │ cron: 0 20 * * 0   │    │
-                                    │ │ [测试][触发][编辑]  │    │
-                                    │ └────────────────────┘    │
-                                    │                          │
-                                    │ 📬 [配置 Webhook 通知 →]  │
-                                    └──────────────────────────┘
+config.html section 导航 (TOC 锚点):
+├── 同步配置
+├── Bangumi 账号
+├── 多用户 (mode=multi 时)
+├── 高级配置
+├── Web 认证
+├── Bangumi-data
+├── 🤖 LLM 配置 [新增 - 顶层 section，与同步/Bangumi 同级]
+│   ├── api_base, api_key (密码框), model, max_tokens, temperature, timeout
+│   └── [测试连接] 按钮 → POST /api/summary/llm/test → toast 结果
+├── 📊 AI 追番总结 [新增 - 卡片式 CRUD，仿 webhook 管理]
+│   ├── [+ 新建 Job] 按钮
+│   ├── Job 卡片列表 (row g-3 > col-md-6):
+│   │   ┌──────────────────────────────────┐
+│   │   │ ✅ 爸爸日报               [开关] │
+│   │   │ cron: 0 21 * * * (每日 21:00)   │
+│   │   │ 用户: dad | 回溯: 1天 | 200条   │
+│   │   │ 📊 本月: 30次 / 90K tokens      │
+│   │   │ [测试] [触发] [编辑] [删除]      │
+│   │   └──────────────────────────────────┘
+│   ├── 新建/编辑 Modal (#summaryJobModal): 11 字段 + 系统/用户提示词 textarea
+│   ├── 删除确认 Modal (#deleteSummaryModal)
+│   └── 测试结果 Modal: summary 文本 + token 用量
+├── 通知配置 (Webhook + Email 卡片式 CRUD)
+├── 飞牛配置
+└── Fongmi 配置
 ```
 
-交叉链接清单：
-
-| 位置 | 链接 | 跳转目标 |
-|------|------|---------|
-| config.html 通知配置区 | "管理 AI 追番总结 →" | `/summary` |
-| /summary 页面 LLM 状态卡 | "修改 LLM 配置 →" | `/config`（锚点） |
-| /summary 页面底部 | "配置 Webhook 通知渠道 →" | `/config`（锚点） |
-
-所有链接使用 `{{ '/path' | p }}`（现有 Jinja2 filter）实现相对路径跳转，兼容反向代理部署。
+**关键决策：**
+- 不新增页面（无 `/summary`），不新增 JS 文件（无 `summary.js`）
+- 不修改 `base.html`（无需新增导航项——"配置"导航已存在）
+- 不修改 `pages.py`（无需新增路由）
+- 所有 Summary Job 前端逻辑内联到 `config.html` 的 `<script>` 中
+- Dashboard LLM 用量 stat cards 保留
 
 ### 4. 多用户适配
 
@@ -191,7 +203,7 @@ config.html                          /summary 页面
 
 | 层面 | 存储 | 用途 | 消费者 |
 |------|------|------|--------|
-| 结构化用量日志 | SQLite `llm_usage_logs` 表 | 聚合统计、趋势图表、成本估算 | Dashboard 用量卡片 + /summary 页面详细图表 |
+| 结构化用量日志 | SQLite `llm_usage_logs` 表 | 聚合统计、趋势图表 | Dashboard 用量卡片 + config.html AI 追番总结区 |
 | 运维日志 | `log.txt`（现有 Logger） | 错误排查、调试 | `/logs` 页面 |
 
 **结构化表设计（仿照 `sync_records` 表模式）：**
@@ -243,7 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_logs_job_id ON llm_usage_logs(job_id);
 | 位置 | 展示内容 | 数据来源 |
 |------|---------|---------|
 | Dashboard | 新增 LLM 用量卡片组（本月调用次数/Token/平均延迟，仿现有 stat cards 模式），放在现有 4 张卡片旁边 | `GET /api/summary/llm/stats?scope=aggregate` |
-| /summary 页面 | 用量概览卡片 + 7 天折线图 + 每个 job 卡片的用量小计 | `GET /api/summary/llm/stats` (含 by_job, daily 分组) |
+| config.html | AI 追番总结区的 Job 卡片含该 job 用量小计 | `GET /api/summary/llm/stats` (含 by_job 分组) |
 
 Dashboard 集成方式参考现有模式：
 - 卡片布局：现有 4 张 `col-md-3` stat cards（total-syncs, today-syncs, success-rate, error-syncs），新增 2 张或更多 LLM stat cards 排在同一行
@@ -353,23 +365,14 @@ API 端点：
 | POST | `/api/summary/jobs/{id}/test` | 测试运行（生成 + 发送） |
 | POST | `/api/summary/jobs/{id}/trigger` | 手动触发 |
 
-### Phase 6: 前端（2 个新文件 + 4 个修改文件）
+### Phase 6: 前端（0 个新文件，2 个修改文件）
 
-**新文件：**
-
-| 文件 | 内容 |
-|------|------|
-| `templates/summary.html` | 独立页面：LLM 状态卡 + 用量概览卡片组（本月调用/Token/延迟/错误）+ 7 天用量折线图 + Summary Job 卡片列表（每张含该 job 用量小计）+ Add/Edit Modal + Delete Modal + Test Result 区域 + 交叉链接 |
-| `static/js/summary.js` | JS：fetch API 调用、用量统计渲染（loadLLMStats + Chart.js 绑图）、卡片渲染（renderSummaryJobs）、Modal CRUD、Test/Trigger 交互 |
-
-**修改文件：**
+**不新增页面，不新增 JS 文件。** 所有逻辑内联到 `config.html`（仿 webhook/email CRUD 模式）。
 
 | 文件 | 改动 |
 |------|------|
-| `templates/base.html` | 侧边栏 + 移动导航增加 "AI 总结"（`bi-robot`，路径 `/summary`） |
-| `templates/config.html` | 新增 "LLM 配置" section（6 字段表单 + 测试连接按钮）+ 通知配置区底部加 "管理 AI 追番总结 →" 链接 |
+| `templates/config.html` | 新增 "LLM 配置" section（顶层，6 字段 + 测试连接）+ "AI 追番总结" 卡片式 CRUD section（Job 列表 + 新建/编辑/删除 Modal + Test Result Modal）+ 所有内联 JS（~500 lines） |
 | `templates/dashboard.html` | 新增 LLM 用量 stat cards（仅在 LLM 已配置时展示） |
-| `app/api/pages.py` | `GET /summary` 页面路由，auth 检查，返回 `summary.html` |
 
 ### Phase 7: 生命周期集成（1 个修改文件）
 
@@ -397,10 +400,8 @@ API 端点：
 | `app/core/database/llm_usage.py` | ~80 |
 | `app/models/summary.py` | ~80 |
 | `app/api/summary.py` | ~250 |
-| `templates/summary.html` | ~400 |
-| `static/js/summary.js` | ~300 |
 
-### Modified files (10)
+### Modified files (7)
 
 | 文件 | 改动 |
 |------|------|
@@ -411,12 +412,10 @@ API 端点：
 | `app/utils/notifier/html_builders.py` | +watching_summary email HTML (~20 lines) |
 | `app/utils/notifier/email_sender.py` | +watching_summary email subject (~10 lines) |
 | `app/main.py` | router + lifecycle (~30 lines) |
-| `templates/base.html` | 侧边栏 + 移动导航 (~20 lines) |
-| `templates/config.html` | LLM 配置 section + 交叉链接 (~80 lines) |
-| `templates/dashboard.html` | 新增 LLM 用量 stat cards（仅在 LLM 已配置时展示）(~40 lines) |
-| `app/api/pages.py` | +1 页面路由 (~15 lines) |
+| `templates/config.html` | LLM 配置 section + AI 追番总结卡片式 CRUD + 所有内联 JS (~500 lines) |
+| `templates/dashboard.html` | 新增 LLM 用量 stat cards (~40 lines) |
 
-总计：~1680 新行 + ~323 修改行。零新依赖（httpx 已有）。
+总计：~985 新行 + ~708 修改行。零新依赖（httpx 已有）。
 
 ## Verification
 
@@ -429,4 +428,4 @@ API 端点：
    - 验证 cron 定时触发
    - 验证 config.html LLM 配置区正常工作
    - 验证 Dashboard LLM 用量卡片
-   - 验证交叉链接跳转
+   - 验证 config.html 内所有 section（LLM 配置 + AI 追番总结 CRUD）正常工作
