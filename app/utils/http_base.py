@@ -4,8 +4,8 @@
 支持链式配置自定义成功/失败消息，不改变原有 httpx API 行为。
 
 日志策略：
-  INFO  — 自定义简短消息 + 技术摘要（METHOD url → status elapsed）
-  DEBUG — 请求详情（headers, params, body）+ 响应详情（headers, body）
+  INFO  — 失败摘要（METHOD url → error）
+  DEBUG — 成功摘要（METHOD url → status elapsed）+ 请求/响应详情
 
 使用示例::
 
@@ -154,10 +154,9 @@ class HttpClientBase:
         logger.debug("\n".join(parts))
 
     def _log_success(self, response: httpx.Response, method: str, url: str) -> None:
-        """INFO: 合并摘要（prefix + 技术信息）; DEBUG: 响应详情"""
+        """DEBUG: 成功摘要（prefix + 技术信息）+ 响应详情"""
         elapsed = response.elapsed.total_seconds()
-        # INFO: 合并为单条日志
-        logger.info(
+        logger.debug(
             f"{self._prefix}[{self._label}] {method.upper()} {url} "
             f"→ {response.status_code} ({elapsed:.2f}s)"
         )
