@@ -6,7 +6,7 @@ import datetime
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from .config import ConfigManager
@@ -72,6 +72,34 @@ class Logger:
         # 不在 __init__ 中打开日志文件：模块执行 logger = Logger() 时，若此处导入
         # config，而 config 初始化链又 import logger，会触发 partially initialized 循环依赖。
         self._log_file_lazy_initialized = False
+        # 日志监听器列表（用于实时捕获日志，如重试 SSE 推送）
+        self._listeners: list[Callable[[str, str], None]] = []
+
+    def add_listener(self, callback: Callable[[str, str], None]) -> None:
+        """添加日志监听器
+
+        callback 签名: callback(log_line: str, level: str)
+        log_line 为完整日志行（含时间戳和级别前缀），level 为级别字符串（DEBUG/INFO/WARNING/ERROR）
+        """
+        self._listeners.append(callback)
+
+    def remove_listener(self, callback: Callable[[str, str], None]) -> None:
+        """移除日志监听器"""
+        try:
+            self._listeners.remove(callback)
+        except ValueError:
+            pass
+
+    def _notify_listeners(self, log_line: str, level: Optional[str]) -> None:
+        """通知所有监听器（监听器异常不影响日志输出）"""
+        if not self._listeners:
+            return
+        level_str = level or ""
+        for cb in list(self._listeners):
+            try:
+                cb(log_line, level_str)
+            except Exception:
+                pass
 
     def _get_safe_username(self) -> str:
         """安全地获取用户名"""
@@ -181,6 +209,15 @@ class Logger:
             for i in args
         ]
 
+    def _format_log_line(self, *args, level: Optional[str]) -> str:
+        """格式化日志行（不输出）"""
+        level_prefix = f"[{level}]" if level else ""
+        timestamp = (
+            f"[{datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S.%f')[:-3]}] "
+        )
+        message = " ".join(str(i) for i in args)
+        return timestamp + level_prefix + " " + message
+
     def log(
         self,
         *args,
@@ -194,14 +231,7 @@ class Logger:
 
         self._lazy_init_log_file_once()
 
-        # 根据日志级别添加对应的标识符
-        level_prefix = f"[{level}]" if level else ""
-
-        timestamp = (
-            f"[{datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S.%f')[:-3]}] "
-        )
-        message = " ".join(str(i) for i in args)
-        log_line = timestamp + level_prefix + " " + message
+        log_line = self._format_log_line(*args, level=level)
 
         # 确保有换行符
         if end is None:
@@ -216,6 +246,9 @@ class Logger:
         if hasattr(self, "log_file"):
             self.log_file.write(log_line + end)
 
+        # 通知监听器
+        self._notify_listeners(log_line, level)
+
     def info(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
         """INFO级别日志"""
         if not silence and self.need_mix:
@@ -224,8 +257,13 @@ class Logger:
 
     def debug(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
         """DEBUG级别日志"""
-        # DEBUG级别只在调试模式下输出
+        # DEBUG级别只在调试模式下输出到控制台/文件
         if not self.debug_mode:
+            # 即使 debug_mode 关闭，也通知监听器（用于重试时捕获 debug 日志）
+            if self._listeners and not silence:
+                mixed_args = self.mix_args_str(*args) if self.need_mix else args
+                log_line = self._format_log_line(*mixed_args, level=self.DEBUG)
+                self._notify_listeners(log_line, self.DEBUG)
             return
         if not silence and self.need_mix:
             args = self.mix_args_str(*args)

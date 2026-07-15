@@ -3,12 +3,15 @@
 """
 
 import ast
+import asyncio
 import json
 import time
 import traceback
+from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sse_starlette.sse import EventSourceResponse
 
 from ..core.logging import logger
 from ..core.security import security_manager
@@ -301,19 +304,7 @@ async def retry_sync_record(
         )
 
         # 重新构建同步项目
-        retry_media = (record.get("media_type") or "episode").lower()
-        if retry_media not in ("episode", "movie"):
-            retry_media = "episode"
-        retry_item = CustomItem(
-            media_type=retry_media,
-            title=record.get("title", ""),
-            ori_title=record.get("ori_title") or None,
-            season=record.get("season", 1),
-            episode=record.get("episode", 1),
-            release_date="",
-            user_name=record.get("user_name", ""),
-            source=retry_source,  # 使用组合来源标识这是重试记录
-        )
+        retry_item = _build_retry_item(record, retry_source)
 
         logger.info(
             f"重试同步记录 {record_id}: {retry_item.title} S{retry_item.season:02d}E{retry_item.episode:02d}, 原始来源: {original_source}, 重试来源: {retry_source}"
@@ -344,6 +335,157 @@ async def retry_sync_record(
     except Exception as e:
         logger.error(f"重试同步记录失败: {e}")
         raise HTTPException(status_code=500, detail=f"重试失败: {str(e)}")
+
+
+def _build_retry_item(record: dict, retry_source: str) -> CustomItem:
+    """从同步记录构建重试用的 CustomItem"""
+    retry_media = (record.get("media_type") or "episode").lower()
+    if retry_media not in ("episode", "movie"):
+        retry_media = "episode"
+    return CustomItem(
+        media_type=retry_media,
+        title=record.get("title", ""),
+        ori_title=record.get("ori_title") or None,
+        season=record.get("season", 1),
+        episode=record.get("episode", 1),
+        release_date="",
+        user_name=record.get("user_name", ""),
+        source=retry_source,
+    )
+
+
+@router.get("/records/{record_id}/retry/stream")
+async def retry_sync_record_stream(
+    record_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """重试同步记录（SSE 流式推送 debug 日志）
+
+    事件类型：
+    - start: 重试开始，包含记录基本信息
+    - log: 实时日志行，包含 level 和 line
+    - done: 重试完成，包含最终状态和消息
+    - error: 重试过程异常
+    - ping: 心跳保活
+    """
+    # 获取原始记录
+    record = sync_service.get_sync_record_by_id(record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    if record.get("status") != "error":
+        raise HTTPException(status_code=400, detail="只能重试失败的记录")
+
+    original_source = record.get("source", "custom")
+    retry_source = f"retry-{original_source}"
+    retry_item = _build_retry_item(record, retry_source)
+
+    logger.info(
+        f"重试同步记录 {record_id}（流式）: {retry_item.title} S{retry_item.season:02d}E{retry_item.episode:02d}, 原始来源: {original_source}, 重试来源: {retry_source}"
+    )
+
+    async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
+        loop = asyncio.get_event_loop()
+        log_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+        def log_listener(log_line: str, level: str) -> None:
+            # 线程安全地投递日志到事件循环的队列
+            loop.call_soon_threadsafe(log_queue.put_nowait, (log_line, level))
+
+        # 注册日志监听器
+        logger.add_listener(log_listener)
+
+        try:
+            # 推送开始事件
+            yield {
+                "event": "start",
+                "data": json.dumps(
+                    {
+                        "record_id": record_id,
+                        "title": retry_item.title,
+                        "season": retry_item.season,
+                        "episode": retry_item.episode,
+                        "source": retry_source,
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+
+            # 在线程中执行同步任务（sync_custom_item 是同步方法，会阻塞事件循环）
+            task = asyncio.create_task(
+                asyncio.to_thread(
+                    sync_service.sync_custom_item, retry_item, source=retry_source
+                )
+            )
+
+            # 等待任务完成，同时实时推送日志
+            while not task.done():
+                try:
+                    log_line, level = await asyncio.wait_for(
+                        log_queue.get(), timeout=1.0
+                    )
+                    yield {
+                        "event": "log",
+                        "data": json.dumps(
+                            {"line": log_line, "level": level}, ensure_ascii=False
+                        ),
+                    }
+                except asyncio.TimeoutError:
+                    # 超时无日志，发送心跳保持连接
+                    yield {"event": "ping", "data": ""}
+
+            # 推送任务完成前残留的日志
+            while not log_queue.empty():
+                log_line, level = log_queue.get_nowait()
+                yield {
+                    "event": "log",
+                    "data": json.dumps(
+                        {"line": log_line, "level": level}, ensure_ascii=False
+                    ),
+                }
+
+            # 获取同步结果
+            result = await task
+
+            # 更新原记录状态
+            if result.status == "success":
+                sync_service.update_sync_record_status(
+                    record_id=record_id,
+                    status="retried",
+                    message=f"已重试成功: {result.message}",
+                )
+            elif result.status == "ignored":
+                sync_service.update_sync_record_status(
+                    record_id=record_id,
+                    status="retried",
+                    message=f"重试被忽略: {result.message}",
+                )
+
+            # 推送完成事件
+            yield {
+                "event": "done",
+                "data": json.dumps(
+                    {
+                        "status": result.status,
+                        "message": result.message,
+                        "data": result.data,
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+
+        except Exception as e:
+            logger.error(f"重试同步记录失败（流式）: {e}")
+            yield {
+                "event": "error",
+                "data": json.dumps(
+                    {"message": f"重试失败: {str(e)}"}, ensure_ascii=False
+                ),
+            }
+        finally:
+            logger.remove_listener(log_listener)
+
+    return EventSourceResponse(event_generator())
 
 
 @router.get("/stats")
