@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from ..core.config import config_manager
@@ -124,18 +125,42 @@ def get_poster_urls_sync(
     subject_ids: list[Any],
     prefer_sizes: tuple[str, ...] | None = None,
 ) -> dict[int, str]:
-    """同步批量解析封面 URL；失败条目跳过。"""
+    """同步批量解析封面 URL；失败条目跳过；未缓存条目并行请求。"""
     sizes = prefer_sizes if prefer_sizes is not None else timeline_poster_size_order()
     result: dict[int, str] = {}
     seen: set[int] = set()
+    to_fetch: list[int] = []
+    namespace = _poster_cache_namespace()
+
     for raw_id in subject_ids:
         subject_id = normalize_subject_id(raw_id)
         if subject_id is None or subject_id in seen:
             continue
         seen.add(subject_id)
-        url = _resolve_poster_url_sync(subject_id, prefer_sizes=sizes)
-        if url:
-            result[subject_id] = url
+        cached = _get_cached_poster_url(subject_id, namespace)
+        if cached:
+            result[subject_id] = cached
+        else:
+            to_fetch.append(subject_id)
+
+    if not to_fetch:
+        return result
+
+    max_workers = min(8, len(to_fetch))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_id = {
+            executor.submit(_resolve_poster_url_sync, sid, sizes): sid
+            for sid in to_fetch
+        }
+        for future in as_completed(future_to_id):
+            subject_id = future_to_id[future]
+            try:
+                url = future.result()
+                if url:
+                    result[subject_id] = url
+            except Exception as e:
+                logger.warning("获取条目 %s 封面失败: %s", subject_id, e)
+
     return result
 
 

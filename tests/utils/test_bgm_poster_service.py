@@ -139,3 +139,24 @@ async def test_get_poster_urls_async():
 
     assert result == {1: "https://example.com/1.jpg"}
     mock_sync.assert_called_once_with([1], None)
+
+
+def test_get_poster_urls_sync_parallel_partial_failure():
+    mock_bgm = MagicMock()
+    mock_bgm.get_subject.side_effect = [
+        RuntimeError("network"),
+        {"id": 2, "images": {"small": "https://lain.bgm.tv/pic/cover/s/c/d/2.jpg"}},
+        {"id": 3, "images": {"small": "https://lain.bgm.tv/pic/cover/s/c/d/3.jpg"}},
+    ]
+
+    with patch(
+        "app.utils.bgm_poster_service.get_shared_bangumi_api", return_value=mock_bgm
+    ):
+        with patch("app.utils.bgm_poster_service.config_manager.get", return_value=""):
+            result = get_poster_urls_sync([1, 2, 3])
+
+    assert result == {
+        2: "https://lain.bgm.tv/pic/cover/s/c/d/2.jpg",
+        3: "https://lain.bgm.tv/pic/cover/s/c/d/3.jpg",
+    }
+    assert mock_bgm.get_subject.call_count == 3
