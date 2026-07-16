@@ -12,7 +12,7 @@
     <!-- 说明信息 -->
     <div class="alert alert-info" role="alert">
         <i class="bi bi-info-circle me-2"></i>
-        <strong>匹配记录说明：</strong>记录每次同步请求的番剧匹配过程，包括匹配方式（自定义映射 / bangumi-data / API 搜索）、匹配置信度、候选列表。在「配置管理」开启调试模式后会记录完整的匹配追踪详情。
+        <strong>匹配记录说明：</strong>记录每次同步请求的番剧匹配过程，包括匹配方式（自定义映射 / bangumi-data / API 搜索）、匹配置信度、候选列表。点击「查看匹配过程」可查看三段式匹配的完整追踪详情。
     </div>
     <!-- 筛选条件 -->
     <div class="card mb-4 filter-card">
@@ -362,7 +362,7 @@ async function showMatchDetail(recordId) {
             html += `
                 <div class="alert alert-warning mb-0">
                     <i class="bi bi-exclamation-triangle me-2"></i>
-                    此记录无匹配追踪详情。请在「配置管理」开启调试模式（[dev] debug = True）后再同步，以记录完整匹配过程。
+                    此记录无匹配追踪详情。
                 </div>
             `;
         }

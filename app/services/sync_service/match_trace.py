@@ -1,8 +1,8 @@
 """
 匹配过程追踪数据结构
 
-用于 debug 模式下记录三段式匹配的完整过程，供"匹配记录"页面和"调试工具"展示。
-非 debug 模式下不创建 MatchTrace 对象，零开销。
+记录三段式匹配的完整过程（custom_mapping → bangumi_data → api_search），
+供"匹配记录"页面和"调试工具"展示。每次同步请求都会创建 MatchTrace 对象。
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ class MatchStep:
 class MatchTrace:
     """完整匹配过程追踪
 
-    在 debug 模式下由 _find_subject_id 创建并填充，记录三段式匹配的每个阶段。
+    由 _find_subject_id 创建并填充，记录三段式匹配的每个阶段。
     匹配完成后写入 sync_records.match_trace（JSON）并返回给调用方。
     """
 

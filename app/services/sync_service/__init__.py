@@ -290,14 +290,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         - 成功：(id, flag, None)
         - 失败：(None, False, 应立即返回的 SyncResponse)
         """
-        # debug 模式下创建匹配追踪
-        trace = None
-        if logger.debug_mode:
-            trace = MatchTrace(
-                request_title=item.title,
-                request_ori_title=item.ori_title or "",
-                request_season=item.season,
-            )
+        # 始终创建匹配追踪，记录三段式匹配过程供「匹配记录」页面展示
+        trace = MatchTrace(
+            request_title=item.title,
+            request_ori_title=item.ori_title or "",
+            request_season=item.season,
+        )
 
         # 查找番剧ID及其是否为特定季度ID的标记
         subject_id, is_season_matched_id, subject_find_error = self._find_subject_id(
@@ -305,17 +303,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         )
 
         # 存储匹配追踪信息（供后续 log_sync_record 使用）
-        if trace:
-            trace.finish()
-            self._last_match_trace = trace
-            self._last_match_method = trace.final_match_method
-            self._last_match_score = trace.final_score
-            self._last_match_platform = ""  # 暂无 platform 信息，后续阶段补充
-        else:
-            self._last_match_trace = None
-            self._last_match_method = ""
-            self._last_match_score = None
-            self._last_match_platform = ""
+        trace.finish()
+        self._last_match_trace = trace
+        self._last_match_method = trace.final_match_method
+        self._last_match_score = trace.final_score
+        self._last_match_platform = ""  # 暂无 platform 信息，后续阶段补充
 
         if subject_id:
             return subject_id, is_season_matched_id, None
@@ -751,7 +743,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         返回 (subject_id, is_season_matched_id, failure_detail)。
         成功时 failure_detail 为空字符串；失败时为简短原因，供同步记录与日志使用。
 
-        当传入 trace 时（debug 模式），会记录每个匹配阶段的详细过程。
+        当传入 trace 时，会记录每个匹配阶段的详细过程。
         """
         # 阶段 1：自定义映射
         if trace:
