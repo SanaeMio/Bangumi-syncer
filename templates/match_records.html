@@ -610,8 +610,6 @@ async function testMatch() {
 
         if (response.ok && result.status === 'success') {
             resultDiv.innerHTML = renderMatchTraceResult(result.data, title, season, episode);
-            // 匹配测试完成后刷新匹配记录列表，展示刚写入的记录
-            loadMatchRecords(1);
         } else {
             const detail = result.detail || result.message || '请求失败';
             resultDiv.innerHTML = `

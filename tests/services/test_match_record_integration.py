@@ -1,7 +1,7 @@
 """匹配记录与测试匹配的集成测试
 
 验证：
-1. test_match 写入匹配记录（source=test-match）
+1. test_match 不写入 sync_records（避免污染统计）
 2. 新媒体类型（ova/oad/real_action）在 sync_custom_item 中的路由
 3. MatchTrace 新字段是否正确填充
 """
@@ -13,15 +13,14 @@ from app.services.sync_service import SyncService
 from app.services.sync_service.match_trace import MatchTrace
 
 
-class TestTestMatchWritesRecord:
-    """test_match 应写入匹配记录"""
+class TestTestMatchNoDbWrite:
+    """test_match 不应写入数据库，避免污染 dashboard 统计与同步记录列表"""
 
     def _make_service(self):
-        svc = SyncService()
-        return svc
+        return SyncService()
 
-    def test_test_match_writes_success_record(self):
-        """test_match 命中时写入 success 记录"""
+    def test_test_match_does_not_write_record_on_success(self):
+        """test_match 命中时不写库"""
         svc = self._make_service()
         item = CustomItem(
             media_type="episode",
@@ -37,19 +36,10 @@ class TestTestMatchWritesRecord:
             ):
                 result = svc.test_match(item)
         assert result["subject_id"] == "12345"
-        # 验证 log_sync_record 被调用
-        mock_db.log_sync_record.assert_called_once()
-        call_kwargs = mock_db.log_sync_record.call_args
-        assert call_kwargs.kwargs["source"] == "test-match"
-        assert call_kwargs.kwargs["status"] == "success"
-        assert call_kwargs.kwargs["subject_id"] == "12345"
-        assert (
-            call_kwargs.kwargs["match_method"] == "custom_mapping"
-            or call_kwargs.kwargs["match_method"] == "failed"
-        )
+        mock_db.log_sync_record.assert_not_called()
 
-    def test_test_match_writes_error_record_on_failure(self):
-        """test_match 未命中时写入 error 记录"""
+    def test_test_match_does_not_write_record_on_failure(self):
+        """test_match 未命中时也不写库"""
         svc = self._make_service()
         item = CustomItem(
             media_type="episode",
@@ -65,10 +55,7 @@ class TestTestMatchWritesRecord:
             ):
                 result = svc.test_match(item)
         assert result["subject_id"] is None
-        mock_db.log_sync_record.assert_called_once()
-        call_kwargs = mock_db.log_sync_record.call_args
-        assert call_kwargs.kwargs["source"] == "test-match"
-        assert call_kwargs.kwargs["status"] == "error"
+        mock_db.log_sync_record.assert_not_called()
 
     def test_test_match_trace_has_new_fields(self):
         """test_match 的 trace 包含新增字段"""
@@ -81,32 +68,13 @@ class TestTestMatchWritesRecord:
             release_date="2024-03-01",
             user_name="test_user",
         )
-        with patch("app.services.sync_service.database_manager"):
-            with patch.object(svc, "_find_subject_id", return_value=("999", False, "")):
-                result = svc.test_match(item)
+        with patch.object(svc, "_find_subject_id", return_value=("999", False, "")):
+            result = svc.test_match(item)
         trace = result["trace"]
         assert trace["request_episode"] == 2
         assert trace["request_media_type"] == "ova"
         assert trace["request_release_date"] == "2024-03-01"
         assert trace["request_user_name"] == "test_user"
-
-    def test_test_match_db_error_does_not_crash(self):
-        """log_sync_record 失败不影响 test_match 返回"""
-        svc = self._make_service()
-        item = CustomItem(
-            media_type="episode",
-            title="测试",
-            season=1,
-            episode=1,
-            release_date="",
-            user_name="u",
-        )
-        with patch("app.services.sync_service.database_manager") as mock_db:
-            mock_db.log_sync_record.side_effect = Exception("DB error")
-            with patch.object(svc, "_find_subject_id", return_value=("1", False, "")):
-                result = svc.test_match(item)
-        # 仍然正常返回
-        assert result["subject_id"] == "1"
 
 
 class TestMediaTypeRouting:

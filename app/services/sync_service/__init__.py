@@ -235,10 +235,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.warning(f"发送候选待确认通知失败（不影响主流程）: {e}")
 
     def test_match(self, item: CustomItem) -> dict[str, Any]:
-        """测试匹配过程，返回匹配追踪详情（不执行实际同步、不发通知）
+        """测试匹配过程，返回匹配追踪详情（不执行实际同步、不发通知、不写库）
 
         用于「匹配记录」页面的匹配测试面板，直观展示三段式匹配的完整过程。
-        匹配结果会写入 sync_records 表（source=test-match），便于历史回溯。
+        不写入 sync_records 表，避免污染 dashboard 统计与同步记录列表。
         """
         trace = MatchTrace(
             request_title=item.title,
@@ -254,31 +254,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             item, trace=trace
         )
         trace.finish()
-
-        # 测试匹配也写入匹配记录，便于回溯和对比
-        try:
-            database_manager.log_sync_record(
-                user_name=item.user_name,
-                title=item.title,
-                ori_title=item.ori_title or "",
-                season=item.season,
-                episode=item.episode,
-                subject_id=str(subject_id) if subject_id else None,
-                episode_id=None,
-                status="success" if subject_id else "error",
-                message=f"测试匹配：{trace.final_match_method}"
-                if subject_id
-                else f"测试匹配失败：{failure_detail}",
-                source="test-match",
-                media_type=item.media_type,
-                bgm_title="",
-                match_method=trace.final_match_method,
-                match_score=trace.final_score,
-                match_platform=self._extract_matched_platform(trace, subject_id),
-                match_trace=trace.to_dict(),
-            )
-        except Exception as e:
-            logger.warning(f"测试匹配写记录失败（不影响主流程）: {e}")
 
         return {
             "subject_id": subject_id,
