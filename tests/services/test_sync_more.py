@@ -5,6 +5,119 @@
 from unittest.mock import patch
 
 from app.models.sync import CustomItem
+from app.services.sync_service.title_normalize import TitleNormalizeMixin
+
+
+class TestTitleNormalize:
+    """标题归一化与候选排序测试"""
+
+    def test_normalize_title_strips_release_group_markers(self):
+        """去除方括号包裹的发布组/分辨率标记"""
+        assert (
+            TitleNormalizeMixin.normalize_title("[ANi] Test Anime 1080p")
+            == "Test Anime"
+        )
+
+    def test_normalize_title_strips_resolution_keywords(self):
+        """去除裸露的分辨率/编码关键词"""
+        assert (
+            TitleNormalizeMixin.normalize_title("Test Anime 1080p HEVC") == "Test Anime"
+        )
+
+    def test_normalize_title_collapses_multiple_spaces(self):
+        """折叠连续空白"""
+        assert (
+            TitleNormalizeMixin.normalize_title("Test   Anime    S1") == "Test Anime S1"
+        )
+
+    def test_normalize_title_translates_chinese_punctuation(self):
+        """中文标点归一化为半角（首尾标点会被剥离）"""
+        assert TitleNormalizeMixin.normalize_title("测试：番剧。") == "测试:番剧"
+        # 标点在中间时保留
+        assert (
+            TitleNormalizeMixin.normalize_title("测试：番剧 第二季")
+            == "测试:番剧 第二季"
+        )
+
+    def test_normalize_title_strips_file_extension(self):
+        """去除文件扩展名残留"""
+        assert TitleNormalizeMixin.normalize_title("Test Anime.mp4") == "Test Anime"
+
+    def test_normalize_title_strips_fps_markers(self):
+        """去除帧率标记"""
+        assert TitleNormalizeMixin.normalize_title("Test Anime 60fps") == "Test Anime"
+
+    def test_normalize_title_empty_input(self):
+        """空输入返回空字符串"""
+        assert TitleNormalizeMixin.normalize_title("") == ""
+
+    def test_normalize_title_preserves_season_keywords(self):
+        """保留季度关键词（不剥离 Season/第X季 等）"""
+        result = TitleNormalizeMixin.normalize_title("[BD] 某番 第二季 1080p")
+        assert "第二季" in result
+        assert "[BD]" not in result
+        assert "1080p" not in result
+
+    def test_normalize_title_strips_leading_trailing_punctuation(self):
+        """去除首尾标点与空白"""
+        assert TitleNormalizeMixin.normalize_title("  - Test Anime -  ") == "Test Anime"
+
+    def test_sort_candidates_tv_mode_prefers_tv(self):
+        """非剧场版场景下 TV 排在 OVA/剧场版之前"""
+        candidates = [
+            {"id": 1, "name": "A", "platform": "OVA"},
+            {"id": 2, "name": "B", "platform": "TV"},
+            {"id": 3, "name": "C", "platform": "剧场版"},
+        ]
+        result = TitleNormalizeMixin._sort_candidates_by_platform(
+            candidates, is_movie=False
+        )
+        assert result[0]["id"] == 2  # TV 优先
+
+    def test_sort_candidates_movie_mode_prefers_movie(self):
+        """剧场版场景下 剧场版/电影 排在 TV 之前"""
+        candidates = [
+            {"id": 1, "name": "A", "platform": "TV"},
+            {"id": 2, "name": "B", "platform": "剧场版"},
+            {"id": 3, "name": "C", "platform": "OVA"},
+        ]
+        result = TitleNormalizeMixin._sort_candidates_by_platform(
+            candidates, is_movie=True
+        )
+        assert result[0]["id"] == 2  # 剧场版 优先
+
+    def test_sort_candidates_respects_limit(self):
+        """limit 参数限制返回数量"""
+        candidates = [{"id": i, "platform": "TV"} for i in range(10)]
+        result = TitleNormalizeMixin._sort_candidates_by_platform(candidates, limit=3)
+        assert len(result) == 3
+
+    def test_sort_candidates_empty_list(self):
+        """空列表返回空列表"""
+        assert TitleNormalizeMixin._sort_candidates_by_platform([]) == []
+
+    def test_sort_candidates_stable_for_equal_weights(self):
+        """同权重候选项保持原始顺序（稳定排序）"""
+        candidates = [
+            {"id": 1, "platform": "TV"},
+            {"id": 2, "platform": "TV"},
+            {"id": 3, "platform": "TV"},
+        ]
+        result = TitleNormalizeMixin._sort_candidates_by_platform(candidates)
+        assert [c["id"] for c in result] == [1, 2, 3]
+
+    def test_sort_candidates_unknown_platform_uses_default_weight(self):
+        """未知 platform 使用默认权重，不报错"""
+        candidates = [
+            {"id": 1, "platform": "未知形态"},
+            {"id": 2, "platform": "TV"},
+        ]
+        result = TitleNormalizeMixin._sort_candidates_by_platform(candidates)
+        assert result[0]["id"] == 2  # TV > 未知
+
+    def test_sort_candidates_non_list_input_returns_unchanged(self):
+        """非列表输入原样返回（防御异常调用方）"""
+        assert TitleNormalizeMixin._sort_candidates_by_platform(None) is None
 
 
 class TestSyncServiceHelper:

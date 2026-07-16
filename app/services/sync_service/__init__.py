@@ -24,9 +24,10 @@ from .match_trace import MatchCandidate, MatchTrace
 from .retry import RetryMixin
 from .season_info import SeasonInfoMixin
 from .task_manager import TaskManagerMixin
+from .title_normalize import TitleNormalizeMixin
 
 
-class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
+class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeMixin):
     """同步服务"""
 
     def __init__(self):
@@ -897,8 +898,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         当传入 trace 时，会记录每个匹配阶段的详细过程。
         """
         # 阶段 1：自定义映射（含季度感知 + 正则规则）
+        # 标题归一化：仅用于 API 搜索阶段，自定义映射仍使用原始标题以保证键名一致
+        normalized_title = self.normalize_title(item.title)
         if trace:
-            trace.normalized_title = item.title
+            trace.normalized_title = normalized_title
             step = trace.start_step("custom_mapping")
         else:
             step = None
@@ -1053,8 +1056,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             if item.release_date and len(item.release_date) >= 8:
                 premiere_date = item.release_date[:10]
 
+            # 搜索时优先使用归一化标题（去除发布组/分辨率/编码等噪声），
+            # 若归一化结果为空则回退到原始标题
+            search_title = normalized_title or item.title
             bgm_data = bgm.bgm_search(
-                title=item.title,
+                title=search_title,
                 ori_title=item.ori_title or "",
                 premiere_date=premiere_date or "",
                 is_movie=(item.media_type == "movie"),
@@ -1071,6 +1077,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 if trace:
                     trace.finish()
                 return None, False, "Bangumi 搜索无结果"
+
+            # top-N platform 加权排序：按放送形态重排候选，使最可能的目标排在首位
+            is_movie_request = item.media_type == "movie"
+            bgm_data = self._sort_candidates_by_platform(
+                bgm_data, is_movie=is_movie_request, limit=10
+            )
 
             # 校验返回结果的标题是否包含目标季度信息，确认是否精准命中季度本体
             is_api_season_matched = False
