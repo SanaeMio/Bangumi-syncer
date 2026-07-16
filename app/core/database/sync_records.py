@@ -165,10 +165,12 @@ class SyncRecordsRepository(BaseRepository):
                 cursor.execute(count_query, params)
                 total = cursor.fetchone()[0]
 
+            # 列表查询不 SELECT match_trace（JSON 体积大，列表页前端不使用）
+            # 完整 trace 通过 get_sync_record_by_id 或 /api/match-records/{id}/trace 获取
             query = f"""
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
                        subject_id, episode_id, status, message, source, media_type, bgm_title,
-                       match_method, match_score, match_platform, match_trace
+                       match_method, match_score, match_platform
                 FROM sync_records{where_clause}
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
@@ -196,7 +198,6 @@ class SyncRecordsRepository(BaseRepository):
                         "match_method": row[14] or "",
                         "match_score": row[15],
                         "match_platform": row[16] or "",
-                        "match_trace": row[17] or "",
                     }
                 )
 
@@ -335,10 +336,12 @@ class SyncRecordsRepository(BaseRepository):
             cursor.execute(count_query, params)
             total = cursor.fetchone()[0]
 
+            # 列表查询不 SELECT match_trace（JSON 体积大，列表页前端不使用）
+            # 完整 trace 通过 get_sync_record_by_id 或 /api/match-records/{id}/trace 获取
             query = f"""
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
                        subject_id, episode_id, status, message, source, media_type, bgm_title,
-                       match_method, match_score, match_platform, match_trace
+                       match_method, match_score, match_platform
                 FROM sync_records{where_clause}
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
@@ -366,7 +369,6 @@ class SyncRecordsRepository(BaseRepository):
                         "match_method": row[14] or "",
                         "match_score": row[15],
                         "match_platform": row[16] or "",
-                        "match_trace": row[17] or "",
                     }
                 )
 
@@ -461,3 +463,29 @@ class SyncRecordsRepository(BaseRepository):
         self._heatmap_cache = result
         self._heatmap_cache_time = now
         return result
+
+    def cleanup_old_records(self, retention_days: int) -> int:
+        """清理超过保留天数的同步记录，返回删除行数。
+
+        retention_days <= 0 时不清理（永不清理语义）。
+        """
+        if retention_days <= 0:
+            return 0
+
+        def _write(conn):
+            cursor = conn.execute(
+                "DELETE FROM sync_records WHERE timestamp < datetime('now', ?)",
+                (f"-{retention_days} days",),
+            )
+            return cursor.rowcount
+
+        try:
+            deleted = self._run_write(_write, error_msg="清理旧同步记录失败")
+            if deleted > 0:
+                # 热力图缓存可能过期，清空让下次查询重新加载
+                self._heatmap_cache = None
+                logger.info(f"已清理 {deleted} 条超过 {retention_days} 天的同步记录")
+            return deleted
+        except Exception as e:
+            logger.warning(f"清理旧同步记录失败（不影响主流程）: {e}")
+            return 0

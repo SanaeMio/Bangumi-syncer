@@ -167,6 +167,8 @@ cython_debug/
 /log.txt
 /bangumi_data_cache.json
 /config.dev.ini
+# config.ini 为本地配置（含敏感信息），首次运行时从 config.example.ini 自动复制
+/config.ini
 /release_manifest.json
 /test-docker.bat
 /docker-compose.yml

@@ -284,6 +284,10 @@ class DatabaseManager:
         """获取热力图数据（过去365天每天同步数），带5分钟缓存"""
         return self._sync.get_heatmap_stats()
 
+    def cleanup_old_records(self, retention_days: int) -> int:
+        """清理超过保留天数的同步记录，返回删除行数。"""
+        return self._sync.cleanup_old_records(retention_days)
+
     # ------------------------------------------------------------------
     # TraktRepository 转发
     # ------------------------------------------------------------------
