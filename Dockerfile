@@ -56,7 +56,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 5. 拷贝脚本与模版
 COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
-COPY --chown=appuser:appuser config.ini /app/config.ini.template
+# config.example.ini 是 git 跟踪的模板（config.ini 已被 .gitignore 忽略）
+# 容器内仍命名为 config.ini.template，由 entrypoint.sh 在首次启动时复制为 /app/config/config.ini
+COPY --chown=appuser:appuser config.example.ini /app/config.ini.template
 COPY --chown=appuser:appuser bangumi_mapping.json /app/bangumi_mapping.json.template
 
 # 运行时版本：与 Release zip 中 release_manifest.json 结构一致（CI 传入 APP_VERSION）

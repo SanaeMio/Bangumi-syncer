@@ -25,6 +25,7 @@ from .connection import (
 )
 from .feiniu import FeiniuRepository
 from .inbox import InboxRepository
+from .pending_candidates import PendingCandidatesRepository
 from .sync_records import SyncRecordsRepository
 from .trakt import TraktRepository
 
@@ -50,6 +51,7 @@ class DatabaseManager:
         self._inbox = InboxRepository(self._connection, self._feiniu)
         self._sync = SyncRecordsRepository(self._connection, self._inbox)
         self._trakt = TraktRepository(self._connection)
+        self._pending = PendingCandidatesRepository(self._connection)
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
         # 需要先创建 inbox_repository（及其 feiniu 依赖）才能执行回填
         self._inbox.backfill_historical_error_notifications()
@@ -117,8 +119,16 @@ class DatabaseManager:
         source: str = "custom",
         media_type: str = "episode",
         bgm_title: str = "",
+        match_method: str = "",
+        match_score: Optional[float] = None,
+        match_platform: str = "",
+        match_trace: Optional[dict] = None,
     ) -> Optional[int]:
-        """记录同步日志到数据库，返回新记录 id（失败时 None）"""
+        """记录同步日志到数据库，返回新记录 id（失败时 None）
+
+        匹配追踪相关字段会一并写入 sync_records 表的 match_* 列，
+        并将完整 trace 序列化为 JSON 存入 match_trace 列。
+        """
         return self._sync.log_sync_record(
             user_name=user_name,
             title=title,
@@ -132,6 +142,10 @@ class DatabaseManager:
             source=source,
             media_type=media_type,
             bgm_title=bgm_title,
+            match_method=match_method,
+            match_score=match_score,
+            match_platform=match_platform,
+            match_trace=match_trace,
         )
 
     def get_sync_records(
@@ -159,11 +173,108 @@ class DatabaseManager:
         """根据ID获取单个同步记录"""
         return self._sync.get_sync_record_by_id(record_id)
 
+    def get_match_records(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+        match_method: Optional[str] = None,
+        match_platform: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """获取匹配记录列表（含匹配追踪字段）"""
+        return self._sync.get_match_records(
+            limit=limit,
+            offset=offset,
+            status=status,
+            match_method=match_method,
+            match_platform=match_platform,
+        )
+
     def update_sync_record_status(
         self, record_id: int, status: str, message: str = ""
     ) -> bool:
         """更新同步记录的状态"""
         return self._sync.update_sync_record_status(record_id, status, message)
+
+    # ------------------------------------------------------------------
+    # PendingCandidatesRepository 转发
+    # ------------------------------------------------------------------
+
+    def log_pending_candidate(
+        self,
+        request_title: str,
+        request_ori_title: str = "",
+        request_season: int = 1,
+        request_episode: int = 0,
+        user_name: str = "",
+        source: str = "",
+        candidates: Optional[list] = None,
+        trace: Optional[dict] = None,
+    ) -> Optional[int]:
+        """沉淀一条待确认候选"""
+        return self._pending.log_pending_candidate(
+            request_title=request_title,
+            request_ori_title=request_ori_title,
+            request_season=request_season,
+            request_episode=request_episode,
+            user_name=user_name,
+            source=source,
+            candidates=candidates,
+            trace=trace,
+        )
+
+    def get_pending_candidates(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """获取待确认候选列表"""
+        return self._pending.get_pending_candidates(
+            limit=limit, offset=offset, status=status
+        )
+
+    def get_pending_candidate_by_id(
+        self, candidate_id: int
+    ) -> Optional[dict[str, Any]]:
+        """获取单条待确认候选详情"""
+        return self._pending.get_pending_candidate_by_id(candidate_id)
+
+    def update_pending_candidate_status(
+        self,
+        candidate_id: int,
+        status: str,
+        confirmed_subject_id: str = "",
+    ) -> bool:
+        """更新待确认候选状态"""
+        return self._pending.update_pending_candidate_status(
+            candidate_id, status, confirmed_subject_id
+        )
+
+    def delete_pending_candidate(self, candidate_id: int) -> bool:
+        """删除待确认候选"""
+        return self._pending.delete_pending_candidate(candidate_id)
+
+    def resolve_similar_pending_candidates(
+        self,
+        request_title: str,
+        request_season: int,
+        user_name: str,
+        source: str,
+        status: str,
+        confirmed_subject_id: str = "",
+        exclude_id: Optional[int] = None,
+    ) -> int:
+        """批量更新同 key 的 pending 候选状态，返回受影响行数"""
+        return self._pending.resolve_similar_pending_candidates(
+            request_title=request_title,
+            request_season=request_season,
+            user_name=user_name,
+            source=source,
+            status=status,
+            confirmed_subject_id=confirmed_subject_id,
+            exclude_id=exclude_id,
+        )
 
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""
@@ -172,6 +283,10 @@ class DatabaseManager:
     def get_heatmap_stats(self) -> list[dict[str, Any]]:
         """获取热力图数据（过去365天每天同步数），带5分钟缓存"""
         return self._sync.get_heatmap_stats()
+
+    def cleanup_old_records(self, retention_days: int) -> int:
+        """清理超过保留天数的同步记录，返回删除行数。"""
+        return self._sync.cleanup_old_records(retention_days)
 
     # ------------------------------------------------------------------
     # TraktRepository 转发

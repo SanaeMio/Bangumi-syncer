@@ -161,6 +161,20 @@
                                             </label>
                                         </div>
                                     </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="enable-real-action"
+                                                   name="sync.enable_real_action">
+                                            <label class="form-check-label" for="enable-real-action">
+                                                启用三次元（日剧/电影）支持
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="开启后 Bangumi API 搜索将同时匹配动画（type=2）与三次元（type=6，含日剧/真人电影）。默认关闭以保持原有动画-only 行为。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1479,6 +1493,10 @@ function populateForm(config) {
     if (animeMarkEl) {
         animeMarkEl.checked = Boolean(sync.anime_mark_subject_completed);
     }
+    const realActionEl = document.getElementById('enable-real-action');
+    if (realActionEl) {
+        realActionEl.checked = Boolean(sync.enable_real_action);
+    }
     const moviePlaybackWatchingEl = document.getElementById(
         'movie-playback-start-mark-watching'
     );
@@ -1680,7 +1698,8 @@ async function saveConfig() {
                 anime_mark_subject_completed: document.getElementById('anime-mark-subject-completed').checked,
                 movie_playback_start_mark_watching: document.getElementById(
                     'movie-playback-start-mark-watching'
-                ).checked
+                ).checked,
+                enable_real_action: document.getElementById('enable-real-action').checked
             },
             web: {
                 base_path: (document.getElementById('web-base-path') && document.getElementById('web-base-path').value.trim()) || ''
@@ -2965,6 +2984,13 @@ function copyWebhookKey() {
                                            value="ip_locked">
                                     <label class="form-check-label" for="webhook-type-ip_locked">IP被锁定 (ip_locked)</label>
                                 </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-pending_candidate"
+                                           value="pending_candidate">
+                                    <label class="form-check-label" for="webhook-type-pending_candidate">候选待确认 (pending_candidate)</label>
+                                </div>
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
                         </div>
@@ -3250,6 +3276,13 @@ function copyWebhookKey() {
                                            id="email-type-ip_locked"
                                            value="ip_locked">
                                     <label class="form-check-label" for="email-type-ip_locked">IP被锁定 (ip_locked)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-pending_candidate"
+                                           value="pending_candidate">
+                                    <label class="form-check-label" for="email-type-pending_candidate">候选待确认 (pending_candidate)</label>
                                 </div>
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>

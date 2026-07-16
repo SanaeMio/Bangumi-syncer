@@ -48,6 +48,10 @@ services:
 
 9. 点击「配置管理」进行在线配置
 
+::: tip 配置文件持久化
+首次启动时 `entrypoint.sh` 会自动从镜像内置模板复制 `config.ini` 到挂载目录（`/docker/bangumi-syncer/config/config.ini`），容器重建后配置不会丢失。后续通过 Web 界面修改并保存的配置也会写入该挂载目录。
+:::
+
 ## 方式二：通过 Container Manager 镜像仓库（原注册表）
 
 > **注意：** 由于大陆网络问题，请自行更换存储库。

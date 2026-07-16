@@ -2,13 +2,15 @@
 同步服务模块
 """
 
+from __future__ import annotations
+
 # time/asyncio 重新导出以兼容测试 patch（app.services.sync_service.time.sleep 等）
 import asyncio  # noqa: F401
 import threading
 import time  # noqa: F401
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Any
 
 from ...core.config import config_manager
 from ...core.database import database_manager
@@ -23,18 +25,20 @@ from ...utils.bangumi_api import BangumiApi
 from ...utils.bangumi_data import BangumiData, bangumi_data
 from ...utils.notifier import send_notify
 from ..mapping_service import mapping_service
+from .match_trace import MatchCandidate, MatchTrace
 from .retry import RetryMixin
 from .season_info import SeasonInfoMixin
 from .task_manager import TaskManagerMixin
+from .title_normalize import TitleNormalizeMixin
 
 
-class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
+class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeMixin):
     """同步服务"""
 
     def __init__(self):
-        self._bangumi_data_cache: Optional[BangumiData] = None
+        self._bangumi_data_cache: BangumiData | None = None
         self._cached_mappings: dict[str, str] = {}
-        self._mapping_file_path: Optional[str] = None
+        self._mapping_file_path: str | None = None
         self._last_modified_time: float = 0
         # 线程池大小从配置读取
         try:
@@ -62,10 +66,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         self,
         limit: int = 100,
         offset: int = 0,
-        status: Optional[str] = None,
-        user_name: Optional[str] = None,
-        source: Optional[str] = None,
-        source_prefix: Optional[str] = None,
+        status: str | None = None,
+        user_name: str | None = None,
+        source: str | None = None,
+        source_prefix: str | None = None,
         skip_count: bool = False,
     ) -> dict[str, Any]:
         """获取同步记录列表"""
@@ -79,9 +83,184 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             skip_count=skip_count,
         )
 
-    def get_sync_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
+    def get_sync_record_by_id(self, record_id: int) -> dict[str, Any] | None:
         """根据 ID 获取单个同步记录"""
         return database_manager.get_sync_record_by_id(record_id)
+
+    def get_match_records(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        match_method: str | None = None,
+        match_platform: str | None = None,
+    ) -> dict[str, Any]:
+        """获取匹配记录列表（含匹配追踪字段）"""
+        return database_manager.get_match_records(
+            limit=limit,
+            offset=offset,
+            status=status,
+            match_method=match_method,
+            match_platform=match_platform,
+        )
+
+    # ------------------------------------------------------------------
+    # 待确认候选（候选沉淀）
+    # ------------------------------------------------------------------
+
+    def get_pending_candidates(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """获取待确认候选列表"""
+        return database_manager.get_pending_candidates(
+            limit=limit, offset=offset, status=status
+        )
+
+    def get_pending_candidate_by_id(self, candidate_id: int) -> dict[str, Any] | None:
+        """获取单条待确认候选详情"""
+        return database_manager.get_pending_candidate_by_id(candidate_id)
+
+    def confirm_pending_candidate(
+        self, candidate_id: int, subject_id: str
+    ) -> tuple[bool, str]:
+        """确认待确认候选：写入自定义映射并标记为已确认
+
+        返回 (success, message)。映射写入采用读全量→合并→写回的模式，
+        避免覆盖已有映射。
+        """
+        record = database_manager.get_pending_candidate_by_id(candidate_id)
+        if not record:
+            return False, "候选记录不存在"
+        if record.get("status") != "pending":
+            return False, f"候选已处理（状态：{record.get('status')}）"
+
+        title = record.get("request_title", "")
+        season = int(record.get("request_season") or 1)
+        if not title or not subject_id:
+            return False, "标题或 subject_id 为空"
+
+        # 读全量映射 → 合并新条目 → 写回
+        all_mappings = mapping_service.get_all_mappings()
+        if season > 1:
+            all_mappings[title] = {"subject_id": str(subject_id), "season": season}
+        else:
+            all_mappings[title] = str(subject_id)
+        if not mapping_service.update_custom_mappings(all_mappings):
+            return False, "写入自定义映射失败"
+
+        database_manager.update_pending_candidate_status(
+            candidate_id, "confirmed", confirmed_subject_id=str(subject_id)
+        )
+        # 批量更新同 key 的其它 pending 行，避免残留（去重后通常无额外行）
+        database_manager.resolve_similar_pending_candidates(
+            request_title=title,
+            request_season=season,
+            user_name=record.get("user_name", ""),
+            source=record.get("source", ""),
+            status="confirmed",
+            confirmed_subject_id=str(subject_id),
+            exclude_id=candidate_id,
+        )
+        return True, f"已确认并写入映射：{title} → subject/{subject_id}"
+
+    def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
+        """拒绝待确认候选"""
+        if not database_manager.update_pending_candidate_status(
+            candidate_id, "rejected"
+        ):
+            return False, "候选记录不存在或已处理"
+        return True, "已忽略"
+
+    def delete_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
+        """删除待确认候选"""
+        if not database_manager.delete_pending_candidate(candidate_id):
+            return False, "候选记录不存在"
+        return True, "已删除"
+
+    @staticmethod
+    def _collect_candidates_from_trace(trace: MatchTrace) -> list[dict[str, Any]]:
+        """从 MatchTrace 各步骤中收集候选，去重并按 score 降序"""
+        seen: set[str] = set()
+        merged: list[dict[str, Any]] = []
+        for step in trace.steps:
+            for cand in step.candidates:
+                if not cand.subject_id or cand.subject_id in seen:
+                    continue
+                seen.add(cand.subject_id)
+                merged.append(cand.to_dict())
+        merged.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        return merged
+
+    def _sediment_pending_candidate(
+        self, item: CustomItem, actual_source: str, trace: MatchTrace
+    ) -> None:
+        """匹配失败时沉淀候选，供用户手动确认。
+
+        仅当 trace 中存在候选时才写入 pending_candidates 表，
+        并触发 pending_candidate 通知提醒用户前往 WebUI 确认。
+        """
+        candidates = self._collect_candidates_from_trace(trace)
+        if not candidates:
+            return
+        try:
+            database_manager.log_pending_candidate(
+                request_title=item.title,
+                request_ori_title=item.ori_title or "",
+                request_season=item.season,
+                request_episode=item.episode,
+                user_name=item.user_name,
+                source=actual_source,
+                candidates=candidates,
+                trace=trace.to_dict(),
+            )
+        except Exception as e:
+            logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
+            return
+
+        # 沉淀成功后触发通知（不影响主流程）
+        try:
+            top = candidates[0] if candidates else {}
+            send_notify(
+                "pending_candidate",
+                item,
+                actual_source,
+                candidates_count=len(candidates),
+                top_candidate_id=str(top.get("subject_id", "")),
+                top_candidate_name=top.get("name_cn") or top.get("name") or "",
+            )
+        except Exception as e:
+            logger.warning(f"发送候选待确认通知失败（不影响主流程）: {e}")
+
+    def test_match(self, item: CustomItem) -> dict[str, Any]:
+        """测试匹配过程，返回匹配追踪详情（不执行实际同步、不发通知、不写库）
+
+        用于「匹配记录」页面的匹配测试面板，直观展示三段式匹配的完整过程。
+        不写入 sync_records 表，避免污染 dashboard 统计与同步记录列表。
+        """
+        trace = MatchTrace(
+            request_title=item.title,
+            request_ori_title=item.ori_title or "",
+            request_season=item.season,
+            request_episode=item.episode,
+            request_media_type=item.media_type,
+            request_release_date=item.release_date or "",
+            request_user_name=item.user_name,
+            request_platform_hint=item.source or "test-match",
+        )
+        subject_id, is_season_matched_id, failure_detail = self._find_subject_id(
+            item, trace=trace
+        )
+        trace.finish()
+
+        return {
+            "subject_id": subject_id,
+            "is_season_matched_id": is_season_matched_id,
+            "failure_detail": failure_detail,
+            "trace": trace.to_dict(),
+        }
 
     def update_sync_record_status(
         self, record_id: int, status: str, message: str = ""
@@ -114,9 +293,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                     message="已在配置中关闭剧场版播放开始标记在看",
                 )
 
-            if item.media_type != "movie":
+            if item.media_type not in ("movie", "real_action"):
                 return SyncResponse(
-                    status="ignored", message="仅剧场版支持播放开始标记在看"
+                    status="ignored", message="仅剧场版/真人电影支持播放开始标记在看"
                 )
 
             if not item.title:
@@ -131,30 +310,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                     status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
                 )
 
-            subject_id, _, subject_find_error = self._find_subject_id(item)
+            subject_id, _, error_response, trace = self._find_matching_subject(
+                item, actual_source
+            )
             if not subject_id:
-                send_notify(
-                    "anime_not_found",
-                    item,
-                    actual_source,
-                    error_message="未找到匹配的番剧",
+                return error_response or SyncResponse(
+                    status="error", message="未找到匹配的番剧"
                 )
-                database_manager.log_sync_record(
-                    user_name=item.user_name,
-                    title=item.title,
-                    ori_title=item.ori_title or "",
-                    season=item.season,
-                    episode=item.episode,
-                    subject_id=None,
-                    episode_id=None,
-                    status="error",
-                    message=self._format_subject_not_found_message(
-                        item, subject_find_error
-                    ),
-                    source=actual_source,
-                    media_type=item.media_type,
-                )
-                return SyncResponse(status="error", message="未找到匹配的番剧")
 
             bgm = self._get_bangumi_api_for_user(item.user_name)
             if not bgm:
@@ -193,6 +355,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 message=result_message,
                 source=actual_source,
                 media_type=item.media_type,
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, subject_id)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
 
             return SyncResponse(
@@ -217,6 +385,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 message=str(e),
                 source=actual_source if "actual_source" in locals() else source,
                 media_type=item.media_type if "item" in locals() else "movie",
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, None)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
             send_notify(
                 "mark_failed",
@@ -228,10 +402,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             )
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
 
-    def _normalize_custom_item_params(self, item: CustomItem) -> Optional[SyncResponse]:
+    def _normalize_custom_item_params(self, item: CustomItem) -> SyncResponse | None:
         """校验自定义条目参数。返回 SyncResponse 表示应立即返回该响应；None 表示校验通过。"""
         # 基本验证
-        if item.media_type not in ("episode", "movie"):
+        # 支持的媒体类型：episode/movie（原有）+ ova/oad/real_action（扩展）
+        if item.media_type not in ("episode", "movie", "ova", "oad", "real_action"):
             logger.error(f"同步类型{item.media_type}不支持，跳过")
             return SyncResponse(
                 status="error", message=f"同步类型{item.media_type}不支持"
@@ -241,7 +416,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             logger.error("同步名称为空，跳过")
             return SyncResponse(status="error", message="同步名称为空")
 
-        if item.media_type == "episode" and item.season == 0:
+        # episode/ova/oad/real_action 走剧集同步路径，不允许 season=0
+        if (
+            item.media_type in ("episode", "ova", "oad", "real_action")
+            and item.season == 0
+        ):
             logger.error("不支持SP标记同步，跳过")
             return SyncResponse(status="error", message="不支持SP标记同步")
 
@@ -263,19 +442,38 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
 
     def _find_matching_subject(
         self, item: CustomItem, actual_source: str
-    ) -> tuple[Optional[str], bool, Optional[SyncResponse]]:
+    ) -> tuple[str | None, bool, SyncResponse | None, MatchTrace]:
         """查找匹配的 Bangumi 条目。
 
-        返回 (subject_id, is_season_matched_id, error_response)：
-        - 成功：(id, flag, None)
-        - 失败：(None, False, 应立即返回的 SyncResponse)
+        返回 (subject_id, is_season_matched_id, error_response, trace)：
+        - 成功：(id, flag, None, trace)
+        - 失败：(None, False, 应立即返回的 SyncResponse, trace)
+
+        trace 始终非 None，包含三段式匹配的完整过程。
+        trace 作为返回值沿调用链传递，避免并发场景下实例字段竞态。
         """
+        # 始终创建匹配追踪，记录三段式匹配过程供「匹配记录」页面展示
+        trace = MatchTrace(
+            request_title=item.title,
+            request_ori_title=item.ori_title or "",
+            request_season=item.season,
+            request_episode=item.episode,
+            request_media_type=item.media_type,
+            request_release_date=item.release_date or "",
+            request_user_name=item.user_name,
+            request_platform_hint=item.source or actual_source,
+        )
+
         # 查找番剧ID及其是否为特定季度ID的标记
         subject_id, is_season_matched_id, subject_find_error = self._find_subject_id(
-            item
+            item, trace=trace
         )
+
+        # 完成匹配追踪（trace 作为返回值沿调用链传递，避免并发竞态）
+        trace.finish()
+
         if subject_id:
-            return subject_id, is_season_matched_id, None
+            return subject_id, is_season_matched_id, None, trace
 
         send_notify(
             "anime_not_found",
@@ -295,8 +493,40 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             message=self._format_subject_not_found_message(item, subject_find_error),
             source=actual_source,
             media_type=item.media_type,
+            match_method=trace.final_match_method,
+            match_score=trace.final_score,
+            match_platform=self._extract_matched_platform(trace, None),
+            match_trace=trace.to_dict(),
         )
-        return None, False, SyncResponse(status="error", message="未找到匹配的番剧")
+        # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认
+        self._sediment_pending_candidate(item, actual_source, trace)
+        return (
+            None,
+            False,
+            SyncResponse(status="error", message="未找到匹配的番剧"),
+            trace,
+        )
+
+    @staticmethod
+    def _extract_matched_platform(trace: MatchTrace, subject_id: str | None) -> str:
+        """从匹配追踪的命中候选中提取 Bangumi 条目 platform（TV/OVA/剧场版/日剧等）。
+
+        优先查找与 subject_id 匹配的候选；找不到则取最后命中阶段的第一个候选。
+        """
+        if not subject_id or not trace:
+            return ""
+        target_id = str(subject_id)
+        # 优先在命中阶段的候选中查找与 subject_id 匹配的条目
+        for step in trace.steps:
+            if step.status != "hit" or not step.subject_id:
+                continue
+            for cand in step.candidates:
+                if cand.subject_id == target_id:
+                    return cand.platform
+            # 命中阶段但候选中没有完全匹配的 ID，取该阶段首个候选的 platform
+            if step.candidates:
+                return step.candidates[0].platform
+        return ""
 
     def _resolve_season_episode(
         self,
@@ -480,9 +710,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         status_holder: list[str],
     ) -> SyncResponse:
         try:
+            trace: MatchTrace | None = None
             sync_action = (item.sync_action or "").strip().lower()
             if sync_action == "mark_watching":
-                if item.media_type == "movie":
+                # movie 和 real_action（真人电影）走「标记在看」路径
+                if item.media_type in ("movie", "real_action"):
                     result = self.sync_movie_watching(item, source)
                     status_holder[0] = result.status
                     return result
@@ -504,7 +736,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 return validation_error
 
             # 查找番剧ID及其是否为特定季度ID的标记
-            subject_id, is_season_matched_id, subject_error_response = (
+            subject_id, is_season_matched_id, subject_error_response, trace = (
                 self._find_matching_subject(item, actual_source)
             )
             if subject_error_response is not None:
@@ -584,6 +816,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
 
             self._mark_subject_completed_if_needed(item, bgm, bgm_se_id, bgm_title)
 
+            # 回填最终剧集 ID 到 trace（匹配阶段未知 ep_id，此处补全）
+            if trace and bgm_ep_id:
+                trace.final_episode_id = str(bgm_ep_id)
+
             # 记录同步成功到数据库
             database_manager.log_sync_record(
                 user_name=item.user_name,
@@ -598,6 +834,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 source=actual_source,
                 media_type=item.media_type,
                 bgm_title=bgm_title,
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, subject_id)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
 
             result = SyncResponse(
@@ -628,6 +870,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 message=str(e),
                 source=actual_source if "actual_source" in locals() else source,
                 media_type=item.media_type if "item" in locals() else "episode",
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, None)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
 
             send_notify(
@@ -731,28 +979,61 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             parts.append(f"premiere_date={item.release_date[:10]}")
         return "；".join(parts)
 
-    def _find_subject_id(self, item: CustomItem) -> tuple[Optional[str], bool, str]:
+    def _find_subject_id(
+        self, item: CustomItem, trace: MatchTrace | None = None
+    ) -> tuple[str | None, bool, str]:
         """根据标题和日期查找番剧ID。
 
         返回 (subject_id, is_season_matched_id, failure_detail)。
         成功时 failure_detail 为空字符串；失败时为简短原因，供同步记录与日志使用。
+
+        当传入 trace 时，会记录每个匹配阶段的详细过程。
         """
-        # 获取自定义映射
-        custom_mappings = self._load_custom_mappings()
-        mapping_subject_id = custom_mappings.get(item.title, "") or custom_mappings.get(
-            item.ori_title or "", ""
+        # 阶段 1：自定义映射（含季度感知 + 正则规则）
+        # 标题归一化：仅用于 API 搜索阶段，自定义映射仍使用原始标题以保证键名一致
+        normalized_title = self.normalize_title(item.title)
+        if trace:
+            trace.normalized_title = normalized_title
+            step = trace.start_step("custom_mapping")
+        else:
+            step = None
+
+        mapping_subject_id, match_type, match_reason = mapping_service.find_mapping(
+            title=item.title,
+            ori_title=item.ori_title or "",
+            season=item.season,
         )
 
         if mapping_subject_id:
-            logger.debug(f"匹配到自定义映射：{item.title}={mapping_subject_id}")
+            logger.debug(
+                f"匹配到自定义映射（{match_type}）：{item.title}={mapping_subject_id} - {match_reason}"
+            )
+            if step:
+                step.status = "hit"
+                step.subject_id = mapping_subject_id
+                step.reason = match_reason
+                step.score = 1.0
+            if trace:
+                trace.final_subject_id = mapping_subject_id
+                trace.final_match_method = "custom_mapping"
+                trace.final_score = 1.0
+                trace.finish()
             # 自定义映射的ID不视为特定季度的ID
             return mapping_subject_id, False, ""
 
+        if step:
+            step.status = "miss"
+            step.reason = "自定义映射与正则规则均未命中"
+
+        # 阶段 2：bangumi-data 本地匹配
         # 标记是否通过bangumi-data获取的ID
         is_season_matched_id = False
 
-        # 尝试使用 bangumi-data 匹配番剧ID
         if config_manager.get("bangumi_data", "enabled", fallback=True):
+            if trace:
+                step = trace.start_step("bangumi_data")
+            else:
+                step = None
             try:
                 bgm_data = self._get_bangumi_data()
                 release_date = None
@@ -806,11 +1087,57 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                         # 第一季总是返回True
                         is_season_matched_id = True
 
+                    if step:
+                        step.status = "hit"
+                        step.subject_id = bangumi_data_id
+                        step.reason = (
+                            f"bangumi-data 匹配命中：{matched_title}，"
+                            f"日期匹配={date_matched}，季度ID可信={is_season_matched_id}"
+                        )
+                        step.score = 1.0 if date_matched else 0.8
+                    if trace:
+                        trace.final_subject_id = bangumi_data_id
+                        trace.final_match_method = "bangumi_data"
+                        trace.final_score = 1.0 if date_matched else 0.8
+                        trace.finish()
                     return bangumi_data_id, is_season_matched_id, ""
+                else:
+                    if step:
+                        step.status = "miss"
+                        step.reason = "bangumi-data 无匹配结果"
             except Exception as e:
                 logger.error(f"bangumi-data 匹配出错: {e}")
+                if step:
+                    step.status = "error"
+                    step.reason = f"bangumi-data 匹配异常：{e}"
+        else:
+            if trace:
+                step = trace.start_step("bangumi_data")
+                step.status = "skipped"
+                step.reason = "bangumi-data 已禁用"
 
-        # 如果没有匹配到，使用 bangumi API 搜索
+        # 阶段 3：Bangumi API 搜索
+        if trace:
+            step = trace.start_step("api_search")
+        else:
+            step = None
+
+        # 根据配置与媒体类型决定搜索的条目类型：
+        # - 默认仅动画（type=2）
+        # - 开启三次元支持后扩展为 [2, 6]（动画 + 三次元，含日剧/电影）
+        # - media_type=real_action 时强制包含 type=6（三次元），无论全局开关
+        enable_real_action = config_manager.get(
+            "sync", "enable_real_action", fallback=False
+        )
+        if item.media_type == "real_action":
+            subject_types = [6]
+        elif enable_real_action:
+            subject_types = [2, 6]
+        else:
+            subject_types = [2]
+        if step and (enable_real_action or item.media_type == "real_action"):
+            step.reason = f"搜索 type={subject_types}（media_type={item.media_type}）"
+
         _ctx = (
             f"user_name={item.user_name!r} source={item.source!r} "
             f"S{item.season:02d}E{item.episode:02d} media_type={item.media_type!r} "
@@ -821,24 +1148,44 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             bgm = self._get_bangumi_api_for_user(item.user_name)
             if not bgm:
                 logger.error(f"bgm: 无法为用户创建 Bangumi API 实例进行搜索；{_ctx}")
+                if step:
+                    step.status = "error"
+                    step.reason = "无法创建 Bangumi API 实例"
+                if trace:
+                    trace.finish()
                 return None, False, "无法创建 Bangumi API 实例，无法搜索条目"
 
             premiere_date = None
             if item.release_date and len(item.release_date) >= 8:
                 premiere_date = item.release_date[:10]
 
+            # 搜索时优先使用归一化标题（去除发布组/分辨率/编码等噪声），
+            # 若归一化结果为空则回退到原始标题
+            search_title = normalized_title or item.title
             bgm_data = bgm.bgm_search(
-                title=item.title,
+                title=search_title,
                 ori_title=item.ori_title or "",
                 premiere_date=premiere_date or "",
                 is_movie=(item.media_type == "movie"),
+                subject_types=subject_types,
             )
             if not bgm_data:
                 logger.error(
                     "bgm: 未查询到番剧信息，跳过；"
                     f"{_ctx} premiere_date={premiere_date!r}"
                 )
+                if step:
+                    step.status = "miss"
+                    step.reason = "Bangumi API 搜索无结果"
+                if trace:
+                    trace.finish()
                 return None, False, "Bangumi 搜索无结果"
+
+            # top-N platform 加权排序：按放送形态重排候选，使最可能的目标排在首位
+            is_movie_request = item.media_type == "movie"
+            bgm_data = self._sort_candidates_by_platform(
+                bgm_data, is_movie=is_movie_request, limit=10
+            )
 
             # 校验返回结果的标题是否包含目标季度信息，确认是否精准命中季度本体
             is_api_season_matched = False
@@ -850,14 +1197,78 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                     returned_name, item.season
                 ) or self._check_season_info_in_title(returned_name_cn, item.season):
                     is_api_season_matched = True
+            elif item.season == 1:
+                # 第一季：若首条候选明确声明了第N季（N>1，如"凡人修仙传 第五季"），
+                # 说明 API 按热度/相关度返回了续季，需要在候选列表里寻找
+                # 标题不含季度后缀的条目作为第一季本体。
+                top_name = bgm_data[0].get("name", "")
+                top_name_cn = bgm_data[0].get("name_cn", "")
+                top_explicit_season = max(
+                    self._get_explicit_season_from_title(top_name) or 0,
+                    self._get_explicit_season_from_title(top_name_cn) or 0,
+                )
+                if top_explicit_season > 1:
+                    # 在候选列表里寻找标题不含季度声明的条目（即第一季本体）
+                    for cand in bgm_data[1:]:
+                        cand_name = cand.get("name", "")
+                        cand_name_cn = cand.get("name_cn", "")
+                        cand_season = max(
+                            self._get_explicit_season_from_title(cand_name) or 0,
+                            self._get_explicit_season_from_title(cand_name_cn) or 0,
+                        )
+                        if cand_season == 0:
+                            logger.debug(
+                                f"首条候选为第{top_explicit_season}季，"
+                                f"改选无季度后缀的候选: "
+                                f"{cand_name_cn or cand_name}(id={cand.get('id')})"
+                            )
+                            bgm_data[0] = cand
+                            is_api_season_matched = True
+                            break
+                    if not is_api_season_matched:
+                        logger.debug(
+                            f"首条候选明确为第{top_explicit_season}季，"
+                            f"但候选列表中无无季度后缀的条目，保持首条"
+                        )
 
+            # 收集候选到 trace（top-5）
+            if step:
+                step.status = "hit"
+                step.subject_id = bgm_data[0]["id"]
+                step.reason = (
+                    f"API 搜索命中：{bgm_data[0].get('name_cn') or bgm_data[0].get('name')}，"
+                    f"季度ID可信={is_api_season_matched}"
+                )
+                # 记录候选列表
+                for cand in bgm_data[:5]:
+                    step.candidates.append(
+                        MatchCandidate(
+                            subject_id=str(cand.get("id", "")),
+                            name=cand.get("name", ""),
+                            name_cn=cand.get("name_cn", ""),
+                            platform=cand.get("platform", ""),
+                            air_date=cand.get("date", ""),
+                            source="api_search",
+                        )
+                    )
+            if trace:
+                trace.final_subject_id = bgm_data[0]["id"]
+                trace.final_match_method = "api_search"
+                # API 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
+                trace.final_score = 1.0 if is_api_season_matched else 0.9
+                trace.finish()
             return bgm_data[0]["id"], is_api_season_matched, ""
         except Exception as e:
             detail = f"Bangumi API 搜索出错: {e}"
             logger.error(f"bgm: {detail}；{_ctx}")
+            if step:
+                step.status = "error"
+                step.reason = detail
+            if trace:
+                trace.finish()
             return None, False, detail
 
-    def _get_bangumi_config_for_user(self, user_name: str) -> Optional[dict[str, str]]:
+    def _get_bangumi_config_for_user(self, user_name: str) -> dict[str, str] | None:
         """根据媒体服务器用户名获取对应的bangumi配置"""
         mode = config_manager.get("sync", "mode", fallback="single")
 
@@ -884,7 +1295,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
 
         return None
 
-    def _get_bangumi_api_for_user(self, user_name: str) -> Optional[BangumiApi]:
+    def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
         """根据用户名创建对应的BangumiApi实例"""
         bangumi_config = self._get_bangumi_config_for_user(user_name)
         if not bangumi_config:
@@ -916,7 +1327,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
 
 
 # 全局同步服务实例（懒加载：首次访问 sync_service 时才创建实例与线程池）
-_sync_service: Optional[SyncService] = None
+_sync_service: SyncService | None = None
 
 
 def __getattr__(name: str) -> Any:

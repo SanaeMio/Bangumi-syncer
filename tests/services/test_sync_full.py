@@ -16,10 +16,16 @@ class TestSyncServiceFind:
             patch("app.services.sync_service.config_manager") as mock_cm,
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.send_notify"),
-            patch("app.services.sync_service.mapping_service"),
+            patch("app.services.sync_service.mapping_service") as mock_mapping,
             patch("app.services.sync_service.BangumiApi") as mock_bgm,
             patch("app.services.sync_service.BangumiData"),
         ):
+            # find_mapping 命中自定义映射（subject_id, match_type, reason）
+            mock_mapping.find_mapping.return_value = (
+                "12345",
+                "exact",
+                "自定义映射命中：Test Show=12345",
+            )
             mock_bgm_instance = MagicMock()
             mock_bgm_instance.search_subject.return_value = {
                 "id": 12345,
@@ -27,11 +33,11 @@ class TestSyncServiceFind:
             }
             mock_bgm.return_value = mock_bgm_instance
 
-            mock_cm.get.side_effect = lambda s, k, f=None: {
+            mock_cm.get.side_effect = lambda s, k, fallback=None: {
                 ("sync", "mode"): "single",
                 ("sync", "blocked_keywords"): "",
                 ("bangumi_data", "enabled"): False,
-            }.get((s, k), f)
+            }.get((s, k), fallback)
             mock_cm.get_single_mode_media_usernames.return_value = ["admin"]
 
             from app.services.sync_service import SyncService

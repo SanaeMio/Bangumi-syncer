@@ -14,6 +14,7 @@ from ...core.logging import logger
 from ...models.sync import CustomItem
 from ...services.mapping_service import mapping_service
 from ...services.sync_service import sync_service
+from ...utils.media_type_detector import detect_media_type
 from ...utils.notifier import send_notify
 from .auth import trakt_auth_service
 from .client import TraktClient, TraktClientFactory
@@ -677,9 +678,14 @@ class TraktSyncService:
                 except Exception:
                     release_date = ""
 
+            # 检测 OVA/OAD/三次元类型
+            detected = detect_media_type(
+                title=title, ori_title=ori_title or "", item_type="episode"
+            )
+
             # 构建 CustomItem
             return CustomItem(
-                media_type="episode",
+                media_type=detected,
                 title=title,
                 ori_title=ori_title,
                 season=season,
@@ -728,8 +734,13 @@ class TraktSyncService:
             except Exception:
                 release_date = ""
 
+        # 电影也检测是否为真人电影（三次元）
+        detected = detect_media_type(
+            title=title, ori_title=ori_title or "", item_type="movie"
+        )
+
         return CustomItem(
-            media_type="movie",
+            media_type=detected,
             title=title,
             ori_title=ori_title,
             season=1,

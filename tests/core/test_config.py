@@ -496,3 +496,99 @@ media_server_username = dup
         cm = _config_manager_from_ini(tmp_path, ini)
         m = cm.get_user_mappings()
         assert m["dup"] == "bangumi-b"
+
+
+class TestEnsureDefaultConfig:
+    """首次运行时从 config.example.ini 自动复制到 config.ini"""
+
+    def test_copies_example_to_default_when_default_missing(self, tmp_path):
+        """active 指向 default 且 default 不存在时，从 example 复制"""
+        from app.core.config import ConfigManager
+
+        default_ini = tmp_path / "config.ini"
+        example_ini = tmp_path / "config.example.ini"
+        example_ini.write_text("[bangumi]\nusername = tpl\n", encoding="utf-8")
+
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.cwd = tmp_path
+        cm.config_paths = {
+            "env": None,
+            "mounted": tmp_path / "nomount.ini",
+            "dev": tmp_path / "nodev.ini",
+            "default": default_ini,
+        }
+        cm.active_config_path = default_ini
+
+        assert not default_ini.exists()
+        cm._ensure_default_config()
+        assert default_ini.exists()
+        assert "tpl" in default_ini.read_text(encoding="utf-8")
+
+    def test_no_copy_when_default_already_exists(self, tmp_path):
+        """default 已存在时不复制"""
+        from app.core.config import ConfigManager
+
+        default_ini = tmp_path / "config.ini"
+        example_ini = tmp_path / "config.example.ini"
+        default_ini.write_text("[bangumi]\nusername = existing\n", encoding="utf-8")
+        example_ini.write_text("[bangumi]\nusername = tpl\n", encoding="utf-8")
+
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.cwd = tmp_path
+        cm.config_paths = {
+            "env": None,
+            "mounted": tmp_path / "nomount.ini",
+            "dev": tmp_path / "nodev.ini",
+            "default": default_ini,
+        }
+        cm.active_config_path = default_ini
+
+        cm._ensure_default_config()
+        # 内容未被覆盖
+        assert "existing" in default_ini.read_text(encoding="utf-8")
+        assert "tpl" not in default_ini.read_text(encoding="utf-8")
+
+    def test_no_copy_when_active_is_not_default(self, tmp_path):
+        """active 指向 env/mounted/dev 时不触发复制（用户已指定自定义配置）"""
+        from app.core.config import ConfigManager
+
+        default_ini = tmp_path / "config.ini"
+        example_ini = tmp_path / "config.example.ini"
+        env_ini = tmp_path / "env.ini"
+        env_ini.write_text("[bangumi]\nusername = env\n", encoding="utf-8")
+        example_ini.write_text("[bangumi]\nusername = tpl\n", encoding="utf-8")
+
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.cwd = tmp_path
+        cm.config_paths = {
+            "env": str(env_ini),
+            "mounted": tmp_path / "nomount.ini",
+            "dev": tmp_path / "nodev.ini",
+            "default": default_ini,
+        }
+        cm.active_config_path = env_ini  # active 是 env，不是 default
+
+        cm._ensure_default_config()
+        # default 未被创建
+        assert not default_ini.exists()
+
+    def test_no_copy_when_example_missing(self, tmp_path):
+        """config.example.ini 不存在时不复制（不报错）"""
+        from app.core.config import ConfigManager
+
+        default_ini = tmp_path / "config.ini"
+        # 不创建 config.example.ini
+
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.cwd = tmp_path
+        cm.config_paths = {
+            "env": None,
+            "mounted": tmp_path / "nomount.ini",
+            "dev": tmp_path / "nodev.ini",
+            "default": default_ini,
+        }
+        cm.active_config_path = default_ini
+
+        # 不应抛异常
+        cm._ensure_default_config()
+        assert not default_ini.exists()

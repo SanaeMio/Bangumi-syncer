@@ -100,6 +100,28 @@ async def mappings_page(request: Request):
     return templates.TemplateResponse(request, "mappings.html", {"user": user})
 
 
+@router.get("/match-records", response_class=HTMLResponse)
+async def match_records_page(request: Request):
+    """匹配记录页面"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return _login_redirect(request)
+
+    return templates.TemplateResponse(request, "match_records.html", {"user": user})
+
+
+@router.get("/pending-candidates", response_class=HTMLResponse)
+async def pending_candidates_page(request: Request):
+    """待确认候选页面"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return _login_redirect(request)
+
+    return templates.TemplateResponse(
+        request, "pending_candidates.html", {"user": user}
+    )
+
+
 @router.get("/debug", response_class=HTMLResponse)
 async def debug_page(request: Request):
     """调试工具页面"""

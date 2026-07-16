@@ -36,6 +36,8 @@ class ConfigManager:
         # 配置文件路径
         self.config_paths = self._get_config_paths()
         self.active_config_path = self._find_active_config()
+        # 首次运行：active 是 default 路径但文件不存在时，从 config.example.ini 自动复制
+        self._ensure_default_config()
 
         # 配置缓存
         self._config_cache: Optional[ConfigParser] = None
@@ -80,6 +82,34 @@ class ConfigManager:
 
         # 4. 默认配置文件
         return self.config_paths["default"]
+
+    def _ensure_default_config(self) -> None:
+        """首次运行时从 config.example.ini 复制到 config.ini。
+
+        仅在 active_config_path 指向 default 路径（即没有 env/mounted/dev 配置）
+        且 default 文件不存在时触发，避免在测试或自定义配置环境下产生副作用。
+        """
+        default_path = self.config_paths["default"]
+        # active 不是 default 路径时，说明用户通过 env/mounted/dev 指定了配置，无需复制
+        if self.active_config_path != default_path:
+            return
+        # default 已存在，无需复制
+        if default_path.exists():
+            return
+        example_path = self.cwd / "config.example.ini"
+        if not example_path.exists():
+            return
+        try:
+            import shutil
+
+            shutil.copy2(str(example_path), str(default_path))
+            # 模块导入阶段不便使用 logger，输出到 stdout 作为首次运行提示
+            print(
+                f"[config] 首次运行：已从 {example_path.name} 复制生成 {default_path.name}，"
+                "请按需修改后重启。"
+            )
+        except Exception as e:
+            print(f"[config] 自动复制 config.example.ini 失败: {e}")
 
     def _load_config(self) -> None:
         """加载配置文件"""

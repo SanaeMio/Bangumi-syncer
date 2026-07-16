@@ -46,6 +46,18 @@ order: 20
 - **SSL 证书验证**：一般保持开启。仅当使用代理后出现证书报错、且你确认环境可信时，再考虑关闭（会降低连接校验强度）。
 - **调试模式**：打开后会打出更多运行细节，方便排查问题；日常使用建议关闭。
 - **调度器时区**：定时任务（飞牛/fongmi/Trakt）使用的时区，IANA 格式（如 `Asia/Shanghai`、`America/New_York`、`UTC`）。在 `config.ini` 的 `[scheduler]` 段 `timezone` 项配置。Docker 部署也可通过 `TZ` 环境变量覆盖，优先级：`config.ini` > `TZ` 环境变量 > 默认值 `Asia/Shanghai`。
+- **同步记录保留天数**：程序每次启动时会自动清理超过指定天数的同步记录，控制数据库体积，避免长期运行后占用过大空间。默认不清理，可在 `config.ini` 的 `[dev]` 段 `sync_records_retention_days` 项修改：填 `0` 或负数表示**永不清理**（保留全部历史记录）；调试环境可设为 `7`–`14`，生产环境建议 `30`–`90`。清理后仪表板的热力图缓存会自动失效并重新加载。
+
+## 配置文件说明
+
+程序按以下优先级查找配置文件（找到第一个即使用，不再继续往下找）：
+
+1. 环境变量 `CONFIG_FILE` 指定的路径
+2. Docker 挂载路径 `/app/config/config.ini`
+3. 工作目录下的 `config.dev.ini`（开发用，方便本地调试覆盖正式配置）
+4. 工作目录下的 `config.ini`（默认路径）
+
+仓库里跟踪的是 **`config.example.ini`** 模板（含完整注释与默认值，不含敏感信息）；`config.ini` 本身被 `.gitignore` 忽略，避免误提交账号密码。**首次运行**时若 `config.ini` 不存在，程序会自动从同目录的 `config.example.ini` 复制一份并提示修改后重启。Docker 部署时由 `entrypoint.sh` 在容器启动阶段把镜像内的模板复制到挂载目录 `/app/config/config.ini`（程序内的 `_ensure_default_config` 不会重复触发，因为 `CONFIG_FILE` 已指向挂载路径）。
 
 ## Web 认证配置
 

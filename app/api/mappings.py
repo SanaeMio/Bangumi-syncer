@@ -17,10 +17,14 @@ router = APIRouter(prefix="/api", tags=["mappings"])
 async def get_custom_mappings(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
-    """获取自定义映射"""
+    """获取自定义映射（含正则规则）"""
     try:
         mappings = mapping_service.get_all_mappings()
-        return {"status": "success", "data": {"mappings": mappings}}
+        rules = mapping_service.get_all_rules()
+        return {
+            "status": "success",
+            "data": {"mappings": mappings, "rules": rules},
+        }
     except Exception as e:
         logger.error(f"获取自定义映射失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取自定义映射失败: {str(e)}")
@@ -30,13 +34,14 @@ async def get_custom_mappings(
 async def update_custom_mappings(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
-    """更新自定义映射"""
+    """更新自定义映射（支持附带 rules）"""
     try:
         data = await request.json()
         mappings = data.get("mappings", {})
+        rules = data.get("rules")  # None 表示保留现有 rules
 
-        # 更新映射
-        mapping_service.update_mappings(mappings)
+        # 更新映射（rules=None 时保留现有）
+        mapping_service.update_custom_mappings(mappings, rules=rules)
 
         return {"status": "success", "message": "映射更新成功"}
     except Exception as e:

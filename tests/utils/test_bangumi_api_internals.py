@@ -208,7 +208,7 @@ class TestCheckAuthAndGetMe:
 class TestSearchAndSubjectJsonBranches:
     def test_search_cache_hit_skips_request(self):
         api = BangumiApi()
-        key = ("kw", "2020-01-01", "2020-02-01", 5, True)
+        key = ("kw", "2020-01-01", "2020-02-01", 5, True, (2,))
         api._cache["search"][key] = [{"id": 9}]
         with patch.object(api, "_request_with_retry") as m:
             out = api.search("kw", "2020-01-01", "2020-02-01", limit=5, list_only=True)

@@ -38,9 +38,17 @@ class SearchMixin:
         end_date: str,
         limit: int = 5,
         list_only: bool = True,
+        subject_types: list[int] | None = None,
     ) -> list[dict[str, Any]] | dict[str, Any]:
         # 使用实例缓存避免内存泄漏
-        cache_key = (title, start_date, end_date, limit, list_only)
+        cache_key = (
+            title,
+            start_date,
+            end_date,
+            limit,
+            list_only,
+            tuple(subject_types or [2]),
+        )
         if cache_key in self._cache["search"]:
             return self._cache["search"][cache_key]
 
@@ -51,7 +59,7 @@ class SearchMixin:
             json={
                 "keyword": title,
                 "filter": {
-                    "type": [2],
+                    "type": subject_types if subject_types else [2],
                     "air_date": [f">={start_date}", f"<{end_date}"],
                     "nsfw": True,
                 },
@@ -73,10 +81,10 @@ class SearchMixin:
         return result
 
     def search_old(
-        self, title: str, list_only: bool = True
+        self, title: str, list_only: bool = True, subject_type: int = 2
     ) -> list[dict[str, Any]] | dict[str, Any]:
         # 使用实例缓存避免内存泄漏
-        cache_key = (title, list_only)
+        cache_key = (title, list_only, subject_type)
         if cache_key in self._cache["search_old"]:
             return self._cache["search_old"][cache_key]
 
@@ -84,7 +92,7 @@ class SearchMixin:
             "GET",
             self.req,
             f"{self.api_base}/search/subject/{title}",
-            params={"type": 2},
+            params={"type": subject_type},
         )
         try:
             res = res.json()
@@ -148,6 +156,7 @@ class SearchMixin:
         ori_title: str | None,
         premiere_date: str,
         is_movie: bool = False,
+        subject_types: list[int] | None = None,
     ) -> list[dict[str, Any]] | None:
         bgm_data = None
         start_date_str = "无日期"
@@ -168,9 +177,13 @@ class SearchMixin:
                         title=ori_title,
                         start_date=start_date_str,
                         end_date=end_date_str,
+                        subject_types=subject_types,
                     )
                 bgm_data = bgm_data or self.search(
-                    title=title, start_date=start_date_str, end_date=end_date_str
+                    title=title,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    subject_types=subject_types,
                 )
 
                 if not bgm_data and is_movie:
@@ -181,6 +194,7 @@ class SearchMixin:
                         title=movie_search_title,
                         start_date=start_date_str,
                         end_date=end_date_str,
+                        subject_types=subject_types,
                     )
             except ValueError:
                 logger.warning(
@@ -199,22 +213,40 @@ class SearchMixin:
             # 过滤无效的空标题
             search_titles = [t for t in (ori_title, title) if t and t.strip()]
 
+            found = False
             for t in search_titles:
-                bgm_data_old = self.search_old(title=t)
+                # 旧版接口仅支持单一 type，按 subject_types 顺序尝试
+                types_to_try = subject_types if subject_types else [2]
+                for t_type in types_to_try:
+                    bgm_data_old = self.search_old(title=t, subject_type=t_type)
 
-                if bgm_data_old and len(bgm_data_old) > 0:
-                    # 旧版接口返回数据不含 infobox 别名信息，需拉取完整条目进行准确相似度计算
-                    subject_id = bgm_data_old[0]["id"]
-                    full_info = self.get_subject(subject_id)
+                    if bgm_data_old and len(bgm_data_old) > 0:
+                        # 旧版接口返回数据不含 infobox 别名信息，需拉取完整条目进行准确相似度计算。
+                        # 取前 5 条候选获取详情，供调用方做季度筛选（如 season=1 时
+                        # 首条为"第N季"需改选无季度后缀的第一季本体）。
+                        candidates: list[dict[str, Any]] = []
+                        for entry in bgm_data_old[:5]:
+                            sid = entry.get("id")
+                            if not sid:
+                                continue
+                            info = self.get_subject(sid)
+                            if info:
+                                candidates.append(info)
 
-                    if (
-                        full_info
-                        and self.title_diff_ratio(title, ori_title, bgm_data=full_info)
-                        > 0.5
-                    ):
-                        # 包装为统一的列表格式返回
-                        bgm_data = [full_info]
-                        break
+                        if candidates:
+                            # 仅保留相似度 > 0.5 的候选；全部低相似度时视为未命中
+                            matched = [
+                                c
+                                for c in candidates
+                                if self.title_diff_ratio(title, ori_title, bgm_data=c)
+                                > 0.5
+                            ]
+                            if matched:
+                                bgm_data = matched
+                                found = True
+                                break
+                if found:
+                    break
             else:
                 bgm_data = None
 

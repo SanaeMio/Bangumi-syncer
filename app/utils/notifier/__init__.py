@@ -84,8 +84,12 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
             if types != "all" and notification_type not in types:
                 continue
 
-            # 检查冷却时间
+            # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
             cooldown_key = f"{webhook_config['id']}_{notification_type}"
+            if notification_type == "pending_candidate":
+                cooldown_key = (
+                    f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
+                )
             if not self._should_send_notification(cooldown_key):
                 continue
 
@@ -105,8 +109,12 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
             if types != "all" and notification_type not in types:
                 continue
 
-            # 检查冷却时间
+            # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
             cooldown_key = f"email_{email_config['id']}_{notification_type}"
+            if notification_type == "pending_candidate":
+                cooldown_key = (
+                    f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
+                )
             if not self._should_send_notification(cooldown_key):
                 continue
 

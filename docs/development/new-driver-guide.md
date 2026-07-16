@@ -252,7 +252,7 @@ def get_mydriver_config(self) -> dict:
     }
 ```
 
-在 `config.ini` 中添加默认配置节：
+在 `config.example.ini` 中添加默认配置节（作为模板，`config.ini` 会在首次运行时自动复制）：
 
 ```ini
 [mydriver]

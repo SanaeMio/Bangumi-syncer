@@ -45,8 +45,14 @@ class FongmiSyncService:
     _synced_keys: set[tuple[str, str]] = set()
 
     def _record_to_custom_item(self, rec: FongmiWatchRecord) -> CustomItem:
+        # 优先使用 media_type 字段（含 OVA/OAD/三次元检测），
+        # 为空时回退到 is_movie 二分
+        if rec.media_type:
+            media_type = rec.media_type
+        else:
+            media_type = "movie" if rec.is_movie else "episode"
         return CustomItem(
-            media_type="movie" if rec.is_movie else "episode",
+            media_type=media_type,
             title=rec.title,
             ori_title=None,
             season=rec.season,

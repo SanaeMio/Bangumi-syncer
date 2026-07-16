@@ -504,7 +504,7 @@ class TestSearchMethods:
 
     def test_search_cache_hit(self):
         api = BangumiApi()
-        api._cache["search"][("title", "2024-01-01", "2024-12-31", 5, True)] = [
+        api._cache["search"][("title", "2024-01-01", "2024-12-31", 5, True, (2,))] = [
             {"id": 1}
         ]
         result = api.search("title", "2024-01-01", "2024-12-31")
@@ -536,7 +536,7 @@ class TestSearchMethods:
 
     def test_search_old_cache_hit(self):
         api = BangumiApi()
-        api._cache["search_old"][("title", True)] = [{"id": 1}]
+        api._cache["search_old"][("title", True, 2)] = [{"id": 1}]
         result = api.search_old("title")
         assert result == [{"id": 1}]
 

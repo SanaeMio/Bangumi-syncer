@@ -141,7 +141,7 @@ async def test_sync(
             raise HTTPException(status_code=400, detail="标题不能为空")
 
         media_type = (data.get("media_type") or "episode").lower()
-        if media_type not in ("episode", "movie"):
+        if media_type not in ("episode", "movie", "ova", "oad", "real_action"):
             media_type = "episode"
 
         # 创建测试项目
@@ -216,6 +216,42 @@ async def test_sync(
         raise HTTPException(status_code=500, detail=error_msg)
 
 
+@router.post("/test-match")
+async def test_match(
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """测试匹配过程（不执行实际同步，只返回三段式匹配追踪详情）"""
+    try:
+        data = await request.json()
+
+        if not data.get("title"):
+            raise HTTPException(status_code=400, detail="标题不能为空")
+
+        media_type = (data.get("media_type") or "episode").lower()
+        if media_type not in ("episode", "movie", "ova", "oad", "real_action"):
+            media_type = "episode"
+
+        test_item = CustomItem(
+            media_type=media_type,
+            title=data.get("title", ""),
+            ori_title=data.get("ori_title") or None,
+            season=int(data.get("season", 1)),
+            episode=int(data.get("episode", 1)),
+            release_date=data.get("release_date") or "",
+            user_name=data.get("user_name", "test_user"),
+            source="test-match",
+        )
+
+        result = sync_service.test_match(test_item)
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"测试匹配失败: {e}")
+        raise HTTPException(status_code=500, detail=f"测试匹配失败: {str(e)}")
+
+
 @router.get("/records")
 async def get_sync_records(
     request: Request,
@@ -256,6 +292,185 @@ async def get_sync_records(
     except Exception as e:
         logger.error(f"获取同步记录失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取同步记录失败: {str(e)}")
+
+
+@router.get("/match-records")
+async def get_match_records(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    status: Optional[str] = None,
+    match_method: Optional[str] = None,
+    match_platform: Optional[str] = None,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取匹配记录列表（含匹配追踪字段）"""
+    try:
+        offset = (page - 1) * limit
+        result = sync_service.get_match_records(
+            limit=limit,
+            offset=offset,
+            status=status,
+            match_method=match_method,
+            match_platform=match_platform,
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"获取匹配记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取匹配记录失败: {str(e)}")
+
+
+@router.get("/match-records/{record_id}/trace")
+async def get_match_trace(
+    record_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取单条匹配记录的完整匹配过程详情"""
+    try:
+        record = sync_service.get_sync_record_by_id(record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="记录不存在")
+
+        # 解析 match_trace JSON
+        trace = None
+        trace_str = record.get("match_trace", "")
+        if trace_str:
+            try:
+                trace = json.loads(trace_str)
+            except (json.JSONDecodeError, TypeError):
+                trace = None
+
+        return {"status": "success", "data": {"record": record, "trace": trace}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取匹配详情失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取匹配详情失败: {str(e)}")
+
+
+# ===== 待确认候选（候选沉淀 + 确认 UI） =====
+
+
+@router.get("/pending-candidates")
+async def get_pending_candidates(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取待确认候选列表"""
+    try:
+        offset = (page - 1) * limit
+        result = sync_service.get_pending_candidates(
+            limit=limit, offset=offset, status=status
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"获取待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取待确认候选失败: {str(e)}")
+
+
+@router.get("/pending-candidates/{candidate_id}")
+async def get_pending_candidate_detail(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取单条待确认候选详情（含完整 trace）"""
+    try:
+        record = sync_service.get_pending_candidate_by_id(candidate_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="候选记录不存在")
+
+        candidates = []
+        cand_str = record.get("candidates_json", "") or "[]"
+        try:
+            candidates = json.loads(cand_str)
+        except (json.JSONDecodeError, TypeError):
+            candidates = []
+
+        trace = None
+        trace_str = record.get("trace_json", "") or "{}"
+        try:
+            trace = json.loads(trace_str) if trace_str else None
+        except (json.JSONDecodeError, TypeError):
+            trace = None
+
+        return {
+            "status": "success",
+            "data": {"record": record, "candidates": candidates, "trace": trace},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取待确认候选详情失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取待确认候选详情失败: {str(e)}")
+
+
+@router.post("/pending-candidates/{candidate_id}/confirm")
+async def confirm_pending_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """确认待确认候选：写入自定义映射并标记为已确认"""
+    try:
+        body = await request.json()
+        subject_id = str(body.get("subject_id", "")).strip()
+        if not subject_id:
+            raise HTTPException(status_code=400, detail="subject_id 不能为空")
+
+        success, message = sync_service.confirm_pending_candidate(
+            candidate_id, subject_id
+        )
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+        return {"status": "success", "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"确认待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"确认失败: {str(e)}")
+
+
+@router.post("/pending-candidates/{candidate_id}/reject")
+async def reject_pending_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """拒绝（忽略）待确认候选"""
+    try:
+        success, message = sync_service.reject_pending_candidate(candidate_id)
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+        return {"status": "success", "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"拒绝待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"拒绝失败: {str(e)}")
+
+
+@router.delete("/pending-candidates/{candidate_id}")
+async def delete_pending_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """删除待确认候选"""
+    try:
+        success, message = sync_service.delete_pending_candidate(candidate_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=message)
+        return {"status": "success", "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
 
 @router.get("/records/{record_id}")
@@ -341,7 +556,7 @@ async def retry_sync_record(
 def _build_retry_item(record: dict, retry_source: str) -> CustomItem:
     """从同步记录构建重试用的 CustomItem"""
     retry_media = (record.get("media_type") or "episode").lower()
-    if retry_media not in ("episode", "movie"):
+    if retry_media not in ("episode", "movie", "ova", "oad", "real_action"):
         retry_media = "episode"
     return CustomItem(
         media_type=retry_media,
