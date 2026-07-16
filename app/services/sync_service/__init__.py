@@ -53,11 +53,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         self._tasks_lock = threading.Lock()
         self._sync_tasks = {}
         self._task_counter = 0
-        # 最近一次匹配追踪信息（供 log_sync_record 使用）
-        self._last_match_trace: MatchTrace | None = None
-        self._last_match_method: str = ""
-        self._last_match_score: float | None = None
-        self._last_match_platform: str = ""
 
     def shutdown(self) -> None:
         """关闭线程池，等待正在执行的任务完成"""
@@ -330,7 +325,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
                 )
 
-            subject_id, _, error_response = self._find_matching_subject(
+            subject_id, _, error_response, trace = self._find_matching_subject(
                 item, actual_source
             )
             if not subject_id:
@@ -375,12 +370,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 message=result_message,
                 source=actual_source,
                 media_type=item.media_type,
-                match_method=self._last_match_method,
-                match_score=self._last_match_score,
-                match_platform=self._last_match_platform,
-                match_trace=self._last_match_trace.to_dict()
-                if self._last_match_trace
-                else None,
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, subject_id)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
 
             return SyncResponse(
@@ -405,12 +400,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 message=str(e),
                 source=actual_source if "actual_source" in locals() else source,
                 media_type=item.media_type if "item" in locals() else "movie",
-                match_method=self._last_match_method,
-                match_score=self._last_match_score,
-                match_platform=self._last_match_platform,
-                match_trace=self._last_match_trace.to_dict()
-                if self._last_match_trace
-                else None,
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, None)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
             send_notify(
                 "mark_failed",
@@ -462,12 +457,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
     def _find_matching_subject(
         self, item: CustomItem, actual_source: str
-    ) -> tuple[str | None, bool, SyncResponse | None]:
+    ) -> tuple[str | None, bool, SyncResponse | None, MatchTrace]:
         """查找匹配的 Bangumi 条目。
 
-        返回 (subject_id, is_season_matched_id, error_response)：
-        - 成功：(id, flag, None)
-        - 失败：(None, False, 应立即返回的 SyncResponse)
+        返回 (subject_id, is_season_matched_id, error_response, trace)：
+        - 成功：(id, flag, None, trace)
+        - 失败：(None, False, 应立即返回的 SyncResponse, trace)
+
+        trace 始终非 None，包含三段式匹配的完整过程。
+        trace 作为返回值沿调用链传递，避免并发场景下实例字段竞态。
         """
         # 始终创建匹配追踪，记录三段式匹配过程供「匹配记录」页面展示
         trace = MatchTrace(
@@ -486,16 +484,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             item, trace=trace
         )
 
-        # 存储匹配追踪信息（供后续 log_sync_record 使用）
+        # 完成匹配追踪（trace 作为返回值沿调用链传递，避免并发竞态）
         trace.finish()
-        self._last_match_trace = trace
-        self._last_match_method = trace.final_match_method
-        self._last_match_score = trace.final_score
-        # 从命中的候选中提取 Bangumi 条目 platform（TV/OVA/剧场版/日剧等）
-        self._last_match_platform = self._extract_matched_platform(trace, subject_id)
 
         if subject_id:
-            return subject_id, is_season_matched_id, None
+            return subject_id, is_season_matched_id, None, trace
 
         send_notify(
             "anime_not_found",
@@ -515,15 +508,19 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             message=self._format_subject_not_found_message(item, subject_find_error),
             source=actual_source,
             media_type=item.media_type,
-            match_method=self._last_match_method,
-            match_score=self._last_match_score,
-            match_platform=self._last_match_platform,
-            match_trace=trace.to_dict() if trace else None,
+            match_method=trace.final_match_method,
+            match_score=trace.final_score,
+            match_platform=self._extract_matched_platform(trace, None),
+            match_trace=trace.to_dict(),
         )
         # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认
-        if trace:
-            self._sediment_pending_candidate(item, actual_source, trace)
-        return None, False, SyncResponse(status="error", message="未找到匹配的番剧")
+        self._sediment_pending_candidate(item, actual_source, trace)
+        return (
+            None,
+            False,
+            SyncResponse(status="error", message="未找到匹配的番剧"),
+            trace,
+        )
 
     @staticmethod
     def _extract_matched_platform(trace: MatchTrace, subject_id: str | None) -> str:
@@ -728,6 +725,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         status_holder: list[str],
     ) -> SyncResponse:
         try:
+            trace: MatchTrace | None = None
             sync_action = (item.sync_action or "").strip().lower()
             if sync_action == "mark_watching":
                 # movie 和 real_action（真人电影）走「标记在看」路径
@@ -753,7 +751,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 return validation_error
 
             # 查找番剧ID及其是否为特定季度ID的标记
-            subject_id, is_season_matched_id, subject_error_response = (
+            subject_id, is_season_matched_id, subject_error_response, trace = (
                 self._find_matching_subject(item, actual_source)
             )
             if subject_error_response is not None:
@@ -834,8 +832,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             self._mark_subject_completed_if_needed(item, bgm, bgm_se_id, bgm_title)
 
             # 回填最终剧集 ID 到 trace（匹配阶段未知 ep_id，此处补全）
-            if self._last_match_trace and bgm_ep_id:
-                self._last_match_trace.final_episode_id = str(bgm_ep_id)
+            if trace and bgm_ep_id:
+                trace.final_episode_id = str(bgm_ep_id)
 
             # 记录同步成功到数据库
             database_manager.log_sync_record(
@@ -851,12 +849,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 source=actual_source,
                 media_type=item.media_type,
                 bgm_title=bgm_title,
-                match_method=self._last_match_method,
-                match_score=self._last_match_score,
-                match_platform=self._last_match_platform,
-                match_trace=self._last_match_trace.to_dict()
-                if self._last_match_trace
-                else None,
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, subject_id)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
 
             result = SyncResponse(
@@ -887,12 +885,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 message=str(e),
                 source=actual_source if "actual_source" in locals() else source,
                 media_type=item.media_type if "item" in locals() else "episode",
-                match_method=self._last_match_method,
-                match_score=self._last_match_score,
-                match_platform=self._last_match_platform,
-                match_trace=self._last_match_trace.to_dict()
-                if self._last_match_trace
-                else None,
+                match_method=trace.final_match_method if trace else "",
+                match_score=trace.final_score if trace else None,
+                match_platform=self._extract_matched_platform(trace, None)
+                if trace
+                else "",
+                match_trace=trace.to_dict() if trace else None,
             )
 
             send_notify(

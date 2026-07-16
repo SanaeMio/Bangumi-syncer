@@ -282,7 +282,7 @@ class TestSyncMovieWatchingMatchFields:
                 with patch.object(
                     svc,
                     "_find_matching_subject",
-                    return_value=("12345", False, None),
+                    return_value=("12345", False, None, MagicMock()),
                 ):
                     with patch.object(
                         svc,
@@ -304,7 +304,7 @@ class TestSyncMovieWatchingMatchFields:
         # 验证 log_sync_record 被调用且传了 match_method
         mock_db.log_sync_record.assert_called_once()
         call_kwargs = mock_db.log_sync_record.call_args.kwargs
-        # _find_matching_subject 未设置 _last_match_method，默认空串
+        # trace 作为返回值传递，match_method/match_trace 来自 trace
         assert "match_method" in call_kwargs
         assert "match_trace" in call_kwargs
 
