@@ -733,7 +733,8 @@ main.app-main > .d-flex:first-child {
     animation: app-fade-in 0.28s ease backwards;
 }
 
-#records-table tbody tr.records-table-row--enter {
+#records-table tbody tr.records-table-row--enter,
+.records-table-wrap tbody tr.records-table-row--enter {
     animation: app-records-row-in 0.36s var(--app-ease-smooth) backwards;
 }
 
@@ -1439,20 +1440,20 @@ textarea.form-control:focus {
     --bs-table-hover-bg: rgba(var(--app-primary-rgb), 0.04);
 }
 
-#records-table {
+.records-table-wrap .app-data-table.table-striped {
     --bs-table-striped-bg: rgba(var(--app-primary-rgb), 0.06);
     --bs-table-striped-color: var(--app-text);
 }
 
-#records-table.table-striped > tbody > tr:nth-of-type(odd) > * {
+.records-table-wrap .app-data-table.table-striped > tbody > tr:nth-of-type(odd) > * {
     background-color: rgba(var(--app-primary-rgb), 0.06);
 }
 
-[data-theme="dark"] #records-table {
+[data-theme="dark"] .records-table-wrap .app-data-table.table-striped {
     --bs-table-striped-bg: rgba(var(--app-primary-rgb), 0.1);
 }
 
-[data-theme="dark"] #records-table.table-striped > tbody > tr:nth-of-type(odd) > * {
+[data-theme="dark"] .records-table-wrap .app-data-table.table-striped > tbody > tr:nth-of-type(odd) > * {
     background-color: rgba(var(--app-primary-rgb), 0.1);
 }
 
@@ -2109,22 +2110,31 @@ textarea.form-control:focus {
         margin-bottom: 0.5rem;
     }
     
-    /* 同步记录表格移动端优化 */
-    #records-table {
+    /* 数据表移动端优化（同步记录 / 匹配记录 / 候选确认 / Trakt 历史） */
+    #records-table,
+    #match-records-table,
+    #pending-candidates-table,
+    #sync-history-table {
         font-size: 0.75rem;
         table-layout: fixed;
         width: 100%;
     }
 
-    #records-table tbody tr[data-record-id] {
+    #records-table tbody tr[data-record-id],
+    #match-records-table tbody tr[data-record-id],
+    #pending-candidates-table tbody tr[data-record-id],
+    #sync-history-table tbody tr[data-record-id] {
         cursor: pointer;
     }
 
-    #records-table tbody tr[data-record-id]:active {
+    #records-table tbody tr[data-record-id]:active,
+    #match-records-table tbody tr[data-record-id]:active,
+    #pending-candidates-table tbody tr[data-record-id]:active,
+    #sync-history-table tbody tr[data-record-id]:active {
         background: var(--app-primary-soft);
     }
 
-    /* 移动端可见列：番剧标题、季/集、状态 */
+    /* 同步记录：番剧标题、季/集、状态 */
     #records-table th:nth-child(4),
     #records-table td:nth-child(4) {
         width: 52%;
@@ -2144,9 +2154,75 @@ textarea.form-control:focus {
         width: 26%;
         text-align: center;
     }
+
+    /* 匹配记录：标题、季/集、状态 */
+    #match-records-table th:nth-child(2),
+    #match-records-table td:nth-child(2) {
+        width: 52%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #match-records-table th:nth-child(3),
+    #match-records-table td:nth-child(3) {
+        width: 22%;
+        text-align: center;
+    }
+
+    #match-records-table th:nth-child(8),
+    #match-records-table td:nth-child(8) {
+        width: 26%;
+        text-align: center;
+    }
+
+    /* 候选确认：标题、季/集、状态 */
+    #pending-candidates-table th:nth-child(2),
+    #pending-candidates-table td:nth-child(2) {
+        width: 52%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #pending-candidates-table th:nth-child(3),
+    #pending-candidates-table td:nth-child(3) {
+        width: 22%;
+        text-align: center;
+    }
+
+    #pending-candidates-table th:nth-child(6),
+    #pending-candidates-table td:nth-child(6) {
+        width: 26%;
+        text-align: center;
+    }
+
+    /* Trakt 同步历史：标题、季/集、状态 */
+    #sync-history-table th:nth-child(3),
+    #sync-history-table td:nth-child(3) {
+        width: 52%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #sync-history-table th:nth-child(4),
+    #sync-history-table td:nth-child(4) {
+        width: 22%;
+        text-align: center;
+    }
+
+    #sync-history-table th:nth-child(5),
+    #sync-history-table td:nth-child(5) {
+        width: 26%;
+        text-align: center;
+    }
     
     /* 移动端徽章优化 */
-    #records-table .badge {
+    #records-table .badge,
+    #match-records-table .badge,
+    #pending-candidates-table .badge,
+    #sync-history-table .badge {
         font-size: 0.65rem;
         padding: 0.3em 0.5em;
         white-space: nowrap;
@@ -2165,7 +2241,13 @@ textarea.form-control:focus {
     
     /* 确保表格不会超出容器 */
     #records-table th,
-    #records-table td {
+    #records-table td,
+    #match-records-table th,
+    #match-records-table td,
+    #pending-candidates-table th,
+    #pending-candidates-table td,
+    #sync-history-table th,
+    #sync-history-table td {
         padding: 0.5rem 0.25rem;
         vertical-align: middle;
     }
@@ -3932,6 +4014,7 @@ main.app-main > *:nth-child(12) {
     .tl-msg,
     .tl-track::before,
     #records-table tbody tr.records-table-row--enter,
+    .records-table-wrap tbody tr.records-table-row--enter,
     .records-table-wrap.records-table-wrap--enter .app-data-table,
     .app-pagination.records-pagination--enter {
         animation: none !important;
@@ -4738,33 +4821,6 @@ main.app-main > *:nth-child(12) {
 .status-connected { color: var(--app-green); }
 .status-disconnected { color: var(--app-red); }
 .status-pending { color: var(--app-orange); }
-
-.sync-history-table {
-    max-height: 400px;
-    overflow-y: auto;
-    overflow-x: auto;
-}
-
-.sync-history-table table {
-    min-width: 800px;
-}
-
-.sync-history-table th,
-.sync-history-table td {
-    white-space: nowrap;
-}
-
-.sync-history-table th:nth-child(3),
-.sync-history-table td:nth-child(3) {
-    white-space: normal;
-    min-width: 120px;
-}
-
-.sync-history-table th:nth-child(6),
-.sync-history-table td:nth-child(6) {
-    white-space: normal;
-    max-width: 250px;
-}
 
 .loading-spinner {
     display: inline-block;

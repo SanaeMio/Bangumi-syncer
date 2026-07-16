@@ -164,11 +164,16 @@
                         <option value="电影">电影</option>
                     </select>
                 </div>
-                <div class="col-md-3 d-flex align-items-end">
+                <div class="col-md-3 d-flex align-items-end gap-2">
                     <button type="button"
-                            class="btn btn-outline-primary w-100"
-                            onclick="loadMatchRecords()">
-                        <i class="bi bi-search me-1"></i>查询
+                            class="btn btn-outline-primary flex-fill"
+                            onclick="loadMatchRecords(1)">
+                        <i class="bi bi-funnel me-1"></i>应用筛选
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary flex-fill"
+                            onclick="clearMatchFilters()">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置筛选
                     </button>
                 </div>
             </div>
@@ -178,25 +183,25 @@
     <div class="card mb-4">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
+                <i class="bi bi-list-ul me-2 card-header-icon"></i>
                 <h6 class="m-0 fw-semibold card-header-title">匹配记录列表</h6>
-                <span id="records-count" class="badge bg-secondary ms-2">0</span>
             </div>
         </div>
         <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle app-data-table"
+            <div id="match-records-table-wrap" class="records-table-wrap">
+                <table class="table table-hover table-striped align-middle app-data-table"
                        id="match-records-table">
                     <thead>
                         <tr>
-                            <th>时间</th>
+                            <th class="col-hide-sm">时间</th>
                             <th>标题</th>
-                            <th>季度</th>
-                            <th>匹配方式</th>
-                            <th>命中条目</th>
-                            <th>形态</th>
-                            <th>置信度</th>
+                            <th>季/集</th>
+                            <th class="col-hide-sm">匹配方式</th>
+                            <th class="col-hide-sm">命中条目</th>
+                            <th class="col-hide-sm">形态</th>
+                            <th class="col-hide-sm">置信度</th>
                             <th>状态</th>
-                            <th>操作</th>
+                            <th class="col-hide-sm">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -204,24 +209,19 @@
                     </tbody>
                 </table>
             </div>
-            <!-- 空状态 -->
-            <div id="empty-state" class="app-empty-state is-hidden">
-                <i class="bi bi-inbox app-empty-state__icon"></i>
-                <h5 class="text-muted mt-3">暂无匹配记录</h5>
-                <p class="text-muted mb-0">同步请求后会产生匹配记录</p>
-            </div>
+            <!-- 分页 -->
+            <nav class="app-pagination" id="pagination-nav" aria-label="分页导航">
+                <ul class="pagination app-pagination__list mb-0" id="pagination">
+                    <!-- 动态生成 -->
+                </ul>
+                <div class="app-pagination__summary text-muted" id="pagination-summary"></div>
+            </nav>
             <!-- 加载状态 -->
             <div id="loading" class="app-loading-state is-hidden">
                 <div class="spinner-border" role="status">
                     <span class="visually-hidden">加载中...</span>
                 </div>
             </div>
-            <!-- 分页 -->
-            <nav id="pagination-nav" class="mt-3 is-hidden">
-                <ul class="pagination justify-content-center" id="pagination">
-                    <!-- 动态生成 -->
-                </ul>
-            </nav>
         </div>
     </div>
     <!-- 匹配详情模态框 -->
@@ -248,11 +248,12 @@
 {% block scripts %}
     <script>
 let currentPage = 1;
-const pageLimit = 20;
+const pageLimit = APP_TABLE_PAGE_SIZE;
 let matchDetailModal = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     matchDetailModal = new bootstrap.Modal(document.getElementById('matchDetailModal'));
+    bindAppTableMobileRowClick('#match-records-table', showMatchDetail);
     loadMatchRecords();
     // 支持通过 ?id= URL 参数自动打开匹配记录详情（从同步记录跳转）
     const params = new URLSearchParams(window.location.search);
@@ -290,7 +291,12 @@ async function loadMatchRecords(page) {
 
         if (data.status === 'success') {
             displayMatchRecords(data.data.records, data.data.total);
-            renderPagination(data.data.total, data.data.limit, data.data.offset);
+            renderAppPagination({
+                total: data.data.total,
+                currentPage: currentPage,
+                limit: pageLimit,
+                onPageChange: loadMatchRecords,
+            });
         } else {
             showAlert('加载匹配记录失败', 'danger');
         }
@@ -304,29 +310,24 @@ async function loadMatchRecords(page) {
 
 function displayMatchRecords(records, total) {
     const tbody = document.querySelector('#match-records-table tbody');
-    const emptyState = document.getElementById('empty-state');
-    const table = document.getElementById('match-records-table');
-    const countBadge = document.getElementById('records-count');
 
     tbody.innerHTML = '';
-    countBadge.textContent = total;
 
     if (records.length === 0) {
-        table.classList.add('is-hidden');
-        emptyState.classList.remove('is-hidden');
+        const emptyRow = document.createElement('tr');
+        applyAppTableRowEnter(emptyRow, 0);
+        emptyRow.innerHTML = `<td colspan="9">${createAppEmptyStateHtml('暂无匹配记录', '同步请求后会产生匹配记录')}</td>`;
+        tbody.appendChild(emptyRow);
+        replayAppTableAnimation('match-records-table-wrap');
         return;
     }
 
-    table.classList.remove('is-hidden');
-    emptyState.classList.add('is-hidden');
-
-    records.forEach(record => {
+    records.forEach((record, index) => {
         const row = document.createElement('tr');
+        row.dataset.recordId = String(record.id);
 
-        // 匹配方式标签
-        const methodBadge = getMethodBadge(record.match_method);
-        // 状态标签
-        const statusBadge = getStatusBadge(record.status);
+        const methodBadge = renderMatchMethodBadge(record.match_method);
+        const statusBadge = renderSyncStatusBadge(record.status);
         // 置信度
         const scoreText = record.match_score !== null && record.match_score !== undefined
             ? (record.match_score * 100).toFixed(1) + '%'
@@ -336,47 +337,32 @@ function displayMatchRecords(records, total) {
             ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="text-decoration-none">${record.bgm_title || record.subject_id}</a>`
             : '<span class="text-muted">-</span>';
 
-        // 行高亮：失败用警告色
-        const rowClass = record.status === 'error' ? 'table-warning' : '';
-
-        row.className = rowClass;
+        applyAppTableRowEnter(row, index);
         row.innerHTML = `
-            <td><small>${formatDate(record.timestamp)}</small></td>
+            <td class="col-hide-sm"><small>${formatDate(record.timestamp)}</small></td>
             <td>${escapeHtml(record.title)}</td>
             <td>S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}</td>
-            <td>${methodBadge}</td>
-            <td>${subjectLink}</td>
-            <td><small>${record.match_platform || '-'}</small></td>
-            <td><small>${scoreText}</small></td>
+            <td class="col-hide-sm">${methodBadge}</td>
+            <td class="col-hide-sm">${subjectLink}</td>
+            <td class="col-hide-sm"><small>${record.match_platform || '-'}</small></td>
+            <td class="col-hide-sm"><small>${scoreText}</small></td>
             <td>${statusBadge}</td>
-            <td>
-                <button type="button" class="btn btn-sm btn-outline-info" onclick="showMatchDetail(${record.id})" title="查看匹配过程">
+            <td class="col-hide-sm text-nowrap records-table-actions">
+                <button type="button" class="btn btn-action btn-outline-primary" onclick="showMatchDetail(${record.id})" title="查看匹配过程">
                     <i class="bi bi-list-ul"></i>
                 </button>
             </td>
         `;
         tbody.appendChild(row);
     });
+    replayAppTableAnimation('match-records-table-wrap');
 }
 
-function getMethodBadge(method) {
-    const badges = {
-        'custom_mapping': '<span class="badge bg-primary">自定义映射</span>',
-        'bangumi_data': '<span class="badge bg-success">bangumi-data</span>',
-        'api_search': '<span class="badge bg-info">API 搜索</span>',
-        'failed': '<span class="badge bg-danger">失败</span>'
-    };
-    return badges[method] || '<span class="badge bg-secondary">未知</span>';
-}
-
-function getStatusBadge(status) {
-    const badges = {
-        'success': '<span class="badge bg-success">成功</span>',
-        'error': '<span class="badge bg-danger">失败</span>',
-        'ignored': '<span class="badge bg-warning">已忽略</span>',
-        'retried': '<span class="badge bg-info">已重试</span>'
-    };
-    return badges[status] || '<span class="badge bg-secondary">' + status + '</span>';
+function clearMatchFilters() {
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-method').value = '';
+    document.getElementById('filter-platform').value = '';
+    loadMatchRecords(1);
 }
 
 function escapeHtml(text) {
@@ -505,59 +491,8 @@ async function showMatchDetail(recordId) {
     }
 }
 
-function renderPagination(total, limit, offset) {
-    const nav = document.getElementById('pagination-nav');
-    const pagination = document.getElementById('pagination');
-
-    const totalPages = Math.ceil(total / limit);
-    const currentPage = Math.floor(offset / limit) + 1;
-
-    if (totalPages <= 1) {
-        nav.classList.add('is-hidden');
-        return;
-    }
-
-    nav.classList.remove('is-hidden');
-    pagination.innerHTML = '';
-
-    // 上一页
-    pagination.innerHTML += `
-        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="loadMatchRecords(${currentPage - 1}); return false;">&laquo;</a>
-        </li>
-    `;
-
-    // 页码（最多显示 10 个）
-    const startPage = Math.max(1, currentPage - 4);
-    const endPage = Math.min(totalPages, startPage + 9);
-
-    for (let i = startPage; i <= endPage; i++) {
-        pagination.innerHTML += `
-            <li class="page-item ${i === currentPage ? 'active' : ''}">
-                <a class="page-link" href="#" onclick="loadMatchRecords(${i}); return false;">${i}</a>
-            </li>
-        `;
-    }
-
-    // 下一页
-    pagination.innerHTML += `
-        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="loadMatchRecords(${currentPage + 1}); return false;">&raquo;</a>
-        </li>
-    `;
-}
-
 function showLoading(show) {
-    const loading = document.getElementById('loading');
-    const table = document.getElementById('match-records-table');
-
-    if (show) {
-        loading.classList.remove('is-hidden');
-        table.classList.add('is-hidden');
-    } else {
-        loading.classList.add('is-hidden');
-        table.classList.remove('is-hidden');
-    }
+    setAppTableLoading(show, 'match-records-table-wrap');
 }
 
 // ===== 番剧匹配测试 =====

@@ -35,11 +35,16 @@
                         <option value="rejected">已忽略</option>
                     </select>
                 </div>
-                <div class="col-md-3 d-flex align-items-end">
+                <div class="col-md-3 d-flex align-items-end gap-2">
                     <button type="button"
-                            class="btn btn-outline-primary w-100"
-                            onclick="loadPendingCandidates()">
-                        <i class="bi bi-search me-1"></i>查询
+                            class="btn btn-outline-primary flex-fill"
+                            onclick="loadPendingCandidates(1)">
+                        <i class="bi bi-funnel me-1"></i>应用筛选
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary flex-fill"
+                            onclick="clearPendingFilters()">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置筛选
                     </button>
                 </div>
             </div>
@@ -51,22 +56,21 @@
             <div class="d-flex align-items-center">
                 <i class="bi bi-list-check me-2 card-header-icon"></i>
                 <h6 class="m-0 fw-semibold card-header-title">候选列表</h6>
-                <span id="records-count" class="badge bg-secondary ms-2">0</span>
             </div>
         </div>
         <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle app-data-table"
+            <div id="pending-candidates-table-wrap" class="records-table-wrap">
+                <table class="table table-hover table-striped align-middle app-data-table"
                        id="pending-candidates-table">
                     <thead>
                         <tr>
-                            <th>时间</th>
+                            <th class="col-hide-sm">时间</th>
                             <th>标题</th>
-                            <th>季度/集数</th>
-                            <th>来源</th>
-                            <th>候选数</th>
+                            <th>季/集</th>
+                            <th class="col-hide-sm">来源</th>
+                            <th class="col-hide-sm">候选数</th>
                             <th>状态</th>
-                            <th>操作</th>
+                            <th class="col-hide-sm">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -74,24 +78,19 @@
                     </tbody>
                 </table>
             </div>
-            <!-- 空状态 -->
-            <div id="empty-state" class="app-empty-state is-hidden">
-                <i class="bi bi-inbox app-empty-state__icon"></i>
-                <h5 class="text-muted mt-3">暂无待确认候选</h5>
-                <p class="text-muted mb-0">匹配失败且存在候选时将自动沉淀到此页面</p>
-            </div>
+            <!-- 分页 -->
+            <nav class="app-pagination" id="pagination-nav" aria-label="分页导航">
+                <ul class="pagination app-pagination__list mb-0" id="pagination">
+                    <!-- 动态生成 -->
+                </ul>
+                <div class="app-pagination__summary text-muted" id="pagination-summary"></div>
+            </nav>
             <!-- 加载状态 -->
             <div id="loading" class="app-loading-state is-hidden">
                 <div class="spinner-border" role="status">
                     <span class="visually-hidden">加载中...</span>
                 </div>
             </div>
-            <!-- 分页 -->
-            <nav id="pagination-nav" class="mt-3 is-hidden">
-                <ul class="pagination justify-content-center" id="pagination">
-                    <!-- 动态生成 -->
-                </ul>
-            </nav>
         </div>
     </div>
     <!-- 候选详情模态框 -->
@@ -120,11 +119,12 @@
 {% block scripts %}
     <script>
 let currentPage = 1;
-const pageLimit = 20;
+const pageLimit = APP_TABLE_PAGE_SIZE;
 let candidateDetailModal = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     candidateDetailModal = new bootstrap.Modal(document.getElementById('candidateDetailModal'));
+    bindAppTableMobileRowClick('#pending-candidates-table', showCandidateDetail);
     loadPendingCandidates();
 });
 
@@ -151,7 +151,12 @@ async function loadPendingCandidates(page) {
 
         if (data.status === 'success') {
             displayPendingCandidates(data.data.records, data.data.total);
-            renderPagination(data.data.total, data.data.limit, data.data.offset);
+            renderAppPagination({
+                total: data.data.total,
+                currentPage: currentPage,
+                limit: pageLimit,
+                onPageChange: loadPendingCandidates,
+            });
         } else {
             showAlert('加载候选列表失败', 'danger');
         }
@@ -165,48 +170,43 @@ async function loadPendingCandidates(page) {
 
 function displayPendingCandidates(records, total) {
     const tbody = document.querySelector('#pending-candidates-table tbody');
-    const emptyState = document.getElementById('empty-state');
-    const table = document.getElementById('pending-candidates-table');
-    const countBadge = document.getElementById('records-count');
 
     tbody.innerHTML = '';
-    countBadge.textContent = total;
 
     if (records.length === 0) {
-        table.classList.add('is-hidden');
-        emptyState.classList.remove('is-hidden');
+        const emptyRow = document.createElement('tr');
+        applyAppTableRowEnter(emptyRow, 0);
+        emptyRow.innerHTML = `<td colspan="7">${createAppEmptyStateHtml('暂无待确认候选', '匹配失败且存在候选时将自动沉淀到此页面')}</td>`;
+        tbody.appendChild(emptyRow);
+        replayAppTableAnimation('pending-candidates-table-wrap');
         return;
     }
 
-    table.classList.remove('is-hidden');
-    emptyState.classList.add('is-hidden');
-
-    records.forEach(record => {
+    records.forEach((record, index) => {
         const row = document.createElement('tr');
-        const statusBadge = getStatusBadge(record.status);
+        row.dataset.recordId = String(record.id);
+        const statusBadge = renderCandidateStatusBadge(record.status);
         const candidatesCount = parseCandidatesCount(record.candidates_json);
 
-        // 行高亮：待确认用警告色
-        const rowClass = record.status === 'pending' ? 'table-warning' : '';
-        row.className = rowClass;
+        applyAppTableRowEnter(row, index);
 
         row.innerHTML = `
-            <td><small>${formatDate(record.created_at)}</small></td>
+            <td class="col-hide-sm"><small>${formatDate(record.created_at)}</small></td>
             <td>${escapeHtml(record.request_title)}</td>
             <td>S${String(record.request_season).padStart(2, '0')}E${String(record.request_episode).padStart(2, '0')}</td>
-            <td><small>${record.source || '-'}</small></td>
-            <td><span class="badge bg-info">${candidatesCount}</span></td>
+            <td class="col-hide-sm">${renderSourceBadge(record.source)}</td>
+            <td class="col-hide-sm"><span class="badge rounded-pill bg-info">${candidatesCount}</span></td>
             <td>${statusBadge}</td>
-            <td>
-                <button type="button" class="btn btn-sm btn-outline-info" onclick="showCandidateDetail(${record.id})" title="查看候选">
+            <td class="col-hide-sm text-nowrap records-table-actions">
+                <button type="button" class="btn btn-action btn-outline-primary" onclick="showCandidateDetail(${record.id})" title="查看候选">
                     <i class="bi bi-list-ul"></i>
                 </button>
                 ${record.status === 'pending' ? `
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="rejectCandidate(${record.id})" title="忽略">
+                    <button type="button" class="btn btn-action btn-outline-danger" onclick="rejectCandidate(${record.id})" title="忽略">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 ` : `
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCandidate(${record.id})" title="删除">
+                    <button type="button" class="btn btn-action btn-outline-danger" onclick="deleteCandidate(${record.id})" title="删除">
                         <i class="bi bi-trash"></i>
                     </button>
                 `}
@@ -214,6 +214,7 @@ function displayPendingCandidates(records, total) {
         `;
         tbody.appendChild(row);
     });
+    replayAppTableAnimation('pending-candidates-table-wrap');
 }
 
 function parseCandidatesCount(jsonStr) {
@@ -225,13 +226,9 @@ function parseCandidatesCount(jsonStr) {
     }
 }
 
-function getStatusBadge(status) {
-    const badges = {
-        'pending': '<span class="badge bg-warning">待确认</span>',
-        'confirmed': '<span class="badge bg-success">已确认</span>',
-        'rejected': '<span class="badge bg-secondary">已忽略</span>'
-    };
-    return badges[status] || '<span class="badge bg-secondary">' + status + '</span>';
+function clearPendingFilters() {
+    document.getElementById('filter-status').value = 'pending';
+    loadPendingCandidates(1);
 }
 
 function escapeHtml(text) {
@@ -397,56 +394,8 @@ async function deleteCandidate(candidateId) {
     }
 }
 
-function renderPagination(total, limit, offset) {
-    const nav = document.getElementById('pagination-nav');
-    const pagination = document.getElementById('pagination');
-
-    const totalPages = Math.ceil(total / limit);
-    const currentPageNum = Math.floor(offset / limit) + 1;
-
-    if (totalPages <= 1) {
-        nav.classList.add('is-hidden');
-        return;
-    }
-
-    nav.classList.remove('is-hidden');
-    pagination.innerHTML = '';
-
-    pagination.innerHTML += `
-        <li class="page-item ${currentPageNum === 1 ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="loadPendingCandidates(${currentPageNum - 1}); return false;">&laquo;</a>
-        </li>
-    `;
-
-    const startPage = Math.max(1, currentPageNum - 4);
-    const endPage = Math.min(totalPages, startPage + 9);
-
-    for (let i = startPage; i <= endPage; i++) {
-        pagination.innerHTML += `
-            <li class="page-item ${i === currentPageNum ? 'active' : ''}">
-                <a class="page-link" href="#" onclick="loadPendingCandidates(${i}); return false;">${i}</a>
-            </li>
-        `;
-    }
-
-    pagination.innerHTML += `
-        <li class="page-item ${currentPageNum === totalPages ? 'disabled' : ''}">
-            <a class="page-link" href="#" onclick="loadPendingCandidates(${currentPageNum + 1}); return false;">&raquo;</a>
-        </li>
-    `;
-}
-
 function showLoading(show) {
-    const loading = document.getElementById('loading');
-    const table = document.getElementById('pending-candidates-table');
-
-    if (show) {
-        loading.classList.remove('is-hidden');
-        table.classList.add('is-hidden');
-    } else {
-        loading.classList.add('is-hidden');
-        table.classList.remove('is-hidden');
-    }
+    setAppTableLoading(show, 'pending-candidates-table-wrap');
 }
     </script>
 {% endblock %}

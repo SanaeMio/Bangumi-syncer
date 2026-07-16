@@ -170,22 +170,14 @@
 {% block scripts %}
     <script>
 let currentPage = 1;
-let currentLimit = 10;
+let currentLimit = APP_TABLE_PAGE_SIZE;
 let currentFilters = {};
 let allUsers = new Set();
 let recordDetailModal;
 
 document.addEventListener('DOMContentLoaded', function() {
     recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
-    document.querySelector('#records-table tbody').addEventListener('click', function(e) {
-        if (!window.matchMedia('(max-width: 767.98px)').matches) return;
-        const row = e.target.closest('tr[data-record-id]');
-        if (!row) return;
-        const rid = parseInt(row.dataset.recordId, 10);
-        if (!isNaN(rid) && rid > 0) {
-            showRecordDetail(rid);
-        }
-    });
+    bindAppTableMobileRowClick('#records-table', showRecordDetail);
     loadRecords().then(function() {
         var openId = new URLSearchParams(window.location.search).get('open');
         if (openId) {
@@ -215,7 +207,12 @@ async function loadRecords(page = 1, limit = 10) {
         
         if (data.status === 'success') {
             displayRecords(data.data.records);
-            updatePagination(data.data.total, page, limit);
+            renderAppPagination({
+                total: data.data.total,
+                currentPage: page,
+                limit,
+                onPageChange: (p) => loadRecords(p, currentLimit),
+            });
             updateUserFilter(data.data.records);
         } else {
             showAlert('加载记录失败', 'danger');
@@ -234,10 +231,10 @@ function displayRecords(records) {
     
     if (records.length === 0) {
         const emptyRow = document.createElement('tr');
-        emptyRow.classList.add('records-table-row--enter');
-        emptyRow.innerHTML = '<td colspan="9"><div class="app-empty-state"><i class="bi bi-inbox app-empty-state__icon"></i><div>暂无同步记录</div></div></td>';
+        applyAppTableRowEnter(emptyRow, 0);
+        emptyRow.innerHTML = `<td colspan="9">${createAppEmptyStateHtml('暂无同步记录')}</td>`;
         tbody.appendChild(emptyRow);
-        replayRecordsTableAnimation();
+        replayAppTableAnimation('records-table-wrap');
         return;
     }
     
@@ -246,15 +243,14 @@ function displayRecords(records) {
         const typeLabel = mt === 'movie' ? '电影' : '剧集';
         const row = document.createElement('tr');
         row.dataset.recordId = String(record.id);
-        row.classList.add('records-table-row--enter');
-        row.style.animationDelay = `${Math.min(index * 0.04, 0.36)}s`;
+        applyAppTableRowEnter(row, index);
         row.innerHTML = `
             <td class="col-hide-sm"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
-            <td class="col-hide-sm">${new Date(record.timestamp).toLocaleString()}</td>
+            <td class="col-hide-sm">${formatDate(record.timestamp)}</td>
             <td class="col-hide-sm">${record.user_name}</td>
             <td>${record.bgm_title || record.title}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
-            <td><span class="badge rounded-pill bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span></td>
+            <td><span class="badge rounded-pill bg-${getSyncRecordStatusColor(record.status)}">${getSyncRecordStatusText(record.status)}</span></td>
             <td class="col-hide-sm"><span class="badge rounded-pill tl-source--${getSourceTlClass(record.source)}">${record.source}</span></td>
             <td class="col-hide-sm text-truncate text-truncate-cell" title="${record.message}">${record.message}</td>
             <td class="col-hide-sm text-nowrap records-table-actions">
@@ -268,139 +264,7 @@ function displayRecords(records) {
         `;
         tbody.appendChild(row);
     });
-    replayRecordsTableAnimation();
-}
-
-function replayRecordsTableAnimation() {
-    const wrap = document.getElementById('records-table-wrap');
-    if (!wrap) return;
-    wrap.classList.remove('records-table-wrap--enter');
-    void wrap.offsetWidth;
-    wrap.classList.add('records-table-wrap--enter');
-}
-
-function replayRecordsPaginationAnimation() {
-    const nav = document.getElementById('pagination-nav');
-    if (!nav || nav.classList.contains('is-hidden')) return;
-    nav.classList.remove('records-pagination--enter');
-    void nav.offsetWidth;
-    nav.classList.add('records-pagination--enter');
-}
-
-function getStatusColor(status) {
-    switch (status) {
-        case 'success': return 'success';
-        case 'error': return 'danger';
-        case 'ignored': return 'warning';
-        case 'retried': return 'success';  // 已重试也用绿色，表示问题已解决
-        default: return 'secondary';
-    }
-}
-
-function getStatusText(status) {
-    switch (status) {
-        case 'success': return '成功';
-        case 'error': return '失败';
-        case 'ignored': return '已忽略';
-        case 'retried': return '已重试';
-        default: return status;
-    }
-}
-
-function getSourceColor(source) {
-    const sourceLower = source.toLowerCase();
-    if (sourceLower.startsWith('retry-')) return 'purple';
-    switch (sourceLower) {
-        case 'plex': return 'warning';
-        case 'emby': return 'success';
-        case 'jellyfin': return 'primary';
-        case 'custom': return 'secondary';
-        case 'feiniu': return 'info';
-        case 'fongmi': return 'primary';
-        case 'test': return 'secondary';
-        default: return 'secondary';
-    }
-}
-
-function getSourceTlClass(source) {
-    const s = source.toLowerCase();
-    if (s.startsWith('retry-')) return 'retry';
-    if (['plex', 'emby', 'jellyfin', 'custom', 'feiniu', 'fongmi', 'test'].indexOf(s) !== -1) return s;
-    return 'custom';
-}
-
-function updatePagination(total, currentPage, limit) {
-    const totalPages = Math.ceil(total / limit);
-    const pagination = document.getElementById('pagination');
-    const summary = document.getElementById('pagination-summary');
-    const nav = document.getElementById('pagination-nav');
-    pagination.innerHTML = '';
-
-    if (total <= 0) {
-        if (summary) summary.textContent = '';
-        if (nav) nav.classList.add('is-hidden');
-        return;
-    }
-
-    if (summary) {
-        summary.textContent = totalPages <= 1
-            ? `共 ${total} 条记录`
-            : `第 ${currentPage} / ${totalPages} 页，共 ${total} 条`;
-    }
-
-    if (totalPages <= 1) {
-        if (nav) nav.classList.remove('is-hidden');
-        replayRecordsPaginationAnimation();
-        return;
-    }
-
-    if (nav) nav.classList.remove('is-hidden');
-
-    const prevLi = document.createElement('li');
-    prevLi.className = `page-item page-item--nav ${currentPage === 1 ? 'disabled' : ''}`;
-    prevLi.innerHTML = `<a class="page-link" href="#" aria-label="上一页" onclick="event.preventDefault(); loadRecords(${currentPage - 1})"><i class="bi bi-chevron-left" aria-hidden="true"></i><span class="d-none d-sm-inline">上一页</span></a>`;
-    pagination.appendChild(prevLi);
-
-    const startPage = Math.max(1, currentPage - 2);
-    const endPage = Math.min(totalPages, currentPage + 2);
-
-    if (startPage > 1) {
-        pagination.appendChild(createPageItem(1, currentPage));
-        if (startPage > 2) {
-            pagination.appendChild(createEllipsisItem());
-        }
-    }
-
-    for (let i = startPage; i <= endPage; i++) {
-        pagination.appendChild(createPageItem(i, currentPage));
-    }
-
-    if (endPage < totalPages) {
-        if (endPage < totalPages - 1) {
-            pagination.appendChild(createEllipsisItem());
-        }
-        pagination.appendChild(createPageItem(totalPages, currentPage));
-    }
-
-    const nextLi = document.createElement('li');
-    nextLi.className = `page-item page-item--nav ${currentPage === totalPages ? 'disabled' : ''}`;
-    nextLi.innerHTML = `<a class="page-link" href="#" aria-label="下一页" onclick="event.preventDefault(); loadRecords(${currentPage + 1})"><span class="d-none d-sm-inline">下一页</span><i class="bi bi-chevron-right" aria-hidden="true"></i></a>`;
-    pagination.appendChild(nextLi);
-    replayRecordsPaginationAnimation();
-}
-
-function createPageItem(page, currentPage) {
-    const li = document.createElement('li');
-    li.className = `page-item page-item--num ${page === currentPage ? 'active' : ''}`;
-    li.innerHTML = `<a class="page-link" href="#" aria-label="第 ${page} 页" aria-current="${page === currentPage ? 'page' : 'false'}" onclick="event.preventDefault(); loadRecords(${page})">${page}</a>`;
-    return li;
-}
-
-function createEllipsisItem() {
-    const li = document.createElement('li');
-    li.className = 'page-item page-item--ellipsis disabled';
-    li.innerHTML = '<span class="page-link" aria-hidden="true">…</span>';
-    return li;
+    replayAppTableAnimation('records-table-wrap');
 }
 
 function updateUserFilter(records) {
@@ -586,16 +450,7 @@ async function showRecordDetail(recordId) {
 }
 
 function showLoading(show) {
-    const loading = document.getElementById('loading');
-    const tableWrap = document.getElementById('records-table-wrap');
-    
-    if (show) {
-        loading.classList.remove('is-hidden');
-        tableWrap.classList.add('app-table-wrap--loading');
-    } else {
-        loading.classList.add('is-hidden');
-        tableWrap.classList.remove('app-table-wrap--loading');
-    }
+    setAppTableLoading(show, 'records-table-wrap');
 }
     </script>
 {% endblock %}
