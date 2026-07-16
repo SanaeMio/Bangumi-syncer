@@ -9,10 +9,22 @@ from fastapi.responses import HTMLResponse
 
 from ..core.app_version import get_display_version
 from ..core.config import config_manager
-from ..core.public_url import redirect_public
+from ..core.public_url import get_public_base_path, redirect_public
 from ..core.web_templates import get_templates
 from ..utils.bgm_image_url import build_poster_cache_namespace
 from .deps import get_current_user_from_cookie
+
+
+def _login_redirect(request: Request):
+    """重定向到登录页，携带当前站内路径作为 next 参数"""
+    path = request.url.path
+    base = get_public_base_path()
+    if base and path.startswith(base):
+        path = path[len(base) :]
+    if not path or path == "/login":
+        path = "/dashboard"
+    return redirect_public(f"/login?next={path}")
+
 
 templates = get_templates()
 
@@ -31,7 +43,7 @@ async def dashboard(request: Request):
     """仪表板页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return redirect_public("/login")
+        return _login_redirect(request)
 
     return templates.TemplateResponse(
         request,
@@ -63,7 +75,7 @@ async def config_page(request: Request) -> HTMLResponse:
     """配置管理页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return redirect_public("/login")
+        return _login_redirect(request)
 
     return templates.TemplateResponse(request, "config.html", {"user": user})
 
@@ -73,7 +85,7 @@ async def records_page(request: Request):
     """同步记录页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return redirect_public("/login")
+        return _login_redirect(request)
 
     return templates.TemplateResponse(request, "records.html", {"user": user})
 
@@ -83,7 +95,7 @@ async def mappings_page(request: Request):
     """映射管理页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return redirect_public("/login")
+        return _login_redirect(request)
 
     return templates.TemplateResponse(request, "mappings.html", {"user": user})
 
@@ -93,7 +105,7 @@ async def debug_page(request: Request):
     """调试工具页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return redirect_public("/login")
+        return _login_redirect(request)
 
     return templates.TemplateResponse(request, "debug.html", {"user": user})
 
@@ -103,7 +115,7 @@ async def logs_page(request: Request):
     """日志页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return redirect_public("/login")
+        return _login_redirect(request)
 
     return templates.TemplateResponse(request, "logs.html", {"user": user})
 
@@ -113,7 +125,7 @@ async def trakt_config_page(request: Request) -> HTMLResponse:
     """Trakt 配置页面"""
     user = get_current_user_from_cookie(request)
     if not user:
-        return redirect_public("/login")
+        return _login_redirect(request)
 
     return templates.TemplateResponse(request, "trakt/config.html", {"user": user})
 

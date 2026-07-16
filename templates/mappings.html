@@ -143,6 +143,14 @@
                                   placeholder='{"番剧名1": "bangumi_id1", "番剧名2": "bangumi_id2"}'></textarea>
                         <div class="form-text">请输入JSON格式的映射数据，格式：{"番剧名": "bangumi_id"}</div>
                     </div>
+                    <!-- fongmi: JSON 文件上传 -->
+                    <div class="mb-3">
+                        <label for="import-file" class="form-label">或上传 JSON 文件</label>
+                        <input type="file"
+                               class="form-control"
+                               id="import-file"
+                               accept=".json,application/json">
+                    </div>
                     <div class="mb-3">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="merge-mappings" checked>
@@ -387,9 +395,29 @@ async function confirmDelete() {
 
 function showImportModal() {
     document.getElementById('import-text').value = '';
+    document.getElementById('import-file').value = '';
     document.getElementById('merge-mappings').checked = true;
     importModal.show();
 }
+
+// fongmi: 文件上传读取
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.getElementById('import-file');
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                document.getElementById('import-text').value = ev.target.result;
+            };
+            reader.onerror = function() {
+                showAlert('文件读取失败', 'danger');
+            };
+            reader.readAsText(file);
+        });
+    }
+});
 
 async function importMappings() {
     const importText = document.getElementById('import-text').value.trim();

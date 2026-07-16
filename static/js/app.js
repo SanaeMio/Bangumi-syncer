@@ -572,8 +572,13 @@ async function handleLoginSubmit(e) {
             `;
             
             // 延迟跳转以显示成功信息
+            const params = new URLSearchParams(window.location.search);
+            const next = params.get('next');
+            // 只允许站内路径跳转，防止开放重定向
+            const target = next && next.startsWith('/') && !next.startsWith('//')
+                ? next : '/dashboard';
             setTimeout(() => {
-                window.location.href = appUrl('/');
+                window.location.href = appUrl(target);
             }, 1000);
         } else {
             // 登录失败
@@ -612,10 +617,14 @@ document.addEventListener('DOMContentLoaded', function() {
 window.initLoginPage = initLoginPage;
 window.handleLoginSubmit = handleLoginSubmit;
 
-// ========== 同步重试功能 ==========
+// ========== 同步重试功能（SSE 流式日志） ==========
+
+let _retryEventSource = null;
+let _retryLogModal = null;
+let _retryDone = false;
 
 /**
- * 重试同步记录
+ * 重试同步记录（打开日志弹窗，SSE 实时推送 debug 日志）
  * @param {number} recordId - 记录ID
  */
 async function retrySync(recordId) {
@@ -623,69 +632,143 @@ async function retrySync(recordId) {
         showAlert('记录ID无效', 'danger');
         return;
     }
-    
+
     // 确认重试
     if (!confirm('确定要重试此同步记录吗？')) {
         return;
     }
-    
-    try {
-        // 显示加载状态
-        showAlert('正在重试同步...', 'info', 0);
-        
-        // 调用重试API
-        const response = await fetch(appUrl(`/api/records/${recordId}/retry`), {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+
+    // 初始化弹窗（懒加载）
+    if (!_retryLogModal) {
+        const modalEl = document.getElementById('retryLogModal');
+        if (!modalEl) {
+            showAlert('日志弹窗元素不存在', 'danger');
+            return;
+        }
+        _retryLogModal = new bootstrap.Modal(modalEl);
+        // 弹窗关闭时停止 SSE
+        modalEl.addEventListener('hidden.bs.modal', function () {
+            stopRetrySSE();
         });
-        
-        const result = await response.json();
-        
-        // 关闭加载提示
-        const toastContainer = document.getElementById('toast-container');
-        if (toastContainer) {
-            toastContainer.innerHTML = '';
-        }
-        
-        if (response.ok && result.status === 'success') {
-            const syncResult = result.data;
-            
-            if (syncResult.status === 'success') {
-                showAlert('重试成功！已同步到Bangumi', 'success', 3000);
-            } else if (syncResult.status === 'ignored') {
-                showAlert('重试完成，但记录被忽略：' + syncResult.message, 'warning', 5000);
-            } else {
-                showAlert('重试失败：' + syncResult.message, 'danger', 5000);
-            }
-            
-            // 延迟刷新页面以显示最新数据
-            setTimeout(() => {
-                // 根据当前页面刷新相应的数据
-                if (typeof loadDashboardData === 'function') {
-                    loadDashboardData();
-                } else if (typeof loadRecords === 'function') {
-                    loadRecords(currentPage, currentLimit);
-                } else {
-                    location.reload();
-                }
-            }, 1500);
-        } else {
-            throw new Error(result.message || '重试失败');
-        }
-    } catch (error) {
-        console.error('重试同步失败:', error);
-        
-        // 关闭加载提示
-        const toastContainer = document.getElementById('toast-container');
-        if (toastContainer) {
-            toastContainer.innerHTML = '';
-        }
-        
-        showAlert('重试失败：' + error.message, 'danger', 5000);
     }
+
+    // 重置弹窗状态
+    _retryDone = false;
+    const logContent = document.getElementById('retry-log-content');
+    const statusBadge = document.getElementById('retry-log-status');
+    if (logContent) logContent.innerHTML = '';
+    if (statusBadge) {
+        statusBadge.innerHTML = '<span class="badge bg-info">重试中...</span>';
+    }
+
+    // 显示弹窗
+    _retryLogModal.show();
+
+    // 启动 SSE
+    startRetrySSE(recordId);
+}
+
+function startRetrySSE(recordId) {
+    stopRetrySSE();
+
+    const url = appUrl(`/api/records/${recordId}/retry/stream`);
+    _retryEventSource = new EventSource(url);
+    _retryEventSource.withCredentials = true;
+
+    _retryEventSource.addEventListener('start', function (e) {
+        const data = JSON.parse(e.data);
+        appendRetryLog(`▶ 开始重试：${data.title} S${String(data.season).padStart(2, '0')}E${String(data.episode).padStart(2, '0')}（来源：${data.source}）`, 'info');
+    });
+
+    _retryEventSource.addEventListener('log', function (e) {
+        const data = JSON.parse(e.data);
+        appendRetryLog(data.line, data.level.toLowerCase());
+    });
+
+    _retryEventSource.addEventListener('done', function (e) {
+        const data = JSON.parse(e.data);
+        const statusBadge = document.getElementById('retry-log-status');
+        _retryDone = true;
+
+        if (data.status === 'success') {
+            appendRetryLog(`✅ 重试成功：${data.message}`, 'success');
+            if (statusBadge) statusBadge.innerHTML = '<span class="badge bg-success">重试成功</span>';
+        } else if (data.status === 'ignored') {
+            appendRetryLog(`⚠️ 重试被忽略：${data.message}`, 'warning');
+            if (statusBadge) statusBadge.innerHTML = '<span class="badge bg-warning">被忽略</span>';
+        } else {
+            appendRetryLog(`❌ 重试失败：${data.message}`, 'error');
+            if (statusBadge) statusBadge.innerHTML = '<span class="badge bg-danger">重试失败</span>';
+        }
+
+        stopRetrySSE();
+        refreshAfterRetry();
+    });
+
+    _retryEventSource.addEventListener('error', function (e) {
+        if (_retryDone) return;
+        if (e.data) {
+            try {
+                const data = JSON.parse(e.data);
+                appendRetryLog(`❌ ${data.message}`, 'error');
+            } catch (_) {
+                appendRetryLog('❌ 连接异常断开', 'error');
+            }
+        }
+        stopRetrySSE();
+        const statusBadge = document.getElementById('retry-log-status');
+        if (statusBadge) statusBadge.innerHTML = '<span class="badge bg-danger">连接异常</span>';
+    });
+
+    _retryEventSource.onerror = function () {
+        // EventSource 自动重连会触发 onerror，已在 done 时标记 _retryDone 跳过
+        if (_retryDone) return;
+        // 连接异常时停止自动重连
+        stopRetrySSE();
+        const statusBadge = document.getElementById('retry-log-status');
+        if (statusBadge) statusBadge.innerHTML = '<span class="badge bg-danger">连接异常</span>';
+        appendRetryLog('❌ SSE 连接异常断开', 'error');
+    };
+}
+
+function stopRetrySSE() {
+    if (_retryEventSource) {
+        _retryEventSource.close();
+        _retryEventSource = null;
+    }
+}
+
+function appendRetryLog(line, level) {
+    const logContent = document.getElementById('retry-log-content');
+    if (!logContent) return;
+
+    const lineDiv = document.createElement('div');
+    // 按级别着色
+    const colorClass = {
+        debug: 'text-secondary',
+        info: 'text-info',
+        warning: 'text-warning',
+        error: 'text-danger',
+        success: 'text-success'
+    }[level] || 'text-light';
+    lineDiv.className = colorClass;
+    lineDiv.textContent = line;
+    logContent.appendChild(lineDiv);
+
+    // 自动滚动到底部
+    logContent.scrollTop = logContent.scrollHeight;
+}
+
+function refreshAfterRetry() {
+    setTimeout(() => {
+        if (typeof loadDashboardData === 'function') {
+            loadDashboardData();
+        } else if (typeof loadRecords === 'function') {
+            loadRecords(currentPage, currentLimit);
+        } else {
+            location.reload();
+        }
+    }, 2000);
 }
 
 // 导出重试功能

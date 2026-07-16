@@ -125,6 +125,47 @@
             </div>
         </div>
     </div>
+    <!-- 重试日志模态框（SSE 实时推送） -->
+    <div class="modal fade"
+         id="retryLogModal"
+         tabindex="-1"
+         data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-scrollable" style="max-width: 80em;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-arrow-clockwise me-2"></i>重试同步日志
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="retry-log-status" class="mb-2">
+                        <span class="badge bg-info">重试中...</span>
+                    </div>
+                    <pre id="retry-log-content"
+                         class="bg-dark text-light p-3 rounded mb-0"
+                         style="max-height: 60vh;
+                                overflow-y: auto;
+                                font-size: 0.85rem;
+                                line-height: 1.4"></pre>
+                </div>
+                <div class="modal-footer d-flex align-items-center">
+                    <div class="me-auto small text-muted">
+                        <i class="bi bi-question-circle me-1"></i>
+                        <a href="https://sanaemio.github.io/Bangumi-syncer/troubleshooting"
+                           target="_blank"
+                           rel="noopener">常见失败原因</a>
+                        <span class="mx-1">·</span>
+                        <span>未解决？</span>
+                        <a href="https://github.com/SanaeMio/Bangumi-syncer/issues"
+                           target="_blank"
+                           rel="noopener">提交 Issue</a>
+                    </div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 {% block scripts %}
     <script>
