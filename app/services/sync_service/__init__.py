@@ -103,6 +103,27 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             match_platform=match_platform,
         )
 
+    def test_match(self, item: CustomItem) -> dict[str, Any]:
+        """测试匹配过程，返回匹配追踪详情（不执行实际同步、不写记录、不发通知）
+
+        用于「调试工具」页面的匹配测试面板，直观展示三段式匹配的完整过程。
+        """
+        trace = MatchTrace(
+            request_title=item.title,
+            request_ori_title=item.ori_title or "",
+            request_season=item.season,
+        )
+        subject_id, is_season_matched_id, failure_detail = self._find_subject_id(
+            item, trace=trace
+        )
+        trace.finish()
+        return {
+            "subject_id": subject_id,
+            "is_season_matched_id": is_season_matched_id,
+            "failure_detail": failure_detail,
+            "trace": trace.to_dict(),
+        }
+
     def update_sync_record_status(
         self, record_id: int, status: str, message: str = ""
     ) -> bool:

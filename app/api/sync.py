@@ -216,6 +216,42 @@ async def test_sync(
         raise HTTPException(status_code=500, detail=error_msg)
 
 
+@router.post("/test-match")
+async def test_match(
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """测试匹配过程（不执行实际同步，只返回三段式匹配追踪详情）"""
+    try:
+        data = await request.json()
+
+        if not data.get("title"):
+            raise HTTPException(status_code=400, detail="标题不能为空")
+
+        media_type = (data.get("media_type") or "episode").lower()
+        if media_type not in ("episode", "movie"):
+            media_type = "episode"
+
+        test_item = CustomItem(
+            media_type=media_type,
+            title=data.get("title", ""),
+            ori_title=data.get("ori_title") or None,
+            season=int(data.get("season", 1)),
+            episode=int(data.get("episode", 1)),
+            release_date=data.get("release_date") or "",
+            user_name=data.get("user_name", "test_user"),
+            source="test-match",
+        )
+
+        result = sync_service.test_match(test_item)
+        return {"status": "success", "data": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"测试匹配失败: {e}")
+        raise HTTPException(status_code=500, detail=f"测试匹配失败: {str(e)}")
+
+
 @router.get("/records")
 async def get_sync_records(
     request: Request,
