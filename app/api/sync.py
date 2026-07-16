@@ -255,7 +255,7 @@ async def test_match(
 @router.get("/records")
 async def get_sync_records(
     request: Request,
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(10, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     status: Optional[str] = None,
     user_name: Optional[str] = None,
@@ -298,7 +298,7 @@ async def get_sync_records(
 async def get_match_records(
     request: Request,
     page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(10, ge=1, le=200),
     status: Optional[str] = None,
     match_method: Optional[str] = None,
     match_platform: Optional[str] = None,
@@ -356,7 +356,7 @@ async def get_match_trace(
 async def get_pending_candidates(
     request: Request,
     page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(10, ge=1, le=200),
     status: Optional[str] = None,
     current_user: dict = Depends(get_current_user_flexible),
 ):

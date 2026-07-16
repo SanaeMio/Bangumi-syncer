@@ -90,6 +90,140 @@ function formatDate(dateString) {
     });
 }
 
+function getSyncRecordStatusColor(status) {
+    switch (status) {
+        case 'success': return 'success';
+        case 'error': return 'danger';
+        case 'ignored': return 'warning';
+        case 'retried': return 'success';
+        default: return 'secondary';
+    }
+}
+
+function getSyncRecordStatusText(status) {
+    switch (status) {
+        case 'success': return '成功';
+        case 'error': return '失败';
+        case 'ignored': return '已忽略';
+        case 'retried': return '已重试';
+        default: return status;
+    }
+}
+
+function renderSyncStatusBadge(status) {
+    return `<span class="badge rounded-pill bg-${getSyncRecordStatusColor(status)}">${getSyncRecordStatusText(status)}</span>`;
+}
+
+function renderMatchMethodBadge(method) {
+    const badges = {
+        custom_mapping: ['primary', '自定义映射'],
+        bangumi_data: ['success', 'bangumi-data'],
+        api_search: ['info', 'API 搜索'],
+        failed: ['danger', '失败'],
+    };
+    const [color, text] = badges[method] || ['secondary', '未知'];
+    return `<span class="badge rounded-pill bg-${color}">${text}</span>`;
+}
+
+function renderCandidateStatusBadge(status) {
+    const badges = {
+        pending: ['warning', '待确认'],
+        confirmed: ['success', '已确认'],
+        rejected: ['secondary', '已忽略'],
+    };
+    const [color, text] = badges[status] || ['secondary', status];
+    return `<span class="badge rounded-pill bg-${color}">${text}</span>`;
+}
+
+function renderMediaTypeBadge(mediaType) {
+    const mt = (mediaType || 'episode').toLowerCase();
+    const label = mt === 'movie' ? '电影' : '剧集';
+    return `<span class="badge rounded-pill bg-dark bg-opacity-75">${label}</span>`;
+}
+
+function getSourceColor(source) {
+    const sourceLower = (source || '').toLowerCase();
+    if (sourceLower.startsWith('retry-')) return 'purple';
+    switch (sourceLower) {
+        case 'plex': return 'warning';
+        case 'emby': return 'success';
+        case 'jellyfin': return 'primary';
+        case 'custom': return 'secondary';
+        case 'feiniu': return 'info';
+        case 'fongmi': return 'primary';
+        case 'test': return 'secondary';
+        case 'trakt': return 'danger';
+        default: return 'secondary';
+    }
+}
+
+function getSourceTlClass(source) {
+    const s = (source || '').toLowerCase();
+    if (s.startsWith('retry-')) return 'retry';
+    if (['plex', 'emby', 'jellyfin', 'custom', 'feiniu', 'fongmi', 'test', 'trakt'].indexOf(s) !== -1) return s;
+    return 'custom';
+}
+
+function renderSourceBadge(source) {
+    const label = source || '-';
+    return `<span class="badge rounded-pill tl-source--${getSourceTlClass(source)}">${label}</span>`;
+}
+
+function createAppEmptyStateHtml(title, subtitle) {
+    let html = `<div class="app-empty-state"><i class="bi bi-inbox app-empty-state__icon"></i><div>${title}</div>`;
+    if (subtitle) {
+        html += `<div class="text-muted small mt-1">${subtitle}</div>`;
+    }
+    html += '</div>';
+    return html;
+}
+
+function setAppTableLoading(show, wrapId, loadingId = 'loading') {
+    const loading = document.getElementById(loadingId);
+    const tableWrap = document.getElementById(wrapId);
+    if (!loading || !tableWrap) return;
+
+    if (show) {
+        loading.classList.remove('is-hidden');
+        tableWrap.classList.add('app-table-wrap--loading');
+    } else {
+        loading.classList.add('is-hidden');
+        tableWrap.classList.remove('app-table-wrap--loading');
+    }
+}
+
+window.getSyncRecordStatusColor = getSyncRecordStatusColor;
+window.getSyncRecordStatusText = getSyncRecordStatusText;
+window.getStatusColor = getSyncRecordStatusColor;
+window.getStatusText = getSyncRecordStatusText;
+window.renderSyncStatusBadge = renderSyncStatusBadge;
+window.renderMatchMethodBadge = renderMatchMethodBadge;
+window.renderCandidateStatusBadge = renderCandidateStatusBadge;
+window.renderMediaTypeBadge = renderMediaTypeBadge;
+window.getSourceColor = getSourceColor;
+window.getSourceTlClass = getSourceTlClass;
+window.renderSourceBadge = renderSourceBadge;
+window.createAppEmptyStateHtml = createAppEmptyStateHtml;
+window.setAppTableLoading = setAppTableLoading;
+
+function bindAppTableMobileRowClick(tableSelector, onRowClick) {
+    const tbody = document.querySelector(`${tableSelector} tbody`);
+    if (!tbody) return;
+
+    tbody.addEventListener('click', function(e) {
+        if (!window.matchMedia('(max-width: 991.98px)').matches) return;
+        if (e.target.closest('a, button')) return;
+        const row = e.target.closest('tr[data-record-id]');
+        if (!row) return;
+        const recordId = parseInt(row.dataset.recordId, 10);
+        if (!isNaN(recordId) && recordId > 0) {
+            onRowClick(recordId);
+        }
+    });
+}
+
+window.bindAppTableMobileRowClick = bindAppTableMobileRowClick;
+
 // 格式化文件大小
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';
@@ -773,6 +907,163 @@ function refreshAfterRetry() {
 
 // 导出重试功能
 window.retrySync = retrySync;
+
+// ========== 数据表格（分页条数与入场动画，与同步记录一致） ==========
+
+const APP_TABLE_PAGE_SIZE = 10;
+window.APP_TABLE_PAGE_SIZE = APP_TABLE_PAGE_SIZE;
+
+function replayAppTableAnimation(wrapId) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    wrap.classList.remove('records-table-wrap--enter');
+    void wrap.offsetWidth;
+    wrap.classList.add('records-table-wrap--enter');
+}
+
+function applyAppTableRowEnter(row, index) {
+    row.classList.add('records-table-row--enter');
+    row.style.animationDelay = `${Math.min(index * 0.04, 0.36)}s`;
+}
+
+function animateAppTableBody(tbody, wrapId) {
+    if (!tbody) return;
+    tbody.querySelectorAll('tr').forEach((row, index) => applyAppTableRowEnter(row, index));
+    replayAppTableAnimation(wrapId);
+}
+
+window.replayAppTableAnimation = replayAppTableAnimation;
+window.applyAppTableRowEnter = applyAppTableRowEnter;
+window.animateAppTableBody = animateAppTableBody;
+
+// ========== 通用分页（与同步记录 app-pagination 一致） ==========
+
+function createAppPageItem(page, currentPage, onPageChange) {
+    const li = document.createElement('li');
+    li.className = `page-item page-item--num ${page === currentPage ? 'active' : ''}`;
+    const link = document.createElement('a');
+    link.className = 'page-link';
+    link.href = '#';
+    link.setAttribute('aria-label', `第 ${page} 页`);
+    link.setAttribute('aria-current', page === currentPage ? 'page' : 'false');
+    link.textContent = String(page);
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (page !== currentPage) onPageChange(page);
+    });
+    li.appendChild(link);
+    return li;
+}
+
+function createAppEllipsisItem() {
+    const li = document.createElement('li');
+    li.className = 'page-item page-item--ellipsis disabled';
+    li.innerHTML = '<span class="page-link" aria-hidden="true">…</span>';
+    return li;
+}
+
+function replayAppPaginationAnimation(navId) {
+    const nav = document.getElementById(navId);
+    if (!nav || nav.classList.contains('is-hidden')) return;
+    nav.classList.remove('records-pagination--enter');
+    void nav.offsetWidth;
+    nav.classList.add('records-pagination--enter');
+}
+
+function renderAppPagination(options) {
+    const {
+        total,
+        currentPage,
+        limit,
+        navId = 'pagination-nav',
+        listId = 'pagination',
+        summaryId = 'pagination-summary',
+        onPageChange,
+        animate = true,
+    } = options;
+
+    const pagination = document.getElementById(listId);
+    if (!pagination) return;
+
+    const summary = document.getElementById(summaryId);
+    const nav = document.getElementById(navId);
+    const totalPages = Math.ceil(total / limit);
+
+    pagination.innerHTML = '';
+
+    if (total <= 0) {
+        if (summary) summary.textContent = '';
+        if (nav) nav.classList.add('is-hidden');
+        return;
+    }
+
+    if (summary) {
+        summary.textContent = totalPages <= 1
+            ? `共 ${total} 条记录`
+            : `第 ${currentPage} / ${totalPages} 页，共 ${total} 条`;
+    }
+
+    if (totalPages <= 1) {
+        if (nav) nav.classList.remove('is-hidden');
+        if (animate) replayAppPaginationAnimation(navId);
+        return;
+    }
+
+    if (nav) nav.classList.remove('is-hidden');
+
+    const prevLi = document.createElement('li');
+    prevLi.className = `page-item page-item--nav ${currentPage === 1 ? 'disabled' : ''}`;
+    const prevLink = document.createElement('a');
+    prevLink.className = 'page-link';
+    prevLink.href = '#';
+    prevLink.setAttribute('aria-label', '上一页');
+    prevLink.innerHTML = '<i class="bi bi-chevron-left" aria-hidden="true"></i><span class="d-none d-sm-inline">上一页</span>';
+    prevLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (currentPage > 1) onPageChange(currentPage - 1);
+    });
+    prevLi.appendChild(prevLink);
+    pagination.appendChild(prevLi);
+
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+
+    if (startPage > 1) {
+        pagination.appendChild(createAppPageItem(1, currentPage, onPageChange));
+        if (startPage > 2) {
+            pagination.appendChild(createAppEllipsisItem());
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        pagination.appendChild(createAppPageItem(i, currentPage, onPageChange));
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            pagination.appendChild(createAppEllipsisItem());
+        }
+        pagination.appendChild(createAppPageItem(totalPages, currentPage, onPageChange));
+    }
+
+    const nextLi = document.createElement('li');
+    nextLi.className = `page-item page-item--nav ${currentPage === totalPages ? 'disabled' : ''}`;
+    const nextLink = document.createElement('a');
+    nextLink.className = 'page-link';
+    nextLink.href = '#';
+    nextLink.setAttribute('aria-label', '下一页');
+    nextLink.innerHTML = '<span class="d-none d-sm-inline">下一页</span><i class="bi bi-chevron-right" aria-hidden="true"></i>';
+    nextLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (currentPage < totalPages) onPageChange(currentPage + 1);
+    });
+    nextLi.appendChild(nextLink);
+    pagination.appendChild(nextLi);
+
+    if (animate) replayAppPaginationAnimation(navId);
+}
+
+window.renderAppPagination = renderAppPagination;
 
 // ========== 主题管理器 ==========
 

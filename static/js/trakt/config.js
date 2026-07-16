@@ -5,7 +5,7 @@
 class TraktConfigPage {
     constructor() {
         this.currentPage = 1;
-        this.pageSize = 20;
+        this.pageSize = APP_TABLE_PAGE_SIZE;
         this.authWindow = null;
         this.authPollInterval = null;
 
@@ -93,17 +93,12 @@ class TraktConfigPage {
             this.loadSyncHistory();
         });
 
-        // 分页按钮
-        document.getElementById('prev-page').addEventListener('click', () => {
-            if (this.currentPage > 1) {
-                this.currentPage--;
-                this.loadSyncHistory();
-            }
-        });
-
-        document.getElementById('next-page').addEventListener('click', () => {
-            this.currentPage++;
-            this.loadSyncHistory();
+        const syncHistoryDetailModalEl = document.getElementById('syncHistoryDetailModal');
+        if (syncHistoryDetailModalEl) {
+            this.syncHistoryDetailModal = new bootstrap.Modal(syncHistoryDetailModalEl);
+        }
+        bindAppTableMobileRowClick('#sync-history-table', (recordId) => {
+            this.showSyncHistoryDetail(recordId);
         });
 
         // 授权模态框按钮
@@ -333,11 +328,18 @@ class TraktConfigPage {
     }
 
     /**
+     * 同步历史表格加载态
+     */
+    setSyncHistoryLoading(show) {
+        setAppTableLoading(show, 'sync-history-table-wrap', 'sync-history-loading');
+    }
+
+    /**
      * 加载同步历史
      */
     async loadSyncHistory() {
         try {
-            this.showLoading('sync-history-body', '正在加载同步历史...');
+            this.setSyncHistoryLoading(true);
 
             const response = await fetch(appUrl(`/api/records?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}&source=trakt`));
 
@@ -352,6 +354,8 @@ class TraktConfigPage {
         } catch (error) {
             console.error('加载同步历史失败:', error);
             this.showError('sync-history-body', '加载同步历史失败');
+        } finally {
+            this.setSyncHistoryLoading(false);
         }
     }
 
@@ -360,97 +364,135 @@ class TraktConfigPage {
      */
     updateSyncHistoryDisplay(data) {
         const tbody = document.getElementById('sync-history-body');
-        const prevButton = document.getElementById('prev-page');
-        const nextButton = document.getElementById('next-page');
-        const pageInfoElement = document.getElementById('page-info');
 
-        // 获取总记录数，如果API没有返回total则使用0
         const total = data?.total || 0;
         const records = data?.records || [];
 
-        // 计算总页数
         const totalPages = total > 0 ? Math.ceil(total / this.pageSize) : 0;
 
-        // 如果当前页码超出有效范围，调整到有效页码
         if (totalPages > 0 && this.currentPage > totalPages) {
             this.currentPage = totalPages;
             this.loadSyncHistory();
             return;
         }
 
-        // 如果没有数据，根据当前页码显示不同信息
         if (!records || records.length === 0) {
             if (this.currentPage > 1) {
-                // 当前页大于1但没有数据，且没有总记录数信息
-                // 回退到前一页并重新加载
                 this.currentPage--;
                 this.loadSyncHistory();
                 return;
-            } else {
-                // 第一页就没有数据，显示暂无记录
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="6" class="text-center text-muted py-4">
-                            <i class="bi bi-inbox me-2"></i>
-                            暂无同步记录
-                        </td>
-                    </tr>
-                `;
-                prevButton.disabled = true;
-                nextButton.disabled = true;
-                if (pageInfoElement) {
-                    pageInfoElement.textContent = '第 1 页';
-                }
-                return;
             }
+
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6">
+                        ${createAppEmptyStateHtml('暂无同步记录')}
+                    </td>
+                </tr>
+            `;
+            animateAppTableBody(tbody, 'sync-history-table-wrap');
+            renderAppPagination({
+                total,
+                currentPage: this.currentPage,
+                limit: this.pageSize,
+                onPageChange: (page) => {
+                    this.currentPage = page;
+                    this.loadSyncHistory();
+                },
+            });
+            return;
         }
 
-        // 构建表格行
         let rows = '';
         records.forEach(record => {
-            const statusClass = record.status === 'success' ? 'text-success' :
-                               record.status === 'error' ? 'text-danger' : 'text-warning';
-            const statusIcon = record.status === 'success' ? 'bi-check-circle-fill' :
-                              record.status === 'error' ? 'bi-x-circle-fill' : 'bi-exclamation-circle-fill';
             const mt = (record.media_type || 'episode').toLowerCase();
-            const typeLabel = mt === 'movie' ? '电影' : '剧集';
+            const message = this.escapeHtml(record.message);
 
             rows += `
-                <tr>
-                    <td><span class="badge bg-secondary">${typeLabel}</span></td>
-                    <td>${record.timestamp}</td>
+                <tr data-record-id="${record.id}">
+                    <td class="col-hide-sm">${renderMediaTypeBadge(mt)}</td>
+                    <td class="col-hide-sm">${formatDate(record.timestamp)}</td>
                     <td>${this.escapeHtml(record.title || record.ori_title || '—')}</td>
                     <td>S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}</td>
-                    <td class="${statusClass}">
-                        <i class="bi ${statusIcon} me-1"></i>
-                        ${record.status}
-                    </td>
-                    <td>${this.escapeHtml(record.message)}</td>
+                    <td>${renderSyncStatusBadge(record.status)}</td>
+                    <td class="col-hide-sm text-truncate text-truncate-cell" title="${message}">${message}</td>
                 </tr>
             `;
         });
 
         tbody.innerHTML = rows;
+        animateAppTableBody(tbody, 'sync-history-table-wrap');
 
-        // 更新分页按钮状态
-        prevButton.disabled = this.currentPage <= 1;
+        renderAppPagination({
+            total,
+            currentPage: this.currentPage,
+            limit: this.pageSize,
+            onPageChange: (page) => {
+                this.currentPage = page;
+                this.loadSyncHistory();
+            },
+        });
+    }
 
-        // 判断是否有下一页：如果有总记录数，使用总记录数计算；否则根据当前页记录数判断
-        let hasNextPage = false;
-        if (total > 0) {
-            hasNextPage = (this.currentPage * this.pageSize) < total;
-        } else {
-            hasNextPage = records.length >= this.pageSize;
-        }
-        nextButton.disabled = !hasNextPage;
-
-        // 更新页码显示
-        if (pageInfoElement) {
-            if (totalPages > 0) {
-                pageInfoElement.textContent = `第 ${this.currentPage} 页 / 共 ${totalPages} 页`;
-            } else {
-                pageInfoElement.textContent = `第 ${this.currentPage} 页`;
+    /**
+     * 显示同步历史详情（移动端点击行）
+     */
+    async showSyncHistoryDetail(recordId) {
+        try {
+            const response = await fetch(appUrl(`/api/records/${recordId}`));
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
             }
+
+            const result = await response.json();
+            if (result.status !== 'success' || !result.data) {
+                throw new Error('记录不存在');
+            }
+
+            const record = result.data;
+            const content = document.getElementById('sync-history-detail-content');
+            if (!content) return;
+
+            const message = this.escapeHtml(record.message || '—');
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>类型:</strong> ${renderMediaTypeBadge(record.media_type)}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>时间:</strong> ${formatDate(record.timestamp)}
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-md-6">
+                        <strong>标题:</strong> ${this.escapeHtml(record.bgm_title || record.title || '—')}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>季/集:</strong> S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-md-6">
+                        <strong>状态:</strong> ${renderSyncStatusBadge(record.status)}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>来源:</strong> ${renderSourceBadge(record.source)}
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <strong>消息:</strong>
+                        <div class="mt-1 text-break">${message}</div>
+                    </div>
+                </div>
+            `;
+
+            if (this.syncHistoryDetailModal) {
+                this.syncHistoryDetailModal.show();
+            }
+        } catch (error) {
+            console.error('加载同步历史详情失败:', error);
+            this.showNotification('加载同步历史详情失败', 'danger');
         }
     }
 
