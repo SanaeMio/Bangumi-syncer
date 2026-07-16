@@ -158,7 +158,11 @@
                                   id="import-text"
                                   rows="10"
                                   placeholder='{"番剧名1": "bangumi_id1", "番剧名2": "bangumi_id2"}'></textarea>
-                        <div class="form-text">请输入JSON格式的映射数据，格式：{"番剧名": "bangumi_id"}</div>
+                        <div class="form-text">
+                            支持两种格式：<br>
+                            1. 简单映射：<code>{"番剧名": "bangumi_id"}</code><br>
+                            2. 含正则规则：<code>{"mappings": {"番剧名": "id"}, "rules": [{"pattern": "^.*之.*刃$", "subject_id": "123456", "description": "说明"}]}</code>
+                        </div>
                     </div>
                     <!-- fongmi: JSON 文件上传 -->
                     <div class="mb-3">
@@ -248,6 +252,98 @@
                 <i class="bi bi-inbox app-empty-state__icon"></i>
                 <h5 class="text-muted mt-3">暂无正则规则</h5>
                 <p class="text-muted mb-0">点击"添加规则"按钮来创建第一条正则规则</p>
+            </div>
+        </div>
+    </div>
+    <!-- 正则匹配测试 -->
+    <div class="card mt-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-lightning me-2 text-warning"></i>
+                <h6 class="m-0 fw-semibold">匹配测试</h6>
+                <small class="text-muted ms-2">输入标题测试现有映射和正则规则是否命中</small>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-8">
+                    <label for="test-title-input" class="form-label">番剧标题</label>
+                    <input type="text"
+                           class="form-control"
+                           id="test-title-input"
+                           placeholder="输入要测试的标题，如：鬼灭之刃 第二季"
+                           onkeydown="if(event.key==='Enter')testMatch()">
+                </div>
+                <div class="col-md-2">
+                    <label for="test-season-input" class="form-label">季度</label>
+                    <input type="number"
+                           class="form-control"
+                           id="test-season-input"
+                           min="1"
+                           max="20"
+                           value="1"
+                           placeholder="1">
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-primary w-100" onclick="testMatch()">
+                        <i class="bi bi-lightning me-1"></i>测试
+                    </button>
+                </div>
+            </div>
+            <!-- 测试结果 -->
+            <div id="test-result" class="is-hidden"></div>
+            <!-- 常见规则提示 -->
+            <div class="mt-3">
+                <details>
+                    <summary class="text-muted small cursor-pointer">常见正则规则与标题示例</summary>
+                    <div class="mt-2 p-3 border rounded bg-body-secondary">
+                        <table class="table table-sm table-borderless mb-0 small">
+                            <thead>
+                                <tr>
+                                    <th style="width: 35%;">正则表达式</th>
+                                    <th style="width: 35%;">匹配标题示例</th>
+                                    <th>说明</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>^.*之.*刃$</code></td>
+                                    <td>鬼灭之刃、鬼灭之刃 第二季</td>
+                                    <td>匹配以「之刃」结尾的标题</td>
+                                </tr>
+                                <tr>
+                                    <td><code>^Re:.*</code></td>
+                                    <td>Re:从零开始的异世界生活</td>
+                                    <td>匹配以「Re:」开头的标题</td>
+                                </tr>
+                                <tr>
+                                    <td><code>^.*剧场版.*$</code></td>
+                                    <td>剧场版 鬼灭之刃 无限列车篇</td>
+                                    <td>匹配含「剧场版」的标题</td>
+                                </tr>
+                                <tr>
+                                    <td><code>^.*第[一二三四五六七八九十]+季.*$</code></td>
+                                    <td>凡人修仙传 第五季</td>
+                                    <td>匹配含「第N季」的标题</td>
+                                </tr>
+                                <tr>
+                                    <td><code>^进击的巨人$</code></td>
+                                    <td>进击的巨人</td>
+                                    <td>精确匹配特定标题</td>
+                                </tr>
+                                <tr>
+                                    <td><code>(?i).*ova.*</code></td>
+                                    <td>某番剧 OVA、某番剧 OAD</td>
+                                    <td>匹配含 OVA/OAD（不区分大小写）</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="form-text mt-2">
+                            <i class="bi bi-info-circle me-1"></i>
+                            正则使用 Python 语法（<code>re.search</code>），会同时匹配标题和原始标题。点击示例可填入测试框。
+                        </div>
+                    </div>
+                </details>
             </div>
         </div>
     </div>
@@ -354,6 +450,23 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('rule-id').addEventListener('input', updateRulePreview);
 
     loadMappings();
+
+    // 支持通过 URL 参数预填映射表单（从匹配记录跳转）
+    const params = new URLSearchParams(window.location.search);
+    const preTitle = params.get('title');
+    const preSeason = params.get('season');
+    if (preTitle) {
+        showAddMappingModal();
+        document.getElementById('mapping-title').value = preTitle;
+        if (preSeason) {
+            document.getElementById('mapping-season').value = preSeason;
+        }
+        // 同时填入测试框
+        const testInput = document.getElementById('test-title-input');
+        if (testInput) testInput.value = preTitle;
+        const testSeason = document.getElementById('test-season-input');
+        if (testSeason && preSeason) testSeason.value = preSeason;
+    }
 });
 
 async function loadMappings() {
@@ -600,47 +713,94 @@ document.addEventListener('DOMContentLoaded', function() {
 async function importMappings() {
     const importText = document.getElementById('import-text').value.trim();
     const mergeMappings = document.getElementById('merge-mappings').checked;
-    
+
     if (!importText) {
         showAlert('请输入映射数据', 'warning');
         return;
     }
-    
+
     try {
         const importData = JSON.parse(importText);
-        
-        if (typeof importData !== 'object' || Array.isArray(importData)) {
+
+        if (typeof importData !== 'object' || importData === null || Array.isArray(importData)) {
             throw new Error('数据格式错误');
         }
-        
-        let newMappings = mergeMappings ? { ...currentMappings } : {};
-        
-        // 验证并添加映射
-        for (const [title, id] of Object.entries(importData)) {
-            if (typeof title !== 'string' || typeof id !== 'string') {
-                throw new Error(`映射 "${title}": "${id}" 格式错误`);
-            }
-            
-            if (!/^\d+$/.test(id)) {
-                throw new Error(`Bangumi ID "${id}" 必须是数字`);
-            }
-            
-            newMappings[title] = id;
+
+        // 解析两种格式：简单映射或含 rules 的扩展格式
+        let importMappings = {};
+        let importRules = null;
+
+        if (importData.mappings || importData.rules) {
+            // 扩展格式：{"mappings": {...}, "rules": [...]}
+            importMappings = importData.mappings || {};
+            importRules = importData.rules || null;
+        } else {
+            // 简单格式：{"番剧名": "id"}
+            importMappings = importData;
         }
-        
+
+        let newMappings = mergeMappings ? { ...currentMappings } : {};
+
+        // 验证并添加映射
+        for (const [title, value] of Object.entries(importMappings)) {
+            if (typeof title !== 'string') {
+                throw new Error(`映射键 "${title}" 必须是字符串`);
+            }
+            // 兼容简单格式和高级格式
+            let sid;
+            if (typeof value === 'object' && value !== null) {
+                sid = value.subject_id;
+            } else {
+                sid = value;
+            }
+            if (typeof sid !== 'string' || !/^\d+$/.test(sid)) {
+                throw new Error(`Bangumi ID "${sid}" 必须是数字`);
+            }
+            newMappings[title] = value;
+        }
+
+        // 处理正则规则
+        let newRules = currentRules;
+        let rulesCount = 0;
+        if (importRules !== null) {
+            if (!Array.isArray(importRules)) {
+                throw new Error('rules 必须是数组');
+            }
+            newRules = mergeMappings ? [...currentRules] : [];
+            for (const rule of importRules) {
+                if (!rule.pattern || !rule.subject_id) {
+                    throw new Error('正则规则必须包含 pattern 和 subject_id');
+                }
+                if (!/^\d+$/.test(rule.subject_id)) {
+                    throw new Error(`规则 Bangumi ID "${rule.subject_id}" 必须是数字`);
+                }
+                newRules.push(rule);
+                rulesCount++;
+            }
+        }
+
+        const body = { mappings: newMappings };
+        if (importRules !== null) {
+            body.rules = newRules;
+        }
+
         const response = await fetch(appUrl('/api/mappings'), {
             method: 'POST',
             credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ mappings: newMappings })
+            body: JSON.stringify(body)
         });
-        
+
         const result = await response.json();
-        
+
         if (result.status === 'success') {
-            showAlert(`成功导入 ${Object.keys(importData).length} 个映射`, 'success');
+            let msg = `成功导入 ${Object.keys(importMappings).length} 个映射`;
+            if (rulesCount > 0) {
+                msg += `、${rulesCount} 条正则规则`;
+            }
+            showAlert(msg, 'success');
             importModal.hide();
             loadMappings();
         } else {
@@ -881,6 +1041,117 @@ async function confirmDeleteRule() {
     } catch (error) {
         console.error('删除规则失败:', error);
         showAlert('删除规则失败', 'danger');
+    }
+}
+
+// ===== 匹配测试 =====
+
+function testMatch() {
+    const title = document.getElementById('test-title-input').value.trim();
+    const season = parseInt(document.getElementById('test-season-input').value, 10) || 1;
+    const resultDiv = document.getElementById('test-result');
+
+    if (!title) {
+        resultDiv.classList.add('is-hidden');
+        return;
+    }
+
+    const results = [];
+
+    // 1. 精确映射匹配（季度感知 → 简单格式）
+    for (const [mapTitle, value] of Object.entries(currentMappings)) {
+        let sid = '';
+        let mapSeason = '';
+        if (typeof value === 'object' && value !== null) {
+            sid = value.subject_id || '';
+            mapSeason = value.season || '';
+        } else {
+            sid = value;
+        }
+        if (mapTitle === title) {
+            if (mapSeason && parseInt(mapSeason, 10) === season) {
+                results.push({
+                    type: 'exact',
+                    match: true,
+                    method: '季度感知映射',
+                    subject_id: sid,
+                    detail: `"${mapTitle}" S${mapSeason} 精确命中`
+                });
+            } else if (!mapSeason) {
+                results.push({
+                    type: 'exact',
+                    match: true,
+                    method: '简单格式映射',
+                    subject_id: sid,
+                    detail: `"${mapTitle}" 精确命中（不限季度）`
+                });
+            }
+        }
+    }
+
+    // 2. 正则规则匹配
+    for (const rule of currentRules) {
+        if (!rule.pattern) continue;
+        try {
+            const re = new RegExp(rule.pattern);
+            if (re.test(title)) {
+                results.push({
+                    type: 'regex',
+                    match: true,
+                    method: '正则规则',
+                    subject_id: rule.subject_id,
+                    detail: `正则 <code>${rule.pattern}</code> 命中${rule.description ? '（' + rule.description + '）' : ''}`
+                });
+            }
+        } catch (e) {
+            results.push({
+                type: 'regex',
+                match: false,
+                method: '正则规则',
+                subject_id: '',
+                detail: `正则 <code>${rule.pattern}</code> 语法错误: ${e.message}`
+            });
+        }
+    }
+
+    // 渲染结果
+    resultDiv.classList.remove('is-hidden');
+    if (results.length === 0) {
+        resultDiv.innerHTML = `
+            <div class="alert alert-warning mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>未命中</strong> — 当前映射和正则规则均未匹配到此标题。
+                <a href="#" onclick="showAddMappingModal();document.getElementById('mapping-title').value='${title.replace(/'/g, "\\'")}';return false;" class="alert-link ms-2">添加映射</a>
+            </div>
+        `;
+    } else {
+        const matched = results.filter(r => r.match);
+        const errorRules = results.filter(r => !r.match);
+        let html = '';
+        for (const r of matched) {
+            const badgeClass = r.type === 'exact' ? 'success' : 'info';
+            html += `
+                <div class="alert alert-${badgeClass} mb-1 d-flex align-items-center">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    <div class="flex-grow-1">
+                        <span class="badge bg-${badgeClass} me-2">${r.method}</span>
+                        ${r.detail}
+                    </div>
+                    <a href="https://bgm.tv/subject/${r.subject_id}" target="_blank" class="btn btn-sm btn-outline-${badgeClass} ms-2">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>${r.subject_id}
+                    </a>
+                </div>
+            `;
+        }
+        for (const r of errorRules) {
+            html += `
+                <div class="alert alert-danger mb-1">
+                    <i class="bi bi-x-circle-fill me-2"></i>
+                    ${r.detail}
+                </div>
+            `;
+        }
+        resultDiv.innerHTML = html;
     }
 }
     </script>

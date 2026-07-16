@@ -426,6 +426,23 @@ async function showMatchDetail(recordId) {
             </div>
         `;
 
+        // 匹配失败时显示跳转到映射管理的链接
+        if (!record.subject_id || record.status === 'error' || (trace && trace.final_match_method === 'failed')) {
+            const mapTitle = encodeURIComponent(record.title || '');
+            const mapSeason = record.season || 1;
+            html += `
+                <div class="alert alert-warning mb-3 d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <div class="flex-grow-1">
+                        <strong>匹配失败</strong> — 可添加自定义映射或正则规则解决此问题。
+                    </div>
+                    <a href="${appUrl('/mappings')}?title=${mapTitle}&season=${mapSeason}" class="btn btn-sm btn-outline-warning ms-2">
+                        <i class="bi bi-arrow-up-right-circle me-1"></i>前往映射管理
+                    </a>
+                </div>
+            `;
+        }
+
         if (trace && trace.steps && trace.steps.length > 0) {
             html += '<div class="card"><div class="card-header py-2"><strong>匹配过程</strong></div><div class="card-body">';
 
