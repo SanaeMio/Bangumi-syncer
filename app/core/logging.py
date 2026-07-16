@@ -2,11 +2,15 @@
 日志管理模块
 """
 
+import contextvars
 import datetime
 import os
 import sys
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .config import ConfigManager
@@ -15,6 +19,38 @@ if TYPE_CHECKING:
 DEFAULT_DEV_LOG_FILE = "./log.txt"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# 同步日志关联 ID（线程内通过 ContextVar 传播）
+sync_run_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "sync_run_id", default=None
+)
+
+RUN_ID_FIELD_WIDTH = 28  # 供 UI 等宽展示参考；写入文件时不填充空格
+
+
+def get_sync_run_id() -> Optional[str]:
+    """当前同步 run_id；无上下文时为 None。"""
+    return sync_run_id.get()
+
+
+@contextmanager
+def sync_log_context(run_id: str) -> Iterator[str]:
+    """在作用域内为日志行附加 [run:...] 标记。"""
+    token = sync_run_id.set(run_id)
+    try:
+        yield run_id
+    finally:
+        sync_run_id.reset(token)
+
+
+def new_inline_sync_run_id(counter: int) -> str:
+    """直调 sync_custom_item 时生成 run_id。"""
+    return f"sync_inline_{counter}_{int(time.time())}"
+
+
+def new_retry_sync_run_id(record_id: int) -> str:
+    """手动重试同步记录时生成 run_id。"""
+    return f"retry_{record_id}_{int(time.time())}"
 
 
 def resolve_dev_log_file_path(raw: str) -> Path:
@@ -209,14 +245,23 @@ class Logger:
             for i in args
         ]
 
+    def _format_level_field(self, level: Optional[str]) -> str:
+        """级别标签，如 [INFO]、[DEBUG]。"""
+        if not level:
+            return ""
+        return f"[{level}]"
+
     def _format_log_line(self, *args, level: Optional[str]) -> str:
         """格式化日志行（不输出）"""
-        level_prefix = f"[{level}]" if level else ""
-        timestamp = (
-            f"[{datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S.%f')[:-3]}] "
-        )
+        timestamp = f"[{datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S.%f')[:-3]}]"
         message = " ".join(str(i) for i in args)
-        return timestamp + level_prefix + " " + message
+        head = timestamp
+        if level:
+            head += " " + self._format_level_field(level)
+        run_id = get_sync_run_id()
+        if run_id:
+            head += f" [run:{run_id}]"
+        return f"{head} {message}"
 
     def log(
         self,

@@ -8,8 +8,12 @@ from unittest.mock import MagicMock, patch
 from app.core.logging import (
     Logger,
     effective_dev_log_file_raw,
+    get_sync_run_id,
+    new_inline_sync_run_id,
+    new_retry_sync_run_id,
     resolve_dev_log_file_path,
     resolved_dev_log_file_path,
+    sync_log_context,
 )
 
 
@@ -323,6 +327,43 @@ class TestLogFilePathHelpers:
         ):
             result = resolved_dev_log_file_path(mock_cm)
             assert result is not None
+
+
+class TestSyncLogContext:
+    """同步 run_id 上下文与日志格式"""
+
+    def test_get_sync_run_id_default_none(self):
+        assert get_sync_run_id() is None
+
+    def test_sync_log_context_sets_run_id(self):
+        with sync_log_context("sync_1_100"):
+            assert get_sync_run_id() == "sync_1_100"
+        assert get_sync_run_id() is None
+
+    def test_new_inline_sync_run_id_format(self):
+        rid = new_inline_sync_run_id(3)
+        assert rid.startswith("sync_inline_3_")
+
+    def test_new_retry_sync_run_id_format(self):
+        rid = new_retry_sync_run_id(42)
+        assert rid.startswith("retry_42_")
+
+    def test_log_includes_run_id_field(self, capsys):
+        logger = _make_logger()
+        with sync_log_context("sync_test_1"):
+            logger.info("hello sync")
+        captured = capsys.readouterr()
+        assert "[run:sync_test_1]" in captured.out
+        # 各段之间仅单空格，无 run_id 固定宽度填充
+        assert "]  [" not in captured.out
+        assert "[run:sync_test_1]  hello" not in captured.out
+        assert "[run:sync_test_1] hello" in captured.out
+
+    def test_log_without_run_id_omits_field(self, capsys):
+        logger = _make_logger()
+        logger.info("plain message")
+        captured = capsys.readouterr()
+        assert "[run:" not in captured.out
 
 
 class TestLoggerLogToFile:

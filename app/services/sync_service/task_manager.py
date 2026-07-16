@@ -5,9 +5,10 @@
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from typing import Any, Optional
 
-from ...core.logging import logger
+from ...core.logging import logger, sync_log_context
 from ...models.sync import CustomItem, SyncResponse
 
 
@@ -53,11 +54,18 @@ class TaskManagerMixin:
             task_id = f"sync_{self._task_counter}_{int(time.time())}"
             self._register_task(task_id, item.model_dump(), source)
 
-        # 提交到线程池异步执行
-        self._executor.submit(self._sync_custom_item_sync, item, source, task_id)
+        # 提交到线程池异步执行（contextvars 需 copy_context 传播）
+        ctx = copy_context()
+
+        def _run() -> SyncResponse:
+            with sync_log_context(task_id):
+                return self._sync_custom_item_sync(item, source, task_id)
+
+        self._executor.submit(ctx.run, _run)
 
         # 不等待结果，立即返回任务ID
-        logger.info(f"同步任务 {task_id} 已提交到异步队列")
+        with sync_log_context(task_id):
+            logger.info(f"同步任务 {task_id} 已提交到异步队列")
         return task_id
 
     def _sync_custom_item_sync(
@@ -122,10 +130,17 @@ class TaskManagerMixin:
             task_id = f"{source}_{self._task_counter}_{int(time.time())}"
             self._register_task(task_id, data, source)
 
-        self._executor.submit(
-            self._run_media_server_task, data, task_id, source, sync_method_name
-        )
-        logger.info(f"{source.capitalize()}同步任务 {task_id} 已提交到异步队列")
+        ctx = copy_context()
+
+        def _run() -> SyncResponse:
+            with sync_log_context(task_id):
+                return self._run_media_server_task(
+                    data, task_id, source, sync_method_name
+                )
+
+        self._executor.submit(ctx.run, _run)
+        with sync_log_context(task_id):
+            logger.info(f"{source.capitalize()}同步任务 {task_id} 已提交到异步队列")
         return task_id
 
     def _run_media_server_task(
@@ -138,7 +153,8 @@ class TaskManagerMixin:
         """媒体服务器同步任务的线程池执行体"""
         try:
             self._update_task_status(task_id, "running")
-            result = getattr(self, sync_method_name)(data)
+            with sync_log_context(task_id):
+                result = getattr(self, sync_method_name)(data)
             self._update_task_status(task_id, "completed", result=result.model_dump())
             return result
         except Exception as e:
