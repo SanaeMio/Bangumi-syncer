@@ -49,6 +49,10 @@ services:
 
 3. 点击「配置管理」进行在线配置
 
+::: tip 配置文件位置
+Docker 部署时程序会优先读取挂载目录下的 `/app/config/config.ini`。若挂载目录为空（首次部署），程序会从镜像内置的 `config.example.ini` 自动复制一份到容器内 `/app/config.ini`，但该文件**不在挂载目录里**，容器重建后会丢失。推荐首次启动后立即通过 Web 界面修改并保存配置，保存会写入 `/app/config/config.ini`（挂载目录内），即可持久化。也可在启动前手动将 `config.example.ini` 复制为 `config.ini` 放入挂载目录。
+:::
+
 ::: 注意：如果你使用 fongmi 驱动，推荐使用 `host` 网络模式
 fongmi 驱动的自动扫描局域网设备，需使用 `host` 网络模式，
 `bridge` 网络模式下容器只能扫描到 `172.x.x.x` 网段，无法发现局域网设备。

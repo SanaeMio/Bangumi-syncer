@@ -48,6 +48,10 @@ services:
 
 9. 点击「配置管理」进行在线配置
 
+::: tip 配置文件持久化
+首次启动后建议立即通过 Web 界面修改并保存配置，确保配置写入挂载目录（`/docker/bangumi-syncer/config/config.ini`）持久化，避免容器重建后丢失。也可在启动前手动将 `config.example.ini` 复制为 `config.ini` 放入挂载目录。
+:::
+
 ## 方式二：通过 Container Manager 镜像仓库（原注册表）
 
 > **注意：** 由于大陆网络问题，请自行更换存储库。
