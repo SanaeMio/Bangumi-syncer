@@ -304,6 +304,13 @@ class DatabaseConnection:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_pending_candidates_status ON pending_candidates(status)"
         )
+        # 部分唯一索引：同一 (title, season, user, source) 仅允许一个 pending 行，
+        # 用于 pending_candidates 去重（upsert 依赖此索引）
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_candidates_dedup "
+            "ON pending_candidates(request_title, request_season, user_name, source) "
+            "WHERE status = 'pending'"
+        )
 
         conn.commit()
         logger.info(f"数据库初始化完成: {self.db_path}")

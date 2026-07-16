@@ -154,6 +154,16 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         database_manager.update_pending_candidate_status(
             candidate_id, "confirmed", confirmed_subject_id=str(subject_id)
         )
+        # 批量更新同 key 的其它 pending 行，避免残留（去重后通常无额外行）
+        database_manager.resolve_similar_pending_candidates(
+            request_title=title,
+            request_season=season,
+            user_name=record.get("user_name", ""),
+            source=record.get("source", ""),
+            status="confirmed",
+            confirmed_subject_id=str(subject_id),
+            exclude_id=candidate_id,
+        )
         return True, f"已确认并写入映射：{title} → subject/{subject_id}"
 
     def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:

@@ -255,6 +255,27 @@ class DatabaseManager:
         """删除待确认候选"""
         return self._pending.delete_pending_candidate(candidate_id)
 
+    def resolve_similar_pending_candidates(
+        self,
+        request_title: str,
+        request_season: int,
+        user_name: str,
+        source: str,
+        status: str,
+        confirmed_subject_id: str = "",
+        exclude_id: Optional[int] = None,
+    ) -> int:
+        """批量更新同 key 的 pending 候选状态，返回受影响行数"""
+        return self._pending.resolve_similar_pending_candidates(
+            request_title=request_title,
+            request_season=request_season,
+            user_name=user_name,
+            source=source,
+            status=status,
+            confirmed_subject_id=confirmed_subject_id,
+            exclude_id=exclude_id,
+        )
+
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""
         return self._sync.get_sync_stats()

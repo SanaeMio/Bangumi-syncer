@@ -119,3 +119,81 @@ class TestEmailDynamicContentPendingCandidate:
         html = notifier._build_email_dynamic_content("pending_candidate", data)
         assert "候选待确认" in html
         assert "首选候选" not in html
+
+
+class TestPendingCandidateCooldownPerItem:
+    """pending_candidate 通知按 item 维度冷却，不同番剧不互相静默"""
+
+    def test_different_animes_not_silenced_by_cooldown(self):
+        """不同番剧的 pending_candidate 通知不互相静默"""
+        from unittest.mock import patch
+
+        notifier = _make_notifier()
+        notifier._notification_cooldown = 60
+
+        webhook_config = {
+            "id": "wh1",
+            "enabled": True,
+            "types": "pending_candidate",
+            "url": "http://example.com",
+            "method": "POST",
+            "headers": {},
+            "template": "",
+        }
+
+        with patch.object(
+            notifier, "_get_webhook_configs", return_value=[webhook_config]
+        ):
+            with patch.object(notifier, "_get_email_configs", return_value=[]):
+                with patch.object(notifier, "_send_webhook_by_config") as mock_send:
+                    # 番剧A 通知
+                    notifier.send_notification_by_type(
+                        "pending_candidate",
+                        {
+                            "title": "番剧A",
+                            "season": 1,
+                            "user_name": "u",
+                            "source": "plex",
+                            "timestamp": "t",
+                            "ori_title": "",
+                            "episode": 1,
+                            "candidates_count": 1,
+                            "top_candidate_id": "1",
+                            "top_candidate_name": "A",
+                        },
+                    )
+                    # 番剧B 通知（应发送，不同 item key）
+                    notifier.send_notification_by_type(
+                        "pending_candidate",
+                        {
+                            "title": "番剧B",
+                            "season": 1,
+                            "user_name": "u",
+                            "source": "plex",
+                            "timestamp": "t",
+                            "ori_title": "",
+                            "episode": 1,
+                            "candidates_count": 1,
+                            "top_candidate_id": "2",
+                            "top_candidate_name": "B",
+                        },
+                    )
+                    # 番剧A 再次通知（应被冷却，同 item key）
+                    notifier.send_notification_by_type(
+                        "pending_candidate",
+                        {
+                            "title": "番剧A",
+                            "season": 1,
+                            "user_name": "u",
+                            "source": "plex",
+                            "timestamp": "t",
+                            "ori_title": "",
+                            "episode": 1,
+                            "candidates_count": 1,
+                            "top_candidate_id": "1",
+                            "top_candidate_name": "A",
+                        },
+                    )
+
+        # 番剧A和番剧B各一次，番剧A第二次被冷却
+        assert mock_send.call_count == 2

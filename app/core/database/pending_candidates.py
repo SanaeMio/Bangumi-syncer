@@ -25,7 +25,11 @@ class PendingCandidatesRepository(BaseRepository):
         candidates: Optional[list[dict[str, Any]]] = None,
         trace: Optional[dict[str, Any]] = None,
     ) -> Optional[int]:
-        """沉淀一条待确认候选，返回新记录 id（失败时 None）"""
+        """沉淀一条待确认候选，返回记录 id（失败时 None）。
+
+        按 (request_title, request_season, user_name, source) 去重：
+        已有 pending 行时更新候选和 trace，否则插入新行。
+        """
 
         def _write(conn):
             local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -33,6 +37,41 @@ class PendingCandidatesRepository(BaseRepository):
                 json.dumps(candidates, ensure_ascii=False) if candidates else "[]"
             )
             trace_json = json.dumps(trace, ensure_ascii=False) if trace else "{}"
+
+            # 先查是否已有 pending 行（按 title+season+user+source 去重）
+            cursor = conn.execute(
+                """
+                SELECT id FROM pending_candidates
+                WHERE request_title = ? AND request_season = ?
+                  AND user_name = ? AND source = ? AND status = 'pending'
+                """,
+                (request_title, request_season, user_name, source),
+            )
+            row = cursor.fetchone()
+
+            if row:
+                # 已有 pending 行，更新候选和 trace（刷新时间）
+                existing_id = row[0]
+                conn.execute(
+                    """
+                    UPDATE pending_candidates
+                    SET created_at = ?, request_ori_title = ?, request_episode = ?,
+                        candidates_json = ?, trace_json = ?,
+                        confirmed_subject_id = '', resolved_at = NULL
+                    WHERE id = ?
+                    """,
+                    (
+                        local_time,
+                        request_ori_title,
+                        request_episode,
+                        cand_json,
+                        trace_json,
+                        existing_id,
+                    ),
+                )
+                return existing_id
+
+            # 无 pending 行，插入新行
             cursor = conn.execute(
                 """
                 INSERT INTO pending_candidates
@@ -167,3 +206,63 @@ class PendingCandidatesRepository(BaseRepository):
             return cursor.rowcount > 0
 
         return self._run_write(_write, error_msg="删除待确认候选失败", default=False)
+
+    def resolve_similar_pending_candidates(
+        self,
+        request_title: str,
+        request_season: int,
+        user_name: str,
+        source: str,
+        status: str,
+        confirmed_subject_id: str = "",
+        exclude_id: Optional[int] = None,
+    ) -> int:
+        """批量更新同 key 的 pending 候选状态，返回受影响行数。
+
+        用于 confirm_pending_candidate 后清理同标题的残留 pending 行。
+        """
+
+        def _write(conn):
+            local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if exclude_id is not None:
+                cursor = conn.execute(
+                    """
+                    UPDATE pending_candidates
+                    SET status = ?, confirmed_subject_id = ?, resolved_at = ?
+                    WHERE request_title = ? AND request_season = ?
+                      AND user_name = ? AND source = ?
+                      AND status = 'pending' AND id != ?
+                    """,
+                    (
+                        status,
+                        confirmed_subject_id,
+                        local_time,
+                        request_title,
+                        request_season,
+                        user_name,
+                        source,
+                        exclude_id,
+                    ),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    UPDATE pending_candidates
+                    SET status = ?, confirmed_subject_id = ?, resolved_at = ?
+                    WHERE request_title = ? AND request_season = ?
+                      AND user_name = ? AND source = ?
+                      AND status = 'pending'
+                    """,
+                    (
+                        status,
+                        confirmed_subject_id,
+                        local_time,
+                        request_title,
+                        request_season,
+                        user_name,
+                        source,
+                    ),
+                )
+            return cursor.rowcount
+
+        return self._run_write(_write, error_msg="批量更新待确认候选失败", default=0)
