@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}匹配记录 - Bangumi Syncer{% endblock %}
-{% block page_title %}<i class="bi bi-target me-2"></i>匹配记录{% endblock %}
+{% block page_title %}匹配记录{% endblock %}
 {% block page_actions %}
     <div class="btn-group" role="group">
         <button type="button" class="btn btn-primary" onclick="loadMatchRecords()">
@@ -178,7 +178,6 @@
     <div class="card mb-4">
         <div class="card-header py-3">
             <div class="d-flex align-items-center">
-                <i class="bi bi-target me-2 card-header-icon"></i>
                 <h6 class="m-0 fw-semibold card-header-title">匹配记录列表</h6>
                 <span id="records-count" class="badge bg-secondary ms-2">0</span>
             </div>
@@ -231,9 +230,7 @@
              style="max-width: 70em">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-target me-2"></i>匹配过程详情
-                    </h5>
+                    <h5 class="modal-title">匹配过程详情</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
