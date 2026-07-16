@@ -71,6 +71,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if request.url.path == '/match-records' %}active{% endif %}"
+                               href="{{ '/match-records' | p }}">
+                                <i class="bi bi-target me-2"></i>匹配记录
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/debug' %}active{% endif %}"
                                href="{{ '/debug' | p }}">
                                 <i class="bi bi-bug me-2"></i>调试工具
@@ -156,6 +162,13 @@
                                    href="{{ '/mappings' | p }}">
                                     <i class="bi bi-diagram-3 me-2"></i>
                                     映射管理
+                                </a>
+                            </li>
+                            <li class="nav-item mb-1">
+                                <a class="nav-link {% if request.url.path == '/match-records' %}active{% endif %}"
+                                   href="{{ '/match-records' | p }}">
+                                    <i class="bi bi-target me-2"></i>
+                                    匹配记录
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
