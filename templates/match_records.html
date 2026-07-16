@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+{% block title %}匹配记录 - Bangumi Syncer{% endblock %}
+{% block page_title %}匹配记录{% endblock %}
+{% block page_actions %}
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-primary" onclick="loadMatchRecords()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+{% endblock %}
+{% block content %}
+    <!-- 说明信息 -->
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>匹配记录说明：</strong>记录每次同步请求的番剧匹配过程，包括匹配方式（自定义映射 / bangumi-data / API 搜索）、匹配置信度、候选列表。在「配置管理」开启调试模式后会记录完整的匹配追踪详情。
+    </div>
+    <!-- 筛选条件 -->
+    <div class="card mb-4 filter-card">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-funnel me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">筛选条件</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="filter-status" class="form-label">状态</label>
+                    <select class="form-select" id="filter-status">
+                        <option value="">全部</option>
+                        <option value="success">成功</option>
+                        <option value="error">失败</option>
+                        <option value="ignored">已忽略</option>
+                        <option value="retried">已重试</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="filter-method" class="form-label">匹配方式</label>
+                    <select class="form-select" id="filter-method">
+                        <option value="">全部</option>
+                        <option value="custom_mapping">自定义映射</option>
+                        <option value="bangumi_data">bangumi-data</option>
+                        <option value="api_search">API 搜索</option>
+                        <option value="failed">匹配失败</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="filter-platform" class="form-label">放送形态</label>
+                    <select class="form-select" id="filter-platform">
+                        <option value="">全部</option>
+                        <option value="TV">TV</option>
+                        <option value="OVA">OVA</option>
+                        <option value="剧场版">剧场版</option>
+                        <option value="WEB">WEB</option>
+                        <option value="日剧">日剧</option>
+                        <option value="电影">电影</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="button"
+                            class="btn btn-outline-primary w-100"
+                            onclick="loadMatchRecords()">
+                        <i class="bi bi-search me-1"></i>查询
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 匹配记录列表 -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-target me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">匹配记录列表</h6>
+                <span id="records-count" class="badge bg-secondary ms-2">0</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle app-data-table"
+                       id="match-records-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>标题</th>
+                            <th>季度</th>
+                            <th>匹配方式</th>
+                            <th>命中条目</th>
+                            <th>形态</th>
+                            <th>置信度</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 动态加载 -->
+                    </tbody>
+                </table>
+            </div>
+            <!-- 空状态 -->
+            <div id="empty-state" class="app-empty-state is-hidden">
+                <i class="bi bi-inbox app-empty-state__icon"></i>
+                <h5 class="text-muted mt-3">暂无匹配记录</h5>
+                <p class="text-muted mb-0">同步请求后会产生匹配记录</p>
+            </div>
+            <!-- 加载状态 -->
+            <div id="loading" class="app-loading-state is-hidden">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+            <!-- 分页 -->
+            <nav id="pagination-nav" class="mt-3 is-hidden">
+                <ul class="pagination justify-content-center" id="pagination">
+                    <!-- 动态生成 -->
+                </ul>
+            </nav>
+        </div>
+    </div>
+    <!-- 匹配详情模态框 -->
+    <div class="modal fade" id="matchDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable"
+             style="max-width: 70em">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-target me-2"></i>匹配过程详情
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="match-detail-content">
+                        <!-- 动态填充 -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script>
+let currentPage = 1;
+const pageLimit = 20;
+let matchDetailModal = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    matchDetailModal = new bootstrap.Modal(document.getElementById('matchDetailModal'));
+    loadMatchRecords();
+});
+
+async function loadMatchRecords(page) {
+    if (page) {
+        currentPage = page;
+    }
+
+    showLoading(true);
+
+    const params = new URLSearchParams({
+        page: currentPage,
+        limit: pageLimit
+    });
+
+    const status = document.getElementById('filter-status').value;
+    const method = document.getElementById('filter-method').value;
+    const platform = document.getElementById('filter-platform').value;
+
+    if (status) params.append('status', status);
+    if (method) params.append('match_method', method);
+    if (platform) params.append('match_platform', platform);
+
+    try {
+        const response = await fetch(appUrl('/api/match-records?' + params), {
+            credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            displayMatchRecords(data.data.records, data.data.total);
+            renderPagination(data.data.total, data.data.limit, data.data.offset);
+        } else {
+            showAlert('加载匹配记录失败', 'danger');
+        }
+    } catch (error) {
+        console.error('加载匹配记录失败:', error);
+        showAlert('加载匹配记录失败', 'danger');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function displayMatchRecords(records, total) {
+    const tbody = document.querySelector('#match-records-table tbody');
+    const emptyState = document.getElementById('empty-state');
+    const table = document.getElementById('match-records-table');
+    const countBadge = document.getElementById('records-count');
+
+    tbody.innerHTML = '';
+    countBadge.textContent = total;
+
+    if (records.length === 0) {
+        table.classList.add('is-hidden');
+        emptyState.classList.remove('is-hidden');
+        return;
+    }
+
+    table.classList.remove('is-hidden');
+    emptyState.classList.add('is-hidden');
+
+    records.forEach(record => {
+        const row = document.createElement('tr');
+
+        // 匹配方式标签
+        const methodBadge = getMethodBadge(record.match_method);
+        // 状态标签
+        const statusBadge = getStatusBadge(record.status);
+        // 置信度
+        const scoreText = record.match_score !== null && record.match_score !== undefined
+            ? (record.match_score * 100).toFixed(1) + '%'
+            : '-';
+        // 命中条目链接
+        const subjectLink = record.subject_id
+            ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="text-decoration-none">${record.bgm_title || record.subject_id}</a>`
+            : '<span class="text-muted">-</span>';
+
+        // 行高亮：失败用警告色
+        const rowClass = record.status === 'error' ? 'table-warning' : '';
+
+        row.className = rowClass;
+        row.innerHTML = `
+            <td><small>${formatDate(record.timestamp)}</small></td>
+            <td>${escapeHtml(record.title)}</td>
+            <td>S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}</td>
+            <td>${methodBadge}</td>
+            <td>${subjectLink}</td>
+            <td><small>${record.match_platform || '-'}</small></td>
+            <td><small>${scoreText}</small></td>
+            <td>${statusBadge}</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-info" onclick="showMatchDetail(${record.id})" title="查看匹配过程">
+                    <i class="bi bi-list-ul"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function getMethodBadge(method) {
+    const badges = {
+        'custom_mapping': '<span class="badge bg-primary">自定义映射</span>',
+        'bangumi_data': '<span class="badge bg-success">bangumi-data</span>',
+        'api_search': '<span class="badge bg-info">API 搜索</span>',
+        'failed': '<span class="badge bg-danger">失败</span>'
+    };
+    return badges[method] || '<span class="badge bg-secondary">未知</span>';
+}
+
+function getStatusBadge(status) {
+    const badges = {
+        'success': '<span class="badge bg-success">成功</span>',
+        'error': '<span class="badge bg-danger">失败</span>',
+        'ignored': '<span class="badge bg-warning">已忽略</span>',
+        'retried': '<span class="badge bg-info">已重试</span>'
+    };
+    return badges[status] || '<span class="badge bg-secondary">' + status + '</span>';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+async function showMatchDetail(recordId) {
+    try {
+        const response = await fetch(appUrl(`/api/match-records/${recordId}/trace`), {
+            credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.status !== 'success') {
+            showAlert('获取匹配详情失败', 'danger');
+            return;
+        }
+
+        const record = data.data.record;
+        const trace = data.data.trace;
+        const content = document.getElementById('match-detail-content');
+
+        let html = '';
+
+        // 基本信息
+        html += `
+            <div class="card mb-3">
+                <div class="card-header py-2">
+                    <strong>请求信息</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-md-6"><small><strong>标题：</strong>${escapeHtml(record.title)}</small></div>
+                        <div class="col-md-6"><small><strong>原始标题：</strong>${escapeHtml(record.ori_title || '-')}</small></div>
+                        <div class="col-md-6"><small><strong>季度/集数：</strong>S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}</small></div>
+                        <div class="col-md-6"><small><strong>来源：</strong>${record.source}</small></div>
+                        <div class="col-md-6"><small><strong>最终匹配方式：</strong>${getMethodBadge(record.match_method)}</small></div>
+                        <div class="col-md-6"><small><strong>命中条目：</strong>${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank">${record.bgm_title || record.subject_id}</a>` : '-'}</small></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (trace && trace.steps && trace.steps.length > 0) {
+            html += '<div class="card"><div class="card-header py-2"><strong>匹配过程</strong></div><div class="card-body">';
+
+            trace.steps.forEach((step, idx) => {
+                const statusIcon = {
+                    'hit': '<i class="bi bi-check-circle-fill text-success"></i>',
+                    'miss': '<i class="bi bi-x-circle-fill text-danger"></i>',
+                    'skipped': '<i class="bi bi-skip-forward text-muted"></i>',
+                    'error': '<i class="bi bi-exclamation-triangle-fill text-danger"></i>'
+                }[step.status] || '<i class="bi bi-question-circle text-muted"></i>';
+
+                const stageName = {
+                    'custom_mapping': '自定义映射',
+                    'bangumi_data': 'bangumi-data 本地匹配',
+                    'api_search': 'Bangumi API 搜索'
+                }[step.stage] || step.stage;
+
+                html += `
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-1">
+                            ${statusIcon}
+                            <strong class="ms-2 me-2">${idx + 1}. ${stageName}</strong>
+                            <span class="badge bg-secondary">${step.status}</span>
+                            <small class="text-muted ms-2">${step.elapsed_ms}ms</small>
+                        </div>
+                        <small class="text-muted d-block mb-2">${escapeHtml(step.reason || '')}</small>
+                `;
+
+                if (step.subject_id) {
+                    html += `<small class="d-block mb-1"><strong>命中 ID：</strong><a href="https://bgm.tv/subject/${step.subject_id}" target="_blank">${step.subject_id}</a></small>`;
+                }
+
+                if (step.candidates && step.candidates.length > 0) {
+                    html += '<small class="d-block mb-1"><strong>候选列表：</strong></small>';
+                    html += '<ul class="small">';
+                    step.candidates.forEach(cand => {
+                        const scoreText = cand.score ? ` (${(cand.score * 100).toFixed(1)}%)` : '';
+                        const platformText = cand.platform ? ` [${cand.platform}]` : '';
+                        html += `<li><a href="https://bgm.tv/subject/${cand.subject_id}" target="_blank">${cand.name_cn || cand.name || cand.subject_id}</a>${platformText}${scoreText}</li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                html += '</div>';
+            });
+
+            html += '</div></div>';
+        } else {
+            html += `
+                <div class="alert alert-warning mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    此记录无匹配追踪详情。请在「配置管理」开启调试模式（[dev] debug = True）后再同步，以记录完整匹配过程。
+                </div>
+            `;
+        }
+
+        content.innerHTML = html;
+        matchDetailModal.show();
+
+    } catch (error) {
+        console.error('获取匹配详情失败:', error);
+        showAlert('获取匹配详情失败', 'danger');
+    }
+}
+
+function renderPagination(total, limit, offset) {
+    const nav = document.getElementById('pagination-nav');
+    const pagination = document.getElementById('pagination');
+
+    const totalPages = Math.ceil(total / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    if (totalPages <= 1) {
+        nav.classList.add('is-hidden');
+        return;
+    }
+
+    nav.classList.remove('is-hidden');
+    pagination.innerHTML = '';
+
+    // 上一页
+    pagination.innerHTML += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="loadMatchRecords(${currentPage - 1}); return false;">&laquo;</a>
+        </li>
+    `;
+
+    // 页码（最多显示 10 个）
+    const startPage = Math.max(1, currentPage - 4);
+    const endPage = Math.min(totalPages, startPage + 9);
+
+    for (let i = startPage; i <= endPage; i++) {
+        pagination.innerHTML += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadMatchRecords(${i}); return false;">${i}</a>
+            </li>
+        `;
+    }
+
+    // 下一页
+    pagination.innerHTML += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="loadMatchRecords(${currentPage + 1}); return false;">&raquo;</a>
+        </li>
+    `;
+}
+
+function showLoading(show) {
+    const loading = document.getElementById('loading');
+    const table = document.getElementById('match-records-table');
+
+    if (show) {
+        loading.classList.remove('is-hidden');
+        table.classList.add('is-hidden');
+    } else {
+        loading.classList.add('is-hidden');
+        table.classList.remove('is-hidden');
+    }
+}
+    </script>
+{% endblock %}
