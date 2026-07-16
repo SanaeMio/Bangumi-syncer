@@ -893,6 +893,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         else:
             step = None
 
+        # 根据配置决定搜索的条目类型：默认仅动画（type=2），
+        # 开启三次元支持后扩展为 [2, 6]（动画 + 三次元，含日剧/电影）
+        enable_real_action = config_manager.get(
+            "sync", "enable_real_action", fallback=False
+        )
+        subject_types = [2, 6] if enable_real_action else [2]
+        if step and enable_real_action:
+            step.reason = f"已启用三次元支持，搜索 type={subject_types}"
+
         _ctx = (
             f"user_name={item.user_name!r} source={item.source!r} "
             f"S{item.season:02d}E{item.episode:02d} media_type={item.media_type!r} "
@@ -919,6 +928,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 ori_title=item.ori_title or "",
                 premiere_date=premiere_date or "",
                 is_movie=(item.media_type == "movie"),
+                subject_types=subject_types,
             )
             if not bgm_data:
                 logger.error(
