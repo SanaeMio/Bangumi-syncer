@@ -55,6 +55,17 @@ def mock_bangumi_api():
             {"id": 123, "name": "Test Anime", "name_cn": "测试动画"}
         ]
 
+        # Mock bgm_search 方法（_find_subject_id 阶段3 调用）
+        mock_instance.bgm_search.return_value = [
+            {
+                "id": 123,
+                "name": "Test Anime",
+                "name_cn": "测试动画",
+                "platform": "TV",
+                "date": "2024-01-01",
+            }
+        ]
+
         # Mock get_subject 方法
         mock_instance.get_subject.return_value = {
             "id": 123,

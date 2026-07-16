@@ -291,3 +291,171 @@ class TestLogSyncRecordFacadeForwardsMatchFields:
             match_platform="TV",
             match_trace=trace_dict,
         )
+
+
+class TestSeasonOneCandidateSelection:
+    """season=1 时 API 搜索候选筛选测试
+
+    场景：搜索"凡人修仙传" season=1，API 按热度返回第一条是"凡人修仙传 第五季"，
+    应在候选列表里改选标题不含季度后缀的第一季本体。
+    """
+
+    def _make_service(self):
+        return SyncService()
+
+    def _make_candidates(self):
+        """模拟 bgm_search 返回的候选列表（已按热度排序）"""
+        return [
+            {
+                "id": 607915,
+                "name": "凡人修仙传 第五季",
+                "name_cn": "凡人修仙传 第五季",
+                "platform": "WEB",
+                "date": "2026-06-13",
+            },
+            {
+                "id": 401234,
+                "name": "凡人修仙传 第四季",
+                "name_cn": "凡人修仙传 第四季",
+                "platform": "WEB",
+                "date": "2024-01-01",
+            },
+            {
+                "id": 328088,
+                "name": "凡人修仙传",
+                "name_cn": "凡人修仙传",
+                "platform": "WEB",
+                "date": "2020-07-15",
+            },
+        ]
+
+    def test_season1_picks_first_season_body_when_top_is_sequel(self):
+        """首条为第五季时，改选无季度后缀的第一季本体"""
+        svc = self._make_service()
+        item = CustomItem(
+            media_type="episode",
+            title="凡人修仙传",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        with patch("app.services.sync_service.mapping_service") as mock_mapping:
+            mock_mapping.find_mapping.return_value = (None, "", "")
+            with patch("app.services.sync_service.config_manager") as mock_cfg:
+                mock_cfg.get.side_effect = lambda s, k, fallback=None: {
+                    ("bangumi_data", "enabled"): False,
+                    ("sync", "enable_real_action"): False,
+                }.get((s, k), fallback)
+                with patch.object(
+                    svc,
+                    "_get_bangumi_api_for_user",
+                    return_value=MagicMock(
+                        bgm_search=MagicMock(return_value=self._make_candidates())
+                    ),
+                ):
+                    with patch.object(
+                        svc,
+                        "_sort_candidates_by_platform",
+                        side_effect=lambda data, **kw: data,
+                    ):
+                        subject_id, is_matched, err = svc._find_subject_id(item)
+        assert err == ""
+        assert subject_id == 328088  # 第一季本体
+        assert is_matched is True
+
+    def test_season1_keeps_top_when_no_seasonless_candidate(self):
+        """候选列表里无无季度后缀条目时，保持首条"""
+        svc = self._make_service()
+        item = CustomItem(
+            media_type="episode",
+            title="某番剧",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        candidates = [
+            {
+                "id": 111,
+                "name": "某番剧 第二季",
+                "name_cn": "某番剧 第二季",
+                "platform": "TV",
+                "date": "",
+            },
+            {
+                "id": 222,
+                "name": "某番剧 第三季",
+                "name_cn": "某番剧 第三季",
+                "platform": "TV",
+                "date": "",
+            },
+        ]
+        with patch("app.services.sync_service.mapping_service") as mock_mapping:
+            mock_mapping.find_mapping.return_value = (None, "", "")
+            with patch("app.services.sync_service.config_manager") as mock_cfg:
+                mock_cfg.get.side_effect = lambda s, k, fallback=None: {
+                    ("bangumi_data", "enabled"): False,
+                    ("sync", "enable_real_action"): False,
+                }.get((s, k), fallback)
+                with patch.object(
+                    svc,
+                    "_get_bangumi_api_for_user",
+                    return_value=MagicMock(
+                        bgm_search=MagicMock(return_value=candidates)
+                    ),
+                ):
+                    with patch.object(
+                        svc,
+                        "_sort_candidates_by_platform",
+                        side_effect=lambda data, **kw: data,
+                    ):
+                        subject_id, is_matched, err = svc._find_subject_id(item)
+        assert err == ""
+        assert subject_id == 111  # 保持首条
+        assert is_matched is False
+
+    def test_season1_keeps_top_when_top_is_seasonless(self):
+        """首条本身无季度后缀时，直接采用（无需改选）"""
+        svc = self._make_service()
+        item = CustomItem(
+            media_type="episode",
+            title="鬼滅の刃",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        candidates = [
+            {
+                "id": 333,
+                "name": "鬼滅の刃",
+                "name_cn": "鬼灭之刃",
+                "platform": "TV",
+                "date": "2019-04-06",
+            },
+        ]
+        with patch("app.services.sync_service.mapping_service") as mock_mapping:
+            mock_mapping.find_mapping.return_value = (None, "", "")
+            with patch("app.services.sync_service.config_manager") as mock_cfg:
+                mock_cfg.get.side_effect = lambda s, k, fallback=None: {
+                    ("bangumi_data", "enabled"): False,
+                    ("sync", "enable_real_action"): False,
+                }.get((s, k), fallback)
+                with patch.object(
+                    svc,
+                    "_get_bangumi_api_for_user",
+                    return_value=MagicMock(
+                        bgm_search=MagicMock(return_value=candidates)
+                    ),
+                ):
+                    with patch.object(
+                        svc,
+                        "_sort_candidates_by_platform",
+                        side_effect=lambda data, **kw: data,
+                    ):
+                        subject_id, is_matched, err = svc._find_subject_id(item)
+        assert err == ""
+        assert subject_id == 333
+        # 首条无季度后缀，不触发改选逻辑，is_matched 保持 False
+        assert is_matched is False

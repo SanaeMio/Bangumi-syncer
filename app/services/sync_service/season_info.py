@@ -3,13 +3,65 @@
 纯函数逻辑，不依赖任何单例。
 """
 
+from __future__ import annotations
+
 import re
 
 from ...core.logging import logger
 
+# 中文数字 → 阿拉伯数字（1-10，支持"十一"~"十九"组合）
+_CN_NUM = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+
 
 class SeasonInfoMixin:
     """季度信息检测（纯逻辑，无外部依赖）。"""
+
+    def _get_explicit_season_from_title(self, title: str) -> int | None:
+        """从标题中提取明确声明的季度编号。
+
+        返回值：
+        - 明确声明第N季时返回 N（>=1）
+        - 标题不含季度声明时返回 None（可能是第一季本体，也可能是总集篇等）
+
+        覆盖形式：第X季/第X期（阿拉伯与中文数字）、Xnd/Xrd/Xth season、Season X
+        """
+        if not title:
+            return None
+        text = title.strip()
+
+        # "第X期" / "第X季"（阿拉伯数字）
+        m = re.search(r"第\s*(\d+)\s*[期季]", text)
+        if m:
+            return int(m.group(1))
+        # "第X期" / "第X季"（中文数字，含"十一"~"十九"）
+        m = re.search(r"第\s*([一二三四五六七八九十]+)\s*[期季]", text)
+        if m:
+            cn = m.group(1)
+            if len(cn) == 1:
+                return _CN_NUM.get(cn)
+            if cn.startswith("十"):
+                return 10 + _CN_NUM.get(cn[1], 0)
+            return _CN_NUM.get(cn)
+        # "Xnd/Xrd/Xth season"
+        m = re.search(r"(\d+)(?:st|nd|rd|th)\s+season", text, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+        # "Season X"（需带数字，避免误匹配"Season"单词本身）
+        m = re.search(r"season\s*(\d+)", text, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+        return None
 
     def _check_season_info_in_title(self, title: str, season: int) -> bool:
         """检查标题中是否包含季度信息"""

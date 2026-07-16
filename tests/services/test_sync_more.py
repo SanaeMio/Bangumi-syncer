@@ -150,6 +150,47 @@ class TestSyncServiceHelper:
             result = service._check_season_info_in_title("测试番剧", 1)
             assert result is False
 
+    def test_get_explicit_season_from_title(self):
+        """测试从标题提取明确声明的季度编号"""
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.mapping_service"),
+        ):
+            mock_config.get.side_effect = lambda section, key, fallback=None: {
+                ("sync", "mode"): "single",
+                ("sync", "blocked_keywords"): "",
+                ("bangumi_data", "enabled"): False,
+            }.get((section, key), fallback)
+            mock_config.get_single_mode_media_usernames.return_value = ["admin"]
+
+            from app.services.sync_service import SyncService
+
+            service = SyncService()
+
+            # 无季度声明 → None（可能是第一季本体）
+            assert service._get_explicit_season_from_title("凡人修仙传") is None
+            assert service._get_explicit_season_from_title("") is None
+            assert service._get_explicit_season_from_title("鬼滅の刃") is None
+
+            # 阿拉伯数字"第N季/第N期"
+            assert service._get_explicit_season_from_title("凡人修仙传 第五季") == 5
+            assert service._get_explicit_season_from_title("某番剧 第3季") == 3
+            assert service._get_explicit_season_from_title("某番剧 第2期") == 2
+
+            # 中文数字"第N季/第N期"
+            assert service._get_explicit_season_from_title("凡人修仙传 第五季") == 5
+            assert service._get_explicit_season_from_title("某番剧 第二季") == 2
+            assert service._get_explicit_season_from_title("某番剧 第十一季") == 11
+
+            # 英文"Xnd/Xrd/Xth season" / "Season X"
+            assert service._get_explicit_season_from_title("Anime 2nd season") == 2
+            assert service._get_explicit_season_from_title("Anime Season 3") == 3
+
+            # 第一季也应识别为 1（用于判断"明确声明了季度"）
+            assert service._get_explicit_season_from_title("某番剧 第一季") == 1
+
 
 class TestCustomItem:
     """CustomItem 测试"""

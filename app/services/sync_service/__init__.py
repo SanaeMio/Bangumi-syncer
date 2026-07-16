@@ -1147,6 +1147,39 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     returned_name, item.season
                 ) or self._check_season_info_in_title(returned_name_cn, item.season):
                     is_api_season_matched = True
+            elif item.season == 1:
+                # 第一季：若首条候选明确声明了第N季（N>1，如"凡人修仙传 第五季"），
+                # 说明 API 按热度/相关度返回了续季，需要在候选列表里寻找
+                # 标题不含季度后缀的条目作为第一季本体。
+                top_name = bgm_data[0].get("name", "")
+                top_name_cn = bgm_data[0].get("name_cn", "")
+                top_explicit_season = max(
+                    self._get_explicit_season_from_title(top_name) or 0,
+                    self._get_explicit_season_from_title(top_name_cn) or 0,
+                )
+                if top_explicit_season > 1:
+                    # 在候选列表里寻找标题不含季度声明的条目（即第一季本体）
+                    for cand in bgm_data[1:]:
+                        cand_name = cand.get("name", "")
+                        cand_name_cn = cand.get("name_cn", "")
+                        cand_season = max(
+                            self._get_explicit_season_from_title(cand_name) or 0,
+                            self._get_explicit_season_from_title(cand_name_cn) or 0,
+                        )
+                        if cand_season == 0:
+                            logger.debug(
+                                f"首条候选为第{top_explicit_season}季，"
+                                f"改选无季度后缀的候选: "
+                                f"{cand_name_cn or cand_name}(id={cand.get('id')})"
+                            )
+                            bgm_data[0] = cand
+                            is_api_season_matched = True
+                            break
+                    if not is_api_season_matched:
+                        logger.debug(
+                            f"首条候选明确为第{top_explicit_season}季，"
+                            f"但候选列表中无无季度后缀的条目，保持首条"
+                        )
 
             # 收集候选到 trace（top-5）
             if step:
