@@ -316,3 +316,69 @@ async def test_clear_logs_exception(app_with_auth):
                 response = await client.post("/api/logs/clear")
 
                 assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_get_logs_grouped_response(app_with_auth):
+    """测试 grouped=true 返回结构化分组数据"""
+    log_content = (
+        "[2026/07/16 09:00:01.123] [INFO] [run:sync_1_100] 同步开始: 测试番剧 S01E01 (test)\n"
+        "[2026/07/16 09:00:02.456] [INFO] [run:sync_1_100] bgm: 测试番剧 已标记为看过\n"
+        "[2026/07/16 09:00:03.789] [INFO] [run:sync_1_100] 同步结束: status=success\n"
+        "[2026/07/16 09:00:04.000] [INFO] 用户 admin 登录成功\n"
+    )
+
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
+        with patch("app.api.logs.os.path.exists", return_value=True):
+            with patch("app.api.logs.os.stat") as mock_stat:
+                mock_stat.return_value = MagicMock(
+                    st_size=len(log_content), st_mtime=1234567890.0
+                )
+                with patch("builtins.open", mock_open(read_data=log_content)):
+                    with patch("app.api.logs.config_manager") as mock_cm:
+                        mock_cm.get.return_value = True
+                        async with AsyncClient(
+                            transport=ASGITransport(app=app_with_auth),
+                            base_url="http://test",
+                        ) as client:
+                            response = await client.get("/api/logs?grouped=true")
+
+                            assert response.status_code == 200
+                            data = response.json()
+                            assert data["status"] == "success"
+                            assert "content" not in data["data"]
+                            assert "groups" in data["data"]
+                            assert "orphans" in data["data"]
+                            assert "debug_mode" in data["data"]
+                            assert len(data["data"]["groups"]) == 1
+                            assert data["data"]["groups"][0]["run_id"] == "sync_1_100"
+                            assert data["data"]["groups"][0]["status"] == "success"
+                            assert len(data["data"]["orphans"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_logs_grouped_disabled(app_with_auth):
+    """测试 grouped=false 仍返回扁平 content"""
+    log_content = "Line 1\nLine 2\n"
+
+    with patch(
+        "app.api.logs.resolved_dev_log_file_path",
+        return_value=Path("/fake/app.log"),
+    ):
+        with patch("app.api.logs.os.path.exists", return_value=True):
+            with patch("app.api.logs.os.stat") as mock_stat:
+                mock_stat.return_value = MagicMock(st_size=100, st_mtime=1234567890.0)
+                with patch("builtins.open", mock_open(read_data=log_content)):
+                    async with AsyncClient(
+                        transport=ASGITransport(app=app_with_auth),
+                        base_url="http://test",
+                    ) as client:
+                        response = await client.get("/api/logs?grouped=false")
+
+                        assert response.status_code == 200
+                        data = response.json()
+                        assert "content" in data["data"]
+                        assert "groups" not in data["data"]

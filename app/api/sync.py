@@ -13,7 +13,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sse_starlette.sse import EventSourceResponse
 
-from ..core.logging import logger
+from ..core.logging import logger, new_retry_sync_run_id, sync_log_context
 from ..core.security import security_manager
 from ..models.sync import CustomItem
 from ..services.custom import custom_sync_service
@@ -526,7 +526,8 @@ async def retry_sync_record(
         )
 
         # 执行同步
-        result = sync_service.sync_custom_item(retry_item, source=retry_source)
+        with sync_log_context(new_retry_sync_run_id(record_id)):
+            result = sync_service.sync_custom_item(retry_item, source=retry_source)
 
         # 如果重试成功，更新原记录的状态
         if result.status == "success":
@@ -627,11 +628,13 @@ async def retry_sync_record_stream(
             }
 
             # 在线程中执行同步任务（sync_custom_item 是同步方法，会阻塞事件循环）
-            task = asyncio.create_task(
-                asyncio.to_thread(
-                    sync_service.sync_custom_item, retry_item, source=retry_source
-                )
-            )
+            def _run_retry() -> Any:
+                with sync_log_context(new_retry_sync_run_id(record_id)):
+                    return sync_service.sync_custom_item(
+                        retry_item, source=retry_source
+                    )
+
+            task = asyncio.create_task(asyncio.to_thread(_run_retry))
 
             # 等待任务完成，同时实时推送日志
             while not task.done():
