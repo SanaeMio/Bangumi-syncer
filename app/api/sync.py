@@ -556,7 +556,7 @@ async def retry_sync_record(
 def _build_retry_item(record: dict, retry_source: str) -> CustomItem:
     """从同步记录构建重试用的 CustomItem"""
     retry_media = (record.get("media_type") or "episode").lower()
-    if retry_media not in ("episode", "movie"):
+    if retry_media not in ("episode", "movie", "ova", "oad", "real_action"):
         retry_media = "episode"
     return CustomItem(
         media_type=retry_media,
