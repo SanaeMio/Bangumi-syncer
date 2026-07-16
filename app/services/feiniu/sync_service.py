@@ -10,6 +10,7 @@ from ...core.config import config_manager
 from ...core.database import FEINIU_MIN_UPDATE_WATERMARK_META_KEY, database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ...utils.media_type_detector import detect_media_type
 from ..base.models import BaseSyncResult
 from .models import FeiniuWatchRecord
 from .reader import fetch_completed_watch_records
@@ -18,16 +19,28 @@ from .reader import fetch_completed_watch_records
 FEINIU_SYNC_SOURCE = "feiniu"
 
 
-def _feiniu_rec_is_movie(rec: FeiniuWatchRecord) -> bool:
-    """是否按电影/剧场版走主同步 movie 分支。
+def _feiniu_detect_media_type(rec: FeiniuWatchRecord) -> str:
+    """检测飞牛记录的媒体类型。
 
-    优先读飞牛 item.type；否则：季号与集号在库中均有值
-    视为剧集；二者皆无则视为单条影片。
+    返回值：movie / ova / oad / real_action / episode
+
+    优先使用统一的 detect_media_type 检测标题和 item_type 中的关键词，
+    再回退到原有的 movie/episode 二分启发式。
     """
+    # 先用统一检测器扫描标题与 item_type
+    detected = detect_media_type(
+        title=rec.display_title,
+        ori_title=rec.original_title or "",
+        item_type=rec.item_type or "",
+    )
+    if detected != "episode":
+        return detected
+
+    # 回退到原有的 movie/episode 启发式
     t = (rec.item_type or "").strip().lower()
     if t:
         if any(k in t for k in ("movie", "film", "电影")):
-            return True
+            return "movie"
         if any(
             k in t
             for k in (
@@ -42,12 +55,12 @@ def _feiniu_rec_is_movie(rec: FeiniuWatchRecord) -> bool:
                 "综艺",
             )
         ):
-            return False
+            return "episode"
     if rec.episode_from_db and rec.season_from_db:
-        return False
+        return "episode"
     if not rec.episode_from_db and not rec.season_from_db:
-        return True
-    return False
+        return "movie"
+    return "episode"
 
 
 def ensure_feiniu_startup_watermark() -> None:
@@ -73,9 +86,11 @@ class FeiniuSyncService:
         if rec.display_title.startswith("视频-"):
             return None
         ori = rec.original_title if rec.original_title else rec.display_title
-        if _feiniu_rec_is_movie(rec):
+        detected_type = _feiniu_detect_media_type(rec)
+        # 非剧集类型（movie/ova/oad/real_action）统一按单集处理
+        if detected_type in ("movie", "ova", "oad", "real_action"):
             return CustomItem(
-                media_type="movie",
+                media_type=detected_type,
                 title=rec.display_title.strip(),
                 ori_title=ori if ori and str(ori).strip() else None,
                 season=1,

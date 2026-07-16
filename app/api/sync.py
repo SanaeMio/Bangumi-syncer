@@ -141,7 +141,7 @@ async def test_sync(
             raise HTTPException(status_code=400, detail="标题不能为空")
 
         media_type = (data.get("media_type") or "episode").lower()
-        if media_type not in ("episode", "movie"):
+        if media_type not in ("episode", "movie", "ova", "oad", "real_action"):
             media_type = "episode"
 
         # 创建测试项目
@@ -229,7 +229,7 @@ async def test_match(
             raise HTTPException(status_code=400, detail="标题不能为空")
 
         media_type = (data.get("media_type") or "episode").lower()
-        if media_type not in ("episode", "movie"):
+        if media_type not in ("episode", "movie", "ova", "oad", "real_action"):
             media_type = "episode"
 
         test_item = CustomItem(

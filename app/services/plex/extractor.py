@@ -6,6 +6,7 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ...utils.media_type_detector import detect_media_type
 
 
 def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
@@ -24,10 +25,13 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
             )
         title = (md.get("title") or "").strip()
         ori = md.get("originalTitle")
+        ori_str = ori if ori and str(ori).strip() else ""
+        # 电影也检测是否为真人电影（三次元）
+        detected = detect_media_type(title=title, ori_title=ori_str, item_type=mtype)
         return CustomItem(
-            media_type="movie",
+            media_type=detected,
             title=title,
-            ori_title=ori if ori and str(ori).strip() else None,
+            ori_title=ori_str if ori_str else None,
             season=1,
             episode=1,
             release_date=release_date,
@@ -45,10 +49,18 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
         )
 
     original_title = md.get("originalTitle", " ")
+    title = md.get("grandparentTitle") or ""
+
+    # 检测 OVA/OAD/三次元类型
+    detected = detect_media_type(
+        title=title,
+        ori_title=str(original_title) if original_title else "",
+        item_type=mtype,
+    )
 
     return CustomItem(
-        media_type=md.get("type", "episode"),
-        title=md["grandparentTitle"],
+        media_type=detected,
+        title=title,
         ori_title=original_title,
         season=md["parentIndex"],
         episode=md["index"],

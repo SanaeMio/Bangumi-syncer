@@ -71,6 +71,10 @@ class MatchTrace:
     request_title: str = ""
     request_ori_title: str = ""
     request_season: int = 1
+    request_episode: int = 0
+    request_media_type: str = ""
+    request_release_date: str = ""
+    request_user_name: str = ""
     request_platform_hint: str = ""
     normalized_title: str = ""
     steps: list[MatchStep] = field(default_factory=list)
@@ -116,6 +120,10 @@ class MatchTrace:
             "request_title": self.request_title,
             "request_ori_title": self.request_ori_title,
             "request_season": self.request_season,
+            "request_episode": self.request_episode,
+            "request_media_type": self.request_media_type,
+            "request_release_date": self.request_release_date,
+            "request_user_name": self.request_user_name,
             "request_platform_hint": self.request_platform_hint,
             "normalized_title": self.normalized_title,
             "steps": [s.to_dict() for s in self.steps],

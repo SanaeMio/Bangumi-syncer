@@ -209,19 +209,51 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
 
     def test_match(self, item: CustomItem) -> dict[str, Any]:
-        """测试匹配过程，返回匹配追踪详情（不执行实际同步、不写记录、不发通知）
+        """测试匹配过程，返回匹配追踪详情（不执行实际同步、不发通知）
 
-        用于「调试工具」页面的匹配测试面板，直观展示三段式匹配的完整过程。
+        用于「匹配记录」页面的匹配测试面板，直观展示三段式匹配的完整过程。
+        匹配结果会写入 sync_records 表（source=test-match），便于历史回溯。
         """
         trace = MatchTrace(
             request_title=item.title,
             request_ori_title=item.ori_title or "",
             request_season=item.season,
+            request_episode=item.episode,
+            request_media_type=item.media_type,
+            request_release_date=item.release_date or "",
+            request_user_name=item.user_name,
+            request_platform_hint=item.source or "test-match",
         )
         subject_id, is_season_matched_id, failure_detail = self._find_subject_id(
             item, trace=trace
         )
         trace.finish()
+
+        # 测试匹配也写入匹配记录，便于回溯和对比
+        try:
+            database_manager.log_sync_record(
+                user_name=item.user_name,
+                title=item.title,
+                ori_title=item.ori_title or "",
+                season=item.season,
+                episode=item.episode,
+                subject_id=str(subject_id) if subject_id else None,
+                episode_id=None,
+                status="success" if subject_id else "error",
+                message=f"测试匹配：{trace.final_match_method}"
+                if subject_id
+                else f"测试匹配失败：{failure_detail}",
+                source="test-match",
+                media_type=item.media_type,
+                bgm_title="",
+                match_method=trace.final_match_method,
+                match_score=trace.final_score,
+                match_platform=self._extract_matched_platform(trace, subject_id),
+                match_trace=trace.to_dict(),
+            )
+        except Exception as e:
+            logger.warning(f"测试匹配写记录失败（不影响主流程）: {e}")
+
         return {
             "subject_id": subject_id,
             "is_season_matched_id": is_season_matched_id,
@@ -260,9 +292,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     message="已在配置中关闭剧场版播放开始标记在看",
                 )
 
-            if item.media_type != "movie":
+            if item.media_type not in ("movie", "real_action"):
                 return SyncResponse(
-                    status="ignored", message="仅剧场版支持播放开始标记在看"
+                    status="ignored", message="仅剧场版/真人电影支持播放开始标记在看"
                 )
 
             if not item.title:
@@ -377,7 +409,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     def _normalize_custom_item_params(self, item: CustomItem) -> SyncResponse | None:
         """校验自定义条目参数。返回 SyncResponse 表示应立即返回该响应；None 表示校验通过。"""
         # 基本验证
-        if item.media_type not in ("episode", "movie"):
+        # 支持的媒体类型：episode/movie（原有）+ ova/oad/real_action（扩展）
+        if item.media_type not in ("episode", "movie", "ova", "oad", "real_action"):
             logger.error(f"同步类型{item.media_type}不支持，跳过")
             return SyncResponse(
                 status="error", message=f"同步类型{item.media_type}不支持"
@@ -387,7 +420,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.error("同步名称为空，跳过")
             return SyncResponse(status="error", message="同步名称为空")
 
-        if item.media_type == "episode" and item.season == 0:
+        # episode/ova/oad/real_action 走剧集同步路径，不允许 season=0
+        if (
+            item.media_type in ("episode", "ova", "oad", "real_action")
+            and item.season == 0
+        ):
             logger.error("不支持SP标记同步，跳过")
             return SyncResponse(status="error", message="不支持SP标记同步")
 
@@ -421,6 +458,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             request_title=item.title,
             request_ori_title=item.ori_title or "",
             request_season=item.season,
+            request_episode=item.episode,
+            request_media_type=item.media_type,
+            request_release_date=item.release_date or "",
+            request_user_name=item.user_name,
             request_platform_hint=item.source or actual_source,
         )
 
@@ -639,7 +680,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             actual_source = item.source if item.source else source
             sync_action = (item.sync_action or "").strip().lower()
             if sync_action == "mark_watching":
-                if item.media_type == "movie":
+                # movie 和 real_action（真人电影）走「标记在看」路径
+                if item.media_type in ("movie", "real_action"):
                     return self.sync_movie_watching(item, source)
                 return SyncResponse(
                     status="ignored",
@@ -920,9 +962,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 step.status = "hit"
                 step.subject_id = mapping_subject_id
                 step.reason = match_reason
+                step.score = 1.0
             if trace:
                 trace.final_subject_id = mapping_subject_id
                 trace.final_match_method = "custom_mapping"
+                trace.final_score = 1.0
                 trace.finish()
             # 自定义映射的ID不视为特定季度的ID
             return mapping_subject_id, False, ""
@@ -1000,9 +1044,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             f"bangumi-data 匹配命中：{matched_title}，"
                             f"日期匹配={date_matched}，季度ID可信={is_season_matched_id}"
                         )
+                        step.score = 1.0 if date_matched else 0.8
                     if trace:
                         trace.final_subject_id = bangumi_data_id
                         trace.final_match_method = "bangumi_data"
+                        trace.final_score = 1.0 if date_matched else 0.8
                         trace.finish()
                     return bangumi_data_id, is_season_matched_id, ""
                 else:
@@ -1026,14 +1072,21 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         else:
             step = None
 
-        # 根据配置决定搜索的条目类型：默认仅动画（type=2），
-        # 开启三次元支持后扩展为 [2, 6]（动画 + 三次元，含日剧/电影）
+        # 根据配置与媒体类型决定搜索的条目类型：
+        # - 默认仅动画（type=2）
+        # - 开启三次元支持后扩展为 [2, 6]（动画 + 三次元，含日剧/电影）
+        # - media_type=real_action 时强制包含 type=6（三次元），无论全局开关
         enable_real_action = config_manager.get(
             "sync", "enable_real_action", fallback=False
         )
-        subject_types = [2, 6] if enable_real_action else [2]
-        if step and enable_real_action:
-            step.reason = f"已启用三次元支持，搜索 type={subject_types}"
+        if item.media_type == "real_action":
+            subject_types = [6]
+        elif enable_real_action:
+            subject_types = [2, 6]
+        else:
+            subject_types = [2]
+        if step and (enable_real_action or item.media_type == "real_action"):
+            step.reason = f"搜索 type={subject_types}（media_type={item.media_type}）"
 
         _ctx = (
             f"user_name={item.user_name!r} source={item.source!r} "
@@ -1118,6 +1171,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             if trace:
                 trace.final_subject_id = bgm_data[0]["id"]
                 trace.final_match_method = "api_search"
+                # API 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
+                trace.final_score = 1.0 if is_api_season_matched else 0.9
                 trace.finish()
             return bgm_data[0]["id"], is_api_season_matched, ""
         except Exception as e:

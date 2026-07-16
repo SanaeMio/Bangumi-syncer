@@ -119,8 +119,16 @@ class DatabaseManager:
         source: str = "custom",
         media_type: str = "episode",
         bgm_title: str = "",
+        match_method: str = "",
+        match_score: Optional[float] = None,
+        match_platform: str = "",
+        match_trace: Optional[dict] = None,
     ) -> Optional[int]:
-        """记录同步日志到数据库，返回新记录 id（失败时 None）"""
+        """记录同步日志到数据库，返回新记录 id（失败时 None）
+
+        匹配追踪相关字段会一并写入 sync_records 表的 match_* 列，
+        并将完整 trace 序列化为 JSON 存入 match_trace 列。
+        """
         return self._sync.log_sync_record(
             user_name=user_name,
             title=title,
@@ -134,6 +142,10 @@ class DatabaseManager:
             source=source,
             media_type=media_type,
             bgm_title=bgm_title,
+            match_method=match_method,
+            match_score=match_score,
+            match_platform=match_platform,
+            match_trace=match_trace,
         )
 
     def get_sync_records(
