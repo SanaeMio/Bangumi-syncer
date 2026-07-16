@@ -3,7 +3,7 @@ FastAPI 主应用测试
 """
 
 from contextlib import contextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -196,3 +196,23 @@ def test_main_shutdown_feiniu_stop_failure_logged():
     ):
         with TestClient(app):
             pass
+
+
+def test_main_startup_retention_defaults_to_no_cleanup():
+    """缺省 sync_records_retention_days 为 0，启动时不清理历史记录。"""
+    from app.main import app
+
+    mock_get_config = MagicMock(return_value=0)
+    mock_cleanup = MagicMock(return_value=0)
+
+    with _main_lifespan_mocks(
+        **{
+            "app.main.config_manager.get_config": {"new": mock_get_config},
+            "app.main.database_manager.cleanup_old_records": {"new": mock_cleanup},
+        }
+    ):
+        with TestClient(app):
+            pass
+
+    mock_get_config.assert_any_call("dev", "sync_records_retention_days", 0)
+    mock_cleanup.assert_called_once_with(0)

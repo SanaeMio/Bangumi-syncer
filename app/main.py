@@ -74,18 +74,16 @@ async def lifespan(app: FastAPI):
     try:
         ensure_feiniu_startup_watermark()
     except Exception as e:
-        logger.debug("飞牛启动水位检查: %s", e)
+        logger.debug(f"飞牛启动水位检查: {e}")
 
     # 清理超过保留天数的同步记录，控制数据库体积
     try:
         retention_days = int(
-            config_manager.get_config("dev", "sync_records_retention_days", 30)
+            config_manager.get_config("dev", "sync_records_retention_days", 0)
         )
-        deleted = database_manager.cleanup_old_records(retention_days)
-        if deleted > 0:
-            logger.info("已清理 %d 条超过 %d 天的同步记录", deleted, retention_days)
+        database_manager.cleanup_old_records(retention_days)
     except Exception as e:
-        logger.warning("启动时清理旧同步记录失败（不影响主流程）: %s", e)
+        logger.warning(f"启动时清理旧同步记录失败（不影响主流程）: {e}")
 
     try:
         scheduler_config = config_manager.get_scheduler_config()
