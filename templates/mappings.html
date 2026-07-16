@@ -18,6 +18,10 @@
     <div class="alert alert-info" role="alert">
         <i class="bi bi-info-circle me-2"></i>
         <strong>自定义映射说明：</strong>当程序无法自动匹配番剧时，可以手动添加映射关系。映射格式为"番剧名 → Bangumi ID"，其中Bangumi ID可以从番剧页面URL中获取。
+        <hr class="my-2">
+        <strong>季度感知映射：</strong>填写季度后仅在该季度匹配时命中，适合同一标题不同季度对应不同条目。留空则所有季度共用。
+        <br>
+        <strong>正则规则：</strong>用正则表达式匹配标题，适合续作/特殊命名。匹配顺序：季度感知 → 简单格式 → 正则规则。
     </div>
     <!-- 映射列表 -->
     <div class="card mb-4">
@@ -35,6 +39,7 @@
                         <tr>
                             <th>番剧名称</th>
                             <th>Bangumi ID</th>
+                            <th>季度</th>
                             <th>Bangumi链接</th>
                             <th>操作</th>
                         </tr>
@@ -85,6 +90,18 @@
                                    required
                                    placeholder="输入Bangumi ID，如：386809">
                             <div class="form-text">可以从Bangumi页面URL中获取，如 https://bgm.tv/subject/386809 中的 386809</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="mapping-season" class="form-label">
+                                季度 <small class="text-muted fw-normal">(可选，季度感知映射)</small>
+                            </label>
+                            <input type="number"
+                                   class="form-control"
+                                   id="mapping-season"
+                                   min="1"
+                                   max="20"
+                                   placeholder="留空表示所有季度共用">
+                            <div class="form-text">填写后仅在该季度匹配时命中，适合同一标题不同季度对应不同条目</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">预览链接</label>
@@ -195,38 +212,164 @@
             </div>
         </div>
     </div>
+    <!-- 正则规则管理 -->
+    <div class="card mt-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-regex me-2 text-info"></i>
+                    <h6 class="m-0 fw-semibold">正则规则</h6>
+                    <small class="text-muted ms-2">用正则表达式匹配标题，优先级低于精确映射</small>
+                </div>
+                <button type="button"
+                        class="btn btn-sm btn-primary"
+                        onclick="showAddRuleModal()">
+                    <i class="bi bi-plus-circle me-1"></i>添加规则
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle" id="rules-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40%;">正则表达式</th>
+                            <th style="width: 15%;">Bangumi ID</th>
+                            <th>说明</th>
+                            <th>链接</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+            <div id="rules-empty-state" class="app-empty-state is-hidden">
+                <i class="bi bi-inbox app-empty-state__icon"></i>
+                <h5 class="text-muted mt-3">暂无正则规则</h5>
+                <p class="text-muted mb-0">点击"添加规则"按钮来创建第一条正则规则</p>
+            </div>
+        </div>
+    </div>
+    <!-- 正则规则添加/编辑模态框 -->
+    <div class="modal fade" id="ruleModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="ruleModalTitle">添加正则规则</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="rule-form">
+                        <div class="mb-3">
+                            <label for="rule-pattern" class="form-label">正则表达式</label>
+                            <input type="text"
+                                   class="form-control font-monospace"
+                                   id="rule-pattern"
+                                   required
+                                   placeholder="如：^.*之.*刃$">
+                            <div class="form-text">
+                                Python 正则语法，匹配标题或原始标题。示例：<code>^.*之.*刃$</code> 匹配以「之刃」结尾的标题
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="rule-id" class="form-label">Bangumi ID</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="rule-id"
+                                   required
+                                   placeholder="输入Bangumi ID，如：386809">
+                        </div>
+                        <div class="mb-3">
+                            <label for="rule-desc" class="form-label">
+                                说明 <small class="text-muted fw-normal">(可选)</small>
+                            </label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="rule-desc"
+                                   placeholder="规则描述，如：鬼灭之刃系列">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">预览链接</label>
+                            <div class="input-group">
+                                <span class="input-group-text">https://bgm.tv/subject/</span>
+                                <input type="text" class="form-control" id="rule-preview-id" readonly>
+                            </div>
+                            <div class="form-text">
+                                <a id="rule-preview-link" href="#" target="_blank" class="is-hidden">点击查看Bangumi页面</a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveRule()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 正则规则删除确认模态框 -->
+    <div class="modal fade" id="ruleDeleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">确认删除</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        确定要删除正则规则 "<code id="delete-rule-pattern"></code>" 吗？
+                    </p>
+                    <p class="text-muted">此操作不可撤销。</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDeleteRule()">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 {% block scripts %}
     <script>
 let currentMappings = {};
+let currentRules = [];
 let mappingModal;
 let deleteModal;
 let importModal;
+let ruleModal;
+let ruleDeleteModal;
 let editingTitle = null;
+let editingRuleIndex = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     mappingModal = new bootstrap.Modal(document.getElementById('mappingModal'));
     deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
     importModal = new bootstrap.Modal(document.getElementById('importModal'));
-    
+    ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
+    ruleDeleteModal = new bootstrap.Modal(document.getElementById('ruleDeleteModal'));
+
     // 监听ID输入变化，更新预览
     document.getElementById('mapping-id').addEventListener('input', updatePreview);
-    
+    document.getElementById('rule-id').addEventListener('input', updateRulePreview);
+
     loadMappings();
 });
 
 async function loadMappings() {
     showLoading(true);
-    
+
     try {
         const response = await fetch(appUrl('/api/mappings'), {
             credentials: 'include'
         });
         const data = await response.json();
-        
+
         if (data.status === 'success') {
-            currentMappings = data.data.mappings;
+            currentMappings = data.data.mappings || {};
+            currentRules = data.data.rules || [];
             displayMappings(currentMappings);
+            displayRules(currentRules);
         } else {
             showAlert('加载映射失败', 'danger');
         }
@@ -242,9 +385,9 @@ function displayMappings(mappings) {
     const tbody = document.querySelector('#mappings-table tbody');
     const emptyState = document.getElementById('empty-state');
     const table = document.getElementById('mappings-table');
-    
+
     tbody.innerHTML = '';
-    
+
     if (Object.keys(mappings).length === 0) {
         table.classList.add('is-hidden');
         emptyState.classList.remove('is-hidden');
@@ -253,12 +396,24 @@ function displayMappings(mappings) {
 
     table.classList.remove('is-hidden');
     emptyState.classList.add('is-hidden');
-    
-    Object.entries(mappings).forEach(([title, id]) => {
+
+    Object.entries(mappings).forEach(([title, value]) => {
+        // 兼容简单格式（str）和高级格式（{subject_id, season}）
+        let id = '';
+        let season = '';
+        if (typeof value === 'object' && value !== null) {
+            id = value.subject_id || '';
+            season = value.season || '';
+        } else {
+            id = value;
+        }
+        const seasonText = season ? `<span class="badge bg-info">S${season}</span>` : '<span class="text-muted">-</span>';
+        const escapedTitle = title.replace(/'/g, "\\'");
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${title}</td>
             <td>${id}</td>
+            <td>${seasonText}</td>
             <td>
                 <a href="https://bgm.tv/subject/${id}" target="_blank" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-box-arrow-up-right me-1"></i>查看
@@ -266,10 +421,10 @@ function displayMappings(mappings) {
             </td>
             <td>
                 <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-secondary" onclick="editMapping('${title}', '${id}')">
+                    <button type="button" class="btn btn-outline-secondary" onclick="editMapping('${escapedTitle}')">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-danger" onclick="deleteMapping('${title}')">
+                    <button type="button" class="btn btn-outline-danger" onclick="deleteMapping('${escapedTitle}')">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
@@ -288,10 +443,20 @@ function showAddMappingModal() {
     mappingModal.show();
 }
 
-function editMapping(title, id) {
+function editMapping(title) {
+    const value = currentMappings[title];
+    let id = '';
+    let season = '';
+    if (typeof value === 'object' && value !== null) {
+        id = value.subject_id || '';
+        season = value.season || '';
+    } else {
+        id = value;
+    }
     document.getElementById('mappingModalTitle').textContent = '编辑映射';
     document.getElementById('mapping-title').value = title;
     document.getElementById('mapping-id').value = id;
+    document.getElementById('mapping-season').value = season;
     updatePreview();
     editingTitle = title;
     mappingModal.show();
@@ -315,28 +480,41 @@ function updatePreview() {
 async function saveMapping() {
     const title = document.getElementById('mapping-title').value.trim();
     const id = document.getElementById('mapping-id').value.trim();
-    
+    const seasonRaw = document.getElementById('mapping-season').value.trim();
+
     if (!title || !id) {
         showAlert('请填写完整的映射信息', 'warning');
         return;
     }
-    
+
     // 验证ID是否为数字
     if (!/^\d+$/.test(id)) {
         showAlert('Bangumi ID必须是数字', 'warning');
         return;
     }
-    
+
+    // 季度感知：填写季度时使用高级格式
+    const season = seasonRaw ? parseInt(seasonRaw, 10) : null;
+    if (seasonRaw && (!season || season < 1)) {
+        showAlert('季度必须为正整数', 'warning');
+        return;
+    }
+
     try {
         // 如果是编辑模式且标题改变了，需要先删除旧的映射
         let newMappings = { ...currentMappings };
-        
+
         if (editingTitle && editingTitle !== title) {
             delete newMappings[editingTitle];
         }
-        
-        newMappings[title] = id;
-        
+
+        // 季度感知使用高级格式，否则用简单格式（向后兼容）
+        if (season) {
+            newMappings[title] = { subject_id: id, season: season };
+        } else {
+            newMappings[title] = id;
+        }
+
         const response = await fetch(appUrl('/api/mappings'), {
             method: 'POST',
             credentials: 'include',
@@ -345,9 +523,9 @@ async function saveMapping() {
             },
             body: JSON.stringify({ mappings: newMappings })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.status === 'success') {
             showAlert(editingTitle ? '映射更新成功' : '映射添加成功', 'success');
             mappingModal.hide();
@@ -529,13 +707,180 @@ function showLoading(show) {
     const loading = document.getElementById('loading');
     const table = document.getElementById('mappings-table');
     const emptyState = document.getElementById('empty-state');
-    
+
     if (show) {
         loading.classList.remove('is-hidden');
         table.classList.add('is-hidden');
         emptyState.classList.add('is-hidden');
     } else {
         loading.classList.add('is-hidden');
+    }
+}
+
+// ===== 正则规则管理 =====
+
+function displayRules(rules) {
+    const tbody = document.querySelector('#rules-table tbody');
+    const emptyState = document.getElementById('rules-empty-state');
+    const table = document.getElementById('rules-table');
+
+    tbody.innerHTML = '';
+
+    if (!rules || rules.length === 0) {
+        table.classList.add('is-hidden');
+        emptyState.classList.remove('is-hidden');
+        return;
+    }
+
+    table.classList.remove('is-hidden');
+    emptyState.classList.add('is-hidden');
+
+    rules.forEach((rule, idx) => {
+        const pattern = rule.pattern || '';
+        const sid = rule.subject_id || '';
+        const desc = rule.description || '';
+        const escapedPattern = pattern.replace(/'/g, "\\'");
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><code class="text-info">${pattern}</code></td>
+            <td>${sid}</td>
+            <td>${desc || '<span class="text-muted">-</span>'}</td>
+            <td>
+                <a href="https://bgm.tv/subject/${sid}" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>查看
+                </a>
+            </td>
+            <td>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-secondary" onclick="editRule(${idx})">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="deleteRule(${idx})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function showAddRuleModal() {
+    document.getElementById('ruleModalTitle').textContent = '添加正则规则';
+    document.getElementById('rule-form').reset();
+    document.getElementById('rule-preview-id').value = '';
+    document.getElementById('rule-preview-link').classList.add('is-hidden');
+    editingRuleIndex = null;
+    ruleModal.show();
+}
+
+function editRule(idx) {
+    const rule = currentRules[idx];
+    if (!rule) return;
+    document.getElementById('ruleModalTitle').textContent = '编辑正则规则';
+    document.getElementById('rule-pattern').value = rule.pattern || '';
+    document.getElementById('rule-id').value = rule.subject_id || '';
+    document.getElementById('rule-desc').value = rule.description || '';
+    updateRulePreview();
+    editingRuleIndex = idx;
+    ruleModal.show();
+}
+
+function updateRulePreview() {
+    const id = document.getElementById('rule-id').value;
+    const previewId = document.getElementById('rule-preview-id');
+    const previewLink = document.getElementById('rule-preview-link');
+
+    previewId.value = id;
+
+    if (id) {
+        previewLink.href = `https://bgm.tv/subject/${id}`;
+        previewLink.classList.remove('is-hidden');
+    } else {
+        previewLink.classList.add('is-hidden');
+    }
+}
+
+async function saveRule() {
+    const pattern = document.getElementById('rule-pattern').value.trim();
+    const id = document.getElementById('rule-id').value.trim();
+    const desc = document.getElementById('rule-desc').value.trim();
+
+    if (!pattern || !id) {
+        showAlert('请填写正则表达式和 Bangumi ID', 'warning');
+        return;
+    }
+
+    if (!/^\d+$/.test(id)) {
+        showAlert('Bangumi ID必须是数字', 'warning');
+        return;
+    }
+
+    // 构建新的 rules 列表
+    let newRules = [...currentRules];
+    const newRule = { pattern: pattern, subject_id: id };
+    if (desc) newRule.description = desc;
+
+    if (editingRuleIndex !== null) {
+        newRules[editingRuleIndex] = newRule;
+    } else {
+        newRules.push(newRule);
+    }
+
+    try {
+        const response = await fetch(appUrl('/api/mappings'), {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mappings: currentMappings, rules: newRules })
+        });
+        const result = await response.json();
+        if (result.status === 'success') {
+            showAlert(editingRuleIndex !== null ? '规则更新成功' : '规则添加成功', 'success');
+            ruleModal.hide();
+            loadMappings();
+        } else {
+            showAlert('保存规则失败: ' + result.message, 'danger');
+        }
+    } catch (error) {
+        console.error('保存规则失败:', error);
+        showAlert('保存规则失败', 'danger');
+    }
+}
+
+function deleteRule(idx) {
+    const rule = currentRules[idx];
+    if (!rule) return;
+    document.getElementById('delete-rule-pattern').textContent = rule.pattern || '';
+    ruleDeleteModal._deleteIndex = idx;
+    ruleDeleteModal.show();
+}
+
+async function confirmDeleteRule() {
+    const idx = ruleDeleteModal._deleteIndex;
+    if (idx === null || idx === undefined) return;
+
+    let newRules = [...currentRules];
+    newRules.splice(idx, 1);
+
+    try {
+        const response = await fetch(appUrl('/api/mappings'), {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mappings: currentMappings, rules: newRules })
+        });
+        const result = await response.json();
+        if (result.status === 'success') {
+            showAlert('规则删除成功', 'success');
+            ruleDeleteModal.hide();
+            loadMappings();
+        } else {
+            showAlert('删除规则失败: ' + result.message, 'danger');
+        }
+    } catch (error) {
+        console.error('删除规则失败:', error);
+        showAlert('删除规则失败', 'danger');
     }
 }
     </script>
