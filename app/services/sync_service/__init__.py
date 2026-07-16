@@ -766,24 +766,27 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
 
         当传入 trace 时，会记录每个匹配阶段的详细过程。
         """
-        # 阶段 1：自定义映射
+        # 阶段 1：自定义映射（含季度感知 + 正则规则）
         if trace:
             trace.normalized_title = item.title
             step = trace.start_step("custom_mapping")
         else:
             step = None
 
-        custom_mappings = self._load_custom_mappings()
-        mapping_subject_id = custom_mappings.get(item.title, "") or custom_mappings.get(
-            item.ori_title or "", ""
+        mapping_subject_id, match_type, match_reason = mapping_service.find_mapping(
+            title=item.title,
+            ori_title=item.ori_title or "",
+            season=item.season,
         )
 
         if mapping_subject_id:
-            logger.debug(f"匹配到自定义映射：{item.title}={mapping_subject_id}")
+            logger.debug(
+                f"匹配到自定义映射（{match_type}）：{item.title}={mapping_subject_id} - {match_reason}"
+            )
             if step:
                 step.status = "hit"
                 step.subject_id = mapping_subject_id
-                step.reason = f"自定义映射命中：{item.title}={mapping_subject_id}"
+                step.reason = match_reason
             if trace:
                 trace.final_subject_id = mapping_subject_id
                 trace.final_match_method = "custom_mapping"
@@ -793,7 +796,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
 
         if step:
             step.status = "miss"
-            step.reason = "自定义映射未命中"
+            step.reason = "自定义映射与正则规则均未命中"
 
         # 阶段 2：bangumi-data 本地匹配
         # 标记是否通过bangumi-data获取的ID
