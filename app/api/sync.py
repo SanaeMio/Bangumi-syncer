@@ -349,6 +349,130 @@ async def get_match_trace(
         raise HTTPException(status_code=500, detail=f"获取匹配详情失败: {str(e)}")
 
 
+# ===== 待确认候选（候选沉淀 + 确认 UI） =====
+
+
+@router.get("/pending-candidates")
+async def get_pending_candidates(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取待确认候选列表"""
+    try:
+        offset = (page - 1) * limit
+        result = sync_service.get_pending_candidates(
+            limit=limit, offset=offset, status=status
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"获取待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取待确认候选失败: {str(e)}")
+
+
+@router.get("/pending-candidates/{candidate_id}")
+async def get_pending_candidate_detail(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取单条待确认候选详情（含完整 trace）"""
+    try:
+        record = sync_service.get_pending_candidate_by_id(candidate_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="候选记录不存在")
+
+        candidates = []
+        cand_str = record.get("candidates_json", "") or "[]"
+        try:
+            candidates = json.loads(cand_str)
+        except (json.JSONDecodeError, TypeError):
+            candidates = []
+
+        trace = None
+        trace_str = record.get("trace_json", "") or "{}"
+        try:
+            trace = json.loads(trace_str) if trace_str else None
+        except (json.JSONDecodeError, TypeError):
+            trace = None
+
+        return {
+            "status": "success",
+            "data": {"record": record, "candidates": candidates, "trace": trace},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取待确认候选详情失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取待确认候选详情失败: {str(e)}")
+
+
+@router.post("/pending-candidates/{candidate_id}/confirm")
+async def confirm_pending_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """确认待确认候选：写入自定义映射并标记为已确认"""
+    try:
+        body = await request.json()
+        subject_id = str(body.get("subject_id", "")).strip()
+        if not subject_id:
+            raise HTTPException(status_code=400, detail="subject_id 不能为空")
+
+        success, message = sync_service.confirm_pending_candidate(
+            candidate_id, subject_id
+        )
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+        return {"status": "success", "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"确认待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"确认失败: {str(e)}")
+
+
+@router.post("/pending-candidates/{candidate_id}/reject")
+async def reject_pending_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """拒绝（忽略）待确认候选"""
+    try:
+        success, message = sync_service.reject_pending_candidate(candidate_id)
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+        return {"status": "success", "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"拒绝待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"拒绝失败: {str(e)}")
+
+
+@router.delete("/pending-candidates/{candidate_id}")
+async def delete_pending_candidate(
+    candidate_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """删除待确认候选"""
+    try:
+        success, message = sync_service.delete_pending_candidate(candidate_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=message)
+        return {"status": "success", "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除待确认候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
 @router.get("/records/{record_id}")
 async def get_sync_record(
     record_id: int,

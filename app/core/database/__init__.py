@@ -25,6 +25,7 @@ from .connection import (
 )
 from .feiniu import FeiniuRepository
 from .inbox import InboxRepository
+from .pending_candidates import PendingCandidatesRepository
 from .sync_records import SyncRecordsRepository
 from .trakt import TraktRepository
 
@@ -50,6 +51,7 @@ class DatabaseManager:
         self._inbox = InboxRepository(self._connection, self._feiniu)
         self._sync = SyncRecordsRepository(self._connection, self._inbox)
         self._trakt = TraktRepository(self._connection)
+        self._pending = PendingCandidatesRepository(self._connection)
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
         # 需要先创建 inbox_repository（及其 feiniu 依赖）才能执行回填
         self._inbox.backfill_historical_error_notifications()
@@ -181,6 +183,65 @@ class DatabaseManager:
     ) -> bool:
         """更新同步记录的状态"""
         return self._sync.update_sync_record_status(record_id, status, message)
+
+    # ------------------------------------------------------------------
+    # PendingCandidatesRepository 转发
+    # ------------------------------------------------------------------
+
+    def log_pending_candidate(
+        self,
+        request_title: str,
+        request_ori_title: str = "",
+        request_season: int = 1,
+        request_episode: int = 0,
+        user_name: str = "",
+        source: str = "",
+        candidates: Optional[list] = None,
+        trace: Optional[dict] = None,
+    ) -> Optional[int]:
+        """沉淀一条待确认候选"""
+        return self._pending.log_pending_candidate(
+            request_title=request_title,
+            request_ori_title=request_ori_title,
+            request_season=request_season,
+            request_episode=request_episode,
+            user_name=user_name,
+            source=source,
+            candidates=candidates,
+            trace=trace,
+        )
+
+    def get_pending_candidates(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """获取待确认候选列表"""
+        return self._pending.get_pending_candidates(
+            limit=limit, offset=offset, status=status
+        )
+
+    def get_pending_candidate_by_id(
+        self, candidate_id: int
+    ) -> Optional[dict[str, Any]]:
+        """获取单条待确认候选详情"""
+        return self._pending.get_pending_candidate_by_id(candidate_id)
+
+    def update_pending_candidate_status(
+        self,
+        candidate_id: int,
+        status: str,
+        confirmed_subject_id: str = "",
+    ) -> bool:
+        """更新待确认候选状态"""
+        return self._pending.update_pending_candidate_status(
+            candidate_id, status, confirmed_subject_id
+        )
+
+    def delete_pending_candidate(self, candidate_id: int) -> bool:
+        """删除待确认候选"""
+        return self._pending.delete_pending_candidate(candidate_id)
 
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""

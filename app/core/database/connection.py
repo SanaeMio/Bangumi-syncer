@@ -264,6 +264,24 @@ class DatabaseConnection:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pending_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                request_title TEXT NOT NULL,
+                request_ori_title TEXT DEFAULT '',
+                request_season INTEGER DEFAULT 1,
+                request_episode INTEGER DEFAULT 0,
+                user_name TEXT DEFAULT '',
+                source TEXT DEFAULT '',
+                candidates_json TEXT DEFAULT '[]',
+                trace_json TEXT DEFAULT '{}',
+                status TEXT DEFAULT 'pending',
+                confirmed_subject_id TEXT DEFAULT '',
+                resolved_at DATETIME
+            )
+        """)
+
         # 创建二级索引以加速常用查询
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_timestamp ON sync_records(timestamp)"
@@ -282,6 +300,9 @@ class DatabaseConnection:
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_in_app_notifications_unread ON in_app_notifications(read_at)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_candidates_status ON pending_candidates(status)"
         )
 
         conn.commit()

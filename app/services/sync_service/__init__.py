@@ -103,6 +103,110 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             match_platform=match_platform,
         )
 
+    # ------------------------------------------------------------------
+    # 待确认候选（候选沉淀）
+    # ------------------------------------------------------------------
+
+    def get_pending_candidates(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """获取待确认候选列表"""
+        return database_manager.get_pending_candidates(
+            limit=limit, offset=offset, status=status
+        )
+
+    def get_pending_candidate_by_id(self, candidate_id: int) -> dict[str, Any] | None:
+        """获取单条待确认候选详情"""
+        return database_manager.get_pending_candidate_by_id(candidate_id)
+
+    def confirm_pending_candidate(
+        self, candidate_id: int, subject_id: str
+    ) -> tuple[bool, str]:
+        """确认待确认候选：写入自定义映射并标记为已确认
+
+        返回 (success, message)。映射写入采用读全量→合并→写回的模式，
+        避免覆盖已有映射。
+        """
+        record = database_manager.get_pending_candidate_by_id(candidate_id)
+        if not record:
+            return False, "候选记录不存在"
+        if record.get("status") != "pending":
+            return False, f"候选已处理（状态：{record.get('status')}）"
+
+        title = record.get("request_title", "")
+        season = int(record.get("request_season") or 1)
+        if not title or not subject_id:
+            return False, "标题或 subject_id 为空"
+
+        # 读全量映射 → 合并新条目 → 写回
+        all_mappings = mapping_service.get_all_mappings()
+        if season > 1:
+            all_mappings[title] = {"subject_id": str(subject_id), "season": season}
+        else:
+            all_mappings[title] = str(subject_id)
+        if not mapping_service.update_custom_mappings(all_mappings):
+            return False, "写入自定义映射失败"
+
+        database_manager.update_pending_candidate_status(
+            candidate_id, "confirmed", confirmed_subject_id=str(subject_id)
+        )
+        return True, f"已确认并写入映射：{title} → subject/{subject_id}"
+
+    def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
+        """拒绝待确认候选"""
+        if not database_manager.update_pending_candidate_status(
+            candidate_id, "rejected"
+        ):
+            return False, "候选记录不存在或已处理"
+        return True, "已忽略"
+
+    def delete_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
+        """删除待确认候选"""
+        if not database_manager.delete_pending_candidate(candidate_id):
+            return False, "候选记录不存在"
+        return True, "已删除"
+
+    @staticmethod
+    def _collect_candidates_from_trace(trace: MatchTrace) -> list[dict[str, Any]]:
+        """从 MatchTrace 各步骤中收集候选，去重并按 score 降序"""
+        seen: set[str] = set()
+        merged: list[dict[str, Any]] = []
+        for step in trace.steps:
+            for cand in step.candidates:
+                if not cand.subject_id or cand.subject_id in seen:
+                    continue
+                seen.add(cand.subject_id)
+                merged.append(cand.to_dict())
+        merged.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        return merged
+
+    def _sediment_pending_candidate(
+        self, item: CustomItem, actual_source: str, trace: MatchTrace
+    ) -> None:
+        """匹配失败时沉淀候选，供用户手动确认。
+
+        仅当 trace 中存在候选时才写入 pending_candidates 表。
+        """
+        candidates = self._collect_candidates_from_trace(trace)
+        if not candidates:
+            return
+        try:
+            database_manager.log_pending_candidate(
+                request_title=item.title,
+                request_ori_title=item.ori_title or "",
+                request_season=item.season,
+                request_episode=item.episode,
+                user_name=item.user_name,
+                source=actual_source,
+                candidates=candidates,
+                trace=trace.to_dict(),
+            )
+        except Exception as e:
+            logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
+
     def test_match(self, item: CustomItem) -> dict[str, Any]:
         """测试匹配过程，返回匹配追踪详情（不执行实际同步、不写记录、不发通知）
 
@@ -358,6 +462,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             match_platform=self._last_match_platform,
             match_trace=trace.to_dict() if trace else None,
         )
+        # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认
+        if trace:
+            self._sediment_pending_candidate(item, actual_source, trace)
         return None, False, SyncResponse(status="error", message="未找到匹配的番剧")
 
     @staticmethod
