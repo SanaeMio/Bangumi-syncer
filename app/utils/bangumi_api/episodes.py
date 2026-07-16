@@ -166,15 +166,93 @@ class EpisodesMixin:
         subject_id: int,
         target_ep: int,
         release_date: str | None,
+        target_season: int = 1,
     ) -> int | None:
-        """季集匹配失败后的统一回退：单条目 airdate 择优。"""
+        """季集匹配失败后的统一回退。
+
+        回退顺序：
+        1. 单条目 airdate 择优（需 release_date + 章节数 >= min_total）
+        2. 连续编号推断（通过 ep 字段重置检测季度边界，无需 release_date）
+        """
         if release_date and target_ep:
             air_pick = self._resolve_episode_by_airdate_in_subject(
                 subject_id, release_date
             )
             if air_pick is not None:
                 return air_pick
+        if target_season > 1 and target_ep:
+            cont_pick = self._try_resolve_continuous_season_episode(
+                subject_id, target_season, target_ep
+            )
+            if cont_pick is not None:
+                return cont_pick
         return None, None if target_ep else None
+
+    def _try_resolve_continuous_season_episode(
+        self,
+        subject_id: int,
+        target_season: int,
+        target_ep: int,
+    ) -> tuple[str | int, str | int] | None:
+        """单 subject 连续编号场景：通过 ep 字段重置检测季度边界。
+
+        适用于 Bangumi 将多季合并到一个 subject 的场景：
+        第一季 ep=1..24 sort=1..24，第二季 ep=1..24 sort=25..48。
+        当 ep 字段从 >1 重置为 1 时，标记为新季开始。
+        """
+        if target_season < 2 or not target_ep:
+            return None
+
+        episodes = self.get_episodes(subject_id, fetch_all=True)
+        ep_info = episodes.get("data") or []
+        if len(ep_info) < 2:
+            return None
+
+        # 仅取本篇章节（type=0），按 sort 排序
+        has_type = any("type" in e for e in ep_info)
+        pool = (
+            [e for e in ep_info if e.get("type", 0) == 0] if has_type else list(ep_info)
+        )
+        if len(pool) < 2:
+            pool = list(ep_info)
+        pool.sort(key=lambda e: e.get("sort", 0))
+
+        # 检测 ep 字段重置点（季度边界）
+        season_start_sorts: list[int] = [pool[0].get("sort", 1)]
+        prev_ep = 0
+        for ep in pool:
+            ep_num = ep.get("ep", 0) or 0
+            sort_num = ep.get("sort", 0) or 0
+            # ep 从 >1 降到 1，说明新季开始
+            if ep_num == 1 and prev_ep > 1:
+                season_start_sorts.append(sort_num)
+            prev_ep = ep_num
+
+        if len(season_start_sorts) < target_season:
+            logger.debug(
+                f"连续编号: 检测到 {len(season_start_sorts)} 季，"
+                f"无法定位第 {target_season} 季 (subject_id={subject_id})"
+            )
+            return None
+
+        # 目标季的起始 sort
+        season_start_sort = season_start_sorts[target_season - 1]
+        target_sort = season_start_sort + target_ep - 1
+
+        for ep in pool:
+            if ep.get("sort") == target_sort:
+                logger.debug(
+                    f"连续编号匹配: subject_id={subject_id} "
+                    f"season={target_season} ep={target_ep} → sort={target_sort} "
+                    f"ep_id={ep['id']}"
+                )
+                return subject_id, ep["id"]
+
+        logger.debug(
+            f"连续编号: 未找到 sort={target_sort} 的章节 "
+            f"(subject_id={subject_id}, season={target_season}, ep={target_ep})"
+        )
+        return None
 
     @staticmethod
     def _parse_iso_date_ymd(value: str | None) -> datetime.date | None:
@@ -521,4 +599,6 @@ class EpisodesMixin:
                 if not ep_found:
                     continue
                 return current_id, _target_ep[0]["id"]
-        return self._episode_lookup_failed(subject_id, target_ep, release_date)
+        return self._episode_lookup_failed(
+            subject_id, target_ep, release_date, target_season=target_season
+        )

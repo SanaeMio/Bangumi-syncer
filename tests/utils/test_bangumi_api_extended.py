@@ -563,3 +563,128 @@ class TestGetTargetSeasonEpisodeIdSplitCour:
         )
         assert sid == 200
         assert eid == 20001
+
+
+class TestContinuousNumbering:
+    """单 subject 连续编号测试（多季合并到一个条目）
+
+    场景：Bangumi 将多季放在一个 subject 下，sort 连续编号，
+    ep 每季重置。第一季 ep=1..24 sort=1..24，第二季 ep=1..24 sort=25..48。
+    """
+
+    def _make_eps(self, seasons: int, eps_per_season: int, start_id: int = 1000):
+        """生成连续编号的 episode 列表"""
+        eps = []
+        eid = start_id
+        for season in range(seasons):
+            for ep in range(1, eps_per_season + 1):
+                sort = season * eps_per_season + ep
+                eps.append(
+                    {
+                        "sort": sort,
+                        "ep": ep,
+                        "id": eid,
+                        "type": 0,
+                        "name": f"第{season + 1}季 第{ep}话",
+                        "airdate": "",
+                    }
+                )
+                eid += 1
+        return eps
+
+    def test_season2_ep1_maps_to_sort25(self):
+        """两季各24集，season=2 ep=1 应映射到 sort=25"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        eps_data = self._make_eps(seasons=2, eps_per_season=24)
+
+        api.get_related_subjects = MagicMock(return_value=[])
+        api.get_subject = MagicMock(return_value={"platform": "TV", "name": "测试番剧"})
+        api.get_episodes = MagicMock(return_value={"data": eps_data, "total": 48})
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=2,
+            target_ep=1,
+            is_season_subject_id=False,
+            release_date=None,
+        )
+        assert sid == 1
+        # sort=25 对应的 ep_id = 1000 + 24 = 1024
+        assert eid == 1024
+
+    def test_season2_ep12_maps_to_sort36(self):
+        """两季各24集，season=2 ep=12 应映射到 sort=36"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        eps_data = self._make_eps(seasons=2, eps_per_season=24)
+
+        api.get_related_subjects = MagicMock(return_value=[])
+        api.get_subject = MagicMock(return_value={"platform": "TV", "name": "测试番剧"})
+        api.get_episodes = MagicMock(return_value={"data": eps_data, "total": 48})
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=2,
+            target_ep=12,
+            is_season_subject_id=False,
+            release_date=None,
+        )
+        assert sid == 1
+        # sort=36 对应的 ep_id = 1000 + 35 = 1035
+        assert eid == 1035
+
+    def test_season3_ep1_maps_to_sort49(self):
+        """三季各16集，season=3 ep=1 应映射到 sort=33"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        eps_data = self._make_eps(seasons=3, eps_per_season=16)
+
+        api.get_related_subjects = MagicMock(return_value=[])
+        api.get_subject = MagicMock(return_value={"platform": "TV", "name": "测试番剧"})
+        api.get_episodes = MagicMock(return_value={"data": eps_data, "total": 48})
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=3,
+            target_ep=1,
+            is_season_subject_id=False,
+            release_date=None,
+        )
+        assert sid == 1
+        # sort=33 对应的 ep_id = 1000 + 32 = 1032
+        assert eid == 1032
+
+    def test_no_reset_returns_none(self):
+        """ep 不重置（单季连续编号）时，连续编号回退返回 None"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        # 48 集但 ep 不重置（全是连续编号的单季）
+        eps_data = [
+            {"sort": i, "ep": i, "id": 1000 + i, "type": 0, "airdate": ""}
+            for i in range(1, 49)
+        ]
+
+        api.get_related_subjects = MagicMock(return_value=[])
+        api.get_subject = MagicMock(return_value={"platform": "TV", "name": "测试"})
+        api.get_episodes = MagicMock(return_value={"data": eps_data, "total": 48})
+
+        result = api._try_resolve_continuous_season_episode(1, 2, 1)
+        assert result is None
+
+    def test_season_beyond_detected_returns_none(self):
+        """目标季超过检测到的季数时返回 None"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        # 只有 2 季
+        eps_data = self._make_eps(seasons=2, eps_per_season=12)
+
+        api.get_episodes = MagicMock(return_value={"data": eps_data, "total": 24})
+
+        result = api._try_resolve_continuous_season_episode(1, 3, 1)
+        assert result is None

@@ -221,21 +221,30 @@ class SearchMixin:
                     bgm_data_old = self.search_old(title=t, subject_type=t_type)
 
                     if bgm_data_old and len(bgm_data_old) > 0:
-                        # 旧版接口返回数据不含 infobox 别名信息，需拉取完整条目进行准确相似度计算
-                        subject_id = bgm_data_old[0]["id"]
-                        full_info = self.get_subject(subject_id)
+                        # 旧版接口返回数据不含 infobox 别名信息，需拉取完整条目进行准确相似度计算。
+                        # 取前 5 条候选获取详情，供调用方做季度筛选（如 season=1 时
+                        # 首条为"第N季"需改选无季度后缀的第一季本体）。
+                        candidates: list[dict[str, Any]] = []
+                        for entry in bgm_data_old[:5]:
+                            sid = entry.get("id")
+                            if not sid:
+                                continue
+                            info = self.get_subject(sid)
+                            if info:
+                                candidates.append(info)
 
-                        if (
-                            full_info
-                            and self.title_diff_ratio(
-                                title, ori_title, bgm_data=full_info
-                            )
-                            > 0.5
-                        ):
-                            # 包装为统一的列表格式返回
-                            bgm_data = [full_info]
-                            found = True
-                            break
+                        if candidates:
+                            # 仅保留相似度 > 0.5 的候选；全部低相似度时视为未命中
+                            matched = [
+                                c
+                                for c in candidates
+                                if self.title_diff_ratio(title, ori_title, bgm_data=c)
+                                > 0.5
+                            ]
+                            if matched:
+                                bgm_data = matched
+                                found = True
+                                break
                 if found:
                     break
             else:
