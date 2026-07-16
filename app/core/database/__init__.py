@@ -159,6 +159,23 @@ class DatabaseManager:
         """根据ID获取单个同步记录"""
         return self._sync.get_sync_record_by_id(record_id)
 
+    def get_match_records(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+        match_method: Optional[str] = None,
+        match_platform: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """获取匹配记录列表（含匹配追踪字段）"""
+        return self._sync.get_match_records(
+            limit=limit,
+            offset=offset,
+            status=status,
+            match_method=match_method,
+            match_platform=match_platform,
+        )
+
     def update_sync_record_status(
         self, record_id: int, status: str, message: str = ""
     ) -> bool:

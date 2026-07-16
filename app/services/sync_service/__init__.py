@@ -86,6 +86,23 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         """根据 ID 获取单个同步记录"""
         return database_manager.get_sync_record_by_id(record_id)
 
+    def get_match_records(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        match_method: str | None = None,
+        match_platform: str | None = None,
+    ) -> dict[str, Any]:
+        """获取匹配记录列表（含匹配追踪字段）"""
+        return database_manager.get_match_records(
+            limit=limit,
+            offset=offset,
+            status=status,
+            match_method=match_method,
+            match_platform=match_platform,
+        )
+
     def update_sync_record_status(
         self, record_id: int, status: str, message: str = ""
     ) -> bool:

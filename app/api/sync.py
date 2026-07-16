@@ -258,6 +258,61 @@ async def get_sync_records(
         raise HTTPException(status_code=500, detail=f"获取同步记录失败: {str(e)}")
 
 
+@router.get("/match-records")
+async def get_match_records(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    status: Optional[str] = None,
+    match_method: Optional[str] = None,
+    match_platform: Optional[str] = None,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取匹配记录列表（含匹配追踪字段）"""
+    try:
+        offset = (page - 1) * limit
+        result = sync_service.get_match_records(
+            limit=limit,
+            offset=offset,
+            status=status,
+            match_method=match_method,
+            match_platform=match_platform,
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"获取匹配记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取匹配记录失败: {str(e)}")
+
+
+@router.get("/match-records/{record_id}/trace")
+async def get_match_trace(
+    record_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """获取单条匹配记录的完整匹配过程详情"""
+    try:
+        record = sync_service.get_sync_record_by_id(record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="记录不存在")
+
+        # 解析 match_trace JSON
+        trace = None
+        trace_str = record.get("match_trace", "")
+        if trace_str:
+            try:
+                trace = json.loads(trace_str)
+            except (json.JSONDecodeError, TypeError):
+                trace = None
+
+        return {"status": "success", "data": {"record": record, "trace": trace}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取匹配详情失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取匹配详情失败: {str(e)}")
+
+
 @router.get("/records/{record_id}")
 async def get_sync_record(
     record_id: int,
