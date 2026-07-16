@@ -538,6 +538,24 @@ async function showRecordDetail(recordId) {
                     </div>
                 </div>
                 ` : ''}
+                ${record.match_method ? `
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <strong>匹配记录:</strong>
+                        <div class="border rounded p-2 mt-1 app-detail-box">
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <span class="badge rounded-pill bg-info">${record.match_method}</span>
+                                ${record.match_platform ? `<span class="badge rounded-pill bg-secondary">${record.match_platform}</span>` : ''}
+                                ${record.match_score != null ? `<span class="text-muted small">置信度 ${(record.match_score * 100).toFixed(0)}%</span>` : ''}
+                                <a href="${appUrl('/match-records')}?id=${record.id}" class="btn btn-sm btn-outline-primary ms-auto" title="查看匹配过程详情">
+                                    <i class="bi bi-diagram-3 me-1"></i>查看匹配详情
+                                    <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
                 <div class="row mt-2">
                     <div class="col-12">
                         <strong>消息:</strong>

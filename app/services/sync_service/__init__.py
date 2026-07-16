@@ -309,30 +309,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
                 )
 
-            subject_id, _, subject_find_error = self._find_subject_id(item)
+            subject_id, _, error_response = self._find_matching_subject(
+                item, actual_source
+            )
             if not subject_id:
-                send_notify(
-                    "anime_not_found",
-                    item,
-                    actual_source,
-                    error_message="未找到匹配的番剧",
+                return error_response or SyncResponse(
+                    status="error", message="未找到匹配的番剧"
                 )
-                database_manager.log_sync_record(
-                    user_name=item.user_name,
-                    title=item.title,
-                    ori_title=item.ori_title or "",
-                    season=item.season,
-                    episode=item.episode,
-                    subject_id=None,
-                    episode_id=None,
-                    status="error",
-                    message=self._format_subject_not_found_message(
-                        item, subject_find_error
-                    ),
-                    source=actual_source,
-                    media_type=item.media_type,
-                )
-                return SyncResponse(status="error", message="未找到匹配的番剧")
 
             bgm = self._get_bangumi_api_for_user(item.user_name)
             if not bgm:
@@ -371,6 +354,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 message=result_message,
                 source=actual_source,
                 media_type=item.media_type,
+                match_method=self._last_match_method,
+                match_score=self._last_match_score,
+                match_platform=self._last_match_platform,
+                match_trace=self._last_match_trace.to_dict()
+                if self._last_match_trace
+                else None,
             )
 
             return SyncResponse(
@@ -395,6 +384,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 message=str(e),
                 source=actual_source if "actual_source" in locals() else source,
                 media_type=item.media_type if "item" in locals() else "movie",
+                match_method=self._last_match_method,
+                match_score=self._last_match_score,
+                match_platform=self._last_match_platform,
+                match_trace=self._last_match_trace.to_dict()
+                if self._last_match_trace
+                else None,
             )
             send_notify(
                 "mark_failed",
@@ -772,6 +767,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
 
             self._mark_subject_completed_if_needed(item, bgm, bgm_se_id, bgm_title)
+
+            # 回填最终剧集 ID 到 trace（匹配阶段未知 ep_id，此处补全）
+            if self._last_match_trace and bgm_ep_id:
+                self._last_match_trace.final_episode_id = str(bgm_ep_id)
 
             # 记录同步成功到数据库
             database_manager.log_sync_record(

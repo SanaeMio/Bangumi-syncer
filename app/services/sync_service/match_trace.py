@@ -79,6 +79,7 @@ class MatchTrace:
     normalized_title: str = ""
     steps: list[MatchStep] = field(default_factory=list)
     final_subject_id: str | None = None
+    final_episode_id: str | None = None
     final_match_method: str = ""  # custom_mapping / bangumi_data / api_search / failed
     final_score: float | None = None
 
@@ -128,6 +129,7 @@ class MatchTrace:
             "normalized_title": self.normalized_title,
             "steps": [s.to_dict() for s in self.steps],
             "final_subject_id": self.final_subject_id,
+            "final_episode_id": self.final_episode_id,
             "final_match_method": self.final_match_method,
             "final_score": round(self.final_score, 4)
             if self.final_score is not None

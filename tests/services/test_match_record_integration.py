@@ -245,6 +245,69 @@ class TestMatchTraceNewFields:
         assert d["request_release_date"] == ""
         assert d["request_user_name"] == ""
 
+    def test_final_episode_id_in_to_dict(self):
+        """final_episode_id 出现在 to_dict 输出中"""
+        trace = MatchTrace(final_subject_id="123", final_episode_id="456")
+        d = trace.to_dict()
+        assert d["final_subject_id"] == "123"
+        assert d["final_episode_id"] == "456"
+
+    def test_final_episode_id_default_none(self):
+        """final_episode_id 默认为 None"""
+        trace = MatchTrace()
+        assert trace.final_episode_id is None
+        assert trace.to_dict()["final_episode_id"] is None
+
+
+class TestSyncMovieWatchingMatchFields:
+    """剧场版分支补传 match_* 字段测试"""
+
+    def _make_service(self):
+        return SyncService()
+
+    def test_movie_watching_success_passes_match_fields(self):
+        """剧场版标记在看成功时传递 match_* 字段到 log_sync_record"""
+        svc = self._make_service()
+        item = CustomItem(
+            media_type="movie",
+            title="测试剧场版",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+            sync_action="mark_watching",
+        )
+        with patch.object(svc, "_check_user_permission", return_value=True):
+            with patch.object(svc, "_is_title_blocked", return_value=False):
+                with patch.object(
+                    svc,
+                    "_find_matching_subject",
+                    return_value=("12345", False, None),
+                ):
+                    with patch.object(
+                        svc,
+                        "_get_bangumi_api_for_user",
+                        return_value=MagicMock(
+                            ensure_subject_watching=MagicMock(return_value=1)
+                        ),
+                    ):
+                        with patch(
+                            "app.services.sync_service.database_manager"
+                        ) as mock_db:
+                            with patch("app.services.sync_service.send_notify"):
+                                with patch(
+                                    "app.services.sync_service.config_manager"
+                                ) as mock_cfg:
+                                    mock_cfg.get.return_value = True
+                                    result = svc.sync_custom_item(item)
+        assert result.status == "success"
+        # 验证 log_sync_record 被调用且传了 match_method
+        mock_db.log_sync_record.assert_called_once()
+        call_kwargs = mock_db.log_sync_record.call_args.kwargs
+        # _find_matching_subject 未设置 _last_match_method，默认空串
+        assert "match_method" in call_kwargs
+        assert "match_trace" in call_kwargs
+
 
 class TestLogSyncRecordFacadeForwardsMatchFields:
     """log_sync_record facade 正确转发 match_* 字段"""

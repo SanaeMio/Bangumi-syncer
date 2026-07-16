@@ -257,6 +257,12 @@ let matchDetailModal = null;
 document.addEventListener('DOMContentLoaded', function() {
     matchDetailModal = new bootstrap.Modal(document.getElementById('matchDetailModal'));
     loadMatchRecords();
+    // 支持通过 ?id= URL 参数自动打开匹配记录详情（从同步记录跳转）
+    const params = new URLSearchParams(window.location.search);
+    const autoOpenId = params.get('id');
+    if (autoOpenId) {
+        showMatchDetail(parseInt(autoOpenId, 10));
+    }
 });
 
 async function loadMatchRecords(page) {
@@ -414,6 +420,7 @@ async function showMatchDetail(recordId) {
                         <div class="col-md-6"><small><strong>来源：</strong>${record.source}</small></div>
                         <div class="col-md-6"><small><strong>最终匹配方式：</strong>${getMethodBadge(record.match_method)}</small></div>
                         <div class="col-md-6"><small><strong>命中条目：</strong>${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank">${record.bgm_title || record.subject_id}</a>` : '-'}</small></div>
+                        <div class="col-md-6"><small><strong>命中剧集：</strong>${(trace && trace.final_episode_id) ? `<a href="https://bgm.tv/ep/${trace.final_episode_id}" target="_blank">ep/${trace.final_episode_id}</a>` : (record.episode_id ? `<a href="https://bgm.tv/ep/${record.episode_id}" target="_blank">ep/${record.episode_id}</a>` : '-')}</small></div>
                     </div>
                 </div>
             </div>
