@@ -316,6 +316,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             request_title=item.title,
             request_ori_title=item.ori_title or "",
             request_season=item.season,
+            request_platform_hint=item.source or actual_source,
         )
 
         # 查找番剧ID及其是否为特定季度ID的标记
@@ -328,7 +329,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
         self._last_match_trace = trace
         self._last_match_method = trace.final_match_method
         self._last_match_score = trace.final_score
-        self._last_match_platform = ""  # 暂无 platform 信息，后续阶段补充
+        # 从命中的候选中提取 Bangumi 条目 platform（TV/OVA/剧场版/日剧等）
+        self._last_match_platform = self._extract_matched_platform(trace, subject_id)
 
         if subject_id:
             return subject_id, is_season_matched_id, None
@@ -357,6 +359,27 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             match_trace=trace.to_dict() if trace else None,
         )
         return None, False, SyncResponse(status="error", message="未找到匹配的番剧")
+
+    @staticmethod
+    def _extract_matched_platform(trace: MatchTrace, subject_id: str | None) -> str:
+        """从匹配追踪的命中候选中提取 Bangumi 条目 platform（TV/OVA/剧场版/日剧等）。
+
+        优先查找与 subject_id 匹配的候选；找不到则取最后命中阶段的第一个候选。
+        """
+        if not subject_id or not trace:
+            return ""
+        target_id = str(subject_id)
+        # 优先在命中阶段的候选中查找与 subject_id 匹配的条目
+        for step in trace.steps:
+            if step.status != "hit" or not step.subject_id:
+                continue
+            for cand in step.candidates:
+                if cand.subject_id == target_id:
+                    return cand.platform
+            # 命中阶段但候选中没有完全匹配的 ID，取该阶段首个候选的 platform
+            if step.candidates:
+                return step.candidates[0].platform
+        return ""
 
     def _resolve_season_episode(
         self,
@@ -968,6 +991,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                             subject_id=str(cand.get("id", "")),
                             name=cand.get("name", ""),
                             name_cn=cand.get("name_cn", ""),
+                            platform=cand.get("platform", ""),
+                            air_date=cand.get("date", ""),
                             source="api_search",
                         )
                     )

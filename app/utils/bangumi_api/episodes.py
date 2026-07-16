@@ -281,6 +281,7 @@ class EpisodesMixin:
         max_hops: int = 15,
         max_days_diff: int = 120,
         root_type: int | None = None,
+        root_platform: str = "",
     ) -> tuple[str | int, str | int] | None:
         """
         沿「续集」链查找与 release_date 最接近的 target_ep 章节（用于 Plex 季数与 Bangumi 分段不一致）。
@@ -303,6 +304,10 @@ class EpisodesMixin:
             if not current_info:
                 continue
             if root_type is not None and current_info.get("type") != root_type:
+                continue
+            # 续集链 platform 隔离：根条目与当前条目都带 platform 且不同时跳过
+            cur_platform = (current_info.get("platform") or "").strip()
+            if root_platform and cur_platform and cur_platform != root_platform:
                 continue
             episodes = self.get_episodes(current_id)
             ep_info = episodes.get("data", [])
@@ -343,9 +348,10 @@ class EpisodesMixin:
         if target_season > max_season or (target_ep and target_ep > max_episode):
             return None, None if target_ep else None
 
-        # 获取根条目的 subject type，续集链遍历时仅放行相同媒体类型的条目
+        # 获取根条目的 subject type 与 platform，续集链遍历时仅放行相同媒体类型/平台的条目
         root_info = self.get_subject(subject_id)
         root_type = root_info.get("type") if root_info else None
+        root_platform = (root_info.get("platform") or "").strip() if root_info else ""
 
         # 如果已经是目标季数的ID，直接尝试匹配集数
         if is_season_subject_id:
@@ -368,19 +374,28 @@ class EpisodesMixin:
             if not target_ep:
                 return subject_id
             return self._find_season_one_episode(
-                subject_id, target_ep, root_type, release_date
+                subject_id, target_ep, root_type, root_platform, release_date
             )
 
         # Plex 季数与 Bangumi 多期/续集计数不一致时，用播出日 + 章节 airdate 择优
         if release_date and target_season > 1 and target_ep:
             air_pick = self._try_resolve_sequel_by_airdate(
-                subject_id, target_ep, release_date, root_type=root_type
+                subject_id,
+                target_ep,
+                release_date,
+                root_type=root_type,
+                root_platform=root_platform,
             )
             if air_pick is not None:
                 return air_pick[0], air_pick[1]
 
         return self._find_multi_season_episode(
-            subject_id, target_season, target_ep, root_type, release_date
+            subject_id,
+            target_season,
+            target_ep,
+            root_type,
+            root_platform,
+            release_date,
         )
 
     def _find_next_sequel_id(self, current_id: int) -> int | None:
@@ -400,6 +415,7 @@ class EpisodesMixin:
         subject_id: int,
         target_ep: int,
         root_type: int,
+        root_platform: str,
         release_date: str | None,
     ):
         """在第一季中查找目标集数（遍历续集链）"""
@@ -411,6 +427,10 @@ class EpisodesMixin:
                 if not current_info:
                     continue
                 if root_type is not None and current_info.get("type") != root_type:
+                    continue
+                # 续集链 platform 隔离：根条目与当前条目都带 platform 且不同时跳过
+                cur_platform = (current_info.get("platform") or "").strip()
+                if root_platform and cur_platform and cur_platform != root_platform:
                     continue
             found = self._find_episode_by_sort(current_id, target_ep)
             if found:
@@ -440,6 +460,7 @@ class EpisodesMixin:
         target_season: int,
         target_ep: int,
         root_type: int,
+        root_platform: str,
         release_date: str | None,
     ):
         """在多季中查找目标集数（遍历续集链并追踪季数）"""
@@ -455,6 +476,10 @@ class EpisodesMixin:
             if not current_info:
                 continue
             if root_type is not None and current_info.get("type") != root_type:
+                continue
+            # 续集链 platform 隔离：根条目与当前条目都带 platform 且不同时跳过
+            cur_platform = (current_info.get("platform") or "").strip()
+            if root_platform and cur_platform and cur_platform != root_platform:
                 continue
             episodes = self.get_episodes(current_id)
             ep_info = episodes.get("data", [])
