@@ -7,7 +7,7 @@ import pytest
 from app.models.sync import SyncResponse
 from app.services.feiniu.models import FeiniuWatchRecord
 from app.services.feiniu.sync_service import (
-    _feiniu_rec_is_movie,
+    _feiniu_detect_media_type,
     feiniu_sync_service,
 )
 
@@ -40,23 +40,39 @@ def _sample_record(**kwargs) -> FeiniuWatchRecord:
 
 
 def test_feiniu_rec_is_movie_by_item_type():
-    assert _feiniu_rec_is_movie(
-        _sample_record(item_type="Movie", episode_from_db=False, season_from_db=False)
+    assert (
+        _feiniu_detect_media_type(
+            _sample_record(
+                item_type="Movie", episode_from_db=False, season_from_db=False
+            )
+        )
+        == "movie"
     )
-    assert not _feiniu_rec_is_movie(
-        _sample_record(item_type="Episode", episode_from_db=True, season_from_db=False)
+    assert (
+        _feiniu_detect_media_type(
+            _sample_record(
+                item_type="Episode", episode_from_db=True, season_from_db=False
+            )
+        )
+        == "episode"
     )
 
 
 def test_feiniu_rec_is_movie_fntv_style_no_season_ep_columns():
-    assert _feiniu_rec_is_movie(
-        _sample_record(item_type=None, episode_from_db=False, season_from_db=False)
+    assert (
+        _feiniu_detect_media_type(
+            _sample_record(item_type=None, episode_from_db=False, season_from_db=False)
+        )
+        == "movie"
     )
 
 
 def test_feiniu_rec_is_episode_when_both_season_ep_from_db():
-    assert not _feiniu_rec_is_movie(
-        _sample_record(item_type=None, episode_from_db=True, season_from_db=True)
+    assert (
+        _feiniu_detect_media_type(
+            _sample_record(item_type=None, episode_from_db=True, season_from_db=True)
+        )
+        == "episode"
     )
 
 
