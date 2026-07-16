@@ -2984,6 +2984,13 @@ function copyWebhookKey() {
                                            value="ip_locked">
                                     <label class="form-check-label" for="webhook-type-ip_locked">IP被锁定 (ip_locked)</label>
                                 </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-pending_candidate"
+                                           value="pending_candidate">
+                                    <label class="form-check-label" for="webhook-type-pending_candidate">候选待确认 (pending_candidate)</label>
+                                </div>
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
                         </div>
@@ -3269,6 +3276,13 @@ function copyWebhookKey() {
                                            id="email-type-ip_locked"
                                            value="ip_locked">
                                     <label class="form-check-label" for="email-type-ip_locked">IP被锁定 (ip_locked)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-pending_candidate"
+                                           value="pending_candidate">
+                                    <label class="form-check-label" for="email-type-pending_candidate">候选待确认 (pending_candidate)</label>
                                 </div>
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>

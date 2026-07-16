@@ -189,7 +189,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     ) -> None:
         """匹配失败时沉淀候选，供用户手动确认。
 
-        仅当 trace 中存在候选时才写入 pending_candidates 表。
+        仅当 trace 中存在候选时才写入 pending_candidates 表，
+        并触发 pending_candidate 通知提醒用户前往 WebUI 确认。
         """
         candidates = self._collect_candidates_from_trace(trace)
         if not candidates:
@@ -207,6 +208,21 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
         except Exception as e:
             logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
+            return
+
+        # 沉淀成功后触发通知（不影响主流程）
+        try:
+            top = candidates[0] if candidates else {}
+            send_notify(
+                "pending_candidate",
+                item,
+                actual_source,
+                candidates_count=len(candidates),
+                top_candidate_id=str(top.get("subject_id", "")),
+                top_candidate_name=top.get("name_cn") or top.get("name") or "",
+            )
+        except Exception as e:
+            logger.warning(f"发送候选待确认通知失败（不影响主流程）: {e}")
 
     def test_match(self, item: CustomItem) -> dict[str, Any]:
         """测试匹配过程，返回匹配追踪详情（不执行实际同步、不发通知）
