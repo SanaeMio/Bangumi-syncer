@@ -46,6 +46,7 @@ class DatabaseConnection:
         self._media_type_migrated = False
         self._bgm_title_migrated = False
         self._trakt_filter_migrated = False
+        self._match_fields_migrated = False
         self._init_database()
 
     def close(self) -> None:
@@ -118,6 +119,35 @@ class DatabaseConnection:
         self._bgm_title_migrated = True
         logger.info("sync_records 已迁移：增加 bgm_title 列")
 
+    def _ensure_sync_records_match_fields(self, cursor) -> None:
+        """旧库迁移：为 sync_records 增加匹配追踪字段。
+
+        新增 4 列：
+        - match_method: 匹配方式（custom_mapping/bangumi_data/api_search/failed）
+        - match_score: 最佳匹配置信度（0-1）
+        - match_platform: 命中条目的 platform（TV/OVA/剧场版/日剧/电影...）
+        - match_trace: JSON 字符串，完整匹配过程（仅 debug 模式写入）
+        """
+        if self._match_fields_migrated:
+            return
+        cursor.execute("PRAGMA table_info(sync_records)")
+        cols = [row[1] for row in cursor.fetchall()]
+        need_commit = False
+        for col, decl in [
+            ("match_method", "TEXT DEFAULT ''"),
+            ("match_score", "REAL"),
+            ("match_platform", "TEXT DEFAULT ''"),
+            ("match_trace", "TEXT DEFAULT ''"),
+        ]:
+            if col not in cols:
+                cursor.execute(f"ALTER TABLE sync_records ADD COLUMN {col} {decl}")
+                need_commit = True
+        if need_commit:
+            logger.info(
+                "sync_records 已迁移：增加匹配追踪字段（match_method/match_score/match_platform/match_trace）"
+            )
+        self._match_fields_migrated = True
+
     def _ensure_trakt_config_sync_filter(self, cursor) -> None:
         """旧库迁移：为 trakt_config 增加 sync_filter_enabled（默认开启）。"""
         if self._trakt_filter_migrated:
@@ -154,11 +184,17 @@ class DatabaseConnection:
                 message TEXT,
                 source TEXT NOT NULL,
                 media_type TEXT NOT NULL DEFAULT 'episode',
-                bgm_title TEXT DEFAULT ''
+                bgm_title TEXT DEFAULT '',
+                match_method TEXT DEFAULT '',
+                match_score REAL,
+                match_platform TEXT DEFAULT '',
+                match_trace TEXT DEFAULT ''
             )
         """)
 
         self._ensure_sync_records_media_type(cursor)
+        self._ensure_sync_records_bgm_title(cursor)
+        self._ensure_sync_records_match_fields(cursor)
 
         # 创建 Trakt 配置表
         cursor.execute("""
