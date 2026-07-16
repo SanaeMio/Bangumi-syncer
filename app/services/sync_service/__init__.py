@@ -12,7 +12,12 @@ from typing import Any, Optional
 
 from ...core.config import config_manager
 from ...core.database import database_manager
-from ...core.logging import logger
+from ...core.logging import (
+    get_sync_run_id,
+    logger,
+    new_inline_sync_run_id,
+    sync_log_context,
+)
 from ...models.sync import CustomItem, SyncResponse
 from ...utils.bangumi_api import BangumiApi
 from ...utils.bangumi_data import BangumiData, bangumi_data
@@ -434,21 +439,59 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                     f"TV番剧自动归档为「看过」失败（单集已处理）: subject_id={bgm_se_id} {e}"
                 )
 
+    def _allocate_inline_run_id(self) -> str:
+        """直调 sync_custom_item 时分配 run_id。"""
+        with self._tasks_lock:
+            self._task_counter += 1
+            counter = self._task_counter
+        return new_inline_sync_run_id(counter)
+
     def sync_custom_item(
         self, item: CustomItem, source: str = "custom"
     ) -> SyncResponse:
         """同步自定义项目"""
+        existing_run_id = get_sync_run_id()
+        if existing_run_id:
+            return self._sync_custom_item_impl(item, source)
+        inline_id = self._allocate_inline_run_id()
+        with sync_log_context(inline_id):
+            return self._sync_custom_item_impl(item, source)
+
+    def _sync_custom_item_impl(
+        self, item: CustomItem, source: str = "custom"
+    ) -> SyncResponse:
+        actual_source = item.source if item.source else source
+        status_holder: list[str] = ["error"]
         try:
-            # 如果item中包含source字段，优先使用item的source
-            actual_source = item.source if item.source else source
+            logger.info(
+                f"同步开始: {item.title} S{item.season:02d}E{item.episode:02d} ({actual_source})"
+            )
+            return self._sync_custom_item_body(
+                item, source, actual_source, status_holder
+            )
+        finally:
+            logger.info(f"同步结束: status={status_holder[0]}")
+
+    def _sync_custom_item_body(
+        self,
+        item: CustomItem,
+        source: str,
+        actual_source: str,
+        status_holder: list[str],
+    ) -> SyncResponse:
+        try:
             sync_action = (item.sync_action or "").strip().lower()
             if sync_action == "mark_watching":
                 if item.media_type == "movie":
-                    return self.sync_movie_watching(item, source)
-                return SyncResponse(
+                    result = self.sync_movie_watching(item, source)
+                    status_holder[0] = result.status
+                    return result
+                result = SyncResponse(
                     status="ignored",
                     message="仅支持剧场版标记在看",
                 )
+                status_holder[0] = result.status
+                return result
 
             logger.info(f"接收到同步请求：{item}")
 
@@ -457,6 +500,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             # 参数校验
             validation_error = self._normalize_custom_item_params(item)
             if validation_error is not None:
+                status_holder[0] = validation_error.status
                 return validation_error
 
             # 查找番剧ID及其是否为特定季度ID的标记
@@ -464,12 +508,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 self._find_matching_subject(item, actual_source)
             )
             if subject_error_response is not None:
+                status_holder[0] = subject_error_response.status
                 return subject_error_response
 
             # 获取对应用户的bangumi API实例
             bgm = self._get_bangumi_api_for_user(item.user_name)
             if not bgm:
                 logger.error(f"无法为用户 {item.user_name} 创建bangumi API实例")
+                status_holder[0] = "error"
                 return SyncResponse(status="error", message="bangumi配置错误")
 
             # 查询 bangumi 章节：电影走短路径，剧集走季番解析
@@ -480,6 +526,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
                 if "认证失败" in str(ve) or "access_token" in str(ve):
+                    status_holder[0] = "error"
                     return SyncResponse(status="error", message=str(ve))
                 else:
                     raise ve
@@ -495,6 +542,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                     subject_id=subject_id,
                     error_message="不存在或集数过多",
                 )
+                status_holder[0] = "error"
                 return SyncResponse(status="error", message="未找到对应的剧集")
 
             # 通过实例缓存获取 Bangumi 平台标题（无额外 API 调用）
@@ -525,6 +573,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
                 if "认证失败" in str(ve) or "access_token" in str(ve):
+                    status_holder[0] = "error"
                     return SyncResponse(status="error", message=str(ve))
                 else:
                     raise ve
@@ -551,7 +600,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 bgm_title=bgm_title,
             )
 
-            return SyncResponse(
+            result = SyncResponse(
                 status="success",
                 message=result_message,
                 data={
@@ -563,6 +612,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                     "episode_id": bgm_ep_id,
                 },
             )
+            status_holder[0] = result.status
+            return result
         except Exception as e:
             logger.error(f"自定义同步处理出错: {e}")
 
@@ -588,6 +639,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin):
                 additional_info=f"完整错误信息: {traceback.format_exc()}",
             )
 
+            status_holder[0] = "error"
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
 
     def _check_user_permission(self, user_name: str) -> bool:
