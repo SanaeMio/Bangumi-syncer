@@ -37,7 +37,7 @@ jobs:
             static \
             requirements.txt \
             start.bat \
-            config.ini \
+            config.example.ini \
             bangumi_mapping.json \
             release_manifest.json \
             README.md \
