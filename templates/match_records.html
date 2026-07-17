@@ -279,29 +279,76 @@ async function showMatchDetail(recordId) {
         const trace = data.data.trace;
         const content = document.getElementById('match-detail-content');
 
+        // 辅助函数：安全格式化
+        const val = (v, d = '-') => (v === null || v === undefined || v === '') ? d : v;
+        const mediaTypeLabel = (t) => {
+            const map = {'episode': '剧集', 'movie': '电影/剧场版', 'ova': 'OVA/OAD', 'real_action': '三次元'};
+            return map[t] || t || '-';
+        };
+        const subjectLink = (sid, name) => sid
+            ? `<a href="https://bgm.tv/subject/${sid}" target="_blank">${escapeHtml(name || sid)}</a>`
+            : '-';
+        const episodeLink = (eid) => eid
+            ? `<a href="https://bgm.tv/ep/${eid}" target="_blank">ep/${eid}</a>`
+            : '-';
+        const scoreText = (s) => (s !== null && s !== undefined) ? `${(s * 100).toFixed(1)}%` : '-';
+
         let html = '';
 
-        // 基本信息
+        // ===== 卡片 1：基本信息（record 全字段）=====
         html += `
             <div class="card mb-3">
-                <div class="card-header py-2">
-                    <strong>请求信息</strong>
-                </div>
+                <div class="card-header py-2"><strong>基本信息</strong></div>
                 <div class="card-body">
                     <div class="row g-2">
-                        <div class="col-md-6"><small><strong>标题：</strong>${escapeHtml(record.title)}</small></div>
-                        <div class="col-md-6"><small><strong>原始标题：</strong>${escapeHtml(record.ori_title || '-')}</small></div>
-                        <div class="col-md-6"><small><strong>季度/集数：</strong>S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}</small></div>
-                        <div class="col-md-6"><small><strong>来源：</strong>${record.source}</small></div>
-                        <div class="col-md-6"><small><strong>最终匹配方式：</strong>${getMethodBadge(record.match_method)}</small></div>
-                        <div class="col-md-6"><small><strong>命中条目：</strong>${record.subject_id ? `<a href="https://bgm.tv/subject/${record.subject_id}" target="_blank">${record.bgm_title || record.subject_id}</a>` : '-'}</small></div>
-                        <div class="col-md-6"><small><strong>命中剧集：</strong>${(trace && trace.final_episode_id) ? `<a href="https://bgm.tv/ep/${trace.final_episode_id}" target="_blank">ep/${trace.final_episode_id}</a>` : (record.episode_id ? `<a href="https://bgm.tv/ep/${record.episode_id}" target="_blank">ep/${record.episode_id}</a>` : '-')}</small></div>
+                        <div class="col-md-6"><small><strong>标题：</strong>${escapeHtml(val(record.title))}</small></div>
+                        <div class="col-md-6"><small><strong>原始标题：</strong>${escapeHtml(val(record.ori_title))}</small></div>
+                        <div class="col-md-6"><small><strong>番剧标题：</strong>${escapeHtml(val(record.bgm_title))}</small></div>
+                        <div class="col-md-6"><small><strong>来源：</strong>${escapeHtml(val(record.source))}</small></div>
+                        <div class="col-md-6"><small><strong>季度/集数：</strong>S${String(record.season || 0).padStart(2, '0')}E${String(record.episode || 0).padStart(2, '0')}</small></div>
+                        <div class="col-md-6"><small><strong>媒体类型：</strong>${mediaTypeLabel(record.media_type)}</small></div>
+                        <div class="col-md-6"><small><strong>时间：</strong>${escapeHtml(val(record.timestamp))}</small></div>
+                        <div class="col-md-6"><small><strong>用户：</strong>${escapeHtml(val(record.user_name))}</small></div>
+                        <div class="col-md-6"><small><strong>状态：</strong><span class="badge bg-${record.status === 'success' ? 'success' : (record.status === 'error' ? 'danger' : 'secondary')}">${record.status || '-'}</span></small></div>
+                        <div class="col-md-6"><small><strong>消息：</strong>${escapeHtml(val(record.message))}</small></div>
+                        <div class="col-md-6"><small><strong>最终匹配方式：</strong>${renderMatchMethodBadge(record.match_method || (trace && trace.final_match_method) || '')}</small></div>
+                        <div class="col-md-6"><small><strong>最终置信度：</strong>${scoreText((trace && trace.final_score !== null && trace.final_score !== undefined) ? trace.final_score : record.match_score)}</small></div>
+                        <div class="col-md-6"><small><strong>命中条目：</strong>${subjectLink(record.subject_id || (trace && trace.final_subject_id), record.bgm_title)}</small></div>
+                        <div class="col-md-6"><small><strong>命中剧集：</strong>${episodeLink((trace && trace.final_episode_id) || record.episode_id)}</small></div>
                     </div>
                 </div>
             </div>
         `;
 
-        // 匹配失败时显示跳转到映射管理的链接
+        // ===== 卡片 2：匹配上下文（trace request_* 字段，仅当 trace 存在时）=====
+        if (trace) {
+            const ctxFields = [
+                ['请求标题', trace.request_title],
+                ['请求原始标题', trace.request_ori_title],
+                ['请求季度', trace.request_season],
+                ['请求集数', trace.request_episode],
+                ['请求媒体类型', trace.request_media_type ? mediaTypeLabel(trace.request_media_type) : null],
+                ['请求发布日期', trace.request_release_date],
+                ['请求用户', trace.request_user_name],
+                ['请求平台提示', trace.request_platform_hint],
+                ['归一化标题', trace.normalized_title],
+            ].filter(([_, v]) => v !== null && v !== undefined && v !== '');
+
+            if (ctxFields.length > 0) {
+                html += `
+                    <div class="card mb-3">
+                        <div class="card-header py-2"><strong>匹配上下文</strong></div>
+                        <div class="card-body">
+                            <div class="row g-2">
+                `;
+                ctxFields.forEach(([label, v]) => {
+                    html += `<div class="col-md-6"><small><strong>${label}：</strong>${escapeHtml(String(v))}</small></div>`;
+                });
+                html += '</div></div></div>';
+            }
+        }
+
+        // ===== 匹配失败提示 =====
         if (!record.subject_id || record.status === 'error' || (trace && trace.final_match_method === 'failed')) {
             const mapTitle = encodeURIComponent(record.title || '');
             const mapSeason = record.season || 1;
@@ -318,6 +365,7 @@ async function showMatchDetail(recordId) {
             `;
         }
 
+        // ===== 卡片 3：匹配过程（steps 全字段）=====
         if (trace && trace.steps && trace.steps.length > 0) {
             html += '<div class="card"><div class="card-header py-2"><strong>匹配过程</strong></div><div class="card-body">';
 
@@ -336,14 +384,15 @@ async function showMatchDetail(recordId) {
                 }[step.stage] || step.stage;
 
                 html += `
-                    <div class="mb-3">
+                    <div class="mb-3 ${idx > 0 ? 'border-top pt-3' : ''}">
                         <div class="d-flex align-items-center mb-1">
                             ${statusIcon}
                             <strong class="ms-2 me-2">${idx + 1}. ${stageName}</strong>
                             <span class="badge bg-secondary">${step.status}</span>
-                            <small class="text-muted ms-2">${step.elapsed_ms}ms</small>
+                            ${step.score !== null && step.score !== undefined ? `<span class="badge bg-info ms-1">置信度 ${(step.score * 100).toFixed(1)}%</span>` : ''}
+                            <small class="text-muted ms-2">${step.elapsed_ms || 0}ms</small>
                         </div>
-                        <small class="text-muted d-block mb-2">${escapeHtml(step.reason || '')}</small>
+                        ${step.reason ? `<small class="text-muted d-block mb-2">${escapeHtml(step.reason)}</small>` : ''}
                 `;
 
                 if (step.subject_id) {
@@ -352,24 +401,39 @@ async function showMatchDetail(recordId) {
 
                 if (step.candidates && step.candidates.length > 0) {
                     html += '<small class="d-block mb-1"><strong>候选列表：</strong></small>';
-                    html += '<ul class="small">';
+                    html += '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0"><thead><tr>';
+                    html += '<th>条目</th><th>subject_id</th><th>置信度</th><th>平台</th><th>放送日期</th><th>来源</th>';
+                    html += '</tr></thead><tbody>';
                     step.candidates.forEach(cand => {
-                        const scoreText = cand.score ? ` (${(cand.score * 100).toFixed(1)}%)` : '';
-                        const platformText = cand.platform ? ` [${cand.platform}]` : '';
-                        html += `<li><a href="https://bgm.tv/subject/${cand.subject_id}" target="_blank">${cand.name_cn || cand.name || cand.subject_id}</a>${platformText}${scoreText}</li>`;
+                        const name = escapeHtml(cand.name_cn || cand.name || cand.subject_id || '-');
+                        html += '<tr>';
+                        html += `<td><a href="https://bgm.tv/subject/${cand.subject_id}" target="_blank">${name}</a></td>`;
+                        html += `<td><small>${escapeHtml(String(cand.subject_id || '-'))}</small></td>`;
+                        html += `<td><small>${scoreText(cand.score)}</small></td>`;
+                        html += `<td><small>${escapeHtml(cand.platform || '-')}</small></td>`;
+                        html += `<td><small>${escapeHtml(cand.air_date || '-')}</small></td>`;
+                        html += `<td><small>${escapeHtml(cand.source || '-')}</small></td>`;
+                        html += '</tr>';
                     });
-                    html += '</ul>';
+                    html += '</tbody></table></div>';
                 }
 
                 html += '</div>';
             });
 
             html += '</div></div>';
+        } else if (!trace) {
+            html += `
+                <div class="alert alert-warning mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    此记录无匹配追踪详情（可能为旧版本记录，未记录匹配过程）。
+                </div>
+            `;
         } else {
             html += `
                 <div class="alert alert-warning mb-0">
                     <i class="bi bi-exclamation-triangle me-2"></i>
-                    此记录无匹配追踪详情。
+                    匹配追踪为空，无步骤数据。
                 </div>
             `;
         }
