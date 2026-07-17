@@ -123,6 +123,8 @@ class SyncRecordsRepository(BaseRepository):
         user_name: Optional[str] = None,
         source: Optional[str] = None,
         source_prefix: Optional[str] = None,
+        match_method: Optional[str] = None,
+        match_platform: Optional[str] = None,
         skip_count: bool = False,
     ) -> dict[str, Any]:
         """获取同步记录"""
@@ -153,6 +155,14 @@ class SyncRecordsRepository(BaseRepository):
             if source_prefix:
                 where_conditions.append("source LIKE ?")
                 params.append(f"{source_prefix}%")
+
+            if match_method:
+                where_conditions.append("match_method = ?")
+                params.append(match_method)
+
+            if match_platform:
+                where_conditions.append("match_platform = ?")
+                params.append(match_platform)
 
             where_clause = (
                 " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
@@ -303,7 +313,10 @@ class SyncRecordsRepository(BaseRepository):
         match_method: Optional[str] = None,
         match_platform: Optional[str] = None,
     ) -> dict[str, Any]:
-        """获取匹配记录（含匹配追踪字段）"""
+        """获取匹配记录（含匹配追踪字段）
+
+        Deprecated: 与 get_sync_records 共用 sync_records 表，请优先使用 get_sync_records。
+        """
 
         def _ensure_schema(cursor):
             self._conn._ensure_sync_records_media_type(cursor)

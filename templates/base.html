@@ -71,12 +71,6 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.url.path == '/match-records' %}active{% endif %}"
-                               href="{{ '/match-records' | p }}">
-                                <i class="bi bi-list-task me-2"></i>匹配记录
-                            </a>
-                        </li>
-                        <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/pending-candidates' %}active{% endif %}"
                                href="{{ '/pending-candidates' | p }}">
                                 <i class="bi bi-list-check me-2"></i>候选确认
@@ -168,13 +162,6 @@
                                    href="{{ '/mappings' | p }}">
                                     <i class="bi bi-diagram-3 me-2"></i>
                                     映射管理
-                                </a>
-                            </li>
-                            <li class="nav-item mb-1">
-                                <a class="nav-link {% if request.url.path == '/match-records' %}active{% endif %}"
-                                   href="{{ '/match-records' | p }}">
-                                    <i class="bi bi-list-task me-2"></i>
-                                    匹配记录
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
@@ -326,6 +313,58 @@
         <!-- Toast通知容器 -->
         <div class="toast-container position-fixed top-0 end-0 p-3">
             <!-- Toast通知将在这里动态添加 -->
+        </div>
+        <!-- 同步记录详情（records / dashboard 共用） -->
+        <div class="modal fade record-detail-modal"
+             id="recordDetailModal"
+             tabindex="-1"
+             aria-labelledby="record-detail-modal-title">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down record-detail-modal__dialog">
+                <div class="modal-content">
+                    <div class="modal-header record-detail-modal__header"
+                         id="record-detail-modal-header">
+                        <div class="record-detail-modal__status"
+                             id="record-detail-modal-status"
+                             role="img">
+                            <i class="bi bi-journal-check"></i>
+                        </div>
+                        <div class="record-detail-modal__head">
+                            <h5 class="modal-title record-detail-modal__title"
+                                id="record-detail-modal-title">同步记录详情</h5>
+                            <div class="record-detail-modal__subtitle"
+                                 id="record-detail-modal-subtitle"></div>
+                        </div>
+                        <button type="button"
+                                class="btn-close"
+                                data-bs-dismiss="modal"
+                                aria-label="关闭"></button>
+                    </div>
+                    <div class="modal-body record-detail-modal__body">
+                        <div class="record-detail-panel">
+                            <div id="record-detail-content"></div>
+                            <div id="record-match-content"></div>
+                            <div id="record-steps-content"></div>
+                            <div id="record-result-content"></div>
+                        </div>
+                    </div>
+                    <div class="modal-footer record-detail-modal__footer">
+                        <a href="https://sanaemio.github.io/Bangumi-syncer/troubleshooting"
+                           class="btn btn-link btn-sm text-muted me-auto d-none record-detail-modal__help"
+                           target="_blank"
+                           rel="noopener">
+                            <i class="bi bi-question-circle me-1"></i>常见失败原因
+                        </a>
+                        <button type="button"
+                                class="btn btn-outline-warning btn-sm d-none"
+                                id="record-detail-retry-btn">
+                            <i class="bi bi-arrow-clockwise me-1"></i>重试同步
+                        </button>
+                        <button type="button"
+                                class="btn btn-secondary btn-sm"
+                                data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="modal fade release-notes-modal"
              id="releaseNotesModal"

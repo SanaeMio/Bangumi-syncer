@@ -15,6 +15,7 @@ from app.api import pages
         "/dashboard",
         "/config",
         "/records",
+        "/match-records",
         "/mappings",
         "/debug",
         "/logs",

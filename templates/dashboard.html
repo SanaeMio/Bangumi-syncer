@@ -219,20 +219,6 @@
             </div>
         </div>
     </div>
-    <!-- 记录详情模态框 -->
-    <div class="modal fade" id="recordDetailModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">同步记录详情</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="record-detail-content"></div>
-                </div>
-            </div>
-        </div>
-    </div>
     <div class="modal fade release-notes-modal inbox-announcement-modal"
          id="inboxAnnouncementModal"
          tabindex="-1"
@@ -283,7 +269,6 @@
     <script>
 // 全局图表实例
 let dailyChartInstance = null;
-let recordDetailModal;
 
 // 海报缓存（命名空间随 Bangumi API / 图片反代配置变化而失效）
 const posterCache = {};
@@ -318,7 +303,6 @@ let cachedDailyStats = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     pruneStalePosterCache();
-    recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
     loadDashboardData();
 
     // 主题变更时重新绘制图表
@@ -407,62 +391,6 @@ function getSourceColor(source) {
         case 'fongmi': return 'primary';
         case 'test': return 'secondary';
         default: return 'secondary';
-    }
-}
-
-async function showRecordDetail(recordId) {
-    try {
-        const response = await fetch(appUrl('/api/records/' + recordId), {
-            method: 'GET',
-            credentials: 'include'
-        });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const result = await response.json();
-        if (result.status === 'success' && result.data) {
-            const record = result.data;
-            const isMovie = (record.media_type || 'episode').toLowerCase() === 'movie';
-            const epHtml = isMovie
-                ? '<span class="badge bg-info">剧场版</span>'
-                : 'S' + String(record.season).padStart(2, '0') + 'E' + String(record.episode).padStart(2, '0');
-
-            const detailContent = document.getElementById('record-detail-content');
-            detailContent.innerHTML = ''
-                + '<div class="row">'
-                + '  <div class="col-md-6"><strong>类型:</strong> ' + (isMovie ? '电影' : '剧集') + '</div>'
-                + '  <div class="col-md-6"><strong>时间:</strong> ' + record.timestamp + '</div>'
-                + '</div>'
-                + '<div class="row mt-2">'
-                + '  <div class="col-md-6"><strong>用户:</strong> ' + escapeHtml(record.user_name) + '</div>'
-                + '  <div class="col-md-6"><strong>番剧标题:</strong> ' + escapeHtml(record.bgm_title || record.title) + '</div>'
-                + '</div>'
-                + '<div class="row mt-2">'
-                + '  <div class="col-md-6"><strong>接收标题:</strong> ' + escapeHtml(record.title) + '</div>'
-                + (record.ori_title && String(record.ori_title).trim()
-                    ? '  <div class="col-md-6"><strong>原始标题:</strong> ' + escapeHtml(record.ori_title) + '</div>'
-                    : '')
-                + '</div>'
-                + '<div class="row mt-2">'
-                + '  <div class="col-md-4"><strong>季/集:</strong> ' + epHtml + '</div>'
-                + '  <div class="col-md-4"><strong>状态:</strong> <span class="badge rounded-pill bg-' + getStatusColor(record.status) + '">' + getStatusText(record.status) + '</span></div>'
-                + '  <div class="col-md-4"><strong>来源:</strong> <span class="badge rounded-pill bg-' + getSourceColor(record.source) + '">' + escapeHtml(record.source) + '</span></div>'
-                + '</div>'
-                + ((record.subject_id || record.episode_id) ? ''
-                + '<div class="row mt-2"><div class="col-12"><strong>Bangumi链接:</strong><div class="mt-1">'
-                + (record.subject_id ? '<a href="https://bgm.tv/subject/' + record.subject_id + '" target="_blank" class="btn btn-sm btn-outline-primary me-2"><i class="bi bi-collection me-1"></i>番剧 ' + record.subject_id + ' <i class="bi bi-box-arrow-up-right ms-1"></i></a>' : '')
-                + (record.episode_id ? '<a href="https://bgm.tv/ep/' + record.episode_id + '" target="_blank" class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle me-1"></i>剧集 ' + record.episode_id + ' <i class="bi bi-box-arrow-up-right ms-1"></i></a>' : '')
-                + '</div></div></div>' : '')
-                + '<div class="row mt-2"><div class="col-12"><strong>消息:</strong>'
-                + '<div class="border rounded p-2 mt-1 app-detail-box">'
-                + escapeHtml(record.message || '无')
-                + '</div></div></div>';
-
-            recordDetailModal.show();
-        } else {
-            throw new Error('获取记录数据失败');
-        }
-    } catch (error) {
-        console.error('显示记录详情失败:', error);
-        showAlert('获取记录详情失败', 'danger');
     }
 }
 

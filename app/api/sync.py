@@ -261,6 +261,8 @@ async def get_sync_records(
     user_name: Optional[str] = None,
     source: Optional[str] = None,
     source_prefix: Optional[str] = None,
+    match_method: Optional[str] = None,
+    match_platform: Optional[str] = None,
     skip_count: bool = Query(False),
     include_poster: bool = Query(False),
     current_user: dict = Depends(get_current_user_flexible),
@@ -274,6 +276,8 @@ async def get_sync_records(
             user_name=user_name,
             source=source,
             source_prefix=source_prefix,
+            match_method=match_method,
+            match_platform=match_platform,
             skip_count=skip_count,
         )
 

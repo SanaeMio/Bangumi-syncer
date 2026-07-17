@@ -125,6 +125,849 @@ function renderMatchMethodBadge(method) {
     return `<span class="badge rounded-pill bg-${color}">${text}</span>`;
 }
 
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+function normalizeRecordText(value) {
+    return String(value || '').trim();
+}
+
+function isMatchFailure(record, trace) {
+    if (record.match_method === 'failed') {
+        return true;
+    }
+    if (trace && trace.final_match_method === 'failed') {
+        return true;
+    }
+    return false;
+}
+
+function renderRecordDetailFacts(items) {
+    const rows = (items || []).filter((item) => {
+        const v = item.value;
+        return v !== null && v !== undefined && v !== '';
+    });
+    if (rows.length === 0) {
+        return '';
+    }
+    let html = '<dl class="record-detail-facts">';
+    rows.forEach((item) => {
+        const wideClass = item.wide ? ' record-detail-fact--wide' : '';
+        html += `<div class="record-detail-fact${wideClass}">`;
+        html += `<dt>${escapeHtml(item.label)}</dt>`;
+        html += `<dd>${item.value}</dd>`;
+        html += '</div>';
+    });
+    html += '</dl>';
+    return html;
+}
+
+function parseRecordMatchTrace(record) {
+    const raw = record && record.match_trace;
+    if (!raw) {
+        return null;
+    }
+    if (typeof raw === 'object') {
+        return raw;
+    }
+    try {
+        return JSON.parse(raw);
+    } catch (error) {
+        return null;
+    }
+}
+
+function getRecordReleaseDate(record, trace) {
+    const fromTrace = trace?.request_release_date
+        || parseRecordMatchTrace(record)?.request_release_date
+        || '';
+    return normalizeRecordText(fromTrace);
+}
+
+function hasDisplayText(value) {
+    return !!normalizeRecordText(value);
+}
+
+function renderRecordDetailZone(variant, title, hint, bodyHtml, sectionId) {
+    const icons = {
+        receive: 'bi-box-arrow-in-down',
+        match: 'bi-diagram-3',
+        steps: 'bi-signpost-split',
+        result: 'bi-clipboard2-check',
+        'result-error': 'bi-exclamation-circle',
+    };
+    const icon = icons[variant] || 'bi-info-circle';
+    const idAttr = sectionId ? ` id="${sectionId}"` : '';
+    return `
+        <section class="record-detail-zone record-detail-zone--${variant}"${idAttr}>
+            <header class="record-detail-zone__head">
+                <div class="record-detail-zone__icon" aria-hidden="true">
+                    <i class="bi ${icon}"></i>
+                </div>
+                <div class="record-detail-zone__titles">
+                    <h6 class="record-detail-zone__title">${escapeHtml(title)}</h6>
+                    ${hint ? `<p class="record-detail-zone__hint">${escapeHtml(hint)}</p>` : ''}
+                </div>
+            </header>
+            <div class="record-detail-zone__body">${bodyHtml}</div>
+        </section>
+    `;
+}
+
+function getMediaTypeLabel(mediaType) {
+    const map = {
+        episode: '剧集',
+        movie: '电影/剧场版',
+        ova: 'OVA/OAD',
+        real_action: '三次元',
+    };
+    const mt = (mediaType || 'episode').toLowerCase();
+    return map[mt] || mediaType || '—';
+}
+
+function renderEpisodeFactValue(record, trace) {
+    const mediaType = trace?.request_media_type || record.media_type;
+    const isMovie = (mediaType || 'episode').toLowerCase() === 'movie';
+    if (isMovie) {
+        return '<span class="record-detail-chip">剧场版</span>';
+    }
+    const season = trace?.request_season ?? record.season ?? 0;
+    const episode = trace?.request_episode ?? record.episode ?? 0;
+    return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+}
+
+function renderMatchInputFacts(record, trace) {
+    const title = trace?.request_title || record.title;
+    const oriTitle = trace?.request_ori_title || record.ori_title;
+    const mediaType = trace?.request_media_type || record.media_type;
+    const user = trace?.request_user_name || record.user_name;
+    const facts = [];
+
+    if (hasDisplayText(title)) {
+        facts.push({ label: '匹配标题', value: escapeHtml(title), wide: true });
+    }
+    if (hasDisplayText(oriTitle)) {
+        facts.push({ label: '匹配原标题', value: escapeHtml(oriTitle), wide: true });
+    }
+    if (hasDisplayText(user)) {
+        facts.push({ label: '用户', value: escapeHtml(user) });
+    }
+    if (mediaType) {
+        facts.push({ label: '媒体类型', value: renderMediaTypeBadge(mediaType) });
+    }
+    facts.push({ label: '季 / 集', value: renderEpisodeFactValue(record, trace) });
+
+    if (hasDisplayText(trace?.normalized_title)) {
+        facts.push({ label: '归一化标题', value: escapeHtml(trace.normalized_title), wide: true });
+    }
+
+    const subsection = facts.length > 0
+        ? renderRecordDetailFacts(facts)
+        : '<p class="record-detail-empty-hint mb-0">无匹配输入信息</p>';
+    return subsection;
+}
+
+function renderMatchFailureBanner(record) {
+    const mapTitle = encodeURIComponent(record.title || '');
+    const mapSeason = record.season || 1;
+    return `
+        <div class="record-detail-banner record-detail-banner--warn record-detail-banner--steps">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span class="flex-grow-1">未匹配到 Bangumi 条目，可添加自定义映射解决</span>
+            <a href="${appUrl('/mappings')}?title=${mapTitle}&season=${mapSeason}" class="record-detail-banner__action">
+                前往映射 <i class="bi bi-arrow-up-right"></i>
+            </a>
+        </div>
+    `;
+}
+
+function getMatchStepStatusLabel(status) {
+    const labels = {
+        hit: '命中',
+        miss: '未命中',
+        skipped: '已跳过',
+        error: '出错',
+    };
+    return labels[status] || status || '未知';
+}
+
+function renderMatchStepsHtml(record, trace) {
+    const scoreText = (s) => (s !== null && s !== undefined) ? `${(s * 100).toFixed(1)}%` : '-';
+
+    if (!trace) {
+        return `
+            <p class="record-detail-empty-hint mb-0">
+                无匹配追踪数据（可能为旧版记录），可在
+                <a href="${appUrl('/debug')}">调试工具</a> 中测试匹配。
+            </p>
+        `;
+    }
+
+    if (!trace.steps || trace.steps.length === 0) {
+        return '<p class="record-detail-empty-hint mb-0">匹配追踪为空，无步骤数据。</p>';
+    }
+
+    let html = '<div class="record-detail-steps">';
+
+    trace.steps.forEach((step, idx) => {
+        const status = step.status || 'unknown';
+        const stageName = {
+            custom_mapping: '自定义映射',
+            bangumi_data: 'bangumi-data 本地匹配',
+            api_search: 'Bangumi API 搜索',
+        }[step.stage] || step.stage;
+
+        html += `<article class="record-detail-step record-detail-step--${status}">`;
+        html += '<div class="record-detail-step__rail" aria-hidden="true">';
+        html += `<span class="record-detail-step__index">${idx + 1}</span>`;
+        if (idx < trace.steps.length - 1) {
+            html += '<span class="record-detail-step__line"></span>';
+        }
+        html += '</div>';
+        html += '<div class="record-detail-step__card">';
+        html += '<header class="record-detail-step__head">';
+        html += `<strong class="record-detail-step__name">${escapeHtml(stageName)}</strong>`;
+        html += `<span class="record-detail-step__badge record-detail-step__badge--${status}">${getMatchStepStatusLabel(status)}</span>`;
+        if (step.score !== null && step.score !== undefined) {
+            html += `<span class="record-detail-step__score">${(step.score * 100).toFixed(0)}%</span>`;
+        }
+        html += `<span class="record-detail-step__time">${step.elapsed_ms || 0}ms</span>`;
+        html += '</header>';
+
+        if (step.reason) {
+            html += `<p class="record-detail-step__reason">${escapeHtml(step.reason)}</p>`;
+        }
+
+        if (step.candidates && step.candidates.length > 0) {
+            html += renderMatchCandidatesTable(step.candidates, scoreText);
+        }
+
+        html += '</div></article>';
+    });
+
+    html += '</div>';
+    return html;
+}
+
+function renderMatchInputZone(record, trace) {
+    const body = renderMatchInputFacts(record, trace);
+
+    return renderRecordDetailZone(
+        'match',
+        '匹配信息',
+        '用于 Bangumi 条目识别的输入',
+        body,
+        'record-section-match',
+    );
+}
+
+function renderMatchStepsZone(record, trace) {
+    let body = renderMatchStepsHtml(record, trace);
+    if (isMatchFailure(record, trace)) {
+        body += renderMatchFailureBanner(record);
+    }
+
+    return renderRecordDetailZone(
+        'steps',
+        '匹配步骤',
+        '各阶段匹配过程与候选结果',
+        body,
+        'record-section-steps',
+    );
+}
+
+function renderMatchDetailModalParts(record, trace) {
+    return {
+        match: renderMatchInputZone(record, trace),
+        steps: renderMatchStepsZone(record, trace),
+    };
+}
+
+function isRecordSyncSuccess(record) {
+    return record.status === 'success' || record.status === 'retried';
+}
+
+function renderSyncResultContent(record, trace) {
+    const isSuccess = isRecordSyncSuccess(record);
+    const score = (trace && trace.final_score !== null && trace.final_score !== undefined)
+        ? trace.final_score
+        : record.match_score;
+    const method = record.match_method || (trace && trace.final_match_method) || '';
+    const subjectId = record.subject_id || (trace && trace.final_subject_id);
+    const episodeId = record.episode_id || (trace && trace.final_episode_id);
+    let body = '';
+
+    if (isSuccess) {
+        const facts = [];
+        if (record.bgm_title) {
+            facts.push({ label: 'Bangumi 条目', value: escapeHtml(record.bgm_title), wide: true });
+        }
+        if (method) {
+            facts.push({ label: '匹配方式', value: renderMatchMethodBadge(method) });
+        }
+        if (score !== null && score !== undefined) {
+            facts.push({ label: '置信度', value: `${(score * 100).toFixed(0)}%` });
+        }
+        const links = renderBangumiLinkPills(subjectId, episodeId);
+        if (links) {
+            facts.push({ label: '链接', value: links, wide: true });
+        }
+        body += renderRecordDetailFacts(facts);
+    }
+
+    const messageText = normalizeRecordText(record.message);
+    if (messageText) {
+        const isNoMatch = isMatchFailure(record, trace);
+        const messageClass = record.status === 'error'
+            ? 'record-detail-message record-detail-message--error'
+            : 'record-detail-message';
+        const msgLabel = (isSuccess || isNoMatch) ? '消息' : '同步结果';
+        let inlineClass = 'record-detail-inline-msg';
+        if (!body || isNoMatch) {
+            inlineClass += ' record-detail-inline-msg--only';
+        }
+        body += `
+            <div class="${inlineClass}">
+                <span class="record-detail-inline-msg__label">${msgLabel}</span>
+                <pre class="${messageClass} mb-0">${escapeHtml(messageText)}</pre>
+            </div>
+        `;
+    } else if (!isSuccess) {
+        body += `<div class="record-detail-result-status">${renderSyncStatusBadge(record.status)}</div>`;
+    }
+
+    if (!body) {
+        body = '<p class="record-detail-empty-hint mb-0">无结果信息</p>';
+    }
+
+    const variant = isSuccess ? 'result' : 'result-error';
+    const hint = isSuccess ? '已成功同步到 Bangumi' : '同步未成功或已忽略';
+    return renderRecordDetailZone(variant, '同步结果', hint, body, 'record-section-result');
+}
+
+function renderBangumiLinkPills(subjectId, episodeId) {
+    const pills = [];
+    if (subjectId) {
+        pills.push(`
+            <a href="https://bgm.tv/subject/${subjectId}" target="_blank" rel="noopener"
+               class="record-detail-link-pill record-detail-link-pill--subject">
+                <i class="bi bi-collection"></i>条目 ${subjectId}
+            </a>
+        `);
+    }
+    if (episodeId) {
+        pills.push(`
+            <a href="https://bgm.tv/ep/${episodeId}" target="_blank" rel="noopener"
+               class="record-detail-link-pill record-detail-link-pill--episode">
+                <i class="bi bi-play-circle"></i>剧集 ${episodeId}
+            </a>
+        `);
+    }
+    if (pills.length === 0) {
+        return '';
+    }
+    return `<div class="record-detail-link-pills">${pills.join('')}</div>`;
+}
+
+function renderRecordDetailTileGrid(items) {
+    const rows = (items || []).filter((item) => {
+        const v = item.value;
+        return v !== null && v !== undefined && v !== '';
+    });
+    if (rows.length === 0) {
+        return '<p class="text-muted small mb-0">暂无信息</p>';
+    }
+    let html = '<div class="record-detail-grid">';
+    rows.forEach((item) => {
+        const wideClass = item.wide ? ' record-detail-tile--wide' : '';
+        html += `<div class="record-detail-tile${wideClass}">`;
+        html += `<span class="record-detail-tile__label">${escapeHtml(item.label)}</span>`;
+        html += `<span class="record-detail-tile__value">${item.value}</span>`;
+        html += '</div>';
+    });
+    html += '</div>';
+    return html;
+}
+
+function renderRecordDetailBlock(title, icon, bodyHtml, sectionId) {
+    const idAttr = sectionId ? ` id="${sectionId}"` : '';
+    return `
+        <section class="record-detail-section"${idAttr}>
+            <div class="record-detail-section__head">
+                <i class="bi ${icon} card-header-icon"></i>
+                <h6 class="record-detail-section__title">${escapeHtml(title)}</h6>
+            </div>
+            <div class="record-detail-section__body">${bodyHtml}</div>
+        </section>
+    `;
+}
+
+function renderRecordDetailKvGrid(items) {
+    const rows = (items || []).filter((item) => {
+        const v = item.value;
+        return v !== null && v !== undefined && v !== '';
+    });
+    if (rows.length === 0) {
+        return '<p class="text-muted small mb-0">暂无信息</p>';
+    }
+    let html = '<dl class="row record-detail-kv mb-0">';
+    rows.forEach((item) => {
+        html += `<dt class="col-sm-4 col-md-3">${escapeHtml(item.label)}</dt>`;
+        html += `<dd class="col-sm-8 col-md-9">${item.value}</dd>`;
+    });
+    html += '</dl>';
+    return html;
+}
+
+function renderRecordDetailSection(title, icon, bodyHtml, extraClass) {
+    const sectionId = extraClass && extraClass.startsWith('id:') ? extraClass.slice(3) : '';
+    return renderRecordDetailBlock(title, icon, bodyHtml, sectionId || null);
+}
+
+function getRecordEpisodeLabel(record) {
+    const isMovie = (record.media_type || 'episode').toLowerCase() === 'movie';
+    if (isMovie) {
+        return '剧场版';
+    }
+    return `S${String(record.season || 0).padStart(2, '0')}E${String(record.episode || 0).padStart(2, '0')}`;
+}
+
+function updateRecordDetailModalChrome(record) {
+    const headerEl = document.getElementById('record-detail-modal-header');
+    const titleEl = document.getElementById('record-detail-modal-title');
+    const subtitleEl = document.getElementById('record-detail-modal-subtitle');
+    const statusEl = document.getElementById('record-detail-modal-status');
+    const retryBtn = document.getElementById('record-detail-retry-btn');
+    const helpLink = document.querySelector('.record-detail-modal__help');
+
+    const displayTitle = record.bgm_title || record.title || '同步记录';
+    const epLabel = getRecordEpisodeLabel(record);
+    const statusChrome = {
+        success: ['bi-check-circle-fill', 'record-detail-modal__header--success'],
+        error: ['bi-x-circle-fill', 'record-detail-modal__header--error'],
+        ignored: ['bi-dash-circle-fill', 'record-detail-modal__header--warning'],
+        retried: ['bi-arrow-repeat', 'record-detail-modal__header--success'],
+    };
+    const [statusIcon, statusClass] = statusChrome[record.status] || ['bi-journal-text', ''];
+
+    if (titleEl) {
+        titleEl.innerHTML = `${escapeHtml(displayTitle)}<span class="text-muted fw-normal"> · ${epLabel}</span>`;
+    }
+
+    if (subtitleEl) {
+        subtitleEl.innerHTML = [
+            `<span>${escapeHtml(record.timestamp || '')}</span>`,
+            renderSourceBadge(record.source),
+        ].join('<span class="record-detail-meta-dot">·</span>');
+    }
+
+    if (headerEl) {
+        headerEl.classList.remove(
+            'record-detail-modal__header--error',
+            'record-detail-modal__header--success',
+            'record-detail-modal__header--warning',
+        );
+        if (statusClass) {
+            headerEl.classList.add(statusClass);
+        }
+    }
+
+    if (statusEl) {
+        statusEl.innerHTML = `<i class="bi ${statusIcon}"></i>`;
+        statusEl.title = getSyncRecordStatusText(record.status);
+        statusEl.setAttribute('aria-label', getSyncRecordStatusText(record.status));
+    }
+
+    if (retryBtn) {
+        const showRetry = record.status === 'error';
+        retryBtn.classList.toggle('d-none', !showRetry);
+        retryBtn.onclick = function() {
+            retrySync(record.id);
+        };
+    }
+
+    if (helpLink) {
+        helpLink.classList.toggle('d-none', record.status !== 'error');
+        helpLink.classList.toggle('d-inline-flex', record.status === 'error');
+    }
+}
+
+function renderMatchCandidatesTable(candidates, scoreText) {
+    if (!candidates || candidates.length === 0) {
+        return '';
+    }
+
+    const renderRows = (items) => items.map((cand) => {
+        const name = escapeHtml(cand.name_cn || cand.name || cand.subject_id || '-');
+        return `<tr>
+            <td><a href="https://bgm.tv/subject/${cand.subject_id}" target="_blank">${name}</a></td>
+            <td><small>${escapeHtml(String(cand.subject_id || '-'))}</small></td>
+            <td><small>${scoreText(cand.score)}</small></td>
+            <td><small>${escapeHtml(cand.platform || '-')}</small></td>
+            <td><small>${escapeHtml(cand.air_date || '-')}</small></td>
+            <td><small>${escapeHtml(cand.source || '-')}</small></td>
+        </tr>`;
+    }).join('');
+
+    const tableHead = '<thead><tr><th>条目</th><th>subject_id</th><th>置信度</th><th>平台</th><th>放送日期</th><th>来源</th></tr></thead>';
+    const tableStart = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0">';
+    const tableEnd = '</table></div>';
+
+    if (candidates.length <= 3) {
+        return tableStart + tableHead + '<tbody>' + renderRows(candidates) + '</tbody>' + tableEnd;
+    }
+
+    const rest = candidates.slice(3);
+    return tableStart + tableHead + '<tbody>' + renderRows(candidates.slice(0, 3)) + '</tbody>' + tableEnd
+        + `<details class="record-detail-candidates mt-2">
+            <summary>展开其余 ${rest.length} 条候选</summary>
+            ${tableStart + tableHead + '<tbody>' + renderRows(rest) + '</tbody>' + tableEnd}
+        </details>`;
+}
+
+function renderMatchDetailModalContent(record, trace) {
+    const parts = renderMatchDetailModalParts(record, trace);
+    return parts.match + parts.steps;
+}
+
+function renderMatchTraceDetail(record, trace, options) {
+    const opts = options || {};
+    if (opts.skipBasicInfo) {
+        return renderMatchDetailModalContent(record, trace);
+    }
+
+    const val = (v, d = '-') => (v === null || v === undefined || v === '') ? d : v;
+    const mediaTypeLabel = (t) => {
+        const map = {
+            episode: '剧集',
+            movie: '电影/剧场版',
+            ova: 'OVA/OAD',
+            real_action: '三次元',
+        };
+        return map[t] || t || '-';
+    };
+    const subjectLink = (sid, name) => sid
+        ? `<a href="https://bgm.tv/subject/${sid}" target="_blank">${escapeHtml(name || sid)}</a>`
+        : '-';
+    const episodeLink = (eid) => eid
+        ? `<a href="https://bgm.tv/ep/${eid}" target="_blank">ep/${eid}</a>`
+        : '-';
+    const scoreText = (s) => (s !== null && s !== undefined) ? `${(s * 100).toFixed(1)}%` : '-';
+
+    let html = '';
+
+    html += renderRecordDetailSection('基本信息', 'bi-info-circle', renderRecordDetailKvGrid([
+            { label: '标题', value: escapeHtml(val(record.title)) },
+            { label: '原始标题', value: escapeHtml(val(record.ori_title)) },
+            { label: '番剧标题', value: escapeHtml(val(record.bgm_title)) },
+            { label: '来源', value: renderSourceBadge(record.source) },
+            { label: '季度/集数', value: `S${String(record.season || 0).padStart(2, '0')}E${String(record.episode || 0).padStart(2, '0')}` },
+            { label: '媒体类型', value: mediaTypeLabel(record.media_type) },
+            { label: '时间', value: escapeHtml(val(record.timestamp)) },
+            { label: '用户', value: escapeHtml(val(record.user_name)) },
+            { label: '状态', value: renderSyncStatusBadge(record.status) },
+            { label: '消息', value: escapeHtml(val(record.message)) },
+            { label: '最终匹配方式', value: renderMatchMethodBadge(record.match_method || (trace && trace.final_match_method) || '') },
+            { label: '最终置信度', value: scoreText((trace && trace.final_score !== null && trace.final_score !== undefined) ? trace.final_score : record.match_score) },
+            { label: '命中条目', value: subjectLink(record.subject_id || (trace && trace.final_subject_id), record.bgm_title) },
+            { label: '命中剧集', value: episodeLink((trace && trace.final_episode_id) || record.episode_id) },
+        ]));
+
+    if (trace) {
+        const ctxFields = [
+            ['请求标题', trace.request_title],
+            ['请求原始标题', trace.request_ori_title],
+            ['请求季度', trace.request_season],
+            ['请求集数', trace.request_episode],
+            ['请求媒体类型', trace.request_media_type ? mediaTypeLabel(trace.request_media_type) : null],
+            ['请求发布日期', trace.request_release_date],
+            ['请求用户', trace.request_user_name],
+            ['请求平台提示', trace.request_platform_hint],
+            ['归一化标题', trace.normalized_title],
+        ].filter(([, v]) => v !== null && v !== undefined && v !== '');
+
+        if (ctxFields.length > 0) {
+            const ctxGrid = renderRecordDetailKvGrid(ctxFields.map(([label, v]) => ({
+                label,
+                value: escapeHtml(String(v)),
+            })));
+            html += renderRecordDetailBlock('匹配上下文', 'bi-braces', ctxGrid);
+        }
+    }
+
+    if (isMatchFailure(record, trace)) {
+        const mapTitle = encodeURIComponent(record.title || '');
+        const mapSeason = record.season || 1;
+        html += `
+            <div class="record-detail-banner record-detail-banner--warn">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <span class="flex-grow-1">未匹配到 Bangumi 条目，可添加自定义映射解决</span>
+                <a href="${appUrl('/mappings')}?title=${mapTitle}&season=${mapSeason}" class="record-detail-banner__action">
+                    前往映射 <i class="bi bi-arrow-up-right"></i>
+                </a>
+            </div>
+        `;
+    }
+
+    if (trace && trace.steps && trace.steps.length > 0) {
+        html += '<p class="record-detail-steps-label">匹配步骤</p>';
+        html += '<ol class="record-detail-timeline mb-0">';
+
+        trace.steps.forEach((step, idx) => {
+            const statusIcon = {
+                hit: '<i class="bi bi-check-circle-fill text-success"></i>',
+                miss: '<i class="bi bi-x-circle-fill text-danger"></i>',
+                skipped: '<i class="bi bi-skip-forward text-muted"></i>',
+                error: '<i class="bi bi-exclamation-triangle-fill text-danger"></i>',
+            }[step.status] || '<i class="bi bi-question-circle text-muted"></i>';
+
+            const stageName = {
+                custom_mapping: '自定义映射',
+                bangumi_data: 'bangumi-data 本地匹配',
+                api_search: 'Bangumi API 搜索',
+            }[step.stage] || step.stage;
+
+            const statusClass = step.status ? ` record-detail-timeline__item--${step.status}` : '';
+
+            html += `<li class="record-detail-timeline__item${statusClass}">`;
+            html += `<span class="record-detail-timeline__marker">${statusIcon}</span>`;
+            html += '<div class="record-detail-timeline__content">';
+            html += '<div class="record-detail-timeline__head">';
+            html += `<strong class="record-detail-timeline__stage">${idx + 1}. ${stageName}</strong>`;
+            if (step.score !== null && step.score !== undefined) {
+                html += `<span class="record-detail-step-tag">${(step.score * 100).toFixed(0)}%</span>`;
+            }
+            html += `<small class="record-detail-step-time">${step.elapsed_ms || 0}ms</small>`;
+            html += '</div>';
+
+            if (step.reason) {
+                html += `<div class="record-detail-step-reason">${escapeHtml(step.reason)}</div>`;
+            }
+
+            if (step.subject_id) {
+                html += `<div class="record-detail-step-hit">命中 <a href="https://bgm.tv/subject/${step.subject_id}" target="_blank">${step.subject_id}</a></div>`;
+            }
+
+            if (step.candidates && step.candidates.length > 0) {
+                html += renderMatchCandidatesTable(step.candidates, scoreText);
+            }
+
+            html += '</div></li>';
+        });
+
+        html += '</ol>';
+    } else if (!trace) {
+        html += `
+            <p class="record-detail-empty-hint mb-0">
+                无匹配追踪数据（可能为旧版记录），可在
+                <a href="${appUrl('/debug')}">调试工具</a> 中测试匹配。
+            </p>
+        `;
+    } else {
+        html += '<p class="record-detail-empty-hint mb-0">匹配追踪为空，无步骤数据。</p>';
+    }
+
+    return html;
+}
+
+function renderSyncDetailContent(record, trace) {
+    const isMovie = (record.media_type || 'episode').toLowerCase() === 'movie';
+    const facts = [];
+
+    if (hasDisplayText(record.title)) {
+        facts.push({ label: '接收标题', value: escapeHtml(record.title), wide: true });
+    }
+    if (hasDisplayText(record.ori_title)) {
+        facts.push({ label: '接收原标题', value: escapeHtml(record.ori_title), wide: true });
+    }
+    if (hasDisplayText(record.user_name)) {
+        facts.push({ label: '用户名', value: escapeHtml(record.user_name) });
+    }
+    if (record.media_type) {
+        facts.push({ label: '媒体类型', value: renderMediaTypeBadge(record.media_type) });
+    }
+    facts.push({
+        label: '季 / 集',
+        value: isMovie ? '<span class="record-detail-chip">剧场版</span>' : getRecordEpisodeLabel(record),
+    });
+
+    const releaseDate = getRecordReleaseDate(record, trace);
+    if (releaseDate) {
+        facts.push({ label: '播出日期', value: escapeHtml(releaseDate) });
+    }
+
+    const body = renderRecordDetailFacts(facts) || '<p class="record-detail-empty-hint mb-0">无接收信息</p>';
+
+    return renderRecordDetailZone(
+        'receive',
+        '接收信息',
+        '媒体库推送的观看记录',
+        body,
+        'record-section-receive',
+    );
+}
+
+function renderMatchTraceLoading() {
+    return renderRecordDetailZone(
+        'match',
+        '匹配信息',
+        '用于 Bangumi 条目识别的输入',
+        `<div class="record-detail-loading" aria-busy="true">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span>加载匹配信息…</span>
+        </div>`,
+        'record-section-match',
+    );
+}
+
+function renderMatchStepsLoading() {
+    return renderRecordDetailZone(
+        'steps',
+        '匹配步骤',
+        '各阶段匹配过程与候选结果',
+        `<div class="record-detail-loading" aria-busy="true">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span>加载匹配步骤…</span>
+        </div>`,
+        'record-section-steps',
+    );
+}
+
+// ========== 同步记录详情弹窗（records / dashboard 共用） ==========
+
+let _recordDetailModal = null;
+const _matchTraceCache = {};
+
+function getRecordDetailModal() {
+    const modalEl = document.getElementById('recordDetailModal');
+    if (!modalEl) {
+        return null;
+    }
+    if (!_recordDetailModal) {
+        _recordDetailModal = new bootstrap.Modal(modalEl);
+    }
+    return _recordDetailModal;
+}
+
+async function loadMatchTraceContent(recordId, record) {
+    const matchContent = document.getElementById('record-match-content');
+    const stepsContent = document.getElementById('record-steps-content');
+    const resultContent = document.getElementById('record-result-content');
+    const detailContent = document.getElementById('record-detail-content');
+    if (!matchContent || !stepsContent) {
+        return;
+    }
+
+    matchContent.innerHTML = renderMatchTraceLoading();
+    stepsContent.innerHTML = renderMatchStepsLoading();
+
+    try {
+        let traceData = _matchTraceCache[recordId];
+        if (!traceData) {
+            const response = await fetch(appUrl(`/api/match-records/${recordId}/trace`), {
+                credentials: 'include',
+            });
+            const data = await response.json();
+            if (data.status !== 'success') {
+                throw new Error('获取匹配详情失败');
+            }
+            traceData = data.data;
+            _matchTraceCache[recordId] = traceData;
+        }
+
+        const traceRecord = traceData.record || record;
+        const trace = traceData.trace;
+        const parts = renderMatchDetailModalParts(traceRecord, trace);
+        matchContent.innerHTML = parts.match;
+        stepsContent.innerHTML = parts.steps;
+        if (detailContent) {
+            detailContent.innerHTML = renderSyncDetailContent(traceRecord, trace);
+        }
+        if (resultContent) {
+            resultContent.innerHTML = renderSyncResultContent(traceRecord, trace);
+        }
+    } catch (error) {
+        console.error('加载匹配过程失败:', error);
+        matchContent.innerHTML = renderRecordDetailZone(
+            'match',
+            '匹配信息',
+            '用于 Bangumi 条目识别的输入',
+            '<p class="record-detail-empty-hint record-detail-empty-hint--error mb-0">加载匹配信息失败</p>',
+            'record-section-match',
+        );
+        stepsContent.innerHTML = renderRecordDetailZone(
+            'steps',
+            '匹配步骤',
+            '各阶段匹配过程与候选结果',
+            '<p class="record-detail-empty-hint record-detail-empty-hint--error mb-0">加载匹配步骤失败</p>',
+            'record-section-steps',
+        );
+    }
+}
+
+async function showRecordDetail(recordId, options) {
+    const opts = typeof options === 'string'
+        ? { scrollToMatch: options === 'match' }
+        : (options || {});
+
+    const modal = getRecordDetailModal();
+    if (!modal) {
+        showAlert('详情弹窗不可用', 'danger');
+        return;
+    }
+
+    const detailContent = document.getElementById('record-detail-content');
+    const matchContent = document.getElementById('record-match-content');
+    const stepsContent = document.getElementById('record-steps-content');
+    const resultContent = document.getElementById('record-result-content');
+    if (!detailContent || !matchContent || !stepsContent || !resultContent) {
+        showAlert('详情弹窗不可用', 'danger');
+        return;
+    }
+
+    try {
+        const response = await fetch(appUrl(`/api/records/${recordId}`), {
+            method: 'GET',
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.status !== 'success' || !result.data) {
+            throw new Error('获取记录数据失败');
+        }
+
+        const record = result.data;
+        delete _matchTraceCache[recordId];
+
+        const embeddedTrace = parseRecordMatchTrace(record);
+        updateRecordDetailModalChrome(record);
+        detailContent.innerHTML = renderSyncDetailContent(record, embeddedTrace);
+        matchContent.innerHTML = renderMatchTraceLoading();
+        stepsContent.innerHTML = renderMatchStepsLoading();
+        resultContent.innerHTML = renderSyncResultContent(record, embeddedTrace);
+        modal.show();
+        await loadMatchTraceContent(recordId, record);
+
+        if (opts.scrollToMatch) {
+            const matchSection = document.getElementById('record-section-steps')
+                || document.getElementById('record-section-match');
+            if (matchSection) {
+                matchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+    } catch (error) {
+        console.error('显示记录详情失败:', error);
+        showAlert('显示记录详情失败', 'danger');
+    }
+}
+
 function renderCandidateStatusBadge(status) {
     const badges = {
         pending: ['warning', '待确认'],
@@ -198,6 +1041,11 @@ window.getStatusColor = getSyncRecordStatusColor;
 window.getStatusText = getSyncRecordStatusText;
 window.renderSyncStatusBadge = renderSyncStatusBadge;
 window.renderMatchMethodBadge = renderMatchMethodBadge;
+window.escapeHtml = escapeHtml;
+window.renderMatchTraceDetail = renderMatchTraceDetail;
+window.renderSyncDetailContent = renderSyncDetailContent;
+window.renderSyncResultContent = renderSyncResultContent;
+window.showRecordDetail = showRecordDetail;
 window.renderCandidateStatusBadge = renderCandidateStatusBadge;
 window.renderMediaTypeBadge = renderMediaTypeBadge;
 window.getSourceColor = getSourceColor;
