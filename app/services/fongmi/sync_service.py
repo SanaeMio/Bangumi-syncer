@@ -230,11 +230,13 @@ class FongmiSyncService:
         }
 
         item = self._record_to_custom_item(rec)
+        # 调试同步使用特殊 source 以便 _check_user_permission 识别为测试来源
+        item.source = "fongmi-debug"
         from ..sync_service import sync_service  # 延迟导入避免循环依赖
 
         try:
             result = await asyncio.to_thread(
-                sync_service.sync_custom_item, item, FONGMI_SYNC_SOURCE
+                sync_service.sync_custom_item, item, "fongmi-debug"
             )
         except Exception as e:
             logger.error(f"fongmi 调试同步执行失败: {e}")

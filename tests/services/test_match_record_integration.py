@@ -94,7 +94,7 @@ class TestMediaTypeRouting:
             release_date="",
             user_name="u",
         )
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 error = svc._normalize_custom_item_params(item)
         assert error is None
@@ -110,7 +110,7 @@ class TestMediaTypeRouting:
             release_date="",
             user_name="u",
         )
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 error = svc._normalize_custom_item_params(item)
         assert error is None
@@ -126,7 +126,7 @@ class TestMediaTypeRouting:
             release_date="",
             user_name="u",
         )
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 error = svc._normalize_custom_item_params(item)
         assert error is None
@@ -245,7 +245,7 @@ class TestSyncMovieWatchingMatchFields:
             user_name="u",
             sync_action="mark_watching",
         )
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 with patch.object(
                     svc,

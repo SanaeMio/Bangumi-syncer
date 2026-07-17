@@ -563,12 +563,18 @@ def test_sync_custom_item_blocked_keyword(mock_config, mock_database):
 
 
 def test_sync_custom_item_no_permission(mock_config, mock_database):
-    """测试同步 - 无权限"""
+    """测试同步 - 无权限（用户不在允许同步的媒体服务器用户名列表中）"""
     service = SyncService()
 
-    # 单用户模式，未配置用户名
+    # 单用户模式，用户名不在允许列表
+    def get_side_effect(section, key, fallback=None):
+        if section == "sync" and key == "mode":
+            return "single"
+        return fallback
+
     with patch("app.services.sync_service.config_manager") as cm:
-        cm.get.side_effect = lambda *args, **kwargs: ""
+        cm.get.side_effect = get_side_effect
+        cm.get_single_mode_media_usernames.return_value = ["other_user"]
         cm.get_user_mappings.return_value = {}
         cm.get_bangumi_configs.return_value = {}
 
@@ -585,7 +591,7 @@ def test_sync_custom_item_no_permission(mock_config, mock_database):
         result = service.sync_custom_item(item, "custom")
 
     assert result.status == "error"
-    assert "无权限" in result.message
+    assert "不在允许同步" in result.message
 
 
 def test_sync_task_status(mock_config, mock_database):
@@ -1068,7 +1074,7 @@ def test_find_subject_id_api_search_exception_returns_none():
 def test_sync_custom_item_no_bgm_api_after_find_subject():
     with _patched_sync_service_deps():
         svc = SyncService()
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 with patch.object(
                     svc, "_find_subject_id", return_value=("123", False, "")
@@ -1090,7 +1096,7 @@ def test_sync_custom_item_get_target_season_value_error_auth_message():
         bgm.get_target_season_episode_id.side_effect = ValueError(
             "认证失败 access_token 过期"
         )
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 with patch.object(
                     svc, "_find_subject_id", return_value=("1", False, "")
