@@ -70,6 +70,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         user_name: str | None = None,
         source: str | None = None,
         source_prefix: str | None = None,
+        match_method: str | None = None,
+        match_platform: str | None = None,
         skip_count: bool = False,
     ) -> dict[str, Any]:
         """获取同步记录列表"""
@@ -80,6 +82,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             user_name=user_name,
             source=source,
             source_prefix=source_prefix,
+            match_method=match_method,
+            match_platform=match_platform,
             skip_count=skip_count,
         )
 

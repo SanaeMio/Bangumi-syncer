@@ -100,14 +100,17 @@ async def mappings_page(request: Request):
     return templates.TemplateResponse(request, "mappings.html", {"user": user})
 
 
-@router.get("/match-records", response_class=HTMLResponse)
+@router.get("/match-records")
 async def match_records_page(request: Request):
-    """匹配记录页面"""
+    """匹配记录页面（已合并至同步记录，保留重定向兼容旧链接）"""
     user = get_current_user_from_cookie(request)
     if not user:
         return _login_redirect(request)
 
-    return templates.TemplateResponse(request, "match_records.html", {"user": user})
+    record_id = request.query_params.get("id")
+    if record_id:
+        return redirect_public(f"/records?open={record_id}&tab=match")
+    return redirect_public("/records")
 
 
 @router.get("/pending-candidates", response_class=HTMLResponse)

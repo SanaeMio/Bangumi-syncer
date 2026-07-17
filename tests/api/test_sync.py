@@ -311,6 +311,25 @@ async def test_get_sync_records_include_poster(
 
 
 @pytest.mark.asyncio
+async def test_get_sync_records_with_match_filters(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试同步记录支持匹配方式与放送形态筛选"""
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/records?match_method=custom_mapping&match_platform=TV"
+        )
+
+    assert response.status_code == 200
+    mock_database_manager.get_sync_records.assert_called()
+    call_kwargs = mock_database_manager.get_sync_records.call_args.kwargs
+    assert call_kwargs.get("match_method") == "custom_mapping"
+    assert call_kwargs.get("match_platform") == "TV"
+
+
+@pytest.mark.asyncio
 async def test_get_sync_record_by_id(
     app_with_auth, mock_sync_service, mock_database_manager
 ):
