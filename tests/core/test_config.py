@@ -301,8 +301,32 @@ base_path = /
         cm = _config_manager_from_ini(tmp_path, ini)
         allc = cm.get_all_config()
         assert "multi_accounts" in allc
-        assert "主账号" in allc["multi_accounts"]
+        assert "bangumi-main" in allc["multi_accounts"]
+        assert allc["multi_accounts"]["bangumi-main"]["display_name"] == "主账号"
         assert "web" in allc
+
+    def test_get_all_config_multi_accounts_duplicate_display_names(self, tmp_path):
+        ini = """
+[sync]
+mode = multi
+[bangumi-alice]
+username = alice
+access_token = ta
+media_server_username = plex_a
+display_name = 家人
+[bangumi-bob]
+username = bob
+access_token = tb
+media_server_username = plex_b
+display_name = 家人
+"""
+        cm = _config_manager_from_ini(tmp_path, ini)
+        allc = cm.get_all_config()
+        assert len(allc["multi_accounts"]) == 2
+        assert "bangumi-alice" in allc["multi_accounts"]
+        assert "bangumi-bob" in allc["multi_accounts"]
+        assert allc["multi_accounts"]["bangumi-alice"]["display_name"] == "家人"
+        assert allc["multi_accounts"]["bangumi-bob"]["display_name"] == "家人"
 
     def test_reload_multi_account_configs(self, tmp_path):
         cm = _config_manager_from_ini(

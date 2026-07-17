@@ -1817,21 +1817,20 @@ async function saveConfig() {
             const userMappings = {};
             
             // 收集Bangumi账号
-            document.querySelectorAll('[id^="bangumi-account-"]').forEach((element, index) => {
-                const displayName = element.querySelector('.bangumi-account-name').value;
-                const username = element.querySelector('.bangumi-account-username').value;
-                const mediaUsername = element.querySelector('.bangumi-account-media-username').value;
+            document.querySelectorAll('#bangumi-accounts-container > [id^="bangumi-account-"]').forEach((element) => {
+                const displayName = element.querySelector('.bangumi-account-name').value.trim();
+                const username = element.querySelector('.bangumi-account-username').value.trim();
+                const mediaUsername = element.querySelector('.bangumi-account-media-username').value.trim();
                 const token = element.querySelector('.bangumi-account-token').value;
                 const isPrivate = element.querySelector('.bangumi-account-private').checked;
                 
                 if (username && mediaUsername && token) {
-                    // 使用索引生成唯一的键名，实际的配置段名会在后端自动生成
-                    const accountKey = displayName || `account_${index + 1}`;
-                    multiAccounts[accountKey] = {
+                    multiAccounts[element.id] = {
                         username: username,
                         access_token: token,
                         media_server_username: mediaUsername,
-                        private: isPrivate
+                        private: isPrivate,
+                        display_name: displayName,
                     };
                 }
             });
