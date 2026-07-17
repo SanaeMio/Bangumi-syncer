@@ -311,7 +311,7 @@ async function showMatchDetail(recordId) {
                         <div class="col-md-6"><small><strong>用户：</strong>${escapeHtml(val(record.user_name))}</small></div>
                         <div class="col-md-6"><small><strong>状态：</strong><span class="badge bg-${record.status === 'success' ? 'success' : (record.status === 'error' ? 'danger' : 'secondary')}">${record.status || '-'}</span></small></div>
                         <div class="col-md-6"><small><strong>消息：</strong>${escapeHtml(val(record.message))}</small></div>
-                        <div class="col-md-6"><small><strong>最终匹配方式：</strong>${getMethodBadge(record.match_method || (trace && trace.final_match_method) || '')}</small></div>
+                        <div class="col-md-6"><small><strong>最终匹配方式：</strong>${renderMatchMethodBadge(record.match_method || (trace && trace.final_match_method) || '')}</small></div>
                         <div class="col-md-6"><small><strong>最终置信度：</strong>${scoreText((trace && trace.final_score !== null && trace.final_score !== undefined) ? trace.final_score : record.match_score)}</small></div>
                         <div class="col-md-6"><small><strong>命中条目：</strong>${subjectLink(record.subject_id || (trace && trace.final_subject_id), record.bgm_title)}</small></div>
                         <div class="col-md-6"><small><strong>命中剧集：</strong>${episodeLink((trace && trace.final_episode_id) || record.episode_id)}</small></div>
