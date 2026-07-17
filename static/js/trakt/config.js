@@ -408,14 +408,15 @@ class TraktConfigPage {
             const mt = (record.media_type || 'episode').toLowerCase();
             const message = this.escapeHtml(record.message);
 
+            const title = this.escapeHtml(record.title || record.ori_title || '—');
             rows += `
                 <tr data-record-id="${record.id}">
-                    <td class="col-hide-sm">${renderMediaTypeBadge(mt)}</td>
+                    <td class="col-hide-sm col-hide-md">${renderMediaTypeBadge(mt)}</td>
                     <td class="col-hide-sm">${formatDate(record.timestamp)}</td>
-                    <td>${this.escapeHtml(record.title || record.ori_title || '—')}</td>
+                    <td class="records-table-col-title" title="${title}">${title}</td>
                     <td>S${String(record.season).padStart(2, '0')}E${String(record.episode).padStart(2, '0')}</td>
                     <td>${renderSyncStatusBadge(record.status)}</td>
-                    <td class="col-hide-sm text-truncate text-truncate-cell" title="${message}">${message}</td>
+                    <td class="col-hide-sm col-hide-md text-truncate text-truncate-cell" title="${message}">${message}</td>
                 </tr>
             `;
         });

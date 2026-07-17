@@ -30,12 +30,6 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label for="filter-user" class="form-label">用户</label>
-                    <select class="form-select" id="filter-user">
-                        <option value="">全部用户</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
                     <label for="filter-source" class="form-label">来源</label>
                     <select class="form-select" id="filter-source">
                         <option value="">全部来源</option>
@@ -78,14 +72,16 @@
                        id="records-table">
                     <thead>
                         <tr>
-                            <th class="col-hide-sm">类型</th>
+                            <th class="col-hide-sm col-hide-md">类型</th>
                             <th class="col-hide-sm">时间</th>
-                            <th class="col-hide-sm">用户</th>
-                            <th>番剧标题</th>
+                            <th class="col-hide-sm col-hide-md">用户</th>
+                            <th class="records-table-col-title">番剧标题</th>
                             <th>季/集</th>
                             <th>状态</th>
+                            <th class="col-hide-sm col-hide-md">匹配方式</th>
+                            <th class="col-hide-sm col-hide-md">置信度</th>
                             <th class="col-hide-sm">来源</th>
-                            <th class="col-hide-sm">消息</th>
+                            <th class="col-hide-sm col-hide-md">消息</th>
                             <th class="col-hide-sm">操作</th>
                         </tr>
                     </thead>
@@ -105,22 +101,6 @@
             <div id="loading" class="app-loading-state is-hidden">
                 <div class="spinner-border" role="status">
                     <span class="visually-hidden">加载中...</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- 记录详情模态框 -->
-    <div class="modal fade" id="recordDetailModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">同步记录详情</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="record-detail-content">
-                        <!-- 动态填充 -->
-                    </div>
                 </div>
             </div>
         </div>
@@ -172,18 +152,20 @@
 let currentPage = 1;
 let currentLimit = APP_TABLE_PAGE_SIZE;
 let currentFilters = {};
-let allUsers = new Set();
-let recordDetailModal;
 
 document.addEventListener('DOMContentLoaded', function() {
-    recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
-    bindAppTableMobileRowClick('#records-table', showRecordDetail);
+    bindAppTableMobileRowClick('#records-table', function(recordId) {
+        showRecordDetail(recordId);
+    });
     loadRecords().then(function() {
-        var openId = new URLSearchParams(window.location.search).get('open');
+        const params = new URLSearchParams(window.location.search);
+        const openId = params.get('open');
         if (openId) {
-            var rid = parseInt(openId, 10);
+            const rid = parseInt(openId, 10);
             if (!isNaN(rid) && rid > 0) {
-                showRecordDetail(rid);
+                showRecordDetail(rid, {
+                    scrollToMatch: params.get('tab') === 'match',
+                });
             }
         }
     });
@@ -192,19 +174,19 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadRecords(page = 1, limit = 10) {
     currentPage = page;
     currentLimit = limit;
-    
+
     showLoading(true);
-    
+
     try {
         const params = new URLSearchParams({
             limit: limit,
             offset: (page - 1) * limit,
             ...currentFilters
         });
-        
+
         const response = await fetch(appUrl(`/api/records?${params}`));
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             displayRecords(data.data.records);
             renderAppPagination({
@@ -213,7 +195,6 @@ async function loadRecords(page = 1, limit = 10) {
                 limit,
                 onPageChange: (p) => loadRecords(p, currentLimit),
             });
-            updateUserFilter(data.data.records);
         } else {
             showAlert('加载记录失败', 'danger');
         }
@@ -228,31 +209,40 @@ async function loadRecords(page = 1, limit = 10) {
 function displayRecords(records) {
     const tbody = document.querySelector('#records-table tbody');
     tbody.innerHTML = '';
-    
+
     if (records.length === 0) {
         const emptyRow = document.createElement('tr');
         applyAppTableRowEnter(emptyRow, 0);
-        emptyRow.innerHTML = `<td colspan="9">${createAppEmptyStateHtml('暂无同步记录')}</td>`;
+        emptyRow.innerHTML = `<td colspan="11">${createAppEmptyStateHtml('暂无同步记录')}</td>`;
         tbody.appendChild(emptyRow);
         replayAppTableAnimation('records-table-wrap');
         return;
     }
-    
+
     records.forEach(function(record, index) {
         const mt = (record.media_type || 'episode').toLowerCase();
         const typeLabel = mt === 'movie' ? '电影' : '剧集';
+        const methodBadge = record.match_method
+            ? renderMatchMethodBadge(record.match_method)
+            : '<span class="text-muted">-</span>';
+        const scoreText = record.match_score !== null && record.match_score !== undefined
+            ? (record.match_score * 100).toFixed(1) + '%'
+            : '-';
         const row = document.createElement('tr');
         row.dataset.recordId = String(record.id);
         applyAppTableRowEnter(row, index);
+        const displayTitle = escapeHtml(record.bgm_title || record.title);
         row.innerHTML = `
-            <td class="col-hide-sm"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
+            <td class="col-hide-sm col-hide-md"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
             <td class="col-hide-sm">${formatDate(record.timestamp)}</td>
-            <td class="col-hide-sm">${record.user_name}</td>
-            <td>${record.bgm_title || record.title}</td>
+            <td class="col-hide-sm col-hide-md">${escapeHtml(record.user_name)}</td>
+            <td class="records-table-col-title" title="${displayTitle}">${displayTitle}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
             <td><span class="badge rounded-pill bg-${getSyncRecordStatusColor(record.status)}">${getSyncRecordStatusText(record.status)}</span></td>
+            <td class="col-hide-sm col-hide-md">${methodBadge}</td>
+            <td class="col-hide-sm col-hide-md"><small>${scoreText}</small></td>
             <td class="col-hide-sm"><span class="badge rounded-pill tl-source--${getSourceTlClass(record.source)}">${record.source}</span></td>
-            <td class="col-hide-sm text-truncate text-truncate-cell" title="${record.message}">${record.message}</td>
+            <td class="col-hide-sm col-hide-md text-truncate text-truncate-cell" title="${escapeHtml(record.message)}">${escapeHtml(record.message)}</td>
             <td class="col-hide-sm text-nowrap records-table-actions">
                 <button class="btn btn-action btn-outline-primary" onclick="showRecordDetail(${record.id})" title="查看详情">
                     <i class="bi bi-eye"></i>
@@ -267,186 +257,29 @@ function displayRecords(records) {
     replayAppTableAnimation('records-table-wrap');
 }
 
-function updateUserFilter(records) {
-    records.forEach(record => {
-        allUsers.add(record.user_name);
-    });
-    
-    const userSelect = document.getElementById('filter-user');
-    const currentValue = userSelect.value;
-    
-    // 清空现有选项（保留"全部用户"）
-    while (userSelect.children.length > 1) {
-        userSelect.removeChild(userSelect.lastChild);
-    }
-    
-    // 添加用户选项
-    Array.from(allUsers).sort().forEach(user => {
-        const option = document.createElement('option');
-        option.value = user;
-        option.textContent = user;
-        userSelect.appendChild(option);
-    });
-    
-    // 恢复之前的选择
-    userSelect.value = currentValue;
-}
-
 function applyFilters() {
     currentFilters = {};
-    
+
     const status = document.getElementById('filter-status').value;
-    const user = document.getElementById('filter-user').value;
     const source = document.getElementById('filter-source').value;
-    
+
     if (status) currentFilters.status = status;
-    if (user) currentFilters.user_name = user;
     if (source) {
-        // 如果选择"重试记录"，使用特殊的筛选参数
         if (source === 'retry') {
             currentFilters.source_prefix = 'retry-';
         } else {
             currentFilters.source = source;
         }
     }
-    
+
     loadRecords(1);
 }
 
 function clearFilters() {
-    // 清空所有筛选条件
     document.getElementById('filter-status').value = '';
-    document.getElementById('filter-user').value = '';
     document.getElementById('filter-source').value = '';
-    
-    // 清空筛选对象
     currentFilters = {};
-    
-    // 重新加载记录
     loadRecords(1);
-}
-
-async function showRecordDetail(recordId) {
-    try {
-        // 从API获取完整的记录数据
-        const response = await fetch(appUrl(`/api/records/${recordId}`), {
-            method: 'GET',
-            credentials: 'include'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const result = await response.json();
-        
-        if (result.status === 'success' && result.data) {
-            const record = result.data;
-            
-            const detailContent = document.getElementById('record-detail-content');
-            detailContent.innerHTML = `
-                <div class="row">
-                    <div class="col-md-6">
-                        <strong>类型:</strong> ${(record.media_type || 'episode').toLowerCase() === 'movie' ? '电影' : '剧集'}
-                    </div>
-                    <div class="col-md-6">
-                        <strong>时间:</strong> ${record.timestamp}
-                    </div>
-                </div>
-                <div class="row mt-2">
-                    <div class="col-md-6">
-                        <strong>用户:</strong> ${record.user_name}
-                    </div>
-                    <div class="col-md-6">
-                        <strong>番剧标题:</strong> ${record.bgm_title || record.title}
-                    </div>
-                </div>
-                <div class="row mt-2">
-                    <div class="col-md-6">
-                        <strong>接收标题:</strong> ${record.title}
-                    </div>
-                    ${record.ori_title && String(record.ori_title).trim() ? `
-                    <div class="col-md-6">
-                        <strong>原始标题:</strong> ${record.ori_title}
-                    </div>` : ''}
-                </div>
-                <div class="row mt-2">
-                    <div class="col-md-4">
-                        <strong>季/集:</strong> S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}
-                    </div>
-                    <div class="col-md-4">
-                        <strong>状态:</strong> <span class="badge rounded-pill bg-${getStatusColor(record.status)}">${getStatusText(record.status)}</span>
-                    </div>
-                    <div class="col-md-4">
-                        <strong>来源:</strong> <span class="badge rounded-pill bg-${getSourceColor(record.source)}">${record.source}</span>
-                    </div>
-                </div>
-                ${(record.subject_id || record.episode_id) ? `
-                <div class="row mt-2">
-                    <div class="col-12">
-                        <strong>Bangumi链接:</strong>
-                        <div class="mt-1">
-                            ${record.subject_id ? `
-                            <a href="https://bgm.tv/subject/${record.subject_id}" target="_blank" class="btn btn-sm btn-outline-primary me-2" title="查看Bangumi番剧页面">
-                                <i class="bi bi-collection me-1"></i>番剧 ${record.subject_id}
-                                <i class="bi bi-box-arrow-up-right ms-1"></i>
-                            </a>
-                            ` : ''}
-                            ${record.episode_id ? `
-                            <a href="https://bgm.tv/ep/${record.episode_id}" target="_blank" class="btn btn-sm btn-outline-success" title="查看Bangumi剧集页面">
-                                <i class="bi bi-play-circle me-1"></i>剧集 ${record.episode_id}
-                                <i class="bi bi-box-arrow-up-right ms-1"></i>
-                            </a>
-                            ` : ''}
-                        </div>
-                    </div>
-                </div>
-                ` : ''}
-                ${record.match_method ? `
-                <div class="row mt-2">
-                    <div class="col-12">
-                        <strong>匹配记录:</strong>
-                        <div class="border rounded p-2 mt-1 app-detail-box">
-                            <div class="d-flex flex-wrap align-items-center gap-2">
-                                <span class="badge rounded-pill bg-info">${record.match_method}</span>
-                                ${record.match_platform ? `<span class="badge rounded-pill bg-secondary">${record.match_platform}</span>` : ''}
-                                ${record.match_score != null ? `<span class="text-muted small">置信度 ${(record.match_score * 100).toFixed(0)}%</span>` : ''}
-                                <a href="${appUrl('/match-records')}?id=${record.id}" class="btn btn-sm btn-outline-primary ms-auto" title="查看匹配过程详情">
-                                    <i class="bi bi-diagram-3 me-1"></i>查看匹配详情
-                                    <i class="bi bi-box-arrow-up-right ms-1"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                ` : ''}
-                <div class="row mt-2">
-                    <div class="col-12">
-                        <strong>消息:</strong>
-                        <div class="border rounded p-2 mt-1 app-detail-box">
-                            ${record.message}
-                        </div>
-                    </div>
-                </div>
-                ${record.status === 'error' ? `
-                <div class="row mt-3">
-                    <div class="col-12 d-grid d-sm-block">
-                        <button type="button" class="btn btn-outline-warning" onclick="retrySync(${record.id})">
-                            <i class="bi bi-arrow-clockwise me-1"></i>重试同步
-                        </button>
-                    </div>
-                </div>
-                ` : ''}
-            `;
-            
-            recordDetailModal.show();
-        } else {
-            throw new Error('获取记录数据失败');
-        }
-    } catch (error) {
-        console.error('显示记录详情失败:', error);
-        showAlert('显示记录详情失败', 'danger');
-    }
 }
 
 function showLoading(show) {

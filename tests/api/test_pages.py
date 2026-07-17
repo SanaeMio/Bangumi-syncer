@@ -164,6 +164,30 @@ class TestPagesAuthenticated:
             r = client.get("/records", follow_redirects=False)
         assert r.status_code == 200
 
+    def test_match_records_redirects_to_records(self):
+        """匹配记录页重定向至同步记录"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/match-records", follow_redirects=False)
+        assert r.status_code == 302
+        assert "/records" in (r.headers.get("location") or "")
+
+    def test_match_records_redirects_with_id_param(self):
+        """旧链接 ?id= 重定向至同步记录并打开匹配 Tab"""
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/match-records?id=42", follow_redirects=False)
+        assert r.status_code == 302
+        location = r.headers.get("location") or ""
+        assert "open=42" in location
+        assert "tab=match" in location
+
     def test_mappings_authenticated(self):
         """已认证用户访问映射页"""
         app = self._make_app()
