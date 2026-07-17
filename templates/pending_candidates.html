@@ -65,10 +65,10 @@
                     <thead>
                         <tr>
                             <th class="col-hide-sm">时间</th>
-                            <th>标题</th>
+                            <th class="records-table-col-title">标题</th>
                             <th>季/集</th>
                             <th class="col-hide-sm">来源</th>
-                            <th class="col-hide-sm">候选数</th>
+                            <th class="col-hide-sm col-hide-md">候选数</th>
                             <th>状态</th>
                             <th class="col-hide-sm">操作</th>
                         </tr>
@@ -190,12 +190,13 @@ function displayPendingCandidates(records, total) {
 
         applyAppTableRowEnter(row, index);
 
+        const requestTitle = escapeHtml(record.request_title);
         row.innerHTML = `
             <td class="col-hide-sm"><small>${formatDate(record.created_at)}</small></td>
-            <td>${escapeHtml(record.request_title)}</td>
+            <td class="records-table-col-title" title="${requestTitle}">${requestTitle}</td>
             <td>S${String(record.request_season).padStart(2, '0')}E${String(record.request_episode).padStart(2, '0')}</td>
             <td class="col-hide-sm">${renderSourceBadge(record.source)}</td>
-            <td class="col-hide-sm"><span class="badge rounded-pill bg-info">${candidatesCount}</span></td>
+            <td class="col-hide-sm col-hide-md"><span class="badge rounded-pill bg-info">${candidatesCount}</span></td>
             <td>${statusBadge}</td>
             <td class="col-hide-sm text-nowrap records-table-actions">
                 <button type="button" class="btn btn-action btn-outline-primary" onclick="showCandidateDetail(${record.id})" title="查看候选">

@@ -2350,9 +2350,29 @@ textarea.form-control:focus {
     border: none;
 }
 
-/* 响应式：小屏只保留标题、季集、状态、操作 */
+/* 响应式：小屏只保留标题、季集、状态 */
 @media (max-width: 991.98px) {
-    .col-hide-sm { display: none; }
+    .col-hide-sm { display: none !important; }
+}
+
+/* 中等宽度：隐藏次要列，避免横向滚动（992px～1399px 仍显示时间/来源/操作等） */
+@media (max-width: 1399.98px) {
+    .col-hide-md { display: none !important; }
+}
+
+@media (min-width: 992px) and (max-width: 1399.98px) {
+    #records-table,
+    #pending-candidates-table,
+    #sync-history-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    .app-data-table .records-table-col-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 }
 
 @media (max-width: 767.98px) {

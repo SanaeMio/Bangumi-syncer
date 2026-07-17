@@ -30,12 +30,6 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label for="filter-user" class="form-label">用户</label>
-                    <select class="form-select" id="filter-user">
-                        <option value="">全部用户</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
                     <label for="filter-source" class="form-label">来源</label>
                     <select class="form-select" id="filter-source">
                         <option value="">全部来源</option>
@@ -47,28 +41,6 @@
                         <option value="fongmi">fongmi</option>
                         <option value="test">测试</option>
                         <option value="retry">重试记录</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label for="filter-method" class="form-label">匹配方式</label>
-                    <select class="form-select" id="filter-method">
-                        <option value="">全部</option>
-                        <option value="custom_mapping">自定义映射</option>
-                        <option value="bangumi_data">bangumi-data</option>
-                        <option value="api_search">API 搜索</option>
-                        <option value="failed">匹配失败</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label for="filter-platform" class="form-label">放送形态</label>
-                    <select class="form-select" id="filter-platform">
-                        <option value="">全部</option>
-                        <option value="TV">TV</option>
-                        <option value="OVA">OVA</option>
-                        <option value="剧场版">剧场版</option>
-                        <option value="WEB">WEB</option>
-                        <option value="日剧">日剧</option>
-                        <option value="电影">电影</option>
                     </select>
                 </div>
                 <div class="col-md-3 d-flex align-items-end gap-2">
@@ -100,16 +72,16 @@
                        id="records-table">
                     <thead>
                         <tr>
-                            <th class="col-hide-sm">类型</th>
+                            <th class="col-hide-sm col-hide-md">类型</th>
                             <th class="col-hide-sm">时间</th>
-                            <th class="col-hide-sm">用户</th>
-                            <th>番剧标题</th>
+                            <th class="col-hide-sm col-hide-md">用户</th>
+                            <th class="records-table-col-title">番剧标题</th>
                             <th>季/集</th>
                             <th>状态</th>
-                            <th class="col-hide-sm">匹配方式</th>
-                            <th class="col-hide-sm">置信度</th>
+                            <th class="col-hide-sm col-hide-md">匹配方式</th>
+                            <th class="col-hide-sm col-hide-md">置信度</th>
                             <th class="col-hide-sm">来源</th>
-                            <th class="col-hide-sm">消息</th>
+                            <th class="col-hide-sm col-hide-md">消息</th>
                             <th class="col-hide-sm">操作</th>
                         </tr>
                     </thead>
@@ -180,7 +152,6 @@
 let currentPage = 1;
 let currentLimit = APP_TABLE_PAGE_SIZE;
 let currentFilters = {};
-let allUsers = new Set();
 
 document.addEventListener('DOMContentLoaded', function() {
     bindAppTableMobileRowClick('#records-table', function(recordId) {
@@ -224,7 +195,6 @@ async function loadRecords(page = 1, limit = 10) {
                 limit,
                 onPageChange: (p) => loadRecords(p, currentLimit),
             });
-            updateUserFilter(data.data.records);
         } else {
             showAlert('加载记录失败', 'danger');
         }
@@ -261,17 +231,18 @@ function displayRecords(records) {
         const row = document.createElement('tr');
         row.dataset.recordId = String(record.id);
         applyAppTableRowEnter(row, index);
+        const displayTitle = escapeHtml(record.bgm_title || record.title);
         row.innerHTML = `
-            <td class="col-hide-sm"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
+            <td class="col-hide-sm col-hide-md"><span class="badge rounded-pill bg-dark bg-opacity-75">${typeLabel}</span></td>
             <td class="col-hide-sm">${formatDate(record.timestamp)}</td>
-            <td class="col-hide-sm">${escapeHtml(record.user_name)}</td>
-            <td>${escapeHtml(record.bgm_title || record.title)}</td>
+            <td class="col-hide-sm col-hide-md">${escapeHtml(record.user_name)}</td>
+            <td class="records-table-col-title" title="${displayTitle}">${displayTitle}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
             <td><span class="badge rounded-pill bg-${getSyncRecordStatusColor(record.status)}">${getSyncRecordStatusText(record.status)}</span></td>
-            <td class="col-hide-sm">${methodBadge}</td>
-            <td class="col-hide-sm"><small>${scoreText}</small></td>
+            <td class="col-hide-sm col-hide-md">${methodBadge}</td>
+            <td class="col-hide-sm col-hide-md"><small>${scoreText}</small></td>
             <td class="col-hide-sm"><span class="badge rounded-pill tl-source--${getSourceTlClass(record.source)}">${record.source}</span></td>
-            <td class="col-hide-sm text-truncate text-truncate-cell" title="${escapeHtml(record.message)}">${escapeHtml(record.message)}</td>
+            <td class="col-hide-sm col-hide-md text-truncate text-truncate-cell" title="${escapeHtml(record.message)}">${escapeHtml(record.message)}</td>
             <td class="col-hide-sm text-nowrap records-table-actions">
                 <button class="btn btn-action btn-outline-primary" onclick="showRecordDetail(${record.id})" title="查看详情">
                     <i class="bi bi-eye"></i>
@@ -286,41 +257,13 @@ function displayRecords(records) {
     replayAppTableAnimation('records-table-wrap');
 }
 
-function updateUserFilter(records) {
-    records.forEach(record => {
-        allUsers.add(record.user_name);
-    });
-
-    const userSelect = document.getElementById('filter-user');
-    const currentValue = userSelect.value;
-
-    while (userSelect.children.length > 1) {
-        userSelect.removeChild(userSelect.lastChild);
-    }
-
-    Array.from(allUsers).sort().forEach(user => {
-        const option = document.createElement('option');
-        option.value = user;
-        option.textContent = user;
-        userSelect.appendChild(option);
-    });
-
-    userSelect.value = currentValue;
-}
-
 function applyFilters() {
     currentFilters = {};
 
     const status = document.getElementById('filter-status').value;
-    const user = document.getElementById('filter-user').value;
     const source = document.getElementById('filter-source').value;
-    const method = document.getElementById('filter-method').value;
-    const platform = document.getElementById('filter-platform').value;
 
     if (status) currentFilters.status = status;
-    if (user) currentFilters.user_name = user;
-    if (method) currentFilters.match_method = method;
-    if (platform) currentFilters.match_platform = platform;
     if (source) {
         if (source === 'retry') {
             currentFilters.source_prefix = 'retry-';
@@ -334,10 +277,7 @@ function applyFilters() {
 
 function clearFilters() {
     document.getElementById('filter-status').value = '';
-    document.getElementById('filter-user').value = '';
     document.getElementById('filter-source').value = '';
-    document.getElementById('filter-method').value = '';
-    document.getElementById('filter-platform').value = '';
     currentFilters = {};
     loadRecords(1);
 }
