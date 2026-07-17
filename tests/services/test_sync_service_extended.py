@@ -62,12 +62,14 @@ class TestSyncServiceHelperMethods:
             service = SyncService()
 
             # 测试有权限的用户
-            result = service._check_user_permission("admin")
-            assert result is True
+            allowed, msg = service._check_user_permission("admin")
+            assert allowed is True
+            assert msg == ""
 
             # 测试无权限的用户
-            result = service._check_user_permission("other_user")
-            assert result is False
+            allowed, msg = service._check_user_permission("other_user")
+            assert allowed is False
+            assert "other_user" in msg
 
     def test_check_user_permission_single_mode_comma_separated(self):
         """单用户模式 media_server_username 逗号分隔时多个名均通过"""
@@ -87,9 +89,9 @@ class TestSyncServiceHelperMethods:
             from app.services.sync_service import SyncService
 
             service = SyncService()
-            assert service._check_user_permission("plex_u") is True
-            assert service._check_user_permission("emby_u") is True
-            assert service._check_user_permission("other") is False
+            assert service._check_user_permission("plex_u")[0] is True
+            assert service._check_user_permission("emby_u")[0] is True
+            assert service._check_user_permission("other")[0] is False
 
     def test_check_user_permission_single_mode_missing_media_usernames(self):
         """单用户模式未配置 media_server_username（解析结果为空）时拒绝"""
@@ -105,7 +107,9 @@ class TestSyncServiceHelperMethods:
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            assert svc._check_user_permission("anyone") is False
+            allowed, msg = svc._check_user_permission("anyone")
+            assert allowed is False
+            assert "media_server_username" in msg
 
     def test_check_user_permission_multi_mode_user_not_in_mappings(self):
         with patched_sync_deps() as cfg:
@@ -120,7 +124,9 @@ class TestSyncServiceHelperMethods:
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            assert svc._check_user_permission("ghost") is False
+            allowed, msg = svc._check_user_permission("ghost")
+            assert allowed is False
+            assert "ghost" in msg
 
     def test_check_user_permission_multi_mode_missing_bangumi_section(self):
         with patched_sync_deps() as cfg:
@@ -136,7 +142,9 @@ class TestSyncServiceHelperMethods:
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            assert svc._check_user_permission("u1") is False
+            allowed, msg = svc._check_user_permission("u1")
+            assert allowed is False
+            assert "u1" in msg
 
     def test_check_user_permission_unknown_mode_returns_false(self):
         with patched_sync_deps() as cfg:
@@ -150,7 +158,57 @@ class TestSyncServiceHelperMethods:
             from app.services.sync_service import SyncService
 
             svc = SyncService()
-            assert svc._check_user_permission("u") is False
+            allowed, msg = svc._check_user_permission("u")
+            assert allowed is False
+            assert "weird" in msg
+
+    def test_check_user_permission_test_source_skip(self):
+        """测试来源 + test_skip_permission_check=True 时跳过校验"""
+        with patched_sync_deps() as cfg:
+
+            def get_side_effect(section, key, fallback=None):
+                if section == "sync" and key == "mode":
+                    return "single"
+                if section == "sync" and key == "test_skip_permission_check":
+                    return True
+                return fallback
+
+            cfg.get.side_effect = get_side_effect
+            cfg.get_single_mode_media_usernames.return_value = []
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            # test 来源跳过
+            allowed, msg = svc._check_user_permission("anyone", source="test")
+            assert allowed is True
+            assert msg == ""
+            # test-match 来源跳过
+            allowed, msg = svc._check_user_permission("anyone", source="test-match")
+            assert allowed is True
+            # fongmi-debug 来源跳过
+            allowed, msg = svc._check_user_permission("anyone", source="fongmi-debug")
+            assert allowed is True
+            # 生产来源不跳过
+            allowed, msg = svc._check_user_permission("anyone", source="custom")
+            assert allowed is False
+
+    def test_check_user_permission_test_source_not_skipped_by_default(self):
+        """test_skip_permission_check=False（默认）时测试来源也不跳过"""
+        with patched_sync_deps() as cfg:
+
+            def get_side_effect(section, key, fallback=None):
+                if section == "sync" and key == "mode":
+                    return "single"
+                return fallback
+
+            cfg.get.side_effect = get_side_effect
+            cfg.get_single_mode_media_usernames.return_value = ["admin"]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            # test 来源但未开启跳过，仍按权限校验
+            allowed, _ = svc._check_user_permission("other", source="test")
+            assert allowed is False
 
     def test_is_title_blocked_empty_keywords(self):
         """测试空屏蔽关键词"""

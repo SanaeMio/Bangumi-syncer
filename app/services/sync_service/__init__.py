@@ -302,8 +302,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 logger.error("同步名称为空，跳过")
                 return SyncResponse(status="error", message="同步名称为空")
 
-            if not self._check_user_permission(item.user_name):
-                return SyncResponse(status="error", message="用户无权限同步")
+            if not (
+                perm_ok := self._check_user_permission(item.user_name, actual_source)
+            )[0]:
+                return SyncResponse(status="error", message=perm_ok[1])
 
             if self._is_title_blocked(item.title, item.ori_title):
                 return SyncResponse(
@@ -402,7 +404,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
 
-    def _normalize_custom_item_params(self, item: CustomItem) -> SyncResponse | None:
+    def _normalize_custom_item_params(
+        self, item: CustomItem, actual_source: str = ""
+    ) -> SyncResponse | None:
         """校验自定义条目参数。返回 SyncResponse 表示应立即返回该响应；None 表示校验通过。"""
         # 基本验证
         # 支持的媒体类型：episode/movie（原有）+ ova/oad/real_action（扩展）
@@ -429,8 +433,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             return SyncResponse(status="error", message=f"集数{item.episode}不能为0")
 
         # 检查用户权限
-        if not self._check_user_permission(item.user_name):
-            return SyncResponse(status="error", message="用户无权限同步")
+        if not (perm_ok := self._check_user_permission(item.user_name, actual_source))[
+            0
+        ]:
+            return SyncResponse(status="error", message=perm_ok[1])
 
         # 检查是否包含屏蔽关键词
         if self._is_title_blocked(item.title, item.ori_title):
@@ -730,7 +736,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             send_notify("request_received", item, actual_source)
 
             # 参数校验
-            validation_error = self._normalize_custom_item_params(item)
+            validation_error = self._normalize_custom_item_params(item, actual_source)
             if validation_error is not None:
                 status_holder[0] = validation_error.status
                 return validation_error
@@ -890,8 +896,25 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             status_holder[0] = "error"
             return SyncResponse(status="error", message=f"处理失败: {str(e)}")
 
-    def _check_user_permission(self, user_name: str) -> bool:
-        """检查用户是否有权限同步"""
+    def _check_user_permission(
+        self, user_name: str, source: str = ""
+    ) -> tuple[bool, str]:
+        """检查用户是否有权限同步。
+
+        返回 (allowed, error_message)：
+        - allowed=True 时 error_message 为空
+        - allowed=False 时 error_message 为细粒化错误原因
+        """
+        # 测试来源跳过权限校验（由 sync.test_skip_permission_check 控制）
+        is_test_source = source in ("test", "test-match")
+        # fongmi 调试同步也视为测试来源
+        if source and source.startswith("fongmi-debug"):
+            is_test_source = True
+        if is_test_source and config_manager.get(
+            "sync", "test_skip_permission_check", fallback=False
+        ):
+            return True, ""
+
         mode = config_manager.get("sync", "mode", fallback="single")
 
         if mode == "single":
@@ -900,22 +923,33 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 logger.error(
                     "未设置 Bangumi 配置中的 media_server_username（媒体服务器用户名），请检查配置"
                 )
-                return False
+                return False, (
+                    "未配置媒体服务器用户名（media_server_username），"
+                    "请在配置页面填写后再同步"
+                )
             if user_name not in allowed:
                 logger.debug(f"非配置同步用户：{user_name}，跳过")
-                return False
+                return False, (
+                    f"用户 {user_name} 不在允许同步的媒体服务器用户名列表中"
+                    f"（当前配置: {', '.join(allowed)}）"
+                )
         elif mode == "multi":
             # 多用户模式，检查用户是否在映射配置中
             user_mappings = config_manager.get_user_mappings()
             if user_name not in user_mappings:
                 logger.debug(f"多用户模式下用户 {user_name} 未配置映射，跳过")
-                return False
+                return False, (
+                    f"用户 {user_name} 未在用户映射中配置（多用户模式下"
+                    "需在 [sync] 段添加 媒体服务器用户名=bangumi-账号 映射）"
+                )
 
             # 检查对应的bangumi配置是否存在且有效
             bangumi_config = self._get_bangumi_config_for_user(user_name)
             if not bangumi_config:
                 logger.error(f"多用户模式下用户 {user_name} 的bangumi配置无效")
-                return False
+                return False, (
+                    f"用户 {user_name} 对应的 Bangumi 账号配置无效或缺少 access_token"
+                )
         else:
             logger.error(f"不支持的同步模式: {mode}")
             send_notify(
@@ -924,9 +958,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 config_type="sync_mode",
                 mode=mode,
             )
-            return False
+            return False, f"不支持的同步模式: {mode}（应为 single 或 multi）"
 
-        return True
+        return True, ""
 
     def _is_title_blocked(self, title: str, ori_title: str = None) -> bool:
         """检查番剧标题是否包含屏蔽关键词"""

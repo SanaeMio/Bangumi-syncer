@@ -353,7 +353,7 @@ class TestSyncCustomItem:
             result = service.sync_custom_item(item, source="custom")
 
             assert result.status == "error"
-            assert "无权限" in result.message
+            assert "不在允许同步" in result.message
 
     def test_sync_custom_item_subject_not_found_logs_record(self, mock_sync_service):
         """未找到番剧时写入同步记录"""
@@ -579,7 +579,7 @@ class TestSyncMovieWatching:
             svc = SyncService()
             r = svc.sync_movie_watching(self._movie_item(), source="custom")
         assert r.status == "error"
-        assert "无权限" in r.message
+        assert "不在允许同步" in r.message
 
     def test_sync_movie_watching_blocked(self):
         with (
