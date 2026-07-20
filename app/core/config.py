@@ -9,7 +9,7 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Any, Optional
 
-from .config_secret_crypto import decrypt_if_sensitive, encrypt_if_sensitive
+from .config_secret_crypto import LLM_SECTION, decrypt_if_sensitive, encrypt_if_sensitive
 from .logging import logger
 from .startup_info import startup_info
 
@@ -448,6 +448,27 @@ class ConfigManager:
 
         return out
 
+    def get_llm_config(self) -> dict[str, Any]:
+        """Get LLM global configuration with defaults."""
+        defaults: dict[str, Any] = {
+            "api_base": "https://api.openai.com/v1",
+            "api_key": "",
+            "model": "gpt-4o-mini",
+            "max_tokens": 2000,
+            "temperature": 0.7,
+            "timeout": 60,
+        }
+        raw = self.get_section(LLM_SECTION, {})
+        merged: dict[str, Any] = {**defaults, **raw}
+        # Ensure correct types
+        if merged.get("max_tokens"):
+            merged["max_tokens"] = int(merged["max_tokens"])
+        if merged.get("temperature"):
+            merged["temperature"] = float(merged["temperature"])
+        if merged.get("timeout"):
+            merged["timeout"] = int(merged["timeout"])
+        return merged
+
     def get_fongmi_config(self) -> dict[str, Any]:
         """fongmi 局域网轮询同步配置（默认关闭）
 
@@ -503,6 +524,97 @@ class ConfigManager:
         except (TypeError, ValueError):
             max_episode = 9999
         return max_season, max_episode
+
+    # ── summary config CRUD ────────────────────────────────────────────
+
+    _SUMMARY_FIELDS = (
+        "id",
+        "enabled",
+        "name",
+        "cron",
+        "lookback_days",
+        "user_name",
+        "system_prompt",
+        "max_records",
+    )
+
+    def get_summary_configs(self) -> list[dict[str, Any]]:
+        """Get all summary config sections sorted by id."""
+        configs: list[dict[str, Any]] = []
+        config = self.get_config_parser()
+        for section_name in config.sections():
+            if section_name.startswith("summary-"):
+                section_config = self.get_section(section_name)
+                configs.append(section_config)
+        configs.sort(key=lambda x: int(x.get("id", 0)))
+        return configs
+
+    def save_summary_config(self, config_data: dict[str, Any]) -> None:
+        """Create a new or update an existing [summary-N] section.
+
+        If *config_data* contains an ``id`` key, the corresponding section
+        is updated (or created when the section does not exist yet).
+        Otherwise a new section with the next sequential id is created.
+        """
+        with self._lock:
+            config = self._get_config_parser_nolock()
+            if "id" in config_data:
+                # 更新
+                cfg_id = int(config_data["id"])
+            else:
+                # 新增
+                count = sum(1 for s in config.sections() if s.startswith("summary-"))
+                cfg_id = count + 1
+
+            section_name = f"summary-{cfg_id}"
+            if not config.has_section(section_name):
+                config.add_section(section_name)
+
+            for field in self._SUMMARY_FIELDS:
+                # review 可以考虑在 566 行将 cfg_id 赋值给 config_data 的 id 字段，消除 if 分支
+                if field == "id":
+                    config.set(section_name, "id", str(cfg_id))
+                else:
+                    value = config_data.get(field, "")
+                    config.set(section_name, field, str(value))
+
+            self._save_config(config)
+
+    def delete_summary_config(self, config_id: int) -> None:
+        """Remove a [summary-N] section and re-index remaining IDs sequentially."""
+        with self._lock:
+            config = self._get_config_parser_nolock()
+            section_name = f"summary-{config_id}"
+            if not config.has_section(section_name):
+                return
+
+            config.remove_section(section_name)
+
+            # Collect remaining summary sections
+            entries: list[dict[str, Any]] = []
+            for sn in config.sections():
+                if sn.startswith("summary-"):
+                    sc = dict(config.items(sn))
+                    entries.append({"section_name": sn, "config": sc})
+
+            entries.sort(key=lambda x: int(x["config"].get("id", 0)))
+
+            # Re-index from 1
+            for new_id, entry in enumerate(entries, 1):
+                old_sn = entry["section_name"]
+                new_sn = f"summary-{new_id}"
+                if old_sn != new_sn:
+                    config.add_section(new_sn)
+                    for key, value in entry["config"].items():
+                        config.set(new_sn, key, value)
+                    config.set(new_sn, "id", str(new_id))
+                    config.remove_section(old_sn)
+                else:
+                    config.set(old_sn, "id", str(new_id))
+
+            self._save_config(config)
+
+    # ────────────────────────────────────────────────────────────────────
 
     def get_all_config(self) -> dict[str, dict[str, Any]]:
         """获取所有配置"""
