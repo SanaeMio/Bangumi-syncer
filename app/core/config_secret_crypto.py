@@ -14,6 +14,8 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .logging import logger
 
+LLM_SECTION = "llm"
+
 PREFIX = "BGS1:"
 _HKDF_SALT = b"bangumi-syncer-config-v1"
 _HKDF_INFO = b"config-secret-fernet-v1"
@@ -33,6 +35,8 @@ def is_sensitive_ini_field(section: str, option: str) -> bool:
     if section.startswith("email-") and option == "smtp_password":
         return True
     if section == "trakt" and option == "client_secret":
+        return True
+    if section == LLM_SECTION and option == "api_key":
         return True
     return False
 

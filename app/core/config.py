@@ -565,18 +565,15 @@ class ConfigManager:
                 # 新增
                 count = sum(1 for s in config.sections() if s.startswith("summary-"))
                 cfg_id = count + 1
+                config_data["id"] = cfg_id
 
             section_name = f"summary-{cfg_id}"
             if not config.has_section(section_name):
                 config.add_section(section_name)
 
             for field in self._SUMMARY_FIELDS:
-                # review 可以考虑在 566 行将 cfg_id 赋值给 config_data 的 id 字段，消除 if 分支
-                if field == "id":
-                    config.set(section_name, "id", str(cfg_id))
-                else:
-                    value = config_data.get(field, "")
-                    config.set(section_name, field, str(value))
+                value = config_data.get(field, "")
+                config.set(section_name, field, str(value))
 
             self._save_config(config)
 

@@ -90,22 +90,13 @@ async def lifespan(app: FastAPI):
                 ("Trakt", trakt_scheduler.start),
                 ("飞牛", feiniu_scheduler.start),
                 ("fongmi", fongmi_scheduler.start),
+                ("Summary", summary_scheduler.start),
             ]:
                 try:
                     ok = await coro()
                     logger.info(f"{name} 调度器启动{'成功' if ok else '失败'}")
                 except Exception as e:
                     logger.error(f"{name} 调度器启动异常: {e}")
-
-            # review 同 Trait、飞牛 整合
-            try:
-                sum_ok = await summary_scheduler.start()
-                if sum_ok:
-                    logger.info("Summary 调度器启动成功")
-                else:
-                    logger.error("Summary 调度器启动失败")
-            except Exception as e:
-                logger.error(f"Summary 调度器启动异常: {e}")
 
         task = asyncio.create_task(delayed_scheduler_start())
         _background_tasks.add(task)
@@ -130,19 +121,13 @@ async def lifespan(app: FastAPI):
         ("Trakt", trakt_scheduler.stop),
         ("飞牛", feiniu_scheduler.stop),
         ("fongmi", fongmi_scheduler.stop),
+        ("Summary", summary_scheduler.stop),
     ]:
         try:
             await coro()
             logger.info(f"{name} 调度器已停止")
         except Exception as e:
             logger.error(f"停止{name}调度器失败: {e}")
-
-    # review 同 Trait、飞牛
-    try:
-        await summary_scheduler.stop()
-        logger.info("Summary 调度器已停止")
-    except Exception as e:
-        logger.error(f"停止 Summary 调度器失败: {e}")
 
     try:
         sync_service.shutdown()
