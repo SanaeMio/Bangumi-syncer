@@ -23,6 +23,8 @@ from .api.mappings import router as mappings_router
 from .api.notification import router as notification_router
 from .api.pages import router as pages_router
 from .api.proxy import router as proxy_router
+from .api.llm import router as llm_router
+from .api.summary_jobs import router as summary_jobs_router
 from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
 from .api.upgrade import router as upgrade_router
@@ -36,6 +38,7 @@ from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.fongmi.scheduler import fongmi_scheduler
 from .services.mapping_service import mapping_service
+from .services.summary.scheduler import summary_scheduler
 from .services.sync_service import sync_service
 from .services.trakt.scheduler import trakt_scheduler
 
@@ -94,6 +97,16 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.error(f"{name} 调度器启动异常: {e}")
 
+            # review 同 Trait、飞牛 整合
+            try:
+                sum_ok = await summary_scheduler.start()
+                if sum_ok:
+                    logger.info("Summary 调度器启动成功")
+                else:
+                    logger.error("Summary 调度器启动失败")
+            except Exception as e:
+                logger.error(f"Summary 调度器启动异常: {e}")
+
         task = asyncio.create_task(delayed_scheduler_start())
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
@@ -123,6 +136,13 @@ async def lifespan(app: FastAPI):
             logger.info(f"{name} 调度器已停止")
         except Exception as e:
             logger.error(f"停止{name}调度器失败: {e}")
+
+    # review 同 Trait、飞牛
+    try:
+        await summary_scheduler.stop()
+        logger.info("Summary 调度器已停止")
+    except Exception as e:
+        logger.error(f"停止 Summary 调度器失败: {e}")
 
     try:
         sync_service.shutdown()
@@ -160,6 +180,8 @@ app.include_router(health_router)
 app.include_router(app_release_router)
 app.include_router(proxy_router)
 app.include_router(notification_router)
+app.include_router(llm_router)
+app.include_router(summary_jobs_router)
 app.include_router(inbox_router)
 app.include_router(trakt_router)
 app.include_router(feiniu_router)
