@@ -784,6 +784,27 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     subject_id=subject_id,
                     error_message="不存在或集数过多",
                 )
+                # 与「未找到番剧」分支对称：写一条 error 同步记录，
+                # 便于在「同步记录」页面看到集数解析失败的情况
+                database_manager.log_sync_record(
+                    user_name=item.user_name,
+                    title=item.title,
+                    ori_title=item.ori_title or "",
+                    season=item.season,
+                    episode=item.episode,
+                    subject_id=str(subject_id),
+                    episode_id=None,
+                    status="error",
+                    message="未找到对应的剧集（不存在或集数过多）",
+                    source=actual_source,
+                    media_type=item.media_type,
+                    match_method=trace.final_match_method if trace else "",
+                    match_score=trace.final_score if trace else None,
+                    match_platform=self._extract_matched_platform(trace, subject_id)
+                    if trace
+                    else "",
+                    match_trace=trace.to_dict() if trace else None,
+                )
                 status_holder[0] = "error"
                 return SyncResponse(status="error", message="未找到对应的剧集")
 
@@ -1086,6 +1107,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     ori_title=item.ori_title,
                     release_date=release_date,
                     season=item.season,
+                    media_type=item.media_type,
                 )
 
                 if bangumi_data_result:
