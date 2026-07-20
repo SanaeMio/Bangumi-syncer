@@ -318,6 +318,8 @@ function renderMatchStepsHtml(record, trace) {
             custom_mapping: '自定义映射',
             bangumi_data: 'bangumi-data 本地匹配',
             api_search: 'Bangumi API 搜索',
+            post_search: '搜索后处理',
+            cross_season: '跨季链查找',
         }[step.stage] || step.stage;
 
         html += `<article class="record-detail-step record-detail-step--${status}">`;

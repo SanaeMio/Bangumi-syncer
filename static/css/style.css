@@ -5549,6 +5549,7 @@ main.app-main > *:nth-child(12) {
     border-radius: 24px;
     background: var(--app-bg-card);
     box-shadow: var(--app-shadow-elevated);
+    width: 80em;
 }
 
 .dropdown-menu {

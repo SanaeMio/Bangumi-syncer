@@ -488,6 +488,142 @@ class EpisodesMixin:
             next_id = []
         return next_id[0]["id"] if next_id else None
 
+    def _find_related_id_by_relation(
+        self, subject_id: int, relation: str
+    ) -> int | None:
+        """从关联条目中按 relation 查找 subject_id。
+
+        支持的 relation 示例：
+        - "续集"：续作（与 _find_next_sequel_id 行为一致）
+        - "前传"：前作
+        - "主线故事"：剧场版关联条目中的主线剧集条目
+        """
+        related = self.get_related_subjects(subject_id)
+        if isinstance(related, list):
+            items = related
+        elif isinstance(related, dict):
+            items = related.get("data", [])
+        else:
+            return None
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("relation") == relation:
+                sid = item.get("id")
+                if sid:
+                    return sid
+        return None
+
+    def find_episode_across_seasons(
+        self,
+        subject_id: int,
+        target_ep: int,
+        max_depth: int = 20,
+    ) -> tuple[int, int] | None:
+        """在当前条目及其前传/续集链中查找含 sort=target_ep 的章节。
+
+        场景：fongmi 解析出连续编号 episode=102，但已命中的 subject（如第六季）
+        的 sort 范围是 235-286，不含 102。需通过前传链向前找到含 sort=102 的
+        季条目（如第三/四季）。
+
+        Bangumi 国漫常见编号模式：每季条目内 ep 从1开始，sort 是整部作品连续编号。
+        本方法不依赖 release_date，仅通过 sort 字段匹配。
+
+        Args:
+            subject_id: 已命中的初始条目 id
+            target_ep: 目标集数（连续编号，对应 ep.sort）
+            max_depth: 沿单方向最多遍历多少个关联条目，防极端环
+
+        Returns:
+            (subject_id, episode_id) 或 None
+        """
+        if not target_ep:
+            return None
+
+        # 先在当前 subject 内查
+        found = self._find_episode_by_sort(subject_id, target_ep)
+        if found:
+            return subject_id, found["id"]
+
+        # 获取当前 subject 的 sort 范围判断方向
+        episodes = self.get_episodes(subject_id, fetch_all=True)
+        ep_info = episodes.get("data") or []
+        type0_rows = [e for e in ep_info if e.get("type", 0) == 0]
+        sorts = [e.get("sort", 0) for e in type0_rows if e.get("sort")]
+        if not sorts:
+            return None
+        min_sort = min(sorts)
+        max_sort = max(sorts)
+
+        # 决定遍历方向
+        if target_ep < min_sort:
+            directions = ["prequel"]
+        elif target_ep > max_sort:
+            directions = ["sequel"]
+        else:
+            # target_ep 在范围内但未找到（如部分章节缺失），两个方向都试
+            directions = ["prequel", "sequel"]
+
+        visited = {subject_id}
+        for direction in directions:
+            result = self._walk_chain_for_episode(
+                subject_id, target_ep, direction, visited, max_depth
+            )
+            if result:
+                return result
+        return None
+
+    def _walk_chain_for_episode(
+        self,
+        start_id: int,
+        target_ep: int,
+        direction: str,
+        visited: set,
+        max_depth: int,
+    ) -> tuple[int, int] | None:
+        """沿指定方向遍历关联条目链，查找含 sort=target_ep 的条目。
+
+        Args:
+            start_id: 起始条目 id
+            target_ep: 目标集数
+            direction: "prequel"（前传）或 "sequel"（续集）
+            visited: 已访问的 subject_id 集合（防环）
+            max_depth: 最大遍历深度
+        """
+        relation_map = {"prequel": "前传", "sequel": "续集"}
+        relation = relation_map.get(direction)
+        if not relation:
+            return None
+
+        current_id = start_id
+        for _ in range(max_depth):
+            next_id = self._find_related_id_by_relation(current_id, relation)
+            if not next_id or next_id in visited:
+                return None
+            visited.add(next_id)
+            current_id = next_id
+
+            # 类型过滤：只看动画（type=2），跳过书籍/音乐等
+            info = self.get_subject(current_id)
+            if not info:
+                continue
+            if info.get("type") != 2:
+                continue
+            # 跳过剧场版/电影（标题命中关键词）
+            name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
+            if "剧场版" in name or "电影" in name:
+                continue
+
+            # 在当前条目内查 sort
+            found = self._find_episode_by_sort(current_id, target_ep)
+            if found:
+                logger.debug(
+                    f"通过{direction}链找到目标集: subject_id={current_id}, "
+                    f"sort={target_ep}, ep_id={found['id']}"
+                )
+                return current_id, found["id"]
+        return None
+
     def _find_season_one_episode(
         self,
         subject_id: int,
