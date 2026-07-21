@@ -16,6 +16,25 @@ from ...core.logging import logger
 # 找到正确条目（如"完美世界"剧场版之外的剧集条目），又避免拉取过多详情。
 OLD_SEARCH_CANDIDATE_LIMIT = 15
 
+# 媒体类型后缀：搜索标题常带此类后缀（如"遮天动画版"），而 Bangumi 条目标题
+# 通常不含或以不同形式包含（如"遮天 第四季"）。匹配时应剥离后缀比较核心标题。
+# 注意：长后缀必须排在短后缀前面，确保优先匹配更具体的后缀。
+_TITLE_SUFFIXES = ("动画版", "动漫版", "真人版", "电影版", "TV版", "动画", "动漫")
+
+
+def _strip_media_suffix(text: str) -> str:
+    """剥离标题末尾的媒体类型后缀，返回核心标题。
+
+    仅当剥离后仍有实质内容（长度 >= 2）时才执行剥离，
+    避免将"动画"等短标题误剥离为空串。
+    """
+    for suffix in _TITLE_SUFFIXES:
+        if text.endswith(suffix):
+            core = text[: -len(suffix)].strip()
+            if len(core) >= 2:
+                return core
+    return text
+
 
 class SearchMixin:
     """搜索与匹配相关方法（供 BangumiApi 组合）"""
@@ -269,6 +288,17 @@ class SearchMixin:
     def title_diff_ratio(
         title: str, ori_title: str | None, bgm_data: dict[str, Any]
     ) -> float:
+        """计算搜索标题与 Bangumi 条目的相似度（0~1）。
+
+        三维度评分：
+        1. 原始 fuzz.ratio（保持向后兼容）
+        2. 核心标题包含检查（剥离媒体后缀后，核心标题互相包含则给 0.9）
+        3. fuzz.partial_ratio * 0.7（捕捉部分匹配，打折抑制误判）
+
+        防误判机制：当搜索标题和候选标题都含有媒体后缀（如"动画版"）时，
+        若核心标题不相关（fuzz.ratio < 0.4 且不互相包含），则将最终得分
+        限制在 0.4 以下，防止共享后缀（如"X动画版" vs "Y动画版"）导致误匹配。
+        """
         ori_title = ori_title or title
         candidates = []
 
@@ -294,15 +324,64 @@ class SearchMixin:
                         candidates.append(alias_value)
                     break
 
+        # 预计算搜索标题的核心部分（剥离媒体后缀）
+        search_core = _strip_media_suffix(title)
+        search_stripped = search_core != title
+        ori_core = _strip_media_suffix(ori_title)
+
         # 计算所有候选项的相似度，取最大值
         max_ratio = 0.0
         for candidate in candidates:
             if not candidate:
                 continue
 
+            # 维度 1：原始 fuzz.ratio（保持向后兼容）
             ratio_title = fuzz.ratio(candidate, title) / 100.0
             ratio_ori = fuzz.ratio(candidate, ori_title) / 100.0
-            max_ratio = max(max_ratio, ratio_title, ratio_ori)
+            score = max(ratio_title, ratio_ori)
+
+            # 维度 2：核心标题包含检查
+            cand_core = _strip_media_suffix(candidate)
+            if search_stripped and len(search_core) >= 2:
+                if search_core in candidate or candidate in search_core:
+                    score = max(score, 0.9)
+                elif search_core in cand_core or cand_core in search_core:
+                    score = max(score, 0.9)
+            # 对 ori_title 也做包含检查（当 ori_title 与 title 不同时）
+            if ori_title != title and len(ori_core) >= 2 and ori_core != ori_title:
+                if ori_core in candidate or candidate in ori_core:
+                    score = max(score, 0.9)
+                elif ori_core in cand_core or cand_core in ori_core:
+                    score = max(score, 0.9)
+
+            # 维度 3：partial_ratio 打折（捕捉部分匹配）
+            partial_title = fuzz.partial_ratio(candidate, title) / 100.0 * 0.7
+            partial_ori = fuzz.partial_ratio(candidate, ori_title) / 100.0 * 0.7
+            score = max(score, partial_title, partial_ori)
+
+            # 防误判：双方都含媒体后缀但核心标题不相关时，限制得分上限。
+            # 典型场景："遮天动画版" vs "剑来 动画版"，共享后缀"动画版"
+            # 导致 fuzz.ratio 虚高，但核心"遮天"与"剑来"完全无关。
+            cand_stripped = cand_core != candidate
+            if search_stripped and cand_stripped:
+                core_sim = fuzz.ratio(search_core, cand_core) / 100.0
+                core_related = (
+                    core_sim >= 0.4
+                    or search_core in cand_core
+                    or cand_core in search_core
+                )
+                # ori_title 的核心与候选核心相关时不限制
+                if not core_related and ori_title != title:
+                    ori_core_sim = fuzz.ratio(ori_core, cand_core) / 100.0
+                    core_related = (
+                        ori_core_sim >= 0.4
+                        or ori_core in cand_core
+                        or cand_core in ori_core
+                    )
+                if not core_related:
+                    score = min(score, 0.4)
+
+            max_ratio = max(max_ratio, score)
 
             # 若发现完全匹配，提前返回
             if max_ratio >= 1.0:

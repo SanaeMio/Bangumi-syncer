@@ -12,6 +12,8 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from rapidfuzz import fuzz
+
 from ...core.config import config_manager
 from ...core.database import database_manager
 from ...core.logging import (
@@ -1743,8 +1745,22 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 for rel in related_list:
                                     if not isinstance(rel, dict):
                                         continue
+                                    # 类型过滤：排除游戏(4)、书籍(5)等非影视条目，
+                                    # 防止 detect_media_type 仅凭标题关键词误判
+                                    rel_type = rel.get("type")
+                                    if rel_type in (4, 5):
+                                        continue
                                     rel_name = rel.get("name", "")
                                     rel_name_cn = rel.get("name_cn", "") or rel_name
+                                    # 标题相关性校验：与搜索标题完全不相关的条目跳过，
+                                    # 防止同 IP 下无关条目（如游戏改动画）被误选
+                                    search_title = (item.title or "").strip()
+                                    if search_title and rel_name_cn:
+                                        title_sim = fuzz.ratio(
+                                            rel_name_cn, search_title
+                                        )
+                                        if title_sim < 25:
+                                            continue
                                     rel_detected = detect_media_type(
                                         title=rel_name_cn, ori_title=rel_name
                                     )
