@@ -934,6 +934,91 @@ class TestFindBangumiIdOptimizedTitleIndex:
         assert result is not None
         assert result[0] == "300"
 
+    def test_exact_index_no_date_multi_candidates_episode_prefers_non_movie(self):
+        """无 release_date 且多个同标题候选时，media_type=episode 应优先选非剧场版候选。
+
+        场景：fongmi 上看"完美世界"，bangumi-data 中"完美世界"对应多个条目：
+        - 542046 完美世界剧场版 九劫焚天（剧场版）
+        - 244224 完美世界（第一季）
+        - 577198 完美世界 第六季
+
+        请求 media_type=episode，应跳过剧场版，返回剧集条目。
+        """
+        data = _make_data()
+        # 注意：_title_index 中"完美世界"对应多个 item，顺序模拟真实数据集（剧场版在前）
+        movie_item = {
+            "title": "完美世界剧场版 九劫焚天",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "sites": [{"site": "bangumi", "id": "542046"}],
+        }
+        s1_item = {
+            "title": "完美世界",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2021-04-23",
+            "sites": [{"site": "bangumi", "id": "244224"}],
+        }
+        s6_item = {
+            "title": "完美世界 第六季",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2025-10-03",
+            "sites": [{"site": "bangumi", "id": "577198"}],
+        }
+        data._title_index = {
+            "完美世界": [movie_item, s1_item, s6_item],
+        }
+        with patch.object(data, "_parse_data", return_value=[]):
+            result = data._find_bangumi_id_optimized("完美世界", media_type="episode")
+        assert result is not None
+        # 不应命中剧场版 542046
+        assert result[0] != "542046"
+        # 应命中剧集条目（第一季 244224 或第六季 577198）
+        assert result[0] in {"244224", "577198"}
+
+    def test_exact_index_no_date_multi_candidates_movie_prefers_movie(self):
+        """无 release_date 且多个同标题候选时，media_type=movie 应优先选剧场版候选。"""
+        data = _make_data()
+        movie_item = {
+            "title": "完美世界剧场版 九劫焚天",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "sites": [{"site": "bangumi", "id": "542046"}],
+        }
+        s1_item = {
+            "title": "完美世界",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2021-04-23",
+            "sites": [{"site": "bangumi", "id": "244224"}],
+        }
+        data._title_index = {
+            "完美世界": [s1_item, movie_item],  # 剧场版不在首位
+        }
+        with patch.object(data, "_parse_data", return_value=[]):
+            result = data._find_bangumi_id_optimized("完美世界", media_type="movie")
+        assert result is not None
+        assert result[0] == "542046"
+
+    def test_exact_index_no_date_no_media_type_falls_back_to_first(self):
+        """无 release_date 且未传 media_type 时，保持原有行为（返回首个候选）。"""
+        data = _make_data()
+        movie_item = {
+            "title": "完美世界剧场版 九劫焚天",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "sites": [{"site": "bangumi", "id": "542046"}],
+        }
+        s1_item = {
+            "title": "完美世界",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2021-04-23",
+            "sites": [{"site": "bangumi", "id": "244224"}],
+        }
+        data._title_index = {
+            "完美世界": [movie_item, s1_item],
+        }
+        with patch.object(data, "_parse_data", return_value=[]):
+            result = data._find_bangumi_id_optimized("完美世界")
+        assert result is not None
+        # 无 media_type 时回退首个候选
+        assert result[0] == "542046"
+
     def test_exact_index_hit_with_date_best_match(self):
         """多个精确匹配时选择日期最近的"""
         data = _make_data()

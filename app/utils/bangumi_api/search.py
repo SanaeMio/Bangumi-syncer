@@ -10,6 +10,12 @@ from rapidfuzz import fuzz
 
 from ...core.logging import logger
 
+# 旧版搜索 API 拉取候选条目详情的最大数量。
+# 旧版接口可能返回数百条相关结果，对每条都调 get_subject 既慢又易触发限流。
+# 这里取一个相对宽裕的上限，既能让调用方在前 N 条里通过 detect_media_type
+# 找到正确条目（如"完美世界"剧场版之外的剧集条目），又避免拉取过多详情。
+OLD_SEARCH_CANDIDATE_LIMIT = 15
+
 
 class SearchMixin:
     """搜索与匹配相关方法（供 BangumiApi 组合）"""
@@ -222,10 +228,11 @@ class SearchMixin:
 
                     if bgm_data_old and len(bgm_data_old) > 0:
                         # 旧版接口返回数据不含 infobox 别名信息，需拉取完整条目进行准确相似度计算。
-                        # 取前 5 条候选获取详情，供调用方做季度筛选（如 season=1 时
-                        # 首条为"第N季"需改选无季度后缀的第一季本体）。
+                        # 取前 OLD_SEARCH_CANDIDATE_LIMIT 条候选获取详情，供调用方做季度/媒体类型
+                        # 筛选（如 season=1 时首条为"第N季"需改选无季度后缀的第一季本体，
+                        # 或 media_type=episode 时首条为剧场版需改选剧集条目）。
                         candidates: list[dict[str, Any]] = []
-                        for entry in bgm_data_old[:5]:
+                        for entry in bgm_data_old[:OLD_SEARCH_CANDIDATE_LIMIT]:
                             sid = entry.get("id")
                             if not sid:
                                 continue

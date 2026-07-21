@@ -2,6 +2,7 @@
 Bangumi API 完整测试
 """
 
+from typing import Optional
 from unittest.mock import MagicMock, patch
 
 from app.utils.bangumi_api import BangumiApi
@@ -688,3 +689,179 @@ class TestContinuousNumbering:
 
         result = api._try_resolve_continuous_season_episode(1, 3, 1)
         assert result is None
+
+
+class TestFindEpisodeAcrossSeasons:
+    """跨季条目链查找 sort=target_ep 测试
+
+    场景：完美世界在 Bangumi 上每季拆分为独立条目，每个条目内
+    ep 从1开始，sort 是整部作品的连续编号。fongmi 传连续编号
+    episode=102，但已命中条目（如第六季 sort=235-286）不含 102，
+    需通过前传链向前找到含 sort=102 的季条目。
+    """
+
+    @staticmethod
+    def _make_eps(start_sort: int, count: int, start_id: int = 10000):
+        """生成单季条目的 episode 列表（sort 连续，ep 从1开始）。"""
+        eps = []
+        for i in range(count):
+            eps.append(
+                {
+                    "sort": start_sort + i,
+                    "ep": i + 1,
+                    "id": start_id + i,
+                    "type": 0,
+                    "airdate": "",
+                }
+            )
+        return eps
+
+    @staticmethod
+    def _make_api(
+        episodes: dict,
+        related: dict,
+        subject_info: Optional[dict] = None,
+    ):
+        """构造一个 mock 好的 BangumiApi 实例。
+
+        - get_episodes / get_related_subjects / get_subject / _fetch_episodes_page 均被 mock
+        - _fetch_episodes_page 始终返回空数据，强制走 get_episodes 全量路径
+          （避免 target_sort>99 时走 offset 快速路径发真实 HTTP）
+        """
+        api = BangumiApi()
+
+        def get_episodes(sid, *args, **kwargs):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        def get_subject(sid):
+            if subject_info is not None:
+                return subject_info
+            return {"type": 2, "name": f"S{sid}", "name_cn": "", "platform": "WEB"}
+
+        api.get_episodes = MagicMock(side_effect=get_episodes)
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        # 强制走 get_episodes 全量路径，跳过 offset 快速路径
+        api._fetch_episodes_page = MagicMock(return_value={"data": [], "total": 0})
+        return api
+
+    def test_walks_prepuel_chain_to_find_target_sort(self):
+        """命中第六季（sort 235-286），target_ep=102 应通过前传链找到第三季。"""
+        # 6 个季条目，每季 50 集
+        # S1=100 sort 1-50, S2=200 sort 51-100, S3=300 sort 101-150,
+        # S4=400 sort 151-200, S5=500 sort 201-250, S6=600 sort 251-300
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            200: {"data": self._make_eps(51, 50, 20001), "total": 50},
+            300: {"data": self._make_eps(101, 50, 30001), "total": 50},
+            400: {"data": self._make_eps(151, 50, 40001), "total": 50},
+            500: {"data": self._make_eps(201, 50, 50001), "total": 50},
+            600: {"data": self._make_eps(251, 50, 60001), "total": 50},
+        }
+        # 前传链：600 → 500 → 400 → 300 → 200 → 100
+        related = {
+            600: [{"relation": "前传", "id": 500, "type": 2}],
+            500: [{"relation": "前传", "id": 400, "type": 2}],
+            400: [{"relation": "前传", "id": 300, "type": 2}],
+            300: [{"relation": "前传", "id": 200, "type": 2}],
+            200: [{"relation": "前传", "id": 100, "type": 2}],
+            100: [],
+        }
+        api = self._make_api(episodes, related)
+
+        # target_ep=102 应在 S3（sort 101-150），ep_id=30002
+        result = api.find_episode_across_seasons(600, 102)
+        assert result is not None
+        assert result[0] == 300
+        assert result[1] == 30002
+
+    def test_walks_sequel_chain_to_find_target_sort(self):
+        """命中第一季（sort 1-50），target_ep=102 应通过续集链找到第三季。"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            200: {"data": self._make_eps(51, 50, 20001), "total": 50},
+            300: {"data": self._make_eps(101, 50, 30001), "total": 50},
+        }
+        # 续集链：100 → 200 → 300
+        related = {
+            100: [{"relation": "续集", "id": 200, "type": 2}],
+            200: [{"relation": "续集", "id": 300, "type": 2}],
+            300: [],
+        }
+        api = self._make_api(episodes, related)
+
+        result = api.find_episode_across_seasons(100, 102)
+        assert result is not None
+        assert result[0] == 300
+        assert result[1] == 30002
+
+    def test_returns_none_when_no_chain_matches(self):
+        """前传/续集链中均无含目标 sort 的条目时返回 None。"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            200: {"data": self._make_eps(51, 50, 20001), "total": 50},
+        }
+        related = {
+            100: [{"relation": "续集", "id": 200, "type": 2}],
+            200: [],
+        }
+        api = self._make_api(episodes, related)
+
+        # target_ep=1000 远超所有条目的 sort 范围
+        result = api.find_episode_across_seasons(100, 1000)
+        assert result is None
+
+    def test_skips_movie_subject_in_chain(self):
+        """前传链中遇到剧场版条目应跳过（不命中也不报错），继续向前找到 S5。"""
+        # 链：600(S6) → 700(剧场版) → 500(S5)
+        # target_ep=210 应跳过剧场版 700，继续找到 S5
+        episodes = {
+            600: {"data": self._make_eps(251, 50, 60001), "total": 50},
+            700: {"data": self._make_eps(1, 1, 70001), "total": 1},
+            500: {"data": self._make_eps(201, 50, 50001), "total": 50},
+        }
+        related = {
+            600: [{"relation": "前传", "id": 700, "type": 2}],
+            700: [{"relation": "前传", "id": 500, "type": 2}],
+            500: [],
+        }
+
+        def get_subject(sid):
+            if sid == 700:
+                return {
+                    "type": 2,
+                    "name": "完美世界剧场版 九劫焚天",
+                    "name_cn": "完美世界剧场版 九劫焚天",
+                }
+            return {"type": 2, "name": f"S{sid}", "name_cn": "", "platform": "WEB"}
+
+        api = BangumiApi()
+        api.get_episodes = MagicMock(
+            side_effect=lambda sid, *a, **kw: episodes.get(
+                int(sid), {"data": [], "total": 0}
+            )
+        )
+        api.get_related_subjects = MagicMock(
+            side_effect=lambda sid: related.get(int(sid), [])
+        )
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api._fetch_episodes_page = MagicMock(return_value={"data": [], "total": 0})
+
+        result = api.find_episode_across_seasons(600, 210)
+        assert result is not None
+        assert result[0] == 500
+
+    def test_target_in_current_subject_returns_directly(self):
+        """目标 sort 在当前 subject 内时直接返回，不走链。"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+        }
+        api = self._make_api(episodes, {})
+
+        result = api.find_episode_across_seasons(100, 25)
+        assert result is not None
+        assert result[0] == 100
+        assert result[1] == 10025
