@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import time
 from typing import Any
 
 from ...core.config import config_manager
@@ -11,6 +12,10 @@ from ...core.logging import logger
 
 _EPISODES_PAGE_LIMIT = 200
 _LONG_SERIES_AIRDATE_MIN_TOTAL = 100
+# find_episode_across_seasons 整体 deadline（秒）。
+# 防御错误 subject_id 触发的长链遍历：单次 API 超时 10s × 多跳累加可能逼近数分钟，
+# 超过此 deadline 立即放弃，避免占用 sync 线程池导致整体卡死。
+_CROSS_SEASON_DEADLINE_SECONDS = 60.0
 
 _CN_NUM = {
     "一": 1,
@@ -540,10 +545,22 @@ class EpisodesMixin:
         if not target_ep:
             return None
 
+        # 整体 deadline：链式 API 调用累计耗时超过 60s 立即放弃
+        # （防御错误 subject_id 触发的长链遍历占用 sync 线程池）
+        deadline = time.monotonic() + _CROSS_SEASON_DEADLINE_SECONDS
+
         # 先在当前 subject 内查
         found = self._find_episode_by_sort(subject_id, target_ep)
         if found:
             return subject_id, found["id"]
+
+        if time.monotonic() > deadline:
+            logger.warning(
+                f"find_episode_across_seasons 整体超时（>"
+                f"{_CROSS_SEASON_DEADLINE_SECONDS:.0f}s），放弃跨季查找: "
+                f"subject_id={subject_id}, target_ep={target_ep}"
+            )
+            return None
 
         # 获取当前 subject 的 sort 范围判断方向
         episodes = self.get_episodes(subject_id, fetch_all=True)
@@ -566,8 +583,16 @@ class EpisodesMixin:
 
         visited = {subject_id}
         for direction in directions:
+            if time.monotonic() > deadline:
+                logger.warning(
+                    f"find_episode_across_seasons 整体超时（>"
+                    f"{_CROSS_SEASON_DEADLINE_SECONDS:.0f}s），放弃剩余方向: "
+                    f"subject_id={subject_id}, target_ep={target_ep}, "
+                    f"direction={direction}"
+                )
+                return None
             result = self._walk_chain_for_episode(
-                subject_id, target_ep, direction, visited, max_depth
+                subject_id, target_ep, direction, visited, max_depth, deadline
             )
             if result:
                 return result
@@ -580,6 +605,7 @@ class EpisodesMixin:
         direction: str,
         visited: set,
         max_depth: int,
+        deadline: float | None = None,
     ) -> tuple[int, int] | None:
         """沿指定方向遍历关联条目链，查找含 sort=target_ep 的条目。
 
@@ -589,6 +615,7 @@ class EpisodesMixin:
             direction: "prequel"（前传）或 "sequel"（续集）
             visited: 已访问的 subject_id 集合（防环）
             max_depth: 最大遍历深度
+            deadline: 整体 deadline（monotonic 时间戳），超过则立即返回 None
         """
         relation_map = {"prequel": "前传", "sequel": "续集"}
         relation = relation_map.get(direction)
@@ -597,6 +624,13 @@ class EpisodesMixin:
 
         current_id = start_id
         for _ in range(max_depth):
+            if deadline is not None and time.monotonic() > deadline:
+                logger.warning(
+                    f"_walk_chain_for_episode 整体 deadline 超时，终止链遍历: "
+                    f"direction={direction}, current_id={current_id}, "
+                    f"target_ep={target_ep}"
+                )
+                return None
             next_id = self._find_related_id_by_relation(current_id, relation)
             if not next_id or next_id in visited:
                 return None
@@ -613,6 +647,14 @@ class EpisodesMixin:
             name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
             if "剧场版" in name or "电影" in name:
                 continue
+
+            if deadline is not None and time.monotonic() > deadline:
+                logger.warning(
+                    f"_walk_chain_for_episode 整体 deadline 超时，终止链遍历: "
+                    f"direction={direction}, current_id={current_id}, "
+                    f"target_ep={target_ep}"
+                )
+                return None
 
             # 在当前条目内查 sort
             found = self._find_episode_by_sort(current_id, target_ep)

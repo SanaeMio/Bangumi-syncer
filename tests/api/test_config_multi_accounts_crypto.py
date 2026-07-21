@@ -100,3 +100,41 @@ def test_handle_multi_accounts_skips_empty_but_adds_valid_account():
     assert parser.get("bangumi-keep_u", "media_server_username") == "plex_only"
     assert parser.get("bangumi-keep_u", "private") == "true"
     assert not parser.has_section("bangumi-skip_u")
+
+
+def test_handle_multi_accounts_preserves_duplicate_display_names():
+    """相同备注的多账号应各自写入独立配置段。"""
+    parser = ConfigParser()
+    mock_cm = MagicMock()
+    mock_cm.get_config_parser.return_value = parser
+
+    accounts = {
+        "bangumi-account-0": {
+            "username": "alice",
+            "access_token": "token_a",
+            "media_server_username": "plex_a",
+            "private": False,
+            "display_name": "家人",
+        },
+        "bangumi-account-1": {
+            "username": "bob",
+            "access_token": "token_b",
+            "media_server_username": "plex_b",
+            "private": True,
+            "display_name": "家人",
+        },
+    }
+
+    with (
+        patch.object(config_api, "config_manager", mock_cm),
+        patch(
+            "app.api.config.encrypt_if_sensitive",
+            side_effect=lambda _sec, _k, v: v,
+        ),
+    ):
+        config_api._handle_multi_accounts_config(accounts)
+
+    assert parser.has_section("bangumi-alice")
+    assert parser.has_section("bangumi-bob")
+    assert parser.get("bangumi-alice", "display_name") == "家人"
+    assert parser.get("bangumi-bob", "display_name") == "家人"

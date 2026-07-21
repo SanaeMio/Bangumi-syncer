@@ -46,6 +46,8 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         self.ssl_verify = ssl_verify
         # 使用 SyncHttpClient 封装 httpx.Client（统一日志/重试）
         # max_retries=3：重试由 SyncHttpClient 内置处理，_request_with_retry 仅负责代理回退
+        # timeout=10.0：单次请求 10s 超时，避免错误 subject_id 触发链式调用时
+        # 每跳都要等 30s 才失败，导致整个同步流程卡死（线程池被占满）
         self.req = (
             SyncHttpClient(
                 label="Bangumi",
@@ -53,6 +55,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
                 verify=ssl_verify,
                 follow_redirects=True,
                 max_retries=3,
+                timeout=10.0,
             )
             .prefix("📚")
             .success_tpl("Bangumi 请求成功")
@@ -65,6 +68,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
                 verify=ssl_verify,
                 follow_redirects=True,
                 max_retries=3,
+                timeout=10.0,
             )
             .prefix("📚")
             .success_tpl("Bangumi 请求成功")

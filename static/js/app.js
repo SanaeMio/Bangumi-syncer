@@ -294,7 +294,188 @@ function getMatchStepStatusLabel(status) {
     return labels[status] || status || '未知';
 }
 
-function renderMatchStepsHtml(record, trace) {
+// 流水线阶段名映射（10 阶段）
+const PIPELINE_STAGE_NAMES = {
+    receive: '接收请求',
+    normalize: '标题归一化',
+    custom_mapping: '自定义映射',
+    bangumi_data: 'bangumi-data 本地匹配',
+    api_search: 'Bangumi API 搜索',
+    post_search: '搜索后处理',
+    cross_season: '跨季链查找',
+    episode_resolve: '集数解析',
+    sync_action: '同步动作',
+    result: '同步结果',
+};
+
+function getPipelineStageName(stage) {
+    return PIPELINE_STAGE_NAMES[stage] || stage;
+}
+
+// 流水线摘要卡：输入 → 输出
+function renderPipelineSummary(record, trace) {
+    const title = record.title || (trace && trace.request_title) || '';
+    const season = (trace && trace.request_season) || record.season || 1;
+    const episode = (trace && trace.request_episode) || record.episode || 0;
+    const source = record.source || (trace && trace.request_platform_hint) || '';
+    const mediaType = (trace && trace.request_media_type) || record.media_type || 'episode';
+
+    const isSuccess = record.status === 'success' || record.status === 'retried';
+    const statusClass = isSuccess ? 'success' : (record.status === 'error' ? 'error' : 'neutral');
+    const statusIcon = isSuccess ? 'bi-check-circle-fill' : (record.status === 'error' ? 'bi-x-circle-fill' : 'bi-dash-circle-fill');
+    const statusText = isSuccess ? '同步成功' : (record.status === 'error' ? '同步失败' : (record.status || '未知'));
+
+    const subjectId = record.subject_id || (trace && trace.final_subject_id);
+    const episodeId = record.episode_id || (trace && trace.final_episode_id);
+    const score = (trace && trace.final_score !== null && trace.final_score !== undefined)
+        ? trace.final_score
+        : record.match_score;
+    const bgmTitle = record.bgm_title || '';
+
+    // 输入区
+    let inputHtml = `<span class="record-pipeline-summary__title">${escapeHtml(title)}</span>`;
+    inputHtml += `<span class="record-pipeline-summary__episode">S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}</span>`;
+    if (source) {
+        inputHtml += `<span class="badge bg-secondary">${escapeHtml(source)}</span>`;
+    }
+    inputHtml += `<span class="badge bg-info">${escapeHtml(mediaType)}</span>`;
+
+    // 输出区
+    let outputHtml = `<i class="bi ${statusIcon} text-${isSuccess ? 'success' : (record.status === 'error' ? 'danger' : 'secondary')}"></i>`;
+    outputHtml += `<span class="record-pipeline-summary__status-text record-pipeline-summary__status-text--${statusClass}">${escapeHtml(statusText)}</span>`;
+    if (subjectId) {
+        outputHtml += `<a href="https://bgm.tv/subject/${escapeHtml(subjectId)}" target="_blank" class="record-pipeline-summary__link">`
+            + `<i class="bi bi-collection"></i>subject/${escapeHtml(subjectId)}`;
+        if (bgmTitle) {
+            outputHtml += ` ${escapeHtml(bgmTitle)}`;
+        }
+        outputHtml += `</a>`;
+    }
+    if (episodeId) {
+        outputHtml += `<a href="https://bgm.tv/ep/${escapeHtml(episodeId)}" target="_blank" class="record-pipeline-summary__link">`
+            + `<i class="bi bi-play-circle"></i>ep/${escapeHtml(episodeId)}</a>`;
+    }
+    if (score !== null && score !== undefined && isSuccess) {
+        outputHtml += `<span class="record-pipeline-summary__score">置信度 ${(score * 100).toFixed(0)}%</span>`;
+    }
+
+    return `
+        <section class="record-pipeline-summary record-pipeline-summary--${statusClass}">
+            <div class="record-pipeline-summary__input">${inputHtml}</div>
+            <div class="record-pipeline-summary__arrow" aria-hidden="true">
+                <i class="bi bi-arrow-down"></i>
+            </div>
+            <div class="record-pipeline-summary__output">${outputHtml}</div>
+        </section>
+    `;
+}
+
+// 通用 payload 表格渲染：横向表头 + 单行数据
+// labels: 可选的 { key: 显示标签 } 映射；以 _url 结尾且非空的字段渲染为链接
+function renderPayloadTable(payload, labels) {
+    if (!payload || typeof payload !== 'object') {
+        return '';
+    }
+    const keys = Object.keys(payload);
+    if (keys.length === 0) {
+        return '';
+    }
+    const labelMap = labels || {};
+    const headCells = keys.map((k) => {
+        const label = labelMap[k] || k;
+        return `<th>${escapeHtml(label)}</th>`;
+    }).join('');
+    const bodyCells = keys.map((k) => {
+        const v = payload[k];
+        const vv = (v === null || v === undefined) ? '' : String(v);
+        let valueCell;
+        if (k.endsWith('_url') && vv) {
+            valueCell = `<a href="${escapeHtml(vv)}" target="_blank" rel="noopener">${escapeHtml(vv)}</a>`;
+        } else {
+            valueCell = escapeHtml(vv);
+        }
+        return `<td>${valueCell}</td>`;
+    }).join('');
+    return '<div class="table-responsive">'
+        + '<table class="table table-sm table-bordered mb-0 record-detail-payload-table">'
+        + `<thead><tr>${headCells}</tr></thead>`
+        + `<tbody><tr>${bodyCells}</tr></tbody></table></div>`;
+}
+
+// receive step 输入字段表格：sync 开始时的输入
+function renderReceiveInputTable(step) {
+    if (!step || step.stage !== 'receive' || !step.processed_payload) {
+        return '';
+    }
+    return renderPayloadTable(step.processed_payload, {
+        source: '来源',
+        user_name: '用户',
+        title: '标题',
+        ori_title: '原始标题',
+        season: '季',
+        episode: '集',
+        media_type: '媒体类型',
+        release_date: '发布日期',
+    });
+}
+
+// result step 结果表格：状态/集数/链接/消息
+function renderResultTable(step) {
+    if (!step || step.stage !== 'result' || !step.processed_payload) {
+        return '';
+    }
+    return renderPayloadTable(step.processed_payload, {
+        status: '状态',
+        episode: '集数',
+        subject_id: '条目 ID',
+        episode_id: '剧集 ID',
+        subject_url: '条目链接',
+        episode_url: '剧集链接',
+        bgm_title: '番剧标题',
+        message: '消息',
+    });
+}
+
+// episode_resolve step 表格：展示输入→输出的集数解析变更过程
+function renderEpisodeResolveTable(step) {
+    if (!step || step.stage !== 'episode_resolve' || !step.processed_payload) {
+        return '';
+    }
+    return renderPayloadTable(step.processed_payload, {
+        input_subject_id: '输入条目 ID',
+        input_is_season_id: '是否季度 ID',
+        request_season: '请求季',
+        request_episode: '请求集',
+        media_type: '媒体类型',
+        release_date: '发布日期',
+        output_subject_id: '输出条目 ID',
+        output_episode_id: '输出剧集 ID',
+        changed: '是否变更',
+        subject_url: '条目链接',
+        episode_url: '剧集链接',
+        error: '错误',
+    });
+}
+
+// cross_season step 表格：展示跨季链查找的变更过程
+function renderCrossSeasonTable(step) {
+    if (!step || step.stage !== 'cross_season' || !step.processed_payload) {
+        return '';
+    }
+    return renderPayloadTable(step.processed_payload, {
+        input_subject_id: '输入条目 ID',
+        output_subject_id: '输出条目 ID',
+        output_episode_id: '输出剧集 ID',
+        target_episode: '目标集',
+        changed: '是否变更',
+        subject_url: '条目链接',
+        episode_url: '剧集链接',
+        error: '错误',
+    });
+}
+
+// 流水线渲染：10 阶段统一展示
+function renderPipelineHtml(record, trace) {
     const scoreText = (s) => (s !== null && s !== undefined) ? `${(s * 100).toFixed(1)}%` : '-';
 
     if (!trace) {
@@ -314,13 +495,7 @@ function renderMatchStepsHtml(record, trace) {
 
     trace.steps.forEach((step, idx) => {
         const status = step.status || 'unknown';
-        const stageName = {
-            custom_mapping: '自定义映射',
-            bangumi_data: 'bangumi-data 本地匹配',
-            api_search: 'Bangumi API 搜索',
-            post_search: '搜索后处理',
-            cross_season: '跨季链查找',
-        }[step.stage] || step.stage;
+        const stageName = getPipelineStageName(step.stage);
 
         html += `<article class="record-detail-step record-detail-step--${status}">`;
         html += '<div class="record-detail-step__rail" aria-hidden="true">';
@@ -343,8 +518,37 @@ function renderMatchStepsHtml(record, trace) {
             html += `<p class="record-detail-step__reason">${escapeHtml(step.reason)}</p>`;
         }
 
+        // receive step：渲染 sync 开始时的输入字段表格
+        if (step.stage === 'receive') {
+            html += renderReceiveInputTable(step);
+        }
+
         if (step.candidates && step.candidates.length > 0) {
             html += renderMatchCandidatesTable(step.candidates, scoreText);
+        }
+
+        // episode_resolve step：渲染输入→输出变更过程表格
+        if (step.stage === 'episode_resolve') {
+            const t = renderEpisodeResolveTable(step);
+            if (t) {
+                html += `<div class="mt-2">${t}</div>`;
+            }
+        }
+
+        // cross_season step：渲染跨季链查找变更过程表格
+        if (step.stage === 'cross_season') {
+            const t = renderCrossSeasonTable(step);
+            if (t) {
+                html += `<div class="mt-2">${t}</div>`;
+            }
+        }
+
+        // result step：渲染结果表格（集数 + 链接 + 消息）
+        if (step.stage === 'result') {
+            const resultTable = renderResultTable(step);
+            if (resultTable) {
+                html += `<div class="mt-2">${resultTable}</div>`;
+            }
         }
 
         html += '</div></article>';
@@ -352,6 +556,11 @@ function renderMatchStepsHtml(record, trace) {
 
     html += '</div>';
     return html;
+}
+
+function renderMatchStepsHtml(record, trace) {
+    // 旧调用方（debug 工具页）兼容：直接复用流水线渲染
+    return renderPipelineHtml(record, trace);
 }
 
 function renderMatchInputZone(record, trace) {
@@ -855,16 +1064,14 @@ function getRecordDetailModal() {
 }
 
 async function loadMatchTraceContent(recordId, record) {
-    const matchContent = document.getElementById('record-match-content');
-    const stepsContent = document.getElementById('record-steps-content');
-    const resultContent = document.getElementById('record-result-content');
-    const detailContent = document.getElementById('record-detail-content');
-    if (!matchContent || !stepsContent) {
+    const summaryContent = document.getElementById('record-summary-content');
+    const pipelineContent = document.getElementById('record-pipeline-content');
+    if (!summaryContent || !pipelineContent) {
         return;
     }
 
-    matchContent.innerHTML = renderMatchTraceLoading();
-    stepsContent.innerHTML = renderMatchStepsLoading();
+    summaryContent.innerHTML = renderPipelineSummary(record, parseRecordMatchTrace(record));
+    pipelineContent.innerHTML = renderMatchStepsLoading();
 
     try {
         let traceData = _matchTraceCache[recordId];
@@ -882,31 +1089,12 @@ async function loadMatchTraceContent(recordId, record) {
 
         const traceRecord = traceData.record || record;
         const trace = traceData.trace;
-        const parts = renderMatchDetailModalParts(traceRecord, trace);
-        matchContent.innerHTML = parts.match;
-        stepsContent.innerHTML = parts.steps;
-        if (detailContent) {
-            detailContent.innerHTML = renderSyncDetailContent(traceRecord, trace);
-        }
-        if (resultContent) {
-            resultContent.innerHTML = renderSyncResultContent(traceRecord, trace);
-        }
+        summaryContent.innerHTML = renderPipelineSummary(traceRecord, trace);
+        pipelineContent.innerHTML = renderPipelineHtml(traceRecord, trace);
     } catch (error) {
         console.error('加载匹配过程失败:', error);
-        matchContent.innerHTML = renderRecordDetailZone(
-            'match',
-            '匹配信息',
-            '用于 Bangumi 条目识别的输入',
-            '<p class="record-detail-empty-hint record-detail-empty-hint--error mb-0">加载匹配信息失败</p>',
-            'record-section-match',
-        );
-        stepsContent.innerHTML = renderRecordDetailZone(
-            'steps',
-            '匹配步骤',
-            '各阶段匹配过程与候选结果',
-            '<p class="record-detail-empty-hint record-detail-empty-hint--error mb-0">加载匹配步骤失败</p>',
-            'record-section-steps',
-        );
+        summaryContent.innerHTML = '';
+        pipelineContent.innerHTML = '<p class="record-detail-empty-hint record-detail-empty-hint--error mb-0">加载匹配流水线失败</p>';
     }
 }
 
@@ -921,11 +1109,9 @@ async function showRecordDetail(recordId, options) {
         return;
     }
 
-    const detailContent = document.getElementById('record-detail-content');
-    const matchContent = document.getElementById('record-match-content');
-    const stepsContent = document.getElementById('record-steps-content');
-    const resultContent = document.getElementById('record-result-content');
-    if (!detailContent || !matchContent || !stepsContent || !resultContent) {
+    const summaryContent = document.getElementById('record-summary-content');
+    const pipelineContent = document.getElementById('record-pipeline-content');
+    if (!summaryContent || !pipelineContent) {
         showAlert('详情弹窗不可用', 'danger');
         return;
     }
@@ -950,18 +1136,15 @@ async function showRecordDetail(recordId, options) {
 
         const embeddedTrace = parseRecordMatchTrace(record);
         updateRecordDetailModalChrome(record);
-        detailContent.innerHTML = renderSyncDetailContent(record, embeddedTrace);
-        matchContent.innerHTML = renderMatchTraceLoading();
-        stepsContent.innerHTML = renderMatchStepsLoading();
-        resultContent.innerHTML = renderSyncResultContent(record, embeddedTrace);
+        summaryContent.innerHTML = renderPipelineSummary(record, embeddedTrace);
+        pipelineContent.innerHTML = renderMatchStepsLoading();
         modal.show();
         await loadMatchTraceContent(recordId, record);
 
         if (opts.scrollToMatch) {
-            const matchSection = document.getElementById('record-section-steps')
-                || document.getElementById('record-section-match');
-            if (matchSection) {
-                matchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const pipelineSection = document.getElementById('record-pipeline-content');
+            if (pipelineSection) {
+                pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
     } catch (error) {

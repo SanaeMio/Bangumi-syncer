@@ -475,16 +475,57 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             request_platform_hint=item.source or actual_source,
         )
 
+        # 流水线第 1 步：接收请求（记录 sync 开始时的输入字段）
+        receive_step = trace.start_step("receive")
+        receive_step.status = "hit"
+        receive_step.reason = (
+            f"{actual_source} 推送：{item.title} S{item.season:02d}E{item.episode:02d}"
+        )
+        receive_step.processed_payload = {
+            "source": item.source or actual_source,
+            "user_name": item.user_name,
+            "title": item.title,
+            "ori_title": item.ori_title,
+            "season": item.season,
+            "episode": item.episode,
+            "media_type": item.media_type,
+            "release_date": item.release_date,
+        }
+
         # 查找番剧ID及其是否为特定季度ID的标记
         subject_id, is_season_matched_id, subject_find_error = self._find_subject_id(
             item, trace=trace
         )
 
         # 完成匹配追踪（trace 作为返回值沿调用链传递，避免并发竞态）
-        trace.finish()
-
+        # _find_subject_id 内部已对成功/失败分支调用 trace.finish()，
+        # 此处仅对失败但未 finish 的情况补 finish + result step
         if subject_id:
             return subject_id, is_season_matched_id, None, trace
+
+        # 流水线失败终止：未找到番剧（trace 已被 _find_subject_id finish，
+        # 但未追加 result step，此处补一个 result step 供前端展示）
+        if not trace.steps or trace.steps[-1].stage != "result":
+            result_step = trace.start_step("result")
+            result_step.status = "miss"
+            result_step.reason = (
+                f"同步失败：未找到匹配的番剧 · {subject_find_error or '无候选'}"
+            )
+            result_step.processed_payload = {
+                "status": "error",
+                "episode": f"S{item.season:02d}E{item.episode:02d}",
+                "subject_id": "",
+                "episode_id": "",
+                "subject_url": "",
+                "episode_url": "",
+                "bgm_title": "",
+                "message": self._format_subject_not_found_message(
+                    item, subject_find_error
+                ),
+            }
+            trace.final_status = "error"
+            trace.final_message = "未找到匹配的番剧"
+        trace.finish()
 
         send_notify(
             "anime_not_found",
@@ -825,6 +866,16 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 return SyncResponse(status="error", message="bangumi配置错误")
 
             # 查询 bangumi 章节：电影走短路径，剧集走季番解析
+            ep_resolve_step = trace.start_step("episode_resolve") if trace else None
+            # 记录集数解析的输入与变更过程（供详情页展示）
+            resolve_input = {
+                "input_subject_id": str(subject_id),
+                "input_is_season_id": bool(is_season_matched_id),
+                "request_season": item.season,
+                "request_episode": item.episode,
+                "media_type": item.media_type,
+                "release_date": item.release_date or "",
+            }
             try:
                 bgm_se_id, bgm_ep_id = self._resolve_season_episode(
                     bgm, item, subject_id, is_season_matched_id
@@ -832,16 +883,57 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
                 if "认证失败" in str(ve) or "access_token" in str(ve):
+                    if ep_resolve_step:
+                        ep_resolve_step.status = "error"
+                        ep_resolve_step.reason = f"认证失败: {ve}"
+                        ep_resolve_step.processed_payload = {
+                            **resolve_input,
+                            "output_subject_id": "",
+                            "output_episode_id": "",
+                            "changed": False,
+                            "error": str(ve),
+                        }
                     status_holder[0] = "error"
                     return SyncResponse(status="error", message=str(ve))
                 else:
                     raise ve
+
+            if ep_resolve_step:
+                changed = str(bgm_se_id) != str(subject_id) if bgm_se_id else False
+                if bgm_ep_id:
+                    ep_resolve_step.status = "hit"
+                    ep_resolve_step.subject_id = str(bgm_se_id)
+                    ep_resolve_step.reason = (
+                        f"集数解析：subject={bgm_se_id} episode={item.episode} → "
+                        f"ep_id={bgm_ep_id}"
+                    )
+                    ep_resolve_step.processed_payload = {
+                        **resolve_input,
+                        "output_subject_id": str(bgm_se_id),
+                        "output_episode_id": str(bgm_ep_id),
+                        "changed": changed,
+                        "subject_url": f"https://bgm.tv/subject/{bgm_se_id}",
+                        "episode_url": f"https://bgm.tv/ep/{bgm_ep_id}",
+                    }
+                else:
+                    ep_resolve_step.status = "miss"
+                    ep_resolve_step.reason = (
+                        f"集数解析未命中：subject={bgm_se_id} episode={item.episode}"
+                    )
+                    ep_resolve_step.processed_payload = {
+                        **resolve_input,
+                        "output_subject_id": str(bgm_se_id) if bgm_se_id else "",
+                        "output_episode_id": "",
+                        "changed": changed,
+                        "error": "未找到对应集数",
+                    }
 
             if not bgm_ep_id:
                 # 集数解析失败回退：通过前传/续集链在关联季条目中查找含目标 sort 的章节。
                 # 场景：fongmi 传 episode=102（连续编号），但已命中条目（如第六季）
                 # 的 sort 范围不含 102，需通过前传链向前找到含 sort=102 的季条目。
                 cross_step = trace.start_step("cross_season") if trace else None
+                cross_input_subject = str(subject_id)
                 chain_pick = None
                 try:
                     chain_pick = bgm.find_episode_across_seasons(
@@ -868,6 +960,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             f"chain_subject_id={chain_subject_id}, "
                             f"ep_id={chain_ep_id} (目标 episode={item.episode})"
                         )
+                        cross_step.processed_payload = {
+                            "input_subject_id": cross_input_subject,
+                            "output_subject_id": str(chain_subject_id),
+                            "output_episode_id": str(chain_ep_id),
+                            "target_episode": item.episode,
+                            "changed": str(prev_subject_id) != str(chain_subject_id),
+                            "subject_url": f"https://bgm.tv/subject/{chain_subject_id}",
+                            "episode_url": f"https://bgm.tv/ep/{chain_ep_id}",
+                        }
                     if trace:
                         trace.final_subject_id = str(chain_subject_id)
                         trace.final_episode_id = str(chain_ep_id)
@@ -880,6 +981,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         cross_step.reason = (
                             f"跨季链查找未命中含 sort={item.episode} 的季条目"
                         )
+                        cross_step.processed_payload = {
+                            "input_subject_id": cross_input_subject,
+                            "output_subject_id": "",
+                            "output_episode_id": "",
+                            "target_episode": item.episode,
+                            "changed": False,
+                            "error": f"未找到含 sort={item.episode} 的关联季条目",
+                        }
                     send_notify(
                         "episode_not_found",
                         item,
@@ -889,6 +998,27 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     )
                     # 与「未找到番剧」分支对称：写一条 error 同步记录，
                     # 便于在「同步记录」页面看到集数解析失败的情况
+                    if trace:
+                        result_step = trace.start_step("result")
+                        result_step.status = "miss"
+                        result_step.subject_id = str(subject_id)
+                        result_step.reason = (
+                            f"同步失败：未找到对应的剧集 · "
+                            f"https://bgm.tv/subject/{subject_id}"
+                        )
+                        result_step.processed_payload = {
+                            "status": "error",
+                            "episode": f"S{item.season:02d}E{item.episode:02d}",
+                            "subject_id": str(subject_id),
+                            "episode_id": "",
+                            "subject_url": f"https://bgm.tv/subject/{subject_id}",
+                            "episode_url": "",
+                            "bgm_title": "",
+                            "message": "未找到对应的剧集（不存在或集数过多）",
+                        }
+                        trace.final_status = "error"
+                        trace.final_message = "未找到对应的剧集（不存在或集数过多）"
+                        trace.finish()
                     database_manager.log_sync_record(
                         user_name=item.user_name,
                         title=item.title,
@@ -908,8 +1038,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         else "",
                         match_trace=trace.to_dict() if trace else None,
                     )
-                    if trace:
-                        trace.finish()
                     status_holder[0] = "error"
                     return SyncResponse(status="error", message="未找到对应的剧集")
 
@@ -936,15 +1064,34 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
 
             # 标记为看过
+            sync_action_step = trace.start_step("sync_action") if trace else None
             try:
                 mark_status = self._retry_mark_episode(bgm, bgm_se_id, bgm_ep_id)
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
                 if "认证失败" in str(ve) or "access_token" in str(ve):
+                    if sync_action_step:
+                        sync_action_step.status = "error"
+                        sync_action_step.reason = f"认证失败: {ve}"
                     status_holder[0] = "error"
                     return SyncResponse(status="error", message=str(ve))
                 else:
                     raise ve
+
+            if sync_action_step:
+                sync_action_step.status = "hit"
+                sync_action_step.subject_id = str(bgm_se_id)
+                # mark_status：0=已在看/看过 1=标记为看过 2=添加收藏
+                action_label = {
+                    0: "已在看/看过（无变更）",
+                    1: "已标记为看过",
+                    2: "已添加收藏",
+                }.get(mark_status, f"mark_status={mark_status}")
+                sync_action_step.reason = (
+                    f"mark_episode_watched 返回 {mark_status}（{action_label}）"
+                )
+                if trace:
+                    trace.final_action = str(mark_status)
 
             result_message = self._apply_sync_status(
                 item, actual_source, bgm_se_id, bgm_ep_id, bgm_title, mark_status
@@ -955,6 +1102,31 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             # 回填最终剧集 ID 到 trace（匹配阶段未知 ep_id，此处补全）
             if trace and bgm_ep_id:
                 trace.final_episode_id = str(bgm_ep_id)
+
+            # 流水线最后一步：同步结果
+            if trace:
+                result_step = trace.start_step("result")
+                result_step.status = "hit"
+                result_step.subject_id = str(bgm_se_id)
+                result_step.reason = (
+                    f"{result_message} · https://bgm.tv/subject/{bgm_se_id}"
+                    + (f" · https://bgm.tv/ep/{bgm_ep_id}" if bgm_ep_id else "")
+                )
+                result_step.processed_payload = {
+                    "status": "success",
+                    "episode": f"S{item.season:02d}E{item.episode:02d}",
+                    "subject_id": str(bgm_se_id),
+                    "episode_id": str(bgm_ep_id) if bgm_ep_id else "",
+                    "subject_url": f"https://bgm.tv/subject/{bgm_se_id}",
+                    "episode_url": f"https://bgm.tv/ep/{bgm_ep_id}"
+                    if bgm_ep_id
+                    else "",
+                    "bgm_title": bgm_title,
+                    "message": result_message,
+                }
+                trace.final_status = "success"
+                trace.final_message = result_message
+                trace.finish()
 
             # 记录同步成功到数据库
             database_manager.log_sync_record(
@@ -1153,11 +1325,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         当传入 trace 时，会记录每个匹配阶段的详细过程。
         """
-        # 阶段 1：自定义映射（含季度感知 + 正则规则）
-        # 标题归一化：仅用于 API 搜索阶段，自定义映射仍使用原始标题以保证键名一致
+        # 阶段 0：标题归一化（仅用于 API 搜索阶段，自定义映射仍使用原始标题以保证键名一致）
         normalized_title = self.normalize_title(item.title)
         if trace:
             trace.normalized_title = normalized_title
+            normalize_step = trace.start_step("normalize")
+            normalize_step.status = "hit"
+            normalize_step.reason = f"标题归一化：{item.title!r} → {normalized_title!r}"
+        else:
+            normalize_step = None  # noqa: F841
+
+        # 阶段 1：自定义映射（含季度感知 + 正则规则）
+        if trace:
             step = trace.start_step("custom_mapping")
         else:
             step = None

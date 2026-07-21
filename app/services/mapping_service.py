@@ -12,10 +12,15 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from typing import Any
 
+import regex as re
+
 from ..core.logging import logger
+
+# 单条正则规则匹配的超时（秒）。
+# regex 库支持 timeout 参数，可防御用户配置的病态正则引发的灾难性回溯。
+_REGEX_TIMEOUT = 1.0
 
 
 class MappingService:
@@ -192,13 +197,19 @@ class MappingService:
                 if not pattern or not subject_id:
                     continue
                 try:
-                    if re.search(pattern, candidate_title):
+                    if re.search(pattern, candidate_title, timeout=_REGEX_TIMEOUT):
                         desc = rule.get("description", "")
                         reason = f"正则规则命中：/{pattern}/ → {subject_id}"
                         if desc:
                             reason += f"（{desc}）"
                         return subject_id, "regex", reason
                 except re.error:
+                    continue
+                except TimeoutError:
+                    logger.warning(
+                        f"映射规则正则匹配超时（>{_REGEX_TIMEOUT}s），已跳过："
+                        f"/{pattern}/ 标题={candidate_title!r}"
+                    )
                     continue
 
         return "", "", ""

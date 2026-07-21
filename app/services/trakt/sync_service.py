@@ -693,6 +693,22 @@ class TraktSyncService:
                 release_date=release_date,
                 user_name=user_id,  # 使用 user_id 作为 user_name
                 source="trakt",
+                raw_payload={
+                    "source": "trakt",
+                    "history_kind": "episode",
+                    "watched_at": item.watched_at,
+                    "show": {
+                        "title": show.get("title"),
+                        "year": show.get("year"),
+                        "ids": show.get("ids", {}),
+                    },
+                    "episode": {
+                        "season": episode.get("season"),
+                        "number": episode.get("number"),
+                        "title": episode.get("title"),
+                        "first_aired": episode.get("first_aired"),
+                    },
+                },
             )
 
         except Exception as e:
@@ -748,6 +764,17 @@ class TraktSyncService:
             release_date=release_date,
             user_name=user_id,
             source="trakt",
+            raw_payload={
+                "source": "trakt",
+                "history_kind": "movie",
+                "watched_at": item.watched_at,
+                "movie": {
+                    "title": movie.get("title"),
+                    "year": movie.get("year"),
+                    "released": movie.get("released"),
+                    "ids": ids,
+                },
+            },
         )
 
     async def start_user_sync_task(self, user_id: str, full_sync: bool = False) -> str:

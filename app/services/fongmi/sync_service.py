@@ -60,6 +60,12 @@ class FongmiSyncService:
             release_date=rec.release_date,
             user_name=rec.device_name,
             source=FONGMI_SYNC_SOURCE,
+            raw_payload={
+                "source": "fongmi",
+                "device_ip": rec.device_ip,
+                "device_name": rec.device_name,
+                "media": rec.raw_media,
+            },
         )
 
     async def _resolve_devices(self, cfg: dict) -> list[FongmiDevice]:
