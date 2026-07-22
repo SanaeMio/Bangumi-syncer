@@ -212,9 +212,11 @@ class TraktSyncService:
                 # bangumi_data 仅收录动画条目，TMDB 命中则确认为动画，跳过 Trakt 详情请求
                 if sync_filter_enabled:
                     if item.type == "episode" and item.show:
-                        tmdb_id = item.show.get("ids", {}).get("tmdb")
+                        show = item.show
+                        tmdb_id = show.get("ids", {}).get("tmdb")
+                        ep_data = item.episode or {}
                         if tmdb_id and bangumi_data.get_title_by_tmdb_id(
-                            f"tv/{tmdb_id}"
+                            f"tv/{tmdb_id}", season=ep_data.get("season")
                         ):
                             logger.debug(
                                 f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: tv/{tmdb_id}"
@@ -639,7 +641,9 @@ class TraktSyncService:
 
             show_tmdb = show.get("ids", {}).get("tmdb")
             if show_tmdb is not None:
-                title = bangumi_data.get_title_by_tmdb_id(f"tv/{show_tmdb}")
+                title = bangumi_data.get_title_by_tmdb_id(
+                    f"tv/{show_tmdb}", season=episode.get("season")
+                )
 
             if not title:
                 # bangumi_data 未收录时，按日文原名 → 预取原文 → 英文标题顺序降级
@@ -663,13 +667,19 @@ class TraktSyncService:
             season = episode.get("season", 1)
             episode_num = episode.get("number", 1)
 
-            # 获取发行日期（优先剧集/剧集首播日期，其次播出年份，最后用户观看日期）
+            # 获取发行日期：episode.first_aired → show.first_aired → bangumi_data begin → show.year → watched_at
             release_date = ""
             if episode.get("first_aired"):
                 release_date = episode["first_aired"]
             elif show.get("first_aired"):
                 release_date = show["first_aired"]
-            elif show.get("year"):
+            elif show_tmdb is not None:
+                bgm_begin = bangumi_data.get_begin_by_tmdb_id(
+                    f"tv/{show_tmdb}", season=episode.get("season")
+                )
+                if bgm_begin and isinstance(bgm_begin, str):
+                    release_date = bgm_begin[:10]
+            if not release_date and show.get("year"):
                 release_date = f"{show['year']}-01-01"
 
             if not release_date and item.watched_at:
