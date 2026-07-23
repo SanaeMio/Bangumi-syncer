@@ -163,18 +163,18 @@ class TestLLMUsageRepository:
         )
 
         stats = repo.get_stats(scope="aggregate", days=30)
-        assert stats["total_calls"] == 3
-        assert stats["total_tokens"] == 600
-        assert stats["error_count"] == 1
-        assert _approx(stats["avg_latency_ms"], 400 / 3)
+        assert stats.total_calls == 3
+        assert stats.total_tokens == 600
+        assert stats.error_count == 1
+        assert _approx(stats.avg_latency_ms, 400 / 3)
 
     def test_get_stats_aggregate_empty(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
         stats = db.llm_usage.get_stats(scope="aggregate", days=30)
-        assert stats["total_calls"] == 0
-        assert stats["total_tokens"] == 0
-        assert stats["error_count"] == 0
-        assert stats["avg_latency_ms"] == 0
+        assert stats.total_calls == 0
+        assert stats.total_tokens == 0
+        assert stats.error_count == 0
+        assert stats.avg_latency_ms == 0
 
     # ── get_stats: detailed ──────────────────────────────────────────
 
@@ -187,11 +187,11 @@ class TestLLMUsageRepository:
         repo.log_usage(model="m2", total_tokens=50, status="success")
 
         stats = repo.get_stats(scope="detailed", days=30)
-        by_model = {m["model"]: m for m in stats["by_model"]}
-        assert by_model["m1"]["calls"] == 2
-        assert by_model["m1"]["total_tokens"] == 300
-        assert by_model["m2"]["calls"] == 1
-        assert by_model["m2"]["total_tokens"] == 50
+        by_model = {m.model: m for m in stats.by_model}
+        assert by_model["m1"].calls == 2
+        assert by_model["m1"].total_tokens == 300
+        assert by_model["m2"].calls == 1
+        assert by_model["m2"].total_tokens == 50
 
     def test_get_stats_detailed_includes_by_job(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
@@ -206,10 +206,10 @@ class TestLLMUsageRepository:
         repo.log_usage(job_name="tagging", model="m", total_tokens=50, status="success")
 
         stats = repo.get_stats(scope="detailed", days=30)
-        by_job = {j["job_name"]: j for j in stats["by_job"]}
-        assert by_job["summary"]["calls"] == 2
-        assert by_job["summary"]["total_tokens"] == 300
-        assert by_job["tagging"]["calls"] == 1
+        by_job = {j.job_name: j for j in stats.by_job}
+        assert by_job["summary"].calls == 2
+        assert by_job["summary"].total_tokens == 300
+        assert by_job["tagging"].calls == 1
 
     def test_get_stats_detailed_includes_daily(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
@@ -219,10 +219,10 @@ class TestLLMUsageRepository:
         repo.log_usage(model="m", total_tokens=200, status="success")
 
         stats = repo.get_stats(scope="detailed", days=30)
-        assert len(stats["daily"]) >= 1
-        today_entry = stats["daily"][-1]
-        assert today_entry["calls"] >= 2
-        assert today_entry["total_tokens"] >= 300
+        assert len(stats.daily) >= 1
+        today_entry = stats.daily[-1]
+        assert today_entry.calls >= 2
+        assert today_entry.total_tokens >= 300
 
     def test_get_stats_detailed_respects_days(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
@@ -232,15 +232,15 @@ class TestLLMUsageRepository:
 
         # Should not return data when days=0 (excludes all)
         stats = repo.get_stats(scope="detailed", days=0)
-        assert stats["total_calls"] == 0
+        assert stats.total_calls == 0
 
     def test_get_stats_scope_defaults_to_aggregate(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
         repo = db.llm_usage
         repo.log_usage(model="m", total_tokens=100, status="success")
         stats = repo.get_stats()  # default scope
-        assert "by_model" not in stats
-        assert stats["total_calls"] == 1
+        assert not stats.by_model  # aggregate 不返回明细
+        assert stats.total_calls == 1
 
     # ── cleanup ──────────────────────────────────────────────────────
 
@@ -283,7 +283,22 @@ class TestLLMUsageRepository:
         repo.log_usage(model="m", total_tokens=1, status="success")
         deleted = repo.cleanup_old(retention_days=90)
         assert deleted == 0
-        assert repo.get_stats()["total_calls"] == 1
+        assert repo.get_stats().total_calls == 1
+
+    def test_cleanup_uses_default_when_negative(self, temp_dir, reset_singletons):
+        """retention_days <= 0 时回退到默认值 365。"""
+        db = self._make_db(temp_dir)
+        repo = db.llm_usage
+        # 不应抛出异常
+        deleted = repo.cleanup_old(retention_days=0)
+        assert deleted == 0
+
+    # ── default retention days ──────────────────────────────────────
+
+    def test_default_retention_days_is_365(self):
+        from app.core.database.llm_usage import LLMUsageRepository
+
+        assert LLMUsageRepository._DEFAULT_RETENTION_DAYS == 365
 
     # ── DatabaseManager wiring ───────────────────────────────────────
 
@@ -299,4 +314,4 @@ class TestLLMUsageRepository:
         db = self._make_db(temp_dir)
         db._conn = None  # simulate connection drop
         assert db.llm_usage.log_usage(model="reconnect-test", total_tokens=5)
-        assert db.llm_usage.get_stats()["total_calls"] == 1
+        assert db.llm_usage.get_stats().total_calls == 1

@@ -722,6 +722,107 @@
                 </div>
             </div>
         </div>
+        <!-- LLM 配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-llm" class="card shadow-sm config-card mb-4">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-robot me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">LLM 配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">API 地址</label>
+                                <input class="form-control"
+                                       id="llm-api-base"
+                                       name="llm.api_base"
+                                       placeholder="https://api.openai.com/v1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">API 密钥</label>
+                                <input type="password"
+                                       class="form-control"
+                                       id="llm-api-key"
+                                       name="llm.api_key"
+                                       placeholder="sk-...">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">模型</label>
+                                <input class="form-control"
+                                       id="llm-model"
+                                       name="llm.model"
+                                       placeholder="gpt-4o-mini">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">最大 Token</label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="llm-max-tokens"
+                                       name="llm.max_tokens"
+                                       value="2000">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">温度</label>
+                                <input type="number"
+                                       step="0.1"
+                                       class="form-control"
+                                       id="llm-temperature"
+                                       name="llm.temperature"
+                                       value="0.7">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">超时(秒)</label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="llm-timeout"
+                                       name="llm.timeout"
+                                       value="60">
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="button" class="btn btn-primary" onclick="saveLLMAndTest()">
+                                    <i class="bi bi-lightning-charge me-1"></i>保存并测试
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-muted small mt-3 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>请使用您信任的 LLM 服务提供商。API 密钥将加密存储，测试连接会产生少量 Token 消耗。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- AI 追番总结 -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-summary" class="card shadow-sm config-card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-journal-text me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">AI 追番总结</h6>
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-primary"
+                                onclick="showSummaryJobModal()">
+                            <i class="bi bi-plus-lg me-1"></i>新建任务
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="summary-jobs-list" class="row g-3">
+                            <!-- Job cards rendered here by renderSummaryJobs() -->
+                        </div>
+                        <div id="summary-jobs-empty"
+                             class="app-empty-state app-empty-state--sm"
+                             style="display:none">
+                            <i class="bi bi-inbox app-empty-state__icon"></i>
+                            <p class="text-muted mt-3 mb-0">还没有追番总结任务，点击上方按钮创建</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <!-- 通知配置 -->
         <div class="row">
             <div class="col-12">
@@ -1337,6 +1438,8 @@ function refreshConfigPageToc() {
         { id: 'config-section-advanced', label: '高级', mode: 'always' },
         { id: 'config-section-auth', label: 'Web 认证', mode: 'always' },
         { id: 'config-section-bangumi-data', label: 'Data', mode: 'always' },
+        { id: 'config-section-llm', label: 'LLM', mode: 'always' },
+        { id: 'config-section-summary', label: 'AI总结', mode: 'always' },
         { id: 'config-section-notify', label: '通知', mode: 'always' },
         { id: 'config-section-feiniu', label: '飞牛', mode: 'always' },
         { id: 'config-section-fongmi', label: 'fongmi', mode: 'always' },
@@ -1443,6 +1546,9 @@ async function loadConfig(showToast = true) {
             // 加载通知配置
             loadWebhookConfigs();
             loadEmailConfigs();
+            // 加载 LLM 和追番总结配置
+            loadLLMConfig();
+            loadSummaryJobs();
             if (showToast) {
                 showAlert('配置重新加载成功', 'success');
             }
@@ -1725,6 +1831,14 @@ async function saveConfig() {
                 max_login_attempts: parseInt(document.getElementById('max-login-attempts').value) || 5,
                 lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900,
                 webhook_auth_enabled: document.getElementById('webhook-auth-enabled').checked
+            },
+            llm: {
+                api_base: document.getElementById('llm-api-base').value,
+                api_key: document.getElementById('llm-api-key').value,
+                model: document.getElementById('llm-model').value,
+                max_tokens: parseInt(document.getElementById('llm-max-tokens').value) || 2000,
+                temperature: parseFloat(document.getElementById('llm-temperature').value) || 0.7,
+                timeout: parseInt(document.getElementById('llm-timeout').value) || 60
             }
         };
         
@@ -2562,6 +2676,8 @@ function showAddWebhookModal() {
     
     // 清空所有 webhook 类型复选框
     clearNotificationTypeCheckboxes('webhook-type-');
+    // 动态加载追番总结通知类型
+    loadSummaryNotificationTypes('webhook-types-container', '');
 
     const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
     modal.show();
@@ -2589,6 +2705,8 @@ async function showEditWebhookModal(webhookId) {
                 
                 // 设置复选框
                 setNotificationTypeCheckboxes('webhook-type-', webhook.types);
+                // 动态加载追番总结通知类型
+                loadSummaryNotificationTypes('webhook-types-container', webhook.types);
 
                 const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
                 modal.show();
@@ -2821,6 +2939,263 @@ function copyWebhookKey() {
         showAlert('复制失败，请手动复制', 'danger');
     }
 }
+
+// ========== LLM 配置 ==========
+
+async function loadLLMConfig() {
+    try {
+        const r = await fetch(appUrl('/api/summary/llm/conf'));
+        const d = await r.json();
+        document.getElementById('llm-api-base').value = d.api_base || '';
+        document.getElementById('llm-api-key').value = d.api_key || '';
+        document.getElementById('llm-model').value = d.model || '';
+        document.getElementById('llm-max-tokens').value = d.max_tokens || 2000;
+        document.getElementById('llm-temperature').value = d.temperature || 0.7;
+        document.getElementById('llm-timeout').value = d.timeout || 60;
+    } catch(e) { /* silent */ }
+}
+
+async function saveLLMAndTest() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
+    try {
+        // 第一步：保存LLM配置
+        const saveR = await fetch(appUrl('/api/summary/llm/conf'), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_base: document.getElementById('llm-api-base').value,
+                api_key: document.getElementById('llm-api-key').value,
+                model: document.getElementById('llm-model').value,
+                max_tokens: parseInt(document.getElementById('llm-max-tokens').value) || 2000,
+                temperature: parseFloat(document.getElementById('llm-temperature').value) || 0.7,
+                timeout: parseInt(document.getElementById('llm-timeout').value) || 60
+            })
+        });
+        const saveD = await saveR.json();
+        if (saveD.status !== 'success') throw new Error(saveD.message || '保存失败');
+
+        // 第二步：测试连接
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
+        const testR = await fetch(appUrl('/api/summary/llm/test'), { method: 'POST' });
+        const testD = await testR.json();
+        if (testD.success) {
+            showAlert('保存成功，连接测试通过: ' + testD.message + ' (' + testD.latency_ms + 'ms)', 'success');
+        } else {
+            showAlert('已保存，但连接测试失败: ' + testD.message, 'warning');
+        }
+    } catch(e) {
+        showAlert('操作失败: ' + e.message, 'danger');
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>保存并测试';
+}
+
+// ========== AI 追番总结 ==========
+
+function formatNotifType(notifType) {
+    if (!notifType || !notifType.startsWith('watching_summary')) return notifType;
+    const suffix = notifType.replace('watching_summary', '').replace(/^_/, '');
+    return suffix ? 'AI 追番总结 (' + suffix + ')' : 'AI 追番总结';
+}
+
+async function loadSummaryJobs() {
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs'));
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        if (d.status === 'success') {
+            renderSummaryJobs(d.data);
+        }
+    } catch(e) { showAlert('加载总结任务失败: ' + e.message, 'danger'); }
+}
+
+function renderSummaryJobs(jobs) {
+    const list = document.getElementById('summary-jobs-list');
+    const empty = document.getElementById('summary-jobs-empty');
+    if (!jobs || jobs.length === 0) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+    list.innerHTML = jobs.map(job => `
+        <div class="col-md-6">
+            <div class="card border ${job.enabled ? 'border-primary' : 'border-secondary'}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-journal-check ${job.enabled ? 'text-success' : 'text-muted'} me-2"></i>
+                            <h6 class="card-title mb-0">${escapeHtml(job.name)}</h6>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" ${job.enabled ? 'checked' : ''}
+                                   onchange="toggleSummaryJob(${job.id}, this.checked)">
+                        </div>
+                    </div>
+                    <p class="card-text small text-muted mb-2">
+                        <i class="bi bi-clock me-1"></i>${escapeHtml(job.cron)} | 回溯: ${job.lookback_days}天 | 上限: ${job.max_records}条
+                    </p>
+                    ${job.user_name ? '<p class="card-text small text-muted mb-2"><i class="bi bi-person me-1"></i>' + escapeHtml(job.user_name) + '</p>' : ''}
+                    <div class="mb-2">
+                        <span class="badge bg-secondary">${formatNotifType(job.notification_type)}</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="editSummaryJob(${job.id})"><i class="bi bi-pencil me-1"></i>编辑</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSummaryJob(${job.id}, '${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-trash me-1"></i>删除</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    window._summaryJobs = jobs;
+}
+
+function showSummaryJobModal() {
+    document.getElementById('summary-job-id').value = '';
+    document.getElementById('summaryJobModalTitle').textContent = '新建追番总结任务';
+    // 生成不重复的默认名称：找出已有 "追番总结 N" 中最大 N，+1
+    var existingJobs = window._summaryJobs || [];
+    var maxN = 0;
+    existingJobs.forEach(function (j) {
+        var m = j.name && j.name.match(/^追番总结\s*(\d+)$/);
+        if (m) {
+            var n = parseInt(m[1], 10);
+            if (n > maxN) maxN = n;
+        }
+    });
+    document.getElementById('summary-job-name').value = '追番总结 ' + (maxN + 1);
+    document.getElementById('summary-job-cron').value = '0 21 * * *';
+    document.getElementById('summary-job-lookback').value = '1';
+    document.getElementById('summary-job-user').value = '';
+    document.getElementById('summary-job-max-records').value = '200';
+    document.getElementById('summary-job-prompt').value =
+        '你是一个轻松有趣的追番助手。用户会给你一段指定时间范围内的观影记录，请你用亲切自然的中文生成追番总结。\n\n' +
+        '规则：\n' +
+        '1. 如果记录为 0 条，告知用户"这段时间还没有追番记录哦~"\n' +
+        '2. 按番剧分组，简要描述观看进度（如"《芙莉莲》追到 S1E10"）\n' +
+        '3. 如果涉及多用户（记录中 user_name 不同），按用户分开描述\n' +
+        '4. 加一两句轻松评论，语气像朋友聊天，不要太正式\n' +
+        '5. 限制在 300 字以内';
+    new bootstrap.Modal(document.getElementById('summaryJobModal')).show();
+}
+
+async function editSummaryJob(id) {
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs'));
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        const job = d.data.find(j => j.id === id);
+        if (!job) { showAlert('任务未找到', 'danger'); return; }
+        document.getElementById('summary-job-id').value = job.id;
+        document.getElementById('summaryJobModalTitle').textContent = '编辑追番总结任务';
+        document.getElementById('summary-job-name').value = job.name;
+        document.getElementById('summary-job-cron').value = job.cron;
+        document.getElementById('summary-job-lookback').value = job.lookback_days;
+        document.getElementById('summary-job-user').value = job.user_name || '';
+        document.getElementById('summary-job-max-records').value = job.max_records;
+        document.getElementById('summary-job-prompt').value = job.system_prompt || '';
+        new bootstrap.Modal(document.getElementById('summaryJobModal')).show();
+    } catch(e) { showAlert('加载失败: ' + e.message, 'danger'); }
+}
+
+async function saveSummaryJob() {
+    const id = document.getElementById('summary-job-id').value;
+    const data = {
+        name: document.getElementById('summary-job-name').value,
+        cron: document.getElementById('summary-job-cron').value,
+        lookback_days: parseInt(document.getElementById('summary-job-lookback').value) || 1,
+        user_name: document.getElementById('summary-job-user').value,
+        max_records: parseInt(document.getElementById('summary-job-max-records').value) || 200,
+        system_prompt: document.getElementById('summary-job-prompt').value,
+    };
+    try {
+        const url = id ? appUrl('/api/summary/jobs/' + id) : appUrl('/api/summary/jobs');
+        const method = id ? 'PUT' : 'POST';
+        const r = await fetch(url, {
+            method, headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        if (d.status === 'success') {
+            bootstrap.Modal.getInstance(document.getElementById('summaryJobModal')).hide();
+            showAlert(id ? '任务已更新' : '任务已创建', 'success');
+            loadSummaryJobs();
+        } else {
+            showAlert('保存失败: ' + (d.message || d.detail || '未知错误'), 'danger');
+        }
+    } catch(e) { showAlert('保存失败: ' + e.message, 'danger'); }
+}
+
+function confirmDeleteSummaryJob(id, name) {
+    document.getElementById('delete-summary-name').textContent = name;
+    const modal = new bootstrap.Modal(document.getElementById('deleteSummaryModal'));
+    document.getElementById('delete-summary-confirm').onclick = async () => {
+        try {
+            const r = await fetch(appUrl('/api/summary/jobs/' + id), { method: 'DELETE' });
+            if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+            const d = await r.json();
+            if (d.status === 'success') {
+                modal.hide();
+                showAlert('任务已删除', 'success');
+                loadSummaryJobs();
+            } else { showAlert('删除失败: ' + (d.message || '未知错误'), 'danger'); }
+        } catch(e) { showAlert('删除失败: ' + e.message, 'danger'); }
+    };
+    modal.show();
+}
+
+async function toggleSummaryJob(id, enabled) {
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs/' + id), {
+            method: 'PUT', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled})
+        });
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        loadSummaryJobs();
+    } catch(e) { showAlert('操作失败: ' + e.message, 'danger'); }
+}
+
+// ========== 动态通知类型 (AI 追番总结) ==========
+
+async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
+    try {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.querySelectorAll('.summary-type-option').forEach(el => el.remove());
+
+        const r = await fetch(appUrl('/api/summary/jobs'));
+        const d = await r.json();
+        if (d.status !== 'success' || !d.data || d.data.length === 0) return;
+
+        const selectedTypes = selectedTypesStr ? selectedTypesStr.split(',') : [];
+
+        d.data.forEach(job => {
+            const div = document.createElement('div');
+            div.className = 'form-check summary-type-option';
+            div.innerHTML = `
+                <input class="form-check-input" type="checkbox"
+                       value="${job.notification_type}" id="${containerId}-${job.notification_type}"
+                       ${selectedTypes.includes(job.notification_type) ? 'checked' : ''}>
+                <label class="form-check-label" for="${containerId}-${job.notification_type}">
+                    AI 追番 - ${escapeHtml(job.name)}
+                </label>
+            `;
+            container.appendChild(div);
+        });
+    } catch(e) { /* 如果 summary API 不可用，就不显示追番总结类型 */ }
+}
+
+// ========== HTML 转义工具 ==========
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML.replace(/"/g, '&quot;');
+}
     </script>
     <!-- Webhook 配置模态框 -->
     <div class="modal fade"
@@ -2878,7 +3253,8 @@ function copyWebhookKey() {
                             <label class="form-label fw-semibold">
                                 <i class="bi bi-tags me-1"></i>通知类型
                             </label>
-                            <div class="border rounded p-3"
+                            <div id="webhook-types-container"
+                                 class="border rounded p-3"
                                  style="max-height: 200px;
                                         overflow-y: auto">
                                 <div class="form-check">
@@ -3164,7 +3540,8 @@ function copyWebhookKey() {
                             <label class="form-label fw-semibold">
                                 <i class="bi bi-tags me-1"></i>通知类型
                             </label>
-                            <div class="border rounded p-3"
+                            <div id="email-types-container"
+                                 class="border rounded p-3"
                                  style="max-height: 200px;
                                         overflow-y: auto">
                                 <div class="form-check">
@@ -3293,6 +3670,82 @@ function copyWebhookKey() {
             </div>
         </div>
     </div>
+    <!-- 追番总结任务模态框 -->
+    <div class="modal fade" id="summaryJobModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="summaryJobModalTitle">新建追番总结任务</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="summary-job-id">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">名称</label>
+                            <input class="form-control" id="summary-job-name" placeholder="每日追番总结">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Cron 表达式</label>
+                            <input class="form-control" id="summary-job-cron" placeholder="0 21 * * *">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">回溯天数</label>
+                            <input type="number"
+                                   class="form-control"
+                                   id="summary-job-lookback"
+                                   value="1"
+                                   min="1"
+                                   max="30">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">用户名</label>
+                            <input class="form-control" id="summary-job-user" placeholder="留空=所有用户">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">最大记录数</label>
+                            <input type="number"
+                                   class="form-control"
+                                   id="summary-job-max-records"
+                                   value="200"
+                                   min="1"
+                                   max="1000">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">
+                                系统提示词 <small class="text-muted">(告诉LLM如何总结)</small>
+                            </label>
+                            <textarea class="form-control" id="summary-job-prompt" rows="4"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSummaryJob()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 删除追番总结确认模态框 -->
+    <div class="modal fade" id="deleteSummaryModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">确认删除</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        确定要删除任务 <strong id="delete-summary-name"></strong> 吗？
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" id="delete-summary-confirm">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <script>
 // ========== 邮件配置管理 ==========
 
@@ -3403,6 +3856,8 @@ function showAddEmailModal() {
 
     // 重置复选框
     clearNotificationTypeCheckboxes('email-type-');
+    // 动态加载追番总结通知类型
+    loadSummaryNotificationTypes('email-types-container', '');
 
     const modal = new bootstrap.Modal(document.getElementById('emailModal'));
     modal.show();
@@ -3440,6 +3895,8 @@ async function showEditEmailModal(emailId) {
 
                 // 设置复选框
                 setNotificationTypeCheckboxes('email-type-', email.types);
+                // 动态加载追番总结通知类型
+                loadSummaryNotificationTypes('email-types-container', email.types);
 
                 const modal = new bootstrap.Modal(document.getElementById('emailModal'));
                 modal.show();

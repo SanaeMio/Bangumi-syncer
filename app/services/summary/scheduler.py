@@ -1,7 +1,8 @@
-"""SummaryScheduler — manages multiple cron jobs from [summary-N] configs.
+"""
+SummaryScheduler —— 管理 [summary-N] 配置中的多个 cron 任务。
 
-Does NOT extend BaseScheduler (which is for single-job schedulers).
-Follows the same start/stop/cron-parsing patterns for consistency.
+不继承 BaseScheduler（后者用于单任务调度器），
+但遵循相同的 start/stop/cron 解析模式以保持一致。
 """
 
 from __future__ import annotations
@@ -20,14 +21,15 @@ from .service import summary_service
 
 
 class SummaryScheduler:
-    """APScheduler wrapper managing multiple summary cron jobs from [summary-N] configs."""
+    """管理 [summary-N] 配置中多个 cron 任务的 APScheduler 封装。"""
 
     def __init__(self) -> None:
         self.scheduler: AsyncIOScheduler | None = None
         self._scheduler_config = config_manager.get_scheduler_config()
+        self._timezone: str = self._scheduler_config.get("timezone", "Asia/Shanghai")
 
     async def start(self) -> bool:
-        """Create and start the scheduler, register all jobs."""
+        """创建并启动调度器，注册所有启用的任务。"""
         try:
             if self.scheduler and self.scheduler.running:
                 self._schedule_all_jobs()
@@ -45,8 +47,7 @@ class SummaryScheduler:
                 jobstores=jobstores,
                 executors=executors,
                 job_defaults=job_defaults,
-                # review 时区参考 Trakt 从环境变量中获取 TZ，否则默认使用 shanghai
-                timezone="Asia/Shanghai",
+                timezone=self._timezone,
             )
             self.scheduler.start()
             self._schedule_all_jobs()
@@ -57,7 +58,7 @@ class SummaryScheduler:
             return False
 
     async def stop(self) -> bool:
-        """Shutdown the scheduler."""
+        """关闭调度器。"""
         try:
             if self.scheduler and self.scheduler.running:
                 self.scheduler.shutdown()
@@ -69,7 +70,11 @@ class SummaryScheduler:
             return False
 
     def _schedule_all_jobs(self) -> None:
-        """Sync APScheduler jobs with [summary-N] configs."""
+        """从 [summary-N] 配置同步 APScheduler 任务。
+
+        所有任务均为 CronTrigger，配合 replace_existing=True，
+        重复调用不会产生重复调度或重置计时问题。
+        """
         if not self.scheduler or not self.scheduler.running:
             return
 
@@ -80,14 +85,16 @@ class SummaryScheduler:
             job_config = SummaryJobConfig.from_config_dict(cfg)
             if not job_config.enabled:
                 continue
-            # review 这里把所有 job_config 为 enabled 的 job 都重新添加 job，是否会存在重复调度的问题？
-            # review 两种情况，如果用户配置的是间隔时间刷新，这里是否会导致无修改的任务时间刷新？
-            # review 如果是已经在的 job_id 重复添加是否会有问题？
-            # review 能否判断配置是否有修改并对有修改的 job 进行重新调度？
+
             job_id = f"summary_{job_config.id}"
             active_ids.add(job_id)
 
-            trigger = self._parse_cron(job_config.cron)
+            try:
+                trigger = self._parse_cron(job_config.cron)
+            except ValueError as e:
+                logger.warning(f"Summary job '{job_config.name}' cron 无效，跳过: {e}")
+                continue
+
             self.scheduler.add_job(
                 func=self._run_job,
                 trigger=trigger,
@@ -100,38 +107,34 @@ class SummaryScheduler:
                 f"Summary job registered: {job_config.name} (cron: {job_config.cron})"
             )
 
-        # Remove jobs whose configs no longer exist or are disabled
+        # 移除配置中已删除或禁用的任务
         all_job_ids = {job.id for job in self.scheduler.get_jobs()}
         for jid in all_job_ids:
             if jid.startswith("summary_") and jid not in active_ids:
                 try:
                     self.scheduler.remove_job(jid)
                     logger.info(f"Summary job removed: {jid}")
-                except Exception:
-                    # review 异常不要静默
-                    pass
+                except Exception as e:
+                    logger.warning(f"移除 Summary 任务 {jid} 失败: {e}")
 
     def _parse_cron(self, cron_expression: str) -> CronTrigger:
-        """Parse 5-field cron expression. Falls back to default '0 21 * * *'."""
+        """解析 5 字段 cron 表达式，无效时抛出 ValueError。"""
         parts = cron_expression.strip().split()
-        # review 考虑到用户总是通过 API 去修改定时任务配置，并且修改完成后，会重新调度任务，
-        # review 所以这里应该抛出异常，并且在接口层面处理异常，而不是令人迷惑的默认定时。
-        # review 测试用例应该增加对于异常的测试
         if len(parts) != 5:
-            logger.warning(
-                f"Invalid cron: '{cron_expression}', using default '0 21 * * *'"
+            raise ValueError(
+                f"无效的 cron 表达式: '{cron_expression}'（需要 5 个字段）"
             )
-            parts = ["0", "21", "*", "*", "*"]
         return CronTrigger(
             minute=parts[0],
             hour=parts[1],
             day=parts[2],
             month=parts[3],
             day_of_week=parts[4],
+            timezone=self._timezone,
         )
 
     async def _run_job(self, job_config: SummaryJobConfig) -> None:
-        """Execute a single summary job with timeout protection."""
+        """执行单个摘要任务，带超时保护。"""
         timeout = self._scheduler_config.get("job_timeout", 300)
         try:
             await asyncio.wait_for(
@@ -144,12 +147,12 @@ class SummaryScheduler:
             logger.error(f"Summary job '{job_config.name}' failed: {e}")
 
     def reload_job_if_running(self) -> None:
-        """Refresh jobs after config change (called from Web UI save flow)."""
+        """配置变更后刷新任务（由 Web UI 保存流程调用）。"""
         if self.scheduler and self.scheduler.running:
             self._schedule_all_jobs()
 
     async def apply_config_after_save(self) -> None:
-        """Sync scheduler state after config.ini save."""
+        """config.ini 保存后同步调度器状态。"""
         if self.scheduler and self.scheduler.running:
             self._schedule_all_jobs()
         else:
@@ -158,5 +161,5 @@ class SummaryScheduler:
                 await self.start()
 
 
-# Singleton
+# 全局单例
 summary_scheduler = SummaryScheduler()

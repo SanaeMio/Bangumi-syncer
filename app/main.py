@@ -18,12 +18,12 @@ from .api.feiniu import router as feiniu_router
 from .api.fongmi import router as fongmi_router
 from .api.health import router as health_router
 from .api.inbox import router as inbox_router
+from .api.llm import router as llm_router
 from .api.logs import router as logs_router
 from .api.mappings import router as mappings_router
 from .api.notification import router as notification_router
 from .api.pages import router as pages_router
 from .api.proxy import router as proxy_router
-from .api.llm import router as llm_router
 from .api.summary_jobs import router as summary_jobs_router
 from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router

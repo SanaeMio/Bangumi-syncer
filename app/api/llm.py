@@ -3,6 +3,7 @@ LLM 配置与连接测试 API。
 """
 
 import time
+from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
 
@@ -20,7 +21,7 @@ from .deps import get_current_user_flexible
 router = APIRouter(prefix="/api/summary/llm", tags=["llm"])
 
 
-@router.get("", response_model=LLMConfigResponse)
+@router.get("/conf", response_model=LLMConfigResponse)
 async def get_llm_config(_=Depends(get_current_user_flexible)):
     cfg = config_manager.get_llm_config()
     # 遮掩 api_key 显示
@@ -37,7 +38,7 @@ async def get_llm_config(_=Depends(get_current_user_flexible)):
     )
 
 
-@router.put("")
+@router.put("/conf")
 async def update_llm_config(
     body: LLMConfigUpdate, _=Depends(get_current_user_flexible)
 ):
@@ -76,4 +77,4 @@ async def get_llm_stats(
 ):
     """获取 LLM 用量统计。"""
     stats = database_manager.llm_usage.get_stats(scope=scope, days=days)
-    return LLMUsageStatsResponse(**stats)
+    return LLMUsageStatsResponse(**asdict(stats))

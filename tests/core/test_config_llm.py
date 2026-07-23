@@ -3,8 +3,6 @@ Tests for ConfigManager.get_llm_config and LLM api_key encryption.
 """
 
 
-
-
 def _cm_from_ini(tmp_path, ini_text: str):
     """Build a ConfigManager pointing to a temp config.ini, without running __init__."""
     from app.core.config import ConfigManager

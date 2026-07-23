@@ -40,20 +40,74 @@ def test_parse_cron_valid_five_fields():
     assert isinstance(trigger, CronTrigger)
 
 
-def test_parse_cron_invalid_falls_back_to_default():
+def test_parse_cron_invalid_raises_value_error():
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
-    trigger = s._parse_cron("not-valid")
-    assert isinstance(trigger, CronTrigger)
+    with pytest.raises(ValueError, match="无效的 cron 表达式"):
+        s._parse_cron("not-valid")
 
 
 def test_parse_cron_strips_whitespace():
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
+    s._timezone = "Asia/Shanghai"
     trigger = s._parse_cron("  0  21  *  *  *  ")
     assert isinstance(trigger, CronTrigger)
+
+
+def test_parse_cron_uses_passed_timezone():
+    """传入 timezone 参数时 CronTrigger 应使用该时区。"""
+    from app.services.summary.scheduler import SummaryScheduler
+
+    s = SummaryScheduler()
+    s._timezone = "Asia/Shanghai"
+    trigger = s._parse_cron(
+        "0 23 * * *",
+    )
+    assert str(trigger.timezone) == "Asia/Shanghai"
+
+
+def test_parse_cron_accepts_string_timezone():
+    """CronTrigger.timezone 返回 ZoneInfo 对象，验证 key 与传入一致。"""
+    from app.services.summary.scheduler import SummaryScheduler
+
+    s = SummaryScheduler()
+    s._timezone = "Asia/Shanghai"
+    trigger = s._parse_cron(
+        "0 23 * * *",
+    )
+    assert trigger.timezone.key == "Asia/Shanghai"
+    assert isinstance(trigger, CronTrigger)
+
+
+def test_schedule_all_jobs_passes_timezone_to_trigger():
+    """_schedule_all_jobs 创建的 trigger 应带有配置的时区。"""
+    from app.services.summary.scheduler import SummaryScheduler
+
+    configs = [
+        _make_summary_config(id=1, name="tz-test", cron="0 23 * * *"),
+    ]
+    with patch(
+        "app.services.summary.scheduler.config_manager.get_summary_configs",
+        return_value=configs,
+    ):
+        s = SummaryScheduler()
+        s._timezone = "Asia/Shanghai"
+        mock_sched = MagicMock()
+        mock_sched.running = True
+        mock_sched.add_job = MagicMock()
+        mock_sched.get_jobs = MagicMock(return_value=[])
+        s.scheduler = mock_sched
+
+        s._schedule_all_jobs()
+
+    # 验证传给 add_job 的 trigger 带有正确时区
+    mock_sched.add_job.assert_called_once()
+    call_kwargs = mock_sched.add_job.call_args[1]
+    trigger = call_kwargs["trigger"]
+    assert trigger.timezone.key == "Asia/Shanghai"
 
 
 # ---------------------------------------------------------------------------
@@ -254,12 +308,15 @@ def test_schedule_all_jobs_removes_orphaned_jobs():
     mock_sched.remove_job.assert_called_once_with("summary_99")
 
 
-def test_schedule_all_jobs_remove_job_exception_suppressed():
-    """If removing an orphaned job raises, it should be suppressed."""
+def test_schedule_all_jobs_remove_job_logs_warning_on_exception():
+    """移除孤立任务时如果发生异常，应记录警告日志。"""
     configs = [_make_summary_config(id=1)]
-    with patch(
-        "app.services.summary.scheduler.config_manager.get_summary_configs",
-        return_value=configs,
+    with (
+        patch(
+            "app.services.summary.scheduler.config_manager.get_summary_configs",
+            return_value=configs,
+        ),
+        patch("app.services.summary.scheduler.logger") as mock_logger,
     ):
         from app.services.summary.scheduler import SummaryScheduler
 
@@ -273,10 +330,11 @@ def test_schedule_all_jobs_remove_job_exception_suppressed():
         mock_sched.remove_job = MagicMock(side_effect=ValueError("bad"))
         s.scheduler = mock_sched
 
-        # Should not raise
+        # 不应抛出异常
         s._schedule_all_jobs()
 
     mock_sched.remove_job.assert_called_once_with("summary_99")
+    mock_logger.warning.assert_called()
 
 
 def test_schedule_all_jobs_does_nothing_when_scheduler_not_running():
@@ -292,6 +350,32 @@ def test_schedule_all_jobs_does_nothing_when_scheduler_not_running():
     s._schedule_all_jobs()
     # get_jobs / add_job should not be called
     s.scheduler.get_jobs.assert_not_called()
+
+
+def test_schedule_all_jobs_skips_invalid_cron_job():
+    """cron 无效的任务应被跳过，不影响其他有效任务继续注册。"""
+    configs = [
+        _make_summary_config(id=1, name="valid-job", cron="0 21 * * *"),
+        _make_summary_config(id=2, name="bad-cron-job", cron="bad"),
+    ]
+    with patch(
+        "app.services.summary.scheduler.config_manager.get_summary_configs",
+        return_value=configs,
+    ):
+        from app.services.summary.scheduler import SummaryScheduler
+
+        s = SummaryScheduler()
+        mock_sched = MagicMock()
+        mock_sched.running = True
+        mock_sched.add_job = MagicMock()
+        mock_sched.get_jobs = MagicMock(return_value=[])
+        s.scheduler = mock_sched
+
+        s._schedule_all_jobs()
+
+    # 只有有效 cron 的任务被注册
+    assert mock_sched.add_job.call_count == 1
+    assert mock_sched.add_job.call_args[1]["id"] == "summary_1"
 
 
 # ---------------------------------------------------------------------------

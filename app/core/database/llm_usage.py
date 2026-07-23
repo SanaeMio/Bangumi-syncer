@@ -4,15 +4,59 @@ LLM 用量日志仓库
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from .base_repository import BaseRepository
+
+
+@dataclass
+class ModelStats:
+    """按模型的用量统计。"""
+
+    model: str = ""
+    calls: int = 0
+    total_tokens: int = 0
+    avg_latency_ms: int = 0
+
+
+@dataclass
+class JobStats:
+    """按任务的用量统计。"""
+
+    job_name: str = ""
+    calls: int = 0
+    total_tokens: int = 0
+    avg_latency_ms: int = 0
+
+
+@dataclass
+class DailyStats:
+    """按天的用量统计。"""
+
+    date: str = ""
+    calls: int = 0
+    total_tokens: int = 0
+
+
+@dataclass
+class LLMUsageStats:
+    """LLM 用量统计汇总。"""
+
+    total_calls: int = 0
+    total_tokens: int = 0
+    error_count: int = 0
+    avg_latency_ms: int = 0
+    by_model: list[ModelStats] = field(default_factory=list)
+    by_job: list[JobStats] = field(default_factory=list)
+    daily: list[DailyStats] = field(default_factory=list)
 
 
 class LLMUsageRepository(BaseRepository):
     """LLM API 调用用量日志的记录与统计。"""
 
     _TABLE = "llm_usage_logs"
+    _DEFAULT_RETENTION_DAYS = 365
 
     def __init__(self, conn):
         super().__init__(conn)
@@ -105,10 +149,26 @@ class LLMUsageRepository(BaseRepository):
         return bool(result)
 
     # ------------------------------------------------------------------
+    # stats helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _days_filter(days: int) -> tuple[str, list[Any]]:
+        """根据 days 参数生成 WHERE 子句和对应参数列表。"""
+        if days > 0:
+            return (
+                " WHERE timestamp >= datetime('now', ? || ' days')",
+                [f"-{days}"],
+            )
+        elif days == 0:
+            return (" WHERE 1=0", [])
+        return ("", [])
+
+    # ------------------------------------------------------------------
     # stats
     # ------------------------------------------------------------------
-    # review 响应体应该使用对象，而不是使用 dict，下面的函数同样需要修改。
-    def get_stats(self, scope: str = "aggregate", days: int = 30) -> dict[str, Any]:
+
+    def get_stats(self, scope: str = "aggregate", days: int = 30) -> LLMUsageStats:
         """获取用量统计。
 
         Args:
@@ -128,35 +188,30 @@ class LLMUsageRepository(BaseRepository):
                     COALESCE(AVG(latency_ms), 0)   AS avg_latency_ms
                 FROM {self._TABLE}
             """
-            # review 提取 sql 语句添加 days 的代码，抽象为函数
-            if days > 0:
-                base_sql += " WHERE timestamp >= datetime('now', ? || ' days')"
-                cursor.execute(base_sql, (f"-{days}",))
-            elif days == 0:
-                base_sql += " WHERE 1=0"
-                cursor.execute(base_sql)
-            else:
-                cursor.execute(base_sql)
+            where, params = self._days_filter(days)
+            cursor.execute(base_sql + where, params)
 
             row = cursor.fetchone()
-            # review row 可能为 None 或者 tuple，需要加上检查，否则在 base_sql 为 1=0 时，可能会报错
-            result: dict[str, Any] = {
-                "total_calls": row[0] or 0,
-                "total_tokens": row[1] or 0,
-                "error_count": row[2] or 0,
-                "avg_latency_ms": int(row[3] or 0),
-            }
+            if row is None:
+                return LLMUsageStats()
+
+            result = LLMUsageStats(
+                total_calls=row[0] or 0,
+                total_tokens=row[1] or 0,
+                error_count=row[2] or 0,
+                avg_latency_ms=int(row[3] or 0),
+            )
 
             if scope == "detailed":
-                result["by_model"] = self._stats_by_model(cursor, days)
-                result["by_job"] = self._stats_by_job(cursor, days)
-                result["daily"] = self._stats_daily(cursor, days)
+                result.by_model = self._stats_by_model(cursor, days)
+                result.by_job = self._stats_by_job(cursor, days)
+                result.daily = self._stats_daily(cursor, days)
 
             return result
 
         return self._run_read(_read, error_msg="获取 LLM 用量统计失败", reraise=True)
 
-    def _stats_by_model(self, cursor, days: int) -> list[dict[str, Any]]:
+    def _stats_by_model(self, cursor, days: int) -> list[ModelStats]:
         sql = f"""
             SELECT model,
                    COUNT(*) AS calls,
@@ -164,25 +219,20 @@ class LLMUsageRepository(BaseRepository):
                    COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
             FROM {self._TABLE}
         """
-        params: list[Any] = []
-        if days > 0:
-            sql += " WHERE timestamp >= datetime('now', ? || ' days')"
-            params.append(f"-{days}")
-        elif days == 0:
-            sql += " WHERE 1=0"
-        sql += " GROUP BY model ORDER BY total_tokens DESC"
+        where, params = self._days_filter(days)
+        sql += where + " GROUP BY model ORDER BY total_tokens DESC"
         cursor.execute(sql, params)
         return [
-            {
-                "model": r[0],
-                "calls": r[1],
-                "total_tokens": r[2],
-                "avg_latency_ms": int(r[3] or 0),
-            }
+            ModelStats(
+                model=r[0],
+                calls=r[1],
+                total_tokens=r[2],
+                avg_latency_ms=int(r[3] or 0),
+            )
             for r in cursor.fetchall()
         ]
 
-    def _stats_by_job(self, cursor, days: int) -> list[dict[str, Any]]:
+    def _stats_by_job(self, cursor, days: int) -> list[JobStats]:
         sql = f"""
             SELECT COALESCE(job_name, '(unknown)') AS job_name,
                    COUNT(*) AS calls,
@@ -190,50 +240,42 @@ class LLMUsageRepository(BaseRepository):
                    COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
             FROM {self._TABLE}
         """
-        params: list[Any] = []
-        if days > 0:
-            sql += " WHERE timestamp >= datetime('now', ? || ' days')"
-            params.append(f"-{days}")
-        elif days == 0:
-            sql += " WHERE 1=0"
-        sql += " GROUP BY job_name ORDER BY total_tokens DESC"
+        where, params = self._days_filter(days)
+        sql += where + " GROUP BY job_name ORDER BY total_tokens DESC"
         cursor.execute(sql, params)
         return [
-            {
-                "job_name": r[0],
-                "calls": r[1],
-                "total_tokens": r[2],
-                "avg_latency_ms": int(r[3] or 0),
-            }
+            JobStats(
+                job_name=r[0],
+                calls=r[1],
+                total_tokens=r[2],
+                avg_latency_ms=int(r[3] or 0),
+            )
             for r in cursor.fetchall()
         ]
 
-    def _stats_daily(self, cursor, days: int) -> list[dict[str, Any]]:
+    def _stats_daily(self, cursor, days: int) -> list[DailyStats]:
         sql = f"""
             SELECT DATE(timestamp) AS date,
                    COUNT(*) AS calls,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens
             FROM {self._TABLE}
         """
-        params: list[Any] = []
-        if days > 0:
-            sql += " WHERE timestamp >= datetime('now', ? || ' days')"
-            params.append(f"-{days}")
-        elif days == 0:
-            sql += " WHERE 1=0"
-        sql += " GROUP BY DATE(timestamp) ORDER BY date"
+        where, params = self._days_filter(days)
+        sql += where + " GROUP BY DATE(timestamp) ORDER BY date"
         cursor.execute(sql, params)
         return [
-            {"date": r[0], "calls": r[1], "total_tokens": r[2]}
+            DailyStats(date=r[0], calls=r[1], total_tokens=r[2])
             for r in cursor.fetchall()
         ]
 
     # ------------------------------------------------------------------
     # maintenance
     # ------------------------------------------------------------------
-    # review retention_days 应该作为参数暴露出去，有两种方式，一种 llm_param，另外一种环境变量，考虑下哪种更好？
-    def cleanup_old(self, retention_days: int = 30) -> int:
+
+    def cleanup_old(self, retention_days: int = _DEFAULT_RETENTION_DAYS) -> int:
         """删除超过 ``retention_days`` 天的记录，返回删除条数。"""
+        if retention_days <= 0:
+            retention_days = self._DEFAULT_RETENTION_DAYS
 
         def _write(conn):
             cursor = conn.execute(

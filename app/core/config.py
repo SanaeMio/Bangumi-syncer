@@ -9,7 +9,11 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Any, Optional
 
-from .config_secret_crypto import LLM_SECTION, decrypt_if_sensitive, encrypt_if_sensitive
+from .config_secret_crypto import (
+    LLM_SECTION,
+    decrypt_if_sensitive,
+    encrypt_if_sensitive,
+)
 from .logging import logger
 from .startup_info import startup_info
 
@@ -457,6 +461,7 @@ class ConfigManager:
             "max_tokens": 2000,
             "temperature": 0.7,
             "timeout": 60,
+            "retention_days": 365,
         }
         raw = self.get_section(LLM_SECTION, {})
         merged: dict[str, Any] = {**defaults, **raw}
@@ -572,8 +577,8 @@ class ConfigManager:
                 config.add_section(section_name)
 
             for field in self._SUMMARY_FIELDS:
-                value = config_data.get(field, "")
-                config.set(section_name, field, str(value))
+                if field in config_data:
+                    config.set(section_name, field, str(config_data[field]))
 
             self._save_config(config)
 

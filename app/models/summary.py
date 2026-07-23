@@ -79,6 +79,13 @@ class SummaryJobResponse(BaseModel):
     @classmethod
     def from_config_dict(cls, data: dict) -> "SummaryJobResponse":
         """Build from config_manager.get_summary_configs() dict"""
+
+        def _int(key: str, default: int) -> int:
+            v = data.get(key, default)
+            if v == "" or v is None:
+                return default
+            return int(v)
+
         user_name = str(data.get("user_name", "") or "")
         notif_type = (
             f"watching_summary_{user_name}" if user_name else "watching_summary"
@@ -89,13 +96,13 @@ class SummaryJobResponse(BaseModel):
             enabled = bool(enabled)
 
         return cls(
-            id=int(data.get("id", 0)),
+            id=_int("id", 0),
             name=str(data.get("name", "")),
             cron=str(data.get("cron", "0 21 * * *")),
-            lookback_days=int(data.get("lookback_days", 1)),
+            lookback_days=_int("lookback_days", 1),
             user_name=user_name,
             system_prompt=str(data.get("system_prompt", "")),
-            max_records=int(data.get("max_records", 200)),
+            max_records=_int("max_records", 200),
             enabled=enabled,
             notification_type=notif_type,
         )

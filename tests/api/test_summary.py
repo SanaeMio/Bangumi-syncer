@@ -432,7 +432,7 @@ class TestGetLLMConfig:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            response = await client.get("/api/summary/llm")
+            response = await client.get("/api/summary/llm/conf")
             assert response.status_code == 200
             data = response.json()
             assert data["api_base"] == "https://custom.api/v1"
@@ -460,7 +460,7 @@ class TestGetLLMConfig:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.get("/api/summary/llm")
+                response = await client.get("/api/summary/llm/conf")
                 assert response.json()["api_key"] == "***"
 
     @pytest.mark.asyncio
@@ -481,7 +481,7 @@ class TestGetLLMConfig:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.get("/api/summary/llm")
+                response = await client.get("/api/summary/llm/conf")
                 assert response.json()["api_key"] == ""
 
     def _create_test_app(self):
@@ -530,7 +530,7 @@ class TestUpdateLLMConfig:
                     "temperature": 0.1,
                     "model": "gpt-4o",
                 }
-                response = await client.put("/api/summary/llm", json=payload)
+                response = await client.put("/api/summary/llm/conf", json=payload)
                 assert response.status_code == 200
                 data = response.json()
                 assert data["status"] == "success"
@@ -558,7 +558,7 @@ class TestUpdateLLMConfig:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.put("/api/summary/llm", json={})
+                response = await client.put("/api/summary/llm/conf", json={})
                 assert response.status_code == 200
                 # No fields to update, so set_config should not be called
                 mock_cm.set_config.assert_not_called()
@@ -659,12 +659,14 @@ class TestGetLLMStats:
         app.dependency_overrides[get_current_user_flexible] = mock_auth
 
         with patch("app.api.llm.database_manager") as mock_db:
-            mock_db.llm_usage.get_stats.return_value = {
-                "total_calls": 10,
-                "total_tokens": 5000,
-                "error_count": 1,
-                "avg_latency_ms": 350,
-            }
+            from app.core.database.llm_usage import LLMUsageStats
+
+            mock_db.llm_usage.get_stats.return_value = LLMUsageStats(
+                total_calls=10,
+                total_tokens=5000,
+                error_count=1,
+                avg_latency_ms=350,
+            )
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -694,15 +696,9 @@ class TestGetLLMStats:
         app.dependency_overrides[get_current_user_flexible] = mock_auth
 
         with patch("app.api.llm.database_manager") as mock_db:
-            mock_db.llm_usage.get_stats.return_value = {
-                "total_calls": 0,
-                "total_tokens": 0,
-                "error_count": 0,
-                "avg_latency_ms": 0,
-                "by_model": [],
-                "by_job": [],
-                "daily": [],
-            }
+            from app.core.database.llm_usage import LLMUsageStats
+
+            mock_db.llm_usage.get_stats.return_value = LLMUsageStats()
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
