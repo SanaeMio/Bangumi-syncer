@@ -407,7 +407,7 @@ function renderReceiveInputTable(step) {
     if (!step || step.stage !== 'receive' || !step.processed_payload) {
         return '';
     }
-    return renderPayloadTable(step.processed_payload, {
+    let html = renderPayloadTable(step.processed_payload, {
         source: '来源',
         user_name: '用户',
         title: '标题',
@@ -416,7 +416,15 @@ function renderReceiveInputTable(step) {
         episode: '集',
         media_type: '媒体类型',
         release_date: '发布日期',
+        sync_action: '同步动作',
     });
+    if (step.raw_payload && typeof step.raw_payload === 'object' && Object.keys(step.raw_payload).length > 0) {
+        html += '<div class="mt-2">'
+            + '<div class="small text-muted mb-1">驱动原始数据</div>'
+            + `<pre class="record-detail-raw-payload mb-0">${escapeHtml(JSON.stringify(step.raw_payload, null, 2))}</pre>`
+            + '</div>';
+    }
+    return html;
 }
 
 // result step 结果表格：状态/集数/链接/消息
