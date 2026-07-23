@@ -142,7 +142,7 @@ secret_key = my-secret-key-for-llm-test
 api_base = 12345
 """
         cm = _cm_from_ini(tmp_path, ini)
-        cfg = cm.get_llm_config()
+        _ = cm.get_llm_config()
         # The get_section method converts "12345" to int, but get_llm_config
         # merges defaults over raw, then coerces only specific numeric fields.
         # So api_base should be a string (or the merged default wins if raw was int).

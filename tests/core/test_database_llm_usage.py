@@ -33,7 +33,7 @@ class TestLLMUsageRepository:
     # ── table creation ───────────────────────────────────────────────
 
     def test_table_created_on_init(self, temp_dir, reset_singletons):
-        db = self._make_db(temp_dir)
+        _ = self._make_db(temp_dir)
 
         with self._raw_conn(temp_dir) as raw:
             cursor = raw.execute(
@@ -43,7 +43,7 @@ class TestLLMUsageRepository:
             assert cursor.fetchone() is not None
 
     def test_table_has_expected_columns(self, temp_dir, reset_singletons):
-        db = self._make_db(temp_dir)
+        _ = self._make_db(temp_dir)
 
         with self._raw_conn(temp_dir) as raw:
             cursor = raw.execute("PRAGMA table_info(llm_usage_logs)")
@@ -66,7 +66,7 @@ class TestLLMUsageRepository:
         assert col_names == expected
 
     def test_indices_created(self, temp_dir, reset_singletons):
-        db = self._make_db(temp_dir)
+        _ = self._make_db(temp_dir)
 
         with self._raw_conn(temp_dir) as raw:
             for idx_name in (
