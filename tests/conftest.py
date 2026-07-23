@@ -14,12 +14,16 @@ from unittest.mock import AsyncMock, Mock, patch
 # ===== 在导入 app 模块前重定向 CONFIG_FILE =====
 # 防止 SecurityManager / ConfigManager 单例在模块导入时
 # 初始化并写回工作区 config.ini（_init_auth_config / _migrate_config）
+# config.ini 已加入 .gitignore（本地配置），优先从 git 跟踪的 config.example.ini 复制
 _REPO_ROOT = Path(__file__).parent.parent
 _ORIG_CONFIG_INI = _REPO_ROOT / "config.ini"
+_ORIG_CONFIG_EXAMPLE = _REPO_ROOT / "config.example.ini"
 _TEST_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="bs_test_config_"))
 _TEST_CONFIG_INI = _TEST_CONFIG_DIR / "config.ini"
 if _ORIG_CONFIG_INI.exists():
     shutil.copy2(_ORIG_CONFIG_INI, _TEST_CONFIG_INI)
+elif _ORIG_CONFIG_EXAMPLE.exists():
+    shutil.copy2(_ORIG_CONFIG_EXAMPLE, _TEST_CONFIG_INI)
 else:
     _TEST_CONFIG_INI.write_text("[bangumi]\n", encoding="utf-8")
 os.environ["CONFIG_FILE"] = str(_TEST_CONFIG_INI)

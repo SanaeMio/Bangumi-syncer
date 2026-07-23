@@ -216,6 +216,18 @@ class WebhookMixin:
                 "attempt_count": data.get("attempt_count", 0),
                 "max_attempts": data.get("max_attempts", 0),
             },
+            "pending_candidate": {
+                "title": "📝 候选待确认",
+                "type": notification_type,
+                "timestamp": data.get("timestamp", ""),
+                "user": data.get("user_name", ""),
+                "anime": data.get("title", ""),
+                "episode": f"S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
+                "source": data.get("source", ""),
+                "candidates_count": data.get("candidates_count", 0),
+                "top_candidate_id": data.get("top_candidate_id", ""),
+                "top_candidate_name": data.get("top_candidate_name", ""),
+            },
         }
 
         return default_templates.get(

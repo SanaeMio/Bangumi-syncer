@@ -435,4 +435,8 @@
     } else {
         init();
     }
+
+    window.BangumiInbox = {
+        openAnnouncementById: openAnnouncementById
+    };
 })();

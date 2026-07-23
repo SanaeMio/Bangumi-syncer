@@ -60,6 +60,8 @@ class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
         # 是否启用更详细的日志，用于调试匹配问题
         self.verbose_logging = config_manager.get("dev", "debug", fallback=False)
         self._cache_tmdb_mapping: dict[str, str] = {}
+        # TMDB id → begin 日期，供 trakt 同步取 release_date
+        self._cache_tmdb_begin: dict[str, str] = {}
         # 精确匹配索引：title → [item]，加速常用查询
         self._title_index: dict[str, list[dict]] = {}
 

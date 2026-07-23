@@ -202,40 +202,50 @@
             </button>
         </div>
         <div class="card-body">
-            <div class="sync-history-table">
-                <table class="table table-hover table-sm align-middle app-data-table">
+            <div id="sync-history-table-wrap" class="records-table-wrap">
+                <table class="table table-hover table-striped align-middle app-data-table"
+                       id="sync-history-table">
                     <thead>
                         <tr>
-                            <th>类型</th>
-                            <th>时间</th>
-                            <th>标题</th>
+                            <th class="col-hide-sm col-hide-md">类型</th>
+                            <th class="col-hide-sm">时间</th>
+                            <th class="records-table-col-title">标题</th>
                             <th>季/集</th>
                             <th>状态</th>
-                            <th>消息</th>
+                            <th class="col-hide-sm col-hide-md">消息</th>
                         </tr>
                     </thead>
                     <tbody id="sync-history-body">
-                        <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
-                                <div class="loading-spinner mx-auto"></div>
-                                <div class="mt-2">正在加载同步历史...</div>
-                            </td>
-                        </tr>
+                        <!-- 动态加载 -->
                     </tbody>
                 </table>
             </div>
-            <div class="text-center mt-3">
-                <div class="btn-group" role="group">
-                    <button type="button"
-                            class="btn btn-outline-secondary btn-sm"
-                            id="prev-page"
-                            disabled>上一页</button>
-                    <button type="button"
-                            class="btn btn-outline-secondary btn-sm"
-                            id="next-page"
-                            disabled>下一页</button>
+            <!-- 分页 -->
+            <nav class="app-pagination" id="pagination-nav" aria-label="分页导航">
+                <ul class="pagination app-pagination__list mb-0" id="pagination">
+                    <!-- 动态生成 -->
+                </ul>
+                <div class="app-pagination__summary text-muted" id="pagination-summary"></div>
+            </nav>
+            <!-- 加载状态 -->
+            <div id="sync-history-loading" class="app-loading-state is-hidden">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
                 </div>
-                <div id="page-info" class="mt-2 small text-muted">第 1 页</div>
+            </div>
+        </div>
+    </div>
+    <!-- 同步历史详情模态框（移动端点击行） -->
+    <div class="modal fade" id="syncHistoryDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">同步记录详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="sync-history-detail-content"></div>
+                </div>
             </div>
         </div>
     </div>

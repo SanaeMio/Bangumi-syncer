@@ -161,6 +161,34 @@
                                             </label>
                                         </div>
                                     </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="enable-real-action"
+                                                   name="sync.enable_real_action">
+                                            <label class="form-check-label" for="enable-real-action">
+                                                启用三次元（日剧/电影）支持
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="开启后 Bangumi API 搜索将同时匹配动画（type=2）与三次元（type=6，含日剧/真人电影）。默认关闭以保持原有动画-only 行为。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="test-skip-permission-check"
+                                                   name="sync.test_skip_permission_check">
+                                            <label class="form-check-label" for="test-skip-permission-check">
+                                                测试同步跳过用户名校验
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="开启后 /api/test-sync 与 /api/fongmi/debug/sync 等测试接口不再校验 media_server_username / 用户映射，方便未配置用户名时验证匹配与标记。仅对测试来源生效，生产 webhook 路径不受影响。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -495,6 +523,33 @@
                                            name="dev.debug">
                                     <label class="form-check-label" for="debug-mode">启用调试模式</label>
                                 </div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label for="log-file" class="form-label fw-semibold">
+                                    <i class="bi bi-file-earmark-text me-1 text-secondary"></i>日志文件路径
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="日志文件路径，可填 ./log.txt 或绝对路径。超过10MB时会重置。留空则禁用文件日志。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="log-file"
+                                       name="dev.log_file"
+                                       placeholder="如：./log.txt，留空则禁用">
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label for="sync-records-retention-days" class="form-label fw-semibold">
+                                    <i class="bi bi-clock-history me-1 text-info"></i>同步记录保留天数
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="sync_records 表保留天数，超过此天数的记录会在启动时自动清理。0 表示永不清理（保留全部历史，数据库体积会持续增长）。建议生产环境 30-90，调试环境 7-14。"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="sync-records-retention-days"
+                                       name="dev.sync_records_retention_days"
+                                       min="0"
+                                       placeholder="0 表示永不清理">
                             </div>
                         </div>
                     </div>
@@ -1585,6 +1640,14 @@ function populateForm(config) {
     if (animeMarkEl) {
         animeMarkEl.checked = Boolean(sync.anime_mark_subject_completed);
     }
+    const realActionEl = document.getElementById('enable-real-action');
+    if (realActionEl) {
+        realActionEl.checked = Boolean(sync.enable_real_action);
+    }
+    const testSkipPermEl = document.getElementById('test-skip-permission-check');
+    if (testSkipPermEl) {
+        testSkipPermEl.checked = Boolean(sync.test_skip_permission_check);
+    }
     const moviePlaybackWatchingEl = document.getElementById(
         'movie-playback-start-mark-watching'
     );
@@ -1603,6 +1666,16 @@ function populateForm(config) {
     document.getElementById('bgm-image-proxy').value = dev.bgm_image_proxy || '';
     document.getElementById('ssl-verify').checked = Boolean(dev.ssl_verify);
     document.getElementById('debug-mode').checked = Boolean(dev.debug);
+    const logFileEl = document.getElementById('log-file');
+    if (logFileEl) {
+        logFileEl.value = dev.log_file || '';
+    }
+    const retentionEl = document.getElementById('sync-records-retention-days');
+    if (retentionEl) {
+        retentionEl.value = (dev.sync_records_retention_days !== undefined && dev.sync_records_retention_days !== null)
+            ? String(dev.sync_records_retention_days)
+            : '0';
+    }
 
     document.getElementById('bangumi-data-enabled').checked = bd.enabled !== false;
     document.getElementById('bangumi-data-cache').checked = bd.use_cache !== false;
@@ -1786,7 +1859,9 @@ async function saveConfig() {
                 anime_mark_subject_completed: document.getElementById('anime-mark-subject-completed').checked,
                 movie_playback_start_mark_watching: document.getElementById(
                     'movie-playback-start-mark-watching'
-                ).checked
+                ).checked,
+                enable_real_action: document.getElementById('enable-real-action').checked,
+                test_skip_permission_check: document.getElementById('test-skip-permission-check').checked
             },
             web: {
                 base_path: (document.getElementById('web-base-path') && document.getElementById('web-base-path').value.trim()) || ''
@@ -1797,7 +1872,9 @@ async function saveConfig() {
                 bgm_next_proxy: document.getElementById('bgm-next-proxy').value.trim(),
                 bgm_image_proxy: document.getElementById('bgm-image-proxy').value.trim(),
                 ssl_verify: document.getElementById('ssl-verify').checked,
-                debug: document.getElementById('debug-mode').checked
+                debug: document.getElementById('debug-mode').checked,
+                log_file: document.getElementById('log-file').value.trim(),
+                sync_records_retention_days: parseInt(document.getElementById('sync-records-retention-days').value) || 0
             },
             bangumi_data: {
                 enabled: document.getElementById('bangumi-data-enabled').checked,
@@ -1854,21 +1931,20 @@ async function saveConfig() {
             const userMappings = {};
             
             // 收集Bangumi账号
-            document.querySelectorAll('[id^="bangumi-account-"]').forEach((element, index) => {
-                const displayName = element.querySelector('.bangumi-account-name').value;
-                const username = element.querySelector('.bangumi-account-username').value;
-                const mediaUsername = element.querySelector('.bangumi-account-media-username').value;
+            document.querySelectorAll('#bangumi-accounts-container > [id^="bangumi-account-"]').forEach((element) => {
+                const displayName = element.querySelector('.bangumi-account-name').value.trim();
+                const username = element.querySelector('.bangumi-account-username').value.trim();
+                const mediaUsername = element.querySelector('.bangumi-account-media-username').value.trim();
                 const token = element.querySelector('.bangumi-account-token').value;
                 const isPrivate = element.querySelector('.bangumi-account-private').checked;
                 
                 if (username && mediaUsername && token) {
-                    // 使用索引生成唯一的键名，实际的配置段名会在后端自动生成
-                    const accountKey = displayName || `account_${index + 1}`;
-                    multiAccounts[accountKey] = {
+                    multiAccounts[element.id] = {
                         username: username,
                         access_token: token,
                         media_server_username: mediaUsername,
-                        private: isPrivate
+                        private: isPrivate,
+                        display_name: displayName,
                     };
                 }
             });
@@ -3341,6 +3417,13 @@ function escapeHtml(str) {
                                            value="ip_locked">
                                     <label class="form-check-label" for="webhook-type-ip_locked">IP被锁定 (ip_locked)</label>
                                 </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="webhook-type-pending_candidate"
+                                           value="pending_candidate">
+                                    <label class="form-check-label" for="webhook-type-pending_candidate">候选待确认 (pending_candidate)</label>
+                                </div>
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
                         </div>
@@ -3627,6 +3710,13 @@ function escapeHtml(str) {
                                            id="email-type-ip_locked"
                                            value="ip_locked">
                                     <label class="form-check-label" for="email-type-ip_locked">IP被锁定 (ip_locked)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="email-type-pending_candidate"
+                                           value="pending_candidate">
+                                    <label class="form-check-label" for="email-type-pending_candidate">候选待确认 (pending_candidate)</label>
                                 </div>
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>

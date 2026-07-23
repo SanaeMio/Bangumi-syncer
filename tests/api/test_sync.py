@@ -311,6 +311,25 @@ async def test_get_sync_records_include_poster(
 
 
 @pytest.mark.asyncio
+async def test_get_sync_records_with_match_filters(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试同步记录支持匹配方式与放送形态筛选"""
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/records?match_method=custom_mapping&match_platform=TV"
+        )
+
+    assert response.status_code == 200
+    mock_database_manager.get_sync_records.assert_called()
+    call_kwargs = mock_database_manager.get_sync_records.call_args.kwargs
+    assert call_kwargs.get("match_method") == "custom_mapping"
+    assert call_kwargs.get("match_platform") == "TV"
+
+
+@pytest.mark.asyncio
 async def test_get_sync_record_by_id(
     app_with_auth, mock_sync_service, mock_database_manager
 ):
@@ -1070,3 +1089,240 @@ async def test_test_sync_movie_payload(app_with_auth, mock_database_manager):
         item = mock_svc.sync_custom_item.call_args[0][0]
         assert item.media_type == "movie"
         assert item.release_date == ""
+
+
+# ========== 匹配记录 API 测试 ==========
+
+
+@pytest.mark.asyncio
+async def test_get_match_records_list(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试获取匹配记录列表"""
+    mock_database_manager.get_match_records.return_value = {
+        "records": [
+            {
+                "id": 1,
+                "title": "Test",
+                "season": 1,
+                "episode": 1,
+                "match_method": "api_search",
+                "match_score": 0.95,
+                "match_platform": "TV",
+                "status": "success",
+            }
+        ],
+        "total": 1,
+        "limit": 10,
+        "offset": 0,
+    }
+    mock_sync_service.get_match_records = mock_database_manager.get_match_records
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/match-records?page=1&limit=10")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["total"] == 1
+    # 列表查询不应包含 match_trace 字段
+    assert "match_trace" not in data["data"]["records"][0]
+
+
+@pytest.mark.asyncio
+async def test_get_match_trace_full_data(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试获取匹配详情：API 返回完整 record + trace（所有字段）"""
+    full_trace = {
+        "request_title": "鬼灭之刃",
+        "request_ori_title": "Demon Slayer",
+        "request_season": 2,
+        "request_episode": 5,
+        "request_media_type": "episode",
+        "request_release_date": "2021-10-10",
+        "request_user_name": "user1",
+        "request_platform_hint": "",
+        "normalized_title": "鬼灭之刃",
+        "steps": [
+            {
+                "stage": "custom_mapping",
+                "status": "miss",
+                "subject_id": None,
+                "score": None,
+                "reason": "无自定义映射",
+                "candidates": [],
+                "elapsed_ms": 1,
+            },
+            {
+                "stage": "bangumi_data",
+                "status": "miss",
+                "subject_id": None,
+                "score": None,
+                "reason": "本地数据未命中",
+                "candidates": [],
+                "elapsed_ms": 5,
+            },
+            {
+                "stage": "api_search",
+                "status": "hit",
+                "subject_id": "245665",
+                "score": 0.92,
+                "reason": "标题完全匹配",
+                "candidates": [
+                    {
+                        "subject_id": "245665",
+                        "name": "鬼滅の刃",
+                        "name_cn": "鬼灭之刃 游郭篇",
+                        "score": 0.92,
+                        "platform": "TV",
+                        "air_date": "2021-12-05",
+                        "source": "api_search",
+                    },
+                    {
+                        "subject_id": "294993",
+                        "name": "呪術廻戦",
+                        "name_cn": "咒术回战",
+                        "score": 0.45,
+                        "platform": "TV",
+                        "air_date": "2020-10-03",
+                        "source": "api_search",
+                    },
+                ],
+                "elapsed_ms": 230,
+            },
+        ],
+        "final_subject_id": "245665",
+        "final_episode_id": "1032",
+        "final_match_method": "api_search",
+        "final_score": 0.92,
+    }
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 42,
+        "timestamp": "2025-07-16 10:00:00",
+        "user_name": "user1",
+        "title": "鬼灭之刃",
+        "ori_title": "Demon Slayer",
+        "season": 2,
+        "episode": 5,
+        "subject_id": "245665",
+        "episode_id": "1032",
+        "status": "success",
+        "message": "",
+        "source": "plex",
+        "media_type": "episode",
+        "bgm_title": "鬼灭之刃 游郭篇",
+        "match_method": "api_search",
+        "match_score": 0.92,
+        "match_platform": "TV",
+        "match_trace": json.dumps(full_trace, ensure_ascii=False),
+    }
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/match-records/42/trace")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+
+    record = data["data"]["record"]
+    trace = data["data"]["trace"]
+
+    # 验证 record 全字段
+    assert record["id"] == 42
+    assert record["title"] == "鬼灭之刃"
+    assert record["ori_title"] == "Demon Slayer"
+    assert record["season"] == 2
+    assert record["episode"] == 5
+    assert record["subject_id"] == "245665"
+    assert record["episode_id"] == "1032"
+    assert record["status"] == "success"
+    assert record["source"] == "plex"
+    assert record["media_type"] == "episode"
+    assert record["bgm_title"] == "鬼灭之刃 游郭篇"
+    assert record["match_method"] == "api_search"
+    assert record["match_score"] == 0.92
+    assert record["match_platform"] == "TV"
+    assert "match_trace" in record  # 详情查询仍返回 match_trace
+
+    # 验证 trace 全字段
+    assert trace is not None
+    assert trace["request_title"] == "鬼灭之刃"
+    assert trace["request_ori_title"] == "Demon Slayer"
+    assert trace["request_season"] == 2
+    assert trace["request_episode"] == 5
+    assert trace["request_media_type"] == "episode"
+    assert trace["request_release_date"] == "2021-10-10"
+    assert trace["request_user_name"] == "user1"
+    assert trace["normalized_title"] == "鬼灭之刃"
+    assert trace["final_subject_id"] == "245665"
+    assert trace["final_episode_id"] == "1032"
+    assert trace["final_match_method"] == "api_search"
+    assert trace["final_score"] == 0.92
+
+    # 验证 steps 全字段
+    assert len(trace["steps"]) == 3
+    api_step = trace["steps"][2]
+    assert api_step["stage"] == "api_search"
+    assert api_step["status"] == "hit"
+    assert api_step["subject_id"] == "245665"
+    assert api_step["score"] == 0.92
+    assert api_step["reason"] == "标题完全匹配"
+    assert api_step["elapsed_ms"] == 230
+
+    # 验证 candidates 全字段
+    assert len(api_step["candidates"]) == 2
+    cand = api_step["candidates"][0]
+    assert cand["subject_id"] == "245665"
+    assert cand["name"] == "鬼滅の刃"
+    assert cand["name_cn"] == "鬼灭之刃 游郭篇"
+    assert cand["score"] == 0.92
+    assert cand["platform"] == "TV"
+    assert cand["air_date"] == "2021-12-05"
+    assert cand["source"] == "api_search"
+
+
+@pytest.mark.asyncio
+async def test_get_match_trace_not_found(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试获取不存在的匹配详情"""
+    mock_database_manager.get_sync_record_by_id.return_value = None
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/match-records/999/trace")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_match_trace_no_trace(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """测试获取无 match_trace 的旧记录（trace 应为 null）"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "title": "Old Record",
+        "season": 1,
+        "episode": 1,
+        "status": "success",
+        "source": "custom",
+        "match_trace": "",
+    }
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/match-records/1/trace")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["trace"] is None
+    assert data["data"]["record"]["title"] == "Old Record"

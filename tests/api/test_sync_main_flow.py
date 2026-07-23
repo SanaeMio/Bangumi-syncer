@@ -323,6 +323,26 @@ async def test_retry_sync_record_movie_media_type_on_custom_item(app_root_and_ap
     assert retry_item.source == "retry-plex"
 
 
+def test_build_retry_item_preserves_all_media_types():
+    """_build_retry_item 保留所有合法 media_type，无效类型回退为 episode"""
+    from app.api.sync import _build_retry_item
+
+    for media_type in ("episode", "movie", "ova", "oad", "real_action"):
+        record = {
+            "title": "测试",
+            "season": 1,
+            "episode": 1,
+            "user_name": "u",
+            "media_type": media_type,
+        }
+        item = _build_retry_item(record, "retry-custom")
+        assert item.media_type == media_type
+
+    # 无效类型仍回退为 episode
+    item = _build_retry_item({"media_type": "invalid", "title": "t"}, "retry-x")
+    assert item.media_type == "episode"
+
+
 @pytest.mark.asyncio
 async def test_get_sync_records_db_error(app_root_and_api):
     with patch(

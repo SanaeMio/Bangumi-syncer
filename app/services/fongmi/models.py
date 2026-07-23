@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,9 @@ class FongmiWatchRecord:
 
     is_movie 标识剧场版/电影：此时 season=1, episode=1，由 SyncService
     走 movie 分支（标记 Bangumi 条目为在看/看过）。
+
+    media_type 标识更细粒度的类型（episode/movie/ova/oad/real_action），
+    默认为空串，为空时按 is_movie 推导。
     """
 
     device_ip: str
@@ -38,3 +42,6 @@ class FongmiWatchRecord:
     artist: str | None = None
     release_date: str = ""
     is_movie: bool = False
+    media_type: str = ""
+    # 驱动原始 payload：/media response 关键字段（过滤过长的 artwork 等二进制 URL）
+    raw_media: dict[str, Any] = field(default_factory=dict)

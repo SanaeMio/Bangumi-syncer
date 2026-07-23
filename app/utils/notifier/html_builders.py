@@ -144,6 +144,11 @@ class EmailHtmlMixin:
                 "title": "API重试失败",
             },
             "ip_locked": {"color": "#dc3545", "icon": "🔒", "title": "IP被锁定"},
+            "pending_candidate": {
+                "color": "#fd7e14",
+                "icon": "📝",
+                "title": "候选待确认",
+            },
         }
 
         config = type_config.get(
@@ -185,6 +190,21 @@ class EmailHtmlMixin:
             details_html += f"<p><strong>Subject ID:</strong> {data['subject_id']}</p>"
         if data.get("episode_id"):
             details_html += f"<p><strong>Episode ID:</strong> {data['episode_id']}</p>"
+
+        # 候选待确认相关信息
+        if data.get("candidates_count"):
+            details_html += (
+                f"<p><strong>候选数:</strong> {data['candidates_count']}</p>"
+            )
+        if data.get("top_candidate_name"):
+            top_id = data.get("top_candidate_id", "")
+            top_name = data.get("top_candidate_name", "")
+            if top_id:
+                details_html += (
+                    f"<p><strong>首选候选:</strong> {top_name} (ID: {top_id})</p>"
+                )
+            else:
+                details_html += f"<p><strong>首选候选:</strong> {top_name}</p>"
 
         # 动态内容（如果存在）
         if data.get("dynamic_content"):
@@ -246,6 +266,7 @@ class EmailHtmlMixin:
             "api_error": "[Bangumi-Syncer] API错误",
             "api_retry_failed": "[Bangumi-Syncer] API重试失败",
             "ip_locked": "[Bangumi-Syncer] IP被锁定",
+            "pending_candidate": f"[Bangumi-Syncer] 候选待确认 - {data.get('title', '')} S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
         }
         return subjects.get(notification_type, f"[Bangumi-Syncer] {notification_type}")
 
@@ -267,6 +288,7 @@ class EmailHtmlMixin:
             "api_error": "API错误",
             "api_retry_failed": "API重试失败",
             "ip_locked": "IP被锁定",
+            "pending_candidate": "候选待确认",
         }
 
         type_desc = type_descriptions.get(notification_type, notification_type)
@@ -358,6 +380,16 @@ IP地址: {data.get("ip", "")}
 最大尝试次数: {data.get("max_attempts", 0)}
 """
 
+        elif notification_type == "pending_candidate":
+            content += f"""
+用户: {data.get("user_name", "")}
+番剧: {data.get("title", "")}
+集数: S{data.get("season", 0):02d}E{data.get("episode", 0):02d}
+来源: {data.get("source", "")}
+候选数: {data.get("candidates_count", 0)}
+首选候选: {data.get("top_candidate_name", "")} (ID: {data.get("top_candidate_id", "")})
+"""
+
         content += "\n---\n此邮件由 Bangumi-Syncer 自动发送\n"
         return content
 
@@ -398,6 +430,7 @@ IP地址: {data.get("ip", "")}
             "api_error": self._build_api_error_html,
             "api_retry_failed": self._build_api_retry_failed_html,
             "ip_locked": self._build_ip_locked_html,
+            "pending_candidate": self._build_pending_candidate_html,
         }
         builder = builders.get(notification_type)
         return builder(data) if builder else ""
@@ -640,4 +673,36 @@ IP地址: {data.get("ip", "")}
                     <div class="info-label"><span class="emoji">🔢</span> 尝试次数</div>
                     <div class="info-value">{data.get("attempt_count", 0)} / {data.get("max_attempts", 0)}</div>
                 </div>
+            </div>"""
+
+    def _build_pending_candidate_html(self, data: dict[str, Any]) -> str:
+        """构建 pending_candidate 通知 HTML"""
+        top_name = data.get("top_candidate_name", "")
+        top_id = data.get("top_candidate_id", "")
+        top_html = ""
+        if top_name or top_id:
+            top_html = f"""
+                <div class="info-row">
+                    <div class="info-label"><span class="emoji">🎯</span> 首选候选</div>
+                    <div class="info-value">{top_name} (ID: {top_id})</div>
+                </div>"""
+        return f"""
+            <div class="info-box">
+                <div class="title"><span class="emoji">📝</span> 候选待确认</div>
+                <div class="message">
+                    匹配失败但存在候选，已沉淀到候选确认页面<br>
+                    请前往 WebUI「候选确认」手动确认
+                </div>
+            </div>
+            <div class="anime-section">
+                <div class="section-title"><span class="emoji">📺</span> 番剧信息</div>
+                <div class="anime-info">
+                    <div><strong>标题:</strong> {data.get("title", "")}</div>
+                    <div><strong>集数:</strong> 第 {data.get("season", 0)} 季 第 {data.get("episode", 0)} 集</div>
+                    <div><strong>用户:</strong> {data.get("user_name", "")}</div>
+                    <div><strong>来源:</strong> {data.get("source", "")}</div>
+                    <div><strong>候选数:</strong> {data.get("candidates_count", 0)}</div>
+                </div>
+            </div>
+            <div class="info-grid">{top_html}
             </div>"""

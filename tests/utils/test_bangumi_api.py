@@ -504,7 +504,7 @@ class TestSearchMethods:
 
     def test_search_cache_hit(self):
         api = BangumiApi()
-        api._cache["search"][("title", "2024-01-01", "2024-12-31", 5, True)] = [
+        api._cache["search"][("title", "2024-01-01", "2024-12-31", 5, True, (2,))] = [
             {"id": 1}
         ]
         result = api.search("title", "2024-01-01", "2024-12-31")
@@ -536,7 +536,7 @@ class TestSearchMethods:
 
     def test_search_old_cache_hit(self):
         api = BangumiApi()
-        api._cache["search_old"][("title", True)] = [{"id": 1}]
+        api._cache["search_old"][("title", True, 2)] = [{"id": 1}]
         result = api.search_old("title")
         assert result == [{"id": 1}]
 
@@ -1097,6 +1097,116 @@ class TestTitleDiffRatio:
         data = {}
         ratio = BangumiApi.title_diff_ratio("title", None, data)
         assert ratio == 0.0
+
+    # === 后缀剥离 + 核心标题包含检查 ===
+
+    def test_suffix_strip_containment_zhetian(self):
+        """遮天动画版 应匹配 遮天 第四季（核心标题包含）"""
+        data = {"name": "遮天 第四季", "name_cn": "遮天 第四季"}
+        ratio = BangumiApi.title_diff_ratio("遮天动画版", None, data)
+        assert ratio > 0.5
+
+    def test_suffix_strip_containment_jianlai(self):
+        """剑来动画版 应匹配 剑来（别名包含核心标题）"""
+        data = {
+            "name": "剑来",
+            "name_cn": "剑来",
+            "infobox": [
+                {
+                    "key": "别名",
+                    "value": [{"v": "剑来 动画版"}, {"v": "Sword of Coming"}],
+                }
+            ],
+        }
+        ratio = BangumiApi.title_diff_ratio("剑来动画版", None, data)
+        assert ratio > 0.5
+
+    def test_shared_suffix_blocking(self):
+        """遮天动画版 不应匹配 剑来（共享后缀但核心不相关）"""
+        data = {
+            "name": "剑来",
+            "name_cn": "剑来",
+            "infobox": [
+                {"key": "别名", "value": [{"v": "剑来 动画版"}, {"v": "剑来 第一季"}]}
+            ],
+        }
+        ratio = BangumiApi.title_diff_ratio("遮天动画版", None, data)
+        assert ratio <= 0.5
+
+    def test_shared_suffix_blocking_reverse(self):
+        """剑来动画版 不应匹配 遮天（反向验证）"""
+        data = {"name": "遮天 第四季", "name_cn": "遮天 第四季"}
+        ratio = BangumiApi.title_diff_ratio("剑来动画版", None, data)
+        assert ratio <= 0.5
+
+    def test_suffix_strip_dongman(self):
+        """动漫版后缀剥离"""
+        data = {"name": "一念永恒", "name_cn": "一念永恒"}
+        ratio = BangumiApi.title_diff_ratio("一念永恒动漫版", None, data)
+        assert ratio > 0.5
+
+    def test_no_false_strip_short_title(self):
+        """短标题不应被误剥离（如"动画"本身）"""
+        data = {"name": "动画", "name_cn": "动画"}
+        ratio = BangumiApi.title_diff_ratio("动画", None, data)
+        assert ratio == 1.0
+
+    # === partial_ratio 维度 ===
+
+    def test_partial_ratio_boost(self):
+        """部分匹配通过 partial_ratio 提升分数"""
+        data = {"name": "完美世界剧场版 九劫焚天"}
+        ratio = BangumiApi.title_diff_ratio("完美世界", None, data)
+        assert ratio > 0.5
+
+    # === 真实数据回归 ===
+
+    def test_real_wanmei_shijie(self):
+        """完美世界 匹配 完美世界 第三季"""
+        data = {"name": "完美世界 第三季", "name_cn": "完美世界 第三季"}
+        ratio = BangumiApi.title_diff_ratio("完美世界", None, data)
+        assert ratio > 0.5
+
+    def test_real_fanren(self):
+        """凡人修仙传 精确匹配"""
+        data = {"name": "凡人修仙传", "name_cn": "凡人修仙传"}
+        ratio = BangumiApi.title_diff_ratio("凡人修仙传", None, data)
+        assert ratio == 1.0
+
+    def test_real_eva(self):
+        """新世纪福音战士 匹配 name_cn"""
+        data = {"name": "新世紀エヴァンゲリオン", "name_cn": "新世纪福音战士"}
+        ratio = BangumiApi.title_diff_ratio("新世纪福音战士", None, data)
+        assert ratio == 1.0
+
+    def test_real_one_piece(self):
+        """海贼王 匹配 name_cn"""
+        data = {"name": "ONE PIECE", "name_cn": "海贼王"}
+        ratio = BangumiApi.title_diff_ratio("海贼王", None, data)
+        assert ratio == 1.0
+
+    def test_real_zhetian_season4(self):
+        """遮天 第四季 精确匹配"""
+        data = {"name": "遮天 第四季", "name_cn": "遮天 第四季"}
+        ratio = BangumiApi.title_diff_ratio("遮天 第四季", None, data)
+        assert ratio == 1.0
+
+    def test_real_kamen_rider(self):
+        """假面骑士加布 匹配 name_cn"""
+        data = {"name": "仮面ライダーガヴ", "name_cn": "假面骑士加布"}
+        ratio = BangumiApi.title_diff_ratio("假面骑士加布", None, data)
+        assert ratio == 1.0
+
+    def test_ori_title_core_containment(self):
+        """当 ori_title 核心匹配时不应被限制"""
+        data = {
+            "name": "剑来",
+            "name_cn": "剑来",
+            "infobox": [{"key": "别名", "value": [{"v": "剑来 动画版"}]}],
+        }
+        # title="遮天动画版" 核心不匹配，但 ori_title="剑来" 核心匹配
+        ratio = BangumiApi.title_diff_ratio("遮天动画版", "剑来", data)
+        assert ratio > 0.5
 
 
 class TestBgmSearch:

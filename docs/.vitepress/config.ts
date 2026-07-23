@@ -75,6 +75,7 @@ export default defineConfig(
         'configuration.md',
         'mapping.md',
         'usage',
+        'troubleshooting.md',
         'roadmap.md',
         'community.md',
         'development',

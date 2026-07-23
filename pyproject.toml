@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "python-multipart>=0.0.20",
     "rapidfuzz>=3.0.0",
+    "regex>=2024.0.0",
     "sse-starlette>=2.0.0",
     "uvicorn[standard]>=0.38.0",
 ]

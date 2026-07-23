@@ -77,7 +77,7 @@ async def test_update_custom_mappings(app_with_auth):
 async def test_update_custom_mappings_exception(app_with_auth):
     """测试更新自定义映射异常"""
     with patch("app.api.mappings.mapping_service") as mock_service:
-        mock_service.update_mappings.side_effect = Exception("Error")
+        mock_service.update_custom_mappings.side_effect = Exception("Error")
 
         async with AsyncClient(
             transport=ASGITransport(app=app_with_auth), base_url="http://test"

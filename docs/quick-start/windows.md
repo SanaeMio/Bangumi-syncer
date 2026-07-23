@@ -12,7 +12,7 @@ order: 10
 ```
 pip install -r requirements.txt
 ```
-3. 双击 `start.bat`，无报错即可。
+3. 双击 `start.bat`，无报错即可。**首次启动**时若目录下没有 `config.ini`，程序会自动从 `config.example.ini` 复制一份并提示修改后重启，无需手动处理。
 
 4. 浏览器访问 `http://localhost:8000` 进入 Web 管理界面。
 

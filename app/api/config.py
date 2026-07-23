@@ -187,9 +187,12 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
             section_name, "private", str(account_config.get("private", False)).lower()
         )
 
-        # 如果有显示名称，也保存
-        if account_key != account_config["username"]:
-            config.set(section_name, "display_name", account_key)
+        display_name = str(account_config.get("display_name") or "").strip()
+        if not display_name and account_key != account_config["username"]:
+            display_name = str(account_key).strip()
+
+        if display_name and display_name != account_config["username"]:
+            config.set(section_name, "display_name", display_name)
 
         logger.info(
             f"创建多账号配置段: {section_name} (媒体服务器用户: {account_config['media_server_username']})"

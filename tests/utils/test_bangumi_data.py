@@ -934,6 +934,91 @@ class TestFindBangumiIdOptimizedTitleIndex:
         assert result is not None
         assert result[0] == "300"
 
+    def test_exact_index_no_date_multi_candidates_episode_prefers_non_movie(self):
+        """无 release_date 且多个同标题候选时，media_type=episode 应优先选非剧场版候选。
+
+        场景：fongmi 上看"完美世界"，bangumi-data 中"完美世界"对应多个条目：
+        - 542046 完美世界剧场版 九劫焚天（剧场版）
+        - 244224 完美世界（第一季）
+        - 577198 完美世界 第六季
+
+        请求 media_type=episode，应跳过剧场版，返回剧集条目。
+        """
+        data = _make_data()
+        # 注意：_title_index 中"完美世界"对应多个 item，顺序模拟真实数据集（剧场版在前）
+        movie_item = {
+            "title": "完美世界剧场版 九劫焚天",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "sites": [{"site": "bangumi", "id": "542046"}],
+        }
+        s1_item = {
+            "title": "完美世界",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2021-04-23",
+            "sites": [{"site": "bangumi", "id": "244224"}],
+        }
+        s6_item = {
+            "title": "完美世界 第六季",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2025-10-03",
+            "sites": [{"site": "bangumi", "id": "577198"}],
+        }
+        data._title_index = {
+            "完美世界": [movie_item, s1_item, s6_item],
+        }
+        with patch.object(data, "_parse_data", return_value=[]):
+            result = data._find_bangumi_id_optimized("完美世界", media_type="episode")
+        assert result is not None
+        # 不应命中剧场版 542046
+        assert result[0] != "542046"
+        # 应命中剧集条目（第一季 244224 或第六季 577198）
+        assert result[0] in {"244224", "577198"}
+
+    def test_exact_index_no_date_multi_candidates_movie_prefers_movie(self):
+        """无 release_date 且多个同标题候选时，media_type=movie 应优先选剧场版候选。"""
+        data = _make_data()
+        movie_item = {
+            "title": "完美世界剧场版 九劫焚天",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "sites": [{"site": "bangumi", "id": "542046"}],
+        }
+        s1_item = {
+            "title": "完美世界",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2021-04-23",
+            "sites": [{"site": "bangumi", "id": "244224"}],
+        }
+        data._title_index = {
+            "完美世界": [s1_item, movie_item],  # 剧场版不在首位
+        }
+        with patch.object(data, "_parse_data", return_value=[]):
+            result = data._find_bangumi_id_optimized("完美世界", media_type="movie")
+        assert result is not None
+        assert result[0] == "542046"
+
+    def test_exact_index_no_date_no_media_type_falls_back_to_first(self):
+        """无 release_date 且未传 media_type 时，保持原有行为（返回首个候选）。"""
+        data = _make_data()
+        movie_item = {
+            "title": "完美世界剧场版 九劫焚天",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "sites": [{"site": "bangumi", "id": "542046"}],
+        }
+        s1_item = {
+            "title": "完美世界",
+            "titleTranslate": {"zh-Hans": ["完美世界"]},
+            "begin": "2021-04-23",
+            "sites": [{"site": "bangumi", "id": "244224"}],
+        }
+        data._title_index = {
+            "完美世界": [movie_item, s1_item],
+        }
+        with patch.object(data, "_parse_data", return_value=[]):
+            result = data._find_bangumi_id_optimized("完美世界")
+        assert result is not None
+        # 无 media_type 时回退首个候选
+        assert result[0] == "542046"
+
     def test_exact_index_hit_with_date_best_match(self):
         """多个精确匹配时选择日期最近的"""
         data = _make_data()
@@ -1798,3 +1883,47 @@ class TestRequestWithRetry:
 
         with pytest.raises(httpx.ConnectError):
             _request_with_retry("https://example.com", max_retries=0)
+
+
+class TestTmdbMappingMultiSeason:
+    """TMDB 映射多条目选择与季度感知查询"""
+
+    def test_multi_entry_picks_no_season_indicator(self):
+        """同 TMDB 多条目时优先选择无季度标记的标题"""
+        bd = BangumiData()
+        # SeasonInfo 的规则：含"第X季"/"Season X"/"SX"/"(第Xクール)" 等标记
+        assert bd._cache_tmdb_mapping.get("tv/94664", "").startswith("無職転生")
+
+    def test_no_season_entries_pick_earliest_begin(self):
+        """同 TMDB 但均含季度标记时选择最早年份的条目"""
+        bd = BangumiData()
+        # tv/94664/season/2 有两条：S2P1(2023-07)和 S2P2(2024-04)
+        s2 = bd._cache_tmdb_mapping.get("tv/94664/season/2", "")
+        assert s2.startswith("無職転生Ⅱ")
+        assert "クール" not in s2
+
+    def test_get_title_by_tmdb_id_with_season(self):
+        """季度感知查询：有季度时优先返回对应季标题"""
+        bd = BangumiData()
+        base = bd.get_title_by_tmdb_id("tv/94664")
+        assert "クール" not in base
+
+        s2 = bd.get_title_by_tmdb_id("tv/94664", season=2)
+        assert "Ⅱ" in s2
+
+        s3 = bd.get_title_by_tmdb_id("tv/94664", season=3)
+        assert "Ⅲ" in s3
+
+    def test_get_title_by_tmdb_id_season_fallback(self):
+        """季度不存在时回退到基 key"""
+        bd = BangumiData()
+        title_s99 = bd.get_title_by_tmdb_id("tv/94664", season=99)
+        assert title_s99 is not None
+        assert "クール" not in title_s99
+
+    def test_single_episode_tmdb_no_unnecessary_strip(self):
+        """单条目的 TMDB 映射保持原标题不变"""
+        bd = BangumiData()
+        sao = bd.get_title_by_tmdb_id("tv/44832")
+        if sao:
+            assert len(sao) > 3

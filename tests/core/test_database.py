@@ -717,3 +717,210 @@ class TestDatabaseDockerAndTrakt:
         first_id = db.list_in_app_notifications()[0]["id"]
         assert db.mark_notification_group_read(first_id) == 2
         assert db.count_unread_notifications() == 0
+
+
+class TestSyncRecordsListNoMatchTrace:
+    """列表查询不再返回 match_trace（改动 A）"""
+
+    def test_get_sync_records_list_has_no_match_trace(self, temp_dir, reset_singletons):
+        """get_sync_records 列表结果不含 match_trace 字段"""
+        db_path = temp_dir / "list_no_trace.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="标题",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+            match_trace={"phase": "custom_mapping", "hit": True},
+        )
+        result = db.get_sync_records(limit=10)
+        assert result["total"] == 1
+        record = result["records"][0]
+        assert "match_trace" not in record
+        # 其余 match_* 字段仍在
+        assert record["match_method"] == ""
+
+    def test_get_match_records_list_has_no_match_trace(
+        self, temp_dir, reset_singletons
+    ):
+        """get_match_records 列表结果不含 match_trace 字段"""
+        db_path = temp_dir / "match_no_trace.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="标题",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+            match_method="api_search",
+            match_score=0.92,
+            match_platform="TV",
+            match_trace={"phase": "api_search", "candidates": [{"id": 1}]},
+        )
+        result = db.get_match_records(limit=10)
+        assert result["total"] == 1
+        record = result["records"][0]
+        assert "match_trace" not in record
+        assert record["match_method"] == "api_search"
+        assert record["match_score"] == 0.92
+        assert record["match_platform"] == "TV"
+
+    def test_get_sync_record_by_id_still_has_match_trace(
+        self, temp_dir, reset_singletons
+    ):
+        """详情查询仍返回完整 match_trace"""
+        db_path = temp_dir / "detail_has_trace.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        record_id = db.log_sync_record(
+            user_name="u",
+            title="标题",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+            match_trace={"phase": "custom_mapping", "hit": True},
+        )
+        assert record_id is not None
+        detail = db.get_sync_record_by_id(record_id)
+        assert detail is not None
+        assert "match_trace" in detail
+        assert "custom_mapping" in detail["match_trace"]
+
+
+class TestCleanupOldRecords:
+    """retention 自动清理（改动 C）"""
+
+    def test_cleanup_removes_old_records(self, temp_dir, reset_singletons):
+        """清理超过保留天数的记录"""
+        db_path = temp_dir / "cleanup_old.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="旧记录",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+        )
+        # 将 timestamp 改为 40 天前
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "UPDATE sync_records SET timestamp = datetime('now', '-40 days')"
+            )
+            conn.commit()
+
+        deleted = db.cleanup_old_records(30)
+        assert deleted == 1
+        result = db.get_sync_records(limit=10)
+        assert result["total"] == 0
+
+    def test_cleanup_keeps_recent_records(self, temp_dir, reset_singletons):
+        """保留期内的记录不被清理"""
+        db_path = temp_dir / "cleanup_keep.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="新记录",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+        )
+        # 5 天前的记录，retention=30 不应清理
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "UPDATE sync_records SET timestamp = datetime('now', '-5 days')"
+            )
+            conn.commit()
+
+        deleted = db.cleanup_old_records(30)
+        assert deleted == 0
+        result = db.get_sync_records(limit=10)
+        assert result["total"] == 1
+
+    def test_cleanup_zero_retention_does_nothing(self, temp_dir, reset_singletons):
+        """retention_days <= 0 时不清理（永不清理语义）"""
+        db_path = temp_dir / "cleanup_zero.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="远古记录",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+        )
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "UPDATE sync_records SET timestamp = datetime('now', '-365 days')"
+            )
+            conn.commit()
+
+        # retention=0 不清理
+        assert db.cleanup_old_records(0) == 0
+        # 负数也不清理
+        assert db.cleanup_old_records(-1) == 0
+        result = db.get_sync_records(limit=10)
+        assert result["total"] == 1
+
+    def test_cleanup_facade_forwards(self, temp_dir, reset_singletons):
+        """DatabaseManager facade 正确转发 cleanup_old_records"""
+        db_path = temp_dir / "cleanup_facade.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        db.log_sync_record(
+            user_name="u",
+            title="facade 旧记录",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+        )
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "UPDATE sync_records SET timestamp = datetime('now', '-100 days')"
+            )
+            conn.commit()
+
+        # 通过 facade 调用，retention=50 应清理 100 天前的记录
+        deleted = db.cleanup_old_records(50)
+        assert deleted == 1
+        result = db.get_sync_records(limit=10)
+        assert result["total"] == 0

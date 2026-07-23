@@ -18,6 +18,7 @@ from datetime import datetime
 from rapidfuzz import fuzz
 
 from ...core.logging import logger
+from ...utils.media_type_detector import detect_media_type
 
 
 class MatchingMixin:
@@ -31,6 +32,7 @@ class MatchingMixin:
         ori_title: str = None,
         release_date: str = None,
         season: int = 1,
+        media_type: str = "",
     ) -> tuple[str, str, bool] | None:
         """
         根据标题和其他信息查找 bangumi id
@@ -40,13 +42,15 @@ class MatchingMixin:
             ori_title: 原版标题（通常是日文）
             release_date: 发布日期，格式为 YYYY-MM-DD
             season: 季度，默认为 1（第一季）
+            media_type: 请求侧媒体类型（episode/movie/ova/oad/real_action），
+                用于在无 release_date 且有多个同标题候选时按类型择优
 
         Returns:
             找到匹配的 (bangumi_id, matched_title, date_matched) 或 None
             date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
         """
         logger.debug(
-            f"正在查找番剧 ID: {title=}, {ori_title=}, {release_date=}, {season=}"
+            f"正在查找番剧 ID: {title=}, {ori_title=}, {release_date=}, {season=}, {media_type=}"
         )
 
         # 如果是非第一季，尝试从标题中识别第一季的标题
@@ -72,7 +76,7 @@ class MatchingMixin:
 
         # 使用优化的匹配算法，避免重复计算
         result = self._find_bangumi_id_optimized(
-            title, ori_title, release_date, original_title, season
+            title, ori_title, release_date, original_title, season, media_type
         )
         if result:
             return result
@@ -85,6 +89,7 @@ class MatchingMixin:
         title: str,
         ori_title: str,
         release_date: str,
+        media_type: str = "",
     ) -> tuple[str, str, bool] | None:
         """尝试通过标题索引进行精确匹配（O(1)查找，避免线性扫描）
 
@@ -129,10 +134,82 @@ class MatchingMixin:
                         f"标题索引命中但日期差 {min_diff} 天 > 180，回退线性扫描检查部分匹配"
                     )
             else:
-                # 无日期时返回第一个精确匹配
+                # 无日期时：若提供了 media_type 且有多个候选，
+                # 按 detect_media_type(候选标题) 与请求 media_type 一致性择优
+                if media_type and len(exact_candidates) > 1:
+                    best = self._select_candidate_by_media_type(
+                        exact_candidates, media_type
+                    )
+                    if best:
+                        item, bangumi_id, matched_key = best
+                        return (bangumi_id, matched_key, False)
+                # 无 media_type 或择优未命中（候选均不匹配该类型），回退首个
                 first = exact_candidates[0]
                 return (first[1], first[2], False)
 
+        return None
+
+    def _select_candidate_by_media_type(
+        self,
+        candidates: list[tuple[dict, str, str]],
+        request_media_type: str,
+    ) -> tuple[dict, str, str] | None:
+        """在多个同标题候选中按媒体类型择优。
+
+        每个候选从 title + titleTranslate.zh-Hans 中收集所有标题，
+        调用 detect_media_type 判断其媒体类型，与 request_media_type 一致者胜出。
+        若无一致者，返回 None（由调用方回退首个候选）。
+
+        Args:
+            candidates: [(item, bangumi_id, matched_key), ...]
+            request_media_type: 请求侧媒体类型（episode/movie/ova/oad/real_action）
+
+        Returns:
+            最佳候选或 None
+        """
+        if not request_media_type or not candidates:
+            return None
+
+        request_type = (request_media_type or "").strip().lower()
+
+        def detect_item(item: dict) -> str:
+            """扫描候选的所有标题（原文 + 中文翻译）判断媒体类型。"""
+            all_titles = self._get_zh_hans_titles(item)
+            # 把所有标题拼接成单个字符串传入 title，让 detect_media_type 一次性扫描
+            # （detect_media_type 的关键词扫描对中英文均生效）
+            combined = " ".join(t for t in all_titles if t)
+            return detect_media_type(title=combined, ori_title=item.get("title", ""))
+
+        # episode 是默认类型：优先排除标题中明确含剧场版/OVA/OAD/电影/真人版关键词的候选
+        if request_type == "episode":
+            preferred = []
+            for item, bangumi_id, matched_key in candidates:
+                if detect_item(item) == "episode":
+                    preferred.append((item, bangumi_id, matched_key))
+            if preferred:
+                if len(preferred) == 1:
+                    logger.debug(
+                        f"media_type={request_type} 择优命中唯一剧集候选: "
+                        f"{preferred[0][0].get('title', '')}"
+                    )
+                    return preferred[0]
+                logger.debug(
+                    f"media_type={request_type} 择优后仍有 {len(preferred)} 个剧集候选，"
+                    f"取首个: {preferred[0][0].get('title', '')}"
+                )
+                return preferred[0]
+            logger.debug(
+                f"media_type={request_type} 但所有候选均非剧集类型，回退首个候选"
+            )
+            return None
+
+        # 非 episode：优先选 detect 出来与请求类型一致的候选
+        for item, bangumi_id, matched_key in candidates:
+            if detect_item(item) == request_type:
+                logger.debug(
+                    f"media_type={request_type} 择优命中: {item.get('title', '')}"
+                )
+                return (item, bangumi_id, matched_key)
         return None
 
     # ----- 线性扫描 -----
@@ -336,6 +413,7 @@ class MatchingMixin:
         release_date: str = None,
         original_title: str = None,
         season: int = 1,
+        media_type: str = "",
     ) -> tuple[str, str, bool] | None:
         """优化的番剧ID查找算法，避免重复计算相似度
 
@@ -344,7 +422,7 @@ class MatchingMixin:
             date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
         """
         # 首先尝试精确匹配索引（O(1)查找，避免线性扫描）
-        result = self._try_exact_match(title, ori_title, release_date)
+        result = self._try_exact_match(title, ori_title, release_date, media_type)
         if result:
             return result
 
@@ -375,7 +453,7 @@ class MatchingMixin:
         if original_title and original_title != title:
             logger.debug(f"使用原始标题 {original_title} 再次尝试匹配")
             return self._find_bangumi_id_optimized(
-                original_title, ori_title, release_date, None, season
+                original_title, ori_title, release_date, None, season, media_type
             )
 
         logger.debug("未找到匹配的番剧 ID")

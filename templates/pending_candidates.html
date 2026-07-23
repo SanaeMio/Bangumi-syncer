@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+{% block title %}候选确认 - Bangumi Syncer{% endblock %}
+{% block page_title %}候选确认{% endblock %}
+{% block page_actions %}
+    <div class="btn-group" role="group">
+        <button type="button"
+                class="btn btn-primary"
+                onclick="loadPendingCandidates()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+{% endblock %}
+{% block content %}
+    <!-- 说明信息 -->
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>候选确认说明：</strong>匹配失败但存在候选时，候选会沉淀到此页面供手动确认。点击「查看候选」可查看所有候选条目，确认后会写入自定义映射，后续相同标题的同步将直接命中。
+    </div>
+    <!-- 筛选条件 -->
+    <div class="card mb-4 filter-card">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-funnel me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">筛选条件</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="filter-status" class="form-label">状态</label>
+                    <select class="form-select" id="filter-status">
+                        <option value="">全部</option>
+                        <option value="pending" selected>待确认</option>
+                        <option value="confirmed">已确认</option>
+                        <option value="rejected">已忽略</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="button"
+                            class="btn btn-outline-primary flex-fill"
+                            onclick="loadPendingCandidates(1)">
+                        <i class="bi bi-funnel me-1"></i>应用筛选
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary flex-fill"
+                            onclick="clearPendingFilters()">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置筛选
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 候选列表 -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-list-check me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">候选列表</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="pending-candidates-table-wrap" class="records-table-wrap">
+                <table class="table table-hover table-striped align-middle app-data-table"
+                       id="pending-candidates-table">
+                    <thead>
+                        <tr>
+                            <th class="col-hide-sm">时间</th>
+                            <th class="records-table-col-title">标题</th>
+                            <th>季/集</th>
+                            <th class="col-hide-sm">来源</th>
+                            <th class="col-hide-sm col-hide-md">候选数</th>
+                            <th>状态</th>
+                            <th class="col-hide-sm">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 动态加载 -->
+                    </tbody>
+                </table>
+            </div>
+            <!-- 分页 -->
+            <nav class="app-pagination" id="pagination-nav" aria-label="分页导航">
+                <ul class="pagination app-pagination__list mb-0" id="pagination">
+                    <!-- 动态生成 -->
+                </ul>
+                <div class="app-pagination__summary text-muted" id="pagination-summary"></div>
+            </nav>
+            <!-- 加载状态 -->
+            <div id="loading" class="app-loading-state is-hidden">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 候选详情模态框 -->
+    <div class="modal fade" id="candidateDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable"
+             style="max-width: 70em">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-list-check me-2"></i>候选详情
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="candidate-detail-content">
+                        <!-- 动态填充 -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script>
+let currentPage = 1;
+const pageLimit = APP_TABLE_PAGE_SIZE;
+let candidateDetailModal = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    candidateDetailModal = new bootstrap.Modal(document.getElementById('candidateDetailModal'));
+    bindAppTableMobileRowClick('#pending-candidates-table', showCandidateDetail);
+    loadPendingCandidates();
+});
+
+async function loadPendingCandidates(page) {
+    if (page) {
+        currentPage = page;
+    }
+
+    showLoading(true);
+
+    const params = new URLSearchParams({
+        page: currentPage,
+        limit: pageLimit
+    });
+
+    const status = document.getElementById('filter-status').value;
+    if (status) params.append('status', status);
+
+    try {
+        const response = await fetch(appUrl('/api/pending-candidates?' + params), {
+            credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            displayPendingCandidates(data.data.records, data.data.total);
+            renderAppPagination({
+                total: data.data.total,
+                currentPage: currentPage,
+                limit: pageLimit,
+                onPageChange: loadPendingCandidates,
+            });
+        } else {
+            showAlert('加载候选列表失败', 'danger');
+        }
+    } catch (error) {
+        console.error('加载候选列表失败:', error);
+        showAlert('加载候选列表失败', 'danger');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function displayPendingCandidates(records, total) {
+    const tbody = document.querySelector('#pending-candidates-table tbody');
+
+    tbody.innerHTML = '';
+
+    if (records.length === 0) {
+        const emptyRow = document.createElement('tr');
+        applyAppTableRowEnter(emptyRow, 0);
+        emptyRow.innerHTML = `<td colspan="7">${createAppEmptyStateHtml('暂无待确认候选', '匹配失败且存在候选时将自动沉淀到此页面')}</td>`;
+        tbody.appendChild(emptyRow);
+        replayAppTableAnimation('pending-candidates-table-wrap');
+        return;
+    }
+
+    records.forEach((record, index) => {
+        const row = document.createElement('tr');
+        row.dataset.recordId = String(record.id);
+        const statusBadge = renderCandidateStatusBadge(record.status);
+        const candidatesCount = parseCandidatesCount(record.candidates_json);
+
+        applyAppTableRowEnter(row, index);
+
+        const requestTitle = escapeHtml(record.request_title);
+        row.innerHTML = `
+            <td class="col-hide-sm"><small>${formatDate(record.created_at)}</small></td>
+            <td class="records-table-col-title" title="${requestTitle}">${requestTitle}</td>
+            <td>S${String(record.request_season).padStart(2, '0')}E${String(record.request_episode).padStart(2, '0')}</td>
+            <td class="col-hide-sm">${renderSourceBadge(record.source)}</td>
+            <td class="col-hide-sm col-hide-md"><span class="badge rounded-pill bg-info">${candidatesCount}</span></td>
+            <td>${statusBadge}</td>
+            <td class="col-hide-sm text-nowrap records-table-actions">
+                <button type="button" class="btn btn-action btn-outline-primary" onclick="showCandidateDetail(${record.id})" title="查看候选">
+                    <i class="bi bi-list-ul"></i>
+                </button>
+                ${record.status === 'pending' ? `
+                    <button type="button" class="btn btn-action btn-outline-danger" onclick="rejectCandidate(${record.id})" title="忽略">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                ` : `
+                    <button type="button" class="btn btn-action btn-outline-danger" onclick="deleteCandidate(${record.id})" title="删除">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                `}
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+    replayAppTableAnimation('pending-candidates-table-wrap');
+}
+
+function parseCandidatesCount(jsonStr) {
+    try {
+        const arr = JSON.parse(jsonStr || '[]');
+        return Array.isArray(arr) ? arr.length : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+function clearPendingFilters() {
+    document.getElementById('filter-status').value = 'pending';
+    loadPendingCandidates(1);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+async function showCandidateDetail(candidateId) {
+    try {
+        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}`), {
+            credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.status !== 'success') {
+            showAlert('获取候选详情失败', 'danger');
+            return;
+        }
+
+        const record = data.data.record;
+        const candidates = data.data.candidates || [];
+        const content = document.getElementById('candidate-detail-content');
+
+        let html = '';
+
+        // 基本信息
+        html += `
+            <div class="card mb-3">
+                <div class="card-header py-2">
+                    <strong>请求信息</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-md-6"><small><strong>标题：</strong>${escapeHtml(record.request_title)}</small></div>
+                        <div class="col-md-6"><small><strong>原始标题：</strong>${escapeHtml(record.request_ori_title || '-')}</small></div>
+                        <div class="col-md-6"><small><strong>季度/集数：</strong>S${String(record.request_season).padStart(2, '0')}E${String(record.request_episode).padStart(2, '0')}</small></div>
+                        <div class="col-md-6"><small><strong>来源：</strong>${record.source || '-'}</small></div>
+                        <div class="col-md-6"><small><strong>状态：</strong>${getStatusBadge(record.status)}</small></div>
+                        <div class="col-md-6"><small><strong>确认条目：</strong>${record.confirmed_subject_id ? `<a href="https://bgm.tv/subject/${record.confirmed_subject_id}" target="_blank">${record.confirmed_subject_id}</a>` : '-'}</small></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 候选列表
+        if (candidates.length > 0) {
+            html += '<div class="card"><div class="card-header py-2"><strong>候选条目（点击「确认」写入映射）</strong></div><div class="card-body">';
+
+            candidates.forEach((cand, idx) => {
+                const scoreText = cand.score ? ` 置信度 ${(cand.score * 100).toFixed(1)}%` : '';
+                const platformText = cand.platform ? ` [${cand.platform}]` : '';
+                const airDateText = cand.air_date ? ` 首播 ${cand.air_date}` : '';
+                const sourceText = cand.source ? ` 来源 ${cand.source}` : '';
+                const name = cand.name_cn || cand.name || cand.subject_id;
+
+                html += `
+                    <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
+                        <div>
+                            <small>
+                                <strong>${idx + 1}.</strong>
+                                <a href="https://bgm.tv/subject/${cand.subject_id}" target="_blank">${escapeHtml(name)}</a>
+                                <span class="text-muted">${platformText}${airDateText}${sourceText}${scoreText}</span>
+                                <br><span class="text-muted">ID: ${cand.subject_id}</span>
+                            </small>
+                        </div>
+                        <div>
+                            ${record.status === 'pending' ? `
+                                <button type="button" class="btn btn-sm btn-success" onclick="confirmCandidate(${record.id}, '${cand.subject_id}')">
+                                    <i class="bi bi-check-lg me-1"></i>确认
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div></div>';
+        } else {
+            html += `
+                <div class="alert alert-warning mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    此记录无候选数据。
+                </div>
+            `;
+        }
+
+        content.innerHTML = html;
+        candidateDetailModal.show();
+
+    } catch (error) {
+        console.error('获取候选详情失败:', error);
+        showAlert('获取候选详情失败', 'danger');
+    }
+}
+
+async function confirmCandidate(candidateId, subjectId) {
+    if (!confirm(`确认为 subject/${subjectId} 并写入自定义映射？`)) {
+        return;
+    }
+    try {
+        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}/confirm`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ subject_id: subjectId })
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            showAlert(data.message || '已确认', 'success');
+            candidateDetailModal.hide();
+            loadPendingCandidates();
+        } else {
+            showAlert(data.detail || '确认失败', 'danger');
+        }
+    } catch (error) {
+        console.error('确认失败:', error);
+        showAlert('确认失败', 'danger');
+    }
+}
+
+async function rejectCandidate(candidateId) {
+    if (!confirm('确定忽略此候选？忽略后不会再出现在待确认列表中。')) {
+        return;
+    }
+    try {
+        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}/reject`), {
+            method: 'POST',
+            credentials: 'include'
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            showAlert(data.message || '已忽略', 'success');
+            loadPendingCandidates();
+        } else {
+            showAlert(data.detail || '操作失败', 'danger');
+        }
+    } catch (error) {
+        console.error('忽略失败:', error);
+        showAlert('忽略失败', 'danger');
+    }
+}
+
+async function deleteCandidate(candidateId) {
+    if (!confirm('确定删除此候选记录？此操作不可撤销。')) {
+        return;
+    }
+    try {
+        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}`), {
+            method: 'DELETE',
+            credentials: 'include'
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            showAlert(data.message || '已删除', 'success');
+            loadPendingCandidates();
+        } else {
+            showAlert(data.detail || '删除失败', 'danger');
+        }
+    } catch (error) {
+        console.error('删除失败:', error);
+        showAlert('删除失败', 'danger');
+    }
+}
+
+function showLoading(show) {
+    setAppTableLoading(show, 'pending-candidates-table-wrap');
+}
+    </script>
+{% endblock %}

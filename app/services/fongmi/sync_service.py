@@ -45,8 +45,14 @@ class FongmiSyncService:
     _synced_keys: set[tuple[str, str]] = set()
 
     def _record_to_custom_item(self, rec: FongmiWatchRecord) -> CustomItem:
+        # 优先使用 media_type 字段（含 OVA/OAD/三次元检测），
+        # 为空时回退到 is_movie 二分
+        if rec.media_type:
+            media_type = rec.media_type
+        else:
+            media_type = "movie" if rec.is_movie else "episode"
         return CustomItem(
-            media_type="movie" if rec.is_movie else "episode",
+            media_type=media_type,
             title=rec.title,
             ori_title=None,
             season=rec.season,
@@ -54,6 +60,12 @@ class FongmiSyncService:
             release_date=rec.release_date,
             user_name=rec.device_name,
             source=FONGMI_SYNC_SOURCE,
+            raw_payload={
+                "source": "fongmi",
+                "device_ip": rec.device_ip,
+                "device_name": rec.device_name,
+                "media": rec.raw_media,
+            },
         )
 
     async def _resolve_devices(self, cfg: dict) -> list[FongmiDevice]:
@@ -224,11 +236,13 @@ class FongmiSyncService:
         }
 
         item = self._record_to_custom_item(rec)
+        # 调试同步使用特殊 source 以便 _check_user_permission 识别为测试来源
+        item.source = "fongmi-debug"
         from ..sync_service import sync_service  # 延迟导入避免循环依赖
 
         try:
             result = await asyncio.to_thread(
-                sync_service.sync_custom_item, item, FONGMI_SYNC_SOURCE
+                sync_service.sync_custom_item, item, "fongmi-debug"
             )
         except Exception as e:
             logger.error(f"fongmi 调试同步执行失败: {e}")

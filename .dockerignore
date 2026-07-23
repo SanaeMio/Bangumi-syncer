@@ -31,9 +31,10 @@ venv
 log.txt
 logs/
 
-# 配置文件（使用挂载，但保留config.ini作为模板）
+# 配置文件（使用挂载，但保留 config.example.ini 作为模板）
 config/
 config.dev.ini
+config.ini
 
 # 缓存文件（使用挂载）
 bangumi_data_cache.json

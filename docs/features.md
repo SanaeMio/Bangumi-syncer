@@ -12,6 +12,7 @@ order: 2
 - 🔌 **常见媒体栈都能接**：已内置适配 **Plex**（[Tautulli](/usage/tautulli)、[官方 Webhooks](/usage/plex-webhooks)）、**[Emby](/usage/emby)**、**[Jellyfin](/usage/jellyfin)** 与 **[自定义 Webhook](/usage/custom-webhook)**。另可按需启用 **[Trakt定时同步](/usage/trakt)**、**[飞牛定时同步](/usage/feiniu)** 、**[fongmi定时同步](/usage/fongmi)** 等，覆盖了绝大多数场景。
 - 👥 **多用户同步**：多用户模式下按 **媒体服务器用户名** 路由到不同 Bangumi 账号，数据互不混杂；仪表板可按用户维度查看同步分布。
 - 🛡️ **安全与告警**：可选 Web 登录、会话超时、HTTPS Cookie、登录失败锁定等，同步过程支持 **Webhook / 邮件** 通知，模板与类型可高度自定义，便于接入Telegram、钉钉、企业微信、邮箱等外部系统。
+- 🧩 **匹配记录可追溯**：保留完整的匹配过程，可直观地了解匹配过程以便排查问题。
 
 ## 接下来
 

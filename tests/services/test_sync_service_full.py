@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.models.sync import CustomItem
+from app.services.mapping_service import mapping_service
 from app.services.sync_service import SyncService
 
 
@@ -52,6 +53,17 @@ def mock_bangumi_api():
         # Mock search 方法
         mock_instance.search.return_value = [
             {"id": 123, "name": "Test Anime", "name_cn": "测试动画"}
+        ]
+
+        # Mock bgm_search 方法（_find_subject_id 阶段3 调用）
+        mock_instance.bgm_search.return_value = [
+            {
+                "id": 123,
+                "name": "Test Anime",
+                "name_cn": "测试动画",
+                "platform": "TV",
+                "date": "2024-01-01",
+            }
         ]
 
         # Mock get_subject 方法
@@ -164,6 +176,8 @@ def test_sync_custom_item_episode_not_found(mock_config, mock_database):
         mock_instance = MagicMock()
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (None, None)
+        # 关联季条目链回退也返回 None（不命中），走原有 error 分支
+        mock_instance.find_episode_across_seasons.return_value = None
         mock_api.return_value = mock_instance
 
         item = CustomItem(
@@ -551,12 +565,18 @@ def test_sync_custom_item_blocked_keyword(mock_config, mock_database):
 
 
 def test_sync_custom_item_no_permission(mock_config, mock_database):
-    """测试同步 - 无权限"""
+    """测试同步 - 无权限（用户不在允许同步的媒体服务器用户名列表中）"""
     service = SyncService()
 
-    # 单用户模式，未配置用户名
+    # 单用户模式，用户名不在允许列表
+    def get_side_effect(section, key, fallback=None):
+        if section == "sync" and key == "mode":
+            return "single"
+        return fallback
+
     with patch("app.services.sync_service.config_manager") as cm:
-        cm.get.side_effect = lambda *args, **kwargs: ""
+        cm.get.side_effect = get_side_effect
+        cm.get_single_mode_media_usernames.return_value = ["other_user"]
         cm.get_user_mappings.return_value = {}
         cm.get_bangumi_configs.return_value = {}
 
@@ -573,7 +593,7 @@ def test_sync_custom_item_no_permission(mock_config, mock_database):
         result = service.sync_custom_item(item, "custom")
 
     assert result.status == "error"
-    assert "无权限" in result.message
+    assert "不在允许同步" in result.message
 
 
 def test_sync_task_status(mock_config, mock_database):
@@ -657,7 +677,11 @@ def _patched_sync_service_deps():
     with patch("app.services.sync_service.config_manager") as mock_cfg:
         with patch("app.services.sync_service.database_manager"):
             with patch("app.services.sync_service.send_notify"):
-                with patch("app.services.sync_service.mapping_service"):
+                with patch(
+                    "app.services.sync_service.mapping_service"
+                ) as mock_mapping_service:
+                    # 默认 find_mapping 返回未命中（subject_id, match_type, reason）
+                    mock_mapping_service.find_mapping.return_value = ("", "", "")
                     yield mock_cfg
 
 
@@ -686,20 +710,22 @@ def _find_subject_via_bangumi_data(mock_cfg, find_return, season=2):
     service = SyncService()
     mock_data = MagicMock()
     mock_data.find_bangumi_id.return_value = find_return
-    with patch.object(service, "_load_custom_mappings", return_value={}):
-        with patch.object(service, "_get_bangumi_data", return_value=mock_data):
-            return service._find_subject_id(
-                _branch_custom_item_for_find(season=season, title="T", ori_title="O")
-            )
+    # find_mapping 已由 _patched_sync_service_deps 默认置为未命中
+    with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+        return service._find_subject_id(
+            _branch_custom_item_for_find(season=season, title="T", ori_title="O")
+        )
 
 
 def test_find_subject_id_from_mapping(mock_config, mock_database):
     """测试从自定义映射查找 subject ID"""
     service = SyncService()
 
-    # Mock 自定义映射
+    # Mock 自定义映射（季度感知 + 正则规则统一通过 find_mapping）
     with patch.object(
-        service, "_load_custom_mappings", return_value={"Test Anime": "12345"}
+        mapping_service,
+        "find_mapping",
+        return_value=("12345", "exact", "自定义映射命中：Test Anime=12345"),
     ):
         item = CustomItem(
             user_name="testuser",
@@ -750,7 +776,7 @@ def test_find_subject_id_movie_passes_is_movie_to_bgm_search(mock_database):
             source="custom",
         )
 
-        with patch.object(service, "_load_custom_mappings", return_value={}):
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
                 sid, is_season, _ = service._find_subject_id(item)
 
@@ -994,7 +1020,7 @@ def test_find_subject_id_find_bangumi_id_exception_falls_through_to_api():
         mock_data.find_bangumi_id.side_effect = RuntimeError("parse fail")
         bgm = MagicMock()
         bgm.bgm_search.return_value = [{"id": 42}]
-        with patch.object(service, "_load_custom_mappings", return_value={}):
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_data", return_value=mock_data):
                 with patch.object(
                     service, "_get_bangumi_api_for_user", return_value=bgm
@@ -1004,6 +1030,260 @@ def test_find_subject_id_find_bangumi_id_exception_falls_through_to_api():
                     )
         assert sid == 42 or sid == "42"
         assert flag is False
+
+
+def test_find_subject_id_api_top_is_movie_falls_back_to_related_mainline():
+    """完美世界场景：bangumi-data 未命中，API 搜索首条是剧场版（movie），
+    候选列表无 episode，通过关联条目改选到主线剧集。
+
+    模拟真实数据：
+    - bgm_search 返回首条 542046 完美世界剧场版 九劫焚天（movie）
+    - get_related_subjects(542046) 返回关联条目含 577198 完美世界 第六季（主线故事）
+    - get_subject(577198) 返回完整条目
+    - 应改选到 577198，而非保持 542046
+    """
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return True
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None  # bangumi-data 未命中
+
+        bgm = MagicMock()
+        # bgm_search 返回首条是剧场版（标题命中"剧场版"关键词 → detect = movie）
+        bgm.bgm_search.return_value = [
+            {
+                "id": 542046,
+                "name": "完美世界剧场版 九劫焚天",
+                "name_cn": "完美世界剧场版 九劫焚天",
+                "platform": "剧场版",
+                "date": "",
+            }
+        ]
+        # 关联条目返回 577198 第六季（主线故事）
+        bgm.get_related_subjects.return_value = [
+            {
+                "id": 485902,
+                "name": "完美世界剧场版 火之灰烬",
+                "name_cn": "",
+                "relation": "前传",
+                "type": 2,
+            },
+            {
+                "id": 577198,
+                "name": "完美世界 第六季",
+                "name_cn": "",
+                "relation": "主线故事",
+                "type": 2,
+            },
+        ]
+        # get_subject 返回 577198 的完整信息
+        bgm.get_subject.return_value = {
+            "id": 577198,
+            "name": "完美世界 第六季",
+            "name_cn": "完美世界 第六季",
+            "type": 2,
+            "platform": "WEB",
+            "date": "2025-10-03",
+        }
+
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="完美世界",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="",
+                        )
+                    )
+        # 应改选到 577198（主线故事），而非保持 542046
+        assert str(sid) == "577198"
+        assert flag is True
+        # 验证调用了 get_related_subjects
+        bgm.get_related_subjects.assert_called_once()
+        # 验证 get_subject 被调用以获取关联条目详情
+        bgm.get_subject.assert_called_with(577198)
+
+
+def test_find_subject_id_api_top_is_movie_no_related_keeps_first():
+    """首条候选是 movie 但关联条目里没有 episode 时，保持首条不报错。"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return True
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 542046,
+                "name": "完美世界剧场版 九劫焚天",
+                "name_cn": "完美世界剧场版 九劫焚天",
+                "platform": "剧场版",
+                "date": "",
+            }
+        ]
+        # 关联条目为空
+        bgm.get_related_subjects.return_value = []
+        bgm.get_subject.return_value = {
+            "id": 542046,
+            "name": "完美世界剧场版 九劫焚天",
+            "name_cn": "完美世界剧场版 九劫焚天",
+        }
+
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="完美世界",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="",
+                        )
+                    )
+        # 关联条目为空，保持首条 542046
+        assert str(sid) == "542046"
+
+
+def test_find_subject_id_api_top_movie_picks_mainline_over_derivative():
+    """完美世界场景：首条是剧场版（movie），候选中有衍生短番（双食记 6 集）
+    和多季主线剧集，应优先选主线剧集（按 eps 择优），而非衍生短番。
+
+    模拟真实搜索结果：
+    - 542046 完美世界剧场版 九劫焚天（movie，detect 排除）
+    - 175141 完美世界双食记（episode，但 eps=6 是衍生短番）
+    - 403251 完美世界 第三季（episode，eps=52 主线剧集）
+    - 345811 完美世界 第二季（episode，eps=52 主线剧集）
+
+    应选 403251 或 345811（eps 最大），而非 175141。
+    """
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return True
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 542046,
+                "name": "完美世界剧场版 九劫焚天",
+                "name_cn": "完美世界剧场版 九劫焚天",
+                "platform": "剧场版",
+                "eps": 1,
+            },
+            {
+                "id": 175141,
+                "name": "完美世界双食记",
+                "name_cn": "完美世界双食记",
+                "platform": "WEB",
+                "eps": 6,
+            },
+            {
+                "id": 403251,
+                "name": "完美世界 第三季",
+                "name_cn": "完美世界 第三季",
+                "platform": "WEB",
+                "eps": 52,
+            },
+            {
+                "id": 345811,
+                "name": "完美世界 第二季",
+                "name_cn": "完美世界 第二季",
+                "platform": "WEB",
+                "eps": 52,
+            },
+        ]
+
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="完美世界",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="",
+                        )
+                    )
+        # 应改选到主线剧集（403251 或 345811），而非衍生短番 175141
+        sid_str = str(sid)
+        assert sid_str in {"403251", "345811"}, f"应改选到主线剧集，实际命中 {sid_str}"
+        assert sid_str != "175141", "不应命中衍生短番双食记"
+
+
+def test_pick_mainline_episode_candidate_prefers_exact_title_match():
+    """_pick_mainline_episode_candidate：标题精确匹配优先。"""
+    service = SyncService()
+    candidates = [
+        {"id": 175141, "name": "完美世界双食记", "name_cn": "完美世界双食记", "eps": 6},
+        {"id": 244224, "name": "完美世界", "name_cn": "完美世界", "eps": 26},
+    ]
+    result = service._pick_mainline_episode_candidate(candidates, "完美世界")
+    assert result["id"] == 244224
+
+
+def test_pick_mainline_episode_candidate_prefers_season_keyword():
+    """_pick_mainline_episode_candidate：无精确匹配时优先含"第N季"声明的候选。"""
+    service = SyncService()
+    candidates = [
+        {"id": 175141, "name": "完美世界双食记", "name_cn": "完美世界双食记", "eps": 6},
+        {
+            "id": 403251,
+            "name": "完美世界 第三季",
+            "name_cn": "完美世界 第三季",
+            "eps": 52,
+        },
+    ]
+    result = service._pick_mainline_episode_candidate(candidates, "完美世界")
+    assert result["id"] == 403251
+
+
+def test_pick_mainline_episode_candidate_falls_back_to_max_eps():
+    """_pick_mainline_episode_candidate：无精确匹配且无季番声明时按 eps 择优。"""
+    service = SyncService()
+    candidates = [
+        {"id": 1, "name": "完美世界A", "name_cn": "完美世界A", "eps": 10},
+        {"id": 2, "name": "完美世界B", "name_cn": "完美世界B", "eps": 100},
+        {"id": 3, "name": "完美世界C", "name_cn": "完美世界C", "eps": 50},
+    ]
+    result = service._pick_mainline_episode_candidate(candidates, "完美世界")
+    assert result["id"] == 2
 
 
 def test_find_subject_id_api_disabled_no_bgm_instance():
@@ -1016,7 +1296,7 @@ def test_find_subject_id_api_disabled_no_bgm_instance():
 
         cfg.get.side_effect = get_side_effect
         service = SyncService()
-        with patch.object(service, "_load_custom_mappings", return_value={}):
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=None):
                 sid, flag, err = service._find_subject_id(
                     _branch_custom_item_for_find()
@@ -1038,7 +1318,7 @@ def test_find_subject_id_api_search_exception_returns_none():
         service = SyncService()
         bgm = MagicMock()
         bgm.bgm_search.side_effect = OSError("net")
-        with patch.object(service, "_load_custom_mappings", return_value={}):
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
                 sid, flag, err = service._find_subject_id(
                     _branch_custom_item_for_find()
@@ -1050,7 +1330,7 @@ def test_find_subject_id_api_search_exception_returns_none():
 def test_sync_custom_item_no_bgm_api_after_find_subject():
     with _patched_sync_service_deps():
         svc = SyncService()
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 with patch.object(
                     svc, "_find_subject_id", return_value=("123", False, "")
@@ -1072,7 +1352,7 @@ def test_sync_custom_item_get_target_season_value_error_auth_message():
         bgm.get_target_season_episode_id.side_effect = ValueError(
             "认证失败 access_token 过期"
         )
-        with patch.object(svc, "_check_user_permission", return_value=True):
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", return_value=False):
                 with patch.object(
                     svc, "_find_subject_id", return_value=("1", False, "")
@@ -1132,7 +1412,7 @@ def test_find_subject_id_api_search_season_gt1_title_matched():
             }
         ]
 
-        with patch.object(service, "_load_custom_mappings", return_value={}):
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
                 sid, flag, err = service._find_subject_id(
                     _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")
@@ -1161,7 +1441,7 @@ def test_find_subject_id_api_search_season_gt1_title_not_matched():
             {"id": 146457, "name": "Rick and Morty", "name_cn": "瑞克和莫蒂"}
         ]
 
-        with patch.object(service, "_load_custom_mappings", return_value={}):
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
                 sid, flag, err = service._find_subject_id(
                     _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")

@@ -2,119 +2,125 @@
 {% block title %}调试工具 - Bangumi Syncer{% endblock %}
 {% block page_title %}调试工具{% endblock %}
 {% block content %}
-    <!-- 测试同步 -->
+    <!-- 番剧测试：匹配与同步共用同一套参数 -->
     <div class="row">
         <div class="col-12">
             <div class="card mb-4">
                 <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-play-circle me-2 card-header-icon"></i>
-                        <h6 class="m-0 fw-semibold card-header-title">番剧同步测试</h6>
+                    <div class="d-flex align-items-center flex-wrap gap-1">
+                        <i class="bi bi-film me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">番剧测试</h6>
                     </div>
                 </div>
                 <div class="card-body">
-                    <form id="test-sync-form">
+                    <form id="bangumi-test-form">
                         <div class="row g-3">
                             <div class="col-md-3">
-                                <label for="test-media-type" class="form-label fw-semibold">
+                                <label for="bangumi-test-media-type" class="form-label fw-semibold">
                                     <i class="bi bi-badge-hd me-1 text-warning"></i>媒体类型
                                 </label>
-                                <select class="form-select"
-                                        id="test-media-type"
-                                        onchange="onTestMediaTypeChange()">
+                                <select class="form-select" id="bangumi-test-media-type">
                                     <option value="episode" selected>剧集</option>
                                     <option value="movie">电影</option>
+                                    <option value="ova">OVA</option>
+                                    <option value="oad">OAD</option>
+                                    <option value="real_action">三次元</option>
                                 </select>
                             </div>
                             <div class="col-md-5">
-                                <label for="test-title" class="form-label fw-semibold">
+                                <label for="bangumi-test-title" class="form-label fw-semibold">
                                     <i class="bi bi-film me-1 text-warning"></i>标题
                                 </label>
                                 <input type="text"
                                        class="form-control"
-                                       id="test-title"
+                                       id="bangumi-test-title"
                                        placeholder="番剧或剧场版名称"
                                        required>
                             </div>
                             <div class="col-md-4">
-                                <label for="test-release-date" class="form-label fw-semibold">
-                                    <i class="bi bi-calendar-event me-1 text-warning"></i>发布日期 <small class="text-muted fw-normal">(可选)</small>
+                                <label for="bangumi-test-ori-title" class="form-label fw-semibold">
+                                    <i class="bi bi-tag me-1 text-warning"></i>原始标题 <small class="text-muted fw-normal">(可选)</small>
                                 </label>
-                                <input type="date"
+                                <input type="text"
                                        class="form-control"
-                                       id="test-release-date"
-                                       placeholder="YYYY-MM-DD">
+                                       id="bangumi-test-ori-title"
+                                       placeholder="日文/罗马音标题">
                             </div>
                             <div class="col-6 col-md-2">
-                                <label for="test-season" class="form-label fw-semibold">
+                                <label for="bangumi-test-season" class="form-label fw-semibold">
                                     <i class="bi bi-calendar3 me-1 text-warning"></i>季度
                                 </label>
                                 <input type="number"
                                        class="form-control"
-                                       id="test-season"
+                                       id="bangumi-test-season"
                                        value="1"
                                        min="1"
                                        max="20"
                                        required>
                             </div>
                             <div class="col-6 col-md-2">
-                                <label for="test-episode" class="form-label fw-semibold">
+                                <label for="bangumi-test-episode" class="form-label fw-semibold">
                                     <i class="bi bi-collection-play me-1 text-warning"></i>集数
                                 </label>
                                 <input type="number"
                                        class="form-control"
-                                       id="test-episode"
+                                       id="bangumi-test-episode"
                                        value="1"
                                        min="1"
                                        max="1000"
                                        required>
                             </div>
-                            <div class="col-md-8">
-                                <label for="test-user" class="form-label fw-semibold">
+                            <div class="col-md-4">
+                                <label for="bangumi-test-release-date" class="form-label fw-semibold">
+                                    <i class="bi bi-calendar-event me-1 text-warning"></i>发布日期 <small class="text-muted fw-normal">(可选)</small>
+                                </label>
+                                <input type="date"
+                                       class="form-control"
+                                       id="bangumi-test-release-date"
+                                       placeholder="YYYY-MM-DD">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="bangumi-test-user" class="form-label fw-semibold">
                                     <i class="bi bi-person me-1 text-warning"></i>用户名
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="媒体服务器中的用户名（Plex/Emby/Jellyfin用户名）"></i>
                                 </label>
                                 <input type="text"
                                        class="form-control"
-                                       id="test-user"
-                                       placeholder="媒体服务器用户名"
-                                       required>
+                                       id="bangumi-test-user"
+                                       placeholder="媒体服务器用户名">
                             </div>
                         </div>
                         <div class="row mt-4">
                             <div class="col-12">
-                                <button type="button"
-                                        class="btn btn-primary px-3"
-                                        id="test-sync-btn"
-                                        onclick="testSync()">
-                                    <i class="bi bi-play-circle me-2"></i>开始测试
-                                </button>
-                                <div class="mt-3" id="test-sync-progress" style="display: none;">
+                                <div class="d-flex flex-wrap align-items-center gap-3">
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <button type="button"
+                                                class="btn btn-primary px-3"
+                                                id="test-match-btn"
+                                                onclick="testMatch()">
+                                            <i class="bi bi-search me-2"></i>开始匹配测试
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn-primary px-3"
+                                                id="test-sync-btn"
+                                                onclick="testSync()">
+                                            <i class="bi bi-play-circle me-2"></i>开始同步测试
+                                        </button>
+                                    </div>
+                                    <div class="form-text mb-0">
+                                        <strong>匹配测试</strong>：仅执行匹配，不触发实际同步与通知。
+                                        <br>
+                                        <strong>同步测试</strong>：执行完整同步流程并写入同步记录。
+                                    </div>
+                                </div>
+                                <div class="mt-3" id="bangumi-test-progress" style="display: none;">
                                     <div class="d-flex align-items-center">
                                         <div class="spinner-border spinner-border-sm me-2" role="status">
                                             <span class="visually-hidden">Loading...</span>
                                         </div>
-                                        <span id="test-sync-status">正在测试同步...</span>
-                                    </div>
-                                    <div class="progress mt-2" style="height: 6px;">
-                                        <div class="progress-bar progress-bar-striped progress-bar-animated"
-                                             role="progressbar"
-                                             style="width: 100%"></div>
+                                        <span id="bangumi-test-status">正在执行...</span>
                                     </div>
                                 </div>
-                                <div class="mt-3" id="test-sync-result" style="display: none;">
-                                    <div class="alert alert-dismissible fade show"
-                                         role="alert"
-                                         id="test-result-alert">
-                                        <div id="test-result-content"></div>
-                                        <button type="button"
-                                                class="btn-close"
-                                                data-bs-dismiss="alert"
-                                                aria-label="Close"></button>
-                                    </div>
-                                </div>
+                                <div class="mt-3" id="bangumi-test-result" style="display: none;"></div>
                             </div>
                         </div>
                     </form>
@@ -335,191 +341,301 @@
         </div>
     </div>
     <script>
-function onTestMediaTypeChange() {
-    const sel = document.getElementById('test-media-type');
-    const isMovie = sel && sel.value === 'movie';
-    const seasonEl = document.getElementById('test-season');
-    const episodeEl = document.getElementById('test-episode');
-    if (!seasonEl || !episodeEl) return;
-    if (isMovie) {
-        seasonEl.value = '1';
-        episodeEl.value = '1';
-        seasonEl.setAttribute('readonly', 'readonly');
-        episodeEl.setAttribute('readonly', 'readonly');
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+// ===== 番剧测试（匹配 / 同步共用表单） =====
+const BANGUMI_TEST_MATCH_BTN_HTML = '<i class="bi bi-search me-2"></i>匹配测试';
+const BANGUMI_TEST_SYNC_BTN_HTML = '<i class="bi bi-play-circle me-2"></i>同步测试';
+
+function getBangumiTestFormData() {
+    const title = document.getElementById('bangumi-test-title').value.trim();
+    const oriTitle = document.getElementById('bangumi-test-ori-title').value.trim();
+    const mediaType = (document.getElementById('bangumi-test-media-type') || { value: 'episode' }).value || 'episode';
+    const season = parseInt(document.getElementById('bangumi-test-season').value, 10) || 1;
+    const episode = parseInt(document.getElementById('bangumi-test-episode').value, 10) || 1;
+    const releaseDate = document.getElementById('bangumi-test-release-date').value;
+    const user = document.getElementById('bangumi-test-user').value.trim() || 'test_user';
+
+    return { title, oriTitle, mediaType, season, episode, releaseDate, user };
+}
+
+function setBangumiTestBusy(busy, activeBtn, busyLabel) {
+    const matchBtn = document.getElementById('test-match-btn');
+    const syncBtn = document.getElementById('test-sync-btn');
+    const progressDiv = document.getElementById('bangumi-test-progress');
+    const resultDiv = document.getElementById('bangumi-test-result');
+    const statusSpan = document.getElementById('bangumi-test-status');
+
+    matchBtn.disabled = busy;
+    syncBtn.disabled = busy;
+
+    if (busy) {
+        activeBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>${busyLabel}`;
+        progressDiv.style.display = 'block';
+        resultDiv.style.display = 'none';
     } else {
-        seasonEl.removeAttribute('readonly');
-        episodeEl.removeAttribute('readonly');
+        matchBtn.innerHTML = BANGUMI_TEST_MATCH_BTN_HTML;
+        syncBtn.innerHTML = BANGUMI_TEST_SYNC_BTN_HTML;
+        progressDiv.style.display = 'none';
+    }
+
+    return { progressDiv, resultDiv, statusSpan };
+}
+
+async function testMatch() {
+    const btn = document.getElementById('test-match-btn');
+    const { title, oriTitle, mediaType, season, episode, releaseDate, user } = getBangumiTestFormData();
+
+    if (!title) {
+        showAlert('请填写标题', 'warning', 3000);
+        return;
+    }
+
+    const { resultDiv, statusSpan } = setBangumiTestBusy(true, btn, '匹配中...');
+
+    try {
+        statusSpan.textContent = `正在匹配: ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
+
+        const response = await fetch(appUrl('/api/test-match'), {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                ori_title: oriTitle || null,
+                season: season,
+                episode: episode,
+                release_date: releaseDate,
+                user_name: user,
+                media_type: mediaType
+            })
+        });
+
+        const result = await response.json();
+        resultDiv.style.display = 'block';
+
+        if (response.ok && result.status === 'success') {
+            resultDiv.innerHTML = renderMatchTraceResult(result.data, title, season, episode);
+        } else {
+            const detail = result.detail || result.message || '请求失败';
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-x-circle me-2"></i><strong>匹配测试失败</strong><br>
+                    <span class="small">${detail}</span>
+                </div>`;
+        }
+    } catch (error) {
+        console.error('匹配测试失败:', error);
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-x-circle me-2"></i><strong>网络错误</strong><br>
+                <span class="small">${error.message || String(error)}</span>
+            </div>`;
+    } finally {
+        setBangumiTestBusy(false, btn, '');
     }
 }
 
-// 测试同步功能
+function renderMatchTraceResult(data, title, season, episode) {
+    const trace = data.trace || {};
+    const subjectId = data.subject_id;
+    const steps = trace.steps || [];
+    const method = trace.final_match_method || (subjectId ? 'unknown' : 'failed');
+
+    const methodBadge = {
+        'custom_mapping': '<span class="badge bg-primary">自定义映射</span>',
+        'bangumi_data': '<span class="badge bg-success">bangumi-data</span>',
+        'api_search': '<span class="badge bg-info">API 搜索</span>',
+        'failed': '<span class="badge bg-danger">未命中</span>',
+        'unknown': '<span class="badge bg-secondary">未知</span>'
+    }[method] || `<span class="badge bg-secondary">${method}</span>`;
+
+    const isSuccess = !!subjectId;
+    const alertClass = isSuccess ? 'success' : 'warning';
+    const alertIcon = isSuccess ? 'check-circle' : 'exclamation-triangle';
+
+    let html = `
+        <div class="alert alert-${alertClass}">
+            <div class="d-flex align-items-start">
+                <i class="bi bi-${alertIcon}-fill text-${alertClass} me-3 mt-1"></i>
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                        <h6 class="mb-0 text-${alertClass} fw-bold">
+                            ${isSuccess ? '匹配命中' : '未匹配到条目'}
+                        </h6>
+                        <span class="text-muted small">
+                            <i class="bi bi-film me-1"></i>${escapeHtml(title)} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}
+                        </span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="text-muted me-2">最终匹配方式：</span>${methodBadge}
+                        ${subjectId ? `
+                            <a href="https://bgm.tv/subject/${subjectId}" target="_blank" class="badge bg-primary text-decoration-none ms-1">
+                                <i class="bi bi-link-45deg me-1"></i>Bangumi ID: ${subjectId}
+                            </a>
+                        ` : ''}
+                        ${data.failure_detail ? `<div class="small text-muted mt-1">${escapeHtml(data.failure_detail)}</div>` : ''}
+                    </div>
+        `;
+
+    if (steps.length > 0) {
+        html += '<hr class="my-2"><div class="fw-semibold mb-2"><i class="bi bi-list-ul me-1"></i>匹配过程</div>';
+
+        steps.forEach((step, idx) => {
+            const statusIcon = {
+                'hit': '<i class="bi bi-check-circle-fill text-success"></i>',
+                'miss': '<i class="bi bi-x-circle-fill text-danger"></i>',
+                'skipped': '<i class="bi bi-skip-forward text-muted"></i>',
+                'error': '<i class="bi bi-exclamation-triangle-fill text-danger"></i>'
+            }[step.status] || '<i class="bi bi-question-circle text-muted"></i>';
+
+            const stageName = {
+                'custom_mapping': '自定义映射',
+                'bangumi_data': 'bangumi-data 本地匹配',
+                'api_search': 'Bangumi API 搜索'
+            }[step.stage] || step.stage;
+
+            html += `
+                <div class="mb-2 ps-2 border-start border-2 ${step.status === 'hit' ? 'border-success' : step.status === 'error' ? 'border-danger' : 'border-light'}">
+                    <div class="d-flex align-items-center mb-1">
+                        ${statusIcon}
+                        <strong class="ms-2 me-2 small">${idx + 1}. ${stageName}</strong>
+                        <span class="badge bg-secondary">${step.status}</span>
+                        <small class="text-muted ms-2">${step.elapsed_ms}ms</small>
+                    </div>
+                    ${step.reason ? `<small class="text-muted d-block mb-1">${escapeHtml(step.reason)}</small>` : ''}
+                    ${step.subject_id ? `<small class="d-block mb-1"><strong>命中 ID：</strong><a href="https://bgm.tv/subject/${step.subject_id}" target="_blank">${step.subject_id}</a></small>` : ''}
+            `;
+
+            if (step.candidates && step.candidates.length > 0) {
+                html += '<small class="d-block mb-1"><strong>候选列表：</strong></small><ul class="small mb-1">';
+                step.candidates.forEach(cand => {
+                    const scoreText = cand.score ? ` (${(cand.score * 100).toFixed(1)}%)` : '';
+                    const platformText = cand.platform ? ` [${cand.platform}]` : '';
+                    html += `<li><a href="https://bgm.tv/subject/${cand.subject_id}" target="_blank">${escapeHtml(cand.name_cn || cand.name || cand.subject_id)}</a>${platformText}${scoreText}</li>`;
+                });
+                html += '</ul>';
+            }
+
+            html += '</div>';
+        });
+    }
+
+    html += '</div></div></div>';
+    return html;
+}
+
+// 番剧同步测试
 async function testSync() {
     const btn = document.getElementById('test-sync-btn');
-    const progressDiv = document.getElementById('test-sync-progress');
-    const resultDiv = document.getElementById('test-sync-result');
-    const resultAlert = document.getElementById('test-result-alert');
-    const resultContent = document.getElementById('test-result-content');
-    const statusSpan = document.getElementById('test-sync-status');
-    
-    // 获取表单数据
-    const title = document.getElementById('test-title').value.trim();
-    const mediaType = (document.getElementById('test-media-type') || { value: 'episode' }).value || 'episode';
-    const season = parseInt(document.getElementById('test-season').value, 10);
-    const episode = parseInt(document.getElementById('test-episode').value, 10);
-    const releaseDate = document.getElementById('test-release-date').value;
-    const user = document.getElementById('test-user').value.trim();
-    
-    // 验证输入
-    if (!title || !season || !episode || !user) {
-        showAlert('请填写完整的测试信息，包括用户名', 'warning', 3000);
+    const { title, oriTitle, mediaType, season, episode, releaseDate, user } = getBangumiTestFormData();
+
+    if (!title) {
+        showAlert('请填写标题', 'warning', 3000);
         return;
     }
-    
-    // 显示进度，隐藏之前的结果
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>测试中...';
-    progressDiv.style.display = 'block';
-    resultDiv.style.display = 'none';
-    
+
+    const { resultDiv, statusSpan } = setBangumiTestBusy(true, btn, '同步中...');
+
     try {
-        const testData = {
-            title: title,
-            season: season,
-            episode: episode,
-            release_date: releaseDate,
-            user_name: user,
-            media_type: mediaType
-        };
-        
-        const locLabel = mediaType === 'movie' ? `电影 ${title} S01E01` : `${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
-        statusSpan.textContent = `正在测试同步: ${locLabel}`;
-        
+        statusSpan.textContent = `正在同步: ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
+
         const startTime = Date.now();
-        
         const response = await fetch(appUrl('/api/test-sync?async_mode=false'), {
             method: 'POST',
             credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(testData)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                ori_title: oriTitle || null,
+                season: season,
+                episode: episode,
+                release_date: releaseDate,
+                user_name: user,
+                media_type: mediaType
+            })
         });
-        
+
         const result = await response.json();
         if (!response.ok) {
             result.message = result.detail || result.message || '请求失败';
             result.status = 'error';
         }
-        const endTime = Date.now();
-        const actualTime = ((endTime - startTime) / 1000).toFixed(2);
-        
-        // 隐藏进度，显示结果
-        progressDiv.style.display = 'none';
+        const actualTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
         resultDiv.style.display = 'block';
-        
+
         const isSuccess = result.status === 'success';
         const isSkipped = isSuccess && result.message && (
             result.message.includes('不再重复标记') ||
             result.message.includes('无需变更')
         );
-        
+
         if (isSuccess) {
-            // 根据是否真正同步成功来决定显示内容
             const isActualSync = !isSkipped;
-            const statusText = isActualSync ? '测试同步成功！' : '连接测试成功！';
-            const statusIcon = isActualSync ? 'bi-check-circle-fill' : 'bi-info-circle-fill';
-            const statusColor = isActualSync ? 'success' : 'info';
-            
-            resultAlert.className = `alert alert-${statusColor} alert-dismissible fade show`;
-            resultContent.innerHTML = `
-                <div class="d-flex align-items-start">
-                    <i class="bi ${statusIcon} text-${statusColor} me-3 mt-1"></i>
-                    <div class="flex-grow-1">
-                        <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
-                            <h6 class="mb-0 text-${statusColor} fw-bold">${statusText}</h6>
-                            <small class="text-muted">
-                                <i class="bi bi-stopwatch me-1"></i>${result.elapsed_time || actualTime + '秒'}
-                            </small>
-                        </div>
-                        <div class="mb-3">
-                            <span class="text-muted me-2">
-                                <i class="bi bi-film me-1"></i>${result.data?.bgm_title || result.test_info?.title || title}
-                            </span>
-                            <span class="badge bg-secondary me-2">${result.test_info?.media_type === 'movie' ? '电影' : '剧集'}</span>
-                            <span class="badge bg-secondary me-2">${result.test_info?.episode || 'S' + season.toString().padStart(2, '0') + 'E' + episode.toString().padStart(2, '0')}</span>
-                            ${result.data && (result.data.subject_id || result.data.episode_id) ? `
-                                ${result.data.subject_id ? `
-                                <a href="https://bgm.tv/subject/${result.data.subject_id}" target="_blank" class="badge bg-primary text-decoration-none me-1" title="点击打开Bangumi番剧页面">
-                                    <i class="bi bi-link-45deg me-1"></i>Bangumi ID: ${result.data.subject_id}
-                                </a>
+            const statusText = isActualSync ? '同步成功' : '连接测试成功';
+            const alertClass = isActualSync ? 'success' : 'info';
+            const statusIcon = isActualSync ? 'check-circle-fill' : 'info-circle-fill';
+
+            resultDiv.innerHTML = `
+                <div class="alert alert-${alertClass} mb-0">
+                    <div class="d-flex align-items-start">
+                        <i class="bi bi-${statusIcon} text-${alertClass} me-3 mt-1"></i>
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap mb-2">
+                                <h6 class="mb-0 text-${alertClass} fw-bold">${statusText}</h6>
+                                <span class="text-muted small">
+                                    <i class="bi bi-stopwatch me-1"></i>${result.elapsed_time || actualTime + '秒'}
+                                </span>
+                            </div>
+                            <div class="mb-2">
+                                <span class="text-muted me-2">
+                                    <i class="bi bi-film me-1"></i>${escapeHtml(result.data?.bgm_title || result.test_info?.title || title)}
+                                </span>
+                                <span class="badge rounded-pill bg-secondary me-1">${result.test_info?.media_type === 'movie' ? '电影' : '剧集'}</span>
+                                <span class="badge rounded-pill bg-secondary me-1">${result.test_info?.episode || 'S' + season.toString().padStart(2, '0') + 'E' + episode.toString().padStart(2, '0')}</span>
+                                ${result.data && result.data.subject_id ? `
+                                    <a href="https://bgm.tv/subject/${result.data.subject_id}" target="_blank" class="badge rounded-pill bg-primary text-decoration-none ms-1">
+                                        <i class="bi bi-link-45deg me-1"></i>Bangumi ID: ${result.data.subject_id}
+                                    </a>
                                 ` : ''}
-                                ${result.data.episode_id ? `
-                                <a href="https://bgm.tv/ep/${result.data.episode_id}" target="_blank" class="badge bg-info text-decoration-none" title="点击打开Bangumi剧集页面">
-                                    <i class="bi bi-link-45deg me-1"></i>EP ID: ${result.data.episode_id}
-                                </a>
+                                ${result.data && result.data.episode_id ? `
+                                    <a href="https://bgm.tv/ep/${result.data.episode_id}" target="_blank" class="badge rounded-pill bg-info text-decoration-none ms-1">
+                                        <i class="bi bi-link-45deg me-1"></i>EP ID: ${result.data.episode_id}
+                                    </a>
                                 ` : ''}
+                            </div>
+                            ${result.message ? `
+                                <div class="small text-muted">${escapeHtml(result.message)}</div>
+                                ${!isActualSync ? '<div class="small text-info mt-1"><i class="bi bi-info-circle me-1"></i>连接和认证正常，同步系统工作正常。</div>' : ''}
                             ` : ''}
                         </div>
-                        ${result.message ? `
-                            <div class="mb-0">
-                                <p class="mb-1 text-muted small"><strong>结果说明：</strong></p>
-                                <p class="mb-0 text-muted small">${result.message}</p>
-                                ${!isActualSync ? `
-                                    <p class="mb-0 text-info small mt-1">
-                                        <i class="bi bi-info-circle me-1"></i>
-                                        连接和认证正常，同步系统工作正常。
-                                    </p>
-                                ` : ''}
-                            </div>
-                        ` : ''}
                     </div>
-                </div>
-            `;
+                </div>`;
         } else {
-            resultAlert.className = 'alert alert-danger alert-dismissible fade show';
-            resultContent.innerHTML = `
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-exclamation-triangle-fill text-danger me-2 mt-1"></i>
-                    <div class="flex-grow-1">
-                        <h6 class="mb-1">测试同步失败</h6>
-                        <p class="mb-2">${result.message}</p>
-                        <div class="row g-2 small text-muted">
-                            <div class="col-md-8">
-                                <strong>请求:</strong> ${mediaType === 'movie' ? '电影' : '剧集'} ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}
-                            </div>
-                            <div class="col-md-4">
-                                <strong>耗时:</strong> ${result.elapsed_time || actualTime + '秒'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-x-circle me-2"></i><strong>同步测试失败</strong><br>
+                    <span class="small">${escapeHtml(result.message || '请求失败')}</span>
+                </div>`;
         }
     } catch (error) {
         console.error('测试同步失败:', error);
-        
-        // 隐藏进度，显示错误
-        progressDiv.style.display = 'none';
         resultDiv.style.display = 'block';
-        resultAlert.className = 'alert alert-danger alert-dismissible fade show';
-        resultContent.innerHTML = `
-            <div class="d-flex align-items-start">
-                <i class="bi bi-x-circle-fill text-danger me-2 mt-1"></i>
-                <div class="flex-grow-1">
-                    <h6 class="mb-1">网络错误</h6>
-                    <p class="mb-0">无法连接到服务器，请检查网络连接或稍后重试。</p>
-                    <small class="text-muted">错误详情: ${error.message}</small>
-                </div>
-            </div>
-        `;
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-x-circle me-2"></i><strong>网络错误</strong><br>
+                <span class="small">${escapeHtml(error.message || String(error))}</span>
+            </div>`;
     } finally {
-        // 恢复按钮状态
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>开始测试';
+        setBangumiTestBusy(false, btn, '');
     }
 }
-
-document.addEventListener('DOMContentLoaded', onTestMediaTypeChange);
 
 // 飞牛：手动触发一次同步（与 POST /api/feiniu/sync/manual 一致）
 async function triggerFeiniuManualSync() {

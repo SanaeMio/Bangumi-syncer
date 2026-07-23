@@ -196,7 +196,8 @@ class TestExtractEmbyData:
         }
         result = extract_emby_data(emby_data)
         assert result.title == "某动画"
-        assert result.ori_title == " "
+        # 修复：episode 分支现在正确提取 OriginalTitle（不再硬编码空格）
+        assert result.ori_title == "第3話 サブタイトル"
 
     def test_extract_emby_data_no_premiere_date(self):
         """测试无发行日期"""

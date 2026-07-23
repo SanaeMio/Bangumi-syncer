@@ -14,6 +14,7 @@ from ...core.logging import logger
 from ...models.sync import CustomItem
 from ...services.mapping_service import mapping_service
 from ...services.sync_service import sync_service
+from ...utils.media_type_detector import detect_media_type
 from ...utils.notifier import send_notify
 from .auth import trakt_auth_service
 from .client import TraktClient, TraktClientFactory
@@ -211,9 +212,11 @@ class TraktSyncService:
                 # bangumi_data 仅收录动画条目，TMDB 命中则确认为动画，跳过 Trakt 详情请求
                 if sync_filter_enabled:
                     if item.type == "episode" and item.show:
-                        tmdb_id = item.show.get("ids", {}).get("tmdb")
+                        show = item.show
+                        tmdb_id = show.get("ids", {}).get("tmdb")
+                        ep_data = item.episode or {}
                         if tmdb_id and bangumi_data.get_title_by_tmdb_id(
-                            f"tv/{tmdb_id}"
+                            f"tv/{tmdb_id}", season=ep_data.get("season")
                         ):
                             logger.debug(
                                 f"命中 bangumi_data 中 TMDB ID，跳过 Trakt 详情请求: tv/{tmdb_id}"
@@ -638,7 +641,9 @@ class TraktSyncService:
 
             show_tmdb = show.get("ids", {}).get("tmdb")
             if show_tmdb is not None:
-                title = bangumi_data.get_title_by_tmdb_id(f"tv/{show_tmdb}")
+                title = bangumi_data.get_title_by_tmdb_id(
+                    f"tv/{show_tmdb}", season=episode.get("season")
+                )
 
             if not title:
                 # bangumi_data 未收录时，按日文原名 → 预取原文 → 英文标题顺序降级
@@ -662,13 +667,19 @@ class TraktSyncService:
             season = episode.get("season", 1)
             episode_num = episode.get("number", 1)
 
-            # 获取发行日期（优先剧集/剧集首播日期，其次播出年份，最后用户观看日期）
+            # 获取发行日期：episode.first_aired → show.first_aired → bangumi_data begin → show.year → watched_at
             release_date = ""
             if episode.get("first_aired"):
                 release_date = episode["first_aired"]
             elif show.get("first_aired"):
                 release_date = show["first_aired"]
-            elif show.get("year"):
+            elif show_tmdb is not None:
+                bgm_begin = bangumi_data.get_begin_by_tmdb_id(
+                    f"tv/{show_tmdb}", season=episode.get("season")
+                )
+                if bgm_begin and isinstance(bgm_begin, str):
+                    release_date = bgm_begin[:10]
+            if not release_date and show.get("year"):
                 release_date = f"{show['year']}-01-01"
 
             if not release_date and item.watched_at:
@@ -677,9 +688,14 @@ class TraktSyncService:
                 except Exception:
                     release_date = ""
 
+            # 检测 OVA/OAD/三次元类型
+            detected = detect_media_type(
+                title=title, ori_title=ori_title or "", item_type="episode"
+            )
+
             # 构建 CustomItem
             return CustomItem(
-                media_type="episode",
+                media_type=detected,
                 title=title,
                 ori_title=ori_title,
                 season=season,
@@ -687,6 +703,22 @@ class TraktSyncService:
                 release_date=release_date,
                 user_name=user_id,  # 使用 user_id 作为 user_name
                 source="trakt",
+                raw_payload={
+                    "source": "trakt",
+                    "history_kind": "episode",
+                    "watched_at": item.watched_at,
+                    "show": {
+                        "title": show.get("title"),
+                        "year": show.get("year"),
+                        "ids": show.get("ids", {}),
+                    },
+                    "episode": {
+                        "season": episode.get("season"),
+                        "number": episode.get("number"),
+                        "title": episode.get("title"),
+                        "first_aired": episode.get("first_aired"),
+                    },
+                },
             )
 
         except Exception as e:
@@ -728,8 +760,13 @@ class TraktSyncService:
             except Exception:
                 release_date = ""
 
+        # 电影也检测是否为真人电影（三次元）
+        detected = detect_media_type(
+            title=title, ori_title=ori_title or "", item_type="movie"
+        )
+
         return CustomItem(
-            media_type="movie",
+            media_type=detected,
             title=title,
             ori_title=ori_title,
             season=1,
@@ -737,6 +774,17 @@ class TraktSyncService:
             release_date=release_date,
             user_name=user_id,
             source="trakt",
+            raw_payload={
+                "source": "trakt",
+                "history_kind": "movie",
+                "watched_at": item.watched_at,
+                "movie": {
+                    "title": movie.get("title"),
+                    "year": movie.get("year"),
+                    "released": movie.get("released"),
+                    "ids": ids,
+                },
+            },
         )
 
     async def start_user_sync_task(self, user_id: str, full_sync: bool = False) -> str:

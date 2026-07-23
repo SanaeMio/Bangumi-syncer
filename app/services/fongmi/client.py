@@ -392,6 +392,7 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
     """将 /media 转为 FongmiWatchRecord（仅提取字段，不判断是否完成）
 
     剧场版/电影：season=1, episode=1，is_movie=True。
+    OVA/OAD/三次元：通过关键词检测，media_type 字段携带细粒度类型。
     """
     title = (media.get("title") or "").strip()
     if not title:
@@ -399,8 +400,14 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
     url = str(media.get("url") or "")
     artist = media.get("artist")
     artist_s = str(artist) if artist else None
-    is_movie = _is_movie(url, artist_s)
-    if is_movie:
+
+    # 检测细粒度媒体类型（含 OVA/OAD/三次元）
+    from ...utils.media_type_detector import detect_media_type
+
+    detected_type = detect_media_type(title=title, url=url, artist=artist_s or "")
+    is_movie = detected_type == "movie"
+    if is_movie or detected_type in ("ova", "oad", "real_action"):
+        # 非剧集类型（movie/ova/oad/real_action）统一按单集处理
         season, episode = 1, 1
     else:
         season, episode = parse_episode_info(url, artist_s or "")
@@ -414,6 +421,17 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
         artist=artist_s,
         release_date="",
         is_movie=is_movie,
+        media_type=detected_type,
+        # /media response 关键字段（过滤 artwork 二进制 URL）
+        raw_media={
+            "title": title,
+            "artist": artist_s,
+            "url": url,
+            "duration": media.get("duration"),
+            "position": media.get("position"),
+            "state": media.get("state"),
+            "speed": media.get("speed"),
+        },
     )
 
 

@@ -6,10 +6,22 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ...utils.media_type_detector import detect_media_type
 
 
 def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
     """从Jellyfin数据中提取CustomItem所需的字段"""
+
+    # 驱动原始 payload（jellyfin 已是预处理后的字典，原样保留输入字段）
+    raw_payload = {
+        "title": jellyfin_data.get("title"),
+        "ori_title": jellyfin_data.get("ori_title"),
+        "season": jellyfin_data.get("season"),
+        "episode": jellyfin_data.get("episode"),
+        "media_type": jellyfin_data.get("media_type"),
+        "release_date": jellyfin_data.get("release_date"),
+        "user_name": jellyfin_data.get("user_name"),
+    }
 
     release_date = ""
     if jellyfin_data.get("release_date"):
@@ -17,26 +29,37 @@ def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
     else:
         logger.debug("未找到release_date字段，将尝试从bangumi-data获取日期信息")
 
+    title = (jellyfin_data.get("title") or "").strip()
+    ori_title = jellyfin_data.get("ori_title") or ""
+    ori_str = str(ori_title).strip() if ori_title else ""
     mtype = (jellyfin_data.get("media_type") or "episode").lower()
+
     if mtype == "movie":
+        # 电影也检测是否为真人电影（三次元）
+        detected = detect_media_type(title=title, ori_title=ori_str, item_type=mtype)
         return CustomItem(
-            media_type="movie",
-            title=jellyfin_data["title"],
-            ori_title=jellyfin_data.get("ori_title"),
+            media_type=detected,
+            title=title,
+            ori_title=ori_str if ori_str else None,
             season=1,
             episode=1,
             release_date=release_date,
             user_name=jellyfin_data["user_name"],
             source="jellyfin",
+            raw_payload=raw_payload,
         )
 
+    # 检测 OVA/OAD/三次元类型
+    detected = detect_media_type(title=title, ori_title=ori_str, item_type=mtype)
+
     return CustomItem(
-        media_type=jellyfin_data["media_type"].lower(),
-        title=jellyfin_data["title"],
+        media_type=detected,
+        title=title,
         ori_title=jellyfin_data["ori_title"],
         season=jellyfin_data["season"],
         episode=jellyfin_data["episode"],
         release_date=release_date,
         user_name=jellyfin_data["user_name"],
         source="jellyfin",
+        raw_payload=raw_payload,
     )

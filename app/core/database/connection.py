@@ -46,6 +46,7 @@ class DatabaseConnection:
         self._media_type_migrated = False
         self._bgm_title_migrated = False
         self._trakt_filter_migrated = False
+        self._match_fields_migrated = False
         self._init_database()
 
     def close(self) -> None:
@@ -118,6 +119,35 @@ class DatabaseConnection:
         self._bgm_title_migrated = True
         logger.info("sync_records 已迁移：增加 bgm_title 列")
 
+    def _ensure_sync_records_match_fields(self, cursor) -> None:
+        """旧库迁移：为 sync_records 增加匹配追踪字段。
+
+        新增 4 列：
+        - match_method: 匹配方式（custom_mapping/bangumi_data/api_search/failed）
+        - match_score: 最佳匹配置信度（0-1）
+        - match_platform: 命中条目的 platform（TV/OVA/剧场版/日剧/电影...）
+        - match_trace: JSON 字符串，完整匹配过程（仅 debug 模式写入）
+        """
+        if self._match_fields_migrated:
+            return
+        cursor.execute("PRAGMA table_info(sync_records)")
+        cols = [row[1] for row in cursor.fetchall()]
+        need_commit = False
+        for col, decl in [
+            ("match_method", "TEXT DEFAULT ''"),
+            ("match_score", "REAL"),
+            ("match_platform", "TEXT DEFAULT ''"),
+            ("match_trace", "TEXT DEFAULT ''"),
+        ]:
+            if col not in cols:
+                cursor.execute(f"ALTER TABLE sync_records ADD COLUMN {col} {decl}")
+                need_commit = True
+        if need_commit:
+            logger.info(
+                "sync_records 已迁移：增加匹配追踪字段（match_method/match_score/match_platform/match_trace）"
+            )
+        self._match_fields_migrated = True
+
     def _ensure_trakt_config_sync_filter(self, cursor) -> None:
         """旧库迁移：为 trakt_config 增加 sync_filter_enabled（默认开启）。"""
         if self._trakt_filter_migrated:
@@ -154,11 +184,17 @@ class DatabaseConnection:
                 message TEXT,
                 source TEXT NOT NULL,
                 media_type TEXT NOT NULL DEFAULT 'episode',
-                bgm_title TEXT DEFAULT ''
+                bgm_title TEXT DEFAULT '',
+                match_method TEXT DEFAULT '',
+                match_score REAL,
+                match_platform TEXT DEFAULT '',
+                match_trace TEXT DEFAULT ''
             )
         """)
 
         self._ensure_sync_records_media_type(cursor)
+        self._ensure_sync_records_bgm_title(cursor)
+        self._ensure_sync_records_match_fields(cursor)
 
         # 创建 Trakt 配置表
         cursor.execute("""
@@ -228,6 +264,24 @@ class DatabaseConnection:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pending_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                request_title TEXT NOT NULL,
+                request_ori_title TEXT DEFAULT '',
+                request_season INTEGER DEFAULT 1,
+                request_episode INTEGER DEFAULT 0,
+                user_name TEXT DEFAULT '',
+                source TEXT DEFAULT '',
+                candidates_json TEXT DEFAULT '[]',
+                trace_json TEXT DEFAULT '{}',
+                status TEXT DEFAULT 'pending',
+                confirmed_subject_id TEXT DEFAULT '',
+                resolved_at DATETIME
+            )
+        """)
+
         # 创建二级索引以加速常用查询
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_timestamp ON sync_records(timestamp)"
@@ -246,6 +300,16 @@ class DatabaseConnection:
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_in_app_notifications_unread ON in_app_notifications(read_at)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_candidates_status ON pending_candidates(status)"
+        )
+        # 部分唯一索引：同一 (title, season, user, source) 仅允许一个 pending 行，
+        # 用于 pending_candidates 去重（upsert 依赖此索引）
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_candidates_dedup "
+            "ON pending_candidates(request_title, request_season, user_name, source) "
+            "WHERE status = 'pending'"
         )
 
         conn.commit()
