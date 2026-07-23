@@ -25,6 +25,7 @@ from .connection import (
 )
 from .feiniu import FeiniuRepository
 from .inbox import InboxRepository
+from .llm_usage import LLMUsageRepository
 from .pending_candidates import PendingCandidatesRepository
 from .sync_records import SyncRecordsRepository
 from .trakt import TraktRepository
@@ -51,10 +52,16 @@ class DatabaseManager:
         self._inbox = InboxRepository(self._connection, self._feiniu)
         self._sync = SyncRecordsRepository(self._connection, self._inbox)
         self._trakt = TraktRepository(self._connection)
+        self.llm_usage = LLMUsageRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
         # 需要先创建 inbox_repository（及其 feiniu 依赖）才能执行回填
         self._inbox.backfill_historical_error_notifications()
+        # 清理超出保留期的旧 LLM 用量日志
+        from ..config import config_manager
+
+        retention_days = int(config_manager.get_llm_config().get("retention_days", 365))
+        self.llm_usage.cleanup_old(retention_days)
 
     # ------------------------------------------------------------------
     # 连接相关属性（保持与原 DatabaseManager 内部结构兼容）
@@ -287,6 +294,23 @@ class DatabaseManager:
     def get_heatmap_stats(self) -> list[dict[str, Any]]:
         """获取热力图数据（过去365天每天同步数），带5分钟缓存"""
         return self._sync.get_heatmap_stats()
+
+    def get_records_in_date_range(
+        self,
+        date_from: str,
+        date_to: str,
+        limit: int = 200,
+        user_name: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """获取指定日期范围内的同步记录"""
+        return self._sync.get_records_in_date_range(
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+            user_name=user_name,
+            source=source,
+        )
 
     def cleanup_old_records(self, retention_days: int) -> int:
         """清理超过保留天数的同步记录，返回删除行数。"""

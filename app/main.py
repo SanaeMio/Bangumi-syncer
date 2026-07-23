@@ -18,11 +18,13 @@ from .api.feiniu import router as feiniu_router
 from .api.fongmi import router as fongmi_router
 from .api.health import router as health_router
 from .api.inbox import router as inbox_router
+from .api.llm import router as llm_router
 from .api.logs import router as logs_router
 from .api.mappings import router as mappings_router
 from .api.notification import router as notification_router
 from .api.pages import router as pages_router
 from .api.proxy import router as proxy_router
+from .api.summary_jobs import router as summary_jobs_router
 from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
 from .api.upgrade import router as upgrade_router
@@ -36,6 +38,7 @@ from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.fongmi.scheduler import fongmi_scheduler
 from .services.mapping_service import mapping_service
+from .services.summary.scheduler import summary_scheduler
 from .services.sync_service import sync_service
 from .services.trakt.scheduler import trakt_scheduler
 
@@ -96,6 +99,7 @@ async def lifespan(app: FastAPI):
                 ("Trakt", trakt_scheduler.start),
                 ("飞牛", feiniu_scheduler.start),
                 ("fongmi", fongmi_scheduler.start),
+                ("Summary", summary_scheduler.start),
             ]:
                 try:
                     ok = await coro()
@@ -126,6 +130,7 @@ async def lifespan(app: FastAPI):
         ("Trakt", trakt_scheduler.stop),
         ("飞牛", feiniu_scheduler.stop),
         ("fongmi", fongmi_scheduler.stop),
+        ("Summary", summary_scheduler.stop),
     ]:
         try:
             await coro()
@@ -169,6 +174,8 @@ app.include_router(health_router)
 app.include_router(app_release_router)
 app.include_router(proxy_router)
 app.include_router(notification_router)
+app.include_router(llm_router)
+app.include_router(summary_jobs_router)
 app.include_router(inbox_router)
 app.include_router(trakt_router)
 app.include_router(feiniu_router)

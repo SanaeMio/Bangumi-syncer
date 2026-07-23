@@ -250,6 +250,9 @@ class EmailHtmlMixin:
         self, notification_type: str, data: dict[str, Any]
     ) -> str:
         """根据通知类型构建邮件标题"""
+        if "watching_summary" in notification_type:
+            return f"[Bangumi-Syncer] 📊 追番总结 - {data.get('job_name', '')}"
+
         subjects = {
             "request_received": f"[Bangumi-Syncer] 收到同步请求 - {data.get('title', '')} S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
             "bangumi_id_found": f"[Bangumi-Syncer] 匹配到番剧 - {data.get('title', '')}",
@@ -403,6 +406,17 @@ IP地址: {data.get("ip", "")}
         Returns:
             HTML内容字符串
         """
+        if "watching_summary" in notification_type:
+            content = f"""
+            <div class="info-box" style="background: #f0f4ff; border-left: 4px solid #6c8ebf;">
+                <div class="title">📊 {data.get("job_name", "追番总结")}</div>
+                <div class="message">Period: {data.get("date_range", "")} | Records: {data.get("record_count", 0)}</div>
+            </div>
+            <div class="summary-section" style="padding: 12px; background: #fafafa; border-radius: 4px; margin-top: 8px;">
+                <pre style="white-space: pre-wrap; font-family: inherit;">{data.get("summary_text", "")}</pre>
+            </div>"""
+            return content
+
         builders: dict[str, Callable[[dict[str, Any]], str]] = {
             "request_received": self._build_request_received_html,
             "bangumi_id_found": self._build_bangumi_id_found_html,

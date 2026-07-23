@@ -449,6 +449,77 @@ class SyncRecordsRepository(BaseRepository):
             reraise=True,
         )
 
+    def get_records_in_date_range(
+        self,
+        date_from: str,
+        date_to: str,
+        limit: int = 200,
+        user_name: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """获取指定日期范围内的同步记录。
+
+        Args:
+            date_from: 起始日期 ``YYYY-MM-DD``（含）。
+            date_to:   结束日期 ``YYYY-MM-DD``（含，查询时转为 ``+1 day`` 后再做
+                       ``<`` 比较以覆盖该天全天）。
+            limit:     最大返回条数，默认 200。
+            user_name: 可选，按用户名过滤。
+            source:    可选，按来源过滤。
+
+        Returns:
+            按 ``timestamp DESC`` 排序的记录列表，每条为包含全部列的 dict。
+        """
+
+        def _read(conn):
+            cursor = conn.cursor()
+            conditions = ["timestamp >= ?", "timestamp < date(?, '+1 day')"]
+            params: list[Any] = [date_from, date_to]
+
+            if user_name:
+                conditions.append("user_name = ?")
+                params.append(user_name)
+            if source:
+                conditions.append("source = ?")
+                params.append(source)
+
+            where = " WHERE " + " AND ".join(conditions)
+            query = f"""
+                SELECT id, timestamp, user_name, title, ori_title, season, episode,
+                       subject_id, episode_id, status, message, source, media_type, bgm_title
+                FROM sync_records
+                {where}
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """
+            params.append(limit)
+            cursor.execute(query, params)
+            return [
+                {
+                    "id": row[0],
+                    "timestamp": row[1],
+                    "user_name": row[2],
+                    "title": row[3],
+                    "ori_title": row[4],
+                    "season": row[5],
+                    "episode": row[6],
+                    "subject_id": row[7],
+                    "episode_id": row[8],
+                    "status": row[9],
+                    "message": row[10],
+                    "source": row[11],
+                    "media_type": row[12] or "episode",
+                    "bgm_title": row[13] or "",
+                }
+                for row in cursor.fetchall()
+            ]
+
+        return self._run_read(
+            _read,
+            error_msg="获取日期范围同步记录失败",
+            reraise=True,
+        )
+
     def get_heatmap_stats(self) -> list[dict[str, Any]]:
         """获取热力图数据（过去365天每天同步数），带5分钟缓存"""
         now = time.time()

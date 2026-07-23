@@ -84,6 +84,19 @@ class WebhookMixin:
             except Exception as e:
                 logger.warning(f"自定义模板解析失败: {e}，使用默认格式")
 
+        # Handle watching_summary type (substring match for variants like watching_summary_dad)
+        # review 这里是否可以对 notification_type 进行修改，并且把 90行-98行放入 default_templates
+        if "watching_summary" in notification_type:
+            return {
+                "title": f"📊 追番总结 - {data.get('job_name', '')}",
+                "type": notification_type,
+                "timestamp": data.get("timestamp", ""),
+                "summary": data.get("summary_text", ""),
+                "date_range": data.get("date_range", ""),
+                "record_count": data.get("record_count", 0),
+                "user_name": data.get("user_name", ""),
+            }
+
         # 根据通知类型使用不同的默认格式
         default_templates = {
             "request_received": {

@@ -153,6 +153,87 @@
             </div>
         </div>
     </div>
+    <!-- LLM 用量卡片 -->
+    <div id="llm-stats-row" class="row g-3 mb-4" style="display:none">
+        <div class="col">
+            <div class="card stats-card h-100 position-relative">
+                <span id="llm-detail-trigger"
+                      style="display:none;
+                             cursor:pointer;
+                             position:absolute;
+                             top:8px;
+                             right:10px;
+                             opacity:0.55"
+                      class="hover-opacity">
+                    <i class="bi bi-info-circle"></i>
+                </span>
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-robot"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">本月 LLM 调用</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="llm-total-calls">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-database"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">本月 Token</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="llm-total-tokens">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-speedometer2"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">平均延迟</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="llm-avg-latency">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">调用失败</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="llm-error-count">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="llm-detail-tooltip"
+         class="app-tooltip"
+         style="display:none;
+                position:fixed;
+                z-index:9999;
+                max-width:480px">
+        <div class="tooltip-inner p-3" id="llm-detail-tooltip-inner"></div>
+    </div>
     <!-- 时间线 + 热力图 + 图表 -->
     <div class="row g-4 mb-4">
         <!-- 左侧：最近同步时间线 -->
@@ -439,6 +520,84 @@ async function loadDashboardData() {
             console.error('加载热力图失败:', error);
             showAlert('加载数据失败', 'danger');
         });
+
+    // LLM 用量统计
+    var _llmDetail = null;
+    fetch(appUrl('/api/summary/llm/stats?scope=detailed'), fetchOpts)
+        .then(function(res) { return res.json(); })
+        .then(function(d) {
+            if (d.total_calls > 0 || d.error_count > 0) {
+                document.getElementById('llm-stats-row').style.display = 'flex';
+                document.getElementById('llm-total-calls').textContent = d.total_calls || 0;
+                document.getElementById('llm-total-tokens').textContent = formatNumber(d.total_tokens || 0);
+                document.getElementById('llm-avg-latency').textContent = (d.avg_latency_ms || 0) + 'ms';
+                document.getElementById('llm-error-count').textContent = d.error_count || 0;
+                // 有数据时显示详情图标
+                if (d.by_model && d.by_model.length || d.by_job && d.by_job.length || d.daily && d.daily.length) {
+                    _llmDetail = d;
+                    document.getElementById('llm-detail-trigger').style.display = '';
+                }
+            }
+        })
+        .catch(function(e) { /* Silent - LLM not configured or not used */ });
+
+    // LLM 详情 tooltip
+    (function() {
+        var trigger = document.getElementById('llm-detail-trigger');
+        var tooltip = document.getElementById('llm-detail-tooltip');
+        var inner = document.getElementById('llm-detail-tooltip-inner');
+        var hideTimer = null;
+
+        function buildDetailHTML(d) {
+            var h = '';
+            if (d.by_model && d.by_model.length) {
+                h += '<div class="fw-bold mb-1">按模型</div>';
+                h += '<table class="w-100 small mb-2"><tr class="text-muted"><td>模型</td><td class="text-end">调用</td><td class="text-end">Token</td><td class="text-end">延迟</td></tr>';
+                d.by_model.forEach(function(m) {
+                    h += '<tr><td>' + escapeHtml(m.model) + '</td><td class="text-end">' + m.calls + '</td><td class="text-end">' + formatNumber(m.total_tokens) + '</td><td class="text-end">' + m.avg_latency_ms + 'ms</td></tr>';
+                });
+                h += '</table>';
+            }
+            if (d.by_job && d.by_job.length) {
+                h += '<div class="fw-bold mb-1">按任务</div>';
+                h += '<table class="w-100 small mb-2"><tr class="text-muted"><td>任务</td><td class="text-end">调用</td><td class="text-end">Token</td><td class="text-end">延迟</td></tr>';
+                d.by_job.forEach(function(j) {
+                    h += '<tr><td>' + escapeHtml(j.job_name) + '</td><td class="text-end">' + j.calls + '</td><td class="text-end">' + formatNumber(j.total_tokens) + '</td><td class="text-end">' + j.avg_latency_ms + 'ms</td></tr>';
+                });
+                h += '</table>';
+            }
+            if (d.daily && d.daily.length) {
+                h += '<div class="fw-bold mb-1">最近 ' + d.daily.length + ' 天</div>';
+                h += '<table class="w-100 small"><tr class="text-muted"><td>日期</td><td class="text-end">调用</td><td class="text-end">Token</td></tr>';
+                d.daily.forEach(function(day) {
+                    h += '<tr><td>' + day.date + '</td><td class="text-end">' + day.calls + '</td><td class="text-end">' + formatNumber(day.total_tokens) + '</td></tr>';
+                });
+                h += '</table>';
+            }
+            return h;
+        }
+
+        trigger.addEventListener('mouseenter', function() {
+            if (!_llmDetail) return;
+            clearTimeout(hideTimer);
+            inner.innerHTML = buildDetailHTML(_llmDetail);
+            tooltip.style.display = 'block';
+            var rect = trigger.getBoundingClientRect();
+            var left = rect.right + 8;
+            var top = rect.top;
+            if (left + 480 > window.innerWidth) left = rect.left - 488;
+            if (top + tooltip.offsetHeight > window.innerHeight) top = window.innerHeight - tooltip.offsetHeight - 8;
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+        });
+
+        trigger.addEventListener('mouseleave', function() {
+            hideTimer = setTimeout(function() { tooltip.style.display = 'none'; }, 200);
+        });
+
+        tooltip.addEventListener('mouseenter', function() { clearTimeout(hideTimer); });
+        tooltip.addEventListener('mouseleave', function() { tooltip.style.display = 'none'; });
+    })();
 }
 
 // ========== 时间线 ==========
@@ -674,6 +833,13 @@ function applyPoster(subjectId, url) {
 function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace ( />/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatNumber(num) {
+    if (num == null) return '0';
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return String(num);
 }
 
 // ========== 热力图 ==========

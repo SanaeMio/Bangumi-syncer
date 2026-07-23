@@ -292,6 +292,54 @@
             </div>
         </div>
     </div>
+    <!-- AI 追番总结测试 -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-robot me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">AI 追番总结测试</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">对已配置的 AI 追番总结任务进行测试或手动触发。</p>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">选择任务</label>
+                            <select class="form-select" id="debug-summary-job-select">
+                                <option value="">-- 加载中 --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button"
+                                    class="btn btn-primary"
+                                    id="debug-test-summary-btn"
+                                    onclick="debugTestSummary()">
+                                <i class="bi bi-play-fill me-1"></i>测试
+                            </button>
+                            <button type="button"
+                                    class="btn btn-warning ms-2"
+                                    id="debug-trigger-summary-btn"
+                                    onclick="debugTriggerSummary()">
+                                <i class="bi bi-lightning-charge me-1"></i>触发
+                            </button>
+                        </div>
+                    </div>
+                    <div id="debug-summary-test-result" class="mt-3" style="display:none">
+                        <div id="debug-summary-test-info" class="small text-muted mb-2"></div>
+                        <pre id="debug-summary-test-text"
+                             style="white-space:pre-wrap;
+                                    background:var(--app-bg-hover);
+                                    padding:12px;
+                                    border-radius:4px;
+                                    max-height:400px;
+                                    overflow-y:auto"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <script>
 function escapeHtml(text) {
     const div = document.createElement('div');
@@ -1424,5 +1472,75 @@ function showAlert(message, type = 'info', duration = 3000) {
         toast.remove();
     });
 }
+
+// ========== AI 追番总结测试 ==========
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+async function loadDebugSummaryJobs() {
+    const select = document.getElementById('debug-summary-job-select');
+    if (!select) return;
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs'));
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        if (d.status === 'success' && d.data && d.data.length > 0) {
+            select.innerHTML = d.data.map(j =>
+                `<option value="${j.id}">${escapeHtml(j.name)} (cron: ${escapeHtml(j.cron)})</option>`
+            ).join('');
+        } else {
+            select.innerHTML = '<option value="">-- 无任务 --</option>';
+        }
+    } catch(e) {
+        select.innerHTML = '<option value="">-- 加载失败 --</option>';
+    }
+}
+
+async function debugTestSummary() {
+    const id = document.getElementById('debug-summary-job-select').value;
+    if (!id) { showAlert('请先选择一个任务', 'warning'); return; }
+    const btn = document.getElementById('debug-test-summary-btn');
+    btn.disabled = true;
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs/' + id + '/test'), { method: 'POST' });
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        const resultEl = document.getElementById('debug-summary-test-result');
+        const infoEl = document.getElementById('debug-summary-test-info');
+        const textEl = document.getElementById('debug-summary-test-text');
+        if (d.success) {
+            resultEl.style.display = 'block';
+            infoEl.innerHTML = '模型: ' + d.model + ' | Token: ' + d.total_tokens +
+                ' (提示:' + d.prompt_tokens + ' + 生成:' + d.completion_tokens +
+                ') | 记录数: ' + d.record_count;
+            textEl.textContent = d.summary_text;
+        } else {
+            showAlert('测试失败: ' + (d.summary_text || d.message || '未知错误'), 'danger');
+        }
+    } catch(e) { showAlert('测试失败: ' + e.message, 'danger'); }
+    btn.disabled = false;
+}
+
+async function debugTriggerSummary() {
+    const id = document.getElementById('debug-summary-job-select').value;
+    if (!id) { showAlert('请先选择一个任务', 'warning'); return; }
+    const btn = document.getElementById('debug-trigger-summary-btn');
+    btn.disabled = true;
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs/' + id + '/trigger'), { method: 'POST' });
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        showAlert(d.status === 'success' ? '任务已触发，summary 将发送到订阅的 webhook' : '触发失败',
+                 d.status === 'success' ? 'success' : 'danger');
+    } catch(e) { showAlert('触发失败: ' + e.message, 'danger'); }
+    btn.disabled = false;
+}
+
+document.addEventListener('DOMContentLoaded', loadDebugSummaryJobs);
     </script>
 {% endblock %}
