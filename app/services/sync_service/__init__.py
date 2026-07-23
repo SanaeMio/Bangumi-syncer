@@ -473,6 +473,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             request_episode=item.episode,
             request_media_type=item.media_type,
             request_release_date=item.release_date or "",
+            request_sync_action=(item.sync_action or "").strip(),
             request_user_name=item.user_name,
             request_platform_hint=item.source or actual_source,
         )
@@ -492,7 +493,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             "episode": item.episode,
             "media_type": item.media_type,
             "release_date": item.release_date,
+            "sync_action": item.sync_action or "",
         }
+        receive_step.raw_payload = item.raw_payload
 
         # 查找番剧ID及其是否为特定季度ID的标记
         subject_id, is_season_matched_id, subject_find_error = self._find_subject_id(

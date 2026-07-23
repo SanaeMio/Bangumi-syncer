@@ -79,6 +79,7 @@ class MatchTrace:
     request_episode: int = 0
     request_media_type: str = ""
     request_release_date: str = ""
+    request_sync_action: str = ""
     request_user_name: str = ""
     request_platform_hint: str = ""
     normalized_title: str = ""
@@ -133,6 +134,7 @@ class MatchTrace:
             "request_episode": self.request_episode,
             "request_media_type": self.request_media_type,
             "request_release_date": self.request_release_date,
+            "request_sync_action": self.request_sync_action,
             "request_user_name": self.request_user_name,
             "request_platform_hint": self.request_platform_hint,
             "normalized_title": self.normalized_title,
