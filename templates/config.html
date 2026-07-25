@@ -1533,12 +1533,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
-    
+
     // 初始化令牌显示/隐藏功能
     document.getElementById('toggle-token-visibility').addEventListener('click', function() {
         const tokenInput = document.getElementById('bangumi-access-token');
         const icon = document.getElementById('token-visibility-icon');
-        
+
         if (tokenInput.type === 'password') {
             tokenInput.type = 'text';
             icon.className = 'bi bi-eye-slash';
@@ -1547,12 +1547,12 @@ document.addEventListener('DOMContentLoaded', function() {
             icon.className = 'bi bi-eye';
         }
     });
-    
+
     // 初始化认证密码显示/隐藏功能
     document.getElementById('toggle-auth-password-visibility').addEventListener('click', function() {
         const passwordInput = document.getElementById('auth-password');
         const icon = document.getElementById('auth-password-visibility-icon');
-        
+
         if (passwordInput.type === 'password') {
             passwordInput.type = 'text';
             icon.className = 'bi bi-eye-slash';
@@ -1586,15 +1586,15 @@ async function loadConfig(showToast = true) {
                 'Content-Type': 'application/json'
             }
         });
-        
+
         if (response.status === 401) {
             // 认证失败，跳转到登录页面
             window.location.href = appUrl('/login');
             return;
         }
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             currentConfig = data.data;
             populateForm(currentConfig);
@@ -1694,7 +1694,7 @@ function populateForm(config) {
         document.getElementById('feiniu-sync-interval').value = fn.sync_interval || '*/15 * * * *';
         document.getElementById('feiniu-limit').value = (fn.limit != null && fn.limit !== '') ? fn.limit : 100;
     }
-    
+
     // 填充 fongmi 配置
     const fm = config.fongmi || {};
     const fmEnabled = document.getElementById('fongmi-enabled');
@@ -1719,14 +1719,14 @@ function populateForm(config) {
         document.getElementById('webhook-key').value = config.auth.webhook_key || '';
         // 密码字段留空，表示不修改
         document.getElementById('auth-password').value = '';
-        
+
         // 根据webhook认证开关显示/隐藏密钥区域
         toggleWebhookKeySection();
     }
 
     // 切换同步模式
     toggleSyncMode();
-    
+
     // 填充多用户配置
     if (sync.mode === 'multi') {
         populateMultiUserConfig(config.multi_accounts, config.user_mappings);
@@ -1737,7 +1737,7 @@ function toggleSyncMode() {
     const mode = document.getElementById('sync-mode').value;
     const singleBangumiSection = document.getElementById('single-user-bangumi-section');
     const multiSection = document.getElementById('multi-user-section');
-    
+
     if (mode === 'single') {
         // 单用户模式：显示 Bangumi 账号配置，隐藏多用户配置
         singleBangumiSection.style.display = 'block';
@@ -1753,7 +1753,7 @@ function toggleSyncMode() {
 function toggleWebhookKeySection() {
     const enabled = document.getElementById('webhook-auth-enabled').checked;
     const keySection = document.getElementById('webhook-key-section');
-    
+
     if (enabled) {
         keySection.style.display = 'block';
         document.getElementById('webhook-auth-enabled-tip').style.display = 'block';
@@ -1775,25 +1775,25 @@ function toggleWebhookKeySection() {
 
 function populateMultiUserConfig(accounts, mappings) {
     const accountsContainer = document.getElementById('bangumi-accounts-container');
-    
+
     accountsContainer.innerHTML = '';
-    
+
     // 重置全局计数器
     bangumiAccountCounter = 0;
-    
+
     // 添加Bangumi账号
     Object.entries(accounts || {}).forEach(([key, account]) => {
         // 使用display_name作为显示名称，如果没有则使用配置段名
         const displayName = account.display_name || key;
         addBangumiAccount(displayName, account);
     });
-    
+
 }
 
 function addBangumiAccount(accountName = '', accountConfig = {}) {
     const container = document.getElementById('bangumi-accounts-container');
     const id = bangumiAccountCounter++;
-    
+
     const accountDiv = document.createElement('div');
     accountDiv.className = 'border rounded p-3 mb-3';
     accountDiv.innerHTML = `
@@ -1831,7 +1831,7 @@ function addBangumiAccount(accountName = '', accountConfig = {}) {
             </div>
         </div>
     `;
-    
+
     accountDiv.id = `bangumi-account-${id}`;
     container.appendChild(accountDiv);
 }
@@ -1918,18 +1918,18 @@ async function saveConfig() {
                 timeout: parseInt(document.getElementById('llm-timeout').value) || 60
             }
         };
-        
+
         // 如果密码字段不为空，则添加到配置中
         const authPassword = document.getElementById('auth-password').value;
         if (authPassword.trim() !== '') {
             configData.auth.password = authPassword;
         }
-        
+
         // 处理多用户配置
         if (configData.sync.mode === 'multi') {
             const multiAccounts = {};
             const userMappings = {};
-            
+
             // 收集Bangumi账号
             document.querySelectorAll('#bangumi-accounts-container > [id^="bangumi-account-"]').forEach((element) => {
                 const displayName = element.querySelector('.bangumi-account-name').value.trim();
@@ -1937,7 +1937,7 @@ async function saveConfig() {
                 const mediaUsername = element.querySelector('.bangumi-account-media-username').value.trim();
                 const token = element.querySelector('.bangumi-account-token').value;
                 const isPrivate = element.querySelector('.bangumi-account-private').checked;
-                
+
                 if (username && mediaUsername && token) {
                     multiAccounts[element.id] = {
                         username: username,
@@ -1948,10 +1948,10 @@ async function saveConfig() {
                     };
                 }
             });
-            
+
             configData.multi_accounts = multiAccounts;
         }
-        
+
         const response = await fetch(appUrl('/api/config'), {
             method: 'POST',
             credentials: 'include',  // 包含Cookie认证信息
@@ -1960,12 +1960,12 @@ async function saveConfig() {
             },
             body: JSON.stringify(configData)
         });
-        
+
         const result = await response.json();
-        
+
         if (result.status === 'success') {
             showAlert('配置保存成功', 'success');
-            
+
             // 如果修改了密码，提示需要重新登录
             if (authPassword.trim() !== '') {
                 setTimeout(() => {
@@ -2000,9 +2000,9 @@ async function backupConfig() {
                 'Content-Type': 'application/json',
             }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             showAlert('配置备份成功，已保存到服务器', 'success');
             // 刷新备份文件列表
@@ -2019,7 +2019,7 @@ async function backupConfig() {
 // 显示恢复配置模态框
 async function showRestoreModal() {
     console.log('尝试显示恢复配置模态框');
-    
+
     // 确保模态框已初始化
     if (!restoreConfigModal) {
         console.log('模态框未初始化，尝试重新初始化');
@@ -2039,7 +2039,7 @@ async function showRestoreModal() {
             return;
         }
     }
-    
+
     try {
         restoreConfigModal.show();
         console.log('模态框显示成功');
@@ -2057,10 +2057,10 @@ async function loadBackupFiles() {
             credentials: 'include'
         });
         const data = await response.json();
-        
+
         const backupFilesList = document.getElementById('backup-files-list');
         backupFilesList.innerHTML = '';
-        
+
         if (data.status === 'success' && data.data.backups.length > 0) {
             data.data.backups.forEach(backup => {
                 const item = document.createElement('div');
@@ -2110,24 +2110,24 @@ async function selectBackupFile(filename) {
         item.classList.remove('active');
     });
     event.target.closest('.list-group-item').classList.add('active');
-    
+
     // 找到对应的backup对象
     const response = await fetch(appUrl('/api/config/backups'), {
         credentials: 'include'
     });
     const data = await response.json();
     const backup = data.data.backups.find(b => b.filename === filename);
-    
+
     selectedBackupFile = backup;
     document.getElementById('restore-confirm-btn').disabled = false;
-    
+
     // 预览配置内容
     try {
         const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
             credentials: 'include'
         });
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             const preview = document.getElementById('config-preview');
             preview.innerHTML = `<pre class="mb-0">${data.data.content}</pre>`;
@@ -2153,24 +2153,24 @@ async function selectBackupFile(filename) {
 // 删除单个备份文件
 async function deleteBackupFile(filename, event) {
     event.stopPropagation(); // 阻止事件冒泡
-    
+
     if (!confirm('确定要删除这个备份文件吗？此操作不可逆。')) {
         return;
     }
-    
+
     try {
         const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
             method: 'DELETE',
             credentials: 'include'
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             showAlert('备份文件删除成功', 'success');
             // 刷新备份文件列表
             await loadBackupFiles();
-            
+
             // 如果删除的是当前选中的文件，清空预览
             if (selectedBackupFile && selectedBackupFile.filename === filename) {
                 selectedBackupFile = null;
@@ -2194,7 +2194,7 @@ async function confirmRestore() {
         showAlert('请选择要恢复的备份文件', 'warning');
         return;
     }
-    
+
     try {
         const response = await fetch(appUrl(`/api/config/restore/${selectedBackupFile.filename}`), {
             method: 'POST',
@@ -2203,15 +2203,15 @@ async function confirmRestore() {
                 'Content-Type': 'application/json',
             }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             if (restoreConfigModal) {
                 restoreConfigModal.hide();
             }
             showAlert('配置已恢复，正在重新加载...', 'success');
-            
+
             // 延迟重新加载配置
             setTimeout(() => {
                 loadConfig(true);
@@ -2239,10 +2239,10 @@ function showCleanupModal() {
 async function showProxyHelper() {
     const helperDiv = document.getElementById('proxy-helper');
     helperDiv.style.display = 'block';
-    
+
     // 尝试从当前输入框检测端口号
     detectPortFromInput();
-    
+
     // 获取代理建议
     await loadProxySuggestions();
 }
@@ -2254,15 +2254,15 @@ function detectPortFromInput(event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    
+
     const proxyInput = document.getElementById('script-proxy').value.trim();
     const portInput = document.getElementById('proxy-port');
-    
+
     if (!proxyInput) {
         showAlert('代理输入框为空，请先填写代理地址', 'warning', 3000);
         return;
     }
-    
+
     // 尝试从URL中提取端口号，支持多种格式
     const portPatterns = [
         /:(\d+)(?:\/|$)/,           // http://127.0.0.1:7890 或 http://127.0.0.1:7890/
@@ -2273,9 +2273,9 @@ function detectPortFromInput(event) {
         /host\.docker\.internal:(\d+)/, // host.docker.internal:7890
         /192\.168\.\d+\.\d+:(\d+)/  // 192.168.x.x:7890
     ];
-    
+
     let detectedPort = null;
-    
+
     for (const pattern of portPatterns) {
         const match = proxyInput.match(pattern);
         if (match && match[1]) {
@@ -2286,7 +2286,7 @@ function detectPortFromInput(event) {
             }
         }
     }
-    
+
     if (detectedPort) {
         portInput.value = detectedPort;
         showAlert(`✅ 已从输入框检测到端口号: ${detectedPort}`, 'success', 3000);
@@ -2303,7 +2303,7 @@ function detectPortFromInput(event) {
         async function updateProxySuggestions() {
             await loadProxySuggestions();
         }
-        
+
         // 测试主机连通性
         async function testHostConnectivity() {
             const hostInput = document.getElementById('test-host');
@@ -2311,17 +2311,17 @@ function detectPortFromInput(event) {
             const timeoutInput = document.getElementById('test-timeout');
             const testBtn = document.getElementById('test-host-btn');
             const resultDiv = document.getElementById('host-test-result');
-            
+
             const host = hostInput.value.trim();
             const port = parseInt(portInput.value) || 7890;
             const timeout = parseInt(timeoutInput.value) || 5;
-            
+
             if (!host) {
                 showAlert('请输入主机地址', 'warning', 3000);
                 hostInput.focus();
                 return;
             }
-            
+
             // 显示测试中状态
             testBtn.disabled = true;
             testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
@@ -2334,7 +2334,7 @@ function detectPortFromInput(event) {
                     </div>
                 </div>
             `;
-            
+
             try {
                 const response = await fetch(appUrl('/api/proxy/test-host'), {
                     method: 'POST',
@@ -2348,15 +2348,15 @@ function detectPortFromInput(event) {
                         timeout: timeout
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.status === 'success') {
                     displayHostTestResult(data.data, host, port);
                 } else {
                     showHostTestError('测试失败: ' + data.message);
                 }
-                
+
             } catch (error) {
                 console.error('主机连通性测试失败:', error);
                 showHostTestError('网络错误，无法执行连通性测试');
@@ -2366,13 +2366,13 @@ function detectPortFromInput(event) {
                 testBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>测试';
             }
         }
-        
+
         // 显示主机测试结果
         function displayHostTestResult(result, host, port) {
             const resultDiv = document.getElementById('host-test-result');
-            
+
             let html = '';
-            
+
             if (result.success) {
                 html = `
                     <div class="alert alert-success">
@@ -2403,11 +2403,11 @@ function detectPortFromInput(event) {
                             <strong>错误：</strong>${result.error}
                         </p>
                 `;
-                
+
                 // 添加详细的测试结果
                 if (result.details) {
                     html += '<hr><h6 class="small">详细测试结果：</h6>';
-                    
+
                     if (result.details.tcp_test) {
                         const tcpTest = result.details.tcp_test;
                         const tcpIcon = tcpTest.success ? 'check-circle text-success' : 'x-circle text-danger';
@@ -2418,7 +2418,7 @@ function detectPortFromInput(event) {
                             </p>
                         `;
                     }
-                    
+
                     if (result.details.ping_test) {
                         const pingTest = result.details.ping_test;
                         const pingIcon = pingTest.success ? 'check-circle text-success' : 'x-circle text-warning';
@@ -2430,7 +2430,7 @@ function detectPortFromInput(event) {
                         `;
                     }
                 }
-                
+
                 html += `
                         <hr>
                         <p class="mb-0 small text-danger">
@@ -2444,10 +2444,10 @@ function detectPortFromInput(event) {
                     </div>
                 `;
             }
-            
+
             resultDiv.innerHTML = html;
         }
-        
+
         // 显示主机测试错误
         function showHostTestError(message) {
             const resultDiv = document.getElementById('host-test-result');
@@ -2466,7 +2466,7 @@ function detectPortFromInput(event) {
 async function loadProxySuggestions() {
     const portInput = document.getElementById('proxy-port');
     const port = parseInt(portInput.value) || 7890;
-    
+
     try {
         // 获取代理建议
         const response = await fetch(appUrl(`/api/proxy/suggestions?port=${port}`), {
@@ -2476,9 +2476,9 @@ async function loadProxySuggestions() {
                 'Content-Type': 'application/json'
             }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             displayProxySuggestions(data.data);
         } else {
@@ -2498,7 +2498,7 @@ function hideProxyHelper() {
 // 显示代理建议
 function displayProxySuggestions(data) {
     const suggestionsDiv = document.getElementById('proxy-suggestions');
-    
+
     if (!data.suggestions || data.suggestions.length === 0) {
         suggestionsDiv.innerHTML = `
             <div class="alert alert-warning">
@@ -2508,9 +2508,9 @@ function displayProxySuggestions(data) {
         `;
         return;
     }
-    
+
     const currentPort = document.getElementById('proxy-port').value;
-    
+
     let html = `
         <div class="mb-3">
             <h6 class="text-info">
@@ -2519,18 +2519,18 @@ function displayProxySuggestions(data) {
                 ${data.environment.is_docker ? `(${data.environment.network_mode}模式)` : '(原生运行)'}
             </h6>
             <p class="small text-muted mb-0">
-                ${data.environment.is_docker ? 
-                    `已为Docker环境优化代理配置建议，使用端口: ${currentPort}` : 
+                ${data.environment.is_docker ?
+                    `已为Docker环境优化代理配置建议，使用端口: ${currentPort}` :
                     `已为本机环境提供常用代理配置，使用端口: ${currentPort}`}
             </p>
         </div>
         <div class="row g-2">
     `;
-    
+
     data.suggestions.forEach((suggestion, index) => {
         const badgeClass = index === 0 ? 'bg-success' : 'bg-info';
         const recommendText = index === 0 ? '推荐' : '';
-        
+
         html += `
             <div class="col-12">
                 <div class="card border-light proxy-suggestion" onclick="selectProxy('${suggestion.address}')" style="cursor: pointer;">
@@ -2552,7 +2552,7 @@ function displayProxySuggestions(data) {
             </div>
         `;
     });
-    
+
     html += '</div>';
     suggestionsDiv.innerHTML = html;
 }
@@ -2577,14 +2577,14 @@ function selectProxy(address) {
 // 测试代理连通性
 async function testProxy(address, event) {
     event.stopPropagation(); // 阻止冒泡
-    
+
     const button = event.target.closest('button');
     const originalHtml = button.innerHTML;
-    
+
     // 显示测试状态
     button.disabled = true;
     button.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div>';
-    
+
     try {
         const response = await fetch(appUrl('/api/proxy/test'), {
             method: 'POST',
@@ -2594,9 +2594,9 @@ async function testProxy(address, event) {
             },
             body: JSON.stringify({ proxy_url: address })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success' && data.data.success) {
             button.innerHTML = '<i class="bi bi-check-circle text-success"></i>';
             showAlert(`代理测试成功 (${data.data.response_time}ms)`, 'success', 3000);
@@ -2608,7 +2608,7 @@ async function testProxy(address, event) {
         button.innerHTML = '<i class="bi bi-x-circle text-danger"></i>';
         showAlert('代理测试失败: 网络错误', 'danger', 5000);
     }
-    
+
     // 3秒后恢复按钮
     setTimeout(() => {
         button.disabled = false;
@@ -2620,13 +2620,13 @@ async function testProxy(address, event) {
 async function confirmCleanup() {
     const strategy = document.querySelector('input[name="cleanupStrategy"]:checked').value;
     let params = { strategy: strategy };
-    
+
     if (strategy === 'recent') {
         params.keep_count = parseInt(document.getElementById('keepCount').value);
     } else if (strategy === 'date') {
         params.keep_days = parseInt(document.getElementById('keepDays').value);
     }
-    
+
     try {
         const response = await fetch(appUrl('/api/config/backups/cleanup'), {
             method: 'POST',
@@ -2636,9 +2636,9 @@ async function confirmCleanup() {
             },
             body: JSON.stringify(params)
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             showAlert(data.message, 'success');
             // 关闭模态框
@@ -2749,7 +2749,7 @@ function showAddWebhookModal() {
     document.getElementById('webhook-method-input').value = 'POST';
     document.getElementById('webhook-headers-input').value = '';
     document.getElementById('webhook-template-input').value = '';
-    
+
     // 清空所有 webhook 类型复选框
     clearNotificationTypeCheckboxes('webhook-type-');
     // 动态加载追番总结通知类型
@@ -2778,7 +2778,7 @@ async function showEditWebhookModal(webhookId) {
                 document.getElementById('webhook-method-input').value = webhook.method;
                 document.getElementById('webhook-headers-input').value = webhook.headers;
                 document.getElementById('webhook-template-input').value = webhook.template;
-                
+
                 // 设置复选框
                 setNotificationTypeCheckboxes('webhook-type-', webhook.types);
                 // 动态加载追番总结通知类型
@@ -2797,7 +2797,7 @@ async function showEditWebhookModal(webhookId) {
 // 保存 Webhook 配置
 async function saveWebhookConfig() {
     const webhookId = document.getElementById('webhook-id').value;
-    
+
     const webhookData = {
         enabled: document.getElementById('webhook-enabled-input').checked,
         url: document.getElementById('webhook-url-input').value,
@@ -2992,18 +2992,18 @@ function copyWebhookKey() {
         showAlert('Webhook 密钥未加载', 'warning');
         return;
     }
-    
+
     const textarea = document.createElement('textarea');
     textarea.value = webhookKey;
     textarea.style.position = 'fixed';
     textarea.style.opacity = '0';
     document.body.appendChild(textarea);
     textarea.select();
-    
+
     try {
         const successful = document.execCommand('copy');
         document.body.removeChild(textarea);
-        
+
         if (successful) {
             showAlert('Webhook 密钥已复制到剪贴板', 'success');
         } else {
@@ -3020,7 +3020,7 @@ function copyWebhookKey() {
 
 async function loadLLMConfig() {
     try {
-        const r = await fetch(appUrl('/api/summary/llm/conf'));
+        const r = await fetch(appUrl('/llm/conf'));
         const d = await r.json();
         document.getElementById('llm-api-base').value = d.api_base || '';
         document.getElementById('llm-api-key').value = d.api_key || '';
@@ -3044,7 +3044,7 @@ async function saveLLMAndTest() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
     try {
         // 第一步：保存LLM配置
-        const saveR = await fetch(appUrl('/api/summary/llm/conf'), {
+        const saveR = await fetch(appUrl('/llm/conf'), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3061,7 +3061,7 @@ async function saveLLMAndTest() {
 
         // 第二步：测试连接
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
-        const testR = await fetch(appUrl('/api/summary/llm/test'), { method: 'POST' });
+        const testR = await fetch(appUrl('/llm/test'), { method: 'POST' });
         const testD = await testR.json();
         if (testD.success) {
             showAlert('保存成功，连接测试通过: ' + testD.message + ' (' + testD.latency_ms + 'ms)', 'success');
@@ -3957,7 +3957,7 @@ function showAddEmailModal() {
     document.getElementById('email-smtp-use-tls-input').checked = true;
     document.getElementById('email-subject-input').value = '';
     document.getElementById('email-template-file-input').value = '';
-    
+
     // 新建时密码为必填
     document.getElementById('email-password-required').style.display = 'inline';
 
@@ -4019,7 +4019,7 @@ async function showEditEmailModal(emailId) {
 async function saveEmailConfig() {
     const emailId = document.getElementById('email-id').value;
     const passwordValue = document.getElementById('email-smtp-password-input').value;
-    
+
     const emailData = {
         enabled: document.getElementById('email-enabled-input').checked,
         smtp_server: document.getElementById('email-smtp-server-input').value,
@@ -4032,7 +4032,7 @@ async function saveEmailConfig() {
         email_template_file: document.getElementById('email-template-file-input').value,
         types: getNotificationTypeCheckboxes('email-type-')
     };
-    
+
     // 只有当密码不是掩码且不为空时才添加到请求数据中
     if (passwordValue && passwordValue !== '******') {
         emailData.smtp_password = passwordValue;
@@ -4043,7 +4043,7 @@ async function saveEmailConfig() {
         showAlert('请填写所有必填字段', 'warning');
         return;
     }
-    
+
     // 新建时必须填写密码
     if (!emailId && !emailData.smtp_password) {
         showAlert('请填写 SMTP 密码/授权码', 'warning');

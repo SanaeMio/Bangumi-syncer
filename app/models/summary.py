@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 
 class LLMConfigResponse(BaseModel):
-    """GET /api/summary/llm 响应"""
+    """GET /llm 响应"""
 
     api_base: str = "https://api.openai.com/v1"
     api_key: str = ""  # 掩码值（前端展示为 "***"）
@@ -19,7 +19,7 @@ class LLMConfigResponse(BaseModel):
 
 
 class LLMConfigUpdate(BaseModel):
-    """PUT /api/summary/llm 请求"""
+    """PUT /llm 请求"""
 
     api_base: Optional[str] = None
     api_key: Optional[str] = None
@@ -30,7 +30,7 @@ class LLMConfigUpdate(BaseModel):
 
 
 class LLMTestResponse(BaseModel):
-    """POST /api/summary/llm/test 响应"""
+    """POST /llm/test 响应"""
 
     success: bool
     message: str
@@ -121,7 +121,7 @@ class SummaryJobTestResponse(BaseModel):
 
 
 class LLMUsageStatsResponse(BaseModel):
-    """GET /api/summary/llm/stats 响应"""
+    """GET /llm/stats 响应"""
 
     total_calls: int = 0
     total_tokens: int = 0
