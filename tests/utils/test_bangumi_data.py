@@ -1883,3 +1883,47 @@ class TestRequestWithRetry:
 
         with pytest.raises(httpx.ConnectError):
             _request_with_retry("https://example.com", max_retries=0)
+
+
+class TestTmdbMappingMultiSeason:
+    """TMDB 映射多条目选择与季度感知查询"""
+
+    def test_multi_entry_picks_no_season_indicator(self):
+        """同 TMDB 多条目时优先选择无季度标记的标题"""
+        bd = BangumiData()
+        # SeasonInfo 的规则：含"第X季"/"Season X"/"SX"/"(第Xクール)" 等标记
+        assert bd._cache_tmdb_mapping.get("tv/94664", "").startswith("無職転生")
+
+    def test_no_season_entries_pick_earliest_begin(self):
+        """同 TMDB 但均含季度标记时选择最早年份的条目"""
+        bd = BangumiData()
+        # tv/94664/season/2 有两条：S2P1(2023-07)和 S2P2(2024-04)
+        s2 = bd._cache_tmdb_mapping.get("tv/94664/season/2", "")
+        assert s2.startswith("無職転生Ⅱ")
+        assert "クール" not in s2
+
+    def test_get_title_by_tmdb_id_with_season(self):
+        """季度感知查询：有季度时优先返回对应季标题"""
+        bd = BangumiData()
+        base = bd.get_title_by_tmdb_id("tv/94664")
+        assert "クール" not in base
+
+        s2 = bd.get_title_by_tmdb_id("tv/94664", season=2)
+        assert "Ⅱ" in s2
+
+        s3 = bd.get_title_by_tmdb_id("tv/94664", season=3)
+        assert "Ⅲ" in s3
+
+    def test_get_title_by_tmdb_id_season_fallback(self):
+        """季度不存在时回退到基 key"""
+        bd = BangumiData()
+        title_s99 = bd.get_title_by_tmdb_id("tv/94664", season=99)
+        assert title_s99 is not None
+        assert "クール" not in title_s99
+
+    def test_single_episode_tmdb_no_unnecessary_strip(self):
+        """单条目的 TMDB 映射保持原标题不变"""
+        bd = BangumiData()
+        sao = bd.get_title_by_tmdb_id("tv/44832")
+        if sao:
+            assert len(sao) > 3

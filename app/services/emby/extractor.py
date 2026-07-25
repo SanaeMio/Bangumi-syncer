@@ -15,6 +15,22 @@ def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
     item = emby_data["Item"]
     itype = (item.get("Type") or "episode").lower()
 
+    # 驱动原始 payload（保留与解析相关的字段，过滤过长的 ProviderIds 等）
+    raw_payload = {
+        "event": emby_data.get("Event"),
+        "user": emby_data.get("User", {}).get("Name"),
+        "item": {
+            "type": item.get("Type"),
+            "name": item.get("Name"),
+            "seriesName": item.get("SeriesName"),
+            "originalTitle": item.get("OriginalTitle"),
+            "parentIndexNumber": item.get("ParentIndexNumber"),
+            "indexNumber": item.get("IndexNumber"),
+            "premiereDate": item.get("PremiereDate"),
+            "productionYear": item.get("ProductionYear"),
+        },
+    }
+
     if itype == "movie":
         release_date = ""
         if item.get("PremiereDate"):
@@ -35,6 +51,7 @@ def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
             release_date=release_date,
             user_name=emby_data["User"]["Name"],
             source="emby",
+            raw_payload=raw_payload,
         )
 
     release_date = ""
@@ -60,4 +77,5 @@ def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
         release_date=release_date,
         user_name=emby_data["User"]["Name"],
         source="emby",
+        raw_payload=raw_payload,
     )

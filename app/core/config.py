@@ -549,9 +549,7 @@ class ConfigManager:
             ]:
                 # 这是多账号配置段，收集到 multi_accounts 中
                 section_config = self.get_section(section_name)
-                # 使用 display_name 作为键，如果没有则使用配置段名
-                account_key = section_config.get("display_name", section_name)
-                multi_accounts[account_key] = section_config
+                multi_accounts[section_name] = section_config
             else:
                 # 统一键名格式：将连字符转换为下划线
                 normalized_key = section_name.replace("-", "_")

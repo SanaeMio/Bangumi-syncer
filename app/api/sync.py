@@ -557,20 +557,126 @@ async def retry_sync_record(
         raise HTTPException(status_code=500, detail=f"重试失败: {str(e)}")
 
 
+def _parse_match_trace(record: dict) -> Optional[dict[str, Any]]:
+    """解析 sync_records.match_trace（JSON 字符串或 dict）。"""
+    raw = record.get("match_trace")
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+
+def _receive_step_from_trace(
+    trace: Optional[dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    """从 match_trace 中取 receive 步骤。"""
+    if not trace:
+        return None
+    for step in trace.get("steps") or []:
+        if isinstance(step, dict) and step.get("stage") == "receive":
+            return step
+    return None
+
+
+def _pick_trace_value(
+    trace: Optional[dict[str, Any]],
+    receive_step: Optional[dict[str, Any]],
+    trace_key: str,
+    payload_key: str,
+    fallback: Any = None,
+) -> Any:
+    """优先 trace 顶层 request_*，再 receive processed_payload，最后 fallback。"""
+    if trace:
+        value = trace.get(trace_key)
+        if value not in (None, ""):
+            return value
+    if receive_step:
+        payload = receive_step.get("processed_payload") or {}
+        if isinstance(payload, dict):
+            value = payload.get(payload_key)
+            if value not in (None, ""):
+                return value
+    return fallback
+
+
+def _original_fields_from_record(record: dict) -> dict[str, Any]:
+    """从 match_trace 还原原始请求字段，无 trace 时回退 sync_records 列。"""
+    trace = _parse_match_trace(record)
+    receive_step = _receive_step_from_trace(trace)
+
+    title = _pick_trace_value(
+        trace, receive_step, "request_title", "title", record.get("title", "")
+    )
+    ori_title = _pick_trace_value(
+        trace, receive_step, "request_ori_title", "ori_title", record.get("ori_title")
+    )
+    season = _pick_trace_value(
+        trace, receive_step, "request_season", "season", record.get("season", 1)
+    )
+    episode = _pick_trace_value(
+        trace, receive_step, "request_episode", "episode", record.get("episode", 1)
+    )
+    media_type = _pick_trace_value(
+        trace,
+        receive_step,
+        "request_media_type",
+        "media_type",
+        record.get("media_type") or "episode",
+    )
+    release_date = _pick_trace_value(
+        trace, receive_step, "request_release_date", "release_date", ""
+    )
+    user_name = _pick_trace_value(
+        trace,
+        receive_step,
+        "request_user_name",
+        "user_name",
+        record.get("user_name", ""),
+    )
+    sync_action = _pick_trace_value(
+        trace, receive_step, "request_sync_action", "sync_action", None
+    )
+    raw_payload = None
+    if receive_step:
+        raw_payload = receive_step.get("raw_payload")
+
+    return {
+        "title": title or "",
+        "ori_title": ori_title or None,
+        "season": int(season) if season is not None else 1,
+        "episode": int(episode) if episode is not None else 1,
+        "media_type": (media_type or "episode").lower(),
+        "release_date": release_date or "",
+        "user_name": user_name or "",
+        "sync_action": sync_action or None,
+        "raw_payload": raw_payload,
+    }
+
+
 def _build_retry_item(record: dict, retry_source: str) -> CustomItem:
-    """从同步记录构建重试用的 CustomItem"""
-    retry_media = (record.get("media_type") or "episode").lower()
+    """从同步记录构建重试用的 CustomItem（优先 match_trace 原始请求）。"""
+    orig = _original_fields_from_record(record)
+    retry_media = orig["media_type"]
     if retry_media not in ("episode", "movie", "ova", "oad", "real_action"):
         retry_media = "episode"
     return CustomItem(
         media_type=retry_media,
-        title=record.get("title", ""),
-        ori_title=record.get("ori_title") or None,
-        season=record.get("season", 1),
-        episode=record.get("episode", 1),
-        release_date="",
-        user_name=record.get("user_name", ""),
+        title=orig["title"],
+        ori_title=orig["ori_title"],
+        season=orig["season"],
+        episode=orig["episode"],
+        release_date=orig["release_date"],
+        user_name=orig["user_name"],
         source=retry_source,
+        sync_action=orig["sync_action"],
+        raw_payload=orig["raw_payload"],
     )
 
 

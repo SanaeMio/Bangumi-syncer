@@ -15,6 +15,22 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
     md = plex_data["Metadata"]
     mtype = (md.get("type") or "episode").lower()
 
+    # 驱动原始 payload（保留与解析相关的字段，过滤掉过长的 artwork/key 等）
+    raw_payload = {
+        "event": plex_data.get("event"),
+        "account": plex_data.get("Account", {}).get("title"),
+        "metadata": {
+            "type": md.get("type"),
+            "title": md.get("title"),
+            "grandparentTitle": md.get("grandparentTitle"),
+            "originalTitle": md.get("originalTitle"),
+            "parentIndex": md.get("parentIndex"),
+            "index": md.get("index"),
+            "librarySectionTitle": md.get("librarySectionTitle"),
+            "originallyAvailableAt": md.get("originallyAvailableAt"),
+        },
+    }
+
     if mtype == "movie":
         release_date = ""
         if md.get("originallyAvailableAt"):
@@ -37,6 +53,7 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
             release_date=release_date,
             user_name=plex_data["Account"]["title"],
             source="plex",
+            raw_payload=raw_payload,
         )
 
     # 获取发行日期，如果不存在则设置为空字符串
@@ -67,4 +84,5 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
         release_date=release_date,
         user_name=plex_data["Account"]["title"],
         source="plex",
+        raw_payload=raw_payload,
     )

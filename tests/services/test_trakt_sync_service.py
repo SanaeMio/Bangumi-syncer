@@ -433,6 +433,37 @@ class TestConvertTraktHistoryToCustomItem:
             assert result is not None
             assert "2024-07-15" in result.release_date
 
+    def test_episode_release_from_bangumi_begin(self):
+        """release_date 降级链优先用 bangumi_data 的 begin 日期"""
+        service = _make_service()
+        item = _make_episode_item(show_tmdb="94664", ep_season=3)
+        with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
+            mock_bd.get_title_by_tmdb_id.return_value = "無職転生Ⅲ"
+            mock_bd.get_begin_by_tmdb_id.return_value = "2026-07-04T11:00:00.000Z"
+            result = service._convert_trakt_history_to_custom_item("u", item)
+            assert result is not None
+            assert "2026-07-04" in result.release_date
+
+    def test_episode_release_date_falls_back_to_year(self):
+        """bangumi_data 无日期时继续降到 show.year"""
+        service = _make_service()
+        show = {"ids": {"tmdb": "94664"}, "title": "タイトル", "year": 2024}
+        episode = {"season": 1, "number": 1, "ids": {"trakt": 100}}
+        item = TraktHistoryItem(
+            id=1,
+            watched_at="2024-01-01T12:00:00Z",
+            action="watch",
+            type="episode",
+            show=show,
+            episode=episode,
+        )
+        with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
+            mock_bd.get_title_by_tmdb_id.return_value = "タイトル"
+            mock_bd.get_begin_by_tmdb_id.return_value = ""
+            result = service._convert_trakt_history_to_custom_item("u", item)
+            assert result is not None
+            assert "2024-01-01" in result.release_date
+
     def test_episode_conversion_exception(self):
         """覆盖 lines 420-422: 转换异常"""
         service = _make_service()

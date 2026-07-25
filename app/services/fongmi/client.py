@@ -422,6 +422,16 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
         release_date="",
         is_movie=is_movie,
         media_type=detected_type,
+        # /media response 关键字段（过滤 artwork 二进制 URL）
+        raw_media={
+            "title": title,
+            "artist": artist_s,
+            "url": url,
+            "duration": media.get("duration"),
+            "position": media.get("position"),
+            "state": media.get("state"),
+            "speed": media.get("speed"),
+        },
     )
 
 

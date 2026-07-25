@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -42,3 +43,5 @@ class FongmiWatchRecord:
     release_date: str = ""
     is_movie: bool = False
     media_type: str = ""
+    # 驱动原始 payload：/media response 关键字段（过滤过长的 artwork 等二进制 URL）
+    raw_media: dict[str, Any] = field(default_factory=dict)

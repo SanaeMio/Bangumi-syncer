@@ -47,6 +47,9 @@ class MatchStep:
     reason: str = ""
     candidates: list[MatchCandidate] = field(default_factory=list)
     elapsed_ms: int = 0
+    # 仅 receive step 使用：驱动原始数据 + 驱动处理后数据
+    raw_payload: dict[str, Any] | None = None
+    processed_payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +60,8 @@ class MatchStep:
             "reason": self.reason,
             "candidates": [c.to_dict() for c in self.candidates],
             "elapsed_ms": self.elapsed_ms,
+            "raw_payload": self.raw_payload,
+            "processed_payload": self.processed_payload,
         }
 
 
@@ -74,6 +79,7 @@ class MatchTrace:
     request_episode: int = 0
     request_media_type: str = ""
     request_release_date: str = ""
+    request_sync_action: str = ""
     request_user_name: str = ""
     request_platform_hint: str = ""
     normalized_title: str = ""
@@ -82,6 +88,10 @@ class MatchTrace:
     final_episode_id: str | None = None
     final_match_method: str = ""  # custom_mapping / bangumi_data / api_search / failed
     final_score: float | None = None
+    # 新增：同步最终状态/消息/动作（用于流水线最后一步 result）
+    final_status: str = ""
+    final_message: str = ""
+    final_action: str = ""
 
     # 内部计时
     _current_step: MatchStep | None = field(default=None, repr=False)
@@ -124,6 +134,7 @@ class MatchTrace:
             "request_episode": self.request_episode,
             "request_media_type": self.request_media_type,
             "request_release_date": self.request_release_date,
+            "request_sync_action": self.request_sync_action,
             "request_user_name": self.request_user_name,
             "request_platform_hint": self.request_platform_hint,
             "normalized_title": self.normalized_title,
@@ -134,4 +145,7 @@ class MatchTrace:
             "final_score": round(self.final_score, 4)
             if self.final_score is not None
             else None,
+            "final_status": self.final_status,
+            "final_message": self.final_message,
+            "final_action": self.final_action,
         }

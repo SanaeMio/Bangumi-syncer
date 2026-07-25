@@ -87,6 +87,19 @@ class FeiniuSyncService:
             return None
         ori = rec.original_title if rec.original_title else rec.display_title
         detected_type = _feiniu_detect_media_type(rec)
+        # 驱动原始 payload：飞牛观看记录关键字段
+        raw_payload = {
+            "source": "feiniu",
+            "username": rec.username,
+            "item_guid": rec.item_guid,
+            "display_title": rec.display_title,
+            "original_title": rec.original_title,
+            "season": rec.season,
+            "episode": rec.episode,
+            "release_date": rec.release_date,
+            "item_type": rec.item_type,
+            "update_time_ms": rec.update_time_ms,
+        }
         # 非剧集类型（movie/ova/oad/real_action）统一按单集处理
         if detected_type in ("movie", "ova", "oad", "real_action"):
             return CustomItem(
@@ -98,6 +111,7 @@ class FeiniuSyncService:
                 release_date=rec.release_date or "",
                 user_name=rec.username,
                 source=FEINIU_SYNC_SOURCE,
+                raw_payload=raw_payload,
             )
         return CustomItem(
             media_type="episode",
@@ -108,6 +122,7 @@ class FeiniuSyncService:
             release_date=rec.release_date,
             user_name=rec.username,
             source=FEINIU_SYNC_SOURCE,
+            raw_payload=raw_payload,
         )
 
     async def run_sync(

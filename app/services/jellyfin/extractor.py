@@ -12,6 +12,17 @@ from ...utils.media_type_detector import detect_media_type
 def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
     """从Jellyfin数据中提取CustomItem所需的字段"""
 
+    # 驱动原始 payload（jellyfin 已是预处理后的字典，原样保留输入字段）
+    raw_payload = {
+        "title": jellyfin_data.get("title"),
+        "ori_title": jellyfin_data.get("ori_title"),
+        "season": jellyfin_data.get("season"),
+        "episode": jellyfin_data.get("episode"),
+        "media_type": jellyfin_data.get("media_type"),
+        "release_date": jellyfin_data.get("release_date"),
+        "user_name": jellyfin_data.get("user_name"),
+    }
+
     release_date = ""
     if jellyfin_data.get("release_date"):
         release_date = jellyfin_data["release_date"]
@@ -35,6 +46,7 @@ def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
             release_date=release_date,
             user_name=jellyfin_data["user_name"],
             source="jellyfin",
+            raw_payload=raw_payload,
         )
 
     # 检测 OVA/OAD/三次元类型
@@ -49,4 +61,5 @@ def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
         release_date=release_date,
         user_name=jellyfin_data["user_name"],
         source="jellyfin",
+        raw_payload=raw_payload,
     )

@@ -2,7 +2,7 @@
 同步相关数据模型
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,11 @@ class CustomItem(BaseModel):
     sync_action: Optional[str] = Field(
         None,
         description='可选：如 "mark_watching" 时仅将剧场版条目标为在看（用于 Tautulli 等 /Custom）',
+    )
+    raw_payload: Optional[dict[str, Any]] = Field(
+        None,
+        description="驱动获取到的原始数据（webhook payload / /media response 等），"
+        "用于在同步记录详情的「接收请求」步骤展示驱动原始输入",
     )
 
 
