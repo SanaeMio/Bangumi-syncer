@@ -35,6 +35,14 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
         self._last_notification_time[notification_type] = current_time
         return True
 
+    @staticmethod
+    def _type_matches(notification_type: str, types: str) -> bool:
+        """检查 notification_type 是否命中订阅的 types 列表（逗号分隔精确匹配）。"""
+        if types == "all":
+            return True
+        type_list = [t.strip() for t in types.split(",")]
+        return notification_type in type_list
+
     def _get_webhook_configs(self) -> list:
         """获取所有webhook配置"""
         config = self.config_manager.get_config_parser()
@@ -81,7 +89,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
 
             # 检查是否支持此通知类型
             types = webhook_config.get("types", "")
-            if types != "all" and notification_type not in types:
+            if not self._type_matches(notification_type, types):
                 continue
 
             # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
@@ -106,7 +114,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
 
             # 检查是否支持此通知类型
             types = email_config.get("types", "")
-            if types != "all" and notification_type not in types:
+            if not self._type_matches(notification_type, types):
                 continue
 
             # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
