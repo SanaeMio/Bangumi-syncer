@@ -101,7 +101,9 @@ class SummaryService:
                 "tokens_used": usage.total_tokens if usage else 0,
             }
             # TODO 需要考虑 88 行的 notif_type 是否能匹配新增前端新增的类型，联动前端保存数据同步看
-            get_notifier().send_notification_by_type(notif_type, data)
+            get_notifier().send_notification_by_type(
+                notif_type, data, skip_cooldown=True
+            )
         except Exception as e:
             logger.error(f"Summary job '{job_config.name}' failed: {e}")
 

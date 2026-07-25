@@ -70,7 +70,10 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
         return email_configs
 
     def send_notification_by_type(
-        self, notification_type: str, data: dict[str, Any]
+        self,
+        notification_type: str,
+        data: dict[str, Any],
+        skip_cooldown: bool = False,
     ) -> None:
         """
         根据通知类型发送通知
@@ -98,7 +101,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
                 cooldown_key = (
                     f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
                 )
-            if not self._should_send_notification(cooldown_key):
+            if not skip_cooldown and not self._should_send_notification(cooldown_key):
                 continue
 
             # 发送webhook通知
@@ -123,7 +126,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
                 cooldown_key = (
                     f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
                 )
-            if not self._should_send_notification(cooldown_key):
+            if not skip_cooldown and not self._should_send_notification(cooldown_key):
                 continue
 
             # 发送邮件通知
