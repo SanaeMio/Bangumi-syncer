@@ -3033,8 +3033,8 @@ async function loadLLMConfig() {
 
 function getLLMApiKeyValue() {
     var v = document.getElementById('llm-api-key').value;
-    // 掩码值（***xxxx）视为未修改，返回空字符串以保持原值
-    if (v && /^\*\*\*/.test(v)) return '';
+    // 掩码值（***xxxx）视为未修改，返回 null 使后端跳过写入
+    if (v && /^\*\*\*/.test(v)) return null;
     return v;
 }
 

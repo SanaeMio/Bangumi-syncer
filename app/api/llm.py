@@ -45,8 +45,10 @@ async def update_llm_config(
     """部分更新 LLM 配置。"""
     updates = body.model_dump(exclude_none=True)
     for key, value in updates.items():
-        if key == "api_key" and str(value).startswith("***"):
-            continue  # 掩码值视为未修改，跳过写入
+        if key == "api_key" and (
+            str(value).startswith("***") or str(value).strip() == ""
+        ):
+            continue  # 掩码值或空值视为未修改，跳过写入
         config_manager.set_config(LLM_SECTION, key, str(value))
     config_manager.reload_config()
     reset_llm_client()
@@ -64,6 +66,11 @@ async def test_llm_connection(_=Depends(get_current_user_flexible)):
             job_name="llm_test",
         )
         latency = int((time.time() - t0) * 1000)
+        # chat() 永不抛异常，重试耗尽时返回空响应
+        if not response.model and not response.content:
+            return LLMTestResponse(
+                success=False, message="LLM 调用失败（所有重试已耗尽）"
+            )
         return LLMTestResponse(
             success=True,
             message=response.content[:200],
