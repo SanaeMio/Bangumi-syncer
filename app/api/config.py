@@ -24,6 +24,7 @@ from ..core.security import security_manager
 from ..services.feiniu.scheduler import feiniu_scheduler
 from ..services.feiniu.sync_service import feiniu_sync_service
 from ..services.fongmi.scheduler import fongmi_scheduler
+from ..services.llm import reset_llm_client
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -308,6 +309,9 @@ async def update_config(
             await fongmi_scheduler.apply_config_after_save()
         except Exception as ex:
             logger.debug("fongmi 调度器随配置更新: %s", ex)
+
+        # 重置 LLM 客户端单例以使用最新配置
+        reset_llm_client()
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:

@@ -15,7 +15,7 @@ from ..models.summary import (
     LLMTestResponse,
     LLMUsageStatsResponse,
 )
-from ..services.llm import Message, get_llm_client
+from ..services.llm import Message, get_llm_client, reset_llm_client
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/summary/llm", tags=["llm"])
@@ -49,6 +49,7 @@ async def update_llm_config(
             continue  # 掩码值视为未修改，跳过写入
         config_manager.set_config(LLM_SECTION, key, str(value))
     config_manager.reload_config()
+    reset_llm_client()
     return {"status": "success", "message": "LLM 配置已更新"}
 
 

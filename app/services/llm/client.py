@@ -163,3 +163,9 @@ def get_llm_client() -> LLMClient:
     if _llm_client is None:
         _llm_client = LLMClient()
     return _llm_client
+
+
+def reset_llm_client() -> None:
+    """重置 LLM 单例，使下次调用 get_llm_client 时用最新配置重建。"""
+    global _llm_client
+    _llm_client = None

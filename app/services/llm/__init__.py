@@ -1,4 +1,4 @@
-from .client import LLMClient, get_llm_client
+from .client import LLMClient, get_llm_client, reset_llm_client
 from .models import ChatResponse, Message, Usage
 
-__all__ = ["Message", "Usage", "ChatResponse", "LLMClient", "get_llm_client"]
+__all__ = ["Message", "Usage", "ChatResponse", "LLMClient", "get_llm_client", "reset_llm_client"]
