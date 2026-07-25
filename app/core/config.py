@@ -495,12 +495,12 @@ class ConfigManager:
         }
         raw = self.get_section(LLM_SECTION, {})
         merged: dict[str, Any] = {**defaults, **raw}
-        # Ensure correct types
-        if merged.get("max_tokens"):
+        # Ensure correct types (is not None to allow falsy values like 0)
+        if merged.get("max_tokens") is not None:
             merged["max_tokens"] = int(merged["max_tokens"])
-        if merged.get("temperature"):
+        if merged.get("temperature") is not None:
             merged["temperature"] = float(merged["temperature"])
-        if merged.get("timeout"):
+        if merged.get("timeout") is not None:
             merged["timeout"] = int(merged["timeout"])
         return merged
 

@@ -191,3 +191,35 @@ class TestLlmApiKeyIsSensitive:
         encrypted = encrypt_if_sensitive("llm", "api_key", "my-api-key", master=master)
         decrypted = decrypt_if_sensitive("llm", "api_key", encrypted, master=master)
         assert decrypted == "my-api-key"
+
+
+class TestLLMConfigZeroValues:
+    """零值不应被绕过类型转换。"""
+
+    def test_temperature_zero_is_float(self, tmp_path):
+        ini = """[llm]\ntemperature = 0\n"""
+        cm = _cm_from_ini(tmp_path, ini)
+        cfg = cm.get_llm_config()
+        assert cfg["temperature"] == 0.0
+        assert isinstance(cfg["temperature"], float)
+
+    def test_temperature_zero_string_is_float(self, tmp_path):
+        ini = """[llm]\ntemperature = 0.0\n"""
+        cm = _cm_from_ini(tmp_path, ini)
+        cfg = cm.get_llm_config()
+        assert cfg["temperature"] == 0.0
+        assert isinstance(cfg["temperature"], float)
+
+    def test_max_tokens_zero_is_int(self, tmp_path):
+        ini = """[llm]\nmax_tokens = 0\n"""
+        cm = _cm_from_ini(tmp_path, ini)
+        cfg = cm.get_llm_config()
+        assert cfg["max_tokens"] == 0
+        assert isinstance(cfg["max_tokens"], int)
+
+    def test_timeout_zero_is_int(self, tmp_path):
+        ini = """[llm]\ntimeout = 0\n"""
+        cm = _cm_from_ini(tmp_path, ini)
+        cfg = cm.get_llm_config()
+        assert cfg["timeout"] == 0
+        assert isinstance(cfg["timeout"], int)

@@ -93,7 +93,7 @@ class SummaryJobResponse(BaseModel):
 
         enabled = data.get("enabled", True)
         if not isinstance(enabled, bool):
-            enabled = bool(enabled)
+            enabled = str(enabled).lower() in ("true", "1")
 
         return cls(
             id=_int("id", 0),
