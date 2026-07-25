@@ -50,7 +50,7 @@ class TestWatchingSummaryPayload:
         payload = notifier._build_payload_by_type("watching_summary_dad", data, "")
 
         assert payload["title"] == "📊 追番总结 - DadSummary"
-        assert payload["type"] == "watching_summary_dad"
+        assert payload["type"] == "watching_summary"
         assert payload["summary"] == "本周共追番5部，更新12集"
 
     def test_payload_handles_missing_fields_gracefully(self):
