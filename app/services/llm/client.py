@@ -67,17 +67,11 @@ class LLMClient:
             try:
                 response = await self._provider.chat(messages, **kwargs)
                 latency_ms = int((time.time() - t_start) * 1000)
-                self._log_usage(
+                self._log_success(
+                    response,
                     job_id=job_id,
                     job_name=job_name,
-                    model=response.model,
-                    prompt_tokens=response.usage.prompt_tokens if response.usage else 0,
-                    completion_tokens=response.usage.completion_tokens
-                    if response.usage
-                    else 0,
-                    total_tokens=response.usage.total_tokens if response.usage else 0,
                     latency_ms=latency_ms,
-                    status="success",
                 )
                 logger.info(
                     f"LLM call: model={response.model} "
@@ -99,48 +93,58 @@ class LLMClient:
         latency_ms = int((time.time() - t_start) * 1000)
         error_msg = str(last_error)
         logger.error(f"LLM call failed after {self.MAX_RETRIES} retries: {error_msg}")
-        self._log_usage(
+        self._log_error(
+            error_msg,
             job_id=job_id,
             job_name=job_name,
-            model=config_manager.get_llm_config()["model"],
             latency_ms=latency_ms,
-            status="error",
-            error_message=error_msg,
         )
         return ChatResponse(content="", model="", usage=None)
 
-    def _log_usage(  # noqa: PLR0913
+    def _log_success(
         self,
+        response: ChatResponse,
         job_id: int | None = None,
         job_name: str | None = None,
-        # review 这里应该传入 Response 而不是 response 的内部成员变量，除非是调用失败，才传入配置的 model。逻辑封装一下
-        # review 或者在上层封装为 success 和 error 两种调用方式
-        model: str = "",
-        provider: str = "openai_compat",
-        prompt_tokens: int = 0,
-        completion_tokens: int = 0,
-        total_tokens: int = 0,
         latency_ms: int = 0,
-        status: str = "success",
-        error_message: str | None = None,
     ) -> None:
-        """Log usage to database (fire-and-forget, best-effort).
+        """记录成功 LLM 调用（从 ChatResponse 提取用量信息）。"""
+        try:
+            from app.core.database import database_manager
 
-        This method never raises -- any failure is caught and logged.
-        """
+            usage = response.usage
+            database_manager.llm_usage.log_usage(
+                job_id=job_id,
+                job_name=job_name or "",
+                model=response.model,
+                provider="openai_compat",
+                prompt_tokens=usage.prompt_tokens if usage else 0,
+                completion_tokens=usage.completion_tokens if usage else 0,
+                total_tokens=usage.total_tokens if usage else 0,
+                latency_ms=latency_ms,
+                status="success",
+            )
+        except Exception as e:
+            logger.error(f"Failed to log LLM usage: {e}")
+
+    def _log_error(
+        self,
+        error_message: str,
+        job_id: int | None = None,
+        job_name: str | None = None,
+        latency_ms: int = 0,
+    ) -> None:
+        """记录失败 LLM 调用（model 取自配置）。"""
         try:
             from app.core.database import database_manager
 
             database_manager.llm_usage.log_usage(
                 job_id=job_id,
                 job_name=job_name or "",
-                model=model,
-                provider=provider,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
+                model=config_manager.get_llm_config()["model"],
+                provider="openai_compat",
                 latency_ms=latency_ms,
-                status=status,
+                status="error",
                 error_message=error_message,
             )
         except Exception as e:
