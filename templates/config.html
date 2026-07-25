@@ -3118,6 +3118,8 @@ function renderSummaryJobs(jobs) {
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="editSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-pencil me-1"></i>编辑</button>
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-trash me-1"></i>删除</button>
+                        <button type="button" class="btn btn-sm btn-outline-info" onclick="testSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-play-fill me-1"></i>测试</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="triggerSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-lightning-charge me-1"></i>触发</button>
                     </div>
                 </div>
             </div>
@@ -3249,6 +3251,44 @@ async function toggleSummaryJob(name, enabled) {
         if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
         loadSummaryJobs();
     } catch(e) { showAlert('操作失败: ' + e.message, 'danger'); }
+}
+
+// ========== 追番总结测试/触发 ==========
+
+async function testSummaryJob(name) {
+    var btn = event && event.target ? event.target.closest('button') : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...'; }
+    try {
+        var r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name) + '/test'), { method: 'POST' });
+        var d = await r.json();
+        if (d.success) {
+            document.getElementById('summary-test-modal-job').textContent = name;
+            document.getElementById('summary-test-modal-info').innerHTML =
+                '模型: ' + escapeHtml(d.model) +
+                ' | Token: P' + d.prompt_tokens + '/C' + d.completion_tokens + '/T' + d.total_tokens +
+                ' | 延迟: ' + d.latency_ms + 'ms | 记录数: ' + d.record_count;
+            document.getElementById('summary-test-modal-text').textContent = d.summary_text || '（无输出）';
+            new bootstrap.Modal(document.getElementById('summaryTestResultModal')).show();
+        } else {
+            showAlert('测试失败: ' + (d.error_message || d.message || '未知错误'), 'danger');
+        }
+    } catch(e) { showAlert('测试请求失败: ' + e.message, 'danger'); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>测试'; }
+}
+
+async function triggerSummaryJob(name) {
+    var btn = event && event.target ? event.target.closest('button') : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>触发中...'; }
+    try {
+        var r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name) + '/trigger'), { method: 'POST' });
+        var d = await r.json();
+        if (d.status === 'success') {
+            showAlert('任务 "' + name + '" 已触发执行', 'success');
+        } else {
+            showAlert('触发失败: ' + (d.message || '未知错误'), 'danger');
+        }
+    } catch(e) { showAlert('触发请求失败: ' + e.message, 'danger'); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>触发'; }
 }
 
 // ========== 动态通知类型 (AI 追番总结) ==========
@@ -3849,6 +3889,32 @@ function escapeHtml(str) {
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                     <button type="button" class="btn btn-danger" id="delete-summary-confirm">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 追番总结测试结果模态框 -->
+    <div class="modal fade" id="summaryTestResultModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        测试结果: <span id="summary-test-modal-job"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="summary-test-modal-info" class="small text-muted mb-3"></div>
+                    <pre id="summary-test-modal-text"
+                         style="white-space:pre-wrap;
+                                background:var(--app-bg-hover);
+                                padding:12px;
+                                border-radius:4px;
+                                max-height:400px;
+                                overflow-y:auto"></pre>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
                 </div>
             </div>
         </div>
