@@ -9,6 +9,20 @@ from typing import Any
 
 from ...core.config import config_manager
 from ...core.logging import logger
+from ...utils.bangumi_constants import (
+    EPISODE_TYPE_NORMAL,
+    RELATION_ID_PARENT_STORY,
+    RELATION_ID_PREQUEL,
+    RELATION_ID_SEQUEL,
+    RELATIONS,
+    SUBJECT_TYPE_ANIME,
+)
+from ...utils.text_constants import CN_NUM
+
+# 关联类型中文名（由 ID 常量推导，避免硬编码字符串）
+_RELATION_CN_SEQUEL = RELATIONS[RELATION_ID_SEQUEL]
+_RELATION_CN_PREQUEL = RELATIONS[RELATION_ID_PREQUEL]
+_RELATION_CN_PARENT_STORY = RELATIONS[RELATION_ID_PARENT_STORY]
 
 _EPISODES_PAGE_LIMIT = 200
 _LONG_SERIES_AIRDATE_MIN_TOTAL = 100
@@ -16,19 +30,6 @@ _LONG_SERIES_AIRDATE_MIN_TOTAL = 100
 # 防御错误 subject_id 触发的长链遍历：单次 API 超时 10s × 多跳累加可能逼近数分钟，
 # 超过此 deadline 立即放弃，避免占用 sync 线程池导致整体卡死。
 _CROSS_SEASON_DEADLINE_SECONDS = 60.0
-
-_CN_NUM = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
 
 
 class EpisodesMixin:
@@ -274,10 +275,10 @@ class EpisodesMixin:
     def _sequel_next_tv_subject_id(self, current_id: str | int) -> int | None:
         related = self.get_related_subjects(current_id)
         if isinstance(related, list):
-            nxt = [i for i in related if i.get("relation") == "续集"]
+            nxt = [i for i in related if i.get("relation") == _RELATION_CN_SEQUEL]
         elif isinstance(related, dict):
             related_list = related.get("data", [])
-            nxt = [i for i in related_list if i.get("relation") == "续集"]
+            nxt = [i for i in related_list if i.get("relation") == _RELATION_CN_SEQUEL]
         else:
             nxt = []
         if not nxt:
@@ -296,11 +297,11 @@ class EpisodesMixin:
         if m:
             cn = m.group(1)
             if len(cn) == 1:
-                return _CN_NUM.get(cn)
+                return CN_NUM.get(cn)
             # "十一"~"十九"
             if cn.startswith("十"):
-                return 10 + _CN_NUM.get(cn[1], 0)
-            return _CN_NUM.get(cn)
+                return 10 + CN_NUM.get(cn[1], 0)
+            return CN_NUM.get(cn)
         # "Xnd/Xrd/Xth season"
         m = re.search(r"(\d+)(?:st|nd|rd|th)\s+season", text, re.IGNORECASE)
         if m:
@@ -339,7 +340,11 @@ class EpisodesMixin:
             return sid, None
 
         has_type = any("type" in e for e in ep_info)
-        pool = [e for e in ep_info if e.get("type") == 0] if has_type else list(ep_info)
+        pool = (
+            [e for e in ep_info if e.get("type") == EPISODE_TYPE_NORMAL]
+            if has_type
+            else list(ep_info)
+        )
         if not pool:
             pool = list(ep_info)
 
@@ -485,10 +490,12 @@ class EpisodesMixin:
         """从关联条目中查找续集 subject_id，无则返回 None"""
         related = self.get_related_subjects(current_id)
         if isinstance(related, list):
-            next_id = [i for i in related if i.get("relation") == "续集"]
+            next_id = [i for i in related if i.get("relation") == _RELATION_CN_SEQUEL]
         elif isinstance(related, dict):
             related_list = related.get("data", [])
-            next_id = [i for i in related_list if i.get("relation") == "续集"]
+            next_id = [
+                i for i in related_list if i.get("relation") == _RELATION_CN_SEQUEL
+            ]
         else:
             next_id = []
         return next_id[0]["id"] if next_id else None
@@ -499,9 +506,9 @@ class EpisodesMixin:
         """从关联条目中按 relation 查找 subject_id。
 
         支持的 relation 示例：
-        - "续集"：续作（与 _find_next_sequel_id 行为一致）
-        - "前传"：前作
-        - "主线故事"：剧场版关联条目中的主线剧集条目
+        - "续集"（RELATION_ID_SEQUEL）：续作（与 _find_next_sequel_id 行为一致）
+        - "前传"（RELATION_ID_PREQUEL）：前作
+        - "主线故事"（RELATION_ID_PARENT_STORY）：剧场版关联条目中的主线剧集条目
         """
         related = self.get_related_subjects(subject_id)
         if isinstance(related, list):
@@ -617,7 +624,7 @@ class EpisodesMixin:
             max_depth: 最大遍历深度
             deadline: 整体 deadline（monotonic 时间戳），超过则立即返回 None
         """
-        relation_map = {"prequel": "前传", "sequel": "续集"}
+        relation_map = {"prequel": _RELATION_CN_PREQUEL, "sequel": _RELATION_CN_SEQUEL}
         relation = relation_map.get(direction)
         if not relation:
             return None
@@ -637,11 +644,11 @@ class EpisodesMixin:
             visited.add(next_id)
             current_id = next_id
 
-            # 类型过滤：只看动画（type=2），跳过书籍/音乐等
+            # 类型过滤：只看动画（SUBJECT_TYPE_ANIME），跳过书籍/音乐等
             info = self.get_subject(current_id)
             if not info:
                 continue
-            if info.get("type") != 2:
+            if info.get("type") != SUBJECT_TYPE_ANIME:
                 continue
             # 跳过剧场版/电影（标题命中关键词）
             name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")

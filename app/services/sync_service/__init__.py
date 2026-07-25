@@ -24,6 +24,13 @@ from ...core.logging import (
 )
 from ...models.sync import CustomItem, SyncResponse
 from ...utils.bangumi_api import BangumiApi
+from ...utils.bangumi_constants import (
+    COLLECTION_TYPE_DONE,
+    RELATION_ID_PARENT_STORY,
+    RELATIONS,
+    SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
+)
 from ...utils.bangumi_data import BangumiData, bangumi_data
 from ...utils.media_type_detector import detect_media_type
 from ...utils.notifier import send_notify
@@ -746,7 +753,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         ):
             try:
                 coll = bgm.get_subject_collection(str(bgm_se_id))
-                if coll.get("type") == 2:
+                if coll.get("type") == COLLECTION_TYPE_DONE:
                     logger.debug(
                         "剧场版条目收藏状态已为「看过」，跳过条目标记: "
                         f"subject_id={bgm_se_id}"
@@ -763,7 +770,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         ):
             try:
                 coll = bgm.get_subject_collection(str(bgm_se_id))
-                if coll.get("type") == 2:
+                if coll.get("type") == COLLECTION_TYPE_DONE:
                     logger.debug(
                         "TV条目收藏状态已为「看过」，跳过条目标记: "
                         f"subject_id={bgm_se_id}"
@@ -1479,11 +1486,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             "sync", "enable_real_action", fallback=False
         )
         if item.media_type == "real_action":
-            subject_types = [6]
+            subject_types = [SUBJECT_TYPE_REAL]
         elif enable_real_action:
-            subject_types = [2, 6]
+            subject_types = [SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL]
         else:
-            subject_types = [2]
+            subject_types = [SUBJECT_TYPE_ANIME]
         if step and (enable_real_action or item.media_type == "real_action"):
             step.reason = f"搜索 type={subject_types}（media_type={item.media_type}）"
 
@@ -1770,7 +1777,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                     if rel_detected != request_media_type:
                                         continue
                                     rel_relation = (rel.get("relation") or "").strip()
-                                    if rel_relation == "主线故事":
+                                    if (
+                                        rel_relation
+                                        == RELATIONS[RELATION_ID_PARENT_STORY]
+                                    ):
                                         mainline_match = rel
                                         break
                                     if other_match is None:

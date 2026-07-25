@@ -18,6 +18,7 @@ import httpx
 
 from ...core.logging import logger
 from ...utils.http_base import AsyncHttpClient
+from ...utils.text_constants import CN_NUM
 from .models import FongmiDevice, FongmiWatchRecord
 
 # 端口与超时
@@ -48,18 +49,6 @@ _BRACKET_EP_RE = re.compile(r"[\[【(]\s*0*(\d{1,3})\s*[\]】)]")
 # 季号标记（仅当 N>1 时才视为多季）
 _SEASON_CN_RE = re.compile(r"第\s*([一二三四五六七八九十2-9])\s*[季期]")
 _SEASON_EN_RE = re.compile(r"[Ss]eason\s*0*([2-9]\d?)", re.IGNORECASE)
-_CN_NUM_MAP = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
 
 # 文件名清理用正则
 _BRACKET_RE = re.compile(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|【[^】]*】|《[^》]*》")
@@ -107,7 +96,7 @@ def _detect_explicit_season(text: str) -> int:
     m = _SEASON_CN_RE.search(text)
     if m:
         token = m.group(1)
-        n = _CN_NUM_MAP.get(token) or (int(token) if token.isdigit() else 0)
+        n = CN_NUM.get(token) or (int(token) if token.isdigit() else 0)
         if n > 1:
             return n
     m = _SEASON_EN_RE.search(text)
