@@ -16,9 +16,8 @@ from app.services.summary.models import SummaryJobConfig
 def _make_config(**overrides) -> SummaryJobConfig:
     """Build a minimal SummaryJobConfig with default test values."""
     defaults = {
-        "id": 1,
-        "enabled": True,
         "name": "test_job",
+        "enabled": True,
         "cron": "0 21 * * *",
         "lookback_days": 1,
         "user_name": "",
@@ -339,7 +338,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_notification_type_empty_user(self):
-        """When user_name is empty, notification_type is 'watching_summary'."""
+        """notification_type uses job name, not user_name."""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -368,11 +367,11 @@ class TestExecuteJob:
         mock_notifier.send_notification_by_type.assert_called_once()
         call_args = mock_notifier.send_notification_by_type.call_args
         notif_type = call_args[0][0]
-        assert notif_type == "watching_summary"
+        assert notif_type == "watching_summary_test_job"
 
     @pytest.mark.asyncio
     async def test_notification_type_with_user(self):
-        """When user_name='dad', notification_type is 'watching_summary_dad'."""
+        """notification_type uses job id, not user_name."""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -401,7 +400,7 @@ class TestExecuteJob:
         mock_notifier.send_notification_by_type.assert_called_once()
         call_args = mock_notifier.send_notification_by_type.call_args
         notif_type = call_args[0][0]
-        assert notif_type == "watching_summary_dad"
+        assert notif_type == "watching_summary_test_job"
 
     @pytest.mark.asyncio
     async def test_data_dict_has_required_fields(self):
@@ -409,7 +408,7 @@ class TestExecuteJob:
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
-        config = _make_config(id=42, name="my_job", user_name="dad", lookback_days=3)
+        config = _make_config(name="my_job", user_name="dad", lookback_days=3)
 
         mock_notifier = MagicMock()
         mock_notifier.send_notification_by_type = MagicMock()
@@ -437,7 +436,6 @@ class TestExecuteJob:
 
         assert "timestamp" in data
         assert data["job_name"] == "my_job"
-        assert data["job_id"] == 42
         assert data["user_name"] == "dad"
         assert data["summary_text"] == "AI generated summary"
         assert data["date_range"] == "2026-07-12 ~ 2026-07-15"
@@ -482,7 +480,7 @@ class TestExecuteJob:
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
-        config = _make_config(name="failing_job", id=99)
+        config = _make_config(name="failing_job")
 
         with (
             patch.object(svc, "generate_summary") as mock_gen,
@@ -501,7 +499,7 @@ class TestExecuteJob:
         mock_logger.error.assert_called_once()
         error_msg = mock_logger.error.call_args[0][0]
         assert "failing_job" in error_msg
-        assert "99" in error_msg
+        assert "failing_job" in error_msg
         assert "LLM down" in error_msg
 
     @pytest.mark.asyncio

@@ -86,7 +86,7 @@ class SummaryScheduler:
             if not job_config.enabled:
                 continue
 
-            job_id = f"summary_{job_config.id}"
+            job_id = f"summary_{job_config.name}"
             active_ids.add(job_id)
 
             try:

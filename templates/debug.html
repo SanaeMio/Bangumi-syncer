@@ -341,7 +341,6 @@
         </div>
     </div>
     <script>
-
 // ===== 番剧测试（匹配 / 同步共用表单） =====
 const BANGUMI_TEST_MATCH_BTN_HTML = '<i class="bi bi-search me-2"></i>匹配测试';
 const BANGUMI_TEST_SYNC_BTN_HTML = '<i class="bi bi-play-circle me-2"></i>同步测试';
@@ -1486,7 +1485,7 @@ async function loadDebugSummaryJobs() {
         const d = await r.json();
         if (d.status === 'success' && d.data && d.data.length > 0) {
             select.innerHTML = d.data.map(j =>
-                `<option value="${j.id}">${escapeHtml(j.name)} (cron: ${escapeHtml(j.cron)})</option>`
+                `<option value="${encodeURIComponent(j.name)}">${escapeHtml(j.name)} (cron: ${escapeHtml(j.cron)})</option>`
             ).join('');
         } else {
             select.innerHTML = '<option value="">-- 无任务 --</option>';
@@ -1497,12 +1496,12 @@ async function loadDebugSummaryJobs() {
 }
 
 async function debugTestSummary() {
-    const id = document.getElementById('debug-summary-job-select').value;
-    if (!id) { showAlert('请先选择一个任务', 'warning'); return; }
+    const name = document.getElementById('debug-summary-job-select').value;
+    if (!name) { showAlert('请先选择一个任务', 'warning'); return; }
     const btn = document.getElementById('debug-test-summary-btn');
     btn.disabled = true;
     try {
-        const r = await fetch(appUrl('/api/summary/jobs/' + id + '/test'), { method: 'POST' });
+        const r = await fetch(appUrl('/api/summary/jobs/' + name + '/test'), { method: 'POST' });
         if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
         const d = await r.json();
         const resultEl = document.getElementById('debug-summary-test-result');
@@ -1515,19 +1514,19 @@ async function debugTestSummary() {
                 ') | 记录数: ' + d.record_count;
             textEl.textContent = d.summary_text;
         } else {
-            showAlert('测试失败: ' + (d.summary_text || d.message || '未知错误'), 'danger');
+            showAlert('测试失败: ' + (d.error_message || '未知错误'), 'danger');
         }
     } catch(e) { showAlert('测试失败: ' + e.message, 'danger'); }
     btn.disabled = false;
 }
 
 async function debugTriggerSummary() {
-    const id = document.getElementById('debug-summary-job-select').value;
-    if (!id) { showAlert('请先选择一个任务', 'warning'); return; }
+    const name = document.getElementById('debug-summary-job-select').value;
+    if (!name) { showAlert('请先选择一个任务', 'warning'); return; }
     const btn = document.getElementById('debug-trigger-summary-btn');
     btn.disabled = true;
     try {
-        const r = await fetch(appUrl('/api/summary/jobs/' + id + '/trigger'), { method: 'POST' });
+        const r = await fetch(appUrl('/api/summary/jobs/' + name + '/trigger'), { method: 'POST' });
         if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
         const d = await r.json();
         showAlert(d.status === 'success' ? '任务已触发，summary 将发送到订阅的 webhook' : '触发失败',

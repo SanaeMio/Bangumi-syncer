@@ -16,7 +16,6 @@ from app.services.summary.models import SummaryJobConfig
 def _make_summary_config(**overrides):
     """Build a minimal summary config dict for tests."""
     return {
-        "id": overrides.get("id", 1),
         "enabled": overrides.get("enabled", True),
         "name": overrides.get("name", "test-summary"),
         "cron": overrides.get("cron", "0 21 * * *"),
@@ -163,10 +162,9 @@ async def test_start_skips_disabled_configs():
         s.scheduler = mock_sched
         await s.start()
     assert mock_sched.add_job.call_count == 1
-    # The one call should be for id=1
     call_args = mock_sched.add_job.call_args
     assert call_args is not None
-    assert call_args[1]["id"] == "summary_1"
+    assert call_args[1]["id"] == "summary_enabled-job"
 
 
 @pytest.mark.asyncio
@@ -375,7 +373,7 @@ def test_schedule_all_jobs_skips_invalid_cron_job():
 
     # 只有有效 cron 的任务被注册
     assert mock_sched.add_job.call_count == 1
-    assert mock_sched.add_job.call_args[1]["id"] == "summary_1"
+    assert mock_sched.add_job.call_args[1]["id"] == "summary_valid-job"
 
 
 # ---------------------------------------------------------------------------
@@ -618,8 +616,8 @@ async def test_full_start_stop_cycle():
 async def test_full_start_stop_with_multiple_jobs():
     """Verify multiple jobs are registered in a real scheduler."""
     configs = [
-        _make_summary_config(id=1, name="job-a", cron="0 21 * * *", enabled=True),
-        _make_summary_config(id=2, name="job-b", cron="30 8 * * *", enabled=True),
+        _make_summary_config(name="job-a", cron="0 21 * * *", enabled=True),
+        _make_summary_config(name="job-b", cron="30 8 * * *", enabled=True),
     ]
     with (
         patch(
@@ -639,8 +637,8 @@ async def test_full_start_stop_with_multiple_jobs():
         jobs = s.scheduler.get_jobs()
         assert len(jobs) == 2
         job_ids = {j.id for j in jobs}
-        assert "summary_1" in job_ids
-        assert "summary_2" in job_ids
+        assert "summary_job-a" in job_ids
+        assert "summary_job-b" in job_ids
 
         ok = await s.stop()
         assert ok is True

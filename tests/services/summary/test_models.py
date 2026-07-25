@@ -8,9 +8,8 @@ from app.services.summary.models import SummaryJobConfig
 def test_from_config_dict_full():
     """All fields provided — instance matches exactly."""
     data = {
-        "id": "3",
-        "enabled": "true",
         "name": "每日追番总结",
+        "enabled": "true",
         "cron": "0 8 * * *",
         "lookback_days": "7",
         "user_name": "testuser",
@@ -18,9 +17,8 @@ def test_from_config_dict_full():
         "max_records": "150",
     }
     cfg = SummaryJobConfig.from_config_dict(data)
-    assert cfg.id == 3
-    assert cfg.enabled is True
     assert cfg.name == "每日追番总结"
+    assert cfg.enabled is True
     assert cfg.cron == "0 8 * * *"
     assert cfg.lookback_days == 7
     assert cfg.user_name == "testuser"
@@ -31,26 +29,24 @@ def test_from_config_dict_full():
 def test_from_config_dict_defaults_empty():
     """Empty dict produces an instance with all defaults."""
     cfg = SummaryJobConfig.from_config_dict({})
-    assert cfg.id == 0
-    assert cfg.enabled is True
     assert cfg.name == ""
+    assert cfg.enabled is True
     assert cfg.cron == "0 21 * * *"
     assert cfg.lookback_days == 1
     assert cfg.user_name == ""
-    assert cfg.system_prompt == SummaryJobConfig.system_prompt  # type: ignore[misc]
+    assert cfg.system_prompt == SummaryJobConfig.system_prompt
     assert cfg.max_records == 200
 
 
 def test_from_config_dict_defaults_minimal():
-    """Only id provided — remaining fields take defaults."""
-    cfg = SummaryJobConfig.from_config_dict({"id": "5"})
-    assert cfg.id == 5
+    """Only name provided — remaining fields take defaults."""
+    cfg = SummaryJobConfig.from_config_dict({"name": "test"})
+    assert cfg.name == "test"
     assert cfg.enabled is True
-    assert cfg.name == ""
     assert cfg.cron == "0 21 * * *"
     assert cfg.lookback_days == 1
     assert cfg.user_name == ""
-    assert cfg.system_prompt == SummaryJobConfig.system_prompt  # type: ignore[misc]
+    assert cfg.system_prompt == SummaryJobConfig.system_prompt
     assert cfg.max_records == 200
 
 
@@ -59,21 +55,21 @@ def test_from_config_dict_defaults_minimal():
 
 def test_enabled_bool_coercion_true_variants():
     for value in ("true", "True", "TRUE", "1"):
-        cfg = SummaryJobConfig.from_config_dict({"id": "1", "enabled": value})
+        cfg = SummaryJobConfig.from_config_dict({"name": "t", "enabled": value})
         assert cfg.enabled is True, f"enabled={value!r} should be True"
 
 
 def test_enabled_bool_coercion_false_variants():
     for value in ("false", "False", "FALSE", "0"):
-        cfg = SummaryJobConfig.from_config_dict({"id": "1", "enabled": value})
+        cfg = SummaryJobConfig.from_config_dict({"name": "t", "enabled": value})
         assert cfg.enabled is False, f"enabled={value!r} should be False"
 
 
 def test_enabled_already_bool():
     """Bool values pass through without error."""
-    cfg_true = SummaryJobConfig.from_config_dict({"id": "1", "enabled": True})
+    cfg_true = SummaryJobConfig.from_config_dict({"name": "t", "enabled": True})
     assert cfg_true.enabled is True
-    cfg_false = SummaryJobConfig.from_config_dict({"id": "1", "enabled": False})
+    cfg_false = SummaryJobConfig.from_config_dict({"name": "t", "enabled": False})
     assert cfg_false.enabled is False
 
 
@@ -81,13 +77,13 @@ def test_enabled_already_bool():
 
 
 def test_lookback_days_coercion():
-    cfg = SummaryJobConfig.from_config_dict({"id": "1", "lookback_days": "14"})
+    cfg = SummaryJobConfig.from_config_dict({"name": "t", "lookback_days": "14"})
     assert cfg.lookback_days == 14
     assert isinstance(cfg.lookback_days, int)
 
 
 def test_max_records_coercion():
-    cfg = SummaryJobConfig.from_config_dict({"id": "1", "max_records": "500"})
+    cfg = SummaryJobConfig.from_config_dict({"name": "t", "max_records": "500"})
     assert cfg.max_records == 500
     assert isinstance(cfg.max_records, int)
 
@@ -106,7 +102,7 @@ def test_system_prompt_default_value():
         "4. 加一两句轻松评论，语气像朋友聊天，不要太正式\n"
         "5. 限制在 300 字以内"
     )
-    assert SummaryJobConfig.system_prompt == expected  # type: ignore[misc]
+    assert SummaryJobConfig.system_prompt == expected
 
 
 # ── user_prompt_template is NOT a dataclass field ─────────────────────
@@ -114,5 +110,5 @@ def test_system_prompt_default_value():
 
 def test_no_user_prompt_template_attribute():
     """user_prompt_template should not be an attribute of the dataclass."""
-    cfg = SummaryJobConfig.from_config_dict({"id": "1"})
+    cfg = SummaryJobConfig.from_config_dict({"name": "t"})
     assert not hasattr(cfg, "user_prompt_template")

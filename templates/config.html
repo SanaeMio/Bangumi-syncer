@@ -3077,12 +3077,6 @@ async function saveLLMAndTest() {
 
 // ========== AI 追番总结 ==========
 
-function formatNotifType(notifType) {
-    if (!notifType || !notifType.startsWith('watching_summary')) return notifType;
-    const suffix = notifType.replace('watching_summary', '').replace(/^_/, '');
-    return suffix ? 'AI 追番总结 (' + suffix + ')' : 'AI 追番总结';
-}
-
 async function loadSummaryJobs() {
     try {
         const r = await fetch(appUrl('/api/summary/jobs'));
@@ -3114,19 +3108,16 @@ function renderSummaryJobs(jobs) {
                         </div>
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" ${job.enabled ? 'checked' : ''}
-                                   onchange="toggleSummaryJob(${job.id}, this.checked)">
+                                   onchange="toggleSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}', this.checked)">
                         </div>
                     </div>
                     <p class="card-text small text-muted mb-2">
                         <i class="bi bi-clock me-1"></i>${escapeHtml(job.cron)} | 回溯: ${job.lookback_days}天 | 上限: ${job.max_records}条
                     </p>
                     ${job.user_name ? '<p class="card-text small text-muted mb-2"><i class="bi bi-person me-1"></i>' + escapeHtml(job.user_name) + '</p>' : ''}
-                    <div class="mb-2">
-                        <span class="badge bg-secondary">${formatNotifType(job.notification_type)}</span>
-                    </div>
                     <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="editSummaryJob(${job.id})"><i class="bi bi-pencil me-1"></i>编辑</button>
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSummaryJob(${job.id}, '${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-trash me-1"></i>删除</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="editSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-pencil me-1"></i>编辑</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-trash me-1"></i>删除</button>
                     </div>
                 </div>
             </div>
@@ -3136,7 +3127,7 @@ function renderSummaryJobs(jobs) {
 }
 
 function showSummaryJobModal() {
-    document.getElementById('summary-job-id').value = '';
+    document.getElementById('summary-job-old-name').value = '';
     document.getElementById('summaryJobModalTitle').textContent = '新建追番总结任务';
     // 生成不重复的默认名称：找出已有 "追番总结 N" 中最大 N，+1
     var existingJobs = window._summaryJobs || [];
@@ -3164,14 +3155,15 @@ function showSummaryJobModal() {
     new bootstrap.Modal(document.getElementById('summaryJobModal')).show();
 }
 
-async function editSummaryJob(id) {
+async function editSummaryJob(name) {
     try {
         const r = await fetch(appUrl('/api/summary/jobs'));
         if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
         const d = await r.json();
-        const job = d.data.find(j => j.id === id);
+        var decoded = decodeURIComponent(name);
+        const job = d.data.find(j => j.name === decoded);
         if (!job) { showAlert('任务未找到', 'danger'); return; }
-        document.getElementById('summary-job-id').value = job.id;
+        document.getElementById('summary-job-old-name').value = job.name;
         document.getElementById('summaryJobModalTitle').textContent = '编辑追番总结任务';
         document.getElementById('summary-job-name').value = job.name;
         document.getElementById('summary-job-cron').value = job.cron;
@@ -3184,8 +3176,8 @@ async function editSummaryJob(id) {
 }
 
 async function saveSummaryJob() {
-    const id = document.getElementById('summary-job-id').value;
-    const data = {
+    var oldName = document.getElementById('summary-job-old-name').value;
+    var data = {
         name: document.getElementById('summary-job-name').value,
         cron: document.getElementById('summary-job-cron').value,
         lookback_days: parseInt(document.getElementById('summary-job-lookback').value) || 1,
@@ -3193,18 +3185,35 @@ async function saveSummaryJob() {
         max_records: parseInt(document.getElementById('summary-job-max-records').value) || 200,
         system_prompt: document.getElementById('summary-job-prompt').value,
     };
+    // 前端校验：名称不能含逗号，不能与已有任务重名
+    if (data.name.indexOf(',') !== -1) {
+        showAlert('任务名称不能包含逗号（,）', 'danger');
+        return;
+    }
+    var jobs = window._summaryJobs || [];
+    var dup = jobs.find(function (j) { return j.name === data.name && j.name !== oldName; });
+    if (dup) {
+        showAlert('任务名称 "' + data.name + '" 已存在，请使用其他名称', 'danger');
+        return;
+    }
     try {
-        const url = id ? appUrl('/api/summary/jobs/' + id) : appUrl('/api/summary/jobs');
-        const method = id ? 'PUT' : 'POST';
-        const r = await fetch(url, {
-            method, headers: {'Content-Type': 'application/json'},
+        var url, method;
+        if (oldName) {
+            url = appUrl('/api/summary/jobs/' + encodeURIComponent(oldName));
+            method = 'PUT';
+        } else {
+            url = appUrl('/api/summary/jobs');
+            method = 'POST';
+        }
+        var r = await fetch(url, {
+            method: method, headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
         if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
-        const d = await r.json();
+        var d = await r.json();
         if (d.status === 'success') {
             bootstrap.Modal.getInstance(document.getElementById('summaryJobModal')).hide();
-            showAlert(id ? '任务已更新' : '任务已创建', 'success');
+            showAlert(oldName ? '任务已更新' : '任务已创建', 'success');
             loadSummaryJobs();
         } else {
             showAlert('保存失败: ' + (d.message || d.detail || '未知错误'), 'danger');
@@ -3212,12 +3221,13 @@ async function saveSummaryJob() {
     } catch(e) { showAlert('保存失败: ' + e.message, 'danger'); }
 }
 
-function confirmDeleteSummaryJob(id, name) {
+function confirmDeleteSummaryJob(name) {
     document.getElementById('delete-summary-name').textContent = name;
+    var encoded = encodeURIComponent(name);
     const modal = new bootstrap.Modal(document.getElementById('deleteSummaryModal'));
     document.getElementById('delete-summary-confirm').onclick = async () => {
         try {
-            const r = await fetch(appUrl('/api/summary/jobs/' + id), { method: 'DELETE' });
+            const r = await fetch(appUrl('/api/summary/jobs/' + encoded), { method: 'DELETE' });
             if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
             const d = await r.json();
             if (d.status === 'success') {
@@ -3230,9 +3240,9 @@ function confirmDeleteSummaryJob(id, name) {
     modal.show();
 }
 
-async function toggleSummaryJob(id, enabled) {
+async function toggleSummaryJob(name, enabled) {
     try {
-        const r = await fetch(appUrl('/api/summary/jobs/' + id), {
+        const r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name)), {
             method: 'PUT', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({enabled})
         });
@@ -3776,7 +3786,7 @@ function escapeHtml(str) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <input type="hidden" id="summary-job-id">
+                    <input type="hidden" id="summary-job-old-name">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">名称</label>

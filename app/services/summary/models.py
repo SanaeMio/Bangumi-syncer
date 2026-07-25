@@ -5,9 +5,8 @@ from dataclasses import dataclass
 
 @dataclass
 class SummaryJobConfig:
-    id: int
-    enabled: bool = True
     name: str = ""
+    enabled: bool = True
     cron: str = "0 21 * * *"
     lookback_days: int = 1
     user_name: str = ""
@@ -26,11 +25,10 @@ class SummaryJobConfig:
     def from_config_dict(cls, data: dict) -> "SummaryJobConfig":
         """Create from a config dict (as returned by config_manager.get_summary_configs())."""
         return cls(
-            id=int(data.get("id", 0)),
+            name=str(data.get("name", "")),
             enabled=data.get("enabled", True)
             if isinstance(data.get("enabled"), bool)
             else str(data.get("enabled", "true")).lower() in ("true", "1"),
-            name=str(data.get("name", "")),
             cron=str(data.get("cron", "0 21 * * *")),
             lookback_days=int(data.get("lookback_days", 1)),
             user_name=str(data.get("user_name", "")),

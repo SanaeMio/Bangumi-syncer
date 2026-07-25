@@ -221,11 +221,10 @@ class TestSummaryJobResponse:
             system_prompt="Be concise.",
             max_records=200,
             enabled=True,
-            notification_type="watching_summary_dad",
+            notification_type="watching_summary_Test Job",
         )
-        assert model.id == 1
         assert model.name == "Test Job"
-        assert model.notification_type == "watching_summary_dad"
+        assert model.notification_type == "watching_summary_Test Job"
 
     def test_notification_type_empty_by_default(self):
         """Verify notification_type defaults to empty string."""
@@ -244,7 +243,7 @@ class TestSummaryJobResponse:
     # ========== from_config_dict tests ==========
 
     def test_from_config_dict_empty_user_name(self):
-        """notification_type = 'watching_summary' when user_name is empty."""
+        """notification_type uses job name."""
         data = {
             "id": 1,
             "name": "Test",
@@ -256,12 +255,11 @@ class TestSummaryJobResponse:
             "enabled": True,
         }
         model = SummaryJobResponse.from_config_dict(data)
-        assert model.notification_type == "watching_summary"
-        assert model.id == 1
+        assert model.notification_type == "watching_summary_Test"
         assert model.name == "Test"
 
     def test_from_config_dict_with_user_name(self):
-        """notification_type = 'watching_summary_dad' when user_name = 'dad'."""
+        """notification_type uses job id, not user_name."""
         data = {
             "id": 2,
             "name": "Dad's Summary",
@@ -273,8 +271,7 @@ class TestSummaryJobResponse:
             "enabled": True,
         }
         model = SummaryJobResponse.from_config_dict(data)
-        assert model.notification_type == "watching_summary_dad"
-        assert model.id == 2
+        assert model.notification_type == "watching_summary_Dad's Summary"
         assert model.name == "Dad's Summary"
         assert model.user_name == "dad"
 
@@ -285,7 +282,6 @@ class TestSummaryJobResponse:
             "name": "Minimal Job",
         }
         model = SummaryJobResponse.from_config_dict(data)
-        assert model.id == 3
         assert model.name == "Minimal Job"
         assert model.cron == "0 21 * * *"
         assert model.lookback_days == 1
@@ -293,10 +289,10 @@ class TestSummaryJobResponse:
         assert model.system_prompt == ""
         assert model.max_records == 200
         assert model.enabled is True
-        assert model.notification_type == "watching_summary"
+        assert model.notification_type == "watching_summary_Minimal Job"
 
     def test_from_config_dict_user_name_none(self):
-        """notification_type = 'watching_summary' when user_name is None."""
+        """notification_type uses job name, not affected by user_name=None."""
         data = {
             "id": 4,
             "name": "None User",
@@ -304,7 +300,7 @@ class TestSummaryJobResponse:
         }
         model = SummaryJobResponse.from_config_dict(data)
         assert model.user_name == ""
-        assert model.notification_type == "watching_summary"
+        assert model.notification_type == "watching_summary_None User"
 
     def test_from_config_dict_disabled_job(self):
         """Verify enabled=False is preserved."""
@@ -345,7 +341,6 @@ class TestSummaryJobResponse:
             "another_extra": 42,
         }
         model = SummaryJobResponse.from_config_dict(data)
-        assert model.id == 8
         assert model.name == "Extra Keys"
 
 
@@ -762,8 +757,11 @@ class TestListSummaryJobs:
                 data = response.json()
                 assert data["status"] == "success"
                 assert len(data["data"]) == 2
-                assert data["data"][0]["id"] == 1
-                assert data["data"][1]["notification_type"] == "watching_summary_dad"
+                assert data["data"][0]["name"] == "Daily Summary"
+                assert (
+                    data["data"][1]["notification_type"]
+                    == "watching_summary_Dad Summary"
+                )
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_configs(self):
@@ -873,7 +871,6 @@ class TestUpdateSummaryJob:
                 mock_cm.save_summary_config.assert_called_once()
                 # Verify the updates dict includes the job_id
                 call_args = mock_cm.save_summary_config.call_args[0][0]
-                assert call_args["id"] == 3
                 assert call_args["name"] == "Updated Job"
                 mock_cm.reload_config.assert_called_once()
                 mock_scheduler.apply_config_after_save.assert_awaited_once()
@@ -908,11 +905,11 @@ class TestDeleteSummaryJob:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.delete("/api/summary/jobs/2")
+                response = await client.delete("/api/summary/jobs/Dad%20Summary")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["status"] == "success"
-                mock_cm.delete_summary_config.assert_called_once_with(2)
+                mock_cm.delete_summary_config.assert_called_once_with("Dad Summary")
                 mock_cm.reload_config.assert_called_once()
                 mock_scheduler.apply_config_after_save.assert_awaited_once()
 
@@ -970,7 +967,7 @@ class TestTestSummaryJob:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.post("/api/summary/jobs/1/test")
+                response = await client.post("/api/summary/jobs/Test%20Job/test")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["success"] is True
@@ -1015,7 +1012,7 @@ class TestTestSummaryJob:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.post("/api/summary/jobs/99/test")
+                response = await client.post("/api/summary/jobs/Nonexistent/test")
                 assert response.status_code == 404
 
 
@@ -1060,7 +1057,7 @@ class TestTriggerSummaryJob:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.post("/api/summary/jobs/1/trigger")
+                response = await client.post("/api/summary/jobs/Trigger%20Job/trigger")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["status"] == "success"
@@ -1089,7 +1086,7 @@ class TestTriggerSummaryJob:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.post("/api/summary/jobs/1/trigger")
+                response = await client.post("/api/summary/jobs/Nonexistent/trigger")
                 assert response.status_code == 404
 
 

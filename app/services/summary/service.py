@@ -65,7 +65,6 @@ class SummaryService:
         client = get_llm_client()
         response = await client.chat(
             messages,
-            job_id=job_config.id,
             job_name=job_config.name,
         )
 
@@ -73,6 +72,7 @@ class SummaryService:
             "summary_text": response.content,
             "model": response.model,
             "usage": response.usage,
+            "latency_ms": 0,
             "record_count": record_count,
             "date_from": date_from,
             "date_to": date_to,
@@ -85,16 +85,13 @@ class SummaryService:
 
             # Build notification type
             user_name = job_config.user_name.strip() if job_config.user_name else ""
-            notif_type = (
-                f"watching_summary_{user_name}" if user_name else "watching_summary"
-            )
+            notif_type = f"watching_summary_{job_config.name}"
 
             # Build data dict
             usage = result["usage"]
             data = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "job_name": job_config.name,
-                "job_id": job_config.id,
                 "user_name": user_name,
                 "summary_text": result["summary_text"],
                 "date_range": f"{result['date_from']} ~ {result['date_to']}",
@@ -106,9 +103,7 @@ class SummaryService:
             # TODO 需要考虑 88 行的 notif_type 是否能匹配新增前端新增的类型，联动前端保存数据同步看
             get_notifier().send_notification_by_type(notif_type, data)
         except Exception as e:
-            logger.error(
-                f"Summary job '{job_config.name}' (id={job_config.id}) failed: {e}"
-            )
+            logger.error(f"Summary job '{job_config.name}' failed: {e}")
 
     def _format_records(self, records: list[dict]) -> str:
         """Format sync records into a compact text table."""

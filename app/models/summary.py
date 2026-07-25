@@ -65,7 +65,6 @@ class SummaryJobUpdate(BaseModel):
 class SummaryJobResponse(BaseModel):
     """Response for summary job CRUD"""
 
-    id: int
     name: str
     cron: str
     lookback_days: int
@@ -86,17 +85,15 @@ class SummaryJobResponse(BaseModel):
                 return default
             return int(v)
 
+        name = str(data.get("name", ""))
         user_name = str(data.get("user_name", "") or "")
-        notif_type = (
-            f"watching_summary_{user_name}" if user_name else "watching_summary"
-        )
+        notif_type = f"watching_summary_{name}"
 
         enabled = data.get("enabled", True)
         if not isinstance(enabled, bool):
             enabled = str(enabled).lower() in ("true", "1")
 
         return cls(
-            id=_int("id", 0),
             name=str(data.get("name", "")),
             cron=str(data.get("cron", "0 21 * * *")),
             lookback_days=_int("lookback_days", 1),
