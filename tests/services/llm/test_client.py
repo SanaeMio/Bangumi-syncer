@@ -271,7 +271,7 @@ class TestLLMClientChat:
         mock_log_usage.assert_called_once()
         kwargs = mock_log_usage.call_args[1]
         assert kwargs["status"] == "error"
-        assert kwargs["error_message"] == "Token exceeded"
+        assert kwargs["error_message"] == "RuntimeError: Token exceeded"
         assert isinstance(kwargs["latency_ms"], int)
 
     @pytest.mark.asyncio

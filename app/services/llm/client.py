@@ -20,6 +20,18 @@ _PROVIDER_MAP: dict[str, type] = {
 }
 
 
+def _format_error_detail(e: Exception) -> str:
+    """从异常对象提取详细的错误信息，包含异常类型、消息、底层原因和请求 URL。"""
+    parts = [f"{type(e).__name__}: {e}"]
+    cause = getattr(e, "__cause__", None)
+    if cause is not None:
+        parts.append(f"[cause: {type(cause).__name__}: {cause}]")
+    req = getattr(e, "request", None)
+    if req is not None:
+        parts.append(f"[url: {req.url}]")
+    return " ".join(parts)
+
+
 def _build_provider(provider: str, cfg: dict, proxy: str | None):
     cls = _PROVIDER_MAP.get(provider)
     if cls is None:
@@ -98,16 +110,18 @@ class LLMClient:
                     delay = self.RETRY_BACKOFF[attempt]
                     logger.warning(
                         f"LLM retry {attempt + 1}/{self.MAX_RETRIES} "
-                        f"after {delay}s: {e}"
+                        f"after {delay}s: {_format_error_detail(e)}"
                     )
                     await asyncio.sleep(delay)
 
         # 所有重试耗尽 —— 记录错误并返回空响应
         latency_ms = int((time.time() - t_start) * 1000)
-        error_msg = str(last_error)
-        logger.error(f"LLM call failed after {self.MAX_RETRIES} retries: {error_msg}")
+        error_detail = _format_error_detail(last_error) if last_error else "unknown"
+        logger.error(
+            f"LLM call failed after {self.MAX_RETRIES} retries: {error_detail}"
+        )
         self._log_error(
-            error_msg,
+            error_detail,
             job_id=job_id,
             job_name=job_name,
             latency_ms=latency_ms,

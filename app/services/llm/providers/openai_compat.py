@@ -6,6 +6,7 @@ API 规范的端点通信。
 
 from typing import Any, Optional
 
+from app.core.logging import logger
 from app.services.llm.models import ChatResponse, Message, Usage
 from app.services.llm.providers.base import BaseProvider
 from app.utils.http_client import create_async_client
@@ -70,9 +71,15 @@ class OpenAICompatProvider(BaseProvider):
             ValueError: JSON 解码失败。
         """
         url = f"{self.api_base}/chat/completions"
+        model = kwargs.get("model", self.model)
+        proxy_label = f", proxy={self.proxy}" if self.proxy else ""
+        logger.info(
+            f"LLM request: url={url}, model={model}, "
+            f"timeout={self.timeout}s{proxy_label}"
+        )
 
         body = {
-            "model": kwargs.get("model", self.model),
+            "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "temperature": kwargs.get("temperature", self.temperature),
