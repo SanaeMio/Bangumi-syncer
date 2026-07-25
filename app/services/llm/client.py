@@ -16,14 +16,34 @@ from app.core.logging import logger
 from .models import ChatResponse, Message
 from .providers.openai_compat import OpenAICompatProvider
 
+_PROVIDER_MAP: dict[str, type] = {
+    "openai_compat": OpenAICompatProvider,
+}
+
+
+def _build_provider(provider: str, cfg: dict, proxy: str | None):
+    cls = _PROVIDER_MAP.get(provider)
+    if cls is None:
+        supported = ", ".join(_PROVIDER_MAP)
+        raise ValueError(
+            f"Unsupported LLM provider '{provider}'. Supported: {supported}"
+        )
+    return cls(
+        api_base=cfg["api_base"],
+        api_key=cfg["api_key"],
+        model=cfg["model"],
+        max_tokens=cfg["max_tokens"],
+        temperature=cfg["temperature"],
+        timeout=cfg["timeout"],
+        proxy=proxy,
+    )
+
 
 class LLMClient:
     """Singleton LLM client with retry logic and usage logging.
 
-    Wraps an OpenAICompatProvider and adds:
-    - Retry with exponential-like backoff (1 s, 3 s)
-    - Fire-and-forget usage logging to the database
-    - Structured logger output for each call
+    Provider selection is driven by the ``provider`` key in the [llm]
+    config section (default ``"openai_compat"``).
     """
 
     MAX_RETRIES = 2
@@ -32,15 +52,8 @@ class LLMClient:
     def __init__(self) -> None:
         cfg = config_manager.get_llm_config()
         proxy = config_manager.get("dev", "script_proxy", fallback="").strip() or None
-        self._provider = OpenAICompatProvider(
-            api_base=cfg["api_base"],
-            api_key=cfg["api_key"],
-            model=cfg["model"],
-            max_tokens=cfg["max_tokens"],
-            temperature=cfg["temperature"],
-            timeout=cfg["timeout"],
-            proxy=proxy,
-        )
+        self._provider_name = cfg["provider"]
+        self._provider = _build_provider(self._provider_name, cfg, proxy)
 
     async def chat(  # noqa: PLR0913
         self,
@@ -119,7 +132,7 @@ class LLMClient:
                 job_id=job_id,
                 job_name=job_name or "",
                 model=response.model,
-                provider="openai_compat",
+                provider=self._provider_name,
                 prompt_tokens=usage.prompt_tokens if usage else 0,
                 completion_tokens=usage.completion_tokens if usage else 0,
                 total_tokens=usage.total_tokens if usage else 0,
@@ -144,7 +157,7 @@ class LLMClient:
                 job_id=job_id,
                 job_name=job_name or "",
                 model=config_manager.get_llm_config()["model"],
-                provider="openai_compat",
+                provider=self._provider_name,
                 latency_ms=latency_ms,
                 status="error",
                 error_message=error_message,

@@ -485,6 +485,7 @@ class ConfigManager:
     def get_llm_config(self) -> dict[str, Any]:
         """Get LLM global configuration with defaults."""
         defaults: dict[str, Any] = {
+            "provider": "openai_compat",
             "api_base": "https://api.openai.com/v1",
             "api_key": "",
             "model": "gpt-4o-mini",
