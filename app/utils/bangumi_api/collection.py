@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from ...core.logging import logger
+from ...utils.bangumi_constants import (
+    COLLECTION_TYPE_DONE,
+    COLLECTION_TYPE_ON_HOLD,
+    COLLECTION_TYPE_WISH,
+)
 
 
 class CollectionMixin:
@@ -46,7 +51,7 @@ class CollectionMixin:
 
     def ensure_subject_watching(self, subject_id: int) -> None:
         """
-        仅将条目收藏置为「在看」(type=3)，不修改单集进度。
+        仅将条目收藏置为「在看」(COLLECTION_TYPE_DOING)，不修改单集进度。
 
         Returns:
             0: 无需变更（已在看或已看过）
@@ -56,9 +61,9 @@ class CollectionMixin:
         if not data:
             self.add_collection_subject(subject_id=subject_id, state=3)
             return 1
-        if data.get("type") == 2:
+        if data.get("type") == COLLECTION_TYPE_DONE:
             return 0
-        if data.get("type") in (1, 4):
+        if data.get("type") in (COLLECTION_TYPE_WISH, COLLECTION_TYPE_ON_HOLD):
             self.change_collection_state(subject_id=subject_id, state=3)
             return 1
         return 0
@@ -73,16 +78,19 @@ class CollectionMixin:
             return 2
         else:
             # 如果整部番已看过则跳过
-            if data.get("type") == 2:
+            if data.get("type") == COLLECTION_TYPE_DONE:
                 return 0
             #  如果条目状态是想看或搁置则调整为在看
-            if data.get("type") == 1 or data.get("type") == 4:
+            if (
+                data.get("type") == COLLECTION_TYPE_WISH
+                or data.get("type") == COLLECTION_TYPE_ON_HOLD
+            ):
                 self.change_collection_state(subject_id=subject_id, state=3)
 
         ep_data = self.get_ep_collection(ep_id)
         logger.debug(ep_data)
         # 如果单集已看过则跳过
-        if ep_data.get("type") == 2:
+        if ep_data.get("type") == COLLECTION_TYPE_DONE:
             return 0
         else:
             # 否则直接点单集格子
