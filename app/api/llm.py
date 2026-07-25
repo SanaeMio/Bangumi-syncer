@@ -45,6 +45,8 @@ async def update_llm_config(
     """部分更新 LLM 配置。"""
     updates = body.model_dump(exclude_none=True)
     for key, value in updates.items():
+        if key == "api_key" and str(value).startswith("***"):
+            continue  # 掩码值视为未修改，跳过写入
         config_manager.set_config(LLM_SECTION, key, str(value))
     config_manager.reload_config()
     return {"status": "success", "message": "LLM 配置已更新"}
