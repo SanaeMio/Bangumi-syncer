@@ -31,6 +31,7 @@ class LLMClient:
 
     def __init__(self) -> None:
         cfg = config_manager.get_llm_config()
+        proxy = config_manager.get("dev", "script_proxy", fallback="").strip() or None
         self._provider = OpenAICompatProvider(
             api_base=cfg["api_base"],
             api_key=cfg["api_key"],
@@ -38,6 +39,7 @@ class LLMClient:
             max_tokens=cfg["max_tokens"],
             temperature=cfg["temperature"],
             timeout=cfg["timeout"],
+            proxy=proxy,
         )
 
     async def chat(  # noqa: PLR0913

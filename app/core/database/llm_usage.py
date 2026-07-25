@@ -16,6 +16,8 @@ class ModelStats:
 
     model: str = ""
     calls: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     total_tokens: int = 0
     avg_latency_ms: int = 0
 
@@ -26,6 +28,8 @@ class JobStats:
 
     job_name: str = ""
     calls: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     total_tokens: int = 0
     avg_latency_ms: int = 0
 
@@ -36,6 +40,8 @@ class DailyStats:
 
     date: str = ""
     calls: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     total_tokens: int = 0
 
 
@@ -45,6 +51,8 @@ class LLMUsageStats:
 
     total_calls: int = 0
     total_tokens: int = 0
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
     error_count: int = 0
     avg_latency_ms: int = 0
     by_model: list[ModelStats] = field(default_factory=list)
@@ -183,6 +191,8 @@ class LLMUsageRepository(BaseRepository):
                 SELECT
                     COUNT(*)                       AS total_calls,
                     COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                    COALESCE(SUM(prompt_tokens), 0) AS total_prompt_tokens,
+                    COALESCE(SUM(completion_tokens), 0) AS total_completion_tokens,
                     COALESCE(SUM(CASE WHEN status = 'error'
                                  THEN 1 ELSE 0 END), 0) AS error_count,
                     COALESCE(AVG(latency_ms), 0)   AS avg_latency_ms
@@ -198,8 +208,10 @@ class LLMUsageRepository(BaseRepository):
             result = LLMUsageStats(
                 total_calls=row[0] or 0,
                 total_tokens=row[1] or 0,
-                error_count=row[2] or 0,
-                avg_latency_ms=int(row[3] or 0),
+                total_prompt_tokens=row[2] or 0,
+                total_completion_tokens=row[3] or 0,
+                error_count=row[4] or 0,
+                avg_latency_ms=int(row[5] or 0),
             )
 
             if scope == "detailed":
@@ -215,6 +227,8 @@ class LLMUsageRepository(BaseRepository):
         sql = f"""
             SELECT model,
                    COUNT(*) AS calls,
+                   COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
                    COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
             FROM {self._TABLE}
@@ -226,8 +240,10 @@ class LLMUsageRepository(BaseRepository):
             ModelStats(
                 model=r[0],
                 calls=r[1],
-                total_tokens=r[2],
-                avg_latency_ms=int(r[3] or 0),
+                prompt_tokens=r[2] or 0,
+                completion_tokens=r[3] or 0,
+                total_tokens=r[4] or 0,
+                avg_latency_ms=int(r[5] or 0),
             )
             for r in cursor.fetchall()
         ]
@@ -236,6 +252,8 @@ class LLMUsageRepository(BaseRepository):
         sql = f"""
             SELECT COALESCE(job_name, '(unknown)') AS job_name,
                    COUNT(*) AS calls,
+                   COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
                    COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
             FROM {self._TABLE}
@@ -247,8 +265,10 @@ class LLMUsageRepository(BaseRepository):
             JobStats(
                 job_name=r[0],
                 calls=r[1],
-                total_tokens=r[2],
-                avg_latency_ms=int(r[3] or 0),
+                prompt_tokens=r[2] or 0,
+                completion_tokens=r[3] or 0,
+                total_tokens=r[4] or 0,
+                avg_latency_ms=int(r[5] or 0),
             )
             for r in cursor.fetchall()
         ]
@@ -257,6 +277,8 @@ class LLMUsageRepository(BaseRepository):
         sql = f"""
             SELECT DATE(timestamp) AS date,
                    COUNT(*) AS calls,
+                   COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens
             FROM {self._TABLE}
         """
@@ -264,7 +286,13 @@ class LLMUsageRepository(BaseRepository):
         sql += where + " GROUP BY DATE(timestamp) ORDER BY date"
         cursor.execute(sql, params)
         return [
-            DailyStats(date=r[0], calls=r[1], total_tokens=r[2])
+            DailyStats(
+                date=r[0],
+                calls=r[1],
+                prompt_tokens=r[2] or 0,
+                completion_tokens=r[3] or 0,
+                total_tokens=r[4] or 0,
+            )
             for r in cursor.fetchall()
         ]
 

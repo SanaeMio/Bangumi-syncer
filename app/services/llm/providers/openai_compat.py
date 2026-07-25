@@ -6,10 +6,9 @@ OpenAI-compatible chat completions endpoint via httpx.
 
 from typing import Any, Optional
 
-import httpx
-
 from app.services.llm.models import ChatResponse, Message, Usage
 from app.services.llm.providers.base import BaseProvider
+from app.utils.http_client import create_async_client
 
 
 class OpenAICompatProvider(BaseProvider):
@@ -35,6 +34,7 @@ class OpenAICompatProvider(BaseProvider):
         max_tokens: int = 2000,
         temperature: float = 0.7,
         timeout: int = 60,
+        proxy: Optional[str] = None,
     ) -> None:
         """Initialize the OpenAI-compatible provider.
 
@@ -45,6 +45,7 @@ class OpenAICompatProvider(BaseProvider):
             max_tokens: Maximum tokens to generate.
             temperature: Sampling temperature (0.0-2.0).
             timeout: HTTP request timeout in seconds.
+            proxy: Optional HTTP proxy URL.
         """
         self.api_base = api_base.rstrip("/")
         self.api_key = api_key
@@ -52,6 +53,7 @@ class OpenAICompatProvider(BaseProvider):
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.timeout = timeout
+        self.proxy = proxy
 
     async def chat(self, messages: list[Message], **kwargs: Any) -> ChatResponse:
         """Send a chat completion request to the API.
@@ -82,7 +84,11 @@ class OpenAICompatProvider(BaseProvider):
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient() as client:
+        async with create_async_client(
+            proxy=self.proxy,
+            timeout=self.timeout,
+            follow_redirects=True,
+        ) as client:
             response = await client.post(
                 url,
                 json=body,
@@ -92,7 +98,15 @@ class OpenAICompatProvider(BaseProvider):
             response.raise_for_status()
             data = response.json()
 
-        content = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        message = choice.get("message", {})
+        content = message.get("content")
+        refusal = message.get("refusal")
+
+        if content is None:
+            if refusal:
+                raise ValueError(f"模型拒绝响应: {refusal}")
+            content = ""
         model = data.get("model", "")
 
         usage: Optional[Usage] = None
