@@ -122,7 +122,6 @@ class SummaryService:
             if media == "movie":
                 ep_label = "剧场版"
             else:
-                # TODO 需要确定这里是否符合数据入库规则
                 ep_label = f"S{r.get('season', 0)}E{r.get('episode', 0)}"
             source = r.get("source", "")
             status = r.get("status", "")
