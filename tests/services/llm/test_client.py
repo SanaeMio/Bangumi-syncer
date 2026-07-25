@@ -11,6 +11,7 @@ from app.services.llm.models import ChatResponse, Message, Usage
 # ---------------------------------------------------------------------------
 
 TEST_LLM_CONFIG = {
+    "provider": "openai_compat",
     "api_base": "https://test.api.com/v1",
     "api_key": "sk-test-key",
     "model": "gpt-4o-mini",
