@@ -10,33 +10,12 @@ import re
 from typing import Any
 
 from ...core.logging import logger
-
-# 各放送形态在「非剧场版」场景下的权重（数值越大越优先）
-_PLATFORM_WEIGHT_TV_MODE = {
-    "TV": 100,
-    "WEB": 90,
-    "OVA": 80,
-    "OAD": 80,
-    "剧场版": 70,
-    "电影": 70,
-    "日剧": 60,
-    "欧美剧": 60,
-}
-
-# 各放送形态在「剧场版」场景下的权重（剧场版/电影优先）
-_PLATFORM_WEIGHT_MOVIE_MODE = {
-    "剧场版": 100,
-    "电影": 100,
-    "OVA": 80,
-    "OAD": 80,
-    "TV": 70,
-    "WEB": 70,
-    "日剧": 60,
-    "欧美剧": 60,
-}
-
-# 默认权重（未识别的 platform）
-_DEFAULT_PLATFORM_WEIGHT = 50
+from ...utils.text_constants import (
+    DEFAULT_PLATFORM_WEIGHT,
+    PLATFORM_WEIGHT_MOVIE_MODE,
+    PLATFORM_WEIGHT_TV_MODE,
+    PUNCTUATION_MAP,
+)
 
 # 释放组/分辨率/编码标记等噪声片段
 _NOISE_PATTERNS = [
@@ -55,37 +34,8 @@ _NOISE_PATTERNS = [
     re.compile(r"\b(?:60fps|120fps|24fps|30fps)\b", re.IGNORECASE),
 ]
 
-# 中文标点 → 半角/标准形式的映射
-_PUNCTUATION_MAP = str.maketrans(
-    {
-        "：": ":",
-        "；": ";",
-        "，": ",",
-        "。": ".",
-        "？": "?",
-        "！": "!",
-        "（": "(",
-        "）": ")",
-        "【": "[",
-        "】": "]",
-        "《": "<",
-        "》": ">",
-        "「": "'",
-        "」": "'",
-        "『": "'",
-        "』": "'",
-        "“": '"',
-        "”": '"',
-        "‘": "'",
-        "’": "'",
-        "～": "~",
-        "・": "·",
-        "･": "·",
-        "—": "-",
-        "–": "-",
-        "―": "-",
-    }
-)
+# 中文标点翻译表（由 PUNCTUATION_MAP 构造）
+_PUNCTUATION_TRANS = str.maketrans(PUNCTUATION_MAP)
 
 # 连续空白
 _MULTI_SPACE = re.compile(r"\s+")
@@ -108,7 +58,7 @@ class TitleNormalizeMixin:
             return ""
 
         # 1. 中文标点归一化
-        cleaned = title.translate(_PUNCTUATION_MAP)
+        cleaned = title.translate(_PUNCTUATION_TRANS)
 
         # 2. 去除噪声片段
         for pattern in _NOISE_PATTERNS:
@@ -141,14 +91,14 @@ class TitleNormalizeMixin:
             return candidates  # type: ignore[return-value]
 
         weight_table = (
-            _PLATFORM_WEIGHT_MOVIE_MODE if is_movie else _PLATFORM_WEIGHT_TV_MODE
+            PLATFORM_WEIGHT_MOVIE_MODE if is_movie else PLATFORM_WEIGHT_TV_MODE
         )
 
         def weight(cand: dict[str, Any]) -> int:
             if not isinstance(cand, dict):
-                return _DEFAULT_PLATFORM_WEIGHT
+                return DEFAULT_PLATFORM_WEIGHT
             platform = (cand.get("platform") or "").strip()
-            return weight_table.get(platform, _DEFAULT_PLATFORM_WEIGHT)
+            return weight_table.get(platform, DEFAULT_PLATFORM_WEIGHT)
 
         sorted_candidates = sorted(candidates, key=weight, reverse=True)
         return sorted_candidates[:limit] if limit > 0 else sorted_candidates

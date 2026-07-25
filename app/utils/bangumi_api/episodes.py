@@ -17,6 +17,7 @@ from ...utils.bangumi_constants import (
     RELATIONS,
     SUBJECT_TYPE_ANIME,
 )
+from ...utils.text_constants import CN_NUM
 
 # 关联类型中文名（由 ID 常量推导，避免硬编码字符串）
 _RELATION_CN_SEQUEL = RELATIONS[RELATION_ID_SEQUEL]
@@ -29,19 +30,6 @@ _LONG_SERIES_AIRDATE_MIN_TOTAL = 100
 # 防御错误 subject_id 触发的长链遍历：单次 API 超时 10s × 多跳累加可能逼近数分钟，
 # 超过此 deadline 立即放弃，避免占用 sync 线程池导致整体卡死。
 _CROSS_SEASON_DEADLINE_SECONDS = 60.0
-
-_CN_NUM = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
 
 
 class EpisodesMixin:
@@ -309,11 +297,11 @@ class EpisodesMixin:
         if m:
             cn = m.group(1)
             if len(cn) == 1:
-                return _CN_NUM.get(cn)
+                return CN_NUM.get(cn)
             # "十一"~"十九"
             if cn.startswith("十"):
-                return 10 + _CN_NUM.get(cn[1], 0)
-            return _CN_NUM.get(cn)
+                return 10 + CN_NUM.get(cn[1], 0)
+            return CN_NUM.get(cn)
         # "Xnd/Xrd/Xth season"
         m = re.search(r"(\d+)(?:st|nd|rd|th)\s+season", text, re.IGNORECASE)
         if m:

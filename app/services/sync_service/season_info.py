@@ -8,20 +8,7 @@ from __future__ import annotations
 import re
 
 from ...core.logging import logger
-
-# 中文数字 → 阿拉伯数字（1-10，支持"十一"~"十九"组合）
-_CN_NUM = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
+from ...utils.text_constants import CN_NUM
 
 
 class SeasonInfoMixin:
@@ -49,10 +36,10 @@ class SeasonInfoMixin:
         if m:
             cn = m.group(1)
             if len(cn) == 1:
-                return _CN_NUM.get(cn)
+                return CN_NUM.get(cn)
             if cn.startswith("十"):
-                return 10 + _CN_NUM.get(cn[1], 0)
-            return _CN_NUM.get(cn)
+                return 10 + CN_NUM.get(cn[1], 0)
+            return CN_NUM.get(cn)
         # "Xnd/Xrd/Xth season"
         m = re.search(r"(\d+)(?:st|nd|rd|th)\s+season", text, re.IGNORECASE)
         if m:
