@@ -1,1 +1,4 @@
-# review __init__.py 中不导出包内对外暴露的内容吗？
+from .base import BaseProvider
+from .openai_compat import OpenAICompatProvider
+
+__all__ = ["BaseProvider", "OpenAICompatProvider"]
