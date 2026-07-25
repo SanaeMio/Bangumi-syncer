@@ -270,10 +270,12 @@ async def update_config(
                         config_manager.set_config(normalized_section, key, value)
                 else:
                     if is_sensitive_ini_field(normalized_section, key) and (
-                        value is None or str(value).strip() == ""
+                        value is None
+                        or str(value).strip() == ""
+                        or str(value).startswith("***")
                     ):
                         logger.debug(
-                            "跳过空敏感字段更新: %s.%s", normalized_section, key
+                            "跳过空/掩码敏感字段更新: %s.%s", normalized_section, key
                         )
                         continue
                     # 其他配置项正常保存（敏感项在 set_config 中加密）
