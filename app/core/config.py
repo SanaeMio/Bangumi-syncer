@@ -563,7 +563,6 @@ class ConfigManager:
     # ── summary config CRUD ────────────────────────────────────────────
 
     _SUMMARY_FIELDS = (
-        "id",
         "enabled",
         "name",
         "cron",
@@ -574,35 +573,34 @@ class ConfigManager:
     )
 
     def get_summary_configs(self) -> list[dict[str, Any]]:
-        """Get all summary config sections sorted by id."""
+        """Get all summary config sections sorted by name."""
         configs: list[dict[str, Any]] = []
         config = self.get_config_parser()
         for section_name in config.sections():
             if section_name.startswith("summary-"):
                 section_config = self.get_section(section_name)
+                section_config["name"] = section_name[len("summary-") :]
                 configs.append(section_config)
-        configs.sort(key=lambda x: int(x.get("id", 0)))
+        configs.sort(key=lambda x: x.get("name", ""))
         return configs
 
-    def save_summary_config(self, config_data: dict[str, Any]) -> None:
-        """Create a new or update an existing [summary-N] section.
+    def save_summary_config(
+        self, config_data: dict[str, Any], old_name: str = ""
+    ) -> None:
+        """Create or update a [summary-{name}] section.
 
-        If *config_data* contains an ``id`` key, the corresponding section
-        is updated (or created when the section does not exist yet).
-        Otherwise a new section with the next sequential id is created.
+        If old_name is provided (rename), the old section is removed first.
         """
         with self._lock:
             config = self._get_config_parser_nolock()
-            if "id" in config_data:
-                # 更新
-                cfg_id = int(config_data["id"])
-            else:
-                # 新增
-                count = sum(1 for s in config.sections() if s.startswith("summary-"))
-                cfg_id = count + 1
-                config_data["id"] = cfg_id
+            name = config_data.get("name", "")
+            section_name = f"summary-{name}"
 
-            section_name = f"summary-{cfg_id}"
+            if old_name and old_name != name:
+                old_section = f"summary-{old_name}"
+                if config.has_section(old_section):
+                    config.remove_section(old_section)
+
             if not config.has_section(section_name):
                 config.add_section(section_name)
 
@@ -612,39 +610,14 @@ class ConfigManager:
 
             self._save_config(config)
 
-    def delete_summary_config(self, config_id: int) -> None:
-        """Remove a [summary-N] section and re-index remaining IDs sequentially."""
+    def delete_summary_config(self, name: str) -> None:
+        """Remove a [summary-{name}] section."""
         with self._lock:
             config = self._get_config_parser_nolock()
-            section_name = f"summary-{config_id}"
-            if not config.has_section(section_name):
-                return
-
-            config.remove_section(section_name)
-
-            # Collect remaining summary sections
-            entries: list[dict[str, Any]] = []
-            for sn in config.sections():
-                if sn.startswith("summary-"):
-                    sc = dict(config.items(sn))
-                    entries.append({"section_name": sn, "config": sc})
-
-            entries.sort(key=lambda x: int(x["config"].get("id", 0)))
-
-            # Re-index from 1
-            for new_id, entry in enumerate(entries, 1):
-                old_sn = entry["section_name"]
-                new_sn = f"summary-{new_id}"
-                if old_sn != new_sn:
-                    config.add_section(new_sn)
-                    for key, value in entry["config"].items():
-                        config.set(new_sn, key, value)
-                    config.set(new_sn, "id", str(new_id))
-                    config.remove_section(old_sn)
-                else:
-                    config.set(old_sn, "id", str(new_id))
-
-            self._save_config(config)
+            section_name = f"summary-{name}"
+            if config.has_section(section_name):
+                config.remove_section(section_name)
+                self._save_config(config)
 
     # ────────────────────────────────────────────────────────────────────
 
