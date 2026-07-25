@@ -1911,7 +1911,7 @@ async function saveConfig() {
             },
             llm: {
                 api_base: document.getElementById('llm-api-base').value,
-                api_key: document.getElementById('llm-api-key').value,
+                api_key: getLLMApiKeyValue(),
                 model: document.getElementById('llm-model').value,
                 max_tokens: parseInt(document.getElementById('llm-max-tokens').value) || 2000,
                 temperature: parseFloat(document.getElementById('llm-temperature').value) || 0.7,
@@ -3031,6 +3031,13 @@ async function loadLLMConfig() {
     } catch(e) { /* silent */ }
 }
 
+function getLLMApiKeyValue() {
+    var v = document.getElementById('llm-api-key').value;
+    // 掩码值（***xxxx）视为未修改，返回空字符串以保持原值
+    if (v && /^\*\*\*/.test(v)) return '';
+    return v;
+}
+
 async function saveLLMAndTest() {
     const btn = event.target;
     btn.disabled = true;
@@ -3042,7 +3049,7 @@ async function saveLLMAndTest() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 api_base: document.getElementById('llm-api-base').value,
-                api_key: document.getElementById('llm-api-key').value,
+                api_key: getLLMApiKeyValue(),
                 model: document.getElementById('llm-model').value,
                 max_tokens: parseInt(document.getElementById('llm-max-tokens').value) || 2000,
                 temperature: parseFloat(document.getElementById('llm-temperature').value) || 0.7,
