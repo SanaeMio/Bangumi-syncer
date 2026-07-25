@@ -1,11 +1,11 @@
 """
-Tests for SyncRecordsRepository.get_records_in_date_range
+SyncRecordsRepository.get_records_in_date_range 测试。
 """
 
 import sqlite3
 from unittest.mock import patch
 
-# ── helpers ──────────────────────────────────────────────────────────────
+# ── 辅助函数 ──────────────────────────────────────────────────────────────
 
 
 def _insert_record(
@@ -40,14 +40,14 @@ def _insert_record(
 
 
 class TestGetRecordsInDateRange:
-    """Tests for the get_records_in_date_range method."""
+    """get_records_in_date_range 方法测试。"""
 
-    # ── basic date filtering ──────────────────────────────────────────
+    # ── 基本日期过滤 ──────────────────────────────────────────
 
     def test_date_range_basic_inclusive_from_exclusive_to(
         self, temp_dir, reset_singletons
     ):
-        """Records from date_from through the full day of date_to."""
+        """来自 date_from 直至 date_to 整天的记录。"""
         db_path = temp_dir / "rd.db"
 
         with patch("app.core.database.logger"):
@@ -66,8 +66,8 @@ class TestGetRecordsInDateRange:
 
         records = db.get_records_in_date_range("2024-06-03", "2024-06-05")
         titles = [r["title"] for r in records]
-        # T3 (start of date_from), T3-late, T5 (midnight of date_to),
-        # T5-noon -- all should be included since date_to is inclusive.
+        # T3（date_from 的开始）、T3-late、T5（date_to 的午夜）、
+        # T5-noon -- 由于 date_to 是包含的，所有这些都应被包含。
         assert len(records) == 4
         assert "T3" in titles
         assert "T3-late" in titles
@@ -90,7 +90,7 @@ class TestGetRecordsInDateRange:
         records = db.get_records_in_date_range("2025-01-01", "2025-01-02")
         assert records == []
 
-    # ── ordering ──────────────────────────────────────────────────────
+    # ── 排序 ──────────────────────────────────────────────────────
 
     def test_records_sorted_by_timestamp_desc(self, temp_dir, reset_singletons):
         db_path = temp_dir / "order.db"
@@ -108,7 +108,7 @@ class TestGetRecordsInDateRange:
         records = db.get_records_in_date_range("2024-07-10", "2024-07-10")
         assert [r["title"] for r in records] == ["C", "B", "A"]
 
-    # ── user_name filter ──────────────────────────────────────────────
+    # ── 用户名过滤 ──────────────────────────────────────────────
 
     def test_filter_by_user_name(self, temp_dir, reset_singletons):
         db_path = temp_dir / "user_filter.db"
@@ -129,7 +129,7 @@ class TestGetRecordsInDateRange:
         assert len(records) == 2
         assert all(r["user_name"] == "alice" for r in records)
 
-    # ── source filter ─────────────────────────────────────────────────
+    # ── 来源过滤 ─────────────────────────────────────────────────
 
     def test_filter_by_source(self, temp_dir, reset_singletons):
         db_path = temp_dir / "src_filter.db"
@@ -150,7 +150,7 @@ class TestGetRecordsInDateRange:
         assert len(records) == 2
         assert all(r["source"] == "custom" for r in records)
 
-    # ── combined filters ──────────────────────────────────────────────
+    # ── 组合过滤 ──────────────────────────────────────────────
 
     def test_combined_filters(self, temp_dir, reset_singletons):
         db_path = temp_dir / "combined.db"
@@ -184,7 +184,7 @@ class TestGetRecordsInDateRange:
         assert len(records) == 1
         assert records[0]["title"] == "AC"
 
-    # ── limit ─────────────────────────────────────────────────────────
+    # ── 限制数量 ─────────────────────────────────────────────────────────
 
     def test_limit(self, temp_dir, reset_singletons):
         db_path = temp_dir / "limit.db"
@@ -200,7 +200,7 @@ class TestGetRecordsInDateRange:
 
         records = db.get_records_in_date_range("2024-11-01", "2024-11-01", limit=5)
         assert len(records) == 5
-        # Since we inserted from 00 to 23, DESC should return top 5 (23..19)
+        # 由于我们从 00 到 23 插入，DESC 应返回前 5 条（23..19）
         assert all(int(r["title"][1:]) >= 19 for r in records)
 
     def test_default_limit_is_200(self, temp_dir, reset_singletons):
@@ -218,10 +218,10 @@ class TestGetRecordsInDateRange:
         records = db.get_records_in_date_range("2024-12-01", "2024-12-01")
         assert len(records) == 200
 
-    # ── index ─────────────────────────────────────────────────────────
+    # ── 索引 ─────────────────────────────────────────────────────────
 
     def test_timestamp_index_exists(self, temp_dir, reset_singletons):
-        """Verify idx_sync_records_timestamp index is present."""
+        """验证 idx_sync_records_timestamp 索引已存在。"""
         db_path = temp_dir / "idx.db"
         with patch("app.core.database.logger"):
             from app.core.database import DatabaseManager
@@ -235,7 +235,7 @@ class TestGetRecordsInDateRange:
             )
             assert cursor.fetchone() is not None
 
-    # ── returned dict structure ───────────────────────────────────────
+    # ── 返回字典结构 ───────────────────────────────────────
 
     def test_returned_dict_has_all_columns(self, temp_dir, reset_singletons):
         db_path = temp_dir / "cols.db"

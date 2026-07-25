@@ -1,4 +1,4 @@
-"""Test SummaryService: generate_summary and execute_job (Task 3.2)."""
+"""测试 SummaryService：generate_summary 和 execute_job（任务 3.2）。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.services.summary.models import SummaryJobConfig
 
 
 def _make_config(**overrides) -> SummaryJobConfig:
-    """Build a minimal SummaryJobConfig with default test values."""
+    """使用默认测试值构建最小 SummaryJobConfig。"""
     defaults = {
         "name": "test_job",
         "enabled": True,
@@ -29,7 +29,7 @@ def _make_config(**overrides) -> SummaryJobConfig:
 
 
 def _sample_records() -> list[dict]:
-    """Return two sample watching records for tests."""
+    """返回两条示例观影记录供测试使用。"""
     return [
         {
             "user_name": "dad",
@@ -70,18 +70,18 @@ def _mock_chat_response(
 
 
 class TestGenerateSummary:
-    """Tests for SummaryService.generate_summary()."""
+    """SummaryService.generate_summary() 测试。"""
 
     @pytest.mark.asyncio
     async def test_date_calculation(self):
-        """lookback_days=1 produces date_from=yesterday, date_to=today."""
+        """lookback_days=1 应产生 date_from=昨天, date_to=今天。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
         config = _make_config(lookback_days=1)
         mock_records = _sample_records()
 
-        # Patch the LLM client so chat() returns a mock response.
+        # Patch LLM 客户端，使 chat() 返回 mock 响应。
         mock_llm_client = MagicMock()
         mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
 
@@ -96,7 +96,7 @@ class TestGenerateSummary:
 
             result = await svc.generate_summary(config)
 
-        # Verify dates
+        # 验证日期
         now = datetime.now()
         expected_date_to = now.strftime("%Y-%m-%d")
         expected_date_from = (now - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -105,7 +105,7 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_user_name_filter_passed_to_db(self):
-        """When user_name is set, it is forwarded to DB query."""
+        """设置 user_name 时，应将其转发给数据库查询。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -125,7 +125,7 @@ class TestGenerateSummary:
 
             await svc.generate_summary(config)
 
-        # Verify DB call args
+        # 验证数据库调用参数
         call_kwargs = mock_db.get_records_in_date_range.call_args.kwargs
         assert call_kwargs["user_name"] == "dad"
         assert "date_from" in call_kwargs
@@ -133,7 +133,7 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_user_name_none_when_empty(self):
-        """Empty user_name is passed as None to DB query."""
+        """空 user_name 以 None 传给数据库查询。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -158,7 +158,7 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_system_prompt_in_messages(self):
-        """LLM is called with system_prompt as messages[0].content (role='system')."""
+        """LLM 被调用时 messages[0].content 为 system_prompt（role='system'）。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -186,7 +186,7 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_default_system_prompt_when_empty(self):
-        """When system_prompt is empty/whitespace, the class default is used."""
+        """当 system_prompt 为空/空白时，使用类的默认值。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -208,12 +208,12 @@ class TestGenerateSummary:
 
         args, _ = mock_llm_client.chat.call_args
         messages = args[0]
-        # Should use the class default, not the whitespace string
+        # 应使用类的默认值，而非空白字符串
         assert messages[0].content == SummaryJobConfig.system_prompt
 
     @pytest.mark.asyncio
     async def test_user_prompt_template_rendered(self):
-        """User message contains date range, record count, and record text."""
+        """用户消息包含日期范围、记录数和记录文本。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -243,25 +243,25 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_records_formatting(self):
-        """Records are formatted into a compact text table."""
+        """记录被格式化为紧凑的文本表格。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
         formatted = svc._format_records(_sample_records())
         lines = formatted.split("\n")
 
-        # First record: episode type
+        # 第一条记录：剧集类型
         assert "葬送的芙莉莲" in lines[0]
         assert "S1E10" in lines[0]
         assert "dad" in lines[0]
 
-        # Second record: movie type → 剧场版
+        # 第二条记录：电影类型 → 剧场版
         assert "鬼灭之刃" in lines[1]
         assert "剧场版" in lines[1]
 
     @pytest.mark.asyncio
     async def test_empty_records_formatting(self):
-        """Empty record list produces '（无记录）'."""
+        """空记录列表产生'（无记录）'。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -270,7 +270,7 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_empty_records_in_generate_summary(self):
-        """generate_summary works with empty records and returns record_count=0."""
+        """空记录时 generate_summary 正常工作，返回 record_count=0。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -291,14 +291,14 @@ class TestGenerateSummary:
             result = await svc.generate_summary(config)
 
         assert result["record_count"] == 0
-        # Verify "（无记录）" appears in the user prompt
+        # 验证用户提示中包含"（无记录）"
         args, _ = mock_llm_client.chat.call_args
         user_content = args[0][1].content
         assert "（无记录）" in user_content
 
     @pytest.mark.asyncio
     async def test_returns_llm_response_fields(self):
-        """Returned dict includes summary_text, model, usage, record_count, dates."""
+        """返回的字典包含 summary_text、model、usage、record_count、dates。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -334,11 +334,11 @@ class TestGenerateSummary:
 
 
 class TestExecuteJob:
-    """Tests for SummaryService.execute_job()."""
+    """SummaryService.execute_job() 测试。"""
 
     @pytest.mark.asyncio
     async def test_notification_type_empty_user(self):
-        """notification_type uses job name, not user_name."""
+        """notification_type 使用任务名称，而非 user_name。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -371,7 +371,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_notification_type_with_user(self):
-        """notification_type uses job id, not user_name."""
+        """notification_type 使用任务 ID，而非 user_name。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -404,7 +404,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_data_dict_has_required_fields(self):
-        """Data dict passed to notifier has all expected keys and values."""
+        """传递给 notifier 的数据字典包含所有预期的键和值。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -446,7 +446,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_notifier_called_once(self):
-        """Notifier is invoked exactly once per execute_job call."""
+        """每次 execute_job 调用恰好触发一次 Notifier。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -476,7 +476,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_exception_in_generate_summary_is_caught(self):
-        """When generate_summary raises, error is logged but not re-raised."""
+        """generate_summary 抛出异常时，记录错误日志但不重新抛出。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -489,13 +489,13 @@ class TestExecuteJob:
         ):
             mock_gen.side_effect = RuntimeError("LLM down")
 
-            # Should not raise
+            # 不应抛出异常
             await svc.execute_job(config)
 
-        # Notifier should NOT be called
+        # Notifier 不应被调用
         mock_get_notifier.return_value.send_notification_by_type.assert_not_called()
 
-        # Logger should record the error
+        # 日志应记录该错误
         mock_logger.error.assert_called_once()
         error_msg = mock_logger.error.call_args[0][0]
         assert "failing_job" in error_msg
@@ -504,7 +504,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_tokens_used_zero_when_usage_is_none(self):
-        """When LLM returns usage=None, tokens_used defaults to 0."""
+        """当 LLM 返回 usage=None 时，tokens_used 默认为 0。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()

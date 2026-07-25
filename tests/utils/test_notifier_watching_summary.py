@@ -1,5 +1,5 @@
 """
-Tests for watching_summary notification type in Notifier.
+Notifier 中 watching_summary 通知类型测试。
 """
 
 from unittest.mock import MagicMock
@@ -8,7 +8,7 @@ from app.utils.notifier import Notifier
 
 
 class TestWatchingSummaryPayload:
-    """Tests for _build_payload_by_type with watching_summary type."""
+    """_build_payload_by_type watching_summary 类型测试。"""
 
     @staticmethod
     def _make_notifier() -> Notifier:
@@ -27,7 +27,7 @@ class TestWatchingSummaryPayload:
         }
 
     def test_payload_for_watching_summary_has_expected_keys(self):
-        """Payload for 'watching_summary' should contain all expected fields."""
+        """watching_summary 的 payload 应包含所有预期字段。"""
         notifier = self._make_notifier()
         data = self._make_watching_data()
 
@@ -42,7 +42,7 @@ class TestWatchingSummaryPayload:
         assert payload["user_name"] == "testuser"
 
     def test_payload_for_watching_summary_dad_has_expected_keys(self):
-        """Payload for 'watching_summary_dad' should contain all expected fields."""
+        """watching_summary_dad 的 payload 应包含所有预期字段。"""
         notifier = self._make_notifier()
         data = self._make_watching_data()
         data["job_name"] = "DadSummary"
@@ -54,7 +54,7 @@ class TestWatchingSummaryPayload:
         assert payload["summary"] == "本周共追番5部，更新12集"
 
     def test_payload_handles_missing_fields_gracefully(self):
-        """Payload should use defaults when data fields are missing."""
+        """数据字段缺失时应使用默认值。"""
         notifier = self._make_notifier()
         data: dict = {}
 
@@ -68,10 +68,10 @@ class TestWatchingSummaryPayload:
 
 
 class TestWatchingSummaryEmailSubject:
-    """Tests for _build_email_subject_by_type with watching_summary type."""
+    """_build_email_subject_by_type watching_summary 类型测试。"""
 
     def test_subject_for_watching_summary(self):
-        """Email subject should contain job_name and proper prefix."""
+        """邮件主题应包含 job_name 和正确的前缀。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {"job_name": "WeeklyReport"}
@@ -83,7 +83,7 @@ class TestWatchingSummaryEmailSubject:
         assert result.startswith("[Bangumi-Syncer]")
 
     def test_subject_for_watching_summary_default_name(self):
-        """Email subject should work even when job_name is missing."""
+        """即使 job_name 缺失，邮件主题也应正常工作。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
 
@@ -93,10 +93,10 @@ class TestWatchingSummaryEmailSubject:
 
 
 class TestWatchingSummaryDynamicContent:
-    """Tests for _build_email_dynamic_content with watching_summary type."""
+    """_build_email_dynamic_content watching_summary 类型测试。"""
 
     def test_dynamic_content_for_watching_summary_contains_key_info(self):
-        """Dynamic HTML content should include job_name, date_range, record_count, summary_text."""
+        """动态 HTML 内容应包含 job_name、date_range、record_count、summary_text。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {
@@ -114,7 +114,7 @@ class TestWatchingSummaryDynamicContent:
         assert "本周更新8集" in result
 
     def test_dynamic_content_for_watching_summary_dad(self):
-        """Dynamic HTML content should work for watching_summary_dad variant."""
+        """动态 HTML 内容应支持 watching_summary_dad 变体。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {
@@ -131,10 +131,10 @@ class TestWatchingSummaryDynamicContent:
 
 
 class TestWatchingSummaryRegression:
-    """Regression tests to ensure existing notification types are unaffected."""
+    """回归测试，确保现有通知类型不受影响。"""
 
     def test_mark_success_payload_unchanged(self):
-        """mark_success payload should still work correctly."""
+        """mark_success payload 仍应正常工作。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {
@@ -153,7 +153,7 @@ class TestWatchingSummaryRegression:
         assert payload["anime"] == "测试番剧"
 
     def test_mark_failed_payload_unchanged(self):
-        """mark_failed payload should still work correctly."""
+        """mark_failed payload 仍应正常工作。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {
@@ -168,7 +168,7 @@ class TestWatchingSummaryRegression:
         assert payload["error"] == "API错误"
 
     def test_request_received_payload_unchanged(self):
-        """request_received payload should still work correctly."""
+        """request_received payload 仍应正常工作。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {"title": "测试番剧", "user_name": "test", "source": "emby"}
@@ -179,7 +179,7 @@ class TestWatchingSummaryRegression:
         assert payload["anime"] == "测试番剧"
 
     def test_mark_success_subject_unchanged(self):
-        """mark_success email subject should still work correctly."""
+        """mark_success 邮件主题仍应正常工作。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {"title": "测试番剧", "season": 1, "episode": 5}
@@ -190,7 +190,7 @@ class TestWatchingSummaryRegression:
         assert "测试番剧" in result
 
     def test_mark_failed_dynamic_content_unchanged(self):
-        """mark_failed dynamic content should still work correctly."""
+        """mark_failed 动态内容仍应正常工作。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {"error_message": "测试错误"}
@@ -201,7 +201,7 @@ class TestWatchingSummaryRegression:
         assert "测试错误" in result
 
     def test_unknown_type_payload_still_works(self):
-        """Unknown types should still get the fallback payload (not crash on substring check)."""
+        """未知通知类型仍应获得回退 payload（不会因子串检查而崩溃）。"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
         data = {"title": "anything"}

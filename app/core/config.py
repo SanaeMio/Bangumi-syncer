@@ -483,7 +483,7 @@ class ConfigManager:
         return out
 
     def get_llm_config(self) -> dict[str, Any]:
-        """Get LLM global configuration with defaults."""
+        """获取 LLM 全局配置（含默认值）。"""
         defaults: dict[str, Any] = {
             "provider": "openai_compat",
             "api_base": "https://api.openai.com/v1",
@@ -496,7 +496,7 @@ class ConfigManager:
         }
         raw = self.get_section(LLM_SECTION, {})
         merged: dict[str, Any] = {**defaults, **raw}
-        # Ensure correct types (is not None to allow falsy values like 0)
+        # 确保类型正确（使用 is not None 以允许 0 等 falsy 值）
         if merged.get("max_tokens") is not None:
             merged["max_tokens"] = int(merged["max_tokens"])
         if merged.get("temperature") is not None:
@@ -561,7 +561,7 @@ class ConfigManager:
             max_episode = 9999
         return max_season, max_episode
 
-    # ── summary config CRUD ────────────────────────────────────────────
+    # ── summary 配置增删改查 ────────────────────────────────────────────
 
     _SUMMARY_FIELDS = (
         "enabled",
@@ -574,7 +574,7 @@ class ConfigManager:
     )
 
     def get_summary_configs(self) -> list[dict[str, Any]]:
-        """Get all summary config sections sorted by name."""
+        """获取所有 summary 配置节，按名称排序。"""
         configs: list[dict[str, Any]] = []
         config = self.get_config_parser()
         for section_name in config.sections():
@@ -588,9 +588,9 @@ class ConfigManager:
     def save_summary_config(
         self, config_data: dict[str, Any], old_name: str = ""
     ) -> None:
-        """Create or update a [summary-{name}] section.
+        """创建或更新 [summary-{name}] 配置节。
 
-        If old_name is provided (rename), the old section is removed first.
+        如果提供了 old_name（重命名场景），则先删除旧配置节。
         """
         with self._lock:
             config = self._get_config_parser_nolock()
@@ -612,7 +612,7 @@ class ConfigManager:
             self._save_config(config)
 
     def delete_summary_config(self, name: str) -> None:
-        """Remove a [summary-{name}] section."""
+        """删除 [summary-{name}] 配置节。"""
         with self._lock:
             config = self._get_config_parser_nolock()
             section_name = f"summary-{name}"

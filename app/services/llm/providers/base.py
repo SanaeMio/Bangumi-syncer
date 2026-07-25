@@ -1,7 +1,6 @@
-"""Abstract base class for LLM providers (Task 1.2).
+"""LLM provider 抽象基类。
 
-All LLM provider implementations must subclass BaseProvider and
-implement the async chat() method.
+所有 LLM provider 实现必须继承 BaseProvider 并实现 async chat() 方法。
 """
 
 from abc import ABC, abstractmethod
@@ -11,24 +10,21 @@ from app.services.llm.models import ChatResponse, Message
 
 
 class BaseProvider(ABC):
-    """Abstract base class for LLM service providers.
+    """LLM 服务提供者抽象基类。
 
-    Subclasses must implement the async chat() method that accepts
-    a list of messages and additional keyword arguments, returning
-    a ChatResponse.
+    子类必须实现 async chat() 方法，接收消息列表和额外关键字参数，
+    返回 ChatResponse。
     """
 
     @abstractmethod
     async def chat(self, messages: list[Message], **kwargs: Any) -> ChatResponse:
-        """Send messages to the LLM and return the response.
+        """向 LLM 发送消息并返回响应。
 
         Args:
-            messages: A list of Message objects representing the
-                conversation history.
-            **kwargs: Provider-specific additional parameters.
+            messages: 表示对话历史的 Message 对象列表。
+            **kwargs: provider 特定的额外参数。
 
         Returns:
-            A ChatResponse containing the assistant's reply and
-            optional usage statistics.
+            包含助手回复和可选用量统计的 ChatResponse。
         """
         ...

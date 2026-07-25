@@ -1,4 +1,4 @@
-"""Summary job configuration dataclass."""
+"""Summary job 配置数据类。"""
 
 from dataclasses import dataclass
 
@@ -23,7 +23,7 @@ class SummaryJobConfig:
 
     @classmethod
     def from_config_dict(cls, data: dict) -> "SummaryJobConfig":
-        """Create from a config dict (as returned by config_manager.get_summary_configs())."""
+        """从 config_manager.get_summary_configs() 字典创建实例。"""
         return cls(
             name=str(data.get("name", "")),
             enabled=data.get("enabled", True)

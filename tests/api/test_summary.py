@@ -1,5 +1,5 @@
 """
-Summary API models validation tests and endpoint integration tests.
+Summary API 模型验证测试与端点集成测试。
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,10 +21,10 @@ from app.models.summary import (
 
 
 class TestLLMConfigResponse:
-    """Tests for LLMConfigResponse model."""
+    """LLMConfigResponse 模型测试。"""
 
     def test_default_values(self):
-        """Verify default field values on construction."""
+        """验证构造时的默认字段值。"""
         model = LLMConfigResponse()
         assert model.api_base == "https://api.openai.com/v1"
         assert model.api_key == ""
@@ -34,7 +34,7 @@ class TestLLMConfigResponse:
         assert model.timeout == 60
 
     def test_override_values(self):
-        """Verify explicit field values are accepted."""
+        """验证显式字段值可被接受。"""
         model = LLMConfigResponse(
             api_base="https://custom.api/v1",
             api_key="***sk-abc123",
@@ -51,7 +51,7 @@ class TestLLMConfigResponse:
         assert model.timeout == 120
 
     def test_model_dump(self):
-        """Verify model_dump() serializes correctly."""
+        """验证 model_dump() 可正确序列化。"""
         model = LLMConfigResponse(api_key="***hidden")
         data = model.model_dump()
         assert data["api_key"] == "***hidden"
@@ -61,10 +61,10 @@ class TestLLMConfigResponse:
 
 
 class TestLLMConfigUpdate:
-    """Tests for LLMConfigUpdate model."""
+    """LLMConfigUpdate 模型测试。"""
 
     def test_all_none_is_valid(self):
-        """Verify an empty partial update is valid."""
+        """验证空的局部更新是合法的。"""
         model = LLMConfigUpdate()
         assert model.api_base is None
         assert model.api_key is None
@@ -74,14 +74,14 @@ class TestLLMConfigUpdate:
         assert model.timeout is None
 
     def test_single_field_update(self):
-        """Verify setting only one field (partial update)."""
+        """验证仅设置单个字段（局部更新）。"""
         model = LLMConfigUpdate(model="gpt-4")
         assert model.model == "gpt-4"
         assert model.api_base is None
         assert model.api_key is None
 
     def test_multiple_fields_update(self):
-        """Verify setting multiple fields."""
+        """验证设置多个字段。"""
         model = LLMConfigUpdate(
             api_base="https://new.api/v1",
             temperature=0.1,
@@ -91,7 +91,7 @@ class TestLLMConfigUpdate:
         assert model.max_tokens is None
 
     def test_model_dump_excludes_none(self):
-        """Verify model_dump(exclude_none=True) omits None fields."""
+        """验证 model_dump(exclude_none=True) 会省略 None 字段。"""
         model = LLMConfigUpdate(model="gpt-4")
         data = model.model_dump(exclude_none=True)
         assert "model" in data
@@ -103,10 +103,10 @@ class TestLLMConfigUpdate:
 
 
 class TestLLMTestResponse:
-    """Tests for LLMTestResponse model."""
+    """LLMTestResponse 模型测试。"""
 
     def test_minimal_creation(self):
-        """Verify required fields only."""
+        """验证仅设置必填字段。"""
         model = LLMTestResponse(success=True, message="OK")
         assert model.success is True
         assert model.message == "OK"
@@ -114,7 +114,7 @@ class TestLLMTestResponse:
         assert model.latency_ms is None
 
     def test_full_creation(self):
-        """Verify all fields."""
+        """验证所有字段。"""
         model = LLMTestResponse(
             success=True,
             message="Connected",
@@ -129,10 +129,10 @@ class TestLLMTestResponse:
 
 
 class TestSummaryJobCreate:
-    """Tests for SummaryJobCreate model."""
+    """SummaryJobCreate 模型测试。"""
 
     def test_default_values(self):
-        """Verify default field values."""
+        """验证默认字段值。"""
         model = SummaryJobCreate()
         assert model.name == "New Summary"
         assert model.cron == "0 21 * * *"
@@ -143,7 +143,7 @@ class TestSummaryJobCreate:
         assert model.enabled is True
 
     def test_all_fields_set(self):
-        """Verify all fields can be set explicitly."""
+        """验证可显式设置所有字段。"""
         model = SummaryJobCreate(
             name="Daily Anime Summary",
             cron="0 9 * * *",
@@ -166,10 +166,10 @@ class TestSummaryJobCreate:
 
 
 class TestSummaryJobUpdate:
-    """Tests for SummaryJobUpdate model."""
+    """SummaryJobUpdate 模型测试。"""
 
     def test_all_none_is_valid(self):
-        """Verify an empty partial update is valid."""
+        """验证空的局部更新是合法的。"""
         model = SummaryJobUpdate()
         assert model.name is None
         assert model.cron is None
@@ -180,14 +180,14 @@ class TestSummaryJobUpdate:
         assert model.enabled is None
 
     def test_single_field_update(self):
-        """Verify setting only one field."""
+        """验证仅设置单个字段。"""
         model = SummaryJobUpdate(enabled=False)
         assert model.enabled is False
         assert model.name is None
         assert model.cron is None
 
     def test_multiple_fields_update(self):
-        """Verify setting multiple fields."""
+        """验证设置多个字段。"""
         model = SummaryJobUpdate(
             name="Updated Job",
             lookback_days=7,
@@ -197,7 +197,7 @@ class TestSummaryJobUpdate:
         assert model.cron is None
 
     def test_model_dump_excludes_none(self):
-        """Verify model_dump(exclude_none=True) omits None fields."""
+        """验证 model_dump(exclude_none=True) 会省略 None 字段。"""
         model = SummaryJobUpdate(enabled=False)
         data = model.model_dump(exclude_none=True)
         assert "enabled" in data
@@ -208,10 +208,10 @@ class TestSummaryJobUpdate:
 
 
 class TestSummaryJobResponse:
-    """Tests for SummaryJobResponse model."""
+    """SummaryJobResponse 模型测试。"""
 
     def test_creation_with_all_fields(self):
-        """Verify model creation with all fields."""
+        """验证使用所有字段创建模型。"""
         model = SummaryJobResponse(
             id=1,
             name="Test Job",
@@ -227,7 +227,7 @@ class TestSummaryJobResponse:
         assert model.notification_type == "watching_summary_Test Job"
 
     def test_notification_type_empty_by_default(self):
-        """Verify notification_type defaults to empty string."""
+        """验证 notification_type 默认为空字符串。"""
         model = SummaryJobResponse(
             id=1,
             name="Test Job",
@@ -240,10 +240,10 @@ class TestSummaryJobResponse:
         )
         assert model.notification_type == ""
 
-    # ========== from_config_dict tests ==========
+    # ========== from_config_dict 测试 ==========
 
     def test_from_config_dict_empty_user_name(self):
-        """notification_type uses job name."""
+        """notification_type 使用任务名称。"""
         data = {
             "id": 1,
             "name": "Test",
@@ -259,7 +259,7 @@ class TestSummaryJobResponse:
         assert model.name == "Test"
 
     def test_from_config_dict_with_user_name(self):
-        """notification_type uses job id, not user_name."""
+        """notification_type 使用任务名称，而非 user_name。"""
         data = {
             "id": 2,
             "name": "Dad's Summary",
@@ -276,7 +276,7 @@ class TestSummaryJobResponse:
         assert model.user_name == "dad"
 
     def test_from_config_dict_missing_optional_keys(self):
-        """Verify defaults are applied when keys are missing from dict."""
+        """验证当字典中缺少键时，会应用默认值。"""
         data = {
             "id": 3,
             "name": "Minimal Job",
@@ -292,7 +292,7 @@ class TestSummaryJobResponse:
         assert model.notification_type == "watching_summary_Minimal Job"
 
     def test_from_config_dict_user_name_none(self):
-        """notification_type uses job name, not affected by user_name=None."""
+        """notification_type 使用任务名称，不受 user_name=None 影响。"""
         data = {
             "id": 4,
             "name": "None User",
@@ -303,7 +303,7 @@ class TestSummaryJobResponse:
         assert model.notification_type == "watching_summary_None User"
 
     def test_from_config_dict_disabled_job(self):
-        """Verify enabled=False is preserved."""
+        """验证 enabled=False 被正确保留。"""
         data = {
             "id": 5,
             "name": "Disabled Job",
@@ -313,7 +313,7 @@ class TestSummaryJobResponse:
         assert model.enabled is False
 
     def test_from_config_dict_enabled_int_zero(self):
-        """Verify enabled=0 is treated as False."""
+        """验证 enabled=0 被当作 False。"""
         data = {
             "id": 6,
             "name": "Int Zero Job",
@@ -323,7 +323,7 @@ class TestSummaryJobResponse:
         assert model.enabled is False
 
     def test_from_config_dict_enabled_int_one(self):
-        """Verify enabled=1 is treated as True."""
+        """验证 enabled=1 被当作 True。"""
         data = {
             "id": 7,
             "name": "Int One Job",
@@ -333,7 +333,7 @@ class TestSummaryJobResponse:
         assert model.enabled is True
 
     def test_from_config_dict_with_extra_keys(self):
-        """Verify extra keys in dict are ignored."""
+        """验证字典中的额外键会被忽略。"""
         data = {
             "id": 8,
             "name": "Extra Keys",
@@ -348,10 +348,10 @@ class TestSummaryJobResponse:
 
 
 class TestSummaryJobTestResponse:
-    """Tests for SummaryJobTestResponse model."""
+    """SummaryJobTestResponse 模型测试。"""
 
     def test_minimal_creation(self):
-        """Verify required fields only, defaults on others."""
+        """验证仅设置必填字段，其余使用默认值。"""
         model = SummaryJobTestResponse(success=True, job_name="Test Job")
         assert model.success is True
         assert model.job_name == "Test Job"
@@ -365,7 +365,7 @@ class TestSummaryJobTestResponse:
         assert model.error_message == ""
 
     def test_failure_response(self):
-        """Verify error fields are populated."""
+        """验证错误字段被正确填充。"""
         model = SummaryJobTestResponse(
             success=False,
             job_name="Failing Job",
@@ -375,7 +375,7 @@ class TestSummaryJobTestResponse:
         assert model.error_message == "LLM timeout after 60s"
 
     def test_success_response_with_tokens(self):
-        """Verify token counts and latency populated on success."""
+        """验证成功时 token 数量和延迟信息被正确填充。"""
         model = SummaryJobTestResponse(
             success=True,
             job_name="Daily Summary",
@@ -398,11 +398,11 @@ class TestSummaryJobTestResponse:
 # ========== LLMUsageStatsResponse ==========
 
 
-# ========== API Endpoint Tests ==========
+# ========== API 端点测试 ==========
 
 
 class TestGetLLMConfig:
-    """Tests for GET /api/summary/llm endpoint."""
+    """GET /api/summary/llm 端点测试。"""
 
     @pytest.fixture
     def _setup(self):
@@ -419,7 +419,7 @@ class TestGetLLMConfig:
 
     @pytest.mark.asyncio
     async def test_returns_config_with_masked_api_key(self, _setup):
-        """GET /api/summary/llm should return config with masked api_key."""
+        """GET /api/summary/llm 应返回带有脱敏 api_key 的配置。"""
         from httpx import ASGITransport, AsyncClient
 
         app = self._create_test_app()
@@ -439,7 +439,7 @@ class TestGetLLMConfig:
 
     @pytest.mark.asyncio
     async def test_masks_short_api_key(self):
-        """GET /api/summary/llm should mask short api_key as '***'."""
+        """GET /api/summary/llm 应将短 api_key 脱敏为 '***'。"""
         from httpx import ASGITransport, AsyncClient
 
         app = self._create_test_app()
@@ -460,7 +460,7 @@ class TestGetLLMConfig:
 
     @pytest.mark.asyncio
     async def test_handles_empty_api_key(self):
-        """GET /api/summary/llm should handle empty api_key gracefully."""
+        """GET /api/summary/llm 应优雅处理空的 api_key。"""
         from httpx import ASGITransport, AsyncClient
 
         app = self._create_test_app()
@@ -480,7 +480,7 @@ class TestGetLLMConfig:
                 assert response.json()["api_key"] == ""
 
     def _create_test_app(self):
-        """Create a FastAPI test app with auth override."""
+        """创建一个带有认证覆盖的 FastAPI 测试应用。"""
         from fastapi import FastAPI
 
         from app.api.deps import get_current_user_flexible
@@ -497,11 +497,11 @@ class TestGetLLMConfig:
 
 
 class TestUpdateLLMConfig:
-    """Tests for PUT /api/summary/llm endpoint."""
+    """PUT /api/summary/llm 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_updates_config_and_calls_reload(self):
-        """PUT /api/summary/llm should update config and reload."""
+        """PUT /api/summary/llm 应更新配置并重新加载。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -534,7 +534,7 @@ class TestUpdateLLMConfig:
 
     @pytest.mark.asyncio
     async def test_empty_update_is_accepted(self):
-        """PUT /api/summary/llm with empty body should still succeed."""
+        """PUT /api/summary/llm 传入空 body 仍应成功。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -555,17 +555,17 @@ class TestUpdateLLMConfig:
             ) as client:
                 response = await client.put("/api/summary/llm/conf", json={})
                 assert response.status_code == 200
-                # No fields to update, so set_config should not be called
+                # 没有需要更新的字段，所以不应调用 set_config
                 mock_cm.set_config.assert_not_called()
                 mock_cm.reload_config.assert_called_once()
 
 
 class TestTestLLMConnection:
-    """Tests for POST /api/summary/llm/test endpoint."""
+    """POST /api/summary/llm/test 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_successful_llm_connection(self):
-        """POST /api/summary/llm/test should return success on valid LLM."""
+        """POST /api/summary/llm/test 在 LLM 有效时应返回成功。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -604,7 +604,7 @@ class TestTestLLMConnection:
 
     @pytest.mark.asyncio
     async def test_llm_connection_failure(self):
-        """POST /api/summary/llm/test should return failure on LLM error."""
+        """POST /api/summary/llm/test 在 LLM 出错时应返回失败。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -634,11 +634,11 @@ class TestTestLLMConnection:
 
 
 class TestGetLLMStats:
-    """Tests for GET /api/summary/llm/stats endpoint."""
+    """GET /api/summary/llm/stats 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_returns_aggregate_stats(self):
-        """GET /api/summary/llm/stats should return usage statistics."""
+        """GET /api/summary/llm/stats 应返回使用统计信息。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -675,7 +675,7 @@ class TestGetLLMStats:
 
     @pytest.mark.asyncio
     async def test_passes_scope_and_days_params(self):
-        """GET /api/summary/llm/stats should forward scope and days params."""
+        """GET /api/summary/llm/stats 应转发 scope 和 days 参数。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -707,11 +707,11 @@ class TestGetLLMStats:
 
 
 class TestListSummaryJobs:
-    """Tests for GET /api/summary/jobs endpoint."""
+    """GET /api/summary/jobs 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_returns_list_of_jobs(self):
-        """GET /api/summary/jobs should return serialized job configs."""
+        """GET /api/summary/jobs 应返回序列化的任务配置列表。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -765,7 +765,7 @@ class TestListSummaryJobs:
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_configs(self):
-        """GET /api/summary/jobs should return empty list when no configs exist."""
+        """GET /api/summary/jobs 在没有配置时应返回空列表。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -792,11 +792,11 @@ class TestListSummaryJobs:
 
 
 class TestCreateSummaryJob:
-    """Tests for POST /api/summary/jobs endpoint."""
+    """POST /api/summary/jobs 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_creates_job_and_calls_scheduler(self):
-        """POST /api/summary/jobs should save config and apply scheduler."""
+        """POST /api/summary/jobs 应保存配置并应用调度器。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -835,11 +835,11 @@ class TestCreateSummaryJob:
 
 
 class TestUpdateSummaryJob:
-    """Tests for PUT /api/summary/jobs/{id} endpoint."""
+    """PUT /api/summary/jobs/{id} 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_updates_existing_job(self):
-        """PUT /api/summary/jobs/{id} should update config with job id."""
+        """PUT /api/summary/jobs/{id} 应使用任务 id 更新配置。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -869,7 +869,7 @@ class TestUpdateSummaryJob:
                 data = response.json()
                 assert data["status"] == "success"
                 mock_cm.save_summary_config.assert_called_once()
-                # Verify the updates dict includes the job_id
+                # 验证更新字典中包含 job_id
                 call_args = mock_cm.save_summary_config.call_args[0][0]
                 assert call_args["name"] == "Updated Job"
                 mock_cm.reload_config.assert_called_once()
@@ -877,11 +877,11 @@ class TestUpdateSummaryJob:
 
 
 class TestDeleteSummaryJob:
-    """Tests for DELETE /api/summary/jobs/{id} endpoint."""
+    """DELETE /api/summary/jobs/{id} 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_deletes_job_and_calls_scheduler(self):
-        """DELETE /api/summary/jobs/{id} should delete config and apply scheduler."""
+        """DELETE /api/summary/jobs/{id} 应删除配置并应用调度器。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -915,11 +915,11 @@ class TestDeleteSummaryJob:
 
 
 class TestTestSummaryJob:
-    """Tests for POST /api/summary/jobs/{id}/test endpoint."""
+    """POST /api/summary/jobs/{id}/test 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_returns_test_result(self):
-        """POST /api/summary/jobs/{id}/test should run generate and return result."""
+        """POST /api/summary/jobs/{id}/test 应运行生成并返回结果。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -981,7 +981,7 @@ class TestTestSummaryJob:
 
     @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_job(self):
-        """POST /api/summary/jobs/{id}/test should return 404 for missing job."""
+        """POST /api/summary/jobs/{id}/test 对不存在的任务应返回 404。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -1017,11 +1017,11 @@ class TestTestSummaryJob:
 
 
 class TestTriggerSummaryJob:
-    """Tests for POST /api/summary/jobs/{id}/trigger endpoint."""
+    """POST /api/summary/jobs/{id}/trigger 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_triggers_job_execution(self):
-        """POST /api/summary/jobs/{id}/trigger should execute the job."""
+        """POST /api/summary/jobs/{id}/trigger 应执行该任务。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -1066,7 +1066,7 @@ class TestTriggerSummaryJob:
 
     @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_job(self):
-        """POST /api/summary/jobs/{id}/trigger should return 404 for missing job."""
+        """POST /api/summary/jobs/{id}/trigger 对不存在的任务应返回 404。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -1091,10 +1091,10 @@ class TestTriggerSummaryJob:
 
 
 class TestLLMUsageStatsResponse:
-    """Tests for LLMUsageStatsResponse model."""
+    """LLMUsageStatsResponse 模型测试。"""
 
     def test_all_defaults(self):
-        """Verify all fields have correct defaults."""
+        """验证所有字段都有正确的默认值。"""
         model = LLMUsageStatsResponse()
         assert model.total_calls == 0
         assert model.total_tokens == 0

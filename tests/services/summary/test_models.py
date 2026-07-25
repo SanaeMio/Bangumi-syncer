@@ -1,4 +1,4 @@
-"""Test SummaryJobConfig dataclass and from_config_dict constructor."""
+"""测试 SummaryJobConfig 数据类和 from_config_dict 构造函数。"""
 
 from app.services.summary.models import SummaryJobConfig
 
@@ -6,7 +6,7 @@ from app.services.summary.models import SummaryJobConfig
 
 
 def test_from_config_dict_full():
-    """All fields provided — instance matches exactly."""
+    """提供所有字段时 —— 实例完全匹配。"""
     data = {
         "name": "每日追番总结",
         "enabled": "true",
@@ -27,7 +27,7 @@ def test_from_config_dict_full():
 
 
 def test_from_config_dict_defaults_empty():
-    """Empty dict produces an instance with all defaults."""
+    """空字典使用全部默认值创建实例。"""
     cfg = SummaryJobConfig.from_config_dict({})
     assert cfg.name == ""
     assert cfg.enabled is True
@@ -39,7 +39,7 @@ def test_from_config_dict_defaults_empty():
 
 
 def test_from_config_dict_defaults_minimal():
-    """Only name provided — remaining fields take defaults."""
+    """仅提供名称 —— 其余字段取默认值。"""
     cfg = SummaryJobConfig.from_config_dict({"name": "test"})
     assert cfg.name == "test"
     assert cfg.enabled is True
@@ -66,7 +66,7 @@ def test_enabled_bool_coercion_false_variants():
 
 
 def test_enabled_already_bool():
-    """Bool values pass through without error."""
+    """布尔值直接通过，不报错。"""
     cfg_true = SummaryJobConfig.from_config_dict({"name": "t", "enabled": True})
     assert cfg_true.enabled is True
     cfg_false = SummaryJobConfig.from_config_dict({"name": "t", "enabled": False})
@@ -92,7 +92,7 @@ def test_max_records_coercion():
 
 
 def test_system_prompt_default_value():
-    """Default system_prompt contains key phrases from the spec."""
+    """默认 system_prompt 包含规范中的关键短语。"""
     expected = (
         "你是一个轻松有趣的追番助手。用户会给你一段指定时间范围内的观影记录，请你用亲切自然的中文生成追番总结。\n\n"
         "规则：\n"
@@ -109,6 +109,6 @@ def test_system_prompt_default_value():
 
 
 def test_no_user_prompt_template_attribute():
-    """user_prompt_template should not be an attribute of the dataclass."""
+    """user_prompt_template 不应该是 dataclass 的属性。"""
     cfg = SummaryJobConfig.from_config_dict({"name": "t"})
     assert not hasattr(cfg, "user_prompt_template")

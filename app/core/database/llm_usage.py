@@ -71,7 +71,7 @@ class LLMUsageRepository(BaseRepository):
         self._ensure_table()
 
     # ------------------------------------------------------------------
-    # schema
+    # 表结构定义
     # ------------------------------------------------------------------
 
     def _ensure_table(self) -> None:
@@ -108,7 +108,7 @@ class LLMUsageRepository(BaseRepository):
         self._run_write(_write, error_msg="创建 LLM 用量表失败")
 
     # ------------------------------------------------------------------
-    # CRUD
+    # 增删改查
     # ------------------------------------------------------------------
 
     def log_usage(
@@ -157,7 +157,7 @@ class LLMUsageRepository(BaseRepository):
         return bool(result)
 
     # ------------------------------------------------------------------
-    # stats helpers
+    # 统计辅助方法
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -173,7 +173,7 @@ class LLMUsageRepository(BaseRepository):
         return ("", [])
 
     # ------------------------------------------------------------------
-    # stats
+    # 统计查询
     # ------------------------------------------------------------------
 
     def get_stats(self, scope: str = "aggregate", days: int = 30) -> LLMUsageStats:
@@ -297,7 +297,7 @@ class LLMUsageRepository(BaseRepository):
         ]
 
     # ------------------------------------------------------------------
-    # maintenance
+    # 维护清理
     # ------------------------------------------------------------------
 
     def cleanup_old(self, retention_days: int = _DEFAULT_RETENTION_DAYS) -> int:

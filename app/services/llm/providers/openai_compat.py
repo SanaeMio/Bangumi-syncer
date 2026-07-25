@@ -1,7 +1,7 @@
-"""OpenAI-compatible API provider (Task 1.3).
+"""OpenAI 兼容 API provider。
 
-Provides an implementation of BaseProvider that communicates with any
-OpenAI-compatible chat completions endpoint via httpx.
+基于 httpx 实现的 BaseProvider，与任何遵循 OpenAI /v1/chat/completions
+API 规范的端点通信。
 """
 
 from typing import Any, Optional
@@ -12,18 +12,17 @@ from app.utils.http_client import create_async_client
 
 
 class OpenAICompatProvider(BaseProvider):
-    """LLM provider for OpenAI-compatible chat completion APIs.
+    """OpenAI 兼容聊天补全 API 的 LLM provider。
 
-    Communicates with any endpoint that follows the OpenAI
-    /v1/chat/completions API contract.
+    与任何遵循 OpenAI /v1/chat/completions API 规范的端点通信。
 
     Attributes:
-        api_base: The base URL of the API (e.g. https://api.openai.com/v1).
-        api_key: Bearer token for authentication.
-        model: Default model name to use.
-        max_tokens: Default maximum tokens for completion.
-        temperature: Default sampling temperature.
-        timeout: Request timeout in seconds.
+        api_base: API 的基础 URL（如 https://api.openai.com/v1）。
+        api_key: 用于认证的 Bearer token。
+        model: 默认使用的模型名称。
+        max_tokens: 补全的默认最大 token 数。
+        temperature: 默认采样温度。
+        timeout: 请求超时时间（秒）。
     """
 
     def __init__(
@@ -36,16 +35,16 @@ class OpenAICompatProvider(BaseProvider):
         timeout: int = 60,
         proxy: Optional[str] = None,
     ) -> None:
-        """Initialize the OpenAI-compatible provider.
+        """初始化 OpenAI 兼容 provider。
 
         Args:
-            api_base: Base URL for the API endpoint.
-            api_key: API key for bearer token authentication.
-            model: Model name to use for completions.
-            max_tokens: Maximum tokens to generate.
-            temperature: Sampling temperature (0.0-2.0).
-            timeout: HTTP request timeout in seconds.
-            proxy: Optional HTTP proxy URL.
+            api_base: API 端点的基础 URL。
+            api_key: 用于 Bearer token 认证的 API key。
+            model: 补全使用的模型名称。
+            max_tokens: 最大生成 token 数。
+            temperature: 采样温度 (0.0-2.0)。
+            timeout: HTTP 请求超时时间（秒）。
+            proxy: 可选的 HTTP 代理 URL。
         """
         self.api_base = api_base.rstrip("/")
         self.api_key = api_key
@@ -56,19 +55,19 @@ class OpenAICompatProvider(BaseProvider):
         self.proxy = proxy
 
     async def chat(self, messages: list[Message], **kwargs: Any) -> ChatResponse:
-        """Send a chat completion request to the API.
+        """向 API 发送聊天补全请求。
 
         Args:
-            messages: List of conversation messages.
-            **kwargs: Override default model, max_tokens, or temperature.
+            messages: 对话消息列表。
+            **kwargs: 覆盖默认的 model、max_tokens 或 temperature。
 
         Returns:
-            ChatResponse with the assistant's content and optional usage.
+            包含助手回复内容和可选用量的 ChatResponse。
 
         Raises:
-            httpx.HTTPStatusError: On HTTP error responses.
-            httpx.TimeoutException: On request timeout.
-            ValueError: On JSON decode failures.
+            httpx.HTTPStatusError: HTTP 错误响应。
+            httpx.TimeoutException: 请求超时。
+            ValueError: JSON 解码失败。
         """
         url = f"{self.api_base}/chat/completions"
 

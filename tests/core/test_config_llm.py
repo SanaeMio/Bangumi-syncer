@@ -1,10 +1,10 @@
 """
-Tests for ConfigManager.get_llm_config and LLM api_key encryption.
+ConfigManager.get_llm_config 与 LLM api_key 加密测试。
 """
 
 
 def _cm_from_ini(tmp_path, ini_text: str):
-    """Build a ConfigManager pointing to a temp config.ini, without running __init__."""
+    """构建一个指向临时 config.ini 的 ConfigManager，不运行 __init__。"""
     from app.core.config import ConfigManager
 
     p = tmp_path / "config.ini"
@@ -26,10 +26,10 @@ def _cm_from_ini(tmp_path, ini_text: str):
 
 
 class TestGetLlmConfig:
-    """Tests for ConfigManager.get_llm_config()."""
+    """ConfigManager.get_llm_config() 测试。"""
 
     def test_defaults_when_no_llm_section(self, tmp_path):
-        """All fields should return their default values when [llm] section is absent."""
+        """当 [llm] 节不存在时，所有字段应返回默认值。"""
         cm = _cm_from_ini(tmp_path, "[bangumi]\nusername = u\n")
         cfg = cm.get_llm_config()
         assert cfg["api_base"] == "https://api.openai.com/v1"
@@ -40,7 +40,7 @@ class TestGetLlmConfig:
         assert cfg["timeout"] == 60
 
     def test_custom_values_from_config(self, tmp_path):
-        """All fields should be read from the [llm] section when present."""
+        """当 [llm] 节存在时，所有字段应从该节读取。"""
         ini = """[llm]
 api_base = https://custom.api.com/v1
 api_key = sk-test-key-12345
@@ -59,7 +59,7 @@ timeout = 120
         assert cfg["timeout"] == 120
 
     def test_type_coercion_numeric_fields(self, tmp_path):
-        """String values for max_tokens, temperature, timeout are coerced to proper types."""
+        """max_tokens、temperature、timeout 的字符串值被强制转换为正确类型。"""
         ini = """[llm]
 max_tokens = 8000
 temperature = 0.1
@@ -75,7 +75,7 @@ timeout = 30
         assert cfg["timeout"] == 30
 
     def test_partial_override_keeps_defaults(self, tmp_path):
-        """Unspecified fields fall back to defaults."""
+        """未指定的字段回退到默认值。"""
         ini = """[llm]
 model = gpt-4-turbo
 temperature = 0.0
@@ -90,83 +90,83 @@ temperature = 0.0
         assert cfg["timeout"] == 60
 
     def test_api_key_encryption_roundtrip(self, tmp_path):
-        """When auth.secret_key is set, api_key stored via set_config is encrypted
-        with BGS1: prefix and decrypted on read via get_llm_config."""
+        """当 auth.secret_key 已设置时，通过 set_config 存储的 api_key 以 BGS1:
+        前缀加密，并在通过 get_llm_config 读取时解密。"""
         ini = """[auth]
 secret_key = my-secret-key-for-llm-test
 """
         cm = _cm_from_ini(tmp_path, ini)
-        # Write a plaintext api_key — should be encrypted on save
+        # 写入明文 api_key — 存储时应被加密
         cm.set_config("llm", "api_key", "sk-live-sensitive-key")
 
-        # Verify stored value is encrypted on disk
+        # 验证磁盘上的值已被加密
         parser = cm.get_config_parser()
         stored = parser.get("llm", "api_key")
         assert stored.startswith("BGS1:"), (
-            f"Expected BGS1: prefix, got: {stored[:20]}..."
+            f"期望 BGS1: 前缀，实际得到: {stored[:20]}..."
         )
 
-        # Verify get_llm_config decrypts it back
+        # 验证 get_llm_config 能将其解密回来
         cfg = cm.get_llm_config()
         assert cfg["api_key"] == "sk-live-sensitive-key"
 
     def test_api_key_encryption_roundtrip_persisted(self, tmp_path):
-        """Encrypted api_key survives a config reload (fresh ConfigManager instance)."""
+        """加密的 api_key 在配置重新加载后仍然可用（全新的 ConfigManager 实例）。"""
         ini = """[auth]
 secret_key = my-secret-key-for-llm-test
 """
         cm = _cm_from_ini(tmp_path, ini)
         cm.set_config("llm", "api_key", "sk-persisted-key")
 
-        # Create a fresh ConfigManager from the same file — simulate restart
+        # 从同一文件创建全新的 ConfigManager — 模拟重启
         cm2 = _cm_from_ini(tmp_path, cm.active_config_path.read_text(encoding="utf-8"))
         cfg = cm2.get_llm_config()
         assert cfg["api_key"] == "sk-persisted-key"
 
     def test_api_key_plaintext_when_no_secret_key(self, tmp_path):
-        """When auth.secret_key is not set, api_key is stored and read as plaintext."""
+        """当 auth.secret_key 未设置时，api_key 以明文形式存储和读取。"""
         cm = _cm_from_ini(tmp_path, "[bangumi]\nusername = u\n")
         cm.set_config("llm", "api_key", "sk-plaintext-key")
 
         parser = cm.get_config_parser()
         stored = parser.get("llm", "api_key")
-        # Without a secret_key, encryption is a no-op (value stored as-is)
+        # 没有 secret_key 时，加密为 no-op（值按原样存储）
         assert stored == "sk-plaintext-key"
 
         cfg = cm.get_llm_config()
         assert cfg["api_key"] == "sk-plaintext-key"
 
     def test_get_llm_config_string_api_base_no_type_conversion(self, tmp_path):
-        """api_base should remain a string even if it looks numeric."""
+        """api_base 即使看起来像数字也应保持字符串类型。"""
         ini = """[llm]
 api_base = 12345
 """
         cm = _cm_from_ini(tmp_path, ini)
         _ = cm.get_llm_config()
-        # The get_section method converts "12345" to int, but get_llm_config
-        # merges defaults over raw, then coerces only specific numeric fields.
-        # So api_base should be a string (or the merged default wins if raw was int).
-        # Actually: raw = {"api_base": 12345} (int due to get_section's isdigit check)
-        # merged = {"api_base": 12345, ...defaults}
-        # No coercion for api_base, so it stays int 12345.
-        # But the default is str, so merged[api_base] = 12345 (int from raw).
-        # get_llm_config doesn't re-coerce api_base, so it returns int.
-        # This is a known edge case — the default type wins when missing, but
-        # raw type wins when present. Documenting this behavior.
+        # get_section 方法会将 "12345" 转换为 int，但 get_llm_config
+        # 会将 raw 合并到 defaults 之上，然后仅对特定的数字字段进行强制类型转换。
+        # 因此 api_base 应为字符串（如果 raw 为 int，则合并后的默认值将胜出）。
+        # 实际上: raw = {"api_base": 12345}（因为 get_section 的 isdigit 检查）
+        # 合并后: merged = {"api_base": 12345, ...defaults}
+        # api_base 没有强制类型转换，因此它保持 int 12345。
+        # 但默认值是 str，所以 merged[api_base] = 12345（来自 raw 的 int）。
+        # get_llm_config 不会对 api_base 重新进行类型转换，因此它返回 int。
+        # 这是一个已知的边界情况 — 当键缺失时默认类型胜出，
+        # 但当键存在时 raw 的类型胜出。记录此行为。
         pass
 
 
 class TestLlmApiKeyIsSensitive:
-    """Tests that (llm, api_key) is registered as a sensitive field."""
+    """测试 (llm, api_key) 被注册为敏感字段。"""
 
     def test_is_sensitive_ini_field_returns_true(self):
-        """is_sensitive_ini_field should return True for ('llm', 'api_key')."""
+        """is_sensitive_ini_field 对 ('llm', 'api_key') 应返回 True。"""
         from app.core.config_secret_crypto import is_sensitive_ini_field
 
         assert is_sensitive_ini_field("llm", "api_key") is True
 
     def test_is_sensitive_ini_field_returns_false_for_other_llm_fields(self):
-        """Other LLM fields like model, temperature are not sensitive."""
+        """其他 LLM 字段（如 model、temperature）不是敏感字段。"""
         from app.core.config_secret_crypto import is_sensitive_ini_field
 
         assert is_sensitive_ini_field("llm", "model") is False
@@ -174,14 +174,14 @@ class TestLlmApiKeyIsSensitive:
         assert is_sensitive_ini_field("llm", "api_base") is False
 
     def test_encrypt_if_sensitive_encrypts_api_key(self):
-        """encrypt_if_sensitive should encrypt the LLM api_key when master is provided."""
+        """encrypt_if_sensitive 在提供 master 时应加密 LLM api_key。"""
         from app.core.config_secret_crypto import encrypt_if_sensitive
 
         result = encrypt_if_sensitive("llm", "api_key", "test-key", master="my-secret")
         assert result.startswith("BGS1:")
 
     def test_decrypt_if_sensitive_roundtrip(self):
-        """decrypt_if_sensitive should round-trip the encrypted value."""
+        """decrypt_if_sensitive 应能对加密值进行往返解密。"""
         from app.core.config_secret_crypto import (
             decrypt_if_sensitive,
             encrypt_if_sensitive,

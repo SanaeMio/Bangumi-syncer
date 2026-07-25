@@ -1,4 +1,4 @@
-"""Tests for app.services.llm.models (Task 1.1)."""
+"""app.services.llm.models 测试（任务 1.1）。"""
 
 import pytest
 
@@ -6,7 +6,7 @@ from app.services.llm.models import ChatResponse, Message, Usage
 
 
 class TestMessage:
-    """Message model creation and serialization."""
+    """Message 模型创建和序列化。"""
 
     def test_create_message(self):
         msg = Message(role="user", content="Hello")
@@ -39,7 +39,7 @@ class TestMessage:
 
 
 class TestUsage:
-    """Usage model defaults and serialization."""
+    """Usage 模型默认值和序列化。"""
 
     def test_usage_defaults(self):
         u = Usage()
@@ -66,7 +66,7 @@ class TestUsage:
 
 
 class TestChatResponse:
-    """ChatResponse model creation, serialization, and optional usage."""
+    """ChatResponse 模型创建、序列化和可选的 usage。"""
 
     def test_create_without_usage(self):
         resp = ChatResponse(content="Hello", model="gpt-4o-mini")
@@ -107,7 +107,7 @@ class TestChatResponse:
         assert resp.model == ""
 
     def test_chat_response_extra_fields_ignored(self):
-        """Pydantic should ignore unknown fields by default with model_validate."""
+        """Pydantic 使用 model_validate 时应默认忽略未知字段。"""
         resp = ChatResponse.model_validate(
             {"content": "Hi", "model": "m", "extra": "should-be-ignored"}
         )

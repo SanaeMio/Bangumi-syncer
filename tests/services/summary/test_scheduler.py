@@ -1,4 +1,4 @@
-"""SummaryScheduler tests — multi-job cron scheduler for [summary-N] configs."""
+"""SummaryScheduler 测试 —— [summary-N] 配置的多任务 cron 调度器。"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,12 +9,12 @@ from apscheduler.triggers.cron import CronTrigger
 from app.services.summary.models import SummaryJobConfig
 
 # ---------------------------------------------------------------------------
-# Helper factories
+# 辅助工厂函数
 # ---------------------------------------------------------------------------
 
 
 def _make_summary_config(**overrides):
-    """Build a minimal summary config dict for tests."""
+    """构建测试用的最小 summary 配置字典。"""
     return {
         "enabled": overrides.get("enabled", True),
         "name": overrides.get("name", "test-summary"),
@@ -116,7 +116,7 @@ def test_schedule_all_jobs_passes_timezone_to_trigger():
 
 @pytest.mark.asyncio
 async def test_start_creates_scheduler_and_registers_enabled_jobs():
-    """start() should create an AsyncIOScheduler and add jobs for enabled configs."""
+    """start() 应创建 AsyncIOScheduler 并为启用的配置注册任务。"""
     configs = [
         _make_summary_config(id=1, name="job1", cron="0 21 * * *"),
         _make_summary_config(id=2, name="job2", cron="30 8 * * *"),
@@ -141,7 +141,7 @@ async def test_start_creates_scheduler_and_registers_enabled_jobs():
 
 @pytest.mark.asyncio
 async def test_start_skips_disabled_configs():
-    """start() should NOT register jobs for configs where enabled=False."""
+    """start() 不应为 enabled=False 的配置注册任务。"""
     configs = [
         _make_summary_config(id=1, name="enabled-job", enabled=True, cron="0 21 * * *"),
         _make_summary_config(
@@ -169,7 +169,7 @@ async def test_start_skips_disabled_configs():
 
 @pytest.mark.asyncio
 async def test_start_when_no_configs_does_not_add_jobs():
-    """start() with empty config list should not add any jobs."""
+    """配置列表为空时，start() 不应添加任何任务。"""
     with patch(
         "app.services.summary.scheduler.config_manager.get_summary_configs",
         return_value=[],
@@ -189,7 +189,7 @@ async def test_start_when_no_configs_does_not_add_jobs():
 
 @pytest.mark.asyncio
 async def test_start_when_already_running_refreshes_jobs():
-    """When scheduler is already running, start() should just refresh jobs."""
+    """当调度器已运行时，start() 应仅刷新任务。"""
     configs = [_make_summary_config(id=1)]
     with patch(
         "app.services.summary.scheduler.config_manager.get_summary_configs",
@@ -210,7 +210,7 @@ async def test_start_when_already_running_refreshes_jobs():
 
 @pytest.mark.asyncio
 async def test_start_constructor_raises_returns_false():
-    """If creating the scheduler raises, start() returns False."""
+    """如果创建调度器时抛出异常，start() 返回 False。"""
     configs = [_make_summary_config(id=1)]
     with (
         patch(
@@ -236,7 +236,7 @@ async def test_start_constructor_raises_returns_false():
 
 @pytest.mark.asyncio
 async def test_stop_shuts_down_scheduler():
-    """stop() should shutdown the scheduler and nullify it."""
+    """stop() 应关闭调度器并将其置空。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
@@ -251,7 +251,7 @@ async def test_stop_shuts_down_scheduler():
 
 @pytest.mark.asyncio
 async def test_stop_when_no_scheduler_returns_true():
-    """stop() with no scheduler should still return True."""
+    """无调度器时 stop() 仍应返回 True。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
@@ -262,7 +262,7 @@ async def test_stop_when_no_scheduler_returns_true():
 
 @pytest.mark.asyncio
 async def test_stop_shutdown_raises_returns_false():
-    """If shutdown raises, stop() returns False."""
+    """如果 shutdown 抛出异常，stop() 返回 False。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
@@ -280,7 +280,7 @@ async def test_stop_shutdown_raises_returns_false():
 
 
 def test_schedule_all_jobs_removes_orphaned_jobs():
-    """Jobs whose configs were removed/deactivated should be cleaned up."""
+    """配置被移除或停用的任务应被清理。"""
     configs = [_make_summary_config(id=1, name="keep-me")]
     with patch(
         "app.services.summary.scheduler.config_manager.get_summary_configs",
@@ -336,7 +336,7 @@ def test_schedule_all_jobs_remove_job_logs_warning_on_exception():
 
 
 def test_schedule_all_jobs_does_nothing_when_scheduler_not_running():
-    """_schedule_all_jobs is a no-op when scheduler is None or not running."""
+    """当 scheduler 为 None 或未运行时，_schedule_all_jobs 是空操作。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
@@ -383,7 +383,7 @@ def test_schedule_all_jobs_skips_invalid_cron_job():
 
 @pytest.mark.asyncio
 async def test_run_job_calls_execute_job_with_correct_config():
-    """_run_job should call summary_service.execute_job with the job_config."""
+    """_run_job 应使用 job_config 调用 summary_service.execute_job。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     job_config = SummaryJobConfig.from_config_dict(
@@ -402,7 +402,7 @@ async def test_run_job_calls_execute_job_with_correct_config():
 
 @pytest.mark.asyncio
 async def test_run_job_handles_timeout():
-    """_run_job should catch TimeoutError and log it."""
+    """_run_job 应捕获 TimeoutError 并记录日志。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     job_config = SummaryJobConfig.from_config_dict(
@@ -435,7 +435,7 @@ async def test_run_job_handles_timeout():
 
 @pytest.mark.asyncio
 async def test_run_job_handles_exception():
-    """_run_job should catch generic exceptions and log them, not propagate."""
+    """_run_job 应捕获通用异常并记录日志，不向上传播。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     job_config = SummaryJobConfig.from_config_dict(
@@ -456,7 +456,7 @@ async def test_run_job_handles_exception():
 
 @pytest.mark.asyncio
 async def test_run_job_default_timeout_is_300():
-    """When no job_timeout is configured, default should be 300 seconds."""
+    """未配置 job_timeout 时，默认应为 300 秒。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     job_config = SummaryJobConfig.from_config_dict(_make_summary_config(id=1))
@@ -476,7 +476,7 @@ async def test_run_job_default_timeout_is_300():
 
 
 def test_reload_job_if_running_calls_schedule():
-    """reload_job_if_running should refresh jobs when scheduler is running."""
+    """调度器运行时，reload_job_if_running 应刷新任务。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
@@ -491,7 +491,7 @@ def test_reload_job_if_running_calls_schedule():
 
 
 def test_reload_job_if_running_noop_when_not_running():
-    """reload_job_if_running should do nothing when scheduler is not running."""
+    """调度器未运行时，reload_job_if_running 不应执行任何操作。"""
     from app.services.summary.scheduler import SummaryScheduler
 
     s = SummaryScheduler()
@@ -508,7 +508,7 @@ def test_reload_job_if_running_noop_when_not_running():
 
 @pytest.mark.asyncio
 async def test_apply_config_after_save_starts_if_not_running_but_jobs_exist():
-    """When scheduler is not running but enabled jobs exist, it should start."""
+    """调度器未运行但存在启用的任务时，应启动调度器。"""
     configs = [_make_summary_config(id=1, enabled=True)]
     with patch(
         "app.services.summary.scheduler.config_manager.get_summary_configs",
@@ -527,7 +527,7 @@ async def test_apply_config_after_save_starts_if_not_running_but_jobs_exist():
 
 @pytest.mark.asyncio
 async def test_apply_config_after_save_refreshes_when_running():
-    """When scheduler is already running, it should refresh jobs in place."""
+    """调度器已运行时，应原地刷新任务。"""
     configs = [_make_summary_config(id=1, enabled=True)]
     with patch(
         "app.services.summary.scheduler.config_manager.get_summary_configs",
@@ -546,7 +546,7 @@ async def test_apply_config_after_save_refreshes_when_running():
 
 @pytest.mark.asyncio
 async def test_apply_config_after_save_no_start_when_no_enabled_jobs():
-    """When scheduler is not running and no enabled jobs exist, should not start."""
+    """调度器未运行且无启用的任务时，不应启动。"""
     configs = [_make_summary_config(id=1, enabled=False)]
     with patch(
         "app.services.summary.scheduler.config_manager.get_summary_configs",
@@ -567,27 +567,27 @@ async def test_apply_config_after_save_no_start_when_no_enabled_jobs():
 
 
 def test_singleton_is_summary_scheduler_instance():
-    """The module-level singleton should be a SummaryScheduler."""
+    """模块级单例应为 SummaryScheduler 实例。"""
     from app.services.summary.scheduler import SummaryScheduler, summary_scheduler
 
     assert isinstance(summary_scheduler, SummaryScheduler)
 
 
 def test_singleton_starts_with_no_scheduler():
-    """A fresh singleton should have no scheduler until started."""
+    """新创建的单例在启动前应无调度器。"""
     from app.services.summary.scheduler import summary_scheduler
 
     assert summary_scheduler.scheduler is None
 
 
 # ---------------------------------------------------------------------------
-# Integration-like: full start/stop cycle
+# 集成风格：完整 start/stop 生命周期
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_full_start_stop_cycle():
-    """Verify start creates scheduler with real job store and stop tears it down."""
+    """验证 start 创建带有真实任务存储的调度器，stop 将其销毁。"""
     configs = [_make_summary_config(id=1, name="integration-test", cron="0 21 * * *")]
     with (
         patch(
@@ -614,7 +614,7 @@ async def test_full_start_stop_cycle():
 
 @pytest.mark.asyncio
 async def test_full_start_stop_with_multiple_jobs():
-    """Verify multiple jobs are registered in a real scheduler."""
+    """验证多个任务在真实调度器中正确注册。"""
     configs = [
         _make_summary_config(name="job-a", cron="0 21 * * *", enabled=True),
         _make_summary_config(name="job-b", cron="30 8 * * *", enabled=True),

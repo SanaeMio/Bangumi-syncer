@@ -1,10 +1,10 @@
 """
-Tests for ConfigManager summary config CRUD methods (name-based).
+ConfigManager summary 配置 CRUD 方法测试（基于名称）。
 """
 
 
 def _cm_from_ini(tmp_path, ini_text: str):
-    """Build a ConfigManager pointing to a temp config.ini, without running __init__."""
+    """构建一个指向临时 config.ini 的 ConfigManager，不运行 __init__。"""
     from app.core.config import ConfigManager
 
     p = tmp_path / "config.ini"
@@ -74,7 +74,7 @@ class TestGetSummaryConfigs:
         assert configs[0]["name"] == "每周总结"
 
     def test_name_derived_from_section(self, tmp_path):
-        """name field is derived from section name if not present in config."""
+        """当配置中不存在 name 字段时，从节名称推导。"""
         ini = """[summary-测试]\nenabled = true\ncron = 0 0 * * *\n"""
         cm = _cm_from_ini(tmp_path, ini)
         configs = cm.get_summary_configs()

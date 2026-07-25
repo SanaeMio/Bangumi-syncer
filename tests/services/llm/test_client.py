@@ -1,4 +1,4 @@
-"""Tests for app.services.llm.client (Task 1.4)."""
+"""app.services.llm.client 测试（任务 1.4）。"""
 
 from unittest.mock import AsyncMock, patch
 
@@ -7,7 +7,7 @@ import pytest
 from app.services.llm.models import ChatResponse, Message, Usage
 
 # ---------------------------------------------------------------------------
-# test data
+# 测试数据
 # ---------------------------------------------------------------------------
 
 TEST_LLM_CONFIG = {
@@ -28,7 +28,7 @@ TEST_LLM_CONFIG = {
 
 @pytest.fixture
 def reset_llm_singleton():
-    """Reset the LLMClient singleton before and after each test."""
+    """在每个测试前后重置 LLMClient 单例。"""
     import app.services.llm.client as client_mod
 
     client_mod._llm_client = None
@@ -38,7 +38,7 @@ def reset_llm_singleton():
 
 @pytest.fixture
 def mock_config():
-    """Mock config_manager.get_llm_config to return test config."""
+    """Mock config_manager.get_llm_config，使其返回测试配置。"""
     with patch(
         "app.services.llm.client.config_manager.get_llm_config",
         return_value=dict(TEST_LLM_CONFIG),
@@ -48,12 +48,11 @@ def mock_config():
 
 @pytest.fixture
 def mock_log_usage():
-    """Mock database_manager.llm_usage.log_usage for verification.
+    """Mock database_manager.llm_usage.log_usage，用于验证。
 
-    The _log_usage method imports ``database_manager`` inside its body via
-    ``from app.core.database import database_manager``.  Because the conftest
-    already triggers the lazy instantiation, the module attribute exists and
-    can be patched directly.
+    _log_usage 方法通过 ``from app.core.database import database_manager``
+    在其内部导入 ``database_manager``。因为 conftest 已触发延迟实例化，
+    模块属性已存在，可以直接 patch。
     """
     with patch("app.core.database.database_manager.llm_usage.log_usage") as mock_log:
         yield mock_log
@@ -61,30 +60,30 @@ def mock_log_usage():
 
 @pytest.fixture
 def mock_logger():
-    """Mock app.core.logging.logger to verify log output."""
+    """Mock app.core.logging.logger，用于验证日志输出。"""
     with patch("app.services.llm.client.logger") as mock_log:
         yield mock_log
 
 
 # ---------------------------------------------------------------------------
-# helpers
+# 辅助方法
 # ---------------------------------------------------------------------------
 
 
 def _chat_patch_path():
-    """Return the target string for patching the provider's chat method."""
+    """返回用于 patch provider chat 方法的目标字符串。"""
     return "app.services.llm.client.OpenAICompatProvider.chat"
 
 
 def _sleep_patch_path():
-    """Return the target string for patching asyncio.sleep inside client."""
+    """返回用于在 client 内部 patch asyncio.sleep 的目标字符串。"""
     return "app.services.llm.client.asyncio.sleep"
 
 
 def _build_client(provider_chat_mock, *, mock_sleep=None):
-    """Create an LLMClient inside active patches for provider.chat (and
-    optionally asyncio.sleep).  Caller must manage the patches via
-    ``with patch(...)`` context managers.
+    """在 provider.chat（及可选的 asyncio.sleep）的 active patch 中创建 LLMClient。
+
+    调用方必须通过 ``with patch(...)`` 上下文管理器管理这些 patch。
     """
     from app.services.llm.client import LLMClient
 
@@ -100,13 +99,13 @@ def _build_client(provider_chat_mock, *, mock_sleep=None):
 
 
 class TestLLMClientChat:
-    """Tests for LLMClient.chat()."""
+    """LLMClient.chat() 测试。"""
 
     @pytest.mark.asyncio
     async def test_chat_success(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """A single successful call returns ChatResponse and logs usage."""
+        """单次成功调用返回 ChatResponse 并记录 usage。"""
         mock_chat = AsyncMock()
         mock_chat.return_value = ChatResponse(
             content="Hello!",
@@ -148,7 +147,7 @@ class TestLLMClientChat:
     async def test_chat_retry_succeeds_on_retry(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """First attempt fails, retry succeeds on attempt 2."""
+        """首次尝试失败，第 2 次重试成功。"""
         mock_sleep = AsyncMock()
         mock_chat = AsyncMock()
         mock_chat.side_effect = [
@@ -178,7 +177,7 @@ class TestLLMClientChat:
     async def test_chat_all_retries_exhausted(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """All 3 attempts (initial + 2 retries) fail -> error ChatResponse."""
+        """全部 3 次尝试（首次 + 2 次重试）均失败 → 返回错误 ChatResponse。"""
         mock_sleep = AsyncMock()
         mock_chat = AsyncMock()
         mock_chat.side_effect = [
@@ -207,7 +206,7 @@ class TestLLMClientChat:
 
     @pytest.mark.asyncio
     async def test_retry_backoff_delays(self, reset_llm_singleton, mock_config):
-        """Correct backoff delays: 1 s then 3 s between retries."""
+        """正确的退避延迟：重试间隔为 1 秒，然后 3 秒。"""
         mock_sleep = AsyncMock()
         mock_chat = AsyncMock()
         mock_chat.side_effect = [
@@ -229,7 +228,7 @@ class TestLLMClientChat:
     async def test_success_logs_correct_tokens(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """Success path logs status='success' and correct token counts."""
+        """成功路径记录 status='success' 和正确的 token 计数。"""
         mock_chat = AsyncMock()
         mock_chat.return_value = ChatResponse(
             content="OK",
@@ -255,7 +254,7 @@ class TestLLMClientChat:
     async def test_failure_path_logs_error(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """Failure path logs status='error' and includes error_message."""
+        """失败路径记录 status='error' 并包含 error_message。"""
         mock_sleep = AsyncMock()
         mock_chat = AsyncMock()
         mock_chat.side_effect = [
@@ -279,7 +278,7 @@ class TestLLMClientChat:
     async def test_logger_info_contains_model_tokens_latency(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """Success path logger.info includes model, tokens, and latency."""
+        """成功路径 logger.info 包含模型、token 和延迟信息。"""
         mock_chat = AsyncMock()
         mock_chat.return_value = ChatResponse(
             content="OK",
@@ -301,7 +300,7 @@ class TestLLMClientChat:
     async def test_log_usage_failure_does_not_crash_chat(
         self, reset_llm_singleton, mock_config, mock_logger
     ):
-        """If log_usage raises, chat still returns the response (best-effort)."""
+        """即使 log_usage 抛出异常，chat 仍应返回响应（尽力而为）。"""
         mock_chat = AsyncMock()
         mock_chat.return_value = ChatResponse(
             content="Hello!",
@@ -326,7 +325,7 @@ class TestLLMClientChat:
     async def test_chat_without_optional_params(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """chat() works fine when job_id and job_name are omitted (None)."""
+        """当 job_id 和 job_name 省略（None）时，chat() 正常工作。"""
         mock_chat = AsyncMock()
         mock_chat.return_value = ChatResponse(
             content="OK",
@@ -349,7 +348,7 @@ class TestLLMClientChat:
     async def test_chat_usage_none_handles_zero_tokens(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """When response.usage is None, token counts default to 0."""
+        """当 response.usage 为 None 时，token 计数默认为 0。"""
         mock_chat = AsyncMock()
         mock_chat.return_value = ChatResponse(
             content="No usage",
@@ -371,7 +370,7 @@ class TestLLMClientChat:
     async def test_chat_passes_kwargs_to_provider(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """Extra kwargs passed to chat() are forwarded to the provider."""
+        """传递给 chat() 的额外 kwargs 会转发给 provider。"""
         mock_chat = AsyncMock()
         mock_chat.return_value = ChatResponse(
             content="OK",
@@ -399,10 +398,10 @@ class TestLLMClientChat:
 
 
 class TestGetLlmClient:
-    """Tests for the get_llm_client() singleton function."""
+    """get_llm_client() 单例函数测试。"""
 
     def test_returns_same_instance(self, reset_llm_singleton, mock_config):
-        """get_llm_client() returns the same instance on repeated calls."""
+        """重复调用 get_llm_client() 返回同一实例。"""
         from app.services.llm.client import get_llm_client
 
         client1 = get_llm_client()
@@ -410,14 +409,14 @@ class TestGetLlmClient:
         assert client1 is client2
 
     def test_returns_llm_client_instance(self, reset_llm_singleton, mock_config):
-        """get_llm_client() returns an LLMClient instance."""
+        """get_llm_client() 返回 LLMClient 实例。"""
         from app.services.llm.client import LLMClient, get_llm_client
 
         client = get_llm_client()
         assert isinstance(client, LLMClient)
 
     def test_two_calls_under_same_fixture(self, reset_llm_singleton, mock_config):
-        """Multiple calls within a single test all return the same object."""
+        """单次测试内的多次调用均返回同一对象。"""
         from app.services.llm.client import get_llm_client
 
         clients = [get_llm_client() for _ in range(5)]

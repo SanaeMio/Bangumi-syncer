@@ -1,5 +1,5 @@
 """
-Summary AI watching report data models.
+Summary AI 观影报告数据模型。
 """
 
 from typing import Optional
@@ -8,10 +8,10 @@ from pydantic import BaseModel
 
 
 class LLMConfigResponse(BaseModel):
-    """Response for GET /api/summary/llm"""
+    """GET /api/summary/llm 响应"""
 
     api_base: str = "https://api.openai.com/v1"
-    api_key: str = ""  # masked value (show "***" prefix)
+    api_key: str = ""  # 掩码值（前端展示为 "***"）
     model: str = "gpt-4o-mini"
     max_tokens: int = 2000
     temperature: float = 0.7
@@ -19,7 +19,7 @@ class LLMConfigResponse(BaseModel):
 
 
 class LLMConfigUpdate(BaseModel):
-    """Request for PUT /api/summary/llm"""
+    """PUT /api/summary/llm 请求"""
 
     api_base: Optional[str] = None
     api_key: Optional[str] = None
@@ -30,7 +30,7 @@ class LLMConfigUpdate(BaseModel):
 
 
 class LLMTestResponse(BaseModel):
-    """Response for POST /api/summary/llm/test"""
+    """POST /api/summary/llm/test 响应"""
 
     success: bool
     message: str
@@ -39,7 +39,7 @@ class LLMTestResponse(BaseModel):
 
 
 class SummaryJobCreate(BaseModel):
-    """Request for POST /api/summary/jobs"""
+    """POST /api/summary/jobs 请求"""
 
     name: str = "New Summary"
     cron: str = "0 21 * * *"
@@ -51,7 +51,7 @@ class SummaryJobCreate(BaseModel):
 
 
 class SummaryJobUpdate(BaseModel):
-    """Request for PUT /api/summary/jobs/{id}"""
+    """PUT /api/summary/jobs/{id} 请求"""
 
     name: Optional[str] = None
     cron: Optional[str] = None
@@ -63,7 +63,7 @@ class SummaryJobUpdate(BaseModel):
 
 
 class SummaryJobResponse(BaseModel):
-    """Response for summary job CRUD"""
+    """summary job CRUD 响应"""
 
     name: str
     cron: str
@@ -72,12 +72,12 @@ class SummaryJobResponse(BaseModel):
     system_prompt: str
     max_records: int
     enabled: bool
-    # Read-only notification type for UI display
+    # 只读的 notification_type，供前端展示
     notification_type: str = ""
 
     @classmethod
     def from_config_dict(cls, data: dict) -> "SummaryJobResponse":
-        """Build from config_manager.get_summary_configs() dict"""
+        """从 config_manager.get_summary_configs() 字典构建"""
 
         def _int(key: str, default: int) -> int:
             v = data.get(key, default)
@@ -106,7 +106,7 @@ class SummaryJobResponse(BaseModel):
 
 
 class SummaryJobTestResponse(BaseModel):
-    """Response for POST /api/summary/jobs/{id}/test"""
+    """POST /api/summary/jobs/{id}/test 响应"""
 
     success: bool
     job_name: str
@@ -121,7 +121,7 @@ class SummaryJobTestResponse(BaseModel):
 
 
 class LLMUsageStatsResponse(BaseModel):
-    """Response for GET /api/summary/llm/stats"""
+    """GET /api/summary/llm/stats 响应"""
 
     total_calls: int = 0
     total_tokens: int = 0

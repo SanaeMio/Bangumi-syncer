@@ -1,8 +1,7 @@
-"""LLM client with retry logic and usage logging (Task 1.4).
+"""LLM 客户端（重试逻辑与用量日志记录）。
 
-Provides LLMClient -- a wrapper around the OpenAI-compatible provider
-that adds automatic retries with backoff and cost logging to the
-database.  Also exports a module-level singleton via get_llm_client().
+提供 LLMClient —— 对 OpenAI 兼容 provider 的封装，增加了自动重试（含退避等待）
+和用量记录功能。同时通过 get_llm_client() 导出模块级单例。
 """
 
 from __future__ import annotations
@@ -40,14 +39,14 @@ def _build_provider(provider: str, cfg: dict, proxy: str | None):
 
 
 class LLMClient:
-    """Singleton LLM client with retry logic and usage logging.
+    """LLM 客户端单例（含重试逻辑与用量日志记录）。
 
-    Provider selection is driven by the ``provider`` key in the [llm]
-    config section (default ``"openai_compat"``).
+    Provider 选择由 [llm] 配置节中的 ``provider`` 键驱动
+    （默认 ``"openai_compat"``）。
     """
 
     MAX_RETRIES = 2
-    RETRY_BACKOFF: list[int] = [1, 3]  # seconds
+    RETRY_BACKOFF: list[int] = [1, 3]  # 秒
 
     def __init__(self) -> None:
         cfg = config_manager.get_llm_config()
@@ -63,17 +62,16 @@ class LLMClient:
         job_name: str | None = None,
         **kwargs,
     ) -> ChatResponse:
-        """Send chat request with retry logic.  Logs usage to database.
+        """发送聊天请求（含重试逻辑），记录用量到数据库。
 
         Args:
-            messages: The conversation messages.
-            job_id: Optional job identifier for usage tracking.
-            job_name: Optional job name for usage tracking.
-            **kwargs: Provider-specific overrides (temperature, max_tokens, etc.).
+            messages: 对话消息列表。
+            job_id: 可选的 job 标识符，用于用量追踪。
+            job_name: 可选的 job 名称，用于用量追踪。
+            **kwargs: provider 特定的覆盖参数（temperature、max_tokens 等）。
 
         Returns:
-            A ChatResponse on success, or an empty ChatResponse if all
-            retries are exhausted.
+            成功时返回 ChatResponse，所有重试耗尽时返回空的 ChatResponse。
         """
         last_error: Exception | None = None
         t_start = time.time()
@@ -104,7 +102,7 @@ class LLMClient:
                     )
                     await asyncio.sleep(delay)
 
-        # All retries exhausted -- log error and return empty response.
+        # 所有重试耗尽 —— 记录错误并返回空响应
         latency_ms = int((time.time() - t_start) * 1000)
         error_msg = str(last_error)
         logger.error(f"LLM call failed after {self.MAX_RETRIES} retries: {error_msg}")
@@ -166,14 +164,14 @@ class LLMClient:
             logger.error(f"Failed to log LLM usage: {e}")
 
 
-# Module-level singleton ------------------------------------------------
+# 模块级单例 ----------------------------------------------------------------
 
 
 _llm_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
-    """Return the module-level LLMClient singleton, creating it on first call."""
+    """返回模块级 LLMClient 单例，首次调用时创建。"""
     global _llm_client
     if _llm_client is None:
         _llm_client = LLMClient()

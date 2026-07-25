@@ -1,4 +1,4 @@
-"""Tests for app.services.llm.providers.base (Task 1.2)."""
+"""app.services.llm.providers.base 测试（任务 1.2）。"""
 
 import pytest
 
@@ -7,15 +7,15 @@ from app.services.llm.providers.base import BaseProvider
 
 
 class TestBaseProvider:
-    """BaseProvider ABC contract tests."""
+    """BaseProvider ABC 接口契约测试。"""
 
     def test_cannot_instantiate_abstract(self):
-        """BaseProvider cannot be instantiated directly."""
+        """BaseProvider 无法直接实例化。"""
         with pytest.raises(TypeError):
             BaseProvider()  # type: ignore[abstract]
 
     def test_subclass_without_chat_raises(self):
-        """A subclass that doesn't implement chat() cannot be instantiated."""
+        """未实现 chat() 的子类无法实例化。"""
         with pytest.raises(TypeError):
 
             class IncompleteProvider(BaseProvider):
@@ -25,7 +25,7 @@ class TestBaseProvider:
 
     @pytest.mark.asyncio
     async def test_properly_implemented_subclass_works(self):
-        """A subclass implementing chat() can be instantiated and called."""
+        """实现了 chat() 的子类可以被实例化和调用。"""
 
         class WorkingProvider(BaseProvider):
             async def chat(self, messages, **kwargs):

@@ -1,4 +1,4 @@
-"""Summary service package."""
+"""Summary 服务包。"""
 
 from .models import SummaryJobConfig
 from .scheduler import SummaryScheduler, summary_scheduler

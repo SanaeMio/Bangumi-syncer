@@ -1,4 +1,4 @@
-"""Summary generation service — orchestrates DB query, LLM call, and notification delivery."""
+"""Summary 生成服务 —— 编排数据库查询、LLM 调用和通知发送。"""
 
 from __future__ import annotations
 
@@ -11,29 +11,29 @@ from app.utils.notifier import get_notifier
 from ..llm import Message, get_llm_client
 from .models import SummaryJobConfig
 
-# Internal constant — user-customizable prompt structure, not exposed to config.ini
+# 内部常量 —— 用户可自定义的 prompt 结构，不暴露到 config.ini
 _USER_PROMPT_TEMPLATE = (
     "{date_from} 至 {date_to} 观影记录（共 {record_count} 条）：\n\n{records}"
 )
 
 
 class SummaryService:
-    """Generates AI-powered summaries of watching records."""
+    """生成 AI 驱动的追番观影总结。"""
 
     async def generate_summary(self, job_config: SummaryJobConfig) -> dict:
-        """Query DB, format records, call LLM.
+        """查询数据库，格式化记录，调用 LLM。
 
-        Returns dict with keys: summary_text, model, usage, record_count,
-        date_from, date_to.
+        返回字典，包含以下键：summary_text、model、usage、record_count、
+        date_from、date_to。
         """
-        # 1. Calculate date range
+        # 1. 计算日期范围
         now = datetime.now()
         date_from = (now - timedelta(days=job_config.lookback_days)).strftime(
             "%Y-%m-%d"
         )
         date_to = now.strftime("%Y-%m-%d")
 
-        # 2. Query records
+        # 2. 查询记录
         records = database_manager.get_records_in_date_range(
             date_from=date_from,
             date_to=date_to,
@@ -42,10 +42,10 @@ class SummaryService:
         )
         record_count = len(records)
 
-        # 3. Format records into text
+        # 3. 格式化记录为文本
         records_text = self._format_records(records)
 
-        # 4. Build messages
+        # 4. 构建消息
         system_prompt = job_config.system_prompt.strip()
         if not system_prompt:
             system_prompt = SummaryJobConfig.system_prompt
@@ -61,7 +61,7 @@ class SummaryService:
             Message(role="user", content=user_content),
         ]
 
-        # 5. Call LLM
+        # 5. 调用 LLM
         client = get_llm_client()
         response = await client.chat(
             messages,
@@ -79,15 +79,15 @@ class SummaryService:
         }
 
     async def execute_job(self, job_config: SummaryJobConfig) -> None:
-        """Full execution: generate summary, then send via Notifier."""
+        """完整执行：生成摘要，然后通过通知器发送。"""
         try:
             result = await self.generate_summary(job_config)
 
-            # Build notification type
+            # 构建通知类型
             user_name = job_config.user_name.strip() if job_config.user_name else ""
             notif_type = f"watching_summary_{job_config.name}"
 
-            # Build data dict
+            # 构建数据字典
             usage = result["usage"]
             data = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -108,7 +108,7 @@ class SummaryService:
             logger.error(f"Summary job '{job_config.name}' failed: {e}")
 
     def _format_records(self, records: list[dict]) -> str:
-        """Format sync records into a compact text table."""
+        """将同步记录格式化为紧凑的文本表格。"""
         if not records:
             return "（无记录）"
         lines = []
@@ -130,5 +130,5 @@ class SummaryService:
         return "\n".join(lines)
 
 
-# Singleton
+# 单例
 summary_service = SummaryService()

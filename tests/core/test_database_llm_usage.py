@@ -1,5 +1,5 @@
 """
-Tests for LLMUsageRepository
+LLMUsageRepository 测试。
 """
 
 import sqlite3
@@ -7,18 +7,18 @@ from unittest.mock import patch
 
 
 def _approx(value, expected, tolerance=10):
-    """Assert *value* is within *tolerance* of *expected*."""
+    """断言 *value* 在 *expected* 的 *tolerance* 范围内。"""
     return abs(value - expected) <= tolerance
 
 
 class TestLLMUsageRepository:
-    """Tests for the LLMUsageRepository (table, log_usage, get_stats, cleanup)."""
+    """LLMUsageRepository 测试（表创建、log_usage、get_stats、cleanup）。"""
 
-    # ── helpers ───────────────────────────────────────────────────────
+    # ── 辅助函数 ───────────────────────────────────────────────────────
 
     @staticmethod
     def _make_db(temp_dir):
-        """Create a DatabaseManager pointed at a temp file and return it."""
+        """创建一个指向临时文件的 DatabaseManager 并返回。"""
         db_path = temp_dir / "llm.db"
         with patch("app.core.database.logger"):
             from app.core.database import DatabaseManager
@@ -30,7 +30,7 @@ class TestLLMUsageRepository:
     def _raw_conn(temp_dir):
         return sqlite3.connect(str(temp_dir / "llm.db"))
 
-    # ── table creation ───────────────────────────────────────────────
+    # ── 表创建 ───────────────────────────────────────────────
 
     def test_table_created_on_init(self, temp_dir, reset_singletons):
         _ = self._make_db(temp_dir)
@@ -80,13 +80,13 @@ class TestLLMUsageRepository:
                 assert cursor.fetchone() is not None, f"Index {idx_name} not found"
 
     def test_table_idempotent(self, temp_dir, reset_singletons):
-        """Calling _ensure_table twice does not raise."""
+        """重复调用 _ensure_table 不会抛出异常。"""
         db = self._make_db(temp_dir)
-        # Trigger again by calling log_usage (which calls _ensure_table)
+        # 通过调用 log_usage（其内部会调用 _ensure_table）再次触发
         for _ in range(3):
             assert db.llm_usage.log_usage(model="gpt-4", total_tokens=10)
 
-    # ── log_usage ────────────────────────────────────────────────────
+    # ── 日志记录 ────────────────────────────────────────────────────
 
     def test_log_usage_minimal(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
@@ -136,9 +136,9 @@ class TestLLMUsageRepository:
         )
 
     def test_log_usage_returns_false_on_error(self, temp_dir, reset_singletons):
-        """Force a DB error and verify log_usage returns False."""
+        """强制触发数据库错误并验证 log_usage 返回 False。"""
         db = self._make_db(temp_dir)
-        # Simulate connection drop so the next operation fails.
+        # 模拟连接断开，使下一次操作失败。
         db._conn = None
         with patch(
             "app.core.database.sqlite3.connect", side_effect=OSError("disk full")
@@ -146,7 +146,7 @@ class TestLLMUsageRepository:
             result = db.llm_usage.log_usage(model="test")
         assert result is False
 
-    # ── get_stats: aggregate ─────────────────────────────────────────
+    # ── get_stats: 聚合 ─────────────────────────────────────────
 
     def test_get_stats_aggregate(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
@@ -176,7 +176,7 @@ class TestLLMUsageRepository:
         assert stats.error_count == 0
         assert stats.avg_latency_ms == 0
 
-    # ── get_stats: detailed ──────────────────────────────────────────
+    # ── get_stats: 明细 ──────────────────────────────────────────
 
     def test_get_stats_detailed_includes_by_model(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
@@ -230,7 +230,7 @@ class TestLLMUsageRepository:
 
         repo.log_usage(model="m", total_tokens=1, status="success")
 
-        # Should not return data when days=0 (excludes all)
+        # days=0 时不应返回数据（排除所有）
         stats = repo.get_stats(scope="detailed", days=0)
         assert stats.total_calls == 0
 
@@ -238,17 +238,17 @@ class TestLLMUsageRepository:
         db = self._make_db(temp_dir)
         repo = db.llm_usage
         repo.log_usage(model="m", total_tokens=100, status="success")
-        stats = repo.get_stats()  # default scope
+        stats = repo.get_stats()  # 默认 scope
         assert not stats.by_model  # aggregate 不返回明细
         assert stats.total_calls == 1
 
-    # ── cleanup ──────────────────────────────────────────────────────
+    # ── 清理 ──────────────────────────────────────────────────────
 
     def test_cleanup_deletes_old_records(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
         repo = db.llm_usage
 
-        # Insert a record with a known old timestamp.
+        # 插入一条带有已知旧时间戳的记录。
         with self._raw_conn(temp_dir) as raw:
             raw.execute(
                 """INSERT INTO llm_usage_logs
@@ -293,14 +293,14 @@ class TestLLMUsageRepository:
         deleted = repo.cleanup_old(retention_days=0)
         assert deleted == 0
 
-    # ── default retention days ──────────────────────────────────────
+    # ── 默认保留天数 ──────────────────────────────────────
 
     def test_default_retention_days_is_365(self):
         from app.core.database.llm_usage import LLMUsageRepository
 
         assert LLMUsageRepository._DEFAULT_RETENTION_DAYS == 365
 
-    # ── DatabaseManager wiring ───────────────────────────────────────
+    # ── DatabaseManager 关联 ───────────────────────────────────────
 
     def test_database_manager_has_llm_usage_attribute(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
@@ -310,8 +310,8 @@ class TestLLMUsageRepository:
         assert isinstance(db.llm_usage, LLMUsageRepository)
 
     def test_llm_usage_accessible_after_reconnect(self, temp_dir, reset_singletons):
-        """log_usage still works after _conn is reset (simulated reconnect)."""
+        """_conn 重置（模拟重连）后 log_usage 仍可正常工作。"""
         db = self._make_db(temp_dir)
-        db._conn = None  # simulate connection drop
+        db._conn = None  # 模拟连接断开
         assert db.llm_usage.log_usage(model="reconnect-test", total_tokens=5)
         assert db.llm_usage.get_stats().total_calls == 1

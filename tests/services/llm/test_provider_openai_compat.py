@@ -1,4 +1,4 @@
-"""Tests for app.services.llm.providers.openai_compat (Task 1.3)."""
+"""app.services.llm.providers.openai_compat 测试（任务 1.3）。"""
 
 from typing import Optional
 from unittest.mock import AsyncMock, Mock, patch
@@ -18,7 +18,7 @@ def _make_mock_client(  # noqa: PLR0913
     post_side_effect: Optional[Exception] = None,
     raise_for_status_side_effect: Optional[Exception] = None,
 ):
-    """Create a mock httpx.AsyncClient ready for use in `async with`."""
+    """创建一个 mock httpx.AsyncClient，准备用于 `async with`。"""
 
     mock_response = Mock()
     mock_response.status_code = status_code
@@ -40,8 +40,8 @@ def _make_mock_client(  # noqa: PLR0913
 
     mock_client.aclose = AsyncMock()
 
-    # Ensure async with returns the same mock_client,
-    # and __aexit__ calls aclose (matching real httpx behaviour).
+    # 确保 async with 返回同一个 mock_client，
+    # 且 __aexit__ 调用 aclose（匹配真实 httpx 行为）。
     mock_client.__aenter__.return_value = mock_client
 
     async def _mock_aexit(*args, **kwargs):
@@ -53,7 +53,7 @@ def _make_mock_client(  # noqa: PLR0913
 
 
 class TestOpenAICompatProviderInit:
-    """Constructor and default values."""
+    """构造函数和默认值。"""
 
     def test_default_values(self):
         provider = OpenAICompatProvider(
@@ -82,11 +82,11 @@ class TestOpenAICompatProviderInit:
 
 
 class TestOpenAICompatProviderChat:
-    """Integration tests for chat() method using mocked httpx."""
+    """使用 mock httpx 的 chat() 方法集成测试。"""
 
     @pytest.mark.asyncio
     async def test_request_format(self):
-        """Verify the correct request format is sent to the API."""
+        """验证发送到 API 的请求格式正确。"""
         mock_client = _make_mock_client(
             json_body={
                 "choices": [{"message": {"content": "Hello, world!"}}],
@@ -117,10 +117,10 @@ class TestOpenAICompatProviderChat:
         mock_client.post.assert_called_once()
         call_args = mock_client.post.call_args
 
-        # Check URL
+        # 验证 URL
         assert call_args[0][0] == "https://api.openai.com/v1/chat/completions"
 
-        # Check request body
+        # 验证请求体
         body = call_args[1]["json"]
         assert body["model"] == "gpt-4o-mini"
         assert body["max_tokens"] == 2000
@@ -130,17 +130,17 @@ class TestOpenAICompatProviderChat:
             {"role": "user", "content": "Hello"},
         ]
 
-        # Check headers
+        # 验证 headers
         headers = call_args[1]["headers"]
         assert headers["Authorization"] == "Bearer sk-test"
         assert headers["Content-Type"] == "application/json"
 
-        # Check timeout
+        # 验证超时
         assert call_args[1]["timeout"] == 60
 
     @pytest.mark.asyncio
     async def test_normal_response_parsing(self):
-        """Verify normal response parsing extracts content and usage."""
+        """验证正常的响应解析能提取内容和 usage。"""
         mock_client = _make_mock_client(
             json_body={
                 "choices": [{"message": {"content": "The answer is 42."}}],
@@ -169,7 +169,7 @@ class TestOpenAICompatProviderChat:
 
     @pytest.mark.asyncio
     async def test_response_without_usage(self):
-        """Response without usage field should still parse correctly."""
+        """没有 usage 字段的响应也应正确解析。"""
         mock_client = _make_mock_client(
             json_body={
                 "choices": [{"message": {"content": "No usage here."}}],
@@ -190,7 +190,7 @@ class TestOpenAICompatProviderChat:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("status_code", [401, 429, 500])
     async def test_http_error_handling(self, status_code):
-        """HTTP errors should raise httpx.HTTPStatusError."""
+        """HTTP 错误应抛出 httpx.HTTPStatusError。"""
         mock_client = _make_mock_client(
             status_code=status_code,
             raise_for_status_side_effect=httpx.HTTPStatusError(
@@ -209,7 +209,7 @@ class TestOpenAICompatProviderChat:
 
     @pytest.mark.asyncio
     async def test_timeout_handling(self):
-        """Timeout should propagate as httpx.TimeoutException."""
+        """超时应作为 httpx.TimeoutException 传播。"""
         mock_client = _make_mock_client(
             post_side_effect=httpx.TimeoutException("timeout")
         )
@@ -223,7 +223,7 @@ class TestOpenAICompatProviderChat:
 
     @pytest.mark.asyncio
     async def test_json_parse_failure(self):
-        """A non-JSON response should raise a json decode error."""
+        """非 JSON 响应应抛出 JSON 解码错误。"""
         mock_client = _make_mock_client(json_side_effect=ValueError("Invalid JSON"))
 
         with patch("httpx.AsyncClient", return_value=mock_client):
@@ -235,7 +235,7 @@ class TestOpenAICompatProviderChat:
 
     @pytest.mark.asyncio
     async def test_extra_kwargs_override_defaults(self):
-        """Extra kwargs passed to chat() should override default parameters."""
+        """传递给 chat() 的额外 kwargs 应覆盖默认参数。"""
         mock_client = _make_mock_client(
             json_body={
                 "choices": [{"message": {"content": "OK"}}],
@@ -266,7 +266,7 @@ class TestOpenAICompatProviderChat:
 
     @pytest.mark.asyncio
     async def test_context_manager_cleanup(self):
-        """The httpx client should be properly closed via context manager."""
+        """httpx 客户端应通过上下文管理器正确关闭。"""
         mock_client = _make_mock_client(
             json_body={
                 "choices": [{"message": {"content": "OK"}}],
@@ -280,5 +280,5 @@ class TestOpenAICompatProviderChat:
             )
             await provider.chat([Message(role="user", content="Q")])
 
-        # Inside `async with`, __aexit__ should call aclose
+        # 在 `async with` 内部，__aexit__ 应调用 aclose
         mock_client.aclose.assert_awaited_once()
