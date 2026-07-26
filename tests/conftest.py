@@ -12,27 +12,35 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 # ===== 在导入 app 模块前重定向 CONFIG_FILE =====
-# 防止 SecurityManager / ConfigManager 单例在模块导入时
-# 初始化并写回工作区 config.ini（_init_auth_config / _migrate_config）
-# config.ini 已加入 .gitignore（本地配置），优先从 git 跟踪的 config.example.ini 复制
+# 优先使用 git 跟踪的 config.example.ini 作为测试基线（安全、可复现），
+# 避免 config.ini 中的本地配置（token、enabled=True、proxy 等）污染测试。
+# config.ini 已加入 .gitignore（含敏感信息），仅在显式设置环境变量
+# BS_TEST_USE_LOCAL_CONFIG=1 时才使用，便于本地调试真实场景。
 _REPO_ROOT = Path(__file__).parent.parent
 _ORIG_CONFIG_INI = _REPO_ROOT / "config.ini"
 _ORIG_CONFIG_EXAMPLE = _REPO_ROOT / "config.example.ini"
 _TEST_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="bs_test_config_"))
 _TEST_CONFIG_INI = _TEST_CONFIG_DIR / "config.ini"
-if _ORIG_CONFIG_INI.exists():
+
+_use_local_config = os.environ.get("BS_TEST_USE_LOCAL_CONFIG", "") == "1"
+if _use_local_config and _ORIG_CONFIG_INI.exists():
+    # 显式 opt-in：本地调试时使用真实 config.ini（含 token/proxy 等）
     shutil.copy2(_ORIG_CONFIG_INI, _TEST_CONFIG_INI)
 elif _ORIG_CONFIG_EXAMPLE.exists():
+    # 默认：使用 git 跟踪的 example，保证测试可复现
     shutil.copy2(_ORIG_CONFIG_EXAMPLE, _TEST_CONFIG_INI)
+elif _ORIG_CONFIG_INI.exists():
+    # 兜底：example 不存在时用 config.ini（不应发生，example 在 git 中）
+    shutil.copy2(_ORIG_CONFIG_INI, _TEST_CONFIG_INI)
 else:
     _TEST_CONFIG_INI.write_text("[bangumi]\n", encoding="utf-8")
 os.environ["CONFIG_FILE"] = str(_TEST_CONFIG_INI)
 
 import pytest  # noqa: E402
 
-# 强制禁用 bangumi-archive，避免用户 config.ini 中 enabled=True 触发
-# BangumiArchive 单例在 import 时启动后台索引构建线程（读取真实 658K 条 DB，
-# 耗时 100s+，会卡死测试）。需要 Archive 的测试应显式创建局部实例。
+# 强制禁用 bangumi-archive，避免 enabled=True 触发 BangumiArchive 单例在
+# import 时启动后台索引构建线程（读取真实 658K 条 DB，耗时 100s+，卡死测试）。
+# 需要 Archive 的测试应通过 monkeypatch 显式控制 config_manager.get 返回值。
 # 此操作必须在任何 app 模块导入前完成，确保 config_manager 读到的是禁用状态。
 import configparser  # noqa: E402
 
