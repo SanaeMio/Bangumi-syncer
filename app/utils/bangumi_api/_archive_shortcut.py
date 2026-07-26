@@ -244,6 +244,9 @@ class ArchiveShortcut:
         命中后通过 archive_store 拉取完整 subject 数据并按 type/air_date 过滤，
         对齐 API 的 filter 行为（type 默认 [2]，air_date 区间为 [start, end)）。
 
+        索引未就绪时（首次启动或后台构建期间）返回 archive_miss 降级到 API，
+        同时懒触发后台构建，避免阻塞调用方。
+
         Returns:
             hit=True 时 data 是 list[dict]（对齐 API data 字段内容）
             hit=False 时 data 为 None，调用方应走 API
@@ -252,6 +255,11 @@ class ArchiveShortcut:
             return ShortcutResult(False, None, "archive_disabled")
         try:
             from ..bangumi_archive._title_index import archive_title_index
+
+            # 索引未就绪时降级到 API，并懒触发后台构建
+            if not archive_title_index.is_ready:
+                archive_title_index.build_in_background()
+                return ShortcutResult(False, None, "archive_miss")
 
             # 1. 精确匹配
             ids = archive_title_index.find_subject_ids_by_title(title)
@@ -307,6 +315,8 @@ class ArchiveShortcut:
         命中后调用方（bgm_search）会取前 N 条调 get_subject 拉详情，
         由于 get_subject 也接入了 Archive 短路，整条链路全走 Archive。
 
+        索引未就绪时返回 archive_miss 降级到 API，并懒触发后台构建。
+
         Returns:
             hit=True 时 data 是 list[dict]（对齐旧版 API 的 list 字段）
             hit=False 时 data 为 None，调用方应走 API
@@ -315,6 +325,11 @@ class ArchiveShortcut:
             return ShortcutResult(False, None, "archive_disabled")
         try:
             from ..bangumi_archive._title_index import archive_title_index
+
+            # 索引未就绪时降级到 API，并懒触发后台构建
+            if not archive_title_index.is_ready:
+                archive_title_index.build_in_background()
+                return ShortcutResult(False, None, "archive_miss")
 
             # 1. 精确匹配
             ids = archive_title_index.find_subject_ids_by_title(title)

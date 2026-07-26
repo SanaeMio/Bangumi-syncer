@@ -13,6 +13,7 @@ import json
 import sqlite3
 import zipfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -438,3 +439,130 @@ class TestBangumiArchive:
             "data_dir",
         }
         assert set(status.keys()) >= expected_keys
+
+
+class TestBackgroundIndexBuildOnStartup:
+    """BangumiArchive 启动时触发标题索引后台构建"""
+
+    def test_init_triggers_build_when_enabled_and_db_exists(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """enabled=True 且 active DB 存在时，__init__ 应触发后台构建"""
+        # 准备 active DB
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        db_a = data_dir / "bangumi_archive_a.db"
+        db_a.touch()  # 创建空文件表示存在
+
+        # mock config_manager
+        def mock_get(section, key, fallback=None):
+            if section == "bangumi-archive":
+                if key == "enabled":
+                    return "true"
+                if key == "data_dir":
+                    return str(data_dir)
+                if key == "min_disk_space_mb":
+                    return "1"
+            return fallback
+
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._archive.config_manager.get",
+            mock_get,
+        )
+
+        # mock archive_title_index.build_in_background
+        mock_build = MagicMock()
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._title_index.archive_title_index.build_in_background",
+            mock_build,
+        )
+
+        BangumiArchive()
+        mock_build.assert_called_once()
+
+    def test_init_skips_build_when_disabled(self, tmp_path: Path, monkeypatch):
+        """enabled=False 时不触发后台构建"""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        def mock_get(section, key, fallback=None):
+            if section == "bangumi-archive":
+                if key == "enabled":
+                    return "false"
+                if key == "data_dir":
+                    return str(data_dir)
+            return fallback
+
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._archive.config_manager.get",
+            mock_get,
+        )
+
+        mock_build = MagicMock()
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._title_index.archive_title_index.build_in_background",
+            mock_build,
+        )
+
+        BangumiArchive()
+        mock_build.assert_not_called()
+
+    def test_init_skips_build_when_db_missing(self, tmp_path: Path, monkeypatch):
+        """enabled=True 但 active DB 不存在时不触发构建"""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        # 不创建 bangumi_archive_a.db
+
+        def mock_get(section, key, fallback=None):
+            if section == "bangumi-archive":
+                if key == "enabled":
+                    return "true"
+                if key == "data_dir":
+                    return str(data_dir)
+            return fallback
+
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._archive.config_manager.get",
+            mock_get,
+        )
+
+        mock_build = MagicMock()
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._title_index.archive_title_index.build_in_background",
+            mock_build,
+        )
+
+        BangumiArchive()
+        mock_build.assert_not_called()
+
+    def test_reload_config_triggers_build(self, tmp_path: Path, monkeypatch):
+        """reload_config 后应再次触发后台构建"""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        db_a = data_dir / "bangumi_archive_a.db"
+        db_a.touch()
+
+        def mock_get(section, key, fallback=None):
+            if section == "bangumi-archive":
+                if key == "enabled":
+                    return "true"
+                if key == "data_dir":
+                    return str(data_dir)
+            return fallback
+
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._archive.config_manager.get",
+            mock_get,
+        )
+
+        mock_build = MagicMock()
+        monkeypatch.setattr(
+            "app.utils.bangumi_archive._title_index.archive_title_index.build_in_background",
+            mock_build,
+        )
+
+        archive = BangumiArchive()
+        mock_build.assert_called_once()
+        # reload_config 后再次触发（build_in_background 内部有就绪检查，不会重复构建）
+        archive.reload_config()
+        assert mock_build.call_count == 2

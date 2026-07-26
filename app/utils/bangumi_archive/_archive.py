@@ -161,6 +161,28 @@ class BangumiArchive:
         self._progress_cache: dict[str, ProgressEvent] = {}
         # 进度历史日志（按 task_id）：所有阶段变化记录
         self._progress_logs: dict[str, list[ProgressEvent]] = {}
+        # 启动时后台预构建标题索引（enabled 且 active DB 存在时）
+        # 构建期间 try_search 自动降级到 API，构建完成后查询走 Archive
+        self._maybe_start_background_index_build()
+
+    def _maybe_start_background_index_build(self) -> None:
+        """启动时若 Archive 已启用且 active DB 存在，触发后台构建标题索引
+
+        场景：服务重启后 active DB 仍在，但内存索引已丢失。
+        通过后台线程构建（优先加载磁盘缓存，否则从 DB 构建），
+        避免首次查询时同步阻塞 100s+。
+        """
+        if not self.enabled:
+            return
+        try:
+            active_db = self.get_active_db_path()
+            if not active_db.exists():
+                return
+            from ._title_index import archive_title_index
+
+            archive_title_index.build_in_background()
+        except Exception as e:
+            logger.warning(f"bangumi_archive 启动时后台构建标题索引失败: {e}")
 
     # ===== 配置 =====
 
@@ -203,6 +225,8 @@ class BangumiArchive:
     def reload_config(self) -> None:
         with self._lock:
             self._load_config()
+        # 配置变更后（如从 disabled 切换到 enabled）触发后台构建
+        self._maybe_start_background_index_build()
 
     # ===== meta 与 active 指针 =====
 
@@ -600,6 +624,17 @@ class BangumiArchive:
             f"bangumi_archive 导入完成: active={new_active}, "
             f"rows={row_counts}, duration={duration_sec:.1f}s"
         )
+
+        # 后台预构建标题索引，避免首次查询时阻塞 100s+
+        # 构建期间 try_search 返回 archive_miss 降级到 API
+        try:
+            from ._title_index import archive_title_index
+
+            # active 库切换后旧索引自动失效，此处触发后台重建
+            archive_title_index.invalidate()
+            archive_title_index.build_in_background()
+        except Exception as e:
+            logger.warning(f"bangumi_archive 标题索引后台构建触发失败: {e}")
 
         # 清理下载的 zip（导入完成后统一清理）
         if cleanup_zip:
