@@ -3113,9 +3113,8 @@ function renderSummaryJobs(jobs) {
                         </div>
                     </div>
                     <p class="card-text small text-muted mb-2">
-                        <i class="bi bi-clock me-1"></i>${escapeHtml(job.cron)} | 回溯: ${job.lookback_days}天 | 上限: ${job.max_records}条
+                        <i class="bi bi-clock me-1"></i>${escapeHtml(job.cron)} | 回溯: ${job.lookback_days}天 | 上限: ${job.max_records}条${job.user_name ? ' | <i class="bi bi-person me-1"></i>' + escapeHtml(job.user_name) : ''}
                     </p>
-                    ${job.user_name ? '<p class="card-text small text-muted mb-2"><i class="bi bi-person me-1"></i>' + escapeHtml(job.user_name) + '</p>' : ''}
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="editSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-pencil me-1"></i>编辑</button>
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-trash me-1"></i>删除</button>

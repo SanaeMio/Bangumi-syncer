@@ -99,6 +99,7 @@ class SummaryService:
                     summary_text,
                     inbox_type="summary_llm_failed",
                     inbox_title=f"追番总结失败：{job_config.name}",
+                    inbox_body="LLM 返回空内容，请检查 API 地址和密钥",
                 )
                 return
 
@@ -115,6 +116,7 @@ class SummaryService:
                 summary_text,
                 inbox_type="summary_job_failed",
                 inbox_title=f"追番总结异常：{job_config.name}",
+                inbox_body="执行异常，请检查任务配置",
             )
 
     def _send_success_notification(
@@ -145,6 +147,7 @@ class SummaryService:
         *,
         inbox_type: str,
         inbox_title: str,
+        inbox_body: str = "",
     ) -> None:
         """发送失败通知（webhook + 邮件 + 收件箱）。"""
         data = {
@@ -163,7 +166,9 @@ class SummaryService:
         )
         try:
             database_manager.insert_notification(
-                notif_type=inbox_type, title=inbox_title, body=summary_text
+                notif_type=inbox_type,
+                title=inbox_title,
+                body=inbox_body or summary_text,
             )
         except Exception as e:
             logger.error(f"写入收件箱通知失败: {e}")
