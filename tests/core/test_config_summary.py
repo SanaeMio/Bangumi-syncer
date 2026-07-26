@@ -181,3 +181,83 @@ class TestDeleteSummaryConfig:
         configs = cm2.get_summary_configs()
         assert len(configs) == 1
         assert configs[0]["name"] == "每周总结"
+
+
+_RENAME_INI = """[bangumi]
+username = u
+[summary-旧任务]
+enabled = true
+name = 旧任务
+cron = 0 21 * * *
+[webhook-1]
+id = 1
+enabled = true
+url = http://example.com
+types = mark_success, watching_summary_旧任务, mark_failed
+[webhook-2]
+id = 2
+enabled = true
+url = http://other.com
+types = all
+[email-1]
+id = 1
+enabled = true
+smtp_server = smtp.example.com
+types = watching_summary_旧任务, mark_failed
+[email-2]
+id = 2
+enabled = false
+smtp_server = smtp2.example.com
+types = mark_success
+"""
+
+
+class TestRenameNotificationType:
+    """rename_notification_type 测试。"""
+
+    def test_replaces_in_webhook_types(self, tmp_path):
+        cm = _cm_from_ini(tmp_path, _RENAME_INI)
+        updated = cm.rename_notification_type(
+            "watching_summary_旧任务", "watching_summary_新任务"
+        )
+        assert updated >= 2  # webhook-1 + email-1
+        config = cm.get_config_parser()
+        wh_types = config.get("webhook-1", "types")
+        assert "watching_summary_旧任务" not in wh_types
+        assert "watching_summary_新任务" in wh_types
+        assert "mark_success" in wh_types
+        assert "mark_failed" in wh_types
+
+    def test_replaces_in_email_types(self, tmp_path):
+        cm = _cm_from_ini(tmp_path, _RENAME_INI)
+        cm.rename_notification_type(
+            "watching_summary_旧任务", "watching_summary_新任务"
+        )
+        config = cm.get_config_parser()
+        em_types = config.get("email-1", "types")
+        assert "watching_summary_旧任务" not in em_types
+        assert "watching_summary_新任务" in em_types
+
+    def test_skips_all_types(self, tmp_path):
+        cm = _cm_from_ini(tmp_path, _RENAME_INI)
+        cm.rename_notification_type(
+            "watching_summary_旧任务", "watching_summary_新任务"
+        )
+        config = cm.get_config_parser()
+        assert config.get("webhook-2", "types") == "all"
+
+    def test_no_match_returns_zero(self, tmp_path):
+        cm = _cm_from_ini(tmp_path, _RENAME_INI)
+        updated = cm.rename_notification_type(
+            "watching_summary_不存在", "watching_summary_xxx"
+        )
+        assert updated == 0
+
+    def test_persists_to_disk(self, tmp_path):
+        cm = _cm_from_ini(tmp_path, _RENAME_INI)
+        cm.rename_notification_type(
+            "watching_summary_旧任务", "watching_summary_新任务"
+        )
+        cm2 = _cm_from_ini(tmp_path, cm.active_config_path.read_text(encoding="utf-8"))
+        config = cm2.get_config_parser()
+        assert "watching_summary_新任务" in config.get("webhook-1", "types")

@@ -622,6 +622,31 @@ class ConfigManager:
                 config.remove_section(section_name)
                 self._save_config(config)
 
+    def rename_notification_type(self, old_type: str, new_type: str) -> int:
+        """将 webhook/邮件配置中的通知类型从 old_type 替换为 new_type。
+
+        用于追番总结任务改名时，自动更新已订阅该任务通知的 webhook/邮件配置，
+        避免用户手动重新勾选。
+        """
+        updated = 0
+        with self._lock:
+            config = self._get_config_parser_nolock()
+            for section in config.sections():
+                if not (section.startswith("webhook-") or section.startswith("email-")):
+                    continue
+                types_raw = config.get(section, "types", fallback="")
+                if not types_raw or types_raw.strip() == "all":
+                    continue
+                type_list = [t.strip() for t in types_raw.split(",")]
+                if old_type not in type_list:
+                    continue
+                type_list = [new_type if t == old_type else t for t in type_list]
+                config.set(section, "types", ", ".join(type_list))
+                updated += 1
+            if updated:
+                self._save_config(config)
+        return updated
+
     # ────────────────────────────────────────────────────────────────────
 
     def get_all_config(self) -> dict[str, dict[str, Any]]:

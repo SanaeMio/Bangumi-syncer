@@ -60,6 +60,10 @@ async def update_summary_job(
     updates = body.model_dump(exclude_none=True)
     if "name" in updates:
         _validate_job_name(updates["name"], old_name=decoded)
+        if updates["name"] != decoded:
+            old_type = f"watching_summary_{decoded}"
+            new_type = f"watching_summary_{updates['name']}"
+            config_manager.rename_notification_type(old_type, new_type)
     config_manager.save_summary_config(updates, old_name=decoded)
     config_manager.reload_config()
     await summary_scheduler.apply_config_after_save()
