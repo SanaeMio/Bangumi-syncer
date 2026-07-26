@@ -484,15 +484,17 @@ class SyncRecordsRepository(BaseRepository):
                 params.append(source)
 
             where = " WHERE " + " AND ".join(conditions)
+            limit_clause = "LIMIT ?" if limit > 0 else ""
             query = f"""
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
                        subject_id, episode_id, status, message, source, media_type, bgm_title
                 FROM sync_records
                 {where}
                 ORDER BY timestamp DESC
-                LIMIT ?
+                {limit_clause}
             """
-            params.append(limit)
+            if limit > 0:
+                params.append(limit)
             cursor.execute(query, params)
             return [
                 {

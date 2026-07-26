@@ -3145,7 +3145,7 @@ function showSummaryJobModal() {
     document.getElementById('summary-job-cron').value = '0 21 * * *';
     document.getElementById('summary-job-lookback').value = '1';
     document.getElementById('summary-job-user').value = '';
-    document.getElementById('summary-job-max-records').value = '200';
+    document.getElementById('summary-job-max-records').value = '-1';
     document.getElementById('summary-job-prompt').value =
         '你是一个轻松有趣的追番助手。用户会给你一段指定时间范围内的观影记录，请你用亲切自然的中文生成追番总结。\n\n' +
         '规则：\n' +
@@ -3179,17 +3179,23 @@ async function editSummaryJob(name) {
 
 async function saveSummaryJob() {
     var oldName = document.getElementById('summary-job-old-name').value;
+    var mrVal = parseInt(document.getElementById('summary-job-max-records').value);
     var data = {
         name: document.getElementById('summary-job-name').value,
         cron: document.getElementById('summary-job-cron').value,
         lookback_days: parseInt(document.getElementById('summary-job-lookback').value) || 1,
         user_name: document.getElementById('summary-job-user').value,
-        max_records: parseInt(document.getElementById('summary-job-max-records').value) || 200,
+        max_records: isNaN(mrVal) ? -1 : mrVal,
         system_prompt: document.getElementById('summary-job-prompt').value,
     };
     // 前端校验：名称不能含逗号，不能与已有任务重名
     if (data.name.indexOf(',') !== -1) {
         showAlert('任务名称不能包含逗号（,）', 'danger');
+        return;
+    }
+    // 最大记录数校验：只允许 -1（不限制）或正整数
+    if (data.max_records !== -1 && (isNaN(data.max_records) || data.max_records <= 0)) {
+        showAlert('最大记录数只能填 -1（不限制）或正整数', 'danger');
         return;
     }
     var jobs = window._summaryJobs || [];
@@ -3854,9 +3860,10 @@ function escapeHtml(str) {
                             <input type="number"
                                    class="form-control"
                                    id="summary-job-max-records"
-                                   value="200"
-                                   min="1"
-                                   max="1000">
+                                   value="-1"
+                                   min="-1"
+                                   max="10000">
+                            <small class="text-muted">-1 表示不限制条数</small>
                         </div>
                         <div class="col-12">
                             <label class="form-label">

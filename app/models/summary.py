@@ -46,7 +46,7 @@ class SummaryJobCreate(BaseModel):
     lookback_days: int = 1
     user_name: str = ""
     system_prompt: str = ""
-    max_records: int = 200
+    max_records: int = -1  # -1 表示不限制
     enabled: bool = True
 
 
@@ -99,7 +99,7 @@ class SummaryJobResponse(BaseModel):
             lookback_days=_int("lookback_days", 1),
             user_name=user_name,
             system_prompt=str(data.get("system_prompt", "")),
-            max_records=_int("max_records", 200),
+            max_records=_int("max_records", -1),
             enabled=enabled,
             notification_type=notif_type,
         )

@@ -19,7 +19,7 @@ class SummaryJobConfig:
         "4. 加一两句轻松评论，语气像朋友聊天，不要太正式\n"
         "5. 限制在 300 字以内"
     )
-    max_records: int = 200
+    max_records: int = -1  # -1 表示不限制
 
     @classmethod
     def from_config_dict(cls, data: dict) -> "SummaryJobConfig":
@@ -33,5 +33,5 @@ class SummaryJobConfig:
             lookback_days=int(data.get("lookback_days", 1)),
             user_name=str(data.get("user_name", "")),
             system_prompt=str(data.get("system_prompt", cls.system_prompt)),
-            max_records=int(data.get("max_records", 200)),
+            max_records=int(data.get("max_records", -1)),
         )
