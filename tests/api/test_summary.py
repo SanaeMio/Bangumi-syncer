@@ -427,7 +427,7 @@ class TestGetLLMConfig:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            response = await client.get("/llm/conf")
+            response = await client.get("/api/llm/conf")
             assert response.status_code == 200
             data = response.json()
             assert data["api_base"] == "https://custom.api/v1"
@@ -455,7 +455,7 @@ class TestGetLLMConfig:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.get("/llm/conf")
+                response = await client.get("/api/llm/conf")
                 assert response.json()["api_key"] == "***"
 
     @pytest.mark.asyncio
@@ -476,7 +476,7 @@ class TestGetLLMConfig:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.get("/llm/conf")
+                response = await client.get("/api/llm/conf")
                 assert response.json()["api_key"] == ""
 
     def _create_test_app(self):
@@ -525,7 +525,7 @@ class TestUpdateLLMConfig:
                     "temperature": 0.1,
                     "model": "gpt-4o",
                 }
-                response = await client.put("/llm/conf", json=payload)
+                response = await client.put("/api/llm/conf", json=payload)
                 assert response.status_code == 200
                 data = response.json()
                 assert data["status"] == "success"
@@ -553,7 +553,7 @@ class TestUpdateLLMConfig:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.put("/llm/conf", json={})
+                response = await client.put("/api/llm/conf", json={})
                 assert response.status_code == 200
                 # 没有需要更新的字段，所以不应调用 set_config
                 mock_cm.set_config.assert_not_called()
@@ -561,11 +561,11 @@ class TestUpdateLLMConfig:
 
 
 class TestTestLLMConnection:
-    """POST /llm/test 端点测试。"""
+    """POST /api/llm/test 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_successful_llm_connection(self):
-        """POST /llm/test 在 LLM 有效时应返回成功。"""
+        """POST /api/llm/test 在 LLM 有效时应返回成功。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -594,7 +594,7 @@ class TestTestLLMConnection:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.post("/llm/test")
+                response = await client.post("/api/llm/test")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["success"] is True
@@ -604,7 +604,7 @@ class TestTestLLMConnection:
 
     @pytest.mark.asyncio
     async def test_llm_connection_failure(self):
-        """POST /llm/test 在 LLM 出错时应返回失败。"""
+        """POST /api/llm/test 在 LLM 出错时应返回失败。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -626,7 +626,7 @@ class TestTestLLMConnection:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.post("/llm/test")
+                response = await client.post("/api/llm/test")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["success"] is False
@@ -634,11 +634,11 @@ class TestTestLLMConnection:
 
 
 class TestGetLLMStats:
-    """GET /llm/stats 端点测试。"""
+    """GET /api/llm/stats 端点测试。"""
 
     @pytest.mark.asyncio
     async def test_returns_aggregate_stats(self):
-        """GET /llm/stats 应返回使用统计信息。"""
+        """GET /api/llm/stats 应返回使用统计信息。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -665,7 +665,7 @@ class TestGetLLMStats:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.get("/llm/stats")
+                response = await client.get("/api/llm/stats")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["total_calls"] == 10
@@ -675,7 +675,7 @@ class TestGetLLMStats:
 
     @pytest.mark.asyncio
     async def test_passes_scope_and_days_params(self):
-        """GET /llm/stats 应转发 scope 和 days 参数。"""
+        """GET /api/llm/stats 应转发 scope 和 days 参数。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -697,7 +697,7 @@ class TestGetLLMStats:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                response = await client.get("/llm/stats?scope=detailed&days=7")
+                response = await client.get("/api/llm/stats?scope=detailed&days=7")
                 assert response.status_code == 200
                 mock_db.llm_usage.get_stats.assert_called_once_with(
                     scope="detailed", days=7
