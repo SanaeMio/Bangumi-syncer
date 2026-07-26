@@ -230,6 +230,70 @@ class ArchiveShortcut:
             logger.warning(f"bangumi_archive 短路 find_sequel_chain 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
 
+    def try_search(
+        self,
+        title: str,
+        start_date: str = "",
+        end_date: str = "",
+        limit: int = 5,
+        subject_types: Optional[list[int]] = None,
+    ) -> ShortcutResult:
+        """短路 search API（标题搜索）
+
+        优先精确匹配标题索引，未命中时降级到 rapidfuzz 模糊匹配。
+        命中后通过 archive_store 拉取完整 subject 数据并按 type/air_date 过滤，
+        对齐 API 的 filter 行为（type 默认 [2]，air_date 区间为 [start, end)）。
+
+        Returns:
+            hit=True 时 data 是 list[dict]（对齐 API data 字段内容）
+            hit=False 时 data 为 None，调用方应走 API
+        """
+        if not self._enabled:
+            return ShortcutResult(False, None, "archive_disabled")
+        try:
+            from ..bangumi_archive._title_index import archive_title_index
+
+            # 1. 精确匹配
+            ids = archive_title_index.find_subject_ids_by_title(title)
+
+            # 2. 精确未命中时模糊匹配
+            if not ids:
+                fuzzy = archive_title_index.find_subject_ids_fuzzy(title)
+                ids = [sid for sid, _ in fuzzy]
+
+            if not ids:
+                return ShortcutResult(False, None, "archive_miss")
+
+            # 3. 拉取完整 subject + 过滤
+            # API 默认 type=[2]（与 search() 一致），None/空列表时也用 [2]
+            types_set: set[int] = set(subject_types) if subject_types else {2}
+            results: list[dict[str, Any]] = []
+            for sid in ids:
+                subject = archive_store.get_subject(sid)
+                if subject is None:
+                    continue
+                # type 过滤
+                if subject.get("type") not in types_set:
+                    continue
+                # air_date 过滤：API filter 为 [">=start", "<end"]
+                # subject.date 缺失时不参与过滤（避免误删无日期条目）
+                subj_date = subject.get("date")
+                if isinstance(subj_date, str) and subj_date:
+                    if start_date and subj_date < start_date:
+                        continue
+                    if end_date and subj_date >= end_date:
+                        continue
+                results.append(subject)
+                if len(results) >= limit:
+                    break
+
+            if not results:
+                return ShortcutResult(False, None, "archive_miss")
+            return ShortcutResult(True, results, "archive_hit")
+        except Exception as e:
+            logger.warning(f"bangumi_archive 短路 search 异常: {e}")
+            return ShortcutResult(False, None, "archive_error")
+
 
 # 全局单例
 archive_shortcut = ArchiveShortcut()
