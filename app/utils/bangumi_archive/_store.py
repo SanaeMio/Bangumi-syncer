@@ -24,6 +24,7 @@ from ..bangumi_constants import (
     RELATIONS,
 )
 from ._archive import bangumi_archive
+from ._wiki_parser import parse_infobox
 
 
 class ArchiveStore:
@@ -320,7 +321,9 @@ class ArchiveStore:
 
         关键差异：
         - tags/score/score_details/meta_tags 在 Archive 中是 JSON 字符串，反序列化为 list/dict
-        - 保留 infobox 原始 wiki 串（与 API 一致）
+        - infobox 在 Archive 中是原始 wiki 串（如 {{Infobox|key=value}}），
+          这里通过 wiki_parser 解析为 API 兼容的 list[dict] 格式；
+          解析失败时回退为空列表（与 API 返回空 infobox 行为一致）
         """
         for json_field in ("tags", "score", "score_details", "meta_tags"):
             val = row.get(json_field)
@@ -330,6 +333,23 @@ class ArchiveStore:
                 except (ValueError, TypeError):
                     # 保留原始字符串，不破坏数据
                     pass
+
+        # infobox: 原始 wiki 串 → API 兼容的 list[dict]
+        infobox_raw = row.get("infobox")
+        if isinstance(infobox_raw, str):
+            if infobox_raw:
+                parsed = parse_infobox(infobox_raw)
+                # 解析失败（非 Infobox 模板/格式异常）时回退为空列表，
+                # 与 BangumiApi 在 infobox 字段为空时返回 [] 的行为对齐
+                row["infobox"] = parsed if parsed else []
+            else:
+                # 空字符串视为空 infobox
+                row["infobox"] = []
+        elif infobox_raw is None:
+            # None 视为空 infobox
+            row["infobox"] = []
+        # 已是 list/dict 的异常情况保持原样
+
         return row
 
     @staticmethod
