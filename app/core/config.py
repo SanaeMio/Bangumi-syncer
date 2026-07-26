@@ -594,7 +594,9 @@ class ConfigManager:
         """
         with self._lock:
             config = self._get_config_parser_nolock()
-            name = config_data.get("name", "")
+            name = config_data.get("name") or old_name
+            if not name:
+                raise ValueError("save_summary_config: name 不能为空")
             section_name = f"summary-{name}"
 
             if old_name and old_name != name:
