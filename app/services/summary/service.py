@@ -87,13 +87,25 @@ class SummaryService:
             user_name = job_config.user_name.strip() if job_config.user_name else ""
             notif_type = f"watching_summary_{job_config.name}"
 
+            # LLM 失败时用明确提示替换空摘要
+            summary_text = result["summary_text"]
+            if not summary_text and not result.get("model"):
+                summary_text = (
+                    "AI 追番总结生成失败：LLM 返回空内容（所有重试已耗尽）。\n"
+                    "请检查 LLM 配置中的 api_base、api_key 是否正确，"
+                    "以及网络连通性。"
+                )
+                logger.error(
+                    f"Summary job '{job_config.name}' LLM 返回空内容，发送失败提示通知"
+                )
+
             # 构建数据字典
             usage = result["usage"]
             data = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "job_name": job_config.name,
                 "user_name": user_name,
-                "summary_text": result["summary_text"],
+                "summary_text": summary_text,
                 "date_range": f"{result['date_from']} ~ {result['date_to']}",
                 "record_count": result["record_count"],
                 "lookback_days": job_config.lookback_days,
