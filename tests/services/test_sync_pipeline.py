@@ -132,6 +132,53 @@ def test_pipeline_receive_step_carries_processed_payload(mock_config, mock_datab
     assert receive_step["processed_payload"]["episode"] == 270
 
 
+def test_pipeline_receive_step_carries_raw_payload_and_sync_action(
+    mock_config, mock_database
+):
+    """receive step 应透传 raw_payload 与 sync_action"""
+    service = SyncService()
+
+    item = CustomItem(
+        user_name="testuser",
+        title="剧场版测试",
+        ori_title=None,
+        season=1,
+        episode=1,
+        media_type="movie",
+        release_date="2024-06-01",
+        source="plex",
+        sync_action="mark_watching",
+        raw_payload={"event": "media.play", "metadata": {"title": "剧场版测试"}},
+    )
+
+    with _make_mock_bangumi_api():
+        with patch.object(
+            service,
+            "_get_bangumi_config_for_user",
+            return_value={
+                "username": "testuser",
+                "access_token": "tok",
+                "private": True,
+            },
+        ):
+            result = service.sync_custom_item(item, "custom")
+
+    assert result.status in ("success", "ignored")
+
+    call_args = mock_database.log_sync_record.call_args
+    trace_data = call_args.kwargs.get("match_trace") or {}
+    receive_step = trace_data.get("steps", [])[0]
+    assert receive_step["stage"] == "receive"
+    assert receive_step["processed_payload"]["sync_action"] == "mark_watching"
+    assert receive_step["processed_payload"]["release_date"] == "2024-06-01"
+    assert receive_step["raw_payload"] == {
+        "event": "media.play",
+        "metadata": {"title": "剧场版测试"},
+    }
+    assert trace_data["request_sync_action"] == "mark_watching"
+    assert trace_data["request_release_date"] == "2024-06-01"
+
+
 def test_pipeline_result_step_carries_episode_and_links(mock_config, mock_database):
     """result step 应携带集数 + subject/ep 链接（processed_payload）"""
     service = SyncService()

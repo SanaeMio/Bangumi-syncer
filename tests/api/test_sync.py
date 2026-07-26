@@ -1001,6 +1001,62 @@ async def test_retry_sync_record_invalid_media_type(
         assert response.status_code == 200
 
 
+@pytest.mark.asyncio
+async def test_retry_sync_record_restores_mark_watching_from_trace(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """重试应从 match_trace 恢复 sync_action=mark_watching"""
+    import json
+
+    trace = {
+        "request_title": "Movie Test",
+        "request_season": 1,
+        "request_episode": 1,
+        "request_media_type": "movie",
+        "request_release_date": "2024-01-15",
+        "request_sync_action": "mark_watching",
+        "request_user_name": "user",
+        "steps": [
+            {
+                "stage": "receive",
+                "processed_payload": {
+                    "sync_action": "mark_watching",
+                    "release_date": "2024-01-15",
+                },
+                "raw_payload": {"event": "media.play"},
+            }
+        ],
+    }
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "error",
+        "title": "Movie Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "movie",
+        "match_trace": json.dumps(trace),
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.model_dump.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+    retry_item = mock_sync_service.sync_custom_item.call_args[0][0]
+    assert retry_item.sync_action == "mark_watching"
+    assert retry_item.release_date == "2024-01-15"
+    assert retry_item.raw_payload == {"event": "media.play"}
+    assert retry_item.source == "retry-plex"
+
+
 # ========== 测试同步特殊路径 ==========
 
 

@@ -343,6 +343,77 @@ def test_build_retry_item_preserves_all_media_types():
     assert item.media_type == "episode"
 
 
+def test_build_retry_item_restores_fields_from_match_trace():
+    """_build_retry_item 优先从 match_trace 还原原始请求（含日期与 sync_action）"""
+    import json
+
+    from app.api.sync import _build_retry_item
+
+    trace = {
+        "request_title": "Trace Title",
+        "request_ori_title": "Ori",
+        "request_season": 2,
+        "request_episode": 5,
+        "request_media_type": "episode",
+        "request_release_date": "2024-03-01",
+        "request_sync_action": "mark_watching",
+        "request_user_name": "trace_user",
+        "steps": [
+            {
+                "stage": "receive",
+                "processed_payload": {
+                    "title": "Trace Title",
+                    "release_date": "2024-03-01",
+                    "sync_action": "mark_watching",
+                },
+                "raw_payload": {"event": "play"},
+            }
+        ],
+    }
+    record = {
+        "title": "Column Title",
+        "ori_title": "Col Ori",
+        "season": 1,
+        "episode": 1,
+        "user_name": "col_user",
+        "media_type": "movie",
+        "match_trace": json.dumps(trace),
+    }
+    item = _build_retry_item(record, "retry-plex")
+    assert item.title == "Trace Title"
+    assert item.ori_title == "Ori"
+    assert item.season == 2
+    assert item.episode == 5
+    assert item.media_type == "episode"
+    assert item.release_date == "2024-03-01"
+    assert item.sync_action == "mark_watching"
+    assert item.user_name == "trace_user"
+    assert item.source == "retry-plex"
+    assert item.raw_payload == {"event": "play"}
+
+
+def test_build_retry_item_falls_back_to_record_columns_without_trace():
+    """无 match_trace 时回退 sync_records 列"""
+    from app.api.sync import _build_retry_item
+
+    record = {
+        "title": "Column Title",
+        "ori_title": "Col Ori",
+        "season": 3,
+        "episode": 7,
+        "user_name": "col_user",
+        "media_type": "ova",
+    }
+    item = _build_retry_item(record, "retry-emby")
+    assert item.title == "Column Title"
+    assert item.ori_title == "Col Ori"
+    assert item.season == 3
+    assert item.episode == 7
+    assert item.release_date == ""
+    assert item.sync_action is None
+    assert item.raw_payload is None
+
+
 @pytest.mark.asyncio
 async def test_get_sync_records_db_error(app_root_and_api):
     with patch(
