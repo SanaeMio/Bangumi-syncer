@@ -65,13 +65,13 @@ Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)
 
 这是因为 Trakt 要求回调地址必须是 HTTPS，仅对 loopback 地址（`127.0.0.1` / `localhost`）允许 HTTP。可以使用 SSH 端口转发，让 Trakt 以为回调发生在本地，完成一次性授权（授权后即可长期使用，无需保持转发）：
 
-1. **修改回调地址**：在 [Trakt 开发者后台](https://app.trakt.tv/settings/apps/api?mode=media) 和 Bangumi-syncer 的 Trakt 配置页面中，将回调地址均填为 `http://127.0.0.1:8003/api/trakt/auth/callback`
-2. **建立 SSH 转发**：在电脑终端中执行以下命令（将 `用户名` 和 `NAS的局域网IP` 替换为实际值，`8003` 替换为 Bangumi-syncer 实际监听的端口）：
+1. **修改回调地址**：在 [Trakt 开发者后台](https://app.trakt.tv/settings/apps/api?mode=media) 和 Bangumi-syncer 的 Trakt 配置页面中，将回调地址均填为 `http://127.0.0.1:8000/api/trakt/auth/callback`
+2. **建立 SSH 转发**：在电脑终端中执行以下命令（将 `用户名` 和 `NAS的局域网IP` 替换为实际值，`8000` 替换为 Bangumi-syncer 实际监听的端口）：
    ```bash
-   ssh -L 8003:127.0.0.1:8003 用户名@NAS的局域网IP
+   ssh -L 8000:127.0.0.1:8000 用户名@NAS的局域网IP
    ```
    保持该终端窗口不要关闭
-3. **完成授权**：在电脑浏览器中打开 Bangumi-syncer 的 Trakt 配置页面，点击授权按钮，跳转至 Trakt 同意授权后，Trakt 会将浏览器重定向到 `http://127.0.0.1:8003/api/trakt/auth/callback?...`，通过 SSH 转发到达 NAS，授权成功
+3. **完成授权**：在电脑浏览器中打开 Bangumi-syncer 的 Trakt 配置页面，点击授权按钮，跳转至 Trakt 同意授权后，Trakt 会将浏览器重定向到 `http://127.0.0.1:8000/api/trakt/auth/callback?...`，通过 SSH 转发到达 NAS，授权成功
 4. **关闭终端**：授权完成后关闭终端即可，后续应用使用已获取的 Token 正常运行，无需保持转发
 
 ## 注意事项
