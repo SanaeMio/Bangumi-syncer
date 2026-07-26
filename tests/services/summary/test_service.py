@@ -505,7 +505,7 @@ class TestExecuteJob:
         mock_db.insert_notification.assert_called_once()
         inbox_args = mock_db.insert_notification.call_args[1]
         assert inbox_args["notif_type"] == "summary_job_failed"
-        assert "LLM down" in inbox_args["body"]
+        assert "执行异常" in inbox_args["body"]
 
         # 日志应记录该错误
         error_calls = [
