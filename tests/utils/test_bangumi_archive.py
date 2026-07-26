@@ -145,20 +145,18 @@ def sample_zip_with_jsonl(tmp_path: Path) -> Path:
 
 
 class TestArchiveImporter:
-    def test_import_all_creates_tables(
+    @pytest.mark.asyncio
+    async def test_import_all_creates_tables(
         self, sample_zip_with_jsonl: Path, temp_db_path: Path
     ):
         """import_all 应建立所有表并导入数据"""
         importer = ArchiveImporter()
-        import asyncio
 
-        row_counts, duration = asyncio.run(
-            importer.import_all(
-                zip_path=sample_zip_with_jsonl,
-                target_db=temp_db_path,
-                task_id="test",
-                progress_cb=None,
-            )
+        row_counts, duration = await importer.import_all(
+            zip_path=sample_zip_with_jsonl,
+            target_db=temp_db_path,
+            task_id="test",
+            progress_cb=None,
         )
 
         assert duration > 0
@@ -166,20 +164,18 @@ class TestArchiveImporter:
         assert row_counts["episode"] == 1
         assert row_counts["subject_relation"] == 1
 
-    def test_import_creates_indexes(
+    @pytest.mark.asyncio
+    async def test_import_creates_indexes(
         self, sample_zip_with_jsonl: Path, temp_db_path: Path
     ):
         """导入后应建立索引"""
         importer = ArchiveImporter()
-        import asyncio
 
-        asyncio.run(
-            importer.import_all(
-                zip_path=sample_zip_with_jsonl,
-                target_db=temp_db_path,
-                task_id="test",
-                progress_cb=None,
-            )
+        await importer.import_all(
+            zip_path=sample_zip_with_jsonl,
+            target_db=temp_db_path,
+            task_id="test",
+            progress_cb=None,
         )
 
         conn = sqlite3.connect(str(temp_db_path))
@@ -194,20 +190,18 @@ class TestArchiveImporter:
         finally:
             conn.close()
 
-    def test_import_optional_fields_missing(
+    @pytest.mark.asyncio
+    async def test_import_optional_fields_missing(
         self, sample_zip_with_jsonl: Path, temp_db_path: Path
     ):
         """第二条 subject 缺失 score/rank/tags 等字段，应填 NULL"""
         importer = ArchiveImporter()
-        import asyncio
 
-        asyncio.run(
-            importer.import_all(
-                zip_path=sample_zip_with_jsonl,
-                target_db=temp_db_path,
-                task_id="test",
-                progress_cb=None,
-            )
+        await importer.import_all(
+            zip_path=sample_zip_with_jsonl,
+            target_db=temp_db_path,
+            task_id="test",
+            progress_cb=None,
         )
 
         conn = sqlite3.connect(str(temp_db_path))
@@ -221,20 +215,18 @@ class TestArchiveImporter:
         finally:
             conn.close()
 
-    def test_import_serializes_list_field(
+    @pytest.mark.asyncio
+    async def test_import_serializes_list_field(
         self, sample_zip_with_jsonl: Path, temp_db_path: Path
     ):
         """list/dict 类型字段应序列化为 JSON 字符串"""
         importer = ArchiveImporter()
-        import asyncio
 
-        asyncio.run(
-            importer.import_all(
-                zip_path=sample_zip_with_jsonl,
-                target_db=temp_db_path,
-                task_id="test",
-                progress_cb=None,
-            )
+        await importer.import_all(
+            zip_path=sample_zip_with_jsonl,
+            target_db=temp_db_path,
+            task_id="test",
+            progress_cb=None,
         )
 
         conn = sqlite3.connect(str(temp_db_path))
@@ -294,7 +286,8 @@ class TestArchiveDownloader:
         assert len(urls) == 2
         assert "ghfast.top" in urls[0]
 
-    def test_verify_sha256_match(self, tmp_path: Path):
+    @pytest.mark.asyncio
+    async def test_verify_sha256_match(self, tmp_path: Path):
         """SHA256 匹配时通过"""
         import hashlib
 
@@ -304,30 +297,29 @@ class TestArchiveDownloader:
         digest = "sha256:" + hashlib.sha256(content).hexdigest()
 
         downloader = ArchiveDownloader()
-        import asyncio
 
-        asyncio.run(downloader.verify_sha256(zip_path, digest))  # 不抛异常即通过
+        await downloader.verify_sha256(zip_path, digest)  # 不抛异常即通过
 
-    def test_verify_sha256_mismatch(self, tmp_path: Path):
+    @pytest.mark.asyncio
+    async def test_verify_sha256_mismatch(self, tmp_path: Path):
         """SHA256 不匹配时抛 RuntimeError"""
         zip_path = tmp_path / "test.zip"
         zip_path.write_bytes(b"hello world")
 
         downloader = ArchiveDownloader()
-        import asyncio
 
         with pytest.raises(RuntimeError, match="SHA256 校验失败"):
-            asyncio.run(downloader.verify_sha256(zip_path, "sha256:00000000"))
+            await downloader.verify_sha256(zip_path, "sha256:00000000")
 
-    def test_verify_sha256_skip_when_no_digest(self, tmp_path: Path):
+    @pytest.mark.asyncio
+    async def test_verify_sha256_skip_when_no_digest(self, tmp_path: Path):
         """digest 为空时跳过校验"""
         zip_path = tmp_path / "test.zip"
         zip_path.write_bytes(b"hello")
 
         downloader = ArchiveDownloader()
-        import asyncio
 
-        asyncio.run(downloader.verify_sha256(zip_path, ""))  # 不抛异常即通过
+        await downloader.verify_sha256(zip_path, "")  # 不抛异常即通过
 
 
 # ===== BangumiArchive 双库切换测试 =====

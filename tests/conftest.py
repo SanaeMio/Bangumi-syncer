@@ -30,6 +30,20 @@ os.environ["CONFIG_FILE"] = str(_TEST_CONFIG_INI)
 
 import pytest  # noqa: E402
 
+# 强制禁用 bangumi-archive，避免用户 config.ini 中 enabled=True 触发
+# BangumiArchive 单例在 import 时启动后台索引构建线程（读取真实 658K 条 DB，
+# 耗时 100s+，会卡死测试）。需要 Archive 的测试应显式创建局部实例。
+# 此操作必须在任何 app 模块导入前完成，确保 config_manager 读到的是禁用状态。
+import configparser  # noqa: E402
+
+_cfg = configparser.ConfigParser()
+_cfg.read(_TEST_CONFIG_INI, encoding="utf-8")
+if not _cfg.has_section("bangumi-archive"):
+    _cfg.add_section("bangumi-archive")
+_cfg.set("bangumi-archive", "enabled", "false")
+with open(_TEST_CONFIG_INI, "w", encoding="utf-8") as _f:
+    _cfg.write(_f)
+
 from app.core.config import config_manager  # noqa: E402
 from app.core.database import database_manager  # noqa: E402
 from app.models.trakt import TraktConfig  # noqa: E402
