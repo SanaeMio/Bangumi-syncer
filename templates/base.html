@@ -88,6 +88,14 @@
                                 <i class="bi bi-file-text me-2"></i>日志管理
                             </a>
                         </li>
+                        {% if archive_enabled() %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if request.url.path == '/bangumi-archive' %}active{% endif %}"
+                                   href="{{ '/bangumi-archive' | p }}">
+                                    <i class="bi bi-database-fill me-2"></i>Archive 离线库
+                                </a>
+                            </li>
+                        {% endif %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
                                href="{{ '/trakt/config' | p }}">
@@ -185,6 +193,15 @@
                                     日志管理
                                 </a>
                             </li>
+                            {% if archive_enabled() %}
+                                <li class="nav-item mb-1">
+                                    <a class="nav-link {% if request.url.path == '/bangumi-archive' %}active{% endif %}"
+                                       href="{{ '/bangumi-archive' | p }}">
+                                        <i class="bi bi-database-fill me-2"></i>
+                                        Archive 离线库
+                                    </a>
+                                </li>
+                            {% endif %}
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
                                    href="{{ '/trakt/config' | p }}">

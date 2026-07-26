@@ -21,6 +21,7 @@ from ..core.config_secret_crypto import (
 )
 from ..core.logging import logger
 from ..core.security import security_manager
+from ..services.bangumi_archive_scheduler import bangumi_archive_scheduler
 from ..services.feiniu.scheduler import feiniu_scheduler
 from ..services.feiniu.sync_service import feiniu_sync_service
 from ..services.fongmi.scheduler import fongmi_scheduler
@@ -306,6 +307,15 @@ async def update_config(
             await fongmi_scheduler.apply_config_after_save()
         except Exception as ex:
             logger.debug("fongmi 调度器随配置更新: %s", ex)
+
+        try:
+            # 重新加载 BangumiArchive 配置（data_dir 等可能变化）
+            from ..utils.bangumi_archive import bangumi_archive
+
+            bangumi_archive.reload_config()
+            await bangumi_archive_scheduler.apply_config_after_save()
+        except Exception as ex:
+            logger.debug("BangumiArchive 调度器随配置更新: %s", ex)
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:

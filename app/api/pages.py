@@ -145,6 +145,16 @@ async def logs_page(request: Request):
     return templates.TemplateResponse(request, "logs.html", {"user": user})
 
 
+@router.get("/bangumi-archive", response_class=HTMLResponse)
+async def bangumi_archive_page(request: Request):
+    """Bangumi Archive 离线查询层管理页面"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return _login_redirect(request)
+
+    return templates.TemplateResponse(request, "bangumi_archive.html", {"user": user})
+
+
 @router.get("/trakt/config", response_class=HTMLResponse)
 async def trakt_config_page(request: Request) -> HTMLResponse:
     """Trakt 配置页面"""

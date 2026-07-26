@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
+from .api.bangumi_archive import router as bangumi_archive_router
 from .api.bgm_poster import router as bgm_poster_router
 from .api.config import router as config_router
 from .api.feiniu import router as feiniu_router
@@ -32,6 +33,7 @@ from .core.database import database_manager
 from .core.logging import logger
 from .core.public_url import get_public_base_path
 from .core.startup_info import startup_info
+from .services.bangumi_archive_scheduler import bangumi_archive_scheduler
 from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.fongmi.scheduler import fongmi_scheduler
@@ -96,6 +98,7 @@ async def lifespan(app: FastAPI):
                 ("Trakt", trakt_scheduler.start),
                 ("飞牛", feiniu_scheduler.start),
                 ("fongmi", fongmi_scheduler.start),
+                ("BangumiArchive", bangumi_archive_scheduler.start),
             ]:
                 try:
                     ok = await coro()
@@ -126,6 +129,7 @@ async def lifespan(app: FastAPI):
         ("Trakt", trakt_scheduler.stop),
         ("飞牛", feiniu_scheduler.stop),
         ("fongmi", fongmi_scheduler.stop),
+        ("BangumiArchive", bangumi_archive_scheduler.stop),
     ]:
         try:
             await coro()
@@ -174,6 +178,7 @@ app.include_router(trakt_router)
 app.include_router(feiniu_router)
 app.include_router(fongmi_router)
 app.include_router(upgrade_router)
+app.include_router(bangumi_archive_router)
 
 
 if __name__ == "__main__":
