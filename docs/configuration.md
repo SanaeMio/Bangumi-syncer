@@ -100,16 +100,12 @@ order: 20
 - **定时 Cron**：隔多久自动轮询一次 fongmi 设备，默认每 3 分钟 `*/3 * * * *`。保存配置后定时任务会热更新，无需重启。
 - **与 Bangumi 账号的对应关系**：单用户或多用户模式下，上文「媒体服务器用户名」需填写 fongmi **设备名称**（来自 `/device` 的 `name` 字段，不是 IP），可在 **「调试工具」** 的 fongmi 扫描结果或同步日志中查看。
 
-## AI 追番总结（LLM 配置）
+## LLM 全局配置
 
-如需使用 AI 自动生成追番总结，请先在「配置管理」页面配置 LLM 连接信息，再创建总结任务。全部在 Web 界面操作即可，无需手动编辑配置文件。
-
-### LLM 全局配置
-
-LLM 连接信息存放在 `[llm]` section，在「配置管理」页面顶部的 LLM 卡片中修改：
+LLM 连接是独立模块，追番总结和调试工具共用。在「配置管理」页面顶部的 LLM 卡片中修改，配置存放在 `[llm]` section：
 
 - **提供商（provider）**：LLM 服务提供商。可选值：`openai_compat`（默认，兼容 OpenAI / DeepSeek / Ollama 等 OpenAI 接口格式的服务）。后续将支持 `anthropic`。
-- **API 地址（api_base）**：LLM 服务商的 API 端点，需兼容所选 provider 的接口格式。默认 `https://api.openai.com/v1`。
+- **API 地址（api_base）**：LLM 服务商的 API 端点，需兼容所选 provider 的接口格式。默认 `https://api.openai.com/v1`。OpenAI 兼容接口请以 `/v1` 结尾填写完整地址。
 - **API 密钥（api_key）**：服务商提供的 API Key。**加密存储**，页面回显为掩码。
 - **模型（model）**：要调用的模型名称，默认 `gpt-4o-mini`。请确认所选模型支持 Chat Completions 接口。
 - **最大 Token（max_tokens）**：单次请求最大输出 token 数，默认 2000。根据模型上下文窗口和总结长度调整。
@@ -118,6 +114,14 @@ LLM 连接信息存放在 `[llm]` section，在「配置管理」页面顶部的
 - **调用记录保留（retention_days）**：LLM 调用记录（Token 用量、延迟等）在数据库中保留天数，默认 365 天。
 
 配置后可点击「测试连接」按钮验证 LLM 是否可达。
+
+---
+
+## AI 追番总结
+
+> **前提**：需要先完成 [LLM 全局配置](#llm-全局配置)，追番总结依赖 LLM 来生成摘要。
+
+在「配置管理」→「AI 追番总结」卡片中创建和管理总结任务。每个任务对应一个 `[summary-{name}]` section，全部在 Web 界面操作，无需手动编辑配置文件。
 
 ### 追番总结任务
 
