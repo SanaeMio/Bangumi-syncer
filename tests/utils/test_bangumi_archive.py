@@ -334,7 +334,12 @@ class TestArchiveDownloader:
 
 @pytest.fixture
 def isolated_archive(tmp_path: Path, monkeypatch):
-    """创建独立数据目录的 BangumiArchive 实例，不污染全局单例"""
+    """创建独立数据目录的 BangumiArchive 实例，不污染全局单例
+
+    注意：本 fixture 会 set config_manager 的 bangumi-archive.enabled=true，
+    但全局 archive_shortcut 的隔离由 conftest.py 的 _isolate_archive_shortcut
+    autouse fixture 负责（mock reload_config 为 noop），无需在此清理。
+    """
     # 重新加载配置到临时目录
     from app.core.config import config_manager
 
@@ -353,7 +358,9 @@ def isolated_archive(tmp_path: Path, monkeypatch):
     archive.meta_file = archive.data_dir / "bangumi_archive.meta"
     archive.min_disk_space_mb = 1
     archive._meta = archive._load_meta()
-    return archive
+    yield archive
+    # teardown: 还原 config，避免 data_dir 等设置残留影响后续测试
+    config_manager.set("bangumi-archive", "enabled", "false")
 
 
 class TestBangumiArchive:

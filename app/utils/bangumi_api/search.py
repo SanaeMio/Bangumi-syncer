@@ -127,6 +127,18 @@ class SearchMixin:
         if cache_key in self._cache["search_old"]:
             return self._cache["search_old"][cache_key]
 
+        # Archive 短路：本地命中即返回，未命中降级到 API
+        shortcut = self._archive.try_search_old(title, subject_type=subject_type)
+        if shortcut.hit:
+            data_list = shortcut.data or []
+            result = (
+                data_list
+                if list_only
+                else {"results": len(data_list), "list": data_list}
+            )
+            self._put_cache("search_old", cache_key, result)
+            return result
+
         res = self._request_with_retry(
             "GET",
             self.req,

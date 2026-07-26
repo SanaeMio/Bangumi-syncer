@@ -464,6 +464,27 @@ def clean_proxy_env():
         os.environ[key] = value
 
 
+@pytest.fixture(autouse=True)
+def _isolate_archive_shortcut(monkeypatch):
+    """每个测试默认禁用全局 archive_shortcut，避免用户 config.ini 中
+    bangumi-archive.enabled=True 通过 conftest 复制污染测试。
+
+    conftest 启动时从用户 config.ini 复制测试配置，若用户启用了 Archive，
+    BangumiApi() 初始化会调 reload_config() 读到 enabled=true 触发短路，
+    导致不关心 Archive 的测试（如 test_bangumi_api 的 JSON 错误分支）
+    命中本地 Archive 数据而非走 mock 的 API。
+
+    需要 Archive 的测试（test_archive_shortcut.py）会显式 mock _archive
+    或创建局部 ArchiveShortcut 实例，不依赖全局单例的 reload_config。
+    """
+    from app.utils.bangumi_api._archive_shortcut import archive_shortcut
+
+    archive_shortcut._enabled = False
+    # mock reload_config 为 noop，防止 BangumiApi.init() 重新读取 config 启用
+    monkeypatch.setattr(archive_shortcut, "reload_config", lambda: None)
+    yield
+
+
 # Playwright 测试配置
 if HAS_PYTEST_PLAYWRIGHT:
     import subprocess

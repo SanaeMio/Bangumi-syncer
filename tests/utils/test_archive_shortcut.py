@@ -636,6 +636,139 @@ class TestArchiveShortcutTrySearch:
         assert r.reason == "archive_error"
 
 
+# ---- try_search_old ----
+
+
+class TestArchiveShortcutTrySearchOld:
+    """ArchiveShortcut.try_search_old 行为测试
+
+    与 try_search 差异：旧版接口不支持 air_date 过滤，仅按 type 过滤，
+    返回结构为 list[dict]（与旧版 API list 字段对齐）。
+    """
+
+    def setup_method(self) -> None:
+        self.shortcut = ArchiveShortcut()
+        self.shortcut._enabled = True
+
+    def test_disabled_returns_archive_disabled(self) -> None:
+        """禁用时返回 archive_disabled"""
+        self.shortcut._enabled = False
+        r = self.shortcut.try_search_old("Test")
+        assert r.hit is False
+        assert r.reason == "archive_disabled"
+
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
+    @patch("app.utils.bangumi_archive._title_index.archive_title_index")
+    def test_exact_match_hit(
+        self, mock_index: MagicMock, mock_store: MagicMock
+    ) -> None:
+        """精确匹配命中时返回完整 subject 列表"""
+        mock_index.find_subject_ids_by_title.return_value = [1]
+        mock_index.find_subject_ids_fuzzy.return_value = []
+        mock_store.get_subject.return_value = {
+            "id": 1,
+            "type": 2,
+            "name": "Test",
+        }
+
+        r = self.shortcut.try_search_old("Test")
+
+        assert r.hit is True
+        assert r.reason == "archive_hit"
+        assert len(r.data) == 1
+        assert r.data[0]["id"] == 1
+        mock_index.find_subject_ids_fuzzy.assert_not_called()
+
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
+    @patch("app.utils.bangumi_archive._title_index.archive_title_index")
+    def test_fuzzy_match_hit(
+        self, mock_index: MagicMock, mock_store: MagicMock
+    ) -> None:
+        """精确未命中时降级模糊匹配"""
+        mock_index.find_subject_ids_by_title.return_value = []
+        mock_index.find_subject_ids_fuzzy.return_value = [(1, 90)]
+        mock_store.get_subject.return_value = {
+            "id": 1,
+            "type": 2,
+            "name": "Test",
+        }
+
+        r = self.shortcut.try_search_old("Tset")
+
+        assert r.hit is True
+        assert r.data[0]["id"] == 1
+
+    @patch("app.utils.bangumi_archive._title_index.archive_title_index")
+    def test_no_match_returns_miss(self, mock_index: MagicMock) -> None:
+        """精确和模糊都未命中时返回 miss"""
+        mock_index.find_subject_ids_by_title.return_value = []
+        mock_index.find_subject_ids_fuzzy.return_value = []
+
+        r = self.shortcut.try_search_old("Nonexistent")
+
+        assert r.hit is False
+        assert r.reason == "archive_miss"
+
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
+    @patch("app.utils.bangumi_archive._title_index.archive_title_index")
+    def test_subject_type_filter_excludes(
+        self, mock_index: MagicMock, mock_store: MagicMock
+    ) -> None:
+        """subject_type 过滤排除 type 不匹配的条目
+
+        回归用例：用户搜索"完美世界"（type=2 动画），
+        Archive 命中包含"完美世界剧场版"（仍是 type=2），
+        但若 subject_type=4（游戏）则应排除。
+        """
+        mock_index.find_subject_ids_by_title.return_value = [1]
+        mock_index.find_subject_ids_fuzzy.return_value = []
+        mock_store.get_subject.return_value = {
+            "id": 1,
+            "type": 2,
+            "name": "Test",
+        }
+
+        # 旧版接口查 type=4（游戏），与 Archive 中的 type=2 不符
+        r = self.shortcut.try_search_old("Test", subject_type=4)
+
+        assert r.hit is False
+        assert r.reason == "archive_miss"
+
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
+    @patch("app.utils.bangumi_archive._title_index.archive_title_index")
+    def test_multiple_subjects_same_title(
+        self, mock_index: MagicMock, mock_store: MagicMock
+    ) -> None:
+        """多个 subject 同名时应全部返回
+
+        回归用例：完美世界有多季条目（完美世界、完美世界 第二季 ...），
+        且都叫"完美世界"，索引应返回多个 subject_id，
+        由调用方 bgm_search 取前 N 条用 title_diff_ratio 择优。
+        """
+        mock_index.find_subject_ids_by_title.return_value = [1, 2, 3]
+        mock_index.find_subject_ids_fuzzy.return_value = []
+
+        def fake_get_subject(sid):
+            return {"id": sid, "type": 2, "name": "完美世界"}
+
+        mock_store.get_subject.side_effect = fake_get_subject
+
+        r = self.shortcut.try_search_old("完美世界")
+
+        assert r.hit is True
+        assert len(r.data) == 3
+
+    @patch("app.utils.bangumi_archive._title_index.archive_title_index")
+    def test_exception_returns_archive_error(self, mock_index: MagicMock) -> None:
+        """查询异常时返回 archive_error"""
+        mock_index.find_subject_ids_by_title.side_effect = RuntimeError("db locked")
+
+        r = self.shortcut.try_search_old("Test")
+
+        assert r.hit is False
+        assert r.reason == "archive_error"
+
+
 # ---- BangumiApi.search() Archive 短路集成 ----
 
 
@@ -725,6 +858,83 @@ class TestBangumiApiSearchArchiveIntegration:
 
         assert result == cached
         api._archive.try_search.assert_not_called()
+        api._request_with_retry.assert_not_called()
+
+
+# ---- BangumiApi.search_old() Archive 短路集成 ----
+
+
+class TestBangumiApiSearchOldArchiveIntegration:
+    """BangumiApi.search_old() 接入 Archive 短路后的行为"""
+
+    @patch("app.utils.bangumi_api.httpx.Client")
+    def test_search_old_archive_hit_skips_api(self, _mock_http: MagicMock) -> None:
+        """Archive 命中时不应调用 API（list_only=True 返回 list）"""
+        api = BangumiApi()
+        archive_data = [{"id": 1, "name": "Test", "type": 2}]
+        api._archive = MagicMock()
+        api._archive.try_search_old.return_value = _mock_archive_hit(archive_data)
+        api._request_with_retry = MagicMock()
+
+        result = api.search_old(title="Test")
+
+        assert result == archive_data
+        api._archive.try_search_old.assert_called_once()
+        api._request_with_retry.assert_not_called()
+        cache_key = ("Test", True, 2)
+        assert api._cache["search_old"][cache_key] == archive_data
+
+    @patch("app.utils.bangumi_api.httpx.Client")
+    def test_search_old_archive_hit_list_only_false(
+        self, _mock_http: MagicMock
+    ) -> None:
+        """list_only=False 时 Archive 命中应包装为 {results, list}"""
+        api = BangumiApi()
+        archive_data = [{"id": 1, "name": "Test", "type": 2}]
+        api._archive = MagicMock()
+        api._archive.try_search_old.return_value = _mock_archive_hit(archive_data)
+        api._request_with_retry = MagicMock()
+
+        result = api.search_old(title="Test", list_only=False)
+
+        assert result == {"results": 1, "list": archive_data}
+
+    @patch("app.utils.bangumi_api.httpx.Client")
+    def test_search_old_archive_miss_falls_back_to_api(
+        self, _mock_http: MagicMock
+    ) -> None:
+        """Archive 未命中时应降级到 API"""
+        api = BangumiApi()
+        api._archive = MagicMock()
+        api._archive.try_search_old.return_value = _mock_archive_miss()
+
+        api_data = {"results": 1, "list": [{"id": 1, "name": "From API"}]}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = api_data
+        api._request_with_retry = MagicMock(return_value=mock_resp)
+
+        result = api.search_old(title="Test")
+
+        assert result == [{"id": 1, "name": "From API"}]
+        api._request_with_retry.assert_called_once()
+
+    @patch("app.utils.bangumi_api.httpx.Client")
+    def test_search_old_cache_hit_skips_archive_and_api(
+        self, _mock_http: MagicMock
+    ) -> None:
+        """缓存命中时应跳过 Archive 和 API"""
+        api = BangumiApi()
+        cached = [{"id": 1, "name": "Cached"}]
+        cache_key = ("Test", True, 2)
+        api._put_cache("search_old", cache_key, cached)
+
+        api._archive = MagicMock()
+        api._request_with_retry = MagicMock()
+
+        result = api.search_old(title="Test")
+
+        assert result == cached
+        api._archive.try_search_old.assert_not_called()
         api._request_with_retry.assert_not_called()
 
 

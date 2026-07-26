@@ -294,6 +294,58 @@ class ArchiveShortcut:
             logger.warning(f"bangumi_archive 短路 search 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
 
+    def try_search_old(
+        self,
+        title: str,
+        subject_type: int = 2,
+    ) -> ShortcutResult:
+        """短路 search_old API（旧版标题搜索）
+
+        旧版接口返回结构为 {results, list}，list_only=True 时取 list 字段。
+        与 try_search 不同：旧版接口不支持 air_date 过滤，仅按 type 过滤。
+
+        命中后调用方（bgm_search）会取前 N 条调 get_subject 拉详情，
+        由于 get_subject 也接入了 Archive 短路，整条链路全走 Archive。
+
+        Returns:
+            hit=True 时 data 是 list[dict]（对齐旧版 API 的 list 字段）
+            hit=False 时 data 为 None，调用方应走 API
+        """
+        if not self._enabled:
+            return ShortcutResult(False, None, "archive_disabled")
+        try:
+            from ..bangumi_archive._title_index import archive_title_index
+
+            # 1. 精确匹配
+            ids = archive_title_index.find_subject_ids_by_title(title)
+
+            # 2. 精确未命中时模糊匹配
+            if not ids:
+                fuzzy = archive_title_index.find_subject_ids_fuzzy(title)
+                ids = [sid for sid, _ in fuzzy]
+
+            if not ids:
+                return ShortcutResult(False, None, "archive_miss")
+
+            # 3. 拉取完整 subject + type 过滤
+            # 旧版接口的 subject_type 即 API type（如 2=动画）
+            results: list[dict[str, Any]] = []
+            for sid in ids:
+                subject = archive_store.get_subject(sid)
+                if subject is None:
+                    continue
+                # type 过滤（旧版接口按单一 type 查询）
+                if subject.get("type") != subject_type:
+                    continue
+                results.append(subject)
+
+            if not results:
+                return ShortcutResult(False, None, "archive_miss")
+            return ShortcutResult(True, results, "archive_hit")
+        except Exception as e:
+            logger.warning(f"bangumi_archive 短路 search_old 异常: {e}")
+            return ShortcutResult(False, None, "archive_error")
+
 
 # 全局单例
 archive_shortcut = ArchiveShortcut()
