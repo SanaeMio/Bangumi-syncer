@@ -83,6 +83,15 @@ class EpisodesMixin:
         if cache_key in self._cache["get_episodes"]:
             return self._cache["get_episodes"][cache_key]
 
+        # Archive 短路：本地命中即返回（始终全量，对 fetch_all=False 也安全）
+        # 未命中降级到 API 分页拉取（保持原行为）
+        shortcut = self._archive.try_get_episodes(subject_id, episode_type=_type)
+        if shortcut.hit:
+            data_list = shortcut.data or []
+            result = {"data": data_list, "total": len(data_list)}
+            self._put_cache("get_episodes", cache_key, result)
+            return result
+
         if not fetch_all:
             result = self._fetch_episodes_page(subject_id, _type)
         else:
@@ -488,6 +497,11 @@ class EpisodesMixin:
 
     def _find_next_sequel_id(self, current_id: int) -> int | None:
         """从关联条目中查找续集 subject_id，无则返回 None"""
+        # Archive 短路：本地命中即返回（int 或 None）
+        shortcut = self._archive.try_find_next_sequel_id(current_id)
+        if shortcut.hit:
+            return shortcut.data
+
         related = self.get_related_subjects(current_id)
         if isinstance(related, list):
             next_id = [i for i in related if i.get("relation") == _RELATION_CN_SEQUEL]
@@ -510,6 +524,11 @@ class EpisodesMixin:
         - "前传"（RELATION_ID_PREQUEL）：前作
         - "主线故事"（RELATION_ID_PARENT_STORY）：剧场版关联条目中的主线剧集条目
         """
+        # Archive 短路：本地命中即返回（int 或 None）
+        shortcut = self._archive.try_find_related_id_by_relation(subject_id, relation)
+        if shortcut.hit:
+            return shortcut.data
+
         related = self.get_related_subjects(subject_id)
         if isinstance(related, list):
             items = related

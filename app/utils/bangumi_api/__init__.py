@@ -14,6 +14,7 @@ import httpx  # noqa: F401
 
 from ...core.logging import logger
 from ..http_base import SyncHttpClient
+from ._archive_shortcut import archive_shortcut
 from .collection import CollectionMixin
 from .episodes import EpisodesMixin
 from .http_layer import HttpLayerMixin
@@ -89,6 +90,10 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         }
         self._max_cache_size = _MAX_CACHE_SIZE
 
+        # Archive 短路协调器（引用全局单例，便于测试时替换）
+        # enabled=False 时所有 try_* 立即返回 archive_disabled，等价于原行为
+        self._archive = archive_shortcut
+
         # 如果禁用SSL验证，输出警告（httpx 无需抑制 urllib3 警告）
         if not ssl_verify:
             logger.warning(
@@ -127,6 +132,8 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
             for k, v in self._req_not_auth.client.headers.items()
             if k.lower() != "authorization"
         }
+        # 重新加载 Archive 短路配置（配置变更后调用方可立即生效）
+        self._archive.reload_config()
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         logger.debug(

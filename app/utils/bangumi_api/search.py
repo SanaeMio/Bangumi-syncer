@@ -138,6 +138,12 @@ class SearchMixin:
         if subject_id in self._cache["get_subject"]:
             return self._cache["get_subject"][subject_id]
 
+        # Archive 短路：本地命中即返回，未命中降级到 API（保持原行为）
+        shortcut = self._archive.try_get_subject(subject_id)
+        if shortcut.hit:
+            self._put_cache("get_subject", subject_id, shortcut.data)
+            return shortcut.data
+
         res = self.get(f"subjects/{subject_id}")
         try:
             res = res.json()
@@ -158,6 +164,12 @@ class SearchMixin:
         # 使用实例缓存避免内存泄漏
         if subject_id in self._cache["get_related_subjects"]:
             return self._cache["get_related_subjects"][subject_id]
+
+        # Archive 短路：本地命中即返回，未命中降级到 API
+        shortcut = self._archive.try_get_related_subjects(subject_id)
+        if shortcut.hit:
+            self._put_cache("get_related_subjects", subject_id, shortcut.data)
+            return shortcut.data
 
         res = self.get(f"subjects/{subject_id}/subjects")
         try:
