@@ -57,7 +57,7 @@ order: 15
 
 ## Trakt 严格校验回调地址的解决方案
 
-如果你的 NAS / Docker 部署环境不具备公网域名和 HTTPS，在 Trakt 授权时会遇到以下报错：
+Trakt 要求回调地址必须是 HTTPS，仅对 loopback 地址（`127.0.0.1` / `localhost`）允许 HTTP。如果你的部署地址不是 localhost，在授权时会遇到以下报错：
 
 ```
 Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)
