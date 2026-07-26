@@ -3316,9 +3316,9 @@ async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
             div.className = 'form-check summary-type-option';
             div.innerHTML = `
                 <input class="form-check-input" type="checkbox"
-                       value="${job.notification_type}" id="${containerId}-${job.notification_type}"
+                       value="${job.notification_type}" id="${containerId.replace('s-container', '')}-${job.notification_type}"
                        ${selectedTypes.includes(job.notification_type) ? 'checked' : ''}>
-                <label class="form-check-label" for="${containerId}-${job.notification_type}">
+                <label class="form-check-label" for="${containerId.replace('s-container', '')}-${job.notification_type}">
                     AI 追番 - ${escapeHtml(job.name)}
                 </label>
             `;
