@@ -139,7 +139,7 @@ class TestSummaryJobCreate:
         assert model.lookback_days == 1
         assert model.user_name == ""
         assert model.system_prompt == ""
-        assert model.max_records == 200
+        assert model.max_records == -1
         assert model.enabled is True
 
     def test_all_fields_set(self):
@@ -287,7 +287,7 @@ class TestSummaryJobResponse:
         assert model.lookback_days == 1
         assert model.user_name == ""
         assert model.system_prompt == ""
-        assert model.max_records == 200
+        assert model.max_records == -1
         assert model.enabled is True
         assert model.notification_type == "watching_summary_Minimal Job"
 

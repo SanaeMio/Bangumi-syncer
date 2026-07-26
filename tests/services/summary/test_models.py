@@ -35,7 +35,7 @@ def test_from_config_dict_defaults_empty():
     assert cfg.lookback_days == 1
     assert cfg.user_name == ""
     assert cfg.system_prompt == SummaryJobConfig.system_prompt
-    assert cfg.max_records == 200
+    assert cfg.max_records == -1
 
 
 def test_from_config_dict_defaults_minimal():
@@ -47,7 +47,7 @@ def test_from_config_dict_defaults_minimal():
     assert cfg.lookback_days == 1
     assert cfg.user_name == ""
     assert cfg.system_prompt == SummaryJobConfig.system_prompt
-    assert cfg.max_records == 200
+    assert cfg.max_records == -1
 
 
 # ── bool coercion ─────────────────────────────────────────────────────
