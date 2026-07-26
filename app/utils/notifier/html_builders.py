@@ -105,9 +105,16 @@ class EmailHtmlMixin:
     def _build_simple_email_html(self, data: dict[str, Any]) -> str:
         """构建简单的 HTML 邮件内容（仅在模板文件完全无法加载时使用）"""
         notification_type = data.get("notification_type", "未知")
+        if "watching_summary" in notification_type:
+            notification_type = "watching_summary"
 
         # 根据通知类型设置标题颜色和图标
         type_config = {
+            "watching_summary": {
+                "color": "#6c8ebf",
+                "icon": "📊",
+                "title": "追番总结",
+            },
             "request_received": {
                 "color": "#0d6efd",
                 "icon": "📥",
@@ -250,7 +257,11 @@ class EmailHtmlMixin:
         self, notification_type: str, data: dict[str, Any]
     ) -> str:
         """根据通知类型构建邮件标题"""
+        if "watching_summary" in notification_type:
+            notification_type = "watching_summary"
+
         subjects = {
+            "watching_summary": f"[Bangumi-Syncer] 📊 追番总结 - {data.get('job_name', '')}",
             "request_received": f"[Bangumi-Syncer] 收到同步请求 - {data.get('title', '')} S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
             "bangumi_id_found": f"[Bangumi-Syncer] 匹配到番剧 - {data.get('title', '')}",
             "mark_success": f"[Bangumi-Syncer] 同步成功 - {data.get('title', '')} S{data.get('season', 0):02d}E{data.get('episode', 0):02d}",
@@ -271,8 +282,12 @@ class EmailHtmlMixin:
         self, notification_type: str, data: dict[str, Any]
     ) -> str:
         """根据通知类型构建纯文本邮件内容"""
+        if "watching_summary" in notification_type:
+            notification_type = "watching_summary"
+
         # 通知类型描述
         type_descriptions = {
+            "watching_summary": "追番总结",
             "request_received": "收到同步请求",
             "bangumi_id_found": "匹配到Bangumi番剧",
             "mark_success": "同步成功",
@@ -403,7 +418,11 @@ IP地址: {data.get("ip", "")}
         Returns:
             HTML内容字符串
         """
+        if "watching_summary" in notification_type:
+            notification_type = "watching_summary"
+
         builders: dict[str, Callable[[dict[str, Any]], str]] = {
+            "watching_summary": self._build_watching_summary_html,
             "request_received": self._build_request_received_html,
             "bangumi_id_found": self._build_bangumi_id_found_html,
             "mark_success": self._build_mark_success_html,
@@ -691,4 +710,15 @@ IP地址: {data.get("ip", "")}
                 </div>
             </div>
             <div class="info-grid">{top_html}
+            </div>"""
+
+    def _build_watching_summary_html(self, data: dict[str, Any]) -> str:
+        """构建 watching_summary 通知 HTML"""
+        return f"""
+            <div class="info-box" style="background: #f0f4ff; border-left: 4px solid #6c8ebf;">
+                <div class="title">📊 {data.get("job_name", "追番总结")}</div>
+                <div class="message">Period: {data.get("date_range", "")} | Records: {data.get("record_count", 0)}</div>
+            </div>
+            <div class="summary-section" style="padding: 12px; background: #fafafa; border-radius: 4px; margin-top: 8px;">
+                <pre style="white-space: pre-wrap; font-family: inherit;">{data.get("summary_text", "")}</pre>
             </div>"""

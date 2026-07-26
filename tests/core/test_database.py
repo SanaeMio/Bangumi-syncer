@@ -1,5 +1,5 @@
 """
-DatabaseManager tests
+DatabaseManager 测试。
 """
 
 import sqlite3
@@ -9,15 +9,15 @@ import pytest
 
 
 class TestDatabaseManager:
-    """Test DatabaseManager class"""
+    """测试 DatabaseManager 类。"""
 
     def test_database_init(self, temp_dir, reset_singletons):
-        """Test database initialization"""
+        """测试数据库初始化。"""
         db_path = temp_dir / "test.db"
 
         from app.core.database import DatabaseManager
 
-        # Patch logging to avoid output during test
+        # 在测试期间 patch 日志以避免输出
         with patch("app.core.database.logger"):
             db = DatabaseManager(str(db_path))
 
@@ -25,7 +25,7 @@ class TestDatabaseManager:
             assert db_path.exists()
 
     def test_log_sync_record(self, temp_dir, reset_singletons):
-        """Test logging sync record"""
+        """测试记录同步日志。"""
         db_path = temp_dir / "test.db"
 
         with patch("app.core.database.logger"):
@@ -33,7 +33,7 @@ class TestDatabaseManager:
 
             db = DatabaseManager(str(db_path))
 
-            # Log a record
+            # 记录一条同步记录
             db.log_sync_record(
                 user_name="test_user",
                 title="测试动画",
@@ -47,7 +47,7 @@ class TestDatabaseManager:
                 source="custom",
             )
 
-            # Verify the record was saved
+            # 验证记录已保存
             result = db.get_sync_records(limit=10)
             assert result["total"] == 1
             assert result["records"][0]["user_name"] == "test_user"
@@ -113,7 +113,7 @@ class TestDatabaseManager:
         assert row["media_type"] == "episode"
 
     def test_get_sync_records_basic(self, temp_dir, reset_singletons):
-        """Test getting sync records basic"""
+        """测试基本获取同步记录。"""
         db_path = temp_dir / "test.db"
 
         with patch("app.core.database.logger"):
@@ -121,7 +121,7 @@ class TestDatabaseManager:
 
             db = DatabaseManager(str(db_path))
 
-            # Add multiple records
+            # 添加多条记录
             for i in range(5):
                 db.log_sync_record(
                     user_name="test_user",
@@ -132,7 +132,7 @@ class TestDatabaseManager:
                     status="success",
                 )
 
-            # Get records
+            # 获取记录
             result = db.get_sync_records(limit=10)
 
             assert result["total"] == 5
@@ -141,7 +141,7 @@ class TestDatabaseManager:
             assert result["offset"] == 0
 
     def test_get_sync_records_with_filters(self, temp_dir, reset_singletons):
-        """Test getting sync records with filters"""
+        """测试带过滤条件获取同步记录。"""
         db_path = temp_dir / "test.db"
 
         with patch("app.core.database.logger"):
@@ -149,7 +149,7 @@ class TestDatabaseManager:
 
             db = DatabaseManager(str(db_path))
 
-            # Add records with different statuses
+            # 添加不同状态的记录
             db.log_sync_record(
                 user_name="user1",
                 title="动画1",
@@ -175,15 +175,15 @@ class TestDatabaseManager:
                 status="success",
             )
 
-            # Filter by status
+            # 按状态过滤
             result = db.get_sync_records(status="success")
             assert result["total"] == 2
 
-            # Filter by user_name
+            # 按用户名过滤
             result = db.get_sync_records(user_name="user1")
             assert result["total"] == 2
 
-            # Filter by source
+            # 按来源过滤
             db.log_sync_record(
                 user_name="user3",
                 title="动画4",
@@ -197,7 +197,7 @@ class TestDatabaseManager:
             assert result["total"] == 1
 
     def test_get_sync_record_by_id(self, temp_dir, reset_singletons):
-        """Test getting sync record by ID"""
+        """测试按 ID 获取同步记录。"""
         db_path = temp_dir / "test.db"
 
         with patch("app.core.database.logger"):
@@ -205,7 +205,7 @@ class TestDatabaseManager:
 
             db = DatabaseManager(str(db_path))
 
-            # Add a record
+            # 添加一条记录
             db.log_sync_record(
                 user_name="test_user",
                 title="测试动画",
@@ -215,18 +215,18 @@ class TestDatabaseManager:
                 status="success",
             )
 
-            # Get by ID
+            # 按 ID 获取
             result = db.get_sync_record_by_id(1)
             assert result is not None
             assert result["user_name"] == "test_user"
             assert result["title"] == "测试动画"
 
-            # Get non-existent ID
+            # 获取不存在的 ID
             result = db.get_sync_record_by_id(999)
             assert result is None
 
     def test_update_sync_record_status(self, temp_dir, reset_singletons):
-        """Test updating sync record status"""
+        """测试更新同步记录状态。"""
         db_path = temp_dir / "test.db"
 
         with patch("app.core.database.logger"):
@@ -234,7 +234,7 @@ class TestDatabaseManager:
 
             db = DatabaseManager(str(db_path))
 
-            # Add a record
+            # 添加一条记录
             db.log_sync_record(
                 user_name="test_user",
                 title="测试动画",
@@ -244,21 +244,21 @@ class TestDatabaseManager:
                 status="pending",
             )
 
-            # Update status
+            # 更新状态
             success = db.update_sync_record_status(1, "success", "Updated message")
             assert success is True
 
-            # Verify update
+            # 验证更新
             result = db.get_sync_record_by_id(1)
             assert result["status"] == "success"
             assert result["message"] == "Updated message"
 
-            # Update non-existent record
+            # 更新不存在的记录
             success = db.update_sync_record_status(999, "success")
             assert success is False
 
     def test_get_sync_stats(self, temp_dir, reset_singletons):
-        """Test getting sync statistics"""
+        """测试获取同步统计信息。"""
         db_path = temp_dir / "test.db"
 
         with patch("app.core.database.logger"):
@@ -266,7 +266,7 @@ class TestDatabaseManager:
 
             db = DatabaseManager(str(db_path))
 
-            # Add various records
+            # 添加多条记录
             db.log_sync_record(
                 user_name="user1",
                 title="动画1",
@@ -292,7 +292,7 @@ class TestDatabaseManager:
                 status="error",
             )
 
-            # Get stats
+            # 获取统计信息
             stats = db.get_sync_stats()
 
             assert stats["total_syncs"] == 3
@@ -302,7 +302,7 @@ class TestDatabaseManager:
             assert len(stats["user_stats"]) == 2
 
     def test_pagination(self, temp_dir, reset_singletons):
-        """Test pagination of records"""
+        """测试记录分页。"""
         db_path = temp_dir / "test.db"
 
         with patch("app.core.database.logger"):
@@ -310,7 +310,7 @@ class TestDatabaseManager:
 
             db = DatabaseManager(str(db_path))
 
-            # Add many records
+            # 添加多条记录
             for i in range(15):
                 db.log_sync_record(
                     user_name="test_user",
@@ -321,7 +321,7 @@ class TestDatabaseManager:
                     status="success",
                 )
 
-            # Test pagination
+            # 测试分页
             result1 = db.get_sync_records(limit=5, offset=0)
             result2 = db.get_sync_records(limit=5, offset=5)
             result3 = db.get_sync_records(limit=5, offset=10)

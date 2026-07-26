@@ -777,6 +777,108 @@
                 </div>
             </div>
         </div>
+        <!-- LLM 配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-llm" class="card shadow-sm config-card mb-4">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-robot me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">LLM 配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">API 地址</label>
+                                <input class="form-control"
+                                       id="llm-api-base"
+                                       name="llm.api_base"
+                                       placeholder="https://api.openai.com/v1">
+                                <small class="text-muted">OpenAI 兼容接口请以 /v1 结尾填写完整地址, 具体以 Provider 文档为准</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">API 密钥</label>
+                                <input type="password"
+                                       class="form-control"
+                                       id="llm-api-key"
+                                       name="llm.api_key"
+                                       placeholder="sk-...">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">模型</label>
+                                <input class="form-control"
+                                       id="llm-model"
+                                       name="llm.model"
+                                       placeholder="gpt-4o-mini">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">最大 Token</label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="llm-max-tokens"
+                                       name="llm.max_tokens"
+                                       value="2000">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">温度</label>
+                                <input type="number"
+                                       step="0.1"
+                                       class="form-control"
+                                       id="llm-temperature"
+                                       name="llm.temperature"
+                                       value="0.7">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">超时(秒)</label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="llm-timeout"
+                                       name="llm.timeout"
+                                       value="60">
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="button" class="btn btn-primary" onclick="saveLLMAndTest()">
+                                    <i class="bi bi-lightning-charge me-1"></i>保存并测试
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-muted small mt-3 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>请使用您信任的 LLM 服务提供商。API 密钥将加密存储，测试连接会产生少量 Token 消耗。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- AI 追番总结 -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-summary" class="card shadow-sm config-card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-journal-text me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">AI 追番总结</h6>
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-primary"
+                                onclick="showSummaryJobModal()">
+                            <i class="bi bi-plus-lg me-1"></i>新建任务
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="summary-jobs-list" class="row g-3">
+                            <!-- Job cards rendered here by renderSummaryJobs() -->
+                        </div>
+                        <div id="summary-jobs-empty"
+                             class="app-empty-state app-empty-state--sm"
+                             style="display:none">
+                            <i class="bi bi-inbox app-empty-state__icon"></i>
+                            <p class="text-muted mt-3 mb-0">还没有追番总结任务，点击上方按钮创建</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <!-- 通知配置 -->
         <div class="row">
             <div class="col-12">
@@ -1505,6 +1607,8 @@ function refreshConfigPageToc() {
         { id: 'config-section-advanced', label: '高级', mode: 'always' },
         { id: 'config-section-auth', label: 'Web 认证', mode: 'always' },
         { id: 'config-section-bangumi-data', label: 'Data', mode: 'always' },
+        { id: 'config-section-llm', label: 'LLM', mode: 'always' },
+        { id: 'config-section-summary', label: 'AI总结', mode: 'always' },
         { id: 'config-section-notify', label: '通知', mode: 'always' },
         { id: 'config-section-feiniu', label: '飞牛', mode: 'always' },
         { id: 'config-section-fongmi', label: 'fongmi', mode: 'always' },
@@ -1544,12 +1648,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
-    
+
     // 初始化令牌显示/隐藏功能
     document.getElementById('toggle-token-visibility').addEventListener('click', function() {
         const tokenInput = document.getElementById('bangumi-access-token');
         const icon = document.getElementById('token-visibility-icon');
-        
+
         if (tokenInput.type === 'password') {
             tokenInput.type = 'text';
             icon.className = 'bi bi-eye-slash';
@@ -1558,12 +1662,12 @@ document.addEventListener('DOMContentLoaded', function() {
             icon.className = 'bi bi-eye';
         }
     });
-    
+
     // 初始化认证密码显示/隐藏功能
     document.getElementById('toggle-auth-password-visibility').addEventListener('click', function() {
         const passwordInput = document.getElementById('auth-password');
         const icon = document.getElementById('auth-password-visibility-icon');
-        
+
         if (passwordInput.type === 'password') {
             passwordInput.type = 'text';
             icon.className = 'bi bi-eye-slash';
@@ -1597,21 +1701,24 @@ async function loadConfig(showToast = true) {
                 'Content-Type': 'application/json'
             }
         });
-        
+
         if (response.status === 401) {
             // 认证失败，跳转到登录页面
             window.location.href = appUrl('/login');
             return;
         }
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             currentConfig = data.data;
             populateForm(currentConfig);
             // 加载通知配置
             loadWebhookConfigs();
             loadEmailConfigs();
+            // 加载 LLM 和追番总结配置
+            loadLLMConfig();
+            loadSummaryJobs();
             if (showToast) {
                 showAlert('配置重新加载成功', 'success');
             }
@@ -1702,7 +1809,7 @@ function populateForm(config) {
         document.getElementById('feiniu-sync-interval').value = fn.sync_interval || '*/15 * * * *';
         document.getElementById('feiniu-limit').value = (fn.limit != null && fn.limit !== '') ? fn.limit : 100;
     }
-    
+
     // 填充 fongmi 配置
     const fm = config.fongmi || {};
     const fmEnabled = document.getElementById('fongmi-enabled');
@@ -1739,14 +1846,14 @@ function populateForm(config) {
         document.getElementById('webhook-key').value = config.auth.webhook_key || '';
         // 密码字段留空，表示不修改
         document.getElementById('auth-password').value = '';
-        
+
         // 根据webhook认证开关显示/隐藏密钥区域
         toggleWebhookKeySection();
     }
 
     // 切换同步模式
     toggleSyncMode();
-    
+
     // 填充多用户配置
     if (sync.mode === 'multi') {
         populateMultiUserConfig(config.multi_accounts, config.user_mappings);
@@ -1757,7 +1864,7 @@ function toggleSyncMode() {
     const mode = document.getElementById('sync-mode').value;
     const singleBangumiSection = document.getElementById('single-user-bangumi-section');
     const multiSection = document.getElementById('multi-user-section');
-    
+
     if (mode === 'single') {
         // 单用户模式：显示 Bangumi 账号配置，隐藏多用户配置
         singleBangumiSection.style.display = 'block';
@@ -1773,7 +1880,7 @@ function toggleSyncMode() {
 function toggleWebhookKeySection() {
     const enabled = document.getElementById('webhook-auth-enabled').checked;
     const keySection = document.getElementById('webhook-key-section');
-    
+
     if (enabled) {
         keySection.style.display = 'block';
         document.getElementById('webhook-auth-enabled-tip').style.display = 'block';
@@ -1795,25 +1902,25 @@ function toggleWebhookKeySection() {
 
 function populateMultiUserConfig(accounts, mappings) {
     const accountsContainer = document.getElementById('bangumi-accounts-container');
-    
+
     accountsContainer.innerHTML = '';
-    
+
     // 重置全局计数器
     bangumiAccountCounter = 0;
-    
+
     // 添加Bangumi账号
     Object.entries(accounts || {}).forEach(([key, account]) => {
         // 使用display_name作为显示名称，如果没有则使用配置段名
         const displayName = account.display_name || key;
         addBangumiAccount(displayName, account);
     });
-    
+
 }
 
 function addBangumiAccount(accountName = '', accountConfig = {}) {
     const container = document.getElementById('bangumi-accounts-container');
     const id = bangumiAccountCounter++;
-    
+
     const accountDiv = document.createElement('div');
     accountDiv.className = 'border rounded p-3 mb-3';
     accountDiv.innerHTML = `
@@ -1851,7 +1958,7 @@ function addBangumiAccount(accountName = '', accountConfig = {}) {
             </div>
         </div>
     `;
-    
+
     accountDiv.id = `bangumi-account-${id}`;
     container.appendChild(accountDiv);
 }
@@ -1936,20 +2043,28 @@ async function saveConfig() {
                 max_login_attempts: parseInt(document.getElementById('max-login-attempts').value) || 5,
                 lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900,
                 webhook_auth_enabled: document.getElementById('webhook-auth-enabled').checked
+            },
+            llm: {
+                api_base: document.getElementById('llm-api-base').value,
+                api_key: getLLMApiKeyValue(),
+                model: document.getElementById('llm-model').value,
+                max_tokens: parseInt(document.getElementById('llm-max-tokens').value) || 2000,
+                temperature: parseFloat(document.getElementById('llm-temperature').value) || 0.7,
+                timeout: parseInt(document.getElementById('llm-timeout').value) || 60
             }
         };
-        
+
         // 如果密码字段不为空，则添加到配置中
         const authPassword = document.getElementById('auth-password').value;
         if (authPassword.trim() !== '') {
             configData.auth.password = authPassword;
         }
-        
+
         // 处理多用户配置
         if (configData.sync.mode === 'multi') {
             const multiAccounts = {};
             const userMappings = {};
-            
+
             // 收集Bangumi账号
             document.querySelectorAll('#bangumi-accounts-container > [id^="bangumi-account-"]').forEach((element) => {
                 const displayName = element.querySelector('.bangumi-account-name').value.trim();
@@ -1957,7 +2072,7 @@ async function saveConfig() {
                 const mediaUsername = element.querySelector('.bangumi-account-media-username').value.trim();
                 const token = element.querySelector('.bangumi-account-token').value;
                 const isPrivate = element.querySelector('.bangumi-account-private').checked;
-                
+
                 if (username && mediaUsername && token) {
                     multiAccounts[element.id] = {
                         username: username,
@@ -1968,10 +2083,10 @@ async function saveConfig() {
                     };
                 }
             });
-            
+
             configData.multi_accounts = multiAccounts;
         }
-        
+
         const response = await fetch(appUrl('/api/config'), {
             method: 'POST',
             credentials: 'include',  // 包含Cookie认证信息
@@ -1980,12 +2095,12 @@ async function saveConfig() {
             },
             body: JSON.stringify(configData)
         });
-        
+
         const result = await response.json();
-        
+
         if (result.status === 'success') {
             showAlert('配置保存成功', 'success');
-            
+
             // 如果修改了密码，提示需要重新登录
             if (authPassword.trim() !== '') {
                 setTimeout(() => {
@@ -2020,9 +2135,9 @@ async function backupConfig() {
                 'Content-Type': 'application/json',
             }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             showAlert('配置备份成功，已保存到服务器', 'success');
             // 刷新备份文件列表
@@ -2039,7 +2154,7 @@ async function backupConfig() {
 // 显示恢复配置模态框
 async function showRestoreModal() {
     console.log('尝试显示恢复配置模态框');
-    
+
     // 确保模态框已初始化
     if (!restoreConfigModal) {
         console.log('模态框未初始化，尝试重新初始化');
@@ -2059,7 +2174,7 @@ async function showRestoreModal() {
             return;
         }
     }
-    
+
     try {
         restoreConfigModal.show();
         console.log('模态框显示成功');
@@ -2077,10 +2192,10 @@ async function loadBackupFiles() {
             credentials: 'include'
         });
         const data = await response.json();
-        
+
         const backupFilesList = document.getElementById('backup-files-list');
         backupFilesList.innerHTML = '';
-        
+
         if (data.status === 'success' && data.data.backups.length > 0) {
             data.data.backups.forEach(backup => {
                 const item = document.createElement('div');
@@ -2130,24 +2245,24 @@ async function selectBackupFile(filename) {
         item.classList.remove('active');
     });
     event.target.closest('.list-group-item').classList.add('active');
-    
+
     // 找到对应的backup对象
     const response = await fetch(appUrl('/api/config/backups'), {
         credentials: 'include'
     });
     const data = await response.json();
     const backup = data.data.backups.find(b => b.filename === filename);
-    
+
     selectedBackupFile = backup;
     document.getElementById('restore-confirm-btn').disabled = false;
-    
+
     // 预览配置内容
     try {
         const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
             credentials: 'include'
         });
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             const preview = document.getElementById('config-preview');
             preview.innerHTML = `<pre class="mb-0">${data.data.content}</pre>`;
@@ -2173,24 +2288,24 @@ async function selectBackupFile(filename) {
 // 删除单个备份文件
 async function deleteBackupFile(filename, event) {
     event.stopPropagation(); // 阻止事件冒泡
-    
+
     if (!confirm('确定要删除这个备份文件吗？此操作不可逆。')) {
         return;
     }
-    
+
     try {
         const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
             method: 'DELETE',
             credentials: 'include'
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             showAlert('备份文件删除成功', 'success');
             // 刷新备份文件列表
             await loadBackupFiles();
-            
+
             // 如果删除的是当前选中的文件，清空预览
             if (selectedBackupFile && selectedBackupFile.filename === filename) {
                 selectedBackupFile = null;
@@ -2214,7 +2329,7 @@ async function confirmRestore() {
         showAlert('请选择要恢复的备份文件', 'warning');
         return;
     }
-    
+
     try {
         const response = await fetch(appUrl(`/api/config/restore/${selectedBackupFile.filename}`), {
             method: 'POST',
@@ -2223,15 +2338,15 @@ async function confirmRestore() {
                 'Content-Type': 'application/json',
             }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             if (restoreConfigModal) {
                 restoreConfigModal.hide();
             }
             showAlert('配置已恢复，正在重新加载...', 'success');
-            
+
             // 延迟重新加载配置
             setTimeout(() => {
                 loadConfig(true);
@@ -2259,10 +2374,10 @@ function showCleanupModal() {
 async function showProxyHelper() {
     const helperDiv = document.getElementById('proxy-helper');
     helperDiv.style.display = 'block';
-    
+
     // 尝试从当前输入框检测端口号
     detectPortFromInput();
-    
+
     // 获取代理建议
     await loadProxySuggestions();
 }
@@ -2274,15 +2389,15 @@ function detectPortFromInput(event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    
+
     const proxyInput = document.getElementById('script-proxy').value.trim();
     const portInput = document.getElementById('proxy-port');
-    
+
     if (!proxyInput) {
         showAlert('代理输入框为空，请先填写代理地址', 'warning', 3000);
         return;
     }
-    
+
     // 尝试从URL中提取端口号，支持多种格式
     const portPatterns = [
         /:(\d+)(?:\/|$)/,           // http://127.0.0.1:7890 或 http://127.0.0.1:7890/
@@ -2293,9 +2408,9 @@ function detectPortFromInput(event) {
         /host\.docker\.internal:(\d+)/, // host.docker.internal:7890
         /192\.168\.\d+\.\d+:(\d+)/  // 192.168.x.x:7890
     ];
-    
+
     let detectedPort = null;
-    
+
     for (const pattern of portPatterns) {
         const match = proxyInput.match(pattern);
         if (match && match[1]) {
@@ -2306,7 +2421,7 @@ function detectPortFromInput(event) {
             }
         }
     }
-    
+
     if (detectedPort) {
         portInput.value = detectedPort;
         showAlert(`✅ 已从输入框检测到端口号: ${detectedPort}`, 'success', 3000);
@@ -2323,7 +2438,7 @@ function detectPortFromInput(event) {
         async function updateProxySuggestions() {
             await loadProxySuggestions();
         }
-        
+
         // 测试主机连通性
         async function testHostConnectivity() {
             const hostInput = document.getElementById('test-host');
@@ -2331,17 +2446,17 @@ function detectPortFromInput(event) {
             const timeoutInput = document.getElementById('test-timeout');
             const testBtn = document.getElementById('test-host-btn');
             const resultDiv = document.getElementById('host-test-result');
-            
+
             const host = hostInput.value.trim();
             const port = parseInt(portInput.value) || 7890;
             const timeout = parseInt(timeoutInput.value) || 5;
-            
+
             if (!host) {
                 showAlert('请输入主机地址', 'warning', 3000);
                 hostInput.focus();
                 return;
             }
-            
+
             // 显示测试中状态
             testBtn.disabled = true;
             testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
@@ -2354,7 +2469,7 @@ function detectPortFromInput(event) {
                     </div>
                 </div>
             `;
-            
+
             try {
                 const response = await fetch(appUrl('/api/proxy/test-host'), {
                     method: 'POST',
@@ -2368,15 +2483,15 @@ function detectPortFromInput(event) {
                         timeout: timeout
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.status === 'success') {
                     displayHostTestResult(data.data, host, port);
                 } else {
                     showHostTestError('测试失败: ' + data.message);
                 }
-                
+
             } catch (error) {
                 console.error('主机连通性测试失败:', error);
                 showHostTestError('网络错误，无法执行连通性测试');
@@ -2386,13 +2501,13 @@ function detectPortFromInput(event) {
                 testBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>测试';
             }
         }
-        
+
         // 显示主机测试结果
         function displayHostTestResult(result, host, port) {
             const resultDiv = document.getElementById('host-test-result');
-            
+
             let html = '';
-            
+
             if (result.success) {
                 html = `
                     <div class="alert alert-success">
@@ -2423,11 +2538,11 @@ function detectPortFromInput(event) {
                             <strong>错误：</strong>${result.error}
                         </p>
                 `;
-                
+
                 // 添加详细的测试结果
                 if (result.details) {
                     html += '<hr><h6 class="small">详细测试结果：</h6>';
-                    
+
                     if (result.details.tcp_test) {
                         const tcpTest = result.details.tcp_test;
                         const tcpIcon = tcpTest.success ? 'check-circle text-success' : 'x-circle text-danger';
@@ -2438,7 +2553,7 @@ function detectPortFromInput(event) {
                             </p>
                         `;
                     }
-                    
+
                     if (result.details.ping_test) {
                         const pingTest = result.details.ping_test;
                         const pingIcon = pingTest.success ? 'check-circle text-success' : 'x-circle text-warning';
@@ -2450,7 +2565,7 @@ function detectPortFromInput(event) {
                         `;
                     }
                 }
-                
+
                 html += `
                         <hr>
                         <p class="mb-0 small text-danger">
@@ -2464,10 +2579,10 @@ function detectPortFromInput(event) {
                     </div>
                 `;
             }
-            
+
             resultDiv.innerHTML = html;
         }
-        
+
         // 显示主机测试错误
         function showHostTestError(message) {
             const resultDiv = document.getElementById('host-test-result');
@@ -2486,7 +2601,7 @@ function detectPortFromInput(event) {
 async function loadProxySuggestions() {
     const portInput = document.getElementById('proxy-port');
     const port = parseInt(portInput.value) || 7890;
-    
+
     try {
         // 获取代理建议
         const response = await fetch(appUrl(`/api/proxy/suggestions?port=${port}`), {
@@ -2496,9 +2611,9 @@ async function loadProxySuggestions() {
                 'Content-Type': 'application/json'
             }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             displayProxySuggestions(data.data);
         } else {
@@ -2518,7 +2633,7 @@ function hideProxyHelper() {
 // 显示代理建议
 function displayProxySuggestions(data) {
     const suggestionsDiv = document.getElementById('proxy-suggestions');
-    
+
     if (!data.suggestions || data.suggestions.length === 0) {
         suggestionsDiv.innerHTML = `
             <div class="alert alert-warning">
@@ -2528,9 +2643,9 @@ function displayProxySuggestions(data) {
         `;
         return;
     }
-    
+
     const currentPort = document.getElementById('proxy-port').value;
-    
+
     let html = `
         <div class="mb-3">
             <h6 class="text-info">
@@ -2539,18 +2654,18 @@ function displayProxySuggestions(data) {
                 ${data.environment.is_docker ? `(${data.environment.network_mode}模式)` : '(原生运行)'}
             </h6>
             <p class="small text-muted mb-0">
-                ${data.environment.is_docker ? 
-                    `已为Docker环境优化代理配置建议，使用端口: ${currentPort}` : 
+                ${data.environment.is_docker ?
+                    `已为Docker环境优化代理配置建议，使用端口: ${currentPort}` :
                     `已为本机环境提供常用代理配置，使用端口: ${currentPort}`}
             </p>
         </div>
         <div class="row g-2">
     `;
-    
+
     data.suggestions.forEach((suggestion, index) => {
         const badgeClass = index === 0 ? 'bg-success' : 'bg-info';
         const recommendText = index === 0 ? '推荐' : '';
-        
+
         html += `
             <div class="col-12">
                 <div class="card border-light proxy-suggestion" onclick="selectProxy('${suggestion.address}')" style="cursor: pointer;">
@@ -2572,7 +2687,7 @@ function displayProxySuggestions(data) {
             </div>
         `;
     });
-    
+
     html += '</div>';
     suggestionsDiv.innerHTML = html;
 }
@@ -2597,14 +2712,14 @@ function selectProxy(address) {
 // 测试代理连通性
 async function testProxy(address, event) {
     event.stopPropagation(); // 阻止冒泡
-    
+
     const button = event.target.closest('button');
     const originalHtml = button.innerHTML;
-    
+
     // 显示测试状态
     button.disabled = true;
     button.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div>';
-    
+
     try {
         const response = await fetch(appUrl('/api/proxy/test'), {
             method: 'POST',
@@ -2614,9 +2729,9 @@ async function testProxy(address, event) {
             },
             body: JSON.stringify({ proxy_url: address })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success' && data.data.success) {
             button.innerHTML = '<i class="bi bi-check-circle text-success"></i>';
             showAlert(`代理测试成功 (${data.data.response_time}ms)`, 'success', 3000);
@@ -2628,7 +2743,7 @@ async function testProxy(address, event) {
         button.innerHTML = '<i class="bi bi-x-circle text-danger"></i>';
         showAlert('代理测试失败: 网络错误', 'danger', 5000);
     }
-    
+
     // 3秒后恢复按钮
     setTimeout(() => {
         button.disabled = false;
@@ -2640,13 +2755,13 @@ async function testProxy(address, event) {
 async function confirmCleanup() {
     const strategy = document.querySelector('input[name="cleanupStrategy"]:checked').value;
     let params = { strategy: strategy };
-    
+
     if (strategy === 'recent') {
         params.keep_count = parseInt(document.getElementById('keepCount').value);
     } else if (strategy === 'date') {
         params.keep_days = parseInt(document.getElementById('keepDays').value);
     }
-    
+
     try {
         const response = await fetch(appUrl('/api/config/backups/cleanup'), {
             method: 'POST',
@@ -2656,9 +2771,9 @@ async function confirmCleanup() {
             },
             body: JSON.stringify(params)
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             showAlert(data.message, 'success');
             // 关闭模态框
@@ -2769,9 +2884,11 @@ function showAddWebhookModal() {
     document.getElementById('webhook-method-input').value = 'POST';
     document.getElementById('webhook-headers-input').value = '';
     document.getElementById('webhook-template-input').value = '';
-    
+
     // 清空所有 webhook 类型复选框
     clearNotificationTypeCheckboxes('webhook-type-');
+    // 动态加载追番总结通知类型
+    loadSummaryNotificationTypes('webhook-types-container', '');
 
     const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
     modal.show();
@@ -2796,9 +2913,11 @@ async function showEditWebhookModal(webhookId) {
                 document.getElementById('webhook-method-input').value = webhook.method;
                 document.getElementById('webhook-headers-input').value = webhook.headers;
                 document.getElementById('webhook-template-input').value = webhook.template;
-                
+
                 // 设置复选框
                 setNotificationTypeCheckboxes('webhook-type-', webhook.types);
+                // 动态加载追番总结通知类型
+                loadSummaryNotificationTypes('webhook-types-container', webhook.types);
 
                 const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
                 modal.show();
@@ -2813,7 +2932,7 @@ async function showEditWebhookModal(webhookId) {
 // 保存 Webhook 配置
 async function saveWebhookConfig() {
     const webhookId = document.getElementById('webhook-id').value;
-    
+
     const webhookData = {
         enabled: document.getElementById('webhook-enabled-input').checked,
         url: document.getElementById('webhook-url-input').value,
@@ -3008,18 +3127,18 @@ function copyWebhookKey() {
         showAlert('Webhook 密钥未加载', 'warning');
         return;
     }
-    
+
     const textarea = document.createElement('textarea');
     textarea.value = webhookKey;
     textarea.style.position = 'fixed';
     textarea.style.opacity = '0';
     document.body.appendChild(textarea);
     textarea.select();
-    
+
     try {
         const successful = document.execCommand('copy');
         document.body.removeChild(textarea);
-        
+
         if (successful) {
             showAlert('Webhook 密钥已复制到剪贴板', 'success');
         } else {
@@ -3030,6 +3149,325 @@ function copyWebhookKey() {
         console.error('复制失败:', err);
         showAlert('复制失败，请手动复制', 'danger');
     }
+}
+
+// ========== LLM 配置 ==========
+
+async function loadLLMConfig() {
+    try {
+        const r = await fetch(appUrl('/api/llm/conf'));
+        const d = await r.json();
+        document.getElementById('llm-api-base').value = d.api_base || '';
+        document.getElementById('llm-api-key').value = d.api_key || '';
+        document.getElementById('llm-model').value = d.model || '';
+        document.getElementById('llm-max-tokens').value = d.max_tokens || 2000;
+        document.getElementById('llm-temperature').value = d.temperature || 0.7;
+        document.getElementById('llm-timeout').value = d.timeout || 60;
+    } catch(e) { /* silent */ }
+}
+
+function getLLMApiKeyValue() {
+    var v = document.getElementById('llm-api-key').value;
+    // 掩码值（***xxxx）视为未修改，返回 null 使后端跳过写入
+    if (v && /^\*\*\*/.test(v)) return null;
+    return v;
+}
+
+async function saveLLMAndTest() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
+    try {
+        // 第一步：保存LLM配置
+        const saveR = await fetch(appUrl('/api/llm/conf'), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_base: document.getElementById('llm-api-base').value,
+                api_key: getLLMApiKeyValue(),
+                model: document.getElementById('llm-model').value,
+                max_tokens: parseInt(document.getElementById('llm-max-tokens').value) || 2000,
+                temperature: parseFloat(document.getElementById('llm-temperature').value) || 0.7,
+                timeout: parseInt(document.getElementById('llm-timeout').value) || 60
+            })
+        });
+        const saveD = await saveR.json();
+        if (saveD.status !== 'success') throw new Error(saveD.message || '保存失败');
+
+        // 第二步：测试连接
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
+        const testR = await fetch(appUrl('/api/llm/test'), { method: 'POST' });
+        const testD = await testR.json();
+        if (testD.success) {
+            showAlert('保存成功，连接测试通过: ' + testD.message + ' (' + testD.latency_ms + 'ms)', 'success');
+        } else {
+            showAlert('已保存，但连接测试失败: ' + testD.message, 'warning');
+        }
+    } catch(e) {
+        showAlert('操作失败: ' + e.message, 'danger');
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>保存并测试';
+}
+
+// ========== AI 追番总结 ==========
+
+async function loadSummaryJobs() {
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs'));
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        if (d.status === 'success') {
+            renderSummaryJobs(d.data);
+        }
+    } catch(e) { showAlert('加载总结任务失败: ' + e.message, 'danger'); }
+}
+
+function renderSummaryJobs(jobs) {
+    const list = document.getElementById('summary-jobs-list');
+    const empty = document.getElementById('summary-jobs-empty');
+    if (!jobs || jobs.length === 0) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+    list.innerHTML = jobs.map(job => `
+        <div class="col-md-6">
+            <div class="card border ${job.enabled ? 'border-primary' : 'border-secondary'}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-journal-check ${job.enabled ? 'text-success' : 'text-muted'} me-2"></i>
+                            <h6 class="card-title mb-0">${escapeHtml(job.name)}</h6>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" ${job.enabled ? 'checked' : ''}
+                                   onchange="toggleSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}', this.checked)">
+                        </div>
+                    </div>
+                    <p class="card-text small text-muted mb-2">
+                        <i class="bi bi-clock me-1"></i>${escapeHtml(job.cron)} | 回溯: ${job.lookback_days}天 | 上限: ${job.max_records}条${job.user_name ? ' | <i class="bi bi-person me-1"></i>' + escapeHtml(job.user_name) : ''}
+                    </p>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="editSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-pencil me-1"></i>编辑</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-trash me-1"></i>删除</button>
+                        <button type="button" class="btn btn-sm btn-outline-info" onclick="testSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-play-fill me-1"></i>测试</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="triggerSummaryJob('${escapeHtml(job.name).replace(/'/g, "\\'")}')"><i class="bi bi-lightning-charge me-1"></i>触发</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    window._summaryJobs = jobs;
+}
+
+function showSummaryJobModal() {
+    document.getElementById('summary-job-old-name').value = '';
+    document.getElementById('summaryJobModalTitle').textContent = '新建追番总结任务';
+    // 生成不重复的默认名称：找出已有 "追番总结 N" 中最大 N，+1
+    var existingJobs = window._summaryJobs || [];
+    var maxN = 0;
+    existingJobs.forEach(function (j) {
+        var m = j.name && j.name.match(/^追番总结\s*(\d+)$/);
+        if (m) {
+            var n = parseInt(m[1], 10);
+            if (n > maxN) maxN = n;
+        }
+    });
+    document.getElementById('summary-job-name').value = '追番总结 ' + (maxN + 1);
+    document.getElementById('summary-job-cron').value = '0 21 * * *';
+    document.getElementById('summary-job-lookback').value = '1';
+    document.getElementById('summary-job-user').value = '';
+    document.getElementById('summary-job-max-records').value = '-1';
+    document.getElementById('summary-job-prompt').value =
+        '你是一个轻松有趣的追番助手。用户会给你一段指定时间范围内的观影记录，请你用亲切自然的中文生成追番总结。\n\n' +
+        '规则：\n' +
+        '1. 如果记录为 0 条，告知用户"这段时间还没有追番记录哦~"\n' +
+        '2. 按番剧分组，简要描述观看进度（如"《芙莉莲》追到 S1E10"）\n' +
+        '3. 如果涉及多用户（记录中 user_name 不同），按用户分开描述\n' +
+        '4. 加一两句轻松评论，语气像朋友聊天，不要太正式\n' +
+        '5. 限制在 300 字以内';
+    new bootstrap.Modal(document.getElementById('summaryJobModal')).show();
+}
+
+async function editSummaryJob(name) {
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs'));
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        const d = await r.json();
+        var decoded = decodeURIComponent(name);
+        const job = d.data.find(j => j.name === decoded);
+        if (!job) { showAlert('任务未找到', 'danger'); return; }
+        document.getElementById('summary-job-old-name').value = job.name;
+        document.getElementById('summaryJobModalTitle').textContent = '编辑追番总结任务';
+        document.getElementById('summary-job-name').value = job.name;
+        document.getElementById('summary-job-cron').value = job.cron;
+        document.getElementById('summary-job-lookback').value = job.lookback_days;
+        document.getElementById('summary-job-user').value = job.user_name || '';
+        document.getElementById('summary-job-max-records').value = job.max_records;
+        document.getElementById('summary-job-prompt').value = job.system_prompt || '';
+        new bootstrap.Modal(document.getElementById('summaryJobModal')).show();
+    } catch(e) { showAlert('加载失败: ' + e.message, 'danger'); }
+}
+
+async function saveSummaryJob() {
+    var oldName = document.getElementById('summary-job-old-name').value;
+    var mrVal = parseInt(document.getElementById('summary-job-max-records').value);
+    var data = {
+        name: document.getElementById('summary-job-name').value,
+        cron: document.getElementById('summary-job-cron').value,
+        lookback_days: parseInt(document.getElementById('summary-job-lookback').value) || 1,
+        user_name: document.getElementById('summary-job-user').value,
+        max_records: isNaN(mrVal) ? -1 : mrVal,
+        system_prompt: document.getElementById('summary-job-prompt').value,
+    };
+    // 前端校验：名称不能含逗号，不能与已有任务重名
+    if (data.name.indexOf(',') !== -1) {
+        showAlert('任务名称不能包含逗号（,）', 'danger');
+        return;
+    }
+    // 最大记录数校验：只允许 -1（不限制）或正整数
+    if (data.max_records !== -1 && (isNaN(data.max_records) || data.max_records <= 0)) {
+        showAlert('最大记录数只能填 -1（不限制）或正整数', 'danger');
+        return;
+    }
+    var jobs = window._summaryJobs || [];
+    var dup = jobs.find(function (j) { return j.name === data.name && j.name !== oldName; });
+    if (dup) {
+        showAlert('任务名称 "' + data.name + '" 已存在，请使用其他名称', 'danger');
+        return;
+    }
+    try {
+        var url, method;
+        if (oldName) {
+            url = appUrl('/api/summary/jobs/' + encodeURIComponent(oldName));
+            method = 'PUT';
+        } else {
+            url = appUrl('/api/summary/jobs');
+            method = 'POST';
+        }
+        var r = await fetch(url, {
+            method: method, headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        var d = await r.json();
+        if (d.status === 'success') {
+            bootstrap.Modal.getInstance(document.getElementById('summaryJobModal')).hide();
+            showAlert(oldName ? '任务已更新' : '任务已创建', 'success');
+            loadSummaryJobs();
+        } else {
+            showAlert('保存失败: ' + (d.message || d.detail || '未知错误'), 'danger');
+        }
+    } catch(e) { showAlert('保存失败: ' + e.message, 'danger'); }
+}
+
+function confirmDeleteSummaryJob(name) {
+    document.getElementById('delete-summary-name').textContent = name;
+    var encoded = encodeURIComponent(name);
+    const modal = new bootstrap.Modal(document.getElementById('deleteSummaryModal'));
+    document.getElementById('delete-summary-confirm').onclick = async () => {
+        try {
+            const r = await fetch(appUrl('/api/summary/jobs/' + encoded), { method: 'DELETE' });
+            if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+            const d = await r.json();
+            if (d.status === 'success') {
+                modal.hide();
+                showAlert('任务已删除', 'success');
+                loadSummaryJobs();
+            } else { showAlert('删除失败: ' + (d.message || '未知错误'), 'danger'); }
+        } catch(e) { showAlert('删除失败: ' + e.message, 'danger'); }
+    };
+    modal.show();
+}
+
+async function toggleSummaryJob(name, enabled) {
+    try {
+        const r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name)), {
+            method: 'PUT', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled})
+        });
+        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
+        loadSummaryJobs();
+    } catch(e) { showAlert('操作失败: ' + e.message, 'danger'); }
+}
+
+// ========== 追番总结测试/触发 ==========
+
+async function testSummaryJob(name) {
+    var btn = event && event.target ? event.target.closest('button') : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...'; }
+    try {
+        var r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name) + '/test'), { method: 'POST' });
+        var d = await r.json();
+        if (d.success) {
+            document.getElementById('summary-test-modal-job').textContent = name;
+            document.getElementById('summary-test-modal-info').innerHTML =
+                '模型: ' + escapeHtml(d.model) +
+                ' | Token: P' + d.prompt_tokens + '/C' + d.completion_tokens + '/T' + d.total_tokens +
+                ' | 延迟: ' + d.latency_ms + 'ms | 记录数: ' + d.record_count;
+            document.getElementById('summary-test-modal-text').textContent = d.summary_text || '（无输出）';
+            new bootstrap.Modal(document.getElementById('summaryTestResultModal')).show();
+        } else {
+            showAlert('测试失败: ' + (d.error_message || d.message || '未知错误'), 'danger');
+        }
+    } catch(e) { showAlert('测试请求失败: ' + e.message, 'danger'); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>测试'; }
+}
+
+async function triggerSummaryJob(name) {
+    var btn = event && event.target ? event.target.closest('button') : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>触发中...'; }
+    try {
+        var r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name) + '/trigger'), { method: 'POST' });
+        var d = await r.json();
+        if (d.status === 'success') {
+            showAlert('任务 "' + name + '" 已触发执行', 'success');
+        } else {
+            showAlert('触发失败: ' + (d.message || '未知错误'), 'danger');
+        }
+    } catch(e) { showAlert('触发请求失败: ' + e.message, 'danger'); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>触发'; }
+}
+
+// ========== 动态通知类型 (AI 追番总结) ==========
+
+async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
+    try {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.querySelectorAll('.summary-type-option').forEach(el => el.remove());
+
+        const r = await fetch(appUrl('/api/summary/jobs'));
+        const d = await r.json();
+        if (d.status !== 'success' || !d.data || d.data.length === 0) return;
+
+        const selectedTypes = selectedTypesStr ? selectedTypesStr.split(',') : [];
+
+        d.data.forEach(job => {
+            const div = document.createElement('div');
+            div.className = 'form-check summary-type-option';
+            div.innerHTML = `
+                <input class="form-check-input" type="checkbox"
+                       value="${job.notification_type}" id="${containerId.replace('s-container', '')}-${job.notification_type}"
+                       ${selectedTypes.includes(job.notification_type) ? 'checked' : ''}>
+                <label class="form-check-label" for="${containerId.replace('s-container', '')}-${job.notification_type}">
+                    AI 追番 - ${escapeHtml(job.name)}
+                </label>
+            `;
+            container.appendChild(div);
+        });
+    } catch(e) { /* 如果 summary API 不可用，就不显示追番总结类型 */ }
+}
+
+// ========== HTML 转义工具 ==========
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML.replace(/"/g, '&quot;');
 }
     </script>
     <!-- Webhook 配置模态框 -->
@@ -3088,7 +3526,8 @@ function copyWebhookKey() {
                             <label class="form-label fw-semibold">
                                 <i class="bi bi-tags me-1"></i>通知类型
                             </label>
-                            <div class="border rounded p-3"
+                            <div id="webhook-types-container"
+                                 class="border rounded p-3"
                                  style="max-height: 200px;
                                         overflow-y: auto">
                                 <div class="form-check">
@@ -3381,7 +3820,8 @@ function copyWebhookKey() {
                             <label class="form-label fw-semibold">
                                 <i class="bi bi-tags me-1"></i>通知类型
                             </label>
-                            <div class="border rounded p-3"
+                            <div id="email-types-container"
+                                 class="border rounded p-3"
                                  style="max-height: 200px;
                                         overflow-y: auto">
                                 <div class="form-check">
@@ -3517,6 +3957,109 @@ function copyWebhookKey() {
             </div>
         </div>
     </div>
+    <!-- 追番总结任务模态框 -->
+    <div class="modal fade" id="summaryJobModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="summaryJobModalTitle">新建追番总结任务</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="summary-job-old-name">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">名称</label>
+                            <input class="form-control" id="summary-job-name" placeholder="每日追番总结">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Cron 表达式</label>
+                            <input class="form-control" id="summary-job-cron" placeholder="0 21 * * *">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">回溯天数</label>
+                            <input type="number"
+                                   class="form-control"
+                                   id="summary-job-lookback"
+                                   value="1"
+                                   min="1"
+                                   max="30">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">用户名</label>
+                            <input class="form-control" id="summary-job-user" placeholder="留空=所有用户">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">最大记录数</label>
+                            <input type="number"
+                                   class="form-control"
+                                   id="summary-job-max-records"
+                                   value="-1"
+                                   min="-1"
+                                   max="10000">
+                            <small class="text-muted">-1 表示不限制条数</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">
+                                系统提示词 <small class="text-muted">(告诉LLM如何总结)</small>
+                            </label>
+                            <textarea class="form-control" id="summary-job-prompt" rows="4"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSummaryJob()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 删除追番总结确认模态框 -->
+    <div class="modal fade" id="deleteSummaryModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">确认删除</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        确定要删除任务 <strong id="delete-summary-name"></strong> 吗？
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" id="delete-summary-confirm">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 追番总结测试结果模态框 -->
+    <div class="modal fade" id="summaryTestResultModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        测试结果: <span id="summary-test-modal-job"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="summary-test-modal-info" class="small text-muted mb-3"></div>
+                    <pre id="summary-test-modal-text"
+                         style="white-space:pre-wrap;
+                                background:var(--app-bg-hover);
+                                padding:12px;
+                                border-radius:4px;
+                                max-height:400px;
+                                overflow-y:auto"></pre>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <script>
 // ========== 邮件配置管理 ==========
 
@@ -3621,12 +4164,14 @@ function showAddEmailModal() {
     document.getElementById('email-smtp-use-tls-input').checked = true;
     document.getElementById('email-subject-input').value = '';
     document.getElementById('email-template-file-input').value = '';
-    
+
     // 新建时密码为必填
     document.getElementById('email-password-required').style.display = 'inline';
 
     // 重置复选框
     clearNotificationTypeCheckboxes('email-type-');
+    // 动态加载追番总结通知类型
+    loadSummaryNotificationTypes('email-types-container', '');
 
     const modal = new bootstrap.Modal(document.getElementById('emailModal'));
     modal.show();
@@ -3664,6 +4209,8 @@ async function showEditEmailModal(emailId) {
 
                 // 设置复选框
                 setNotificationTypeCheckboxes('email-type-', email.types);
+                // 动态加载追番总结通知类型
+                loadSummaryNotificationTypes('email-types-container', email.types);
 
                 const modal = new bootstrap.Modal(document.getElementById('emailModal'));
                 modal.show();
@@ -3679,7 +4226,7 @@ async function showEditEmailModal(emailId) {
 async function saveEmailConfig() {
     const emailId = document.getElementById('email-id').value;
     const passwordValue = document.getElementById('email-smtp-password-input').value;
-    
+
     const emailData = {
         enabled: document.getElementById('email-enabled-input').checked,
         smtp_server: document.getElementById('email-smtp-server-input').value,
@@ -3692,7 +4239,7 @@ async function saveEmailConfig() {
         email_template_file: document.getElementById('email-template-file-input').value,
         types: getNotificationTypeCheckboxes('email-type-')
     };
-    
+
     // 只有当密码不是掩码且不为空时才添加到请求数据中
     if (passwordValue && passwordValue !== '******') {
         emailData.smtp_password = passwordValue;
@@ -3703,7 +4250,7 @@ async function saveEmailConfig() {
         showAlert('请填写所有必填字段', 'warning');
         return;
     }
-    
+
     // 新建时必须填写密码
     if (!emailId && !emailData.smtp_password) {
         showAlert('请填写 SMTP 密码/授权码', 'warning');

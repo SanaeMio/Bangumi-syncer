@@ -25,6 +25,7 @@ from ..services.bangumi_archive_scheduler import bangumi_archive_scheduler
 from ..services.feiniu.scheduler import feiniu_scheduler
 from ..services.feiniu.sync_service import feiniu_sync_service
 from ..services.fongmi.scheduler import fongmi_scheduler
+from ..services.llm import reset_llm_client
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -271,10 +272,12 @@ async def update_config(
                         config_manager.set_config(normalized_section, key, value)
                 else:
                     if is_sensitive_ini_field(normalized_section, key) and (
-                        value is None or str(value).strip() == ""
+                        value is None
+                        or str(value).strip() == ""
+                        or str(value).startswith("***")
                     ):
                         logger.debug(
-                            "跳过空敏感字段更新: %s.%s", normalized_section, key
+                            "跳过空/掩码敏感字段更新: %s.%s", normalized_section, key
                         )
                         continue
                     # 其他配置项正常保存（敏感项在 set_config 中加密）
@@ -307,6 +310,9 @@ async def update_config(
             await fongmi_scheduler.apply_config_after_save()
         except Exception as ex:
             logger.debug("fongmi 调度器随配置更新: %s", ex)
+
+        # 重置 LLM 客户端单例以使用最新配置
+        reset_llm_client()
 
         try:
             # 重新加载 BangumiArchive 配置（data_dir 等可能变化）

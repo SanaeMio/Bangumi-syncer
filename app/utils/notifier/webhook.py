@@ -84,8 +84,22 @@ class WebhookMixin:
             except Exception as e:
                 logger.warning(f"自定义模板解析失败: {e}，使用默认格式")
 
+        # 归一化 notification_type（watching_summary_dad → watching_summary）
+        lookup_type = notification_type
+        if "watching_summary" in notification_type:
+            lookup_type = "watching_summary"
+
         # 根据通知类型使用不同的默认格式
         default_templates = {
+            "watching_summary": {
+                "title": f"📊 追番总结 - {data.get('job_name', '')}",
+                "type": lookup_type,
+                "timestamp": data.get("timestamp", ""),
+                "summary": data.get("summary_text", ""),
+                "date_range": data.get("date_range", ""),
+                "record_count": data.get("record_count", 0),
+                "user_name": data.get("user_name", ""),
+            },
             "request_received": {
                 "title": "📥 收到同步请求",
                 "type": notification_type,
@@ -218,7 +232,7 @@ class WebhookMixin:
         }
 
         return default_templates.get(
-            notification_type,
+            lookup_type,
             {
                 "title": f"📢 {notification_type}",
                 "type": notification_type,
