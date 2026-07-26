@@ -207,6 +207,8 @@
                     escapeHtml(ids) +
                     '" data-ref-id="' +
                     (item.ref_id || '') +
+                    '" data-type="' +
+                    escapeHtml(item.type || '') +
                     '">' +
                     '<span class="inbox-card__icon"><i class="bi bi-exclamation-circle"></i></span>' +
                     '<span class="inbox-card__content">' +
@@ -382,9 +384,17 @@
                 var notifId = card.getAttribute('data-notification-id');
                 await markNotificationRead(notifId);
                 await refreshSummary();
-                var url = appUrl('/records');
+                var type = card.getAttribute('data-type');
                 var refId = card.getAttribute('data-ref-id');
-                if (refId) url += '?open=' + encodeURIComponent(refId);
+                var url;
+                if (type === 'summary_llm_failed') {
+                    url = appUrl('/config') + '#config-section-llm';
+                } else if (type === 'summary_job_failed') {
+                    url = appUrl('/config') + '#config-section-summary';
+                } else {
+                    url = appUrl('/records');
+                    if (refId) url += '?open=' + encodeURIComponent(refId);
+                }
                 window.location.href = url;
             });
         }

@@ -202,6 +202,25 @@ class InboxRepository(BaseRepository):
 
         return self._run_write(_write, error_msg="全部公告已读失败", default=0)
 
+    def insert_notification(
+        self,
+        notif_type: str,
+        title: str,
+        body: str = "",
+        ref_id: "int | None" = None,
+    ) -> None:
+        """写入一条收件箱通知。"""
+
+        def _write(conn):
+            conn.execute(
+                "INSERT INTO in_app_notifications "
+                "(type, title, body, ref_id, created_at, read_at) "
+                "VALUES (?, ?, ?, ?, datetime('now', 'localtime'), NULL)",
+                (notif_type, title, body, ref_id),
+            )
+
+        self._run_write(_write, error_msg="插入收件箱通知失败")
+
     def backfill_historical_error_notifications(self) -> int:
         """将历史 error 同步记录回填为已读通知（仅执行一次）。"""
         if self._feiniu.get_feiniu_meta(INBOX_ERROR_BACKFILL_META_KEY):

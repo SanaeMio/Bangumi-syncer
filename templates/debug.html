@@ -293,12 +293,6 @@
         </div>
     </div>
     <script>
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
-}
-
 // ===== 番剧测试（匹配 / 同步共用表单） =====
 const BANGUMI_TEST_MATCH_BTN_HTML = '<i class="bi bi-search me-2"></i>匹配测试';
 const BANGUMI_TEST_SYNC_BTN_HTML = '<i class="bi bi-play-circle me-2"></i>同步测试';
@@ -1424,5 +1418,15 @@ function showAlert(message, type = 'info', duration = 3000) {
         toast.remove();
     });
 }
+
+// ========== AI 追番总结测试 ==========
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML.replace(/"/g, '&quot;');
+}
+
     </script>
 {% endblock %}

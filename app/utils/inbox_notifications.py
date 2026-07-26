@@ -17,11 +17,14 @@ def notification_group_key(title: str) -> str:
     return t
 
 
-def aggregated_notification_title(latest_title: str, count: int) -> str:
+def aggregated_notification_title(
+    latest_title: str, count: int, notif_type: str = "sync_failed"
+) -> str:
     if count <= 1:
         return latest_title
     show = notification_group_key(latest_title)
-    return f"同步失败：{show}（{count} 条）"
+    prefix = "同步失败：" if notif_type == "sync_failed" else ""
+    return f"{prefix}{show}（{count} 条）"
 
 
 def aggregate_notification_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -54,7 +57,9 @@ def aggregate_notification_rows(rows: list[dict[str, Any]]) -> list[dict[str, An
                 "id": group["ids"][0],
                 "type": str(latest.get("type") or "sync_failed"),
                 "title": aggregated_notification_title(
-                    str(latest.get("title") or ""), group["count"]
+                    str(latest.get("title") or ""),
+                    group["count"],
+                    notif_type=str(latest.get("type") or "sync_failed"),
                 ),
                 "body": str(latest.get("body") or ""),
                 "ref_id": latest.get("ref_id"),

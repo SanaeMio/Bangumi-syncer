@@ -9,7 +9,11 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Any, Optional
 
-from .config_secret_crypto import decrypt_if_sensitive, encrypt_if_sensitive
+from .config_secret_crypto import (
+    LLM_SECTION,
+    decrypt_if_sensitive,
+    encrypt_if_sensitive,
+)
 from .logging import logger
 from .startup_info import startup_info
 
@@ -478,6 +482,29 @@ class ConfigManager:
 
         return out
 
+    def get_llm_config(self) -> dict[str, Any]:
+        """获取 LLM 全局配置（含默认值）。"""
+        defaults: dict[str, Any] = {
+            "provider": "openai_compat",
+            "api_base": "https://api.openai.com/v1",
+            "api_key": "",
+            "model": "gpt-4o-mini",
+            "max_tokens": 2000,
+            "temperature": 0.7,
+            "timeout": 60,
+            "retention_days": 365,
+        }
+        raw = self.get_section(LLM_SECTION, {})
+        merged: dict[str, Any] = {**defaults, **raw}
+        # 确保类型正确（使用 is not None 以允许 0 等 falsy 值）
+        if merged.get("max_tokens") is not None:
+            merged["max_tokens"] = int(merged["max_tokens"])
+        if merged.get("temperature") is not None:
+            merged["temperature"] = float(merged["temperature"])
+        if merged.get("timeout") is not None:
+            merged["timeout"] = int(merged["timeout"])
+        return merged
+
     def get_fongmi_config(self) -> dict[str, Any]:
         """fongmi 局域网轮询同步配置（默认关闭）
 
@@ -533,6 +560,94 @@ class ConfigManager:
         except (TypeError, ValueError):
             max_episode = 9999
         return max_season, max_episode
+
+    # ── summary 配置增删改查 ────────────────────────────────────────────
+
+    _SUMMARY_FIELDS = (
+        "enabled",
+        "name",
+        "cron",
+        "lookback_days",
+        "user_name",
+        "system_prompt",
+        "max_records",
+    )
+
+    def get_summary_configs(self) -> list[dict[str, Any]]:
+        """获取所有 summary 配置节，按名称排序。"""
+        configs: list[dict[str, Any]] = []
+        config = self.get_config_parser()
+        for section_name in config.sections():
+            if section_name.startswith("summary-"):
+                section_config = self.get_section(section_name)
+                section_config["name"] = section_name[len("summary-") :]
+                configs.append(section_config)
+        configs.sort(key=lambda x: x.get("name", ""))
+        return configs
+
+    def save_summary_config(
+        self, config_data: dict[str, Any], old_name: str = ""
+    ) -> None:
+        """创建或更新 [summary-{name}] 配置节。
+
+        如果提供了 old_name（重命名场景），则先删除旧配置节。
+        """
+        with self._lock:
+            config = self._get_config_parser_nolock()
+            name = config_data.get("name") or old_name
+            if not name:
+                raise ValueError("save_summary_config: name 不能为空")
+            section_name = f"summary-{name}"
+
+            if old_name and old_name != name:
+                old_section = f"summary-{old_name}"
+                if config.has_section(old_section):
+                    config.remove_section(old_section)
+
+            if not config.has_section(section_name):
+                config.add_section(section_name)
+
+            for field in self._SUMMARY_FIELDS:
+                if field in config_data:
+                    config.set(section_name, field, str(config_data[field]))
+
+            self._save_config(config)
+
+    def delete_summary_config(self, name: str) -> None:
+        """删除 [summary-{name}] 配置节。"""
+        with self._lock:
+            config = self._get_config_parser_nolock()
+            section_name = f"summary-{name}"
+            if config.has_section(section_name):
+                config.remove_section(section_name)
+                self._save_config(config)
+
+    def rename_notification_type(self, old_type: str, new_type: str) -> int:
+        """将 webhook/邮件配置中的通知类型从 old_type 替换为 new_type。
+
+        用于追番总结任务改名时，自动更新已订阅该任务通知的 webhook/邮件配置，
+        避免用户手动重新勾选。
+        """
+        updated = 0
+        with self._lock:
+            config = self._get_config_parser_nolock()
+            for section in config.sections():
+                if not (section.startswith("webhook-") or section.startswith("email-")):
+                    continue
+                types_raw = config.get(section, "types", fallback="")
+                if not types_raw or types_raw.strip() == "all":
+                    continue
+                type_list = [t.strip() for t in types_raw.split(",")]
+                if old_type not in type_list:
+                    continue
+                type_list = [new_type if t == old_type else t for t in type_list]
+                config.set(section, "types", ", ".join(type_list))
+                updated += 1
+            if updated:
+                self._save_config(config)
+        return updated
+
+    # ────────────────────────────────────────────────────────────────────
 
     def get_all_config(self) -> dict[str, dict[str, Any]]:
         """获取所有配置"""

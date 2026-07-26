@@ -35,6 +35,14 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
         self._last_notification_time[notification_type] = current_time
         return True
 
+    @staticmethod
+    def _type_matches(notification_type: str, types: str) -> bool:
+        """检查 notification_type 是否命中订阅的 types 列表（逗号分隔精确匹配）。"""
+        if types == "all":
+            return True
+        type_list = [t.strip() for t in types.split(",")]
+        return notification_type in type_list
+
     def _get_webhook_configs(self) -> list:
         """获取所有webhook配置"""
         config = self.config_manager.get_config_parser()
@@ -62,7 +70,10 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
         return email_configs
 
     def send_notification_by_type(
-        self, notification_type: str, data: dict[str, Any]
+        self,
+        notification_type: str,
+        data: dict[str, Any],
+        skip_cooldown: bool = False,
     ) -> None:
         """
         根据通知类型发送通知
@@ -81,7 +92,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
 
             # 检查是否支持此通知类型
             types = webhook_config.get("types", "")
-            if types != "all" and notification_type not in types:
+            if not self._type_matches(notification_type, types):
                 continue
 
             # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
@@ -90,7 +101,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
                 cooldown_key = (
                     f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
                 )
-            if not self._should_send_notification(cooldown_key):
+            if not skip_cooldown and not self._should_send_notification(cooldown_key):
                 continue
 
             # 发送webhook通知
@@ -106,7 +117,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
 
             # 检查是否支持此通知类型
             types = email_config.get("types", "")
-            if types != "all" and notification_type not in types:
+            if not self._type_matches(notification_type, types):
                 continue
 
             # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
@@ -115,7 +126,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
                 cooldown_key = (
                     f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
                 )
-            if not self._should_send_notification(cooldown_key):
+            if not skip_cooldown and not self._should_send_notification(cooldown_key):
                 continue
 
             # 发送邮件通知

@@ -968,3 +968,32 @@ class TestNotifierIntegration:
             pass
         except Exception:
             pass
+
+
+class TestTypeMatches:
+    """_type_matches 边界测试"""
+
+    def test_all_matches_anything(self):
+        assert Notifier._type_matches("anything", "all") is True
+        assert Notifier._type_matches("mark_success", "all") is True
+
+    def test_exact_match(self):
+        assert (
+            Notifier._type_matches("mark_success", "mark_success,mark_failed") is True
+        )
+
+    def test_exact_match_with_spaces(self):
+        assert (
+            Notifier._type_matches("mark_success", "mark_success, mark_failed") is True
+        )
+
+    def test_prefix_not_match(self):
+        """前缀不应误匹配——用的是精确 in 检查，不是子串。"""
+        assert Notifier._type_matches("mark", "mark_success,mark_failed") is False
+
+    def test_empty_types_no_match(self):
+        assert Notifier._type_matches("mark_success", "") is False
+
+    def test_single_type_no_comma(self):
+        assert Notifier._type_matches("mark_success", "mark_success") is True
+        assert Notifier._type_matches("mark_failed", "mark_success") is False
