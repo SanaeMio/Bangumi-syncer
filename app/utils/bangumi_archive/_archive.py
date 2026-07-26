@@ -171,6 +171,9 @@ class BangumiArchive:
         场景：服务重启后 active DB 仍在，但内存索引已丢失。
         通过后台线程构建（优先加载磁盘缓存，否则从 DB 构建），
         避免首次查询时同步阻塞 100s+。
+
+        实现说明：用 threading.Timer(0, ...) 把构建推到子线程执行，
+        避免在模块加载阶段（bangumi_archive 单例尚未赋值）触发循环 import。
         """
         if not self.enabled:
             return
@@ -178,9 +181,20 @@ class BangumiArchive:
             active_db = self.get_active_db_path()
             if not active_db.exists():
                 return
-            from ._title_index import archive_title_index
 
-            archive_title_index.build_in_background()
+            def _trigger():
+                try:
+                    from ._title_index import archive_title_index
+
+                    archive_title_index.build_in_background()
+                except Exception as e:
+                    logger.warning(f"bangumi_archive 启动时后台构建标题索引失败: {e}")
+
+            # Timer(0, ...) 在新线程中执行，此时主线程已继续完成模块加载
+            # 与单例赋值，子线程内 import _title_index 不会触发循环 import。
+            timer = threading.Timer(0.0, _trigger)
+            timer.daemon = True
+            timer.start()
         except Exception as e:
             logger.warning(f"bangumi_archive 启动时后台构建标题索引失败: {e}")
 
@@ -227,6 +241,15 @@ class BangumiArchive:
             self._load_config()
         # 配置变更后（如从 disabled 切换到 enabled）触发后台构建
         self._maybe_start_background_index_build()
+        # 同步刷新 archive_shortcut 的 enabled 状态
+        # 避免 bangumi_archive.enabled=True 但 archive_shortcut._enabled=False
+        # 导致所有 try_* 短路返回 archive_disabled 的问题
+        try:
+            from ..bangumi_api._archive_shortcut import archive_shortcut
+
+            archive_shortcut.reload_config()
+        except Exception as e:
+            logger.warning(f"bangumi_archive 同步刷新 archive_shortcut 配置失败: {e}")
 
     # ===== meta 与 active 指针 =====
 

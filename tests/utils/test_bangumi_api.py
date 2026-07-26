@@ -1308,6 +1308,99 @@ class TestBgmSearch:
             result = api.bgm_search("title", "", "2024-01-15")
             assert result is None
 
+    def test_v0_api_tries_stripped_title(self):
+        """v0 API 路径：原始 title miss 时应尝试剥离后缀的变体
+
+        场景：fongmi 推送「完美世界 S06E279」，archive 禁用或 miss 后
+        降级到 API，原始标题无结果，剥离后用「完美世界」命中。
+        """
+        api = BangumiApi()
+        search_calls = []
+
+        def mock_search(title, **kwargs):
+            search_calls.append(title)
+            # 只有剥离后缀的「完美世界」命中
+            if title == "完美世界":
+                return [{"id": 1, "name": "完美世界"}]
+            return []
+
+        with (
+            patch.object(api, "search", side_effect=mock_search),
+            patch.object(api, "title_diff_ratio", return_value=0.9),
+        ):
+            result = api.bgm_search("完美世界 S06E279", "", "2026-01-15")
+            assert result is not None
+            # 应依次尝试原始 title 和 stripped title
+            assert "完美世界 S06E279" in search_calls
+            assert "完美世界" in search_calls
+
+    def test_v0_api_tries_stripped_ori_title(self):
+        """v0 API 路径：原始 ori_title miss 时应尝试剥离后缀的变体"""
+        api = BangumiApi()
+        search_calls = []
+
+        def mock_search(title, **kwargs):
+            search_calls.append(title)
+            if title == "Original":
+                return [{"id": 1, "name": "Original"}]
+            return []
+
+        with (
+            patch.object(api, "search", side_effect=mock_search),
+            patch.object(api, "search_old", return_value=[]),
+            patch.object(api, "title_diff_ratio", return_value=0.9),
+        ):
+            # ori_title 含 S02E10 后缀，剥离后为 "Original"
+            result = api.bgm_search("中文", "Original S02E10", "2026-01-15")
+            assert result is not None
+            assert "Original S02E10" in search_calls
+            assert "Original" in search_calls
+
+    def test_search_old_tries_stripped_title(self):
+        """旧版 API 路径：应尝试剥离后缀的变体"""
+        api = BangumiApi()
+        search_old_calls = []
+
+        def mock_search(title, **kwargs):
+            return []  # v0 API 全部 miss
+
+        def mock_search_old(title, **kwargs):
+            search_old_calls.append(title)
+            if title == "完美世界":
+                return [{"id": 1}]
+            return []
+
+        with (
+            patch.object(api, "search", side_effect=mock_search),
+            patch.object(api, "search_old", side_effect=mock_search_old),
+            patch.object(
+                api, "get_subject", return_value={"id": 1, "name": "完美世界"}
+            ),
+            patch.object(api, "title_diff_ratio", return_value=0.9),
+        ):
+            result = api.bgm_search("完美世界 S06E279", "", "2026-01-15")
+            assert result is not None
+            # 旧版 API 应尝试剥离后缀的「完美世界」
+            assert "完美世界" in search_old_calls
+
+    def test_no_suffix_skips_stripped_variant(self):
+        """标题不含季数后缀时不应尝试 stripped 变体（避免重复查询）"""
+        api = BangumiApi()
+        search_calls = []
+
+        def mock_search(title, **kwargs):
+            search_calls.append(title)
+            return [{"id": 1, "name": "番剧"}]
+
+        with (
+            patch.object(api, "search", side_effect=mock_search),
+            patch.object(api, "title_diff_ratio", return_value=0.9),
+        ):
+            # 无后缀标题，stripped == title，不应重复查询
+            api.bgm_search("普通番剧", "", "2026-01-15")
+            # search 只应被调用一次（原始标题命中）
+            assert search_calls.count("普通番剧") == 1
+
 
 class TestParseIsoDateYmd:
     """测试 _parse_iso_date_ymd"""

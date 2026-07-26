@@ -36,13 +36,13 @@ else:
     _TEST_CONFIG_INI.write_text("[bangumi]\n", encoding="utf-8")
 os.environ["CONFIG_FILE"] = str(_TEST_CONFIG_INI)
 
-import pytest  # noqa: E402
-
 # 强制禁用 bangumi-archive，避免 enabled=True 触发 BangumiArchive 单例在
 # import 时启动后台索引构建线程（读取真实 658K 条 DB，耗时 100s+，卡死测试）。
 # 需要 Archive 的测试应通过 monkeypatch 显式控制 config_manager.get 返回值。
 # 此操作必须在任何 app 模块导入前完成，确保 config_manager 读到的是禁用状态。
 import configparser  # noqa: E402
+
+import pytest  # noqa: E402
 
 _cfg = configparser.ConfigParser()
 _cfg.read(_TEST_CONFIG_INI, encoding="utf-8")

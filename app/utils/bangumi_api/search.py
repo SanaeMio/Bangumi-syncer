@@ -225,6 +225,17 @@ class SearchMixin:
         start_date_str = "无日期"
         end_date_str = "无日期"
 
+        # 预计算剥离季数/集数后缀的标题变体（用于 API 查询提升匹配率）
+        # 场景：fongmi/媒体库推送「完美世界 S06E279」，archive 禁用或 miss
+        # 后降级到 API，原样发给 Bangumi API 会因季后缀导致无结果或低相似度
+        # 命中，剥离后用核心标题「完美世界」更易命中。
+        # 延迟导入避免循环依赖，与 _archive_shortcut 内部使用同一函数保持
+        # API 与 archive 路径的剥离逻辑一致。
+        from ._archive_shortcut import _strip_season_episode_suffix
+
+        stripped_title = _strip_season_episode_suffix(title)
+        stripped_ori = _strip_season_episode_suffix(ori_title) if ori_title else ""
+
         # 尝试使用 v0 接口进行带首播日期的精确搜索
         if premiere_date and len(premiere_date) >= 10:
             try:
@@ -248,6 +259,22 @@ class SearchMixin:
                     end_date=end_date_str,
                     subject_types=subject_types,
                 )
+                # 剥离季数/集数后缀变体（仅在与原 title 不同时尝试）
+                # 提升 API 场景匹配率：覆盖「完美世界 S06E279」类查询
+                if not bgm_data and stripped_title and stripped_title != title:
+                    bgm_data = self.search(
+                        title=stripped_title,
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        subject_types=subject_types,
+                    )
+                if not bgm_data and stripped_ori and stripped_ori != (ori_title or ""):
+                    bgm_data = self.search(
+                        title=stripped_ori,
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        subject_types=subject_types,
+                    )
 
                 if not bgm_data and is_movie:
                     movie_search_title = ori_title or title
@@ -273,8 +300,14 @@ class SearchMixin:
             )
             < 0.5
         ):
-            # 过滤无效的空标题
-            search_titles = [t for t in (ori_title, title) if t and t.strip()]
+            # 构建搜索标题列表：原始 + 剥离后缀变体（去重，保持优先级）
+            # 原始标题在前（更精确），剥离后缀变体在后（兜底提升命中率）
+            seen_titles: set[str] = set()
+            search_titles: list[str] = []
+            for t in (ori_title, title, stripped_ori, stripped_title):
+                if t and t.strip() and t not in seen_titles:
+                    seen_titles.add(t)
+                    search_titles.append(t)
 
             found = False
             for t in search_titles:

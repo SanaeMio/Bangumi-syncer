@@ -110,7 +110,7 @@ def title_index_with_db(tmp_path: Path, monkeypatch):
     index = ArchiveTitleIndex()
     # 替换 _archive 模块内的 bangumi_archive 引用
     monkeypatch.setattr(
-        "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+        "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
         lambda: db_path,
     )
     # 显式同步构建索引（测试场景可接受阻塞，3 条数据构建极快）
@@ -123,7 +123,8 @@ def title_index_with_db(tmp_path: Path, monkeypatch):
 
 class TestNormalizeKey:
     def test_lowercases(self) -> None:
-        assert _normalize_key("Test Anime") == "test anime"
+        # 归一化后空格被去除（标点替换为空再转小写）
+        assert _normalize_key("Test Anime") == "testanime"
 
     def test_strips(self) -> None:
         assert _normalize_key("  Hello  ") == "hello"
@@ -133,6 +134,24 @@ class TestNormalizeKey:
 
     def test_non_string(self) -> None:
         assert _normalize_key(None) == ""  # type: ignore[arg-type]
+
+    def test_nfkc_normalization(self) -> None:
+        """NFKC 标准化：全角→半角"""
+        # 全角英数字 → 半角
+        assert _normalize_key("Ｔｅｓｔ") == "test"
+        # 全角数字 → 半角
+        assert _normalize_key("０８年") == "08年"
+
+    def test_punct_removed(self) -> None:
+        """标点符号应被去除（让 'C.A.N.S' 与 'CANS' 等价）"""
+        assert _normalize_key("C.A.N.S") == "cans"
+        assert _normalize_key("CANS") == "cans"
+        assert _normalize_key("A-B") == "ab"
+        assert _normalize_key("Re: Zero") == "rezero"
+        # 标点差异的查询都命中同一 key
+        assert _normalize_key("Battle Spirits [Re]") == _normalize_key(
+            "Battle Spirits Re"
+        )
 
 
 # ===== 精确匹配 =====
@@ -209,6 +228,87 @@ class TestFuzzyMatch:
         results = index.find_subject_ids_fuzzy("Test Anime", threshold=50, limit=2)
         assert len(results) <= 2
 
+    def test_partial_match_substring_hits(self, title_index_with_db) -> None:
+        """子串包含关系应通过 partial_ratio 命中
+
+        'Another' 是 'Another Show' 的子串，应得 100 分
+        """
+        index, _ = title_index_with_db
+        results = index.find_subject_ids_fuzzy("Another", threshold=80)
+        assert any(sid == 2 for sid, _ in results)
+        # 子串包含应得 100 分
+        assert any(score == 100.0 for sid, score in results if sid == 2)
+
+    def test_token_set_ratio_word_order(self, title_index_with_db) -> None:
+        """字符相同顺序不同的查询应能命中
+
+        归一化后 'Anime Test' 与 'Test Anime' 分别为 'animetest' 和 'testanime'，
+        字符集相同但顺序不同，fuzz.ratio 仍能给较高分数。
+        """
+        index, _ = title_index_with_db
+        results = index.find_subject_ids_fuzzy("Anime Test", threshold=60)
+        assert any(sid in (1, 3) for sid, _ in results)
+
+
+# ===== bigram 倒排索引 =====
+
+
+class TestBigramIndex:
+    """bigram 倒排索引预筛测试"""
+
+    def test_extract_bigrams_basic(self) -> None:
+        """_extract_bigrams 应提取相邻字符对"""
+        from app.utils.bangumi_archive._title_index import _extract_bigrams
+
+        assert _extract_bigrams("完美世界") == {"完美", "美世", "世界"}
+        assert _extract_bigrams("ab") == {"ab"}
+        assert _extract_bigrams("a") == set()  # 短标题返回空集
+        assert _extract_bigrams("") == set()
+
+    def test_bigram_index_built(self, title_index_with_db) -> None:
+        """构建后 _bigram_index 应被填充"""
+        index, _ = title_index_with_db
+        # 归一化后 'test anime' → 'testanime'，bigram 'te' 应在索引中
+        assert "te" in index._bigram_index
+        assert "es" in index._bigram_index
+        assert "testanime" in index._bigram_index["te"]
+
+    def test_collect_candidates_returns_relevant(self, title_index_with_db) -> None:
+        """_collect_candidates_by_bigram 应返回相关候选"""
+        index, _ = title_index_with_db
+        candidates = index._collect_candidates_by_bigram("testanime")
+        assert "testanime" in candidates
+        assert "测试动画" not in candidates  # 中文不应被 bigram "te" 命中
+
+    def test_collect_candidates_handles_unknown_bigram(
+        self, title_index_with_db
+    ) -> None:
+        """query 含未知 bigram 时仍能从已知 bigram 找到候选"""
+        index, _ = title_index_with_db
+        # "testanme" 含 'nm' 不在索引中，但 'te', 'es', 'st' 等都在
+        candidates = index._collect_candidates_by_bigram("testanme")
+        assert "testanime" in candidates
+
+    def test_collect_candidates_empty_for_no_hits(self, title_index_with_db) -> None:
+        """所有 bigram 都未命中时返回空列表"""
+        index, _ = title_index_with_db
+        # 用 archive 中不存在的字符
+        candidates = index._collect_candidates_by_bigram("zzzzz")
+        assert candidates == []
+
+    def test_score_candidate_substring_short_circuit(self, title_index_with_db) -> None:
+        """子串包含应直接得 100 分"""
+        index, _ = title_index_with_db
+        # 'test' 是 'test anime' 的子串
+        score = index._score_candidate("test", "test anime")
+        assert score == 100.0
+
+    def test_score_candidate_exact_match(self, title_index_with_db) -> None:
+        """完全相同应得 100 分"""
+        index, _ = title_index_with_db
+        score = index._score_candidate("test anime", "test anime")
+        assert score == 100.0
+
 
 # ===== 失效与重建 =====
 
@@ -244,7 +344,7 @@ class TestInvalidateAndRebuild:
         new_db = tmp_path / "new_archive.db"
         _create_test_db(new_db)
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: new_db,
         )
 
@@ -264,7 +364,7 @@ class TestInvalidateAndRebuild:
         index = ArchiveTitleIndex()
         nonexistent = tmp_path / "missing.db"
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: nonexistent,
         )
         # 未构建时 is_ready=False，查询返回空
@@ -318,7 +418,7 @@ class TestDiskCache:
         _create_test_db(db_path)
         index = ArchiveTitleIndex()
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: db_path,
         )
 
@@ -326,21 +426,26 @@ class TestDiskCache:
 
         cache_path = index._get_cache_path(db_path)
         assert cache_path.exists()
-        # 缓存文件应包含 header + data 两行
+        # 缓存文件应包含 header + title_to_ids + bigram_index 三行
         with open(cache_path, "rb") as f:
             header = json.loads(f.readline())
             data = json.loads(f.readline())
-        assert header["format_version"] == 1
+            bigram_data = json.loads(f.readline())
+        assert header["format_version"] == 3
         assert header["db_mtime"] == db_path.stat().st_mtime
         assert header["db_size"] == db_path.stat().st_size
-        assert "test anime" in data  # 归一化后的小写 key
+        # 归一化后 'Test Anime' → 'testanime'
+        assert "testanime" in data
+        # bigram 倒排索引：应含 testanime 的 bigram
+        assert "te" in bigram_data  # "testanime" 的 bigram
+        assert "testanime" in bigram_data["te"]
 
     def test_load_from_disk_skips_db_build(self, tmp_path: Path, monkeypatch) -> None:
         """磁盘缓存有效时，加载应跳过 DB 构建"""
         db_path = tmp_path / "test_archive_a.db"
         _create_test_db(db_path)
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: db_path,
         )
 
@@ -374,7 +479,7 @@ class TestDiskCache:
         db_path = tmp_path / "test_archive_a.db"
         _create_test_db(db_path)
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: db_path,
         )
 
@@ -404,7 +509,7 @@ class TestDiskCache:
         db_path = tmp_path / "test_archive_a.db"
         _create_test_db(db_path)
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: db_path,
         )
 
@@ -443,7 +548,7 @@ class TestBackgroundBuild:
         db_path = tmp_path / "test_archive_a.db"
         _create_test_db(db_path)
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: db_path,
         )
 
@@ -464,7 +569,7 @@ class TestBackgroundBuild:
         db_path = tmp_path / "test_archive_a.db"
         _create_test_db(db_path)
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: db_path,
         )
 
@@ -483,7 +588,7 @@ class TestBackgroundBuild:
         db_path = tmp_path / "test_archive_a.db"
         _create_test_db(db_path)
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: db_path,
         )
 
@@ -506,7 +611,7 @@ class TestBackgroundBuild:
         """active DB 不存在时 build_in_background 应直接返回"""
         nonexistent = tmp_path / "missing.db"
         monkeypatch.setattr(
-            "app.utils.bangumi_archive._title_index.bangumi_archive.get_active_db_path",
+            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
             lambda: nonexistent,
         )
 
