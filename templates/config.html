@@ -3021,7 +3021,7 @@ function copyWebhookKey() {
 
 async function loadLLMConfig() {
     try {
-        const r = await fetch(appUrl('/llm/conf'));
+        const r = await fetch(appUrl('/api/llm/conf'));
         const d = await r.json();
         document.getElementById('llm-api-base').value = d.api_base || '';
         document.getElementById('llm-api-key').value = d.api_key || '';
@@ -3045,7 +3045,7 @@ async function saveLLMAndTest() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
     try {
         // 第一步：保存LLM配置
-        const saveR = await fetch(appUrl('/llm/conf'), {
+        const saveR = await fetch(appUrl('/api/llm/conf'), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3062,7 +3062,7 @@ async function saveLLMAndTest() {
 
         // 第二步：测试连接
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
-        const testR = await fetch(appUrl('/llm/test'), { method: 'POST' });
+        const testR = await fetch(appUrl('/api/llm/test'), { method: 'POST' });
         const testD = await testR.json();
         if (testD.success) {
             showAlert('保存成功，连接测试通过: ' + testD.message + ' (' + testD.latency_ms + 'ms)', 'success');

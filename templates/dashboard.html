@@ -523,7 +523,7 @@ async function loadDashboardData() {
 
     // LLM 用量统计
     var _llmDetail = null;
-    fetch(appUrl('/llm/stats?scope=detailed'), fetchOpts)
+    fetch(appUrl('/api/llm/stats?scope=detailed'), fetchOpts)
         .then(function(res) { return res.json(); })
         .then(function(d) {
             if (d.total_calls > 0 || d.error_count > 0) {
