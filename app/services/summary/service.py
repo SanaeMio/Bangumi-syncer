@@ -72,7 +72,7 @@ class SummaryService:
             "summary_text": response.content,
             "model": response.model,
             "usage": response.usage,
-            "latency_ms": 0,
+            "latency_ms": response.latency,
             "record_count": record_count,
             "date_from": date_from,
             "date_to": date_to,

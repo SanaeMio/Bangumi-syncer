@@ -32,3 +32,4 @@ class ChatResponse(BaseModel):
     content: str
     model: str = ""
     usage: Optional[Usage] = None
+    latency: int = 0

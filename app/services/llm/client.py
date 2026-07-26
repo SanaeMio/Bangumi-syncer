@@ -13,6 +13,7 @@ from app.core.config import config_manager
 from app.core.logging import logger
 
 from .models import ChatResponse, Message
+from .providers.base import BaseProvider
 from .providers.openai_compat import OpenAICompatProvider
 
 _PROVIDER_MAP: dict[str, type] = {
@@ -32,7 +33,9 @@ def _format_error_detail(e: Exception) -> str:
     return " ".join(parts)
 
 
-def _build_provider(provider: str, cfg: dict, proxy: str | None):
+def _build_provider(
+    provider: str, cfg: dict[str, object], proxy: str | None
+) -> BaseProvider:
     cls = _PROVIDER_MAP.get(provider)
     if cls is None:
         supported = ", ".join(_PROVIDER_MAP)
@@ -92,16 +95,12 @@ class LLMClient:
             try:
                 response = await self._provider.chat(messages, **kwargs)
                 latency_ms = int((time.time() - t_start) * 1000)
-                self._log_success(
-                    response,
-                    job_id=job_id,
-                    job_name=job_name,
-                    latency_ms=latency_ms,
-                )
+                response.latency = latency_ms
+                self._log_success(response, job_id=job_id, job_name=job_name)
                 logger.info(
                     f"LLM call: model={response.model} "
                     f"tokens={response.usage.total_tokens if response.usage else 0} "
-                    f"latency={latency_ms}ms"
+                    f"latency={response.latency}ms"
                 )
                 return response
             except Exception as e:
@@ -126,14 +125,13 @@ class LLMClient:
             job_name=job_name,
             latency_ms=latency_ms,
         )
-        return ChatResponse(content="", model="", usage=None)
+        return ChatResponse(content="", model="", usage=None, latency=latency_ms)
 
     def _log_success(
         self,
         response: ChatResponse,
         job_id: int | None = None,
         job_name: str | None = None,
-        latency_ms: int = 0,
     ) -> None:
         """记录成功 LLM 调用（从 ChatResponse 提取用量信息）。"""
         try:
@@ -148,7 +146,7 @@ class LLMClient:
                 prompt_tokens=usage.prompt_tokens if usage else 0,
                 completion_tokens=usage.completion_tokens if usage else 0,
                 total_tokens=usage.total_tokens if usage else 0,
-                latency_ms=latency_ms,
+                latency_ms=response.latency,
                 status="success",
             )
         except Exception as e:
