@@ -437,6 +437,16 @@ class DatabaseManager:
     def mark_all_announcements_read(self, announcement_ids: list[str]) -> int:
         return self._inbox.mark_all_announcements_read(announcement_ids)
 
+    def insert_notification(
+        self,
+        notif_type: str,
+        title: str,
+        body: str = "",
+        ref_id: "int | None" = None,
+    ) -> None:
+        """写入一条收件箱通知。"""
+        return self._inbox.insert_notification(notif_type, title, body, ref_id)
+
     def backfill_historical_error_notifications(self) -> int:
         """将历史 error 同步记录回填为已读通知（仅执行一次）。"""
         return self._inbox.backfill_historical_error_notifications()

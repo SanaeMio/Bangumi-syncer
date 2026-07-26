@@ -83,10 +83,6 @@ class SummaryService:
         try:
             result = await self.generate_summary(job_config)
 
-            # 构建通知类型
-            user_name = job_config.user_name.strip() if job_config.user_name else ""
-            notif_type = f"watching_summary_{job_config.name}"
-
             # LLM 失败时用明确提示替换空摘要
             summary_text = result["summary_text"]
             if not summary_text and not result.get("model"):
@@ -98,26 +94,79 @@ class SummaryService:
                 logger.error(
                     f"Summary job '{job_config.name}' LLM 返回空内容，发送失败提示通知"
                 )
+                self._send_failure_notification(
+                    job_config,
+                    summary_text,
+                    inbox_type="summary_llm_failed",
+                    inbox_title=f"追番总结失败：{job_config.name}",
+                )
+                return
 
-            # 构建数据字典
-            usage = result["usage"]
-            data = {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "job_name": job_config.name,
-                "user_name": user_name,
-                "summary_text": summary_text,
-                "date_range": f"{result['date_from']} ~ {result['date_to']}",
-                "record_count": result["record_count"],
-                "lookback_days": job_config.lookback_days,
-                "model": result["model"],
-                "tokens_used": usage.total_tokens if usage else 0,
-            }
-
-            get_notifier().send_notification_by_type(
-                notif_type, data, skip_cooldown=True
-            )
+            # 正常发送成功通知
+            self._send_success_notification(job_config, result)
         except Exception as e:
             logger.error(f"Summary job '{job_config.name}' failed: {e}")
+            summary_text = (
+                f"追番总结任务执行异常：{e}\n"
+                "请检查任务配置（Cron 表达式、回溯天数等）是否正确。"
+            )
+            self._send_failure_notification(
+                job_config,
+                summary_text,
+                inbox_type="summary_job_failed",
+                inbox_title=f"追番总结异常：{job_config.name}",
+            )
+
+    def _send_success_notification(
+        self, job_config: SummaryJobConfig, result: dict
+    ) -> None:
+        """发送成功通知（webhook + 邮件）。"""
+        user_name = job_config.user_name.strip() if job_config.user_name else ""
+        usage = result["usage"]
+        data = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "job_name": job_config.name,
+            "user_name": user_name,
+            "summary_text": result["summary_text"],
+            "date_range": f"{result['date_from']} ~ {result['date_to']}",
+            "record_count": result["record_count"],
+            "lookback_days": job_config.lookback_days,
+            "model": result["model"],
+            "tokens_used": usage.total_tokens if usage else 0,
+        }
+        get_notifier().send_notification_by_type(
+            f"watching_summary_{job_config.name}", data, skip_cooldown=True
+        )
+
+    def _send_failure_notification(
+        self,
+        job_config: SummaryJobConfig,
+        summary_text: str,
+        *,
+        inbox_type: str,
+        inbox_title: str,
+    ) -> None:
+        """发送失败通知（webhook + 邮件 + 收件箱）。"""
+        data = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "job_name": job_config.name,
+            "user_name": job_config.user_name.strip() or "",
+            "summary_text": summary_text,
+            "date_range": "",
+            "record_count": 0,
+            "lookback_days": job_config.lookback_days,
+            "model": "",
+            "tokens_used": 0,
+        }
+        get_notifier().send_notification_by_type(
+            f"watching_summary_{job_config.name}", data, skip_cooldown=True
+        )
+        try:
+            database_manager.insert_notification(
+                notif_type=inbox_type, title=inbox_title, body=summary_text
+            )
+        except Exception as e:
+            logger.error(f"写入收件箱通知失败: {e}")
 
     def _format_records(self, records: list[dict]) -> str:
         """将同步记录格式化为紧凑的文本表格。"""

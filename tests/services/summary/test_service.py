@@ -476,7 +476,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_exception_in_generate_summary_is_caught(self):
-        """generate_summary 抛出异常时，记录错误日志但不重新抛出。"""
+        """generate_summary 抛出异常时，发送失败通知并记录错误日志。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
@@ -485,6 +485,7 @@ class TestExecuteJob:
         with (
             patch.object(svc, "generate_summary") as mock_gen,
             patch("app.services.summary.service.get_notifier") as mock_get_notifier,
+            patch("app.services.summary.service.database_manager") as mock_db,
             patch("app.services.summary.service.logger") as mock_logger,
         ):
             mock_gen.side_effect = RuntimeError("LLM down")
@@ -492,15 +493,77 @@ class TestExecuteJob:
             # 不应抛出异常
             await svc.execute_job(config)
 
-        # Notifier 不应被调用
-        mock_get_notifier.return_value.send_notification_by_type.assert_not_called()
+        # 应发送失败通知
+        mock_get_notifier.return_value.send_notification_by_type.assert_called_once()
+        call_args = mock_get_notifier.return_value.send_notification_by_type.call_args[
+            0
+        ]
+        assert call_args[0] == "watching_summary_failing_job"
+        assert "LLM down" in call_args[1]["summary_text"]
+
+        # 收件箱应写入通知
+        mock_db.insert_notification.assert_called_once()
+        inbox_args = mock_db.insert_notification.call_args[1]
+        assert inbox_args["notif_type"] == "summary_job_failed"
+        assert "LLM down" in inbox_args["body"]
 
         # 日志应记录该错误
-        mock_logger.error.assert_called_once()
-        error_msg = mock_logger.error.call_args[0][0]
-        assert "failing_job" in error_msg
-        assert "failing_job" in error_msg
-        assert "LLM down" in error_msg
+        error_calls = [
+            c[0][0]
+            for c in mock_logger.error.call_args_list
+            if isinstance(c[0], tuple) and c[0]
+        ]
+        assert any("failing_job" in msg for msg in error_calls)
+        assert any("LLM down" in msg for msg in error_calls)
+
+    @pytest.mark.asyncio
+    async def test_empty_llm_content_sends_llm_failed_notification(self):
+        """LLM 返回空内容时，发送 summary_llm_failed 通知并写入收件箱。"""
+        from app.services.summary.service import SummaryService
+
+        svc = SummaryService()
+        config = _make_config(name="empty_llm_job")
+
+        with (
+            patch.object(svc, "generate_summary") as mock_gen,
+            patch("app.services.summary.service.get_notifier") as mock_get_notifier,
+            patch("app.services.summary.service.database_manager") as mock_db,
+            patch("app.services.summary.service.logger") as mock_logger,
+        ):
+            mock_gen.return_value = {
+                "summary_text": "",
+                "model": "",
+                "usage": None,
+                "record_count": 0,
+                "date_from": "2026-07-14",
+                "date_to": "2026-07-15",
+            }
+
+            await svc.execute_job(config)
+
+        # 应发送失败通知（而非成功通知）
+        mock_get_notifier.return_value.send_notification_by_type.assert_called_once()
+        call_args = mock_get_notifier.return_value.send_notification_by_type.call_args[
+            0
+        ]
+        notif_type = call_args[0]
+        assert notif_type == "watching_summary_empty_llm_job"
+        assert "LLM 返回空内容" in call_args[1]["summary_text"]
+        assert call_args[1]["model"] == ""
+
+        # 收件箱应写入 summary_llm_failed 类型通知
+        mock_db.insert_notification.assert_called_once()
+        inbox_args = mock_db.insert_notification.call_args[1]
+        assert inbox_args["notif_type"] == "summary_llm_failed"
+        assert "empty_llm_job" in inbox_args["title"]
+
+        # 应记录错误日志
+        error_calls = [
+            c[0][0]
+            for c in mock_logger.error.call_args_list
+            if isinstance(c[0], tuple) and c[0]
+        ]
+        assert any("LLM 返回空内容" in msg for msg in error_calls)
 
     @pytest.mark.asyncio
     async def test_tokens_used_zero_when_usage_is_none(self):
