@@ -135,6 +135,22 @@ class TestSaveSummaryConfig:
         assert "改名后的总结" in names
         assert "每日总结" not in names
 
+    def test_partial_update_only_enabled(self, tmp_path):
+        """只传 enabled 时不应写入错误的配置节（回归 summary- 空名称 bug）。"""
+        cm = _cm_from_ini(tmp_path, _TWO_SUMMARY_INI)
+        cm.save_summary_config({"enabled": False}, old_name="每日总结")
+
+        configs = cm.get_summary_configs()
+        c = next(c for c in configs if c["name"] == "每日总结")
+        assert c["enabled"] is False
+        # 其他字段应保持原值
+        assert c["cron"] == "0 21 * * *"
+        assert c["user_name"] == "alice"
+
+        # 确认没有创建空的 summary- 节
+        parser = cm.get_config_parser()
+        assert not parser.has_section("summary-")
+
     def test_save_persists_to_disk(self, tmp_path):
         cm = _cm_from_ini(tmp_path, "[bangumi]\nusername = u\n")
         cm.save_summary_config(dict(_SAMPLE_CONFIG))
