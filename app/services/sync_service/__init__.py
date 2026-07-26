@@ -50,6 +50,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         self._cached_mappings: dict[str, str] = {}
         self._mapping_file_path: str | None = None
         self._last_modified_time: float = 0
+        # BangumiApi 实例缓存：user_name → (实例, 配置快照)
+        # 配置快照变更时自动失效重建，避免每次同步都重新构造 httpx.Client
+        self._bangumi_api_cache: dict[str, tuple[BangumiApi, dict]] = {}
         # 线程池大小从配置读取
         try:
             scheduler_cfg = config_manager.get_scheduler_config()
@@ -1916,7 +1919,16 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return None
 
     def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
-        """根据用户名创建对应的BangumiApi实例"""
+        """根据用户名获取对应的BangumiApi实例
+
+        按用户缓存实例，配置变更时自动失效重建。
+        复用实例可避免每次同步都重新构造 httpx.Client（含连接池建立），
+        同时让 BangumiApi 内部的 OrderedDict 实例缓存跨调用点生效，
+        显著降低单次同步耗时（特别是跨季遍历场景）。
+
+        线程安全说明：dict get/set 在 GIL 下原子，最坏情况是两个线程
+        同时 miss 各创建一个实例，最终 dict 被覆盖，可接受（比加锁性能好）。
+        """
         bangumi_config = self._get_bangumi_config_for_user(user_name)
         if not bangumi_config:
             return None
@@ -1925,15 +1937,38 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.error(f"用户 {user_name} 的bangumi配置不完整")
             return None
 
-        return BangumiApi(
-            username=bangumi_config["username"],
-            access_token=bangumi_config["access_token"],
-            private=bangumi_config["private"],
-            http_proxy=config_manager.get("dev", "script_proxy", fallback=""),
-            ssl_verify=config_manager.get("dev", "ssl_verify", fallback=True),
-            bgm_api_proxy=config_manager.get("dev", "bgm_api_proxy", fallback=""),
-            bgm_next_proxy=config_manager.get("dev", "bgm_next_proxy", fallback=""),
+        # 组装配置快照：bangumi section + dev section 中影响 API 行为的字段
+        dev_proxy = config_manager.get("dev", "script_proxy", fallback="")
+        dev_ssl = config_manager.get("dev", "ssl_verify", fallback=True)
+        dev_bgm_api_proxy = config_manager.get("dev", "bgm_api_proxy", fallback="")
+        dev_bgm_next_proxy = config_manager.get("dev", "bgm_next_proxy", fallback="")
+        config_snapshot = {
+            "username": bangumi_config["username"],
+            "access_token": bangumi_config["access_token"],
+            "private": bangumi_config["private"],
+            "http_proxy": dev_proxy,
+            "ssl_verify": dev_ssl,
+            "bgm_api_proxy": dev_bgm_api_proxy,
+            "bgm_next_proxy": dev_bgm_next_proxy,
+        }
+
+        # 缓存命中：实例存在且配置快照未变化
+        cached = self._bangumi_api_cache.get(user_name)
+        if cached is not None and cached[1] == config_snapshot:
+            return cached[0]
+
+        # 未命中或配置变更：创建新实例
+        api = BangumiApi(
+            username=config_snapshot["username"],
+            access_token=config_snapshot["access_token"],
+            private=config_snapshot["private"],
+            http_proxy=config_snapshot["http_proxy"],
+            ssl_verify=config_snapshot["ssl_verify"],
+            bgm_api_proxy=config_snapshot["bgm_api_proxy"],
+            bgm_next_proxy=config_snapshot["bgm_next_proxy"],
         )
+        self._bangumi_api_cache[user_name] = (api, config_snapshot)
+        return api
 
     def _get_bangumi_data(self) -> BangumiData:
         """获取BangumiData实例（使用实例缓存避免内存泄漏）"""
