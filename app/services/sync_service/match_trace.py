@@ -1,8 +1,11 @@
 """
 匹配过程追踪数据结构
 
-记录三段式匹配的完整过程（custom_mapping → bangumi_data → api_search），
+记录三段式匹配的完整过程（custom_mapping → bangumi_data → archive/api_search），
 供"匹配记录"页面和"调试工具"展示。每次同步请求都会创建 MatchTrace 对象。
+
+archive 与 api_search 共用第三阶段入口：当 BangumiApi 的 archive 短路命中时
+stage/final_match_method 标记为 "archive"，否则降级走 API 标记为 "api_search"。
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ class MatchCandidate:
     score: float = 0.0
     platform: str = ""
     air_date: str = ""
-    source: str = ""  # bangumi_data / api_search
+    source: str = ""  # bangumi_data / archive / api_search
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,7 +43,7 @@ class MatchCandidate:
 class MatchStep:
     """单阶段匹配步骤"""
 
-    stage: str  # custom_mapping / bangumi_data / api_search
+    stage: str  # custom_mapping / bangumi_data / archive / api_search
     status: str  # hit / miss / skipped / error
     subject_id: str | None = None
     score: float | None = None
@@ -86,7 +89,7 @@ class MatchTrace:
     steps: list[MatchStep] = field(default_factory=list)
     final_subject_id: str | None = None
     final_episode_id: str | None = None
-    final_match_method: str = ""  # custom_mapping / bangumi_data / api_search / failed
+    final_match_method: str = ""  # custom_mapping / bangumi_data / archive / api_search / failed
     final_score: float | None = None
     # 新增：同步最终状态/消息/动作（用于流水线最后一步 result）
     final_status: str = ""

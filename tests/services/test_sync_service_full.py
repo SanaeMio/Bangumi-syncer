@@ -11,6 +11,7 @@ import pytest
 from app.models.sync import CustomItem
 from app.services.mapping_service import mapping_service
 from app.services.sync_service import SyncService
+from app.services.sync_service.match_trace import MatchTrace
 
 
 @pytest.fixture
@@ -1325,6 +1326,129 @@ def test_find_subject_id_api_search_exception_returns_none():
                 )
         assert sid is None
         assert "Bangumi API 搜索出错" in err
+
+
+def test_find_subject_id_archive_hit_marks_stage_as_archive():
+    """archive 短路命中时，trace.step.stage 和 final_match_method 都标记为 "archive"，
+    而不是 "api_search"。让"本地归档匹配"在同步记录详情中可见。
+    """
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 12345,
+                "name": "测试番剧",
+                "name_cn": "测试番剧",
+                "platform": "TV",
+                "date": "2024-01-15",
+            }
+        ]
+        # 关键：模拟 archive 短路命中（bgm_search 内部 search/search_old 走 archive）
+        bgm.last_hit_source = "archive"
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="测试番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-01-15",
+                        ),
+                        trace=trace,
+                    )
+
+        assert str(sid) == "12345"
+        # 验证 trace：final_match_method 应为 "archive"
+        assert trace.final_match_method == "archive"
+        assert trace.final_subject_id == 12345
+        # 验证 steps 中存在 stage="archive" 的步骤
+        archive_steps = [s for s in trace.steps if s.stage == "archive"]
+        assert len(archive_steps) == 1
+        assert archive_steps[0].status == "hit"
+        assert archive_steps[0].subject_id == 12345
+        # 验证 candidates 的 source 也为 "archive"
+        assert all(c.source == "archive" for c in archive_steps[0].candidates)
+        # 不应出现 stage="api_search" 的命中步骤
+        api_hit_steps = [
+            s for s in trace.steps if s.stage == "api_search" and s.status == "hit"
+        ]
+        assert len(api_hit_steps) == 0
+
+
+def test_find_subject_id_api_hit_keeps_stage_as_api_search():
+    """API 命中（非 archive）时保持 stage="api_search"，确认 archive/api 分流正确。"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 67890,
+                "name": "API番剧",
+                "name_cn": "API番剧",
+                "platform": "TV",
+                "date": "2024-02-20",
+            }
+        ]
+        # 走 API 命中：last_hit_source 为空字符串
+        bgm.last_hit_source = ""
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="API番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-02-20",
+                        ),
+                        trace=trace,
+                    )
+
+        assert str(sid) == "67890"
+        assert trace.final_match_method == "api_search"
+        assert trace.final_subject_id == 67890
+        api_steps = [s for s in trace.steps if s.stage == "api_search"]
+        assert len(api_steps) == 1
+        assert api_steps[0].status == "hit"
+        # 不应出现 stage="archive"
+        archive_steps = [s for s in trace.steps if s.stage == "archive"]
+        assert len(archive_steps) == 0
 
 
 def test_sync_custom_item_no_bgm_api_after_find_subject():

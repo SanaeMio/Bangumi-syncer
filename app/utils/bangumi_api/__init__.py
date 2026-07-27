@@ -94,6 +94,12 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         # enabled=False 时所有 try_* 立即返回 archive_disabled，等价于原行为
         self._archive = archive_shortcut
 
+        # 最近一次读操作的命中来源（""=API/未命中，"archive"=本地归档命中）
+        # 由 search/search_old/get_subject/get_related_subjects 在 archive 短路命中时置 "archive"，
+        # 调用方（sync_service）据此把匹配过程步骤标记为 archive 而非 api_search。
+        # 每次 bgm_search 入口会重置为 ""，反映该次搜索的最终命中来源。
+        self.last_hit_source: str = ""
+
         # 如果禁用SSL验证，输出警告（httpx 无需抑制 urllib3 警告）
         if not ssl_verify:
             logger.warning(

@@ -118,6 +118,7 @@ function renderMatchMethodBadge(method) {
     const badges = {
         custom_mapping: ['primary', '自定义映射'],
         bangumi_data: ['success', 'bangumi-data'],
+        archive: ['warning', '本地归档'],
         api_search: ['info', 'API 搜索'],
         failed: ['danger', '失败'],
     };
@@ -294,12 +295,13 @@ function getMatchStepStatusLabel(status) {
     return labels[status] || status || '未知';
 }
 
-// 流水线阶段名映射（10 阶段）
+// 流水线阶段名映射（11 阶段：archive 短路命中时独立展示）
 const PIPELINE_STAGE_NAMES = {
     receive: '接收请求',
     normalize: '标题归一化',
     custom_mapping: '自定义映射',
     bangumi_data: 'bangumi-data 本地匹配',
+    archive: '本地归档匹配',
     api_search: 'Bangumi API 搜索',
     post_search: '搜索后处理',
     cross_season: '跨季链查找',
@@ -946,6 +948,7 @@ function renderMatchTraceDetail(record, trace, options) {
             const stageName = {
                 custom_mapping: '自定义映射',
                 bangumi_data: 'bangumi-data 本地匹配',
+                archive: '本地归档匹配',
                 api_search: 'Bangumi API 搜索',
             }[step.stage] || step.stage;
 

@@ -1540,6 +1540,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     trace.finish()
                 return None, False, "Bangumi 搜索无结果"
 
+            # 判断本次搜索最终命中来源：archive 短路命中标记为 "archive"，
+            # 否则（走 API 命中）保持 "api_search"。后续 step.stage / candidates.source /
+            # final_match_method 都据此区分，让"本地归档匹配"在同步记录详情中可见。
+            is_archive_hit = bgm.last_hit_source == "archive"
+            match_stage = "archive" if is_archive_hit else "api_search"
+            if step:
+                step.stage = match_stage
+
             # top-N platform 加权排序：按放送形态重排候选，使最可能的目标排在首位
             is_movie_request = item.media_type == "movie"
             bgm_data = self._sort_candidates_by_platform(
@@ -1549,7 +1557,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             # 保证 detect_media_type 改选时所有候选都可用，
             # 后续 trace 候选收集单独取 top-5。
 
-            # 记录 api_search step（原始搜索结果，可能在后续 post_search step 中被改选）
+            # 记录 search step（原始搜索结果，可能在后续 post_search step 中被改选）
             original_top = bgm_data[0] if bgm_data else {}
             original_top_id = original_top.get("id")
             original_top_name = (
@@ -1558,7 +1566,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             if step:
                 step.status = "hit"
                 step.subject_id = original_top_id
-                step.reason = f"API 搜索命中：{original_top_name}"
+                step.reason = (
+                    f"本地归档命中：{original_top_name}"
+                    if is_archive_hit
+                    else f"API 搜索命中：{original_top_name}"
+                )
                 for cand in bgm_data[:5]:
                     step.candidates.append(
                         MatchCandidate(
@@ -1567,7 +1579,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             name_cn=cand.get("name_cn", ""),
                             platform=cand.get("platform", ""),
                             air_date=cand.get("date", ""),
-                            source="api_search",
+                            source=match_stage,
                         )
                     )
 
@@ -1878,8 +1890,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
             if trace:
                 trace.final_subject_id = bgm_data[0]["id"]
-                trace.final_match_method = "api_search"
-                # API 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
+                # 区分 archive / api_search 命中来源（与 step.stage 保持一致）
+                trace.final_match_method = match_stage
+                # 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
                 trace.final_score = 1.0 if is_api_season_matched else 0.9
                 trace.finish()
             return bgm_data[0]["id"], is_api_season_matched, ""

@@ -42,7 +42,7 @@ class SyncRecordsRepository(BaseRepository):
         """记录同步日志到数据库，返回新记录 id（失败时 None）
 
         匹配追踪相关字段：
-        - match_method: 匹配方式（custom_mapping/bangumi_data/api_search/failed）
+        - match_method: 匹配方式（custom_mapping/bangumi_data/archive/api_search/failed）
         - match_score: 最佳匹配置信度（0-1）
         - match_platform: 命中条目的 platform
         - match_trace: 完整匹配过程字典（序列化为 JSON 存储）

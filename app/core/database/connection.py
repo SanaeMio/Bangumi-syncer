@@ -122,7 +122,7 @@ class DatabaseConnection:
         """旧库迁移：为 sync_records 增加匹配追踪字段。
 
         新增 4 列：
-        - match_method: 匹配方式（custom_mapping/bangumi_data/api_search/failed）
+        - match_method: 匹配方式（custom_mapping/bangumi_data/archive/api_search/failed）
         - match_score: 最佳匹配置信度（0-1）
         - match_platform: 命中条目的 platform（TV/OVA/剧场版/日剧/电影...）
         - match_trace: JSON 字符串，完整匹配过程（仅 debug 模式写入）

@@ -89,7 +89,10 @@ class SearchMixin:
             data_list = shortcut.data or []
             result = data_list if list_only else {"data": data_list}
             self._put_cache("search", cache_key, result)
+            self.last_hit_source = "archive"
             return result
+        # archive 未命中/未启用：走 API，清空命中来源标记
+        self.last_hit_source = ""
 
         res = self._request_with_retry(
             "POST",
@@ -137,7 +140,10 @@ class SearchMixin:
                 else {"results": len(data_list), "list": data_list}
             )
             self._put_cache("search_old", cache_key, result)
+            self.last_hit_source = "archive"
             return result
+        # archive 未命中/未启用：走 API，清空命中来源标记
+        self.last_hit_source = ""
 
         res = self._request_with_retry(
             "GET",
@@ -224,6 +230,11 @@ class SearchMixin:
         bgm_data = None
         start_date_str = "无日期"
         end_date_str = "无日期"
+
+        # 重置命中来源标记：反映本次 bgm_search 的最终命中来源
+        # 内部 search/search_old 在 archive 命中时会置 "archive"，未命中时置 ""
+        # 调用方据此区分 archive / api_search 两种匹配路径
+        self.last_hit_source = ""
 
         # 预计算剥离季数/集数后缀的标题变体（用于 API 查询提升匹配率）
         # 场景：fongmi/媒体库推送「完美世界 S06E279」，archive 禁用或 miss
