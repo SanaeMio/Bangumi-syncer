@@ -1572,7 +1572,9 @@ class TestLongSeriesEpisodeSync:
             return_value=ShortcutResult(True, archive_data, "archive_hit"),
         ):
             with patch.object(api, "_fetch_episodes_page") as mock_fetch:
-                with patch.object(api, "get_episodes", return_value=full_eps) as mock_get:
+                with patch.object(
+                    api, "get_episodes", return_value=full_eps
+                ) as mock_get:
                     found = api._find_episode_by_sort("899", 500)
         assert found is not None
         assert found["id"] == 999

@@ -394,10 +394,13 @@ def test_handle_multi_accounts_config_preserves_bangumi_archive_section():
         }
     )
 
-    with patch(
-        "app.api.config.config_manager.get_config_parser",
-        return_value=parser,
-    ), patch("app.api.config.config_manager.save_config"):
+    with (
+        patch(
+            "app.api.config.config_manager.get_config_parser",
+            return_value=parser,
+        ),
+        patch("app.api.config.config_manager.save_config"),
+    ):
         _handle_multi_accounts_config(
             {
                 "bangumi-bob": {

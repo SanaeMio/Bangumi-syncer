@@ -296,9 +296,7 @@ async def discover_devices(
         for msg in failures:
             err_groups.setdefault(_short_err(msg), []).append(msg)
 
-        summary_parts = [
-            f"{err}×{len(ips)}" for err, ips in err_groups.items()
-        ]
+        summary_parts = [f"{err}×{len(ips)}" for err, ips in err_groups.items()]
         sample_lines: list[str] = []
         for err, ips in err_groups.items():
             samples = ", ".join(ips[:3])

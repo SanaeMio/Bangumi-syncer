@@ -1662,4 +1662,3 @@ def test_find_subject_id_api_season_gt1_top_movie_reselects_mainline_via_related
     bgm.get_related_subjects.assert_called_once()
     # 验证 get_subject 被调用以获取关联条目详情
     bgm.get_subject.assert_called_with(577198)
-

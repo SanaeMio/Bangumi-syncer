@@ -508,9 +508,7 @@ class ArchiveImporter:
             if index_path.exists():
                 try:
                     index_path.unlink()
-                    logger.info(
-                        f"bangumi_archive: 已清理旧索引缓存 {index_path.name}"
-                    )
+                    logger.info(f"bangumi_archive: 已清理旧索引缓存 {index_path.name}")
                 except OSError as e:
                     logger.warning(
                         f"bangumi_archive: 清理索引缓存失败 {index_path}: {e}"

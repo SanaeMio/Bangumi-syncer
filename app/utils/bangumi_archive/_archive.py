@@ -208,9 +208,7 @@ class BangumiArchive:
         )
         # 默认放到 ./data/archive 子目录，避免与 sync_records.db 等其他数据文件混杂
         self.data_dir = Path(
-            config_manager.get(
-                "bangumi-archive", "data_dir", fallback="./data/archive"
-            )
+            config_manager.get("bangumi-archive", "data_dir", fallback="./data/archive")
         )
         self.http_proxy = (
             config_manager.get("bangumi-archive", "http_proxy", fallback="").strip()
@@ -239,9 +237,10 @@ class BangumiArchive:
         # 但实际数据库已迁移到 ./data/archive 子目录。
         # 检测策略：配置路径下找不到 db 文件，但 archive 子目录下有，则使用新路径。
         # 仅在用户显式指定 ./data 或类似父目录时触发，避免误改其他自定义路径。
-        if not (self.data_dir / "bangumi_archive_a.db").exists() and not (
-            self.data_dir / "bangumi_archive_b.db"
-        ).exists():
+        if (
+            not (self.data_dir / "bangumi_archive_a.db").exists()
+            and not (self.data_dir / "bangumi_archive_b.db").exists()
+        ):
             archive_subdir = self.data_dir / "archive"
             if (archive_subdir / "bangumi_archive_a.db").exists() or (
                 archive_subdir / "bangumi_archive_b.db"

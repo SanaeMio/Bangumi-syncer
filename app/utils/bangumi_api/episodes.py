@@ -124,7 +124,9 @@ class EpisodesMixin:
         3. 全量拉取 + 本地匹配（兜底，archive 未命中且 offset 快速路径未命中时）
         """
         # 1. 优先尝试 archive 短路，避免对长篇动画（如 sort>99）也走 API
-        archive_shortcut = self._archive.try_get_episodes(subject_id, episode_type=_type)
+        archive_shortcut = self._archive.try_get_episodes(
+            subject_id, episode_type=_type
+        )
         if archive_shortcut.hit:
             ep_info = archive_shortcut.data or []
             rows = self._match_target_ep_rows(ep_info, target_sort)

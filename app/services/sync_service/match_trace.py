@@ -89,7 +89,9 @@ class MatchTrace:
     steps: list[MatchStep] = field(default_factory=list)
     final_subject_id: str | None = None
     final_episode_id: str | None = None
-    final_match_method: str = ""  # custom_mapping / bangumi_data / archive / api_search / failed
+    final_match_method: str = (
+        ""  # custom_mapping / bangumi_data / archive / api_search / failed
+    )
     final_score: float | None = None
     # 新增：同步最终状态/消息/动作（用于流水线最后一步 result）
     final_status: str = ""
