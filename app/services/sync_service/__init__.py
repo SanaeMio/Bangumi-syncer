@@ -1583,10 +1583,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     returned_name, item.season
                 ) or self._check_season_info_in_title(returned_name_cn, item.season):
                     is_api_season_matched = True
-            elif item.season == 1:
-                # 第一季：若首条候选明确声明了第N季（N>1，如"凡人修仙传 第五季"），
-                # 说明 API 按热度/相关度返回了续季，需要在候选列表里寻找
-                # 标题不含季度后缀的条目作为第一季本体。
+            if not is_api_season_matched:
+                # season == 1：首条候选可能明确声明了第N季（N>1，如"凡人修仙传 第五季"），
+                #   需在候选列表里寻找标题不含季度后缀的条目作为第一季本体。
+                # season > 1 且季度未匹配：首条候选可能是剧场版/衍生作
+                #   （如"完美世界剧场版 九劫焚天"），季度信息不在标题中，
+                #   需通过媒体类型与关联条目改选命中主线剧集。
                 top_name = bgm_data[0].get("name", "")
                 top_name_cn = bgm_data[0].get("name_cn", "")
                 top_explicit_season = max(

@@ -1450,3 +1450,92 @@ def test_find_subject_id_api_search_season_gt1_title_not_matched():
     assert sid == 146457
     assert flag is False  # 核心断言：智能判定未生效，安全地回退给后续的关系链爬虫去处理
     assert err == ""
+
+
+def test_find_subject_id_api_season_gt1_top_movie_reselects_mainline_via_related():
+    """完美世界 S06E279 场景：season > 1 且首条候选是剧场版（标题不含季度信息），
+    通过关联条目改选命中主线剧集。
+
+    复现真实失败案例：
+    - 用户请求：完美世界 S06E279
+    - bgm_search 返回首条 542046 完美世界剧场版 九劫焚天（platform=剧场版，仅 1 集）
+    - get_related_subjects(542046) 含 577198 完美世界 第六季（relation=主线故事）
+    - 应改选到 577198，而非在 542046 上找 ep 279 导致 400 错误
+    """
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        # bgm_search 返回首条是剧场版（detect_media_type 命中"剧场版"关键词 → movie）
+        bgm.bgm_search.return_value = [
+            {
+                "id": 542046,
+                "name": "完美世界剧场版 九劫焚天",
+                "name_cn": "完美世界剧场版 九劫焚天",
+                "platform": "剧场版",
+                "date": "",
+            }
+        ]
+        # 关联条目返回 577198 第六季（主线故事）
+        bgm.get_related_subjects.return_value = [
+            {
+                "id": 485902,
+                "name": "完美世界剧场版 火之灰烬",
+                "name_cn": "",
+                "relation": "前传",
+                "type": 2,
+            },
+            {
+                "id": 577198,
+                "name": "完美世界 第六季",
+                "name_cn": "",
+                "relation": "主线故事",
+                "type": 2,
+            },
+        ]
+        # get_subject 返回 577198 的完整信息
+        bgm.get_subject.return_value = {
+            "id": 577198,
+            "name": "完美世界 第六季",
+            "name_cn": "完美世界 第六季",
+            "type": 2,
+            "platform": "WEB",
+            "date": "2025-10-03",
+        }
+
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, err = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="完美世界",
+                            ori_title="",
+                            season=6,
+                            episode=279,
+                            media_type="episode",
+                            release_date="",
+                        )
+                    )
+
+    # 应改选到 577198（主线故事），而非保持 542046
+    assert str(sid) == "577198"
+    assert flag is True  # 改选成功标记
+    assert err == ""
+    # 验证调用了 get_related_subjects
+    bgm.get_related_subjects.assert_called_once()
+    # 验证 get_subject 被调用以获取关联条目详情
+    bgm.get_subject.assert_called_with(577198)
+
