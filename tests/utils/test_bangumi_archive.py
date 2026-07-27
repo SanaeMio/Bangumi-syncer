@@ -248,6 +248,54 @@ class TestArchiveImporter:
         importer.clear_database(db_path)
         assert not db_path.exists()
 
+    def test_clear_database_removes_index_cache(self, tmp_path: Path):
+        """clear_database 应同时删除对应的 .index 磁盘缓存文件
+
+        双库设计要求：导入完成切换 active 后清空旧库，
+        旧库的 .index 缓存（~460MB）也应一并释放，避免磁盘累积。
+        """
+        # 模拟 bangumi_archive_a.db + bangumi_archive_a.index 双文件
+        db_path = tmp_path / "bangumi_archive_a.db"
+        index_path = tmp_path / "bangumi_archive_a.index"
+        db_path.write_text("dummy db")
+        index_path.write_text("dummy index cache ~460MB")
+        assert db_path.exists()
+        assert index_path.exists()
+
+        importer = ArchiveImporter()
+        importer.clear_database(db_path)
+
+        # db 和 .index 都应被清理
+        assert not db_path.exists()
+        assert not index_path.exists()
+
+    def test_clear_database_removes_wal_shm_sidecars(self, tmp_path: Path):
+        """clear_database 应同时删除 WAL/SHM sidecar 文件"""
+        db_path = tmp_path / "bangumi_archive_a.db"
+        wal_path = tmp_path / "bangumi_archive_a.db-wal"
+        shm_path = tmp_path / "bangumi_archive_a.db-shm"
+        db_path.write_text("dummy")
+        wal_path.write_text("wal")
+        shm_path.write_text("shm")
+
+        importer = ArchiveImporter()
+        importer.clear_database(db_path)
+
+        assert not db_path.exists()
+        assert not wal_path.exists()
+        assert not shm_path.exists()
+
+    def test_clear_database_missing_index_is_safe(self, tmp_path: Path):
+        """clear_database 在 .index 不存在时应安全跳过（不抛异常）"""
+        db_path = tmp_path / "bangumi_archive_b.db"
+        db_path.write_text("dummy")
+        # 不创建 .index 文件
+
+        importer = ArchiveImporter()
+        # 不应抛异常
+        importer.clear_database(db_path)
+        assert not db_path.exists()
+
 
 # ===== ArchiveDownloader 测试 =====
 

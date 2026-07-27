@@ -1223,13 +1223,13 @@
                                     <i class="bi bi-folder me-1 text-warning"></i>数据目录
                                     <i class="bi bi-question-circle ms-1 text-muted"
                                        data-bs-toggle="tooltip"
-                                       title="存放双库（a/b）、meta 与 active 指针的目录。Docker 建议挂载到 /app/data。"></i>
+                                       title="存放双库（a/b）、meta、active 指针与索引缓存的目录。默认 ./data/archive，Docker 建议挂载到 /app/data。"></i>
                                 </label>
                                 <input type="text"
                                        class="form-control"
                                        id="bangumi-archive-data-dir"
                                        name="bangumi_archive.data_dir"
-                                       placeholder="./data">
+                                       placeholder="./data/archive">
                             </div>
                             <div class="col-md-6">
                                 <label for="bangumi-archive-http-proxy" class="form-label fw-semibold">
@@ -1249,14 +1249,14 @@
                                     <i class="bi bi-hdd me-1 text-success"></i>磁盘阈值 (MB)
                                     <i class="bi bi-question-circle ms-1 text-muted"
                                        data-bs-toggle="tooltip"
-                                       title="低于此可用空间时跳过导入，避免磁盘写满。默认 1500MB（zip + 解压 + db ≈ 1.2GB）。"></i>
+                                       title="低于此可用空间时跳过导入，避免磁盘写满。默认 2000MB（双库 ~2.8GB + 索引 ~1GB + zip ~0.4GB）。"></i>
                                 </label>
                                 <input type="number"
                                        class="form-control"
                                        id="bangumi-archive-min-disk-space"
                                        name="bangumi_archive.min_disk_space_mb"
                                        min="100"
-                                       value="1500">
+                                       value="2000">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label fw-semibold">
@@ -1828,9 +1828,9 @@ function populateForm(config) {
     if (baEnabled) {
         baEnabled.checked = ba.enabled === true || ba.enabled === 'true' || String(ba.enabled).toLowerCase() === 'true';
         document.getElementById('bangumi-archive-update-cron').value = ba.update_cron || '0 8 * * 3';
-        document.getElementById('bangumi-archive-data-dir').value = ba.data_dir || './data';
+        document.getElementById('bangumi-archive-data-dir').value = ba.data_dir || './data/archive';
         document.getElementById('bangumi-archive-http-proxy').value = ba.http_proxy || '';
-        document.getElementById('bangumi-archive-min-disk-space').value = (ba.min_disk_space_mb != null && ba.min_disk_space_mb !== '') ? ba.min_disk_space_mb : 1500;
+        document.getElementById('bangumi-archive-min-disk-space').value = (ba.min_disk_space_mb != null && ba.min_disk_space_mb !== '') ? ba.min_disk_space_mb : 2000;
         document.getElementById('bangumi-archive-ssl-verify').checked = ba.ssl_verify !== false;
     }
 
@@ -2030,9 +2030,9 @@ async function saveConfig() {
             bangumi_archive: {
                 enabled: document.getElementById('bangumi-archive-enabled').checked,
                 update_cron: document.getElementById('bangumi-archive-update-cron').value.trim() || '0 8 * * 3',
-                data_dir: document.getElementById('bangumi-archive-data-dir').value.trim() || './data',
+                data_dir: document.getElementById('bangumi-archive-data-dir').value.trim() || './data/archive',
                 http_proxy: document.getElementById('bangumi-archive-http-proxy').value.trim(),
-                min_disk_space_mb: parseInt(document.getElementById('bangumi-archive-min-disk-space').value, 10) || 1500,
+                min_disk_space_mb: parseInt(document.getElementById('bangumi-archive-min-disk-space').value, 10) || 2000,
                 ssl_verify: document.getElementById('bangumi-archive-ssl-verify').checked
             },
             auth: {

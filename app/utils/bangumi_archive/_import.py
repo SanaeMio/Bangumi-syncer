@@ -488,6 +488,7 @@ class ArchiveImporter:
         """清空数据库（删除文件，释放磁盘）
 
         用于双库模式：导入成功切换后清空旧库。
+        同时清理对应的 .index 磁盘缓存，避免旧索引残留占用空间（~460MB）。
         """
         try:
             if db_path.exists():
@@ -501,5 +502,18 @@ class ArchiveImporter:
                         sidecar.unlink()
                     except OSError:
                         pass
+            # 清理对应的 .index 磁盘缓存文件
+            # db_path 名为 bangumi_archive_{a|b}.db，对应缓存为 bangumi_archive_{a|b}.index
+            index_path = db_path.with_suffix(".index")
+            if index_path.exists():
+                try:
+                    index_path.unlink()
+                    logger.info(
+                        f"bangumi_archive: 已清理旧索引缓存 {index_path.name}"
+                    )
+                except OSError as e:
+                    logger.warning(
+                        f"bangumi_archive: 清理索引缓存失败 {index_path}: {e}"
+                    )
         except OSError as e:
             logger.warning(f"bangumi_archive: 清空数据库失败 {db_path}: {e}")

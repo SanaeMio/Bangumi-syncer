@@ -37,7 +37,9 @@ from ...core.logging import logger
 _DB_NAMES = ("a", "b")
 
 # 磁盘空间阈值（MB），低于此值跳过导入
-_DEFAULT_MIN_DISK_SPACE_MB = 1500
+# 双库 ~2.8GB（a+b 各 ~1.4GB）+ 索引缓存 ~0.5GB × 2 + 临时下载 zip ~0.4GB，
+# 实际占用约 4.6GB，预留 2000MB 避免导入中途空间不足
+_DEFAULT_MIN_DISK_SPACE_MB = 2000
 
 # 镜像源 fallback（与 upgrade_service 一致）
 _GH_PROXY_MIRRORS = (
@@ -204,8 +206,11 @@ class BangumiArchive:
         self.enabled = bool(
             config_manager.get("bangumi-archive", "enabled", fallback=False)
         )
+        # 默认放到 ./data/archive 子目录，避免与 sync_records.db 等其他数据文件混杂
         self.data_dir = Path(
-            config_manager.get("bangumi-archive", "data_dir", fallback="./data")
+            config_manager.get(
+                "bangumi-archive", "data_dir", fallback="./data/archive"
+            )
         )
         self.http_proxy = (
             config_manager.get("bangumi-archive", "http_proxy", fallback="").strip()
