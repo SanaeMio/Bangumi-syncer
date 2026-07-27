@@ -4,6 +4,8 @@ Bangumi 数据工具完整测试
 
 from unittest.mock import patch
 
+import pytest
+
 from app.utils.bangumi_data import BangumiData
 
 
@@ -232,6 +234,7 @@ class TestBangumiDataSearch:
 class TestBangumiDataForceUpdate:
     """强制更新测试"""
 
+    @pytest.mark.slow
     def test_force_update(self):
         """测试强制更新"""
         data = BangumiData()
