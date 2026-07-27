@@ -1521,6 +1521,65 @@ class TestLongSeriesEpisodeSync:
         assert found is not None
         assert found["id"] == 999
 
+    def test_find_episode_by_sort_archive_short_circuits_api(self):
+        """archive 命中时应直接返回，不调用任何 API（_fetch_episodes_page / get_episodes）"""
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        api = BangumiApi()
+        # archive 短路命中：577198 第六季 sort=279
+        archive_data = [{"id": 1552078, "sort": 279, "type": 0, "subject_id": 577198}]
+        with patch.object(
+            api._archive,
+            "try_get_episodes",
+            return_value=ShortcutResult(True, archive_data, "archive_hit"),
+        ):
+            with patch.object(api, "_fetch_episodes_page") as mock_fetch:
+                with patch.object(api, "get_episodes") as mock_get:
+                    found = api._find_episode_by_sort(577198, 279)
+        assert found is not None
+        assert found["id"] == 1552078
+        # archive 命中：不应调用任何 API
+        mock_fetch.assert_not_called()
+        mock_get.assert_not_called()
+
+    def test_find_episode_by_sort_archive_miss_falls_back_to_offset(self):
+        """archive 未命中时应走 offset 快速路径"""
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        api = BangumiApi()
+        page = {"data": [{"id": 20606, "sort": 500, "ep": 500}], "total": 1328}
+        with patch.object(
+            api._archive,
+            "try_get_episodes",
+            return_value=ShortcutResult(False, None, "archive_miss"),
+        ):
+            with patch.object(api, "_fetch_episodes_page", return_value=page):
+                found = api._find_episode_by_sort("899", 500)
+        assert found is not None
+        assert found["id"] == 20606
+
+    def test_find_episode_by_sort_archive_hit_but_no_match_falls_back_to_api(self):
+        """archive 命中但未找到该 sort 时应降级到 API 全量拉取"""
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        api = BangumiApi()
+        # archive 命中但数据中没有 sort=500
+        archive_data = [{"id": 1, "sort": 1, "type": 0}]
+        full_eps = {"data": [{"id": 999, "sort": 500, "ep": 500}], "total": 1328}
+        with patch.object(
+            api._archive,
+            "try_get_episodes",
+            return_value=ShortcutResult(True, archive_data, "archive_hit"),
+        ):
+            with patch.object(api, "_fetch_episodes_page") as mock_fetch:
+                with patch.object(api, "get_episodes", return_value=full_eps) as mock_get:
+                    found = api._find_episode_by_sort("899", 500)
+        assert found is not None
+        assert found["id"] == 999
+        # archive 命中但未匹配：不应走 offset 快速路径，直接全量拉取
+        mock_fetch.assert_not_called()
+        mock_get.assert_called_once()
+
     def test_resolve_episode_by_airdate_in_subject(self):
         api = BangumiApi()
         episodes = {

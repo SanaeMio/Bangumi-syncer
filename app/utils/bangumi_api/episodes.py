@@ -116,7 +116,35 @@ class EpisodesMixin:
     def _find_episode_by_sort(
         self, subject_id: int, target_sort: int, _type: int = 0
     ) -> dict | None:
-        """在 subject 内按 sort/ep 规则查找章节；ep>99 时优先 offset 快速路径。"""
+        """在 subject 内按 sort/ep 规则查找章节。
+
+        优先级：
+        1. Archive 短路（若启用且命中，直接在内存数据中筛选，避免任何 API 调用）
+        2. API offset 快速路径（target_sort>99 时单次定位）
+        3. 全量拉取 + 本地匹配（兜底，archive 未命中且 offset 快速路径未命中时）
+        """
+        # 1. 优先尝试 archive 短路，避免对长篇动画（如 sort>99）也走 API
+        archive_shortcut = self._archive.try_get_episodes(subject_id, episode_type=_type)
+        if archive_shortcut.hit:
+            ep_info = archive_shortcut.data or []
+            rows = self._match_target_ep_rows(ep_info, target_sort)
+            if rows:
+                logger.debug(
+                    f"archive 短路命中 sort={target_sort} subject_id={subject_id}"
+                )
+                return rows[0]
+            # archive 命中但未匹配到该 sort：archive 可能不完整，降级到 API
+            logger.debug(
+                f"archive 命中但未找到 sort={target_sort} subject_id={subject_id}，降级 API"
+            )
+            # 跳过 offset 快速路径（archive 已知该 subject 数据存在但不完整）
+            # 直接全量拉取 + 本地匹配
+            episodes = self.get_episodes(subject_id, _type, fetch_all=True)
+            ep_info = episodes.get("data") or []
+            rows = self._match_target_ep_rows(ep_info, target_sort)
+            return rows[0] if rows else None
+
+        # 2. API offset 快速路径（target_sort>99 时单次定位）
         if target_sort > 99:
             page = self._fetch_episodes_page(
                 subject_id, _type, limit=1, offset=target_sort - 1
@@ -128,6 +156,7 @@ class EpisodesMixin:
                 )
                 return data[0]
 
+        # 3. 全量拉取 + 本地匹配（archive 未命中时兜底）
         episodes = self.get_episodes(subject_id, _type, fetch_all=target_sort > 99)
         ep_info = episodes.get("data") or []
         rows = self._match_target_ep_rows(ep_info, target_sort)
