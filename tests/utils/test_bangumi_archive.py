@@ -480,6 +480,62 @@ class TestBangumiArchive:
         }
         assert set(status.keys()) >= expected_keys
 
+    def test_load_config_auto_migrate_to_archive_subdir(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """_load_config 检测旧路径下无 db 但 archive 子目录下有时自动迁移
+
+        复现用户场景：之前 data_dir=./data，数据已迁移到 ./data/archive，
+        但用户 config.ini 仍写着 data_dir=./data。
+        期望：自动切换到 ./data/archive 子目录。
+        """
+        from app.core.config import config_manager
+
+        # 模拟用户旧配置：data_dir=./data
+        # 实际数据库在 ./data/archive 子目录下
+        old_data_dir = tmp_path / "data"
+        archive_subdir = old_data_dir / "archive"
+        archive_subdir.mkdir(parents=True)
+
+        # 在 archive 子目录下放置 db 文件（模拟已迁移）
+        (archive_subdir / "bangumi_archive_b.db").touch()
+
+        # 旧路径下没有任何 db 文件
+        monkeypatch.chdir(tmp_path)
+        config_manager.set("bangumi-archive", "enabled", "true")
+        config_manager.set("bangumi-archive", "data_dir", str(old_data_dir))
+        config_manager.set("bangumi-archive", "min_disk_space_mb", "1")
+
+        archive = BangumiArchive()
+
+        # 应自动切换到 archive 子目录
+        assert archive.data_dir == archive_subdir
+        assert archive.db_b_path == archive_subdir / "bangumi_archive_b.db"
+        assert archive.db_b_path.exists()
+
+    def test_load_config_no_migrate_when_db_in_configured_dir(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """_load_config 在配置路径下有 db 时不触发迁移"""
+        from app.core.config import config_manager
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        # 配置路径下直接有 db 文件
+        (data_dir / "bangumi_archive_a.db").touch()
+
+        monkeypatch.chdir(tmp_path)
+        config_manager.set("bangumi-archive", "enabled", "true")
+        config_manager.set("bangumi-archive", "data_dir", str(data_dir))
+        config_manager.set("bangumi-archive", "min_disk_space_mb", "1")
+
+        archive = BangumiArchive()
+
+        # 不应切换
+        assert archive.data_dir == data_dir
+        assert archive.db_a_path == data_dir / "bangumi_archive_a.db"
+
 
 class TestBackgroundIndexBuildOnStartup:
     """BangumiArchive 启动时触发标题索引后台构建"""

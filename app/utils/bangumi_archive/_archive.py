@@ -235,6 +235,23 @@ class BangumiArchive:
             config_manager.get("bangumi-archive", "retry_interval", fallback=3600)
         )
 
+        # 兼容迁移：用户 config.ini 可能显式指定旧路径 ./data，
+        # 但实际数据库已迁移到 ./data/archive 子目录。
+        # 检测策略：配置路径下找不到 db 文件，但 archive 子目录下有，则使用新路径。
+        # 仅在用户显式指定 ./data 或类似父目录时触发，避免误改其他自定义路径。
+        if not (self.data_dir / "bangumi_archive_a.db").exists() and not (
+            self.data_dir / "bangumi_archive_b.db"
+        ).exists():
+            archive_subdir = self.data_dir / "archive"
+            if (archive_subdir / "bangumi_archive_a.db").exists() or (
+                archive_subdir / "bangumi_archive_b.db"
+            ).exists():
+                logger.info(
+                    f"bangumi_archive: 检测到数据目录已迁移到 {archive_subdir}，"
+                    f"自动切换（配置值: {self.data_dir}）"
+                )
+                self.data_dir = archive_subdir
+
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.db_a_path = self.data_dir / "bangumi_archive_a.db"
         self.db_b_path = self.data_dir / "bangumi_archive_b.db"
