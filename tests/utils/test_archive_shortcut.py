@@ -82,12 +82,19 @@ class TestArchiveShortcutHit:
 
     @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
     def test_try_get_episodes_hit_empty_list(self, mock_store: MagicMock) -> None:
-        """Archive 命中但章节为空列表时仍算命中（避免 API 重复调用）"""
+        """Archive 命中但章节为空列表时仍算命中（避免 API 重复调用）
+
+        subject 在 archive 中存在但无章节记录（如剧场版只有正片），
+        返回 hit=True 避免对这类条目重复调用 API。
+        """
         mock_store.get_episodes.return_value = []
+        mock_store.get_subject.return_value = {"id": 1, "name": "Test"}
         r = self.shortcut.try_get_episodes(1)
         assert r.hit is True
         assert r.data == []
         assert r.reason == "archive_hit"
+        # 空列表时应追加 subject 存在性校验
+        mock_store.get_subject.assert_called_once_with(1)
 
     @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
     def test_try_get_episodes_hit_with_data(self, mock_store: MagicMock) -> None:
@@ -96,6 +103,27 @@ class TestArchiveShortcutHit:
         assert r.hit is True
         assert len(r.data) == 1
         mock_store.get_episodes.assert_called_once_with(1, episode_type=0)
+        # 章节非空时不需校验 subject（短路提前返回）
+        mock_store.get_subject.assert_not_called()
+
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
+    def test_try_get_episodes_miss_when_subject_absent(
+        self, mock_store: MagicMock
+    ) -> None:
+        """Archive 不完整时降级到 API（防止静默返回空数据导致 sync 失败）
+
+        场景：新增条目/冷门条目不在 archive DB 中，底层 get_episodes 返回 []。
+        修复前：误报 hit=True 导致不调用 API，sync 静默失败。
+        修复后：追加 get_subject 校验，subject 不存在则返回 miss 降级到 API。
+        """
+        mock_store.get_episodes.return_value = []
+        mock_store.get_subject.return_value = None
+        r = self.shortcut.try_get_episodes(999)
+        assert r.hit is False
+        assert r.reason == "archive_miss"
+        assert r.data is None
+        mock_store.get_episodes.assert_called_once_with(999, episode_type=None)
+        mock_store.get_subject.assert_called_once_with(999)
 
     @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
     def test_try_get_related_subjects_hit(self, mock_store: MagicMock) -> None:
@@ -105,6 +133,41 @@ class TestArchiveShortcutHit:
         r = self.shortcut.try_get_related_subjects(1)
         assert r.hit is True
         assert r.data[0]["id"] == 2
+        # 关联非空时不需校验 subject
+        mock_store.get_subject.assert_not_called()
+
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
+    def test_try_get_related_subjects_hit_empty_list(
+        self, mock_store: MagicMock
+    ) -> None:
+        """Archive 命中但关联为空时仍算命中（subject 存在但无关联记录）"""
+        mock_store.get_related_subjects.return_value = []
+        mock_store.get_subject.return_value = {"id": 1, "name": "Test"}
+        r = self.shortcut.try_get_related_subjects(1)
+        assert r.hit is True
+        assert r.data == []
+        assert r.reason == "archive_hit"
+        # 空列表时应追加 subject 存在性校验
+        mock_store.get_subject.assert_called_once_with(1)
+
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
+    def test_try_get_related_subjects_miss_when_subject_absent(
+        self, mock_store: MagicMock
+    ) -> None:
+        """Archive 不完整时降级到 API（防止续集链查找断链）
+
+        场景：subject 不在 archive DB 中，底层 get_related_subjects 返回 []。
+        修复前：误报 hit=True 导致续集链/前传链查找断链。
+        修复后：追加 get_subject 校验，subject 不存在则返回 miss 降级到 API。
+        """
+        mock_store.get_related_subjects.return_value = []
+        mock_store.get_subject.return_value = None
+        r = self.shortcut.try_get_related_subjects(999)
+        assert r.hit is False
+        assert r.reason == "archive_miss"
+        assert r.data is None
+        mock_store.get_related_subjects.assert_called_once_with(999)
+        mock_store.get_subject.assert_called_once_with(999)
 
     @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
     def test_try_find_next_sequel_id_hit(self, mock_store: MagicMock) -> None:

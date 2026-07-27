@@ -261,13 +261,29 @@ class ArchiveShortcut:
 
         注意：Archive 命中但章节为空时，仍返回 hit=True，
         避免对空条目重复调用 API。
+
+        防止 archive 不完整时静默返回空数据：
+        底层 archive_store.get_episodes 在 subject 不存在时也返回空列表 []，
+        无法区分"subject 在 archive 但无章节"和"subject 不在 archive"。
+        因此当章节为空时，追加 archive_store.get_subject 校验 subject 存在性：
+        - subject 存在 → hit=True（确实无章节，避免 API 重复调用）
+        - subject 不存在 → hit=False, reason="archive_miss"，降级到 API
         """
         if not self._enabled:
             return ShortcutResult(False, None, "archive_disabled")
         try:
             data = archive_store.get_episodes(subject_id, episode_type=episode_type)
-            # Archive 命中（即使空列表也算命中，避免 API 重复调用）
-            return ShortcutResult(True, data, "archive_hit")
+            # 章节非空：archive 命中
+            if data:
+                return ShortcutResult(True, data, "archive_hit")
+            # 章节为空：需校验 subject 是否在 archive 中
+            # 避免archive 不完整（新增条目/冷门条目缺失）时静默返回空数据导致 sync 失败
+            subject = archive_store.get_subject(subject_id)
+            if subject is not None:
+                # subject 存在但无章节（如剧场版只有正片无章节记录）
+                return ShortcutResult(True, data, "archive_hit")
+            # subject 不在 archive 中：降级到 API
+            return ShortcutResult(False, None, "archive_miss")
         except Exception as e:
             logger.warning(f"bangumi_archive 短路 get_episodes 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
@@ -277,14 +293,27 @@ class ArchiveShortcut:
 
         Returns:
             hit=True 时 data 是 list[dict]（对齐 API 返回结构，含 relation 中文）
-            hit=False 时 data 为 None
+            hit=False 时 data 为 None，调用方应走 API
+
+        防止 archive 不完整时静默返回空数据：
+        同 try_get_episodes，底层 archive_store.get_related_subjects 在 subject
+        不存在时也返回空列表 []。空列表时追加 get_subject 校验存在性，
+        避免续集链/前传链查找因 archive 不完整而断链。
         """
         if not self._enabled:
             return ShortcutResult(False, None, "archive_disabled")
         try:
             data = archive_store.get_related_subjects(subject_id)
-            # Archive 命中（即使空列表也算命中）
-            return ShortcutResult(True, data, "archive_hit")
+            # 关联非空：archive 命中
+            if data:
+                return ShortcutResult(True, data, "archive_hit")
+            # 关联为空：需校验 subject 是否在 archive 中
+            subject = archive_store.get_subject(subject_id)
+            if subject is not None:
+                # subject 存在但无关联记录
+                return ShortcutResult(True, data, "archive_hit")
+            # subject 不在 archive 中：降级到 API
+            return ShortcutResult(False, None, "archive_miss")
         except Exception as e:
             logger.warning(f"bangumi_archive 短路 get_related_subjects 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
