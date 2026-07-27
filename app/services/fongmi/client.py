@@ -243,6 +243,7 @@ async def discover_devices(
         )
         .prefix("📡")
         .silent_failure()
+        .silent_request()  # 批量扫描 254 IP，避免逐条请求日志噪声
     )
     found: list[FongmiDevice] = []
     failures: list[str] = []  # 收集失败 IP 的原因，用于 debug 汇总
@@ -284,9 +285,29 @@ async def discover_devices(
         logger.info(f"fongmi 设备发现：网段 {subnet}.0/24 扫描完成，未发现设备")
 
     if failures:
-        failure_detail = "\n  ".join(failures)
+        # 局域网扫描时绝大多数 IP 无设备响应是预期行为，
+        # 逐条打印 254 行 ConnectTimeout 噪声过大。
+        # 按错误类型分组汇总，每类仅展示最多 3 个示例 IP，保留可观测性的同时大幅降噪。
+        def _short_err(msg: str) -> str:
+            # 形如 "192.168.10.5:9978 → ConnectTimeout"，取 → 之后的错误类型
+            return msg.split("→", 1)[-1].strip() if "→" in msg else msg
+
+        err_groups: dict[str, list[str]] = {}
+        for msg in failures:
+            err_groups.setdefault(_short_err(msg), []).append(msg)
+
+        summary_parts = [
+            f"{err}×{len(ips)}" for err, ips in err_groups.items()
+        ]
+        sample_lines: list[str] = []
+        for err, ips in err_groups.items():
+            samples = ", ".join(ips[:3])
+            extra = f" 等 {len(ips)} 个" if len(ips) > 3 else ""
+            sample_lines.append(f"  [{err}] {samples}{extra}")
+
         logger.debug(
-            f"fongmi 设备发现：以下 {len(failures)} 个目标探测失败（详情）：\n  {failure_detail}"
+            f"fongmi 设备发现：{len(failures)} 个目标探测失败"
+            f"（{'; '.join(summary_parts)}）\n" + "\n".join(sample_lines)
         )
     return found
 

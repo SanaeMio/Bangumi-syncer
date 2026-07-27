@@ -64,6 +64,9 @@ class HttpClientBase:
         self._success_tpl: str = "请求成功"
         self._failure_tpl: str = "请求失败"
         self._silent_failure: bool = False
+        # 静默请求/成功日志（用于批量探测/扫描场景，避免 N 个 IP 各打一行请求日志造成噪声）
+        # 由调用方统一记录汇总日志
+        self._silent_request: bool = False
 
     # ===== 链式配置方法 =====
 
@@ -97,6 +100,11 @@ class HttpClientBase:
         self._silent_failure = enabled
         return self
 
+    def silent_request(self, enabled: bool = True) -> HttpClientBase:
+        """静默请求/成功日志（用于批量探测/扫描场景，避免 N 个 IP 各打一行请求日志）"""
+        self._silent_request = enabled
+        return self
+
     # ===== 日志格式化 =====
 
     def _format_success(self, response: httpx.Response, url: str) -> str:
@@ -127,6 +135,8 @@ class HttpClientBase:
 
     def _log_request(self, method: str, url: str, **kwargs: Any) -> None:
         """DEBUG: 请求详情（method, url, headers, params, body）"""
+        if self._silent_request:
+            return
         parts: list[str] = [f"[{self._label}] 请求 → {method.upper()} {url}"]
 
         headers = kwargs.get("headers")
@@ -155,6 +165,8 @@ class HttpClientBase:
 
     def _log_success(self, response: httpx.Response, method: str, url: str) -> None:
         """DEBUG: 成功摘要（prefix + 技术信息）+ 响应详情"""
+        if self._silent_request:
+            return
         elapsed = response.elapsed.total_seconds()
         logger.debug(
             f"{self._prefix}[{self._label}] {method.upper()} {url} "
