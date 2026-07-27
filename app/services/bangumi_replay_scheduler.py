@@ -92,15 +92,11 @@ class BangumiReplayScheduler(BaseScheduler):
             cfg: dict[str, Any] = {}
             if mode == "single":
                 cfg = {
-                    "username": config_manager.get(
-                        "bangumi", "username", fallback=""
-                    ),
+                    "username": config_manager.get("bangumi", "username", fallback=""),
                     "access_token": config_manager.get(
                         "bangumi", "access_token", fallback=""
                     ),
-                    "private": config_manager.get(
-                        "bangumi", "private", fallback=False
-                    ),
+                    "private": config_manager.get("bangumi", "private", fallback=False),
                 }
             elif mode == "multi":
                 bangumi_configs = config_manager.get_bangumi_configs()

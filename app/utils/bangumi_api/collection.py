@@ -219,6 +219,4 @@ def is_replay_enabled() -> bool:
     )
     if not archive_enabled:
         return False
-    return bool(
-        config_manager.get("bangumi-archive", "replay_enabled", fallback=True)
-    )
+    return bool(config_manager.get("bangumi-archive", "replay_enabled", fallback=True))

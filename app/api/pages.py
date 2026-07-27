@@ -132,9 +132,7 @@ async def bangumi_replay_page(request: Request):
     if not user:
         return _login_redirect(request)
 
-    return templates.TemplateResponse(
-        request, "bangumi_replay.html", {"user": user}
-    )
+    return templates.TemplateResponse(request, "bangumi_replay.html", {"user": user})
 
 
 @router.get("/debug", response_class=HTMLResponse)

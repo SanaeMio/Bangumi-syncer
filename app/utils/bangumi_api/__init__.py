@@ -149,7 +149,9 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         # 从配置读取 TTL（replay 与 archive 共用 [bangumi-archive] 段，未启用时仍可用默认值）
         try:
             ttl = int(
-                config_manager.get("bangumi-archive", "api_probe_interval", fallback=300)
+                config_manager.get(
+                    "bangumi-archive", "api_probe_interval", fallback=300
+                )
             )
             if ttl < 30:
                 ttl = 30
