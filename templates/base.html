@@ -96,6 +96,14 @@
                                 </a>
                             </li>
                         {% endif %}
+                        {% if replay_enabled() %}
+                            <li class="nav-item">
+                                <a class="nav-link {% if request.url.path == '/bangumi-replay' %}active{% endif %}"
+                                   href="{{ '/bangumi-replay' | p }}">
+                                    <i class="bi bi-clock-history me-2"></i>待同步队列
+                                </a>
+                            </li>
+                        {% endif %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
                                href="{{ '/trakt/config' | p }}">
@@ -199,6 +207,15 @@
                                        href="{{ '/bangumi-archive' | p }}">
                                         <i class="bi bi-database-fill me-2"></i>
                                         Archive 离线库
+                                    </a>
+                                </li>
+                            {% endif %}
+                            {% if replay_enabled() %}
+                                <li class="nav-item mb-1">
+                                    <a class="nav-link {% if request.url.path == '/bangumi-replay' %}active{% endif %}"
+                                       href="{{ '/bangumi-replay' | p }}">
+                                        <i class="bi bi-clock-history me-2"></i>
+                                        待同步队列
                                     </a>
                                 </li>
                             {% endif %}

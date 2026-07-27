@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
 from .api.bangumi_archive import router as bangumi_archive_router
+from .api.bangumi_replay import router as bangumi_replay_router
 from .api.bgm_poster import router as bgm_poster_router
 from .api.config import router as config_router
 from .api.feiniu import router as feiniu_router
@@ -36,6 +37,7 @@ from .core.logging import logger
 from .core.public_url import get_public_base_path
 from .core.startup_info import startup_info
 from .services.bangumi_archive_scheduler import bangumi_archive_scheduler
+from .services.bangumi_replay_scheduler import bangumi_replay_scheduler
 from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.fongmi.scheduler import fongmi_scheduler
@@ -103,6 +105,7 @@ async def lifespan(app: FastAPI):
                 ("fongmi", fongmi_scheduler.start),
                 ("Summary", summary_scheduler.start),
                 ("BangumiArchive", bangumi_archive_scheduler.start),
+                ("BangumiReplay", bangumi_replay_scheduler.start),
             ]:
                 try:
                     ok = await coro()
@@ -135,6 +138,7 @@ async def lifespan(app: FastAPI):
         ("fongmi", fongmi_scheduler.stop),
         ("Summary", summary_scheduler.stop),
         ("BangumiArchive", bangumi_archive_scheduler.stop),
+        ("BangumiReplay", bangumi_replay_scheduler.stop),
     ]:
         try:
             await coro()
@@ -186,6 +190,7 @@ app.include_router(feiniu_router)
 app.include_router(fongmi_router)
 app.include_router(upgrade_router)
 app.include_router(bangumi_archive_router)
+app.include_router(bangumi_replay_router)
 
 
 if __name__ == "__main__":

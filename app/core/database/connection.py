@@ -281,6 +281,27 @@ class DatabaseConnection:
             )
         """)
 
+        # 待同步队列：Bangumi API 不可达时缓存已匹配的同步请求，API 恢复后补发
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pending_sync_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                season INTEGER DEFAULT 1,
+                episode INTEGER DEFAULT 0,
+                subject_id TEXT NOT NULL,
+                episode_id TEXT,
+                source TEXT DEFAULT '',
+                media_type TEXT DEFAULT 'episode',
+                payload_json TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                attempts INTEGER DEFAULT 0,
+                last_attempt_at DATETIME,
+                last_error TEXT
+            )
+        """)
+
         # 创建二级索引以加速常用查询
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_timestamp ON sync_records(timestamp)"
@@ -308,6 +329,15 @@ class DatabaseConnection:
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_candidates_dedup "
             "ON pending_candidates(request_title, request_season, user_name, source) "
+            "WHERE status = 'pending'"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_sync_queue_status ON pending_sync_queue(status)"
+        )
+        # 部分唯一索引：同一用户同一集仅保留一条 pending 行（episode_id 为空时退化为按 subject_id 去重）
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_sync_queue_dedup "
+            "ON pending_sync_queue(user_name, subject_id, COALESCE(episode_id, ''), source) "
             "WHERE status = 'pending'"
         )
 

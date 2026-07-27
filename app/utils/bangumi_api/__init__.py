@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx  # noqa: F401
 
+from ...core.config import config_manager
 from ...core.logging import logger
 from ..http_base import SyncHttpClient
 from ._archive_shortcut import archive_shortcut
@@ -79,6 +80,15 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         # 代理失败标记：一旦代理失败，后续请求都直接使用直连
         self._proxy_failed = False
 
+        # API 不可达标记 + TTL：重试耗尽后置 True，避免后续请求再次等 10s×3 重试
+        # _api_unreachable_until 之前都跳过实际请求，直接走降级（写操作入队、读操作走 archive）
+        # TTL 到期后下一次请求恢复探测；成功后清除标记
+        self._api_unreachable: bool = False
+        self._api_unreachable_until: float = 0.0
+        self._api_unreachable_ttl: int = (
+            300  # 默认 5 分钟，可被 [bangumi-archive] api_probe_interval 覆盖
+        )
+
         # 实例级别的带大小限制缓存，避免无限增长
         _MAX_CACHE_SIZE = 200
         self._cache = {
@@ -119,6 +129,46 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         while len(cache) > self._max_cache_size:
             cache.popitem(last=False)
 
+    # ------------------------------------------------------------------
+    # API 可达性标记（供 http_layer 与 collection 层协作）
+    # ------------------------------------------------------------------
+
+    def is_api_unreachable(self) -> bool:
+        """API 是否处于不可达状态（TTL 内直接降级，不发请求）"""
+        if not self._api_unreachable:
+            return False
+        # TTL 已过期，自动恢复探测
+        if time.time() >= self._api_unreachable_until:
+            self._api_unreachable = False
+            logger.info("📚 Bangumi API 不可达 TTL 已过期，恢复探测")
+            return False
+        return True
+
+    def mark_api_unreachable(self) -> None:
+        """标记 API 不可达，按 TTL 推迟下一次探测"""
+        # 从配置读取 TTL（replay 与 archive 共用 [bangumi-archive] 段，未启用时仍可用默认值）
+        try:
+            ttl = int(
+                config_manager.get("bangumi-archive", "api_probe_interval", fallback=300)
+            )
+            if ttl < 30:
+                ttl = 30
+        except (TypeError, ValueError):
+            ttl = 300
+        self._api_unreachable = True
+        self._api_unreachable_until = time.time() + ttl
+        self._api_unreachable_ttl = ttl
+        logger.warning(
+            f"📚 Bangumi API 标记为不可达，{ttl} 秒内读操作走 archive、写操作入待同步队列"
+        )
+
+    def mark_api_reachable(self) -> None:
+        """请求成功后清除不可达标记（API 已恢复）"""
+        if self._api_unreachable:
+            logger.info("📚 Bangumi API 已恢复可达，清除不可达标记")
+        self._api_unreachable = False
+        self._api_unreachable_until = 0.0
+
     def init(self) -> None:
         for r in self.req, self._req_not_auth:
             r.client.headers.update(
@@ -148,6 +198,8 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         res = self._request_with_retry(
             "GET", self.req, f"{self.host}/{path}", params=params
         )
+        # 请求成功即清除不可达标记
+        self.mark_api_reachable()
         return self._check_auth_error(res)
 
     def post(
@@ -162,6 +214,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         res = self._request_with_retry(
             "POST", self.req, f"{self.host}/{path}", json=_json, params=params
         )
+        self.mark_api_reachable()
         return self._check_auth_error(res)
 
     def put(
@@ -173,6 +226,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         res = self._request_with_retry(
             "PUT", self.req, f"{self.host}/{path}", json=_json, params=params
         )
+        self.mark_api_reachable()
         return self._check_auth_error(res)
 
     def patch(
@@ -184,4 +238,5 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         res = self._request_with_retry(
             "PATCH", self.req, f"{self.host}/{path}", json=_json, params=params
         )
+        self.mark_api_reachable()
         return self._check_auth_error(res)

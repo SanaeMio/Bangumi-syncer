@@ -125,6 +125,18 @@ async def pending_candidates_page(request: Request):
     )
 
 
+@router.get("/bangumi-replay", response_class=HTMLResponse)
+async def bangumi_replay_page(request: Request):
+    """待同步队列（Replay 补发）页面"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return _login_redirect(request)
+
+    return templates.TemplateResponse(
+        request, "bangumi_replay.html", {"user": user}
+    )
+
+
 @router.get("/debug", response_class=HTMLResponse)
 async def debug_page(request: Request):
     """调试工具页面"""

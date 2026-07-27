@@ -328,6 +328,16 @@ async def update_config(
         except Exception as ex:
             logger.debug("BangumiArchive 调度器随配置更新: %s", ex)
 
+        try:
+            # 同步 BangumiReplay 调度器状态（enabled/replay_cron 变化时重建定时任务）
+            from ..services.bangumi_replay_scheduler import (
+                bangumi_replay_scheduler,
+            )
+
+            await bangumi_replay_scheduler.apply_config_after_save()
+        except Exception as ex:
+            logger.debug("BangumiReplay 调度器随配置更新: %s", ex)
+
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:
             await asyncio.to_thread(security_manager._init_auth_config)

@@ -51,4 +51,16 @@ def get_templates() -> Jinja2Templates:
                 return False
 
         env.globals["archive_enabled"] = archive_enabled
+
+        # 注入 replay_enabled 函数供 base.html 侧边栏条件显示
+        # 规则与 is_replay_enabled 一致：archive 启用且 replay_enabled 非 false
+        def replay_enabled() -> bool:
+            try:
+                from ..utils.bangumi_api.collection import is_replay_enabled
+
+                return bool(is_replay_enabled())
+            except Exception:
+                return False
+
+        env.globals["replay_enabled"] = replay_enabled
     return _templates

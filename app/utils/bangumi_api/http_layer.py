@@ -131,7 +131,7 @@ class HttpLayerMixin:
         本方法仅负责：
         - 代理失败后直连回退
         - DNS 错误网络诊断
-        - 重试耗尽后的状态码通知
+        - 重试耗尽后的状态码通知 + API 不可达标记
         """
         kwargs.setdefault("timeout", 15)
         # httpx.Client 在构造时已设置 verify 和 proxy，移除 per-request 残留
@@ -168,6 +168,10 @@ class HttpLayerMixin:
                 logger.warning("⚠️  检测到DNS解析问题，开始网络诊断...")
                 self._diagnose_network_issue(url)
 
+            # 标记 API 不可达，TTL 内后续请求直接走降级
+            # （仅在配置了 [bangumi-archive] enabled=true 时实际生效，否则标记只是空操作）
+            self.mark_api_unreachable()
+
             raise e
 
         # 重试耗尽后仍返回重试状态码（429/500/502/503/504）
@@ -182,6 +186,9 @@ class HttpLayerMixin:
                 error_message=f"HTTP {res.status_code} 错误，已达到最大重试次数",
                 retry_count=session._max_retries,
             )
+            # 服务端 5xx/429 持续不可用，同样标记不可达
+            self.mark_api_unreachable()
+
             raise httpx.HTTPStatusError(
                 f"HTTP {res.status_code} 错误，已达到最大重试次数",
                 request=res.request,
