@@ -13,7 +13,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.config import config_manager, parse_media_server_username_value
+from ..core.config import (
+    _BANGUMI_NON_ACCOUNT_SECTIONS,
+    config_manager,
+    parse_media_server_username_value,
+)
 from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
     encrypt_if_sensitive,
@@ -135,12 +139,13 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
     """处理多账号配置"""
     config = config_manager.get_config_parser()
 
-    # 清除现有的多账号 bangumi-* 配置段（但保留 bangumi-data 和 bangumi-mapping）
+    # 清除现有的多账号 bangumi-* 配置段（保留非账号的系统功能段，
+    # 如 bangumi-data / bangumi-mapping / bangumi-archive）
     sections_to_remove = [
         section
         for section in config.sections()
         if section.startswith("bangumi-")
-        and section not in ["bangumi-data", "bangumi-mapping"]
+        and section not in _BANGUMI_NON_ACCOUNT_SECTIONS
     ]
     for section in sections_to_remove:
         config.remove_section(section)

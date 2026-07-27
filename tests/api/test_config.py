@@ -370,6 +370,55 @@ async def test_update_config_multi_accounts_incomplete(
     assert response.status_code == 200
 
 
+def test_handle_multi_accounts_config_preserves_bangumi_archive_section():
+    """多账号保存时不应清除 bangumi-archive 系统功能段。
+    回归测试：此前 _handle_multi_accounts_config 会清除所有 bangumi-* 段
+    （仅排除 bangumi-data/bangumi-mapping），导致 bangumi-archive 段被误删，
+    用户保存多账号后 archive enabled 配置永久丢失。
+    """
+    from configparser import ConfigParser
+
+    from app.api.config import _handle_multi_accounts_config
+
+    parser = ConfigParser()
+    parser.read_dict(
+        {
+            "bangumi-archive": {"enabled": "True", "data_dir": "./data/archive"},
+            "bangumi-data": {"db_path": "./data/sync_records.db"},
+            "bangumi-mapping": {"types": "movie,tv"},
+            "bangumi-alice": {
+                "username": "alice",
+                "access_token": "ta",
+                "media_server_username": "plex_a",
+            },
+        }
+    )
+
+    with patch(
+        "app.api.config.config_manager.get_config_parser",
+        return_value=parser,
+    ), patch("app.api.config.config_manager.save_config"):
+        _handle_multi_accounts_config(
+            {
+                "bangumi-bob": {
+                    "username": "bob",
+                    "access_token": "tb",
+                    "media_server_username": "plex_b",
+                }
+            }
+        )
+
+    # bangumi-archive 段必须保留
+    assert parser.has_section("bangumi-archive")
+    assert parser.get("bangumi-archive", "enabled") == "True"
+    # bangumi-data / bangumi-mapping 同样保留
+    assert parser.has_section("bangumi-data")
+    assert parser.has_section("bangumi-mapping")
+    # 旧的 bangumi-alice 段应被清除，新的 bangumi-bob 段应被创建
+    assert not parser.has_section("bangumi-alice")
+    assert parser.has_section("bangumi-bob")
+
+
 @pytest.mark.asyncio
 async def test_update_config_password_update_reloads_auth(
     app_with_auth, mock_config_manager, mock_security_manager

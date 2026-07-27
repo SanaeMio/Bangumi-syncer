@@ -17,6 +17,15 @@ from .config_secret_crypto import (
 from .logging import logger
 from .startup_info import startup_info
 
+# 非多账号的 bangumi-* section：以 bangumi- 开头但承载系统功能（数据/映射/archive），
+# 不应被当作多账号配置收集、也不应在保存多账号时被清除。
+# 新增此类 section 时需同步加入此列表，否则前端配置页将读不到/被误删。
+_BANGUMI_NON_ACCOUNT_SECTIONS: tuple[str, ...] = (
+    "bangumi-data",
+    "bangumi-mapping",
+    "bangumi-archive",
+)
+
 
 def parse_media_server_username_value(raw: Optional[str]) -> list[str]:
     """解析 media_server_username 配置值（英文或中文逗号分隔）为去重前的用户名列表。"""
@@ -287,12 +296,11 @@ class ConfigManager:
         config = self.get_config_parser()
         bangumi_configs = {}
 
-        # 遍历所有配置段，查找多账号 bangumi-* 配置段（排除 bangumi-data 和 bangumi-mapping）
+        # 遍历所有配置段，查找多账号 bangumi-* 配置段（排除非账号的系统功能段）
         for section_name in config.sections():
-            if section_name.startswith("bangumi-") and section_name not in [
-                "bangumi-data",
-                "bangumi-mapping",
-            ]:
+            if section_name.startswith("bangumi-") and section_name not in (
+                _BANGUMI_NON_ACCOUNT_SECTIONS
+            ):
                 section_config = self.get_section(section_name)
                 if section_config.get("username") and section_config.get(
                     "access_token"
@@ -658,10 +666,9 @@ class ConfigManager:
         multi_accounts = {}
 
         for section_name in config.sections():
-            if section_name.startswith("bangumi-") and section_name not in [
-                "bangumi-data",
-                "bangumi-mapping",
-            ]:
+            if section_name.startswith("bangumi-") and section_name not in (
+                _BANGUMI_NON_ACCOUNT_SECTIONS
+            ):
                 # 这是多账号配置段，收集到 multi_accounts 中
                 section_config = self.get_section(section_name)
                 multi_accounts[section_name] = section_config
