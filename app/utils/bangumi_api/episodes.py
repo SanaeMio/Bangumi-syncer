@@ -209,11 +209,16 @@ class EpisodesMixin:
         target_season: int,
         target_ep: int,
     ) -> tuple[str | int, str | int] | None:
-        """单 subject 连续编号场景：通过 ep 字段重置检测季度边界。
+        """单 subject 连续编号场景：通过季度边界检测定位目标 sort。
 
         适用于 Bangumi 将多季合并到一个 subject 的场景：
         第一季 ep=1..24 sort=1..24，第二季 ep=1..24 sort=25..48。
-        当 ep 字段从 >1 重置为 1 时，标记为新季开始。
+
+        季度边界检测优先级：
+        1. ep 字段重置检测：ep 从 >1 降到 1，说明新季开始
+        2. sort 跳变检测（ep 字段缺失时兜底）：
+           sort 不连续（如 24 → 1，或 24 → 26 但下一行 sort 又回到 1）
+           说明新季开始，且新季 sort 从 1 重新计数
         """
         if target_season < 2 or not target_ep:
             return None
@@ -232,21 +237,42 @@ class EpisodesMixin:
             pool = list(ep_info)
         pool.sort(key=lambda e: e.get("sort", 0))
 
-        # 检测 ep 字段重置点（季度边界）
-        season_start_sorts: list[int] = [pool[0].get("sort", 1)]
-        prev_ep = 0
-        for ep in pool:
-            ep_num = ep.get("ep", 0) or 0
-            sort_num = ep.get("sort", 0) or 0
-            # ep 从 >1 降到 1，说明新季开始
-            if ep_num == 1 and prev_ep > 1:
-                season_start_sorts.append(sort_num)
-            prev_ep = ep_num
+        # 检测 ep 字段是否有效（archive 旧库可能 ep 全为 NULL/0）
+        ep_valid_count = sum(1 for e in pool if (e.get("ep") or 0) > 0)
+        use_ep_field = ep_valid_count >= len(pool) * 0.5  # 半数以上有效才用
+
+        # 检测季度边界
+        # 按 id 升序排（episode id 通常递增，能反映章节的录入顺序），
+        # 而非按 sort 排（sort 重置场景下排序会聚拢相同 sort，无法检测跳变）
+        pool_by_id = sorted(pool, key=lambda e: e.get("id", 0))
+        season_start_sorts: list[int] = [pool_by_id[0].get("sort", 1)]
+        if use_ep_field:
+            # 策略 1：ep 字段重置检测（ep 从 >1 降到 1）
+            prev_ep = 0
+            for ep in pool_by_id:
+                ep_num = ep.get("ep", 0) or 0
+                sort_num = ep.get("sort", 0) or 0
+                if ep_num == 1 and prev_ep > 1:
+                    season_start_sorts.append(sort_num)
+                prev_ep = ep_num
+        else:
+            # 策略 2：sort 跳变检测（ep 字段缺失时兜底）
+            # 场景：archive dump 缺 ep 字段，但 sort 在每季开始时重置为 1。
+            # 按 id 升序遍历，sort 从高值跳到 1 说明新季开始。
+            # 仅检测 sort=1 的重置点（最可靠）。
+            prev_sort = pool_by_id[0].get("sort", 0) or 0
+            for ep in pool_by_id[1:]:
+                sort_num = ep.get("sort", 0) or 0
+                # sort=1 且前一个 sort > 1，说明新季开始
+                if sort_num == 1 and prev_sort > 1:
+                    season_start_sorts.append(sort_num)
+                prev_sort = sort_num
 
         if len(season_start_sorts) < target_season:
             logger.debug(
                 f"连续编号: 检测到 {len(season_start_sorts)} 季，"
-                f"无法定位第 {target_season} 季 (subject_id={subject_id})"
+                f"无法定位第 {target_season} 季 (subject_id={subject_id}, "
+                f"use_ep_field={use_ep_field})"
             )
             return None
 
@@ -254,14 +280,36 @@ class EpisodesMixin:
         season_start_sort = season_start_sorts[target_season - 1]
         target_sort = season_start_sort + target_ep - 1
 
-        for ep in pool:
-            if ep.get("sort") == target_sort:
-                logger.debug(
-                    f"连续编号匹配: subject_id={subject_id} "
-                    f"season={target_season} ep={target_ep} → sort={target_sort} "
-                    f"ep_id={ep['id']}"
-                )
-                return subject_id, ep["id"]
+        # sort 重置场景：每季 sort 从 1 开始，target_sort 可能与多季的 sort 重复。
+        # 此时需跳过前 (target_season - 1) 个 sort=target_sort 的章节。
+        # 检测是否为 sort 重置场景：season_start_sorts 中有多个 1（或多个相同值）
+        if (
+            not use_ep_field
+            and target_season > 1
+            and season_start_sorts.count(season_start_sort) > 1
+        ):
+            # sort 重置场景：跳过前 (target_season - 1) 个匹配
+            match_count = 0
+            for ep in pool:
+                if ep.get("sort") == target_sort:
+                    match_count += 1
+                    if match_count == target_season:
+                        logger.debug(
+                            f"连续编号匹配(sort 重置): subject_id={subject_id} "
+                            f"season={target_season} ep={target_ep} → sort={target_sort} "
+                            f"ep_id={ep['id']} (第 {match_count} 个匹配)"
+                        )
+                        return subject_id, ep["id"]
+        else:
+            # 连续编号场景：sort 唯一
+            for ep in pool:
+                if ep.get("sort") == target_sort:
+                    logger.debug(
+                        f"连续编号匹配: subject_id={subject_id} "
+                        f"season={target_season} ep={target_ep} → sort={target_sort} "
+                        f"ep_id={ep['id']} (use_ep_field={use_ep_field})"
+                    )
+                    return subject_id, ep["id"]
 
         logger.debug(
             f"连续编号: 未找到 sort={target_sort} 的章节 "
@@ -788,7 +836,16 @@ class EpisodesMixin:
                         and "第2部分" not in current_info.get("name_cn", "")
                     ):
                         season_num += 1
-                elif any(ep.get("sort") == 1 for ep in ep_info):
+                    elif not _target_ep:
+                        # 兜底：新续集 subject 既无 sort=target_ep 也无 ep=target_ep，
+                        # 仍应认为是一个新季度，避免 season_num 不递增导致走过头。
+                        # 场景：续集链中的 OVA/特别篇 episode 数据稀疏，
+                        # 不应因缺少目标章节而跳过整个 subject 的季度计数。
+                        season_num += 1
+                else:
+                    # 有 sort=target_ep 的章节，认为是新季开始。
+                    # 不再强制检查 sort=1：长篇续集（如魔人ブウ編 sort 从 99 开始）
+                    # 也是独立季度，应递增 season_num。
                     season_num += 1
                     last_season_num = None
             if season_num > target_season:

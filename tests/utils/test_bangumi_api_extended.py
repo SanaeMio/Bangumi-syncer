@@ -690,6 +690,66 @@ class TestContinuousNumbering:
         result = api._try_resolve_continuous_season_episode(1, 3, 1)
         assert result is None
 
+    def test_ep_missing_uses_sort_jump_detection(self):
+        """ep 字段缺失（archive dump 不含 ep 列）时，
+        通过 sort 跳变检测季度边界。
+
+        场景：bangumi/Archive 官方 dump 的 episode 不含 ep 字段，
+        但部分条目的 sort 在每季开始时重置为 1（如第一季 sort=1-24，
+        第二季 sort=1-24 重新计数）。通过 sort 从高值跳到 1 检测季度边界。
+
+        注意：此检测仅对 sort 重置的条目有效。
+        对于 sort 连续编号（1-48）的单 subject 多季合并条目，
+        无法通过 sort 检测边界，需依赖续集链查找。
+        """
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        # 两季各 24 集，sort 每季重置（sort=1-24, sort=1-24），
+        # ep 全为 None（模拟 archive dump 缺 ep 字段）
+        eps_data = []
+        eid = 1000
+        for _season in range(2):
+            for ep_in_season in range(1, 25):
+                eps_data.append(
+                    {
+                        "sort": ep_in_season,  # 每季 sort 重置
+                        "ep": None,  # archive dump 缺 ep 字段
+                        "id": eid,
+                        "type": 0,
+                        "airdate": "",
+                    }
+                )
+                eid += 1
+
+        api.get_episodes = MagicMock(return_value={"data": eps_data, "total": 48})
+
+        # season=2 ep=1 应通过 sort 跳变检测到边界（sort=24 → sort=1）
+        # 并定位到第二季 sort=1 的章节
+        result = api._try_resolve_continuous_season_episode(1, 2, 1)
+        assert result is not None
+        sid, eid_result = result
+        assert sid == 1
+        # 第二季 sort=1 对应的 ep_id = 1000 + 24 = 1024
+        assert eid_result == 1024
+
+    def test_ep_missing_single_season_returns_none(self):
+        """ep 字段缺失且单季（sort 不重置）时返回 None"""
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        # 48 集连续编号，ep 全为 None，无 sort 重置
+        eps_data = [
+            {"sort": i, "ep": None, "id": 1000 + i, "type": 0, "airdate": ""}
+            for i in range(1, 49)
+        ]
+
+        api.get_episodes = MagicMock(return_value={"data": eps_data, "total": 48})
+
+        # 无 sort 重置，检测不到季度边界，应返回 None
+        result = api._try_resolve_continuous_season_episode(1, 2, 1)
+        assert result is None
+
 
 class TestFindEpisodeAcrossSeasons:
     """跨季条目链查找 sort=target_ep 测试
