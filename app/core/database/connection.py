@@ -27,19 +27,18 @@ class DatabaseConnection:
     def __init__(self, db_path: Optional[str] = None):
         auto = db_path is None
         if auto:
-            db_path = (
-                "data/sync_records.db"
-                if _env_flag("DOCKER_CONTAINER")
-                else "sync_records.db"
-            )
+            # 所有环境（Docker/直装）默认统一放到 data/ 目录，便于与其他数据隔离
+            db_path = "data/sync_records.db"
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if auto and _env_flag("DOCKER_CONTAINER"):
+        # 自动迁移：项目根目录下存在旧版 sync_records.db 时，移动到新路径
+        # 覆盖 Docker 与直装场景，确保现有用户升级后数据不丢失
+        if auto:
             legacy = Path("sync_records.db")
             if not self.db_path.exists() and legacy.is_file():
                 shutil.move(str(legacy), str(self.db_path))
-                logger.info(f"Docker: 已从旧路径迁移数据库 {legacy} -> {self.db_path}")
+                logger.info(f"已从旧路径迁移数据库 {legacy} -> {self.db_path}")
 
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None

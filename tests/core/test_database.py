@@ -362,7 +362,7 @@ class TestDatabaseManager:
 
 
 class TestDatabaseDockerAndTrakt:
-    """Docker 默认路径、Trakt CRUD 与部分异常分支。"""
+    """默认路径、legacy 迁移、Trakt CRUD 与部分异常分支。"""
 
     def test_database_auto_path_docker_migrates_legacy(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -380,14 +380,57 @@ class TestDatabaseDockerAndTrakt:
         assert (tmp_path / "data" / "sync_records.db").is_file()
         assert not legacy.exists()
 
-    def test_database_auto_path_non_docker_relative(self, tmp_path, monkeypatch):
+    def test_database_auto_path_non_docker_migrates_legacy(self, tmp_path, monkeypatch):
+        """直装环境：根目录存在旧 sync_records.db 时应自动迁移到 data/ 下"""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DOCKER_CONTAINER", raising=False)
+        legacy = tmp_path / "sync_records.db"
+        conn = sqlite3.connect(str(legacy))
+        conn.execute("CREATE TABLE IF NOT EXISTS t(i INTEGER)")
+        conn.commit()
+        conn.close()
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(None)
+        assert db.db_path.resolve() == (tmp_path / "data" / "sync_records.db").resolve()
+        assert (tmp_path / "data" / "sync_records.db").is_file()
+        assert not legacy.exists()
+
+    def test_database_auto_path_default_to_data_dir(self, tmp_path, monkeypatch):
+        """无 legacy 文件时，默认路径应为 data/sync_records.db（Docker 与直装一致）"""
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("DOCKER_CONTAINER", raising=False)
         with patch("app.core.database.logger"):
             from app.core.database import DatabaseManager
 
             db = DatabaseManager(None)
-        assert db.db_path.resolve() == (tmp_path / "sync_records.db").resolve()
+        assert db.db_path.resolve() == (tmp_path / "data" / "sync_records.db").resolve()
+
+    def test_database_auto_path_keeps_existing_when_legacy_present(
+        self, tmp_path, monkeypatch
+    ):
+        """新路径已存在 db 时不迁移 legacy，避免覆盖现有用户的新数据"""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DOCKER_CONTAINER", raising=False)
+        legacy = tmp_path / "sync_records.db"
+        legacy.write_text("legacy")
+        new_dir = tmp_path / "data"
+        new_dir.mkdir()
+        new_db = new_dir / "sync_records.db"
+        # 用真实空 SQLite 数据库占位（DatabaseManager 会尝试连接）
+        conn = sqlite3.connect(str(new_db))
+        conn.execute("CREATE TABLE IF NOT EXISTS t(i INTEGER)")
+        conn.commit()
+        conn.close()
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(None)
+        assert db.db_path.resolve() == new_db.resolve()
+        # 旧文件保留未动（未触发迁移）
+        assert legacy.is_file()
+        assert legacy.read_text() == "legacy"
 
     def test_trakt_save_insert_update_delete_and_list(self, temp_dir, reset_singletons):
         db_path = temp_dir / "trakt.db"
