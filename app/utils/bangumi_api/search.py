@@ -231,7 +231,12 @@ class SearchMixin:
         # 命中，剥离后用核心标题「完美世界」更易命中。
         # 延迟导入避免循环依赖，与 _archive_shortcut 内部使用同一函数保持
         # API 与 archive 路径的剥离逻辑一致。
-        from ._archive_shortcut import _strip_season_episode_suffix
+        from ._archive_shortcut import (
+            _MEDIA_PREFIX_VARIANTS,
+            _split_title_segments,
+            _strip_season_episode_suffix,
+            _strip_title_wrappers,
+        )
 
         stripped_title = _strip_season_episode_suffix(title)
         stripped_ori = _strip_season_episode_suffix(ori_title) if ori_title else ""
@@ -302,12 +307,72 @@ class SearchMixin:
         ):
             # 构建搜索标题列表：原始 + 剥离后缀变体（去重，保持优先级）
             # 原始标题在前（更精确），剥离后缀变体在后（兜底提升命中率）
+            # 额外复用 archive 路径的三种变体策略：
+            # 1. 书名号剥离：「「君の名は。」」→「君の名は。」
+            # 2. 标题分割主段：「魔法少女小圆：叛逆的物语」→「魔法少女小圆」
+            # 3. 媒体前缀变体：「クドわふたー」→「劇場版 クドわふたー」
+            # 仅在已有变体都未命中时尝试（避免对易匹配标题增加延迟）
             seen_titles: set[str] = set()
             search_titles: list[str] = []
             for t in (ori_title, title, stripped_ori, stripped_title):
                 if t and t.strip() and t not in seen_titles:
                     seen_titles.add(t)
                     search_titles.append(t)
+
+            # 追加书名号剥离变体（与原始标题不同时才有意义）
+            # 同时作用于原始标题和剥离季数后缀后的标题：
+            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 S02E10 后
+            # 得到「『魔法少女小圆：叛逆的物语』」，再剥离外层 『』 才能拿到
+            # 「魔法少女小圆：叛逆的物语」供后续主段分割。
+            for t in (ori_title, title, stripped_ori, stripped_title):
+                if t:
+                    unwrapped = _strip_title_wrappers(t)
+                    if unwrapped != t and unwrapped not in seen_titles:
+                        seen_titles.add(unwrapped)
+                        search_titles.append(unwrapped)
+
+            # 追加标题分割主段变体（仅当主段长度 >= 4 时才尝试，避免过短误匹配）
+            # 同时对剥离季数后缀和书名号包裹后的标题做分割：
+            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 S02E10 + 外层『』后
+            # 得到「魔法少女小圆：叛逆的物语」，再分割主段得到「魔法少女小圆」。
+            split_bases: list[str] = []
+            for t in (stripped_ori, stripped_title):
+                if t:
+                    split_bases.append(t)
+                    unwrapped = _strip_title_wrappers(t)
+                    if unwrapped != t:
+                        split_bases.append(unwrapped)
+            for t in split_bases:
+                if t:
+                    segments = _split_title_segments(t)
+                    if segments and len(segments[0]) >= 4:
+                        main_seg = segments[0]
+                        if main_seg not in seen_titles:
+                            seen_titles.add(main_seg)
+                            search_titles.append(main_seg)
+
+            # 追加媒体前缀变体（仅当核心标题不含前缀时才拼接尝试）
+            # 用剥离后的标题拼前缀，避免对「劇場版 X」再次拼成「劇場版 劇場版 X」
+            # 同时对书名号剥离后标题和主段拼前缀：
+            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 + 分割后得到
+            # 核心标题「魔法少女小圆」，拼前缀得到「劇場版 魔法少女小圆」更易命中。
+            media_prefix_bases: list[str] = []
+            for base in (stripped_ori, stripped_title):
+                if base:
+                    media_prefix_bases.append(base)
+                    unwrapped = _strip_title_wrappers(base)
+                    if unwrapped != base:
+                        media_prefix_bases.append(unwrapped)
+                    segments = _split_title_segments(unwrapped)
+                    if segments and len(segments[0]) >= 4:
+                        media_prefix_bases.append(segments[0])
+            for base in media_prefix_bases:
+                if base and not any(base.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
+                    for prefix in _MEDIA_PREFIX_VARIANTS:
+                        variant = f"{prefix}{base}"
+                        if variant not in seen_titles:
+                            seen_titles.add(variant)
+                            search_titles.append(variant)
 
             found = False
             for t in search_titles:
