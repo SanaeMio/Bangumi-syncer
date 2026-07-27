@@ -78,7 +78,13 @@ def mock_database():
     db.delete_pending_sync_record.return_value = True
     db.mark_pending_sync_synced.return_value = True
     db.increment_pending_sync_attempts.return_value = True
-    with patch("app.core.database.database_manager", db):
+    # 同时 patch 源模块与路由模块的本地引用：
+    # 路由用 `from ..core.database import database_manager` 已建立本地引用，
+    # 仅 patch 源模块不会替换路由作用域内的引用，会导致真实 DB 被调用。
+    with (
+        patch("app.core.database.database_manager", db),
+        patch("app.api.bangumi_replay.database_manager", db),
+    ):
         yield db
 
 
