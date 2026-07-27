@@ -315,7 +315,6 @@ def test_ensure_latest_in_list_noop_when_present():
 
 
 @pytest.mark.asyncio
-@pytest.mark.slow
 async def test_release_info_update_available_none_when_compare_raises():
     gh = LatestReleaseResult(
         ok=True,
