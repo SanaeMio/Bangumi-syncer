@@ -74,6 +74,7 @@ export default defineConfig(
         'quick-start',
         'configuration.md',
         'mapping.md',
+        'bangumi-archive.md',
         'usage',
         'troubleshooting.md',
         'roadmap.md',

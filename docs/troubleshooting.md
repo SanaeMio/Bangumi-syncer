@@ -118,3 +118,55 @@ Bangumi 是以 ACG（动画、漫画、游戏）为主的站点，非 ACG 内容
    - 对应的媒体服务器类型（Plex / Emby / Jellyfin / 自定义等）
 
 收到完整信息后会尽快协助排查。
+
+---
+
+## 6. Bangumi Archive 相关问题
+
+启用了 [Bangumi Archive 离线查询层](/bangumi-archive) 后，同步会优先查本地 SQLite。本节列出 archive 相关的常见问题。
+
+### 6.1 启用后一直未生效
+
+**排查步骤**：
+
+1. **查看状态**：通过 `GET /api/bangumi_archive/status` 检查 `enabled` / `last_error` / `import_in_progress` / `current_progress` 字段
+2. **查看进度日志**：`GET /api/bangumi_archive/progress_log?task_id=xxx` 看完整阶段变化
+3. **常见原因**：
+   - **磁盘空间不足**：可用空间低于 `min_disk_space_mb`（默认 2000MB）会跳过导入
+   - **网络代理配置错误**：`http_proxy` 留空但 `[dev] script_proxy` 也未配置
+   - **GitHub 下载失败**：直连与镜像源 fallback 链均不通，建议配置代理或手动下载 zip 后通过 `/api/bangumi_archive/import_local` 上传
+
+### 6.2 导入失败后重试
+
+- **自动重试**：`retry_interval = 3600`（默认 1 小时）后自动重试
+- **手动重试**：`POST /api/bangumi_archive/trigger?force=true` 强制重新下载导入（忽略 dump_date 未变化的跳过逻辑）
+
+### 6.3 索引未就绪降级到 API
+
+archive 启用但**标题索引未构建完成**时（首次启用约 3-8 分钟），`try_search` / `try_search_old` 会返回 `archive_miss` 自动降级到 API：
+
+- **不影响同步成功率**，只是该次查询走 API 较慢
+- 其他 `try_get_*` 方法（直接查 SQLite，不依赖标题索引）可正常工作
+- 索引构建在子线程进行，**不阻塞主流程**，构建完成后自动开始命中
+
+### 6.4 数据陈旧
+
+- Bangumi 官方每周三 05:00（北京时间）发布新 dump
+- 默认 `update_cron = 0 8 * * 3` 每周三 08:00 自动拉取
+- 如需立即更新：`POST /api/bangumi_archive/trigger?force=true`
+
+### 6.5 archive 命中但结果不对
+
+archive 数据来自 Bangumi 官方 dump，可能存在数据延迟或边缘情况：
+
+1. **临时关闭 archive** 走纯 API 路径，对比结果是否一致
+2. 在「调试工具」用「测试同步」功能复现问题
+3. 必要时到 [GitHub Issues](https://github.com/SanaeMio/Bangumi-syncer/issues) 反馈
+
+### 6.6 磁盘占用过大
+
+- 双库 + 索引缓存 + 临时下载文件合计峰值约 **4.6GB**
+- 导入成功切换 active 指针后，旧库（db / db-wal / db-shm）与对应的 `.index` 缓存会自动清理，常态占用约 **3.3GB**
+- 若磁盘紧张可关闭 archive，并删除 `data_dir` 下的 `bangumi_archive_*.db` / `bangumi_archive_*.index` 文件
+
+更详细的 archive 说明请看 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)。
