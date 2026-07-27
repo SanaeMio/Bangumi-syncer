@@ -2113,6 +2113,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "should_mark_synced": False,  # 配置问题，不标记，等用户修复
             }
 
+        # 补发场景下，调度器已通过 _probe_api 确认 API 可达；
+        # 但缓存的 BangumiApi 实例可能仍带着上一轮失败的 _api_unreachable 标记（TTL 未过期）。
+        # 强制清除标记，避免 mark_episode_watched 第一步就被短路返回 _PendingSyncQueued。
+        bgm.mark_api_reachable()
+
         # 优先按队列里存的 subject_id + episode_id 直接标记
         # （比走完整匹配链路快且避免重复消耗 API 调用）
         try:

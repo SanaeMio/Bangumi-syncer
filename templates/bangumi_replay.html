@@ -141,6 +141,10 @@ let currentPage = 1;
 const pageLimit = APP_TABLE_PAGE_SIZE;
 let recordDetailModal = null;
 
+function showLoading(show) {
+    setAppTableLoading(show, 'replay-queue-table-wrap');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
     bindAppTableMobileRowClick('#replay-queue-table', showRecordDetail);
@@ -156,6 +160,10 @@ async function loadQueue(page) {
     if (status) params.append('status', status);
     try {
         const response = await fetch(appUrl('/api/bangumi_replay/queue?' + params), { credentials: 'include' });
+        if (response.status === 401) {
+            window.location.href = appUrl('/login');
+            return;
+        }
         const data = await response.json();
         if (data.status === 'success') {
             displayQueue(data.data.records, data.data.total);
