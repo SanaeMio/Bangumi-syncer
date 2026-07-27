@@ -696,6 +696,24 @@ class EpisodesMixin:
         if not relation:
             return None
 
+        # 快速路径：archive 启用且命中时，一次拿完整续集链批量遍历
+        # 避免 sequel 方向逐跳 _find_related_id_by_relation + get_subject 调用
+        # archive 命中时链上 get_subject / _find_episode_by_sort 也都走 archive 短路
+        # archive miss / 未启用 / 空链时降级到逐跳逻辑（保持原行为）
+        if direction == "sequel":
+            shortcut = self._archive.try_find_sequel_chain(start_id, max_hops=max_depth)
+            if shortcut.hit:
+                chain = shortcut.data or []
+                result = self._find_episode_in_chain(
+                    chain, target_ep, visited, deadline
+                )
+                if result:
+                    return result
+                # archive 命中但链上未找到目标 ep，返回 None
+                # 避免重复走逐跳逻辑（archive 已确认链上无目标）
+                return None
+
+        # 降级路径：逐跳遍历（archive 未启用 / miss / prequel 方向）
         current_id = start_id
         for _ in range(max_depth):
             if deadline is not None and time.monotonic() > deadline:
@@ -735,6 +753,66 @@ class EpisodesMixin:
             if found:
                 logger.debug(
                     f"通过{direction}链找到目标集: subject_id={current_id}, "
+                    f"sort={target_ep}, ep_id={found['id']}"
+                )
+                return current_id, found["id"]
+        return None
+
+    def _find_episode_in_chain(
+        self,
+        chain: list[int],
+        target_ep: int,
+        visited: set,
+        deadline: float | None = None,
+    ) -> tuple[int, int] | None:
+        """在已知续集链上批量遍历查找含 sort=target_ep 的条目
+
+        与 _walk_chain_for_episode 的逐跳逻辑相比：
+        - 跳过 _find_related_id_by_relation（chain 已预构图）
+        - 保留类型/剧场版过滤和 deadline 检查
+        - 已访问的 subject_id 跳过（防环）
+
+        Args:
+            chain: 续集链 subject_id 列表（不含起始条目）
+            target_ep: 目标集数
+            visited: 已访问的 subject_id 集合（会被本方法更新）
+            deadline: 整体 deadline
+        """
+        for current_id in chain:
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+
+            if deadline is not None and time.monotonic() > deadline:
+                logger.warning(
+                    f"_find_episode_in_chain 整体 deadline 超时，终止链遍历: "
+                    f"current_id={current_id}, target_ep={target_ep}"
+                )
+                return None
+
+            # 类型过滤：只看动画（SUBJECT_TYPE_ANIME），跳过书籍/音乐等
+            info = self.get_subject(current_id)
+            if not info:
+                continue
+            if info.get("type") != SUBJECT_TYPE_ANIME:
+                continue
+            # 跳过剧场版/电影（标题命中关键词）
+            name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
+            if "剧场版" in name or "电影" in name:
+                continue
+
+            if deadline is not None and time.monotonic() > deadline:
+                logger.warning(
+                    f"_find_episode_in_chain 整体 deadline 超时，终止链遍历: "
+                    f"current_id={current_id}, target_ep={target_ep}"
+                )
+                return None
+
+            # 在当前条目内查 sort
+            found = self._find_episode_by_sort(current_id, target_ep)
+            if found:
+                logger.debug(
+                    f"通过 archive 续集链找到目标集: subject_id={current_id}, "
                     f"sort={target_ep}, ep_id={found['id']}"
                 )
                 return current_id, found["id"]
