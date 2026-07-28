@@ -413,6 +413,43 @@ async def get_pending_candidate_detail(
         raise HTTPException(status_code=500, detail=f"获取待确认候选详情失败: {str(e)}")
 
 
+@router.get("/records/{record_id}/pending-candidate")
+async def get_pending_candidate_by_sync_record(
+    record_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """按 sync_record_id 查询关联的候选记录（用于 records 页「查看候选」入口）"""
+    try:
+        record = sync_service.get_pending_candidate_by_sync_record_id(record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="该记录无关联候选")
+
+        candidates = []
+        cand_str = record.get("candidates_json", "") or "[]"
+        try:
+            candidates = json.loads(cand_str)
+        except (json.JSONDecodeError, TypeError):
+            candidates = []
+
+        trace = None
+        trace_str = record.get("trace_json", "") or "{}"
+        try:
+            trace = json.loads(trace_str) if trace_str else None
+        except (json.JSONDecodeError, TypeError):
+            trace = None
+
+        return {
+            "status": "success",
+            "data": {"record": record, "candidates": candidates, "trace": trace},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"按 sync_record_id 查候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
 @router.post("/pending-candidates/{candidate_id}/confirm")
 async def confirm_pending_candidate(
     candidate_id: int,

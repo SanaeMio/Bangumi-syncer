@@ -179,6 +179,51 @@ class PendingCandidatesRepository(BaseRepository):
 
         return self._run_read(_read, error_msg="获取待确认候选详情失败", default=None)
 
+    def get_pending_candidate_by_sync_record_id(
+        self, sync_record_id: int
+    ) -> Optional[dict[str, Any]]:
+        """按 sync_record_id 查询最新候选记录（含 trace_json）
+
+        用于 records 页「查看候选」入口：根据同步记录跳转到关联的候选详情。
+        优先返回 pending 行；若都已处理则返回最近一条（按 id DESC）。
+        """
+        # 先查 pending 行（最相关）
+        row = self._read_sync_record(sync_record_id, "pending")
+        if row:
+            return row
+        # 无 pending 行时返回最近一条（任意状态）
+        return self._read_sync_record(sync_record_id, None)
+
+    def _read_sync_record(
+        self, sync_record_id: int, status: Optional[str]
+    ) -> Optional[dict[str, Any]]:
+        """内部读：按 sync_record_id 查候选，可按 status 过滤"""
+        sql = """
+            SELECT id, created_at, request_title, request_ori_title,
+                   request_season, request_episode, user_name, source,
+                   candidates_json, trace_json, status, confirmed_subject_id,
+                   resolved_at, sync_record_id
+            FROM pending_candidates
+            WHERE sync_record_id = ?
+        """
+        params: list[Any] = [sync_record_id]
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY id DESC LIMIT 1"
+
+        def _read(conn):
+            cursor = conn.execute(sql, tuple(params))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            cols = [d[0] for d in cursor.description]
+            return dict(zip(cols, row))
+
+        return self._run_read(
+            _read, error_msg="按 sync_record_id 查候选失败", default=None
+        )
+
     def update_pending_candidate_status(
         self,
         candidate_id: int,

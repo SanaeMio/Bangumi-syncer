@@ -1658,6 +1658,29 @@ let _retryLogModal = null;
 let _retryDone = false;
 
 /**
+ * 根据同步记录跳转到关联的候选详情；若无候选则提示
+ * @param {number} recordId - 记录ID
+ */
+async function viewCandidateByRecord(recordId) {
+    if (!recordId) {
+        showAlert('记录ID无效', 'danger');
+        return;
+    }
+    try {
+        const data = await apiFetch(`/api/records/${recordId}/pending-candidate`);
+        if (data && data.status === 'success' && data.data && data.data.record) {
+            const candidateId = data.data.record.id;
+            window.location.href = appUrl(`/pending-candidates?focus=${candidateId}`);
+            return;
+        }
+        showAlert('该记录无关联候选', 'info');
+    } catch (err) {
+        console.error('查询候选失败:', err);
+        showAlert('查询候选失败', 'danger');
+    }
+}
+
+/**
  * 重试同步记录（打开日志弹窗，SSE 实时推送 debug 日志）
  * @param {number} recordId - 记录ID
  */

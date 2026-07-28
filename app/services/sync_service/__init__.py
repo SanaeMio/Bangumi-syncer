@@ -143,6 +143,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """获取单条待确认候选详情"""
         return database_manager.get_pending_candidate_by_id(candidate_id)
 
+    def get_pending_candidate_by_sync_record_id(
+        self, sync_record_id: int
+    ) -> dict[str, Any] | None:
+        """按 sync_record_id 查询关联的候选记录"""
+        return database_manager.get_pending_candidate_by_sync_record_id(sync_record_id)
+
     def confirm_pending_candidate(
         self, candidate_id: int, subject_id: str
     ) -> tuple[bool, str]:
