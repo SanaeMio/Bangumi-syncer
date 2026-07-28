@@ -317,12 +317,7 @@
 
         async function loadArchiveStatus() {
             try {
-                const resp = await fetch(appUrl('/api/bangumi_archive/status'), { credentials: 'include' });
-                if (resp.status === 401) {
-                    window.location.href = appUrl('/login');
-                    return;
-                }
-                const s = await resp.json();
+                const s = await apiFetch('/api/bangumi_archive/status');
                 _renderStatus(s);
                 // 若有进行中任务，自动连接 SSE
                 if (s.import_in_progress && s.current_task_id) {
@@ -497,9 +492,8 @@
             // 清空日志区
             document.getElementById('archive-progress-log').innerHTML = '';
             try {
-                const url = appUrl('/api/bangumi_archive/trigger') + (force ? '?force=true' : '');
-                const resp = await fetch(url, { method: 'POST', credentials: 'include' });
-                const data = await resp.json();
+                const path = '/api/bangumi_archive/trigger' + (force ? '?force=true' : '');
+                const data = await apiFetch(path, { method: 'POST' });
                 if (data.status === 'started' && data.task_id) {
                     showAlert('更新任务已启动', 'success');
                     _connectProgressSSE(data.task_id);
@@ -536,12 +530,10 @@
             statusEl.textContent = `正在上传 ${file.name}（${_fmtSize(file.size)}）…`;
 
             try {
-                const resp = await fetch(appUrl('/api/bangumi_archive/import_local'), {
+                const data = await apiFetch('/api/bangumi_archive/import_local', {
                     method: 'POST',
-                    body: formData,
-                    credentials: 'include'
+                    body: formData
                 });
-                const data = await resp.json();
                 if (data.status === 'started' && data.task_id) {
                     showAlert('上传成功，开始导入: ' + (data.detail || ''), 'success');
                     statusEl.textContent = '已开始导入，进度见上方';

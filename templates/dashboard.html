@@ -463,10 +463,7 @@ function getStatusText(status) {
 // getSourceColor 已在 app.js 全局定义（window.getSourceColor），此处不再重复
 
 async function loadDashboardData() {
-    const fetchOpts = { credentials: 'include' };
-
-    fetch(appUrl('/api/stats'), fetchOpts)
-        .then(function(res) { return res.json(); })
+    apiFetch('/api/stats')
         .then(function(statsData) {
             if (statsData.status === 'success') {
                 const stats = statsData.data;
@@ -483,8 +480,7 @@ async function loadDashboardData() {
             showAlert('加载数据失败', 'danger');
         });
 
-    fetch(appUrl('/api/records?limit=6&skip_count=true'), fetchOpts)
-        .then(function(res) { return res.json(); })
+    apiFetch('/api/records?limit=6&skip_count=true')
         .then(function(recordsData) {
             if (recordsData.status === 'success') {
                 renderTimeline(recordsData.data.records);
@@ -495,8 +491,7 @@ async function loadDashboardData() {
             showAlert('加载数据失败', 'danger');
         });
 
-    fetch(appUrl('/api/stats/heatmap'), fetchOpts)
-        .then(function(res) { return res.json(); })
+    apiFetch('/api/stats/heatmap')
         .then(function(heatmapData) {
             if (heatmapData.status === 'success') {
                 cachedHeatmapData = heatmapData.data;
@@ -510,8 +505,7 @@ async function loadDashboardData() {
 
     // LLM 用量统计
     var _llmDetail = null;
-    fetch(appUrl('/api/llm/stats?scope=detailed'), fetchOpts)
-        .then(function(res) { return res.json(); })
+    apiFetch('/api/llm/stats?scope=detailed')
         .then(function(d) {
             if (d.total_calls > 0 || d.error_count > 0) {
                 document.getElementById('llm-stats-row').style.display = 'flex';
@@ -777,10 +771,7 @@ function loadTimelinePosters(records) {
     const params = new URLSearchParams();
     needFetch.forEach(function(sid) { params.append('subject_ids', sid); });
 
-    fetch(appUrl('/api/bgm/subjects/posters?' + params.toString()), {
-        credentials: 'include'
-    })
-        .then(function(res) { return res.json(); })
+    apiFetch('/api/bgm/subjects/posters?' + params.toString())
         .then(function(data) {
             if (data.status !== 'success') throw new Error('bad response');
             const posters = data.posters || {};
