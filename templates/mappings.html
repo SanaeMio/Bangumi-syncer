@@ -429,10 +429,7 @@ async function loadMappings() {
     showLoading(true);
 
     try {
-        const response = await fetch(appUrl('/api/mappings'), {
-            credentials: 'include'
-        });
-        const data = await response.json();
+        const data = await apiFetch('/api/mappings');
 
         if (data.status === 'success') {
             currentMappings = data.data.mappings || {};
@@ -668,13 +665,11 @@ async function saveMapping() {
                 newRules.splice(editingRuleIndex, 1);
                 // 先更新规则再更新映射
                 const preBody = { mappings: currentMappings, rules: newRules };
-                const preResp = await fetch(appUrl('/api/mappings'), {
+                const preResult = await apiFetch('/api/mappings', {
                     method: 'POST',
-                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(preBody)
                 });
-                const preResult = await preResp.json();
                 if (preResult.status !== 'success') {
                     showAlert('保存映射失败: ' + preResult.message, 'danger');
                     return;
@@ -688,14 +683,11 @@ async function saveMapping() {
                 newMappings[title] = id;
             }
 
-            const response = await fetch(appUrl('/api/mappings'), {
+            const result = await apiFetch('/api/mappings', {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mappings: newMappings, rules: currentRules })
             });
-
-            const result = await response.json();
 
             if (result.status === 'success') {
                 showAlert(editingTitle ? '映射更新成功' : '映射添加成功', 'success');
@@ -736,13 +728,11 @@ async function saveMapping() {
                 delete bodyMappings[editingTitle];
             }
 
-            const response = await fetch(appUrl('/api/mappings'), {
+            const result = await apiFetch('/api/mappings', {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mappings: bodyMappings, rules: newRules })
             });
-            const result = await response.json();
             if (result.status === 'success') {
                 showAlert(editingRuleIndex !== null ? '规则更新成功' : '规则添加成功', 'success');
                 mappingModal.hide();
@@ -785,12 +775,9 @@ async function confirmDelete() {
     if (type === 'exact') {
         const title = key;
         try {
-            const response = await fetch(appUrl(`/api/mappings/${encodeURIComponent(title)}`), {
-                method: 'DELETE',
-                credentials: 'include'
+            const result = await apiFetch(`/api/mappings/${encodeURIComponent(title)}`, {
+                method: 'DELETE'
             });
-
-            const result = await response.json();
 
             if (result.status === 'success') {
                 showAlert('映射删除成功', 'success');
@@ -809,13 +796,11 @@ async function confirmDelete() {
         newRules.splice(idx, 1);
 
         try {
-            const response = await fetch(appUrl('/api/mappings'), {
+            const result = await apiFetch('/api/mappings', {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mappings: currentMappings, rules: newRules })
             });
-            const result = await response.json();
             if (result.status === 'success') {
                 showAlert('规则删除成功', 'success');
                 deleteModal.hide();
@@ -932,16 +917,13 @@ async function importMappings() {
             body.rules = newRules;
         }
 
-        const response = await fetch(appUrl('/api/mappings'), {
+        const result = await apiFetch('/api/mappings', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(body)
         });
-
-        const result = await response.json();
 
         if (result.status === 'success') {
             let msg = `成功导入 ${Object.keys(importMappings).length} 个映射`;
@@ -990,16 +972,13 @@ async function clearAllMappings() {
     }
 
     try {
-        const response = await fetch(appUrl('/api/mappings'), {
+        const result = await apiFetch('/api/mappings', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ mappings: {}, rules: [] })
         });
-
-        const result = await response.json();
 
         if (result.status === 'success') {
             showAlert('所有映射已清空', 'success');

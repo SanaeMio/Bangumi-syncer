@@ -184,8 +184,7 @@ async function loadRecords(page = 1, limit = 10) {
             ...currentFilters
         });
 
-        const response = await fetch(appUrl(`/api/records?${params}`));
-        const data = await response.json();
+        const data = await apiFetch(`/api/records?${params}`);
 
         if (data.status === 'success') {
             displayRecords(data.data.records);
