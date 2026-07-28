@@ -159,12 +159,7 @@ async function loadQueue(page) {
     const status = document.getElementById('filter-status').value;
     if (status) params.append('status', status);
     try {
-        const response = await fetch(appUrl('/api/bangumi_replay/queue?' + params), { credentials: 'include' });
-        if (response.status === 401) {
-            window.location.href = appUrl('/login');
-            return;
-        }
-        const data = await response.json();
+        const data = await apiFetch('/api/bangumi_replay/queue?' + params);
         if (data.status === 'success') {
             displayQueue(data.data.records, data.data.total);
             renderAppPagination({
@@ -256,8 +251,7 @@ function clearFilters() {
 
 async function showRecordDetail(recordId) {
     try {
-        const response = await fetch(appUrl(`/api/bangumi_replay/queue/${recordId}`), { credentials: 'include' });
-        const data = await response.json();
+        const data = await apiFetch(`/api/bangumi_replay/queue/${recordId}`);
         if (data.status !== 'success') {
             showAlert('获取详情失败', 'danger');
             return;
@@ -274,11 +268,9 @@ async function showRecordDetail(recordId) {
 async function replayBatch() {
     if (!confirm('确认手动触发批量补发？')) return;
     try {
-        const response = await fetch(appUrl('/api/bangumi_replay/replay?limit=20'), {
+        const data = await apiFetch('/api/bangumi_replay/replay?limit=20', {
             method: 'POST',
-            credentials: 'include',
         });
-        const data = await response.json();
         if (data.status === 'success') {
             const s = data.data || {};
             showAlert(`补发完成：总计 ${s.total || 0}，成功 ${s.success || 0}，失败 ${s.failed || 0}，仍不可达 ${s.still_unreachable || 0}`, 'success');
@@ -295,11 +287,9 @@ async function replayBatch() {
 
 async function replaySingle(recordId) {
     try {
-        const response = await fetch(appUrl(`/api/bangumi_replay/replay/${recordId}`), {
+        const data = await apiFetch(`/api/bangumi_replay/replay/${recordId}`, {
             method: 'POST',
-            credentials: 'include',
         });
-        const data = await response.json();
         if (data.status === 'success') {
             const r = data.data || {};
             const msg = r.success ? `补发成功：${r.message || ''}` : `补发失败：${r.message || ''}`;
@@ -318,11 +308,9 @@ async function replaySingle(recordId) {
 async function deleteRecord(recordId) {
     if (!confirm('确认删除此任务？')) return;
     try {
-        const response = await fetch(appUrl(`/api/bangumi_replay/queue/${recordId}`), {
+        const data = await apiFetch(`/api/bangumi_replay/queue/${recordId}`, {
             method: 'DELETE',
-            credentials: 'include',
         });
-        const data = await response.json();
         if (data.status === 'success') {
             showAlert('已删除', 'success');
             loadQueue();
@@ -338,11 +326,9 @@ async function deleteRecord(recordId) {
 
 async function probeApi() {
     try {
-        const response = await fetch(appUrl('/api/bangumi_replay/probe'), {
+        const data = await apiFetch('/api/bangumi_replay/probe', {
             method: 'POST',
-            credentials: 'include',
         });
-        const data = await response.json();
         if (data.status === 'success') {
             const r = data.data || {};
             showAlert(r.message || (r.reachable ? 'API 可达' : 'API 不可达'), r.reachable ? 'success' : 'warning');
@@ -357,8 +343,7 @@ async function probeApi() {
 
 async function loadStatus() {
     try {
-        const response = await fetch(appUrl('/api/bangumi_replay/status'), { credentials: 'include' });
-        const data = await response.json();
+        const data = await apiFetch('/api/bangumi_replay/status');
         const bar = document.getElementById('replay-status-bar');
         if (!data || data.enabled == null) {
             bar.innerHTML = '<span class="text-muted">无法获取状态</span>';
