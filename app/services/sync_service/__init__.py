@@ -21,6 +21,7 @@ from ...core.logging import (
     get_sync_run_id,
     logger,
     new_inline_sync_run_id,
+    new_retry_sync_run_id,
     sync_log_context,
 )
 from ...models.sync import CustomItem, SyncResponse
@@ -188,7 +189,189 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             confirmed_subject_id=str(subject_id),
             exclude_id=candidate_id,
         )
-        return True, f"已确认并写入映射：{title} → subject/{subject_id}"
+
+        # 候选确认即补发：若有关联的 sync_record_id，自动触发重试
+        replay_msg = self._auto_replay_after_confirm(
+            record.get("sync_record_id"), record, title
+        )
+        final_msg = f"已确认并写入映射：{title} → subject/{subject_id}"
+        if replay_msg:
+            final_msg = f"{final_msg}；{replay_msg}"
+        return True, final_msg
+
+    def _auto_replay_after_confirm(
+        self,
+        sync_record_id: int | None,
+        candidate_record: dict[str, Any],
+        title: str,
+    ) -> str:
+        """候选确认后自动补发原同步记录。
+
+        仅当 pending_candidates.sync_record_id 存在且对应 sync_records 状态非 success
+        时触发。补发复用 sync_custom_item 流程，结果回写 sync_records：
+        - success/ignored → 状态改写为 retried，清理 pending_sync_queue
+        - error → 保持原状态，返回错误原因供前端展示
+
+        补发失败不影响 confirm 主流程（映射已写入，下次同步会自动命中）。
+        返回补发结果描述字符串；未触发补发时返回空串。
+        """
+        if not sync_record_id:
+            return ""
+
+        try:
+            record = database_manager.get_sync_record_by_id(int(sync_record_id))
+        except Exception as e:
+            logger.warning(
+                f"候选确认后补发：查询 sync_record_id={sync_record_id} 失败: {e}"
+            )
+            return ""
+
+        if not record:
+            return ""
+
+        if record.get("status") == "success":
+            return ""
+
+        # 构建重试 item（优先用 sync_record 的 match_trace 还原原始请求字段）
+        try:
+            retry_item = self._build_retry_item_from_record(
+                record, f"retry-{record.get('source', 'custom')}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"候选确认后补发：构建重试 item 失败 (record={sync_record_id}): {e}"
+            )
+            return ""
+
+        logger.info(
+            f"候选确认触发补发: record_id={sync_record_id}, title={title}, "
+            f"原状态={record.get('status')}"
+        )
+        try:
+            with sync_log_context(new_retry_sync_run_id(int(sync_record_id))):
+                result = self.sync_custom_item(
+                    retry_item,
+                    source=f"retry-{record.get('source', 'custom')}",
+                )
+        except Exception as e:
+            logger.warning(f"候选确认后补发异常 (record={sync_record_id}): {e}")
+            return f"补发异常: {e}"
+
+        # 回写原 sync_records 状态
+        original_status = record.get("status", "")
+        if result.status == "success":
+            database_manager.update_sync_record_status(
+                record_id=int(sync_record_id),
+                status="retried",
+                message=f"候选确认后补发成功: {result.message}",
+            )
+            self._cleanup_pending_for_replay(int(sync_record_id), original_status)
+            return "已自动补发成功"
+        if result.status == "ignored":
+            database_manager.update_sync_record_status(
+                record_id=int(sync_record_id),
+                status="retried",
+                message=f"候选确认后补发被忽略: {result.message}",
+            )
+            self._cleanup_pending_for_replay(int(sync_record_id), original_status)
+            return f"补发被忽略: {result.message}"
+        # error
+        return f"补发失败: {result.message}"
+
+    def _cleanup_pending_for_replay(self, record_id: int, original_status: str) -> None:
+        """补发成功后清理 pending_sync_queue 中对应的 pending 行。
+
+        原 queued 记录背后通常有一条 pending_sync_queue 行等待补发，
+        补发成功后必须清理，否则调度器仍会捞起该行重放，导致重复标记。
+        非 queued 状态原记录无关联 pending 行，直接跳过。
+        """
+        if original_status != "queued":
+            return
+        try:
+            affected = database_manager.mark_pending_sync_synced_by_sync_record_id(
+                record_id
+            )
+            if affected > 0:
+                logger.info(
+                    f"补发后清理 pending_sync_queue (record={record_id}): "
+                    f"删除 {affected} 条 pending 行"
+                )
+        except Exception as e:
+            logger.warning(f"清理 pending_sync_queue (record={record_id}) 失败: {e}")
+
+    def _build_retry_item_from_record(
+        self, record: dict[str, Any], retry_source: str
+    ) -> CustomItem:
+        """从 sync_record 构建 retry 用的 CustomItem。
+
+        优先从 match_trace 还原原始请求字段；trace 缺失时回退到 sync_records 列。
+        与 app/api/sync.py._build_retry_item 行为一致，但下沉到 sync_service
+        供候选确认即补发流程复用。
+        """
+        from ...models.sync import CustomItem as _CustomItem
+
+        # 优先 match_trace，回退到 sync_records 字段
+        trace_raw = record.get("match_trace")
+        trace: dict[str, Any] | None = None
+        if isinstance(trace_raw, dict):
+            trace = trace_raw
+        elif isinstance(trace_raw, str) and trace_raw:
+            try:
+                parsed = json.loads(trace_raw)
+                if isinstance(parsed, dict):
+                    trace = parsed
+            except json.JSONDecodeError:
+                trace = None
+
+        # receive 步骤中的 processed_payload 含原始请求字段
+        receive_step: dict[str, Any] | None = None
+        if trace:
+            for step in trace.get("steps") or []:
+                if isinstance(step, dict) and step.get("stage") == "receive":
+                    receive_step = step
+                    break
+
+        def _pick(trace_key: str, payload_key: str, fallback: Any) -> Any:
+            if trace:
+                v = trace.get(trace_key)
+                if v not in (None, ""):
+                    return v
+            if receive_step:
+                payload = receive_step.get("processed_payload") or {}
+                if isinstance(payload, dict):
+                    v = payload.get(payload_key)
+                    if v not in (None, ""):
+                        return v
+            return fallback
+
+        title = _pick("request_title", "title", record.get("title", ""))
+        ori_title = _pick("request_ori_title", "ori_title", record.get("ori_title"))
+        season = _pick("request_season", "season", record.get("season", 1))
+        episode = _pick("request_episode", "episode", record.get("episode", 1))
+        media_type = _pick(
+            "request_media_type", "media_type", record.get("media_type") or "episode"
+        )
+        release_date = _pick("request_release_date", "release_date", "")
+        user_name = _pick("request_user_name", "user_name", record.get("user_name", ""))
+        sync_action = _pick("request_sync_action", "sync_action", None)
+        raw_payload = receive_step.get("raw_payload") if receive_step else None
+
+        retry_media = (media_type or "episode").lower()
+        if retry_media not in ("episode", "movie", "ova", "oad", "real_action"):
+            retry_media = "episode"
+
+        return _CustomItem(
+            media_type=retry_media,
+            title=title or "",
+            ori_title=ori_title or None,
+            season=int(season) if season is not None else 1,
+            episode=int(episode) if episode is not None else 1,
+            release_date=release_date or "",
+            user_name=user_name or "",
+            source=retry_source,
+            sync_action=sync_action or None,
+            raw_payload=raw_payload,
+        )
 
     def _validate_subject_id(self, subject_id: str) -> tuple[bool, str]:
         """校验 subject_id 是否有效：存在且类型为动画/三次元

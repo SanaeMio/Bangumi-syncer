@@ -344,7 +344,10 @@ async function confirmCandidate(candidateId, subjectId) {
             body: JSON.stringify({ subject_id: subjectId })
         });
         if (data.status === 'success') {
-            showAlert(data.message || '已确认', 'success');
+            // message 中可能包含「补发结果」，含「失败/异常/忽略」时用 warning 色提示
+            const msg = data.message || '已确认';
+            const hasReplayIssue = /补发失败|补发异常|补发被忽略/.test(msg);
+            showAlert(msg, hasReplayIssue ? 'warning' : 'success');
             hideModal('candidateDetailModal');
             loadPendingCandidates();
         } else {

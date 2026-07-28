@@ -1,4 +1,4 @@
-"""sync_service：候选确认 subject_id 有效性校验测试
+"""sync_service：候选确认 subject_id 有效性校验与确认即补发测试
 
 验证：
 1. 非数字 subject_id 直接拒绝
@@ -9,9 +9,12 @@
 6. API 异常时降级放行（不阻塞用户）
 7. 无可用 Bangumi 配置时降级放行
 8. confirm_pending_candidate 校验失败时不写入映射
+9. 候选确认即补发：sync_record_id 存在时自动重试
+10. 补发成功后回写 sync_records 状态为 retried 并清理 pending_sync_queue
+11. 无 sync_record_id 或原记录 success 时不触发补发
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.services.sync_service import SyncService
 from app.utils.bangumi_api._archive_shortcut import ShortcutResult
@@ -246,9 +249,157 @@ class TestConfirmPendingCandidateValidation:
             patch(
                 "app.services.sync_service.database_manager.resolve_similar_pending_candidates"
             ),
+            patch.object(self.svc, "_auto_replay_after_confirm", return_value=""),
         ):
             ok, msg = self.svc.confirm_pending_candidate(2, "123")
 
         assert ok is True
         mock_upsert.assert_called_once_with("测试番", "123", 1)
         mock_update.assert_called_once()
+
+
+class TestAutoReplayAfterConfirm:
+    """候选确认即补发（_auto_replay_after_confirm）"""
+
+    def setup_method(self):
+        self.svc = SyncService()
+
+    def test_no_sync_record_id_skips_replay(self):
+        """无 sync_record_id 时不触发补发"""
+        msg = self.svc._auto_replay_after_confirm(None, {}, "title")
+        assert msg == ""
+
+    def test_record_not_found_skips_replay(self):
+        """sync_record_id 对应记录不存在时跳过"""
+        with patch(
+            "app.services.sync_service.database_manager.get_sync_record_by_id",
+            return_value=None,
+        ):
+            msg = self.svc._auto_replay_after_confirm(99, {}, "title")
+        assert msg == ""
+
+    def test_record_success_skips_replay(self):
+        """原记录已是 success 时不重复补发"""
+        with patch(
+            "app.services.sync_service.database_manager.get_sync_record_by_id",
+            return_value={"id": 1, "status": "success"},
+        ):
+            msg = self.svc._auto_replay_after_confirm(1, {}, "title")
+        assert msg == ""
+
+    def test_replay_success_writes_retried_and_cleans_pending(self):
+        """补发成功后状态改写为 retried 并清理 pending_sync_queue"""
+        record = {
+            "id": 10,
+            "status": "error",
+            "source": "plex",
+            "title": "测试",
+            "match_trace": {},
+        }
+        result = MagicMock()
+        result.status = "success"
+        result.message = "ok"
+        with (
+            patch(
+                "app.services.sync_service.database_manager.get_sync_record_by_id",
+                return_value=record,
+            ),
+            patch.object(self.svc, "_build_retry_item_from_record") as mock_build,
+            patch.object(
+                self.svc, "sync_custom_item", return_value=result
+            ) as mock_sync,
+            patch(
+                "app.services.sync_service.database_manager.update_sync_record_status"
+            ) as mock_update,
+            patch.object(self.svc, "_cleanup_pending_for_replay") as mock_cleanup,
+        ):
+            msg = self.svc._auto_replay_after_confirm(10, {}, "测试")
+
+        assert "补发成功" in msg
+        mock_build.assert_called_once()
+        mock_sync.assert_called_once()
+        mock_update.assert_called_once_with(
+            record_id=10,
+            status="retried",
+            message=mock_update.call_args.kwargs["message"],
+        )
+        mock_cleanup.assert_called_once_with(10, "error")
+
+    def test_replay_queued_success_cleans_pending_sync_queue(self):
+        """原状态为 queued、补发成功时清理 pending_sync_queue"""
+        record = {"id": 20, "status": "queued", "source": "plex", "match_trace": {}}
+        result = MagicMock()
+        result.status = "success"
+        result.message = "ok"
+        with (
+            patch(
+                "app.services.sync_service.database_manager.get_sync_record_by_id",
+                return_value=record,
+            ),
+            patch.object(self.svc, "_build_retry_item_from_record"),
+            patch.object(self.svc, "sync_custom_item", return_value=result),
+            patch(
+                "app.services.sync_service.database_manager.update_sync_record_status"
+            ),
+            patch(
+                "app.services.sync_service.database_manager.mark_pending_sync_synced_by_sync_record_id",
+                return_value=2,
+            ) as mock_mark,
+        ):
+            msg = self.svc._auto_replay_after_confirm(20, {}, "测试")
+
+        assert "补发成功" in msg
+        mock_mark.assert_called_once_with(20)
+
+    def test_replay_error_keeps_original_status(self):
+        """补发失败（error）时保持原状态不变"""
+        record = {"id": 30, "status": "error", "source": "plex", "match_trace": {}}
+        result = MagicMock()
+        result.status = "error"
+        result.message = "API 不可达"
+        with (
+            patch(
+                "app.services.sync_service.database_manager.get_sync_record_by_id",
+                return_value=record,
+            ),
+            patch.object(self.svc, "_build_retry_item_from_record"),
+            patch.object(self.svc, "sync_custom_item", return_value=result),
+            patch(
+                "app.services.sync_service.database_manager.update_sync_record_status"
+            ) as mock_update,
+            patch.object(self.svc, "_cleanup_pending_for_replay") as mock_cleanup,
+        ):
+            msg = self.svc._auto_replay_after_confirm(30, {}, "测试")
+
+        assert "补发失败" in msg
+        assert "API 不可达" in msg
+        mock_update.assert_not_called()
+        mock_cleanup.assert_not_called()
+
+    def test_replay_exception_returns_error_message(self):
+        """补发过程抛异常时返回错误描述，不抛出"""
+        record = {"id": 40, "status": "error", "source": "plex", "match_trace": {}}
+        with (
+            patch(
+                "app.services.sync_service.database_manager.get_sync_record_by_id",
+                return_value=record,
+            ),
+            patch.object(self.svc, "_build_retry_item_from_record"),
+            patch.object(
+                self.svc,
+                "sync_custom_item",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            msg = self.svc._auto_replay_after_confirm(40, {}, "测试")
+
+        assert "补发异常" in msg
+        assert "boom" in msg
+
+    def test_cleanup_pending_skips_non_queued(self):
+        """_cleanup_pending_for_replay 对非 queued 状态跳过"""
+        with patch(
+            "app.services.sync_service.database_manager.mark_pending_sync_synced_by_sync_record_id"
+        ) as mock_mark:
+            self.svc._cleanup_pending_for_replay(1, "error")
+        mock_mark.assert_not_called()
