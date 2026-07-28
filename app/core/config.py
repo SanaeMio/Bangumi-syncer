@@ -17,13 +17,14 @@ from .config_secret_crypto import (
 from .logging import logger
 from .startup_info import startup_info
 
-# 非多账号的 bangumi-* section：以 bangumi- 开头但承载系统功能（数据/映射/archive），
+# 非多账号的 bangumi-* section：以 bangumi- 开头但承载系统功能（数据/映射/archive/replay），
 # 不应被当作多账号配置收集、也不应在保存多账号时被清除。
 # 新增此类 section 时需同步加入此列表，否则前端配置页将读不到/被误删。
 _BANGUMI_NON_ACCOUNT_SECTIONS: tuple[str, ...] = (
     "bangumi-data",
     "bangumi-mapping",
     "bangumi-archive",
+    "bangumi-replay",
 )
 
 

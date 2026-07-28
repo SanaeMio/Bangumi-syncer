@@ -250,16 +250,10 @@ class _PendingSyncQueued(Exception):
 def is_replay_enabled() -> bool:
     """检查 replay（待同步队列补发）是否启用
 
-    开关关系（详见 config.example.ini）：
-    - archive enabled=false 时整体关闭，replay 不论设置均不生效。
-    - archive enabled=true 时 replay 默认跟随启用（replay_enabled 默认 true），
-      可单独设为 false 关闭写降级入队。
+    与 archive 解耦：直接读 [bangumi-replay] enabled（默认 true）。
+    archive 是否启用不影响本开关；但完全实现「无网缓存请求 + 自动补发」
+    仍需 archive 配合（archive 提供读降级，replay 提供写降级）。
 
     供 sync_service 判断是否走"入队"分支；未启用时直接抛错让原有重试逻辑生效。
     """
-    archive_enabled = bool(
-        config_manager.get("bangumi-archive", "enabled", fallback=False)
-    )
-    if not archive_enabled:
-        return False
-    return bool(config_manager.get("bangumi-archive", "replay_enabled", fallback=True))
+    return bool(config_manager.get("bangumi-replay", "enabled", fallback=True))

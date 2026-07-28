@@ -2231,7 +2231,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         user_name 非 None 时仅补发该用户的任务（多用户隔离）。
         """
         max_attempts = int(
-            config_manager.get("bangumi-archive", "max_attempts", fallback=50)
+            config_manager.get("bangumi-replay", "max_attempts", fallback=50)
         )
         records = database_manager.fetch_pending_sync(
             limit=limit, max_attempts=max_attempts, user_name=user_name
@@ -2245,7 +2245,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         still_unreachable = 0
         threshold = int(
             config_manager.get(
-                "bangumi-archive", "replay_unreachable_threshold", fallback=3
+                "bangumi-replay", "replay_unreachable_threshold", fallback=3
             )
         )
         consecutive_unreachable = 0

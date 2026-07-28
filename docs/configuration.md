@@ -63,6 +63,20 @@ order: 20
 
 更详细的功能说明、管理 API、性能基线与故障排查请看 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)。
 
+## Bangumi Replay 待同步队列补发
+
+当 Bangumi API 不可达（网络抖动、DNS 失败、5xx/429 持续返回）时，把写操作（标记在看 / 点单集等）暂存到本地 `pending_sync_queue` 表，等 API 恢复后由调度器自动批量补发（详见 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive) 的「待同步队列（Replay）」章节）。
+
+::: tip 与 Archive 解耦
+Replay 与 Archive 已解耦，可独立启停。但**完全实现「无网缓存请求 + 自动补发」需要 Archive 配合**：Archive 提供读降级（命中本地数据集匹配新条目），Replay 提供写降级（入队待补发）。不开 Archive 时，Replay 仍可独立工作，但仅能在「API 已匹配到 subject_id 后写失败」场景下补发。
+:::
+
+- **启用 Replay**：总开关，默认启用，与 Archive 互相独立。
+- **API 不可达 TTL (秒)**：标记 API 不可达后的冷却时间，期间所有写操作直接入队不发请求，默认 300 秒（5 分钟）。
+- **补发调度 Cron**：五段式 cron，默认每 10 分钟扫描一次队列进行补发。
+- **批量大小**：每轮补发最多处理的任务数量，默认 20。
+- **最大重试次数**：单条任务重试次数上限，超过后标记为 `abandoned` 不再重试，默认 50。
+
 ## Web 认证配置
 
 - **启用 Web 认证**：建议能从外网打开管理页时务必开启；关闭后任何人知道地址都能进管理页，仅适合纯内网且你完全信任当前环境。

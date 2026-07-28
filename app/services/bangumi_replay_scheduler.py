@@ -1,11 +1,10 @@
 """待同步队列补发调度器
 
-继承 BaseScheduler，按 [bangumi-archive] replay_cron 定时触发补发。
+继承 BaseScheduler，按 [bangumi-replay] replay_cron 定时触发补发。
 默认 cron: "*/10 * * * *"（每 10 分钟）。
 
 流程：
-1. archive enabled=false 或 replay_enabled=false 时不启动
-   （replay_enabled 默认 true，archive 启用时自动跟随）
+1. [bangumi-replay] enabled=false 时不启动（默认 true，与 archive 解耦）
 2. 探测 API 可达性：轻量调用 GET /v0/subjects/1，失败则等下一轮
 3. 探测成功 → 调用 sync_service.replay_pending_batch 批量补发
 4. 仍然不可达则立即跳出，避免浪费请求
@@ -29,18 +28,18 @@ class BangumiReplayScheduler(BaseScheduler):
     DRIVER_NAME = "BangumiReplay"
 
     def _is_enabled(self) -> bool:
-        """replay 启用条件：archive enabled=true 且 replay_enabled 非 false"""
-        if not bool(config_manager.get("bangumi-archive", "enabled", fallback=False)):
-            return False
-        return bool(
-            config_manager.get("bangumi-archive", "replay_enabled", fallback=True)
-        )
+        """replay 启用条件：[bangumi-replay] enabled 非 false（默认 true）
+
+        与 archive 解耦：archive 关闭时 replay 仍可独立工作。
+        但「无网环境下匹配新条目并缓存待补发」完整流程仍需 archive 配合。
+        """
+        return bool(config_manager.get("bangumi-replay", "enabled", fallback=True))
 
     def _get_driver_config(self) -> dict:
         """返回含 sync_interval 的配置（sync_interval 字段名复用为 cron）"""
         return {
             "sync_interval": config_manager.get(
-                "bangumi-archive", "replay_cron", fallback=self.DEFAULT_CRON
+                "bangumi-replay", "replay_cron", fallback=self.DEFAULT_CRON
             )
         }
 
@@ -59,7 +58,7 @@ class BangumiReplayScheduler(BaseScheduler):
             from .sync_service import sync_service
 
             batch_size = int(
-                config_manager.get("bangumi-archive", "replay_batch_size", fallback=20)
+                config_manager.get("bangumi-replay", "replay_batch_size", fallback=20)
             )
             timeout = self._scheduler_config.get("job_timeout", 300)
             stats = await asyncio.wait_for(

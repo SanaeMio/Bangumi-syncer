@@ -38,11 +38,6 @@ Bangumi Archive 是一项**本地归档**功能：把 [Bangumi 官方 Archive �
 | `update_cron` | `0 8 * * 3` | 定时更新 cron（五段式），默认每周三 08:00（北京时间），晚于官方 05:00 发布 |
 | `min_disk_space_mb` | `2000` | 磁盘可用空间阈值（MB），低于此值跳过导入，避免磁盘写满 |
 | `retry_interval` | `3600` | 导入失败后的重试间隔（秒） |
-| `replay_enabled` | `true` | **待同步队列子开关**。仅在 `enabled=true` 时生效；显式设为 `false` 时关闭写降级入队与定时补发 |
-| `api_probe_interval` | `300` | API 不可达 TTL（秒）。标记后此期间内所有写操作直接入队，到期后下一次请求恢复探测 |
-| `replay_cron` | `*/10 * * * *` | 待同步队列补发调度 cron（五段式），默认每 10 分钟扫描一次 |
-| `replay_batch_size` | `20` | 每轮补发批量大小 |
-| `max_attempts` | `50` | 单条任务最大重试次数，超过则标记为 `abandoned` |
 
 ::: tip 配置立即生效
 保存配置后会自动调用 `bangumi_archive.reload_config()` 与 `bangumi_archive_scheduler.apply_config_after_save()`，**无需重启程序**。从「关闭」切到「开启」时会自动触发首次导入与索引构建。
@@ -60,6 +55,76 @@ update_cron = 0 8 * * 3                  ; 每周三 08:00 自动更新
 min_disk_space_mb = 2000
 retry_interval = 3600
 ```
+
+## 待同步队列（Replay）
+
+::: warning 与 Archive 解耦
+Replay 已从 Archive 拆分为独立的 `[bangumi-replay]` 配置段，可独立启停，不再依赖 Archive 启用。
+
+但**完全实现「无网缓存请求 + 自动补发」仍需要 Archive 配合**：
+- **Archive 提供读降级**：API 不可达时，读操作（搜索 / 查条目）命中本地数据集，仍能匹配新条目
+- **Replay 提供写降级**：API 不可达时，写操作（点在看 / 标章节）入队待补发
+
+不开 Archive 时，Replay 仍可独立工作，但仅能在「API 已匹配到 subject_id 后写失败」场景下补发；无法在 API 完全不可达时匹配新条目并入队。
+:::
+
+### Replay 配置项
+
+对应 `config.ini` 的 `[bangumi-replay]` 段：
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `true` | 总开关。`false` 时关闭写降级入队与定时补发；与 `[bangumi-archive] enabled` 互相独立 |
+| `api_probe_interval` | `300` | API 不可达 TTL（秒）。标记后此期间内所有写操作直接入队，到期后下一次请求恢复探测 |
+| `replay_cron` | `*/10 * * * *` | 待同步队列补发调度 cron（五段式），默认每 10 分钟扫描一次 |
+| `replay_batch_size` | `20` | 每轮补发批量大小 |
+| `max_attempts` | `50` | 单条任务最大重试次数，超过则标记为 `abandoned` |
+
+### 触发条件
+
+满足以下条件时写操作进入待同步队列而非直接失败：
+
+1. `[bangumi-replay] enabled` 未显式设为 `false`（默认 `true`，与 archive 解耦）
+2. BangumiApi 实例 `_api_unreachable = true`（HTTP 层重试耗尽后自动置位，TTL 内不再发请求）
+
+::: tip 写降级 vs 读降级
+- **读操作**（搜索 / 查条目）→ archive 启用时优先走本地数据集；archive 未启用时仍走 API
+- **写操作**（点在看 / 标章节）→ 进入 `pending_sync_queue` 队列，待 API 恢复后补发
+:::
+
+### TTL 与探测
+
+- 标记不可达后，按 `api_probe_interval`（默认 300 秒）推迟下一次探测
+- TTL 到期后下一次请求恢复实际探测；成功后自动清除不可达标记
+- 补发调度器（`BangumiReplayScheduler`）按 `replay_cron` 定时执行：
+  1. 创建临时 `BangumiApi` 实例探测 `GET /v0/subjects/1`
+  2. 探测成功 → 调用 `sync_service.replay_pending_batch` 批量补发
+  3. 仍不可达 → 跳过本轮，等待下一次调度
+
+### WebUI 队列页
+
+`[bangumi-replay] enabled=true` 时，导航栏与侧边栏会出现「待同步队列」入口（路径 `/bangumi-replay`），提供：
+
+- **调度器状态栏**：展示 enabled / cron / running / 队列统计
+- **过滤与列表**：按状态（pending / synced / abandoned）筛选，分页展示
+- **详情弹窗**：查看单条任务的完整 payload 与匹配追踪
+- **批量 / 单条补发**：手动触发补发（API 已恢复但调度器未到下一轮时有用）
+- **API 探测按钮**：手动探测当前 API 可达性
+- **删除**：清理不需要的任务
+
+### 任务状态流转
+
+```
+pending  ──补发成功──→  synced
+   │
+   ├──补发失败（重试次数 <max_attempts）──→  仍为 pending（等待下一轮）
+   │
+   └──重试次数 ≥max_attempts ──→  abandoned
+```
+
+### 单条任务去重
+
+`pending_sync_queue` 通过 `(user_name, source, subject_id, episode_id)` 唯一索引去重。重复入队时更新 `payload_json` 与 `updated_at`，不会新增记录。
 
 ## 启用后的行为
 
@@ -166,57 +231,6 @@ data/archive/
 - `BangumiApi` HTTP 超时 `10s × max_retries=3`：archive 未命中降级到 API 时的延迟上限
 - `find_episode_across_seasons` 整体 deadline `60s`
 - 续集链遍历 `_SEQUEL_CHAIN_MAX_HOPS = 30` + visited set 防环
-
-## 待同步队列（Replay）
-
-Archive 启用后会同步开启 **Replay** 子功能：当 Bangumi API 不可达（网络抖动、DNS 失败、5xx/429 持续返回）时，把写操作（标记在看 / 点单集等）暂存到本地 `pending_sync_queue` 表，等 API 恢复后由调度器自动批量补发。
-
-### 触发条件
-
-满足以下条件时写操作进入待同步队列而非直接失败：
-
-1. `[bangumi-archive] enabled = true`（总开关）
-2. `replay_enabled` 未显式设为 `false`（默认 `true`）
-3. BangumiApi 实例 `_api_unreachable = true`（HTTP 层重试耗尽后自动置位，TTL 内不再发请求）
-
-::: tip 写降级 vs 读降级
-- **读操作**（搜索 / 查条目）→ 优先走 archive 本地数据集
-- **写操作**（点在看 / 标章节）→ 进入 `pending_sync_queue` 队列，待 API 恢复后补发
-:::
-
-### TTL 与探测
-
-- 标记不可达后，按 `api_probe_interval`（默认 300 秒）推迟下一次探测
-- TTL 到期后下一次请求恢复实际探测；成功后自动清除不可达标记
-- 补发调度器（`BangumiReplayScheduler`）按 `replay_cron` 定时执行：
-  1. 创建临时 `BangumiApi` 实例探测 `GET /v0/subjects/1`
-  2. 探测成功 → 调用 `sync_service.replay_pending_batch` 批量补发
-  3. 仍不可达 → 跳过本轮，等待下一次调度
-
-### WebUI 队列页
-
-`replay_enabled=true` 时，导航栏与侧边栏会出现「待同步队列」入口（路径 `/bangumi-replay`），提供：
-
-- **调度器状态栏**：展示 enabled / cron / running / 队列统计
-- **过滤与列表**：按状态（pending / synced / abandoned）筛选，分页展示
-- **详情弹窗**：查看单条任务的完整 payload 与匹配追踪
-- **批量 / 单条补发**：手动触发补发（API 已恢复但调度器未到下一轮时有用）
-- **API 探测按钮**：手动探测当前 API 可达性
-- **删除**：清理不需要的任务
-
-### 任务状态流转
-
-```
-pending  ──补发成功──→  synced
-   │
-   ├──补发失败（重试次数 <max_attempts）──→  仍为 pending（等待下一轮）
-   │
-   └──重试次数 ≥max_attempts ──→  abandoned
-```
-
-### 单条任务去重
-
-`pending_sync_queue` 通过 `(user_name, source, subject_id, episode_id)` 唯一索引去重。重复入队时更新 `payload_json` 与 `updated_at`，不会新增记录。
 
 ## 故障排查
 

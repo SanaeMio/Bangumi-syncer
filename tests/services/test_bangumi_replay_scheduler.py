@@ -32,59 +32,43 @@ def _make_get_side_effect(values: dict[tuple[str, str], object]):
 
 
 class TestIsEnabled:
-    """archive enabled × replay_enabled 的组合（replay_enabled 默认 True）"""
+    """[bangumi-replay] enabled 的判定（默认 True，与 archive 解耦）"""
 
-    def test_archive_disabled_replay_enabled_true_returns_false(self):
+    def test_replay_enabled_true_returns_true(self):
         s = BangumiReplayScheduler()
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): False,
-                    ("bangumi-archive", "replay_enabled"): True,
-                }
-            )
-            assert s._is_enabled() is False
-
-    def test_archive_disabled_replay_enabled_false_returns_false(self):
-        s = BangumiReplayScheduler()
-        with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
-            cm.get.side_effect = _make_get_side_effect(
-                {
-                    ("bangumi-archive", "enabled"): False,
-                    ("bangumi-archive", "replay_enabled"): False,
-                }
-            )
-            assert s._is_enabled() is False
-
-    def test_archive_enabled_replay_enabled_true_returns_true(self):
-        s = BangumiReplayScheduler()
-        with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
-            cm.get.side_effect = _make_get_side_effect(
-                {
-                    ("bangumi-archive", "enabled"): True,
-                    ("bangumi-archive", "replay_enabled"): True,
+                    ("bangumi-replay", "enabled"): True,
                 }
             )
             assert s._is_enabled() is True
 
-    def test_archive_enabled_replay_enabled_false_returns_false(self):
+    def test_replay_enabled_false_returns_false(self):
         s = BangumiReplayScheduler()
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
-                    ("bangumi-archive", "replay_enabled"): False,
+                    ("bangumi-replay", "enabled"): False,
                 }
             )
             assert s._is_enabled() is False
 
-    def test_archive_enabled_replay_enabled_unconfigured_fallback_true(self):
-        """未配置 replay_enabled 时 fallback True，archive 启用即整体启用"""
+    def test_replay_unconfigured_fallback_true(self):
+        """未配置 enabled 时 fallback True"""
+        s = BangumiReplayScheduler()
+        with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
+            cm.get.side_effect = _make_get_side_effect({})
+            assert s._is_enabled() is True
+
+    def test_replay_independent_of_archive(self):
+        """replay 启用与 archive 无关：archive 关闭但 replay 启用时仍应返回 True"""
         s = BangumiReplayScheduler()
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
+                    ("bangumi-archive", "enabled"): False,
+                    ("bangumi-replay", "enabled"): True,
                 }
             )
             assert s._is_enabled() is True
@@ -110,7 +94,7 @@ class TestGetDriverConfig:
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "replay_cron"): "0 * * * *",
+                    ("bangumi-replay", "replay_cron"): "0 * * * *",
                 }
             )
             cfg = s._get_driver_config()
@@ -136,9 +120,8 @@ class TestGetStatus:
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
-                    ("bangumi-archive", "replay_enabled"): True,
-                    ("bangumi-archive", "replay_cron"): "0 * * * *",
+                    ("bangumi-replay", "enabled"): True,
+                    ("bangumi-replay", "replay_cron"): "0 * * * *",
                 }
             )
             db.get_pending_sync_stats.return_value = {
@@ -166,7 +149,7 @@ class TestGetStatus:
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
+                    ("bangumi-replay", "enabled"): True,
                 }
             )
             db.get_pending_sync_stats.return_value = {
@@ -190,7 +173,7 @@ class TestGetStatus:
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): False,
+                    ("bangumi-replay", "enabled"): False,
                 }
             )
             db.get_pending_sync_stats.return_value = {
@@ -453,7 +436,7 @@ class TestRunSyncJob:
             patch("app.services.sync_service.sync_service") as mock_svc,
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.return_value = {
                 "total": 3,
@@ -477,7 +460,7 @@ class TestRunSyncJob:
             patch("app.services.sync_service.sync_service") as mock_svc,
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.return_value = {
                 "total": 0,
@@ -506,7 +489,7 @@ class TestRunSyncJob:
             ),
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.return_value = {
                 "total": 0,
@@ -529,7 +512,7 @@ class TestRunSyncJob:
             patch("app.services.sync_service.sync_service") as mock_svc,
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.side_effect = RuntimeError("db error")
             # 不应抛出
