@@ -139,14 +139,12 @@
     <script>
 let currentPage = 1;
 const pageLimit = APP_TABLE_PAGE_SIZE;
-let recordDetailModal = null;
 
 function showLoading(show) {
     setAppTableLoading(show, 'replay-queue-table-wrap');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
     bindAppTableMobileRowClick('#replay-queue-table', showRecordDetail);
     loadQueue();
     loadStatus();
@@ -258,7 +256,7 @@ async function showRecordDetail(recordId) {
         }
         const record = data.data.record;
         document.getElementById('record-detail-content').textContent = JSON.stringify(record, null, 2);
-        recordDetailModal.show();
+        showModal('recordDetailModal');
     } catch (error) {
         console.error('获取详情失败:', error);
         showAlert('获取详情失败', 'danger');

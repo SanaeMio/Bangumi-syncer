@@ -386,9 +386,9 @@ let editingTitle = null;
 let editingRuleIndex = null;
 
 document.addEventListener('DOMContentLoaded', function() {
-    mappingModal = new bootstrap.Modal(document.getElementById('mappingModal'));
-    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
-    importModal = new bootstrap.Modal(document.getElementById('importModal'));
+    mappingModal = getModal('mappingModal');
+    deleteModal = getModal('deleteModal');
+    importModal = getModal('importModal');
 
     // 监听ID输入变化，更新预览
     document.getElementById('mapping-id').addEventListener('input', updatePreview);

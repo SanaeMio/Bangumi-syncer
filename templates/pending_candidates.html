@@ -120,10 +120,8 @@
     <script>
 let currentPage = 1;
 const pageLimit = APP_TABLE_PAGE_SIZE;
-let candidateDetailModal = null;
 
 document.addEventListener('DOMContentLoaded', function() {
-    candidateDetailModal = new bootstrap.Modal(document.getElementById('candidateDetailModal'));
     bindAppTableMobileRowClick('#pending-candidates-table', showCandidateDetail);
     loadPendingCandidates();
 });
@@ -306,7 +304,7 @@ async function showCandidateDetail(candidateId) {
         }
 
         content.innerHTML = html;
-        candidateDetailModal.show();
+        showModal('candidateDetailModal');
 
     } catch (error) {
         console.error('获取候选详情失败:', error);
@@ -326,7 +324,7 @@ async function confirmCandidate(candidateId, subjectId) {
         });
         if (data.status === 'success') {
             showAlert(data.message || '已确认', 'success');
-            candidateDetailModal.hide();
+            hideModal('candidateDetailModal');
             loadPendingCandidates();
         } else {
             showAlert(data.detail || '确认失败', 'danger');

@@ -1255,6 +1255,73 @@ function setAppTableLoading(show, wrapId, loadingId = 'loading') {
     }
 }
 
+/**
+ * 按钮加载态封装
+ *
+ * 用法：
+ *   const restore = setButtonLoading(btn, '测试中...');
+ *   try { ... } finally { restore(); }
+ *
+ * 或传入 async 函数自动恢复：
+ *   await setButtonLoading(btn, '保存中...', async () => { ... });
+ *
+ * @param {HTMLButtonElement} button 按钮
+ * @param {string} [loadingText] 加载态文案，默认仅 spinner
+ * @param {Function} [asyncFn] 可选，执行完自动恢复
+ * @returns {Function|Promise} restore 函数；若传入 asyncFn 则返回 Promise
+ */
+function setButtonLoading(button, loadingText, asyncFn) {
+    if (!button) return typeof asyncFn === 'function' ? Promise.resolve() : function () {};
+    const originalHtml = button.innerHTML;
+    const originalDisabled = button.disabled;
+    button.disabled = true;
+    button.innerHTML = loadingText
+        ? '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>' + loadingText
+        : '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+    const restore = function () {
+        button.disabled = originalDisabled;
+        button.innerHTML = originalHtml;
+    };
+
+    if (typeof asyncFn === 'function') {
+        return Promise.resolve()
+            .then(asyncFn)
+            .finally(restore);
+    }
+    return restore;
+}
+
+/**
+ * 模态框工具：缓存实例，避免重复 new bootstrap.Modal
+ *
+ * getModal('modalId') 返回缓存的 Modal 实例（不存在则创建）
+ * showModal('modalId') 显示模态框
+ * hideModal('modalId') 隐藏模态框
+ */
+const _modalCache = {};
+
+function getModal(modalId) {
+    if (!_modalCache[modalId]) {
+        const el = document.getElementById(modalId);
+        if (!el) return null;
+        _modalCache[modalId] = bootstrap.Modal.getOrCreateInstance(el);
+    }
+    return _modalCache[modalId];
+}
+
+function showModal(modalId) {
+    const modal = getModal(modalId);
+    if (modal) modal.show();
+    return modal;
+}
+
+function hideModal(modalId) {
+    const modal = getModal(modalId);
+    if (modal) modal.hide();
+    return modal;
+}
+
 window.getSyncRecordStatusColor = getSyncRecordStatusColor;
 window.getSyncRecordStatusText = getSyncRecordStatusText;
 window.getStatusColor = getSyncRecordStatusColor;
@@ -1273,6 +1340,10 @@ window.getSourceTlClass = getSourceTlClass;
 window.renderSourceBadge = renderSourceBadge;
 window.createAppEmptyStateHtml = createAppEmptyStateHtml;
 window.setAppTableLoading = setAppTableLoading;
+window.setButtonLoading = setButtonLoading;
+window.getModal = getModal;
+window.showModal = showModal;
+window.hideModal = hideModal;
 
 function bindAppTableMobileRowClick(tableSelector, onRowClick) {
     const tbody = document.querySelector(`${tableSelector} tbody`);
