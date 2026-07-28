@@ -13,6 +13,39 @@ function appUrl(path) {
     return base + p;
 }
 
+/**
+ * 统一 HTTP 请求封装
+ *
+ * - 默认带 credentials: 'include'
+ * - 401 自动跳转登录（可用 skipAuthRedirect 绕过）
+ * - !ok 抛异常并解析后端 detail/message（可用 returnResponse 绕过，返回原始 response）
+ *
+ * @param {string} path 站内路径，会自动拼接 appUrl
+ * @param {object} options fetch options，可附加 skipAuthRedirect / returnResponse
+ */
+async function apiFetch(path, options = {}) {
+    const opts = { credentials: 'include', ...options };
+    const response = await fetch(appUrl(path), opts);
+
+    if (response.status === 401 && !opts.skipAuthRedirect) {
+        window.location.href = appUrl('/login');
+        throw new Error('未登录，正在跳转登录页');
+    }
+
+    if (!response.ok && !opts.returnResponse) {
+        let msg = `请求失败: ${response.status}`;
+        try {
+            const errData = await response.json();
+            msg = errData.detail || errData.message || msg;
+        } catch (_) {}
+        throw new Error(msg);
+    }
+
+    // returnResponse: 返回原始 Response 对象（调用方需自行处理 .json()/.ok 等）
+    // 否则：自动解析 JSON
+    return opts.returnResponse ? response : response.json();
+}
+
 // 显示提示消息
 function showAlert(message, type = 'info', duration = 5000) {
     // 创建Toast容器（如果不存在）
@@ -77,59 +110,14 @@ function getToastIcon(type) {
     }
 }
 
-// 格式化日期
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
-}
-
-function getSyncRecordStatusColor(status) {
-    switch (status) {
-        case 'success': return 'success';
-        case 'error': return 'danger';
-        case 'ignored': return 'warning';
-        case 'retried': return 'success';
-        default: return 'secondary';
-    }
-}
-
-function getSyncRecordStatusText(status) {
-    switch (status) {
-        case 'success': return '成功';
-        case 'error': return '失败';
-        case 'ignored': return '已忽略';
-        case 'retried': return '已重试';
-        default: return status;
-    }
-}
-
-function renderSyncStatusBadge(status) {
-    return `<span class="badge rounded-pill bg-${getSyncRecordStatusColor(status)}">${getSyncRecordStatusText(status)}</span>`;
-}
-
-function renderMatchMethodBadge(method) {
-    const badges = {
-        custom_mapping: ['primary', '自定义映射'],
-        bangumi_data: ['success', 'bangumi-data'],
-        archive: ['warning', '本地归档'],
-        api_search: ['info', 'API 搜索'],
-        failed: ['danger', '失败'],
-    };
-    const [color, text] = badges[method] || ['secondary', '未知'];
-    return `<span class="badge rounded-pill bg-${color}">${text}</span>`;
-}
-
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
+    if (text == null) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function normalizeRecordText(value) {
@@ -1087,10 +1075,7 @@ async function loadMatchTraceContent(recordId, record) {
     try {
         let traceData = _matchTraceCache[recordId];
         if (!traceData) {
-            const response = await fetch(appUrl(`/api/match-records/${recordId}/trace`), {
-                credentials: 'include',
-            });
-            const data = await response.json();
+            const data = await apiFetch(`/api/match-records/${recordId}/trace`);
             if (data.status !== 'success') {
                 throw new Error('获取匹配详情失败');
             }
@@ -1128,16 +1113,8 @@ async function showRecordDetail(recordId, options) {
     }
 
     try {
-        const response = await fetch(appUrl(`/api/records/${recordId}`), {
-            method: 'GET',
-            credentials: 'include',
-        });
+        const result = await apiFetch(`/api/records/${recordId}`, { method: 'GET' });
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const result = await response.json();
         if (result.status !== 'success' || !result.data) {
             throw new Error('获取记录数据失败');
         }
@@ -1164,118 +1141,82 @@ async function showRecordDetail(recordId, options) {
     }
 }
 
-function renderCandidateStatusBadge(status) {
-    const badges = {
-        pending: ['warning', '待确认'],
-        confirmed: ['success', '已确认'],
-        rejected: ['secondary', '已忽略'],
+/**
+ * 按钮加载态封装
+ *
+ * 用法：
+ *   const restore = setButtonLoading(btn, '测试中...');
+ *   try { ... } finally { restore(); }
+ *
+ * 或传入 async 函数自动恢复：
+ *   await setButtonLoading(btn, '保存中...', async () => { ... });
+ *
+ * @param {HTMLButtonElement} button 按钮
+ * @param {string} [loadingText] 加载态文案，默认仅 spinner
+ * @param {Function} [asyncFn] 可选，执行完自动恢复
+ * @returns {Function|Promise} restore 函数；若传入 asyncFn 则返回 Promise
+ */
+function setButtonLoading(button, loadingText, asyncFn) {
+    if (!button) return typeof asyncFn === 'function' ? Promise.resolve() : function () {};
+    const originalHtml = button.innerHTML;
+    const originalDisabled = button.disabled;
+    button.disabled = true;
+    button.innerHTML = loadingText
+        ? '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>' + loadingText
+        : '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+    const restore = function () {
+        button.disabled = originalDisabled;
+        button.innerHTML = originalHtml;
     };
-    const [color, text] = badges[status] || ['secondary', status];
-    return `<span class="badge rounded-pill bg-${color}">${text}</span>`;
-}
 
-function renderMediaTypeBadge(mediaType) {
-    const mt = (mediaType || 'episode').toLowerCase();
-    const label = mt === 'movie' ? '电影' : '剧集';
-    return `<span class="badge rounded-pill bg-dark bg-opacity-75">${label}</span>`;
-}
-
-function getSourceColor(source) {
-    const sourceLower = (source || '').toLowerCase();
-    if (sourceLower.startsWith('retry-')) return 'purple';
-    switch (sourceLower) {
-        case 'plex': return 'warning';
-        case 'emby': return 'success';
-        case 'jellyfin': return 'primary';
-        case 'custom': return 'secondary';
-        case 'feiniu': return 'info';
-        case 'fongmi': return 'primary';
-        case 'test': return 'secondary';
-        case 'trakt': return 'danger';
-        default: return 'secondary';
+    if (typeof asyncFn === 'function') {
+        return Promise.resolve()
+            .then(asyncFn)
+            .finally(restore);
     }
+    return restore;
 }
 
-function getSourceTlClass(source) {
-    const s = (source || '').toLowerCase();
-    if (s.startsWith('retry-')) return 'retry';
-    if (['plex', 'emby', 'jellyfin', 'custom', 'feiniu', 'fongmi', 'test', 'trakt'].indexOf(s) !== -1) return s;
-    return 'custom';
-}
+/**
+ * 模态框工具：缓存实例，避免重复 new bootstrap.Modal
+ *
+ * getModal('modalId') 返回缓存的 Modal 实例（不存在则创建）
+ * showModal('modalId') 显示模态框
+ * hideModal('modalId') 隐藏模态框
+ */
+const _modalCache = {};
 
-function renderSourceBadge(source) {
-    const label = source || '-';
-    return `<span class="badge rounded-pill tl-source--${getSourceTlClass(source)}">${label}</span>`;
-}
-
-function createAppEmptyStateHtml(title, subtitle) {
-    let html = `<div class="app-empty-state"><i class="bi bi-inbox app-empty-state__icon"></i><div>${title}</div>`;
-    if (subtitle) {
-        html += `<div class="text-muted small mt-1">${subtitle}</div>`;
+function getModal(modalId) {
+    if (!_modalCache[modalId]) {
+        const el = document.getElementById(modalId);
+        if (!el) return null;
+        _modalCache[modalId] = bootstrap.Modal.getOrCreateInstance(el);
     }
-    html += '</div>';
-    return html;
+    return _modalCache[modalId];
 }
 
-function setAppTableLoading(show, wrapId, loadingId = 'loading') {
-    const loading = document.getElementById(loadingId);
-    const tableWrap = document.getElementById(wrapId);
-    if (!loading || !tableWrap) return;
-
-    if (show) {
-        loading.classList.remove('is-hidden');
-        tableWrap.classList.add('app-table-wrap--loading');
-    } else {
-        loading.classList.add('is-hidden');
-        tableWrap.classList.remove('app-table-wrap--loading');
-    }
+function showModal(modalId) {
+    const modal = getModal(modalId);
+    if (modal) modal.show();
+    return modal;
 }
 
-window.getSyncRecordStatusColor = getSyncRecordStatusColor;
-window.getSyncRecordStatusText = getSyncRecordStatusText;
-window.getStatusColor = getSyncRecordStatusColor;
-window.getStatusText = getSyncRecordStatusText;
-window.renderSyncStatusBadge = renderSyncStatusBadge;
-window.renderMatchMethodBadge = renderMatchMethodBadge;
+function hideModal(modalId) {
+    const modal = getModal(modalId);
+    if (modal) modal.hide();
+    return modal;
+}
+
 window.escapeHtml = escapeHtml;
 window.renderMatchTraceDetail = renderMatchTraceDetail;
 window.renderSyncDetailContent = renderSyncDetailContent;
 window.renderSyncResultContent = renderSyncResultContent;
 window.showRecordDetail = showRecordDetail;
-window.renderCandidateStatusBadge = renderCandidateStatusBadge;
-window.renderMediaTypeBadge = renderMediaTypeBadge;
-window.getSourceColor = getSourceColor;
-window.getSourceTlClass = getSourceTlClass;
-window.renderSourceBadge = renderSourceBadge;
-window.createAppEmptyStateHtml = createAppEmptyStateHtml;
-window.setAppTableLoading = setAppTableLoading;
-
-function bindAppTableMobileRowClick(tableSelector, onRowClick) {
-    const tbody = document.querySelector(`${tableSelector} tbody`);
-    if (!tbody) return;
-
-    tbody.addEventListener('click', function(e) {
-        if (!window.matchMedia('(max-width: 991.98px)').matches) return;
-        if (e.target.closest('a, button')) return;
-        const row = e.target.closest('tr[data-record-id]');
-        if (!row) return;
-        const recordId = parseInt(row.dataset.recordId, 10);
-        if (!isNaN(recordId) && recordId > 0) {
-            onRowClick(recordId);
-        }
-    });
-}
-
-window.bindAppTableMobileRowClick = bindAppTableMobileRowClick;
-
-// 格式化文件大小
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+window.setButtonLoading = setButtonLoading;
+window.getModal = getModal;
+window.showModal = showModal;
+window.hideModal = hideModal;
 
 // 复制到剪贴板
 async function copyToClipboard(text) {
@@ -1296,15 +1237,6 @@ async function copyToClipboard(text) {
             showAlert('复制失败', 'danger');
         }
         document.body.removeChild(textArea);
-    }
-}
-
-// 确认对话框（保持向后兼容）
-function confirmAction(message, callback) {
-    if (confirm(message)) {
-        if (callback && typeof callback === 'function') {
-            callback();
-        }
     }
 }
 
@@ -1368,78 +1300,6 @@ class LoadingManager {
 }
 
 const loadingManager = new LoadingManager();
-
-// HTTP请求封装
-class ApiClient {
-    constructor(baseURL = '') {
-        this.baseURL = baseURL;
-    }
-    
-    async request(url, options = {}) {
-        const config = {
-            credentials: 'include',  // 默认包含Cookie认证信息
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
-            ...options
-        };
-        
-        try {
-            loadingManager.show();
-            const response = await fetch(this.baseURL + url, config);
-            
-            // 处理认证失败
-            if (response.status === 401) {
-                // 跳转到登录页面
-                window.location.href = appUrl('/login');
-                return;
-            }
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error('API request failed:', error);
-            throw error;
-        } finally {
-            loadingManager.hide();
-        }
-    }
-    
-    async get(url, params = {}) {
-        const queryString = new URLSearchParams(params).toString();
-        const fullUrl = queryString ? `${url}?${queryString}` : url;
-        return this.request(fullUrl);
-    }
-    
-    async post(url, data = {}) {
-        return this.request(url, {
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
-    }
-    
-    async put(url, data = {}) {
-        return this.request(url, {
-            method: 'PUT',
-            body: JSON.stringify(data)
-        });
-    }
-    
-    async delete(url) {
-        return this.request(url, {
-            method: 'DELETE'
-        });
-    }
-}
-
-const api = new ApiClient(
-    typeof window.__APP_BASE_PATH__ === 'string' ? window.__APP_BASE_PATH__ : ''
-);
 
 // 表单验证
 class FormValidator {
@@ -1594,25 +1454,21 @@ document.addEventListener('DOMContentLoaded', function() {
 async function logout() {
     try {
         const result = await confirmAction('确定要登出吗？', async () => {
-            const response = await fetch(appUrl('/api/logout'), {
+            await apiFetch('/api/logout', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
-            
-            if (response.ok) {
-                if (typeof window.clearBgmReleaseInfoCache === 'function') {
-                    window.clearBgmReleaseInfoCache();
-                }
-                showAlert('登出成功', 'success', 2000);
-                // 延迟跳转到登录页面
-                setTimeout(() => {
-                    window.location.href = appUrl('/login');
-                }, 1000);
-            } else {
-                throw new Error('登出失败');
+
+            if (typeof window.clearBgmReleaseInfoCache === 'function') {
+                window.clearBgmReleaseInfoCache();
             }
+            showAlert('登出成功', 'success', 2000);
+            // 延迟跳转到登录页面
+            setTimeout(() => {
+                window.location.href = appUrl('/login');
+            }, 1000);
         });
     } catch (error) {
         showAlert('登出失败: ' + error.message, 'danger');
@@ -1636,9 +1492,8 @@ async function confirmAction(message, callback) {
 // 检查认证状态
 async function checkAuthStatus() {
     try {
-        const response = await fetch(appUrl('/api/auth/status'));
-        const result = await response.json();
-        
+        const result = await apiFetch('/api/auth/status', { skipAuthRedirect: true });
+
         if (result.status === 'success' && result.data) {
             return result.data;
         }
@@ -1664,14 +1519,11 @@ async function initAuth() {
 
 // 导出全局函数
 window.showAlert = showAlert;
-window.formatDate = formatDate;
-window.formatFileSize = formatFileSize;
 window.copyToClipboard = copyToClipboard;
 window.confirmAction = confirmAction;
 window.debounce = debounce;
 window.throttle = throttle;
 window.loadingManager = loadingManager;
-window.api = api;
 window.FormValidator = FormValidator;
 window.ValidationRules = ValidationRules;
 window.StorageManager = StorageManager;
@@ -1679,6 +1531,7 @@ window.logout = logout;
 window.checkAuthStatus = checkAuthStatus;
 window.initAuth = initAuth;
 window.appUrl = appUrl;
+window.apiFetch = apiFetch;
 
 // ========== 登录页面专用功能 ==========
 
@@ -1731,16 +1584,18 @@ async function handleLoginSubmit(e) {
     };
     
     try {
-        const response = await fetch(appUrl('/api/login'), {
+        const response = await apiFetch('/api/login', {
             method: 'POST',
+            returnResponse: true,
+            skipAuthRedirect: true,
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(data)
         });
-        
+
         const result = await response.json();
-        
+
         if (response.ok && result.status === 'success') {
             // 登录成功，显示成功信息并跳转
             alertContainer.innerHTML = `
@@ -1951,163 +1806,6 @@ function refreshAfterRetry() {
 
 // 导出重试功能
 window.retrySync = retrySync;
-
-// ========== 数据表格（分页条数与入场动画，与同步记录一致） ==========
-
-const APP_TABLE_PAGE_SIZE = 10;
-window.APP_TABLE_PAGE_SIZE = APP_TABLE_PAGE_SIZE;
-
-function replayAppTableAnimation(wrapId) {
-    const wrap = document.getElementById(wrapId);
-    if (!wrap) return;
-    wrap.classList.remove('records-table-wrap--enter');
-    void wrap.offsetWidth;
-    wrap.classList.add('records-table-wrap--enter');
-}
-
-function applyAppTableRowEnter(row, index) {
-    row.classList.add('records-table-row--enter');
-    row.style.animationDelay = `${Math.min(index * 0.04, 0.36)}s`;
-}
-
-function animateAppTableBody(tbody, wrapId) {
-    if (!tbody) return;
-    tbody.querySelectorAll('tr').forEach((row, index) => applyAppTableRowEnter(row, index));
-    replayAppTableAnimation(wrapId);
-}
-
-window.replayAppTableAnimation = replayAppTableAnimation;
-window.applyAppTableRowEnter = applyAppTableRowEnter;
-window.animateAppTableBody = animateAppTableBody;
-
-// ========== 通用分页（与同步记录 app-pagination 一致） ==========
-
-function createAppPageItem(page, currentPage, onPageChange) {
-    const li = document.createElement('li');
-    li.className = `page-item page-item--num ${page === currentPage ? 'active' : ''}`;
-    const link = document.createElement('a');
-    link.className = 'page-link';
-    link.href = '#';
-    link.setAttribute('aria-label', `第 ${page} 页`);
-    link.setAttribute('aria-current', page === currentPage ? 'page' : 'false');
-    link.textContent = String(page);
-    link.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (page !== currentPage) onPageChange(page);
-    });
-    li.appendChild(link);
-    return li;
-}
-
-function createAppEllipsisItem() {
-    const li = document.createElement('li');
-    li.className = 'page-item page-item--ellipsis disabled';
-    li.innerHTML = '<span class="page-link" aria-hidden="true">…</span>';
-    return li;
-}
-
-function replayAppPaginationAnimation(navId) {
-    const nav = document.getElementById(navId);
-    if (!nav || nav.classList.contains('is-hidden')) return;
-    nav.classList.remove('records-pagination--enter');
-    void nav.offsetWidth;
-    nav.classList.add('records-pagination--enter');
-}
-
-function renderAppPagination(options) {
-    const {
-        total,
-        currentPage,
-        limit,
-        navId = 'pagination-nav',
-        listId = 'pagination',
-        summaryId = 'pagination-summary',
-        onPageChange,
-        animate = true,
-    } = options;
-
-    const pagination = document.getElementById(listId);
-    if (!pagination) return;
-
-    const summary = document.getElementById(summaryId);
-    const nav = document.getElementById(navId);
-    const totalPages = Math.ceil(total / limit);
-
-    pagination.innerHTML = '';
-
-    if (total <= 0) {
-        if (summary) summary.textContent = '';
-        if (nav) nav.classList.add('is-hidden');
-        return;
-    }
-
-    if (summary) {
-        summary.textContent = totalPages <= 1
-            ? `共 ${total} 条记录`
-            : `第 ${currentPage} / ${totalPages} 页，共 ${total} 条`;
-    }
-
-    if (totalPages <= 1) {
-        if (nav) nav.classList.remove('is-hidden');
-        if (animate) replayAppPaginationAnimation(navId);
-        return;
-    }
-
-    if (nav) nav.classList.remove('is-hidden');
-
-    const prevLi = document.createElement('li');
-    prevLi.className = `page-item page-item--nav ${currentPage === 1 ? 'disabled' : ''}`;
-    const prevLink = document.createElement('a');
-    prevLink.className = 'page-link';
-    prevLink.href = '#';
-    prevLink.setAttribute('aria-label', '上一页');
-    prevLink.innerHTML = '<i class="bi bi-chevron-left" aria-hidden="true"></i><span class="d-none d-sm-inline">上一页</span>';
-    prevLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (currentPage > 1) onPageChange(currentPage - 1);
-    });
-    prevLi.appendChild(prevLink);
-    pagination.appendChild(prevLi);
-
-    const startPage = Math.max(1, currentPage - 2);
-    const endPage = Math.min(totalPages, currentPage + 2);
-
-    if (startPage > 1) {
-        pagination.appendChild(createAppPageItem(1, currentPage, onPageChange));
-        if (startPage > 2) {
-            pagination.appendChild(createAppEllipsisItem());
-        }
-    }
-
-    for (let i = startPage; i <= endPage; i++) {
-        pagination.appendChild(createAppPageItem(i, currentPage, onPageChange));
-    }
-
-    if (endPage < totalPages) {
-        if (endPage < totalPages - 1) {
-            pagination.appendChild(createAppEllipsisItem());
-        }
-        pagination.appendChild(createAppPageItem(totalPages, currentPage, onPageChange));
-    }
-
-    const nextLi = document.createElement('li');
-    nextLi.className = `page-item page-item--nav ${currentPage === totalPages ? 'disabled' : ''}`;
-    const nextLink = document.createElement('a');
-    nextLink.className = 'page-link';
-    nextLink.href = '#';
-    nextLink.setAttribute('aria-label', '下一页');
-    nextLink.innerHTML = '<span class="d-none d-sm-inline">下一页</span><i class="bi bi-chevron-right" aria-hidden="true"></i>';
-    nextLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (currentPage < totalPages) onPageChange(currentPage + 1);
-    });
-    nextLi.appendChild(nextLink);
-    pagination.appendChild(nextLi);
-
-    if (animate) replayAppPaginationAnimation(navId);
-}
-
-window.renderAppPagination = renderAppPagination;
 
 // ========== 主题管理器 ==========
 

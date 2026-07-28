@@ -345,7 +345,8 @@
             </div>
         </div>
         <!-- Toast通知容器 -->
-        <div class="toast-container position-fixed top-0 end-0 p-3">
+        <div id="toast-container"
+             class="toast-container position-fixed top-0 end-0 p-3">
             <!-- Toast通知将在这里动态添加 -->
         </div>
         <!-- 同步记录详情（records / dashboard 共用） -->
@@ -485,6 +486,9 @@
             </div>
         </div>
         <script src="{{ '/static/js/bootstrap.bundle.min.js' | static_v }}"></script>
+        <script src="{{ '/static/js/format.js' | static_v }}"></script>
+        <script src="{{ '/static/js/badges.js' | static_v }}"></script>
+        <script src="{{ '/static/js/table-utils.js' | static_v }}"></script>
         <script src="{{ '/static/js/app.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/chart.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/version-release.js' | static_v }}"></script>

@@ -10,12 +10,7 @@
     var _activeAnnouncementId = null;
     var _pollTimer = null;
 
-    function escapeHtml(text) {
-        if (text == null) return '';
-        var div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
-    }
+    var escapeHtml = window.escapeHtml;
 
     function levelBadgeClass(level) {
         if (level === 'important') return 'bg-danger';
@@ -81,15 +76,7 @@
     }
 
     async function fetchJson(url, options) {
-        var response = await fetch(appUrl(url), Object.assign({ credentials: 'include' }, options || {}));
-        if (response.status === 401) {
-            window.location.href = appUrl('/login');
-            throw new Error('未登录');
-        }
-        if (!response.ok) {
-            throw new Error('HTTP ' + response.status);
-        }
-        return response.json();
+        return apiFetch(url, options || {});
     }
 
     function updateBadge(summary) {

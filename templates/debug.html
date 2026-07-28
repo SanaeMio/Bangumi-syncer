@@ -346,9 +346,9 @@ async function testMatch() {
     try {
         statusSpan.textContent = `正在匹配: ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
 
-        const response = await fetch(appUrl('/api/test-match'), {
+        const response = await apiFetch('/api/test-match', {
             method: 'POST',
-            credentials: 'include',
+            returnResponse: true,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 title: title,
@@ -492,9 +492,9 @@ async function testSync() {
         statusSpan.textContent = `正在同步: ${title} S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}`;
 
         const startTime = Date.now();
-        const response = await fetch(appUrl('/api/test-sync?async_mode=false'), {
+        const response = await apiFetch('/api/test-sync?async_mode=false', {
             method: 'POST',
-            credentials: 'include',
+            returnResponse: true,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 title: title,
@@ -588,7 +588,7 @@ async function triggerFeiniuManualSync() {
     const btn = document.getElementById('feiniu-manual-sync-btn');
     const out = document.getElementById('feiniu-sync-test-result');
     const user = document.getElementById('feiniu-debug-user').value.trim();
-    let url = appUrl('/api/feiniu/sync/manual');
+    let url = '/api/feiniu/sync/manual';
     if (user) {
         url += '?user=' + encodeURIComponent(user);
     }
@@ -597,9 +597,9 @@ async function triggerFeiniuManualSync() {
     out.style.display = 'block';
     out.innerHTML = '<div class="alert alert-info mb-0"><i class="bi bi-hourglass-split me-2"></i>正在执行飞牛扫描与同步，请稍候…</div>';
     try {
-        const response = await fetch(url, {
+        const response = await apiFetch(url, {
             method: 'POST',
-            credentials: 'include',
+            returnResponse: true,
             headers: { 'Accept': 'application/json' }
         });
         let data = {};
@@ -646,15 +646,15 @@ async function triggerFeiniuManualSync() {
 async function triggerFongmiDebugScan() {
     const btn = document.getElementById('fongmi-debug-scan-btn');
     const out = document.getElementById('fongmi-scan-result');
-    const url = appUrl('/api/fongmi/debug/scan');
+    const url = '/api/fongmi/debug/scan';
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>搜寻中...';
     out.style.display = 'block';
     out.innerHTML = '<div class="alert alert-info mb-0"><i class="bi bi-hourglass-split me-2"></i>正在搜寻设备并拉取状态，请稍候…</div>';
     try {
-        const response = await fetch(url, {
+        const response = await apiFetch(url, {
             method: 'POST',
-            credentials: 'include',
+            returnResponse: true,
             headers: { 'Accept': 'application/json' }
         });
         let data = {};
@@ -772,9 +772,9 @@ async function fongmiDebugSync(idx, deviceIp, devicePort, deviceName) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 35000);
     try {
-        const response = await fetch(appUrl('/api/fongmi/debug/sync'), {
+        const response = await apiFetch('/api/fongmi/debug/sync', {
             method: 'POST',
-            credentials: 'include',
+            returnResponse: true,
             headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 device_ip: deviceIp,
@@ -885,17 +885,14 @@ async function diagnoseBangumiNetwork() {
     `;
     
     try {
-        const response = await fetch(appUrl('/api/network/diagnose'), {
+        const result = await apiFetch('/api/network/diagnose', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ url: urlInput.value })
         });
-        
-        const result = await response.json();
-        
+
         if (result.status === 'success') {
             displayBangumiDiagnosisResult(result.data);
         } else {
@@ -1201,17 +1198,14 @@ async function testHostConnectivity() {
     `;
     
     try {
-        const response = await fetch(appUrl('/api/proxy/test-host'), {
+        const result = await apiFetch('/api/proxy/test-host', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ host, port, timeout })
         });
-        
-        const result = await response.json();
-        
+
         if (result.status === 'success') {
             displayHostTestResult(result.data);
         } else {
@@ -1351,17 +1345,14 @@ async function testProxy(address, event) {
     button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>测试中';
     
     try {
-        const response = await fetch(appUrl('/api/proxy/test'), {
+        const result = await apiFetch('/api/proxy/test', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ proxy_url: address })
         });
-        
-        const result = await response.json();
-        
+
         if (result.status === 'success') {
             showAlert(`代理测试成功！延迟: ${result.data.response_time_ms}ms`, 'success', 3000);
         } else {
@@ -1420,13 +1411,7 @@ function showAlert(message, type = 'info', duration = 3000) {
 }
 
 // ========== AI 追番总结测试 ==========
-
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;');
-}
+// escapeHtml 已在 app.js 全局定义（window.escapeHtml），此处不再重复
 
     </script>
 {% endblock %}

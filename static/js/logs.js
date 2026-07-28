@@ -66,10 +66,7 @@
     window.loadLogs = async function loadLogs() {
         try {
             const params = getFilterParams();
-            const response = await fetch(appUrl(`/api/logs?${params}`), {
-                credentials: 'include',
-            });
-            const data = await response.json();
+            const data = await apiFetch(`/api/logs?${params}`);
 
             if (data.status !== 'success') {
                 showAlert('加载日志失败: ' + (data.message || ''), 'danger');
@@ -585,11 +582,9 @@
         }, COPY_FEEDBACK_MS);
     }
 
-    function escapeHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    var escapeHtml = window.escapeHtml;
+    var showAlert = window.showAlert;
+    var formatFileSize = window.formatFileSize;
 
     window.clearLogs = function clearLogs() {
         clearLogsModal.show();
@@ -599,13 +594,11 @@
         const createBackup = document.getElementById('backup-before-clear').checked;
 
         try {
-            const response = await fetch(appUrl('/api/logs/clear'), {
+            const data = await apiFetch('/api/logs/clear', {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ backup: createBackup }),
             });
-            const data = await response.json();
 
             if (data.status === 'success') {
                 clearLogsModal.hide();
@@ -622,31 +615,4 @@
             showAlert('清空日志失败', 'danger');
         }
     };
-
-    function formatFileSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    function showAlert(message, type) {
-        const toastContainer = document.querySelector('.toast-container');
-        if (!toastContainer) return;
-        const toast = document.createElement('div');
-        toast.className = 'toast align-items-center text-white bg-' + type + ' border-0';
-        toast.setAttribute('role', 'alert');
-        toast.innerHTML =
-            '<div class="d-flex">' +
-            '<div class="toast-body">' + escapeHtml(message) + '</div>' +
-            '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
-            '</div>';
-        toastContainer.appendChild(toast);
-        const bsToast = new bootstrap.Toast(toast);
-        bsToast.show();
-        toast.addEventListener('hidden.bs.toast', function () {
-            toast.remove();
-        });
-    }
 })();

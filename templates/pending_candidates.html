@@ -120,10 +120,8 @@
     <script>
 let currentPage = 1;
 const pageLimit = APP_TABLE_PAGE_SIZE;
-let candidateDetailModal = null;
 
 document.addEventListener('DOMContentLoaded', function() {
-    candidateDetailModal = new bootstrap.Modal(document.getElementById('candidateDetailModal'));
     bindAppTableMobileRowClick('#pending-candidates-table', showCandidateDetail);
     loadPendingCandidates();
 });
@@ -144,10 +142,7 @@ async function loadPendingCandidates(page) {
     if (status) params.append('status', status);
 
     try {
-        const response = await fetch(appUrl('/api/pending-candidates?' + params), {
-            credentials: 'include'
-        });
-        const data = await response.json();
+        const data = await apiFetch('/api/pending-candidates?' + params);
 
         if (data.status === 'success') {
             displayPendingCandidates(data.data.records, data.data.total);
@@ -232,18 +227,9 @@ function clearPendingFilters() {
     loadPendingCandidates(1);
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
-}
-
 async function showCandidateDetail(candidateId) {
     try {
-        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}`), {
-            credentials: 'include'
-        });
-        const data = await response.json();
+        const data = await apiFetch(`/api/pending-candidates/${candidateId}`);
 
         if (data.status !== 'success') {
             showAlert('获取候选详情失败', 'danger');
@@ -318,7 +304,7 @@ async function showCandidateDetail(candidateId) {
         }
 
         content.innerHTML = html;
-        candidateDetailModal.show();
+        showModal('candidateDetailModal');
 
     } catch (error) {
         console.error('获取候选详情失败:', error);
@@ -331,16 +317,14 @@ async function confirmCandidate(candidateId, subjectId) {
         return;
     }
     try {
-        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}/confirm`), {
+        const data = await apiFetch(`/api/pending-candidates/${candidateId}/confirm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ subject_id: subjectId })
         });
-        const data = await response.json();
         if (data.status === 'success') {
             showAlert(data.message || '已确认', 'success');
-            candidateDetailModal.hide();
+            hideModal('candidateDetailModal');
             loadPendingCandidates();
         } else {
             showAlert(data.detail || '确认失败', 'danger');
@@ -356,11 +340,9 @@ async function rejectCandidate(candidateId) {
         return;
     }
     try {
-        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}/reject`), {
-            method: 'POST',
-            credentials: 'include'
+        const data = await apiFetch(`/api/pending-candidates/${candidateId}/reject`, {
+            method: 'POST'
         });
-        const data = await response.json();
         if (data.status === 'success') {
             showAlert(data.message || '已忽略', 'success');
             loadPendingCandidates();
@@ -378,11 +360,9 @@ async function deleteCandidate(candidateId) {
         return;
     }
     try {
-        const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}`), {
-            method: 'DELETE',
-            credentials: 'include'
+        const data = await apiFetch(`/api/pending-candidates/${candidateId}`, {
+            method: 'DELETE'
         });
-        const data = await response.json();
         if (data.status === 'success') {
             showAlert(data.message || '已删除', 'success');
             loadPendingCandidates();
