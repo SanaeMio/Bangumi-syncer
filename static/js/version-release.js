@@ -124,11 +124,7 @@
         });
     }
 
-    function escapeHtml(s) {
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
+    var escapeHtml = window.escapeHtml;
 
     /** ISO 8601 → 本地常规日期时间（如 2026/1/1 20:00） */
     function formatPublishedAt(iso) {

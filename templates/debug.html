@@ -1420,13 +1420,7 @@ function showAlert(message, type = 'info', duration = 3000) {
 }
 
 // ========== AI 追番总结测试 ==========
-
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;');
-}
+// escapeHtml 已在 app.js 全局定义（window.escapeHtml），此处不再重复
 
     </script>
 {% endblock %}

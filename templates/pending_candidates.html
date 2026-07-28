@@ -232,12 +232,6 @@ function clearPendingFilters() {
     loadPendingCandidates(1);
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
-}
-
 async function showCandidateDetail(candidateId) {
     try {
         const response = await fetch(appUrl(`/api/pending-candidates/${candidateId}`), {

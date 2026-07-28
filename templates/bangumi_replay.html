@@ -253,11 +253,6 @@ function clearFilters() {
     loadQueue(1);
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text == null ? '' : String(text);
-    return div.innerHTML;
-}
 
 async function showRecordDetail(recordId) {
     try {

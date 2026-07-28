@@ -10,12 +10,7 @@
     var _activeAnnouncementId = null;
     var _pollTimer = null;
 
-    function escapeHtml(text) {
-        if (text == null) return '';
-        var div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
-    }
+    var escapeHtml = window.escapeHtml;
 
     function levelBadgeClass(level) {
         if (level === 'important') return 'bg-danger';

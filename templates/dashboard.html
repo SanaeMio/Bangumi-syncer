@@ -830,11 +830,6 @@ function applyPoster(subjectId, url) {
     });
 }
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace ( />/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 function formatNumber(num) {
     if (num == null) return '0';
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';

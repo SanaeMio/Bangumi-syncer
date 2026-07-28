@@ -123,32 +123,12 @@ class TraktConfigPage {
     }
 
     /**
-     * 显示通知
+     * 显示通知（委托全局 showAlert，保持调用签名兼容）
      */
     showNotification(message, type = 'info') {
-        // 移除现有通知
-        const existingAlert = document.querySelector('.alert');
-        if (existingAlert) {
-            existingAlert.remove();
+        if (typeof window.showAlert === 'function') {
+            window.showAlert(message, type, 3000);
         }
-
-        // 创建新通知
-        const alert = document.createElement('div');
-        alert.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
-        alert.style.zIndex = '1050';
-        alert.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-
-        document.body.appendChild(alert);
-
-        // 3秒后自动消失
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, 3000);
     }
 
     /**
