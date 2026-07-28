@@ -495,9 +495,9 @@
         setBannerLoading(true);
 
         try {
-            var r = await fetch(appUrl('/api/app/release-info'), {
+            var r = await apiFetch('/api/app/release-info', {
                 method: 'GET',
-                credentials: 'include',
+                returnResponse: true,
                 headers: { Accept: 'application/json' },
             });
             if (!r.ok) {

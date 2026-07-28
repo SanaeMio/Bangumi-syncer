@@ -76,12 +76,10 @@
 
         // 缓存数据可能缺少新字段，回退到 API
         if (releaseInfo.environment === undefined || releaseInfo.upgrade_available === undefined) {
-            fetch(appUrl('/api/app/upgrade/status'), {
+            apiFetch('/api/app/upgrade/status', {
                 method: 'GET',
-                credentials: 'include',
                 headers: { Accept: 'application/json' },
             })
-                .then(function (r) { return r.json(); })
                 .then(function (status) {
                     applyUpgradeUI(releaseInfo, status.environment, status.upgrade_capable);
                 })
@@ -105,16 +103,14 @@
         setText('upgradeStatusText', '准备开始升级...');
         setProgress(0);
 
-        fetch(appUrl('/api/app/upgrade'), {
+        apiFetch('/api/app/upgrade', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
             body: JSON.stringify({}),
         })
-            .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.status === 'error') {
                     showUpgradeError(data.detail || '升级启动失败');
@@ -177,9 +173,9 @@
     function triggerRestartInternal() {
         setText('upgradeStatusText', '正在重启...');
 
-        fetch(appUrl('/api/app/upgrade/restart'), {
+        apiFetch('/api/app/upgrade/restart', {
             method: 'POST',
-            credentials: 'include',
+            returnResponse: true,
             headers: { Accept: 'application/json' },
         }).catch(function () {});
 
@@ -194,11 +190,11 @@
         }
 
         setTimeout(function () {
-            fetch(appUrl('/health'), {
+            apiFetch('/health', {
                 method: 'GET',
                 cache: 'no-store',
+                skipAuthRedirect: true,
             })
-                .then(function (r) { return r.json(); })
                 .then(function (data) {
                     if (data.status === 'healthy') {
                         setText('upgradeStatusText', '服务已重启，正在刷新页面...');

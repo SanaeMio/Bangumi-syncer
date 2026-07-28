@@ -76,15 +76,7 @@
     }
 
     async function fetchJson(url, options) {
-        var response = await fetch(appUrl(url), Object.assign({ credentials: 'include' }, options || {}));
-        if (response.status === 401) {
-            window.location.href = appUrl('/login');
-            throw new Error('未登录');
-        }
-        if (!response.ok) {
-            throw new Error('HTTP ' + response.status);
-        }
-        return response.json();
+        return apiFetch(url, options || {});
     }
 
     function updateBadge(summary) {

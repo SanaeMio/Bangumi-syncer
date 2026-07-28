@@ -1122,10 +1122,7 @@ async function loadMatchTraceContent(recordId, record) {
     try {
         let traceData = _matchTraceCache[recordId];
         if (!traceData) {
-            const response = await fetch(appUrl(`/api/match-records/${recordId}/trace`), {
-                credentials: 'include',
-            });
-            const data = await response.json();
+            const data = await apiFetch(`/api/match-records/${recordId}/trace`);
             if (data.status !== 'success') {
                 throw new Error('获取匹配详情失败');
             }
@@ -1163,16 +1160,8 @@ async function showRecordDetail(recordId, options) {
     }
 
     try {
-        const response = await fetch(appUrl(`/api/records/${recordId}`), {
-            method: 'GET',
-            credentials: 'include',
-        });
+        const result = await apiFetch(`/api/records/${recordId}`, { method: 'GET' });
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const result = await response.json();
         if (result.status !== 'success' || !result.data) {
             throw new Error('获取记录数据失败');
         }
@@ -1548,25 +1537,21 @@ document.addEventListener('DOMContentLoaded', function() {
 async function logout() {
     try {
         const result = await confirmAction('确定要登出吗？', async () => {
-            const response = await fetch(appUrl('/api/logout'), {
+            await apiFetch('/api/logout', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
-            
-            if (response.ok) {
-                if (typeof window.clearBgmReleaseInfoCache === 'function') {
-                    window.clearBgmReleaseInfoCache();
-                }
-                showAlert('登出成功', 'success', 2000);
-                // 延迟跳转到登录页面
-                setTimeout(() => {
-                    window.location.href = appUrl('/login');
-                }, 1000);
-            } else {
-                throw new Error('登出失败');
+
+            if (typeof window.clearBgmReleaseInfoCache === 'function') {
+                window.clearBgmReleaseInfoCache();
             }
+            showAlert('登出成功', 'success', 2000);
+            // 延迟跳转到登录页面
+            setTimeout(() => {
+                window.location.href = appUrl('/login');
+            }, 1000);
         });
     } catch (error) {
         showAlert('登出失败: ' + error.message, 'danger');
@@ -1590,9 +1575,8 @@ async function confirmAction(message, callback) {
 // 检查认证状态
 async function checkAuthStatus() {
     try {
-        const response = await fetch(appUrl('/api/auth/status'));
-        const result = await response.json();
-        
+        const result = await apiFetch('/api/auth/status', { skipAuthRedirect: true });
+
         if (result.status === 'success' && result.data) {
             return result.data;
         }
@@ -1685,16 +1669,18 @@ async function handleLoginSubmit(e) {
     };
     
     try {
-        const response = await fetch(appUrl('/api/login'), {
+        const response = await apiFetch('/api/login', {
             method: 'POST',
+            returnResponse: true,
+            skipAuthRedirect: true,
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(data)
         });
-        
+
         const result = await response.json();
-        
+
         if (response.ok && result.status === 'success') {
             // 登录成功，显示成功信息并跳转
             alertContainer.innerHTML = `

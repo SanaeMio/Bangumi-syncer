@@ -66,10 +66,7 @@
     window.loadLogs = async function loadLogs() {
         try {
             const params = getFilterParams();
-            const response = await fetch(appUrl(`/api/logs?${params}`), {
-                credentials: 'include',
-            });
-            const data = await response.json();
+            const data = await apiFetch(`/api/logs?${params}`);
 
             if (data.status !== 'success') {
                 showAlert('加载日志失败: ' + (data.message || ''), 'danger');
@@ -597,13 +594,11 @@
         const createBackup = document.getElementById('backup-before-clear').checked;
 
         try {
-            const response = await fetch(appUrl('/api/logs/clear'), {
+            const data = await apiFetch('/api/logs/clear', {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ backup: createBackup }),
             });
-            const data = await response.json();
 
             if (data.status === 'success') {
                 clearLogsModal.hide();
