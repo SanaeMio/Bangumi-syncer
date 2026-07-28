@@ -150,6 +150,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         返回 (success, message)。映射写入委托
         :meth:`MappingService.upsert_single_mapping`，由其内部完成
         读全量→合并→写回，避免覆盖已有映射。
+
+        subject_id 有效性校验：优先走 archive 短路（无网络开销），
+        archive 未命中时降级到 Bangumi API。校验失败（条目不存在或类型
+        不是动画/三次元）时拒绝确认并返回原因，避免写入无效映射。
         """
         record = database_manager.get_pending_candidate_by_id(candidate_id)
         if not record:
@@ -161,6 +165,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         season = int(record.get("request_season") or 1)
         if not title or not subject_id:
             return False, "标题或 subject_id 为空"
+
+        # subject_id 有效性校验：必须存在且类型为动画/三次元
+        ok, reason = self._validate_subject_id(subject_id)
+        if not ok:
+            return False, f"subject_id 校验失败：{reason}"
 
         # 写入单条映射（读全量→合并→写回由 mapping_service 封装）
         if not mapping_service.upsert_single_mapping(title, subject_id, season):
@@ -180,6 +189,72 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             exclude_id=candidate_id,
         )
         return True, f"已确认并写入映射：{title} → subject/{subject_id}"
+
+    def _validate_subject_id(self, subject_id: str) -> tuple[bool, str]:
+        """校验 subject_id 是否有效：存在且类型为动画/三次元
+
+        优先走 archive 短路（本地查询，<1ms），未命中降级到 Bangumi API。
+        返回 (True, "") 或 (False, reason)。
+
+        校验失败场景：
+        - subject_id 非数字
+        - 条目不存在（API 404 或返回空）
+        - 类型非动画/三次元（如书籍/音乐/游戏）
+        - archive 与 API 均不可用（网络异常时降级放行，避免阻塞用户）
+        """
+        try:
+            sid = int(subject_id)
+        except (TypeError, ValueError):
+            return False, "ID 必须为纯数字"
+
+        # 优先走 archive 短路（无网络开销）
+        from ...utils.bangumi_api._archive_shortcut import archive_shortcut
+
+        if archive_shortcut.enabled:
+            result = archive_shortcut.try_get_subject(sid)
+            if result.hit and isinstance(result.data, dict):
+                stype = result.data.get("type")
+                if stype in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
+                    return True, ""
+                return False, f"条目类型为 {stype}，仅支持动画/三次元"
+            # archive 未命中或不完整：降级到 API
+
+        # 降级到 API：优先用单用户配置，其次多用户第一个可用配置
+        cfg = config_manager.get_active_bangumi_config("") or None
+        if cfg is None:
+            configs = config_manager.get_bangumi_configs()
+            if not configs:
+                # 无可用配置时降级放行（不阻塞用户，映射写入后再由同步流程校验）
+                logger.warning(
+                    f"subject_id={sid} 校验跳过：无可用 Bangumi 配置，降级放行"
+                )
+                return True, ""
+            cfg = next(iter(configs.values()))
+
+        dev_snapshot = config_manager.get_dev_http_snapshot()
+        api = BangumiApi(
+            username=cfg["username"],
+            access_token=cfg["access_token"],
+            private=cfg.get("private", False),
+            http_proxy=dev_snapshot["script_proxy"],
+            ssl_verify=dev_snapshot["ssl_verify"],
+            bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
+            bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
+        )
+        try:
+            data = api.get_subject(sid)
+        except Exception as e:
+            logger.warning(f"subject_id={sid} API 校验异常：{e}，降级放行")
+            return True, ""
+
+        if not isinstance(data, dict) or not data:
+            return False, "条目不存在或 API 返回空"
+
+        stype = data.get("type")
+        if stype not in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
+            return False, f"条目类型为 {stype}，仅支持动画/三次元"
+
+        return True, ""
 
     def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
         """拒绝待确认候选"""
