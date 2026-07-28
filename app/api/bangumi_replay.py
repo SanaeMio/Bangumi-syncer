@@ -156,10 +156,24 @@ async def replay_single(
             raise HTTPException(status_code=404, detail="记录不存在")
 
         result = await asyncio.to_thread(sync_service.replay_pending_item, record)
+        sync_record_id = result.get("sync_record_id")
         if result.get("should_mark_synced") and result["success"]:
             database_manager.mark_pending_sync_synced(
                 record_id, **_filter_kwargs(user_name)
             )
+            # 回写 sync_records：queued → success
+            if sync_record_id:
+                try:
+                    database_manager.update_sync_record_status(
+                        sync_record_id,
+                        "success",
+                        f"📚 手动补发成功（{result.get('message', '')}）",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"📚 回写 sync_records 状态失败 "
+                        f"sync_record_id={sync_record_id}: {e}"
+                    )
         elif not result["success"]:
             msg = (result.get("message") or "").lower()
             if "不可达" not in msg and "unreachable" not in msg:

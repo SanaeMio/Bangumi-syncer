@@ -306,6 +306,7 @@ class DatabaseManager:
         payload: dict[str, Any],
         reason: str = "api_unreachable",
         last_error: str = "",
+        sync_record_id: Optional[int] = None,
     ) -> Optional[int]:
         """入队一条待同步任务，返回记录 id（失败时 None）"""
         return self._pending_sync.enqueue(
@@ -320,6 +321,27 @@ class DatabaseManager:
             payload=payload,
             reason=reason,
             last_error=last_error,
+            sync_record_id=sync_record_id,
+        )
+
+    def link_pending_sync_to_record(
+        self,
+        user_name: str,
+        subject_id: str,
+        episode_id: Optional[str],
+        source: str,
+        sync_record_id: int,
+    ) -> bool:
+        """按四元组软匹配，回填最近一条 pending 行的 sync_record_id。
+
+        入队时 sync_record_id 尚未产生，主流程在 log_sync_record 后调用本方法回填关联。
+        """
+        return self._pending_sync.link_sync_record_id(
+            user_name=user_name,
+            subject_id=subject_id,
+            episode_id=episode_id,
+            source=source,
+            sync_record_id=sync_record_id,
         )
 
     def fetch_pending_sync(

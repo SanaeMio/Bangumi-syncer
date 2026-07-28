@@ -33,11 +33,15 @@ class PendingSyncQueueRepository(BaseRepository):
         payload: dict[str, Any],
         reason: str = "api_unreachable",
         last_error: str = "",
+        sync_record_id: Optional[int] = None,
     ) -> Optional[int]:
         """入队一条待同步任务，返回记录 id（失败时 None）。
 
         去重规则：同一 (user_name, subject_id, episode_id, source) 已有 pending 行时
         更新 payload 与 last_error，刷新 created_at，不重复插入。
+
+        sync_record_id：关联的 sync_records 行 id，用于补发成功/放弃时回写状态。
+        去重 UPDATE 时也会刷新为最新值（同一集多次入队时，以最新 queued 记录为准）。
         """
 
         def _write(conn):
@@ -64,7 +68,8 @@ class PendingSyncQueueRepository(BaseRepository):
                     UPDATE pending_sync_queue
                     SET created_at = ?, title = ?, season = ?, episode = ?,
                         episode_id = ?, media_type = ?, payload_json = ?,
-                        last_error = ?, attempts = 0, last_attempt_at = NULL
+                        last_error = ?, attempts = 0, last_attempt_at = NULL,
+                        sync_record_id = ?
                     WHERE id = ?
                     """,
                     (
@@ -76,6 +81,7 @@ class PendingSyncQueueRepository(BaseRepository):
                         media_type,
                         payload_json,
                         last_error or reason,
+                        sync_record_id,
                         existing_id,
                     ),
                 )
@@ -86,8 +92,8 @@ class PendingSyncQueueRepository(BaseRepository):
                 INSERT INTO pending_sync_queue
                 (created_at, user_name, title, season, episode, subject_id,
                  episode_id, source, media_type, payload_json, status,
-                 attempts, last_attempt_at, last_error)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?)
+                 attempts, last_attempt_at, last_error, sync_record_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?, ?)
                 """,
                 (
                     local_time,
@@ -101,6 +107,7 @@ class PendingSyncQueueRepository(BaseRepository):
                     media_type,
                     payload_json,
                     last_error or reason,
+                    sync_record_id,
                 ),
             )
             return cursor.lastrowid
@@ -122,7 +129,7 @@ class PendingSyncQueueRepository(BaseRepository):
             sql = """
                 SELECT id, created_at, user_name, title, season, episode,
                        subject_id, episode_id, source, media_type, payload_json,
-                       attempts, last_attempt_at, last_error
+                       attempts, last_attempt_at, last_error, sync_record_id
                 FROM pending_sync_queue
                 WHERE status = 'pending'
             """
@@ -161,6 +168,45 @@ class PendingSyncQueueRepository(BaseRepository):
             return cursor.rowcount > 0
 
         return self._run_write(_write, error_msg="标记已同步失败", default=False)
+
+    def link_sync_record_id(
+        self,
+        user_name: str,
+        subject_id: str,
+        episode_id: Optional[str],
+        source: str,
+        sync_record_id: int,
+    ) -> bool:
+        """按四元组软匹配，把最近一条 pending 行的 sync_record_id 回填为给定值。
+
+        场景：入队时（_retry_mark_episode 内部）sync_record_id 尚未产生，
+        主流程在随后 log_sync_record(status="queued") 拿到 id 后调用本方法回填关联。
+        部分唯一索引保证 (user, subject, ep, source) 至多一条 pending 行，更新安全。
+        """
+
+        def _write(conn):
+            sql = """
+                UPDATE pending_sync_queue
+                SET sync_record_id = ?
+                WHERE user_name = ? AND subject_id = ?
+                  AND COALESCE(episode_id, '') = COALESCE(?, '')
+                  AND source = ? AND status = 'pending'
+            """
+            cursor = conn.execute(
+                sql,
+                (
+                    int(sync_record_id),
+                    user_name,
+                    str(subject_id),
+                    episode_id or "",
+                    source,
+                ),
+            )
+            return cursor.rowcount > 0
+
+        return self._run_write(
+            _write, error_msg="回填 sync_record_id 失败", default=False
+        )
 
     def increment_attempts(
         self, record_id: int, error: str, user_name: Optional[str] = None
@@ -292,7 +338,7 @@ class PendingSyncQueueRepository(BaseRepository):
                 f"""
                 SELECT id, created_at, user_name, title, season, episode,
                        subject_id, episode_id, source, media_type, status,
-                       attempts, last_attempt_at, last_error
+                       attempts, last_attempt_at, last_error, sync_record_id
                 FROM pending_sync_queue
                 {where_clause}
                 ORDER BY id DESC
@@ -327,7 +373,7 @@ class PendingSyncQueueRepository(BaseRepository):
             sql = """
                 SELECT id, created_at, user_name, title, season, episode,
                        subject_id, episode_id, source, media_type, payload_json,
-                       status, attempts, last_attempt_at, last_error
+                       status, attempts, last_attempt_at, last_error, sync_record_id
                 FROM pending_sync_queue WHERE id = ?
             """
             params: list[Any] = [record_id]

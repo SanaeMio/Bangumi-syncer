@@ -395,3 +395,175 @@ class TestPendingSyncQueueList:
             assert pending_only["total"] == 4
         finally:
             dbm._connection._conn.close()
+
+
+class TestPendingSyncQueueSyncRecordId:
+    """sync_record_id 关联字段测试
+
+    阶段1.1：pending_sync_queue 增加 sync_record_id 列，用于补发回写 sync_records 状态。
+    """
+
+    def test_enqueue_writes_sync_record_id(self, tmp_path):
+        """enqueue 接受 sync_record_id 参数并写入"""
+        dbm = _make_db(tmp_path)
+        try:
+            row_id = dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+                sync_record_id=99,
+            )
+            assert row_id is not None
+
+            record = dbm.get_pending_sync_record_by_id(row_id)
+            assert record["sync_record_id"] == 99
+        finally:
+            dbm._connection._conn.close()
+
+    def test_enqueue_without_sync_record_id_defaults_null(self, tmp_path):
+        """不传 sync_record_id 时默认 NULL（旧数据兼容）"""
+        dbm = _make_db(tmp_path)
+        try:
+            row_id = dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+            )
+            record = dbm.get_pending_sync_record_by_id(row_id)
+            assert record["sync_record_id"] is None
+        finally:
+            dbm._connection._conn.close()
+
+    def test_upsert_refreshes_sync_record_id(self, tmp_path):
+        """同 key 重复入队时刷新 sync_record_id 为最新值"""
+        dbm = _make_db(tmp_path)
+        try:
+            id1 = dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+                sync_record_id=100,
+            )
+            # 同 key 再次入队，sync_record_id 不同
+            id2 = dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+                sync_record_id=200,
+            )
+            assert id1 == id2
+
+            record = dbm.get_pending_sync_record_by_id(id1)
+            # 应为最新值 200
+            assert record["sync_record_id"] == 200
+        finally:
+            dbm._connection._conn.close()
+
+    def test_link_sync_record_id_by_soft_key(self, tmp_path):
+        """link_pending_sync_to_record 按四元组软匹配回填"""
+        dbm = _make_db(tmp_path)
+        try:
+            # 入队时不带 sync_record_id（模拟真实场景：先入队后写 sync_records）
+            row_id = dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+            )
+            # 验证初始为 None
+            assert dbm.get_pending_sync_record_by_id(row_id)["sync_record_id"] is None
+
+            # 回填
+            ok = dbm.link_pending_sync_to_record(
+                user_name="user1",
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                sync_record_id=777,
+            )
+            assert ok is True
+
+            record = dbm.get_pending_sync_record_by_id(row_id)
+            assert record["sync_record_id"] == 777
+        finally:
+            dbm._connection._conn.close()
+
+    def test_link_returns_false_when_no_pending_row(self, tmp_path):
+        """无匹配 pending 行时返回 False（已 synced 或不存在）"""
+        dbm = _make_db(tmp_path)
+        try:
+            row_id = dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+            )
+            dbm.mark_pending_sync_synced(row_id)
+
+            # 已 synced，部分唯一索引不再覆盖，link 找不到 pending 行
+            ok = dbm.link_pending_sync_to_record(
+                user_name="user1",
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                sync_record_id=999,
+            )
+            assert ok is False
+        finally:
+            dbm._connection._conn.close()
+
+    def test_fetch_pending_returns_sync_record_id(self, tmp_path):
+        """fetch_pending 返回值包含 sync_record_id 字段"""
+        dbm = _make_db(tmp_path)
+        try:
+            dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+                sync_record_id=55,
+            )
+            records = dbm.fetch_pending_sync(limit=10)
+            assert len(records) == 1
+            assert records[0]["sync_record_id"] == 55
+        finally:
+            dbm._connection._conn.close()

@@ -102,6 +102,7 @@ def mock_sync_service():
         "message": "补发成功 mark_status=1",
         "should_mark_synced": True,
         "mark_status": 1,
+        "sync_record_id": 42,
     }
     with patch("app.services.sync_service.sync_service", svc):
         yield svc
@@ -210,6 +211,11 @@ class TestReplaySingleEndpoint:
         assert resp.status_code == 200
         # 成功时应调用 mark_synced
         mock_database.mark_pending_sync_synced.assert_called_once_with(1)
+        # 应回写 sync_records：queued → success
+        mock_database.update_sync_record_status.assert_called_once()
+        call_args = mock_database.update_sync_record_status.call_args
+        assert call_args.args[0] == 42  # sync_record_id
+        assert call_args.args[1] == "success"
 
     @pytest.mark.asyncio
     async def test_returns_404_when_not_found(
@@ -223,6 +229,29 @@ class TestReplaySingleEndpoint:
             resp = await client.post("/api/bangumi_replay/replay/999")
 
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_skip_status_writeback_when_sync_record_id_none(
+        self, app_with_auth, mock_scheduler, mock_database, mock_sync_service
+    ):
+        """旧数据 sync_record_id 为 None 时跳过回写（不报错）"""
+        mock_sync_service.replay_pending_item.return_value = {
+            "success": True,
+            "message": "补发成功 mark_status=1",
+            "should_mark_synced": True,
+            "mark_status": 1,
+            "sync_record_id": None,
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post("/api/bangumi_replay/replay/1")
+
+        assert resp.status_code == 200
+        mock_database.mark_pending_sync_synced.assert_called_once_with(1)
+        # sync_record_id 为 None，不应调用 update_sync_record_status
+        mock_database.update_sync_record_status.assert_not_called()
 
 
 class TestDeleteEndpoint:
