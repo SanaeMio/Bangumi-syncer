@@ -1778,21 +1778,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadConfig(showToast = true) {
     try {
-        const response = await fetch(appUrl('/api/config'), {
+        const data = await apiFetch('/api/config', {
             method: 'GET',
-            credentials: 'include',  // 包含Cookie认证信息
             headers: {
                 'Content-Type': 'application/json'
             }
         });
-
-        if (response.status === 401) {
-            // 认证失败，跳转到登录页面
-            window.location.href = appUrl('/login');
-            return;
-        }
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             currentConfig = data.data;
@@ -2182,16 +2173,13 @@ async function saveConfig() {
             configData.multi_accounts = multiAccounts;
         }
 
-        const response = await fetch(appUrl('/api/config'), {
+        const result = await apiFetch('/api/config', {
             method: 'POST',
-            credentials: 'include',  // 包含Cookie认证信息
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(configData)
         });
-
-        const result = await response.json();
 
         if (result.status === 'success') {
             showAlert('配置保存成功', 'success');
@@ -2201,9 +2189,9 @@ async function saveConfig() {
                 setTimeout(() => {
                     if (confirm('您已修改了登录密码，需要重新登录。是否现在跳转到登录页面？')) {
                         // 先登出，然后跳转到登录页面
-                        fetch(appUrl('/api/logout'), {
+                        apiFetch('/api/logout', {
                             method: 'POST',
-                            credentials: 'include'
+                            returnResponse: true
                         }).then(() => {
                             window.location.href = appUrl('/login');
                         });
@@ -2223,15 +2211,12 @@ async function saveConfig() {
 // 备份配置
 async function backupConfig() {
     try {
-        const response = await fetch(appUrl('/api/config/backup'), {
+        const data = await apiFetch('/api/config/backup', {
             method: 'POST',
-            credentials: 'include',  // 包含Cookie认证信息
             headers: {
                 'Content-Type': 'application/json',
             }
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             showAlert('配置备份成功，已保存到服务器', 'success');
@@ -2283,10 +2268,7 @@ async function showRestoreModal() {
 // 加载备份文件列表
 async function loadBackupFiles() {
     try {
-        const response = await fetch(appUrl('/api/config/backups'), {
-            credentials: 'include'
-        });
-        const data = await response.json();
+        const data = await apiFetch('/api/config/backups');
 
         const backupFilesList = document.getElementById('backup-files-list');
         backupFilesList.innerHTML = '';
@@ -2342,10 +2324,7 @@ async function selectBackupFile(filename) {
     event.target.closest('.list-group-item').classList.add('active');
 
     // 找到对应的backup对象
-    const response = await fetch(appUrl('/api/config/backups'), {
-        credentials: 'include'
-    });
-    const data = await response.json();
+    const data = await apiFetch('/api/config/backups');
     const backup = data.data.backups.find(b => b.filename === filename);
 
     selectedBackupFile = backup;
@@ -2353,10 +2332,7 @@ async function selectBackupFile(filename) {
 
     // 预览配置内容
     try {
-        const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
-            credentials: 'include'
-        });
-        const data = await response.json();
+        const data = await apiFetch(`/api/config/backup/${filename}`);
 
         if (data.status === 'success') {
             const preview = document.getElementById('config-preview');
@@ -2389,12 +2365,9 @@ async function deleteBackupFile(filename, event) {
     }
 
     try {
-        const response = await fetch(appUrl(`/api/config/backup/${filename}`), {
-            method: 'DELETE',
-            credentials: 'include'
+        const data = await apiFetch(`/api/config/backup/${filename}`, {
+            method: 'DELETE'
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             showAlert('备份文件删除成功', 'success');
@@ -2426,15 +2399,12 @@ async function confirmRestore() {
     }
 
     try {
-        const response = await fetch(appUrl(`/api/config/restore/${selectedBackupFile.filename}`), {
+        const data = await apiFetch(`/api/config/restore/${selectedBackupFile.filename}`, {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
             }
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             if (restoreConfigModal) {
@@ -2566,9 +2536,8 @@ function detectPortFromInput(event) {
             `;
 
             try {
-                const response = await fetch(appUrl('/api/proxy/test-host'), {
+                const data = await apiFetch('/api/proxy/test-host', {
                     method: 'POST',
-                    credentials: 'include',
                     headers: {
                         'Content-Type': 'application/json'
                     },
@@ -2578,8 +2547,6 @@ function detectPortFromInput(event) {
                         timeout: timeout
                     })
                 });
-
-                const data = await response.json();
 
                 if (data.status === 'success') {
                     displayHostTestResult(data.data, host, port);
@@ -2699,15 +2666,12 @@ async function loadProxySuggestions() {
 
     try {
         // 获取代理建议
-        const response = await fetch(appUrl(`/api/proxy/suggestions?port=${port}`), {
+        const data = await apiFetch(`/api/proxy/suggestions?port=${port}`, {
             method: 'GET',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             }
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             displayProxySuggestions(data.data);
@@ -2816,16 +2780,13 @@ async function testProxy(address, event) {
     button.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div>';
 
     try {
-        const response = await fetch(appUrl('/api/proxy/test'), {
+        const data = await apiFetch('/api/proxy/test', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ proxy_url: address })
         });
-
-        const data = await response.json();
 
         if (data.status === 'success' && data.data.success) {
             button.innerHTML = '<i class="bi bi-check-circle text-success"></i>';
@@ -2858,16 +2819,13 @@ async function confirmCleanup() {
     }
 
     try {
-        const response = await fetch(appUrl('/api/config/backups/cleanup'), {
+        const data = await apiFetch('/api/config/backups/cleanup', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(params)
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             showAlert(data.message, 'success');
@@ -2890,11 +2848,7 @@ async function confirmCleanup() {
 // 加载 Webhook 配置列表
 async function loadWebhookConfigs() {
     try {
-        const response = await fetch(appUrl('/api/notification/webhooks'), {
-            credentials: 'include'
-        });
-
-        const data = await response.json();
+        const data = await apiFetch('/api/notification/webhooks');
 
         if (data.status === 'success') {
             renderWebhookConfigs(data.data);
@@ -2992,11 +2946,7 @@ function showAddWebhookModal() {
 // 显示编辑 Webhook 模态框
 async function showEditWebhookModal(webhookId) {
     try {
-        const response = await fetch(appUrl('/api/notification/webhooks'), {
-            credentials: 'include'
-        });
-
-        const data = await response.json();
+        const data = await apiFetch('/api/notification/webhooks');
 
         if (data.status === 'success') {
             const webhook = data.data.find(w => w.id === webhookId);
@@ -3044,12 +2994,11 @@ async function saveWebhookConfig() {
     }
 
     try {
-        let response;
+        let data;
         if (webhookId) {
             // 更新
-            response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}`), {
+            data = await apiFetch(`/api/notification/webhooks/${webhookId}`, {
                 method: 'PUT',
-                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -3057,17 +3006,14 @@ async function saveWebhookConfig() {
             });
         } else {
             // 创建
-            response = await fetch(appUrl('/api/notification/webhooks'), {
+            data = await apiFetch('/api/notification/webhooks', {
                 method: 'POST',
-                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(webhookData)
             });
         }
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             showAlert(webhookId ? 'Webhook 配置更新成功' : 'Webhook 配置创建成功', 'success');
@@ -3088,16 +3034,13 @@ async function saveWebhookConfig() {
 // 切换 Webhook 启用状态
 async function toggleWebhookEnabled(webhookId, enabled) {
     try {
-        const response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}`), {
+        const data = await apiFetch(`/api/notification/webhooks/${webhookId}`, {
             method: 'PUT',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ enabled: enabled })
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             showAlert(enabled ? 'Webhook 已启用' : 'Webhook 已禁用', 'success');
@@ -3129,12 +3072,9 @@ async function deleteWebhookConfig() {
     const webhookId = document.getElementById('delete-webhook-id').value;
 
     try {
-        const response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}`), {
-            method: 'DELETE',
-            credentials: 'include'
+        const data = await apiFetch(`/api/notification/webhooks/${webhookId}`, {
+            method: 'DELETE'
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             showAlert('Webhook 配置删除成功', 'success');
@@ -3160,12 +3100,9 @@ async function testWebhook(webhookId) {
     button.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
 
     try {
-        const response = await fetch(appUrl(`/api/notification/webhooks/${webhookId}/test`), {
-            method: 'POST',
-            credentials: 'include'
+        const data = await apiFetch(`/api/notification/webhooks/${webhookId}/test`, {
+            method: 'POST'
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             const webhookResult = data.data.webhook.webhooks[0];
@@ -3193,15 +3130,12 @@ async function refreshWebhookKey() {
     }
 
     try {
-        const response = await fetch(appUrl('/api/config/auth/refresh-webhook-key'), {
+        const data = await apiFetch('/api/config/auth/refresh-webhook-key', {
             method: 'POST',
-            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             }
         });
-
-        const data = await response.json();
 
         if (data.status === 'success') {
             document.getElementById('webhook-key').value = data.data.webhook_key;
@@ -3250,8 +3184,7 @@ function copyWebhookKey() {
 
 async function loadLLMConfig() {
     try {
-        const r = await fetch(appUrl('/api/llm/conf'));
-        const d = await r.json();
+        const d = await apiFetch('/api/llm/conf');
         document.getElementById('llm-api-base').value = d.api_base || '';
         document.getElementById('llm-api-key').value = d.api_key || '';
         document.getElementById('llm-model').value = d.model || '';
@@ -3274,7 +3207,7 @@ async function saveLLMAndTest() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
     try {
         // 第一步：保存LLM配置
-        const saveR = await fetch(appUrl('/api/llm/conf'), {
+        const saveD = await apiFetch('/api/llm/conf', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3286,13 +3219,11 @@ async function saveLLMAndTest() {
                 timeout: parseInt(document.getElementById('llm-timeout').value) || 60
             })
         });
-        const saveD = await saveR.json();
         if (saveD.status !== 'success') throw new Error(saveD.message || '保存失败');
 
         // 第二步：测试连接
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
-        const testR = await fetch(appUrl('/api/llm/test'), { method: 'POST' });
-        const testD = await testR.json();
+        const testD = await apiFetch('/api/llm/test', { method: 'POST' });
         if (testD.success) {
             showAlert('保存成功，连接测试通过: ' + testD.message + ' (' + testD.latency_ms + 'ms)', 'success');
         } else {
@@ -3309,9 +3240,7 @@ async function saveLLMAndTest() {
 
 async function loadSummaryJobs() {
     try {
-        const r = await fetch(appUrl('/api/summary/jobs'));
-        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
-        const d = await r.json();
+        const d = await apiFetch('/api/summary/jobs');
         if (d.status === 'success') {
             renderSummaryJobs(d.data);
         }
@@ -3388,9 +3317,7 @@ function showSummaryJobModal() {
 
 async function editSummaryJob(name) {
     try {
-        const r = await fetch(appUrl('/api/summary/jobs'));
-        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
-        const d = await r.json();
+        const d = await apiFetch('/api/summary/jobs');
         var decoded = decodeURIComponent(name);
         const job = d.data.find(j => j.name === decoded);
         if (!job) { showAlert('任务未找到', 'danger'); return; }
@@ -3434,20 +3361,18 @@ async function saveSummaryJob() {
         return;
     }
     try {
-        var url, method;
+        var path, method;
         if (oldName) {
-            url = appUrl('/api/summary/jobs/' + encodeURIComponent(oldName));
+            path = '/api/summary/jobs/' + encodeURIComponent(oldName);
             method = 'PUT';
         } else {
-            url = appUrl('/api/summary/jobs');
+            path = '/api/summary/jobs';
             method = 'POST';
         }
-        var r = await fetch(url, {
+        var d = await apiFetch(path, {
             method: method, headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
         });
-        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
-        var d = await r.json();
         if (d.status === 'success') {
             bootstrap.Modal.getInstance(document.getElementById('summaryJobModal')).hide();
             showAlert(oldName ? '任务已更新' : '任务已创建', 'success');
@@ -3464,9 +3389,7 @@ function confirmDeleteSummaryJob(name) {
     const modal = new bootstrap.Modal(document.getElementById('deleteSummaryModal'));
     document.getElementById('delete-summary-confirm').onclick = async () => {
         try {
-            const r = await fetch(appUrl('/api/summary/jobs/' + encoded), { method: 'DELETE' });
-            if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
-            const d = await r.json();
+            const d = await apiFetch('/api/summary/jobs/' + encoded, { method: 'DELETE' });
             if (d.status === 'success') {
                 modal.hide();
                 showAlert('任务已删除', 'success');
@@ -3479,11 +3402,10 @@ function confirmDeleteSummaryJob(name) {
 
 async function toggleSummaryJob(name, enabled) {
     try {
-        const r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name)), {
+        await apiFetch('/api/summary/jobs/' + encodeURIComponent(name), {
             method: 'PUT', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({enabled})
         });
-        if (!r.ok) throw new Error('服务器错误 (' + r.status + ')');
         loadSummaryJobs();
     } catch(e) { showAlert('操作失败: ' + e.message, 'danger'); }
 }
@@ -3494,8 +3416,7 @@ async function testSummaryJob(name) {
     var btn = event && event.target ? event.target.closest('button') : null;
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...'; }
     try {
-        var r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name) + '/test'), { method: 'POST' });
-        var d = await r.json();
+        var d = await apiFetch('/api/summary/jobs/' + encodeURIComponent(name) + '/test', { method: 'POST' });
         if (d.success) {
             document.getElementById('summary-test-modal-job').textContent = name;
             document.getElementById('summary-test-modal-info').innerHTML =
@@ -3515,8 +3436,7 @@ async function triggerSummaryJob(name) {
     var btn = event && event.target ? event.target.closest('button') : null;
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>触发中...'; }
     try {
-        var r = await fetch(appUrl('/api/summary/jobs/' + encodeURIComponent(name) + '/trigger'), { method: 'POST' });
-        var d = await r.json();
+        var d = await apiFetch('/api/summary/jobs/' + encodeURIComponent(name) + '/trigger', { method: 'POST' });
         if (d.status === 'success') {
             showAlert('任务 "' + name + '" 已触发执行', 'success');
         } else {
@@ -3534,8 +3454,7 @@ async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
         if (!container) return;
         container.querySelectorAll('.summary-type-option').forEach(el => el.remove());
 
-        const r = await fetch(appUrl('/api/summary/jobs'));
-        const d = await r.json();
+        const d = await apiFetch('/api/summary/jobs');
         if (d.status !== 'success' || !d.data || d.data.length === 0) return;
 
         const selectedTypes = selectedTypesStr ? selectedTypesStr.split(',') : [];
@@ -4155,11 +4074,7 @@ async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
 // 加载邮件配置列表
 async function loadEmailConfigs() {
     try {
-        const response = await fetch(appUrl('/api/notification/emails'), {
-            credentials: 'include'
-        });
-
-        const data = await response.json();
+        const data = await apiFetch('/api/notification/emails');
 
         if (data.status === 'success') {
             renderEmailConfigs(data.data);
@@ -4269,11 +4184,7 @@ function showAddEmailModal() {
 // 显示编辑邮件配置模态框
 async function showEditEmailModal(emailId) {
     try {
-        const response = await fetch(appUrl('/api/notification/emails'), {
-            credentials: 'include'
-        });
-
-        const data = await response.json();
+        const data = await apiFetch('/api/notification/emails');
 
         if (data.status === 'success') {
             const email = data.data.find(e => e.id == emailId);
@@ -4347,24 +4258,21 @@ async function saveEmailConfig() {
     }
 
     try {
-        let response;
+        let data;
         if (emailId) {
-            response = await fetch(appUrl(`/api/notification/emails/${emailId}`), {
+            data = await apiFetch(`/api/notification/emails/${emailId}`, {
                 method: 'PUT',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(emailData)
             });
         } else {
-            response = await fetch(appUrl('/api/notification/emails'), {
+            data = await apiFetch('/api/notification/emails', {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(emailData)
             });
         }
 
-        const data = await response.json();
         if (data.status === 'success') {
             showAlert(emailId ? '邮件配置更新成功' : '邮件配置创建成功', 'success');
             const modal = bootstrap.Modal.getInstance(document.getElementById('emailModal'));
@@ -4382,14 +4290,12 @@ async function saveEmailConfig() {
 // 切换邮件配置启用状态
 async function toggleEmailEnabled(emailId, enabled) {
     try {
-        const response = await fetch(appUrl(`/api/notification/emails/${emailId}`), {
+        const data = await apiFetch(`/api/notification/emails/${emailId}`, {
             method: 'PUT',
-            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled: enabled })
         });
 
-        const data = await response.json();
         if (data.status === 'success') {
             showAlert(enabled ? '邮件配置已启用' : '邮件配置已禁用', 'success');
             await loadEmailConfigs();
@@ -4414,12 +4320,10 @@ async function deleteEmailConfig() {
     const emailId = document.getElementById('delete-email-id').value;
 
     try {
-        const response = await fetch(appUrl(`/api/notification/emails/${emailId}`), {
-            method: 'DELETE',
-            credentials: 'include'
+        const data = await apiFetch(`/api/notification/emails/${emailId}`, {
+            method: 'DELETE'
         });
 
-        const data = await response.json();
         if (data.status === 'success') {
             showAlert('邮件配置删除成功', 'success');
             const modal = bootstrap.Modal.getInstance(document.getElementById('deleteEmailModal'));
@@ -4442,12 +4346,10 @@ async function testEmail(emailId) {
     button.innerHTML = '<i class="bi bi-hourglass-split"></i> 测试中...';
 
     try {
-        const response = await fetch(appUrl(`/api/notification/emails/${emailId}/test`), {
-            method: 'POST',
-            credentials: 'include'
+        const data = await apiFetch(`/api/notification/emails/${emailId}/test`, {
+            method: 'POST'
         });
 
-        const data = await response.json();
         if (data.status === 'success') {
             const emailResult = data.data.email.emails[0];
             if (emailResult.success) {
