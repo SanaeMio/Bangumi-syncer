@@ -43,16 +43,14 @@ class TestHealth:
 class TestLogs:
     """测试日志端点"""
 
-    def test_logs_endpoint(self):
-        """测试日志端点"""
-        app = FastAPI()
-        app.include_router(logs.router)
+    def test_logs_endpoint(self, app_with_auth):
+        """测试日志端点（认证已覆盖，应返回 200）"""
+        app_with_auth.include_router(logs.router)
 
-        client = TestClient(app)
+        client = TestClient(app_with_auth)
 
         response = client.get("/api/logs")
-        # 可能返回多种状态
-        assert response.status_code in [200, 401, 404, 500]
+        assert response.status_code == 200
 
 
 class TestProxy:
