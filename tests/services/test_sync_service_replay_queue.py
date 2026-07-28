@@ -26,7 +26,7 @@ class TestRetryMarkEpisodeQueueing:
         """enabled=true + 抛 _PendingSyncQueued → 返回 MARK_QUEUED"""
         svc = SyncService()
         bgm = MagicMock()
-        bgm.username = "user1"
+        bgm.username = "bangumi_account_a"  # Bangumi 账号名，不应被入队使用
         bgm.mark_episode_watched.side_effect = _PendingSyncQueued(
             subject_id=123, ep_id=456, reason="api_unreachable"
         )
@@ -41,7 +41,12 @@ class TestRetryMarkEpisodeQueueing:
                 bgm,
                 "123",
                 "456",
-                queue_payload={"title": "测试", "season": 1, "episode": 1},
+                queue_payload={
+                    "title": "测试",
+                    "season": 1,
+                    "episode": 1,
+                    "user_name": "plex_user_b",  # 媒体库用户名
+                },
             )
 
         assert status == MARK_QUEUED
@@ -51,6 +56,9 @@ class TestRetryMarkEpisodeQueueing:
         assert call_kwargs.kwargs["subject_id"] == 123
         assert call_kwargs.kwargs["ep_id"] == 456
         assert call_kwargs.kwargs["reason"] == "api_unreachable"
+        # payload 必须原样透传（user_name 由 _enqueue_pending_sync 内部从 payload 读取，
+        # 不再依赖 bgm_api.username；具体校验见 TestEnqueuePendingSyncUserName）
+        assert call_kwargs.kwargs["payload"]["user_name"] == "plex_user_b"
 
     def test_raises_when_replay_disabled(self):
         """enabled=false + 抛 _PendingSyncQueued → 正常向上抛"""
@@ -185,3 +193,66 @@ class TestPendingSyncQueuedException:
         assert "42" in s
         assert "99" in s
         assert "http_503" in s
+
+
+class TestEnqueuePendingSyncUserName:
+    """_enqueue_pending_sync 必须用 payload 里的媒体库用户名，而不是 bgm_api.username"""
+
+    def test_uses_payload_user_name_not_bangumi_username(self):
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.username = "bangumi_account_a"  # Bangumi 账号名
+
+        payload = {
+            "title": "测试番剧",
+            "season": 2,
+            "episode": 5,
+            "user_name": "plex_user_b",  # 媒体库用户名
+            "source": "plex",
+            "media_type": "episode",
+        }
+
+        with patch("app.core.database.database_manager") as mock_db:
+            SyncService._enqueue_pending_sync(
+                bgm_api=bgm,
+                subject_id=123,
+                ep_id=456,
+                reason="api_unreachable",
+                last_error="timeout",
+                payload=payload,
+            )
+
+        mock_db.enqueue_pending_sync.assert_called_once()
+        call_kwargs = mock_db.enqueue_pending_sync.call_args.kwargs
+        assert call_kwargs["user_name"] == "plex_user_b"
+        assert call_kwargs["title"] == "测试番剧"
+        assert call_kwargs["season"] == 2
+        assert call_kwargs["episode"] == 5
+        assert call_kwargs["source"] == "plex"
+        assert call_kwargs["subject_id"] == "123"
+        assert call_kwargs["episode_id"] == "456"
+
+    def test_falls_back_to_empty_string_when_payload_missing_user_name(self):
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.username = "bangumi_account_a"
+
+        payload = {"title": "测试", "season": 1, "episode": 1}
+
+        with patch("app.core.database.database_manager") as mock_db:
+            SyncService._enqueue_pending_sync(
+                bgm_api=bgm,
+                subject_id=1,
+                ep_id=2,
+                reason="api_unreachable",
+                last_error="",
+                payload=payload,
+            )
+
+        call_kwargs = mock_db.enqueue_pending_sync.call_args.kwargs
+        # 缺失时回退为空串，而不是 bgm_api.username
+        assert call_kwargs["user_name"] == ""

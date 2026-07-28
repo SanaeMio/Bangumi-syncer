@@ -158,7 +158,10 @@ class RetryMixin:
         """把一条标记任务写入 pending_sync_queue 表"""
         from ...core.database import database_manager
 
-        user_name = getattr(bgm_api, "username", "") or ""
+        # user_name 必须用媒体库用户名（payload 里的），与 _get_bangumi_api_for_user
+        # 和 WebUI 用户过滤一致；bgm_api.username 是 Bangumi 账号名，多用户模式下
+        # 会与 [bangumi-*] 映射 key 不匹配，导致补发找不到配置、队列对用户不可见
+        user_name = str(payload.get("user_name", "") or "")
         title = str(payload.get("title", ""))
         season = int(payload.get("season", 1) or 1)
         episode = int(payload.get("episode", 0) or 0)
