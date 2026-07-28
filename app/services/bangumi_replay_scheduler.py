@@ -86,44 +86,20 @@ class BangumiReplayScheduler(BaseScheduler):
             from ..utils.bangumi_api import BangumiApi
 
             # 按 sync.mode 读取账号配置（与 sync_service._get_bangumi_config_for_user 一致）
-            # 注意：get_bangumi_configs() 只收集 bangumi-* 多账号段，不含 [bangumi] 单用户段，
-            # 单用户模式必须直接从 [bangumi] 段读取，否则 cfg 永远为空导致探测始终失败。
-            mode = config_manager.get("sync", "mode", fallback="single")
-            cfg: dict[str, Any] = {}
-            if mode == "single":
-                cfg = {
-                    "username": config_manager.get("bangumi", "username", fallback=""),
-                    "access_token": config_manager.get(
-                        "bangumi", "access_token", fallback=""
-                    ),
-                    "private": config_manager.get("bangumi", "private", fallback=False),
-                }
-            elif mode == "multi":
-                bangumi_configs = config_manager.get_bangumi_configs()
-                user_mappings = config_manager.get_user_mappings()
-                if user_mappings:
-                    first_section = next(iter(user_mappings.values()))
-                    cfg = bangumi_configs.get(first_section, {})
-
-            if not cfg.get("username") or not cfg.get("access_token"):
+            cfg = config_manager.get_active_bangumi_config()
+            if not cfg or not cfg.get("username") or not cfg.get("access_token"):
                 logger.debug("📚 无可用账号配置用于探测 API")
                 return False
 
-            dev_proxy = config_manager.get("dev", "script_proxy", fallback="")
-            dev_ssl = config_manager.get("dev", "ssl_verify", fallback=True)
-            dev_bgm_api_proxy = config_manager.get("dev", "bgm_api_proxy", fallback="")
-            dev_bgm_next_proxy = config_manager.get(
-                "dev", "bgm_next_proxy", fallback=""
-            )
-
+            dev_snapshot = config_manager.get_dev_http_snapshot()
             probe_api = BangumiApi(
                 username=cfg["username"],
                 access_token=cfg["access_token"],
                 private=cfg.get("private", False),
-                http_proxy=dev_proxy,
-                ssl_verify=dev_ssl,
-                bgm_api_proxy=dev_bgm_api_proxy,
-                bgm_next_proxy=dev_bgm_next_proxy,
+                http_proxy=dev_snapshot["script_proxy"],
+                ssl_verify=dev_snapshot["ssl_verify"],
+                bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
+                bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
             )
             # 清除不可达标记以强制探测
             probe_api.mark_api_reachable()

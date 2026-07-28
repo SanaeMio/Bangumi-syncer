@@ -124,7 +124,7 @@ async def test_delete_custom_mapping_exception(app_with_auth):
     """测试删除映射异常"""
     with patch("app.api.mappings.mapping_service") as mock_service:
         mock_service.get_all_mappings.return_value = {"test": "value"}
-        mock_service.update_mappings.side_effect = Exception("Error")
+        mock_service.delete_single_mapping.side_effect = Exception("Error")
 
         async with AsyncClient(
             transport=ASGITransport(app=app_with_auth), base_url="http://test"

@@ -336,6 +336,56 @@ class ConfigManager:
         raw = self.get("bangumi", "media_server_username", fallback="")
         return parse_media_server_username_value(str(raw) if raw is not None else "")
 
+    def get_active_bangumi_config(
+        self, user_name: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
+        """按 sync.mode 读取指定用户的 Bangumi 账号配置
+
+        single 模式：忽略 user_name，读 [bangumi] 段，返回 username/access_token/private
+        multi 模式：按 user_name 查 [bangumi-*] 段；user_name 为 None 时取首个用户映射
+        无可用配置返回 None
+        """
+        mode = self.get("sync", "mode", fallback="single")
+
+        if mode == "single":
+            return {
+                "username": self.get("bangumi", "username", fallback=""),
+                "access_token": self.get("bangumi", "access_token", fallback=""),
+                "private": self.get("bangumi", "private", fallback=False),
+            }
+
+        if mode == "multi":
+            user_mappings = self.get_user_mappings()
+            bangumi_configs = self.get_bangumi_configs()
+            if user_name is None:
+                # 无指定用户时取首个用户映射对应账号段（用于 API 探测等无用户上下文场景）
+                if not user_mappings:
+                    return None
+                target_section = next(iter(user_mappings.values()))
+            else:
+                target_section = user_mappings.get(user_name)
+                if not target_section or target_section not in bangumi_configs:
+                    logger.error(
+                        f"多用户模式下未找到用户 {user_name} 的bangumi配置映射"
+                    )
+                    return None
+            return bangumi_configs.get(target_section)
+
+        return None
+
+    def get_dev_http_snapshot(self) -> dict[str, Any]:
+        """读取 [dev] 段影响 HTTP 请求的 4 字段快照
+
+        返回 dict 含 script_proxy/ssl_verify/bgm_api_proxy/bgm_next_proxy，
+        默认值与原各处拼装保持一致（""/True/""/""）。
+        """
+        return {
+            "script_proxy": self.get("dev", "script_proxy", fallback=""),
+            "ssl_verify": self.get("dev", "ssl_verify", fallback=True),
+            "bgm_api_proxy": self.get("dev", "bgm_api_proxy", fallback=""),
+            "bgm_next_proxy": self.get("dev", "bgm_next_proxy", fallback=""),
+        }
+
     def _migrate_sync_single_username_to_bangumi(self, config: ConfigParser) -> None:
         """将 [sync] single_username 迁移到 [bangumi] media_server_username 后删除旧键。"""
         if not config.has_section("sync") or not config.has_option(

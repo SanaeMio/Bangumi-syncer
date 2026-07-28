@@ -139,6 +139,7 @@ class TestSyncServiceHelperMethods:
             cfg.get.side_effect = get_side_effect
             cfg.get_user_mappings.return_value = {"u1": "missing_section"}
             cfg.get_bangumi_configs.return_value = {}
+            cfg.get_active_bangumi_config.return_value = None
             from app.services.sync_service import SyncService
 
             svc = SyncService()

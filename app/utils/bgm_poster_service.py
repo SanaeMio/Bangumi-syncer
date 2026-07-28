@@ -27,11 +27,15 @@ def _dev_config(key: str, fallback: Any = "") -> Any:
     return config_manager.get("dev", key, fallback=fallback)
 
 
-def _bangumi_api_config_key() -> tuple[str, bool, str]:
+def _bangumi_api_config_key(
+    dev_snapshot: dict[str, Any] | None = None,
+) -> tuple[str, bool, str]:
+    if dev_snapshot is None:
+        dev_snapshot = config_manager.get_dev_http_snapshot()
     return (
-        str(_dev_config("script_proxy", "") or ""),
-        bool(_dev_config("ssl_verify", True)),
-        str(_dev_config("bgm_api_proxy", "") or ""),
+        str(dev_snapshot["script_proxy"] or ""),
+        bool(dev_snapshot["ssl_verify"]),
+        str(dev_snapshot["bgm_api_proxy"] or ""),
     )
 
 
@@ -44,7 +48,8 @@ def _poster_cache_namespace() -> str:
 
 def get_shared_bangumi_api() -> BangumiApi:
     """按 dev 代理配置复用 BangumiApi 实例，使 get_subject LRU 跨请求命中。"""
-    key = _bangumi_api_config_key()
+    dev_snapshot = config_manager.get_dev_http_snapshot()
+    key = _bangumi_api_config_key(dev_snapshot)
     api = _bgm_api_instances.get(key)
     if api is None:
         http_proxy, ssl_verify, bgm_api_proxy = key
