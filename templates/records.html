@@ -238,7 +238,7 @@ function displayRecords(records) {
             <td class="col-hide-sm col-hide-md">${escapeHtml(record.user_name)}</td>
             <td class="records-table-col-title" title="${displayTitle}">${displayTitle}</td>
             <td>S${record.season.toString().padStart(2, '0')}E${record.episode.toString().padStart(2, '0')}</td>
-            <td><span class="badge rounded-pill bg-${getSyncRecordStatusColor(record.status)}">${getSyncRecordStatusText(record.status)}</span></td>
+            <td><span class="badge rounded-pill bg-${getSyncRecordStatusColor(record.status)}">${getSyncRecordStatusText(record.status)}</span>${renderSyncSubStatusBadge(record)}</td>
             <td class="col-hide-sm col-hide-md">${methodBadge}</td>
             <td class="col-hide-sm col-hide-md"><small>${scoreText}</small></td>
             <td class="col-hide-sm"><span class="badge rounded-pill tl-source--${getSourceTlClass(record.source)}">${record.source}</span></td>

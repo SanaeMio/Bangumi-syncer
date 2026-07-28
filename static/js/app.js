@@ -645,7 +645,7 @@ function renderSyncResultContent(record, trace) {
             </div>
         `;
     } else if (!isSuccess) {
-        body += `<div class="record-detail-result-status">${renderSyncStatusBadge(record.status)}</div>`;
+        body += `<div class="record-detail-result-status">${renderSyncStatusBadge(record.status)}${renderSyncSubStatusBadge(record)}</div>`;
     }
 
     if (!body) {
@@ -878,7 +878,7 @@ function renderMatchTraceDetail(record, trace, options) {
             { label: '媒体类型', value: mediaTypeLabel(record.media_type) },
             { label: '时间', value: escapeHtml(val(record.timestamp)) },
             { label: '用户', value: escapeHtml(val(record.user_name)) },
-            { label: '状态', value: renderSyncStatusBadge(record.status) },
+            { label: '状态', value: renderSyncStatusBadge(record.status) + renderSyncSubStatusBadge(record) },
             { label: '消息', value: escapeHtml(val(record.message)) },
             { label: '最终匹配方式', value: renderMatchMethodBadge(record.match_method || (trace && trace.final_match_method) || '') },
             { label: '最终置信度', value: scoreText((trace && trace.final_score !== null && trace.final_score !== undefined) ? trace.final_score : record.match_score) },
