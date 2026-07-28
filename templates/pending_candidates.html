@@ -303,6 +303,27 @@ async function showCandidateDetail(candidateId) {
             `;
         }
 
+        // 手动指定 Bangumi 条目 ID（方案A）：候选都不对或无候选时，用户直接输入 ID
+        if (record.status === 'pending') {
+            html += `
+                <div class="card mt-3">
+                    <div class="card-header py-2">
+                        <strong><i class="bi bi-pencil-square me-1"></i>手动指定 Bangumi 条目 ID</strong>
+                    </div>
+                    <div class="card-body">
+                        <small class="text-muted d-block mb-2">候选列表中没有合适的条目时，可在此直接输入 Bangumi 条目 ID（数字），确认后会写入自定义映射。可访问 <a href="https://bgm.tv/" target="_blank">bgm.tv</a> 搜索条目，URL 形如 <code>bgm.tv/subject/12345</code> 中的数字即 ID。</small>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">subject/</span>
+                            <input type="number" id="manual-subject-id-${record.id}" class="form-control" placeholder="例如 12" min="1" step="1">
+                            <button type="button" class="btn btn-success" onclick="confirmCandidateWithManualId(${record.id})">
+                                <i class="bi bi-check-lg me-1"></i>用手动 ID 确认
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         content.innerHTML = html;
         showModal('candidateDetailModal');
 
@@ -333,6 +354,18 @@ async function confirmCandidate(candidateId, subjectId) {
         console.error('确认失败:', error);
         showAlert('确认失败', 'danger');
     }
+}
+
+async function confirmCandidateWithManualId(candidateId) {
+    const input = document.getElementById(`manual-subject-id-${candidateId}`);
+    if (!input) return;
+    const subjectId = (input.value || '').trim();
+    if (!/^\d+$/.test(subjectId)) {
+        showAlert('请输入有效的 Bangumi 条目 ID（纯数字）', 'warning');
+        input.focus();
+        return;
+    }
+    await confirmCandidate(candidateId, subjectId);
 }
 
 async function rejectCandidate(candidateId) {
