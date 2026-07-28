@@ -323,39 +323,59 @@ class DatabaseManager:
         )
 
     def fetch_pending_sync(
-        self, limit: int = 20, max_attempts: Optional[int] = None
+        self,
+        limit: int = 20,
+        max_attempts: Optional[int] = None,
+        user_name: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """拉取一批 pending 待同步任务（先入先补发）"""
-        return self._pending_sync.fetch_pending(limit=limit, max_attempts=max_attempts)
+        return self._pending_sync.fetch_pending(
+            limit=limit, max_attempts=max_attempts, user_name=user_name
+        )
 
-    def mark_pending_sync_synced(self, record_id: int) -> bool:
+    def mark_pending_sync_synced(
+        self, record_id: int, user_name: Optional[str] = None
+    ) -> bool:
         """标记待同步任务为已同步"""
-        return self._pending_sync.mark_synced(record_id)
+        return self._pending_sync.mark_synced(record_id, user_name=user_name)
 
-    def increment_pending_sync_attempts(self, record_id: int, error: str) -> bool:
+    def increment_pending_sync_attempts(
+        self, record_id: int, error: str, user_name: Optional[str] = None
+    ) -> bool:
         """累加待同步任务重试次数并记录错误"""
-        return self._pending_sync.increment_attempts(record_id, error)
+        return self._pending_sync.increment_attempts(
+            record_id, error, user_name=user_name
+        )
 
-    def mark_pending_sync_abandoned(self, record_id: int, reason: str = "") -> bool:
+    def mark_pending_sync_abandoned(
+        self, record_id: int, reason: str = "", user_name: Optional[str] = None
+    ) -> bool:
         """标记待同步任务为放弃"""
-        return self._pending_sync.mark_abandoned(record_id, reason)
+        return self._pending_sync.mark_abandoned(record_id, reason, user_name=user_name)
 
-    def delete_pending_sync_record(self, record_id: int) -> bool:
+    def delete_pending_sync_record(
+        self, record_id: int, user_name: Optional[str] = None
+    ) -> bool:
         """删除一条待同步任务"""
-        return self._pending_sync.delete_record(record_id)
+        return self._pending_sync.delete_record(record_id, user_name=user_name)
 
     def get_pending_sync_queue(
         self,
         limit: int = 50,
         offset: int = 0,
         status: Optional[str] = None,
+        user_name: Optional[str] = None,
     ) -> dict[str, Any]:
         """获取待同步队列列表"""
-        return self._pending_sync.get_queue(limit=limit, offset=offset, status=status)
+        return self._pending_sync.get_queue(
+            limit=limit, offset=offset, status=status, user_name=user_name
+        )
 
-    def get_pending_sync_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
+    def get_pending_sync_record_by_id(
+        self, record_id: int, user_name: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
         """获取单条待同步任务详情"""
-        return self._pending_sync.get_record_by_id(record_id)
+        return self._pending_sync.get_record_by_id(record_id, user_name=user_name)
 
     def count_pending_sync(self) -> int:
         """当前 pending 任务总数"""
@@ -364,6 +384,17 @@ class DatabaseManager:
     def get_pending_sync_stats(self) -> dict[str, int]:
         """返回各状态计数"""
         return self._pending_sync.get_stats()
+
+    def cleanup_pending_sync_queue(
+        self,
+        retention_days: int = 30,
+        statuses: Optional[list[str]] = None,
+    ) -> int:
+        """清理超过保留天数的 synced/abandoned 待同步队列历史记录，返回删除行数。
+
+        绝不删除 pending 状态的记录。
+        """
+        return self._pending_sync.cleanup_old_records(retention_days, statuses)
 
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""

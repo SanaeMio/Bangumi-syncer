@@ -89,6 +89,9 @@ async def lifespan(app: FastAPI):
             config_manager.get_config("dev", "sync_records_retention_days", 0)
         )
         database_manager.cleanup_old_records(retention_days)
+        # 复用同一保留期清理待同步队列的 synced/abandoned 历史记录
+        # （pending 是待处理任务，永不清理）
+        database_manager.cleanup_pending_sync_queue(retention_days)
     except Exception as e:
         logger.warning(f"启动时清理旧同步记录失败（不影响主流程）: {e}")
 

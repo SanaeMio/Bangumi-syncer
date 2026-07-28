@@ -22,11 +22,25 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from ..core.config import config_manager
 from ..core.database import database_manager
 from ..core.logging import logger
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/bangumi_replay", tags=["bangumi-replay"])
+
+
+def _resolve_user_filter(current_user: dict) -> Optional[str]:
+    """多用户模式返回当前用户名（强制隔离），单用户模式返回 None（管理员可见全部）"""
+    mode = config_manager.get("sync", "mode", fallback="single")
+    if mode == "multi":
+        return current_user.get("username")
+    return None
+
+
+def _filter_kwargs(user_name: Optional[str]) -> dict[str, Any]:
+    """构造 user_name 过滤参数：None 时不传（保持向后兼容），非 None 时传 user_name"""
+    return {"user_name": user_name} if user_name is not None else {}
 
 
 class ReplayStatusResponse(BaseModel):
@@ -75,8 +89,9 @@ async def get_queue(
     """获取待同步队列列表（分页）"""
     try:
         offset = (page - 1) * limit
+        user_name = _resolve_user_filter(current_user)
         result = database_manager.get_pending_sync_queue(
-            limit=limit, offset=offset, status=status
+            limit=limit, offset=offset, status=status, **_filter_kwargs(user_name)
         )
         return QueueListResponse(status="success", data=result)
     except Exception as e:
@@ -91,7 +106,10 @@ async def get_queue_item(
 ) -> QueueListResponse:
     """获取单条待同步任务详情（含 payload_json）"""
     try:
-        record = database_manager.get_pending_sync_record_by_id(record_id)
+        user_name = _resolve_user_filter(current_user)
+        record = database_manager.get_pending_sync_record_by_id(
+            record_id, **_filter_kwargs(user_name)
+        )
         if not record:
             raise HTTPException(status_code=404, detail="记录不存在")
         return QueueListResponse(status="success", data={"record": record})
@@ -111,7 +129,10 @@ async def replay_batch(
     try:
         from ..services.sync_service import sync_service
 
-        stats = await asyncio.to_thread(sync_service.replay_pending_batch, limit)
+        user_name = _resolve_user_filter(current_user)
+        stats = await asyncio.to_thread(
+            sync_service.replay_pending_batch, limit, **_filter_kwargs(user_name)
+        )
         return ReplayBatchResponse(status="success", data=stats)
     except Exception as e:
         logger.error(f"手动批量补发失败: {e}")
@@ -127,18 +148,23 @@ async def replay_single(
     try:
         from ..services.sync_service import sync_service
 
-        record = database_manager.get_pending_sync_record_by_id(record_id)
+        user_name = _resolve_user_filter(current_user)
+        record = database_manager.get_pending_sync_record_by_id(
+            record_id, **_filter_kwargs(user_name)
+        )
         if not record:
             raise HTTPException(status_code=404, detail="记录不存在")
 
         result = await asyncio.to_thread(sync_service.replay_pending_item, record)
         if result.get("should_mark_synced") and result["success"]:
-            database_manager.mark_pending_sync_synced(record_id)
+            database_manager.mark_pending_sync_synced(
+                record_id, **_filter_kwargs(user_name)
+            )
         elif not result["success"]:
             msg = (result.get("message") or "").lower()
             if "不可达" not in msg and "unreachable" not in msg:
                 database_manager.increment_pending_sync_attempts(
-                    record_id, result.get("message", "")
+                    record_id, result.get("message", ""), **_filter_kwargs(user_name)
                 )
 
         return ReplayBatchResponse(status="success", data=result)
@@ -156,7 +182,10 @@ async def delete_queue_item(
 ) -> dict[str, str]:
     """删除单条待同步任务（用户手动清理）"""
     try:
-        if not database_manager.delete_pending_sync_record(record_id):
+        user_name = _resolve_user_filter(current_user)
+        if not database_manager.delete_pending_sync_record(
+            record_id, **_filter_kwargs(user_name)
+        ):
             raise HTTPException(status_code=404, detail="记录不存在")
         return {"status": "success", "message": "已删除"}
     except HTTPException:

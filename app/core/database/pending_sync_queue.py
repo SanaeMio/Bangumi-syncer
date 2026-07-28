@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 from typing import Any, Optional
 
+from ..logging import logger
 from .base_repository import BaseRepository
 
 
@@ -107,9 +108,15 @@ class PendingSyncQueueRepository(BaseRepository):
         return self._run_write(_write, error_msg="入队待同步任务失败", default=None)
 
     def fetch_pending(
-        self, limit: int = 20, max_attempts: Optional[int] = None
+        self,
+        limit: int = 20,
+        max_attempts: Optional[int] = None,
+        user_name: Optional[str] = None,
     ) -> list[dict[str, Any]]:
-        """拉取一批 pending 任务（按 created_at 升序，先入先补发）"""
+        """拉取一批 pending 任务（按 created_at 升序，先入先补发）
+
+        user_name 非 None 时按用户过滤（多用户隔离）。
+        """
 
         def _read(conn):
             sql = """
@@ -123,6 +130,9 @@ class PendingSyncQueueRepository(BaseRepository):
             if max_attempts is not None:
                 sql += " AND attempts < ?"
                 params.append(int(max_attempts))
+            if user_name is not None:
+                sql += " AND user_name = ?"
+                params.append(user_name)
             sql += " ORDER BY created_at ASC LIMIT ?"
             params.append(int(limit))
             cursor = conn.execute(sql, params)
@@ -131,60 +141,92 @@ class PendingSyncQueueRepository(BaseRepository):
 
         return self._run_read(_read, error_msg="拉取待同步任务失败", default=[])
 
-    def mark_synced(self, record_id: int) -> bool:
-        """标记为已同步"""
+    def mark_synced(self, record_id: int, user_name: Optional[str] = None) -> bool:
+        """标记为已同步
+
+        user_name 非 None 时校验归属，不匹配不更新（返回 False）。
+        """
 
         def _write(conn):
             local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor = conn.execute(
-                "UPDATE pending_sync_queue SET status = 'synced', last_attempt_at = ? WHERE id = ?",
-                (local_time, record_id),
+            sql = (
+                "UPDATE pending_sync_queue "
+                "SET status = 'synced', last_attempt_at = ? WHERE id = ?"
             )
+            params: list[Any] = [local_time, record_id]
+            if user_name is not None:
+                sql += " AND user_name = ?"
+                params.append(user_name)
+            cursor = conn.execute(sql, params)
             return cursor.rowcount > 0
 
         return self._run_write(_write, error_msg="标记已同步失败", default=False)
 
-    def increment_attempts(self, record_id: int, error: str) -> bool:
-        """重试失败时累加 attempts 并记录错误"""
+    def increment_attempts(
+        self, record_id: int, error: str, user_name: Optional[str] = None
+    ) -> bool:
+        """重试失败时累加 attempts 并记录错误
+
+        user_name 非 None 时校验归属，不匹配不更新（返回 False）。
+        """
 
         def _write(conn):
             local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor = conn.execute(
-                """
+            sql = """
                 UPDATE pending_sync_queue
                 SET attempts = attempts + 1, last_attempt_at = ?, last_error = ?
                 WHERE id = ?
-                """,
-                (local_time, error, record_id),
-            )
+            """
+            params: list[Any] = [local_time, error, record_id]
+            if user_name is not None:
+                sql += " AND user_name = ?"
+                params.append(user_name)
+            cursor = conn.execute(sql, params)
             return cursor.rowcount > 0
 
         return self._run_write(_write, error_msg="累加重试次数失败", default=False)
 
-    def mark_abandoned(self, record_id: int, reason: str = "") -> bool:
-        """标记为放弃（重试次数耗尽等）"""
+    def mark_abandoned(
+        self, record_id: int, reason: str = "", user_name: Optional[str] = None
+    ) -> bool:
+        """标记为放弃（重试次数耗尽等）
+
+        user_name 非 None 时校验归属，不匹配不更新（返回 False）。
+        """
 
         def _write(conn):
             local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor = conn.execute(
-                """
+            sql = """
                 UPDATE pending_sync_queue
                 SET status = 'abandoned', last_attempt_at = ?, last_error = ?
                 WHERE id = ?
-                """,
-                (local_time, reason or "exceeded max attempts", record_id),
-            )
+            """
+            params: list[Any] = [
+                local_time,
+                reason or "exceeded max attempts",
+                record_id,
+            ]
+            if user_name is not None:
+                sql += " AND user_name = ?"
+                params.append(user_name)
+            cursor = conn.execute(sql, params)
             return cursor.rowcount > 0
 
         return self._run_write(_write, error_msg="标记放弃失败", default=False)
 
-    def delete_record(self, record_id: int) -> bool:
-        """删除一条记录（用户手动清理）"""
+    def delete_record(self, record_id: int, user_name: Optional[str] = None) -> bool:
+        """删除一条记录（用户手动清理）
+
+        user_name 非 None 时校验归属，不匹配不删除（返回 False）。
+        """
 
         def _write(conn):
-            cursor = conn.execute(
-                "DELETE FROM pending_sync_queue WHERE id = ?", (record_id,)
-            )
+            sql = "DELETE FROM pending_sync_queue WHERE id = ?"
+            params: list[Any] = [record_id]
+            if user_name is not None:
+                sql += " AND user_name = ?"
+                params.append(user_name)
+            cursor = conn.execute(sql, params)
             return cursor.rowcount > 0
 
         return self._run_write(_write, error_msg="删除待同步任务失败", default=False)
@@ -194,8 +236,12 @@ class PendingSyncQueueRepository(BaseRepository):
         limit: int = 50,
         offset: int = 0,
         status: Optional[str] = None,
+        user_name: Optional[str] = None,
     ) -> dict[str, Any]:
-        """获取待同步队列列表，返回 {records, total, limit, offset}"""
+        """获取待同步队列列表，返回 {records, total, limit, offset}
+
+        user_name 非 None 时按用户过滤（多用户隔离）。
+        """
 
         def _read(conn):
             where_conditions = []
@@ -203,6 +249,9 @@ class PendingSyncQueueRepository(BaseRepository):
             if status:
                 where_conditions.append("status = ?")
                 params.append(status)
+            if user_name is not None:
+                where_conditions.append("user_name = ?")
+                params.append(user_name)
             where_clause = (
                 f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
             )
@@ -240,19 +289,26 @@ class PendingSyncQueueRepository(BaseRepository):
             default={"records": [], "total": 0, "limit": limit, "offset": offset},
         )
 
-    def get_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
-        """获取单条记录详情（含 payload_json）"""
+    def get_record_by_id(
+        self, record_id: int, user_name: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
+        """获取单条记录详情（含 payload_json）
+
+        user_name 非 None 时校验归属，不匹配返回 None。
+        """
 
         def _read(conn):
-            cursor = conn.execute(
-                """
+            sql = """
                 SELECT id, created_at, user_name, title, season, episode,
                        subject_id, episode_id, source, media_type, payload_json,
                        status, attempts, last_attempt_at, last_error
                 FROM pending_sync_queue WHERE id = ?
-                """,
-                (record_id,),
-            )
+            """
+            params: list[Any] = [record_id]
+            if user_name is not None:
+                sql += " AND user_name = ?"
+                params.append(user_name)
+            cursor = conn.execute(sql, params)
             row = cursor.fetchone()
             if not row:
                 return None
@@ -293,3 +349,51 @@ class PendingSyncQueueRepository(BaseRepository):
             error_msg="统计队列状态失败",
             default={"pending": 0, "synced": 0, "abandoned": 0},
         )
+
+    def cleanup_old_records(
+        self,
+        retention_days: int = 30,
+        statuses: Optional[list[str]] = None,
+    ) -> int:
+        """清理超过保留天数的 synced/abandoned 历史记录，返回删除行数。
+
+        绝不删除 pending 状态的记录（那是待处理任务）。
+
+        Args:
+            retention_days: 保留天数；<=0 时不清理（永不清理语义）。
+            statuses: 待清理的状态集合，默认 ['synced', 'abandoned']。
+                      传入空列表等异常值时回退到默认。
+        """
+        if retention_days <= 0:
+            return 0
+
+        # 严格限制可清理状态：永不包含 pending
+        allowed = {"synced", "abandoned"}
+        if not statuses:
+            statuses = ["synced", "abandoned"]
+        targets = [s for s in statuses if s in allowed]
+        if not targets:
+            return 0
+
+        placeholders = ",".join("?" for _ in targets)
+
+        def _write(conn):
+            cursor = conn.execute(
+                f"DELETE FROM pending_sync_queue "
+                f"WHERE status IN ({placeholders}) "
+                f"AND created_at < datetime('now', ?)",
+                (*targets, f"-{retention_days} days"),
+            )
+            return cursor.rowcount
+
+        try:
+            deleted = self._run_write(_write, error_msg="清理待同步队列历史记录失败")
+            if deleted > 0:
+                logger.info(
+                    f"已清理 {deleted} 条超过 {retention_days} 天的待同步队列历史记录"
+                    f"（状态: {','.join(targets)}）"
+                )
+            return deleted
+        except Exception as e:
+            logger.warning(f"清理待同步队列历史记录失败（不影响主流程）: {e}")
+            return 0
