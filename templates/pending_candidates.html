@@ -237,7 +237,12 @@ async function showCandidateDetail(candidateId) {
         }
 
         const record = data.data.record;
-        const candidates = data.data.candidates || [];
+        const candidates = (data.data.candidates || []).slice().sort((a, b) => {
+            // 按 score 降序排序，无 score 的排在最后
+            const sa = typeof a.score === 'number' ? a.score : -1;
+            const sb = typeof b.score === 'number' ? b.score : -1;
+            return sb - sa;
+        });
         const content = document.getElementById('candidate-detail-content');
 
         let html = '';
