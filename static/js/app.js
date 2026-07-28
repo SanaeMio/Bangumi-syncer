@@ -791,7 +791,7 @@ function updateRecordDetailModalChrome(record) {
     }
 
     if (retryBtn) {
-        const showRetry = record.status === 'error';
+        const showRetry = record.status !== 'success';
         retryBtn.classList.toggle('d-none', !showRetry);
         retryBtn.onclick = function() {
             retrySync(record.id);
@@ -799,8 +799,9 @@ function updateRecordDetailModalChrome(record) {
     }
 
     if (helpLink) {
-        helpLink.classList.toggle('d-none', record.status !== 'error');
-        helpLink.classList.toggle('d-inline-flex', record.status === 'error');
+        const showHelp = record.status !== 'success';
+        helpLink.classList.toggle('d-none', !showHelp);
+        helpLink.classList.toggle('d-inline-flex', showHelp);
     }
 }
 

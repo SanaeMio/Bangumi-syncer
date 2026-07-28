@@ -283,6 +283,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """更新同步记录的状态"""
         return database_manager.update_sync_record_status(record_id, status, message)
 
+    def mark_pending_sync_synced_by_sync_record_id(self, sync_record_id: int) -> int:
+        """按 sync_record_id 清理 pending_sync_queue 中的 pending 行。
+
+        用于手动重试 queued 同步记录成功后，避免补发调度器重复捞起导致重复标记。
+        """
+        return database_manager.mark_pending_sync_synced_by_sync_record_id(
+            sync_record_id
+        )
+
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""
         return database_manager.get_sync_stats()

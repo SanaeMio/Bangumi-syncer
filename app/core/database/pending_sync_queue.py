@@ -169,6 +169,28 @@ class PendingSyncQueueRepository(BaseRepository):
 
         return self._run_write(_write, error_msg="标记已同步失败", default=False)
 
+    def mark_synced_by_sync_record_id(self, sync_record_id: int) -> int:
+        """按 sync_record_id 反查 pending 行并标记为 synced，返回受影响行数。
+
+        场景：手动重试一条 queued 的 sync_record 成功后，需要清理背后等待补发的
+        pending_sync_queue 行，避免补发调度器重复捞起导致重复标记。
+        仅清理 status='pending' 的行，已 synced/abandoned 的不受影响。
+        """
+
+        def _write(conn):
+            local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor = conn.execute(
+                "UPDATE pending_sync_queue "
+                "SET status = 'synced', last_attempt_at = ? "
+                "WHERE sync_record_id = ? AND status = 'pending'",
+                (local_time, int(sync_record_id)),
+            )
+            return cursor.rowcount
+
+        return self._run_write(
+            _write, error_msg="按 sync_record_id 清理 pending 行失败", default=0
+        )
+
     def link_sync_record_id(
         self,
         user_name: str,

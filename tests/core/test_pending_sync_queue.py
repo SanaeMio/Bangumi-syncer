@@ -567,3 +567,106 @@ class TestPendingSyncQueueSyncRecordId:
             assert records[0]["sync_record_id"] == 55
         finally:
             dbm._connection._conn.close()
+
+
+class TestPendingSyncQueueMarkSyncedBySyncRecordId:
+    """mark_synced_by_sync_record_id 测试
+
+    阶段1.2：手动重试 queued 同步记录成功后，按 sync_record_id 清理
+    pending_sync_queue 中的 pending 行，避免补发调度器重复捞起。
+    """
+
+    def test_marks_single_pending_row(self, tmp_path):
+        """按 sync_record_id 清理对应的 pending 行"""
+        dbm = _make_db(tmp_path)
+        try:
+            dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+                sync_record_id=42,
+            )
+            assert dbm.count_pending_sync() == 1
+
+            affected = dbm.mark_pending_sync_synced_by_sync_record_id(42)
+            assert affected == 1
+            assert dbm.count_pending_sync() == 0
+
+            stats = dbm.get_pending_sync_stats()
+            assert stats["synced"] == 1
+        finally:
+            dbm._connection._conn.close()
+
+    def test_returns_zero_when_no_match(self, tmp_path):
+        """无匹配 sync_record_id 时返回 0（不报错）"""
+        dbm = _make_db(tmp_path)
+        try:
+            affected = dbm.mark_pending_sync_synced_by_sync_record_id(999)
+            assert affected == 0
+        finally:
+            dbm._connection._conn.close()
+
+    def test_does_not_touch_synced_rows(self, tmp_path):
+        """已 synced 的行不受影响（仅清理 pending）"""
+        dbm = _make_db(tmp_path)
+        try:
+            row_id = dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="测试番剧",
+                season=1,
+                episode=1,
+                subject_id="123",
+                episode_id="456",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload(),
+                sync_record_id=42,
+            )
+            dbm.mark_pending_sync_synced(row_id)
+
+            # 已 synced，再次按 sync_record_id 清理应返回 0
+            affected = dbm.mark_pending_sync_synced_by_sync_record_id(42)
+            assert affected == 0
+        finally:
+            dbm._connection._conn.close()
+
+    def test_does_not_touch_other_sync_record_ids(self, tmp_path):
+        """只清理目标 sync_record_id，不影响其他行"""
+        dbm = _make_db(tmp_path)
+        try:
+            dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="番剧A",
+                season=1,
+                episode=1,
+                subject_id="111",
+                episode_id="e1",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload("番剧A"),
+                sync_record_id=42,
+            )
+            dbm.enqueue_pending_sync(
+                user_name="user1",
+                title="番剧B",
+                season=1,
+                episode=1,
+                subject_id="222",
+                episode_id="e2",
+                source="plex",
+                media_type="episode",
+                payload=_make_payload("番剧B"),
+                sync_record_id=43,
+            )
+
+            affected = dbm.mark_pending_sync_synced_by_sync_record_id(42)
+            assert affected == 1
+            assert dbm.count_pending_sync() == 1
+        finally:
+            dbm._connection._conn.close()

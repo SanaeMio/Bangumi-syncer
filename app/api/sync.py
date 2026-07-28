@@ -512,9 +512,9 @@ async def retry_sync_record(
         if not record:
             raise HTTPException(status_code=404, detail="记录不存在")
 
-        # 只允许重试失败的记录
-        if record.get("status") != "error":
-            raise HTTPException(status_code=400, detail="只能重试失败的记录")
+        # 除 success 外均允许重试（error/queued/ignored/retried 都可重试）
+        if record.get("status") == "success":
+            raise HTTPException(status_code=400, detail="成功的记录无需重试")
 
         # 获取原始来源并添加重试标记
         original_source = record.get("source", "custom")
@@ -533,20 +533,8 @@ async def retry_sync_record(
         with sync_log_context(new_retry_sync_run_id(record_id)):
             result = sync_service.sync_custom_item(retry_item, source=retry_source)
 
-        # 如果重试成功，更新原记录的状态
-        if result.status == "success":
-            sync_service.update_sync_record_status(
-                record_id=record_id,
-                status="retried",  # 标记为已重试
-                message=f"已重试成功: {result.message}",
-            )
-        elif result.status == "ignored":
-            sync_service.update_sync_record_status(
-                record_id=record_id,
-                status="retried",
-                message=f"重试被忽略: {result.message}",
-            )
-        # 如果重试仍然失败，保持原状态不变
+        # 重试结果回写原记录；queued 重试有结果时清理 pending_sync_queue
+        _finalize_retry(record_id, record.get("status", ""), result)
 
         return {"status": "success", "message": "重试完成", "data": result.model_dump()}
 
@@ -680,6 +668,50 @@ def _build_retry_item(record: dict, retry_source: str) -> CustomItem:
     )
 
 
+def _cleanup_pending_for_queued_retry(record_id: int, original_status: str) -> None:
+    """重试有结果后清理 pending_sync_queue 中对应的 pending 行。
+
+    原 queued 记录背后通常有一条 pending_sync_queue 行等待补发，
+    手动重试拿到结果（success/ignored）后必须清理，否则补发调度器
+    仍会捞起该行重放，导致重复标记或与手动重试结果冲突。
+    非 queued 状态原记录无关联 pending 行，直接跳过。
+    """
+    if original_status != "queued":
+        return
+    try:
+        affected = sync_service.mark_pending_sync_synced_by_sync_record_id(record_id)
+        if affected > 0:
+            logger.info(
+                f"重试 queued 记录 {record_id} 已清理 {affected} 条 pending_sync_queue 行"
+            )
+    except Exception as e:
+        logger.warning(
+            f"清理 pending_sync_queue (sync_record_id={record_id}) 失败: {e}"
+        )
+
+
+def _finalize_retry(record_id: int, original_status: str, result) -> None:
+    """重试完成后回写原 sync_records 状态，并按需清理 pending_sync_queue。
+
+    - success/ignored：原记录改写为 retried；若原状态为 queued，清理 pending 行
+    - error：保持原状态不变（仍可再次重试）
+    """
+    if result.status == "success":
+        sync_service.update_sync_record_status(
+            record_id=record_id,
+            status="retried",
+            message=f"已重试成功: {result.message}",
+        )
+        _cleanup_pending_for_queued_retry(record_id, original_status)
+    elif result.status == "ignored":
+        sync_service.update_sync_record_status(
+            record_id=record_id,
+            status="retried",
+            message=f"重试被忽略: {result.message}",
+        )
+        _cleanup_pending_for_queued_retry(record_id, original_status)
+
+
 @router.get("/records/{record_id}/retry/stream")
 async def retry_sync_record_stream(
     record_id: int,
@@ -699,10 +731,12 @@ async def retry_sync_record_stream(
     record = sync_service.get_sync_record_by_id(record_id)
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
-    if record.get("status") != "error":
-        raise HTTPException(status_code=400, detail="只能重试失败的记录")
+    # 除 success 外均允许重试（error/queued/ignored/retried 都可重试）
+    if record.get("status") == "success":
+        raise HTTPException(status_code=400, detail="成功的记录无需重试")
 
     original_source = record.get("source", "custom")
+    original_status = record.get("status", "")
     retry_source = f"retry-{original_source}"
     retry_item = _build_retry_item(record, retry_source)
 
@@ -775,19 +809,8 @@ async def retry_sync_record_stream(
             # 获取同步结果
             result = await task
 
-            # 更新原记录状态
-            if result.status == "success":
-                sync_service.update_sync_record_status(
-                    record_id=record_id,
-                    status="retried",
-                    message=f"已重试成功: {result.message}",
-                )
-            elif result.status == "ignored":
-                sync_service.update_sync_record_status(
-                    record_id=record_id,
-                    status="retried",
-                    message=f"重试被忽略: {result.message}",
-                )
+            # 重试结果回写原记录；queued 重试有结果时清理 pending_sync_queue
+            _finalize_retry(record_id, original_status, result)
 
             # 推送完成事件
             yield {

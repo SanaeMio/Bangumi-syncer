@@ -361,6 +361,14 @@ class DatabaseManager:
         """标记待同步任务为已同步"""
         return self._pending_sync.mark_synced(record_id, user_name=user_name)
 
+    def mark_pending_sync_synced_by_sync_record_id(self, sync_record_id: int) -> int:
+        """按 sync_record_id 反查并标记 pending 行为 synced，返回受影响行数。
+
+        用于手动重试 queued 同步记录成功后清理对应的 pending_sync_queue 行，
+        避免补发调度器重复捞起导致重复标记。
+        """
+        return self._pending_sync.mark_synced_by_sync_record_id(sync_record_id)
+
     def increment_pending_sync_attempts(
         self, record_id: int, error: str, user_name: Optional[str] = None
     ) -> bool:
