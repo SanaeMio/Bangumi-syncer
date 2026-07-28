@@ -33,7 +33,7 @@
             </div>
         </div>
         <div class="card-body">
-            <div class="table-responsive">
+            <div id="mappings-table-wrap" class="table-responsive">
                 <table class="table table-hover align-middle app-data-table"
                        id="mappings-table">
                     <thead>
@@ -1014,16 +1014,11 @@ async function clearAllMappings() {
 }
 
 function showLoading(show) {
-    const loading = document.getElementById('loading');
-    const table = document.getElementById('mappings-table');
-    const emptyState = document.getElementById('empty-state');
-
+    setAppTableLoading(show, 'mappings-table-wrap');
+    // 加载时隐藏 empty-state，加载完成后由 displayMappings 控制显隐
     if (show) {
-        loading.classList.remove('is-hidden');
-        table.classList.add('is-hidden');
-        emptyState.classList.add('is-hidden');
-    } else {
-        loading.classList.add('is-hidden');
+        const emptyState = document.getElementById('empty-state');
+        if (emptyState) emptyState.classList.add('is-hidden');
     }
 }
 

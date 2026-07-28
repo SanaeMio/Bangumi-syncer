@@ -460,20 +460,7 @@ function getStatusText(status) {
     }
 }
 
-function getSourceColor(source) {
-    const sourceLower = source.toLowerCase();
-    if (sourceLower.startsWith('retry-')) return 'purple';
-    switch (sourceLower) {
-        case 'plex': return 'warning';
-        case 'emby': return 'success';
-        case 'jellyfin': return 'primary';
-        case 'custom': return 'secondary';
-        case 'feiniu': return 'info';
-        case 'fongmi': return 'primary';
-        case 'test': return 'secondary';
-        default: return 'secondary';
-    }
-}
+// getSourceColor 已在 app.js 全局定义（window.getSourceColor），此处不再重复
 
 async function loadDashboardData() {
     const fetchOpts = { credentials: 'include' };
