@@ -1,0 +1,573 @@
+{% extends "base.html" %}
+{% block title %}Bangumi Archive - Bangumi-Syncer{% endblock %}
+{% block page_title %}Bangumi Archive 离线查询层{% endblock %}
+{% block page_actions %}
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-primary" onclick="loadArchiveStatus()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新状态
+        </button>
+        <button type="button"
+                class="btn btn-outline-warning"
+                id="archiveTriggerBtn"
+                onclick="triggerArchiveUpdate(false)">
+            <i class="bi bi-cloud-download me-1"></i>手动触发更新
+        </button>
+        <button type="button"
+                class="btn btn-outline-danger"
+                id="archiveForceBtn"
+                onclick="triggerArchiveUpdate(true)"
+                title="忽略 dump_date 一致性检查强制更新">
+            <i class="bi bi-exclamation-triangle me-1"></i>强制更新
+        </button>
+    </div>
+{% endblock %}
+{% block content %}
+    <!-- 顶部统计卡片 -->
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-4 mb-4">
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-toggle-on"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">启用状态</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="archive-enabled">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-database"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">Active 库</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="archive-active">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-hdd"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">库大小</div>
+                            <div class="h4 mb-0 fw-bold stats-value" id="archive-db-size">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card stats-card h-100">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="stats-icon me-3 bg-primary-soft">
+                            <i class="bi bi-calendar-event"></i>
+                        </div>
+                        <div>
+                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">Dump 日期</div>
+                            <div class="h4 mb-0 fw-bold stats-value stats-value--compact"
+                                 id="archive-dump-date">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 详细信息 -->
+    <div class="row g-4 mb-4">
+        <div class="col-12 col-lg-6">
+            <div class="card h-100">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-clock-history me-2"></i>
+                        <h6 class="m-0 fw-semibold">导入时间</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-5 text-muted">上次导入时间</dt>
+                        <dd class="col-sm-7" id="archive-last-import">
+                            -
+                        </dd>
+                        <dt class="col-sm-5 text-muted">导入耗时</dt>
+                        <dd class="col-sm-7" id="archive-import-duration">
+                            -
+                        </dd>
+                        <dt class="col-sm-5 text-muted">预计下次导入</dt>
+                        <dd class="col-sm-7" id="archive-next-run">
+                            -
+                        </dd>
+                        <dt class="col-sm-5 text-muted">更新 Cron</dt>
+                        <dd class="col-sm-7">
+                            <code id="archive-cron">-</code>
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-6">
+            <div class="card h-100">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-table me-2"></i>
+                        <h6 class="m-0 fw-semibold">各表行数</h6>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>表名</th>
+                                <th class="text-end">行数</th>
+                            </tr>
+                        </thead>
+                        <tbody id="archive-row-counts">
+                            <tr>
+                                <td colspan="2" class="text-center text-muted">加载中…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 数据源与路径 -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-folder2-open me-2"></i>
+                <h6 class="m-0 fw-semibold">数据源与路径</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3 text-muted">数据目录</dt>
+                <dd class="col-sm-9">
+                    <code id="archive-data-dir">-</code>
+                </dd>
+                <dt class="col-sm-3 text-muted">Active 库路径</dt>
+                <dd class="col-sm-9">
+                    <code id="archive-active-path">-</code>
+                </dd>
+                <dt class="col-sm-3 text-muted">Dump 文件名</dt>
+                <dd class="col-sm-9" id="archive-dump-filename">
+                    -
+                </dd>
+                <dt class="col-sm-3 text-muted">Dump 文件大小</dt>
+                <dd class="col-sm-9" id="archive-dump-size">
+                    -
+                </dd>
+            </dl>
+        </div>
+    </div>
+    <!-- 错误信息 -->
+    <div class="card mb-4 d-none" id="archive-error-card">
+        <div class="card-header py-3 bg-danger text-white">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <h6 class="m-0 fw-semibold">上次错误</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="text-danger fw-semibold mb-1" id="archive-error-time">-</div>
+            <pre class="mb-0 small"
+                 id="archive-error-message"
+                 style="white-space: pre-wrap;
+                        word-break: break-all"></pre>
+        </div>
+    </div>
+    <!-- 上传本地 zip 导入 -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-upload me-2"></i>
+                <h6 class="m-0 fw-semibold">上传本地 dump zip 导入</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info mb-3">
+                <i class="bi bi-info-circle me-1"></i>
+                <strong>使用场景：</strong>网络受限时，可手动从
+                <a href="https://github.com/bangumi/Archive/releases"
+                   target="_blank"
+                   rel="noopener">GitHub Releases</a>
+                下载 dump zip 后上传导入。跳过下载阶段，直接解压导入。
+                <br>
+                <strong>限制：</strong>仅支持 .zip 文件，最大 1GB。
+            </div>
+            <form id="archive-upload-form" enctype="multipart/form-data">
+                <div class="input-group mb-3">
+                    <input type="file"
+                           class="form-control"
+                           id="archive-upload-input"
+                           name="file"
+                           accept=".zip"
+                           required>
+                    <button class="btn btn-primary"
+                            type="button"
+                            id="archive-upload-btn"
+                            onclick="uploadLocalZip()">
+                        <i class="bi bi-upload me-1"></i>上传并导入
+                    </button>
+                </div>
+                <div class="small text-muted" id="archive-upload-status"></div>
+            </form>
+        </div>
+    </div>
+    <!-- 导入进度卡片（始终显示，刷新页面可恢复） -->
+    <div class="card mb-4" id="archive-progress-card">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-arrow-repeat me-2"></i>
+                <h6 class="m-0 fw-semibold">导入进度</h6>
+                <span class="ms-2 small text-muted" id="archive-progress-stage">空闲</span>
+                <span class="ms-auto small fw-bold" id="archive-progress-percent">0%</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="progress mb-3" style="height: 12px;">
+                <div id="archive-progress-bar"
+                     class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar"
+                     style="width: 0%;
+                            transition: width 0.4s ease"></div>
+            </div>
+            <div class="small text-muted mb-2" id="archive-progress-message">暂无任务</div>
+            <div class="bg-dark text-light p-3 rounded small"
+                 id="archive-progress-log"
+                 style="max-height: 300px;
+                        overflow-y: auto;
+                        font-family: monospace">
+                <div class="text-muted">[等待任务]</div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script>
+        let archiveEventSource = null;
+        let archiveCurrentTaskId = null;
+        let archiveStatusPollTimer = null;
+
+        // 阶段中文映射
+        const STAGE_LABELS = {
+            idle: '空闲',
+            checking: '检查磁盘空间',
+            fetching_latest: '拉取 latest.json',
+            skipped: '跳过（dump 未更新）',
+            downloading: '下载中',
+            download_retry: '下载重试',
+            download_switch: '切换镜像源',
+            verifying: 'SHA256 校验',
+            extracting: '解压中',
+            importing: '导入中',
+            import_table: '导入表中',
+            indexing: '建立索引',
+            vacuuming: 'VACUUM 压缩',
+            switching: '切换 active 指针',
+            cleaning: '清空旧库',
+            done: '完成',
+            error: '失败',
+            upload_received: '已接收上传文件'
+        };
+
+        function _fmtSize(bytes) {
+            if (!bytes || bytes <= 0) return '-';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+        }
+
+        function _fmtDuration(sec) {
+            if (sec == null) return '-';
+            if (sec < 60) return sec.toFixed(1) + ' 秒';
+            const m = Math.floor(sec / 60);
+            const s = Math.round(sec % 60);
+            return m + ' 分 ' + s + ' 秒';
+        }
+
+        function _fmtIso(iso) {
+            if (!iso) return '-';
+            try {
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return iso;
+                return d.toLocaleString('zh-CN');
+            } catch (e) {
+                return iso;
+            }
+        }
+
+        function _stageLabel(stage) {
+            return STAGE_LABELS[stage] || stage || '-';
+        }
+
+        async function loadArchiveStatus() {
+            try {
+                const resp = await fetch(appUrl('/api/bangumi_archive/status'), { credentials: 'include' });
+                if (resp.status === 401) {
+                    window.location.href = appUrl('/login');
+                    return;
+                }
+                const s = await resp.json();
+                _renderStatus(s);
+                // 若有进行中任务，自动连接 SSE
+                if (s.import_in_progress && s.current_task_id) {
+                    _connectProgressSSE(s.current_task_id);
+                } else if (s.current_progress) {
+                    // 任务已结束但缓存还在，渲染最终进度
+                    _renderProgress(s.current_progress);
+                }
+            } catch (e) {
+                console.error('加载 Archive 状态失败:', e);
+                showAlert('加载状态失败: ' + e.message, 'danger');
+            }
+        }
+
+        function _renderStatus(s) {
+            document.getElementById('archive-enabled').textContent = s.enabled ? '已启用' : '未启用';
+            document.getElementById('archive-enabled').className =
+                'h4 mb-0 fw-bold stats-value ' + (s.enabled ? 'text-success' : 'text-muted');
+            document.getElementById('archive-active').textContent = s.active || '-';
+            document.getElementById('archive-db-size').textContent = _fmtSize(s.db_size_bytes);
+            document.getElementById('archive-dump-date').textContent = s.dump_date || '-';
+
+            document.getElementById('archive-last-import').textContent = _fmtIso(s.last_import_at);
+            document.getElementById('archive-import-duration').textContent = _fmtDuration(s.last_import_duration_sec);
+            document.getElementById('archive-next-run').textContent = _fmtIso(s.next_run_at);
+            document.getElementById('archive-cron').textContent = s.update_cron || '-';
+
+            const tbody = document.getElementById('archive-row-counts');
+            const counts = s.row_counts || {};
+            const keys = Object.keys(counts);
+            if (keys.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">暂无数据</td></tr>';
+            } else {
+                tbody.innerHTML = keys.map(k =>
+                    `<tr><td><code>${k}</code></td><td class="text-end">${counts[k].toLocaleString()}</td></tr>`
+                ).join('');
+            }
+
+            document.getElementById('archive-data-dir').textContent = s.data_dir || '-';
+            document.getElementById('archive-active-path').textContent = s.active_db_path || '-';
+            document.getElementById('archive-dump-filename').textContent = s.dump_filename || '-';
+            document.getElementById('archive-dump-size').textContent = _fmtSize(s.dump_size_bytes);
+
+            const errCard = document.getElementById('archive-error-card');
+            if (s.last_error) {
+                errCard.classList.remove('d-none');
+                document.getElementById('archive-error-time').textContent = _fmtIso(s.last_error_at);
+                document.getElementById('archive-error-message').textContent = s.last_error;
+            } else {
+                errCard.classList.add('d-none');
+            }
+
+            const triggerBtn = document.getElementById('archiveTriggerBtn');
+            const forceBtn = document.getElementById('archiveForceBtn');
+            if (s.import_in_progress) {
+                triggerBtn.disabled = true;
+                forceBtn.disabled = true;
+                triggerBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>导入中…';
+            } else {
+                triggerBtn.disabled = false;
+                forceBtn.disabled = false;
+                triggerBtn.innerHTML = '<i class="bi bi-cloud-download me-1"></i>手动触发更新';
+            }
+        }
+
+        function _renderProgress(p) {
+            if (!p) return;
+            const percent = p.percent || 0;
+            const stage = p.stage || 'idle';
+            document.getElementById('archive-progress-stage').textContent = _stageLabel(stage);
+            document.getElementById('archive-progress-percent').textContent = percent + '%';
+            document.getElementById('archive-progress-bar').style.width = percent + '%';
+            document.getElementById('archive-progress-message').textContent = p.message || '';
+
+            // 进度条颜色
+            const bar = document.getElementById('archive-progress-bar');
+            bar.classList.remove('bg-success', 'bg-danger', 'bg-warning');
+            if (stage === 'done') {
+                bar.classList.add('bg-success');
+            } else if (stage === 'error') {
+                bar.classList.add('bg-danger');
+            } else if (stage === 'skipped') {
+                bar.classList.add('bg-warning');
+            }
+        }
+
+        function _appendProgressLog(msg) {
+            const logEl = document.getElementById('archive-progress-log');
+            // 首次清空"等待任务"提示
+            if (logEl.children.length === 1 && logEl.children[0].textContent.includes('等待任务')) {
+                logEl.innerHTML = '';
+            }
+            const time = new Date().toLocaleTimeString('zh-CN');
+            const line = document.createElement('div');
+            line.textContent = '[' + time + '] ' + msg;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function _connectProgressSSE(taskId) {
+            // 关闭已有连接
+            if (archiveEventSource) {
+                archiveEventSource.close();
+                archiveEventSource = null;
+            }
+            archiveCurrentTaskId = taskId;
+
+            const url = appUrl('/api/bangumi_archive/progress?task_id=') + encodeURIComponent(taskId);
+            const es = new EventSource(url);
+            archiveEventSource = es;
+
+            // 历史日志（刷新恢复）
+            es.addEventListener('history', function (e) {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.events && data.events.length > 0) {
+                        // 清空日志区，重放历史
+                        document.getElementById('archive-progress-log').innerHTML = '';
+                        data.events.forEach(ev => {
+                            const time = new Date(ev.timestamp * 1000).toLocaleTimeString('zh-CN');
+                            const line = document.createElement('div');
+                            line.textContent = '[' + time + '] ' + _stageLabel(ev.stage) + ' - ' + ev.message;
+                            document.getElementById('archive-progress-log').appendChild(line);
+                        });
+                        const logEl = document.getElementById('archive-progress-log');
+                        logEl.scrollTop = logEl.scrollHeight;
+                        // 渲染最新进度
+                        const latest = data.events[data.events.length - 1];
+                        _renderProgress(latest);
+                    }
+                } catch (err) {
+                    console.error('解析 history 事件失败:', err);
+                }
+            });
+
+            // 实时进度
+            es.addEventListener('progress', function (e) {
+                try {
+                    const p = JSON.parse(e.data);
+                    _renderProgress(p);
+                    _appendProgressLog(_stageLabel(p.stage) + ' - ' + p.message);
+                } catch (err) {
+                    console.error('解析 progress 事件失败:', err);
+                }
+            });
+
+            es.onerror = function () {
+                es.close();
+                archiveEventSource = null;
+            };
+
+            // 任务完成时关闭连接并刷新状态
+            es.addEventListener('progress', function (e) {
+                try {
+                    const p = JSON.parse(e.data);
+                    if (p.stage === 'done' || p.stage === 'error' || p.stage === 'skipped') {
+                        setTimeout(() => {
+                            es.close();
+                            archiveEventSource = null;
+                            loadArchiveStatus();
+                        }, 500);
+                    }
+                } catch (err) {}
+            });
+        }
+
+        async function triggerArchiveUpdate(force) {
+            if (archiveEventSource) {
+                archiveEventSource.close();
+                archiveEventSource = null;
+            }
+            // 清空日志区
+            document.getElementById('archive-progress-log').innerHTML = '';
+            try {
+                const url = appUrl('/api/bangumi_archive/trigger') + (force ? '?force=true' : '');
+                const resp = await fetch(url, { method: 'POST', credentials: 'include' });
+                const data = await resp.json();
+                if (data.status === 'started' && data.task_id) {
+                    showAlert('更新任务已启动', 'success');
+                    _connectProgressSSE(data.task_id);
+                } else if (data.status === 'error') {
+                    showAlert('触发失败: ' + (data.detail || '未知错误'), 'danger');
+                } else {
+                    showAlert('触发响应异常: ' + JSON.stringify(data), 'warning');
+                }
+            } catch (e) {
+                console.error('触发更新失败:', e);
+                showAlert('触发失败: ' + e.message, 'danger');
+            }
+        }
+
+        async function uploadLocalZip() {
+            const input = document.getElementById('archive-upload-input');
+            const statusEl = document.getElementById('archive-upload-status');
+            const btn = document.getElementById('archive-upload-btn');
+            if (!input.files || input.files.length === 0) {
+                showAlert('请选择 zip 文件', 'warning');
+                return;
+            }
+            const file = input.files[0];
+            if (!file.name.toLowerCase().endsWith('.zip')) {
+                showAlert('仅支持 .zip 文件', 'warning');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>上传中…';
+            statusEl.textContent = `正在上传 ${file.name}（${_fmtSize(file.size)}）…`;
+
+            try {
+                const resp = await fetch(appUrl('/api/bangumi_archive/import_local'), {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                });
+                const data = await resp.json();
+                if (data.status === 'started' && data.task_id) {
+                    showAlert('上传成功，开始导入: ' + (data.detail || ''), 'success');
+                    statusEl.textContent = '已开始导入，进度见上方';
+                    _connectProgressSSE(data.task_id);
+                    // 清空 input 以便下次上传
+                    input.value = '';
+                } else if (data.status === 'error') {
+                    showAlert('上传失败: ' + (data.detail || '未知错误'), 'danger');
+                    statusEl.textContent = '上传失败: ' + (data.detail || '未知错误');
+                } else {
+                    showAlert('上传响应异常: ' + JSON.stringify(data), 'warning');
+                    statusEl.textContent = '上传响应异常';
+                }
+            } catch (e) {
+                console.error('上传失败:', e);
+                showAlert('上传失败: ' + e.message, 'danger');
+                statusEl.textContent = '上传失败: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-upload me-1"></i>上传并导入';
+            }
+        }
+
+        // 初始加载
+        document.addEventListener('DOMContentLoaded', function () {
+            loadArchiveStatus();
+        });
+    </script>
+{% endblock %}

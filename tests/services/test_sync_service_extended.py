@@ -139,6 +139,7 @@ class TestSyncServiceHelperMethods:
             cfg.get.side_effect = get_side_effect
             cfg.get_user_mappings.return_value = {"u1": "missing_section"}
             cfg.get_bangumi_configs.return_value = {}
+            cfg.get_active_bangumi_config.return_value = None
             from app.services.sync_service import SyncService
 
             svc = SyncService()
@@ -305,6 +306,97 @@ class TestSyncServiceHelperMethods:
                 return_value={"username": "", "access_token": "t", "private": False},
             ):
                 assert svc._get_bangumi_api_for_user("u") is None
+
+    def test_bangumi_api_cache_reuses_instance(self):
+        """同一用户多次调用应复用同一 BangumiApi 实例"""
+        with patched_sync_deps() as cfg:
+            cfg.get.side_effect = lambda s, k, fallback=None: fallback
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            svc._bangumi_api_cache.clear()
+
+            # Mock BangumiApi 构造，验证只被调用一次
+            with patch.object(svc, "_get_bangumi_config_for_user") as mock_cfg:
+                mock_cfg.return_value = {
+                    "username": "user1",
+                    "access_token": "token1",
+                    "private": False,
+                }
+                with patch("app.services.sync_service.BangumiApi") as mock_cls:
+                    mock_instance = MagicMock()
+                    mock_cls.return_value = mock_instance
+
+                    api1 = svc._get_bangumi_api_for_user("user_a")
+                    api2 = svc._get_bangumi_api_for_user("user_a")
+
+                    assert api1 is api2 is mock_instance
+                    assert mock_cls.call_count == 1
+
+    def test_bangumi_api_cache_invalidates_on_config_change(self):
+        """用户配置变更（如 access_token 改了）应重建实例"""
+        with patched_sync_deps() as cfg:
+            cfg.get.side_effect = lambda s, k, fallback=None: fallback
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            svc._bangumi_api_cache.clear()
+
+            with patch.object(svc, "_get_bangumi_config_for_user") as mock_cfg:
+                mock_cfg.return_value = {
+                    "username": "user1",
+                    "access_token": "token1",
+                    "private": False,
+                }
+                with patch("app.services.sync_service.BangumiApi") as mock_cls:
+                    instance1 = MagicMock()
+                    instance2 = MagicMock()
+                    mock_cls.side_effect = [instance1, instance2]
+
+                    # 第一次调用：使用 token1
+                    api1 = svc._get_bangumi_api_for_user("user_a")
+                    assert api1 is instance1
+
+                    # 配置变更：token 改了
+                    mock_cfg.return_value = {
+                        "username": "user1",
+                        "access_token": "token2",  # 改了
+                        "private": False,
+                    }
+
+                    # 第二次调用：应重建实例
+                    api2 = svc._get_bangumi_api_for_user("user_a")
+                    assert api2 is instance2
+                    assert api1 is not api2
+                    assert mock_cls.call_count == 2
+
+    def test_bangumi_api_cache_separate_users(self):
+        """不同用户的实例互不干扰"""
+        with patched_sync_deps() as cfg:
+            cfg.get.side_effect = lambda s, k, fallback=None: fallback
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            svc._bangumi_api_cache.clear()
+
+            with patch.object(svc, "_get_bangumi_config_for_user") as mock_cfg:
+                mock_cfg.return_value = {
+                    "username": "u",
+                    "access_token": "t",
+                    "private": False,
+                }
+                with patch("app.services.sync_service.BangumiApi") as mock_cls:
+                    inst_a = MagicMock()
+                    inst_b = MagicMock()
+                    mock_cls.side_effect = [inst_a, inst_b]
+
+                    api_a = svc._get_bangumi_api_for_user("user_a")
+                    api_b = svc._get_bangumi_api_for_user("user_b")
+
+                    assert api_a is inst_a
+                    assert api_b is inst_b
+                    assert api_a is not api_b
+                    assert mock_cls.call_count == 2
 
     def test_get_bangumi_data_uses_singleton_cache(self):
         with patched_sync_deps():

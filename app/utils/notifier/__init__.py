@@ -14,6 +14,18 @@ from .html_builders import EmailHtmlMixin
 from .selftest import TestHelpersMixin
 from .webhook import WebhookMixin
 
+# 条目相关类型：按 item 维度冷却，避免不同番剧互相静默
+ITEM_LEVEL_TYPES = {
+    "pending_candidate",
+    "mark_failed",
+    "mark_success",
+    "mark_skipped",
+    "sync_replayed",
+    "sync_queued",
+    "bangumi_id_found",
+    "request_received",
+}
+
 
 class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin):
     """通知管理器（组合各 mixin，提供通知发送能力）"""
@@ -34,6 +46,23 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
 
         self._last_notification_time[notification_type] = current_time
         return True
+
+    def _build_cooldown_key(
+        self, channel_id: str, notification_type: str, data: dict[str, Any]
+    ) -> str:
+        """构造冷却 key
+
+        条目相关类型按 item 维度（title+season+episode）冷却；
+        系统级类型按 type 级别冷却。
+        """
+        key = f"{channel_id}_{notification_type}"
+        if notification_type in ITEM_LEVEL_TYPES:
+            item_key = (
+                f"{data.get('title', '')}_{data.get('season', 0)}_"
+                f"{data.get('episode', 0)}"
+            )
+            key = f"{key}_{item_key}"
+        return key
 
     @staticmethod
     def _type_matches(notification_type: str, types: str) -> bool:
@@ -95,12 +124,10 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
             if not self._type_matches(notification_type, types):
                 continue
 
-            # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
-            cooldown_key = f"{webhook_config['id']}_{notification_type}"
-            if notification_type == "pending_candidate":
-                cooldown_key = (
-                    f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
-                )
+            # 检查冷却时间（条目相关类型按 item 维度冷却，避免不同番剧互相静默）
+            cooldown_key = self._build_cooldown_key(
+                str(webhook_config["id"]), notification_type, data
+            )
             if not skip_cooldown and not self._should_send_notification(cooldown_key):
                 continue
 
@@ -120,12 +147,10 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
             if not self._type_matches(notification_type, types):
                 continue
 
-            # 检查冷却时间（pending_candidate 按 item 维度冷却，避免不同番剧互相静默）
-            cooldown_key = f"email_{email_config['id']}_{notification_type}"
-            if notification_type == "pending_candidate":
-                cooldown_key = (
-                    f"{cooldown_key}_{data.get('title', '')}_{data.get('season', 0)}"
-                )
+            # 检查冷却时间（条目相关类型按 item 维度冷却，避免不同番剧互相静默）
+            cooldown_key = self._build_cooldown_key(
+                f"email_{email_config['id']}", notification_type, data
+            )
             if not skip_cooldown and not self._should_send_notification(cooldown_key):
                 continue
 

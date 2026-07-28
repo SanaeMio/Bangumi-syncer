@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from ..core.app_version import get_version
+from ..core.background_tasks import register_background_task
 from ..services.upgrade_service import restart_application, upgrade_service
 from ..utils.docker_helper import docker_helper
 from .deps import get_current_user_flexible
@@ -146,5 +147,5 @@ async def restart_after_upgrade(
         await asyncio.sleep(1)
         restart_application()
 
-    asyncio.create_task(delayed_restart())
+    register_background_task(delayed_restart())
     return {"status": "restarting"}

@@ -12,23 +12,45 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 # ===== 在导入 app 模块前重定向 CONFIG_FILE =====
-# 防止 SecurityManager / ConfigManager 单例在模块导入时
-# 初始化并写回工作区 config.ini（_init_auth_config / _migrate_config）
-# config.ini 已加入 .gitignore（本地配置），优先从 git 跟踪的 config.example.ini 复制
+# 优先使用 git 跟踪的 config.example.ini 作为测试基线（安全、可复现），
+# 避免 config.ini 中的本地配置（token、enabled=True、proxy 等）污染测试。
+# config.ini 已加入 .gitignore（含敏感信息），仅在显式设置环境变量
+# BS_TEST_USE_LOCAL_CONFIG=1 时才使用，便于本地调试真实场景。
 _REPO_ROOT = Path(__file__).parent.parent
 _ORIG_CONFIG_INI = _REPO_ROOT / "config.ini"
 _ORIG_CONFIG_EXAMPLE = _REPO_ROOT / "config.example.ini"
 _TEST_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="bs_test_config_"))
 _TEST_CONFIG_INI = _TEST_CONFIG_DIR / "config.ini"
-if _ORIG_CONFIG_INI.exists():
+
+_use_local_config = os.environ.get("BS_TEST_USE_LOCAL_CONFIG", "") == "1"
+if _use_local_config and _ORIG_CONFIG_INI.exists():
+    # 显式 opt-in：本地调试时使用真实 config.ini（含 token/proxy 等）
     shutil.copy2(_ORIG_CONFIG_INI, _TEST_CONFIG_INI)
 elif _ORIG_CONFIG_EXAMPLE.exists():
+    # 默认：使用 git 跟踪的 example，保证测试可复现
     shutil.copy2(_ORIG_CONFIG_EXAMPLE, _TEST_CONFIG_INI)
+elif _ORIG_CONFIG_INI.exists():
+    # 兜底：example 不存在时用 config.ini（不应发生，example 在 git 中）
+    shutil.copy2(_ORIG_CONFIG_INI, _TEST_CONFIG_INI)
 else:
     _TEST_CONFIG_INI.write_text("[bangumi]\n", encoding="utf-8")
 os.environ["CONFIG_FILE"] = str(_TEST_CONFIG_INI)
 
+# 强制禁用 bangumi-archive，避免 enabled=True 触发 BangumiArchive 单例在
+# import 时启动后台索引构建线程（读取真实 658K 条 DB，耗时 100s+，卡死测试）。
+# 需要 Archive 的测试应通过 monkeypatch 显式控制 config_manager.get 返回值。
+# 此操作必须在任何 app 模块导入前完成，确保 config_manager 读到的是禁用状态。
+import configparser  # noqa: E402
+
 import pytest  # noqa: E402
+
+_cfg = configparser.ConfigParser()
+_cfg.read(_TEST_CONFIG_INI, encoding="utf-8")
+if not _cfg.has_section("bangumi-archive"):
+    _cfg.add_section("bangumi-archive")
+_cfg.set("bangumi-archive", "enabled", "false")
+with open(_TEST_CONFIG_INI, "w", encoding="utf-8") as _f:
+    _cfg.write(_f)
 
 from app.core.config import config_manager  # noqa: E402
 from app.core.database import database_manager  # noqa: E402
@@ -462,6 +484,27 @@ def clean_proxy_env():
     # 恢复（可选，如果 scope 是 function 则必须恢复）
     for key, value in stash.items():
         os.environ[key] = value
+
+
+@pytest.fixture(autouse=True)
+def _isolate_archive_shortcut(monkeypatch):
+    """每个测试默认禁用全局 archive_shortcut，避免用户 config.ini 中
+    bangumi-archive.enabled=True 通过 conftest 复制污染测试。
+
+    conftest 启动时从用户 config.ini 复制测试配置，若用户启用了 Archive，
+    BangumiApi() 初始化会调 reload_config() 读到 enabled=true 触发短路，
+    导致不关心 Archive 的测试（如 test_bangumi_api 的 JSON 错误分支）
+    命中本地 Archive 数据而非走 mock 的 API。
+
+    需要 Archive 的测试（test_archive_shortcut.py）会显式 mock _archive
+    或创建局部 ArchiveShortcut 实例，不依赖全局单例的 reload_config。
+    """
+    from app.utils.bangumi_api._archive_shortcut import archive_shortcut
+
+    archive_shortcut._enabled = False
+    # mock reload_config 为 noop，防止 BangumiApi.init() 重新读取 config 启用
+    monkeypatch.setattr(archive_shortcut, "reload_config", lambda: None)
+    yield
 
 
 # Playwright 测试配置

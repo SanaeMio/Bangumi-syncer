@@ -57,18 +57,13 @@ async def delete_custom_mapping(
 ) -> dict[str, Any]:
     """删除单个自定义映射"""
     try:
-        # 获取当前所有映射
-        mappings = mapping_service.get_all_mappings()
-
-        # 检查映射是否存在
-        if title not in mappings:
+        # 检查映射是否存在（保留 404 语义）
+        if title not in mapping_service.get_all_mappings():
             raise HTTPException(status_code=404, detail="映射不存在")
 
-        # 删除指定映射
-        del mappings[title]
-
-        # 更新映射
-        mapping_service.update_mappings(mappings)
+        # 删除并写回（读全量→删除→写回由 service 层封装）
+        if not mapping_service.delete_single_mapping(title):
+            raise HTTPException(status_code=500, detail="删除映射失败")
 
         return {"status": "success", "message": "映射删除成功"}
     except HTTPException:

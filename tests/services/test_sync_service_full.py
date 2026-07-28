@@ -11,6 +11,7 @@ import pytest
 from app.models.sync import CustomItem
 from app.services.mapping_service import mapping_service
 from app.services.sync_service import SyncService
+from app.services.sync_service.match_trace import MatchTrace
 
 
 @pytest.fixture
@@ -1327,6 +1328,129 @@ def test_find_subject_id_api_search_exception_returns_none():
         assert "Bangumi API 搜索出错" in err
 
 
+def test_find_subject_id_archive_hit_marks_stage_as_archive():
+    """archive 短路命中时，trace.step.stage 和 final_match_method 都标记为 "archive"，
+    而不是 "api_search"。让"本地归档匹配"在同步记录详情中可见。
+    """
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 12345,
+                "name": "测试番剧",
+                "name_cn": "测试番剧",
+                "platform": "TV",
+                "date": "2024-01-15",
+            }
+        ]
+        # 关键：模拟 archive 短路命中（bgm_search 内部 search/search_old 走 archive）
+        bgm.last_hit_source = "archive"
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="测试番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-01-15",
+                        ),
+                        trace=trace,
+                    )
+
+        assert str(sid) == "12345"
+        # 验证 trace：final_match_method 应为 "archive"
+        assert trace.final_match_method == "archive"
+        assert trace.final_subject_id == 12345
+        # 验证 steps 中存在 stage="archive" 的步骤
+        archive_steps = [s for s in trace.steps if s.stage == "archive"]
+        assert len(archive_steps) == 1
+        assert archive_steps[0].status == "hit"
+        assert archive_steps[0].subject_id == 12345
+        # 验证 candidates 的 source 也为 "archive"
+        assert all(c.source == "archive" for c in archive_steps[0].candidates)
+        # 不应出现 stage="api_search" 的命中步骤
+        api_hit_steps = [
+            s for s in trace.steps if s.stage == "api_search" and s.status == "hit"
+        ]
+        assert len(api_hit_steps) == 0
+
+
+def test_find_subject_id_api_hit_keeps_stage_as_api_search():
+    """API 命中（非 archive）时保持 stage="api_search"，确认 archive/api 分流正确。"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 67890,
+                "name": "API番剧",
+                "name_cn": "API番剧",
+                "platform": "TV",
+                "date": "2024-02-20",
+            }
+        ]
+        # 走 API 命中：last_hit_source 为空字符串
+        bgm.last_hit_source = ""
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, _ = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="API番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-02-20",
+                        ),
+                        trace=trace,
+                    )
+
+        assert str(sid) == "67890"
+        assert trace.final_match_method == "api_search"
+        assert trace.final_subject_id == 67890
+        api_steps = [s for s in trace.steps if s.stage == "api_search"]
+        assert len(api_steps) == 1
+        assert api_steps[0].status == "hit"
+        # 不应出现 stage="archive"
+        archive_steps = [s for s in trace.steps if s.stage == "archive"]
+        assert len(archive_steps) == 0
+
+
 def test_sync_custom_item_no_bgm_api_after_find_subject():
     with _patched_sync_service_deps():
         svc = SyncService()
@@ -1450,3 +1574,91 @@ def test_find_subject_id_api_search_season_gt1_title_not_matched():
     assert sid == 146457
     assert flag is False  # 核心断言：智能判定未生效，安全地回退给后续的关系链爬虫去处理
     assert err == ""
+
+
+def test_find_subject_id_api_season_gt1_top_movie_reselects_mainline_via_related():
+    """完美世界 S06E279 场景：season > 1 且首条候选是剧场版（标题不含季度信息），
+    通过关联条目改选命中主线剧集。
+
+    复现真实失败案例：
+    - 用户请求：完美世界 S06E279
+    - bgm_search 返回首条 542046 完美世界剧场版 九劫焚天（platform=剧场版，仅 1 集）
+    - get_related_subjects(542046) 含 577198 完美世界 第六季（relation=主线故事）
+    - 应改选到 577198，而非在 542046 上找 ep 279 导致 400 错误
+    """
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        # bgm_search 返回首条是剧场版（detect_media_type 命中"剧场版"关键词 → movie）
+        bgm.bgm_search.return_value = [
+            {
+                "id": 542046,
+                "name": "完美世界剧场版 九劫焚天",
+                "name_cn": "完美世界剧场版 九劫焚天",
+                "platform": "剧场版",
+                "date": "",
+            }
+        ]
+        # 关联条目返回 577198 第六季（主线故事）
+        bgm.get_related_subjects.return_value = [
+            {
+                "id": 485902,
+                "name": "完美世界剧场版 火之灰烬",
+                "name_cn": "",
+                "relation": "前传",
+                "type": 2,
+            },
+            {
+                "id": 577198,
+                "name": "完美世界 第六季",
+                "name_cn": "",
+                "relation": "主线故事",
+                "type": 2,
+            },
+        ]
+        # get_subject 返回 577198 的完整信息
+        bgm.get_subject.return_value = {
+            "id": 577198,
+            "name": "完美世界 第六季",
+            "name_cn": "完美世界 第六季",
+            "type": 2,
+            "platform": "WEB",
+            "date": "2025-10-03",
+        }
+
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, err = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="完美世界",
+                            ori_title="",
+                            season=6,
+                            episode=279,
+                            media_type="episode",
+                            release_date="",
+                        )
+                    )
+
+    # 应改选到 577198（主线故事），而非保持 542046
+    assert str(sid) == "577198"
+    assert flag is True  # 改选成功标记
+    assert err == ""
+    # 验证调用了 get_related_subjects
+    bgm.get_related_subjects.assert_called_once()
+    # 验证 get_subject 被调用以获取关联条目详情
+    bgm.get_subject.assert_called_with(577198)

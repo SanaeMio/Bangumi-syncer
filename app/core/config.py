@@ -17,6 +17,15 @@ from .config_secret_crypto import (
 from .logging import logger
 from .startup_info import startup_info
 
+# 非多账号的 bangumi-* section：以 bangumi- 开头但承载系统功能（数据/映射/archive），
+# 不应被当作多账号配置收集、也不应在保存多账号时被清除。
+# 新增此类 section 时需同步加入此列表，否则前端配置页将读不到/被误删。
+_BANGUMI_NON_ACCOUNT_SECTIONS: tuple[str, ...] = (
+    "bangumi-data",
+    "bangumi-mapping",
+    "bangumi-archive",
+)
+
 
 def parse_media_server_username_value(raw: Optional[str]) -> list[str]:
     """解析 media_server_username 配置值（英文或中文逗号分隔）为去重前的用户名列表。"""
@@ -287,12 +296,11 @@ class ConfigManager:
         config = self.get_config_parser()
         bangumi_configs = {}
 
-        # 遍历所有配置段，查找多账号 bangumi-* 配置段（排除 bangumi-data 和 bangumi-mapping）
+        # 遍历所有配置段，查找多账号 bangumi-* 配置段（排除非账号的系统功能段）
         for section_name in config.sections():
-            if section_name.startswith("bangumi-") and section_name not in [
-                "bangumi-data",
-                "bangumi-mapping",
-            ]:
+            if section_name.startswith("bangumi-") and section_name not in (
+                _BANGUMI_NON_ACCOUNT_SECTIONS
+            ):
                 section_config = self.get_section(section_name)
                 if section_config.get("username") and section_config.get(
                     "access_token"
@@ -327,6 +335,56 @@ class ConfigManager:
         """单用户模式下允许的媒体服务器用户名列表（来自 [bangumi] media_server_username）。"""
         raw = self.get("bangumi", "media_server_username", fallback="")
         return parse_media_server_username_value(str(raw) if raw is not None else "")
+
+    def get_active_bangumi_config(
+        self, user_name: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
+        """按 sync.mode 读取指定用户的 Bangumi 账号配置
+
+        single 模式：忽略 user_name，读 [bangumi] 段，返回 username/access_token/private
+        multi 模式：按 user_name 查 [bangumi-*] 段；user_name 为 None 时取首个用户映射
+        无可用配置返回 None
+        """
+        mode = self.get("sync", "mode", fallback="single")
+
+        if mode == "single":
+            return {
+                "username": self.get("bangumi", "username", fallback=""),
+                "access_token": self.get("bangumi", "access_token", fallback=""),
+                "private": self.get("bangumi", "private", fallback=False),
+            }
+
+        if mode == "multi":
+            user_mappings = self.get_user_mappings()
+            bangumi_configs = self.get_bangumi_configs()
+            if user_name is None:
+                # 无指定用户时取首个用户映射对应账号段（用于 API 探测等无用户上下文场景）
+                if not user_mappings:
+                    return None
+                target_section = next(iter(user_mappings.values()))
+            else:
+                target_section = user_mappings.get(user_name)
+                if not target_section or target_section not in bangumi_configs:
+                    logger.error(
+                        f"多用户模式下未找到用户 {user_name} 的bangumi配置映射"
+                    )
+                    return None
+            return bangumi_configs.get(target_section)
+
+        return None
+
+    def get_dev_http_snapshot(self) -> dict[str, Any]:
+        """读取 [dev] 段影响 HTTP 请求的 4 字段快照
+
+        返回 dict 含 script_proxy/ssl_verify/bgm_api_proxy/bgm_next_proxy，
+        默认值与原各处拼装保持一致（""/True/""/""）。
+        """
+        return {
+            "script_proxy": self.get("dev", "script_proxy", fallback=""),
+            "ssl_verify": self.get("dev", "ssl_verify", fallback=True),
+            "bgm_api_proxy": self.get("dev", "bgm_api_proxy", fallback=""),
+            "bgm_next_proxy": self.get("dev", "bgm_next_proxy", fallback=""),
+        }
 
     def _migrate_sync_single_username_to_bangumi(self, config: ConfigParser) -> None:
         """将 [sync] single_username 迁移到 [bangumi] media_server_username 后删除旧键。"""
@@ -658,10 +716,9 @@ class ConfigManager:
         multi_accounts = {}
 
         for section_name in config.sections():
-            if section_name.startswith("bangumi-") and section_name not in [
-                "bangumi-data",
-                "bangumi-mapping",
-            ]:
+            if section_name.startswith("bangumi-") and section_name not in (
+                _BANGUMI_NON_ACCOUNT_SECTIONS
+            ):
                 # 这是多账号配置段，收集到 multi_accounts 中
                 section_config = self.get_section(section_name)
                 multi_accounts[section_name] = section_config

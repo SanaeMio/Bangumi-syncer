@@ -27,19 +27,18 @@ class DatabaseConnection:
     def __init__(self, db_path: Optional[str] = None):
         auto = db_path is None
         if auto:
-            db_path = (
-                "data/sync_records.db"
-                if _env_flag("DOCKER_CONTAINER")
-                else "sync_records.db"
-            )
+            # 所有环境（Docker/直装）默认统一放到 data/ 目录，便于与其他数据隔离
+            db_path = "data/sync_records.db"
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if auto and _env_flag("DOCKER_CONTAINER"):
+        # 自动迁移：项目根目录下存在旧版 sync_records.db 时，移动到新路径
+        # 覆盖 Docker 与直装场景，确保现有用户升级后数据不丢失
+        if auto:
             legacy = Path("sync_records.db")
             if not self.db_path.exists() and legacy.is_file():
                 shutil.move(str(legacy), str(self.db_path))
-                logger.info(f"Docker: 已从旧路径迁移数据库 {legacy} -> {self.db_path}")
+                logger.info(f"已从旧路径迁移数据库 {legacy} -> {self.db_path}")
 
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
@@ -123,7 +122,7 @@ class DatabaseConnection:
         """旧库迁移：为 sync_records 增加匹配追踪字段。
 
         新增 4 列：
-        - match_method: 匹配方式（custom_mapping/bangumi_data/api_search/failed）
+        - match_method: 匹配方式（custom_mapping/bangumi_data/archive/api_search/failed）
         - match_score: 最佳匹配置信度（0-1）
         - match_platform: 命中条目的 platform（TV/OVA/剧场版/日剧/电影...）
         - match_trace: JSON 字符串，完整匹配过程（仅 debug 模式写入）
@@ -282,6 +281,27 @@ class DatabaseConnection:
             )
         """)
 
+        # 待同步队列：Bangumi API 不可达时缓存已匹配的同步请求，API 恢复后补发
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pending_sync_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                season INTEGER DEFAULT 1,
+                episode INTEGER DEFAULT 0,
+                subject_id TEXT NOT NULL,
+                episode_id TEXT,
+                source TEXT DEFAULT '',
+                media_type TEXT DEFAULT 'episode',
+                payload_json TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                attempts INTEGER DEFAULT 0,
+                last_attempt_at DATETIME,
+                last_error TEXT
+            )
+        """)
+
         # 创建二级索引以加速常用查询
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_timestamp ON sync_records(timestamp)"
@@ -309,6 +329,15 @@ class DatabaseConnection:
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_candidates_dedup "
             "ON pending_candidates(request_title, request_season, user_name, source) "
+            "WHERE status = 'pending'"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_sync_queue_status ON pending_sync_queue(status)"
+        )
+        # 部分唯一索引：同一用户同一集仅保留一条 pending 行（episode_id 为空时退化为按 subject_id 去重）
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_sync_queue_dedup "
+            "ON pending_sync_queue(user_name, subject_id, COALESCE(episode_id, ''), source) "
             "WHERE status = 'pending'"
         )
 

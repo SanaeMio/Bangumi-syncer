@@ -2,7 +2,7 @@
 更多测试 - 简化版
 """
 
-from app.utils.data_util import extract_plex_data
+from app.services.plex.extractor import extract_plex_data
 
 
 class TestDataUtil:

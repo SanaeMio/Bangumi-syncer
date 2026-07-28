@@ -238,9 +238,8 @@ class TestSecurityManagerExtended:
         assert result is True
         assert sm.login_attempts["192.168.1.100"]["attempts"] == 0
 
-    @patch("app.core.security.send_notify")
     @patch("app.core.security.config_manager")
-    def test_record_login_failure_no_lockout(self, mock_config, mock_notify):
+    def test_record_login_failure_no_lockout(self, mock_config):
         """测试记录登录失败 - 未达到锁定阈值"""
         mock_config.get.side_effect = lambda *args, **kwargs: {
             ("auth", "max_login_attempts"): 5,
@@ -255,11 +254,9 @@ class TestSecurityManagerExtended:
 
         assert sm.login_attempts["192.168.1.100"]["attempts"] == 1
         assert "locked_until" not in sm.login_attempts["192.168.1.100"]
-        mock_notify.assert_not_called()
 
-    @patch("app.core.security.send_notify")
     @patch("app.core.security.config_manager")
-    def test_record_login_failure_triggers_lockout(self, mock_config, mock_notify):
+    def test_record_login_failure_triggers_lockout(self, mock_config):
         """测试记录登录失败 - 触发锁定"""
         mock_config.get.side_effect = lambda *args, **kwargs: {
             ("auth", "max_login_attempts"): 3,
@@ -277,7 +274,6 @@ class TestSecurityManagerExtended:
 
         assert sm.login_attempts["192.168.1.100"]["attempts"] == 3
         assert "locked_until" in sm.login_attempts["192.168.1.100"]
-        mock_notify.assert_called_once()
 
     @patch("app.core.security.config_manager")
     def test_reset_login_attempts(self, mock_config):

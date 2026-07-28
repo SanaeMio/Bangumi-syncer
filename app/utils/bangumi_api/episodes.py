@@ -83,6 +83,15 @@ class EpisodesMixin:
         if cache_key in self._cache["get_episodes"]:
             return self._cache["get_episodes"][cache_key]
 
+        # Archive 短路：本地命中即返回（始终全量，对 fetch_all=False 也安全）
+        # 未命中降级到 API 分页拉取（保持原行为）
+        shortcut = self._archive.try_get_episodes(subject_id, episode_type=_type)
+        if shortcut.hit:
+            data_list = shortcut.data or []
+            result = {"data": data_list, "total": len(data_list)}
+            self._put_cache("get_episodes", cache_key, result)
+            return result
+
         if not fetch_all:
             result = self._fetch_episodes_page(subject_id, _type)
         else:
@@ -107,7 +116,37 @@ class EpisodesMixin:
     def _find_episode_by_sort(
         self, subject_id: int, target_sort: int, _type: int = 0
     ) -> dict | None:
-        """在 subject 内按 sort/ep 规则查找章节；ep>99 时优先 offset 快速路径。"""
+        """在 subject 内按 sort/ep 规则查找章节。
+
+        优先级：
+        1. Archive 短路（若启用且命中，直接在内存数据中筛选，避免任何 API 调用）
+        2. API offset 快速路径（target_sort>99 时单次定位）
+        3. 全量拉取 + 本地匹配（兜底，archive 未命中且 offset 快速路径未命中时）
+        """
+        # 1. 优先尝试 archive 短路，避免对长篇动画（如 sort>99）也走 API
+        archive_shortcut = self._archive.try_get_episodes(
+            subject_id, episode_type=_type
+        )
+        if archive_shortcut.hit:
+            ep_info = archive_shortcut.data or []
+            rows = self._match_target_ep_rows(ep_info, target_sort)
+            if rows:
+                logger.debug(
+                    f"archive 短路命中 sort={target_sort} subject_id={subject_id}"
+                )
+                return rows[0]
+            # archive 命中但未匹配到该 sort：archive 可能不完整，降级到 API
+            logger.debug(
+                f"archive 命中但未找到 sort={target_sort} subject_id={subject_id}，降级 API"
+            )
+            # 跳过 offset 快速路径（archive 已知该 subject 数据存在但不完整）
+            # 直接全量拉取 + 本地匹配
+            episodes = self.get_episodes(subject_id, _type, fetch_all=True)
+            ep_info = episodes.get("data") or []
+            rows = self._match_target_ep_rows(ep_info, target_sort)
+            return rows[0] if rows else None
+
+        # 2. API offset 快速路径（target_sort>99 时单次定位）
         if target_sort > 99:
             page = self._fetch_episodes_page(
                 subject_id, _type, limit=1, offset=target_sort - 1
@@ -119,6 +158,7 @@ class EpisodesMixin:
                 )
                 return data[0]
 
+        # 3. 全量拉取 + 本地匹配（archive 未命中时兜底）
         episodes = self.get_episodes(subject_id, _type, fetch_all=target_sort > 99)
         ep_info = episodes.get("data") or []
         rows = self._match_target_ep_rows(ep_info, target_sort)
@@ -200,11 +240,16 @@ class EpisodesMixin:
         target_season: int,
         target_ep: int,
     ) -> tuple[str | int, str | int] | None:
-        """单 subject 连续编号场景：通过 ep 字段重置检测季度边界。
+        """单 subject 连续编号场景：通过季度边界检测定位目标 sort。
 
         适用于 Bangumi 将多季合并到一个 subject 的场景：
         第一季 ep=1..24 sort=1..24，第二季 ep=1..24 sort=25..48。
-        当 ep 字段从 >1 重置为 1 时，标记为新季开始。
+
+        季度边界检测优先级：
+        1. ep 字段重置检测：ep 从 >1 降到 1，说明新季开始
+        2. sort 跳变检测（ep 字段缺失时兜底）：
+           sort 不连续（如 24 → 1，或 24 → 26 但下一行 sort 又回到 1）
+           说明新季开始，且新季 sort 从 1 重新计数
         """
         if target_season < 2 or not target_ep:
             return None
@@ -223,21 +268,42 @@ class EpisodesMixin:
             pool = list(ep_info)
         pool.sort(key=lambda e: e.get("sort", 0))
 
-        # 检测 ep 字段重置点（季度边界）
-        season_start_sorts: list[int] = [pool[0].get("sort", 1)]
-        prev_ep = 0
-        for ep in pool:
-            ep_num = ep.get("ep", 0) or 0
-            sort_num = ep.get("sort", 0) or 0
-            # ep 从 >1 降到 1，说明新季开始
-            if ep_num == 1 and prev_ep > 1:
-                season_start_sorts.append(sort_num)
-            prev_ep = ep_num
+        # 检测 ep 字段是否有效（archive 旧库可能 ep 全为 NULL/0）
+        ep_valid_count = sum(1 for e in pool if (e.get("ep") or 0) > 0)
+        use_ep_field = ep_valid_count >= len(pool) * 0.5  # 半数以上有效才用
+
+        # 检测季度边界
+        # 按 id 升序排（episode id 通常递增，能反映章节的录入顺序），
+        # 而非按 sort 排（sort 重置场景下排序会聚拢相同 sort，无法检测跳变）
+        pool_by_id = sorted(pool, key=lambda e: e.get("id", 0))
+        season_start_sorts: list[int] = [pool_by_id[0].get("sort", 1)]
+        if use_ep_field:
+            # 策略 1：ep 字段重置检测（ep 从 >1 降到 1）
+            prev_ep = 0
+            for ep in pool_by_id:
+                ep_num = ep.get("ep", 0) or 0
+                sort_num = ep.get("sort", 0) or 0
+                if ep_num == 1 and prev_ep > 1:
+                    season_start_sorts.append(sort_num)
+                prev_ep = ep_num
+        else:
+            # 策略 2：sort 跳变检测（ep 字段缺失时兜底）
+            # 场景：archive dump 缺 ep 字段，但 sort 在每季开始时重置为 1。
+            # 按 id 升序遍历，sort 从高值跳到 1 说明新季开始。
+            # 仅检测 sort=1 的重置点（最可靠）。
+            prev_sort = pool_by_id[0].get("sort", 0) or 0
+            for ep in pool_by_id[1:]:
+                sort_num = ep.get("sort", 0) or 0
+                # sort=1 且前一个 sort > 1，说明新季开始
+                if sort_num == 1 and prev_sort > 1:
+                    season_start_sorts.append(sort_num)
+                prev_sort = sort_num
 
         if len(season_start_sorts) < target_season:
             logger.debug(
                 f"连续编号: 检测到 {len(season_start_sorts)} 季，"
-                f"无法定位第 {target_season} 季 (subject_id={subject_id})"
+                f"无法定位第 {target_season} 季 (subject_id={subject_id}, "
+                f"use_ep_field={use_ep_field})"
             )
             return None
 
@@ -245,14 +311,36 @@ class EpisodesMixin:
         season_start_sort = season_start_sorts[target_season - 1]
         target_sort = season_start_sort + target_ep - 1
 
-        for ep in pool:
-            if ep.get("sort") == target_sort:
-                logger.debug(
-                    f"连续编号匹配: subject_id={subject_id} "
-                    f"season={target_season} ep={target_ep} → sort={target_sort} "
-                    f"ep_id={ep['id']}"
-                )
-                return subject_id, ep["id"]
+        # sort 重置场景：每季 sort 从 1 开始，target_sort 可能与多季的 sort 重复。
+        # 此时需跳过前 (target_season - 1) 个 sort=target_sort 的章节。
+        # 检测是否为 sort 重置场景：season_start_sorts 中有多个 1（或多个相同值）
+        if (
+            not use_ep_field
+            and target_season > 1
+            and season_start_sorts.count(season_start_sort) > 1
+        ):
+            # sort 重置场景：跳过前 (target_season - 1) 个匹配
+            match_count = 0
+            for ep in pool:
+                if ep.get("sort") == target_sort:
+                    match_count += 1
+                    if match_count == target_season:
+                        logger.debug(
+                            f"连续编号匹配(sort 重置): subject_id={subject_id} "
+                            f"season={target_season} ep={target_ep} → sort={target_sort} "
+                            f"ep_id={ep['id']} (第 {match_count} 个匹配)"
+                        )
+                        return subject_id, ep["id"]
+        else:
+            # 连续编号场景：sort 唯一
+            for ep in pool:
+                if ep.get("sort") == target_sort:
+                    logger.debug(
+                        f"连续编号匹配: subject_id={subject_id} "
+                        f"season={target_season} ep={target_ep} → sort={target_sort} "
+                        f"ep_id={ep['id']} (use_ep_field={use_ep_field})"
+                    )
+                    return subject_id, ep["id"]
 
         logger.debug(
             f"连续编号: 未找到 sort={target_sort} 的章节 "
@@ -488,6 +576,11 @@ class EpisodesMixin:
 
     def _find_next_sequel_id(self, current_id: int) -> int | None:
         """从关联条目中查找续集 subject_id，无则返回 None"""
+        # Archive 短路：本地命中即返回（int 或 None）
+        shortcut = self._archive.try_find_next_sequel_id(current_id)
+        if shortcut.hit:
+            return shortcut.data
+
         related = self.get_related_subjects(current_id)
         if isinstance(related, list):
             next_id = [i for i in related if i.get("relation") == _RELATION_CN_SEQUEL]
@@ -510,6 +603,11 @@ class EpisodesMixin:
         - "前传"（RELATION_ID_PREQUEL）：前作
         - "主线故事"（RELATION_ID_PARENT_STORY）：剧场版关联条目中的主线剧集条目
         """
+        # Archive 短路：本地命中即返回（int 或 None）
+        shortcut = self._archive.try_find_related_id_by_relation(subject_id, relation)
+        if shortcut.hit:
+            return shortcut.data
+
         related = self.get_related_subjects(subject_id)
         if isinstance(related, list):
             items = related
@@ -629,6 +727,24 @@ class EpisodesMixin:
         if not relation:
             return None
 
+        # 快速路径：archive 启用且命中时，一次拿完整续集链批量遍历
+        # 避免 sequel 方向逐跳 _find_related_id_by_relation + get_subject 调用
+        # archive 命中时链上 get_subject / _find_episode_by_sort 也都走 archive 短路
+        # archive miss / 未启用 / 空链时降级到逐跳逻辑（保持原行为）
+        if direction == "sequel":
+            shortcut = self._archive.try_find_sequel_chain(start_id, max_hops=max_depth)
+            if shortcut.hit:
+                chain = shortcut.data or []
+                result = self._find_episode_in_chain(
+                    chain, target_ep, visited, deadline
+                )
+                if result:
+                    return result
+                # archive 命中但链上未找到目标 ep，返回 None
+                # 避免重复走逐跳逻辑（archive 已确认链上无目标）
+                return None
+
+        # 降级路径：逐跳遍历（archive 未启用 / miss / prequel 方向）
         current_id = start_id
         for _ in range(max_depth):
             if deadline is not None and time.monotonic() > deadline:
@@ -668,6 +784,66 @@ class EpisodesMixin:
             if found:
                 logger.debug(
                     f"通过{direction}链找到目标集: subject_id={current_id}, "
+                    f"sort={target_ep}, ep_id={found['id']}"
+                )
+                return current_id, found["id"]
+        return None
+
+    def _find_episode_in_chain(
+        self,
+        chain: list[int],
+        target_ep: int,
+        visited: set,
+        deadline: float | None = None,
+    ) -> tuple[int, int] | None:
+        """在已知续集链上批量遍历查找含 sort=target_ep 的条目
+
+        与 _walk_chain_for_episode 的逐跳逻辑相比：
+        - 跳过 _find_related_id_by_relation（chain 已预构图）
+        - 保留类型/剧场版过滤和 deadline 检查
+        - 已访问的 subject_id 跳过（防环）
+
+        Args:
+            chain: 续集链 subject_id 列表（不含起始条目）
+            target_ep: 目标集数
+            visited: 已访问的 subject_id 集合（会被本方法更新）
+            deadline: 整体 deadline
+        """
+        for current_id in chain:
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+
+            if deadline is not None and time.monotonic() > deadline:
+                logger.warning(
+                    f"_find_episode_in_chain 整体 deadline 超时，终止链遍历: "
+                    f"current_id={current_id}, target_ep={target_ep}"
+                )
+                return None
+
+            # 类型过滤：只看动画（SUBJECT_TYPE_ANIME），跳过书籍/音乐等
+            info = self.get_subject(current_id)
+            if not info:
+                continue
+            if info.get("type") != SUBJECT_TYPE_ANIME:
+                continue
+            # 跳过剧场版/电影（标题命中关键词）
+            name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
+            if "剧场版" in name or "电影" in name:
+                continue
+
+            if deadline is not None and time.monotonic() > deadline:
+                logger.warning(
+                    f"_find_episode_in_chain 整体 deadline 超时，终止链遍历: "
+                    f"current_id={current_id}, target_ep={target_ep}"
+                )
+                return None
+
+            # 在当前条目内查 sort
+            found = self._find_episode_by_sort(current_id, target_ep)
+            if found:
+                logger.debug(
+                    f"通过 archive 续集链找到目标集: subject_id={current_id}, "
                     f"sort={target_ep}, ep_id={found['id']}"
                 )
                 return current_id, found["id"]
@@ -769,7 +945,16 @@ class EpisodesMixin:
                         and "第2部分" not in current_info.get("name_cn", "")
                     ):
                         season_num += 1
-                elif any(ep.get("sort") == 1 for ep in ep_info):
+                    elif not _target_ep:
+                        # 兜底：新续集 subject 既无 sort=target_ep 也无 ep=target_ep，
+                        # 仍应认为是一个新季度，避免 season_num 不递增导致走过头。
+                        # 场景：续集链中的 OVA/特别篇 episode 数据稀疏，
+                        # 不应因缺少目标章节而跳过整个 subject 的季度计数。
+                        season_num += 1
+                else:
+                    # 有 sort=target_ep 的章节，认为是新季开始。
+                    # 不再强制检查 sort=1：长篇续集（如魔人ブウ編 sort 从 99 开始）
+                    # 也是独立季度，应递增 season_num。
                     season_num += 1
                     last_season_num = None
             if season_num > target_season:

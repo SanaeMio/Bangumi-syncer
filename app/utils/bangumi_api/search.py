@@ -77,6 +77,23 @@ class SearchMixin:
         if cache_key in self._cache["search"]:
             return self._cache["search"][cache_key]
 
+        # Archive 短路：本地命中即返回，未命中降级到 API
+        shortcut = self._archive.try_search(
+            title,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            subject_types=subject_types,
+        )
+        if shortcut.hit:
+            data_list = shortcut.data or []
+            result = data_list if list_only else {"data": data_list}
+            self._put_cache("search", cache_key, result)
+            self.last_hit_source = "archive"
+            return result
+        # archive 未命中/未启用：走 API，清空命中来源标记
+        self.last_hit_source = ""
+
         res = self._request_with_retry(
             "POST",
             self._req_not_auth,
@@ -113,6 +130,21 @@ class SearchMixin:
         if cache_key in self._cache["search_old"]:
             return self._cache["search_old"][cache_key]
 
+        # Archive 短路：本地命中即返回，未命中降级到 API
+        shortcut = self._archive.try_search_old(title, subject_type=subject_type)
+        if shortcut.hit:
+            data_list = shortcut.data or []
+            result = (
+                data_list
+                if list_only
+                else {"results": len(data_list), "list": data_list}
+            )
+            self._put_cache("search_old", cache_key, result)
+            self.last_hit_source = "archive"
+            return result
+        # archive 未命中/未启用：走 API，清空命中来源标记
+        self.last_hit_source = ""
+
         res = self._request_with_retry(
             "GET",
             self.req,
@@ -138,6 +170,12 @@ class SearchMixin:
         if subject_id in self._cache["get_subject"]:
             return self._cache["get_subject"][subject_id]
 
+        # Archive 短路：本地命中即返回，未命中降级到 API（保持原行为）
+        shortcut = self._archive.try_get_subject(subject_id)
+        if shortcut.hit:
+            self._put_cache("get_subject", subject_id, shortcut.data)
+            return shortcut.data
+
         res = self.get(f"subjects/{subject_id}")
         try:
             res = res.json()
@@ -158,6 +196,12 @@ class SearchMixin:
         # 使用实例缓存避免内存泄漏
         if subject_id in self._cache["get_related_subjects"]:
             return self._cache["get_related_subjects"][subject_id]
+
+        # Archive 短路：本地命中即返回，未命中降级到 API
+        shortcut = self._archive.try_get_related_subjects(subject_id)
+        if shortcut.hit:
+            self._put_cache("get_related_subjects", subject_id, shortcut.data)
+            return shortcut.data
 
         res = self.get(f"subjects/{subject_id}/subjects")
         try:
@@ -187,6 +231,27 @@ class SearchMixin:
         start_date_str = "无日期"
         end_date_str = "无日期"
 
+        # 重置命中来源标记：反映本次 bgm_search 的最终命中来源
+        # 内部 search/search_old 在 archive 命中时会置 "archive"，未命中时置 ""
+        # 调用方据此区分 archive / api_search 两种匹配路径
+        self.last_hit_source = ""
+
+        # 预计算剥离季数/集数后缀的标题变体（用于 API 查询提升匹配率）
+        # 场景：fongmi/媒体库推送「完美世界 S06E279」，archive 禁用或 miss
+        # 后降级到 API，原样发给 Bangumi API 会因季后缀导致无结果或低相似度
+        # 命中，剥离后用核心标题「完美世界」更易命中。
+        # 延迟导入避免循环依赖，与 _archive_shortcut 内部使用同一函数保持
+        # API 与 archive 路径的剥离逻辑一致。
+        from ._archive_shortcut import (
+            _MEDIA_PREFIX_VARIANTS,
+            _split_title_segments,
+            _strip_season_episode_suffix,
+            _strip_title_wrappers,
+        )
+
+        stripped_title = _strip_season_episode_suffix(title)
+        stripped_ori = _strip_season_episode_suffix(ori_title) if ori_title else ""
+
         # 尝试使用 v0 接口进行带首播日期的精确搜索
         if premiere_date and len(premiere_date) >= 10:
             try:
@@ -210,6 +275,22 @@ class SearchMixin:
                     end_date=end_date_str,
                     subject_types=subject_types,
                 )
+                # 剥离季数/集数后缀变体（仅在与原 title 不同时尝试）
+                # 提升 API 场景匹配率：覆盖「完美世界 S06E279」类查询
+                if not bgm_data and stripped_title and stripped_title != title:
+                    bgm_data = self.search(
+                        title=stripped_title,
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        subject_types=subject_types,
+                    )
+                if not bgm_data and stripped_ori and stripped_ori != (ori_title or ""):
+                    bgm_data = self.search(
+                        title=stripped_ori,
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        subject_types=subject_types,
+                    )
 
                 if not bgm_data and is_movie:
                     movie_search_title = ori_title or title
@@ -235,8 +316,74 @@ class SearchMixin:
             )
             < 0.5
         ):
-            # 过滤无效的空标题
-            search_titles = [t for t in (ori_title, title) if t and t.strip()]
+            # 构建搜索标题列表：原始 + 剥离后缀变体（去重，保持优先级）
+            # 原始标题在前（更精确），剥离后缀变体在后（兜底提升命中率）
+            # 额外复用 archive 路径的三种变体策略：
+            # 1. 书名号剥离：「「君の名は。」」→「君の名は。」
+            # 2. 标题分割主段：「魔法少女小圆：叛逆的物语」→「魔法少女小圆」
+            # 3. 媒体前缀变体：「クドわふたー」→「劇場版 クドわふたー」
+            # 仅在已有变体都未命中时尝试（避免对易匹配标题增加延迟）
+            seen_titles: set[str] = set()
+            search_titles: list[str] = []
+            for t in (ori_title, title, stripped_ori, stripped_title):
+                if t and t.strip() and t not in seen_titles:
+                    seen_titles.add(t)
+                    search_titles.append(t)
+
+            # 追加书名号剥离变体（与原始标题不同时才有意义）
+            # 同时作用于原始标题和剥离季数后缀后的标题：
+            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 S02E10 后
+            # 得到「『魔法少女小圆：叛逆的物语』」，再剥离外层 『』 才能拿到
+            # 「魔法少女小圆：叛逆的物语」供后续主段分割。
+            for t in (ori_title, title, stripped_ori, stripped_title):
+                if t:
+                    unwrapped = _strip_title_wrappers(t)
+                    if unwrapped != t and unwrapped not in seen_titles:
+                        seen_titles.add(unwrapped)
+                        search_titles.append(unwrapped)
+
+            # 追加标题分割主段变体（仅当主段长度 >= 4 时才尝试，避免过短误匹配）
+            # 同时对剥离季数后缀和书名号包裹后的标题做分割：
+            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 S02E10 + 外层『』后
+            # 得到「魔法少女小圆：叛逆的物语」，再分割主段得到「魔法少女小圆」。
+            split_bases: list[str] = []
+            for t in (stripped_ori, stripped_title):
+                if t:
+                    split_bases.append(t)
+                    unwrapped = _strip_title_wrappers(t)
+                    if unwrapped != t:
+                        split_bases.append(unwrapped)
+            for t in split_bases:
+                if t:
+                    segments = _split_title_segments(t)
+                    if segments and len(segments[0]) >= 4:
+                        main_seg = segments[0]
+                        if main_seg not in seen_titles:
+                            seen_titles.add(main_seg)
+                            search_titles.append(main_seg)
+
+            # 追加媒体前缀变体（仅当核心标题不含前缀时才拼接尝试）
+            # 用剥离后的标题拼前缀，避免对「劇場版 X」再次拼成「劇場版 劇場版 X」
+            # 同时对书名号剥离后标题和主段拼前缀：
+            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 + 分割后得到
+            # 核心标题「魔法少女小圆」，拼前缀得到「劇場版 魔法少女小圆」更易命中。
+            media_prefix_bases: list[str] = []
+            for base in (stripped_ori, stripped_title):
+                if base:
+                    media_prefix_bases.append(base)
+                    unwrapped = _strip_title_wrappers(base)
+                    if unwrapped != base:
+                        media_prefix_bases.append(unwrapped)
+                    segments = _split_title_segments(unwrapped)
+                    if segments and len(segments[0]) >= 4:
+                        media_prefix_bases.append(segments[0])
+            for base in media_prefix_bases:
+                if base and not any(base.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
+                    for prefix in _MEDIA_PREFIX_VARIANTS:
+                        variant = f"{prefix}{base}"
+                        if variant not in seen_titles:
+                            seen_titles.add(variant)
+                            search_titles.append(variant)
 
             found = False
             for t in search_titles:

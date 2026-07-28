@@ -297,21 +297,47 @@ class MappingService:
             logger.error(f"更新自定义映射失败: {e}")
             return False
 
+    def upsert_single_mapping(
+        self, title: str, subject_id: str, season: int = 1
+    ) -> bool:
+        """新增或更新单条映射（读全量→合并→写回）
+
+        season > 1 写高级格式 ``{"subject_id": str(subject_id), "season": int(season)}``，
+        season <= 1 写简单格式 ``str(subject_id)``（与 confirm_pending_candidate 原逻辑一致）。
+        返回是否写入成功。
+        """
+        all_mappings = self.get_all_mappings()
+        if season > 1:
+            all_mappings[title] = {"subject_id": str(subject_id), "season": int(season)}
+        else:
+            all_mappings[title] = str(subject_id)
+        return self.update_custom_mappings(all_mappings)
+
+    def delete_single_mapping(self, title: str) -> bool:
+        """删除单条映射（读全量→删除→写回）
+
+        返回是否删除成功（不存在也算成功）。
+        """
+        all_mappings = self.get_all_mappings()
+        if title not in all_mappings:
+            return True  # 不存在视为成功
+        del all_mappings[title]
+        return self.update_custom_mappings(all_mappings)
+
     def delete_custom_mapping(self, title: str) -> bool:
-        """删除自定义映射"""
+        """删除自定义映射
+
+        向后兼容包装：不存在时返回 False（与历史行为一致），
+        存在时委托 :meth:`delete_single_mapping` 完成读全量→删除→写回。
+        """
         try:
             mappings = self.load_custom_mappings()
-            if title in mappings:
-                del mappings[title]
-
-                # 更新配置文件（保留现有 rules）
-                if self.update_custom_mappings(mappings):
-                    logger.info(f'映射 "{title}" 已删除')
-                    return True
-                else:
-                    return False
-
-            logger.warning(f'映射 "{title}" 不存在')
+            if title not in mappings:
+                logger.warning(f'映射 "{title}" 不存在')
+                return False
+            if self.delete_single_mapping(title):
+                logger.info(f'映射 "{title}" 已删除')
+                return True
             return False
         except Exception as e:
             logger.error(f"删除自定义映射失败: {e}")

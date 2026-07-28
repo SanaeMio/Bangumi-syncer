@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ..core.logging import logger
 from ..core.security import security_manager
+from ..utils.notifier import send_notify
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -89,6 +90,16 @@ async def login(request: Request, response: Response) -> dict[str, Any]:
                     "%Y-%m-%d %H:%M:%S"
                 )
                 logger.warning(f"IP {client_ip} 因登录失败次数过多被锁定")
+                # 发送IP锁定通知（通知触发职责由 API 层承担，避免 core 反向依赖 utils）
+                attempts_info = security_manager.get_login_attempts(client_ip)
+                auth_config = security_manager.get_auth_config()
+                send_notify(
+                    "ip_locked",
+                    ip=client_ip,
+                    locked_until=lockout_str,
+                    attempt_count=attempts_info.get("attempts", 0),
+                    max_attempts=auth_config.get("max_login_attempts", 5),
+                )
                 raise HTTPException(
                     status_code=423,
                     detail=f"登录失败次数过多，IP已被锁定，请于 {lockout_str} 后重试",

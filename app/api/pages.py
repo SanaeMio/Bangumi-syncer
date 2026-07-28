@@ -125,6 +125,16 @@ async def pending_candidates_page(request: Request):
     )
 
 
+@router.get("/bangumi-replay", response_class=HTMLResponse)
+async def bangumi_replay_page(request: Request):
+    """待同步队列（Replay 补发）页面"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return _login_redirect(request)
+
+    return templates.TemplateResponse(request, "bangumi_replay.html", {"user": user})
+
+
 @router.get("/debug", response_class=HTMLResponse)
 async def debug_page(request: Request):
     """调试工具页面"""
@@ -143,6 +153,16 @@ async def logs_page(request: Request):
         return _login_redirect(request)
 
     return templates.TemplateResponse(request, "logs.html", {"user": user})
+
+
+@router.get("/bangumi-archive", response_class=HTMLResponse)
+async def bangumi_archive_page(request: Request):
+    """Bangumi Archive 离线查询层管理页面"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return _login_redirect(request)
+
+    return templates.TemplateResponse(request, "bangumi_archive.html", {"user": user})
 
 
 @router.get("/trakt/config", response_class=HTMLResponse)

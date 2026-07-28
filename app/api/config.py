@@ -13,7 +13,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.config import config_manager, parse_media_server_username_value
+from ..core.config import (
+    _BANGUMI_NON_ACCOUNT_SECTIONS,
+    config_manager,
+    parse_media_server_username_value,
+)
 from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
     encrypt_if_sensitive,
@@ -21,6 +25,7 @@ from ..core.config_secret_crypto import (
 )
 from ..core.logging import logger
 from ..core.security import security_manager
+from ..services.bangumi_archive_scheduler import bangumi_archive_scheduler
 from ..services.feiniu.scheduler import feiniu_scheduler
 from ..services.feiniu.sync_service import feiniu_sync_service
 from ..services.fongmi.scheduler import fongmi_scheduler
@@ -134,12 +139,13 @@ def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> 
     """处理多账号配置"""
     config = config_manager.get_config_parser()
 
-    # 清除现有的多账号 bangumi-* 配置段（但保留 bangumi-data 和 bangumi-mapping）
+    # 清除现有的多账号 bangumi-* 配置段（保留非账号的系统功能段，
+    # 如 bangumi-data / bangumi-mapping / bangumi-archive）
     sections_to_remove = [
         section
         for section in config.sections()
         if section.startswith("bangumi-")
-        and section not in ["bangumi-data", "bangumi-mapping"]
+        and section not in _BANGUMI_NON_ACCOUNT_SECTIONS
     ]
     for section in sections_to_remove:
         config.remove_section(section)
@@ -312,6 +318,25 @@ async def update_config(
 
         # 重置 LLM 客户端单例以使用最新配置
         reset_llm_client()
+
+        try:
+            # 重新加载 BangumiArchive 配置（data_dir 等可能变化）
+            from ..utils.bangumi_archive import bangumi_archive
+
+            bangumi_archive.reload_config()
+            await bangumi_archive_scheduler.apply_config_after_save()
+        except Exception as ex:
+            logger.debug("BangumiArchive 调度器随配置更新: %s", ex)
+
+        try:
+            # 同步 BangumiReplay 调度器状态（enabled/replay_cron 变化时重建定时任务）
+            from ..services.bangumi_replay_scheduler import (
+                bangumi_replay_scheduler,
+            )
+
+            await bangumi_replay_scheduler.apply_config_after_save()
+        except Exception as ex:
+            logger.debug("BangumiReplay 调度器随配置更新: %s", ex)
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:

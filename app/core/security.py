@@ -8,7 +8,6 @@ import secrets
 import time
 from typing import Any, Optional
 
-from ..utils.notifier import send_notify
 from .config import config_manager
 from .config_secret_crypto import (
     encrypt_if_sensitive,
@@ -232,15 +231,6 @@ class SecurityManager:
                 "%Y-%m-%d %H:%M:%S", time.localtime(lockout_until)
             )
             logger.warning(f"IP {ip} 因登录失败次数过多被锁定至 {lockout_time_str}")
-
-            # 发送IP锁定通知
-            send_notify(
-                "ip_locked",
-                ip=ip,
-                locked_until=lockout_time_str,
-                attempt_count=self.login_attempts[ip]["attempts"],
-                max_attempts=auth_config["max_login_attempts"],
-            )
 
     def reset_login_attempts(self, ip: str) -> None:
         """重置登录尝试次数"""

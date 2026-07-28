@@ -80,6 +80,7 @@ def _main_lifespan_mocks(**replace: object):
         "app.main.config_manager.get_user_mappings": {"return_value": {}},
         "app.main.mapping_service.get_all_mappings": {"return_value": {}},
         "app.main.ensure_feiniu_startup_watermark": {},
+        "app.main.database_manager.cleanup_pending_sync_queue": {},
         "app.main.config_manager.get_scheduler_config": {
             "return_value": {"startup_delay": 0}
         },

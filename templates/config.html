@@ -1177,6 +1177,203 @@
                 </div>
             </div>
         </div>
+        <!-- Bangumi Archive 离线查询层 -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-bangumi-archive" class="card mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-database-fill me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">Bangumi Archive 离线查询层</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-toggle-on me-1 text-primary"></i>启用 Archive
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="默认关闭。开启后每周三自动下载 Bangumi 全站数据快照到本地 SQLite。"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center mb-0">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="bangumi-archive-enabled"
+                                           name="bangumi_archive.enabled">
+                                    <label class="form-check-label" for="bangumi-archive-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bangumi-archive-update-cron" class="form-label fw-semibold">
+                                    <i class="bi bi-clock me-1 text-info"></i>定时更新 Cron
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="五段式 Cron，默认每周三 08:00 执行（晚于官方 05:00 发布）。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bangumi-archive-update-cron"
+                                       name="bangumi_archive.update_cron"
+                                       placeholder="0 8 * * 3"
+                                       value="0 8 * * 3">
+                            </div>
+                            <div class="col-md-12">
+                                <label for="bangumi-archive-data-dir" class="form-label fw-semibold">
+                                    <i class="bi bi-folder me-1 text-warning"></i>数据目录
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="存放双库（a/b）、meta、active 指针与索引缓存的目录。默认 ./data/archive，Docker 建议挂载到 /app/data。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bangumi-archive-data-dir"
+                                       name="bangumi_archive.data_dir"
+                                       placeholder="./data/archive">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bangumi-archive-http-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-globe me-1 text-secondary"></i>HTTP 代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="下载 dump zip 时使用的代理，留空则继承 [dev] script_proxy。镜像源 fallback 链会自动尝试。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bangumi-archive-http-proxy"
+                                       name="bangumi_archive.http_proxy"
+                                       placeholder="留空继承 script_proxy">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="bangumi-archive-min-disk-space" class="form-label fw-semibold">
+                                    <i class="bi bi-hdd me-1 text-success"></i>磁盘阈值 (MB)
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="低于此可用空间时跳过导入，避免磁盘写满。默认 2000MB（双库 ~2.8GB + 索引 ~1GB + zip ~0.4GB）。"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="bangumi-archive-min-disk-space"
+                                       name="bangumi_archive.min_disk_space_mb"
+                                       min="100"
+                                       value="2000">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-check me-1 text-info"></i>SSL 校验
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="下载时是否校验 SSL 证书，自签名环境可关闭。"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center mb-0">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="bangumi-archive-ssl-verify"
+                                           name="bangumi_archive.ssl_verify"
+                                           checked>
+                                    <label class="form-check-label" for="bangumi-archive-ssl-verify">校验</label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="alert alert-warning mt-3">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    <strong>警告：</strong>此功能占用的磁盘较大，约需要占用1.5GB大小，请确认是否启用。
+                                </div>
+                                <div class="alert alert-info mb-0 d-flex align-items-center">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <strong>说明：</strong>本功能可以大幅减少对bangumi的api请求，提升对条目的匹配准确性。启用后首次需手动触发导入（约 3-8 分钟，下载 ~400MB 全量数据）。
+                                    数据每周三 05:00 由 Bangumi 官方发布，本项目 08:00 开始自动拉取。
+                                </div>
+                            </div>
+                            <!-- Bangumi Replay 待同步队列补发（与 archive 合并段） -->
+                            <div class="col-12 mt-4">
+                                <div class="d-flex align-items-center mb-3">
+                                    <i class="bi bi-clock-history me-2 text-primary"></i>
+                                    <h6 class="m-0 fw-semibold">Replay 待同步队列补发</h6>
+                                    <span class="badge bg-secondary ms-2">依赖 Archive 启用</span>
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold">
+                                            <i class="bi bi-toggle-on me-1 text-primary"></i>启用 Replay
+                                            <i class="bi bi-question-circle ms-1 text-muted"
+                                               data-bs-toggle="tooltip"
+                                               title="仅当 Archive 启用时生效。默认跟随 Archive 启用；关闭后 API 不可达时写操作将直接报错（不入队）。"></i>
+                                        </label>
+                                        <div class="form-check form-switch d-flex align-items-center mb-0">
+                                            <input class="form-check-input me-2"
+                                                   type="checkbox"
+                                                   id="bangumi-archive-replay-enabled"
+                                                   name="bangumi_archive.replay_enabled"
+                                                   checked>
+                                            <label class="form-check-label" for="bangumi-archive-replay-enabled">启用</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="bangumi-archive-api-probe-interval"
+                                               class="form-label fw-semibold">
+                                            <i class="bi bi-stopwatch me-1 text-warning"></i>API 不可达 TTL (秒)
+                                            <i class="bi bi-question-circle ms-1 text-muted"
+                                               data-bs-toggle="tooltip"
+                                               title="标记 API 不可达后的冷却时间。期间所有写操作直接入队，不发请求。默认 300 秒（5 分钟）。"></i>
+                                        </label>
+                                        <input type="number"
+                                               class="form-control"
+                                               id="bangumi-archive-api-probe-interval"
+                                               name="bangumi_archive.api_probe_interval"
+                                               min="30"
+                                               value="300">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="bangumi-archive-replay-cron" class="form-label fw-semibold">
+                                            <i class="bi bi-clock me-1 text-info"></i>补发调度 Cron
+                                            <i class="bi bi-question-circle ms-1 text-muted"
+                                               data-bs-toggle="tooltip"
+                                               title="五段式 Cron，默认每 10 分钟扫描一次 pending_sync_queue 进行补发。"></i>
+                                        </label>
+                                        <input type="text"
+                                               class="form-control"
+                                               id="bangumi-archive-replay-cron"
+                                               name="bangumi_archive.replay_cron"
+                                               placeholder="*/10 * * * *"
+                                               value="*/10 * * * *">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="bangumi-archive-replay-batch-size"
+                                               class="form-label fw-semibold">
+                                            <i class="bi bi-stack me-1 text-success"></i>批量大小
+                                            <i class="bi bi-question-circle ms-1 text-muted"
+                                               data-bs-toggle="tooltip"
+                                               title="每轮补发最多处理的任务数量。"></i>
+                                        </label>
+                                        <input type="number"
+                                               class="form-control"
+                                               id="bangumi-archive-replay-batch-size"
+                                               name="bangumi_archive.replay_batch_size"
+                                               min="1"
+                                               value="20">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="bangumi-archive-max-attempts" class="form-label fw-semibold">
+                                            <i class="bi bi-arrow-repeat me-1 text-danger"></i>最大重试次数
+                                            <i class="bi bi-question-circle ms-1 text-muted"
+                                               data-bs-toggle="tooltip"
+                                               title="单条任务重试次数上限，超过后标记为 abandoned 不再重试。"></i>
+                                        </label>
+                                        <input type="number"
+                                               class="form-control"
+                                               id="bangumi-archive-max-attempts"
+                                               name="bangumi_archive.max_attempts"
+                                               min="1"
+                                               value="50">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </form>
     <!-- 操作按钮 -->
     <div id="config-section-actions" class="row">
@@ -1499,6 +1696,7 @@ function refreshConfigPageToc() {
         { id: 'config-section-notify', label: '通知', mode: 'always' },
         { id: 'config-section-feiniu', label: '飞牛', mode: 'always' },
         { id: 'config-section-fongmi', label: 'fongmi', mode: 'always' },
+        { id: 'config-section-bangumi-archive', label: 'bangumi archive', mode: 'always' },
         { id: 'config-section-actions', label: '保存区', mode: 'always', primary: true },
     ];
     items.forEach(function (item) {
@@ -1708,6 +1906,24 @@ function populateForm(config) {
         document.getElementById('fongmi-sync-interval').value = fm.sync_interval || '*/3 * * * *';
     }
 
+    // 填充 Bangumi Archive 配置
+    const ba = config.bangumi_archive || {};
+    const baEnabled = document.getElementById('bangumi-archive-enabled');
+    if (baEnabled) {
+        baEnabled.checked = ba.enabled === true || ba.enabled === 'true' || String(ba.enabled).toLowerCase() === 'true';
+        document.getElementById('bangumi-archive-update-cron').value = ba.update_cron || '0 8 * * 3';
+        document.getElementById('bangumi-archive-data-dir').value = ba.data_dir || './data/archive';
+        document.getElementById('bangumi-archive-http-proxy').value = ba.http_proxy || '';
+        document.getElementById('bangumi-archive-min-disk-space').value = (ba.min_disk_space_mb != null && ba.min_disk_space_mb !== '') ? ba.min_disk_space_mb : 2000;
+        document.getElementById('bangumi-archive-ssl-verify').checked = ba.ssl_verify !== false;
+        // Replay 子配置（合并段）
+        document.getElementById('bangumi-archive-replay-enabled').checked = ba.replay_enabled !== false;
+        document.getElementById('bangumi-archive-api-probe-interval').value = (ba.api_probe_interval != null && ba.api_probe_interval !== '') ? ba.api_probe_interval : 300;
+        document.getElementById('bangumi-archive-replay-cron').value = ba.replay_cron || '*/10 * * * *';
+        document.getElementById('bangumi-archive-replay-batch-size').value = (ba.replay_batch_size != null && ba.replay_batch_size !== '') ? ba.replay_batch_size : 20;
+        document.getElementById('bangumi-archive-max-attempts').value = (ba.max_attempts != null && ba.max_attempts !== '') ? ba.max_attempts : 50;
+    }
+
     // 填充认证配置
     if (config.auth) {
         document.getElementById('auth-enabled').checked = config.auth.enabled !== false;
@@ -1900,6 +2116,19 @@ async function saveConfig() {
                 subnet: document.getElementById('fongmi-subnet').value.trim(),
                 min_percent: parseInt(document.getElementById('fongmi-min-percent').value, 10) || 80,
                 sync_interval: document.getElementById('fongmi-sync-interval').value.trim() || '*/3 * * * *'
+            },
+            bangumi_archive: {
+                enabled: document.getElementById('bangumi-archive-enabled').checked,
+                update_cron: document.getElementById('bangumi-archive-update-cron').value.trim() || '0 8 * * 3',
+                data_dir: document.getElementById('bangumi-archive-data-dir').value.trim() || './data/archive',
+                http_proxy: document.getElementById('bangumi-archive-http-proxy').value.trim(),
+                min_disk_space_mb: parseInt(document.getElementById('bangumi-archive-min-disk-space').value, 10) || 2000,
+                ssl_verify: document.getElementById('bangumi-archive-ssl-verify').checked,
+                replay_enabled: document.getElementById('bangumi-archive-replay-enabled').checked,
+                api_probe_interval: parseInt(document.getElementById('bangumi-archive-api-probe-interval').value, 10) || 300,
+                replay_cron: document.getElementById('bangumi-archive-replay-cron').value.trim() || '*/10 * * * *',
+                replay_batch_size: parseInt(document.getElementById('bangumi-archive-replay-batch-size').value, 10) || 20,
+                max_attempts: parseInt(document.getElementById('bangumi-archive-max-attempts').value, 10) || 50
             },
             auth: {
                 enabled: document.getElementById('auth-enabled').checked,

@@ -155,17 +155,14 @@ class TestSecurityManager:
     def test_record_login_failure_triggers_lockout(self):
         """测试登录失败次数过多触发锁定"""
         manager = _make_manager()
-        with (
-            patch.object(
-                manager,
-                "get_auth_config",
-                return_value={
-                    "enabled": True,
-                    "max_login_attempts": 2,
-                    "lockout_duration": 900,
-                },
-            ),
-            patch("app.core.security.send_notify"),
+        with patch.object(
+            manager,
+            "get_auth_config",
+            return_value={
+                "enabled": True,
+                "max_login_attempts": 2,
+                "lockout_duration": 900,
+            },
         ):
             manager.login_attempts["192.168.1.1"] = {"attempts": 1}
             manager.record_login_failure("192.168.1.1")

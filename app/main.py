@@ -12,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
+from .api.bangumi_archive import router as bangumi_archive_router
+from .api.bangumi_replay import router as bangumi_replay_router
 from .api.bgm_poster import router as bgm_poster_router
 from .api.config import router as config_router
 from .api.feiniu import router as feiniu_router
@@ -29,11 +31,18 @@ from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
 from .api.upgrade import router as upgrade_router
 from .core.app_version import get_version, get_version_info, get_version_name
+from .core.background_tasks import (
+    cancel_all as cancel_background_tasks,
+    register_background_task,
+    wait_all as wait_background_tasks,
+)
 from .core.config import config_manager
 from .core.database import database_manager
 from .core.logging import logger
 from .core.public_url import get_public_base_path
 from .core.startup_info import startup_info
+from .services.bangumi_archive_scheduler import bangumi_archive_scheduler
+from .services.bangumi_replay_scheduler import bangumi_replay_scheduler
 from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.fongmi.scheduler import fongmi_scheduler
@@ -41,8 +50,6 @@ from .services.mapping_service import mapping_service
 from .services.summary.scheduler import summary_scheduler
 from .services.sync_service import sync_service
 from .services.trakt.scheduler import trakt_scheduler
-
-_background_tasks: set[asyncio.Task] = set()
 
 # 创建FastAPI应用（root_path 便于反代子路径下 OpenAPI 等）
 _app_kw: dict = {
@@ -85,6 +92,9 @@ async def lifespan(app: FastAPI):
             config_manager.get_config("dev", "sync_records_retention_days", 0)
         )
         database_manager.cleanup_old_records(retention_days)
+        # 复用同一保留期清理待同步队列的 synced/abandoned 历史记录
+        # （pending 是待处理任务，永不清理）
+        database_manager.cleanup_pending_sync_queue(retention_days)
     except Exception as e:
         logger.warning(f"启动时清理旧同步记录失败（不影响主流程）: {e}")
 
@@ -100,6 +110,8 @@ async def lifespan(app: FastAPI):
                 ("飞牛", feiniu_scheduler.start),
                 ("fongmi", fongmi_scheduler.start),
                 ("Summary", summary_scheduler.start),
+                ("BangumiArchive", bangumi_archive_scheduler.start),
+                ("BangumiReplay", bangumi_replay_scheduler.start),
             ]:
                 try:
                     ok = await coro()
@@ -107,9 +119,7 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.error(f"{name} 调度器启动异常: {e}")
 
-        task = asyncio.create_task(delayed_scheduler_start())
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        register_background_task(delayed_scheduler_start())
     except Exception as e:
         logger.error(f"启动调度器失败: {e}")
 
@@ -120,17 +130,17 @@ async def lifespan(app: FastAPI):
     # ===== 关闭 =====
     logger.info("Bangumi-Syncer 正在关闭...")
 
-    for task in _background_tasks:
-        task.cancel()
-    if _background_tasks:
-        await asyncio.gather(*_background_tasks, return_exceptions=True)
-    _background_tasks.clear()
+    # 取消所有后台 fire-and-forget 任务，并等待最多 5 秒让它们清理资源
+    cancel_background_tasks()
+    await wait_background_tasks(timeout=5.0)
 
     for name, coro in [
         ("Trakt", trakt_scheduler.stop),
         ("飞牛", feiniu_scheduler.stop),
         ("fongmi", fongmi_scheduler.stop),
         ("Summary", summary_scheduler.stop),
+        ("BangumiArchive", bangumi_archive_scheduler.stop),
+        ("BangumiReplay", bangumi_replay_scheduler.stop),
     ]:
         try:
             await coro()
@@ -181,6 +191,8 @@ app.include_router(trakt_router)
 app.include_router(feiniu_router)
 app.include_router(fongmi_router)
 app.include_router(upgrade_router)
+app.include_router(bangumi_archive_router)
+app.include_router(bangumi_replay_router)
 
 
 if __name__ == "__main__":

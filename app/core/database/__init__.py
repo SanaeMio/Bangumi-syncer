@@ -27,6 +27,7 @@ from .feiniu import FeiniuRepository
 from .inbox import InboxRepository
 from .llm_usage import LLMUsageRepository
 from .pending_candidates import PendingCandidatesRepository
+from .pending_sync_queue import PendingSyncQueueRepository
 from .sync_records import SyncRecordsRepository
 from .trakt import TraktRepository
 
@@ -54,6 +55,7 @@ class DatabaseManager:
         self._trakt = TraktRepository(self._connection)
         self.llm_usage = LLMUsageRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
+        self._pending_sync = PendingSyncQueueRepository(self._connection)
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
         # 需要先创建 inbox_repository（及其 feiniu 依赖）才能执行回填
         self._inbox.backfill_historical_error_notifications()
@@ -286,6 +288,121 @@ class DatabaseManager:
             confirmed_subject_id=confirmed_subject_id,
             exclude_id=exclude_id,
         )
+
+    # ------------------------------------------------------------------
+    # PendingSyncQueueRepository 转发
+    # ------------------------------------------------------------------
+
+    def enqueue_pending_sync(
+        self,
+        user_name: str,
+        title: str,
+        season: int,
+        episode: int,
+        subject_id: str,
+        episode_id: Optional[str],
+        source: str,
+        media_type: str,
+        payload: dict[str, Any],
+        reason: str = "api_unreachable",
+        last_error: str = "",
+    ) -> Optional[int]:
+        """入队一条待同步任务，返回记录 id（失败时 None）"""
+        return self._pending_sync.enqueue(
+            user_name=user_name,
+            title=title,
+            season=season,
+            episode=episode,
+            subject_id=subject_id,
+            episode_id=episode_id,
+            source=source,
+            media_type=media_type,
+            payload=payload,
+            reason=reason,
+            last_error=last_error,
+        )
+
+    def fetch_pending_sync(
+        self,
+        limit: int = 20,
+        max_attempts: Optional[int] = None,
+        user_name: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """拉取一批 pending 待同步任务（先入先补发）"""
+        return self._pending_sync.fetch_pending(
+            limit=limit, max_attempts=max_attempts, user_name=user_name
+        )
+
+    def mark_pending_sync_synced(
+        self, record_id: int, user_name: Optional[str] = None
+    ) -> bool:
+        """标记待同步任务为已同步"""
+        return self._pending_sync.mark_synced(record_id, user_name=user_name)
+
+    def increment_pending_sync_attempts(
+        self, record_id: int, error: str, user_name: Optional[str] = None
+    ) -> bool:
+        """累加待同步任务重试次数并记录错误"""
+        return self._pending_sync.increment_attempts(
+            record_id, error, user_name=user_name
+        )
+
+    def update_pending_sync_error_message(
+        self, record_id: int, message: str, user_name: Optional[str] = None
+    ) -> bool:
+        """仅更新待同步任务的错误消息，不累加 attempts（用于手动补发失败场景）"""
+        return self._pending_sync.update_error_message(
+            record_id, message, user_name=user_name
+        )
+
+    def mark_pending_sync_abandoned(
+        self, record_id: int, reason: str = "", user_name: Optional[str] = None
+    ) -> bool:
+        """标记待同步任务为放弃"""
+        return self._pending_sync.mark_abandoned(record_id, reason, user_name=user_name)
+
+    def delete_pending_sync_record(
+        self, record_id: int, user_name: Optional[str] = None
+    ) -> bool:
+        """删除一条待同步任务"""
+        return self._pending_sync.delete_record(record_id, user_name=user_name)
+
+    def get_pending_sync_queue(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+        user_name: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """获取待同步队列列表"""
+        return self._pending_sync.get_queue(
+            limit=limit, offset=offset, status=status, user_name=user_name
+        )
+
+    def get_pending_sync_record_by_id(
+        self, record_id: int, user_name: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
+        """获取单条待同步任务详情"""
+        return self._pending_sync.get_record_by_id(record_id, user_name=user_name)
+
+    def count_pending_sync(self) -> int:
+        """当前 pending 任务总数"""
+        return self._pending_sync.count_pending()
+
+    def get_pending_sync_stats(self) -> dict[str, int]:
+        """返回各状态计数"""
+        return self._pending_sync.get_stats()
+
+    def cleanup_pending_sync_queue(
+        self,
+        retention_days: int = 30,
+        statuses: Optional[list[str]] = None,
+    ) -> int:
+        """清理超过保留天数的 synced/abandoned 待同步队列历史记录，返回删除行数。
+
+        绝不删除 pending 状态的记录。
+        """
+        return self._pending_sync.cleanup_old_records(retention_days, statuses)
 
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""

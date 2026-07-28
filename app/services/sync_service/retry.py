@@ -4,10 +4,18 @@
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Optional
 
 from ...core.logging import logger
 from ...utils.bangumi_api import BangumiApi
+from ...utils.bangumi_api.collection import _PendingSyncQueued, is_replay_enabled
+
+# 标记方法返回值约定：
+#   0: 已在看/看过（无变更）
+#   1: 已标记为看过
+#   2: 已新增收藏为在看并标记单集
+#  -1: API 不可达，已入待同步队列（replay 模式专用，不视为错误）
+MARK_QUEUED = -1
 
 
 class RetryMixin:
@@ -17,9 +25,24 @@ class RetryMixin:
     _executor: Any  # ThreadPoolExecutor，供异步版本使用
 
     def _retry_mark_episode(
-        self, bgm_api: BangumiApi, subject_id: str, ep_id: str, max_retries: int = 3
+        self,
+        bgm_api: BangumiApi,
+        subject_id: str,
+        ep_id: str,
+        max_retries: int = 3,
+        *,
+        queue_payload: Optional[dict] = None,
     ) -> int:
-        """带重试机制的标记剧集方法（优化版，减少阻塞时间）"""
+        """带重试机制的标记剧集方法（优化版，减少阻塞时间）
+
+        Args:
+            queue_payload: 入队时携带的完整 payload（CustomItem 序列化），
+                供补发时重新走完整同步流程。未传则只存 subject_id+ep_id。
+
+        当 API 不可达且 [bangumi-archive] enabled=true 时，
+        捕获 _PendingSyncQueued 后入队，返回 MARK_QUEUED(-1)。
+        上层据此跳过失败分支，把同步记录标记为 queued 而非 error。
+        """
         for attempt in range(max_retries + 1):
             try:
                 mark_status = bgm_api.mark_episode_watched(
@@ -28,6 +51,24 @@ class RetryMixin:
                 if attempt > 0:
                     logger.info(f"重试成功，第 {attempt + 1} 次尝试标记成功")
                 return mark_status
+            except _PendingSyncQueued as e:
+                # API 不可达：入队并返回 MARK_QUEUED，不再重试
+                if is_replay_enabled() and queue_payload is not None:
+                    logger.warning(
+                        f"📚 API 不可达，已入待同步队列: subject={e.subject_id} "
+                        f"ep={e.ep_id} reason={e.reason}"
+                    )
+                    self._enqueue_pending_sync(
+                        bgm_api=bgm_api,
+                        subject_id=e.subject_id,
+                        ep_id=e.ep_id,
+                        reason=e.reason,
+                        last_error=str(e.cause) if e.cause else e.reason,
+                        payload=queue_payload,
+                    )
+                    return MARK_QUEUED
+                # 未启用补发：按原行为抛错
+                raise
             except Exception as e:
                 if attempt < max_retries:
                     # 优化延迟策略：减少最大延迟时间
@@ -48,7 +89,13 @@ class RetryMixin:
         return 0  # pragma: no cover
 
     async def _retry_mark_episode_async(
-        self, bgm_api: BangumiApi, subject_id: str, ep_id: str, max_retries: int = 3
+        self,
+        bgm_api: BangumiApi,
+        subject_id: str,
+        ep_id: str,
+        max_retries: int = 3,
+        *,
+        queue_payload: Optional[dict] = None,
     ) -> int:
         """异步版本的重试标记剧集方法"""
         for attempt in range(max_retries + 1):
@@ -61,6 +108,22 @@ class RetryMixin:
                 if attempt > 0:
                     logger.info(f"异步重试成功，第 {attempt + 1} 次尝试标记成功")
                 return mark_status
+            except _PendingSyncQueued as e:
+                if is_replay_enabled() and queue_payload is not None:
+                    logger.warning(
+                        f"📚 API 不可达，已入待同步队列: subject={e.subject_id} "
+                        f"ep={e.ep_id} reason={e.reason}"
+                    )
+                    self._enqueue_pending_sync(
+                        bgm_api=bgm_api,
+                        subject_id=e.subject_id,
+                        ep_id=e.ep_id,
+                        reason=e.reason,
+                        last_error=str(e.cause) if e.cause else e.reason,
+                        payload=queue_payload,
+                    )
+                    return MARK_QUEUED
+                raise
             except Exception as e:
                 if attempt < max_retries:
                     delay = min(2**attempt, 3)  # 最大延迟3秒
@@ -78,3 +141,43 @@ class RetryMixin:
                     raise e
         # This line should never be reached due to the loop logic
         return 0  # pragma: no cover
+
+    # ------------------------------------------------------------------
+    # 待同步队列入队辅助（延迟 import 避免循环依赖）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _enqueue_pending_sync(
+        bgm_api: BangumiApi,
+        subject_id: Any,
+        ep_id: Any,
+        reason: str,
+        last_error: str,
+        payload: dict,
+    ) -> None:
+        """把一条标记任务写入 pending_sync_queue 表"""
+        from ...core.database import database_manager
+
+        # user_name 必须用媒体库用户名（payload 里的），与 _get_bangumi_api_for_user
+        # 和 WebUI 用户过滤一致；bgm_api.username 是 Bangumi 账号名，多用户模式下
+        # 会与 [bangumi-*] 映射 key 不匹配，导致补发找不到配置、队列对用户不可见
+        user_name = str(payload.get("user_name", "") or "")
+        title = str(payload.get("title", ""))
+        season = int(payload.get("season", 1) or 1)
+        episode = int(payload.get("episode", 0) or 0)
+        source = str(payload.get("source", "") or "")
+        media_type = str(payload.get("media_type", "episode") or "episode")
+
+        database_manager.enqueue_pending_sync(
+            user_name=user_name,
+            title=title,
+            season=season,
+            episode=episode,
+            subject_id=str(subject_id),
+            episode_id=str(ep_id) if ep_id else None,
+            source=source,
+            media_type=media_type,
+            payload=payload,
+            reason=reason,
+            last_error=last_error,
+        )

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 # time/asyncio 重新导出以兼容测试 patch（app.services.sync_service.time.sleep 等）
 import asyncio  # noqa: F401
+import json
 import threading
 import time  # noqa: F401
 import traceback
@@ -24,6 +25,7 @@ from ...core.logging import (
 )
 from ...models.sync import CustomItem, SyncResponse
 from ...utils.bangumi_api import BangumiApi
+from ...utils.bangumi_api.collection import _PendingSyncQueued, is_replay_enabled
 from ...utils.bangumi_constants import (
     COLLECTION_TYPE_DONE,
     RELATION_ID_PARENT_STORY,
@@ -36,7 +38,7 @@ from ...utils.media_type_detector import detect_media_type
 from ...utils.notifier import send_notify
 from ..mapping_service import mapping_service
 from .match_trace import MatchCandidate, MatchTrace
-from .retry import RetryMixin
+from .retry import MARK_QUEUED, RetryMixin
 from .season_info import SeasonInfoMixin
 from .task_manager import TaskManagerMixin
 from .title_normalize import TitleNormalizeMixin
@@ -50,6 +52,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         self._cached_mappings: dict[str, str] = {}
         self._mapping_file_path: str | None = None
         self._last_modified_time: float = 0
+        # BangumiApi 实例缓存：user_name → (实例, 配置快照)
+        # 配置快照变更时自动失效重建，避免每次同步都重新构造 httpx.Client
+        self._bangumi_api_cache: dict[str, tuple[BangumiApi, dict]] = {}
         # 线程池大小从配置读取
         try:
             scheduler_cfg = config_manager.get_scheduler_config()
@@ -142,8 +147,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     ) -> tuple[bool, str]:
         """确认待确认候选：写入自定义映射并标记为已确认
 
-        返回 (success, message)。映射写入采用读全量→合并→写回的模式，
-        避免覆盖已有映射。
+        返回 (success, message)。映射写入委托
+        :meth:`MappingService.upsert_single_mapping`，由其内部完成
+        读全量→合并→写回，避免覆盖已有映射。
         """
         record = database_manager.get_pending_candidate_by_id(candidate_id)
         if not record:
@@ -156,13 +162,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         if not title or not subject_id:
             return False, "标题或 subject_id 为空"
 
-        # 读全量映射 → 合并新条目 → 写回
-        all_mappings = mapping_service.get_all_mappings()
-        if season > 1:
-            all_mappings[title] = {"subject_id": str(subject_id), "season": season}
-        else:
-            all_mappings[title] = str(subject_id)
-        if not mapping_service.update_custom_mappings(all_mappings):
+        # 写入单条映射（读全量→合并→写回由 mapping_service 封装）
+        if not mapping_service.upsert_single_mapping(title, subject_id, season):
             return False, "写入自定义映射失败"
 
         database_manager.update_pending_candidate_status(
@@ -345,6 +346,63 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
             try:
                 mark_st = bgm.ensure_subject_watching(str(subject_id))
+            except _PendingSyncQueued as e:
+                # API 不可达：与剧集降级路径对称，入待同步队列而非报错
+                if not is_replay_enabled():
+                    # 未启用补发：让异常向上抛，由外层捕获为 error
+                    raise
+                self._enqueue_pending_sync(
+                    bgm_api=bgm,
+                    subject_id=e.subject_id,
+                    ep_id=e.ep_id,
+                    reason=e.reason,
+                    last_error=str(e.cause) if e.cause else e.reason,
+                    payload=item.model_dump(),
+                )
+                queued_message = (
+                    f"📚 Bangumi API 不可达，已入待同步队列："
+                    f"{item.title} → subject/{subject_id}"
+                )
+                logger.warning(queued_message)
+                database_manager.log_sync_record(
+                    user_name=item.user_name,
+                    title=item.title,
+                    ori_title=item.ori_title or "",
+                    season=item.season,
+                    episode=item.episode,
+                    subject_id=str(subject_id),
+                    episode_id=None,
+                    status="queued",
+                    message=queued_message,
+                    source=actual_source,
+                    media_type=item.media_type,
+                    match_method=trace.final_match_method if trace else "",
+                    match_score=trace.final_score if trace else None,
+                    match_platform=self._extract_matched_platform(trace, subject_id)
+                    if trace
+                    else "",
+                    match_trace=trace.to_dict() if trace else None,
+                )
+                try:
+                    send_notify(
+                        "sync_queued",
+                        item,
+                        actual_source,
+                        subject_id=str(subject_id),
+                        episode_id="",
+                    )
+                except Exception:
+                    pass
+                return SyncResponse(
+                    status="queued",
+                    message=queued_message,
+                    data={
+                        "title": item.title,
+                        "season": item.season,
+                        "episode": item.episode,
+                        "subject_id": str(subject_id),
+                    },
+                )
             except ValueError as ve:
                 if "认证失败" in str(ve) or "access_token" in str(ve):
                     return SyncResponse(status="error", message=str(ve))
@@ -1078,7 +1136,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             # 标记为看过
             sync_action_step = trace.start_step("sync_action") if trace else None
             try:
-                mark_status = self._retry_mark_episode(bgm, bgm_se_id, bgm_ep_id)
+                # 传入 queue_payload：API 不可达时由 retry 层入待同步队列
+                mark_status = self._retry_mark_episode(
+                    bgm,
+                    bgm_se_id,
+                    bgm_ep_id,
+                    queue_payload=item.model_dump(),
+                )
             except ValueError as ve:
                 # 捕获认证错误（通知已在 BangumiApi 中发送）
                 if "认证失败" in str(ve) or "access_token" in str(ve):
@@ -1089,6 +1153,72 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     return SyncResponse(status="error", message=str(ve))
                 else:
                     raise ve
+
+            # API 不可达：已入待同步队列，跳过后续步骤，记录为 queued 而非 error
+            if mark_status == MARK_QUEUED:
+                if sync_action_step:
+                    sync_action_step.status = "hit"
+                    sync_action_step.subject_id = str(bgm_se_id)
+                    sync_action_step.reason = (
+                        "API 不可达，已入待同步队列，等待补发调度器重放"
+                    )
+                if trace:
+                    trace.final_action = "queued"
+                    trace.final_status = "queued"
+                    trace.final_message = "API 不可达，已入待同步队列"
+                    trace.finish()
+
+                queued_message = (
+                    f"📚 Bangumi API 不可达，已入待同步队列："
+                    f"{item.title} S{item.season:02d}E{item.episode:02d} → "
+                    f"subject/{bgm_se_id}" + (f" · ep/{bgm_ep_id}" if bgm_ep_id else "")
+                )
+                # 记录为 queued（沿用 success 表，便于 dashboard 统计）
+                database_manager.log_sync_record(
+                    user_name=item.user_name,
+                    title=item.title,
+                    ori_title=item.ori_title or "",
+                    season=item.season,
+                    episode=item.episode,
+                    subject_id=bgm_se_id,
+                    episode_id=bgm_ep_id,
+                    status="queued",
+                    message=queued_message,
+                    source=actual_source,
+                    media_type=item.media_type,
+                    bgm_title=bgm_title,
+                    match_method=trace.final_match_method if trace else "",
+                    match_score=trace.final_score if trace else None,
+                    match_platform=self._extract_matched_platform(trace, subject_id)
+                    if trace
+                    else "",
+                    match_trace=trace.to_dict() if trace else None,
+                )
+                # 通知用户：同步已排队（非错误，是降级成功）
+                try:
+                    send_notify(
+                        "sync_queued",
+                        item,
+                        actual_source,
+                        subject_id=str(bgm_se_id),
+                        episode_id=str(bgm_ep_id) if bgm_ep_id else "",
+                        bgm_title=bgm_title,
+                    )
+                except Exception:
+                    pass
+                status_holder[0] = "queued"
+                return SyncResponse(
+                    status="queued",
+                    message=queued_message,
+                    data={
+                        "title": item.title,
+                        "bgm_title": bgm_title,
+                        "season": item.season,
+                        "episode": item.episode,
+                        "subject_id": bgm_se_id,
+                        "episode_id": bgm_ep_id,
+                    },
+                )
 
             if sync_action_step:
                 sync_action_step.status = "hit"
@@ -1537,6 +1667,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     trace.finish()
                 return None, False, "Bangumi 搜索无结果"
 
+            # 判断本次搜索最终命中来源：archive 短路命中标记为 "archive"，
+            # 否则（走 API 命中）保持 "api_search"。后续 step.stage / candidates.source /
+            # final_match_method 都据此区分，让"本地归档匹配"在同步记录详情中可见。
+            is_archive_hit = bgm.last_hit_source == "archive"
+            match_stage = "archive" if is_archive_hit else "api_search"
+            if step:
+                step.stage = match_stage
+
             # top-N platform 加权排序：按放送形态重排候选，使最可能的目标排在首位
             is_movie_request = item.media_type == "movie"
             bgm_data = self._sort_candidates_by_platform(
@@ -1546,7 +1684,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             # 保证 detect_media_type 改选时所有候选都可用，
             # 后续 trace 候选收集单独取 top-5。
 
-            # 记录 api_search step（原始搜索结果，可能在后续 post_search step 中被改选）
+            # 记录 search step（原始搜索结果，可能在后续 post_search step 中被改选）
             original_top = bgm_data[0] if bgm_data else {}
             original_top_id = original_top.get("id")
             original_top_name = (
@@ -1555,7 +1693,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             if step:
                 step.status = "hit"
                 step.subject_id = original_top_id
-                step.reason = f"API 搜索命中：{original_top_name}"
+                step.reason = (
+                    f"本地归档命中：{original_top_name}"
+                    if is_archive_hit
+                    else f"API 搜索命中：{original_top_name}"
+                )
                 for cand in bgm_data[:5]:
                     step.candidates.append(
                         MatchCandidate(
@@ -1564,7 +1706,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             name_cn=cand.get("name_cn", ""),
                             platform=cand.get("platform", ""),
                             air_date=cand.get("date", ""),
-                            source="api_search",
+                            source=match_stage,
                         )
                     )
 
@@ -1580,10 +1722,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     returned_name, item.season
                 ) or self._check_season_info_in_title(returned_name_cn, item.season):
                     is_api_season_matched = True
-            elif item.season == 1:
-                # 第一季：若首条候选明确声明了第N季（N>1，如"凡人修仙传 第五季"），
-                # 说明 API 按热度/相关度返回了续季，需要在候选列表里寻找
-                # 标题不含季度后缀的条目作为第一季本体。
+            if not is_api_season_matched:
+                # season == 1：首条候选可能明确声明了第N季（N>1，如"凡人修仙传 第五季"），
+                #   需在候选列表里寻找标题不含季度后缀的条目作为第一季本体。
+                # season > 1 且季度未匹配：首条候选可能是剧场版/衍生作
+                #   （如"完美世界剧场版 九劫焚天"），季度信息不在标题中，
+                #   需通过媒体类型与关联条目改选命中主线剧集。
                 top_name = bgm_data[0].get("name", "")
                 top_name_cn = bgm_data[0].get("name_cn", "")
                 top_explicit_season = max(
@@ -1755,10 +1899,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 for rel in related_list:
                                     if not isinstance(rel, dict):
                                         continue
-                                    # 类型过滤：排除游戏(4)、书籍(5)等非影视条目，
+                                    # 类型过滤：仅保留动画(2)/三次元(6)，排除书籍(1)/音乐(3)/游戏(4)等非影视条目，
                                     # 防止 detect_media_type 仅凭标题关键词误判
+                                    # （典型场景：「斗破苍穹年番」关联到原作小说「斗破苍穹」type=1，需排除）
                                     rel_type = rel.get("type")
-                                    if rel_type in (4, 5):
+                                    if rel_type not in (
+                                        SUBJECT_TYPE_ANIME,
+                                        SUBJECT_TYPE_REAL,
+                                    ):
                                         continue
                                     rel_name = rel.get("name", "")
                                     rel_name_cn = rel.get("name_cn", "") or rel_name
@@ -1873,8 +2021,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
             if trace:
                 trace.final_subject_id = bgm_data[0]["id"]
-                trace.final_match_method = "api_search"
-                # API 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
+                # 区分 archive / api_search 命中来源（与 step.stage 保持一致）
+                trace.final_match_method = match_stage
+                # 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
                 trace.final_score = 1.0 if is_api_season_matched else 0.9
                 trace.finish()
             return bgm_data[0]["id"], is_api_season_matched, ""
@@ -1890,33 +2039,19 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
     def _get_bangumi_config_for_user(self, user_name: str) -> dict[str, str] | None:
         """根据媒体服务器用户名获取对应的bangumi配置"""
-        mode = config_manager.get("sync", "mode", fallback="single")
-
-        if mode == "single":
-            # 单用户模式，使用默认的bangumi配置
-            return {
-                "username": config_manager.get("bangumi", "username", fallback=""),
-                "access_token": config_manager.get(
-                    "bangumi", "access_token", fallback=""
-                ),
-                "private": config_manager.get("bangumi", "private", fallback=False),
-            }
-        elif mode == "multi":
-            # 多用户模式，根据用户映射查找对应的配置
-            user_mappings = config_manager.get_user_mappings()
-            bangumi_configs = config_manager.get_bangumi_configs()
-
-            bangumi_section = user_mappings.get(user_name)
-            if bangumi_section and bangumi_section in bangumi_configs:
-                return bangumi_configs[bangumi_section]
-            else:
-                logger.error(f"多用户模式下未找到用户 {user_name} 的bangumi配置映射")
-                return None
-
-        return None
+        return config_manager.get_active_bangumi_config(user_name)
 
     def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
-        """根据用户名创建对应的BangumiApi实例"""
+        """根据用户名获取对应的BangumiApi实例
+
+        按用户缓存实例，配置变更时自动失效重建。
+        复用实例可避免每次同步都重新构造 httpx.Client（含连接池建立），
+        同时让 BangumiApi 内部的 OrderedDict 实例缓存跨调用点生效，
+        显著降低单次同步耗时（特别是跨季遍历场景）。
+
+        线程安全说明：dict get/set 在 GIL 下原子，最坏情况是两个线程
+        同时 miss 各创建一个实例，最终 dict 被覆盖，可接受（比加锁性能好）。
+        """
         bangumi_config = self._get_bangumi_config_for_user(user_name)
         if not bangumi_config:
             return None
@@ -1925,21 +2060,234 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.error(f"用户 {user_name} 的bangumi配置不完整")
             return None
 
-        return BangumiApi(
-            username=bangumi_config["username"],
-            access_token=bangumi_config["access_token"],
-            private=bangumi_config["private"],
-            http_proxy=config_manager.get("dev", "script_proxy", fallback=""),
-            ssl_verify=config_manager.get("dev", "ssl_verify", fallback=True),
-            bgm_api_proxy=config_manager.get("dev", "bgm_api_proxy", fallback=""),
-            bgm_next_proxy=config_manager.get("dev", "bgm_next_proxy", fallback=""),
+        # 组装配置快照：bangumi section + dev section 中影响 API 行为的字段
+        dev_snapshot = config_manager.get_dev_http_snapshot()
+        config_snapshot = {
+            "username": bangumi_config["username"],
+            "access_token": bangumi_config["access_token"],
+            "private": bangumi_config["private"],
+            "http_proxy": dev_snapshot["script_proxy"],
+            "ssl_verify": dev_snapshot["ssl_verify"],
+            "bgm_api_proxy": dev_snapshot["bgm_api_proxy"],
+            "bgm_next_proxy": dev_snapshot["bgm_next_proxy"],
+        }
+
+        # 缓存命中：实例存在且配置快照未变化
+        cached = self._bangumi_api_cache.get(user_name)
+        if cached is not None and cached[1] == config_snapshot:
+            return cached[0]
+
+        # 未命中或配置变更：创建新实例
+        api = BangumiApi(
+            username=config_snapshot["username"],
+            access_token=config_snapshot["access_token"],
+            private=config_snapshot["private"],
+            http_proxy=config_snapshot["http_proxy"],
+            ssl_verify=config_snapshot["ssl_verify"],
+            bgm_api_proxy=config_snapshot["bgm_api_proxy"],
+            bgm_next_proxy=config_snapshot["bgm_next_proxy"],
         )
+        self._bangumi_api_cache[user_name] = (api, config_snapshot)
+        return api
 
     def _get_bangumi_data(self) -> BangumiData:
         """获取BangumiData实例（使用实例缓存避免内存泄漏）"""
         if self._bangumi_data_cache is None:
             self._bangumi_data_cache = bangumi_data
         return self._bangumi_data_cache
+
+    # ------------------------------------------------------------------
+    # 待同步队列补发：API 恢复后由调度器或手动 API 触发
+    # ------------------------------------------------------------------
+
+    def replay_pending_item(self, record: dict) -> dict[str, Any]:
+        """补发单条待同步任务，返回 {success, message, should_mark_synced}
+
+        从 pending_sync_queue 表读取一条记录，反序列化 payload：
+        - 剧场版（media_type 为 movie/real_action）：走 ensure_subject_watching 链路
+        - 剧集：走完整的 mark_episode_watched 链路
+        成功时 should_mark_synced=True；仍然不可达时 should_mark_synced=False
+        （不入队，因为已在队列里，只累加 attempts）；
+        业务错误时 should_mark_synced=True（标记 abandoned）。
+        """
+        record_id = int(record.get("id", 0))
+        user_name = record.get("user_name", "")
+        subject_id = str(record.get("subject_id", ""))
+        episode_id = record.get("episode_id") or ""
+        payload_json = record.get("payload_json") or "{}"
+
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            payload = {}
+
+        # 反序列化为 CustomItem 以复用同步逻辑
+        try:
+            item = CustomItem(**payload)
+        except Exception as e:
+            logger.error(
+                f"补发失败：payload 反序列化异常 record_id={record_id} error={e}"
+            )
+            return {
+                "success": False,
+                "message": f"payload 反序列化失败: {e}",
+                "should_mark_synced": True,  # 数据损坏，标记为已处理避免无限重试
+            }
+
+        bgm = self._get_bangumi_api_for_user(user_name)
+        if not bgm:
+            return {
+                "success": False,
+                "message": f"用户 {user_name} 的 bangumi 配置不可用",
+                "should_mark_synced": False,  # 配置问题，不标记，等用户修复
+            }
+
+        # 补发场景下，调度器已通过 _probe_api 确认 API 可达；
+        # 但缓存的 BangumiApi 实例可能仍带着上一轮失败的 _api_unreachable 标记（TTL 未过期）。
+        # 强制清除标记，避免 mark_episode_watched/ensure_subject_watching 第一步就被短路返回 _PendingSyncQueued。
+        bgm.mark_api_reachable()
+
+        # 优先按队列里存的 subject_id + episode_id 直接标记
+        # （比走完整匹配链路快且避免重复消耗 API 调用）
+        try:
+            bgm_se_id = str(subject_id)
+            bgm_ep_id = str(episode_id) if episode_id else ""
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"subject_id/episode_id 解析失败: {e}",
+                "should_mark_synced": True,
+            }
+
+        # 剧场版场景：仅标记条目为在看，不点单集
+        is_movie = payload.get("media_type") in ("movie", "real_action")
+
+        try:
+            if is_movie:
+                mark_status = bgm.ensure_subject_watching(bgm_se_id)
+            else:
+                mark_status = self._retry_mark_episode(
+                    bgm,
+                    bgm_se_id,
+                    bgm_ep_id,
+                    queue_payload=item.model_dump(),
+                )
+        except _PendingSyncQueued:
+            # 仍然不可达，不累加 attempts（避免 TTL 期内频繁重试时累加无意义次数）
+            return {
+                "success": False,
+                "message": "API 仍不可达，已重新入队（不累加 attempts）",
+                "should_mark_synced": False,
+            }
+        except Exception as e:
+            if is_movie:
+                logger.error(
+                    f"补发标记失败 record_id={record_id} subject={bgm_se_id}: {e}"
+                )
+            else:
+                logger.error(
+                    f"补发标记失败 record_id={record_id} "
+                    f"subject={bgm_se_id} ep={bgm_ep_id}: {e}"
+                )
+            return {
+                "success": False,
+                "message": f"标记失败: {e}",
+                "should_mark_synced": False,  # 业务异常暂不放弃，由 attempts 累加控制
+            }
+
+        if mark_status == MARK_QUEUED:
+            # 仍然不可达，已重新入队（去重逻辑会刷新原记录的 created_at）
+            return {
+                "success": False,
+                "message": "API 仍不可达，已重新入队",
+                "should_mark_synced": False,
+            }
+
+        # 补发成功，发通知（可选）
+        try:
+            send_notify(
+                "sync_replayed",
+                item,
+                record.get("source", "") or "replay",
+                subject_id=bgm_se_id,
+                episode_id=bgm_ep_id,
+                mark_status=mark_status,
+            )
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "message": f"补发成功 mark_status={mark_status}",
+            "should_mark_synced": True,
+            "mark_status": mark_status,
+        }
+
+    def replay_pending_batch(
+        self, limit: int = 20, user_name: str | None = None
+    ) -> dict[str, Any]:
+        """批量补发待同步任务，返回统计 {total, success, failed, still_unreachable}
+
+        user_name 非 None 时仅补发该用户的任务（多用户隔离）。
+        """
+        max_attempts = int(
+            config_manager.get("bangumi-archive", "max_attempts", fallback=50)
+        )
+        records = database_manager.fetch_pending_sync(
+            limit=limit, max_attempts=max_attempts, user_name=user_name
+        )
+        if not records:
+            return {"total": 0, "success": 0, "failed": 0, "still_unreachable": 0}
+
+        total = len(records)
+        success = 0
+        failed = 0
+        still_unreachable = 0
+        threshold = int(
+            config_manager.get(
+                "bangumi-archive", "replay_unreachable_threshold", fallback=3
+            )
+        )
+        consecutive_unreachable = 0
+
+        for record in records:
+            record_id = int(record.get("id", 0))
+            result = self.replay_pending_item(record)
+            if result["success"]:
+                success += 1
+                consecutive_unreachable = 0
+                if result.get("should_mark_synced"):
+                    database_manager.mark_pending_sync_synced(record_id)
+            else:
+                # 检查消息判断是否仍然不可达
+                msg = (result.get("message") or "").lower()
+                if "不可达" in msg or "unreachable" in msg:
+                    still_unreachable += 1
+                    consecutive_unreachable += 1
+                    # 连续 N 条不可达才中止，避免单条瞬时故障阻断后续
+                    if consecutive_unreachable >= threshold:
+                        logger.info(f"📚 连续 {threshold} 条任务不可达，中止本轮补发")
+                        break
+                else:
+                    failed += 1
+                    consecutive_unreachable = 0
+                    database_manager.increment_pending_sync_attempts(
+                        record_id, result.get("message", "")
+                    )
+                    # 超过最大重试次数则放弃
+                    attempts = int(record.get("attempts", 0)) + 1
+                    if attempts >= max_attempts:
+                        database_manager.mark_pending_sync_abandoned(
+                            record_id,
+                            reason=f"exceeded max attempts ({max_attempts})",
+                        )
+
+        return {
+            "total": total,
+            "success": success,
+            "failed": failed,
+            "still_unreachable": still_unreachable,
+        }
 
     def _load_custom_mappings(self) -> dict[str, str]:
         """从外部JSON文件读取自定义映射配置"""

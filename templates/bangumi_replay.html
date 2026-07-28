@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}待同步队列 - Bangumi Syncer{% endblock %}
+{% block page_title %}待同步队列（Replay 补发）{% endblock %}
+{% block page_actions %}
+    <div class="btn-group" role="group">
+        <button type="button"
+                class="btn btn-outline-info"
+                onclick="probeApi()"
+                title="手动探测 Bangumi API 可达性">
+            <i class="bi bi-wifi me-1"></i>探测 API
+        </button>
+        <button type="button" class="btn btn-primary" onclick="replayBatch()">
+            <i class="bi bi-play-fill me-1"></i>批量补发
+        </button>
+        <button type="button" class="btn btn-outline-primary" onclick="loadQueue()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+{% endblock %}
+{% block content %}
+    <!-- 说明信息 -->
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>待同步队列说明：</strong>Bangumi API 不可达（5xx/连接错误/超时/429）时，已匹配的同步任务会持久化到此队列，API 恢复后由补发调度器自动重放。也可点击「批量补发」手动触发。
+    </div>
+    <!-- 状态卡片 -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-activity me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">调度器状态</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="replay-status-bar" class="d-flex flex-wrap gap-3">
+                <span class="text-muted">加载中...</span>
+            </div>
+        </div>
+    </div>
+    <!-- 筛选条件 -->
+    <div class="card mb-4 filter-card">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-funnel me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">筛选条件</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="filter-status" class="form-label">状态</label>
+                    <select class="form-select" id="filter-status">
+                        <option value="" selected>全部</option>
+                        <option value="pending">待补发</option>
+                        <option value="synced">已同步</option>
+                        <option value="abandoned">已放弃</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="button"
+                            class="btn btn-outline-primary flex-fill"
+                            onclick="loadQueue(1)">
+                        <i class="bi bi-funnel me-1"></i>应用筛选
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary flex-fill"
+                            onclick="clearFilters()">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 队列列表 -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-clock-history me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">队列列表</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="replay-queue-table-wrap" class="records-table-wrap">
+                <table class="table table-hover table-striped align-middle app-data-table"
+                       id="replay-queue-table">
+                    <thead>
+                        <tr>
+                            <th class="col-hide-sm">入队时间</th>
+                            <th class="records-table-col-title">标题</th>
+                            <th>季/集</th>
+                            <th class="col-hide-sm">条目/章节 ID</th>
+                            <th class="col-hide-sm">来源</th>
+                            <th class="col-hide-sm col-hide-md">重试</th>
+                            <th>状态</th>
+                            <th class="col-hide-sm">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 动态加载 -->
+                    </tbody>
+                </table>
+            </div>
+            <!-- 分页 -->
+            <nav class="app-pagination" id="pagination-nav" aria-label="分页导航">
+                <ul class="pagination app-pagination__list mb-0" id="pagination">
+                    <!-- 动态生成 -->
+                </ul>
+                <div class="app-pagination__summary text-muted" id="pagination-summary"></div>
+            </nav>
+            <!-- 加载状态 -->
+            <div id="loading" class="app-loading-state is-hidden">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 任务详情模态框 -->
+    <div class="modal fade" id="recordDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clock-history me-2"></i>任务详情
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <pre id="record-detail-content" class="mb-0 small"></pre>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script>
+let currentPage = 1;
+const pageLimit = APP_TABLE_PAGE_SIZE;
+let recordDetailModal = null;
+
+function showLoading(show) {
+    setAppTableLoading(show, 'replay-queue-table-wrap');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    recordDetailModal = new bootstrap.Modal(document.getElementById('recordDetailModal'));
+    bindAppTableMobileRowClick('#replay-queue-table', showRecordDetail);
+    loadQueue();
+    loadStatus();
+});
+
+async function loadQueue(page) {
+    if (page) currentPage = page;
+    showLoading(true);
+    const params = new URLSearchParams({ page: currentPage, limit: pageLimit });
+    const status = document.getElementById('filter-status').value;
+    if (status) params.append('status', status);
+    try {
+        const response = await fetch(appUrl('/api/bangumi_replay/queue?' + params), { credentials: 'include' });
+        if (response.status === 401) {
+            window.location.href = appUrl('/login');
+            return;
+        }
+        const data = await response.json();
+        if (data.status === 'success') {
+            displayQueue(data.data.records, data.data.total);
+            renderAppPagination({
+                total: data.data.total,
+                currentPage: currentPage,
+                limit: pageLimit,
+                onPageChange: loadQueue,
+            });
+        } else {
+            showAlert('加载队列失败', 'danger');
+        }
+    } catch (error) {
+        console.error('加载队列失败:', error);
+        showAlert('加载队列失败', 'danger');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function displayQueue(records, total) {
+    const tbody = document.querySelector('#replay-queue-table tbody');
+    tbody.innerHTML = '';
+    if (!records || records.length === 0) {
+        const emptyRow = document.createElement('tr');
+        applyAppTableRowEnter(emptyRow, 0);
+        emptyRow.innerHTML = `<td colspan="8">${createAppEmptyStateHtml('队列为空', 'API 不可达时已匹配的同步任务会自动入队')}</td>`;
+        tbody.appendChild(emptyRow);
+        replayAppTableAnimation('replay-queue-table-wrap');
+        return;
+    }
+    records.forEach((record, index) => {
+        const row = document.createElement('tr');
+        row.dataset.recordId = String(record.id);
+        applyAppTableRowEnter(row, index);
+        const title = escapeHtml(record.title || '');
+        const statusBadge = renderStatusBadge(record.status);
+        const subjectId = record.subject_id || '-';
+        const epId = record.episode_id || '-';
+        const source = record.source || '-';
+        const attempts = record.attempts || 0;
+        const season = record.season != null ? String(record.season).padStart(2, '0') : '--';
+        const episode = record.episode != null ? String(record.episode).padStart(2, '0') : '--';
+        row.innerHTML = `
+            <td class="col-hide-sm"><small>${formatDate(record.created_at)}</small></td>
+            <td class="records-table-col-title" title="${title}">${title}</td>
+            <td>S${season}E${episode}</td>
+            <td class="col-hide-sm"><small>${escapeHtml(String(subjectId))} / ${escapeHtml(String(epId))}</small></td>
+            <td class="col-hide-sm">${escapeHtml(source)}</td>
+            <td class="col-hide-sm col-hide-md"><span class="badge rounded-pill bg-secondary">${attempts}</span></td>
+            <td>${statusBadge}</td>
+            <td class="col-hide-sm text-nowrap records-table-actions">
+                <button type="button" class="btn btn-action btn-outline-primary" onclick="showRecordDetail(${record.id})" title="查看详情">
+                    <i class="bi bi-list-ul"></i>
+                </button>
+                ${record.status === 'pending' ? `
+                    <button type="button" class="btn btn-action btn-outline-success" onclick="replaySingle(${record.id})" title="手动补发">
+                        <i class="bi bi-play-fill"></i>
+                    </button>
+                    <button type="button" class="btn btn-action btn-outline-danger" onclick="deleteRecord(${record.id})" title="删除">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                ` : `
+                    <button type="button" class="btn btn-action btn-outline-danger" onclick="deleteRecord(${record.id})" title="删除">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                `}
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+    replayAppTableAnimation('replay-queue-table-wrap');
+}
+
+function renderStatusBadge(status) {
+    const map = {
+        pending: { cls: 'bg-warning', text: '待补发' },
+        synced: { cls: 'bg-success', text: '已同步' },
+        abandoned: { cls: 'bg-secondary', text: '已放弃' },
+    };
+    const info = map[status] || { cls: 'bg-secondary', text: status || '-' };
+    return `<span class="badge rounded-pill ${info.cls}">${info.text}</span>`;
+}
+
+function clearFilters() {
+    document.getElementById('filter-status').value = '';
+    loadQueue(1);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : String(text);
+    return div.innerHTML;
+}
+
+async function showRecordDetail(recordId) {
+    try {
+        const response = await fetch(appUrl(`/api/bangumi_replay/queue/${recordId}`), { credentials: 'include' });
+        const data = await response.json();
+        if (data.status !== 'success') {
+            showAlert('获取详情失败', 'danger');
+            return;
+        }
+        const record = data.data.record;
+        document.getElementById('record-detail-content').textContent = JSON.stringify(record, null, 2);
+        recordDetailModal.show();
+    } catch (error) {
+        console.error('获取详情失败:', error);
+        showAlert('获取详情失败', 'danger');
+    }
+}
+
+async function replayBatch() {
+    if (!confirm('确认手动触发批量补发？')) return;
+    try {
+        const response = await fetch(appUrl('/api/bangumi_replay/replay?limit=20'), {
+            method: 'POST',
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            const s = data.data || {};
+            showAlert(`补发完成：总计 ${s.total || 0}，成功 ${s.success || 0}，失败 ${s.failed || 0}，仍不可达 ${s.still_unreachable || 0}`, 'success');
+            loadQueue();
+            loadStatus();
+        } else {
+            showAlert('补发失败', 'danger');
+        }
+    } catch (error) {
+        console.error('补发失败:', error);
+        showAlert('补发失败', 'danger');
+    }
+}
+
+async function replaySingle(recordId) {
+    try {
+        const response = await fetch(appUrl(`/api/bangumi_replay/replay/${recordId}`), {
+            method: 'POST',
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            const r = data.data || {};
+            const msg = r.success ? `补发成功：${r.message || ''}` : `补发失败：${r.message || ''}`;
+            showAlert(msg, r.success ? 'success' : 'warning');
+            loadQueue();
+            loadStatus();
+        } else {
+            showAlert('补发失败', 'danger');
+        }
+    } catch (error) {
+        console.error('补发失败:', error);
+        showAlert('补发失败', 'danger');
+    }
+}
+
+async function deleteRecord(recordId) {
+    if (!confirm('确认删除此任务？')) return;
+    try {
+        const response = await fetch(appUrl(`/api/bangumi_replay/queue/${recordId}`), {
+            method: 'DELETE',
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            showAlert('已删除', 'success');
+            loadQueue();
+            loadStatus();
+        } else {
+            showAlert('删除失败', 'danger');
+        }
+    } catch (error) {
+        console.error('删除失败:', error);
+        showAlert('删除失败', 'danger');
+    }
+}
+
+async function probeApi() {
+    try {
+        const response = await fetch(appUrl('/api/bangumi_replay/probe'), {
+            method: 'POST',
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            const r = data.data || {};
+            showAlert(r.message || (r.reachable ? 'API 可达' : 'API 不可达'), r.reachable ? 'success' : 'warning');
+        } else {
+            showAlert('探测失败', 'danger');
+        }
+    } catch (error) {
+        console.error('探测失败:', error);
+        showAlert('探测失败', 'danger');
+    }
+}
+
+async function loadStatus() {
+    try {
+        const response = await fetch(appUrl('/api/bangumi_replay/status'), { credentials: 'include' });
+        const data = await response.json();
+        const bar = document.getElementById('replay-status-bar');
+        if (!data || data.enabled == null) {
+            bar.innerHTML = '<span class="text-muted">无法获取状态</span>';
+            return;
+        }
+        const stats = data.queue_stats || {};
+        const runningBadge = data.running
+            ? '<span class="badge bg-success">运行中</span>'
+            : '<span class="badge bg-secondary">已停止</span>';
+        const enabledBadge = data.enabled
+            ? '<span class="badge bg-primary">已启用</span>'
+            : '<span class="badge bg-secondary">未启用</span>';
+        bar.innerHTML = `
+            ${enabledBadge}
+            ${runningBadge}
+            <span class="text-muted small">Cron: <code>${escapeHtml(data.cron || '-')}</code></span>
+            <span class="badge rounded-pill bg-warning" title="待补发">待补发 ${stats.pending || 0}</span>
+            <span class="badge rounded-pill bg-success" title="已同步">已同步 ${stats.synced || 0}</span>
+            <span class="badge rounded-pill bg-secondary" title="已放弃">已放弃 ${stats.abandoned || 0}</span>
+        `;
+    } catch (error) {
+        console.error('加载状态失败:', error);
+    }
+}
+    </script>
+{% endblock %}

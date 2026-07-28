@@ -2,13 +2,28 @@
 收件箱通知与公告已读状态仓库
 """
 
+import re
 from datetime import datetime
 from typing import Any, Optional
 
-from ...utils.inbox_notifications import notification_group_key
 from ..logging import logger
 from .base_repository import BaseRepository
 from .connection import INBOX_ERROR_BACKFILL_META_KEY
+
+_SYNC_FAIL_RE = re.compile(r"^同步失败：(.+?) (S\d+E\d+|剧场版)$")
+
+
+def notification_group_key(title: str) -> str:
+    """同一番剧的多条同步失败通知归为同一组。
+
+    纯文本解析函数，置于 core 层供 InboxRepository 与
+    utils.inbox_notifications 聚合逻辑共享，避免 core 反向依赖 utils。
+    """
+    t = (title or "").strip()
+    match = _SYNC_FAIL_RE.match(t)
+    if match:
+        return match.group(1).strip()
+    return t
 
 
 class InboxRepository(BaseRepository):

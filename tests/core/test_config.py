@@ -328,6 +328,30 @@ display_name = 家人
         assert allc["multi_accounts"]["bangumi-alice"]["display_name"] == "家人"
         assert allc["multi_accounts"]["bangumi-bob"]["display_name"] == "家人"
 
+    def test_get_all_config_archive_section_not_in_multi_accounts(self, tmp_path):
+        """bangumi-archive 是系统功能段，不应被归入 multi_accounts。
+        回归测试：此前 bangumi-archive 被误判为多账号段，
+        导致前端 config.bangumi_archive 取不到值（enabled 显示为默认 false）。
+        """
+        ini = """
+[sync]
+mode = single
+[bangumi-archive]
+enabled = True
+data_dir = ./data/archive
+[bangumi-main]
+username = u
+access_token = t
+"""
+        cm = _config_manager_from_ini(tmp_path, ini)
+        allc = cm.get_all_config()
+        # bangumi-archive 应作为普通段（下划线归一化）返回，而不是多账号段
+        assert "bangumi_archive" in allc
+        assert allc["bangumi_archive"]["enabled"] is True
+        # multi_accounts 不应包含 bangumi-archive
+        if "multi_accounts" in allc:
+            assert "bangumi-archive" not in allc["multi_accounts"]
+
     def test_reload_multi_account_configs(self, tmp_path):
         cm = _config_manager_from_ini(
             tmp_path,

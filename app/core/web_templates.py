@@ -40,4 +40,27 @@ def get_templates() -> Jinja2Templates:
             return Markup(json.dumps(get_public_base_path()))
 
         env.globals["public_base_path_json"] = public_base_path_json
+
+        # 注入 archive_enabled 函数供 base.html 侧边栏条件显示（避免在每个页面 context 中显式传递）
+        def archive_enabled() -> bool:
+            try:
+                from ..utils.bangumi_archive import bangumi_archive
+
+                return bool(bangumi_archive.enabled)
+            except Exception:
+                return False
+
+        env.globals["archive_enabled"] = archive_enabled
+
+        # 注入 replay_enabled 函数供 base.html 侧边栏条件显示
+        # 规则与 is_replay_enabled 一致：archive 启用且 replay_enabled 非 false
+        def replay_enabled() -> bool:
+            try:
+                from ..utils.bangumi_api.collection import is_replay_enabled
+
+                return bool(is_replay_enabled())
+            except Exception:
+                return False
+
+        env.globals["replay_enabled"] = replay_enabled
     return _templates
