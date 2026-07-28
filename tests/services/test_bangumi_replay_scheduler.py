@@ -399,7 +399,7 @@ class TestProbeApiMultiMode:
 
 
 class TestRunSyncJob:
-    """_run_sync_job 流程：启用检查 → 探测 → 补发"""
+    """_run_sync_job 流程：启用检查 → 队列计数 → 探测 → 补发"""
 
     @pytest.mark.asyncio
     async def test_disabled_returns_without_probe(self):
@@ -420,9 +420,28 @@ class TestRunSyncJob:
                 s, "_probe_api", new_callable=AsyncMock, return_value=False
             ) as probe,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             await s._run_sync_job()
         probe.assert_awaited_once()
+        mock_svc.replay_pending_batch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_queue_skips_probe_and_replay(self):
+        """队列为空时应直接跳过，不探测、不补发"""
+        s = BangumiReplayScheduler()
+        with (
+            patch.object(s, "_is_enabled", return_value=True),
+            patch.object(s, "_probe_api", new_callable=AsyncMock) as probe,
+            patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=0
+            ),
+        ):
+            await s._run_sync_job()
+        probe.assert_not_awaited()
         mock_svc.replay_pending_batch.assert_not_called()
 
     @pytest.mark.asyncio
@@ -434,6 +453,9 @@ class TestRunSyncJob:
             patch.object(s, "_probe_api", new_callable=AsyncMock, return_value=True),
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {("bangumi-replay", "replay_batch_size"): 20}
@@ -458,6 +480,9 @@ class TestRunSyncJob:
             patch.object(s, "_probe_api", new_callable=AsyncMock, return_value=True),
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {("bangumi-replay", "replay_batch_size"): 20}
@@ -487,6 +512,9 @@ class TestRunSyncJob:
                 new_callable=AsyncMock,
                 side_effect=asyncio.TimeoutError,
             ),
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {("bangumi-replay", "replay_batch_size"): 20}
@@ -510,6 +538,9 @@ class TestRunSyncJob:
             patch.object(s, "_probe_api", new_callable=AsyncMock, return_value=True),
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {("bangumi-replay", "replay_batch_size"): 20}
@@ -519,3 +550,51 @@ class TestRunSyncJob:
             await s._run_sync_job()
 
         mock_svc.replay_pending_batch.assert_called_once_with(20)
+
+
+# ----------------------------------------------------------------------
+# 6. trigger_immediate_run
+# ----------------------------------------------------------------------
+
+
+class TestTriggerImmediateRun:
+    """入队后立即触发补发：防抖 + 调度器状态判断"""
+
+    def test_disabled_does_nothing(self):
+        s = BangumiReplayScheduler()
+        with patch.object(s, "_is_enabled", return_value=False):
+            s.trigger_immediate_run()
+        # scheduler 未创建，不应抛出
+
+    def test_scheduler_not_running_does_nothing(self):
+        s = BangumiReplayScheduler()
+        fake_scheduler = MagicMock()
+        fake_scheduler.running = False
+        s.scheduler = fake_scheduler
+        with patch.object(s, "_is_enabled", return_value=True):
+            s.trigger_immediate_run()
+        fake_scheduler.add_job.assert_not_called()
+
+    def test_running_scheduler_adds_immediate_job(self):
+        s = BangumiReplayScheduler()
+        fake_scheduler = MagicMock()
+        fake_scheduler.running = True
+        s.scheduler = fake_scheduler
+        with patch.object(s, "_is_enabled", return_value=True):
+            s.trigger_immediate_run()
+        fake_scheduler.add_job.assert_called_once()
+        kwargs = fake_scheduler.add_job.call_args.kwargs
+        assert kwargs["trigger"] == "date"
+        assert kwargs["id"] == "bangumi_replay_pending_immediate"
+        assert kwargs["replace_existing"] is True
+
+    def test_debounce_within_500ms_skips_second_call(self):
+        s = BangumiReplayScheduler()
+        fake_scheduler = MagicMock()
+        fake_scheduler.running = True
+        s.scheduler = fake_scheduler
+        with patch.object(s, "_is_enabled", return_value=True):
+            s.trigger_immediate_run()
+            # 500ms 内再次触发，应被防抖丢弃
+            s.trigger_immediate_run()
+        assert fake_scheduler.add_job.call_count == 1

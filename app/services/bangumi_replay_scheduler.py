@@ -44,8 +44,21 @@ class BangumiReplayScheduler(BaseScheduler):
         }
 
     async def _run_sync_job(self) -> None:
-        """单轮补发：探测 → 批量补发"""
+        """单轮补发：队列空直接跳过；非空则探测 → 批量补发"""
         if not self._is_enabled():
+            return
+
+        # 队列为空时直接跳过，避免无意义的 API 探测请求
+        from ..core.database import database_manager
+
+        try:
+            pending_count = database_manager.count_pending_sync()
+        except Exception as e:
+            logger.debug(f"📚 统计待同步队列失败: {e}")
+            pending_count = 0
+
+        if pending_count <= 0:
+            logger.debug("📚 待同步队列为空，本轮跳过")
             return
 
         # 探测 API 可达性
@@ -75,6 +88,38 @@ class BangumiReplayScheduler(BaseScheduler):
             logger.error("📚 待同步队列补发超时")
         except Exception as e:
             logger.error(f"📚 待同步队列补发异常: {e}")
+
+    def trigger_immediate_run(self) -> None:
+        """队列有新条目入队时立即触发一次补发（异步、防抖）
+
+        - 调度器未启动 / 未启用 → 直接 return，依赖下一轮 cron 兜底
+        - 已有 job 在运行 → APScheduler 的 max_instances=1 会自动合并，
+          本方法仅负责"提前唤醒"，不强制并发
+        - 用 flag 做毫秒级防抖，避免高频入队时堆积 trigger 调用
+        """
+        if not self._is_enabled():
+            return
+        if not self.scheduler or not self.scheduler.running:
+            return
+        # 防抖：500ms 内的多次入队只触发一次立即执行
+        now = asyncio.get_event_loop().time()
+        last = getattr(self, "_last_trigger_ts", 0.0)
+        if now - last < 0.5:
+            return
+        self._last_trigger_ts = now
+
+        try:
+            self.scheduler.add_job(
+                func=self._run_sync_job,
+                trigger="date",
+                run_date=None,  # 立即执行
+                id=f"{self.JOB_ID}_immediate",
+                name=f"{self.DRIVER_NAME} immediate",
+                replace_existing=True,
+            )
+            logger.debug("📚 队列有新条目，已触发立即补发")
+        except Exception as e:
+            logger.debug(f"📚 触发立即补发失败: {e}")
 
     async def _probe_api(self) -> bool:
         """轻量探测 Bangumi API 是否恢复可达
