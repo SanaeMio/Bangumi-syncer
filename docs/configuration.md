@@ -65,7 +65,7 @@ order: 20
 
 ## Bangumi Replay 待同步队列补发
 
-当 Bangumi API 不可达（网络抖动、DNS 失败、5xx/429 持续返回）时，把写操作（标记在看 / 点单集等）暂存到本地 `pending_sync_queue` 表，等 API 恢复后由调度器自动批量补发（详见 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive) 的「待同步队列（Replay）」章节）。
+当 Bangumi API 不可达（网络抖动、DNS 失败、5xx/429 持续返回）时，把写操作（标记在看 / 点单集等）暂存到本地 `pending_sync_queue` 表，等 API 恢复后由调度器自动批量补发（详见 [🔄 Bangumi Replay 待同步队列补发](/bangumi-replay)）。
 
 ::: tip 与 Archive 解耦
 Replay 与 Archive 已解耦，可独立启停。但**完全实现「无网缓存请求 + 自动补发」需要 Archive 配合**：Archive 提供读降级（命中本地数据集匹配新条目），Replay 提供写降级（入队待补发）。不开 Archive 时，Replay 仍可独立工作，但仅能在「API 已匹配到 subject_id 后写失败」场景下补发。
