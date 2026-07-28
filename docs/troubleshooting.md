@@ -170,3 +170,42 @@ archive 数据来自 Bangumi 官方 dump，可能存在数据延迟或边缘情�
 - 若磁盘紧张可关闭 archive，并删除 `data_dir` 下的 `bangumi_archive_*.db` / `bangumi_archive_*.index` 文件
 
 更详细的 archive 说明请看 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)。
+
+---
+
+## 7. Bangumi Replay 待同步队列问题
+
+启用了 [Bangumi Replay 待同步队列补发](/bangumi-replay) 后，API 不可达时的写操作会进入 `pending_sync_queue` 队列。本节列出 replay 相关的常见问题。
+
+### 7.1 同步记录显示 `queued` 但一直不补发
+
+**排查步骤**：
+
+1. **确认开关**：`[bangumi-replay] enabled` 未被设为 `false`（默认 `true`，与 archive 互相独立）
+2. **查看调度器状态**：`GET /api/bangumi_replay/status`，关注 `enabled` / `running` / `cron` / `next_run`
+   - `running = false`：调度器未启动，定时补发与立即触发都不会执行。保存一次 Replay 配置触发 `apply_config_after_save`，或重启程序
+3. **手动触发补发**：队列页点击「批量补发」或 `POST /api/bangumi_replay/replay`
+4. **看日志关键字**：
+   - `📚 待同步队列为空，本轮跳过`：队列已被其他线程补发完，正常
+   - `📚 Bangumi API 仍不可达，本轮补发跳过`：API 还没恢复，等下一轮
+   - `📚 API 探测失败`：探测请求本身异常，看具体堆栈
+
+### 7.2 API 一直不可达
+
+队列页点击「探测 API」或调度器日志一直报告不可达：
+
+1. **检查 `[bangumi]` 段配置**：探测使用的账号来自 `[sync] mode` 对应的段
+   - `mode = single`（默认）→ 读 `[bangumi]` 段的 `username` / `access_token`
+   - `mode = multi` → 读第一个用户映射指向的 `[bangumi-*]` 段
+   - 任一字段为空都会导致探测直接返回 `False`（日志：`📚 无可用账号配置用于探测 API`）
+2. **检查 `[dev]` 段代理与 SSL**：`script_proxy` 不通或 `ssl_verify=false` 配置错误都会让探测请求失败
+3. **手动验证账号可用性**：用相同 `access_token` 直接请求 `https://api.bgm.tv/v0/subjects/1`，确认 token 未过期（有效期 1 年）
+4. **强制清除不可达标记**：调度器探测成功后会自动清除，但缓存的 `BangumiApi` 实例可能仍带标记；补发单条时已通过 `mark_api_reachable()` 强制清除，如仍异常可重启服务
+
+### 7.3 队列堆积过多
+
+- 单条任务最大重试次数由 `max_attempts` 控制（默认 50），超过后标记为 `abandoned` 不再重试
+- 可在队列页手动删除不需要的任务（如已用映射解决的旧失败记录）
+- 长时间堆积通常意味着 Bangumi API 长期不可达，建议先解决 API 可达性问题（代理 / token / 网络）
+
+更详细的 replay 说明请看 [🔄 Bangumi Replay 待同步队列补发](/bangumi-replay)。

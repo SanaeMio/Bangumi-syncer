@@ -41,6 +41,14 @@ order: 40
 
 ✅ 支持 fongmi 定时同步
 
+✅ Bangumi Archive 离线查询层（本地全站数据快照，命中即返回、未命中回退 API）
+
+✅ Bangumi Replay 待同步队列补发（API 不可达时写操作入队，恢复后自动补发；入队后立即触发补发，与 cron 双保险）
+
+✅ 匹配追踪（MatchTrace）可视化：流水线摘要、各阶段步骤卡、搜索参数、API 返回摘要、错误堆栈、步骤耗时表
+
+✅ 候选确认与手动指定 Bangumi ID（确认即补发，无需手动重试）
+
 以上能力已陆续实现，如果您有好的功能建议，欢迎提一个 [Issues](https://github.com/SanaeMio/Bangumi-syncer/issues) 进行交流。
 
 ## 接下来

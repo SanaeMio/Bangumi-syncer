@@ -76,9 +76,24 @@ max_attempts = 50
 - 标记不可达后，按 `api_probe_interval`（默认 300 秒）推迟下一次探测
 - TTL 到期后下一次请求恢复实际探测；成功后自动清除不可达标记
 - 补发调度器（`BangumiReplayScheduler`）按 `replay_cron` 定时执行：
-  1. 创建临时 `BangumiApi` 实例探测 `GET /v0/subjects/1`
-  2. 探测成功 → 调用 `sync_service.replay_pending_batch` 批量补发
-  3. 仍不可达 → 跳过本轮，等待下一次调度
+  1. **队列空短路**：先调 `count_pending_sync()` 统计待补发条数，为 0 直接跳过本轮，避免无意义的 API 探测请求
+  2. 创建临时 `BangumiApi` 实例探测 `GET /v0/subjects/1`
+  3. 探测成功 → 调用 `sync_service.replay_pending_batch` 批量补发
+  4. 仍不可达 → 跳过本轮，等待下一次调度
+
+## 立即触发补发
+
+定时调度之外，**入队成功后会自动触发一次立即补发**（`trigger_immediate_run`）：
+
+- 入队方在写入 `pending_sync_queue` 后调用 `bangumi_replay_scheduler.trigger_immediate_run()`
+- 调度器用 `add_job(trigger="date")` 立即执行一次 `_run_sync_job`，走完整的「队列计数 → 探测 → 补发」流程
+- **500ms 防抖**：短时间内多次入队（如 Trakt 全量同步、批量补番）只触发一次立即执行，避免堆积
+- **并发安全**：APScheduler 的 `max_instances=1, coalesce=True` 保证同一时刻只有一个补发任务在跑，触发只负责"提前唤醒"
+- **失败兜底**：调度器未启动 / 未启用 / 触发异常都不影响入队本身，下一轮 cron 仍会正常补发
+
+::: tip 实时性
+立即触发让"API 抖动恢复"场景下的补发延迟从「下一个 cron 周期」降到「秒级」，用户体验接近直写成功。
+:::
 
 ## WebUI 队列页
 
@@ -125,6 +140,8 @@ pending  ──补发成功──→  synced
 1. 确认 `[bangumi-replay] enabled` 未被设为 `false`
 2. 查看调度器状态：`GET /api/bangumi_replay/status`，关注 `enabled` / `cron` / `next_run`
 3. 手动触发补发：队列页点击「批量补发」或 `POST /api/bangumi_replay/replay`
+4. 检查调度器是否已启动：`status.running = false` 时立即触发与定时补发都不会执行，需保存一次 Replay 配置触发 `apply_config_after_save` 或重启程序
+5. 看日志是否有 `📚 待同步队列为空，本轮跳过`：说明队列被其他进程/线程先行补发完，属正常行为
 
 ## 接下来
 
