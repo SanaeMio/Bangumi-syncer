@@ -3,15 +3,10 @@
 
 extract_plex_json: Plex 原始报文字节流切片（保留在此处，通用工具）
 extract_plex_data / extract_emby_data / extract_jellyfin_data:
-    已迁移至各驱动子包的 extractor.py，此处重新导出以向后兼容。
+    已迁移至各驱动子包的 extractor.py，请直接从对应子包导入。
 """
 
 from __future__ import annotations
-
-# ===== 以下函数已迁移至各驱动子包，此处重新导出以向后兼容 =====
-from ..services.emby.extractor import extract_emby_data  # noqa: F401
-from ..services.jellyfin.extractor import extract_jellyfin_data  # noqa: F401
-from ..services.plex.extractor import extract_plex_data  # noqa: F401
 
 
 def extract_plex_json(s: str | bytes) -> str | None:

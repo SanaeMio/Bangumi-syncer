@@ -62,7 +62,7 @@ class TestExtractPlexData:
 
     def test_extract_plex_data_basic(self):
         """测试基本 Plex 数据提取"""
-        from app.utils.data_util import extract_plex_data
+        from app.services.plex.extractor import extract_plex_data
 
         plex_data = {
             "event": "media.scrobble",
@@ -90,7 +90,7 @@ class TestExtractPlexData:
 
     def test_extract_plex_data_no_release_date(self):
         """测试无发行日期"""
-        from app.utils.data_util import extract_plex_data
+        from app.services.plex.extractor import extract_plex_data
 
         plex_data = {
             "event": "media.scrobble",
@@ -110,7 +110,7 @@ class TestExtractPlexData:
         assert result.release_date == ""
 
     def test_extract_plex_data_movie(self):
-        from app.utils.data_util import extract_plex_data
+        from app.services.plex.extractor import extract_plex_data
 
         plex_data = {
             "event": "media.scrobble",
@@ -131,7 +131,7 @@ class TestExtractPlexData:
 
     def test_extract_plex_data_movie_no_originally_available_at(self):
         """电影无 originallyAvailableAt 时 release_date 为空并走缺省日志分支"""
-        from app.utils.data_util import extract_plex_data
+        from app.services.plex.extractor import extract_plex_data
 
         plex_data = {
             "event": "media.play",
@@ -152,7 +152,7 @@ class TestExtractEmbyData:
 
     def test_extract_emby_data_basic(self):
         """测试基本 Emby 数据提取"""
-        from app.utils.data_util import extract_emby_data
+        from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
             "Event": "item.markplayed",
@@ -179,7 +179,7 @@ class TestExtractEmbyData:
 
     def test_extract_emby_data_episode_does_not_use_original_title(self):
         """剧集仍用单空格占位；即使有 OriginalTitle 也不写入（其为分集名）"""
-        from app.utils.data_util import extract_emby_data
+        from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
             "Event": "item.markplayed",
@@ -201,7 +201,7 @@ class TestExtractEmbyData:
 
     def test_extract_emby_data_no_premiere_date(self):
         """测试无发行日期"""
-        from app.utils.data_util import extract_emby_data
+        from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
             "Event": "item.markplayed",
@@ -221,7 +221,7 @@ class TestExtractEmbyData:
         assert result.ori_title == " "
 
     def test_extract_emby_data_movie(self):
-        from app.utils.data_util import extract_emby_data
+        from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
             "Event": "item.markplayed",
@@ -242,7 +242,7 @@ class TestExtractEmbyData:
 
     def test_extract_emby_data_movie_original_title(self):
         """Emby 电影应携带 OriginalTitle 作为 ori_title（剧场版等日文检索）"""
-        from app.utils.data_util import extract_emby_data
+        from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
             "Event": "item.markplayed",
@@ -262,7 +262,7 @@ class TestExtractEmbyData:
 
     def test_extract_emby_data_movie_original_title_blank(self):
         """OriginalTitle 为空或仅空白时 ori_title 为 None"""
-        from app.utils.data_util import extract_emby_data
+        from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
             "Event": "item.markplayed",
@@ -279,7 +279,7 @@ class TestExtractEmbyData:
 
     def test_extract_emby_data_movie_no_premiere_date(self):
         """电影无 PremiereDate 时 release_date 为空"""
-        from app.utils.data_util import extract_emby_data
+        from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
             "Event": "playback.start",
@@ -298,7 +298,7 @@ class TestExtractJellyfinData:
 
     def test_extract_jellyfin_data_basic(self):
         """测试基本 Jellyfin 数据提取"""
-        from app.utils.data_util import extract_jellyfin_data
+        from app.services.jellyfin.extractor import extract_jellyfin_data
 
         jellyfin_data = {
             "NotificationType": "PlaybackStop",
@@ -325,7 +325,7 @@ class TestExtractJellyfinData:
 
     def test_extract_jellyfin_data_no_release_date(self):
         """测试无发行日期"""
-        from app.utils.data_util import extract_jellyfin_data
+        from app.services.jellyfin.extractor import extract_jellyfin_data
 
         jellyfin_data = {
             "NotificationType": "PlaybackStop",
@@ -344,7 +344,7 @@ class TestExtractJellyfinData:
         assert result.release_date == ""
 
     def test_extract_jellyfin_data_movie(self):
-        from app.utils.data_util import extract_jellyfin_data
+        from app.services.jellyfin.extractor import extract_jellyfin_data
 
         jellyfin_data = {
             "NotificationType": "PlaybackStop",

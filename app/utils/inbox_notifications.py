@@ -2,19 +2,9 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-_SYNC_FAIL_RE = re.compile(r"^同步失败：(.+?) (S\d+E\d+|剧场版)$")
-
-
-def notification_group_key(title: str) -> str:
-    """同一番剧的多条同步失败通知归为同一组。"""
-    t = (title or "").strip()
-    match = _SYNC_FAIL_RE.match(t)
-    if match:
-        return match.group(1).strip()
-    return t
+from ..core.database.inbox import notification_group_key
 
 
 def aggregated_notification_title(

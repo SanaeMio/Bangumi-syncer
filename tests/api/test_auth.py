@@ -337,16 +337,21 @@ async def test_login_failure_triggers_lockout(mock_security_manager):
     app = FastAPI()
     app.include_router(auth.router)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/api/login",
-            json={"username": "u", "password": "bad"},
-        )
+    with patch("app.api.auth.send_notify") as mock_notify:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/login",
+                json={"username": "u", "password": "bad"},
+            )
 
     assert response.status_code == 423
     assert "锁定" in response.json()["detail"]
+    # 通知触发职责已上移至 API 层：IP 被锁定时应发送 ip_locked 通知
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.args[0] == "ip_locked"
+    assert mock_notify.call_args.kwargs["ip"] == "127.0.0.1"
 
 
 @pytest.mark.asyncio
