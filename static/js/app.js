@@ -41,7 +41,9 @@ async function apiFetch(path, options = {}) {
         throw new Error(msg);
     }
 
-    return response.json();
+    // returnResponse: 返回原始 Response 对象（调用方需自行处理 .json()/.ok 等）
+    // 否则：自动解析 JSON
+    return opts.returnResponse ? response : response.json();
 }
 
 // 显示提示消息
