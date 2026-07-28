@@ -47,6 +47,7 @@ class DatabaseConnection:
         self._trakt_filter_migrated = False
         self._match_fields_migrated = False
         self._pending_sync_sync_record_id_migrated = False
+        self._pending_candidates_sync_record_id_migrated = False
         self._init_database()
 
     def close(self) -> None:
@@ -182,6 +183,25 @@ class DatabaseConnection:
         self._pending_sync_sync_record_id_migrated = True
         logger.info("pending_sync_queue 已迁移：增加 sync_record_id 列")
 
+    def _ensure_pending_candidates_sync_record_id(self, cursor) -> None:
+        """旧库迁移：为 pending_candidates 增加 sync_record_id（关联 sync_records 行）。
+
+        用于候选确认后回写原 sync_records 状态（error → retried/success），
+        形成「候选确认即补发」的闭环。
+        """
+        if self._pending_candidates_sync_record_id_migrated:
+            return
+        cursor.execute("PRAGMA table_info(pending_candidates)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "sync_record_id" in cols:
+            self._pending_candidates_sync_record_id_migrated = True
+            return
+        cursor.execute(
+            "ALTER TABLE pending_candidates ADD COLUMN sync_record_id INTEGER"
+        )
+        self._pending_candidates_sync_record_id_migrated = True
+        logger.info("pending_candidates 已迁移：增加 sync_record_id 列")
+
     def _init_database(self) -> None:
         """初始化数据库"""
         conn = self._get_connection()
@@ -297,9 +317,11 @@ class DatabaseConnection:
                 trace_json TEXT DEFAULT '{}',
                 status TEXT DEFAULT 'pending',
                 confirmed_subject_id TEXT DEFAULT '',
-                resolved_at DATETIME
+                resolved_at DATETIME,
+                sync_record_id INTEGER
             )
         """)
+        self._ensure_pending_candidates_sync_record_id(cursor)
 
         # 待同步队列：Bangumi API 不可达时缓存已匹配的同步请求，API 恢复后补发
         cursor.execute("""

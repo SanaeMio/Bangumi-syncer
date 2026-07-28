@@ -223,6 +223,7 @@ class DatabaseManager:
         source: str = "",
         candidates: Optional[list] = None,
         trace: Optional[dict] = None,
+        sync_record_id: Optional[int] = None,
     ) -> Optional[int]:
         """沉淀一条待确认候选"""
         return self._pending.log_pending_candidate(
@@ -234,6 +235,7 @@ class DatabaseManager:
             source=source,
             candidates=candidates,
             trace=trace,
+            sync_record_id=sync_record_id,
         )
 
     def get_pending_candidates(

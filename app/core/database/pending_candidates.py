@@ -24,11 +24,15 @@ class PendingCandidatesRepository(BaseRepository):
         source: str = "",
         candidates: Optional[list[dict[str, Any]]] = None,
         trace: Optional[dict[str, Any]] = None,
+        sync_record_id: Optional[int] = None,
     ) -> Optional[int]:
         """沉淀一条待确认候选，返回记录 id（失败时 None）。
 
         按 (request_title, request_season, user_name, source) 去重：
         已有 pending 行时更新候选和 trace，否则插入新行。
+
+        sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
+        去重 UPDATE 时也会刷新为最新值（同一标题多次失败时以最新 sync_record 为准）。
         """
 
         def _write(conn):
@@ -57,7 +61,8 @@ class PendingCandidatesRepository(BaseRepository):
                     UPDATE pending_candidates
                     SET created_at = ?, request_ori_title = ?, request_episode = ?,
                         candidates_json = ?, trace_json = ?,
-                        confirmed_subject_id = '', resolved_at = NULL
+                        confirmed_subject_id = '', resolved_at = NULL,
+                        sync_record_id = ?
                     WHERE id = ?
                     """,
                     (
@@ -66,6 +71,7 @@ class PendingCandidatesRepository(BaseRepository):
                         request_episode,
                         cand_json,
                         trace_json,
+                        sync_record_id,
                         existing_id,
                     ),
                 )
@@ -77,8 +83,8 @@ class PendingCandidatesRepository(BaseRepository):
                 INSERT INTO pending_candidates
                 (created_at, request_title, request_ori_title, request_season,
                  request_episode, user_name, source, candidates_json, trace_json,
-                 status, confirmed_subject_id, resolved_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', NULL)
+                 status, confirmed_subject_id, resolved_at, sync_record_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', NULL, ?)
                 """,
                 (
                     local_time,
@@ -90,6 +96,7 @@ class PendingCandidatesRepository(BaseRepository):
                     source,
                     cand_json,
                     trace_json,
+                    sync_record_id,
                 ),
             )
             return cursor.lastrowid
@@ -124,7 +131,8 @@ class PendingCandidatesRepository(BaseRepository):
                 f"""
                 SELECT id, created_at, request_title, request_ori_title,
                        request_season, request_episode, user_name, source,
-                       candidates_json, status, confirmed_subject_id, resolved_at
+                       candidates_json, status, confirmed_subject_id, resolved_at,
+                       sync_record_id
                 FROM pending_candidates
                 {where_clause}
                 ORDER BY id DESC
@@ -158,7 +166,7 @@ class PendingCandidatesRepository(BaseRepository):
                 SELECT id, created_at, request_title, request_ori_title,
                        request_season, request_episode, user_name, source,
                        candidates_json, trace_json, status, confirmed_subject_id,
-                       resolved_at
+                       resolved_at, sync_record_id
                 FROM pending_candidates WHERE id = ?
                 """,
                 (candidate_id,),

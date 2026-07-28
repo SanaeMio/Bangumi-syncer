@@ -210,12 +210,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return merged
 
     def _sediment_pending_candidate(
-        self, item: CustomItem, actual_source: str, trace: MatchTrace
+        self,
+        item: CustomItem,
+        actual_source: str,
+        trace: MatchTrace,
+        sync_record_id: int | None = None,
     ) -> None:
         """匹配失败时沉淀候选，供用户手动确认。
 
         仅当 trace 中存在候选时才写入 pending_candidates 表，
         并触发 pending_candidate 通知提醒用户前往 WebUI 确认。
+
+        sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
         """
         candidates = self._collect_candidates_from_trace(trace)
         if not candidates:
@@ -230,6 +236,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 source=actual_source,
                 candidates=candidates,
                 trace=trace.to_dict(),
+                sync_record_id=sync_record_id,
             )
         except Exception as e:
             logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
@@ -626,7 +633,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             actual_source,
             error_message="未找到匹配的番剧",
         )
-        database_manager.log_sync_record(
+        sync_record_id = database_manager.log_sync_record(
             user_name=item.user_name,
             title=item.title,
             ori_title=item.ori_title or "",
@@ -644,7 +651,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             match_trace=trace.to_dict(),
         )
         # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认
-        self._sediment_pending_candidate(item, actual_source, trace)
+        # 关联 sync_record_id，便于候选确认后回写原记录状态形成闭环
+        self._sediment_pending_candidate(
+            item, actual_source, trace, sync_record_id=sync_record_id
+        )
         return (
             None,
             False,
