@@ -2243,12 +2243,19 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         success = 0
         failed = 0
         still_unreachable = 0
+        threshold = int(
+            config_manager.get(
+                "bangumi-archive", "replay_unreachable_threshold", fallback=3
+            )
+        )
+        consecutive_unreachable = 0
 
         for record in records:
             record_id = int(record.get("id", 0))
             result = self.replay_pending_item(record)
             if result["success"]:
                 success += 1
+                consecutive_unreachable = 0
                 if result.get("should_mark_synced"):
                     database_manager.mark_pending_sync_synced(record_id)
             else:
@@ -2256,10 +2263,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 msg = (result.get("message") or "").lower()
                 if "不可达" in msg or "unreachable" in msg:
                     still_unreachable += 1
-                    # 仍然不可达：直接跳出，剩余任务也大概率不可达
-                    break
+                    consecutive_unreachable += 1
+                    # 连续 N 条不可达才中止，避免单条瞬时故障阻断后续
+                    if consecutive_unreachable >= threshold:
+                        logger.info(f"📚 连续 {threshold} 条任务不可达，中止本轮补发")
+                        break
                 else:
                     failed += 1
+                    consecutive_unreachable = 0
                     database_manager.increment_pending_sync_attempts(
                         record_id, result.get("message", "")
                     )

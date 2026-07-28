@@ -186,6 +186,32 @@ class PendingSyncQueueRepository(BaseRepository):
 
         return self._run_write(_write, error_msg="累加重试次数失败", default=False)
 
+    def update_error_message(
+        self, record_id: int, message: str, user_name: Optional[str] = None
+    ) -> bool:
+        """仅更新错误消息，不累加 attempts（用于手动补发失败场景）
+
+        手动补发是用户显式触发的操作，理应给予更高的成功机会：
+        只记录失败信息供查看，避免重试几次后被自动补发标记为 abandoned。
+
+        user_name 非 None 时校验归属，不匹配不更新（返回 False）。
+        """
+
+        def _write(conn):
+            local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            sql = (
+                "UPDATE pending_sync_queue "
+                "SET last_error = ?, last_attempt_at = ? WHERE id = ?"
+            )
+            params: list[Any] = [message, local_time, record_id]
+            if user_name is not None:
+                sql += " AND user_name = ?"
+                params.append(user_name)
+            cursor = conn.execute(sql, params)
+            return cursor.rowcount > 0
+
+        return self._run_write(_write, error_msg="更新错误消息失败", default=False)
+
     def mark_abandoned(
         self, record_id: int, reason: str = "", user_name: Optional[str] = None
     ) -> bool:

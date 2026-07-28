@@ -347,6 +347,14 @@ class DatabaseManager:
             record_id, error, user_name=user_name
         )
 
+    def update_pending_sync_error_message(
+        self, record_id: int, message: str, user_name: Optional[str] = None
+    ) -> bool:
+        """仅更新待同步任务的错误消息，不累加 attempts（用于手动补发失败场景）"""
+        return self._pending_sync.update_error_message(
+            record_id, message, user_name=user_name
+        )
+
     def mark_pending_sync_abandoned(
         self, record_id: int, reason: str = "", user_name: Optional[str] = None
     ) -> bool:

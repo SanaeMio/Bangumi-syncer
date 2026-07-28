@@ -163,7 +163,9 @@ async def replay_single(
         elif not result["success"]:
             msg = (result.get("message") or "").lower()
             if "不可达" not in msg and "unreachable" not in msg:
-                database_manager.increment_pending_sync_attempts(
+                # 手动补发不累加 attempts，仅记录错误信息
+                # 避免用户手动重试几次后被自动补发标记为 abandoned
+                database_manager.update_pending_sync_error_message(
                     record_id, result.get("message", ""), **_filter_kwargs(user_name)
                 )
 
