@@ -188,3 +188,14 @@ class RetryMixin:
             last_error=last_error,
             sync_record_id=sync_record_id,
         )
+
+        # 入队后立即触发补发（健康度检查 + 同步）。
+        # 调度器未启动 / 队列未启用时 trigger_immediate_run 内部会自动跳过，
+        # 失败也无所谓——下一轮 cron 会兜底。
+        try:
+            from ..bangumi_replay_scheduler import bangumi_replay_scheduler
+
+            bangumi_replay_scheduler.trigger_immediate_run()
+        except Exception:
+            # 触发失败不影响入队本身，cron 会兜底
+            pass

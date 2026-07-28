@@ -213,7 +213,12 @@ class TestEnqueuePendingSyncUserName:
             "media_type": "episode",
         }
 
-        with patch("app.core.database.database_manager") as mock_db:
+        with (
+            patch("app.core.database.database_manager") as mock_db,
+            patch(
+                "app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"
+            ) as mock_sched,
+        ):
             SyncService._enqueue_pending_sync(
                 bgm_api=bgm,
                 subject_id=123,
@@ -232,6 +237,8 @@ class TestEnqueuePendingSyncUserName:
         assert call_kwargs["source"] == "plex"
         assert call_kwargs["subject_id"] == "123"
         assert call_kwargs["episode_id"] == "456"
+        # 入队后应立即触发补发调度器
+        mock_sched.trigger_immediate_run.assert_called_once()
 
     def test_falls_back_to_empty_string_when_payload_missing_user_name(self):
         from app.services.sync_service import SyncService
@@ -241,7 +248,10 @@ class TestEnqueuePendingSyncUserName:
 
         payload = {"title": "测试", "season": 1, "episode": 1}
 
-        with patch("app.core.database.database_manager") as mock_db:
+        with (
+            patch("app.core.database.database_manager") as mock_db,
+            patch("app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"),
+        ):
             SyncService._enqueue_pending_sync(
                 bgm_api=bgm,
                 subject_id=1,
@@ -254,6 +264,33 @@ class TestEnqueuePendingSyncUserName:
         call_kwargs = mock_db.enqueue_pending_sync.call_args.kwargs
         # 缺失时回退为空串，而不是 bgm_api.username
         assert call_kwargs["user_name"] == ""
+
+    def test_trigger_failure_does_not_raise(self):
+        """trigger_immediate_run 抛异常时不应影响入队流程"""
+        from app.services.sync_service import SyncService
+
+        bgm = MagicMock()
+        bgm.username = "bangumi_account_a"
+        payload = {"title": "x", "season": 1, "episode": 1, "user_name": "u"}
+
+        with (
+            patch("app.core.database.database_manager") as mock_db,
+            patch(
+                "app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"
+            ) as mock_sched,
+        ):
+            mock_sched.trigger_immediate_run.side_effect = RuntimeError("boom")
+            # 不应抛出
+            SyncService._enqueue_pending_sync(
+                bgm_api=bgm,
+                subject_id=1,
+                ep_id=None,
+                reason="api_unreachable",
+                last_error="",
+                payload=payload,
+            )
+
+        mock_db.enqueue_pending_sync.assert_called_once()
 
 
 class TestReplayPendingItemSyncRecordId:
