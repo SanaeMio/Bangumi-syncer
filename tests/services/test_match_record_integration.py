@@ -226,6 +226,70 @@ class TestMatchTraceNewFields:
         assert trace.final_episode_id is None
         assert trace.to_dict()["final_episode_id"] is None
 
+    def test_total_elapsed_ms_in_to_dict(self):
+        """total_elapsed_ms 出现在 to_dict 输出中"""
+        trace = MatchTrace()
+        trace.start_step("custom_mapping")
+        trace.finish()
+        d = trace.to_dict()
+        assert "total_elapsed_ms" in d
+        assert isinstance(d["total_elapsed_ms"], int)
+        assert d["total_elapsed_ms"] >= 0
+
+    def test_step_error_detail_in_to_dict(self):
+        """MatchStep.error_detail 出现在 to_dict 输出中"""
+        from app.services.sync_service.match_trace import MatchStep
+
+        step = MatchStep(stage="api_search", status="error")
+        step.error_detail = {
+            "type": "ValueError",
+            "message": "test error",
+            "traceback": "trace",
+        }
+        d = step.to_dict()
+        assert d["error_detail"]["type"] == "ValueError"
+        assert d["error_detail"]["message"] == "test error"
+
+    def test_step_request_params_in_to_dict(self):
+        """MatchStep.request_params 出现在 to_dict 输出中"""
+        from app.services.sync_service.match_trace import MatchStep
+
+        step = MatchStep(stage="api_search", status="hit")
+        step.request_params = {"title": "test", "subject_types": [1]}
+        d = step.to_dict()
+        assert d["request_params"]["title"] == "test"
+        assert d["request_params"]["subject_types"] == [1]
+
+    def test_step_api_response_summary_in_to_dict(self):
+        """MatchStep.api_response_summary 出现在 to_dict 输出中"""
+        from app.services.sync_service.match_trace import MatchStep
+
+        step = MatchStep(stage="api_search", status="hit")
+        step.api_response_summary = {
+            "total_candidates": 5,
+            "is_archive_hit": False,
+            "first_subject_id": 123,
+        }
+        d = step.to_dict()
+        assert d["api_response_summary"]["total_candidates"] == 5
+        assert d["api_response_summary"]["first_subject_id"] == 123
+
+    def test_candidate_media_type_and_aliases_in_to_dict(self):
+        """MatchCandidate.media_type / infobox_aliases 出现在 to_dict 输出中"""
+        from app.services.sync_service.match_trace import MatchCandidate
+
+        cand = MatchCandidate(
+            subject_id="123",
+            name="test",
+            name_cn="测试",
+            score=0.9,
+            media_type="episode",
+            infobox_aliases=["别名1", "别名2"],
+        )
+        d = cand.to_dict()
+        assert d["media_type"] == "episode"
+        assert d["infobox_aliases"] == ["别名1", "别名2"]
+
 
 class TestSyncMovieWatchingMatchFields:
     """剧场版分支补传 match_* 字段测试"""

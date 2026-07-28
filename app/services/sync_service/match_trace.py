@@ -26,6 +26,10 @@ class MatchCandidate:
     platform: str = ""
     air_date: str = ""
     source: str = ""  # bangumi_data / archive / api_search
+    # P0: 候选媒体类型（detect_media_type 判断结果），用于媒体类型改选排错
+    media_type: str = ""
+    # P2: 候选别名列表（infobox/aliases），用于理解 title_diff_ratio 为何给出该分数
+    infobox_aliases: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -36,6 +40,8 @@ class MatchCandidate:
             "platform": self.platform,
             "air_date": self.air_date,
             "source": self.source,
+            "media_type": self.media_type,
+            "infobox_aliases": self.infobox_aliases,
         }
 
 
@@ -53,6 +59,12 @@ class MatchStep:
     # 仅 receive step 使用：驱动原始数据 + 驱动处理后数据
     raw_payload: dict[str, Any] | None = None
     processed_payload: dict[str, Any] | None = None
+    # P0: status=error 时存储完整异常信息（type/message/traceback）
+    error_detail: dict[str, Any] | None = None
+    # P1: 实际发送给 API 的搜索参数（title 变体/date_range/subject_types 等）
+    request_params: dict[str, Any] | None = None
+    # P1: API 返回质量摘要（候选总数/是否 archive 短路/首条摘要）
+    api_response_summary: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +77,9 @@ class MatchStep:
             "elapsed_ms": self.elapsed_ms,
             "raw_payload": self.raw_payload,
             "processed_payload": self.processed_payload,
+            "error_detail": self.error_detail,
+            "request_params": self.request_params,
+            "api_response_summary": self.api_response_summary,
         }
 
 
@@ -97,14 +112,19 @@ class MatchTrace:
     final_status: str = ""
     final_message: str = ""
     final_action: str = ""
+    # P2: 匹配阶段总耗时（不含 receive/result 阶段），用于性能排错
+    total_elapsed_ms: int = 0
 
     # 内部计时
     _current_step: MatchStep | None = field(default=None, repr=False)
     _step_start: float = field(default=0.0, repr=False)
+    _trace_start: float = field(default=0.0, repr=False)
 
     def start_step(self, stage: str) -> MatchStep:
         """开始一个新匹配阶段"""
         self._finish_current_step()
+        if self._trace_start == 0.0:
+            self._trace_start = time.perf_counter()
         step = MatchStep(stage=stage, status="miss")
         self._current_step = step
         self._step_start = time.perf_counter()
@@ -125,6 +145,10 @@ class MatchTrace:
     def finish(self) -> None:
         """完成整个匹配过程"""
         self._finish_current_step()
+        if self._trace_start > 0:
+            self.total_elapsed_ms = int(
+                (time.perf_counter() - self._trace_start) * 1000
+            )
         if self.final_subject_id is None:
             self.final_match_method = "failed"
 
@@ -132,6 +156,10 @@ class MatchTrace:
         """序列化为字典（用于 JSON 存储/传输）"""
         # 确保最后一步已收尾
         self._finish_current_step()
+        if self._trace_start > 0 and self.total_elapsed_ms == 0:
+            self.total_elapsed_ms = int(
+                (time.perf_counter() - self._trace_start) * 1000
+            )
         return {
             "request_title": self.request_title,
             "request_ori_title": self.request_ori_title,
@@ -153,4 +181,5 @@ class MatchTrace:
             "final_status": self.final_status,
             "final_message": self.final_message,
             "final_action": self.final_action,
+            "total_elapsed_ms": self.total_elapsed_ms,
         }

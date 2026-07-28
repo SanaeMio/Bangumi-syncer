@@ -45,6 +45,53 @@ from .task_manager import TaskManagerMixin
 from .title_normalize import TitleNormalizeMixin
 
 
+def _build_error_detail(exc: Exception) -> dict[str, Any]:
+    """构建 MatchStep.error_detail 字典（type/message/traceback）"""
+    import traceback as _tb
+
+    return {
+        "type": type(exc).__name__,
+        "message": str(exc),
+        "traceback": _tb.format_exc(),
+    }
+
+
+def _extract_infobox_aliases(cand: dict) -> list[str]:
+    """从候选条目的 infobox 中提取别名列表（兼容多种历史数据格式）
+
+    用于 P2 infobox_aliases 字段，帮助理解 title_diff_ratio 为何给出该分数。
+    """
+    aliases: list[str] = []
+    infobox = cand.get("infobox")
+    if not isinstance(infobox, list):
+        return aliases
+    for info in infobox:
+        if not isinstance(info, dict) or info.get("key") != "别名":
+            continue
+        value = info.get("value")
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict) and "v" in item:
+                    aliases.append(str(item["v"]))
+                elif isinstance(item, str):
+                    aliases.append(item)
+        elif isinstance(value, str):
+            aliases.append(value)
+        break
+    return aliases
+
+
+def _detect_candidate_media_type(cand: dict) -> str:
+    """检测候选条目的媒体类型（用于 P0 media_type 字段）"""
+    try:
+        return detect_media_type(
+            title=cand.get("name_cn", ""),
+            ori_title=cand.get("name", ""),
+        )
+    except Exception:
+        return ""
+
+
 class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeMixin):
     """同步服务"""
 
@@ -1934,6 +1981,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 if step:
                     step.status = "error"
                     step.reason = f"bangumi-data 匹配异常：{e}"
+                    step.error_detail = _build_error_detail(e)
         else:
             if trace:
                 step = trace.start_step("bangumi_data")
@@ -1975,6 +2023,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 if step:
                     step.status = "error"
                     step.reason = "无法创建 Bangumi API 实例"
+                    step.error_detail = {
+                        "type": "RuntimeError",
+                        "message": "无法为用户创建 Bangumi API 实例",
+                        "traceback": "",
+                    }
                 if trace:
                     trace.finish()
                 return None, False, "无法创建 Bangumi API 实例，无法搜索条目"
@@ -1986,6 +2039,19 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             # 搜索时优先使用归一化标题（去除发布组/分辨率/编码等噪声），
             # 若归一化结果为空则回退到原始标题
             search_title = normalized_title or item.title
+
+            # P1: 记录实际发送给 API 的搜索参数
+            if step:
+                step.request_params = {
+                    "title": search_title,
+                    "ori_title": item.ori_title or "",
+                    "premiere_date": premiere_date or "",
+                    "is_movie": item.media_type == "movie",
+                    "subject_types": subject_types,
+                    "media_type": item.media_type,
+                    "season": item.season,
+                }
+
             bgm_data = bgm.bgm_search(
                 title=search_title,
                 ori_title=item.ori_title or "",
@@ -1993,6 +2059,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 is_movie=(item.media_type == "movie"),
                 subject_types=subject_types,
             )
+
+            # P1: 记录 API 返回质量摘要
+            if step:
+                first = bgm_data[0] if bgm_data else {}
+                step.api_response_summary = {
+                    "total_candidates": len(bgm_data) if bgm_data else 0,
+                    "is_archive_hit": bool(bgm and bgm.last_hit_source == "archive"),
+                    "first_subject_id": first.get("id"),
+                    "first_name": first.get("name") or "",
+                    "first_name_cn": first.get("name_cn") or "",
+                }
+
             if not bgm_data:
                 logger.error(
                     "bgm: 未查询到番剧信息，跳过；"
@@ -2048,6 +2126,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             platform=cand.get("platform", ""),
                             air_date=cand.get("date", ""),
                             source=match_stage,
+                            media_type=_detect_candidate_media_type(cand),
+                            infobox_aliases=_extract_infobox_aliases(cand),
                         )
                     )
 
@@ -2112,6 +2192,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         platform=cand.get("platform", ""),
                                         air_date=cand.get("date", ""),
                                         source="post_search",
+                                        media_type=_detect_candidate_media_type(cand),
+                                        infobox_aliases=_extract_infobox_aliases(cand),
                                     )
                                 )
                             break
@@ -2345,6 +2427,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         platform=c.get("platform", ""),
                                         air_date=c.get("date", ""),
                                         source="post_search",
+                                        media_type=_detect_candidate_media_type(c),
+                                        infobox_aliases=_extract_infobox_aliases(c),
                                     )
                                 )
                             for r in related_list:
@@ -2359,6 +2443,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                             search_title, item.ori_title, r
                                         ),
                                         source="post_search_related",
+                                        media_type=_detect_candidate_media_type(r),
+                                        infobox_aliases=_extract_infobox_aliases(r),
                                     )
                                 )
 
@@ -2383,6 +2469,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             if step:
                 step.status = "error"
                 step.reason = detail
+                step.error_detail = _build_error_detail(e)
             if trace:
                 trace.finish()
             return None, False, detail
