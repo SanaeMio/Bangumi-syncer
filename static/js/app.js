@@ -13,6 +13,37 @@ function appUrl(path) {
     return base + p;
 }
 
+/**
+ * 统一 HTTP 请求封装
+ *
+ * - 默认带 credentials: 'include'
+ * - 401 自动跳转登录（可用 skipAuthRedirect 绕过）
+ * - !ok 抛异常并解析后端 detail/message（可用 returnResponse 绕过，返回原始 response）
+ *
+ * @param {string} path 站内路径，会自动拼接 appUrl
+ * @param {object} options fetch options，可附加 skipAuthRedirect / returnResponse
+ */
+async function apiFetch(path, options = {}) {
+    const opts = { credentials: 'include', ...options };
+    const response = await fetch(appUrl(path), opts);
+
+    if (response.status === 401 && !opts.skipAuthRedirect) {
+        window.location.href = appUrl('/login');
+        throw new Error('未登录，正在跳转登录页');
+    }
+
+    if (!response.ok && !opts.returnResponse) {
+        let msg = `请求失败: ${response.status}`;
+        try {
+            const errData = await response.json();
+            msg = errData.detail || errData.message || msg;
+        } catch (_) {}
+        throw new Error(msg);
+    }
+
+    return response.json();
+}
+
 // 显示提示消息
 function showAlert(message, type = 'info', duration = 5000) {
     // 创建Toast容器（如果不存在）
@@ -127,9 +158,13 @@ function renderMatchMethodBadge(method) {
 }
 
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
+    if (text == null) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function normalizeRecordText(value) {
@@ -1299,15 +1334,6 @@ async function copyToClipboard(text) {
     }
 }
 
-// 确认对话框（保持向后兼容）
-function confirmAction(message, callback) {
-    if (confirm(message)) {
-        if (callback && typeof callback === 'function') {
-            callback();
-        }
-    }
-}
-
 // 防抖函数
 function debounce(func, wait, immediate) {
     let timeout;
@@ -1368,78 +1394,6 @@ class LoadingManager {
 }
 
 const loadingManager = new LoadingManager();
-
-// HTTP请求封装
-class ApiClient {
-    constructor(baseURL = '') {
-        this.baseURL = baseURL;
-    }
-    
-    async request(url, options = {}) {
-        const config = {
-            credentials: 'include',  // 默认包含Cookie认证信息
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
-            ...options
-        };
-        
-        try {
-            loadingManager.show();
-            const response = await fetch(this.baseURL + url, config);
-            
-            // 处理认证失败
-            if (response.status === 401) {
-                // 跳转到登录页面
-                window.location.href = appUrl('/login');
-                return;
-            }
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error('API request failed:', error);
-            throw error;
-        } finally {
-            loadingManager.hide();
-        }
-    }
-    
-    async get(url, params = {}) {
-        const queryString = new URLSearchParams(params).toString();
-        const fullUrl = queryString ? `${url}?${queryString}` : url;
-        return this.request(fullUrl);
-    }
-    
-    async post(url, data = {}) {
-        return this.request(url, {
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
-    }
-    
-    async put(url, data = {}) {
-        return this.request(url, {
-            method: 'PUT',
-            body: JSON.stringify(data)
-        });
-    }
-    
-    async delete(url) {
-        return this.request(url, {
-            method: 'DELETE'
-        });
-    }
-}
-
-const api = new ApiClient(
-    typeof window.__APP_BASE_PATH__ === 'string' ? window.__APP_BASE_PATH__ : ''
-);
 
 // 表单验证
 class FormValidator {
@@ -1671,7 +1625,6 @@ window.confirmAction = confirmAction;
 window.debounce = debounce;
 window.throttle = throttle;
 window.loadingManager = loadingManager;
-window.api = api;
 window.FormValidator = FormValidator;
 window.ValidationRules = ValidationRules;
 window.StorageManager = StorageManager;
@@ -1679,6 +1632,7 @@ window.logout = logout;
 window.checkAuthStatus = checkAuthStatus;
 window.initAuth = initAuth;
 window.appUrl = appUrl;
+window.apiFetch = apiFetch;
 
 // ========== 登录页面专用功能 ==========
 
