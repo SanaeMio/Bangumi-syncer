@@ -409,10 +409,10 @@ function renderReceiveInputTable(step) {
         sync_action: '同步动作',
     });
     if (step.raw_payload && typeof step.raw_payload === 'object' && Object.keys(step.raw_payload).length > 0) {
-        html += '<div class="mt-2">'
-            + '<div class="small text-muted mb-1">驱动原始数据</div>'
-            + `<pre class="record-detail-raw-payload mb-0">${escapeHtml(JSON.stringify(step.raw_payload, null, 2))}</pre>`
-            + '</div>';
+        html += '<details class="mt-2 record-detail-raw-payload-details">'
+            + '<summary class="small text-muted">驱动原始数据</summary>'
+            + `<pre class="record-detail-raw-payload mb-0 mt-1">${escapeHtml(JSON.stringify(step.raw_payload, null, 2))}</pre>`
+            + '</details>';
     }
     return html;
 }
@@ -478,8 +478,8 @@ function renderStepErrorDetail(detail) {
     const type = escapeHtml(detail.type || '');
     const message = escapeHtml(detail.message || '');
     const traceback = detail.traceback || '';
-    let html = `<details class="record-detail-error-detail mt-1">
-        <summary class="text-danger small"><i class="bi bi-bug-fill"></i> 异常详情：${type}</summary>
+    let html = `<details class="record-detail-error-detail record-detail-subpanel record-detail-subpanel--error mt-1">
+        <summary class="record-detail-subpanel__summary record-detail-subpanel__summary--error"><i class="bi bi-bug-fill"></i>异常详情：${type}</summary>
         <div class="mt-1 small">
             <div class="text-danger"><strong>${type}</strong>: ${message}</div>`;
     if (traceback) {
@@ -496,19 +496,30 @@ function renderStepRequestParams(params) {
         const map = { episode: '剧集', movie: '剧场版', ova: 'OVA', oad: 'OAD', real_action: '三次元' };
         return map[t] || t || '-';
     };
-    const rows = [
-        ['搜索标题', params.title],
-        ['原始标题', params.ori_title],
-        ['发布日期', params.premiere_date],
-        ['媒体类型', params.media_type ? mediaTypeLabel(params.media_type) : ''],
-        ['季度', params.season],
-        ['subject_types', Array.isArray(params.subject_types) ? params.subject_types.join(', ') : params.subject_types],
-    ].filter(([, v]) => v !== null && v !== undefined && v !== '');
-    if (rows.length === 0) return '';
-    const body = rows.map(([k, v]) => `<dt class="col-sm-4 text-muted">${escapeHtml(k)}</dt><dd class="col-sm-8 mb-0"><small>${escapeHtml(String(v))}</small></dd>`).join('');
-    return `<details class="record-detail-request-params mt-1">
-        <summary class="small text-muted"><i class="bi bi-arrow-up-right-square"></i> 搜索参数</summary>
-        <dl class="row mb-0 mt-1">${body}</dl>
+    const subjectTypes = Array.isArray(params.subject_types)
+        ? params.subject_types.join(', ')
+        : (params.subject_types || '');
+    const items = [
+        { icon: 'bi-tag', label: '搜索标题', value: params.title, wide: true },
+        { icon: 'bi-translate', label: '原始标题', value: params.ori_title, wide: true },
+        { icon: 'bi-calendar3', label: '发布日期', value: params.premiere_date },
+        { icon: 'bi-film', label: '媒体类型', value: params.media_type ? mediaTypeLabel(params.media_type) : '' },
+        { icon: 'bi-collection-play', label: '季度', value: params.season },
+        { icon: 'bi-filter-circle', label: 'subject_types', value: subjectTypes, mono: true },
+    ].filter((it) => it.value !== null && it.value !== undefined && it.value !== '');
+    if (items.length === 0) return '';
+    const cells = items.map((it) => {
+        const wideCls = it.wide ? ' record-detail-step__kv--wide' : '';
+        const monoCls = it.mono ? ' record-detail-step__kv--mono' : '';
+        return `
+            <div class="record-detail-step__kv${wideCls}${monoCls}">
+                <span class="record-detail-step__kv-label"><i class="bi ${it.icon}"></i>${escapeHtml(it.label)}</span>
+                <span class="record-detail-step__kv-value">${escapeHtml(String(it.value))}</span>
+            </div>`;
+    }).join('');
+    return `<details class="record-detail-request-params record-detail-subpanel mt-1">
+        <summary class="record-detail-subpanel__summary"><i class="bi bi-arrow-up-right-square"></i>搜索参数</summary>
+        <div class="record-detail-step__kv-grid">${cells}</div>
     </details>`;
 }
 
@@ -518,20 +529,17 @@ function renderStepApiResponseSummary(summary) {
     const total = summary.total_candidates ?? 0;
     const archiveHit = summary.is_archive_hit;
     const firstId = summary.first_subject_id;
-    const firstName = escapeHtml(summary.first_name_cn || summary.first_name || '');
-    const archiveBadge = archiveHit
-        ? '<span class="badge rounded-pill bg-info bg-opacity-75">archive 短路</span>'
-        : '<span class="badge rounded-pill bg-secondary bg-opacity-75">API</span>';
+    const firstName = summary.first_name_cn || summary.first_name || '';
+    const sourceBadge = archiveHit
+        ? '<span class="record-detail-step__pill record-detail-step__pill--archive"><i class="bi bi-database-fill"></i>archive 短路</span>'
+        : '<span class="record-detail-step__pill record-detail-step__pill--api"><i class="bi bi-cloud-fill"></i>API</span>';
+    const totalBadge = `<span class="record-detail-step__pill record-detail-step__pill--count">候选 <strong>${total}</strong></span>`;
     const firstLink = firstId
-        ? `<a href="https://bgm.tv/subject/${firstId}" target="_blank">${firstName || firstId}</a>`
-        : '-';
-    return `<details class="record-detail-api-summary mt-1">
-        <summary class="small text-muted"><i class="bi bi-graph-up"></i> API 返回摘要</summary>
-        <div class="mt-1 small">
-            <span class="me-2">候选数：<strong>${total}</strong></span>
-            <span class="me-2">${archiveBadge}</span>
-            <span>首条：${firstLink}</span>
-        </div>
+        ? `<a href="https://bgm.tv/subject/${escapeHtml(String(firstId))}" target="_blank" class="record-detail-step__pill record-detail-step__pill--link"><i class="bi bi-link-45deg"></i>${escapeHtml(firstName || String(firstId))}</a>`
+        : '<span class="record-detail-step__pill record-detail-step__pill--muted">无候选</span>';
+    return `<details class="record-detail-api-summary record-detail-subpanel mt-1">
+        <summary class="record-detail-subpanel__summary"><i class="bi bi-graph-up"></i>API 返回摘要</summary>
+        <div class="record-detail-step__pills">${totalBadge}${sourceBadge}${firstLink}</div>
     </details>`;
 }
 
@@ -556,7 +564,7 @@ function renderPipelineHtml(record, trace) {
         const status = step.status || 'unknown';
         const stageName = getPipelineStageName(step.stage);
 
-        html += `<article class="record-detail-step record-detail-step--${status}">`;
+        html += `<article class="record-detail-step record-detail-step--${status}" id="record-step-${idx + 1}" tabindex="-1">`;
         html += '<div class="record-detail-step__rail" aria-hidden="true">';
         html += `<span class="record-detail-step__index">${idx + 1}</span>`;
         if (idx < trace.steps.length - 1) {
@@ -630,12 +638,87 @@ function renderPipelineHtml(record, trace) {
 
     html += '</div>';
 
-    // P2: 总耗时（匹配阶段总和）
-    if (trace.total_elapsed_ms !== null && trace.total_elapsed_ms !== undefined && trace.total_elapsed_ms > 0) {
-        html += `<p class="record-detail-total-time mt-2 mb-0 text-muted small">匹配总耗时：${trace.total_elapsed_ms}ms</p>`;
-    }
+    // P2: 步骤耗时汇总（每步耗时 + 总耗时 + 占比条）
+    html += renderStepTimings(trace);
 
     return html;
+}
+
+// P2: 渲染步骤耗时汇总面板
+function renderStepTimings(trace) {
+    if (!trace || !Array.isArray(trace.steps) || trace.steps.length === 0) {
+        return '';
+    }
+    const rows = trace.steps
+        .map((s, idx) => ({
+            idx: idx + 1,
+            stage: s.stage,
+            stageName: getPipelineStageName(s.stage),
+            status: s.status,
+            elapsed: Math.max(0, Number(s.elapsed_ms) || 0),
+        }))
+        .filter((r) => r.elapsed > 0);
+
+    // 没有任何耗时数据则不展示
+    if (rows.length === 0) {
+        return '';
+    }
+
+    // 优先用 trace.total_elapsed_ms；否则用 steps 求和
+    const sumElapsed = rows.reduce((acc, r) => acc + r.elapsed, 0);
+    const totalElapsed = (typeof trace.total_elapsed_ms === 'number' && trace.total_elapsed_ms > 0)
+        ? trace.total_elapsed_ms
+        : sumElapsed;
+    const maxElapsed = rows.reduce((acc, r) => Math.max(acc, r.elapsed), 0);
+    const baseTotal = Math.max(totalElapsed, maxElapsed, 1);
+
+    const statusLabel = (st) => {
+        const m = { hit: '命中', miss: '未命中', skipped: '已跳过', error: '出错' };
+        return m[st] || st || '';
+    };
+
+    const formatMs = (ms) => {
+        if (ms < 1) return '0ms';
+        if (ms < 1000) return `${ms}ms`;
+        return `${(ms / 1000).toFixed(2)}s`;
+    };
+
+    const rowHtml = rows.map((r) => {
+        const pct = (r.elapsed / baseTotal) * 100;
+        const pctOfTotal = totalElapsed > 0 ? (r.elapsed / totalElapsed) * 100 : 0;
+        const isMax = r.elapsed === maxElapsed;
+        return `
+            <button type="button" class="record-detail-timings__row${isMax ? ' record-detail-timings__row--hot' : ''}" onclick="jumpToRecordStep(${r.idx})" title="跳转到「${escapeHtml(r.stageName)}」">
+                <span class="record-detail-timings__idx">${r.idx}</span>
+                <span class="record-detail-timings__name">${escapeHtml(r.stageName)}</span>
+                <span class="record-detail-timings__status record-detail-timings__status--${r.status}">${escapeHtml(statusLabel(r.status))}</span>
+                <span class="record-detail-timings__bar" aria-hidden="true">
+                    <span class="record-detail-timings__bar-fill" style="width:${pct.toFixed(1)}%"></span>
+                </span>
+                <span class="record-detail-timings__elapsed">${formatMs(r.elapsed)}</span>
+                <span class="record-detail-timings__pct">${pctOfTotal.toFixed(1)}%</span>
+            </button>`;
+    }).join('');
+
+    return `
+        <section class="record-detail-timings">
+            <header class="record-detail-timings__head">
+                <h6 class="record-detail-timings__title"><i class="bi bi-stopwatch"></i>步骤耗时</h6>
+                <span class="record-detail-timings__total">总执行时间 <strong>${formatMs(totalElapsed)}</strong></span>
+            </header>
+            <div class="record-detail-timings__rows">${rowHtml}</div>
+        </section>
+    `;
+}
+
+// 耗时表点击跳转到对应步骤并高亮
+function jumpToRecordStep(idx) {
+    const target = document.getElementById(`record-step-${idx}`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('record-detail-step--flash');
+    void target.offsetWidth;
+    target.classList.add('record-detail-step--flash');
 }
 
 function renderMatchStepsHtml(record, trace) {
@@ -971,14 +1054,82 @@ function getRecordDetailModal() {
     return _recordDetailModal;
 }
 
+// 弹窗头部核心信息 chips（仅展示 modal-title 里没有的字段）
+function renderPipelineSummaryChips(record, trace) {
+    const t = trace || {};
+    const season = t.request_season ?? record.season ?? 1;
+    const episode = t.request_episode ?? record.episode ?? 0;
+    const mediaType = t.request_media_type || record.media_type || 'episode';
+    const isSuccess = record.status === 'success' || record.status === 'retried';
+    const statusClass = isSuccess ? 'success' : (record.status === 'error' ? 'error' : 'neutral');
+    const statusIcon = isSuccess ? 'bi-check-circle-fill' : (record.status === 'error' ? 'bi-x-circle-fill' : 'bi-dash-circle-fill');
+    const statusText = isSuccess ? '同步成功' : (record.status === 'error' ? '同步失败' : (record.status || '未知'));
+
+    const subjectId = record.subject_id || t.final_subject_id;
+    const episodeId = record.episode_id || t.final_episode_id;
+    const score = (t.final_score !== null && t.final_score !== undefined)
+        ? t.final_score
+        : record.match_score;
+    const bgmTitle = record.bgm_title || '';
+
+    const chips = [];
+
+    // 季 / 集
+    const isMovie = (mediaType || 'episode').toLowerCase() === 'movie';
+    if (!isMovie) {
+        chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--mono">S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}</span>`);
+    }
+
+    // 媒体类型
+    chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--type">${escapeHtml(getMediaTypeLabel(mediaType))}</span>`);
+
+    // 状态
+    chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--status record-detail-modal__chip--status-${statusClass}"><i class="bi ${statusIcon}"></i>${escapeHtml(statusText)}</span>`);
+
+    // subject 链接
+    if (subjectId) {
+        let label = `subject/${subjectId}`;
+        if (bgmTitle) {
+            label += ` · ${bgmTitle}`;
+        }
+        chips.push(`<a href="https://bgm.tv/subject/${escapeHtml(subjectId)}" target="_blank" class="record-detail-modal__chip record-detail-modal__chip--link"><i class="bi bi-collection"></i>${escapeHtml(label)}</a>`);
+    }
+
+    // episode 链接
+    if (episodeId) {
+        chips.push(`<a href="https://bgm.tv/ep/${escapeHtml(episodeId)}" target="_blank" class="record-detail-modal__chip record-detail-modal__chip--link"><i class="bi bi-play-circle"></i>ep/${escapeHtml(episodeId)}</a>`);
+    }
+
+    // 置信度
+    if (score !== null && score !== undefined && isSuccess) {
+        chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--score">置信度 ${(score * 100).toFixed(0)}%</span>`);
+    }
+
+    return `<div class="record-detail-modal__chips">${chips.join('')}</div>`;
+}
+
+// 弹窗头部核心信息 chips
+function setRecordSummaryHtml(record, trace) {
+    const head = document.getElementById('record-detail-modal-summary');
+    if (head) {
+        head.innerHTML = renderPipelineSummaryChips(record, trace);
+    }
+}
+
+function clearRecordSummaryHtml() {
+    const head = document.getElementById('record-detail-modal-summary');
+    if (head) {
+        head.innerHTML = '';
+    }
+}
+
 async function loadMatchTraceContent(recordId, record) {
-    const summaryContent = document.getElementById('record-summary-content');
     const pipelineContent = document.getElementById('record-pipeline-content');
-    if (!summaryContent || !pipelineContent) {
+    if (!pipelineContent) {
         return;
     }
 
-    summaryContent.innerHTML = renderPipelineSummary(record, parseRecordMatchTrace(record));
+    setRecordSummaryHtml(record, parseRecordMatchTrace(record));
     pipelineContent.innerHTML = renderMatchStepsLoading();
 
     try {
@@ -994,11 +1145,11 @@ async function loadMatchTraceContent(recordId, record) {
 
         const traceRecord = traceData.record || record;
         const trace = traceData.trace;
-        summaryContent.innerHTML = renderPipelineSummary(traceRecord, trace);
+        setRecordSummaryHtml(traceRecord, trace);
         pipelineContent.innerHTML = renderPipelineHtml(traceRecord, trace);
     } catch (error) {
         console.error('加载匹配过程失败:', error);
-        summaryContent.innerHTML = '';
+        clearRecordSummaryHtml();
         pipelineContent.innerHTML = '<p class="record-detail-empty-hint record-detail-empty-hint--error mb-0">加载匹配流水线失败</p>';
     }
 }
@@ -1014,9 +1165,8 @@ async function showRecordDetail(recordId, options) {
         return;
     }
 
-    const summaryContent = document.getElementById('record-summary-content');
     const pipelineContent = document.getElementById('record-pipeline-content');
-    if (!summaryContent || !pipelineContent) {
+    if (!pipelineContent) {
         showAlert('详情弹窗不可用', 'danger');
         return;
     }
@@ -1033,7 +1183,7 @@ async function showRecordDetail(recordId, options) {
 
         const embeddedTrace = parseRecordMatchTrace(record);
         updateRecordDetailModalChrome(record);
-        summaryContent.innerHTML = renderPipelineSummary(record, embeddedTrace);
+        setRecordSummaryHtml(record, embeddedTrace);
         pipelineContent.innerHTML = renderMatchStepsLoading();
         modal.show();
         await loadMatchTraceContent(recordId, record);
