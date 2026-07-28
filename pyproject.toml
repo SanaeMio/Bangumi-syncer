@@ -30,6 +30,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "responses>=0.25.0",
     "respx>=0.22.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.ruff]
