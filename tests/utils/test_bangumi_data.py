@@ -1927,3 +1927,84 @@ class TestTmdbMappingMultiSeason:
         sao = bd.get_title_by_tmdb_id("tv/44832")
         if sao:
             assert len(sao) > 3
+
+
+class TestFindBangumiCandidates:
+    """find_bangumi_candidates 候选回传测试"""
+
+    def test_empty_title_returns_empty(self):
+        """空标题返回空列表"""
+        bd = _make_data()
+        assert bd.find_bangumi_candidates("") == []
+
+    def test_returns_exact_matches_with_score_1(self):
+        """精确匹配候选 score=1.0"""
+        bd = _make_data()
+        exact_items = [
+            (
+                {"title": "test", "titleTranslate": {"zh-Hans": ["测试"]}},
+                "111",
+                "title",
+            ),
+        ]
+        with (
+            patch.object(bd, "_scan_candidates", return_value=(exact_items, [], 1)),
+            patch.object(bd, "_get_best_matched_title", return_value="测试"),
+        ):
+            result = bd.find_bangumi_candidates("test")
+        assert len(result) == 1
+        assert result[0]["id"] == "111"
+        assert result[0]["score"] == 1.0
+        assert result[0]["source"] == "bangumi_data_exact"
+
+    def test_partial_matches_sorted_by_score_desc(self):
+        """部分匹配按 score 降序排列"""
+        bd = _make_data()
+        partial = [
+            ({"title": "a"}, 0.6, "222"),
+            ({"title": "b"}, 0.9, "333"),
+            ({"title": "c"}, 0.7, "444"),
+        ]
+        with (
+            patch.object(bd, "_scan_candidates", return_value=([], partial, 3)),
+            patch.object(bd, "_get_best_matched_title", return_value="x"),
+        ):
+            result = bd.find_bangumi_candidates("test", limit=5)
+        assert len(result) == 3
+        assert result[0]["id"] == "333"  # 0.9 最高
+        assert result[1]["id"] == "444"  # 0.7
+        assert result[2]["id"] == "222"  # 0.6
+        assert result[0]["score"] == 0.9
+
+    def test_limit_truncates_result(self):
+        """limit 截断候选数量"""
+        bd = _make_data()
+        exact = [({"title": f"t{i}"}, f"id{i}", "title") for i in range(10)]
+        with (
+            patch.object(bd, "_scan_candidates", return_value=(exact, [], 10)),
+            patch.object(bd, "_get_best_matched_title", return_value="x"),
+        ):
+            result = bd.find_bangumi_candidates("test", limit=3)
+        assert len(result) == 3
+
+    def test_exception_returns_empty(self):
+        """扫描异常时返回空列表"""
+        bd = _make_data()
+        with patch.object(bd, "_scan_candidates", side_effect=RuntimeError("boom")):
+            result = bd.find_bangumi_candidates("test")
+        assert result == []
+
+    def test_exact_preferred_over_partial(self):
+        """精确匹配优先于部分匹配"""
+        bd = _make_data()
+        exact = [({"title": "exact"}, "111", "title")]
+        partial = [({"title": "partial"}, 0.9, "222")]
+        with (
+            patch.object(bd, "_scan_candidates", return_value=(exact, partial, 2)),
+            patch.object(bd, "_get_best_matched_title", return_value="x"),
+        ):
+            result = bd.find_bangumi_candidates("test", limit=5)
+        assert len(result) == 2
+        assert result[0]["id"] == "111"  # exact 优先
+        assert result[0]["score"] == 1.0
+        assert result[1]["id"] == "222"  # partial 次之

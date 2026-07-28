@@ -149,6 +149,72 @@ class MatchingMixin:
 
         return None
 
+    def find_bangumi_candidates(
+        self,
+        title: str,
+        ori_title: str = None,
+        release_date: str = None,
+        limit: int = 5,
+    ) -> list[dict]:
+        """查找标题对应的候选条目列表（用于候选回传到 trace / 候选队列）
+
+        与 find_bangumi_id 不同，此方法不返回单个最佳匹配，而是返回 top-N 候选，
+        每个候选含 id / name / name_cn / score / date，便于上层展示与人工选择。
+
+        Args:
+            title: 中文标题
+            ori_title: 原版标题
+            release_date: 发布日期 YYYY-MM-DD
+            limit: 最多返回的候选数，默认 5
+
+        Returns:
+            [{"id": "123", "name": "...", "name_cn": "...", "score": 0.85}, ...]
+            无候选时返回空列表。
+        """
+        if not title and not ori_title:
+            return []
+
+        try:
+            exact_matches, partial_matches, _ = self._scan_candidates(
+                title or "", ori_title or "", release_date or ""
+            )
+        except Exception as e:
+            logger.warning(f"find_bangumi_candidates 扫描失败: {e}")
+            return []
+
+        candidates: list[dict] = []
+
+        # 精确匹配优先（score=1.0），按出现顺序
+        for item, bangumi_id, _match_type in exact_matches[:limit]:
+            candidates.append(
+                {
+                    "id": str(bangumi_id),
+                    "name": item.get("title", ""),
+                    "name_cn": self._get_best_matched_title(item),
+                    "score": 1.0,
+                    "source": "bangumi_data_exact",
+                }
+            )
+            if len(candidates) >= limit:
+                return candidates
+
+        # 部分匹配按 score 降序填充
+        partial_matches.sort(key=lambda x: x[1], reverse=True)
+        for item, score, bangumi_id in partial_matches:
+            candidates.append(
+                {
+                    "id": str(bangumi_id),
+                    "name": item.get("title", ""),
+                    "name_cn": self._get_best_matched_title(item),
+                    "score": round(score, 3),
+                    "source": "bangumi_data_partial",
+                }
+            )
+            if len(candidates) >= limit:
+                break
+
+        return candidates
+
     def _select_candidate_by_media_type(
         self,
         candidates: list[tuple[dict, str, str]],

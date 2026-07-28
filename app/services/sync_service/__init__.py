@@ -1903,6 +1903,32 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     if step:
                         step.status = "miss"
                         step.reason = "bangumi-data 无匹配结果"
+                        # 阶段3.1：未命中时回传候选列表到 trace，供候选队列展示
+                        try:
+                            raw_candidates = bgm_data.find_bangumi_candidates(
+                                title=item.title,
+                                ori_title=item.ori_title,
+                                release_date=release_date,
+                                limit=5,
+                            )
+                            if raw_candidates:
+                                step.candidates = [
+                                    MatchCandidate(
+                                        subject_id=str(c.get("id", "")),
+                                        name=c.get("name", ""),
+                                        name_cn=c.get("name_cn", ""),
+                                        score=float(c.get("score", 0.0)),
+                                    )
+                                    for c in raw_candidates
+                                ]
+                                step.reason = (
+                                    f"bangumi-data 无精确命中，"
+                                    f"回传 {len(raw_candidates)} 条候选"
+                                )
+                        except Exception as cand_err:
+                            logger.debug(
+                                f"bangumi_data 候选回传失败（不影响主流程）: {cand_err}"
+                            )
             except Exception as e:
                 logger.error(f"bangumi-data 匹配出错: {e}")
                 if step:
