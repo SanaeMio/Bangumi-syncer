@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from app.utils.bangumi_data import bangumi_data
 
+from ...core.background_tasks import register_background_task
 from ...core.database import database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
@@ -817,7 +818,7 @@ class TraktSyncService:
                     del self._active_syncs[task_id]
 
         # 创建并运行任务
-        task = asyncio.create_task(sync_task())
+        task = register_background_task(sync_task())
         self._active_syncs[task_id] = task
 
         logger.info(f"Trakt 同步任务 {task_id} 已启动")

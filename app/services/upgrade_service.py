@@ -24,6 +24,7 @@ from typing import Optional
 import httpx
 
 from ..core.app_version import get_version
+from ..core.background_tasks import register_background_task
 from ..core.config import config_manager
 from ..core.database import database_manager
 from ..core.logging import logger
@@ -152,7 +153,7 @@ class UpgradeService:
         )
 
         self._queues[upgrade_id] = asyncio.Queue(maxsize=100)
-        asyncio.create_task(self._run_upgrade(upgrade_id, target_version))
+        register_background_task(self._run_upgrade(upgrade_id, target_version))
         return upgrade_id
 
     async def _run_upgrade(self, upgrade_id: str, target_version: Optional[str]):

@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from ..core.background_tasks import register_background_task
 from ..utils.bangumi_archive import bangumi_archive
 from .deps import get_current_user_flexible
 
@@ -127,7 +128,7 @@ async def trigger_update(
             # 错误已在 run_update 内部记录到 meta
             pass
 
-    asyncio.create_task(_run())
+    register_background_task(_run())
     # 等待 task_id 被赋值（最多 1 秒）
     for _ in range(10):
         if bangumi_archive.current_task_id:
@@ -209,7 +210,7 @@ async def import_local_zip(
             except OSError:
                 pass
 
-    asyncio.create_task(_run())
+    register_background_task(_run())
     # 等待 task_id 被赋值
     for _ in range(10):
         if bangumi_archive.current_task_id:

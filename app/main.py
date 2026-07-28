@@ -31,6 +31,11 @@ from .api.sync import root_router, router as sync_router
 from .api.trakt import router as trakt_router
 from .api.upgrade import router as upgrade_router
 from .core.app_version import get_version, get_version_info, get_version_name
+from .core.background_tasks import (
+    cancel_all as cancel_background_tasks,
+    register_background_task,
+    wait_all as wait_background_tasks,
+)
 from .core.config import config_manager
 from .core.database import database_manager
 from .core.logging import logger
@@ -45,8 +50,6 @@ from .services.mapping_service import mapping_service
 from .services.summary.scheduler import summary_scheduler
 from .services.sync_service import sync_service
 from .services.trakt.scheduler import trakt_scheduler
-
-_background_tasks: set[asyncio.Task] = set()
 
 # 创建FastAPI应用（root_path 便于反代子路径下 OpenAPI 等）
 _app_kw: dict = {
@@ -116,9 +119,7 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.error(f"{name} 调度器启动异常: {e}")
 
-        task = asyncio.create_task(delayed_scheduler_start())
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        register_background_task(delayed_scheduler_start())
     except Exception as e:
         logger.error(f"启动调度器失败: {e}")
 
@@ -129,11 +130,9 @@ async def lifespan(app: FastAPI):
     # ===== 关闭 =====
     logger.info("Bangumi-Syncer 正在关闭...")
 
-    for task in _background_tasks:
-        task.cancel()
-    if _background_tasks:
-        await asyncio.gather(*_background_tasks, return_exceptions=True)
-    _background_tasks.clear()
+    # 取消所有后台 fire-and-forget 任务，并等待最多 5 秒让它们清理资源
+    cancel_background_tasks()
+    await wait_background_tasks(timeout=5.0)
 
     for name, coro in [
         ("Trakt", trakt_scheduler.stop),
