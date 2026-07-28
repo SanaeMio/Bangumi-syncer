@@ -2042,6 +2042,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             subject_id=str(cand.get("id", "")),
                             name=cand.get("name", ""),
                             name_cn=cand.get("name_cn", ""),
+                            score=bgm.title_diff_ratio(
+                                search_title, item.ori_title, cand
+                            ),
                             platform=cand.get("platform", ""),
                             air_date=cand.get("date", ""),
                             source=match_stage,
@@ -2103,6 +2106,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         subject_id=str(cand.get("id", "")),
                                         name=cand.get("name", ""),
                                         name_cn=cand.get("name_cn", ""),
+                                        score=bgm.title_diff_ratio(
+                                            search_title, item.ori_title, cand
+                                        ),
                                         platform=cand.get("platform", ""),
                                         air_date=cand.get("date", ""),
                                         source="post_search",
@@ -2333,6 +2339,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         subject_id=str(c.get("id", "")),
                                         name=c.get("name", ""),
                                         name_cn=c.get("name_cn", ""),
+                                        score=bgm.title_diff_ratio(
+                                            search_title, item.ori_title, c
+                                        ),
                                         platform=c.get("platform", ""),
                                         air_date=c.get("date", ""),
                                         source="post_search",
@@ -2346,6 +2355,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         subject_id=str(r.get("id", "")),
                                         name=r.get("name", ""),
                                         name_cn=r.get("name_cn", ""),
+                                        score=bgm.title_diff_ratio(
+                                            search_title, item.ori_title, r
+                                        ),
                                         source="post_search_related",
                                     )
                                 )

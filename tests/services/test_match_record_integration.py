@@ -334,6 +334,21 @@ class TestSeasonOneCandidateSelection:
     def _make_service(self):
         return SyncService()
 
+    @staticmethod
+    def _make_bgm_mock(candidates, scores=None):
+        """创建带 title_diff_ratio 的 bgm mock
+
+        Args:
+            candidates: bgm_search 返回的候选列表
+            scores: title_diff_ratio 的返回值序列；None 时统一返回 0.85
+        """
+        bgm = MagicMock(bgm_search=MagicMock(return_value=candidates))
+        if scores is not None:
+            bgm.title_diff_ratio = MagicMock(side_effect=list(scores))
+        else:
+            bgm.title_diff_ratio = MagicMock(return_value=0.85)
+        return bgm
+
     def _make_candidates(self):
         """模拟 bgm_search 返回的候选列表（已按热度排序）"""
         return [
@@ -381,9 +396,7 @@ class TestSeasonOneCandidateSelection:
                 with patch.object(
                     svc,
                     "_get_bangumi_api_for_user",
-                    return_value=MagicMock(
-                        bgm_search=MagicMock(return_value=self._make_candidates())
-                    ),
+                    return_value=self._make_bgm_mock(self._make_candidates()),
                 ):
                     with patch.object(
                         svc,
@@ -432,9 +445,7 @@ class TestSeasonOneCandidateSelection:
                 with patch.object(
                     svc,
                     "_get_bangumi_api_for_user",
-                    return_value=MagicMock(
-                        bgm_search=MagicMock(return_value=candidates)
-                    ),
+                    return_value=self._make_bgm_mock(candidates),
                 ):
                     with patch.object(
                         svc,
@@ -476,9 +487,7 @@ class TestSeasonOneCandidateSelection:
                 with patch.object(
                     svc,
                     "_get_bangumi_api_for_user",
-                    return_value=MagicMock(
-                        bgm_search=MagicMock(return_value=candidates)
-                    ),
+                    return_value=self._make_bgm_mock(candidates),
                 ):
                     with patch.object(
                         svc,
@@ -490,3 +499,60 @@ class TestSeasonOneCandidateSelection:
         assert subject_id == 333
         # 首条无季度后缀，不触发改选逻辑，is_matched 保持 False
         assert is_matched is False
+
+
+class TestCandidateScoreFilling:
+    """验证 trace 内候选 score 通过 title_diff_ratio 填充"""
+
+    def test_bgm_search_candidates_have_score(self):
+        """bgm_search step 候选 score 由 title_diff_ratio 填充"""
+        svc = SyncService()
+        item = CustomItem(
+            media_type="episode",
+            title="测试番剧",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        candidates = [
+            {
+                "id": 111,
+                "name": "测试番剧",
+                "name_cn": "测试番剧",
+                "platform": "TV",
+                "date": "",
+            },
+            {
+                "id": 222,
+                "name": "测试番剧 第二季",
+                "name_cn": "测试番剧 第二季",
+                "platform": "TV",
+                "date": "",
+            },
+        ]
+        bgm = MagicMock(bgm_search=MagicMock(return_value=candidates))
+        bgm.title_diff_ratio = MagicMock(side_effect=[0.95, 0.72])
+
+        trace = MatchTrace()
+        with patch("app.services.sync_service.mapping_service") as mock_mapping:
+            mock_mapping.find_mapping.return_value = (None, "", "")
+            with patch("app.services.sync_service.config_manager") as mock_cfg:
+                mock_cfg.get.side_effect = lambda s, k, fallback=None: {
+                    ("bangumi_data", "enabled"): False,
+                    ("sync", "enable_real_action"): False,
+                }.get((s, k), fallback)
+                with patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm):
+                    with patch.object(
+                        svc,
+                        "_sort_candidates_by_platform",
+                        side_effect=lambda data, **kw: data,
+                    ):
+                        svc._find_subject_id(item, trace=trace)
+
+        search_steps = [s for s in trace.steps if s.stage in ("api_search", "archive")]
+        assert len(search_steps) >= 1
+        step = search_steps[0]
+        assert len(step.candidates) == 2
+        assert step.candidates[0].score == 0.95
+        assert step.candidates[1].score == 0.72
