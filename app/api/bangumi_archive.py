@@ -172,6 +172,21 @@ async def import_local_zip(
     # 保存到临时文件
     tmp_dir = Path(tempfile.mkdtemp(prefix="bangumi_archive_upload_"))
     tmp_path = tmp_dir / filename
+
+    def _cleanup_tmp() -> None:
+        """清理临时文件与目录（幂等，多次调用安全）"""
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        try:
+            if tmp_dir.exists():
+                tmp_dir.rmdir()
+        except OSError:
+            pass
+
+    background_scheduled = False
     try:
         size = 0
         with open(tmp_path, "wb") as f:
@@ -183,13 +198,10 @@ async def import_local_zip(
                         status_code=413,
                         detail=f"文件过大，超过 {_MAX_UPLOAD_SIZE // (1024 * 1024)}MB 限制",
                     )
-    except HTTPException:
-        # 清理临时文件
-        try:
-            tmp_path.unlink(missing_ok=True)
-            tmp_dir.rmdir()
-        except OSError:
-            pass
+    except Exception:
+        # 任何写入异常（磁盘满、超限等）都清理临时文件，避免泄漏
+        if not background_scheduled:
+            _cleanup_tmp()
         raise
     finally:
         await file.close()
@@ -201,16 +213,10 @@ async def import_local_zip(
         except Exception:
             pass
         finally:
-            # 清理临时文件与目录
-            try:
-                if tmp_path.exists():
-                    tmp_path.unlink()
-                if tmp_dir.exists():
-                    tmp_dir.rmdir()
-            except OSError:
-                pass
+            _cleanup_tmp()
 
     register_background_task(_run())
+    background_scheduled = True
     # 等待 task_id 被赋值
     for _ in range(10):
         if bangumi_archive.current_task_id:

@@ -201,7 +201,6 @@ class TestEnqueuePendingSyncUserName:
     def test_uses_payload_user_name_not_bangumi_username(self):
         from app.services.sync_service import SyncService
 
-        svc = SyncService()
         bgm = MagicMock()
         bgm.username = "bangumi_account_a"  # Bangumi 账号名
 
@@ -237,7 +236,6 @@ class TestEnqueuePendingSyncUserName:
     def test_falls_back_to_empty_string_when_payload_missing_user_name(self):
         from app.services.sync_service import SyncService
 
-        svc = SyncService()
         bgm = MagicMock()
         bgm.username = "bangumi_account_a"
 
