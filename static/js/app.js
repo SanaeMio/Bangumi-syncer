@@ -474,8 +474,6 @@ function renderCrossSeasonTable(step) {
 
 // 流水线渲染：10 阶段统一展示
 function renderPipelineHtml(record, trace) {
-    const scoreText = (s) => (s !== null && s !== undefined) ? `${(s * 100).toFixed(1)}%` : '-';
-
     if (!trace) {
         return `
             <p class="record-detail-empty-hint mb-0">
@@ -507,7 +505,7 @@ function renderPipelineHtml(record, trace) {
         html += `<strong class="record-detail-step__name">${escapeHtml(stageName)}</strong>`;
         html += `<span class="record-detail-step__badge record-detail-step__badge--${status}">${getMatchStepStatusLabel(status)}</span>`;
         if (step.score !== null && step.score !== undefined) {
-            html += `<span class="record-detail-step__score">${(step.score * 100).toFixed(0)}%</span>`;
+            html += `<span class="record-detail-step__score">${formatMatchScore(step.score)}</span>`;
         }
         html += `<span class="record-detail-step__time">${step.elapsed_ms || 0}ms</span>`;
         html += '</header>';
@@ -522,7 +520,7 @@ function renderPipelineHtml(record, trace) {
         }
 
         if (step.candidates && step.candidates.length > 0) {
-            html += renderMatchCandidatesTable(step.candidates, scoreText);
+            html += renderMatchCandidatesTable(step.candidates);
         }
 
         // episode_resolve step：渲染输入→输出变更过程表格
@@ -805,183 +803,9 @@ function updateRecordDetailModalChrome(record) {
     }
 }
 
-function renderMatchCandidatesTable(candidates, scoreText) {
-    if (!candidates || candidates.length === 0) {
-        return '';
-    }
-
-    const renderRows = (items) => items.map((cand) => {
-        const name = escapeHtml(cand.name_cn || cand.name || cand.subject_id || '-');
-        return `<tr>
-            <td><a href="https://bgm.tv/subject/${cand.subject_id}" target="_blank">${name}</a></td>
-            <td><small>${escapeHtml(String(cand.subject_id || '-'))}</small></td>
-            <td><small>${scoreText(cand.score)}</small></td>
-            <td><small>${escapeHtml(cand.platform || '-')}</small></td>
-            <td><small>${escapeHtml(cand.air_date || '-')}</small></td>
-            <td><small>${escapeHtml(cand.source || '-')}</small></td>
-        </tr>`;
-    }).join('');
-
-    const tableHead = '<thead><tr><th>条目</th><th>subject_id</th><th>置信度</th><th>平台</th><th>放送日期</th><th>来源</th></tr></thead>';
-    const tableStart = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0">';
-    const tableEnd = '</table></div>';
-
-    if (candidates.length <= 3) {
-        return tableStart + tableHead + '<tbody>' + renderRows(candidates) + '</tbody>' + tableEnd;
-    }
-
-    const rest = candidates.slice(3);
-    return tableStart + tableHead + '<tbody>' + renderRows(candidates.slice(0, 3)) + '</tbody>' + tableEnd
-        + `<details class="record-detail-candidates mt-2">
-            <summary>展开其余 ${rest.length} 条候选</summary>
-            ${tableStart + tableHead + '<tbody>' + renderRows(rest) + '</tbody>' + tableEnd}
-        </details>`;
-}
-
 function renderMatchDetailModalContent(record, trace) {
     const parts = renderMatchDetailModalParts(record, trace);
     return parts.match + parts.steps;
-}
-
-function renderMatchTraceDetail(record, trace, options) {
-    const opts = options || {};
-    if (opts.skipBasicInfo) {
-        return renderMatchDetailModalContent(record, trace);
-    }
-
-    const val = (v, d = '-') => (v === null || v === undefined || v === '') ? d : v;
-    const mediaTypeLabel = (t) => {
-        const map = {
-            episode: '剧集',
-            movie: '电影/剧场版',
-            ova: 'OVA/OAD',
-            real_action: '三次元',
-        };
-        return map[t] || t || '-';
-    };
-    const subjectLink = (sid, name) => sid
-        ? `<a href="https://bgm.tv/subject/${sid}" target="_blank">${escapeHtml(name || sid)}</a>`
-        : '-';
-    const episodeLink = (eid) => eid
-        ? `<a href="https://bgm.tv/ep/${eid}" target="_blank">ep/${eid}</a>`
-        : '-';
-    const scoreText = (s) => (s !== null && s !== undefined) ? `${(s * 100).toFixed(1)}%` : '-';
-
-    let html = '';
-
-    html += renderRecordDetailSection('基本信息', 'bi-info-circle', renderRecordDetailKvGrid([
-            { label: '标题', value: escapeHtml(val(record.title)) },
-            { label: '原始标题', value: escapeHtml(val(record.ori_title)) },
-            { label: '番剧标题', value: escapeHtml(val(record.bgm_title)) },
-            { label: '来源', value: renderSourceBadge(record.source) },
-            { label: '季度/集数', value: `S${String(record.season || 0).padStart(2, '0')}E${String(record.episode || 0).padStart(2, '0')}` },
-            { label: '媒体类型', value: mediaTypeLabel(record.media_type) },
-            { label: '时间', value: escapeHtml(val(record.timestamp)) },
-            { label: '用户', value: escapeHtml(val(record.user_name)) },
-            { label: '状态', value: renderSyncStatusBadge(record.status) + renderSyncSubStatusBadge(record) },
-            { label: '消息', value: escapeHtml(val(record.message)) },
-            { label: '最终匹配方式', value: renderMatchMethodBadge(record.match_method || (trace && trace.final_match_method) || '') },
-            { label: '最终置信度', value: scoreText((trace && trace.final_score !== null && trace.final_score !== undefined) ? trace.final_score : record.match_score) },
-            { label: '命中条目', value: subjectLink(record.subject_id || (trace && trace.final_subject_id), record.bgm_title) },
-            { label: '命中剧集', value: episodeLink((trace && trace.final_episode_id) || record.episode_id) },
-        ]));
-
-    if (trace) {
-        const ctxFields = [
-            ['请求标题', trace.request_title],
-            ['请求原始标题', trace.request_ori_title],
-            ['请求季度', trace.request_season],
-            ['请求集数', trace.request_episode],
-            ['请求媒体类型', trace.request_media_type ? mediaTypeLabel(trace.request_media_type) : null],
-            ['请求发布日期', trace.request_release_date],
-            ['请求用户', trace.request_user_name],
-            ['请求平台提示', trace.request_platform_hint],
-            ['归一化标题', trace.normalized_title],
-        ].filter(([, v]) => v !== null && v !== undefined && v !== '');
-
-        if (ctxFields.length > 0) {
-            const ctxGrid = renderRecordDetailKvGrid(ctxFields.map(([label, v]) => ({
-                label,
-                value: escapeHtml(String(v)),
-            })));
-            html += renderRecordDetailBlock('匹配上下文', 'bi-braces', ctxGrid);
-        }
-    }
-
-    if (isMatchFailure(record, trace)) {
-        const mapTitle = encodeURIComponent(record.title || '');
-        const mapSeason = record.season || 1;
-        html += `
-            <div class="record-detail-banner record-detail-banner--warn">
-                <i class="bi bi-exclamation-triangle-fill"></i>
-                <span class="flex-grow-1">未匹配到 Bangumi 条目，可添加自定义映射解决</span>
-                <a href="${appUrl('/mappings')}?title=${mapTitle}&season=${mapSeason}" class="record-detail-banner__action">
-                    前往映射 <i class="bi bi-arrow-up-right"></i>
-                </a>
-            </div>
-        `;
-    }
-
-    if (trace && trace.steps && trace.steps.length > 0) {
-        html += '<p class="record-detail-steps-label">匹配步骤</p>';
-        html += '<ol class="record-detail-timeline mb-0">';
-
-        trace.steps.forEach((step, idx) => {
-            const statusIcon = {
-                hit: '<i class="bi bi-check-circle-fill text-success"></i>',
-                miss: '<i class="bi bi-x-circle-fill text-danger"></i>',
-                skipped: '<i class="bi bi-skip-forward text-muted"></i>',
-                error: '<i class="bi bi-exclamation-triangle-fill text-danger"></i>',
-            }[step.status] || '<i class="bi bi-question-circle text-muted"></i>';
-
-            const stageName = {
-                custom_mapping: '自定义映射',
-                bangumi_data: 'bangumi-data 本地匹配',
-                archive: '本地归档匹配',
-                api_search: 'Bangumi API 搜索',
-            }[step.stage] || step.stage;
-
-            const statusClass = step.status ? ` record-detail-timeline__item--${step.status}` : '';
-
-            html += `<li class="record-detail-timeline__item${statusClass}">`;
-            html += `<span class="record-detail-timeline__marker">${statusIcon}</span>`;
-            html += '<div class="record-detail-timeline__content">';
-            html += '<div class="record-detail-timeline__head">';
-            html += `<strong class="record-detail-timeline__stage">${idx + 1}. ${stageName}</strong>`;
-            if (step.score !== null && step.score !== undefined) {
-                html += `<span class="record-detail-step-tag">${(step.score * 100).toFixed(0)}%</span>`;
-            }
-            html += `<small class="record-detail-step-time">${step.elapsed_ms || 0}ms</small>`;
-            html += '</div>';
-
-            if (step.reason) {
-                html += `<div class="record-detail-step-reason">${escapeHtml(step.reason)}</div>`;
-            }
-
-            if (step.subject_id) {
-                html += `<div class="record-detail-step-hit">命中 <a href="https://bgm.tv/subject/${step.subject_id}" target="_blank">${step.subject_id}</a></div>`;
-            }
-
-            if (step.candidates && step.candidates.length > 0) {
-                html += renderMatchCandidatesTable(step.candidates, scoreText);
-            }
-
-            html += '</div></li>';
-        });
-
-        html += '</ol>';
-    } else if (!trace) {
-        html += `
-            <p class="record-detail-empty-hint mb-0">
-                无匹配追踪数据（可能为旧版记录），可在
-                <a href="${appUrl('/debug')}">调试工具</a> 中测试匹配。
-            </p>
-        `;
-    } else {
-        html += '<p class="record-detail-empty-hint mb-0">匹配追踪为空，无步骤数据。</p>';
-    }
-
-    return html;
 }
 
 function renderSyncDetailContent(record, trace) {
@@ -1210,7 +1034,6 @@ function hideModal(modalId) {
 }
 
 window.escapeHtml = escapeHtml;
-window.renderMatchTraceDetail = renderMatchTraceDetail;
 window.renderSyncDetailContent = renderSyncDetailContent;
 window.renderSyncResultContent = renderSyncResultContent;
 window.showRecordDetail = showRecordDetail;

@@ -223,6 +223,86 @@ function renderAppPagination(options) {
     if (animate) replayAppPaginationAnimation(navId);
 }
 
+// ========== 匹配候选表格通用组件 ==========
+
+/**
+ * 格式化匹配分数为百分比字符串
+ * 统一规则：null/undefined → '-'，否则 (s*100).toFixed(1)%
+ * @param {number|null|undefined} score
+ * @returns {string}
+ */
+function formatMatchScore(score) {
+    if (score === null || score === undefined) return '-';
+    return `${(score * 100).toFixed(1)}%`;
+}
+
+/**
+ * 候选列表按 score 降序排序（无 score 的排在最后）
+ * 返回新数组，不修改原数组
+ * @param {Array} candidates
+ * @returns {Array}
+ */
+function sortCandidatesByScore(candidates) {
+    if (!candidates || candidates.length === 0) return [];
+    return candidates.slice().sort((a, b) => {
+        const sa = typeof a.score === 'number' ? a.score : -1;
+        const sb = typeof b.score === 'number' ? b.score : -1;
+        return sb - sa;
+    });
+}
+
+/**
+ * 渲染匹配候选表格（统一组件，供 records 详情 / pending_candidates / debug 等共用）
+ *
+ * 统一规则：
+ * - 候选按 score 降序排序
+ * - score 格式：formatMatchScore
+ * - 空值显示为空字符串（视觉更干净）
+ * - 候选数 > maxCollapsed 时折叠其余项
+ *
+ * @param {Array} candidates 候选列表
+ * @param {Object} [options]
+ * @param {number} [options.maxCollapsed=3] 超过此数量时折叠其余候选
+ * @returns {string} HTML 字符串；空列表返回 ''
+ */
+function renderMatchCandidatesTable(candidates, options) {
+    if (!candidates || candidates.length === 0) {
+        return '';
+    }
+    const opts = options || {};
+    const maxCollapsed = typeof opts.maxCollapsed === 'number' ? opts.maxCollapsed : 3;
+    const sorted = sortCandidatesByScore(candidates);
+
+    const renderCell = (val) => `<small>${escapeHtml(val === null || val === undefined || val === '' ? '' : String(val))}</small>`;
+    const renderRows = (items) => items.map((cand) => {
+        const name = escapeHtml(cand.name_cn || cand.name || cand.subject_id || '-');
+        const subjectId = cand.subject_id || '';
+        return `<tr>
+            <td><a href="https://bgm.tv/subject/${subjectId}" target="_blank">${name}</a></td>
+            <td>${renderCell(subjectId)}</td>
+            <td><small>${formatMatchScore(cand.score)}</small></td>
+            <td>${renderCell(cand.platform)}</td>
+            <td>${renderCell(cand.air_date)}</td>
+            <td>${renderCell(cand.source)}</td>
+        </tr>`;
+    }).join('');
+
+    const tableHead = '<thead><tr><th>条目</th><th>subject_id</th><th>置信度</th><th>平台</th><th>放送日期</th><th>来源</th></tr></thead>';
+    const tableStart = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0">';
+    const tableEnd = '</table></div>';
+
+    if (sorted.length <= maxCollapsed) {
+        return tableStart + tableHead + '<tbody>' + renderRows(sorted) + '</tbody>' + tableEnd;
+    }
+
+    const rest = sorted.slice(maxCollapsed);
+    return tableStart + tableHead + '<tbody>' + renderRows(sorted.slice(0, maxCollapsed)) + '</tbody>' + tableEnd
+        + `<details class="record-detail-candidates mt-2">
+            <summary>展开其余 ${rest.length} 条候选</summary>
+            ${tableStart + tableHead + '<tbody>' + renderRows(rest) + '</tbody>' + tableEnd}
+        </details>`;
+}
+
 window.createAppEmptyStateHtml = createAppEmptyStateHtml;
 window.setAppTableLoading = setAppTableLoading;
 window.bindAppTableMobileRowClick = bindAppTableMobileRowClick;
@@ -230,3 +310,6 @@ window.replayAppTableAnimation = replayAppTableAnimation;
 window.applyAppTableRowEnter = applyAppTableRowEnter;
 window.animateAppTableBody = animateAppTableBody;
 window.renderAppPagination = renderAppPagination;
+window.renderMatchCandidatesTable = renderMatchCandidatesTable;
+window.formatMatchScore = formatMatchScore;
+window.sortCandidatesByScore = sortCandidatesByScore;

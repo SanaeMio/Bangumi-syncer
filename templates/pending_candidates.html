@@ -237,12 +237,7 @@ async function showCandidateDetail(candidateId) {
         }
 
         const record = data.data.record;
-        const candidates = (data.data.candidates || []).slice().sort((a, b) => {
-            // 按 score 降序排序，无 score 的排在最后
-            const sa = typeof a.score === 'number' ? a.score : -1;
-            const sb = typeof b.score === 'number' ? b.score : -1;
-            return sb - sa;
-        });
+        const candidates = sortCandidatesByScore(data.data.candidates || []);
         const content = document.getElementById('candidate-detail-content');
 
         let html = '';
@@ -271,7 +266,7 @@ async function showCandidateDetail(candidateId) {
             html += '<div class="card"><div class="card-header py-2"><strong>候选条目（点击「确认」写入映射）</strong></div><div class="card-body">';
 
             candidates.forEach((cand, idx) => {
-                const scoreText = cand.score ? ` 置信度 ${(cand.score * 100).toFixed(1)}%` : '';
+                const scoreText = cand.score ? ` 置信度 ${formatMatchScore(cand.score)}` : '';
                 const platformText = cand.platform ? ` [${cand.platform}]` : '';
                 const airDateText = cand.air_date ? ` 首播 ${cand.air_date}` : '';
                 const sourceText = cand.source ? ` 来源 ${cand.source}` : '';
