@@ -472,6 +472,69 @@ function renderCrossSeasonTable(step) {
     });
 }
 
+// P0: 渲染 step.error_detail 异常详情（可折叠）
+function renderStepErrorDetail(detail) {
+    if (!detail) return '';
+    const type = escapeHtml(detail.type || '');
+    const message = escapeHtml(detail.message || '');
+    const traceback = detail.traceback || '';
+    let html = `<details class="record-detail-error-detail mt-1">
+        <summary class="text-danger small"><i class="bi bi-bug-fill"></i> 异常详情：${type}</summary>
+        <div class="mt-1 small">
+            <div class="text-danger"><strong>${type}</strong>: ${message}</div>`;
+    if (traceback) {
+        html += `<pre class="mt-1 mb-0 p-2 bg-dark text-light rounded small" style="max-height:240px;overflow:auto">${escapeHtml(traceback)}</pre>`;
+    }
+    html += '</div></details>';
+    return html;
+}
+
+// P1: 渲染 step.request_params 实际发送的搜索参数
+function renderStepRequestParams(params) {
+    if (!params) return '';
+    const mediaTypeLabel = (t) => {
+        const map = { episode: '剧集', movie: '剧场版', ova: 'OVA', oad: 'OAD', real_action: '三次元' };
+        return map[t] || t || '-';
+    };
+    const rows = [
+        ['搜索标题', params.title],
+        ['原始标题', params.ori_title],
+        ['发布日期', params.premiere_date],
+        ['媒体类型', params.media_type ? mediaTypeLabel(params.media_type) : ''],
+        ['季度', params.season],
+        ['subject_types', Array.isArray(params.subject_types) ? params.subject_types.join(', ') : params.subject_types],
+    ].filter(([, v]) => v !== null && v !== undefined && v !== '');
+    if (rows.length === 0) return '';
+    const body = rows.map(([k, v]) => `<dt class="col-sm-4 text-muted">${escapeHtml(k)}</dt><dd class="col-sm-8 mb-0"><small>${escapeHtml(String(v))}</small></dd>`).join('');
+    return `<details class="record-detail-request-params mt-1">
+        <summary class="small text-muted"><i class="bi bi-arrow-up-right-square"></i> 搜索参数</summary>
+        <dl class="row mb-0 mt-1">${body}</dl>
+    </details>`;
+}
+
+// P1: 渲染 step.api_response_summary API 返回质量摘要
+function renderStepApiResponseSummary(summary) {
+    if (!summary) return '';
+    const total = summary.total_candidates ?? 0;
+    const archiveHit = summary.is_archive_hit;
+    const firstId = summary.first_subject_id;
+    const firstName = escapeHtml(summary.first_name_cn || summary.first_name || '');
+    const archiveBadge = archiveHit
+        ? '<span class="badge rounded-pill bg-info bg-opacity-75">archive 短路</span>'
+        : '<span class="badge rounded-pill bg-secondary bg-opacity-75">API</span>';
+    const firstLink = firstId
+        ? `<a href="https://bgm.tv/subject/${firstId}" target="_blank">${firstName || firstId}</a>`
+        : '-';
+    return `<details class="record-detail-api-summary mt-1">
+        <summary class="small text-muted"><i class="bi bi-graph-up"></i> API 返回摘要</summary>
+        <div class="mt-1 small">
+            <span class="me-2">候选数：<strong>${total}</strong></span>
+            <span class="me-2">${archiveBadge}</span>
+            <span>首条：${firstLink}</span>
+        </div>
+    </details>`;
+}
+
 // 流水线渲染：10 阶段统一展示
 function renderPipelineHtml(record, trace) {
     if (!trace) {
@@ -514,6 +577,21 @@ function renderPipelineHtml(record, trace) {
             html += `<p class="record-detail-step__reason">${escapeHtml(step.reason)}</p>`;
         }
 
+        // P0: error_detail 异常详情（status=error 时展示）
+        if (step.error_detail) {
+            html += renderStepErrorDetail(step.error_detail);
+        }
+
+        // P1: request_params 实际发送的搜索参数
+        if (step.request_params) {
+            html += renderStepRequestParams(step.request_params);
+        }
+
+        // P1: api_response_summary API 返回质量摘要
+        if (step.api_response_summary) {
+            html += renderStepApiResponseSummary(step.api_response_summary);
+        }
+
         // receive step：渲染 sync 开始时的输入字段表格
         if (step.stage === 'receive') {
             html += renderReceiveInputTable(step);
@@ -551,6 +629,12 @@ function renderPipelineHtml(record, trace) {
     });
 
     html += '</div>';
+
+    // P2: 总耗时（匹配阶段总和）
+    if (trace.total_elapsed_ms !== null && trace.total_elapsed_ms !== undefined && trace.total_elapsed_ms > 0) {
+        html += `<p class="record-detail-total-time mt-2 mb-0 text-muted small">匹配总耗时：${trace.total_elapsed_ms}ms</p>`;
+    }
+
     return html;
 }
 

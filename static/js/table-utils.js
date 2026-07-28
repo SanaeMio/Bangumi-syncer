@@ -259,6 +259,7 @@ function sortCandidatesByScore(candidates) {
  * - score 格式：formatMatchScore
  * - 空值显示为空字符串（视觉更干净）
  * - 候选数 > maxCollapsed 时折叠其余项
+ * - 媒体类型列展示 detect_media_type 判断结果（P0 增强字段）
  *
  * @param {Array} candidates 候选列表
  * @param {Object} [options]
@@ -274,20 +275,37 @@ function renderMatchCandidatesTable(candidates, options) {
     const sorted = sortCandidatesByScore(candidates);
 
     const renderCell = (val) => `<small>${escapeHtml(val === null || val === undefined || val === '' ? '' : String(val))}</small>`;
+    const renderMediaType = (t) => {
+        if (!t) return '<small class="text-muted">-</small>';
+        const map = {
+            episode: '剧集',
+            movie: '剧场版',
+            ova: 'OVA',
+            oad: 'OAD',
+            real_action: '三次元',
+        };
+        const label = map[t] || t;
+        return `<small><span class="badge rounded-pill bg-secondary bg-opacity-75">${escapeHtml(label)}</span></small>`;
+    };
     const renderRows = (items) => items.map((cand) => {
         const name = escapeHtml(cand.name_cn || cand.name || cand.subject_id || '-');
         const subjectId = cand.subject_id || '';
+        // 候选别名 tooltip（P2 infobox_aliases）
+        const aliases = cand.infobox_aliases && cand.infobox_aliases.length > 0
+            ? ` title="别名：${escapeHtml(cand.infobox_aliases.join(' / '))}"`
+            : '';
         return `<tr>
-            <td><a href="https://bgm.tv/subject/${subjectId}" target="_blank">${name}</a></td>
+            <td><a href="https://bgm.tv/subject/${subjectId}" target="_blank"${aliases}>${name}</a></td>
             <td>${renderCell(subjectId)}</td>
             <td><small>${formatMatchScore(cand.score)}</small></td>
+            <td>${renderMediaType(cand.media_type)}</td>
             <td>${renderCell(cand.platform)}</td>
             <td>${renderCell(cand.air_date)}</td>
             <td>${renderCell(cand.source)}</td>
         </tr>`;
     }).join('');
 
-    const tableHead = '<thead><tr><th>条目</th><th>subject_id</th><th>置信度</th><th>平台</th><th>放送日期</th><th>来源</th></tr></thead>';
+    const tableHead = '<thead><tr><th>条目</th><th>subject_id</th><th>置信度</th><th>类型</th><th>平台</th><th>放送日期</th><th>来源</th></tr></thead>';
     const tableStart = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0">';
     const tableEnd = '</table></div>';
 
