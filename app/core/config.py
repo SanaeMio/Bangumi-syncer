@@ -9,6 +9,10 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Any, Optional
 
+from .config_schema import (
+    all_env_overrides,
+    non_account_bangumi_sections,
+)
 from .config_secret_crypto import (
     LLM_SECTION,
     decrypt_if_sensitive,
@@ -17,15 +21,9 @@ from .config_secret_crypto import (
 from .logging import logger
 from .startup_info import startup_info
 
-# 非多账号的 bangumi-* section：以 bangumi- 开头但承载系统功能（数据/映射/archive/replay），
-# 不应被当作多账号配置收集、也不应在保存多账号时被清除。
-# 新增此类 section 时需同步加入此列表，否则前端配置页将读不到/被误删。
-_BANGUMI_NON_ACCOUNT_SECTIONS: tuple[str, ...] = (
-    "bangumi-data",
-    "bangumi-mapping",
-    "bangumi-archive",
-    "bangumi-replay",
-)
+# 非多账号的 bangumi-* section：从 SectionMeta 注册表派生
+# （bangumi-data / bangumi-mapping / bangumi-archive / bangumi-replay）
+_BANGUMI_NON_ACCOUNT_SECTIONS: tuple[str, ...] = non_account_bangumi_sections()
 
 
 def parse_media_server_username_value(raw: Optional[str]) -> list[str]:
@@ -147,23 +145,8 @@ class ConfigManager:
         )
 
     def _apply_env_overrides(self, config: ConfigParser) -> None:
-        """应用环境变量覆盖"""
-        env_overrides = {
-            ("bangumi", "username"): "BANGUMI_USERNAME",
-            ("bangumi", "access_token"): "BANGUMI_ACCESS_TOKEN",
-            ("bangumi", "media_server_username"): "SINGLE_USERNAME",
-            ("bangumi", "private"): "BANGUMI_PRIVATE",
-            ("dev", "script_proxy"): "HTTP_PROXY",
-            ("dev", "debug"): "DEBUG_MODE",
-            ("web", "base_path"): "APPLICATION_ROOT",
-            ("feiniu", "db_path"): "FEINIU_DB_PATH",
-            ("fongmi", "enabled"): "FONGMI_ENABLED",
-            ("fongmi", "devices"): "FONGMI_DEVICES",
-            ("fongmi", "subnet"): "FONGMI_SUBNET",
-            ("fongmi", "auto_scan"): "FONGMI_AUTO_SCAN",
-            ("fongmi", "sync_interval"): "FONGMI_SYNC_INTERVAL",
-            ("fongmi", "min_percent"): "FONGMI_MIN_PERCENT",
-        }
+        """应用环境变量覆盖（映射来源：SectionMeta.env_overrides）"""
+        env_overrides = all_env_overrides()
 
         for (section, option), env_var in env_overrides.items():
             env_value = os.environ.get(env_var)
