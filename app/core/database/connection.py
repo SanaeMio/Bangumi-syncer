@@ -384,6 +384,16 @@ class DatabaseConnection:
             "ON pending_sync_queue(user_name, subject_id, COALESCE(episode_id, ''), source) "
             "WHERE status = 'pending'"
         )
+        # sync_record_id 反查索引：加速 mark_synced_by_sync_record_id 与
+        # get_pending_candidate_by_sync_record_id（原为全表扫描）
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_sync_queue_sync_record_id "
+            "ON pending_sync_queue(sync_record_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_candidates_sync_record_id "
+            "ON pending_candidates(sync_record_id)"
+        )
 
         conn.commit()
         logger.info(f"数据库初始化完成: {self.db_path}")
