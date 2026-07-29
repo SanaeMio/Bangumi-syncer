@@ -549,8 +549,8 @@ async def retry_sync_record(
         if not record:
             raise HTTPException(status_code=404, detail="记录不存在")
 
-        # 除 success 外均允许重试（error/queued/ignored/retried 都可重试）
-        if record.get("status") == "success":
+        # 成功（含补发成功）的记录无需重试
+        if record.get("status") in ("success", "retried"):
             raise HTTPException(status_code=400, detail="成功的记录无需重试")
 
         # 获取原始来源并添加重试标记
@@ -768,8 +768,8 @@ async def retry_sync_record_stream(
     record = sync_service.get_sync_record_by_id(record_id)
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
-    # 除 success 外均允许重试（error/queued/ignored/retried 都可重试）
-    if record.get("status") == "success":
+    # 成功（含补发成功）的记录无需重试
+    if record.get("status") in ("success", "retried"):
         raise HTTPException(status_code=400, detail="成功的记录无需重试")
 
     original_source = record.get("source", "custom")

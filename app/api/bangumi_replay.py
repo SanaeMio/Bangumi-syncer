@@ -161,12 +161,12 @@ async def replay_single(
             database_manager.mark_pending_sync_synced(
                 record_id, **_filter_kwargs(user_name)
             )
-            # 回写 sync_records：queued → success
+            # 回写 sync_records：queued → retried（补发成功统一为 retried）
             if sync_record_id:
                 try:
                     database_manager.update_sync_record_status(
                         sync_record_id,
-                        "success",
+                        "retried",
                         f"📚 手动补发成功（{result.get('message', '')}）",
                     )
                 except Exception as e:

@@ -361,7 +361,7 @@ class TestReplayPendingBatchWriteback:
     """replay_pending_batch 在补发成功/放弃时回写 sync_records 状态"""
 
     def test_writeback_success_on_replay_success(self):
-        """补发成功时回写 sync_records: queued → success"""
+        """补发成功时回写 sync_records: queued → retried（与手动重试/候选确认补发统一）"""
         from app.services.sync_service import SyncService
 
         svc = SyncService()
@@ -411,7 +411,7 @@ class TestReplayPendingBatchWriteback:
         mock_update.assert_called_once()
         call_args = mock_update.call_args
         assert call_args.args[0] == 100  # sync_record_id
-        assert call_args.args[1] == "success"
+        assert call_args.args[1] == "retried"
 
     def test_writeback_error_on_abandoned(self):
         """补发超过 max_attempts 时回写 sync_records: queued → error"""

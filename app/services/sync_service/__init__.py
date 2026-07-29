@@ -2714,12 +2714,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 consecutive_unreachable = 0
                 if result.get("should_mark_synced"):
                     database_manager.mark_pending_sync_synced(record_id)
-                    # 回写 sync_records：queued → success，形成状态闭环
+                    # 回写 sync_records：queued → retried（补发成功统一为 retried，
+                    # 与手动重试/候选确认补发路径一致，避免统计分裂）
                     if sync_record_id:
                         try:
                             database_manager.update_sync_record_status(
                                 sync_record_id,
-                                "success",
+                                "retried",
                                 f"📚 补发成功（{result.get('message', '')}）",
                             )
                         except Exception as e:
