@@ -86,7 +86,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         self._api_unreachable: bool = False
         self._api_unreachable_until: float = 0.0
         self._api_unreachable_ttl: int = (
-            300  # 默认 5 分钟，可被 [bangumi-archive] api_probe_interval 覆盖
+            300  # 默认 5 分钟，可被 [bangumi-replay] api_probe_interval 覆盖
         )
 
         # 实例级别的带大小限制缓存，避免无限增长
@@ -146,12 +146,10 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
 
     def mark_api_unreachable(self) -> None:
         """标记 API 不可达，按 TTL 推迟下一次探测"""
-        # 从配置读取 TTL（replay 与 archive 共用 [bangumi-archive] 段，未启用时仍可用默认值）
+        # 从配置读取 TTL（[bangumi-replay] 段，未配置时仍可用默认值）
         try:
             ttl = int(
-                config_manager.get(
-                    "bangumi-archive", "api_probe_interval", fallback=300
-                )
+                config_manager.get("bangumi-replay", "api_probe_interval", fallback=300)
             )
             if ttl < 30:
                 ttl = 30

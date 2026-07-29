@@ -339,6 +339,9 @@ mode = single
 [bangumi-archive]
 enabled = True
 data_dir = ./data/archive
+[bangumi-replay]
+enabled = True
+replay_cron = */10 * * * *
 [bangumi-main]
 username = u
 access_token = t
@@ -348,9 +351,13 @@ access_token = t
         # bangumi-archive 应作为普通段（下划线归一化）返回，而不是多账号段
         assert "bangumi_archive" in allc
         assert allc["bangumi_archive"]["enabled"] is True
-        # multi_accounts 不应包含 bangumi-archive
+        # bangumi-replay 同样作为系统功能段返回
+        assert "bangumi_replay" in allc
+        assert allc["bangumi_replay"]["enabled"] is True
+        # multi_accounts 不应包含 bangumi-archive / bangumi-replay
         if "multi_accounts" in allc:
             assert "bangumi-archive" not in allc["multi_accounts"]
+            assert "bangumi-replay" not in allc["multi_accounts"]
 
     def test_reload_multi_account_configs(self, tmp_path):
         cm = _config_manager_from_ini(

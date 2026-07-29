@@ -64,6 +64,14 @@ def mock_sync_service():
         mock_service.update_sync_record_status = (
             real_sync_service.update_sync_record_status
         )
+        mock_service.mark_pending_sync_synced_by_sync_record_id = (
+            real_sync_service.mark_pending_sync_synced_by_sync_record_id
+        )
+        # _build_retry_item_from_record 仅读 record dict，透传以返回真实 CustomItem
+        # （否则 MagicMock 无法被 f-string :02d 格式化，导致重试接口 500）
+        mock_service._build_retry_item_from_record = (
+            real_sync_service._build_retry_item_from_record
+        )
         mock_service.get_sync_stats = real_sync_service.get_sync_stats
         mock_service.get_heatmap_stats = real_sync_service.get_heatmap_stats
 
@@ -874,7 +882,7 @@ async def test_custom_sync_error_status(app_with_auth, mock_custom_sync_service)
 async def test_retry_sync_record_not_failed(
     app_with_auth, mock_sync_service, mock_database_manager
 ):
-    """测试重试非失败状态的记录"""
+    """测试重试 success 状态的记录被拒绝（只有 success 不可重试）"""
     mock_database_manager.get_sync_record_by_id.return_value = {
         "id": 1,
         "status": "success",
@@ -1055,6 +1063,198 @@ async def test_retry_sync_record_restores_mark_watching_from_trace(
     assert retry_item.release_date == "2024-01-15"
     assert retry_item.raw_payload == {"event": "media.play"}
     assert retry_item.source == "retry-plex"
+
+
+@pytest.mark.asyncio
+async def test_retry_sync_record_queued_status_allowed(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """queued 状态的记录可以重试（不再限制为 error）"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "queued",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.model_dump.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_retry_sync_record_ignored_status_allowed(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """ignored 状态的记录可以重试"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "ignored",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.model_dump.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_retry_sync_record_retried_status_blocked(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """retried 状态（补发成功）的记录不允许重试"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "retried",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.model_dump.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 400
+        assert "无需重试" in response.json()["detail"]
+    # 应直接拦截，不进入同步流程
+    mock_sync_service.sync_custom_item.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_queued_cleans_pending_sync_queue(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """重试 queued 记录成功后，应清理对应的 pending_sync_queue 行"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "queued",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+    mock_database_manager.mark_pending_sync_synced_by_sync_record_id.return_value = 1
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.message = "mark_status=1"
+    mock_result.model_dump.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+    # 应回写原记录为 retried
+    mock_database_manager.update_sync_record_status.assert_called_once_with(
+        1, "retried", "已重试成功: mark_status=1"
+    )
+    # 应清理 pending_sync_queue 中 sync_record_id=1 的 pending 行
+    mock_database_manager.mark_pending_sync_synced_by_sync_record_id.assert_called_once_with(
+        1
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_queued_error_keeps_pending_sync_queue(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """重试 queued 记录结果为 error 时，不清理 pending 行（保持原状态可再次重试）"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "queued",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "error"
+    mock_result.message = "still failing"
+    mock_result.model_dump.return_value = {"status": "error"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+    # error 时不回写原记录状态，也不清理 pending 行
+    mock_database_manager.update_sync_record_status.assert_not_called()
+    mock_database_manager.mark_pending_sync_synced_by_sync_record_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_non_queued_does_not_clean_pending(
+    app_with_auth, mock_sync_service, mock_database_manager
+):
+    """重试 error 状态记录成功时，不触发 pending_sync_queue 清理（无关联 pending 行）"""
+    mock_database_manager.get_sync_record_by_id.return_value = {
+        "id": 1,
+        "status": "error",
+        "title": "Test",
+        "season": 1,
+        "episode": 1,
+        "source": "plex",
+        "user_name": "user",
+        "media_type": "episode",
+    }
+
+    mock_result = MagicMock()
+    mock_result.status = "success"
+    mock_result.message = "mark_status=1"
+    mock_result.model_dump.return_value = {"status": "success"}
+    mock_sync_service.sync_custom_item.return_value = mock_result
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/records/1/retry")
+        assert response.status_code == 200
+
+    mock_database_manager.update_sync_record_status.assert_called_once()
+    # error 状态原记录无关联 pending 行，不应调用清理
+    mock_database_manager.mark_pending_sync_synced_by_sync_record_id.assert_not_called()
 
 
 # ========== 测试同步特殊路径 ==========

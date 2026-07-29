@@ -1,0 +1,111 @@
+<!-- 公共映射弹窗：被 mappings.html / pending_candidates.html 等页面 include -->
+<div class="modal fade" id="mappingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="mappingModalTitle">添加映射</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="mapping-form">
+                    <!-- 类型切换 -->
+                    <div class="mb-3">
+                        <label class="form-label">类型</label>
+                        <div class="btn-group w-100" role="group" id="mapping-type-group">
+                            <input type="radio"
+                                   class="btn-check"
+                                   name="mapping-type"
+                                   id="type-exact"
+                                   value="exact"
+                                   checked
+                                   onchange="MappingModal.setMappingType('exact')">
+                            <label class="btn btn-outline-primary" for="type-exact">
+                                <i class="bi bi-diagram-3 me-1"></i>精确映射
+                            </label>
+                            <input type="radio"
+                                   class="btn-check"
+                                   name="mapping-type"
+                                   id="type-regex"
+                                   value="regex"
+                                   onchange="MappingModal.setMappingType('regex')">
+                            <label class="btn btn-outline-info" for="type-regex">
+                                <i class="bi bi-regex me-1"></i>正则规则
+                            </label>
+                        </div>
+                    </div>
+                    <!-- 精确映射字段 -->
+                    <div id="exact-fields">
+                        <div class="mb-3">
+                            <label for="mapping-title" class="form-label">番剧名称</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="mapping-title"
+                                   placeholder="输入番剧名称，如：我推的孩子">
+                            <div class="form-text">请输入准确的番剧名称，这将用于匹配同步请求</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="mapping-season" class="form-label">
+                                季度 <small class="text-muted fw-normal">(可选，季度感知映射)</small>
+                            </label>
+                            <input type="number"
+                                   class="form-control"
+                                   id="mapping-season"
+                                   min="1"
+                                   max="20"
+                                   placeholder="留空表示所有季度共用">
+                            <div class="form-text">填写后仅在该季度匹配时命中，适合同一标题不同季度对应不同条目</div>
+                        </div>
+                    </div>
+                    <!-- 正则规则字段 -->
+                    <div id="regex-fields" class="is-hidden">
+                        <div class="mb-3">
+                            <label for="rule-pattern" class="form-label">正则表达式</label>
+                            <input type="text"
+                                   class="form-control font-monospace"
+                                   id="rule-pattern"
+                                   placeholder="如：^.*之.*刃$">
+                            <div class="form-text">
+                                Python 正则语法，匹配标题或原始标题。示例：<code>^.*之.*刃$</code> 匹配以「之刃」结尾的标题
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="rule-desc" class="form-label">
+                                说明 <small class="text-muted fw-normal">(可选)</small>
+                            </label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="rule-desc"
+                                   placeholder="规则描述，如：鬼灭之刃系列">
+                        </div>
+                    </div>
+                    <!-- 公共字段：Bangumi ID -->
+                    <div class="mb-3">
+                        <label for="mapping-id" class="form-label">Bangumi ID</label>
+                        <input type="text"
+                               class="form-control"
+                               id="mapping-id"
+                               required
+                               placeholder="输入Bangumi ID，如：386809"
+                               oninput="MappingModal.updatePreview()">
+                        <div class="form-text">可以从Bangumi页面URL中获取，如 https://bgm.tv/subject/386809 中的 386809</div>
+                    </div>
+                    <!-- 预览链接 -->
+                    <div class="mb-3">
+                        <label class="form-label">预览链接</label>
+                        <div class="input-group">
+                            <span class="input-group-text">https://bgm.tv/subject/</span>
+                            <input type="text" class="form-control" id="preview-id" readonly>
+                        </div>
+                        <div class="form-text">
+                            <a id="preview-link" href="#" target="_blank" class="is-hidden">点击查看Bangumi页面</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="MappingModal.save()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>

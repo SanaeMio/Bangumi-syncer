@@ -384,6 +384,7 @@ def test_handle_multi_accounts_config_preserves_bangumi_archive_section():
     parser.read_dict(
         {
             "bangumi-archive": {"enabled": "True", "data_dir": "./data/archive"},
+            "bangumi-replay": {"enabled": "True", "replay_cron": "*/10 * * * *"},
             "bangumi-data": {"db_path": "./data/sync_records.db"},
             "bangumi-mapping": {"types": "movie,tv"},
             "bangumi-alice": {
@@ -414,6 +415,9 @@ def test_handle_multi_accounts_config_preserves_bangumi_archive_section():
     # bangumi-archive 段必须保留
     assert parser.has_section("bangumi-archive")
     assert parser.get("bangumi-archive", "enabled") == "True"
+    # bangumi-replay 段也必须保留（与 archive 解耦后同为系统功能段）
+    assert parser.has_section("bangumi-replay")
+    assert parser.get("bangumi-replay", "enabled") == "True"
     # bangumi-data / bangumi-mapping 同样保留
     assert parser.has_section("bangumi-data")
     assert parser.has_section("bangumi-mapping")

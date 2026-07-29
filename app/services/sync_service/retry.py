@@ -32,14 +32,16 @@ class RetryMixin:
         max_retries: int = 3,
         *,
         queue_payload: Optional[dict] = None,
+        sync_record_id: Optional[int] = None,
     ) -> int:
         """带重试机制的标记剧集方法（优化版，减少阻塞时间）
 
         Args:
             queue_payload: 入队时携带的完整 payload（CustomItem 序列化），
                 供补发时重新走完整同步流程。未传则只存 subject_id+ep_id。
+            sync_record_id: 关联的 sync_records 行 id，补发成功/放弃时回写状态用。
 
-        当 API 不可达且 [bangumi-archive] enabled=true 时，
+        当 API 不可达且 [bangumi-replay] enabled=true 时，
         捕获 _PendingSyncQueued 后入队，返回 MARK_QUEUED(-1)。
         上层据此跳过失败分支，把同步记录标记为 queued 而非 error。
         """
@@ -65,6 +67,7 @@ class RetryMixin:
                         reason=e.reason,
                         last_error=str(e.cause) if e.cause else e.reason,
                         payload=queue_payload,
+                        sync_record_id=sync_record_id,
                     )
                     return MARK_QUEUED
                 # 未启用补发：按原行为抛错
@@ -96,6 +99,7 @@ class RetryMixin:
         max_retries: int = 3,
         *,
         queue_payload: Optional[dict] = None,
+        sync_record_id: Optional[int] = None,
     ) -> int:
         """异步版本的重试标记剧集方法"""
         for attempt in range(max_retries + 1):
@@ -121,6 +125,7 @@ class RetryMixin:
                         reason=e.reason,
                         last_error=str(e.cause) if e.cause else e.reason,
                         payload=queue_payload,
+                        sync_record_id=sync_record_id,
                     )
                     return MARK_QUEUED
                 raise
@@ -154,6 +159,7 @@ class RetryMixin:
         reason: str,
         last_error: str,
         payload: dict,
+        sync_record_id: Optional[int] = None,
     ) -> None:
         """把一条标记任务写入 pending_sync_queue 表"""
         from ...core.database import database_manager
@@ -180,4 +186,16 @@ class RetryMixin:
             payload=payload,
             reason=reason,
             last_error=last_error,
+            sync_record_id=sync_record_id,
         )
+
+        # 入队后立即触发补发（健康度检查 + 同步）。
+        # 调度器未启动 / 队列未启用时 trigger_immediate_run 内部会自动跳过，
+        # 失败也无所谓——下一轮 cron 会兜底。
+        try:
+            from ..bangumi_replay_scheduler import bangumi_replay_scheduler
+
+            bangumi_replay_scheduler.trigger_immediate_run()
+        except Exception:
+            # 触发失败不影响入队本身，cron 会兜底
+            pass

@@ -24,11 +24,15 @@ class PendingCandidatesRepository(BaseRepository):
         source: str = "",
         candidates: Optional[list[dict[str, Any]]] = None,
         trace: Optional[dict[str, Any]] = None,
+        sync_record_id: Optional[int] = None,
     ) -> Optional[int]:
         """沉淀一条待确认候选，返回记录 id（失败时 None）。
 
         按 (request_title, request_season, user_name, source) 去重：
         已有 pending 行时更新候选和 trace，否则插入新行。
+
+        sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
+        去重 UPDATE 时也会刷新为最新值（同一标题多次失败时以最新 sync_record 为准）。
         """
 
         def _write(conn):
@@ -57,7 +61,8 @@ class PendingCandidatesRepository(BaseRepository):
                     UPDATE pending_candidates
                     SET created_at = ?, request_ori_title = ?, request_episode = ?,
                         candidates_json = ?, trace_json = ?,
-                        confirmed_subject_id = '', resolved_at = NULL
+                        confirmed_subject_id = '', resolved_at = NULL,
+                        sync_record_id = ?
                     WHERE id = ?
                     """,
                     (
@@ -66,6 +71,7 @@ class PendingCandidatesRepository(BaseRepository):
                         request_episode,
                         cand_json,
                         trace_json,
+                        sync_record_id,
                         existing_id,
                     ),
                 )
@@ -77,8 +83,8 @@ class PendingCandidatesRepository(BaseRepository):
                 INSERT INTO pending_candidates
                 (created_at, request_title, request_ori_title, request_season,
                  request_episode, user_name, source, candidates_json, trace_json,
-                 status, confirmed_subject_id, resolved_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', NULL)
+                 status, confirmed_subject_id, resolved_at, sync_record_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', NULL, ?)
                 """,
                 (
                     local_time,
@@ -90,6 +96,7 @@ class PendingCandidatesRepository(BaseRepository):
                     source,
                     cand_json,
                     trace_json,
+                    sync_record_id,
                 ),
             )
             return cursor.lastrowid
@@ -124,7 +131,8 @@ class PendingCandidatesRepository(BaseRepository):
                 f"""
                 SELECT id, created_at, request_title, request_ori_title,
                        request_season, request_episode, user_name, source,
-                       candidates_json, status, confirmed_subject_id, resolved_at
+                       candidates_json, status, confirmed_subject_id, resolved_at,
+                       sync_record_id
                 FROM pending_candidates
                 {where_clause}
                 ORDER BY id DESC
@@ -158,7 +166,7 @@ class PendingCandidatesRepository(BaseRepository):
                 SELECT id, created_at, request_title, request_ori_title,
                        request_season, request_episode, user_name, source,
                        candidates_json, trace_json, status, confirmed_subject_id,
-                       resolved_at
+                       resolved_at, sync_record_id
                 FROM pending_candidates WHERE id = ?
                 """,
                 (candidate_id,),
@@ -170,6 +178,51 @@ class PendingCandidatesRepository(BaseRepository):
             return dict(zip(cols, row))
 
         return self._run_read(_read, error_msg="获取待确认候选详情失败", default=None)
+
+    def get_pending_candidate_by_sync_record_id(
+        self, sync_record_id: int
+    ) -> Optional[dict[str, Any]]:
+        """按 sync_record_id 查询最新候选记录（含 trace_json）
+
+        用于 records 页「查看候选」入口：根据同步记录跳转到关联的候选详情。
+        优先返回 pending 行；若都已处理则返回最近一条（按 id DESC）。
+        """
+        # 先查 pending 行（最相关）
+        row = self._read_sync_record(sync_record_id, "pending")
+        if row:
+            return row
+        # 无 pending 行时返回最近一条（任意状态）
+        return self._read_sync_record(sync_record_id, None)
+
+    def _read_sync_record(
+        self, sync_record_id: int, status: Optional[str]
+    ) -> Optional[dict[str, Any]]:
+        """内部读：按 sync_record_id 查候选，可按 status 过滤"""
+        sql = """
+            SELECT id, created_at, request_title, request_ori_title,
+                   request_season, request_episode, user_name, source,
+                   candidates_json, trace_json, status, confirmed_subject_id,
+                   resolved_at, sync_record_id
+            FROM pending_candidates
+            WHERE sync_record_id = ?
+        """
+        params: list[Any] = [sync_record_id]
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY id DESC LIMIT 1"
+
+        def _read(conn):
+            cursor = conn.execute(sql, tuple(params))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            cols = [d[0] for d in cursor.description]
+            return dict(zip(cols, row))
+
+        return self._run_read(
+            _read, error_msg="按 sync_record_id 查候选失败", default=None
+        )
 
     def update_pending_candidate_status(
         self,

@@ -766,6 +766,82 @@ main.app-main>.d-flex:first-child {
     color: var(--app-text-muted);
 }
 
+.record-detail-modal__summary {
+    margin-top: 0.4rem;
+}
+
+.record-detail-modal__chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.35rem;
+}
+
+.record-detail-modal__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--app-radius-pill);
+    font-size: 0.7rem;
+    line-height: 1.4;
+    background: var(--app-bg-card);
+    border: 1px solid var(--app-border);
+    color: var(--app-text);
+    text-decoration: none;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.record-detail-modal__chip--mono {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: var(--app-text-muted);
+}
+
+.record-detail-modal__chip--type {
+    background: var(--app-primary-soft);
+    color: var(--app-primary);
+    border-color: transparent;
+}
+
+.record-detail-modal__chip--status {
+    font-weight: 600;
+    border-color: transparent;
+}
+
+.record-detail-modal__chip--status-success {
+    background: var(--app-green-soft);
+    color: var(--app-green-hover);
+}
+
+.record-detail-modal__chip--status-error {
+    background: var(--app-red-soft);
+    color: var(--app-red-hover);
+}
+
+.record-detail-modal__chip--status-neutral {
+    background: var(--app-gray-soft);
+    color: var(--app-text-muted);
+}
+
+.record-detail-modal__chip--link {
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.1);
+    border-color: transparent;
+}
+
+.record-detail-modal__chip--link:hover {
+    background: rgba(99, 102, 241, 0.22);
+    color: #a5b4fc;
+    text-decoration: none;
+}
+
+.record-detail-modal__chip--score {
+    background: rgba(34, 197, 94, 0.12);
+    color: #4ade80;
+    border-color: transparent;
+    font-weight: 600;
+}
+
 .record-detail-meta-dot {
     opacity: 0.5;
 }
@@ -1214,6 +1290,30 @@ main.app-main>.d-flex:first-child {
     color: var(--app-text-muted);
 }
 
+.record-detail-step--flash {
+    animation: record-detail-step-flash 1.4s ease-out;
+}
+
+@keyframes record-detail-step-flash {
+    0% {
+        box-shadow: 0 0 0 2px var(--app-primary);
+        background: color-mix(in srgb, var(--app-primary) 18%, transparent);
+    }
+    60% {
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-primary) 40%, transparent);
+        background: color-mix(in srgb, var(--app-primary) 8%, transparent);
+    }
+    100% {
+        box-shadow: 0 0 0 0 transparent;
+        background: transparent;
+    }
+}
+
+.record-detail-step--flash .record-detail-step__card {
+    border-color: var(--app-primary);
+    transition: border-color 0.3s ease;
+}
+
 /* ===== 流水线摘要卡（输入 → 输出） ===== */
 .record-pipeline-summary {
     display: flex;
@@ -1380,6 +1480,334 @@ main.app-main>.d-flex:first-child {
     max-height: 18rem;
     overflow: auto;
     white-space: pre;
+}
+
+/* ===== step 子面板（搜索参数 / API 返回摘要 / 异常详情） ===== */
+.record-detail-subpanel {
+    background: color-mix(in srgb, var(--app-bg-card) 80%, var(--app-bg));
+    border: 1px solid var(--app-border);
+    border-radius: 0.45rem;
+    padding: 0.35rem 0.6rem;
+}
+
+.record-detail-subpanel > summary {
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    list-style: none;
+    padding: 0.1rem 0;
+}
+
+.record-detail-subpanel > summary::-webkit-details-marker {
+    display: none;
+}
+
+.record-detail-subpanel > summary::before {
+    content: "\25B8";
+    font-size: 0.7rem;
+    transition: transform 0.15s ease;
+}
+
+.record-detail-subpanel[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.record-detail-subpanel > summary:hover {
+    color: var(--app-text);
+}
+
+.record-detail-subpanel--error {
+    background: color-mix(in srgb, var(--bs-danger) 6%, var(--app-bg-card));
+    border-color: color-mix(in srgb, var(--bs-danger) 22%, var(--app-border));
+}
+
+.record-detail-subpanel__summary--error {
+    color: var(--bs-danger);
+}
+
+.record-detail-step__kv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.35rem 0.75rem;
+    margin-top: 0.4rem;
+}
+
+.record-detail-step__kv {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.record-detail-step__kv--wide {
+    grid-column: 1 / -1;
+}
+
+.record-detail-step__kv-label {
+    font-size: 0.66rem;
+    color: var(--app-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.record-detail-step__kv-value {
+    font-size: 0.74rem;
+    color: var(--app-text);
+    word-break: break-all;
+}
+
+.record-detail-step__kv--mono .record-detail-step__kv-value {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.7rem;
+}
+
+.record-detail-step__pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+}
+
+.record-detail-step__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--app-radius-pill);
+    font-size: 0.7rem;
+    line-height: 1.4;
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+
+.record-detail-step__pill--count {
+    background: var(--app-cyan-soft);
+    color: var(--app-cyan-hover);
+    font-weight: 600;
+}
+
+.record-detail-step__pill--archive {
+    background: rgba(99, 102, 241, 0.12);
+    color: #818cf8;
+}
+
+.record-detail-step__pill--api {
+    background: var(--app-gray-soft);
+    color: var(--app-text-muted);
+}
+
+.record-detail-step__pill--link {
+    background: rgba(34, 197, 94, 0.1);
+    color: #4ade80;
+}
+
+.record-detail-step__pill--link:hover {
+    background: rgba(34, 197, 94, 0.22);
+    color: #86efac;
+    text-decoration: none;
+}
+
+.record-detail-step__pill--muted {
+    background: var(--app-gray-soft);
+    color: var(--app-text-muted);
+}
+
+/* ===== 步骤耗时汇总面板（P2） ===== */
+.record-detail-timings {
+    margin-top: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 0.6rem;
+    background: var(--app-bg-card);
+    border: 1px solid var(--app-glass-border);
+    box-shadow: var(--app-shadow-sm);
+}
+
+.record-detail-timings__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.3rem 0.5rem;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px dashed var(--app-border);
+}
+
+.record-detail-timings__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.record-detail-timings__total {
+    font-size: 0.72rem;
+    color: var(--app-text-muted);
+}
+
+.record-detail-timings__total strong {
+    color: var(--app-primary);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-weight: 600;
+    margin-left: 0.25rem;
+}
+
+.record-detail-timings__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.record-detail-timings__row {
+    display: grid;
+    grid-template-columns: 1.4rem minmax(0, 1fr) auto minmax(4rem, 8rem) auto auto;
+    align-items: center;
+    gap: 0.4rem 0.5rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    background: transparent;
+    font-size: 0.72rem;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.record-detail-timings__row:hover {
+    background: color-mix(in srgb, var(--app-primary) 4%, transparent);
+}
+
+.record-detail-timings__row:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: -2px;
+}
+
+.record-detail-timings__row--hot {
+    background: color-mix(in srgb, var(--bs-warning) 8%, transparent);
+}
+
+.record-detail-timings__row--hot:hover {
+    background: color-mix(in srgb, var(--bs-warning) 14%, transparent);
+}
+
+.record-detail-timings__idx {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: var(--app-gray-soft);
+    color: var(--app-text-muted);
+    font-size: 0.66rem;
+    font-weight: 600;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+
+.record-detail-timings__row--hot .record-detail-timings__idx {
+    background: color-mix(in srgb, var(--bs-warning) 18%, var(--app-bg-card));
+    color: var(--bs-warning);
+}
+
+.record-detail-timings__name {
+    color: var(--app-text);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.record-detail-timings__status {
+    font-size: 0.66rem;
+    padding: 0.08rem 0.4rem;
+    border-radius: var(--app-radius-pill);
+    font-weight: 600;
+}
+
+.record-detail-timings__status--hit {
+    background: var(--app-green-soft);
+    color: var(--app-green-hover);
+}
+
+.record-detail-timings__status--miss,
+.record-detail-timings__status--skipped {
+    background: var(--app-gray-soft);
+    color: var(--app-text-muted);
+}
+
+.record-detail-timings__status--error {
+    background: var(--app-red-soft);
+    color: var(--app-red-hover);
+}
+
+.record-detail-timings__bar {
+    display: block;
+    position: relative;
+    height: 0.4rem;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-gray-soft);
+    overflow: hidden;
+}
+
+.record-detail-timings__bar-fill {
+    display: block;
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: var(--app-radius-pill);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--app-primary) 60%, transparent), var(--app-primary));
+    transition: width 0.3s ease;
+}
+
+.record-detail-timings__row--hot .record-detail-timings__bar-fill {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--bs-warning) 60%, transparent), var(--bs-warning));
+}
+
+.record-detail-timings__elapsed {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--app-text);
+    text-align: right;
+    min-width: 3.5rem;
+}
+
+.record-detail-timings__pct {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.66rem;
+    color: var(--app-text-muted);
+    text-align: right;
+    min-width: 3rem;
+}
+
+@media (max-width: 575.98px) {
+    .record-detail-timings__row {
+        grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+    }
+    .record-detail-timings__bar {
+        grid-column: 2 / 4;
+    }
+    .record-detail-timings__elapsed,
+    .record-detail-timings__pct {
+        grid-column: span 1;
+    }
+    .record-detail-timings__pct {
+        grid-column: 2 / 4;
+        text-align: left;
+    }
 }
 
 .record-detail-step__hit {

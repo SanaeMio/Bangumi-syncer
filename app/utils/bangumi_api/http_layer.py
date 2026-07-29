@@ -168,8 +168,10 @@ class HttpLayerMixin:
                 logger.warning("⚠️  检测到DNS解析问题，开始网络诊断...")
                 self._diagnose_network_issue(url)
 
-            # 标记 API 不可达，TTL 内后续请求直接走降级
-            # （仅在配置了 [bangumi-archive] enabled=true 时实际生效，否则标记只是空操作）
+            # 标记 API 不可达，TTL 内后续请求直接走降级：
+            # - 写降级（入 pending_sync_queue 待补发）由 [bangumi-replay] enabled 控制
+            # - 读降级（走 archive 本地数据集短路）由 [bangumi-archive] enabled 控制
+            # 标记本身始终生效，与 archive 是否启用无关
             self.mark_api_unreachable()
 
             raise e

@@ -406,10 +406,12 @@ class SyncRecordsRepository(BaseRepository):
             cursor = conn.cursor()
 
             # 合并 3 条 COUNT 查询为 1 条，减少数据库往返
+            # success 统计包含 retried（补发成功）：两者都是"最终成功"，
+            # 避免补发成功的记录被漏算导致 success_rate 偏低
             cursor.execute("""
                 SELECT
                     COUNT(*) AS total,
-                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+                    SUM(CASE WHEN status IN ('success', 'retried') THEN 1 ELSE 0 END) AS success,
                     SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
                     SUM(CASE WHEN DATE(timestamp) = DATE('now') THEN 1 ELSE 0 END) AS today
                 FROM sync_records

@@ -407,12 +407,13 @@ class SearchMixin:
                                 candidates.append(info)
 
                         if candidates:
-                            # 仅保留相似度 > 0.5 的候选；全部低相似度时视为未命中
+                            # 保留相似度 > 0.3 的候选；全部低于阈值时视为未命中
+                            # 阈值从 0.5 下调到 0.3，让更多低相似度候选保留用于 trace 回传
                             matched = [
                                 c
                                 for c in candidates
                                 if self.title_diff_ratio(title, ori_title, bgm_data=c)
-                                > 0.5
+                                > 0.3
                             ]
                             if matched:
                                 bgm_data = matched

@@ -213,7 +213,12 @@ class TestEnqueuePendingSyncUserName:
             "media_type": "episode",
         }
 
-        with patch("app.core.database.database_manager") as mock_db:
+        with (
+            patch("app.core.database.database_manager") as mock_db,
+            patch(
+                "app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"
+            ) as mock_sched,
+        ):
             SyncService._enqueue_pending_sync(
                 bgm_api=bgm,
                 subject_id=123,
@@ -232,6 +237,8 @@ class TestEnqueuePendingSyncUserName:
         assert call_kwargs["source"] == "plex"
         assert call_kwargs["subject_id"] == "123"
         assert call_kwargs["episode_id"] == "456"
+        # 入队后应立即触发补发调度器
+        mock_sched.trigger_immediate_run.assert_called_once()
 
     def test_falls_back_to_empty_string_when_payload_missing_user_name(self):
         from app.services.sync_service import SyncService
@@ -241,7 +248,10 @@ class TestEnqueuePendingSyncUserName:
 
         payload = {"title": "测试", "season": 1, "episode": 1}
 
-        with patch("app.core.database.database_manager") as mock_db:
+        with (
+            patch("app.core.database.database_manager") as mock_db,
+            patch("app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"),
+        ):
             SyncService._enqueue_pending_sync(
                 bgm_api=bgm,
                 subject_id=1,
@@ -254,3 +264,264 @@ class TestEnqueuePendingSyncUserName:
         call_kwargs = mock_db.enqueue_pending_sync.call_args.kwargs
         # 缺失时回退为空串，而不是 bgm_api.username
         assert call_kwargs["user_name"] == ""
+
+    def test_trigger_failure_does_not_raise(self):
+        """trigger_immediate_run 抛异常时不应影响入队流程"""
+        from app.services.sync_service import SyncService
+
+        bgm = MagicMock()
+        bgm.username = "bangumi_account_a"
+        payload = {"title": "x", "season": 1, "episode": 1, "user_name": "u"}
+
+        with (
+            patch("app.core.database.database_manager") as mock_db,
+            patch(
+                "app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"
+            ) as mock_sched,
+        ):
+            mock_sched.trigger_immediate_run.side_effect = RuntimeError("boom")
+            # 不应抛出
+            SyncService._enqueue_pending_sync(
+                bgm_api=bgm,
+                subject_id=1,
+                ep_id=None,
+                reason="api_unreachable",
+                last_error="",
+                payload=payload,
+            )
+
+        mock_db.enqueue_pending_sync.assert_called_once()
+
+
+class TestReplayPendingItemSyncRecordId:
+    """replay_pending_item 返回 sync_record_id 字段"""
+
+    def test_returns_sync_record_id_from_record(self):
+        """补发成功时返回值带 sync_record_id（来自 pending_sync_queue 行）"""
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        record = {
+            "id": 1,
+            "user_name": "user1",
+            "subject_id": "123",
+            "episode_id": "456",
+            "payload_json": '{"title": "测试", "season": 1, "episode": 1, '
+            '"release_date": "2024-01-01", "user_name": "user1", '
+            '"source": "plex", "media_type": "episode"}',
+            "source": "plex",
+            "sync_record_id": 88,
+        }
+
+        with (
+            patch.object(svc, "_get_bangumi_api_for_user") as mock_get_bgm,
+            patch.object(svc, "_retry_mark_episode", return_value=1),
+        ):
+            mock_bgm = MagicMock()
+            mock_bgm.mark_api_reachable = MagicMock()
+            mock_get_bgm.return_value = mock_bgm
+
+            result = svc.replay_pending_item(record)
+
+        assert result["success"] is True
+        assert result["sync_record_id"] == 88
+
+    def test_returns_none_sync_record_id_when_missing(self):
+        """旧数据无 sync_record_id 字段时返回 None"""
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        record = {
+            "id": 1,
+            "user_name": "user1",
+            "subject_id": "123",
+            "episode_id": "456",
+            "payload_json": '{"title": "测试", "season": 1, "episode": 1, '
+            '"release_date": "2024-01-01", "user_name": "user1", '
+            '"source": "plex", "media_type": "episode"}',
+            "source": "plex",
+            "sync_record_id": None,  # 旧数据
+        }
+
+        with (
+            patch.object(svc, "_get_bangumi_api_for_user") as mock_get_bgm,
+            patch.object(svc, "_retry_mark_episode", return_value=1),
+        ):
+            mock_bgm = MagicMock()
+            mock_bgm.mark_api_reachable = MagicMock()
+            mock_get_bgm.return_value = mock_bgm
+
+            result = svc.replay_pending_item(record)
+
+        assert result["success"] is True
+        assert result["sync_record_id"] is None
+
+
+class TestReplayPendingBatchWriteback:
+    """replay_pending_batch 在补发成功/放弃时回写 sync_records 状态"""
+
+    def test_writeback_success_on_replay_success(self):
+        """补发成功时回写 sync_records: queued → retried（与手动重试/候选确认补发统一）"""
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        records = [
+            {
+                "id": 1,
+                "user_name": "user1",
+                "subject_id": "123",
+                "episode_id": "456",
+                "payload_json": '{"title": "测试", "season": 1, "episode": 1, '
+                '"user_name": "user1", "source": "plex", "media_type": "episode"}',
+                "source": "plex",
+                "attempts": 0,
+                "sync_record_id": 100,
+            }
+        ]
+
+        with (
+            patch(
+                "app.services.sync_service.config_manager.get",
+                return_value=50,
+            ),
+            patch(
+                "app.services.sync_service.database_manager.fetch_pending_sync",
+                return_value=records,
+            ),
+            patch.object(svc, "replay_pending_item") as mock_item,
+            patch(
+                "app.services.sync_service.database_manager.mark_pending_sync_synced"
+            ) as mock_mark,
+            patch(
+                "app.services.sync_service.database_manager.update_sync_record_status"
+            ) as mock_update,
+        ):
+            mock_item.return_value = {
+                "success": True,
+                "message": "补发成功 mark_status=1",
+                "should_mark_synced": True,
+                "mark_status": 1,
+                "sync_record_id": 100,
+            }
+
+            stats = svc.replay_pending_batch(limit=10)
+
+        assert stats["success"] == 1
+        mock_mark.assert_called_once_with(1)
+        mock_update.assert_called_once()
+        call_args = mock_update.call_args
+        assert call_args.args[0] == 100  # sync_record_id
+        assert call_args.args[1] == "retried"
+
+    def test_writeback_error_on_abandoned(self):
+        """补发超过 max_attempts 时回写 sync_records: queued → error"""
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        records = [
+            {
+                "id": 1,
+                "user_name": "user1",
+                "subject_id": "123",
+                "episode_id": "456",
+                "payload_json": '{"title": "测试", "season": 1, "episode": 1, '
+                '"user_name": "user1", "source": "plex", "media_type": "episode"}',
+                "source": "plex",
+                "attempts": 49,  # 已达上限-1
+                "sync_record_id": 200,
+            }
+        ]
+
+        # 模拟配置：max_attempts=50, threshold=3
+        def config_get_side_effect(section, key, fallback=None):
+            if key == "max_attempts":
+                return 50
+            if key == "replay_unreachable_threshold":
+                return 3
+            return fallback
+
+        with (
+            patch(
+                "app.services.sync_service.config_manager.get",
+                side_effect=config_get_side_effect,
+            ),
+            patch(
+                "app.services.sync_service.database_manager.fetch_pending_sync",
+                return_value=records,
+            ),
+            patch.object(svc, "replay_pending_item") as mock_item,
+            patch(
+                "app.services.sync_service.database_manager.increment_pending_sync_attempts"
+            ),
+            patch(
+                "app.services.sync_service.database_manager.mark_pending_sync_abandoned"
+            ) as mock_abandon,
+            patch(
+                "app.services.sync_service.database_manager.update_sync_record_status"
+            ) as mock_update,
+        ):
+            mock_item.return_value = {
+                "success": False,
+                "message": "标记失败: 401 Unauthorized",
+                "should_mark_synced": False,
+                "sync_record_id": 200,
+            }
+
+            stats = svc.replay_pending_batch(limit=10)
+
+        assert stats["failed"] == 1
+        mock_abandon.assert_called_once()
+        mock_update.assert_called_once()
+        call_args = mock_update.call_args
+        assert call_args.args[0] == 200  # sync_record_id
+        assert call_args.args[1] == "error"
+
+    def test_skip_writeback_when_sync_record_id_none(self):
+        """旧数据 sync_record_id 为 None 时跳过回写"""
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        records = [
+            {
+                "id": 1,
+                "user_name": "user1",
+                "subject_id": "123",
+                "episode_id": "456",
+                "payload_json": '{"title": "测试", "season": 1, "episode": 1, '
+                '"user_name": "user1", "source": "plex", "media_type": "episode"}',
+                "source": "plex",
+                "attempts": 0,
+                "sync_record_id": None,  # 旧数据
+            }
+        ]
+
+        with (
+            patch(
+                "app.services.sync_service.config_manager.get",
+                return_value=50,
+            ),
+            patch(
+                "app.services.sync_service.database_manager.fetch_pending_sync",
+                return_value=records,
+            ),
+            patch.object(svc, "replay_pending_item") as mock_item,
+            patch(
+                "app.services.sync_service.database_manager.mark_pending_sync_synced"
+            ),
+            patch(
+                "app.services.sync_service.database_manager.update_sync_record_status"
+            ) as mock_update,
+        ):
+            mock_item.return_value = {
+                "success": True,
+                "message": "补发成功 mark_status=1",
+                "should_mark_synced": True,
+                "mark_status": 1,
+                "sync_record_id": None,
+            }
+
+            stats = svc.replay_pending_batch(limit=10)
+
+        assert stats["success"] == 1
+        # sync_record_id 为 None，不应调用 update_sync_record_status
+        mock_update.assert_not_called()

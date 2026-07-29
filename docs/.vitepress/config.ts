@@ -75,6 +75,7 @@ export default defineConfig(
         'configuration.md',
         'mapping.md',
         'bangumi-archive.md',
+        'bangumi-replay.md',
         'usage',
         'troubleshooting.md',
         'roadmap.md',

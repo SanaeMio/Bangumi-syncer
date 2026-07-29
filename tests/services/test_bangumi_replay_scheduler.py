@@ -32,59 +32,43 @@ def _make_get_side_effect(values: dict[tuple[str, str], object]):
 
 
 class TestIsEnabled:
-    """archive enabled × replay_enabled 的组合（replay_enabled 默认 True）"""
+    """[bangumi-replay] enabled 的判定（默认 True，与 archive 解耦）"""
 
-    def test_archive_disabled_replay_enabled_true_returns_false(self):
+    def test_replay_enabled_true_returns_true(self):
         s = BangumiReplayScheduler()
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): False,
-                    ("bangumi-archive", "replay_enabled"): True,
-                }
-            )
-            assert s._is_enabled() is False
-
-    def test_archive_disabled_replay_enabled_false_returns_false(self):
-        s = BangumiReplayScheduler()
-        with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
-            cm.get.side_effect = _make_get_side_effect(
-                {
-                    ("bangumi-archive", "enabled"): False,
-                    ("bangumi-archive", "replay_enabled"): False,
-                }
-            )
-            assert s._is_enabled() is False
-
-    def test_archive_enabled_replay_enabled_true_returns_true(self):
-        s = BangumiReplayScheduler()
-        with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
-            cm.get.side_effect = _make_get_side_effect(
-                {
-                    ("bangumi-archive", "enabled"): True,
-                    ("bangumi-archive", "replay_enabled"): True,
+                    ("bangumi-replay", "enabled"): True,
                 }
             )
             assert s._is_enabled() is True
 
-    def test_archive_enabled_replay_enabled_false_returns_false(self):
+    def test_replay_enabled_false_returns_false(self):
         s = BangumiReplayScheduler()
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
-                    ("bangumi-archive", "replay_enabled"): False,
+                    ("bangumi-replay", "enabled"): False,
                 }
             )
             assert s._is_enabled() is False
 
-    def test_archive_enabled_replay_enabled_unconfigured_fallback_true(self):
-        """未配置 replay_enabled 时 fallback True，archive 启用即整体启用"""
+    def test_replay_unconfigured_fallback_true(self):
+        """未配置 enabled 时 fallback True"""
+        s = BangumiReplayScheduler()
+        with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
+            cm.get.side_effect = _make_get_side_effect({})
+            assert s._is_enabled() is True
+
+    def test_replay_independent_of_archive(self):
+        """replay 启用与 archive 无关：archive 关闭但 replay 启用时仍应返回 True"""
         s = BangumiReplayScheduler()
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
+                    ("bangumi-archive", "enabled"): False,
+                    ("bangumi-replay", "enabled"): True,
                 }
             )
             assert s._is_enabled() is True
@@ -110,7 +94,7 @@ class TestGetDriverConfig:
         with patch("app.services.bangumi_replay_scheduler.config_manager") as cm:
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "replay_cron"): "0 * * * *",
+                    ("bangumi-replay", "replay_cron"): "0 * * * *",
                 }
             )
             cfg = s._get_driver_config()
@@ -136,9 +120,8 @@ class TestGetStatus:
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
-                    ("bangumi-archive", "replay_enabled"): True,
-                    ("bangumi-archive", "replay_cron"): "0 * * * *",
+                    ("bangumi-replay", "enabled"): True,
+                    ("bangumi-replay", "replay_cron"): "0 * * * *",
                 }
             )
             db.get_pending_sync_stats.return_value = {
@@ -166,7 +149,7 @@ class TestGetStatus:
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): True,
+                    ("bangumi-replay", "enabled"): True,
                 }
             )
             db.get_pending_sync_stats.return_value = {
@@ -190,7 +173,7 @@ class TestGetStatus:
         ):
             cm.get.side_effect = _make_get_side_effect(
                 {
-                    ("bangumi-archive", "enabled"): False,
+                    ("bangumi-replay", "enabled"): False,
                 }
             )
             db.get_pending_sync_stats.return_value = {
@@ -416,7 +399,7 @@ class TestProbeApiMultiMode:
 
 
 class TestRunSyncJob:
-    """_run_sync_job 流程：启用检查 → 探测 → 补发"""
+    """_run_sync_job 流程：启用检查 → 队列计数 → 探测 → 补发"""
 
     @pytest.mark.asyncio
     async def test_disabled_returns_without_probe(self):
@@ -437,9 +420,28 @@ class TestRunSyncJob:
                 s, "_probe_api", new_callable=AsyncMock, return_value=False
             ) as probe,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             await s._run_sync_job()
         probe.assert_awaited_once()
+        mock_svc.replay_pending_batch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_queue_skips_probe_and_replay(self):
+        """队列为空时应直接跳过，不探测、不补发"""
+        s = BangumiReplayScheduler()
+        with (
+            patch.object(s, "_is_enabled", return_value=True),
+            patch.object(s, "_probe_api", new_callable=AsyncMock) as probe,
+            patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=0
+            ),
+        ):
+            await s._run_sync_job()
+        probe.assert_not_awaited()
         mock_svc.replay_pending_batch.assert_not_called()
 
     @pytest.mark.asyncio
@@ -451,9 +453,12 @@ class TestRunSyncJob:
             patch.object(s, "_probe_api", new_callable=AsyncMock, return_value=True),
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.return_value = {
                 "total": 3,
@@ -475,9 +480,12 @@ class TestRunSyncJob:
             patch.object(s, "_probe_api", new_callable=AsyncMock, return_value=True),
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.return_value = {
                 "total": 0,
@@ -504,9 +512,12 @@ class TestRunSyncJob:
                 new_callable=AsyncMock,
                 side_effect=asyncio.TimeoutError,
             ),
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.return_value = {
                 "total": 0,
@@ -527,12 +538,63 @@ class TestRunSyncJob:
             patch.object(s, "_probe_api", new_callable=AsyncMock, return_value=True),
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
             patch("app.services.sync_service.sync_service") as mock_svc,
+            patch(
+                "app.core.database.database_manager.count_pending_sync", return_value=5
+            ),
         ):
             cm.get.side_effect = _make_get_side_effect(
-                {("bangumi-archive", "replay_batch_size"): 20}
+                {("bangumi-replay", "replay_batch_size"): 20}
             )
             mock_svc.replay_pending_batch.side_effect = RuntimeError("db error")
             # 不应抛出
             await s._run_sync_job()
 
         mock_svc.replay_pending_batch.assert_called_once_with(20)
+
+
+# ----------------------------------------------------------------------
+# 6. trigger_immediate_run
+# ----------------------------------------------------------------------
+
+
+class TestTriggerImmediateRun:
+    """入队后立即触发补发：防抖 + 调度器状态判断"""
+
+    def test_disabled_does_nothing(self):
+        s = BangumiReplayScheduler()
+        with patch.object(s, "_is_enabled", return_value=False):
+            s.trigger_immediate_run()
+        # scheduler 未创建，不应抛出
+
+    def test_scheduler_not_running_does_nothing(self):
+        s = BangumiReplayScheduler()
+        fake_scheduler = MagicMock()
+        fake_scheduler.running = False
+        s.scheduler = fake_scheduler
+        with patch.object(s, "_is_enabled", return_value=True):
+            s.trigger_immediate_run()
+        fake_scheduler.add_job.assert_not_called()
+
+    def test_running_scheduler_adds_immediate_job(self):
+        s = BangumiReplayScheduler()
+        fake_scheduler = MagicMock()
+        fake_scheduler.running = True
+        s.scheduler = fake_scheduler
+        with patch.object(s, "_is_enabled", return_value=True):
+            s.trigger_immediate_run()
+        fake_scheduler.add_job.assert_called_once()
+        kwargs = fake_scheduler.add_job.call_args.kwargs
+        assert kwargs["trigger"] == "date"
+        assert kwargs["id"] == "bangumi_replay_pending_immediate"
+        assert kwargs["replace_existing"] is True
+
+    def test_debounce_within_500ms_skips_second_call(self):
+        s = BangumiReplayScheduler()
+        fake_scheduler = MagicMock()
+        fake_scheduler.running = True
+        s.scheduler = fake_scheduler
+        with patch.object(s, "_is_enabled", return_value=True):
+            s.trigger_immediate_run()
+            # 500ms 内再次触发，应被防抖丢弃
+            s.trigger_immediate_run()
+        assert fake_scheduler.add_job.call_count == 1

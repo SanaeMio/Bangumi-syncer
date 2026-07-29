@@ -115,11 +115,15 @@
             </div>
         </div>
     </div>
+    <!-- 公共映射弹窗（复用自映射管理） -->
+    {% include "_mapping_modal.html" %}
 {% endblock %}
 {% block scripts %}
     <script>
 let currentPage = 1;
 const pageLimit = APP_TABLE_PAGE_SIZE;
+// 当前正在查看的候选记录，供「手动指定 ID」流程预填映射弹窗使用
+let _currentCandidateRecord = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     bindAppTableMobileRowClick('#pending-candidates-table', showCandidateDetail);
@@ -237,7 +241,9 @@ async function showCandidateDetail(candidateId) {
         }
 
         const record = data.data.record;
-        const candidates = data.data.candidates || [];
+        // 缓存当前候选记录，供「手动指定 ID」流程预填映射弹窗使用
+        _currentCandidateRecord = record;
+        const candidates = sortCandidatesByScore(data.data.candidates || []);
         const content = document.getElementById('candidate-detail-content');
 
         let html = '';
@@ -254,7 +260,7 @@ async function showCandidateDetail(candidateId) {
                         <div class="col-md-6"><small><strong>原始标题：</strong>${escapeHtml(record.request_ori_title || '-')}</small></div>
                         <div class="col-md-6"><small><strong>季度/集数：</strong>S${String(record.request_season).padStart(2, '0')}E${String(record.request_episode).padStart(2, '0')}</small></div>
                         <div class="col-md-6"><small><strong>来源：</strong>${record.source || '-'}</small></div>
-                        <div class="col-md-6"><small><strong>状态：</strong>${getStatusBadge(record.status)}</small></div>
+                        <div class="col-md-6"><small><strong>状态：</strong>${renderCandidateStatusBadge(record.status)}</small></div>
                         <div class="col-md-6"><small><strong>确认条目：</strong>${record.confirmed_subject_id ? `<a href="https://bgm.tv/subject/${record.confirmed_subject_id}" target="_blank">${record.confirmed_subject_id}</a>` : '-'}</small></div>
                     </div>
                 </div>
@@ -266,7 +272,7 @@ async function showCandidateDetail(candidateId) {
             html += '<div class="card"><div class="card-header py-2"><strong>候选条目（点击「确认」写入映射）</strong></div><div class="card-body">';
 
             candidates.forEach((cand, idx) => {
-                const scoreText = cand.score ? ` 置信度 ${(cand.score * 100).toFixed(1)}%` : '';
+                const scoreText = cand.score ? ` 置信度 ${formatMatchScore(cand.score)}` : '';
                 const platformText = cand.platform ? ` [${cand.platform}]` : '';
                 const airDateText = cand.air_date ? ` 首播 ${cand.air_date}` : '';
                 const sourceText = cand.source ? ` 来源 ${cand.source}` : '';
@@ -303,6 +309,23 @@ async function showCandidateDetail(candidateId) {
             `;
         }
 
+        // 手动指定 Bangumi 条目 ID：复用映射管理弹窗（MappingModal）
+        if (record.status === 'pending') {
+            html += `
+                <div class="card mt-3">
+                    <div class="card-header py-2">
+                        <strong><i class="bi bi-pencil-square me-1"></i>手动指定 Bangumi 条目 ID</strong>
+                    </div>
+                    <div class="card-body">
+                        <small class="text-muted d-block mb-2">候选列表中没有合适的条目时，可打开映射弹窗直接指定 Bangumi ID。保存后会写入自定义映射并确认该候选。可访问 <a href="https://bgm.tv/" target="_blank">bgm.tv</a> 搜索条目，URL 形如 <code>bgm.tv/subject/12345</code> 中的数字即 ID。</small>
+                        <button type="button" class="btn btn-success btn-sm" onclick="openManualMappingModal(${record.id})">
+                            <i class="bi bi-pencil-square me-1"></i>打开映射弹窗
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
         content.innerHTML = html;
         showModal('candidateDetailModal');
 
@@ -316,6 +339,14 @@ async function confirmCandidate(candidateId, subjectId) {
     if (!confirm(`确认为 subject/${subjectId} 并写入自定义映射？`)) {
         return;
     }
+    await _confirmCandidateCore(candidateId, subjectId);
+}
+
+/**
+ * 确认候选的核心逻辑（不做二次确认，由调用方决定是否需要 confirm）。
+ * 供 confirmCandidate 与「手动指定 ID」流程的 onSaved 回调复用。
+ */
+async function _confirmCandidateCore(candidateId, subjectId) {
     try {
         const data = await apiFetch(`/api/pending-candidates/${candidateId}/confirm`, {
             method: 'POST',
@@ -323,7 +354,10 @@ async function confirmCandidate(candidateId, subjectId) {
             body: JSON.stringify({ subject_id: subjectId })
         });
         if (data.status === 'success') {
-            showAlert(data.message || '已确认', 'success');
+            // message 中可能包含「补发结果」，含「失败/异常/忽略」时用 warning 色提示
+            const msg = data.message || '已确认';
+            const hasReplayIssue = /补发失败|补发异常|补发被忽略/.test(msg);
+            showAlert(msg, hasReplayIssue ? 'warning' : 'success');
             hideModal('candidateDetailModal');
             loadPendingCandidates();
         } else {
@@ -333,6 +367,53 @@ async function confirmCandidate(candidateId, subjectId) {
         console.error('确认失败:', error);
         showAlert('确认失败', 'danger');
     }
+}
+
+/**
+ * 打开公共映射弹窗（MappingModal）为当前候选手动指定 Bangumi ID。
+ * 保存成功后通过 onSaved 回调触发候选确认与补发。
+ * 由于 POST /api/mappings 是覆盖性写入，这里必须先 fetch 现有快照，
+ * 否则会清空所有已有映射。
+ */
+async function openManualMappingModal(candidateId) {
+    if (!_currentCandidateRecord || _currentCandidateRecord.id !== candidateId) {
+        showAlert('候选记录已失效，请重新打开候选详情', 'warning');
+        return;
+    }
+    const title = _currentCandidateRecord.request_title || '';
+    const season = _currentCandidateRecord.request_season;
+
+    // 拉取现有映射/规则快照，避免覆盖写入丢失数据
+    let currentMappings = {};
+    let currentRules = [];
+    try {
+        const data = await apiFetch('/api/mappings');
+        if (data.status === 'success') {
+            currentMappings = data.data.mappings || {};
+            currentRules = data.data.rules || [];
+        } else {
+            showAlert('加载现有映射失败，无法安全保存', 'danger');
+            return;
+        }
+    } catch (error) {
+        console.error('加载现有映射失败:', error);
+        showAlert('加载现有映射失败', 'danger');
+        return;
+    }
+
+    // 关闭候选详情模态框，避免与映射弹窗叠加导致 Bootstrap 多 modal 焦点/遮罩冲突
+    hideModal('candidateDetailModal');
+
+    MappingModal.showAdd({
+        title: title,
+        season: season,
+        currentMappings: currentMappings,
+        currentRules: currentRules,
+        onSaved: async (subjectId) => {
+            // 用户已在映射弹窗中完成保存动作，跳过二次确认
+            await _confirmCandidateCore(candidateId, subjectId);
+        }
+    });
 }
 
 async function rejectCandidate(candidateId) {

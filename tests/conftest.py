@@ -49,6 +49,10 @@ _cfg.read(_TEST_CONFIG_INI, encoding="utf-8")
 if not _cfg.has_section("bangumi-archive"):
     _cfg.add_section("bangumi-archive")
 _cfg.set("bangumi-archive", "enabled", "false")
+# 同样强制禁用 bangumi-replay，避免调度器在测试导入时启动定时任务
+if not _cfg.has_section("bangumi-replay"):
+    _cfg.add_section("bangumi-replay")
+_cfg.set("bangumi-replay", "enabled", "false")
 with open(_TEST_CONFIG_INI, "w", encoding="utf-8") as _f:
     _cfg.write(_f)
 

@@ -413,6 +413,43 @@ async def get_pending_candidate_detail(
         raise HTTPException(status_code=500, detail=f"获取待确认候选详情失败: {str(e)}")
 
 
+@router.get("/records/{record_id}/pending-candidate")
+async def get_pending_candidate_by_sync_record(
+    record_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+):
+    """按 sync_record_id 查询关联的候选记录（用于 records 页「查看候选」入口）"""
+    try:
+        record = sync_service.get_pending_candidate_by_sync_record_id(record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="该记录无关联候选")
+
+        candidates = []
+        cand_str = record.get("candidates_json", "") or "[]"
+        try:
+            candidates = json.loads(cand_str)
+        except (json.JSONDecodeError, TypeError):
+            candidates = []
+
+        trace = None
+        trace_str = record.get("trace_json", "") or "{}"
+        try:
+            trace = json.loads(trace_str) if trace_str else None
+        except (json.JSONDecodeError, TypeError):
+            trace = None
+
+        return {
+            "status": "success",
+            "data": {"record": record, "candidates": candidates, "trace": trace},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"按 sync_record_id 查候选失败: {e}")
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
 @router.post("/pending-candidates/{candidate_id}/confirm")
 async def confirm_pending_candidate(
     candidate_id: int,
@@ -512,9 +549,9 @@ async def retry_sync_record(
         if not record:
             raise HTTPException(status_code=404, detail="记录不存在")
 
-        # 只允许重试失败的记录
-        if record.get("status") != "error":
-            raise HTTPException(status_code=400, detail="只能重试失败的记录")
+        # 成功（含补发成功）的记录无需重试
+        if record.get("status") in ("success", "retried"):
+            raise HTTPException(status_code=400, detail="成功的记录无需重试")
 
         # 获取原始来源并添加重试标记
         original_source = record.get("source", "custom")
@@ -533,20 +570,8 @@ async def retry_sync_record(
         with sync_log_context(new_retry_sync_run_id(record_id)):
             result = sync_service.sync_custom_item(retry_item, source=retry_source)
 
-        # 如果重试成功，更新原记录的状态
-        if result.status == "success":
-            sync_service.update_sync_record_status(
-                record_id=record_id,
-                status="retried",  # 标记为已重试
-                message=f"已重试成功: {result.message}",
-            )
-        elif result.status == "ignored":
-            sync_service.update_sync_record_status(
-                record_id=record_id,
-                status="retried",
-                message=f"重试被忽略: {result.message}",
-            )
-        # 如果重试仍然失败，保持原状态不变
+        # 重试结果回写原记录；queued 重试有结果时清理 pending_sync_queue
+        _finalize_retry(record_id, record.get("status", ""), result)
 
         return {"status": "success", "message": "重试完成", "data": result.model_dump()}
 
@@ -557,127 +582,57 @@ async def retry_sync_record(
         raise HTTPException(status_code=500, detail=f"重试失败: {str(e)}")
 
 
-def _parse_match_trace(record: dict) -> Optional[dict[str, Any]]:
-    """解析 sync_records.match_trace（JSON 字符串或 dict）。"""
-    raw = record.get("match_trace")
-    if not raw:
-        return None
-    if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-        return parsed if isinstance(parsed, dict) else None
-    return None
-
-
-def _receive_step_from_trace(
-    trace: Optional[dict[str, Any]],
-) -> Optional[dict[str, Any]]:
-    """从 match_trace 中取 receive 步骤。"""
-    if not trace:
-        return None
-    for step in trace.get("steps") or []:
-        if isinstance(step, dict) and step.get("stage") == "receive":
-            return step
-    return None
-
-
-def _pick_trace_value(
-    trace: Optional[dict[str, Any]],
-    receive_step: Optional[dict[str, Any]],
-    trace_key: str,
-    payload_key: str,
-    fallback: Any = None,
-) -> Any:
-    """优先 trace 顶层 request_*，再 receive processed_payload，最后 fallback。"""
-    if trace:
-        value = trace.get(trace_key)
-        if value not in (None, ""):
-            return value
-    if receive_step:
-        payload = receive_step.get("processed_payload") or {}
-        if isinstance(payload, dict):
-            value = payload.get(payload_key)
-            if value not in (None, ""):
-                return value
-    return fallback
-
-
-def _original_fields_from_record(record: dict) -> dict[str, Any]:
-    """从 match_trace 还原原始请求字段，无 trace 时回退 sync_records 列。"""
-    trace = _parse_match_trace(record)
-    receive_step = _receive_step_from_trace(trace)
-
-    title = _pick_trace_value(
-        trace, receive_step, "request_title", "title", record.get("title", "")
-    )
-    ori_title = _pick_trace_value(
-        trace, receive_step, "request_ori_title", "ori_title", record.get("ori_title")
-    )
-    season = _pick_trace_value(
-        trace, receive_step, "request_season", "season", record.get("season", 1)
-    )
-    episode = _pick_trace_value(
-        trace, receive_step, "request_episode", "episode", record.get("episode", 1)
-    )
-    media_type = _pick_trace_value(
-        trace,
-        receive_step,
-        "request_media_type",
-        "media_type",
-        record.get("media_type") or "episode",
-    )
-    release_date = _pick_trace_value(
-        trace, receive_step, "request_release_date", "release_date", ""
-    )
-    user_name = _pick_trace_value(
-        trace,
-        receive_step,
-        "request_user_name",
-        "user_name",
-        record.get("user_name", ""),
-    )
-    sync_action = _pick_trace_value(
-        trace, receive_step, "request_sync_action", "sync_action", None
-    )
-    raw_payload = None
-    if receive_step:
-        raw_payload = receive_step.get("raw_payload")
-
-    return {
-        "title": title or "",
-        "ori_title": ori_title or None,
-        "season": int(season) if season is not None else 1,
-        "episode": int(episode) if episode is not None else 1,
-        "media_type": (media_type or "episode").lower(),
-        "release_date": release_date or "",
-        "user_name": user_name or "",
-        "sync_action": sync_action or None,
-        "raw_payload": raw_payload,
-    }
-
-
 def _build_retry_item(record: dict, retry_source: str) -> CustomItem:
-    """从同步记录构建重试用的 CustomItem（优先 match_trace 原始请求）。"""
-    orig = _original_fields_from_record(record)
-    retry_media = orig["media_type"]
-    if retry_media not in ("episode", "movie", "ova", "oad", "real_action"):
-        retry_media = "episode"
-    return CustomItem(
-        media_type=retry_media,
-        title=orig["title"],
-        ori_title=orig["ori_title"],
-        season=orig["season"],
-        episode=orig["episode"],
-        release_date=orig["release_date"],
-        user_name=orig["user_name"],
-        source=retry_source,
-        sync_action=orig["sync_action"],
-        raw_payload=orig["raw_payload"],
-    )
+    """从同步记录构建重试用的 CustomItem（优先 match_trace 原始请求）。
+
+    委托给 sync_service._build_retry_item_from_record 作为单一实现，
+    避免与 service 层逻辑漂移。
+    """
+    return sync_service._build_retry_item_from_record(record, retry_source)
+
+
+def _cleanup_pending_for_queued_retry(record_id: int, original_status: str) -> None:
+    """重试有结果后清理 pending_sync_queue 中对应的 pending 行。
+
+    原 queued 记录背后通常有一条 pending_sync_queue 行等待补发，
+    手动重试拿到结果（success/ignored）后必须清理，否则补发调度器
+    仍会捞起该行重放，导致重复标记或与手动重试结果冲突。
+    非 queued 状态原记录无关联 pending 行，直接跳过。
+    """
+    if original_status != "queued":
+        return
+    try:
+        affected = sync_service.mark_pending_sync_synced_by_sync_record_id(record_id)
+        if affected > 0:
+            logger.info(
+                f"重试 queued 记录 {record_id} 已清理 {affected} 条 pending_sync_queue 行"
+            )
+    except Exception as e:
+        logger.warning(
+            f"清理 pending_sync_queue (sync_record_id={record_id}) 失败: {e}"
+        )
+
+
+def _finalize_retry(record_id: int, original_status: str, result) -> None:
+    """重试完成后回写原 sync_records 状态，并按需清理 pending_sync_queue。
+
+    - success/ignored：原记录改写为 retried；若原状态为 queued，清理 pending 行
+    - error：保持原状态不变（仍可再次重试）
+    """
+    if result.status == "success":
+        sync_service.update_sync_record_status(
+            record_id=record_id,
+            status="retried",
+            message=f"已重试成功: {result.message}",
+        )
+        _cleanup_pending_for_queued_retry(record_id, original_status)
+    elif result.status == "ignored":
+        sync_service.update_sync_record_status(
+            record_id=record_id,
+            status="retried",
+            message=f"重试被忽略: {result.message}",
+        )
+        _cleanup_pending_for_queued_retry(record_id, original_status)
 
 
 @router.get("/records/{record_id}/retry/stream")
@@ -699,10 +654,12 @@ async def retry_sync_record_stream(
     record = sync_service.get_sync_record_by_id(record_id)
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
-    if record.get("status") != "error":
-        raise HTTPException(status_code=400, detail="只能重试失败的记录")
+    # 成功（含补发成功）的记录无需重试
+    if record.get("status") in ("success", "retried"):
+        raise HTTPException(status_code=400, detail="成功的记录无需重试")
 
     original_source = record.get("source", "custom")
+    original_status = record.get("status", "")
     retry_source = f"retry-{original_source}"
     retry_item = _build_retry_item(record, retry_source)
 
@@ -775,19 +732,8 @@ async def retry_sync_record_stream(
             # 获取同步结果
             result = await task
 
-            # 更新原记录状态
-            if result.status == "success":
-                sync_service.update_sync_record_status(
-                    record_id=record_id,
-                    status="retried",
-                    message=f"已重试成功: {result.message}",
-                )
-            elif result.status == "ignored":
-                sync_service.update_sync_record_status(
-                    record_id=record_id,
-                    status="retried",
-                    message=f"重试被忽略: {result.message}",
-                )
+            # 重试结果回写原记录；queued 重试有结果时清理 pending_sync_queue
+            _finalize_retry(record_id, original_status, result)
 
             # 推送完成事件
             yield {

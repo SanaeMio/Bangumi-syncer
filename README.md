@@ -37,6 +37,7 @@ Bangumi-syncer 是一款把常见媒体库与 [Bangumi（番组计划）](https:
 - 👥 **多用户同步**：支持多用户模式，按媒体服务器用户名路由到不同 Bangumi 账号，数据不混杂。
 - 🔔 **通知能力**：同步过程支持 Webhook 和 邮件 通知，模板与类型可高度自定义，便于接入Telegram、钉钉等软件通知或扩展更多状态同步能力。
 - 🧩 **匹配记录可追溯**：保留完整的匹配过程，可直观地了解匹配过程以便排查问题。
+- 🔄 **离线容错与补发**：Bangumi API 不可达时，写操作自动入队待补发（[Replay](https://sanaemio.github.io/Bangumi-syncer/bangumi-replay)）；配合本地数据集归档（[Archive](https://sanaemio.github.io/Bangumi-syncer/bangumi-archive)）还能在无网时匹配新条目，形成端到端的无网缓存请求闭环。两者互相独立，可各自启停。
 
 ## 📺 支持的媒体库、接入方式与支持情况
 

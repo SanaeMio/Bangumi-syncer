@@ -65,116 +65,8 @@
             </div>
         </div>
     </div>
-    <!-- 添加/编辑映射模态框 -->
-    <div class="modal fade" id="mappingModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="mappingModalTitle">添加映射</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="mapping-form">
-                        <!-- 类型切换 -->
-                        <div class="mb-3">
-                            <label class="form-label">类型</label>
-                            <div class="btn-group w-100" role="group" id="mapping-type-group">
-                                <input type="radio"
-                                       class="btn-check"
-                                       name="mapping-type"
-                                       id="type-exact"
-                                       value="exact"
-                                       checked
-                                       onchange="setMappingType('exact')">
-                                <label class="btn btn-outline-primary" for="type-exact">
-                                    <i class="bi bi-diagram-3 me-1"></i>精确映射
-                                </label>
-                                <input type="radio"
-                                       class="btn-check"
-                                       name="mapping-type"
-                                       id="type-regex"
-                                       value="regex"
-                                       onchange="setMappingType('regex')">
-                                <label class="btn btn-outline-info" for="type-regex">
-                                    <i class="bi bi-regex me-1"></i>正则规则
-                                </label>
-                            </div>
-                        </div>
-                        <!-- 精确映射字段 -->
-                        <div id="exact-fields">
-                            <div class="mb-3">
-                                <label for="mapping-title" class="form-label">番剧名称</label>
-                                <input type="text"
-                                       class="form-control"
-                                       id="mapping-title"
-                                       placeholder="输入番剧名称，如：我推的孩子">
-                                <div class="form-text">请输入准确的番剧名称，这将用于匹配同步请求</div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="mapping-season" class="form-label">
-                                    季度 <small class="text-muted fw-normal">(可选，季度感知映射)</small>
-                                </label>
-                                <input type="number"
-                                       class="form-control"
-                                       id="mapping-season"
-                                       min="1"
-                                       max="20"
-                                       placeholder="留空表示所有季度共用">
-                                <div class="form-text">填写后仅在该季度匹配时命中，适合同一标题不同季度对应不同条目</div>
-                            </div>
-                        </div>
-                        <!-- 正则规则字段 -->
-                        <div id="regex-fields" class="is-hidden">
-                            <div class="mb-3">
-                                <label for="rule-pattern" class="form-label">正则表达式</label>
-                                <input type="text"
-                                       class="form-control font-monospace"
-                                       id="rule-pattern"
-                                       placeholder="如：^.*之.*刃$">
-                                <div class="form-text">
-                                    Python 正则语法，匹配标题或原始标题。示例：<code>^.*之.*刃$</code> 匹配以「之刃」结尾的标题
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="rule-desc" class="form-label">
-                                    说明 <small class="text-muted fw-normal">(可选)</small>
-                                </label>
-                                <input type="text"
-                                       class="form-control"
-                                       id="rule-desc"
-                                       placeholder="规则描述，如：鬼灭之刃系列">
-                            </div>
-                        </div>
-                        <!-- 公共字段：Bangumi ID -->
-                        <div class="mb-3">
-                            <label for="mapping-id" class="form-label">Bangumi ID</label>
-                            <input type="text"
-                                   class="form-control"
-                                   id="mapping-id"
-                                   required
-                                   placeholder="输入Bangumi ID，如：386809">
-                            <div class="form-text">可以从Bangumi页面URL中获取，如 https://bgm.tv/subject/386809 中的 386809</div>
-                        </div>
-                        <!-- 预览链接 -->
-                        <div class="mb-3">
-                            <label class="form-label">预览链接</label>
-                            <div class="input-group">
-                                <span class="input-group-text">https://bgm.tv/subject/</span>
-                                <input type="text" class="form-control" id="preview-id" readonly>
-                            </div>
-                            <div class="form-text">
-                                <a id="preview-link" href="#" target="_blank" class="is-hidden">点击查看Bangumi页面</a>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" onclick="saveMapping()">保存</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- 添加/编辑映射模态框（公共组件） -->
+    {% include "_mapping_modal.html" %}
     <!-- 删除确认模态框 -->
     <div class="modal fade" id="deleteModal" tabindex="-1">
         <div class="modal-dialog">
@@ -378,20 +270,12 @@
     <script>
 let currentMappings = {};
 let currentRules = [];
-let mappingModal;
 let deleteModal;
 let importModal;
-let editingType = 'exact';  // 'exact' | 'regex'
-let editingTitle = null;
-let editingRuleIndex = null;
 
 document.addEventListener('DOMContentLoaded', function() {
-    mappingModal = getModal('mappingModal');
     deleteModal = getModal('deleteModal');
     importModal = getModal('importModal');
-
-    // 监听ID输入变化，更新预览
-    document.getElementById('mapping-id').addEventListener('input', updatePreview);
 
     loadMappings();
 
@@ -400,11 +284,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const preTitle = params.get('title');
     const preSeason = params.get('season');
     if (preTitle) {
-        showAddMappingModal();
-        document.getElementById('mapping-title').value = preTitle;
-        if (preSeason) {
-            document.getElementById('mapping-season').value = preSeason;
-        }
+        MappingModal.showAdd({
+            title: preTitle,
+            season: preSeason,
+            currentMappings: currentMappings,
+            currentRules: currentRules,
+            onSaved: () => {
+                loadMappings();
+            }
+        });
         // 同时填入正则测试的标题框
         const testInput = document.getElementById('test-title-input');
         if (testInput) testInput.value = preTitle;
@@ -552,199 +440,25 @@ function setMappingType(type) {
 // ===== 添加/编辑 =====
 
 function showAddMappingModal() {
-    document.getElementById('mappingModalTitle').textContent = '添加映射';
-    document.getElementById('mapping-form').reset();
-    document.getElementById('preview-id').value = '';
-    document.getElementById('preview-link').classList.add('is-hidden');
-    document.getElementById('type-exact').checked = true;
-    setMappingType('exact');
-    editingType = 'exact';
-    editingTitle = null;
-    editingRuleIndex = null;
-    mappingModal.show();
+    MappingModal.showAdd({
+        currentMappings: currentMappings,
+        currentRules: currentRules,
+        onSaved: () => {
+            loadMappings();
+        }
+    });
 }
 
 function editMapping(type, key) {
-    if (type === 'exact') {
-        const title = key;
-        const value = currentMappings[title];
-        let id = '';
-        let season = '';
-        if (typeof value === 'object' && value !== null) {
-            id = value.subject_id || '';
-            season = value.season || '';
-        } else {
-            id = value;
+    MappingModal.showEdit({
+        type: type,
+        key: key,
+        currentMappings: currentMappings,
+        currentRules: currentRules,
+        onSaved: () => {
+            loadMappings();
         }
-        document.getElementById('mappingModalTitle').textContent = '编辑映射';
-        document.getElementById('type-exact').checked = true;
-        setMappingType('exact');
-        document.getElementById('mapping-title').value = title;
-        document.getElementById('mapping-id').value = id;
-        document.getElementById('mapping-season').value = season;
-        document.getElementById('rule-pattern').value = '';
-        document.getElementById('rule-desc').value = '';
-        updatePreview();
-        editingType = 'exact';
-        editingTitle = title;
-        editingRuleIndex = null;
-    } else {
-        const idx = key;
-        const rule = currentRules[idx];
-        if (!rule) return;
-        document.getElementById('mappingModalTitle').textContent = '编辑正则规则';
-        document.getElementById('type-regex').checked = true;
-        setMappingType('regex');
-        document.getElementById('rule-pattern').value = rule.pattern || '';
-        document.getElementById('mapping-id').value = rule.subject_id || '';
-        document.getElementById('rule-desc').value = rule.description || '';
-        document.getElementById('mapping-title').value = '';
-        document.getElementById('mapping-season').value = '';
-        updatePreview();
-        editingType = 'regex';
-        editingTitle = null;
-        editingRuleIndex = idx;
-    }
-    mappingModal.show();
-}
-
-function updatePreview() {
-    const id = document.getElementById('mapping-id').value;
-    const previewId = document.getElementById('preview-id');
-    const previewLink = document.getElementById('preview-link');
-
-    previewId.value = id;
-
-    if (id) {
-        previewLink.href = `https://bgm.tv/subject/${id}`;
-        previewLink.classList.remove('is-hidden');
-    } else {
-        previewLink.classList.add('is-hidden');
-    }
-}
-
-async function saveMapping() {
-    const type = document.querySelector('input[name="mapping-type"]:checked').value;
-    const id = document.getElementById('mapping-id').value.trim();
-
-    if (!id) {
-        showAlert('请填写 Bangumi ID', 'warning');
-        return;
-    }
-
-    if (!/^\d+$/.test(id)) {
-        showAlert('Bangumi ID必须是数字', 'warning');
-        return;
-    }
-
-    if (type === 'exact') {
-        const title = document.getElementById('mapping-title').value.trim();
-        const seasonRaw = document.getElementById('mapping-season').value.trim();
-
-        if (!title) {
-            showAlert('请填写番剧名称', 'warning');
-            return;
-        }
-
-        const season = seasonRaw ? parseInt(seasonRaw, 10) : null;
-        if (seasonRaw && (!season || season < 1)) {
-            showAlert('季度必须为正整数', 'warning');
-            return;
-        }
-
-        try {
-            let newMappings = { ...currentMappings };
-
-            // 编辑时若标题变更，删除旧映射
-            if (editingType === 'exact' && editingTitle && editingTitle !== title) {
-                delete newMappings[editingTitle];
-            }
-            // 从正则规则切换为精确映射时，删除原规则
-            if (editingType === 'regex' && editingRuleIndex !== null) {
-                let newRules = [...currentRules];
-                newRules.splice(editingRuleIndex, 1);
-                // 先更新规则再更新映射
-                const preBody = { mappings: currentMappings, rules: newRules };
-                const preResult = await apiFetch('/api/mappings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(preBody)
-                });
-                if (preResult.status !== 'success') {
-                    showAlert('保存映射失败: ' + preResult.message, 'danger');
-                    return;
-                }
-                currentRules = newRules;
-            }
-
-            if (season) {
-                newMappings[title] = { subject_id: id, season: season };
-            } else {
-                newMappings[title] = id;
-            }
-
-            const result = await apiFetch('/api/mappings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mappings: newMappings, rules: currentRules })
-            });
-
-            if (result.status === 'success') {
-                showAlert(editingTitle ? '映射更新成功' : '映射添加成功', 'success');
-                mappingModal.hide();
-                loadMappings();
-            } else {
-                showAlert('保存映射失败: ' + result.message, 'danger');
-            }
-        } catch (error) {
-            console.error('保存映射失败:', error);
-            showAlert('保存映射失败', 'danger');
-        }
-    } else {
-        // 正则规则
-        const pattern = document.getElementById('rule-pattern').value.trim();
-        const desc = document.getElementById('rule-desc').value.trim();
-
-        if (!pattern) {
-            showAlert('请填写正则表达式', 'warning');
-            return;
-        }
-
-        let newRules = [...currentRules];
-        const newRule = { pattern: pattern, subject_id: id };
-        if (desc) newRule.description = desc;
-
-        if (editingType === 'regex' && editingRuleIndex !== null) {
-            newRules[editingRuleIndex] = newRule;
-        } else {
-            newRules.push(newRule);
-        }
-
-        try {
-            let bodyMappings = currentMappings;
-            // 从精确映射切换为正则规则时，删除原映射
-            if (editingType === 'exact' && editingTitle) {
-                bodyMappings = { ...currentMappings };
-                delete bodyMappings[editingTitle];
-            }
-
-            const result = await apiFetch('/api/mappings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mappings: bodyMappings, rules: newRules })
-            });
-            if (result.status === 'success') {
-                showAlert(editingRuleIndex !== null ? '规则更新成功' : '规则添加成功', 'success');
-                mappingModal.hide();
-                loadMappings();
-            } else {
-                showAlert('保存规则失败: ' + result.message, 'danger');
-            }
-        } catch (error) {
-            console.error('保存规则失败:', error);
-            showAlert('保存规则失败', 'danger');
-        }
-    }
+    });
 }
 
 // ===== 删除 =====

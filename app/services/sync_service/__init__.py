@@ -21,6 +21,7 @@ from ...core.logging import (
     get_sync_run_id,
     logger,
     new_inline_sync_run_id,
+    new_retry_sync_run_id,
     sync_log_context,
 )
 from ...models.sync import CustomItem, SyncResponse
@@ -42,6 +43,53 @@ from .retry import MARK_QUEUED, RetryMixin
 from .season_info import SeasonInfoMixin
 from .task_manager import TaskManagerMixin
 from .title_normalize import TitleNormalizeMixin
+
+
+def _build_error_detail(exc: Exception) -> dict[str, Any]:
+    """构建 MatchStep.error_detail 字典（type/message/traceback）"""
+    import traceback as _tb
+
+    return {
+        "type": type(exc).__name__,
+        "message": str(exc),
+        "traceback": _tb.format_exc(),
+    }
+
+
+def _extract_infobox_aliases(cand: dict) -> list[str]:
+    """从候选条目的 infobox 中提取别名列表（兼容多种历史数据格式）
+
+    用于 P2 infobox_aliases 字段，帮助理解 title_diff_ratio 为何给出该分数。
+    """
+    aliases: list[str] = []
+    infobox = cand.get("infobox")
+    if not isinstance(infobox, list):
+        return aliases
+    for info in infobox:
+        if not isinstance(info, dict) or info.get("key") != "别名":
+            continue
+        value = info.get("value")
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict) and "v" in item:
+                    aliases.append(str(item["v"]))
+                elif isinstance(item, str):
+                    aliases.append(item)
+        elif isinstance(value, str):
+            aliases.append(value)
+        break
+    return aliases
+
+
+def _detect_candidate_media_type(cand: dict) -> str:
+    """检测候选条目的媒体类型（用于 P0 media_type 字段）"""
+    try:
+        return detect_media_type(
+            title=cand.get("name_cn", ""),
+            ori_title=cand.get("name", ""),
+        )
+    except Exception:
+        return ""
 
 
 class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeMixin):
@@ -142,6 +190,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """获取单条待确认候选详情"""
         return database_manager.get_pending_candidate_by_id(candidate_id)
 
+    def get_pending_candidate_by_sync_record_id(
+        self, sync_record_id: int
+    ) -> dict[str, Any] | None:
+        """按 sync_record_id 查询关联的候选记录"""
+        return database_manager.get_pending_candidate_by_sync_record_id(sync_record_id)
+
     def confirm_pending_candidate(
         self, candidate_id: int, subject_id: str
     ) -> tuple[bool, str]:
@@ -150,6 +204,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         返回 (success, message)。映射写入委托
         :meth:`MappingService.upsert_single_mapping`，由其内部完成
         读全量→合并→写回，避免覆盖已有映射。
+
+        subject_id 有效性校验：优先走 archive 短路（无网络开销），
+        archive 未命中时降级到 Bangumi API。校验失败（条目不存在或类型
+        不是动画/三次元）时拒绝确认并返回原因，避免写入无效映射。
         """
         record = database_manager.get_pending_candidate_by_id(candidate_id)
         if not record:
@@ -161,6 +219,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         season = int(record.get("request_season") or 1)
         if not title or not subject_id:
             return False, "标题或 subject_id 为空"
+
+        # subject_id 有效性校验：必须存在且类型为动画/三次元
+        ok, reason = self._validate_subject_id(subject_id)
+        if not ok:
+            return False, f"subject_id 校验失败：{reason}"
 
         # 写入单条映射（读全量→合并→写回由 mapping_service 封装）
         if not mapping_service.upsert_single_mapping(title, subject_id, season):
@@ -179,7 +242,255 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             confirmed_subject_id=str(subject_id),
             exclude_id=candidate_id,
         )
-        return True, f"已确认并写入映射：{title} → subject/{subject_id}"
+
+        # 候选确认即补发：若有关联的 sync_record_id，自动触发重试
+        replay_msg = self._auto_replay_after_confirm(
+            record.get("sync_record_id"), record, title
+        )
+        final_msg = f"已确认并写入映射：{title} → subject/{subject_id}"
+        if replay_msg:
+            final_msg = f"{final_msg}；{replay_msg}"
+        return True, final_msg
+
+    def _auto_replay_after_confirm(
+        self,
+        sync_record_id: int | None,
+        candidate_record: dict[str, Any],
+        title: str,
+    ) -> str:
+        """候选确认后自动补发原同步记录。
+
+        仅当 pending_candidates.sync_record_id 存在且对应 sync_records 状态非 success
+        时触发。补发复用 sync_custom_item 流程，结果回写 sync_records：
+        - success/ignored → 状态改写为 retried，清理 pending_sync_queue
+        - error → 保持原状态，返回错误原因供前端展示
+
+        补发失败不影响 confirm 主流程（映射已写入，下次同步会自动命中）。
+        返回补发结果描述字符串；未触发补发时返回空串。
+        """
+        if not sync_record_id:
+            return ""
+
+        try:
+            record = database_manager.get_sync_record_by_id(int(sync_record_id))
+        except Exception as e:
+            logger.warning(
+                f"候选确认后补发：查询 sync_record_id={sync_record_id} 失败: {e}"
+            )
+            return ""
+
+        if not record:
+            return ""
+
+        if record.get("status") == "success":
+            return ""
+
+        # 构建重试 item（优先用 sync_record 的 match_trace 还原原始请求字段）
+        try:
+            retry_item = self._build_retry_item_from_record(
+                record, f"retry-{record.get('source', 'custom')}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"候选确认后补发：构建重试 item 失败 (record={sync_record_id}): {e}"
+            )
+            return ""
+
+        logger.info(
+            f"候选确认触发补发: record_id={sync_record_id}, title={title}, "
+            f"原状态={record.get('status')}"
+        )
+        try:
+            with sync_log_context(new_retry_sync_run_id(int(sync_record_id))):
+                result = self.sync_custom_item(
+                    retry_item,
+                    source=f"retry-{record.get('source', 'custom')}",
+                )
+        except Exception as e:
+            logger.warning(f"候选确认后补发异常 (record={sync_record_id}): {e}")
+            return f"补发异常: {e}"
+
+        # 回写原 sync_records 状态
+        original_status = record.get("status", "")
+        if result.status == "success":
+            database_manager.update_sync_record_status(
+                record_id=int(sync_record_id),
+                status="retried",
+                message=f"候选确认后补发成功: {result.message}",
+            )
+            self._cleanup_pending_for_replay(int(sync_record_id), original_status)
+            return "已自动补发成功"
+        if result.status == "ignored":
+            database_manager.update_sync_record_status(
+                record_id=int(sync_record_id),
+                status="retried",
+                message=f"候选确认后补发被忽略: {result.message}",
+            )
+            self._cleanup_pending_for_replay(int(sync_record_id), original_status)
+            return f"补发被忽略: {result.message}"
+        # error
+        return f"补发失败: {result.message}"
+
+    def _cleanup_pending_for_replay(self, record_id: int, original_status: str) -> None:
+        """补发成功后清理 pending_sync_queue 中对应的 pending 行。
+
+        原 queued 记录背后通常有一条 pending_sync_queue 行等待补发，
+        补发成功后必须清理，否则调度器仍会捞起该行重放，导致重复标记。
+        非 queued 状态原记录无关联 pending 行，直接跳过。
+        """
+        if original_status != "queued":
+            return
+        try:
+            affected = database_manager.mark_pending_sync_synced_by_sync_record_id(
+                record_id
+            )
+            if affected > 0:
+                logger.info(
+                    f"补发后清理 pending_sync_queue (record={record_id}): "
+                    f"删除 {affected} 条 pending 行"
+                )
+        except Exception as e:
+            logger.warning(f"清理 pending_sync_queue (record={record_id}) 失败: {e}")
+
+    def _build_retry_item_from_record(
+        self, record: dict[str, Any], retry_source: str
+    ) -> CustomItem:
+        """从 sync_record 构建 retry 用的 CustomItem。
+
+        优先从 match_trace 还原原始请求字段；trace 缺失时回退到 sync_records 列。
+        与 app/api/sync.py._build_retry_item 行为一致，但下沉到 sync_service
+        供候选确认即补发流程复用。
+        """
+        from ...models.sync import CustomItem as _CustomItem
+
+        # 优先 match_trace，回退到 sync_records 字段
+        trace_raw = record.get("match_trace")
+        trace: dict[str, Any] | None = None
+        if isinstance(trace_raw, dict):
+            trace = trace_raw
+        elif isinstance(trace_raw, str) and trace_raw:
+            try:
+                parsed = json.loads(trace_raw)
+                if isinstance(parsed, dict):
+                    trace = parsed
+            except json.JSONDecodeError:
+                trace = None
+
+        # receive 步骤中的 processed_payload 含原始请求字段
+        receive_step: dict[str, Any] | None = None
+        if trace:
+            for step in trace.get("steps") or []:
+                if isinstance(step, dict) and step.get("stage") == "receive":
+                    receive_step = step
+                    break
+
+        def _pick(trace_key: str, payload_key: str, fallback: Any) -> Any:
+            if trace:
+                v = trace.get(trace_key)
+                if v not in (None, ""):
+                    return v
+            if receive_step:
+                payload = receive_step.get("processed_payload") or {}
+                if isinstance(payload, dict):
+                    v = payload.get(payload_key)
+                    if v not in (None, ""):
+                        return v
+            return fallback
+
+        title = _pick("request_title", "title", record.get("title", ""))
+        ori_title = _pick("request_ori_title", "ori_title", record.get("ori_title"))
+        season = _pick("request_season", "season", record.get("season", 1))
+        episode = _pick("request_episode", "episode", record.get("episode", 1))
+        media_type = _pick(
+            "request_media_type", "media_type", record.get("media_type") or "episode"
+        )
+        release_date = _pick("request_release_date", "release_date", "")
+        user_name = _pick("request_user_name", "user_name", record.get("user_name", ""))
+        sync_action = _pick("request_sync_action", "sync_action", None)
+        raw_payload = receive_step.get("raw_payload") if receive_step else None
+
+        retry_media = (media_type or "episode").lower()
+        if retry_media not in ("episode", "movie", "ova", "oad", "real_action"):
+            retry_media = "episode"
+
+        return _CustomItem(
+            media_type=retry_media,
+            title=title or "",
+            ori_title=ori_title or None,
+            season=int(season) if season is not None else 1,
+            episode=int(episode) if episode is not None else 1,
+            release_date=release_date or "",
+            user_name=user_name or "",
+            source=retry_source,
+            sync_action=sync_action or None,
+            raw_payload=raw_payload,
+        )
+
+    def _validate_subject_id(self, subject_id: str) -> tuple[bool, str]:
+        """校验 subject_id 是否有效：存在且类型为动画/三次元
+
+        优先走 archive 短路（本地查询，<1ms），未命中降级到 Bangumi API。
+        返回 (True, "") 或 (False, reason)。
+
+        校验失败场景：
+        - subject_id 非数字
+        - 条目不存在（API 404 或返回空）
+        - 类型非动画/三次元（如书籍/音乐/游戏）
+        - archive 与 API 均不可用（网络异常时降级放行，避免阻塞用户）
+        """
+        try:
+            sid = int(subject_id)
+        except (TypeError, ValueError):
+            return False, "ID 必须为纯数字"
+
+        # 优先走 archive 短路（无网络开销）
+        from ...utils.bangumi_api._archive_shortcut import archive_shortcut
+
+        if archive_shortcut.enabled:
+            result = archive_shortcut.try_get_subject(sid)
+            if result.hit and isinstance(result.data, dict):
+                stype = result.data.get("type")
+                if stype in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
+                    return True, ""
+                return False, f"条目类型为 {stype}，仅支持动画/三次元"
+            # archive 未命中或不完整：降级到 API
+
+        # 降级到 API：优先用单用户配置，其次多用户第一个可用配置
+        cfg = config_manager.get_active_bangumi_config("") or None
+        if cfg is None:
+            configs = config_manager.get_bangumi_configs()
+            if not configs:
+                # 无可用配置时降级放行（不阻塞用户，映射写入后再由同步流程校验）
+                logger.warning(
+                    f"subject_id={sid} 校验跳过：无可用 Bangumi 配置，降级放行"
+                )
+                return True, ""
+            cfg = next(iter(configs.values()))
+
+        dev_snapshot = config_manager.get_dev_http_snapshot()
+        api = BangumiApi(
+            username=cfg["username"],
+            access_token=cfg["access_token"],
+            private=cfg.get("private", False),
+            http_proxy=dev_snapshot["script_proxy"],
+            ssl_verify=dev_snapshot["ssl_verify"],
+            bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
+            bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
+        )
+        try:
+            data = api.get_subject(sid)
+        except Exception as e:
+            logger.warning(f"subject_id={sid} API 校验异常：{e}，降级放行")
+            return True, ""
+
+        if not isinstance(data, dict) or not data:
+            return False, "条目不存在或 API 返回空"
+
+        stype = data.get("type")
+        if stype not in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
+            return False, f"条目类型为 {stype}，仅支持动画/三次元"
+
+        return True, ""
 
     def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
         """拒绝待确认候选"""
@@ -210,12 +521,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return merged
 
     def _sediment_pending_candidate(
-        self, item: CustomItem, actual_source: str, trace: MatchTrace
+        self,
+        item: CustomItem,
+        actual_source: str,
+        trace: MatchTrace,
+        sync_record_id: int | None = None,
     ) -> None:
         """匹配失败时沉淀候选，供用户手动确认。
 
         仅当 trace 中存在候选时才写入 pending_candidates 表，
         并触发 pending_candidate 通知提醒用户前往 WebUI 确认。
+
+        sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
         """
         candidates = self._collect_candidates_from_trace(trace)
         if not candidates:
@@ -230,6 +547,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 source=actual_source,
                 candidates=candidates,
                 trace=trace.to_dict(),
+                sync_record_id=sync_record_id,
             )
         except Exception as e:
             logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
@@ -282,6 +600,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     ) -> bool:
         """更新同步记录的状态"""
         return database_manager.update_sync_record_status(record_id, status, message)
+
+    def mark_pending_sync_synced_by_sync_record_id(self, sync_record_id: int) -> int:
+        """按 sync_record_id 清理 pending_sync_queue 中的 pending 行。
+
+        用于手动重试 queued 同步记录成功后，避免补发调度器重复捞起导致重复标记。
+        """
+        return database_manager.mark_pending_sync_synced_by_sync_record_id(
+            sync_record_id
+        )
 
     def get_sync_stats(self) -> dict[str, Any]:
         """获取同步统计信息"""
@@ -364,7 +691,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     f"{item.title} → subject/{subject_id}"
                 )
                 logger.warning(queued_message)
-                database_manager.log_sync_record(
+                queued_record_id = database_manager.log_sync_record(
                     user_name=item.user_name,
                     title=item.title,
                     ori_title=item.ori_title or "",
@@ -383,6 +710,20 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     else "",
                     match_trace=trace.to_dict() if trace else None,
                 )
+                # 回填 sync_record_id 到刚入队的 pending_sync_queue 行
+                if queued_record_id:
+                    try:
+                        database_manager.link_pending_sync_to_record(
+                            user_name=item.user_name,
+                            subject_id=str(subject_id),
+                            episode_id=None,
+                            source=actual_source,
+                            sync_record_id=queued_record_id,
+                        )
+                    except Exception as link_err:
+                        logger.warning(
+                            f"📚 回填 sync_record_id 失败（不影响入队）: {link_err}"
+                        )
                 try:
                     send_notify(
                         "sync_queued",
@@ -603,7 +944,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             actual_source,
             error_message="未找到匹配的番剧",
         )
-        database_manager.log_sync_record(
+        sync_record_id = database_manager.log_sync_record(
             user_name=item.user_name,
             title=item.title,
             ori_title=item.ori_title or "",
@@ -621,7 +962,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             match_trace=trace.to_dict(),
         )
         # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认
-        self._sediment_pending_candidate(item, actual_source, trace)
+        # 关联 sync_record_id，便于候选确认后回写原记录状态形成闭环
+        self._sediment_pending_candidate(
+            item, actual_source, trace, sync_record_id=sync_record_id
+        )
         return (
             None,
             False,
@@ -1174,7 +1518,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     f"subject/{bgm_se_id}" + (f" · ep/{bgm_ep_id}" if bgm_ep_id else "")
                 )
                 # 记录为 queued（沿用 success 表，便于 dashboard 统计）
-                database_manager.log_sync_record(
+                queued_record_id = database_manager.log_sync_record(
                     user_name=item.user_name,
                     title=item.title,
                     ori_title=item.ori_title or "",
@@ -1194,6 +1538,21 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     else "",
                     match_trace=trace.to_dict() if trace else None,
                 )
+                # 回填 sync_record_id 到刚入队的 pending_sync_queue 行，
+                # 供补发成功/放弃时精准回写 sync_records 状态
+                if queued_record_id:
+                    try:
+                        database_manager.link_pending_sync_to_record(
+                            user_name=item.user_name,
+                            subject_id=bgm_se_id,
+                            episode_id=bgm_ep_id or None,
+                            source=actual_source,
+                            sync_record_id=queued_record_id,
+                        )
+                    except Exception as link_err:
+                        logger.warning(
+                            f"📚 回填 sync_record_id 失败（不影响入队）: {link_err}"
+                        )
                 # 通知用户：同步已排队（非错误，是降级成功）
                 try:
                     send_notify(
@@ -1591,11 +1950,38 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     if step:
                         step.status = "miss"
                         step.reason = "bangumi-data 无匹配结果"
+                        # 阶段3.1：未命中时回传候选列表到 trace，供候选队列展示
+                        try:
+                            raw_candidates = bgm_data.find_bangumi_candidates(
+                                title=item.title,
+                                ori_title=item.ori_title,
+                                release_date=release_date,
+                                limit=5,
+                            )
+                            if raw_candidates:
+                                step.candidates = [
+                                    MatchCandidate(
+                                        subject_id=str(c.get("id", "")),
+                                        name=c.get("name", ""),
+                                        name_cn=c.get("name_cn", ""),
+                                        score=float(c.get("score", 0.0)),
+                                    )
+                                    for c in raw_candidates
+                                ]
+                                step.reason = (
+                                    f"bangumi-data 无精确命中，"
+                                    f"回传 {len(raw_candidates)} 条候选"
+                                )
+                        except Exception as cand_err:
+                            logger.debug(
+                                f"bangumi_data 候选回传失败（不影响主流程）: {cand_err}"
+                            )
             except Exception as e:
                 logger.error(f"bangumi-data 匹配出错: {e}")
                 if step:
                     step.status = "error"
                     step.reason = f"bangumi-data 匹配异常：{e}"
+                    step.error_detail = _build_error_detail(e)
         else:
             if trace:
                 step = trace.start_step("bangumi_data")
@@ -1637,6 +2023,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 if step:
                     step.status = "error"
                     step.reason = "无法创建 Bangumi API 实例"
+                    step.error_detail = {
+                        "type": "RuntimeError",
+                        "message": "无法为用户创建 Bangumi API 实例",
+                        "traceback": "",
+                    }
                 if trace:
                     trace.finish()
                 return None, False, "无法创建 Bangumi API 实例，无法搜索条目"
@@ -1648,6 +2039,19 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             # 搜索时优先使用归一化标题（去除发布组/分辨率/编码等噪声），
             # 若归一化结果为空则回退到原始标题
             search_title = normalized_title or item.title
+
+            # P1: 记录实际发送给 API 的搜索参数
+            if step:
+                step.request_params = {
+                    "title": search_title,
+                    "ori_title": item.ori_title or "",
+                    "premiere_date": premiere_date or "",
+                    "is_movie": item.media_type == "movie",
+                    "subject_types": subject_types,
+                    "media_type": item.media_type,
+                    "season": item.season,
+                }
+
             bgm_data = bgm.bgm_search(
                 title=search_title,
                 ori_title=item.ori_title or "",
@@ -1655,6 +2059,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 is_movie=(item.media_type == "movie"),
                 subject_types=subject_types,
             )
+
+            # P1: 记录 API 返回质量摘要
+            if step:
+                first = bgm_data[0] if bgm_data else {}
+                step.api_response_summary = {
+                    "total_candidates": len(bgm_data) if bgm_data else 0,
+                    "is_archive_hit": bool(bgm and bgm.last_hit_source == "archive"),
+                    "first_subject_id": first.get("id"),
+                    "first_name": first.get("name") or "",
+                    "first_name_cn": first.get("name_cn") or "",
+                }
+
             if not bgm_data:
                 logger.error(
                     "bgm: 未查询到番剧信息，跳过；"
@@ -1704,9 +2120,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             subject_id=str(cand.get("id", "")),
                             name=cand.get("name", ""),
                             name_cn=cand.get("name_cn", ""),
+                            score=bgm.title_diff_ratio(
+                                search_title, item.ori_title, cand
+                            ),
                             platform=cand.get("platform", ""),
                             air_date=cand.get("date", ""),
                             source=match_stage,
+                            media_type=_detect_candidate_media_type(cand),
+                            infobox_aliases=_extract_infobox_aliases(cand),
                         )
                     )
 
@@ -1765,9 +2186,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         subject_id=str(cand.get("id", "")),
                                         name=cand.get("name", ""),
                                         name_cn=cand.get("name_cn", ""),
+                                        score=bgm.title_diff_ratio(
+                                            search_title, item.ori_title, cand
+                                        ),
                                         platform=cand.get("platform", ""),
                                         air_date=cand.get("date", ""),
                                         source="post_search",
+                                        media_type=_detect_candidate_media_type(cand),
+                                        infobox_aliases=_extract_infobox_aliases(cand),
                                     )
                                 )
                             break
@@ -1995,9 +2421,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         subject_id=str(c.get("id", "")),
                                         name=c.get("name", ""),
                                         name_cn=c.get("name_cn", ""),
+                                        score=bgm.title_diff_ratio(
+                                            search_title, item.ori_title, c
+                                        ),
                                         platform=c.get("platform", ""),
                                         air_date=c.get("date", ""),
                                         source="post_search",
+                                        media_type=_detect_candidate_media_type(c),
+                                        infobox_aliases=_extract_infobox_aliases(c),
                                     )
                                 )
                             for r in related_list:
@@ -2008,7 +2439,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         subject_id=str(r.get("id", "")),
                                         name=r.get("name", ""),
                                         name_cn=r.get("name_cn", ""),
+                                        score=bgm.title_diff_ratio(
+                                            search_title, item.ori_title, r
+                                        ),
                                         source="post_search_related",
+                                        media_type=_detect_candidate_media_type(r),
+                                        infobox_aliases=_extract_infobox_aliases(r),
                                     )
                                 )
 
@@ -2033,6 +2469,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             if step:
                 step.status = "error"
                 step.reason = detail
+                step.error_detail = _build_error_detail(e)
             if trace:
                 trace.finish()
             return None, False, detail
@@ -2101,7 +2538,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     # ------------------------------------------------------------------
 
     def replay_pending_item(self, record: dict) -> dict[str, Any]:
-        """补发单条待同步任务，返回 {success, message, should_mark_synced}
+        """补发单条待同步任务，返回 {success, message, should_mark_synced, sync_record_id}
 
         从 pending_sync_queue 表读取一条记录，反序列化 payload：
         - 剧场版（media_type 为 movie/real_action）：走 ensure_subject_watching 链路
@@ -2109,12 +2546,23 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         成功时 should_mark_synced=True；仍然不可达时 should_mark_synced=False
         （不入队，因为已在队列里，只累加 attempts）；
         业务错误时 should_mark_synced=True（标记 abandoned）。
+
+        返回值中 sync_record_id 为关联的 sync_records 行 id（可能为 None，旧数据无此字段），
+        供调用方在补发成功/放弃时回写 sync_records.status 形成状态闭环。
         """
         record_id = int(record.get("id", 0))
         user_name = record.get("user_name", "")
         subject_id = str(record.get("subject_id", ""))
         episode_id = record.get("episode_id") or ""
         payload_json = record.get("payload_json") or "{}"
+        # pending_sync_queue.sync_record_id（旧数据为 NULL）
+        sync_record_id_raw = record.get("sync_record_id")
+        sync_record_id: int | None = None
+        if sync_record_id_raw is not None:
+            try:
+                sync_record_id = int(sync_record_id_raw)
+            except (TypeError, ValueError):
+                sync_record_id = None
 
         try:
             payload = json.loads(payload_json)
@@ -2132,6 +2580,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "success": False,
                 "message": f"payload 反序列化失败: {e}",
                 "should_mark_synced": True,  # 数据损坏，标记为已处理避免无限重试
+                "sync_record_id": sync_record_id,
             }
 
         bgm = self._get_bangumi_api_for_user(user_name)
@@ -2140,6 +2589,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "success": False,
                 "message": f"用户 {user_name} 的 bangumi 配置不可用",
                 "should_mark_synced": False,  # 配置问题，不标记，等用户修复
+                "sync_record_id": sync_record_id,
             }
 
         # 补发场景下，调度器已通过 _probe_api 确认 API 可达；
@@ -2157,6 +2607,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "success": False,
                 "message": f"subject_id/episode_id 解析失败: {e}",
                 "should_mark_synced": True,
+                "sync_record_id": sync_record_id,
             }
 
         # 剧场版场景：仅标记条目为在看，不点单集
@@ -2178,6 +2629,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "success": False,
                 "message": "API 仍不可达，已重新入队（不累加 attempts）",
                 "should_mark_synced": False,
+                "sync_record_id": sync_record_id,
             }
         except Exception as e:
             if is_movie:
@@ -2193,6 +2645,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "success": False,
                 "message": f"标记失败: {e}",
                 "should_mark_synced": False,  # 业务异常暂不放弃，由 attempts 累加控制
+                "sync_record_id": sync_record_id,
             }
 
         if mark_status == MARK_QUEUED:
@@ -2201,6 +2654,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "success": False,
                 "message": "API 仍不可达，已重新入队",
                 "should_mark_synced": False,
+                "sync_record_id": sync_record_id,
             }
 
         # 补发成功，发通知（可选）
@@ -2221,6 +2675,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             "message": f"补发成功 mark_status={mark_status}",
             "should_mark_synced": True,
             "mark_status": mark_status,
+            "sync_record_id": sync_record_id,
         }
 
     def replay_pending_batch(
@@ -2231,7 +2686,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         user_name 非 None 时仅补发该用户的任务（多用户隔离）。
         """
         max_attempts = int(
-            config_manager.get("bangumi-archive", "max_attempts", fallback=50)
+            config_manager.get("bangumi-replay", "max_attempts", fallback=50)
         )
         records = database_manager.fetch_pending_sync(
             limit=limit, max_attempts=max_attempts, user_name=user_name
@@ -2245,7 +2700,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         still_unreachable = 0
         threshold = int(
             config_manager.get(
-                "bangumi-archive", "replay_unreachable_threshold", fallback=3
+                "bangumi-replay", "replay_unreachable_threshold", fallback=3
             )
         )
         consecutive_unreachable = 0
@@ -2253,11 +2708,26 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         for record in records:
             record_id = int(record.get("id", 0))
             result = self.replay_pending_item(record)
+            sync_record_id = result.get("sync_record_id")
             if result["success"]:
                 success += 1
                 consecutive_unreachable = 0
                 if result.get("should_mark_synced"):
                     database_manager.mark_pending_sync_synced(record_id)
+                    # 回写 sync_records：queued → retried（补发成功统一为 retried，
+                    # 与手动重试/候选确认补发路径一致，避免统计分裂）
+                    if sync_record_id:
+                        try:
+                            database_manager.update_sync_record_status(
+                                sync_record_id,
+                                "retried",
+                                f"📚 补发成功（{result.get('message', '')}）",
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"📚 回写 sync_records 状态失败 "
+                                f"sync_record_id={sync_record_id}: {e}"
+                            )
             else:
                 # 检查消息判断是否仍然不可达
                 msg = (result.get("message") or "").lower()
@@ -2281,6 +2751,21 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             record_id,
                             reason=f"exceeded max attempts ({max_attempts})",
                         )
+                        # 回写 sync_records：queued → error（补发放弃）
+                        if sync_record_id:
+                            try:
+                                database_manager.update_sync_record_status(
+                                    sync_record_id,
+                                    "error",
+                                    f"📚 补发放弃：超过最大重试次数 "
+                                    f"({max_attempts})，最后错误："
+                                    f"{result.get('message', '')}",
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    f"📚 回写 sync_records 状态失败 "
+                                    f"sync_record_id={sync_record_id}: {e}"
+                                )
 
         return {
             "total": total,

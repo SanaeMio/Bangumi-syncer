@@ -230,3 +230,79 @@ class TestResolveSimilarPendingCandidates:
             assert dbm.get_pending_candidates(status="pending")["total"] == 0
         finally:
             dbm._connection._conn.close()
+
+
+class TestPendingCandidatesSyncRecordId:
+    """sync_record_id 字段写入与回读测试
+
+    验证候选沉淀时关联的 sync_records 行 id 被正确持久化，
+    用于后续「候选确认即补发」回写原记录状态。
+    """
+
+    def test_insert_writes_sync_record_id(self, tmp_path):
+        """首次沉淀时 sync_record_id 被写入"""
+        dbm = _make_db(tmp_path)
+        try:
+            row_id = dbm.log_pending_candidate(
+                request_title="测试番剧",
+                request_season=1,
+                user_name="user1",
+                source="plex",
+                candidates=_make_candidates(),
+                trace={"steps": []},
+                sync_record_id=42,
+            )
+            assert row_id is not None
+
+            record = dbm.get_pending_candidate_by_id(row_id)
+            assert record["sync_record_id"] == 42
+
+            # 列表接口也返回该字段
+            result = dbm.get_pending_candidates(status="pending")
+            assert result["records"][0]["sync_record_id"] == 42
+        finally:
+            dbm._connection._conn.close()
+
+    def test_insert_without_sync_record_id_defaults_null(self, tmp_path):
+        """不传 sync_record_id 时默认 NULL"""
+        dbm = _make_db(tmp_path)
+        try:
+            row_id = dbm.log_pending_candidate(
+                request_title="测试番剧",
+                request_season=1,
+                user_name="user1",
+                source="plex",
+                candidates=_make_candidates(),
+            )
+            record = dbm.get_pending_candidate_by_id(row_id)
+            assert record["sync_record_id"] is None
+        finally:
+            dbm._connection._conn.close()
+
+    def test_upsert_refreshes_sync_record_id(self, tmp_path):
+        """同 key 重复沉淀时 sync_record_id 刷新为最新值"""
+        dbm = _make_db(tmp_path)
+        try:
+            id1 = dbm.log_pending_candidate(
+                request_title="测试番剧",
+                request_season=1,
+                user_name="user1",
+                source="plex",
+                candidates=_make_candidates(),
+                sync_record_id=100,
+            )
+            # 同 key 再次沉淀，刷新 sync_record_id
+            id2 = dbm.log_pending_candidate(
+                request_title="测试番剧",
+                request_season=1,
+                user_name="user1",
+                source="plex",
+                candidates=_make_candidates(),
+                sync_record_id=200,
+            )
+            assert id1 == id2
+
+            record = dbm.get_pending_candidate_by_id(id1)
+            assert record["sync_record_id"] == 200
+        finally:
+            dbm._connection._conn.close()
