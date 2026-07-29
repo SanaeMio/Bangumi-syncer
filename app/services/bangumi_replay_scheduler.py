@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from ..core.config import config_manager
@@ -102,7 +103,10 @@ class BangumiReplayScheduler(BaseScheduler):
         if not self.scheduler or not self.scheduler.running:
             return
         # 防抖：500ms 内的多次入队只触发一次立即执行
-        now = asyncio.get_event_loop().time()
+        # 用 time.monotonic() 而非 asyncio.get_event_loop().time()，
+        # 因为本方法可能被 sync_service 同步流程从 ThreadPoolExecutor 工作线程
+        # 调用（无 running loop），后者会抛 RuntimeError 或静默失效。
+        now = time.monotonic()
         last = getattr(self, "_last_trigger_ts", 0.0)
         if now - last < 0.5:
             return

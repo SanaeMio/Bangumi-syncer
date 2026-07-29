@@ -211,11 +211,11 @@ class TestReplaySingleEndpoint:
         assert resp.status_code == 200
         # 成功时应调用 mark_synced
         mock_database.mark_pending_sync_synced.assert_called_once_with(1)
-        # 应回写 sync_records：queued → success
+        # 应回写 sync_records：queued → retried（补发成功统一为 retried）
         mock_database.update_sync_record_status.assert_called_once()
         call_args = mock_database.update_sync_record_status.call_args
         assert call_args.args[0] == 42  # sync_record_id
-        assert call_args.args[1] == "success"
+        assert call_args.args[1] == "retried"
 
     @pytest.mark.asyncio
     async def test_returns_404_when_not_found(
