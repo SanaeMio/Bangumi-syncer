@@ -71,12 +71,10 @@ DB_PATH_A = PROJECT_ROOT / "data" / "archive" / "bangumi_archive_a.db"
 
 # 抽样配置：按 subject.type 分层抽样
 # type: 1=书籍 2=动画 3=音乐 4=游戏 6=三次元
+# 注：Archive 导入时仅保留 type∈(2,6)，其他类型不会入库，故抽样仅覆盖这两类
 SAMPLE_DIST = {
     2: 3000,  # 动画：同步流程主要类型
     6: 2000,  # 三次元：影视剧
-    1: 2000,  # 书籍
-    4: 2000,  # 游戏
-    3: 1000,  # 音乐
 }
 
 # 默认抽样上限（--limit 参数可覆盖）

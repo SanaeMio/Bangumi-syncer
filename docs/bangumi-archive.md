@@ -130,11 +130,14 @@ ArchiveShortcut.try_*  →  ArchiveStore（SQLite）  →  BangumiApi（HTTP）
 
 | 项目                                                                          | 大小                  |
 | ----------------------------------------------------------------------------- | --------------------- |
-| `bangumi_archive_a.db` + `bangumi_archive_b.db`（双库互备，含 FTS5 标题索引） | 约 2.8GB（各 ~1.4GB） |
+| `bangumi_archive_a.db` + `bangumi_archive_b.db`（双库互备，含 FTS5 标题索引） | 约 1.6GB（各 ~0.8GB） |
 | 临时下载的 dump zip                                                           | 约 0.4GB              |
-| **合计峰值占用**                                                              | **约 3.6GB**          |
+| **合计峰值占用**                                                              | **约 2.4GB**          |
 
-导入成功切换 active 指针后，旧库（db / db-wal / db-shm）会自动清理，常态占用约 **2.3GB**。
+导入成功切换 active 指针后，旧库（db / db-wal / db-shm）会自动清理，常态占用约 **1.3GB**。
+
+> 导入时仅保留 `type∈(2,6)`（动画 + 三次元）的 subject，并移除 `subject_character` /
+> `subject_person` / `person_relation` 三张运行时未使用的死表，单库体积从 ~1.4GB 降至 ~0.8GB。
 
 `min_disk_space_mb = 4000` 是**导入前**的硬性阈值，低于此值会跳过导入并记录错误日志。
 
@@ -163,7 +166,7 @@ data/archive/
 
 ## 性能基线
 
-基于 658248 个 subject / 842829 条标题的实测数据：
+基于导入过滤后的 subject（仅 type∈(2,6)）实测数据：
 
 | 操作                                                  | 耗时                     |
 | ----------------------------------------------------- | ------------------------ |
