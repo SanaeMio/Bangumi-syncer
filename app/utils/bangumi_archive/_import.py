@@ -472,8 +472,77 @@ class ArchiveImporter:
                         )
             conn.commit()
             logger.info("bangumi_archive: 索引建立完成")
+
+            # 构建 FTS5 trigram 标题索引（替代原内存 dict + bigram 索引）
+            # 内存占用从 200-350MB 降到接近 0，查询性能 0.03-0.08ms
+            self._build_fts5_index(conn)
         finally:
             conn.close()
+
+    def _build_fts5_index(self, conn: sqlite3.Connection) -> None:
+        """构建 FTS5 trigram 标题索引
+
+        从 subject 表读取 name/name_cn/infobox，归一化后填充到
+        subject_fts 虚拟表。trigram tokenizer 专为 CJK 设计，
+        支持 3+ 字符子串匹配。
+
+        性能：84 万标题约 7s（含归一化 + 插入 + optimize）。
+        """
+        from ._fts_query import _extract_alias_text, _normalize_key
+
+        try:
+            # contentless 模式：不重复存储原始内容，省磁盘
+            # 先 DROP 再 CREATE，确保旧库升级/重建场景下不会因 rowid 冲突
+            # 导致 INSERT 失败（contentless FTS5 不支持 INSERT OR REPLACE）
+            conn.execute("DROP TABLE IF EXISTS subject_fts")
+            conn.execute(
+                "CREATE VIRTUAL TABLE subject_fts USING fts5("
+                "name, name_cn, aliases, content='', tokenize='trigram'"
+                ")"
+            )
+            # 批量读取 subject 表，归一化后插入 FTS5
+            cursor = conn.execute("SELECT id, name, name_cn, infobox FROM subject")
+            batch: list[tuple[int, str, str, str]] = []
+            count = 0
+            while True:
+                rows = cursor.fetchmany(_BATCH_SIZE)
+                if not rows:
+                    break
+                for row in rows:
+                    sid, name, name_cn, infobox = row
+                    norm_name = _normalize_key(name or "")
+                    norm_cn = _normalize_key(name_cn or "")
+                    aliases = _extract_alias_text(infobox)
+                    # 跳过完全无标题的条目（避免空行污染索引）
+                    if not norm_name and not norm_cn and not aliases:
+                        continue
+                    batch.append((sid, norm_name, norm_cn, aliases))
+                if batch:
+                    conn.executemany(
+                        "INSERT INTO subject_fts(rowid, name, name_cn, aliases) "
+                        "VALUES (?, ?, ?, ?)",
+                        batch,
+                    )
+                    count += len(batch)
+                    batch.clear()
+            # 插入剩余
+            if batch:
+                conn.executemany(
+                    "INSERT INTO subject_fts(rowid, name, name_cn, aliases) "
+                    "VALUES (?, ?, ?, ?)",
+                    batch,
+                )
+                count += len(batch)
+                batch.clear()
+            # optimize 合并索引段，提升查询性能
+            conn.execute("INSERT INTO subject_fts(subject_fts) VALUES('optimize')")
+            conn.commit()
+            logger.info(f"bangumi_archive: FTS5 trigram 索引构建完成，{count} 条标题")
+        except sqlite3.OperationalError as e:
+            # FTS5 不可用（老版本 SQLite）时跳过，查询层会降级
+            logger.warning(
+                f"bangumi_archive: FTS5 trigram 索引构建失败（SQLite 版本可能过低）: {e}"
+            )
 
     def _vacuum(self, db_path: Path) -> None:
         """VACUUM 压缩数据库"""

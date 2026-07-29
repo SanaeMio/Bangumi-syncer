@@ -132,7 +132,7 @@ Bangumi 是以 ACG（动画、漫画、游戏）为主的站点，非 ACG 内容
 1. **查看状态**：通过 `GET /api/bangumi_archive/status` 检查 `enabled` / `last_error` / `import_in_progress` / `current_progress` 字段
 2. **查看进度日志**：`GET /api/bangumi_archive/progress_log?task_id=xxx` 看完整阶段变化
 3. **常见原因**：
-   - **磁盘空间不足**：可用空间低于 `min_disk_space_mb`（默认 2000MB）会跳过导入
+   - **磁盘空间不足**：可用空间低于 `min_disk_space_mb`（默认 4000MB）会跳过导入
    - **网络代理配置错误**：`http_proxy` 留空但 `[dev] script_proxy` 也未配置
    - **GitHub 下载失败**：直连与镜像源 fallback 链均不通，建议配置代理或手动下载 zip 后通过 `/api/bangumi_archive/import_local` 上传
 
