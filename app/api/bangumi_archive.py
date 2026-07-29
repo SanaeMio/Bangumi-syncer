@@ -164,10 +164,12 @@ async def import_local_zip(
             task_id=bangumi_archive.current_task_id,
         )
 
-    # 校验文件名
-    filename = file.filename or "upload.zip"
+    # 校验文件名（剥离路径前缀，防止 CWE-22 路径穿越）
+    filename = Path(file.filename or "upload.zip").name
     if not filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="仅支持 .zip 文件")
+    if not filename:
+        raise HTTPException(status_code=400, detail="文件名无效")
 
     # 保存到临时文件
     tmp_dir = Path(tempfile.mkdtemp(prefix="bangumi_archive_upload_"))
