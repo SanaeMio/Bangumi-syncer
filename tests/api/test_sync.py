@@ -67,6 +67,11 @@ def mock_sync_service():
         mock_service.mark_pending_sync_synced_by_sync_record_id = (
             real_sync_service.mark_pending_sync_synced_by_sync_record_id
         )
+        # _build_retry_item_from_record 仅读 record dict，透传以返回真实 CustomItem
+        # （否则 MagicMock 无法被 f-string :02d 格式化，导致重试接口 500）
+        mock_service._build_retry_item_from_record = (
+            real_sync_service._build_retry_item_from_record
+        )
         mock_service.get_sync_stats = real_sync_service.get_sync_stats
         mock_service.get_heatmap_stats = real_sync_service.get_heatmap_stats
 
@@ -1117,10 +1122,10 @@ async def test_retry_sync_record_ignored_status_allowed(
 
 
 @pytest.mark.asyncio
-async def test_retry_sync_record_retried_status_allowed(
+async def test_retry_sync_record_retried_status_blocked(
     app_with_auth, mock_sync_service, mock_database_manager
 ):
-    """retried 状态的记录可以再次重试"""
+    """retried 状态（补发成功）的记录不允许重试"""
     mock_database_manager.get_sync_record_by_id.return_value = {
         "id": 1,
         "status": "retried",
@@ -1141,7 +1146,10 @@ async def test_retry_sync_record_retried_status_allowed(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         response = await client.post("/api/records/1/retry")
-        assert response.status_code == 200
+        assert response.status_code == 400
+        assert "无需重试" in response.json()["detail"]
+    # 应直接拦截，不进入同步流程
+    mock_sync_service.sync_custom_item.assert_not_called()
 
 
 @pytest.mark.asyncio
