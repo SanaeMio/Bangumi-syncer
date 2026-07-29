@@ -1,0 +1,257 @@
+        <!-- 高级配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-advanced" class="card mb-4">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-sliders me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">高级配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="web-base-path" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Web 对外路径前缀（子路径反代）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="部署在反向代理子路径下时才需要填写，例如 /Bangumi，须与 Nginx location 一致；根路径访问请留空。修改后需要重启服务才生效。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="web-base-path"
+                                       name="web.base_path"
+                                       placeholder="除非你知道自己在做什么，否则留空，修改后需要重启服务才生效"
+                                       autocomplete="off">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bgm-api-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi API 反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://api.bgm.tv，留空则使用默认地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bgm-api-proxy"
+                                       name="dev.bgm_api_proxy"
+                                       placeholder="留空则使用默认地址">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bgm-next-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi Next 反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://next.bgm.tv，留空则使用默认地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bgm-next-proxy"
+                                       name="dev.bgm_next_proxy"
+                                       placeholder="留空则使用默认地址">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="bgm-image-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-image me-1 text-primary"></i>Bangumi 图片反向代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于反代 https://lain.bgm.tv，仪表板时间线封面使用；留空则使用 API 返回的原始图片地址"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="bgm-image-proxy"
+                                       name="dev.bgm_image_proxy"
+                                       placeholder="留空则使用默认图片 CDN 地址">
+                            </div>
+                            <div class="col-12">
+                                <label for="script-proxy" class="form-label fw-semibold">
+                                    <i class="bi bi-globe me-1 text-info"></i>HTTP代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="脚本的 HTTP 代理，例如 http://127.0.0.1:7890。若用 OpenClash 可能慢，原因未知，可尝试 CFW 或透明代理等"></i>
+                                </label>
+                                <div class="input-group">
+                                    <input type="text"
+                                           class="form-control"
+                                           id="script-proxy"
+                                           name="dev.script_proxy"
+                                           placeholder="如：http://127.0.0.1:7890">
+                                    <button class="btn btn-primary fw-bold"
+                                            type="button"
+                                            onclick="showProxyHelper()"
+                                            title="智能代理配置助手 - 自动检测环境并推荐最佳配置"
+                                            style="min-width: 120px">
+                                        <i class="bi bi-magic me-1"></i>智能配置
+                                    </button>
+                                </div>
+                                <div class="form-text mt-1">
+                                    <i class="bi bi-lightbulb text-warning me-1"></i>
+                                    <small class="text-muted">点击"智能配置"按钮获取适合您环境的代理配置建议</small>
+                                </div>
+                                <!-- 代理助手区域 -->
+                                <div id="proxy-helper" class="mt-3" style="display: none;">
+                                    <div class="card border-info">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">
+                                                <i class="bi bi-magic me-2 text-warning"></i>智能代理配置助手
+                                                <small class="text-muted ms-2">支持Docker和本机环境</small>
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <!-- 端口号配置 -->
+                                            <div class="row g-3 mb-3">
+                                                <div class="col-md-6">
+                                                    <label for="proxy-port" class="form-label fw-semibold">
+                                                        <i class="bi bi-hdd-network me-1"></i>代理端口号
+                                                    </label>
+                                                    <input type="number"
+                                                           class="form-control"
+                                                           id="proxy-port"
+                                                           value="7890"
+                                                           min="1"
+                                                           max="65535"
+                                                           onchange="updateProxySuggestions()"
+                                                           placeholder="如：7890">
+                                                </div>
+                                                <div class="col-md-6 d-flex align-items-end">
+                                                    <button type="button"
+                                                            class="btn btn-outline-primary"
+                                                            onclick="detectPortFromInput(event)">
+                                                        <i class="bi bi-search me-1"></i>从HTTP代理输入框识别
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div id="proxy-suggestions" class="mb-3">
+                                                <div class="text-center">
+                                                    <div class="spinner-border spinner-border-sm text-info" role="status">
+                                                        <span class="visually-hidden">检测中...</span>
+                                                    </div>
+                                                    <span class="ms-2">正在检测环境并生成建议...</span>
+                                                </div>
+                                            </div>
+                                            <!-- 主机连通性测试区域 -->
+                                            <div class="mt-3 border-top pt-3">
+                                                <h6 class="text-primary mb-3">
+                                                    <i class="bi bi-wifi me-2"></i>网络连通性测试
+                                                    <small class="text-muted ms-2">验证容器是否能访问宿主机</small>
+                                                </h6>
+                                                <div class="row g-3 mb-3">
+                                                    <div class="col-md-4">
+                                                        <label for="test-host" class="form-label">主机地址</label>
+                                                        <input type="text"
+                                                               class="form-control"
+                                                               id="test-host"
+                                                               placeholder="如：192.168.1.100"
+                                                               value="">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label for="test-port" class="form-label">端口</label>
+                                                        <input type="number"
+                                                               class="form-control"
+                                                               id="test-port"
+                                                               value="7890"
+                                                               min="1"
+                                                               max="65535">
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <label for="test-timeout" class="form-label">超时(秒)</label>
+                                                        <input type="number"
+                                                               class="form-control"
+                                                               id="test-timeout"
+                                                               value="5"
+                                                               min="1"
+                                                               max="30">
+                                                    </div>
+                                                    <div class="col-md-2 d-flex align-items-end">
+                                                        <button type="button"
+                                                                class="btn btn-primary btn-sm w-100"
+                                                                onclick="testHostConnectivity()"
+                                                                id="test-host-btn">
+                                                            <i class="bi bi-play-circle me-1"></i>测试
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div id="host-test-result" class="mb-3" style="display: none;">
+                                                    <!-- 测试结果将显示在这里 -->
+                                                </div>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small class="text-muted">
+                                                    <i class="bi bi-info-circle me-1"></i>
+                                                    点击建议的代理地址可自动填入，可自定义端口号重新生成建议
+                                                </small>
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        onclick="hideProxyHelper()">关闭</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-check me-1 text-success"></i>SSL证书验证
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="SSL证书验证。当使用代理时可能需要关闭。注意：关闭SSL验证会降低安全性，仅在代理环境下出现SSL错误时使用"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="ssl-verify"
+                                           name="dev.ssl_verify">
+                                    <label class="form-check-label" for="ssl-verify">启用SSL验证</label>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-bug me-1 text-warning"></i>调试模式
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否开启debug模式，一般不用开。开启后会输出详细的调试信息"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="debug-mode"
+                                           name="dev.debug">
+                                    <label class="form-check-label" for="debug-mode">启用调试模式</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label for="log-file" class="form-label fw-semibold">
+                                    <i class="bi bi-file-earmark-text me-1 text-secondary"></i>日志文件路径
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="日志文件路径，可填 ./log.txt 或绝对路径。超过10MB时会重置。留空则禁用文件日志。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="log-file"
+                                       name="dev.log_file"
+                                       placeholder="如：./log.txt，留空则禁用">
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label for="sync-records-retention-days" class="form-label fw-semibold">
+                                    <i class="bi bi-clock-history me-1 text-info"></i>同步记录保留天数
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="sync_records 表保留天数，超过此天数的记录会在启动时自动清理。0 表示永不清理（保留全部历史，数据库体积会持续增长）。建议生产环境 30-90，调试环境 7-14。"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="sync-records-retention-days"
+                                       name="dev.sync_records_retention_days"
+                                       min="0"
+                                       placeholder="0 表示永不清理">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Web认证配置 -->
+        <div class="row">
+            <div class="col-12">

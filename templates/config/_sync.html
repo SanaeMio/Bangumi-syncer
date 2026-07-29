@@ -1,0 +1,184 @@
+        <!-- 同步配置 -->
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-sync" class="card mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-arrow-repeat me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">同步配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="sync-mode" class="form-label fw-semibold">
+                                    <i class="bi bi-gear me-1 text-success"></i>同步模式
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
+                                </label>
+                                <select class="form-select"
+                                        id="sync-mode"
+                                        name="sync.mode"
+                                        onchange="toggleSyncMode()">
+                                    <option value="single">单用户模式</option>
+                                    <option value="multi">多用户模式</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-lock me-1 text-warning"></i>启用Webhook认证
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="开启后需要提供密钥才能访问webhook接口，关闭后可直接访问无需密钥"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center mb-0">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="webhook-auth-enabled"
+                                           name="auth.webhook_auth_enabled"
+                                           onchange="toggleWebhookKeySection()">
+                                    <label class="form-check-label" for="webhook-auth-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-12" id="webhook-key-section">
+                                <label for="webhook-key" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>Webhook认证密钥
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="用于Plex/Emby/Jellyfin webhook的认证密钥。刷新后需要更新媒体服务器的webhook配置"></i>
+                                </label>
+                                <div class="input-group">
+                                    <input type="text"
+                                           class="form-control"
+                                           id="webhook-key"
+                                           readonly
+                                           placeholder="加载中...">
+                                    <button class="btn btn-outline-primary"
+                                            type="button"
+                                            onclick="copyWebhookKey()">
+                                        <i class="bi bi-clipboard me-1"></i>复制
+                                    </button>
+                                    <button class="btn btn-outline-secondary"
+                                            type="button"
+                                            onclick="refreshWebhookKey()">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+                                    </button>
+                                </div>
+                                <div class="alert alert-info mt-2 mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <strong>Webhook 配置提示：</strong>
+                                    <div class="mt-2">
+                                        <div id="webhook-auth-enabled-tip">
+                                            <strong>Plex：</strong>http://{ip}:8000/Plex/{密钥}
+                                        </div>
+                                        <div id="webhook-auth-disabled-tip" style="display: none;">
+                                            <strong>Plex：</strong>http://{ip}:8000/Plex/
+                                        </div>
+                                        <div id="webhook-auth-enabled-tip-emby">
+                                            <strong>Emby：</strong>http://{ip}:8000/Emby/{密钥}
+                                        </div>
+                                        <div id="webhook-auth-disabled-tip-emby" style="display: none;">
+                                            <strong>Emby：</strong>http://{ip}:8000/Emby/
+                                        </div>
+                                        <div id="webhook-auth-enabled-tip-jellyfin">
+                                            <strong>Jellyfin：</strong>http://{ip}:8000/Jellyfin/{密钥}
+                                        </div>
+                                        <div id="webhook-auth-disabled-tip-jellyfin" style="display: none;">
+                                            <strong>Jellyfin：</strong>http://{ip}:8000/Jellyfin/
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label for="blocked-keywords" class="form-label fw-semibold">
+                                    <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="blocked-keywords"
+                                       name="sync.blocked_keywords"
+                                       placeholder="多个关键词用逗号分隔，如：物语系列,特典">
+                            </div>
+                            <div class="col-12">
+                                <div class="row g-3 align-items-center mt-1">
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="movie-playback-start-mark-watching"
+                                                   name="sync.movie_playback_start_mark_watching">
+                                            <label class="form-check-label" for="movie-playback-start-mark-watching">
+                                                剧场版播放开始时将条目标为在看
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="开启后开始播放剧场版会自动将 Bangumi 条目收藏标为在看。关闭则不会标记在看。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="movie-mark-subject-completed"
+                                                   name="sync.movie_mark_subject_completed">
+                                            <label class="form-check-label" for="movie-mark-subject-completed">
+                                                剧场版同步后自动将条目也标为看过
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="仅当同步类型为剧场版时生效：单集打格子后，将条目收藏状态标为「看过」。关闭则只更新单集进度（方便手动标记完成写评论）。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="anime-mark-subject-completed"
+                                                   name="sync.anime_mark_subject_completed">
+                                            <label class="form-check-label" for="anime-mark-subject-completed">
+                                                TV系列同步后自动将整部番标为看过
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="当同步类型为TV系列，并且你已经看完该番剧下的所有正片格子时：将条目收藏状态自动标记为「看过」。关闭则不自动处理。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="enable-real-action"
+                                                   name="sync.enable_real_action">
+                                            <label class="form-check-label" for="enable-real-action">
+                                                启用三次元（日剧/电影）支持
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="开启后 Bangumi API 搜索将同时匹配动画（type=2）与三次元（type=6，含日剧/真人电影）。默认关闭以保持原有动画-only 行为。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="test-skip-permission-check"
+                                                   name="sync.test_skip_permission_check">
+                                            <label class="form-check-label" for="test-skip-permission-check">
+                                                测试同步跳过用户名校验
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="开启后 /api/test-sync 与 /api/fongmi/debug/sync 等测试接口不再校验 media_server_username / 用户映射，方便未配置用户名时验证匹配与标记。仅对测试来源生效，生产 webhook 路径不受影响。"></i>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>

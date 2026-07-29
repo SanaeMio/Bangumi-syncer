@@ -69,6 +69,10 @@ indent = 4
 # 最大行长度
 max_line_length = 120
 
+# 子模板（HTML 片段，非完整文档）跳过 djlint 检查：
+# djlint 会误判片段的闭合标签，这些片段通过主模板 {% include %} 组装
+exclude = "templates/config/_.*\\.html"
+
 [tool.pytest.ini_options]
 # 基础配置
 minversion = "6.0"

@@ -1,0 +1,90 @@
+                <div id="config-section-bangumi-data" class="card mb-4 config-card">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-hdd-stack me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">Bangumi-data配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-search me-1 text-success"></i>使用Bangumi-data匹配
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否启用 bangumi-data 匹配。启用后会先尝试通过 bangumi-data 匹配番剧ID，匹配成功后可以减少API请求次数"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="bangumi-data-enabled"
+                                           name="bangumi_data.enabled">
+                                    <label class="form-check-label" for="bangumi-data-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-hdd me-1 text-primary"></i>使用本地缓存
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否使用本地缓存文件，默认启用。启用后会将下载的数据保存到本地，之后再次启动时优先使用缓存"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="bangumi-data-cache"
+                                           name="bangumi_data.use_cache">
+                                    <label class="form-check-label" for="bangumi-data-cache">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="cache-ttl" class="form-label fw-semibold">
+                                    <i class="bi bi-clock me-1 text-warning"></i>缓存有效期（天）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="缓存有效期（天），超过此时间后会自动更新缓存。设置为0表示每次启动都会更新缓存"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="cache-ttl"
+                                       name="bangumi_data.cache_ttl_days"
+                                       placeholder="7"
+                                       min="0"
+                                       max="365">
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-3">
+                            <div class="col-md-6">
+                                <label for="data-url" class="form-label fw-semibold">
+                                    <i class="bi bi-link me-1 text-info"></i>数据源URL
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="bangumi-data数据源的URL地址，默认使用官方CDN地址。如果官方地址无法访问，可以替换为其他镜像地址"></i>
+                                </label>
+                                <input type="url"
+                                       class="form-control"
+                                       id="data-url"
+                                       name="bangumi_data.data_url"
+                                       placeholder="https://unpkg.com/bangumi-data@0.3/dist/data.json">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="local-cache-path" class="form-label fw-semibold">
+                                    <i class="bi bi-folder me-1 text-secondary"></i>本地缓存路径
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="bangumi-data本地缓存文件的存储路径，默认为当前目录下的bangumi_data_cache.json文件"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="local-cache-path"
+                                       name="bangumi_data.local_cache_path"
+                                       placeholder="./bangumi_data_cache.json">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- LLM 配置 -->
+        <div class="row">
+            <div class="col-12">
