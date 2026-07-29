@@ -41,7 +41,7 @@ class RetryMixin:
                 供补发时重新走完整同步流程。未传则只存 subject_id+ep_id。
             sync_record_id: 关联的 sync_records 行 id，补发成功/放弃时回写状态用。
 
-        当 API 不可达且 [bangumi-archive] enabled=true 时，
+        当 API 不可达且 [bangumi-replay] enabled=true 时，
         捕获 _PendingSyncQueued 后入队，返回 MARK_QUEUED(-1)。
         上层据此跳过失败分支，把同步记录标记为 queued 而非 error。
         """
