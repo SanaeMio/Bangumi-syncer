@@ -4,31 +4,80 @@
 {% block head %}{% endblock %}
 {% block page_actions %}{% endblock %}
 {% block content %}
-    <nav class="card mb-3 config-page-toc d-none d-lg-block"
-         aria-label="配置页目录">
-        <div class="card-body py-2 px-3">
-            <div id="config-page-toc-links"
-                 class="d-flex flex-wrap align-items-center gap-2 small"></div>
-        </div>
-    </nav>
-    <form id="config-form" class="config-form">
-        {% include "config/_sync.html" %}
-        {% include "config/_bangumi_account.html" %}
-        {% include "config/_multi_user.html" %}
-        {% include "config/_advanced.html" %}
-        {% include "config/_auth.html" %}
-        {% include "config/_bangumi_data.html" %}
-        {% include "config/_llm.html" %}
-        {% include "config/_summary.html" %}
-        {% include "config/_notify.html" %}
-        {% include "config/_feiniu.html" %}
-        {% include "config/_fongmi.html" %}
-        {% include "config/_bangumi_archive.html" %}
-    </form>
-    <!-- 操作按钮 -->
-    <div id="config-section-actions" class="row">
-        <div class="col-12">
-            <div class="card mb-4">
+    <div class="row g-3">
+        <!-- 左侧：竖向 TOC + 配置操作（lg+ 显示，sticky 侧栏） -->
+        <aside class="col-lg-3 d-none d-lg-block">
+            <div class="config-sidebar">
+                <nav class="card mb-3 config-page-toc" aria-label="配置页目录">
+                    <div class="card-header py-2 px-3">
+                        <span class="config-page-toc__kicker text-muted fw-semibold text-uppercase">本页跳转</span>
+                    </div>
+                    <div class="card-body py-2 px-2">
+                        <div id="config-page-toc-links" class="d-flex flex-column gap-1 small"></div>
+                    </div>
+                </nav>
+                <div id="config-section-actions" class="card mb-3">
+                    <div class="card-header py-2 px-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-gear me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title small">配置操作</h6>
+                        </div>
+                    </div>
+                    <div class="card-body p-2">
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-primary" onclick="saveConfig()">
+                                <i class="bi bi-save me-2"></i>保存配置
+                            </button>
+                            <button type="button"
+                                    class="btn btn-outline-secondary"
+                                    onclick="loadConfig(true)">
+                                <i class="bi bi-arrow-clockwise me-2"></i>重新加载
+                            </button>
+                            <button type="button"
+                                    class="btn btn-outline-primary"
+                                    onclick="backupConfig()">
+                                <i class="bi bi-download me-2"></i>备份配置
+                            </button>
+                            <button type="button"
+                                    class="btn btn-outline-primary"
+                                    onclick="showRestoreModal()">
+                                <i class="bi bi-upload me-2"></i>恢复配置
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card mb-3 border-info border-opacity-25">
+                    <div class="card-body p-2">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-bug me-2 text-info"></i>
+                            <span class="fw-semibold small text-info">调试工具</span>
+                        </div>
+                        <p class="text-muted small mb-2">测试同步与网络诊断功能已移至专门页面。</p>
+                        <a href="{{ '/debug' | p }}" class="btn btn-outline-info btn-sm w-100">
+                            <i class="bi bi-arrow-right-circle me-1"></i>前往调试工具
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </aside>
+        <!-- 右侧：配置表单 -->
+        <div class="col-lg-9">
+            <form id="config-form" class="config-form">
+                {% include "config/_sync.html" %}
+                {% include "config/_bangumi_account.html" %}
+                {% include "config/_multi_user.html" %}
+                {% include "config/_advanced.html" %}
+                {% include "config/_auth.html" %}
+                {% include "config/_bangumi_data.html" %}
+                {% include "config/_llm.html" %}
+                {% include "config/_summary.html" %}
+                {% include "config/_notify.html" %}
+                {% include "config/_feiniu.html" %}
+                {% include "config/_fongmi.html" %}
+                {% include "config/_bangumi_archive.html" %}
+            </form>
+            <!-- 小屏（lg 以下）操作按钮 fallback -->
+            <div class="card mb-4 d-lg-none">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center">
                         <i class="bi bi-gear me-2 card-header-icon"></i>
@@ -60,25 +109,25 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-    <!-- 调试工具导航 -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card mb-4 border-info border-opacity-25">
-                <div class="card-body text-center py-4">
-                    <div class="mb-3">
-                        <i class="bi bi-bug display-4 text-info"></i>
+            <!-- 调试工具导航 -->
+            <div class="row">
+                <div class="col-12">
+                    <div class="card mb-4 border-info border-opacity-25">
+                        <div class="card-body text-center py-4">
+                            <div class="mb-3">
+                                <i class="bi bi-bug display-4 text-info"></i>
+                            </div>
+                            <h5 class="card-title text-info mb-3">需要测试同步功能？</h5>
+                            <p class="card-text text-muted mb-4">
+                                测试同步和网络诊断功能已移至专门的调试工具页面，
+                                <br>
+                                提供更丰富的调试功能和更好的用户体验。
+                            </p>
+                            <a href="{{ '/debug' | p }}" class="btn btn-primary px-4">
+                                <i class="bi bi-arrow-right-circle me-2"></i>前往调试工具
+                            </a>
+                        </div>
                     </div>
-                    <h5 class="card-title text-info mb-3">需要测试同步功能？</h5>
-                    <p class="card-text text-muted mb-4">
-                        测试同步和网络诊断功能已移至专门的调试工具页面，
-                        <br>
-                        提供更丰富的调试功能和更好的用户体验。
-                    </p>
-                    <a href="{{ '/debug' | p }}" class="btn btn-primary px-4">
-                        <i class="bi bi-arrow-right-circle me-2"></i>前往调试工具
-                    </a>
                 </div>
             </div>
         </div>
@@ -405,10 +454,6 @@ function refreshConfigPageToc() {
     const modeSelect = document.getElementById('sync-mode');
     const mode = modeSelect ? modeSelect.value : 'single';
     wrap.replaceChildren();
-    const kicker = document.createElement('span');
-    kicker.className = 'config-page-toc__kicker text-muted fw-semibold text-uppercase me-1';
-    kicker.textContent = '本页跳转';
-    wrap.appendChild(kicker);
     const items = [
         { id: 'config-section-sync', label: '同步', mode: 'always' },
         { id: 'config-section-bgm', label: 'Bangumi', mode: 'single' },
@@ -423,7 +468,6 @@ function refreshConfigPageToc() {
         { id: 'config-section-fongmi', label: 'fongmi', mode: 'always' },
         { id: 'config-section-bangumi-archive', label: 'bangumi archive', mode: 'always' },
         { id: 'config-section-bangumi-replay', label: 'bangumi replay', mode: 'always' },
-        { id: 'config-section-actions', label: '保存区', mode: 'always', primary: true },
     ];
     items.forEach(function (item) {
         const show =
@@ -438,9 +482,7 @@ function refreshConfigPageToc() {
             return;
         }
         const a = document.createElement('a');
-        a.className =
-            'btn btn-sm rounded-pill ' +
-            (item.primary ? 'btn-outline-primary' : 'btn-outline-secondary');
+        a.className = 'config-page-toc__link';
         a.href = '#' + item.id;
         a.textContent = item.label;
         a.addEventListener('click', function (event) {

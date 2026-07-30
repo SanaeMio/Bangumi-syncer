@@ -3010,16 +3010,41 @@ textarea.form-control:focus {
     }
 }
 
-/* 配置页：目录与锚点定位 */
-.config-page-toc {
+/* 配置页：左侧 sticky 侧栏 + 竖向目录 */
+.config-sidebar {
     position: sticky;
-    top: 0.75rem;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+}
+
+.config-page-toc {
+    position: static;
     z-index: 5;
 }
 
 .config-page-toc__kicker {
     font-size: 0.7rem;
     letter-spacing: 0.06em;
+}
+
+/* 竖向 TOC 链接：满宽、左对齐、悬停高亮 */
+.config-page-toc__link {
+    display: block;
+    padding: 0.35rem 0.6rem;
+    border-radius: 0.3rem;
+    color: inherit;
+    text-decoration: none;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.config-page-toc__link:hover,
+.config-page-toc__link:focus {
+    background-color: rgba(13, 110, 253, 0.1);
+    color: var(--bs-primary);
+    text-decoration: none;
 }
 
 @media (min-width: 992px) {
@@ -5605,7 +5630,7 @@ main.app-main>*:nth-child(12) {
         scroll-behavior: auto !important;
     }
 
-    .config-page-toc {
+    .config-sidebar {
         position: static;
     }
 
