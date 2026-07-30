@@ -647,3 +647,28 @@ async def test_email(
     except Exception as e:
         logger.error(f"测试邮件失败: {e}")
         return {"status": "error", "message": f"测试邮件失败: {str(e)}"}
+
+
+@router.get("/notification/types")
+async def get_notification_types(
+    request: Request,
+    _: Any = Depends(get_current_user_flexible),
+) -> dict:
+    """返回所有通知类型元数据，供前端动态加载复选框
+
+    替代原先硬编码在 config.html 中的 13 种类型复选框。
+    """
+    from ..core.notification_registry import ui_visible_types
+
+    types = [
+        {
+            "id": t.id,
+            "display_name": t.display_name,
+            "icon": t.icon,
+            "color": t.color,
+            "description": t.description,
+            "is_item_level": t.is_item_level,
+        }
+        for t in ui_visible_types()
+    ]
+    return {"status": "success", "data": types}
