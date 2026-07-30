@@ -7,7 +7,7 @@ import os
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
 from .api.app_release import router as app_release_router
@@ -169,6 +169,37 @@ app.include_router(fongmi_router)
 app.include_router(upgrade_router)
 app.include_router(bangumi_archive_router)
 app.include_router(bangumi_replay_router)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CSP 响应头（纵深防御，限制外域资源加载 + 禁用内联事件外的脚本注入）
+# ─────────────────────────────────────────────────────────────────────────
+# 现状：base.html 含内联防闪烁脚本，需保留 'unsafe-inline'
+# 外域资源：仅 <a href> 跳转（bgm.tv / github.com），无外域 script/img 加载
+# 图片：通过 /api/bgm/subjects/posters 后端代理 + data: 占位符
+_CSP_HEADER = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'"
+)
+
+
+@app.middleware("http")
+async def csp_middleware(request: Request, call_next):
+    """为所有 HTML 响应附加 Content-Security-Policy 头"""
+    response = await call_next(request)
+    # 仅对 HTML 页面附加，避免静态资源 / API JSON 误伤
+    ctype = response.headers.get("content-type", "")
+    if "text/html" in ctype:
+        response.headers["Content-Security-Policy"] = _CSP_HEADER
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+    return response
 
 
 if __name__ == "__main__":

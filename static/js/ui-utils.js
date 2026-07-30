@@ -287,6 +287,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// 全局错误捕获：捕获未处理的同步异常与 Promise 拒绝，console.error 记录
+// 避免线上 JS 异常静默失败，便于通过浏览器控制台或日志聚合定位
+// ─────────────────────────────────────────────────────────────────────────
+window.addEventListener('error', function (e) {
+    // 忽略跨域脚本错误（无访问权限的 external script，仅能拿到 'Script error.')
+    if (e.message && e.message !== 'Script error.') {
+        console.error('[未捕获异常]', e.message, e.error || e.filename + ':' + e.lineno);
+    }
+});
+
+window.addEventListener('unhandledrejection', function (e) {
+    const reason = e.reason;
+    const msg = reason && (reason.message || reason.toString()) || String(reason);
+    console.error('[未处理的 Promise 拒绝]', msg, reason);
+});
+
 // 异步确认对话框
 async function confirmAction(message, callback) {
     return new Promise((resolve) => {

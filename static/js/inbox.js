@@ -425,6 +425,18 @@
         bindEvents();
         refreshSummary();
         _pollTimer = setInterval(refreshSummary, POLL_MS);
+        // 标签页隐藏时暂停轮询，可见时恢复（省电省流量）
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                if (_pollTimer) {
+                    clearInterval(_pollTimer);
+                    _pollTimer = null;
+                }
+            } else if (!_pollTimer) {
+                refreshSummary();
+                _pollTimer = setInterval(refreshSummary, POLL_MS);
+            }
+        });
     }
 
     if (document.readyState === 'loading') {

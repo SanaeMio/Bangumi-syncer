@@ -36,6 +36,17 @@
             groupCollapseState = {};
             loadLogs();
         });
+
+        // 标签页隐藏时暂停自动刷新，可见时恢复（尊重用户 autoRefresh 开关）
+        document.addEventListener('visibilitychange', function () {
+            const checkbox = document.getElementById('auto-refresh');
+            const userEnabled = checkbox ? checkbox.checked : true;
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else if (userEnabled) {
+                startAutoRefresh();
+            }
+        });
     });
 
     function startAutoRefresh() {

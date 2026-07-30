@@ -111,21 +111,6 @@ function startRetrySSE(recordId) {
         refreshAfterRetry();
     });
 
-    _retryEventSource.addEventListener('error', function (e) {
-        if (_retryDone) return;
-        if (e.data) {
-            try {
-                const data = JSON.parse(e.data);
-                appendRetryLog(`❌ ${data.message}`, 'error');
-            } catch (_) {
-                appendRetryLog('❌ 连接异常断开', 'error');
-            }
-        }
-        stopRetrySSE();
-        const statusBadge = document.getElementById('retry-log-status');
-        if (statusBadge) statusBadge.innerHTML = '<span class="badge bg-danger">连接异常</span>';
-    });
-
     _retryEventSource.onerror = function () {
         // EventSource 自动重连会触发 onerror，已在 done 时标记 _retryDone 跳过
         if (_retryDone) return;
