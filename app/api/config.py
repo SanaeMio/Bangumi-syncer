@@ -303,19 +303,34 @@ async def update_config(
                 feiniu_sync_service.clear_min_update_watermark()
                 logger.info("飞牛已关闭：已清除同步起点水位")
 
-        # 调度器联动统一走 registry（feiniu/fongmi/archive/replay）
+        # ── 统一联动：遍历本次变更的 section，通过 SectionMeta 驱动 ──
+        from ..core.config_schema import (
+            multi_instance_prefixes,
+            scheduler_id_for_section,
+        )
         from ..core.scheduler_registry import scheduler_registry
 
-        await scheduler_registry.apply_config_by_section("feiniu")
-        await scheduler_registry.apply_config_by_section("fongmi")
+        changed_sections = set()
+        for section in data.keys():
+            normalized = section.replace("_", "-")
+            # 多实例段归一化：webhook-1 → webhook, email-2 → email
+            for prefix in multi_instance_prefixes():
+                if normalized.startswith(f"{prefix}-"):
+                    normalized = prefix
+                    break
+            changed_sections.add(normalized)
+        if multi_accounts is not None:
+            changed_sections.add("bangumi")
 
-        # 重置 LLM 客户端单例以使用最新配置
-        reset_llm_client()
+        for section in changed_sections:
+            # 调度器联动（通过 SectionMeta.scheduler_id 反查）
+            sid = scheduler_id_for_section(section)
+            if sid:
+                await scheduler_registry.apply_config_by_section(section)
 
-        # BangumiArchive / BangumiReplay 通过 registry 统一联动
-        # （archive 的 pre_reload_hook 已在 JobSpec 中声明，自动执行 reload_config）
-        await scheduler_registry.apply_config_by_section("bangumi-archive")
-        await scheduler_registry.apply_config_by_section("bangumi-replay")
+            # LLM 客户端重置（llm 段或 summary 段变更时）
+            if section in ("llm", "summary"):
+                reset_llm_client()
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:
