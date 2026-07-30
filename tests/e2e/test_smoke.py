@@ -36,18 +36,29 @@ def test_login_page_displays(page, base_url: str):
 
 
 def test_static_css_loaded(page, base_url: str):
-    """静态 CSS 资源正常加载（style.css 200）"""
+    """静态 CSS 资源正常加载（style.css 拆分后的 6 个文件均 200）"""
     page.goto(f"{base_url}/login")
     page.wait_for_load_state("networkidle")
 
-    # 检查 style.css 是否成功加载
-    style_loaded = page.evaluate(
-        """() => {
-            const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
-            return links.some(l => l.href.includes('style.css'));
-        }"""
+    # style.css 已按功能拆分为 6 个独立文件，逐一校验加载
+    expected = [
+        "theme-base.css",
+        "records-detail.css",
+        "components.css",
+        "pages.css",
+        "dashboard.css",
+        "effects.css",
+    ]
+    loaded = page.evaluate(
+        """(expected) => {
+            const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+                .map(l => l.href);
+            return expected.filter(name => links.some(s => s.includes(name)));
+        }""",
+        expected,
     )
-    assert style_loaded, "style.css 未被加载"
+    missing = set(expected) - set(loaded)
+    assert not missing, f"以下 CSS 文件未被加载: {missing}"
 
 
 def test_static_js_loaded(page, base_url: str):
