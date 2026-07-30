@@ -300,10 +300,10 @@
             </div>
         </div>
     </div>
-    <!-- 调度器状态卡 -->
+    <!-- 调度器状态卡（与最近同步卡同尺寸：col-xl-5 col-lg-6） -->
     <div class="row g-4 mb-4">
-        <div class="col-12">
-            <div class="card h-100">
+        <div class="col-xl-5 col-lg-6 d-flex">
+            <div class="card flex-fill">
                 <div class="card-header py-3">
                     <div class="d-flex align-items-center justify-content-between">
                         <div class="d-flex align-items-center">
@@ -321,9 +321,11 @@
                     </div>
                 </div>
                 <div id="scheduler-status-body" class="card-body p-3">
-                    <div class="text-center py-3 app-text-muted-block">
-                        <div class="spinner-border spinner-border-sm" role="status"></div>
-                        <div class="mt-2 small">加载中...</div>
+                    <div class="sync-timeline" id="scheduler-timeline">
+                        <div class="text-center py-4 app-text-muted-block">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                            <div class="mt-2 small">加载中...</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -374,6 +376,7 @@
     </div>
 {% endblock %}
 {% block scripts %}
+    <script defer src="{{ '/static/js/cron-desc.js' | static_v }}"></script>
     <script defer src="{{ '/static/js/inbox.js' | static_v }}"></script>
     <script>window.__POSTER_CACHE_NS__ = {{ poster_cache_ns | tojson }};</script>
     <script>
@@ -697,6 +700,7 @@
 
   /**
    * 渲染调度器状态列表到 #scheduler-status-body。
+   * 复用最近同步卡的 .sync-timeline / .tl-track / .tl-item 样式（不含海报）。
    * @param {Array} schedulers - [{scheduler_id, display_name, jobs: [{job_id, name, next_run_time, trigger}]}, ...]
    */
   function renderSchedulerStatus(schedulers) {
@@ -704,7 +708,7 @@
     const summary = document.getElementById('scheduler-status-summary')
     if (!schedulers || schedulers.length === 0) {
       body.innerHTML =
-        '<div class="text-center text-muted small py-3">无已注册调度器</div>'
+        '<div class="sync-timeline"><div class="app-empty-state"><i class="bi bi-inbox app-empty-state__icon"></i><div>无已注册调度器</div></div></div>'
       if (summary) summary.classList.add('d-none')
       return
     }
@@ -733,77 +737,91 @@
       summary.classList.remove('d-none')
     }
 
-    body.innerHTML =
-      '<div class="row g-3">' +
-      schedulers
-        .map(function (s) {
-          return (
-            '<div class="col-md-6 col-xl-4">' +
-            '<div class="sched-cell">' +
-            '<div class="sched-cell__head">' +
-            '<span class="sched-cell__icon"><i class="bi bi-server"></i></span>' +
-            '<span class="sched-cell__name">' +
-            escapeHtml(s.display_name || s.scheduler_id) +
-            '</span>' +
-            '</div>' +
-            renderJobsHtml(s.jobs) +
-            '</div>' +
-            '</div>'
-          )
-        })
-        .join('') +
-      '</div>'
+    // 所有 jobs 混在一个 tl-track 内，scheduler 名作为 .tl-source 标签区分；
+    // 空 scheduler 不渲染（无运行中任务时不占位）。
+    var itemsHtml = ''
+    var itemIndex = 0
+    schedulers.forEach(function (s) {
+      var schedulerName = s.display_name || s.scheduler_id
+      var jobs = s.jobs || []
+      jobs.forEach(function (j) {
+        itemsHtml += renderSchedulerJobHtml(j, schedulerName, itemIndex++)
+      })
+    })
+    if (!itemsHtml) {
+      itemsHtml =
+        '<div class="app-empty-state"><i class="bi bi-inbox app-empty-state__icon"></i><div>无运行中任务</div></div>'
+    }
+
+    body.innerHTML = '<div class="sync-timeline"><div class="tl-track">' + itemsHtml + '</div></div>'
   }
 
-  function renderJobsHtml(jobs) {
-    if (!jobs || jobs.length === 0) {
-      return (
-        '<div class="sched-cell__empty">' +
-        '<i class="bi bi-pause-circle me-1"></i>无运行中任务' +
-        '</div>'
-      )
+  /**
+   * 渲染单个调度任务为 .tl-item（无海报）。
+   * 结构与最近同步卡一致：dot + body(title + meta + msg)。
+   */
+  function renderSchedulerJobHtml(j, schedulerName, index) {
+    var isScheduled = !!j.next_run_time
+    var dotClass = isScheduled ? 'tl-dot--success' : 'tl-dot--idle'
+    var name = escapeHtml(j.name || j.job_id || '-')
+
+    // scheduler 名作为来源标签（复用 .tl-source 风格）
+    var sourceHtml =
+      '<span class="tl-source tl-source--custom">' +
+      escapeHtml(schedulerName) +
+      '</span>'
+
+    // trigger 作为等宽标签（复用 .tl-episode-text 风格）
+    var triggerHtml = j.trigger
+      ? '<span class="tl-episode-text"><i class="bi bi-calendar3 me-1"></i>' +
+        escapeHtml(formatTrigger(j.trigger)) +
+        '</span>'
+      : ''
+
+    // cron 表达式人类可读描述（如"每 15 分钟"、"每月1日 08:00"）
+    var cronDescHtml = ''
+    if (j.trigger && window.CronDesc) {
+      var desc = window.CronDesc.describe(j.trigger, '')
+      if (desc) {
+        cronDescHtml =
+          '<span class="tl-cron-desc"><i class="bi bi-translate me-1"></i>' +
+          escapeHtml(desc) +
+          '</span>'
+      }
     }
+
+    // 下次运行时间（复用 .tl-time 风格）
+    var timeHtml
+    if (isScheduled) {
+      timeHtml =
+        '<span class="tl-time"><span class="tl-relative-time">' +
+        formatRelativeNextRun(j.next_run_time) +
+        '</span> · ' +
+        formatNextRun(j.next_run_time) +
+        '</span>'
+    } else {
+      timeHtml =
+        '<span class="tl-time"><span class="tl-relative-time">未调度</span></span>'
+    }
+
+    // 未调度时显示提示消息（复用 .tl-msg--warn 风格）
+    var msgHtml = isScheduled
+      ? ''
+      : '<div class="tl-msg tl-msg--warn"><i class="bi bi-info-circle-fill me-1"></i>未调度</div>'
+
     return (
-      '<div class="sched-jobs">' +
-      jobs
-        .map(function (j) {
-          var isScheduled = !!j.next_run_time
-          var nextRunAbs = formatNextRun(j.next_run_time)
-          var nextRunRel = formatRelativeNextRun(j.next_run_time)
-          var statusDot =
-            '<span class="sched-job__dot ' + (isScheduled ? 'sched-job__dot--on' : 'sched-job__dot--off') + '" title="' + (isScheduled ? '已调度' : '未调度') + '"></span>'
-          var nameHtml =
-            '<div class="sched-job__name">' +
-            statusDot +
-            escapeHtml(j.name || j.job_id || '-') +
-            '</div>'
-          var triggerHtml = j.trigger
-            ? '<span class="sched-job__tag"><i class="bi bi-calendar3 me-1"></i>' +
-              escapeHtml(j.trigger) +
-              '</span>'
-            : ''
-          var nextRunHtml = isScheduled
-            ? '<div class="sched-job__next">' +
-              '<i class="bi bi-alarm me-1"></i>' +
-              '<span class="sched-job__next-abs">' +
-              nextRunAbs +
-              '</span>' +
-              '<span class="sched-job__next-rel">' +
-              nextRunRel +
-              '</span>' +
-              '</div>'
-            : '<div class="sched-job__next sched-job__next--idle"><i class="bi bi-dash-circle me-1"></i>未调度</div>'
-          return (
-            '<div class="sched-job">' +
-            nameHtml +
-            '<div class="sched-job__meta">' +
-            triggerHtml +
-            '</div>' +
-            nextRunHtml +
-            '</div>'
-          )
-        })
-        .join('') +
+      '<div class="tl-item" style="animation-delay:' + index * 0.06 + 's">' +
+      '<div class="tl-dot-wrap"><div class="tl-dot ' + dotClass + '" title="' + (isScheduled ? '已调度' : '未调度') + '"></div></div>' +
+      '<div class="tl-body">' +
+      '<div class="tl-title">' + name + '</div>' +
+      '<div class="tl-meta">' +
+      sourceHtml +
+      triggerHtml +
+      cronDescHtml +
+      timeHtml +
+      '</div>' +
+      msgHtml +
+      '</div>' +
       '</div>'
     )
   }
@@ -815,12 +833,7 @@
     if (!ts) return '未调度'
     var d = new Date(ts * 1000)
     if (isNaN(d.getTime())) return '未调度'
-    return d.toLocaleString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    return window.CronDesc.formatNext(d)
   }
 
   /**
@@ -840,6 +853,15 @@
     if (hr < 24) return (past ? '已过期 ' : '') + hr + ' 小时' + (past ? '前' : '后')
     var day = Math.floor(hr / 24)
     return (past ? '已过期 ' : '') + day + ' 天' + (past ? '前' : '后')
+  }
+
+  // 将 trigger 字符串归一化为标准五段式 cron（用于 trigger 标签展示原始表达式）。
+  // APScheduler 的 str(trigger) 形如 cron[month='*', day='*', day_of_week='*', hour='*', minute='*/3']，
+  // 归一化为 */3 * * * *。非 cron[...] 格式原样返回。
+  function formatTrigger(trigger) {
+    if (!trigger) return ''
+    if (!window.CronDesc) return trigger
+    return window.CronDesc.normalize(trigger)
   }
 
   // ========== 时间线 ==========

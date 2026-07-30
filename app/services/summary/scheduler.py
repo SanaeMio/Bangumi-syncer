@@ -151,6 +151,28 @@ class SummaryScheduler:
         if self.scheduler and self.scheduler.running:
             self._schedule_all_jobs()
 
+    def get_all_jobs_status(self) -> dict[str, dict]:
+        """获取所有 summary 任务的运行状态（供 SchedulerRegistry 状态卡查询）。
+
+        返回结构：``{job_id: {"job_id", "name", "next_run_time", "trigger"}}``。
+        与 trakt scheduler 的 get_all_jobs_status 语义一致。
+        """
+        status: dict[str, dict] = {}
+        if not self.scheduler or not self.scheduler.running:
+            return status
+        for job in self.scheduler.get_jobs():
+            if not job.id.startswith("summary_"):
+                continue
+            status[job.id] = {
+                "job_id": job.id,
+                "name": job.name or job.id,
+                "next_run_time": (
+                    job.next_run_time.timestamp() if job.next_run_time else None
+                ),
+                "trigger": str(job.trigger),
+            }
+        return status
+
     async def apply_config_after_save(self) -> None:
         """config.ini 保存后同步调度器状态。"""
         if self.scheduler and self.scheduler.running:

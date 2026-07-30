@@ -301,6 +301,8 @@
 {% endblock %}
 {% block scripts %}
     <script src="{{ '/static/js/config-form.js' | static_v }}"></script>
+    <script src="{{ '/static/js/cron-desc.js' | static_v }}"></script>
+    <script src="{{ '/static/js/cron-preview.js' | static_v }}"></script>
     <script>
 // 全局变量
 let bangumiAccountCounter = 0;
@@ -626,6 +628,11 @@ function populateForm(config) {
     // 7. 多用户模式
     if (config.sync && config.sync.mode === 'multi') {
         populateMultiUserConfig(config.multi_accounts, config.user_mappings);
+    }
+
+    // 8. 刷新 cron 预览（populate 后 input.value 已更新）
+    if (window.refreshAllCronPreviews) {
+        window.refreshAllCronPreviews();
     }
 }
 
@@ -1923,6 +1930,7 @@ function showSummaryJobModal() {
         '3. 如果涉及多用户（记录中 user_name 不同），按用户分开描述\n' +
         '4. 加一两句轻松评论，语气像朋友聊天，不要太正式\n' +
         '5. 限制在 300 字以内';
+    if (window.refreshAllCronPreviews) window.refreshAllCronPreviews();
     showModal('summaryJobModal');
 }
 
@@ -1940,6 +1948,7 @@ async function editSummaryJob(name) {
         document.getElementById('summary-job-user').value = job.user_name || '';
         document.getElementById('summary-job-max-records').value = job.max_records;
         document.getElementById('summary-job-prompt').value = job.system_prompt || '';
+        if (window.refreshAllCronPreviews) window.refreshAllCronPreviews();
         showModal('summaryJobModal');
     } catch(e) { showAlert('加载失败: ' + e.message, 'danger'); }
 }
@@ -2415,7 +2424,10 @@ async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Cron 表达式</label>
-                            <input class="form-control" id="summary-job-cron" placeholder="0 21 * * *">
+                            <input class="form-control"
+                                   id="summary-job-cron"
+                                   placeholder="0 21 * * *"
+                                   data-cron-preview>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">回溯天数</label>

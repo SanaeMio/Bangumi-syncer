@@ -5223,6 +5223,21 @@ main.app-main>*:nth-child(12) {
     box-shadow: 0 0 0 2px var(--app-red);
 }
 
+/* 调度器状态卡：已调度（绿）/ 未调度（灰），复用 .tl-dot 视觉规则 */
+.tl-dot--success {
+    background-color: #22c55e;
+    box-shadow: 0 0 0 1.5px #22c55e;
+}
+
+.tl-dot--idle {
+    background-color: var(--app-text-muted);
+    box-shadow: 0 0 0 1.5px var(--app-text-muted);
+}
+
+.tl-item:hover .tl-dot--success {
+    box-shadow: 0 0 0 1.5px #22c55e, 0 0 6px rgba(34, 197, 94, 0.35);
+}
+
 /* 海报 */
 .timeline-poster {
     flex-shrink: 0;
@@ -5495,6 +5510,21 @@ main.app-main>*:nth-child(12) {
 [data-theme="dark"] .tl-source--fongmi {
     background-color: rgba(59, 130, 246, 0.15);
     color: #60a5fa;
+}
+
+/* cron 表达式人类可读描述标签（如"每 15 分钟"） */
+.tl-cron-desc {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.66rem;
+    font-weight: 500;
+    padding: 0.15em 0.5em;
+    border-radius: 10px;
+    color: var(--app-primary);
+    background-color: rgba(var(--app-primary-rgb), 0.1);
+    border: 1px solid rgba(var(--app-primary-rgb), 0.18);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
 }
 
 .tl-time {
@@ -6567,149 +6597,262 @@ main.app-main>*:nth-child(12) {
     }
 }
 
-/* ========== 调度器状态卡 ========== */
-.sched-cell {
-    border: 1px solid var(--app-glass-border);
-    border-radius: var(--app-radius-card-sm);
-    background-color: var(--app-bg-card);
-    padding: 0.85rem 0.95rem;
-    height: 100%;
-    transition: box-shadow 0.22s var(--app-ease-smooth),
-        border-color 0.22s var(--app-ease-smooth);
-}
-
-.sched-cell:hover {
-    box-shadow: var(--app-shadow-card-hover);
-    border-color: rgba(var(--app-primary-rgb), 0.25);
-}
-
-.sched-cell__head {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.6rem;
-    padding-bottom: 0.55rem;
-    border-bottom: 1px dashed var(--app-glass-border);
-}
-
-.sched-cell__icon {
-    width: 1.7rem;
-    height: 1.7rem;
-    border-radius: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.85rem;
-    color: #fff;
-    background: linear-gradient(145deg, var(--app-primary), var(--app-primary-hover));
-    flex-shrink: 0;
-}
-
-.sched-cell__name {
-    font-size: 0.92rem;
-    font-weight: 600;
-    color: var(--app-text);
-    line-height: 1.3;
-    word-break: break-all;
-}
-
-.sched-cell__empty {
-    font-size: 0.78rem;
-    color: var(--app-text-muted);
-    padding: 0.55rem 0;
-    text-align: center;
-}
-
-.sched-jobs {
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-}
-
-.sched-job {
-    padding: 0.5rem 0.6rem;
-    border-radius: 10px;
-    background-color: var(--app-bg-card-header);
-    border: 1px solid var(--app-glass-border);
-}
-
-.sched-job__name {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.84rem;
-    font-weight: 600;
-    color: var(--app-text);
-    margin-bottom: 0.35rem;
-    word-break: break-all;
-}
-
-.sched-job__dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    flex-shrink: 0;
-    display: inline-block;
-}
-
-.sched-job__dot--on {
-    background: #22c55e;
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
-}
-
-.sched-job__dot--off {
-    background: #9ca3af;
-    box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.18);
-}
-
-.sched-job__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-bottom: 0.35rem;
-}
-
-.sched-job__tag {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.72rem;
-    padding: 0.1rem 0.45rem;
-    border-radius: 6px;
-    color: var(--app-text-muted);
-    background-color: rgba(var(--app-primary-rgb), 0.08);
-    border: 1px solid rgba(var(--app-primary-rgb), 0.12);
-    font-family: var(--app-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-    word-break: break-all;
-}
-
-.sched-job__next {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.76rem;
-    color: var(--app-text);
-    line-height: 1.4;
-}
-
-.sched-job__next-abs {
-    font-weight: 600;
-}
-
-.sched-job__next-rel {
-    color: var(--app-primary);
-    font-size: 0.72rem;
-    padding: 0.05rem 0.4rem;
-    border-radius: 5px;
-    background-color: var(--app-primary-soft);
-}
-
-.sched-job__next--idle {
-    color: var(--app-text-muted);
-    font-size: 0.74rem;
-}
-
+/* ========== 调度器状态卡 ==========
+   任务项复用最近同步卡的 .sync-timeline / .tl-track / .tl-item 样式，
+   状态点复用 .tl-dot--success / .tl-dot--idle（见 .tl-dot 段）。
+   仅保留摘要徽章的样式。 */
 #scheduler-status-summary {
     font-size: 0.72rem;
     letter-spacing: 0.02em;
+}
+
+/* ========== 五段式 Cron 实时预览（悬浮弹窗） ========== */
+.cron-popover {
+    position: absolute;
+    z-index: 1080;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    background-color: var(--app-bg-card);
+    border: 1px solid var(--app-glass-border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    padding: 0.6rem 0.75rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+    pointer-events: none;
+}
+
+.cron-popover--show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.cron-preview {
+    border: 1px solid var(--app-glass-border);
+    border-radius: 10px;
+    background-color: var(--app-bg-card-header);
+    padding: 0.55rem 0.7rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.cron-preview--error {
+    border-color: rgba(220, 38, 38, 0.4);
+    background-color: rgba(220, 38, 38, 0.06);
+    color: #dc2626;
+}
+
+.cron-preview__desc {
+    font-weight: 600;
+    color: var(--app-text);
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.45rem;
+    border-bottom: 1px dashed var(--app-glass-border);
+    word-break: break-all;
+}
+
+.cron-fields {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+@media (max-width: 575.98px) {
+    .cron-fields {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.cron-field {
+    border: 1px solid var(--app-glass-border);
+    border-radius: 6px;
+    background-color: var(--app-bg-card);
+    padding: 0.3rem 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+    user-select: none;
+}
+
+.cron-field:hover {
+    border-color: rgba(var(--app-primary-rgb), 0.5);
+    box-shadow: 0 0 0 2px rgba(var(--app-primary-rgb), 0.1);
+}
+
+.cron-field:active {
+    transform: scale(0.97);
+}
+
+.cron-field--expanded {
+    border-color: var(--app-primary);
+    box-shadow: 0 0 0 2px rgba(var(--app-primary-rgb), 0.2);
+}
+
+.cron-field__caret {
+    font-size: 0.6rem;
+    margin-left: 0.2rem;
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+
+.cron-field:hover .cron-field__caret {
+    opacity: 1;
+}
+
+/* 预设按钮组 */
+.cron-presets {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid rgba(var(--app-primary-rgb), 0.2);
+    border-radius: 8px;
+    background-color: rgba(var(--app-primary-rgb), 0.04);
+}
+
+.cron-presets__title {
+    font-size: 0.7rem;
+    color: var(--app-text-muted);
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+}
+
+.cron-presets__grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.cron-presets__btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--app-glass-border);
+    border-radius: 6px;
+    background-color: var(--app-bg-card);
+    color: var(--app-text);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.cron-presets__btn:hover {
+    border-color: var(--app-primary);
+    color: var(--app-primary);
+}
+
+.cron-presets__btn--active {
+    border-color: var(--app-primary);
+    background-color: var(--app-primary-soft);
+    color: var(--app-primary);
+    font-weight: 600;
+}
+
+.cron-presets__btn code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.65rem;
+    color: var(--app-text-muted);
+    font-weight: 400;
+}
+
+.cron-presets__btn--active code {
+    color: var(--app-primary);
+}
+
+.cron-field--all {
+    border-color: rgba(34, 197, 94, 0.25);
+    background-color: rgba(34, 197, 94, 0.06);
+}
+
+.cron-field--some {
+    border-color: rgba(var(--app-primary-rgb), 0.3);
+    background-color: var(--app-primary-soft);
+}
+
+.cron-field__label {
+    font-size: 0.68rem;
+    color: var(--app-text-muted);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+.cron-field__raw {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--app-text);
+    font-weight: 600;
+    word-break: break-all;
+    min-height: 1em;
+}
+
+.cron-field__summary {
+    font-size: 0.68rem;
+    color: var(--app-text-muted);
+}
+
+.cron-field--all .cron-field__summary {
+    color: #16a34a;
+}
+
+.cron-field--some .cron-field__summary {
+    color: var(--app-primary);
+    font-weight: 600;
+}
+
+.cron-next {
+    border-top: 1px dashed var(--app-glass-border);
+    padding-top: 0.45rem;
+}
+
+.cron-next__title {
+    font-size: 0.7rem;
+    color: var(--app-text-muted);
+    margin-bottom: 0.3rem;
+    font-weight: 600;
+}
+
+.cron-next__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.cron-next__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.74rem;
+}
+
+.cron-next__abs {
+    color: var(--app-text);
+    font-weight: 500;
+}
+
+.cron-next__rel {
+    color: var(--app-primary);
+    font-size: 0.7rem;
+    padding: 0.02rem 0.35rem;
+    border-radius: 4px;
+    background-color: var(--app-primary-soft);
+}
+
+.cron-next__item--empty {
+    color: var(--app-text-muted);
+    justify-content: center;
+    padding: 0.2rem 0;
 }
