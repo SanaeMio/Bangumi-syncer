@@ -244,6 +244,21 @@ async def get_config_schema(
     return {"status": "success", "data": serialize_schema()}
 
 
+@router.get("/scheduler/status")
+async def get_scheduler_status(
+    request: Request, current_user: dict = Depends(get_current_user_flexible)
+) -> dict[str, Any]:
+    """获取所有已注册调度器的运行状态
+
+    返回 SchedulerRegistry.get_status_list() 的结果，包含每个调度器的
+    display_name（来自 SectionMeta）和 job 列表（trigger / next_run_time），
+    供配置页侧栏调度器状态卡展示。
+    """
+    from ..core.scheduler_registry import scheduler_registry
+
+    return {"status": "success", "data": scheduler_registry.get_status_list()}
+
+
 @router.post("/config")
 async def update_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)

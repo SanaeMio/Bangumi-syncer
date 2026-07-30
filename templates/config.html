@@ -49,6 +49,25 @@
                         </div>
                     </div>
                 </div>
+                <div id="scheduler-status-card" class="card mb-3">
+                    <div class="card-header py-2 px-3">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-clock-history me-2 card-header-icon"></i>
+                                <h6 class="m-0 fw-semibold card-header-title small">调度器状态</h6>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                    onclick="loadSchedulerStatus()"
+                                    title="刷新状态">
+                                <i class="bi bi-arrow-clockwise small"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="scheduler-status-body" class="card-body p-2">
+                        <p class="text-muted small mb-0">加载中...</p>
+                    </div>
+                </div>
                 <div class="card mb-3 border-info border-opacity-25">
                     <div class="card-header py-2 px-3">
                         <div class="d-flex align-items-center">
@@ -350,6 +369,68 @@ function isLooseTrue(v) {
     return v === true || v === 'true' || (typeof v === 'string' && v.toLowerCase() === 'true');
 }
 
+// ========== 调度器状态卡 ==========
+
+/**
+ * 从 /api/scheduler/status 加载调度器状态并渲染到侧栏状态卡。
+ */
+async function loadSchedulerStatus() {
+    const body = document.getElementById('scheduler-status-body');
+    if (!body) return;
+    try {
+        const data = await apiFetch('/api/scheduler/status', { method: 'GET' });
+        if (data.status === 'success' && Array.isArray(data.data)) {
+            renderSchedulerStatus(data.data);
+        } else {
+            body.innerHTML = '<p class="text-muted small mb-0">加载失败</p>';
+        }
+    } catch (e) {
+        console.error('加载调度器状态失败:', e);
+        body.innerHTML = '<p class="text-muted small mb-0">加载失败</p>';
+    }
+}
+
+/**
+ * 渲染调度器状态列表到 #scheduler-status-body。
+ * @param {Array} schedulers - [{scheduler_id, display_name, jobs: [{job_id, name, next_run_time, trigger}]}, ...]
+ */
+function renderSchedulerStatus(schedulers) {
+    const body = document.getElementById('scheduler-status-body');
+    if (!schedulers || schedulers.length === 0) {
+        body.innerHTML = '<p class="text-muted small mb-0">无已注册调度器</p>';
+        return;
+    }
+    body.innerHTML = schedulers.map(function (s) {
+        var jobsHtml;
+        if (s.jobs && s.jobs.length > 0) {
+            jobsHtml = s.jobs.map(function (j) {
+                return '<div class="small text-muted ps-2 border-start border-opacity-25">'
+                    + '<i class="bi bi-clock me-1"></i>' + escapeHtml(j.trigger || '-')
+                    + ' · <span class="text-nowrap">' + formatNextRun(j.next_run_time) + '</span>'
+                    + '</div>';
+            }).join('');
+        } else {
+            jobsHtml = '<div class="small text-muted ps-2 border-start border-opacity-25">无运行中任务</div>';
+        }
+        return '<div class="mb-2">'
+            + '<div class="small fw-semibold">' + escapeHtml(s.display_name) + '</div>'
+            + jobsHtml
+            + '</div>';
+    }).join('');
+}
+
+/**
+ * 格式化下次运行时间戳为简洁的中文日期时间。
+ */
+function formatNextRun(ts) {
+    if (!ts) return '未调度';
+    var d = new Date(ts * 1000);
+    if (isNaN(d.getTime())) return '未调度';
+    return d.toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+}
+
 // ========== 通用通知类型复选框处理函数 ==========
 
 /**
@@ -554,6 +635,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     // 先加载配置 schema（驱动默认值/布尔语义），再加载配置数据
     loadConfigSchema().then(() => loadConfig(false));
+    // 加载调度器状态卡（独立于配置数据，可并行）
+    loadSchedulerStatus();
 });
 
 async function loadConfig(showToast = true) {

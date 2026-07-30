@@ -131,6 +131,64 @@ async def test_get_config_schema(app_with_auth):
 
 
 @pytest.mark.asyncio
+async def test_get_scheduler_status(app_with_auth):
+    """/api/scheduler/status 返回调度器状态列表"""
+    mock_status_list = [
+        {
+            "scheduler_id": "feiniu",
+            "display_name": "飞牛影视",
+            "jobs": [
+                {
+                    "job_id": "feiniu_sync",
+                    "name": "飞牛同步",
+                    "next_run_time": 1700000000.0,
+                    "trigger": "*/15 * * * *",
+                }
+            ],
+        },
+        {
+            "scheduler_id": "trakt",
+            "display_name": "Trakt 同步",
+            "jobs": [],
+        },
+    ]
+    with patch(
+        "app.core.scheduler_registry.scheduler_registry.get_status_list",
+        return_value=mock_status_list,
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/scheduler/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert isinstance(data["data"], list)
+    assert len(data["data"]) == 2
+    assert data["data"][0]["scheduler_id"] == "feiniu"
+    assert data["data"][0]["display_name"] == "飞牛影视"
+    assert len(data["data"][0]["jobs"]) == 1
+    assert data["data"][0]["jobs"][0]["trigger"] == "*/15 * * * *"
+    assert data["data"][1]["scheduler_id"] == "trakt"
+    assert data["data"][1]["jobs"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_scheduler_status_empty(app_with_auth):
+    """/api/scheduler/status 无调度器注册时返回空列表"""
+    with patch(
+        "app.core.scheduler_registry.scheduler_registry.get_status_list",
+        return_value=[],
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/scheduler/status")
+    assert response.status_code == 200
+    assert response.json()["data"] == []
+
+
+@pytest.mark.asyncio
 async def test_update_config(app_with_auth, mock_config_manager, mock_security_manager):
     """测试更新配置"""
     async with AsyncClient(

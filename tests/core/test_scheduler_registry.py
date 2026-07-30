@@ -243,3 +243,146 @@ class TestGetAllJobsStatus:
         inst.get_all_jobs_status = MagicMock(side_effect=RuntimeError("status fail"))
         reg.register_instance("trakt", inst)
         assert reg.get_all_jobs_status() == {}
+
+
+class TestGetStatusList:
+    """get_status_list() — 前端状态卡数据源"""
+
+    def test_empty_registry_returns_empty_list(self):
+        reg = SchedulerRegistry()
+        assert reg.get_status_list() == []
+
+    def test_spec_with_no_scheduler_returns_empty_jobs(self):
+        """spec 调度器未启动（scheduler=None）时 jobs 为空列表"""
+        reg = SchedulerRegistry()
+        runner = _make_runner()
+        runner.scheduler = None
+        reg.register_spec(JobSpec(scheduler_id="feiniu", runner=runner))
+        result = reg.get_status_list()
+        assert len(result) == 1
+        assert result[0]["scheduler_id"] == "feiniu"
+        assert result[0]["display_name"] == "飞牛影视"
+        assert result[0]["jobs"] == []
+
+    def test_spec_with_job_includes_job_info(self):
+        """spec 调度器有 job 时返回 trigger / next_run_time"""
+        reg = SchedulerRegistry()
+        runner = _make_runner(job_id="feiniu_sync")
+        # 模拟 APScheduler job
+        mock_job = MagicMock()
+        mock_job.id = "feiniu_sync"
+        mock_job.name = "飞牛同步"
+        mock_job.next_run_time = MagicMock()
+        mock_job.next_run_time.timestamp.return_value = 1700000000.0
+        mock_job.trigger = "*/15 * * * *"
+        mock_sched = MagicMock()
+        mock_sched.get_job.return_value = mock_job
+        runner.scheduler = mock_sched
+        reg.register_spec(JobSpec(scheduler_id="feiniu", runner=runner))
+
+        result = reg.get_status_list()
+        assert len(result) == 1
+        assert result[0]["display_name"] == "飞牛影视"
+        assert len(result[0]["jobs"]) == 1
+        job = result[0]["jobs"][0]
+        assert job["job_id"] == "feiniu_sync"
+        assert job["name"] == "飞牛同步"
+        assert job["next_run_time"] == 1700000000.0
+        assert job["trigger"] == "*/15 * * * *"
+
+    def test_spec_job_none_next_run_time(self):
+        """job.next_run_time 为 None 时 next_run_time 字段为 None"""
+        reg = SchedulerRegistry()
+        runner = _make_runner(job_id="replay_job")
+        mock_job = MagicMock()
+        mock_job.id = "replay_job"
+        mock_job.name = "补发"
+        mock_job.next_run_time = None
+        mock_job.trigger = "*/10 * * * *"
+        mock_sched = MagicMock()
+        mock_sched.get_job.return_value = mock_job
+        runner.scheduler = mock_sched
+        reg.register_spec(JobSpec(scheduler_id="bangumi_replay", runner=runner))
+
+        result = reg.get_status_list()
+        assert result[0]["jobs"][0]["next_run_time"] is None
+
+    def test_instance_jobs_merged(self):
+        """instance 调度器的 jobs 被合并到 jobs 列表"""
+        reg = SchedulerRegistry()
+        inst = _make_instance(
+            status={
+                "trakt_user_1": {
+                    "name": "Trakt 同步",
+                    "next_run_time": 100.0,
+                    "trigger": "0 * * * *",
+                },
+                "trakt_user_2": {
+                    "name": "Trakt 同步",
+                    "next_run_time": 200.0,
+                    "trigger": "0 * * * *",
+                },
+            }
+        )
+        reg.register_instance("trakt", inst)
+
+        result = reg.get_status_list()
+        assert len(result) == 1
+        assert result[0]["scheduler_id"] == "trakt"
+        assert result[0]["display_name"] == "Trakt 同步"
+        assert len(result[0]["jobs"]) == 2
+
+    def test_instance_exception_returns_empty_jobs(self):
+        """instance 调度器 get_all_jobs_status 抛异常时 jobs 为空"""
+        reg = SchedulerRegistry()
+        inst = _make_instance()
+        inst.get_all_jobs_status = MagicMock(side_effect=RuntimeError("boom"))
+        reg.register_instance("trakt", inst)
+
+        result = reg.get_status_list()
+        assert len(result) == 1
+        assert result[0]["jobs"] == []
+
+    def test_display_name_from_section_meta(self):
+        """display_name 从 SectionMeta 取（bangumi_archive → Bangumi Archive）"""
+        reg = SchedulerRegistry()
+        runner = _make_runner()
+        runner.scheduler = None
+        reg.register_spec(JobSpec(scheduler_id="bangumi_archive", runner=runner))
+        result = reg.get_status_list()
+        assert result[0]["display_name"] == "Bangumi Archive"
+
+    def test_display_name_fallback_to_scheduler_id(self):
+        """无 SectionMeta 关联的 scheduler_id 回退为 id 本身"""
+        reg = SchedulerRegistry()
+        inst = _make_instance(status={})
+        reg.register_instance("unknown_sid", inst)
+        result = reg.get_status_list()
+        assert result[0]["display_name"] == "unknown_sid"
+
+    def test_mixed_spec_and_instance(self):
+        """spec + instance 混合注册"""
+        reg = SchedulerRegistry()
+        runner = _make_runner()
+        runner.scheduler = None
+        reg.register_spec(JobSpec(scheduler_id="feiniu", runner=runner))
+        inst = _make_instance(status={"trakt_job": {"next_run_time": 1.0}})
+        reg.register_instance("trakt", inst)
+
+        result = reg.get_status_list()
+        assert len(result) == 2
+        sids = {r["scheduler_id"] for r in result}
+        assert sids == {"feiniu", "trakt"}
+
+    def test_instance_job_dict_keys_passed_through(self):
+        """instance 返回的 job dict 额外字段（如 pending）被透传"""
+        reg = SchedulerRegistry()
+        inst = _make_instance(
+            status={"job1": {"next_run_time": 1.0, "pending": True, "custom": "x"}}
+        )
+        reg.register_instance("trakt", inst)
+        result = reg.get_status_list()
+        job = result[0]["jobs"][0]
+        assert job["pending"] is True
+        assert job["custom"] == "x"
+        assert job["job_id"] == "job1"

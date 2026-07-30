@@ -126,6 +126,73 @@ class SchedulerRegistry:
                 logger.debug("获取 %s 调度器状态失败: %s", sid, e)
         return status
 
+    def get_status_list(self) -> list[dict]:
+        """返回调度器状态列表（带 display_name），供前端状态卡展示
+
+        每个元素结构：
+        ```
+        {
+            "scheduler_id": "feiniu",
+            "display_name": "飞牛影视",  # 从 SectionMeta 取
+            "jobs": [
+                {"job_id": "feiniu_sync", "name": "...", "next_run_time": 123.0, "trigger": "*/15 * * * *"}
+            ]
+        }
+        ```
+        """
+        from .config_schema import SECTIONS, sections_for_scheduler
+
+        result: list[dict] = []
+        for sid in self.all_scheduler_ids():
+            display_name = sid
+            for sec_name in sections_for_scheduler(sid):
+                meta = SECTIONS.get(sec_name)
+                if meta:
+                    display_name = meta.display_name
+                    break
+
+            jobs: list[dict] = []
+            # spec 调度器：单 job
+            spec = self._specs.get(sid)
+            if spec:
+                runner = spec.runner
+                sched = getattr(runner, "scheduler", None)
+                job_id = getattr(runner, "JOB_ID", "")
+                if sched and job_id:
+                    job = sched.get_job(job_id)
+                    if job:
+                        jobs.append(
+                            {
+                                "job_id": job.id,
+                                "name": job.name,
+                                "next_run_time": (
+                                    job.next_run_time.timestamp()
+                                    if job.next_run_time
+                                    else None
+                                ),
+                                "trigger": str(job.trigger),
+                            }
+                        )
+            # instance 调度器：多 job
+            inst = self._instances.get(sid)
+            if inst:
+                try:
+                    inst_status = inst.get_all_jobs_status()
+                    if isinstance(inst_status, dict):
+                        for jid, jinfo in inst_status.items():
+                            jobs.append({"job_id": str(jid), **jinfo})
+                except Exception as e:
+                    logger.debug("获取 %s 调度器状态失败: %s", sid, e)
+
+            result.append(
+                {
+                    "scheduler_id": sid,
+                    "display_name": display_name,
+                    "jobs": jobs,
+                }
+            )
+        return result
+
     # ===== 生命周期 =====
 
     async def start_all(self) -> None:
