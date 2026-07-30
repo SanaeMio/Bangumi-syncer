@@ -37,10 +37,9 @@ from ...core.logging import logger
 _DB_NAMES = ("a", "b")
 
 # 磁盘空间阈值（MB），低于此值跳过导入
-# 双库 ~2.8GB（a+b 各 ~1.4GB）+ 临时下载 zip ~0.4GB，
-# FTS5 改造后磁盘占用从 4.6GB 降至 3.6GB（contentless 表不重复存储原始内容），
-# 阈值同步上调至 4000MB，预留充足空间避免导入中途写满
-_DEFAULT_MIN_DISK_SPACE_MB = 4000
+# 导入峰值 = 双库（a+b 各 ~0.8GB）+ 临时下载 zip ~0.4GB + WAL 余量 ≈ 2.4GB
+# 阈值设为 3000MB，预留充足空间避免导入中途写满
+_DEFAULT_MIN_DISK_SPACE_MB = 3000
 
 # 镜像源 fallback（与 upgrade_service 一致）
 _GH_PROXY_MIRRORS = (

@@ -1249,14 +1249,14 @@
                                     <i class="bi bi-hdd me-1 text-success"></i>磁盘阈值 (MB)
                                     <i class="bi bi-question-circle ms-1 text-muted"
                                        data-bs-toggle="tooltip"
-                                       title="低于此可用空间时跳过导入，避免磁盘写满。默认 4000MB（双库 ~2.8GB + zip ~0.4GB，FTS5 改造后磁盘占用约 3.6GB）。"></i>
+                                       title="低于此可用空间时跳过导入，避免磁盘写满。默认 3000MB（导入峰值 = 双库各 ~0.8GB + zip ~0.4GB + WAL 余量 ≈ 2.4GB）。"></i>
                                 </label>
                                 <input type="number"
                                        class="form-control"
                                        id="bangumi-archive-min-disk-space"
                                        name="bangumi_archive.min_disk_space_mb"
                                        min="100"
-                                       value="4000">
+                                       value="3000">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label fw-semibold">
@@ -1916,7 +1916,7 @@ function populateForm(config) {
         document.getElementById('bangumi-archive-update-cron').value = ba.update_cron || '0 8 * * 3';
         document.getElementById('bangumi-archive-data-dir').value = ba.data_dir || './data/archive';
         document.getElementById('bangumi-archive-http-proxy').value = ba.http_proxy || '';
-        document.getElementById('bangumi-archive-min-disk-space').value = (ba.min_disk_space_mb != null && ba.min_disk_space_mb !== '') ? ba.min_disk_space_mb : 4000;
+        document.getElementById('bangumi-archive-min-disk-space').value = (ba.min_disk_space_mb != null && ba.min_disk_space_mb !== '') ? ba.min_disk_space_mb : 3000;
         document.getElementById('bangumi-archive-ssl-verify').checked = ba.ssl_verify !== false;
     }
 
@@ -2129,7 +2129,7 @@ async function saveConfig() {
                 update_cron: document.getElementById('bangumi-archive-update-cron').value.trim() || '0 8 * * 3',
                 data_dir: document.getElementById('bangumi-archive-data-dir').value.trim() || './data/archive',
                 http_proxy: document.getElementById('bangumi-archive-http-proxy').value.trim(),
-                min_disk_space_mb: parseInt(document.getElementById('bangumi-archive-min-disk-space').value, 10) || 4000,
+                min_disk_space_mb: parseInt(document.getElementById('bangumi-archive-min-disk-space').value, 10) || 3000,
                 ssl_verify: document.getElementById('bangumi-archive-ssl-verify').checked
             },
             bangumi_replay: {

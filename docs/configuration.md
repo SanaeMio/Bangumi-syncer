@@ -52,13 +52,13 @@ order: 20
 
 ## Bangumi Archive 离线查询层
 
-可选的本地归档功能：把 Bangumi 全站数据快照下载到本地 SQLite，启用后同步优先查本地、未命中再回退 API，能显著降低延迟与 API 调用。默认**关闭**，占用磁盘约 3.3GB（详见 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)）。
+可选的本地归档功能：把 Bangumi 全站数据快照下载到本地 SQLite，启用后同步优先查本地、未命中再回退 API，能显著降低延迟与 API 调用。默认**关闭**，常态占用约 1.3GB，导入峰值约 2.4GB（详见 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)）。
 
 - **启用 Archive**：总开关。关闭后所有短路查询立即返回 `archive_disabled`，行为与未接入 archive 完全一致；从「关闭」切到「开启」会自动触发首次导入与索引构建，**无需重启程序**。
 - **定时更新 Cron**：五段式 cron，默认每周三 08:00（北京时间）执行，晚于官方 05:00 发布。可在「调试工具」或通过 API 手动触发更新。
-- **数据目录**：存放双库（a/b 互备）、meta、active 指针与索引缓存的目录，默认 `./data/archive`。**Docker 部署建议挂载到 `/app/data`**，避免容器重建时数据丢失。
+- **数据目录**：存放双库（a/b 互备）、meta、active 指针的目录，默认 `./data/archive`。**Docker 部署建议挂载到 `/app/data`**，避免容器重建时数据丢失。
 - **HTTP 代理**：下载 dump zip 时使用的代理。**留空则自动继承 `[dev] script_proxy`**，国内用户建议配置。
-- **磁盘阈值 (MB)**：低于此可用空间时跳过导入，避免磁盘写满。默认 `4000`，双库 + 临时下载文件合计峰值约 3.6GB（FTS5 contentless 表不重复存储原始内容）。
+- **磁盘阈值 (MB)**：低于此可用空间时跳过导入，避免磁盘写满。默认 `3000`，导入峰值 = 双库（a+b 各 ~0.8GB）+ 临时下载 zip ~0.4GB + WAL 余量 ≈ 2.4GB。
 - **SSL 校验**：下载时是否校验 SSL 证书，自签名环境可关闭。
 
 更详细的功能说明、管理 API、性能基线与故障排查请看 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)。

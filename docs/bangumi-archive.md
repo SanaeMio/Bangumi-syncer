@@ -36,7 +36,7 @@ Bangumi Archive 是一项**本地归档**功能：把 [Bangumi 官方 Archive �
 | `http_proxy`        | （空）           | 下载 dump zip 时使用的 HTTP 代理。**留空则自动继承 `[dev] script_proxy`**，建议国内用户配置                                                              |
 | `ssl_verify`        | `true`           | 下载时是否校验 SSL 证书。自签名环境可关闭                                                                                                                |
 | `update_cron`       | `0 8 * * 3`      | 定时更新 cron（五段式），默认每周三 08:00（北京时间），晚于官方 05:00 发布                                                                               |
-| `min_disk_space_mb` | `4000`           | 磁盘可用空间阈值（MB），低于此值跳过导入，避免磁盘写满                                                                                                   |
+| `min_disk_space_mb` | `3000`           | 磁盘可用空间阈值（MB），低于此值跳过导入，避免磁盘写满                                                                                                   |
 | `retry_interval`    | `3600`           | 导入失败后的重试间隔（秒）                                                                                                                               |
 
 ::: tip 配置立即生效
@@ -52,7 +52,7 @@ data_dir = ./data/archive
 http_proxy = http://127.0.0.1:7890       ; 国内建议配置代理
 ssl_verify = true
 update_cron = 0 8 * * 3                  ; 每周三 08:00 自动更新
-min_disk_space_mb = 4000
+min_disk_space_mb = 3000
 retry_interval = 3600
 ```
 
@@ -139,7 +139,7 @@ ArchiveShortcut.try_*  →  ArchiveStore（SQLite）  →  BangumiApi（HTTP）
 > 导入时仅保留 `type∈(2,6)`（动画 + 三次元）的 subject，并移除 `subject_character` /
 > `subject_person` / `person_relation` 三张运行时未使用的死表，单库体积从 ~1.4GB 降至 ~0.8GB。
 
-`min_disk_space_mb = 4000` 是**导入前**的硬性阈值，低于此值会跳过导入并记录错误日志。
+`min_disk_space_mb = 3000` 是**导入前**的硬性阈值，低于此值会跳过导入并记录错误日志。导入峰值 = 双库（a+b 各 ~0.8GB）+ 临时下载 zip ~0.4GB + WAL 余量 ≈ 2.4GB，阈值预留约 600MB 余量。
 
 ## 内存占用
 
