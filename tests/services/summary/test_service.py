@@ -344,14 +344,9 @@ class TestExecuteJob:
         svc = SummaryService()
         config = _make_config(user_name="")
 
-        mock_notifier = MagicMock()
-        mock_notifier.send_notification_by_type = MagicMock()
-
         with (
             patch.object(svc, "generate_summary") as mock_gen,
-            patch(
-                "app.services.summary.service.get_notifier", return_value=mock_notifier
-            ),
+            patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             mock_gen.return_value = {
                 "summary_text": "test",
@@ -364,9 +359,9 @@ class TestExecuteJob:
 
             await svc.execute_job(config)
 
-        mock_notifier.send_notification_by_type.assert_called_once()
-        call_args = mock_notifier.send_notification_by_type.call_args
-        notif_type = call_args[0][0]
+        mock_ns.notify.assert_called_once()
+        call_args = mock_ns.notify.call_args
+        notif_type = call_args.args[0]
         assert notif_type == "watching_summary_test_job"
 
     @pytest.mark.asyncio
@@ -377,14 +372,9 @@ class TestExecuteJob:
         svc = SummaryService()
         config = _make_config(user_name="dad")
 
-        mock_notifier = MagicMock()
-        mock_notifier.send_notification_by_type = MagicMock()
-
         with (
             patch.object(svc, "generate_summary") as mock_gen,
-            patch(
-                "app.services.summary.service.get_notifier", return_value=mock_notifier
-            ),
+            patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             mock_gen.return_value = {
                 "summary_text": "test",
@@ -397,9 +387,9 @@ class TestExecuteJob:
 
             await svc.execute_job(config)
 
-        mock_notifier.send_notification_by_type.assert_called_once()
-        call_args = mock_notifier.send_notification_by_type.call_args
-        notif_type = call_args[0][0]
+        mock_ns.notify.assert_called_once()
+        call_args = mock_ns.notify.call_args
+        notif_type = call_args.args[0]
         assert notif_type == "watching_summary_test_job"
 
     @pytest.mark.asyncio
@@ -410,14 +400,9 @@ class TestExecuteJob:
         svc = SummaryService()
         config = _make_config(name="my_job", user_name="dad", lookback_days=3)
 
-        mock_notifier = MagicMock()
-        mock_notifier.send_notification_by_type = MagicMock()
-
         with (
             patch.object(svc, "generate_summary") as mock_gen,
-            patch(
-                "app.services.summary.service.get_notifier", return_value=mock_notifier
-            ),
+            patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             mock_gen.return_value = {
                 "summary_text": "AI generated summary",
@@ -432,9 +417,9 @@ class TestExecuteJob:
 
             await svc.execute_job(config)
 
-        data = mock_notifier.send_notification_by_type.call_args[0][1]
+        data = mock_ns.notify.call_args.kwargs
 
-        assert "timestamp" in data
+        # timestamp 由 NotificationService._build_data 内部生成，不在调用方 kwargs 中
         assert data["job_name"] == "my_job"
         assert data["user_name"] == "dad"
         assert data["summary_text"] == "AI generated summary"
@@ -452,14 +437,9 @@ class TestExecuteJob:
         svc = SummaryService()
         config = _make_config()
 
-        mock_notifier = MagicMock()
-        mock_notifier.send_notification_by_type = MagicMock()
-
         with (
             patch.object(svc, "generate_summary") as mock_gen,
-            patch(
-                "app.services.summary.service.get_notifier", return_value=mock_notifier
-            ),
+            patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             mock_gen.return_value = {
                 "summary_text": "test",
@@ -472,7 +452,7 @@ class TestExecuteJob:
 
             await svc.execute_job(config)
 
-        assert mock_notifier.send_notification_by_type.call_count == 1
+        assert mock_ns.notify.call_count == 1
 
     @pytest.mark.asyncio
     async def test_exception_in_generate_summary_is_caught(self):
@@ -560,14 +540,9 @@ class TestExecuteJob:
         svc = SummaryService()
         config = _make_config()
 
-        mock_notifier = MagicMock()
-        mock_notifier.send_notification_by_type = MagicMock()
-
         with (
             patch.object(svc, "generate_summary") as mock_gen,
-            patch(
-                "app.services.summary.service.get_notifier", return_value=mock_notifier
-            ),
+            patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             mock_gen.return_value = {
                 "summary_text": "test",
@@ -580,5 +555,5 @@ class TestExecuteJob:
 
             await svc.execute_job(config)
 
-        data = mock_notifier.send_notification_by_type.call_args[0][1]
+        data = mock_ns.notify.call_args.kwargs
         assert data["tokens_used"] == 0

@@ -3,10 +3,8 @@
 作为所有通知发送的单一入口，替代原先的 send_notify + insert_notification 双调用模式。
 调用方只需 ``notification_service.notify(type, item, source, **kwargs)``，
 Service 内部根据 NotificationTypeRegistry 的元数据决定：
-- 发送到 webhook/email 渠道（委托给现有 Notifier）
+- 发送到 webhook/email 渠道（委托给现有 Notifier，冷却检查由 Notifier 内部完成）
 - 是否写站内信（根据 in_app_type 映射）
-
-CooldownPolicy 从 Notifier 提取为独立策略，支持可配置冷却时长。
 """
 
 from __future__ import annotations
@@ -17,62 +15,9 @@ from typing import Any
 from ..core.logging import logger
 from ..core.notification_registry import (
     get_type_meta,
-    is_item_level_type,
     resolve_in_app_type,
 )
 from ..utils.notifier import get_notifier
-
-
-class CooldownPolicy:
-    """通知冷却策略
-
-    支持全局冷却时长 + 按类型自定义。
-    条目级类型按 title+season+episode 维度冷却，避免不同番剧互相静默。
-    """
-
-    def __init__(self, default_cooldown: int = 60) -> None:
-        self._default_cooldown = default_cooldown
-        self._type_cooldowns: dict[str, int] = {}
-        self._last_time: dict[str, float] = {}
-
-    def set_type_cooldown(self, type_id: str, seconds: int) -> None:
-        """为指定类型设置自定义冷却时长"""
-        self._type_cooldowns[type_id] = seconds
-
-    def get_cooldown(self, type_id: str) -> int:
-        """获取类型的冷却时长"""
-        return self._type_cooldowns.get(type_id, self._default_cooldown)
-
-    def _build_key(self, channel_id: str, type_id: str, data: dict[str, Any]) -> str:
-        """构造冷却 key"""
-        key = f"{channel_id}_{type_id}"
-        if is_item_level_type(type_id):
-            item_key = (
-                f"{data.get('title', '')}_{data.get('season', 0)}_"
-                f"{data.get('episode', 0)}"
-            )
-            key = f"{key}_{item_key}"
-        return key
-
-    def should_send(
-        self,
-        channel_id: str,
-        type_id: str,
-        data: dict[str, Any],
-        skip_cooldown: bool = False,
-    ) -> bool:
-        """检查是否应该发送（冷却未过期）"""
-        if skip_cooldown:
-            return True
-        key = self._build_key(channel_id, type_id, data)
-        now = time.time()
-        last = self._last_time.get(key, 0)
-        cooldown = self.get_cooldown(type_id)
-        if now - last < cooldown:
-            logger.debug(f"通知冷却中，跳过 {type_id} 类型通知")
-            return False
-        self._last_time[key] = now
-        return True
 
 
 class NotificationService:
@@ -80,7 +25,6 @@ class NotificationService:
 
     def __init__(self) -> None:
         self._notifier = get_notifier()
-        self._cooldown = CooldownPolicy()
         self._db_manager: Any = None  # 延迟初始化，避免循环 import
 
     def _get_db_manager(self) -> Any:
