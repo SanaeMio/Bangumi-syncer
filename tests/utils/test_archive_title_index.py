@@ -345,9 +345,9 @@ class TestInvalidateAndRebuild:
             lambda: new_db,
         )
 
-        # 路径变化后 is_ready 仍为 True（内存索引未失效），但 _built_path 不匹配
-        # find_subject_ids_* 不检查路径，仍返回旧索引结果
-        # 需显式 invalidate + _ensure_built 重建
+        # 路径变化后 is_ready 返回 False（_built_path 不匹配，见 is_ready 实现）
+        # find_subject_ids_* 在 is_ready=False 时直接返回空列表，
+        # 需显式 invalidate + _ensure_built 重建连接与 FTS5 表
         index.invalidate()
         assert index._ensure_built() is True
         ids = index.find_subject_ids_by_title("Test Anime")
