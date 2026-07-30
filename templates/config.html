@@ -305,43 +305,36 @@
 // 全局变量
 let bangumiAccountCounter = 0;
 
-// ========== 配置默认值 ==========
-// 用于 populateForm（显示回填）与 saveConfig（空值回填）的双向默认值，
-// 替代原散落在两处的 `value || default` 与 `parseInt(...) || default` 逻辑。
-const CONFIG_DEFAULTS = {
-    sync: { mode: 'single' },
-    dev: { sync_records_retention_days: 0 },
-    bangumi_data: {
-        cache_ttl_days: 7,
-        data_url: 'https://unpkg.com/bangumi-data@0.3/dist/data.json',
-        local_cache_path: './bangumi_data_cache.json',
-    },
-    feiniu: {
-        min_percent: 85, limit: 100, user_filter: 'all',
-        time_range: 'all', sync_interval: '*/15 * * * *',
-    },
-    fongmi: { min_percent: 80, sync_interval: '*/3 * * * *' },
-    bangumi_archive: {
-        update_cron: '0 8 * * 3', data_dir: './data/archive', min_disk_space_mb: 2000,
-    },
-    bangumi_replay: {
-        api_probe_interval: 300, replay_cron: '*/10 * * * *',
-        replay_batch_size: 20, max_attempts: 50,
-    },
-    auth: {
-        username: 'admin', session_timeout: 3600,
-        max_login_attempts: 5, lockout_duration: 900,
-    },
-    llm: { max_tokens: 2000, temperature: 0.7, timeout: 60 },
+// ========== 配置 Schema（从 /api/config/schema 动态加载） ==========
+// 替代原散落的 CONFIG_DEFAULTS / DEFAULT_TRUE_FIELDS / STRING_TRUE_FIELDS 硬编码字典，
+// 由后端 SectionMeta + FieldMeta 注册表作为单一真相源驱动。
+let CONFIG_SCHEMA = {
+    config_defaults: {},
+    default_true_fields: [],
+    loose_true_fields: [],
+    sections: [],
 };
 
+async function loadConfigSchema() {
+    try {
+        const data = await apiFetch('/api/config/schema', { method: 'GET' });
+        if (data.status === 'success' && data.data) {
+            CONFIG_SCHEMA = data.data;
+        } else {
+            console.error('加载配置 schema 失败:', data.message || '未知错误');
+        }
+    } catch (e) {
+        console.error('加载配置 schema 失败:', e);
+    }
+}
+
 /**
- * 应用默认值：返回新对象，将缺失或空字符串字段替换为 CONFIG_DEFAULTS 中的默认值。
+ * 应用默认值：返回新对象，将缺失或空字符串字段替换为 schema 中的默认值。
  * 不修改输入，保留 0/false 等显式 falsy 值。
  */
 function applyConfigDefaults(config) {
     const result = { ...config };
-    for (const [section, defaults] of Object.entries(CONFIG_DEFAULTS)) {
+    for (const [section, defaults] of Object.entries(CONFIG_SCHEMA.config_defaults || {})) {
         result[section] = { ...(result[section] || {}) };
         for (const [key, defaultVal] of Object.entries(defaults)) {
             const cur = result[section][key];
@@ -352,28 +345,6 @@ function applyConfigDefaults(config) {
     }
     return result;
 }
-
-/**
- * "默认 true"语义的 checkbox 字段：仅当显式 false 时取消勾选。
- * 这些字段在 INI 中通常省略，原 populateForm 用 `value !== false` 兼容。
- */
-const DEFAULT_TRUE_FIELDS = [
-    'bangumi_data.enabled',
-    'bangumi_data.use_cache',
-    'bangumi_archive.ssl_verify',
-    'bangumi_replay.enabled',
-    'auth.enabled',
-];
-
-/**
- * 字符串 'true' 兼容字段：INI 中布尔值可能存为字符串，需宽松匹配。
- */
-const STRING_TRUE_FIELDS = [
-    'feiniu.enabled',
-    'fongmi.enabled',
-    'fongmi.auto_scan',
-    'bangumi_archive.enabled',
-];
 
 function isLooseTrue(v) {
     return v === true || v === 'true' || (typeof v === 'string' && v.toLowerCase() === 'true');
@@ -581,7 +552,8 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error('找不到恢复配置模态框元素');
     }
-    loadConfig(false); // 初始加载时不显示提示
+    // 先加载配置 schema（驱动默认值/布尔语义），再加载配置数据
+    loadConfigSchema().then(() => loadConfig(false));
 });
 
 async function loadConfig(showToast = true) {
@@ -624,7 +596,7 @@ function populateForm(config) {
     // 3. 处理"默认 true"语义的 checkbox：仅当显式 false 时取消勾选
     //    ConfigForm.populate 用 Boolean(value)，undefined 会得到 false，
     //    但这些字段原语义是"未设置即视为 true"
-    DEFAULT_TRUE_FIELDS.forEach((path) => {
+    (CONFIG_SCHEMA.default_true_fields || []).forEach((path) => {
         const [section, key] = path.split('.');
         const v = config[section] && config[section][key];
         const el = document.querySelector(`#config-form [name="${path}"]`);
@@ -632,7 +604,7 @@ function populateForm(config) {
     });
 
     // 4. 处理字符串 'true' 兼容字段（INI 中布尔值可能存为字符串）
-    STRING_TRUE_FIELDS.forEach((path) => {
+    (CONFIG_SCHEMA.loose_true_fields || []).forEach((path) => {
         const [section, key] = path.split('.');
         const v = config[section] && config[section][key];
         const el = document.querySelector(`#config-form [name="${path}"]`);

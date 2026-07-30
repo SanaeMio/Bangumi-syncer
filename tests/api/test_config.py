@@ -99,6 +99,38 @@ async def test_get_config_with_encrypted_password(app_with_auth, mock_config_man
 
 
 @pytest.mark.asyncio
+async def test_get_config_schema(app_with_auth):
+    """/api/config/schema 返回 SectionMeta 序列化结构"""
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config/schema")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    schema = data["data"]
+    # 顶层结构
+    assert "sections" in schema
+    assert "config_defaults" in schema
+    assert "default_true_fields" in schema
+    assert "loose_true_fields" in schema
+    # 段按 order 排序
+    orders = [s["order"] for s in schema["sections"]]
+    assert orders == sorted(orders)
+    # 段同时提供连字符 name 与下划线 name_key
+    for s in schema["sections"]:
+        assert "name" in s
+        assert "name_key" in s
+        assert "-" not in s["name_key"]
+    # 默认值示例
+    assert schema["config_defaults"]["sync"]["mode"] == "single"
+    assert schema["config_defaults"]["llm"]["max_tokens"] == 2000
+    # default_true / loose_true 字段使用下划线路径
+    assert "bangumi_data.enabled" in schema["default_true_fields"]
+    assert "feiniu.enabled" in schema["loose_true_fields"]
+
+
+@pytest.mark.asyncio
 async def test_update_config(app_with_auth, mock_config_manager, mock_security_manager):
     """测试更新配置"""
     async with AsyncClient(

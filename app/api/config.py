@@ -229,6 +229,21 @@ async def get_config(
         raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
 
 
+@router.get("/config/schema")
+async def get_config_schema(
+    request: Request, current_user: dict = Depends(get_current_user_flexible)
+) -> dict[str, Any]:
+    """获取配置段元数据 schema
+
+    暴露 SectionMeta 注册表（段排序、可见性、敏感字段、关联调度器）以及
+    字段级元数据（默认值、default_true/loose_true 布尔语义），供前端动态
+    驱动表单默认值回填与 checkbox 语义，替代散落的硬编码字典。
+    """
+    from ..core.config_schema import serialize_schema
+
+    return {"status": "success", "data": serialize_schema()}
+
+
 @router.post("/config")
 async def update_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)

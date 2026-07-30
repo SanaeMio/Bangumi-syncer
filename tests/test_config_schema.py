@@ -238,3 +238,223 @@ class TestUIVisibility:
         names = {s.name for s in config_schema.ui_visible_sections()}
         assert "bangumi-mapping" not in names
         assert "bangumi" in names
+
+
+class TestFieldMeta:
+    """字段级元数据（FieldMeta）注册与派生"""
+
+    def test_bangumi_data_fields_registered(self):
+        meta = config_schema.SECTIONS["bangumi-data"]
+        names = {f.name for f in meta.fields}
+        assert {
+            "enabled",
+            "use_cache",
+            "cache_ttl_days",
+            "data_url",
+            "local_cache_path",
+        } <= names
+
+    def test_auth_default_username(self):
+        assert config_schema.field_default("auth", "username") == "admin"
+
+    def test_auth_default_session_timeout(self):
+        assert config_schema.field_default("auth", "session_timeout") == 3600
+
+    def test_llm_defaults(self):
+        assert config_schema.field_default("llm", "max_tokens") == 2000
+        assert config_schema.field_default("llm", "temperature") == 0.7
+        assert config_schema.field_default("llm", "timeout") == 60
+
+    def test_feiniu_defaults(self):
+        assert config_schema.field_default("feiniu", "min_percent") == 85
+        assert config_schema.field_default("feiniu", "limit") == 100
+        assert config_schema.field_default("feiniu", "sync_interval") == "*/15 * * * *"
+
+    def test_fongmi_defaults(self):
+        assert config_schema.field_default("fongmi", "min_percent") == 80
+        assert config_schema.field_default("fongmi", "sync_interval") == "*/3 * * * *"
+
+    def test_archive_defaults(self):
+        assert (
+            config_schema.field_default("bangumi-archive", "update_cron") == "0 8 * * 3"
+        )
+        assert (
+            config_schema.field_default("bangumi-archive", "data_dir")
+            == "./data/archive"
+        )
+        assert (
+            config_schema.field_default("bangumi-archive", "min_disk_space_mb") == 2000
+        )
+
+    def test_replay_defaults(self):
+        assert (
+            config_schema.field_default("bangumi-replay", "api_probe_interval") == 300
+        )
+        assert config_schema.field_default("bangumi-replay", "replay_batch_size") == 20
+        assert config_schema.field_default("bangumi-replay", "max_attempts") == 50
+
+    def test_sync_mode_default(self):
+        assert config_schema.field_default("sync", "mode") == "single"
+
+    def test_dev_retention_default(self):
+        assert config_schema.field_default("dev", "sync_records_retention_days") == 0
+
+    def test_unregistered_field_returns_none(self):
+        assert config_schema.field_default("sync", "nonexistent") is None
+        assert config_schema.field_meta("sync", "nonexistent") is None
+
+    def test_field_meta_multi_instance_lookup(self):
+        """多实例段前缀匹配查 FieldMeta"""
+        # notify-webhook 段当前未登记字段，但应能通过前缀匹配返回 None 而非 KeyError
+        assert config_schema.field_meta("notify-webhook-1", "url") is None
+
+
+class TestDefaultTrueFields:
+    """default_true 字段派生（替代 DEFAULT_TRUE_FIELDS）"""
+
+    def test_includes_bangumi_data_enabled(self):
+        assert "bangumi_data.enabled" in config_schema.default_true_fields()
+
+    def test_includes_bangumi_data_use_cache(self):
+        assert "bangumi_data.use_cache" in config_schema.default_true_fields()
+
+    def test_includes_archive_ssl_verify(self):
+        assert "bangumi_archive.ssl_verify" in config_schema.default_true_fields()
+
+    def test_includes_replay_enabled(self):
+        assert "bangumi_replay.enabled" in config_schema.default_true_fields()
+
+    def test_includes_auth_enabled(self):
+        assert "auth.enabled" in config_schema.default_true_fields()
+
+    def test_uses_underscore_section_name(self):
+        """所有路径用下划线形式（匹配前端 form name）"""
+        for path in config_schema.default_true_fields():
+            assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
+
+    def test_count_matches_legacy(self):
+        """原硬编码共 5 个 default_true 字段"""
+        assert len(config_schema.default_true_fields()) == 5
+
+
+class TestLooseTrueFields:
+    """loose_true 字段派生（替代 STRING_TRUE_FIELDS）"""
+
+    def test_includes_feiniu_enabled(self):
+        assert "feiniu.enabled" in config_schema.loose_true_fields()
+
+    def test_includes_fongmi_enabled(self):
+        assert "fongmi.enabled" in config_schema.loose_true_fields()
+
+    def test_includes_fongmi_auto_scan(self):
+        assert "fongmi.auto_scan" in config_schema.loose_true_fields()
+
+    def test_includes_archive_enabled(self):
+        assert "bangumi_archive.enabled" in config_schema.loose_true_fields()
+
+    def test_uses_underscore_section_name(self):
+        for path in config_schema.loose_true_fields():
+            assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
+
+    def test_count_matches_legacy(self):
+        """原硬编码共 4 个 loose_true 字段"""
+        assert len(config_schema.loose_true_fields()) == 4
+
+
+class TestConfigDefaults:
+    """config_defaults() 派生（替代 CONFIG_DEFAULTS）"""
+
+    def test_includes_sync_mode(self):
+        assert config_schema.config_defaults()["sync"]["mode"] == "single"
+
+    def test_includes_bangumi_data_defaults(self):
+        cd = config_schema.config_defaults()
+        assert cd["bangumi_data"]["cache_ttl_days"] == 7
+        assert cd["bangumi_data"]["data_url"].startswith("https://")
+        assert cd["bangumi_data"]["local_cache_path"] == "./bangumi_data_cache.json"
+
+    def test_includes_feiniu_defaults(self):
+        cd = config_schema.config_defaults()
+        assert cd["feiniu"]["min_percent"] == 85
+        assert cd["feiniu"]["limit"] == 100
+        assert cd["feiniu"]["sync_interval"] == "*/15 * * * *"
+
+    def test_includes_llm_defaults(self):
+        cd = config_schema.config_defaults()
+        assert cd["llm"]["max_tokens"] == 2000
+        assert cd["llm"]["temperature"] == 0.7
+        assert cd["llm"]["timeout"] == 60
+
+    def test_excludes_default_true_fields(self):
+        """default_true 字段不应出现在 config_defaults 中（避免双重回填）"""
+        cd = config_schema.config_defaults()
+        # bangumi_data.enabled 是 default_true，不应在 config_defaults
+        assert "enabled" not in cd.get("bangumi_data", {})
+        # auth.enabled 是 default_true，不应在 config_defaults
+        assert "enabled" not in cd.get("auth", {})
+
+    def test_excludes_loose_true_fields(self):
+        """loose_true 字段不应出现在 config_defaults 中"""
+        cd = config_schema.config_defaults()
+        # feiniu.enabled 是 loose_true，不应在 config_defaults
+        assert "enabled" not in cd.get("feiniu", {})
+        # bangumi_archive.enabled 是 loose_true，不应在 config_defaults
+        assert "enabled" not in cd.get("bangumi_archive", {})
+
+    def test_uses_underscore_section_keys(self):
+        """所有 section 键用下划线形式（匹配前端 form name）"""
+        for section in config_schema.config_defaults().keys():
+            assert "-" not in section, f"段名含连字符: {section}"
+
+
+class TestSerializeSchema:
+    """serialize_schema() 完整序列化"""
+
+    def test_returns_required_top_level_keys(self):
+        schema = config_schema.serialize_schema()
+        assert "sections" in schema
+        assert "config_defaults" in schema
+        assert "default_true_fields" in schema
+        assert "loose_true_fields" in schema
+
+    def test_sections_sorted_by_order(self):
+        schema = config_schema.serialize_schema()
+        orders = [s["order"] for s in schema["sections"]]
+        assert orders == sorted(orders)
+
+    def test_section_has_name_key_underscore(self):
+        """每个段同时提供 name（连字符）和 name_key（下划线）"""
+        schema = config_schema.serialize_schema()
+        for s in schema["sections"]:
+            assert "name" in s
+            assert "name_key" in s
+            assert "-" not in s["name_key"]
+
+    def test_section_fields_structure(self):
+        schema = config_schema.serialize_schema()
+        bangumi_data = next(
+            s for s in schema["sections"] if s["name"] == "bangumi-data"
+        )
+        assert "cache_ttl_days" in bangumi_data["fields"]
+        field = bangumi_data["fields"]["cache_ttl_days"]
+        assert field["default"] == 7
+        assert field["default_true"] is False
+        assert field["loose_true"] is False
+
+    def test_section_sensitive_fields_sorted(self):
+        schema = config_schema.serialize_schema()
+        auth = next(s for s in schema["sections"] if s["name"] == "auth")
+        assert auth["sensitive_fields"] == ["webhook_key"]
+
+    def test_config_defaults_consistent_with_helper(self):
+        """serialize_schema 的 config_defaults 与 config_defaults() 函数一致"""
+        schema = config_schema.serialize_schema()
+        assert schema["config_defaults"] == config_schema.config_defaults()
+
+    def test_default_true_fields_consistent_with_helper(self):
+        schema = config_schema.serialize_schema()
+        assert schema["default_true_fields"] == config_schema.default_true_fields()
+
+    def test_loose_true_fields_consistent_with_helper(self):
+        schema = config_schema.serialize_schema()
+        assert schema["loose_true_fields"] == config_schema.loose_true_fields()
