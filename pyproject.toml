@@ -107,6 +107,11 @@ markers = [
     "e2e: mark test as an end-to-end test (requires playwright + server, slow)",
 ]
 
+# E2E 失败捕获参数（pytest-playwright CLI 选项）
+# 本地跑 E2E：uv run pytest tests/e2e/ -m e2e --browser chromium
+# 这些参数不在 ini 中配置（pytest-playwright 不识别 ini 段），由 CI workflow 显式传入：
+#   --screenshot only-on-failure --video retain-on-failure --trace retain-on-failure --output test-results/e2e
+
 # Coverage configuration
 [tool.coverage.run]
 source = ["app"]

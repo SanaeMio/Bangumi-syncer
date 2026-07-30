@@ -90,8 +90,10 @@ def test_static_js_loaded(page, base_url: str):
 
 def test_root_redirects_when_unauthed(page, base_url: str):
     """未登录访问根路径重定向到 /login"""
-    page.goto(f"{base_url}/")
-    page.wait_for_load_state("networkidle")
-
-    # 未登录应跳转到 /login
+    page.goto(f"{base_url}/", wait_until="domcontentloaded")
+    # 重定向可能在 goto 返回后才完成，用 wait_for_function 等 URL 稳定
+    page.wait_for_function(
+        "() => window.location.pathname.includes('/login')",
+        timeout=10000,
+    )
     assert "/login" in page.url

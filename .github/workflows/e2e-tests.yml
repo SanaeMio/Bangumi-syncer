@@ -43,4 +43,19 @@ jobs:
         run: uv run playwright install chromium --with-deps
 
       - name: Run E2E tests
-        run: uv run pytest tests/e2e/ -m e2e --browser chromium -v
+        # 失败捕获参数来自 pyproject.toml [tool.pytest.ini_options.playwright]
+        # 显式带上 --output 确保产物路径与上传步骤一致
+        run: |
+          uv run pytest tests/e2e/ -m e2e --browser chromium -v \
+            --screenshot only-on-failure \
+            --video retain-on-failure \
+            --trace retain-on-failure \
+            --output test-results/e2e
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-artifacts
+          path: test-results/e2e/
+          retention-days: 7

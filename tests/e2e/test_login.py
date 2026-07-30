@@ -71,8 +71,14 @@ def test_logout_redirects_to_login(page, base_url: str):
     )
 
     # 再访问 dashboard，应重定向到 login
-    page.goto(f"{base_url}/dashboard")
-    page.wait_for_load_state("networkidle")
+    # 重定向会被 playwright 视为"导航被打断"，用 domcontentloaded 避免报错
+    page.goto(f"{base_url}/dashboard", wait_until="domcontentloaded")
+    # 重定向可能在 goto 返回后才完成，给一点时间让 URL 稳定
+    page.wait_for_timeout(500)
+    page.wait_for_function(
+        "() => window.location.pathname.includes('/login')",
+        timeout=10000,
+    )
     assert "/login" in page.url, f"登出后未重定向到登录页，当前 URL: {page.url}"
 
 
@@ -86,7 +92,7 @@ def test_authed_access_to_dashboard(page, base_url: str):
     page.click("#loginBtn")
     page.wait_for_url("**/dashboard", timeout=10000)
 
-    # 直接访问 dashboard
+    # 直接访问 dashboard（已登录不会被重定向，可用 networkidle）
     page.goto(f"{base_url}/dashboard")
     page.wait_for_load_state("networkidle")
     assert "/dashboard" in page.url
