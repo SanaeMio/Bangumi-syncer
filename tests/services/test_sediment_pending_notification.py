@@ -1,7 +1,7 @@
 """_sediment_pending_candidate 触发通知测试
 
 验证：
-- 沉淀成功后调用 send_notify('pending_candidate', ...)
+- 沉淀成功后调用 notification_service.notify('pending_candidate', ...)
 - 候选为空时不通知
 - 沉淀失败时不通知
 - 通知失败不影响主流程
@@ -74,7 +74,7 @@ class TestSedimentPendingCandidateNotification:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             return SyncService()
@@ -89,14 +89,14 @@ class TestSedimentPendingCandidateNotification:
             "app.services.sync_service.database_manager.log_pending_candidate",
             return_value=1,
         ) as mock_log:
-            with patch("app.services.sync_service.send_notify") as mock_notify:
+            with patch("app.services.sync_service.notification_service") as mock_notify:
                 svc._sediment_pending_candidate(item, "plex", trace)
 
         # 验证沉淀写入
         mock_log.assert_called_once()
         # 验证通知被触发
-        mock_notify.assert_called_once()
-        call_args = mock_notify.call_args
+        mock_notify.notify.assert_called_once()
+        call_args = mock_notify.notify.call_args
         assert call_args.args[0] == "pending_candidate"
         assert call_args.args[1] is item
         assert call_args.args[2] == "plex"
@@ -114,11 +114,11 @@ class TestSedimentPendingCandidateNotification:
         with patch(
             "app.services.sync_service.database_manager.log_pending_candidate"
         ) as mock_log:
-            with patch("app.services.sync_service.send_notify") as mock_notify:
+            with patch("app.services.sync_service.notification_service") as mock_notify:
                 svc._sediment_pending_candidate(item, "plex", trace)
 
         mock_log.assert_not_called()
-        mock_notify.assert_not_called()
+        mock_notify.notify.assert_not_called()
 
     def test_sediment_db_failure_no_notification(self):
         """沉淀写入失败时不通知"""
@@ -130,12 +130,12 @@ class TestSedimentPendingCandidateNotification:
             "app.services.sync_service.database_manager.log_pending_candidate",
             side_effect=Exception("db error"),
         ) as mock_log:
-            with patch("app.services.sync_service.send_notify") as mock_notify:
+            with patch("app.services.sync_service.notification_service") as mock_notify:
                 # 不应抛出异常（不影响主流程）
                 svc._sediment_pending_candidate(item, "plex", trace)
 
         mock_log.assert_called_once()
-        mock_notify.assert_not_called()
+        mock_notify.notify.assert_not_called()
 
     def test_sediment_notify_failure_does_not_crash(self):
         """通知发送失败不影响主流程"""
@@ -147,10 +147,8 @@ class TestSedimentPendingCandidateNotification:
             "app.services.sync_service.database_manager.log_pending_candidate",
             return_value=1,
         ):
-            with patch(
-                "app.services.sync_service.send_notify",
-                side_effect=Exception("notify error"),
-            ):
+            with patch("app.services.sync_service.notification_service") as mock_notify:
+                mock_notify.notify.side_effect = Exception("notify error")
                 # 不应抛出异常
                 svc._sediment_pending_candidate(item, "plex", trace)
 
@@ -180,10 +178,10 @@ class TestSedimentPendingCandidateNotification:
             "app.services.sync_service.database_manager.log_pending_candidate",
             return_value=1,
         ):
-            with patch("app.services.sync_service.send_notify") as mock_notify:
+            with patch("app.services.sync_service.notification_service") as mock_notify:
                 svc._sediment_pending_candidate(item, "plex", trace)
 
-        kwargs = mock_notify.call_args.kwargs
+        kwargs = mock_notify.notify.call_args.kwargs
         assert kwargs["top_candidate_name"] == "english name"
         assert kwargs["top_candidate_id"] == "111"
         assert kwargs["candidates_count"] == 1

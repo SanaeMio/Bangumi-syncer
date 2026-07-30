@@ -484,8 +484,7 @@ class TestExecuteJob:
 
         with (
             patch.object(svc, "generate_summary") as mock_gen,
-            patch("app.services.summary.service.get_notifier") as mock_get_notifier,
-            patch("app.services.summary.service.database_manager") as mock_db,
+            patch("app.services.summary.service.notification_service") as mock_ns,
             patch("app.services.summary.service.logger") as mock_logger,
         ):
             mock_gen.side_effect = RuntimeError("LLM down")
@@ -493,19 +492,14 @@ class TestExecuteJob:
             # 不应抛出异常
             await svc.execute_job(config)
 
-        # 应发送失败通知
-        mock_get_notifier.return_value.send_notification_by_type.assert_called_once()
-        call_args = mock_get_notifier.return_value.send_notification_by_type.call_args[
-            0
-        ]
-        assert call_args[0] == "watching_summary_failing_job"
-        assert "LLM down" in call_args[1]["summary_text"]
-
-        # 收件箱应写入通知
-        mock_db.insert_notification.assert_called_once()
-        inbox_args = mock_db.insert_notification.call_args[1]
-        assert inbox_args["notif_type"] == "summary_job_failed"
-        assert "执行异常" in inbox_args["body"]
+        # P4.7：应通过 notification_service.notify 发送失败通知
+        mock_ns.notify.assert_called_once()
+        call_args = mock_ns.notify.call_args
+        assert call_args.args[0] == "watching_summary_failing_job"
+        kwargs = call_args.kwargs
+        assert kwargs["in_app_type"] == "summary_job_failed"
+        assert "LLM down" in kwargs["summary_text"]
+        assert "执行异常" in kwargs["in_app_body"]
 
         # 日志应记录该错误
         error_calls = [
@@ -526,8 +520,7 @@ class TestExecuteJob:
 
         with (
             patch.object(svc, "generate_summary") as mock_gen,
-            patch("app.services.summary.service.get_notifier") as mock_get_notifier,
-            patch("app.services.summary.service.database_manager") as mock_db,
+            patch("app.services.summary.service.notification_service") as mock_ns,
             patch("app.services.summary.service.logger") as mock_logger,
         ):
             mock_gen.return_value = {
@@ -541,21 +534,15 @@ class TestExecuteJob:
 
             await svc.execute_job(config)
 
-        # 应发送失败通知（而非成功通知）
-        mock_get_notifier.return_value.send_notification_by_type.assert_called_once()
-        call_args = mock_get_notifier.return_value.send_notification_by_type.call_args[
-            0
-        ]
-        notif_type = call_args[0]
-        assert notif_type == "watching_summary_empty_llm_job"
-        assert "LLM 返回空内容" in call_args[1]["summary_text"]
-        assert call_args[1]["model"] == ""
-
-        # 收件箱应写入 summary_llm_failed 类型通知
-        mock_db.insert_notification.assert_called_once()
-        inbox_args = mock_db.insert_notification.call_args[1]
-        assert inbox_args["notif_type"] == "summary_llm_failed"
-        assert "empty_llm_job" in inbox_args["title"]
+        # P4.7：应通过 notification_service.notify 发送失败通知（而非成功通知）
+        mock_ns.notify.assert_called_once()
+        call_args = mock_ns.notify.call_args
+        assert call_args.args[0] == "watching_summary_empty_llm_job"
+        kwargs = call_args.kwargs
+        assert kwargs["in_app_type"] == "summary_llm_failed"
+        assert "empty_llm_job" in kwargs["in_app_title"]
+        assert "LLM 返回空内容" in kwargs["summary_text"]
+        assert kwargs["model"] == ""
 
         # 应记录错误日志
         error_calls = [

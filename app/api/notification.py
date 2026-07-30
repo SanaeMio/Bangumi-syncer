@@ -116,7 +116,7 @@ async def get_notification_status(
         webhook_count = 0
         webhook_enabled_count = 0
         for section_name in config_manager.get_config_parser().sections():
-            if section_name.startswith("webhook-"):
+            if section_name.startswith("notify-webhook-"):
                 webhook_count += 1
                 section_config = config_manager.get_section(section_name)
                 if section_config.get("enabled", False):
@@ -126,7 +126,7 @@ async def get_notification_status(
         email_count = 0
         email_enabled_count = 0
         for section_name in config_manager.get_config_parser().sections():
-            if section_name.startswith("email-"):
+            if section_name.startswith("notify-email-"):
                 email_count += 1
                 section_config = config_manager.get_section(section_name)
                 if section_config.get("enabled", False):
@@ -163,7 +163,7 @@ async def get_webhooks(current_user: dict = Depends(get_current_user_flexible)):
         config = config_manager.get_config_parser()
 
         for section_name in config.sections():
-            if section_name.startswith("webhook-"):
+            if section_name.startswith("notify-webhook-"):
                 section_config = config_manager.get_section(section_name)
                 webhook_configs.append(
                     {
@@ -198,12 +198,12 @@ async def create_webhook(
         # 计算当前webhook配置的数量
         webhook_count = 0
         for section_name in config.sections():
-            if section_name.startswith("webhook-"):
+            if section_name.startswith("notify-webhook-"):
                 webhook_count += 1
 
         # 新ID为当前数量+1
         new_id = webhook_count + 1
-        section_name = f"webhook-{new_id}"
+        section_name = f"notify-webhook-{new_id}"
 
         # 创建新的配置段
         if not config.has_section(section_name):
@@ -248,7 +248,7 @@ async def update_webhook(
 ) -> dict[str, Any]:
     """更新webhook配置"""
     try:
-        section_name = f"webhook-{webhook_id}"
+        section_name = f"notify-webhook-{webhook_id}"
         config = config_manager.get_config_parser()
 
         # 检查配置段是否存在
@@ -300,7 +300,7 @@ async def delete_webhook(
 ) -> dict[str, Any]:
     """删除webhook配置"""
     try:
-        section_name = f"webhook-{webhook_id}"
+        section_name = f"notify-webhook-{webhook_id}"
         config = config_manager.get_config_parser()
 
         # 检查配置段是否存在
@@ -313,7 +313,7 @@ async def delete_webhook(
         # 重新索引剩余的webhook配置
         webhook_sections = []
         for section_name in config.sections():
-            if section_name.startswith("webhook-"):
+            if section_name.startswith("notify-webhook-"):
                 section_config = config_manager.get_section(section_name)
                 webhook_sections.append(
                     {"section_name": section_name, "config": section_config}
@@ -325,7 +325,7 @@ async def delete_webhook(
         # 重新分配ID（从1开始）
         for new_id, webhook in enumerate(webhook_sections, 1):
             old_section_name = webhook["section_name"]
-            new_section_name = f"webhook-{new_id}"
+            new_section_name = f"notify-webhook-{new_id}"
 
             # 如果配置段名称需要更改
             if old_section_name != new_section_name:
@@ -383,7 +383,7 @@ async def get_emails(current_user: dict = Depends(get_current_user_flexible)):
         config = config_manager.get_config_parser()
 
         for section_name in config.sections():
-            if section_name.startswith("email-"):
+            if section_name.startswith("notify-email-"):
                 section_config = config_manager.get_section(section_name)
                 # 不返回密码字段（或返回掩码）
                 email_config = {
@@ -425,12 +425,12 @@ async def create_email(
         # 计算当前邮件配置的数量
         email_count = 0
         for section_name in config.sections():
-            if section_name.startswith("email-"):
+            if section_name.startswith("notify-email-"):
                 email_count += 1
 
         # 新ID为当前数量+1
         new_id = email_count + 1
-        section_name = f"email-{new_id}"
+        section_name = f"notify-email-{new_id}"
 
         # 创建新的配置段
         if not config.has_section(section_name):
@@ -491,7 +491,7 @@ async def update_email(
 ) -> dict[str, Any]:
     """更新邮件配置"""
     try:
-        section_name = f"email-{email_id}"
+        section_name = f"notify-email-{email_id}"
         config = config_manager.get_config_parser()
 
         # 检查配置段是否存在
@@ -571,7 +571,7 @@ async def delete_email(
 ) -> dict[str, Any]:
     """删除邮件配置"""
     try:
-        section_name = f"email-{email_id}"
+        section_name = f"notify-email-{email_id}"
         config = config_manager.get_config_parser()
 
         # 检查配置段是否存在
@@ -584,7 +584,7 @@ async def delete_email(
         # 重新索引剩余的邮件配置
         email_sections = []
         for section_name in config.sections():
-            if section_name.startswith("email-"):
+            if section_name.startswith("notify-email-"):
                 section_config = config_manager.get_section(section_name)
                 email_sections.append(
                     {"section_name": section_name, "config": section_config}
@@ -596,7 +596,7 @@ async def delete_email(
         # 重新分配ID（从1开始）
         for new_id, email in enumerate(email_sections, 1):
             old_section_name = email["section_name"]
-            new_section_name = f"email-{new_id}"
+            new_section_name = f"notify-email-{new_id}"
 
             # 如果配置段名称需要更改
             if old_section_name != new_section_name:

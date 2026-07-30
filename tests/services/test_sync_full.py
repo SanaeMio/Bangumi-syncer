@@ -15,7 +15,7 @@ class TestSyncServiceFind:
         with (
             patch("app.services.sync_service.config_manager") as mock_cm,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service") as mock_mapping,
             patch("app.services.sync_service.BangumiApi") as mock_bgm,
             patch("app.services.sync_service.BangumiData"),
@@ -66,7 +66,7 @@ class TestSyncServiceMore:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService

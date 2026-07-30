@@ -13,7 +13,7 @@ def test_is_sensitive_ini_field():
     assert not csc.is_sensitive_ini_field("bangumi-mapping", "access_token")
     assert csc.is_sensitive_ini_field("auth", "webhook_key")
     assert not csc.is_sensitive_ini_field("auth", "password")
-    assert csc.is_sensitive_ini_field("email-1", "smtp_password")
+    assert csc.is_sensitive_ini_field("notify-email-1", "smtp_password")
     assert csc.is_sensitive_ini_field("trakt", "client_secret")
     assert not csc.is_sensitive_ini_field("bangumi", "username")
     assert not csc.is_sensitive_ini_field("auth", "secret_key")
@@ -109,7 +109,7 @@ def test_decrypt_if_sensitive_non_sensitive_unchanged():
 
 def test_decrypt_if_sensitive_non_string_unchanged():
     assert csc.decrypt_if_sensitive("bangumi", "access_token", None) is None
-    assert csc.decrypt_if_sensitive("email-1", "smtp_port", 465) == 465
+    assert csc.decrypt_if_sensitive("notify-email-1", "smtp_port", 465) == 465
 
 
 def test_decrypt_if_sensitive_decrypts_token():
@@ -187,8 +187,8 @@ def test_migrate_skips_empty_and_already_encrypted():
     cfg = ConfigParser()
     cfg.add_section("bangumi")
     cfg.set("bangumi", "access_token", "")
-    cfg.add_section("email-1")
-    cfg.set("email-1", "smtp_password", "")
+    cfg.add_section("notify-email-1")
+    cfg.set("notify-email-1", "smtp_password", "")
     with patch.object(csc, "_master_secret", return_value="m" * 20):
         assert csc.migrate_plaintext_sensitive_fields(cfg) is False
 
@@ -215,14 +215,14 @@ def test_migrate_migrates_bangumi_dash_webhook_and_email_password():
     cfg.set("bangumi-user99", "access_token", "multi-plain")
     cfg.add_section("auth")
     cfg.set("auth", "webhook_key", "wh-plain")
-    cfg.add_section("email-2")
-    cfg.set("email-2", "smtp_password", "pw-plain")
+    cfg.add_section("notify-email-2")
+    cfg.set("notify-email-2", "smtp_password", "pw-plain")
 
     with patch.object(csc, "_master_secret", return_value="m" * 22):
         assert csc.migrate_plaintext_sensitive_fields(cfg) is True
         assert csc.decrypt(cfg.get("bangumi-user99", "access_token")) == "multi-plain"
         assert csc.decrypt(cfg.get("auth", "webhook_key")) == "wh-plain"
-        assert csc.decrypt(cfg.get("email-2", "smtp_password")) == "pw-plain"
+        assert csc.decrypt(cfg.get("notify-email-2", "smtp_password")) == "pw-plain"
 
 
 def test_migrate_second_run_returns_false():

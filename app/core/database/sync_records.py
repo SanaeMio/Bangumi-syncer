@@ -85,27 +85,6 @@ class SyncRecordsRepository(BaseRepository):
                 ),
             )
             record_id = cursor.lastrowid
-            if status == "error" and record_id:
-                ep_label = (
-                    f"S{season}E{episode}"
-                    if (media_type or "episode") == "episode"
-                    else "剧场版"
-                )
-                notif_title = f"同步失败：{title} {ep_label}"
-                conn.execute(
-                    """
-                    INSERT INTO in_app_notifications
-                    (type, title, body, ref_id, created_at, read_at)
-                    VALUES (?, ?, ?, ?, ?, NULL)
-                    """,
-                    (
-                        "sync_failed",
-                        notif_title,
-                        message or "",
-                        record_id,
-                        local_time,
-                    ),
-                )
             return record_id
 
         return self._run_write(

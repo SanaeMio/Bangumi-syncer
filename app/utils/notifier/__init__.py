@@ -78,7 +78,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
         webhook_configs = []
 
         for section_name in config.sections():
-            if section_name.startswith("webhook-"):
+            if section_name.startswith("notify-webhook-"):
                 section_config = self.config_manager.get_section(section_name)
                 if section_config.get("url"):  # 必须有URL才有效
                     webhook_configs.append(section_config)
@@ -91,7 +91,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
         email_configs = []
 
         for section_name in config.sections():
-            if section_name.startswith("email-"):
+            if section_name.startswith("notify-email-"):
                 section_config = self.config_manager.get_section(section_name)
                 if section_config.get("smtp_server"):  # 必须有SMTP服务器才有效
                     email_configs.append(section_config)
@@ -168,56 +168,3 @@ def get_notifier() -> Notifier:
     if _notifier_instance is None:
         _notifier_instance = Notifier(config_manager)
     return _notifier_instance
-
-
-def send_notify(
-    notification_type: str, item: Any = None, source: str = None, **kwargs
-) -> bool:
-    """
-    安全发送通知的便捷函数
-
-    Args:
-        notification_type: 通知类型
-        item: CustomItem 对象或 None，自动提取 user_name, title, ori_title, season, episode
-              如果为 None 或字段不存在，使用默认值
-        source: 来源（覆盖 item.source）
-        **kwargs: 额外的通知数据字段，会覆盖从 item 提取的同名字段
-
-    Returns:
-        bool: 是否发送成功
-    """
-    try:
-        notifier = get_notifier()
-
-        # 基础数据，带默认值
-        data = {
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "user_name": "unknown",
-            "title": "unknown",
-            "ori_title": "",
-            "season": 0,
-            "episode": 0,
-            "source": "",
-        }
-
-        # 从 item 对象提取字段（安全访问）
-        if item is not None:
-            data["user_name"] = getattr(item, "user_name", "unknown")
-            data["title"] = getattr(item, "title", "unknown")
-            data["ori_title"] = getattr(item, "ori_title", "") or ""
-            data["season"] = getattr(item, "season", 0)
-            data["episode"] = getattr(item, "episode", 0)
-            data["source"] = getattr(item, "source", "")
-
-        # source 参数覆盖
-        if source is not None:
-            data["source"] = source
-
-        # kwargs 覆盖所有同名字段
-        data.update(kwargs)
-
-        notifier.send_notification_by_type(notification_type, data)
-        return True
-    except Exception as e:
-        logger.error(f"发送 {notification_type} 通知失败: {e}")
-        return False

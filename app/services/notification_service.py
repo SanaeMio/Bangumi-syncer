@@ -101,6 +101,7 @@ class NotificationService:
         in_app_title: str | None = None,
         in_app_body: str | None = None,
         in_app_ref_id: int | None = None,
+        in_app_type: str | None = None,
         **kwargs: Any,
     ) -> bool:
         """统一通知入口
@@ -110,10 +111,12 @@ class NotificationService:
             item: CustomItem 对象或 None
             source: 来源（覆盖 item.source）
             skip_cooldown: 跳过冷却检查
-            write_in_app: 是否写站内信（仅在类型有 in_app_type 映射时生效）
+            write_in_app: 是否写站内信（仅在类型有 in_app_type 映射或 in_app_type 参数提供时生效）
             in_app_title: 自定义站内信标题（覆盖模板）
             in_app_body: 自定义站内信正文（覆盖 message）
             in_app_ref_id: 站内信 ref_id（关联 sync_records.id）
+            in_app_type: 自定义站内信 type（覆盖 Registry 解析结果，用于
+                webhook/email 类型与站内信类型不一致的场景，如 summary 服务）
             **kwargs: 额外数据字段
         """
         try:
@@ -123,10 +126,15 @@ class NotificationService:
             # 1. 发送 webhook + email（委托给现有 Notifier）
             self._send_to_channels(notification_type, data, skip_cooldown)
 
-            # 2. 写站内信（如果类型有 in_app_type 映射）
+            # 2. 写站内信（如果类型有 in_app_type 映射或显式指定 in_app_type）
             if write_in_app:
                 self._write_in_app_notification(
-                    notification_type, data, in_app_title, in_app_body, in_app_ref_id
+                    notification_type,
+                    data,
+                    in_app_title,
+                    in_app_body,
+                    in_app_ref_id,
+                    in_app_type,
                 )
 
             return True
@@ -180,9 +188,10 @@ class NotificationService:
         custom_title: str | None,
         custom_body: str | None,
         ref_id: int | None,
+        custom_in_app_type: str | None = None,
     ) -> None:
-        """写站内信（如果类型有 in_app_type 映射）"""
-        in_app_type = resolve_in_app_type(notification_type)
+        """写站内信（如果类型有 in_app_type 映射或显式指定 custom_in_app_type）"""
+        in_app_type = custom_in_app_type or resolve_in_app_type(notification_type)
         if in_app_type is None:
             return
 

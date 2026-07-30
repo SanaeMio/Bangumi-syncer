@@ -178,9 +178,9 @@ class HttpLayerMixin:
 
         # 重试耗尽后仍返回重试状态码（429/500/502/503/504）
         if res.status_code in RETRY_STATUS_CODES:
-            from ..notifier import send_notify
+            from ...services.notification_service import notification_service
 
-            send_notify(
+            notification_service.notify(
                 "api_error",
                 status_code=res.status_code,
                 url=url,
@@ -206,9 +206,9 @@ class HttpLayerMixin:
             logger.error(error_msg)
 
             # 发送API认证失败通知（webhook和邮件）
-            from ..notifier import send_notify
+            from ...services.notification_service import notification_service
 
-            send_notify(
+            notification_service.notify(
                 "api_auth_error",
                 user_name=self.username,
                 status_code=res.status_code,

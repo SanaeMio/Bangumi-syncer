@@ -145,14 +145,14 @@ SECTIONS: dict[str, SectionMeta] = {
         scheduler_id="bangumi_replay",
     ),
     # ── 通知配置（order 500-599，多实例）──
-    "webhook": SectionMeta(
-        name="webhook",
+    "notify-webhook": SectionMeta(
+        name="notify-webhook",
         display_name="Webhook 通知",
         order=500,
         is_multi_instance=True,
     ),
-    "email": SectionMeta(
-        name="email",
+    "notify-email": SectionMeta(
+        name="notify-email",
         display_name="邮件通知",
         order=510,
         is_multi_instance=True,

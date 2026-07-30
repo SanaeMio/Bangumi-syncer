@@ -133,6 +133,9 @@ class ConfigManager:
         # 将旧版 sync.single_username 迁移到 bangumi.media_server_username
         self._migrate_sync_single_username_to_bangumi(config)
 
+        # 通知配置段重命名迁移：webhook-N → notify-webhook-N, email-N → notify-email-N
+        self._migrate_notification_section_names(config)
+
         # 应用环境变量覆盖
         self._apply_env_overrides(config)
 
@@ -408,6 +411,40 @@ class ConfigManager:
             "配置迁移：已将 sync.single_username 写入 bangumi.media_server_username 并删除旧键"
         )
 
+    def _migrate_notification_section_names(self, config: ConfigParser) -> None:
+        """通知配置段重命名：webhook-N → notify-webhook-N, email-N → notify-email-N
+
+        幂等：已重命名的配置不会再次迁移。仅迁移 section 名，字段不变。
+        """
+        renamed = False
+        for section in list(config.sections()):
+            # webhook-N → notify-webhook-N（跳过已是 notify- 前缀的）
+            if section.startswith("webhook-") and not section.startswith(
+                "notify-webhook-"
+            ):
+                suffix = section[len("webhook-") :]
+                new_name = f"notify-webhook-{suffix}"
+                items = dict(config.items(section))
+                config.remove_section(section)
+                config.add_section(new_name)
+                for k, v in items.items():
+                    config.set(new_name, k, v)
+                renamed = True
+            elif section.startswith("email-") and not section.startswith(
+                "notify-email-"
+            ):
+                suffix = section[len("email-") :]
+                new_name = f"notify-email-{suffix}"
+                items = dict(config.items(section))
+                config.remove_section(section)
+                config.add_section(new_name)
+                for k, v in items.items():
+                    config.set(new_name, k, v)
+                renamed = True
+        if renamed:
+            self._save_config(config)
+            logger.info("配置迁移：通知段已重命名为 notify-webhook-N / notify-email-N")
+
     def get_trakt_config(self) -> dict[str, Any]:
         """获取 Trakt 配置"""
         config = self.get_config_parser()
@@ -674,7 +711,10 @@ class ConfigManager:
         with self._lock:
             config = self._get_config_parser_nolock()
             for section in config.sections():
-                if not (section.startswith("webhook-") or section.startswith("email-")):
+                if not (
+                    section.startswith("notify-webhook-")
+                    or section.startswith("notify-email-")
+                ):
                     continue
                 types_raw = config.get(section, "types", fallback="")
                 if not types_raw or types_raw.strip() == "all":
@@ -748,7 +788,7 @@ class ConfigManager:
 
         # 检查是否已经存在新的webhook配置段
         has_new_webhook = any(
-            section.startswith("webhook-") for section in config.sections()
+            section.startswith("notify-webhook-") for section in config.sections()
         )
 
         # 检查是否存在旧的邮件配置
@@ -756,7 +796,7 @@ class ConfigManager:
 
         # 检查是否已经存在新的邮件配置段
         has_new_email = any(
-            section.startswith("email-") for section in config.sections()
+            section.startswith("notify-email-") for section in config.sections()
         )
 
         # 如果存在旧配置且不存在新配置，则需要迁移
@@ -791,24 +831,24 @@ class ConfigManager:
 
         if webhook_url and webhook_headers and webhook_template:
             # 创建新的webhook-1配置段
-            if not config.has_section("webhook-1"):
-                config.add_section("webhook-1")
+            if not config.has_section("notify-webhook-1"):
+                config.add_section("notify-webhook-1")
 
-            config.set("webhook-1", "id", "1")
-            config.set("webhook-1", "enabled", webhook_enabled)
-            config.set("webhook-1", "url", webhook_url)
-            config.set("webhook-1", "method", webhook_method)
-            config.set("webhook-1", "headers", webhook_headers)
-            config.set("webhook-1", "template", webhook_template)
+            config.set("notify-webhook-1", "id", "1")
+            config.set("notify-webhook-1", "enabled", webhook_enabled)
+            config.set("notify-webhook-1", "url", webhook_url)
+            config.set("notify-webhook-1", "method", webhook_method)
+            config.set("notify-webhook-1", "headers", webhook_headers)
+            config.set("notify-webhook-1", "template", webhook_template)
 
             # 迁移策略：只启用错误通知类型，保持原有行为
-            config.set("webhook-1", "types", "mark_failed")
+            config.set("notify-webhook-1", "types", "mark_failed")
 
             # 保存配置
             self._save_config(config)
 
             logger.info(
-                "配置迁移完成：旧webhook配置已迁移到webhook-1配置段（仅启用mark_failed类型）"
+                "配置迁移完成：旧webhook配置已迁移到notify-webhook-1配置段（仅启用mark_failed类型）"
             )
         else:
             # 字段不完整，删除旧配置但不创建新配置
@@ -861,23 +901,23 @@ class ConfigManager:
 
         if smtp_server and smtp_username and smtp_password and email_from:
             # 创建新的email-1配置段
-            if not config.has_section("email-1"):
-                config.add_section("email-1")
+            if not config.has_section("notify-email-1"):
+                config.add_section("notify-email-1")
 
-            config.set("email-1", "id", "1")
-            config.set("email-1", "enabled", email_enabled)
-            config.set("email-1", "smtp_server", smtp_server)
-            config.set("email-1", "smtp_port", smtp_port)
-            config.set("email-1", "smtp_username", smtp_username)
-            config.set("email-1", "smtp_password", smtp_password)
-            config.set("email-1", "smtp_use_tls", smtp_use_tls)
-            config.set("email-1", "email_from", email_from)
-            config.set("email-1", "email_to", email_to)
-            config.set("email-1", "email_subject", email_subject)
-            config.set("email-1", "email_template_file", email_template_file)
+            config.set("notify-email-1", "id", "1")
+            config.set("notify-email-1", "enabled", email_enabled)
+            config.set("notify-email-1", "smtp_server", smtp_server)
+            config.set("notify-email-1", "smtp_port", smtp_port)
+            config.set("notify-email-1", "smtp_username", smtp_username)
+            config.set("notify-email-1", "smtp_password", smtp_password)
+            config.set("notify-email-1", "smtp_use_tls", smtp_use_tls)
+            config.set("notify-email-1", "email_from", email_from)
+            config.set("notify-email-1", "email_to", email_to)
+            config.set("notify-email-1", "email_subject", email_subject)
+            config.set("notify-email-1", "email_template_file", email_template_file)
 
             # 迁移策略：只启用错误通知类型，保持原有行为
-            config.set("email-1", "types", "mark_failed")
+            config.set("notify-email-1", "types", "mark_failed")
 
             # 保存配置
             self._save_config(config)

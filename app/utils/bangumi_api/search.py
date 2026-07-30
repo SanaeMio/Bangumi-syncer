@@ -43,9 +43,9 @@ class SearchMixin:
         res = self.get("me")
         if 400 <= res.status_code < 500:
             # 发送API认证失败通知
-            from ..notifier import send_notify
+            from ...services.notification_service import notification_service
 
-            send_notify(
+            notification_service.notify(
                 "api_auth_error",
                 user_name=self.username,
                 status_code=res.status_code,

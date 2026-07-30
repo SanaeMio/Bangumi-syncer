@@ -53,7 +53,7 @@ class TestSyncServiceBasics:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService

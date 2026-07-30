@@ -275,14 +275,14 @@ async def test_network_diagnose_dns_failure(app_logs_proxy):
 @pytest.mark.asyncio
 async def test_get_notification_status_webhook_and_email(app_notif):
     cfg = configparser.ConfigParser()
-    cfg.add_section("webhook-1")
-    cfg.set("webhook-1", "id", "1")
-    cfg.set("webhook-1", "enabled", "true")
-    cfg.set("webhook-1", "url", "https://w.example/hook")
-    cfg.add_section("email-1")
-    cfg.set("email-1", "id", "1")
-    cfg.set("email-1", "enabled", "false")
-    cfg.set("email-1", "smtp_server", "smtp.example")
+    cfg.add_section("notify-webhook-1")
+    cfg.set("notify-webhook-1", "id", "1")
+    cfg.set("notify-webhook-1", "enabled", "true")
+    cfg.set("notify-webhook-1", "url", "https://w.example/hook")
+    cfg.add_section("notify-email-1")
+    cfg.set("notify-email-1", "id", "1")
+    cfg.set("notify-email-1", "enabled", "false")
+    cfg.set("notify-email-1", "smtp_server", "smtp.example")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         transport = ASGITransport(app=app_notif)
@@ -300,7 +300,7 @@ async def test_get_notification_status_webhook_and_email(app_notif):
 async def test_get_notification_webhooks_sorted(app_notif):
     cfg = configparser.ConfigParser()
     for wid, url in ((2, "https://second"), (1, "https://first")):
-        sec = f"webhook-{wid}"
+        sec = f"notify-webhook-{wid}"
         cfg.add_section(sec)
         cfg.set(sec, "id", str(wid))
         cfg.set(sec, "enabled", "true")
@@ -410,19 +410,19 @@ async def test_update_notification_email_success(app_notif):
 @pytest.mark.asyncio
 async def test_get_notification_emails_list(app_notif):
     cfg = configparser.ConfigParser()
-    cfg.add_section("email-1")
-    cfg.set("email-1", "id", "1")
-    cfg.set("email-1", "enabled", "true")
-    cfg.set("email-1", "smtp_server", "smtp.x")
-    cfg.set("email-1", "smtp_port", "587")
-    cfg.set("email-1", "smtp_username", "u")
-    cfg.set("email-1", "smtp_password", "")
-    cfg.set("email-1", "smtp_use_tls", "true")
-    cfg.set("email-1", "email_from", "")
-    cfg.set("email-1", "email_to", "t@x")
-    cfg.set("email-1", "email_subject", "")
-    cfg.set("email-1", "email_template_file", "")
-    cfg.set("email-1", "types", "mark_failed")
+    cfg.add_section("notify-email-1")
+    cfg.set("notify-email-1", "id", "1")
+    cfg.set("notify-email-1", "enabled", "true")
+    cfg.set("notify-email-1", "smtp_server", "smtp.x")
+    cfg.set("notify-email-1", "smtp_port", "587")
+    cfg.set("notify-email-1", "smtp_username", "u")
+    cfg.set("notify-email-1", "smtp_password", "")
+    cfg.set("notify-email-1", "smtp_use_tls", "true")
+    cfg.set("notify-email-1", "email_from", "")
+    cfg.set("notify-email-1", "email_to", "t@x")
+    cfg.set("notify-email-1", "email_subject", "")
+    cfg.set("notify-email-1", "email_template_file", "")
+    cfg.set("notify-email-1", "types", "mark_failed")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         transport = ASGITransport(app=app_notif)
@@ -450,7 +450,7 @@ async def test_post_notification_email_test_by_id(app_notif):
 async def test_delete_webhook_reindexes_remaining(app_notif):
     cfg = configparser.ConfigParser()
     for wid, url in ((1, "http://first"), (2, "http://second")):
-        sec = f"webhook-{wid}"
+        sec = f"notify-webhook-{wid}"
         cfg.add_section(sec)
         cfg.set(sec, "id", str(wid))
         cfg.set(sec, "enabled", "true")
@@ -468,10 +468,10 @@ async def test_delete_webhook_reindexes_remaining(app_notif):
 
     assert r.status_code == 200
     assert r.json()["status"] == "success"
-    assert "webhook-2" not in cfg.sections()
-    assert cfg.has_section("webhook-1")
-    assert cfg.get("webhook-1", "url") == "http://second"
-    assert cfg.get("webhook-1", "id") == "1"
+    assert "notify-webhook-2" not in cfg.sections()
+    assert cfg.has_section("notify-webhook-1")
+    assert cfg.get("notify-webhook-1", "url") == "http://second"
+    assert cfg.get("notify-webhook-1", "id") == "1"
 
 
 @pytest.mark.asyncio
@@ -553,7 +553,7 @@ async def test_network_diagnose_tcp_and_http_success(app_logs_proxy):
 async def test_delete_email_reindexes_remaining(app_notif):
     cfg = configparser.ConfigParser()
     for eid, server in ((1, "smtp-first"), (2, "smtp-second")):
-        sec = f"email-{eid}"
+        sec = f"notify-email-{eid}"
         cfg.add_section(sec)
         cfg.set(sec, "id", str(eid))
         cfg.set(sec, "enabled", "true")
@@ -576,28 +576,28 @@ async def test_delete_email_reindexes_remaining(app_notif):
 
     assert r.status_code == 200
     assert r.json()["status"] == "success"
-    assert "email-2" not in cfg.sections()
-    assert cfg.has_section("email-1")
-    assert cfg.get("email-1", "smtp_server") == "smtp-second"
-    assert cfg.get("email-1", "id") == "1"
+    assert "notify-email-2" not in cfg.sections()
+    assert cfg.has_section("notify-email-1")
+    assert cfg.get("notify-email-1", "smtp_server") == "smtp-second"
+    assert cfg.get("notify-email-1", "id") == "1"
 
 
 @pytest.mark.asyncio
 async def test_update_notification_email_new_password(app_notif):
     cfg = configparser.ConfigParser()
-    cfg.add_section("email-1")
-    cfg.set("email-1", "id", "1")
-    cfg.set("email-1", "enabled", "true")
-    cfg.set("email-1", "smtp_server", "smtp.x")
-    cfg.set("email-1", "smtp_port", "587")
-    cfg.set("email-1", "smtp_username", "u")
-    cfg.set("email-1", "smtp_password", "old-plain")
-    cfg.set("email-1", "smtp_use_tls", "true")
-    cfg.set("email-1", "email_from", "")
-    cfg.set("email-1", "email_to", "t@x")
-    cfg.set("email-1", "email_subject", "")
-    cfg.set("email-1", "email_template_file", "")
-    cfg.set("email-1", "types", "mark_failed")
+    cfg.add_section("notify-email-1")
+    cfg.set("notify-email-1", "id", "1")
+    cfg.set("notify-email-1", "enabled", "true")
+    cfg.set("notify-email-1", "smtp_server", "smtp.x")
+    cfg.set("notify-email-1", "smtp_port", "587")
+    cfg.set("notify-email-1", "smtp_username", "u")
+    cfg.set("notify-email-1", "smtp_password", "old-plain")
+    cfg.set("notify-email-1", "smtp_use_tls", "true")
+    cfg.set("notify-email-1", "email_from", "")
+    cfg.set("notify-email-1", "email_to", "t@x")
+    cfg.set("notify-email-1", "email_subject", "")
+    cfg.set("notify-email-1", "email_template_file", "")
+    cfg.set("notify-email-1", "types", "mark_failed")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         with patch("app.core.config.config_manager._save_config"):
@@ -610,7 +610,7 @@ async def test_update_notification_email_new_password(app_notif):
 
     assert r.status_code == 200
     assert r.json()["status"] == "success"
-    assert cfg.get("email-1", "smtp_password") != "old-plain"
+    assert cfg.get("notify-email-1", "smtp_password") != "old-plain"
 
 
 @pytest.mark.asyncio
@@ -755,14 +755,14 @@ async def test_update_webhook_save_failure(app_notif):
 @pytest.mark.asyncio
 async def test_update_webhook_all_optional_fields(app_notif):
     cfg = configparser.ConfigParser()
-    cfg.add_section("webhook-1")
-    cfg.set("webhook-1", "id", "1")
-    cfg.set("webhook-1", "enabled", "true")
-    cfg.set("webhook-1", "url", "https://old")
-    cfg.set("webhook-1", "method", "POST")
-    cfg.set("webhook-1", "headers", "")
-    cfg.set("webhook-1", "template", "")
-    cfg.set("webhook-1", "types", "all")
+    cfg.add_section("notify-webhook-1")
+    cfg.set("notify-webhook-1", "id", "1")
+    cfg.set("notify-webhook-1", "enabled", "true")
+    cfg.set("notify-webhook-1", "url", "https://old")
+    cfg.set("notify-webhook-1", "method", "POST")
+    cfg.set("notify-webhook-1", "headers", "")
+    cfg.set("notify-webhook-1", "template", "")
+    cfg.set("notify-webhook-1", "types", "all")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         with patch("app.core.config.config_manager._save_config"):
@@ -781,21 +781,21 @@ async def test_update_webhook_all_optional_fields(app_notif):
                 )
     assert r.status_code == 200
     assert r.json()["status"] == "success"
-    assert cfg.get("webhook-1", "method") == "GET"
-    assert cfg.get("webhook-1", "types") == "sync"
+    assert cfg.get("notify-webhook-1", "method") == "GET"
+    assert cfg.get("notify-webhook-1", "types") == "sync"
 
 
 @pytest.mark.asyncio
 async def test_delete_webhook_save_failure(app_notif):
     cfg = configparser.ConfigParser()
-    cfg.add_section("webhook-1")
-    cfg.set("webhook-1", "id", "1")
-    cfg.set("webhook-1", "enabled", "true")
-    cfg.set("webhook-1", "url", "https://only")
-    cfg.set("webhook-1", "method", "POST")
-    cfg.set("webhook-1", "headers", "")
-    cfg.set("webhook-1", "template", "")
-    cfg.set("webhook-1", "types", "all")
+    cfg.add_section("notify-webhook-1")
+    cfg.set("notify-webhook-1", "id", "1")
+    cfg.set("notify-webhook-1", "enabled", "true")
+    cfg.set("notify-webhook-1", "url", "https://only")
+    cfg.set("notify-webhook-1", "method", "POST")
+    cfg.set("notify-webhook-1", "headers", "")
+    cfg.set("notify-webhook-1", "template", "")
+    cfg.set("notify-webhook-1", "types", "all")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         with patch(
@@ -810,10 +810,10 @@ async def test_delete_webhook_save_failure(app_notif):
 
 @pytest.mark.asyncio
 async def test_delete_second_webhook_keeps_first_section_name(app_notif):
-    """删除非首条时，若剩余段名已是 webhook-1，只更新 id（走 else 分支）。"""
+    """删除非首条时，若剩余段名已是 notify-webhook-1，只更新 id（走 else 分支）。"""
     cfg = configparser.ConfigParser()
     for wid, url in ((1, "http://a"), (2, "http://b")):
-        sec = f"webhook-{wid}"
+        sec = f"notify-webhook-{wid}"
         cfg.add_section(sec)
         cfg.set(sec, "id", str(wid))
         cfg.set(sec, "enabled", "true")
@@ -831,9 +831,9 @@ async def test_delete_second_webhook_keeps_first_section_name(app_notif):
 
     assert r.status_code == 200
     assert r.json()["status"] == "success"
-    assert list(cfg.sections()) == ["webhook-1"]
-    assert cfg.get("webhook-1", "url") == "http://a"
-    assert cfg.get("webhook-1", "id") == "1"
+    assert list(cfg.sections()) == ["notify-webhook-1"]
+    assert cfg.get("notify-webhook-1", "url") == "http://a"
+    assert cfg.get("notify-webhook-1", "id") == "1"
 
 
 @pytest.mark.asyncio
@@ -851,10 +851,10 @@ async def test_get_notification_emails_parser_error(app_notif):
 @pytest.mark.asyncio
 async def test_get_notification_status_counts_enabled_email(app_notif):
     cfg = configparser.ConfigParser()
-    cfg.add_section("email-1")
-    cfg.set("email-1", "id", "1")
-    cfg.set("email-1", "enabled", "true")
-    cfg.set("email-1", "smtp_server", "smtp.x")
+    cfg.add_section("notify-email-1")
+    cfg.set("notify-email-1", "id", "1")
+    cfg.set("notify-email-1", "enabled", "true")
+    cfg.set("notify-email-1", "smtp_server", "smtp.x")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         transport = ASGITransport(app=app_notif)
@@ -968,19 +968,19 @@ async def test_update_email_optional_fields_exercise_setters(app_notif):
 @pytest.mark.asyncio
 async def test_delete_email_save_failure(app_notif):
     cfg = configparser.ConfigParser()
-    cfg.add_section("email-1")
-    cfg.set("email-1", "id", "1")
-    cfg.set("email-1", "enabled", "true")
-    cfg.set("email-1", "smtp_server", "smtp.x")
-    cfg.set("email-1", "smtp_port", "587")
-    cfg.set("email-1", "smtp_username", "u")
-    cfg.set("email-1", "smtp_password", "")
-    cfg.set("email-1", "smtp_use_tls", "true")
-    cfg.set("email-1", "email_from", "")
-    cfg.set("email-1", "email_to", "t@x")
-    cfg.set("email-1", "email_subject", "")
-    cfg.set("email-1", "email_template_file", "")
-    cfg.set("email-1", "types", "mark_failed")
+    cfg.add_section("notify-email-1")
+    cfg.set("notify-email-1", "id", "1")
+    cfg.set("notify-email-1", "enabled", "true")
+    cfg.set("notify-email-1", "smtp_server", "smtp.x")
+    cfg.set("notify-email-1", "smtp_port", "587")
+    cfg.set("notify-email-1", "smtp_username", "u")
+    cfg.set("notify-email-1", "smtp_password", "")
+    cfg.set("notify-email-1", "smtp_use_tls", "true")
+    cfg.set("notify-email-1", "email_from", "")
+    cfg.set("notify-email-1", "email_to", "t@x")
+    cfg.set("notify-email-1", "email_subject", "")
+    cfg.set("notify-email-1", "email_template_file", "")
+    cfg.set("notify-email-1", "types", "mark_failed")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
         with patch(

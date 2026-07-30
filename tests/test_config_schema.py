@@ -84,7 +84,7 @@ class TestIsSensitiveField:
             return False
         if section == "auth" and option == "webhook_key":
             return True
-        if section.startswith("email-") and option == "smtp_password":
+        if section.startswith("notify-email-") and option == "smtp_password":
             return True
         if section == "trakt" and option == "client_secret":
             return True
@@ -116,9 +116,9 @@ class TestIsSensitiveField:
 
     def test_email_smtp_password(self):
         """多实例段 email-N 的 smtp_password 敏感"""
-        assert config_schema.is_sensitive_field("email-1", "smtp_password")
-        assert is_sensitive_ini_field("email-1", "smtp_password")
-        assert config_schema.is_sensitive_field("email-2", "smtp_password")
+        assert config_schema.is_sensitive_field("notify-email-1", "smtp_password")
+        assert is_sensitive_ini_field("notify-email-1", "smtp_password")
+        assert config_schema.is_sensitive_field("notify-email-2", "smtp_password")
 
     def test_trakt_client_secret(self):
         assert config_schema.is_sensitive_field("trakt", "client_secret")
@@ -133,7 +133,7 @@ class TestIsSensitiveField:
         assert not config_schema.is_sensitive_field("sync", "mode")
         assert not config_schema.is_sensitive_field("bangumi", "username")
         assert not config_schema.is_sensitive_field("feiniu", "db_path")
-        assert not config_schema.is_sensitive_field("webhook-1", "url")
+        assert not config_schema.is_sensitive_field("notify-webhook-1", "url")
 
     def test_legacy_parity(self):
         """与改造前原逻辑对比：常见场景结果一致
@@ -148,7 +148,7 @@ class TestIsSensitiveField:
             ("bangumi-data", "access_token", False),
             ("bangumi-mapping", "access_token", False),
             ("auth", "webhook_key", True),
-            ("email-1", "smtp_password", True),
+            ("notify-email-1", "smtp_password", True),
             ("trakt", "client_secret", True),
             ("llm", "api_key", True),
             ("sync", "mode", False),
@@ -209,10 +209,10 @@ class TestMultiInstance:
     """多实例段标记"""
 
     def test_webhook_is_multi_instance(self):
-        assert config_schema.SECTIONS["webhook"].is_multi_instance
+        assert config_schema.SECTIONS["notify-webhook"].is_multi_instance
 
     def test_email_is_multi_instance(self):
-        assert config_schema.SECTIONS["email"].is_multi_instance
+        assert config_schema.SECTIONS["notify-email"].is_multi_instance
 
     def test_summary_is_multi_instance(self):
         assert config_schema.SECTIONS["summary"].is_multi_instance
@@ -222,7 +222,7 @@ class TestMultiInstance:
 
     def test_prefixes(self):
         prefixes = set(config_schema.multi_instance_prefixes())
-        assert {"webhook", "email", "summary"} <= prefixes
+        assert {"notify-webhook", "notify-email", "summary"} <= prefixes
 
 
 class TestUIVisibility:
