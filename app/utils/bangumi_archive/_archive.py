@@ -37,9 +37,9 @@ from ...core.logging import logger
 _DB_NAMES = ("a", "b")
 
 # 磁盘空间阈值（MB），低于此值跳过导入
-# 双库 ~2.8GB（a+b 各 ~1.4GB）+ 索引缓存 ~0.5GB × 2 + 临时下载 zip ~0.4GB，
-# 实际占用约 4.6GB，预留 2000MB 避免导入中途空间不足
-_DEFAULT_MIN_DISK_SPACE_MB = 2000
+# 导入峰值 = 双库（a+b 各 ~0.8GB）+ 临时下载 zip ~0.4GB + WAL 余量 ≈ 2.4GB
+# 阈值设为 3000MB，预留充足空间避免导入中途写满
+_DEFAULT_MIN_DISK_SPACE_MB = 3000
 
 # 镜像源 fallback（与 upgrade_service 一致）
 _GH_PROXY_MIRRORS = (
@@ -168,14 +168,10 @@ class BangumiArchive:
         self._maybe_start_background_index_build()
 
     def _maybe_start_background_index_build(self) -> None:
-        """启动时若 Archive 已启用且 active DB 存在，触发后台构建标题索引
+        """启动时若 Archive 已启用且 active DB 存在，初始化 FTS5 查询层连接
 
-        场景：服务重启后 active DB 仍在，但内存索引已丢失。
-        通过后台线程构建（优先加载磁盘缓存，否则从 DB 构建），
-        避免首次查询时同步阻塞 100s+。
-
-        实现说明：用 threading.Timer(0, ...) 把构建推到子线程执行，
-        避免在模块加载阶段（bangumi_archive 单例尚未赋值）触发循环 import。
+        FTS5 方案下无需后台预构建（表在导入时已建好），
+        此处仅触发一次连接检查，让 is_ready 状态正确。
         """
         if not self.enabled:
             return
@@ -188,17 +184,17 @@ class BangumiArchive:
                 try:
                     from ._title_index import archive_title_index
 
+                    # FTS5 方案下为 no-op，仅触发连接检查
                     archive_title_index.build_in_background()
                 except Exception as e:
-                    logger.warning(f"bangumi_archive 启动时后台构建标题索引失败: {e}")
+                    logger.warning(f"bangumi_archive 启动时 FTS5 查询层初始化失败: {e}")
 
-            # Timer(0, ...) 在新线程中执行，此时主线程已继续完成模块加载
-            # 与单例赋值，子线程内 import _title_index 不会触发循环 import。
+            # Timer(0, ...) 在新线程中执行，避免模块加载阶段循环 import
             timer = threading.Timer(0.0, _trigger)
             timer.daemon = True
             timer.start()
         except Exception as e:
-            logger.warning(f"bangumi_archive 启动时后台构建标题索引失败: {e}")
+            logger.warning(f"bangumi_archive 启动时 FTS5 查询层初始化失败: {e}")
 
     # ===== 配置 =====
 
@@ -669,16 +665,15 @@ class BangumiArchive:
             f"rows={row_counts}, duration={duration_sec:.1f}s"
         )
 
-        # 后台预构建标题索引，避免首次查询时阻塞 100s+
-        # 构建期间 try_search 返回 archive_miss 降级到 API
+        # active 库切换后，invalidate 让 FTS5 查询层重连到新库
+        # FTS5 表在导入时已构建，无需后台重建
         try:
             from ._title_index import archive_title_index
 
-            # active 库切换后旧索引自动失效，此处触发后台重建
             archive_title_index.invalidate()
             archive_title_index.build_in_background()
         except Exception as e:
-            logger.warning(f"bangumi_archive 标题索引后台构建触发失败: {e}")
+            logger.warning(f"bangumi_archive FTS5 查询层重连失败: {e}")
 
         # 清理下载的 zip（导入完成后统一清理）
         if cleanup_zip:

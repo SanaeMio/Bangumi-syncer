@@ -8,6 +8,11 @@
 SUBJECT_TYPE_ANIME = 2  # 动画
 SUBJECT_TYPE_REAL = 6  # 三次元（日剧/电影等）
 
+# Archive 导入时仅保留的条目类型（动画 + 三次元）
+# 业务层（sync_service / archive_shortcut）查询时仅放行 type∈(2,6)，
+# 其他类型（书籍/音乐/游戏）在运行时永远不会被命中，导入时直接丢弃以节省磁盘与导入耗时
+ARCHIVE_ALLOWED_SUBJECT_TYPES = frozenset({SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL})
+
 # ===== 收藏类型（Collection Type）=====
 COLLECTION_TYPE_WISH = 1  # 想看
 COLLECTION_TYPE_DONE = 2  # 看过

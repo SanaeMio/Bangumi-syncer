@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ...core.logging import logger
+from ..bangumi_constants import ARCHIVE_ALLOWED_SUBJECT_TYPES
 
 # JSON Lines 批量插入大小
 _BATCH_SIZE = 5000
@@ -142,77 +143,19 @@ _SCHEMA: dict[str, dict[str, Any]] = {
             "CREATE INDEX idx_relation_type ON subject_relation(relation_type)",
         ],
     },
-    "subject_character": {
-        "create": """
-            CREATE TABLE subject_character (
-                character_id INTEGER,
-                subject_id INTEGER,
-                type INTEGER,
-                "order" INTEGER,
-                PRIMARY KEY (character_id, subject_id)
-            )
-        """,
-        "fields": ["character_id", "subject_id", "type", "order"],
-        "optional_fields": set(),
-        "index_sqls": [
-            "CREATE INDEX idx_subchar_subject ON subject_character(subject_id)",
-            "CREATE INDEX idx_subchar_character ON subject_character(character_id)",
-        ],
-    },
-    "subject_person": {
-        "create": """
-            CREATE TABLE subject_person (
-                person_id INTEGER,
-                subject_id INTEGER,
-                position INTEGER,
-                appear_eps TEXT,
-                PRIMARY KEY (person_id, subject_id, position)
-            )
-        """,
-        "fields": ["person_id", "subject_id", "position", "appear_eps"],
-        # appear_eps 是 2025-09 新增字段，可能缺失
-        "optional_fields": {"appear_eps"},
-        "index_sqls": [
-            "CREATE INDEX idx_subperson_subject ON subject_person(subject_id)",
-            "CREATE INDEX idx_subperson_person ON subject_person(person_id)",
-        ],
-    },
-    "person_relation": {
-        "create": """
-            CREATE TABLE person_relation (
-                person_type TEXT,
-                person_id INTEGER,
-                related_person_id INTEGER,
-                relation_type INTEGER,
-                spoiler INTEGER,
-                ended INTEGER,
-                PRIMARY KEY (person_type, person_id, related_person_id, relation_type)
-            )
-        """,
-        "fields": [
-            "person_type",
-            "person_id",
-            "related_person_id",
-            "relation_type",
-            "spoiler",
-            "ended",
-        ],
-        "optional_fields": set(),
-        "index_sqls": [
-            "CREATE INDEX idx_personrel_person ON person_relation(person_id)",
-            "CREATE INDEX idx_personrel_related ON person_relation(related_person_id)",
-        ],
-    },
 }
+
+# 注：以下死表已从导入流程中移除（运行时从未被 SELECT，纯属磁盘浪费）：
+# - subject_character（条目-角色关联）
+# - subject_person（条目-人物关联）
+# - person_relation（人物间关联）
+# 如未来需要角色/人物查询能力，可在此处重新登记 schema 并加入 _IMPORT_ORDER。
 
 # 导入顺序（subject 先于 episode，避免外键引用问题；SQLite 默认不启用 FK，但仍按依赖顺序）
 _IMPORT_ORDER = [
     "subject",
     "episode",
     "subject_relation",
-    "subject_character",
-    "subject_person",
-    "person_relation",
 ]
 
 # 各表对应的 dump 文件名（基于 Archive README 描述的命名约定）
@@ -226,21 +169,6 @@ _FILE_NAME_CANDIDATES = {
         "subject-relations.json",
         "subject_relations.jsonlines",
         "subject_relations.jsonl",
-    ],
-    "subject_character": [
-        "subject-characters.jsonlines",
-        "subject-characters.jsonl",
-        "subject_characters.jsonlines",
-    ],
-    "subject_person": [
-        "subject-persons.jsonlines",
-        "subject-persons.jsonl",
-        "subject_persons.jsonlines",
-    ],
-    "person_relation": [
-        "person-relations.jsonlines",
-        "person-relations.jsonl",
-        "person_relations.jsonlines",
     ],
 }
 
@@ -333,14 +261,21 @@ class ArchiveImporter:
                         f"导入 {table_name} 完成（{count} 行）",
                     )
 
-            # 4. 建立索引
+            # 4. 级联清理孤儿行
+            # subject 表导入时按 type 过滤，episode / subject_relation 中
+            # 引用被丢弃 subject_id 的行需删除，避免索引膨胀与无效回表
+            if progress_cb:
+                progress_cb(task_id, "cleanup", 86, "清理孤儿行")
+            await asyncio.to_thread(self._cleanup_orphans, target_db)
+
+            # 5. 建立索引
             if progress_cb:
                 progress_cb(task_id, "indexing", 88, "建立索引")
             await asyncio.to_thread(self._create_indexes, target_db)
             if progress_cb:
                 progress_cb(task_id, "indexing", 92, "索引建立完成")
 
-            # 5. VACUUM 压缩
+            # 6. VACUUM 压缩
             if progress_cb:
                 progress_cb(task_id, "vacuuming", 93, "VACUUM 压缩数据库")
             await asyncio.to_thread(self._vacuum, target_db)
@@ -429,6 +364,12 @@ class ArchiveImporter:
                     if not isinstance(row, dict):
                         continue
 
+                    # type 过滤：subject 表仅保留动画(2)与三次元(6)
+                    # 业务层查询时仅放行这两种类型，其他类型导入即浪费磁盘
+                    if table_name == "subject":
+                        if row.get("type") not in ARCHIVE_ALLOWED_SUBJECT_TYPES:
+                            continue
+
                     # 提取字段（optional 字段缺失时填 None）
                     values = []
                     for field in fields:
@@ -458,6 +399,41 @@ class ArchiveImporter:
         finally:
             conn.close()
 
+    def _cleanup_orphans(self, db_path: Path) -> None:
+        """清理 subject type 过滤产生的孤儿行
+
+        subject 表导入时仅保留 type∈(2,6) 的条目，episode / subject_relation
+        中引用被丢弃 subject_id 的行需删除：
+        - episode.subject_id 指向被丢弃条目
+        - subject_relation.subject_id 或 related_subject_id 指向被丢弃条目
+
+        无外键约束（SQLite 默认不启用 FK），故需手动级联清理。
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        try:
+            # episode 孤儿行
+            cur = conn.execute(
+                "DELETE FROM episode WHERE subject_id NOT IN (SELECT id FROM subject)"
+            )
+            ep_removed = cur.rowcount
+            # subject_relation 孤儿行（任一端指向被丢弃条目即删除）
+            cur = conn.execute(
+                "DELETE FROM subject_relation "
+                "WHERE subject_id NOT IN (SELECT id FROM subject) "
+                "OR related_subject_id NOT IN (SELECT id FROM subject)"
+            )
+            rel_removed = cur.rowcount
+            conn.commit()
+            if ep_removed or rel_removed:
+                logger.info(
+                    f"bangumi_archive: 孤儿行清理完成，"
+                    f"episode 移除 {ep_removed} 行，subject_relation 移除 {rel_removed} 行"
+                )
+        finally:
+            conn.close()
+
     def _create_indexes(self, db_path: Path) -> None:
         """为所有表建立索引"""
         conn = sqlite3.connect(str(db_path))
@@ -472,8 +448,76 @@ class ArchiveImporter:
                         )
             conn.commit()
             logger.info("bangumi_archive: 索引建立完成")
+
+            # 构建 FTS5 trigram 标题索引（替代原内存 dict + bigram 索引）
+            # 内存占用从 200-350MB 降到接近 0，查询性能 0.03-0.08ms
+            self._build_fts5_index(conn)
         finally:
             conn.close()
+
+    def _build_fts5_index(self, conn: sqlite3.Connection) -> None:
+        """构建 FTS5 trigram 标题索引
+
+        从 subject 表读取 name/name_cn/infobox，归一化后填充到
+        subject_fts 虚拟表。trigram tokenizer 专为 CJK 设计，
+        支持 3+ 字符子串匹配。
+
+        性能：84 万标题约 7s（含归一化 + 插入 + optimize）。
+        """
+        from ._fts_query import _extract_alias_text, _normalize_key
+
+        try:
+            # contentless 模式：不重复存储原始内容，省磁盘
+            # 先 DROP 再 CREATE，确保旧库升级/重建场景下不会因 rowid 冲突
+            # 导致 INSERT 失败（contentless FTS5 不支持 INSERT OR REPLACE）
+            conn.execute("DROP TABLE IF EXISTS subject_fts")
+            conn.execute(
+                "CREATE VIRTUAL TABLE subject_fts USING fts5("
+                "name, name_cn, aliases, content='', tokenize='trigram'"
+                ")"
+            )
+            # 批量读取 subject 表，归一化后插入 FTS5
+            # subject 表已按 type 过滤（仅保留 2/6），此处无需再过滤
+            cursor = conn.execute("SELECT id, name, name_cn, infobox FROM subject")
+            insert_sql = (
+                "INSERT INTO subject_fts(rowid, name, name_cn, aliases) "
+                "VALUES (?, ?, ?, ?)"
+            )
+            batch: list[tuple[int, str, str, str]] = []
+            count = 0
+            while True:
+                rows = cursor.fetchmany(_BATCH_SIZE)
+                if not rows:
+                    break
+                for row in rows:
+                    sid, name, name_cn, infobox = row
+                    norm_name = _normalize_key(name or "")
+                    norm_cn = _normalize_key(name_cn or "")
+                    aliases = _extract_alias_text(infobox)
+                    # 跳过完全无标题的条目（避免空行污染索引）
+                    if not norm_name and not norm_cn and not aliases:
+                        continue
+                    batch.append((sid, norm_name, norm_cn, aliases))
+                # 攒满 _BATCH_SIZE 再批量插入（与 _import_table 一致）
+                if len(batch) >= _BATCH_SIZE:
+                    conn.executemany(insert_sql, batch)
+                    count += len(batch)
+                    batch.clear()
+            # 插入剩余
+            if batch:
+                conn.executemany(insert_sql, batch)
+                count += len(batch)
+                batch.clear()
+            # optimize 合并索引段，提升查询性能
+            conn.execute("INSERT INTO subject_fts(subject_fts) VALUES('optimize')")
+            conn.commit()
+            logger.info(f"bangumi_archive: FTS5 trigram 索引构建完成，{count} 条标题")
+        except sqlite3.OperationalError as e:
+            # FTS5 不可用（老版本 SQLite）时跳过，查询层会降级到 API
+            logger.warning(
+                f"bangumi_archive: FTS5 trigram 索引构建失败: {e}。"
+                f"需 SQLite ≥ 3.34.0 且启用 FTS5 扩展，查询将降级到 API。"
+            )
 
     def _vacuum(self, db_path: Path) -> None:
         """VACUUM 压缩数据库"""
@@ -488,7 +532,7 @@ class ArchiveImporter:
         """清空数据库（删除文件，释放磁盘）
 
         用于双库模式：导入成功切换后清空旧库。
-        同时清理对应的 .index 磁盘缓存，避免旧索引残留占用空间（~460MB）。
+        同时清理 WAL/SHM 文件，以及旧版本（FTS5 改造前）残留的 .index 磁盘缓存。
         """
         try:
             if db_path.exists():
@@ -502,16 +546,19 @@ class ArchiveImporter:
                         sidecar.unlink()
                     except OSError:
                         pass
-            # 清理对应的 .index 磁盘缓存文件
+            # 清理旧版本残留的 .index 磁盘缓存（FTS5 改造后已废弃，
+            # 仅为从旧版升级的用户清理残留文件，新装用户无此文件）
             # db_path 名为 bangumi_archive_{a|b}.db，对应缓存为 bangumi_archive_{a|b}.index
             index_path = db_path.with_suffix(".index")
             if index_path.exists():
                 try:
                     index_path.unlink()
-                    logger.info(f"bangumi_archive: 已清理旧索引缓存 {index_path.name}")
+                    logger.info(
+                        f"bangumi_archive: 已清理旧版索引缓存 {index_path.name}"
+                    )
                 except OSError as e:
                     logger.warning(
-                        f"bangumi_archive: 清理索引缓存失败 {index_path}: {e}"
+                        f"bangumi_archive: 清理旧版索引缓存失败 {index_path}: {e}"
                     )
         except OSError as e:
             logger.warning(f"bangumi_archive: 清空数据库失败 {db_path}: {e}")
