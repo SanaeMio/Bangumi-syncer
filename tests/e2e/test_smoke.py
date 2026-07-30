@@ -51,17 +51,30 @@ def test_static_css_loaded(page, base_url: str):
 
 
 def test_static_js_loaded(page, base_url: str):
-    """静态 JS 资源正常加载（app.js 200）"""
+    """静态 JS 资源正常加载（app.js 拆分后的 7 个模块均 200）"""
     page.goto(f"{base_url}/login")
     page.wait_for_load_state("networkidle")
 
-    js_loaded = page.evaluate(
-        """() => {
-            const scripts = Array.from(document.querySelectorAll('script[src]'));
-            return scripts.some(s => s.src.includes('app.js'));
-        }"""
+    # app.js 已按功能拆分为 7 个独立文件，逐一校验加载
+    expected = [
+        "api-utils.js",
+        "toast-ui.js",
+        "ui-utils.js",
+        "records-detail.js",
+        "auth.js",
+        "sync-retry.js",
+        "theme.js",
+    ]
+    loaded = page.evaluate(
+        """(expected) => {
+            const srcs = Array.from(document.querySelectorAll('script[src]'))
+                .map(s => s.src);
+            return expected.filter(name => srcs.some(s => s.includes(name)));
+        }""",
+        expected,
     )
-    assert js_loaded, "app.js 未被加载"
+    missing = set(expected) - set(loaded)
+    assert not missing, f"以下 JS 模块未被加载: {missing}"
 
 
 def test_root_redirects_when_unauthed(page, base_url: str):
