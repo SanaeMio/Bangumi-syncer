@@ -12,7 +12,8 @@
 - 原 _title_to_ids / _bigram_index 内存结构已移除
 - 原磁盘缓存（.index 文件）已废弃，FTS5 表由 SQLite 自管理
 - 原 _build_internal / _save_to_disk / _load_from_disk 已移除
-- 原 build_in_background 改为 no-op（FTS5 表导入时已构建）
+- 原 build_in_background 改为轻量同步初始化（FTS5 表导入时已构建，
+  旧库升级时可能触发同步 FTS 构建）
 """
 
 # ruff: noqa: UP045 — 与项目其他模块风格保持一致，使用 Optional[X]

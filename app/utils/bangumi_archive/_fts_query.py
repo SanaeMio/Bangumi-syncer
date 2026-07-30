@@ -51,9 +51,6 @@ _EXACT_BATCH_SIZE = 500
 _PARTIAL_RATIO_WEIGHT = 0.9
 _TOKEN_SET_RATIO_WEIGHT = 0.95
 
-# SQLite trigram tokenizer 最低版本要求（3.34.0 引入）
-_MIN_SQLITE_VERSION = "3.34.0"
-
 
 def _normalize_key(text: str) -> str:
     """归一化标题为索引 key：NFKC + 去除标点 + 转小写
@@ -70,23 +67,6 @@ def _normalize_key(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = "".join(c for c in text if c.isalnum())
     return text.lower()
-
-
-def _is_trigram_supported() -> bool:
-    """检测当前 SQLite 是否支持 trigram tokenizer"""
-    try:
-        conn = sqlite3.connect(":memory:")
-        try:
-            conn.execute(
-                "CREATE VIRTUAL TABLE _probe USING fts5(x, tokenize='trigram')"
-            )
-            return True
-        except sqlite3.OperationalError:
-            return False
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return False
 
 
 def _score_candidate(query: str, candidate: str) -> float:
@@ -269,7 +249,10 @@ class ArchiveFTSQuery:
             self._fts_ready = self._check_fts_table_exists(conn)
             return self._fts_ready
         except sqlite3.Error as e:
-            logger.warning(f"bangumi_archive FTS5 自动构建失败: {e}")
+            logger.warning(
+                f"bangumi_archive FTS5 自动构建失败: {e}。"
+                f"需 SQLite ≥ 3.34.0 且启用 FTS5 扩展，查询将降级到 API。"
+            )
             try:
                 conn.execute("PRAGMA query_only=ON")
             except sqlite3.Error:
@@ -302,12 +285,14 @@ class ArchiveFTSQuery:
             self._built_path = None
 
     def build_in_background(self) -> None:
-        """后台触发构建（兼容接口，FTS5 方案下为 no-op）
+        """轻量同步初始化（兼容接口）
 
-        FTS5 表在导入时已构建，无需后台预构建。
-        此方法仅为兼容 _archive.py 调用保留，直接返回。
+        FTS5 表在导入时已构建，无需后台预构建。但此方法会同步调用
+        _ensure_built()：对已就绪的库是轻量检查（仅查询 sqlite_master），
+        对缺 subject_fts 的旧库会触发一次同步 FTS 构建（约 7s）。
+        _archive.py 在导入完成后调用此方法以确保查询层就绪。
         """
-        # 触发一次连接检查，让 is_ready 状态正确
+        # 触发一次连接检查 + 必要时同步构建 FTS5
         self._ensure_built()
 
     def find_subject_ids_by_title(self, title: str) -> list[int]:
@@ -417,14 +402,15 @@ class ArchiveFTSQuery:
         # 第二阶段：拉取候选标题 + rapidfuzz 精排
         try:
             id_to_score: dict[int, float] = {}
-            # 批量拉取候选标题
+            # 批量拉取候选标题（含 infobox，用于别名精排）
             placeholders = ",".join("?" * len(candidate_ids))
             rows = conn.execute(
-                f"SELECT id, name, name_cn FROM subject WHERE id IN ({placeholders})",
+                f"SELECT id, name, name_cn, infobox FROM subject WHERE id IN ({placeholders})",
                 candidate_ids,
             ).fetchall()
-            for sid, name, name_cn in rows:
+            for sid, name, name_cn, infobox in rows:
                 best_score = 0.0
+                # name / name_cn 精排
                 for candidate_title in (name, name_cn):
                     if not candidate_title:
                         continue
@@ -434,6 +420,16 @@ class ArchiveFTSQuery:
                     score = _score_candidate(key, cand_key)
                     if score > best_score:
                         best_score = score
+                # aliases 精排：覆盖 typo 发生在别名、name/name_cn 相似度不够的场景
+                if infobox:
+                    alias_text = _extract_alias_text(infobox)
+                    if alias_text:
+                        for alias_key in alias_text.split():
+                            if not alias_key:
+                                continue
+                            score = _score_candidate(key, alias_key)
+                            if score > best_score:
+                                best_score = score
                 if best_score < threshold:
                     continue
                 cur = id_to_score.get(sid)
