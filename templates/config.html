@@ -246,9 +246,84 @@
     </div>
 {% endblock %}
 {% block scripts %}
+    <script src="{{ '/static/js/config-form.js' | static_v }}"></script>
     <script>
 // 全局变量
 let bangumiAccountCounter = 0;
+
+// ========== 配置默认值 ==========
+// 用于 populateForm（显示回填）与 saveConfig（空值回填）的双向默认值，
+// 替代原散落在两处的 `value || default` 与 `parseInt(...) || default` 逻辑。
+const CONFIG_DEFAULTS = {
+    sync: { mode: 'single' },
+    dev: { sync_records_retention_days: 0 },
+    bangumi_data: {
+        cache_ttl_days: 7,
+        data_url: 'https://unpkg.com/bangumi-data@0.3/dist/data.json',
+        local_cache_path: './bangumi_data_cache.json',
+    },
+    feiniu: {
+        min_percent: 85, limit: 100, user_filter: 'all',
+        time_range: 'all', sync_interval: '*/15 * * * *',
+    },
+    fongmi: { min_percent: 80, sync_interval: '*/3 * * * *' },
+    bangumi_archive: {
+        update_cron: '0 8 * * 3', data_dir: './data/archive', min_disk_space_mb: 2000,
+    },
+    bangumi_replay: {
+        api_probe_interval: 300, replay_cron: '*/10 * * * *',
+        replay_batch_size: 20, max_attempts: 50,
+    },
+    auth: {
+        username: 'admin', session_timeout: 3600,
+        max_login_attempts: 5, lockout_duration: 900,
+    },
+    llm: { max_tokens: 2000, temperature: 0.7, timeout: 60 },
+};
+
+/**
+ * 应用默认值：返回新对象，将缺失或空字符串字段替换为 CONFIG_DEFAULTS 中的默认值。
+ * 不修改输入，保留 0/false 等显式 falsy 值。
+ */
+function applyConfigDefaults(config) {
+    const result = { ...config };
+    for (const [section, defaults] of Object.entries(CONFIG_DEFAULTS)) {
+        result[section] = { ...(result[section] || {}) };
+        for (const [key, defaultVal] of Object.entries(defaults)) {
+            const cur = result[section][key];
+            if (cur === undefined || cur === null || cur === '') {
+                result[section][key] = defaultVal;
+            }
+        }
+    }
+    return result;
+}
+
+/**
+ * "默认 true"语义的 checkbox 字段：仅当显式 false 时取消勾选。
+ * 这些字段在 INI 中通常省略，原 populateForm 用 `value !== false` 兼容。
+ */
+const DEFAULT_TRUE_FIELDS = [
+    'bangumi_data.enabled',
+    'bangumi_data.use_cache',
+    'bangumi_archive.ssl_verify',
+    'bangumi_replay.enabled',
+    'auth.enabled',
+];
+
+/**
+ * 字符串 'true' 兼容字段：INI 中布尔值可能存为字符串，需宽松匹配。
+ */
+const STRING_TRUE_FIELDS = [
+    'feiniu.enabled',
+    'fongmi.enabled',
+    'fongmi.auto_scan',
+    'bangumi_archive.enabled',
+];
+
+function isLooseTrue(v) {
+    return v === true || v === 'true' || (typeof v === 'string' && v.toLowerCase() === 'true');
+}
 
 // ========== 通用通知类型复选框处理函数 ==========
 
@@ -458,136 +533,44 @@ async function loadConfig(showToast = true) {
 }
 
 function populateForm(config) {
-    const sync = config.sync || {};
-    const dev = config.dev || {};
-    const bd = config.bangumi_data || {};
+    // 1. 合并默认值（数值/字符串字段），不修改原 config
+    const merged = applyConfigDefaults(config || {});
 
-    // 填充基本配置
-    document.getElementById('bangumi-username').value = (config.bangumi && config.bangumi.username) || '';
-    document.getElementById('bangumi-access-token').value = (config.bangumi && config.bangumi.access_token) || '';
-    document.getElementById('bangumi-private').checked = (config.bangumi && config.bangumi.private) || false;
-    const bmsu = document.getElementById('bangumi-media-server-username');
-    if (bmsu) {
-        bmsu.value = (config.bangumi && config.bangumi.media_server_username) ? String(config.bangumi.media_server_username) : '';
-    }
+    // 2. 自动填充所有带 name="section.key" 的字段（文本/数值/普通 checkbox）
+    ConfigForm.populate(merged);
 
-    document.getElementById('sync-mode').value = sync.mode || 'single';
-    document.getElementById('blocked-keywords').value = sync.blocked_keywords || '';
-    const movieMarkEl = document.getElementById('movie-mark-subject-completed');
-    if (movieMarkEl) {
-        movieMarkEl.checked = sync.movie_mark_subject_completed !== false;
-    }
-    const animeMarkEl = document.getElementById('anime-mark-subject-completed');
-    if (animeMarkEl) {
-        animeMarkEl.checked = Boolean(sync.anime_mark_subject_completed);
-    }
-    const realActionEl = document.getElementById('enable-real-action');
-    if (realActionEl) {
-        realActionEl.checked = Boolean(sync.enable_real_action);
-    }
-    const testSkipPermEl = document.getElementById('test-skip-permission-check');
-    if (testSkipPermEl) {
-        testSkipPermEl.checked = Boolean(sync.test_skip_permission_check);
-    }
-    const moviePlaybackWatchingEl = document.getElementById(
-        'movie-playback-start-mark-watching'
-    );
-    if (moviePlaybackWatchingEl) {
-        moviePlaybackWatchingEl.checked =
-            sync.movie_playback_start_mark_watching !== false;
-    }
+    // 3. 处理"默认 true"语义的 checkbox：仅当显式 false 时取消勾选
+    //    ConfigForm.populate 用 Boolean(value)，undefined 会得到 false，
+    //    但这些字段原语义是"未设置即视为 true"
+    DEFAULT_TRUE_FIELDS.forEach((path) => {
+        const [section, key] = path.split('.');
+        const v = config[section] && config[section][key];
+        const el = document.querySelector(`#config-form [name="${path}"]`);
+        if (el) el.checked = v !== false;
+    });
 
-    const webBase = document.getElementById('web-base-path');
-    if (webBase) {
-        webBase.value = (config.web && config.web.base_path) ? String(config.web.base_path) : '';
-    }
-    document.getElementById('script-proxy').value = dev.script_proxy || '';
-	document.getElementById('bgm-api-proxy').value = dev.bgm_api_proxy || '';
-    document.getElementById('bgm-next-proxy').value = dev.bgm_next_proxy || '';
-    document.getElementById('bgm-image-proxy').value = dev.bgm_image_proxy || '';
-    document.getElementById('ssl-verify').checked = Boolean(dev.ssl_verify);
-    document.getElementById('debug-mode').checked = Boolean(dev.debug);
-    const logFileEl = document.getElementById('log-file');
-    if (logFileEl) {
-        logFileEl.value = dev.log_file || '';
-    }
-    const retentionEl = document.getElementById('sync-records-retention-days');
-    if (retentionEl) {
-        retentionEl.value = (dev.sync_records_retention_days !== undefined && dev.sync_records_retention_days !== null)
-            ? String(dev.sync_records_retention_days)
-            : '0';
-    }
+    // 4. 处理字符串 'true' 兼容字段（INI 中布尔值可能存为字符串）
+    STRING_TRUE_FIELDS.forEach((path) => {
+        const [section, key] = path.split('.');
+        const v = config[section] && config[section][key];
+        const el = document.querySelector(`#config-form [name="${path}"]`);
+        if (el) el.checked = isLooseTrue(v);
+    });
 
-    document.getElementById('bangumi-data-enabled').checked = bd.enabled !== false;
-    document.getElementById('bangumi-data-cache').checked = bd.use_cache !== false;
-    document.getElementById('cache-ttl').value = bd.cache_ttl_days || 7;
-    document.getElementById('data-url').value = bd.data_url || 'https://unpkg.com/bangumi-data@0.3/dist/data.json';
-    document.getElementById('local-cache-path').value = bd.local_cache_path || './bangumi_data_cache.json';
+    // 5. 特殊字段（无 name 属性或需特殊处理）
+    // Webhook key: 只读显示字段，由后端生成（无 name 属性，需手动填）
+    document.getElementById('webhook-key').value = (config.auth && config.auth.webhook_key) || '';
+    // 密码字段：留空表示不修改
+    document.getElementById('auth-password').value = '';
 
-    const fn = config.feiniu || {};
-    const fe = document.getElementById('feiniu-enabled');
-    if (fe) {
-        fe.checked = fn.enabled === true || fn.enabled === 'true' || String(fn.enabled).toLowerCase() === 'true';
-        document.getElementById('feiniu-db-path').value = fn.db_path || '';
-        document.getElementById('feiniu-min-percent').value = (fn.min_percent != null && fn.min_percent !== '') ? fn.min_percent : 85;
-        document.getElementById('feiniu-user-filter').value = fn.user_filter || 'all';
-        document.getElementById('feiniu-time-range').value = fn.time_range || 'all';
-        document.getElementById('feiniu-sync-interval').value = fn.sync_interval || '*/15 * * * *';
-        document.getElementById('feiniu-limit').value = (fn.limit != null && fn.limit !== '') ? fn.limit : 100;
-    }
-
-    // 填充 fongmi 配置
-    const fm = config.fongmi || {};
-    const fmEnabled = document.getElementById('fongmi-enabled');
-    if (fmEnabled) {
-        fmEnabled.checked = fm.enabled === true || fm.enabled === 'true' || String(fm.enabled).toLowerCase() === 'true';
-        document.getElementById('fongmi-devices').value = fm.devices || '';
-        document.getElementById('fongmi-auto-scan').checked = fm.auto_scan === true || fm.auto_scan === 'true' || String(fm.auto_scan).toLowerCase() === 'true';
-        document.getElementById('fongmi-subnet').value = fm.subnet || '';
-        document.getElementById('fongmi-min-percent').value = (fm.min_percent != null && fm.min_percent !== '') ? fm.min_percent : 80;
-        document.getElementById('fongmi-sync-interval').value = fm.sync_interval || '*/3 * * * *';
-    }
-
-    // 填充 Bangumi Archive 配置
-    const ba = config.bangumi_archive || {};
-    const baEnabled = document.getElementById('bangumi-archive-enabled');
-    if (baEnabled) {
-        baEnabled.checked = ba.enabled === true || ba.enabled === 'true' || String(ba.enabled).toLowerCase() === 'true';
-        document.getElementById('bangumi-archive-update-cron').value = ba.update_cron || '0 8 * * 3';
-        document.getElementById('bangumi-archive-data-dir').value = ba.data_dir || './data/archive';
-        document.getElementById('bangumi-archive-http-proxy').value = ba.http_proxy || '';
-        document.getElementById('bangumi-archive-min-disk-space').value = (ba.min_disk_space_mb != null && ba.min_disk_space_mb !== '') ? ba.min_disk_space_mb : 2000;
-        document.getElementById('bangumi-archive-ssl-verify').checked = ba.ssl_verify !== false;
-        // Replay 子配置（合并段）
-        document.getElementById('bangumi-archive-replay-enabled').checked = ba.replay_enabled !== false;
-        document.getElementById('bangumi-archive-api-probe-interval').value = (ba.api_probe_interval != null && ba.api_probe_interval !== '') ? ba.api_probe_interval : 300;
-        document.getElementById('bangumi-archive-replay-cron').value = ba.replay_cron || '*/10 * * * *';
-        document.getElementById('bangumi-archive-replay-batch-size').value = (ba.replay_batch_size != null && ba.replay_batch_size !== '') ? ba.replay_batch_size : 20;
-        document.getElementById('bangumi-archive-max-attempts').value = (ba.max_attempts != null && ba.max_attempts !== '') ? ba.max_attempts : 50;
-    }
-
-    // 填充认证配置
+    // 6. UI 状态切换
+    toggleSyncMode();
     if (config.auth) {
-        document.getElementById('auth-enabled').checked = config.auth.enabled !== false;
-        document.getElementById('auth-username').value = config.auth.username || 'admin';
-        document.getElementById('session-timeout').value = config.auth.session_timeout || 3600;
-        document.getElementById('https-only').checked = config.auth.https_only || false;
-        document.getElementById('max-login-attempts').value = config.auth.max_login_attempts || 5;
-        document.getElementById('lockout-duration').value = config.auth.lockout_duration || 900;
-        document.getElementById('webhook-auth-enabled').checked = config.auth.webhook_auth_enabled || false;
-        document.getElementById('webhook-key').value = config.auth.webhook_key || '';
-        // 密码字段留空，表示不修改
-        document.getElementById('auth-password').value = '';
-
-        // 根据webhook认证开关显示/隐藏密钥区域
         toggleWebhookKeySection();
     }
 
-    // 切换同步模式
-    toggleSyncMode();
-
-    // 填充多用户配置
-    if (sync.mode === 'multi') {
+    // 7. 多用户模式
+    if (config.sync && config.sync.mode === 'multi') {
         populateMultiUserConfig(config.multi_accounts, config.user_mappings);
     }
 }
@@ -704,103 +687,46 @@ function removeBangumiAccount(id) {
 
 async function saveConfig() {
     try {
-        const configData = {
-            bangumi: {
-                username: document.getElementById('bangumi-username').value,
-                access_token: document.getElementById('bangumi-access-token').value,
-                private: document.getElementById('bangumi-private').checked,
-                media_server_username: (document.getElementById('bangumi-media-server-username') && document.getElementById('bangumi-media-server-username').value) || ''
-            },
-            sync: {
-                mode: document.getElementById('sync-mode').value,
-                blocked_keywords: document.getElementById('blocked-keywords').value,
-                movie_mark_subject_completed: document.getElementById('movie-mark-subject-completed').checked,
-                anime_mark_subject_completed: document.getElementById('anime-mark-subject-completed').checked,
-                movie_playback_start_mark_watching: document.getElementById(
-                    'movie-playback-start-mark-watching'
-                ).checked,
-                enable_real_action: document.getElementById('enable-real-action').checked,
-                test_skip_permission_check: document.getElementById('test-skip-permission-check').checked
-            },
-            web: {
-                base_path: (document.getElementById('web-base-path') && document.getElementById('web-base-path').value.trim()) || ''
-            },
-            dev: {
-                script_proxy: document.getElementById('script-proxy').value,
-                bgm_api_proxy: document.getElementById('bgm-api-proxy').value.trim(),
-                bgm_next_proxy: document.getElementById('bgm-next-proxy').value.trim(),
-                bgm_image_proxy: document.getElementById('bgm-image-proxy').value.trim(),
-                ssl_verify: document.getElementById('ssl-verify').checked,
-                debug: document.getElementById('debug-mode').checked,
-                log_file: document.getElementById('log-file').value.trim(),
-                sync_records_retention_days: parseInt(document.getElementById('sync-records-retention-days').value) || 0
-            },
-            bangumi_data: {
-                enabled: document.getElementById('bangumi-data-enabled').checked,
-                use_cache: document.getElementById('bangumi-data-cache').checked,
-                cache_ttl_days: parseInt(document.getElementById('cache-ttl').value),
-                data_url: document.getElementById('data-url').value,
-                local_cache_path: document.getElementById('local-cache-path').value
-            },
-            feiniu: {
-                enabled: document.getElementById('feiniu-enabled').checked,
-                db_path: document.getElementById('feiniu-db-path').value.trim(),
-                min_percent: parseInt(document.getElementById('feiniu-min-percent').value, 10) || 85,
-                user_filter: document.getElementById('feiniu-user-filter').value.trim() || 'all',
-                time_range: document.getElementById('feiniu-time-range').value || 'all',
-                sync_interval: document.getElementById('feiniu-sync-interval').value.trim() || '*/15 * * * *',
-                limit: parseInt(document.getElementById('feiniu-limit').value, 10) || 100
-            },
-            fongmi: {
-                enabled: document.getElementById('fongmi-enabled').checked,
-                devices: document.getElementById('fongmi-devices').value.trim(),
-                auto_scan: document.getElementById('fongmi-auto-scan').checked,
-                subnet: document.getElementById('fongmi-subnet').value.trim(),
-                min_percent: parseInt(document.getElementById('fongmi-min-percent').value, 10) || 80,
-                sync_interval: document.getElementById('fongmi-sync-interval').value.trim() || '*/3 * * * *'
-            },
-            bangumi_archive: {
-                enabled: document.getElementById('bangumi-archive-enabled').checked,
-                update_cron: document.getElementById('bangumi-archive-update-cron').value.trim() || '0 8 * * 3',
-                data_dir: document.getElementById('bangumi-archive-data-dir').value.trim() || './data/archive',
-                http_proxy: document.getElementById('bangumi-archive-http-proxy').value.trim(),
-                min_disk_space_mb: parseInt(document.getElementById('bangumi-archive-min-disk-space').value, 10) || 2000,
-                ssl_verify: document.getElementById('bangumi-archive-ssl-verify').checked,
-                replay_enabled: document.getElementById('bangumi-archive-replay-enabled').checked,
-                api_probe_interval: parseInt(document.getElementById('bangumi-archive-api-probe-interval').value, 10) || 300,
-                replay_cron: document.getElementById('bangumi-archive-replay-cron').value.trim() || '*/10 * * * *',
-                replay_batch_size: parseInt(document.getElementById('bangumi-archive-replay-batch-size').value, 10) || 20,
-                max_attempts: parseInt(document.getElementById('bangumi-archive-max-attempts').value, 10) || 50
-            },
-            auth: {
-                enabled: document.getElementById('auth-enabled').checked,
-                username: document.getElementById('auth-username').value,
-                session_timeout: parseInt(document.getElementById('session-timeout').value) || 3600,
-                https_only: document.getElementById('https-only').checked,
-                max_login_attempts: parseInt(document.getElementById('max-login-attempts').value) || 5,
-                lockout_duration: parseInt(document.getElementById('lockout-duration').value) || 900,
-                webhook_auth_enabled: document.getElementById('webhook-auth-enabled').checked
-            },
-            llm: {
-                api_base: document.getElementById('llm-api-base').value,
-                api_key: getLLMApiKeyValue(),
-                model: document.getElementById('llm-model').value,
-                max_tokens: parseInt(document.getElementById('llm-max-tokens').value) || 2000,
-                temperature: parseFloat(document.getElementById('llm-temperature').value) || 0.7,
-                timeout: parseInt(document.getElementById('llm-timeout').value) || 60
-            }
-        };
+        // 1. 自动收集所有带 name="section.key" 的字段
+        //    - 跳过空值的敏感字段（auth.password, llm.api_key 由后续特殊处理）
+        let configData = ConfigForm.serialize({
+            skipEmpty: ['auth.password', 'llm.api_key']
+        });
 
-        // 如果密码字段不为空，则添加到配置中
+        // 2. 字符串字段去除首尾空白（保留原 saveConfig 的 trim 行为）
+        //    先 trim 再 applyConfigDefaults，使 trim 后的空字段能被默认值回填
+        const TRIM_FIELDS = [
+            'web.base_path',
+            'dev.bgm_api_proxy', 'dev.bgm_next_proxy', 'dev.bgm_image_proxy', 'dev.log_file',
+            'feiniu.db_path', 'feiniu.user_filter', 'feiniu.sync_interval',
+            'fongmi.devices', 'fongmi.subnet', 'fongmi.sync_interval',
+            'bangumi_archive.update_cron', 'bangumi_archive.data_dir',
+            'bangumi_archive.http_proxy',
+            'bangumi_replay.replay_cron',
+        ];
+        TRIM_FIELDS.forEach((path) => {
+            const [section, key] = path.split('.');
+            if (configData[section] && typeof configData[section][key] === 'string') {
+                configData[section][key] = configData[section][key].trim();
+            }
+        });
+
+        // 3. 应用默认值（trim 后的空字段会被默认值回填，匹配原 `value.trim() || default` 语义）
+        configData = applyConfigDefaults(configData);
+
+        // 4. 特殊字段处理
+        // LLM API key: 掩码值（***xxxx）视为未修改，发送 null 使后端跳过写入
+        configData.llm.api_key = getLLMApiKeyValue();
+
+        // Auth password: 仅当非空时添加（已通过 skipEmpty 跳过空值，需手动补回）
         const authPassword = document.getElementById('auth-password').value;
         if (authPassword.trim() !== '') {
             configData.auth.password = authPassword;
         }
 
-        // 处理多用户配置
+        // 5. 处理多用户配置
         if (configData.sync.mode === 'multi') {
             const multiAccounts = {};
-            const userMappings = {};
 
             // 收集Bangumi账号
             document.querySelectorAll('#bangumi-accounts-container > [id^="bangumi-account-"]').forEach((element) => {
