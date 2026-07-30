@@ -40,7 +40,7 @@ async def test_create_email_passes_smtp_password_through_encrypt(app_with_auth):
         "email_from": "",
         "email_to": "to@example.com",
         "email_subject": "",
-        "email_template_file": "",
+        "template": "",
         "types": "mark_failed",
     }
 

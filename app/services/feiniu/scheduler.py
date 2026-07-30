@@ -9,6 +9,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 from ...core.config import config_manager
 from ...core.logging import logger
+from ..base.notifier_helpers import (
+    notify_batch_sync_summary,
+    notify_scheduler_failure,
+)
 from ..base.scheduler import BaseScheduler
 from .sync_service import feiniu_sync_service
 
@@ -50,11 +54,24 @@ class FeiniuScheduler(BaseScheduler):
             return
         timeout = self._scheduler_config.get("job_timeout", 300)
         try:
-            await asyncio.wait_for(feiniu_sync_service.run_sync(), timeout=timeout)
+            result = await asyncio.wait_for(
+                feiniu_sync_service.run_sync(), timeout=timeout
+            )
+            notify_batch_sync_summary(
+                "feiniu",
+                total=result.synced_count + result.skipped_count + result.error_count,
+                succeeded=result.synced_count,
+                failed=result.error_count,
+                skipped=result.skipped_count,
+            )
         except asyncio.TimeoutError:
             logger.error(f"飞牛定时同步超时 ({timeout} 秒)")
+            notify_scheduler_failure(
+                "feiniu", f"定时同步超时 ({timeout} 秒)", timeout=True
+            )
         except Exception as e:
             logger.error(f"飞牛定时同步失败: {e}")
+            notify_scheduler_failure("feiniu", str(e))
 
 
 feiniu_scheduler = FeiniuScheduler()

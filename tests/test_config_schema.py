@@ -186,11 +186,13 @@ class TestSchedulerLinkage:
     def test_fongmi_links_to_scheduler(self):
         assert config_schema.scheduler_id_for_section("fongmi") == "fongmi"
 
-    def test_trakt_links_to_scheduler(self):
-        assert config_schema.scheduler_id_for_section("trakt") == "trakt"
+    def test_trakt_no_scheduler(self):
+        """trakt 调度器为 instance 类型，配置不联动"""
+        assert config_schema.scheduler_id_for_section("trakt") is None
 
-    def test_summary_links_to_scheduler(self):
-        assert config_schema.scheduler_id_for_section("summary") == "summary"
+    def test_summary_no_scheduler(self):
+        """summary 调度器为 instance 类型，配置联动由 summary_jobs API 直调"""
+        assert config_schema.scheduler_id_for_section("summary") is None
 
     def test_sync_no_scheduler(self):
         assert config_schema.scheduler_id_for_section("sync") is None
@@ -333,8 +335,8 @@ class TestDefaultTrueFields:
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """原硬编码共 5 个 default_true 字段"""
-        assert len(config_schema.default_true_fields()) == 5
+        """default_true 字段：原 5 个 + sync.movie_*(2) + dev.ssl_verify + bangumi-data.*(2) + bangumi-archive.ssl_verify + bangumi-replay.enabled + notify-in-app.in_app_notification"""
+        assert len(config_schema.default_true_fields()) == 9
 
 
 class TestLooseTrueFields:

@@ -133,7 +133,7 @@ class TestNotifierSendEmail:
             "email_from": "from@example.com",
             "email_to": "to@example.com",
             "email_subject": "",
-            "email_template_file": "",
+            "template": "",
         }
 
         with (
@@ -169,7 +169,7 @@ class TestNotifierSendEmail:
             "email_from": "from@example.com",
             "email_to": "to@example.com",
             "email_subject": "",
-            "email_template_file": "",
+            "template": "",
         }
 
         with (

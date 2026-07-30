@@ -500,6 +500,17 @@ class ArchiveTitleIndex:
                     self._save_to_disk(cache_path, db_path)
         except Exception as e:
             logger.warning(f"bangumi_archive 标题索引后台构建异常: {e}")
+            try:
+                from ...services.notification_service import notification_service
+
+                notification_service.notify(
+                    "archive_build_failed",
+                    source="bangumi-archive",
+                    error_message=f"标题索引后台构建异常: {e}",
+                    stage="title_index_build",
+                )
+            except Exception:
+                pass
 
     def find_subject_ids_by_title(self, title: str) -> list[int]:
         """精确匹配标题 → subject_id 列表

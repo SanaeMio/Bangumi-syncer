@@ -94,7 +94,11 @@ SECTIONS: dict[str, SectionMeta] = {
         name="sync",
         display_name="同步设置",
         order=20,
-        fields=(FieldMeta(name="mode", default="single"),),
+        fields=(
+            FieldMeta(name="mode", default="single"),
+            FieldMeta(name="movie_playback_start_mark_watching", default_true=True),
+            FieldMeta(name="movie_mark_subject_completed", default_true=True),
+        ),
     ),
     "auth": SectionMeta(
         name="auth",
@@ -123,7 +127,10 @@ SECTIONS: dict[str, SectionMeta] = {
             "script_proxy": "HTTP_PROXY",
             "debug": "DEBUG_MODE",
         },
-        fields=(FieldMeta(name="sync_records_retention_days", default=0),),
+        fields=(
+            FieldMeta(name="sync_records_retention_days", default=0),
+            FieldMeta(name="ssl_verify", default_true=True),
+        ),
     ),
     # ── 媒体源驱动（order 100-199）──
     "feiniu": SectionMeta(
@@ -166,7 +173,7 @@ SECTIONS: dict[str, SectionMeta] = {
         display_name="Trakt 同步",
         order=120,
         sensitive_fields=frozenset({"client_secret"}),
-        scheduler_id="trakt",
+        # trakt 调度器为 instance 类型，配置变更需重启或通过专用 API 生效
     ),
     # ── Bangumi 容灾（order 200-299）──
     "bangumi-data": SectionMeta(
@@ -230,13 +237,39 @@ SECTIONS: dict[str, SectionMeta] = {
         is_multi_instance=True,
         sensitive_fields=frozenset({"smtp_password"}),
     ),
+    "notify-wecom": SectionMeta(
+        name="notify-wecom",
+        display_name="企业微信通知",
+        order=520,
+        is_multi_instance=True,
+        sensitive_fields=frozenset({"key"}),
+    ),
+    "notify-dingtalk": SectionMeta(
+        name="notify-dingtalk",
+        display_name="钉钉通知",
+        order=530,
+        is_multi_instance=True,
+        sensitive_fields=frozenset({"access_token", "secret"}),
+    ),
+    "notify-in-app": SectionMeta(
+        name="notify-in-app",
+        display_name="站内信",
+        order=535,
+        fields=(FieldMeta(name="in_app_notification", default_true=True),),
+    ),
+    "notify-rule": SectionMeta(
+        name="notify-rule",
+        display_name="通知规则",
+        order=540,
+        is_multi_instance=True,
+    ),
     # ── AI 总结（order 600-699，多实例）──
     "summary": SectionMeta(
         name="summary",
         display_name="AI 追番总结",
         order=600,
         is_multi_instance=True,
-        scheduler_id="summary",
+        # summary 调度器为 instance 类型，配置联动由 summary_jobs API 直调
     ),
     "llm": SectionMeta(
         name="llm",

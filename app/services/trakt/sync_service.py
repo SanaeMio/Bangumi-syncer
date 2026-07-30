@@ -13,6 +13,7 @@ from ...core.background_tasks import register_background_task
 from ...core.database import database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ...services.base.notifier_helpers import notify_source_event
 from ...services.mapping_service import mapping_service
 from ...services.notification_service import notification_service
 from ...services.sync_service import sync_service
@@ -407,6 +408,12 @@ class TraktSyncService:
             history_items = await client.get_all_watched_history(start_date=start_date)
 
             if not history_items:
+                notify_source_event(
+                    "trakt",
+                    "empty",
+                    user_id=user_id,
+                    message="没有新的观看历史需要同步",
+                )
                 return TraktSyncResult(
                     success=True,
                     message="没有新的观看历史需要同步",
@@ -509,6 +516,9 @@ class TraktSyncService:
 
         except Exception as e:
             logger.error(f"同步观看历史失败: {e}")
+            notify_source_event(
+                "trakt", "failed", user_id=user_id, error_message=str(e)
+            )
             return TraktSyncResult(
                 success=False,
                 message=f"同步观看历史失败: {str(e)}",

@@ -1,0 +1,11 @@
+{
+  "title": "{type_icon} {type_display_name}",
+  "type": "{notification_type}",
+  "timestamp": "{timestamp}",
+  "user": "{user_name}",
+  "anime": "{title}",
+  "episode": "S{season}E{episode}",
+  "source": "{source}",
+  "error": "{error_message}",
+  "extra": {}
+}

@@ -113,6 +113,16 @@ async def login(request: Request, response: Response) -> dict[str, Any]:
                 logger.warning(
                     f"用户 {username} 登录失败，IP: {client_ip}，剩余尝试次数: {remaining_attempts}"
                 )
+                try:
+                    notification_service.notify(
+                        "auth_login_failed",
+                        source="auth",
+                        username=username,
+                        ip=client_ip,
+                        remaining_attempts=remaining_attempts,
+                    )
+                except Exception:
+                    pass
                 raise HTTPException(
                     status_code=401,
                     detail=f"用户名或密码错误（剩余尝试次数: {remaining_attempts}）",

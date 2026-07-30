@@ -34,7 +34,7 @@ class EmailSenderMixin:
             from_email = email_config.get("email_from", smtp_username)
             to_email = email_config.get("email_to", "")
             email_subject = email_config.get("email_subject", "")
-            email_template_file = email_config.get("email_template_file", "")
+            template = email_config.get("template", "")
 
             # 验证配置
             if not from_email:
@@ -69,7 +69,7 @@ class EmailSenderMixin:
 
             # 邮件正文
             text_content = self._build_email_text_by_type(notification_type, data)
-            html_content = self._load_email_template(email_template_file, data)
+            html_content = self._load_email_template(template, data)
 
             # 添加纯文本部分
             part1 = MIMEText(text_content, "plain", "utf-8")

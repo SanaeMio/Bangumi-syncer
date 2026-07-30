@@ -29,6 +29,7 @@ class NotificationTypeMeta:
     color: str  # 颜色 hex，如 "#dc3545"
     description: str  # 纯文本描述
     is_item_level: bool = False  # 是否按 item 维度冷却（title+season+episode）
+    category: str = ""  # 分类标识，如 "sync_flow" / "match_quality" / "data_source"
 
     # 站内信映射：该类型触发站内信时使用的 type 和标题模板
     # None 表示不触发站内信；如 "sync_failed" 表示写站内信时 type=sync_failed
@@ -37,6 +38,18 @@ class NotificationTypeMeta:
 
     # 是否在配置页类型选择列表中展示（某些内部类型如 sync_queued 也可展示）
     visible_in_ui: bool = True
+
+
+# ── 事件分类 ──────────────────────────────────────────────────────────────
+
+CATEGORIES: dict[str, str] = {
+    "sync_flow": "同步流程",
+    "match_quality": "匹配质量",
+    "data_source": "数据源",
+    "scheduler": "调度任务",
+    "bangumi_api": "Bangumi API",
+    "system": "系统运维",
+}
 
 
 # ── 动态类型前缀 ──────────────────────────────────────────────────────────
@@ -58,38 +71,42 @@ _WATCHING_SUMMARY_META = NotificationTypeMeta(
 # ── 类型元数据注册表 ──────────────────────────────────────────────────────
 
 _TYPES: dict[str, NotificationTypeMeta] = {
-    # ── 同步流程核心 ──
+    # ═════════════════ 同步流程 ═════════════════
     "request_received": NotificationTypeMeta(
         id="request_received",
         display_name="收到同步请求",
         icon="📥",
         color="#0d6efd",
-        description="收到来自媒体服务器的同步请求",
+        description="媒体库推送的播放事件到达",
         is_item_level=True,
+        category="sync_flow",
     ),
     "bangumi_id_found": NotificationTypeMeta(
         id="bangumi_id_found",
         display_name="匹配到番剧",
         icon="🔍",
         color="#198754",
-        description="成功匹配到 Bangumi 番剧信息",
+        description="成功匹配到 Bangumi 条目",
         is_item_level=True,
+        category="sync_flow",
     ),
     "mark_success": NotificationTypeMeta(
         id="mark_success",
         display_name="同步成功",
         icon="✅",
         color="#198754",
-        description="番剧已成功标记为已看",
+        description="已标记为已看",
         is_item_level=True,
+        category="sync_flow",
     ),
     "mark_failed": NotificationTypeMeta(
         id="mark_failed",
         display_name="同步失败",
         icon="❌",
         color="#dc3545",
-        description="同步标记失败或处理异常",
+        description="标记失败或处理异常",
         is_item_level=True,
+        category="sync_flow",
         in_app_type="sync_failed",
         in_app_title_template="同步失败：{title} {ep_label}",
     ),
@@ -98,33 +115,37 @@ _TYPES: dict[str, NotificationTypeMeta] = {
         display_name="已看过跳过",
         icon="⏭️",
         color="#6c757d",
-        description="已看过不再重复标记",
+        description="重复标记，已看过不再处理",
         is_item_level=True,
+        category="sync_flow",
     ),
     "sync_queued": NotificationTypeMeta(
         id="sync_queued",
         display_name="API不可达入队",
         icon="📋",
         color="#6c8ebf",
-        description="Bangumi API 不可达，请求进入待同步队列",
+        description="Bangumi API 不可达，暂存待补发",
         is_item_level=True,
+        category="sync_flow",
     ),
     "sync_replayed": NotificationTypeMeta(
         id="sync_replayed",
         display_name="队列补发成功",
         icon="📤",
         color="#198754",
-        description="待同步队列补发成功",
+        description="API 恢复后补发成功",
         is_item_level=True,
+        category="sync_flow",
     ),
-    # ── 匹配失败类 ──
+    # ═════════════════ 匹配质量 ═════════════════
     "anime_not_found": NotificationTypeMeta(
         id="anime_not_found",
         display_name="未找到番剧",
         icon="🔍",
         color="#fd7e14",
-        description="未找到匹配的番剧",
+        description="搜索无结果，无法匹配",
         is_item_level=False,
+        category="match_quality",
         in_app_type="sync_failed",
         in_app_title_template="同步失败：{title} {ep_label}",
     ),
@@ -133,8 +154,9 @@ _TYPES: dict[str, NotificationTypeMeta] = {
         display_name="未找到剧集",
         icon="📺",
         color="#fd7e14",
-        description="未找到对应的剧集信息",
+        description="番剧已匹配但指定剧集不存在",
         is_item_level=False,
+        category="match_quality",
         in_app_type="sync_failed",
         in_app_title_template="同步失败：{title} {ep_label}",
     ),
@@ -143,52 +165,159 @@ _TYPES: dict[str, NotificationTypeMeta] = {
         display_name="候选待确认",
         icon="📝",
         color="#fd7e14",
-        description="匹配失败但有候选，等待用户确认",
+        description="匹配失败但有候选，需手动确认",
         is_item_level=True,
+        category="match_quality",
     ),
-    # ── 系统/配置类 ──
-    "config_error": NotificationTypeMeta(
-        id="config_error",
-        display_name="配置错误",
-        icon="⚙️",
-        color="#ffc107",
-        description="配置错误导致同步无法继续",
-        is_item_level=False,
+    "match_ambiguous": NotificationTypeMeta(
+        id="match_ambiguous",
+        display_name="匹配歧义",
+        icon="🤔",
+        color="#fd7e14",
+        description="候选分数接近，已选最高分但存疑",
+        is_item_level=True,
+        category="match_quality",
     ),
-    "ip_locked": NotificationTypeMeta(
-        id="ip_locked",
-        display_name="IP被锁定",
-        icon="🔒",
+    # ═════════════════ 数据源 ═════════════════
+    "source_fetch_failed": NotificationTypeMeta(
+        id="source_fetch_failed",
+        display_name="数据源拉取失败",
+        icon="🚫",
         color="#dc3545",
-        description="登录失败次数过多，IP 被临时锁定",
+        description="Trakt/飞牛/FongMi 拉取观看记录失败",
         is_item_level=False,
+        category="data_source",
     ),
-    # ── Bangumi API 类 ──
+    "source_fetch_empty": NotificationTypeMeta(
+        id="source_fetch_empty",
+        display_name="数据源返回空",
+        icon="📭",
+        color="#fd7e14",
+        description="拉取到 0 条记录，可能配置错误",
+        is_item_level=False,
+        category="data_source",
+    ),
+    # ═════════════════ 调度任务 ═════════════════
+    "scheduler_job_failed": NotificationTypeMeta(
+        id="scheduler_job_failed",
+        display_name="定时任务失败",
+        icon="⏰",
+        color="#dc3545",
+        description="archive/replay/feiniu/fongmi/trakt/summary 异常",
+        is_item_level=False,
+        category="scheduler",
+    ),
+    "batch_sync_summary": NotificationTypeMeta(
+        id="batch_sync_summary",
+        display_name="批量同步汇总",
+        icon="📦",
+        color="#0d6efd",
+        description="一批同步结束的成功/失败/跳过统计",
+        is_item_level=False,
+        category="scheduler",
+    ),
+    "queue_size_warning": NotificationTypeMeta(
+        id="queue_size_warning",
+        display_name="队列堆积预警",
+        icon="📨",
+        color="#ffc107",
+        description="待同步队列超过阈值（默认 100 条）",
+        is_item_level=False,
+        category="scheduler",
+    ),
+    # ═════════════════ Bangumi API ═════════════════
     "api_error": NotificationTypeMeta(
         id="api_error",
         display_name="API错误",
         icon="🌐",
         color="#dc3545",
-        description="Bangumi API 返回错误（5xx/429）",
+        description="Bangumi API 返回 5xx 或 429",
         is_item_level=False,
+        category="bangumi_api",
     ),
     "api_auth_error": NotificationTypeMeta(
         id="api_auth_error",
         display_name="API认证失败",
         icon="🔑",
         color="#dc3545",
-        description="Bangumi API 认证失败（401）",
+        description="Bangumi API 返回 401",
         is_item_level=False,
+        category="bangumi_api",
     ),
     "api_retry_failed": NotificationTypeMeta(
         id="api_retry_failed",
         display_name="API重试失败",
         icon="🔄",
         color="#dc3545",
-        description="Bangumi API 重试耗尽",
+        description="重试耗尽仍失败",
         is_item_level=False,
+        category="bangumi_api",
     ),
-    # ── 站内信专用类型（不在前端选择列表展示）──
+    "bangumi_token_expired": NotificationTypeMeta(
+        id="bangumi_token_expired",
+        display_name="Token已过期",
+        icon="🔑",
+        color="#dc3545",
+        description="access_token 过期，需更新",
+        is_item_level=False,
+        category="bangumi_api",
+    ),
+    # ═════════════════ 系统运维 ═════════════════
+    "config_error": NotificationTypeMeta(
+        id="config_error",
+        display_name="配置错误",
+        icon="⚙️",
+        color="#ffc107",
+        description="配置项缺失或无效，同步无法继续",
+        is_item_level=False,
+        category="system",
+    ),
+    "ip_locked": NotificationTypeMeta(
+        id="ip_locked",
+        display_name="IP被锁定",
+        icon="🔒",
+        color="#dc3545",
+        description="登录失败次数过多，IP 临时锁定",
+        is_item_level=False,
+        category="system",
+    ),
+    "auth_login_failed": NotificationTypeMeta(
+        id="auth_login_failed",
+        display_name="Web登录失败",
+        icon="🔒",
+        color="#dc3545",
+        description="用户名或密码错误",
+        is_item_level=False,
+        category="system",
+    ),
+    "app_upgrade_available": NotificationTypeMeta(
+        id="app_upgrade_available",
+        display_name="新版本可用",
+        icon="🆕",
+        color="#198754",
+        description="检测到 Bangumi-syncer 新版本",
+        is_item_level=False,
+        category="system",
+    ),
+    "archive_build_failed": NotificationTypeMeta(
+        id="archive_build_failed",
+        display_name="档案库构建失败",
+        icon="🗄️",
+        color="#dc3545",
+        description="番组档案库导入或索引构建失败",
+        is_item_level=False,
+        category="system",
+    ),
+    "archive_disk_warning": NotificationTypeMeta(
+        id="archive_disk_warning",
+        display_name="档案库磁盘预警",
+        icon="💾",
+        color="#ffc107",
+        description="档案库磁盘可用空间接近阈值",
+        is_item_level=False,
+        category="system",
+    ),
+    # ═════════════════ 站内信专用（不在前端选择列表展示）═════════════════
     "sync_failed": NotificationTypeMeta(
         id="sync_failed",
         display_name="同步失败",

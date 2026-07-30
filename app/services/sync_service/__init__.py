@@ -567,6 +567,49 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         except Exception as e:
             logger.warning(f"发送候选待确认通知失败（不影响主流程）: {e}")
 
+    def _maybe_notify_match_ambiguous(
+        self,
+        trace: MatchTrace,
+        item: CustomItem,
+        actual_source: str,
+        *,
+        score_diff_threshold: float = 0.05,
+    ) -> None:
+        """匹配成功但 top1/top2 候选分数接近时触发 match_ambiguous 通知
+
+        Args:
+            trace: 已 finish 的 MatchTrace
+            item: 当前同步条目
+            actual_source: 实际来源
+            score_diff_threshold: top1 与 top2 分数差小于该值视为歧义（默认 0.05）
+        """
+        try:
+            candidates = self._collect_candidates_from_trace(trace)
+            if len(candidates) < 2:
+                return
+            top1_score = float(candidates[0].get("score", 0.0))
+            top2_score = float(candidates[1].get("score", 0.0))
+            if top1_score - top2_score >= score_diff_threshold:
+                return
+
+            from ..notification_service import notification_service
+
+            notification_service.notify(
+                "match_ambiguous",
+                item=item,
+                source=actual_source,
+                final_subject_id=trace.final_subject_id,
+                top1_score=top1_score,
+                top2_score=top2_score,
+                top1_name=candidates[0].get("name_cn") or candidates[0].get("name", ""),
+                top2_name=candidates[1].get("name_cn") or candidates[1].get("name", ""),
+                top1_subject_id=candidates[0].get("subject_id"),
+                top2_subject_id=candidates[1].get("subject_id"),
+                score_diff=round(top1_score - top2_score, 4),
+            )
+        except Exception as e:
+            logger.debug(f"发送 match_ambiguous 通知失败（可忽略）: {e}")
+
     def test_match(self, item: CustomItem) -> dict[str, Any]:
         """测试匹配过程，返回匹配追踪详情（不执行实际同步、不发通知、不写库）
 
@@ -2466,6 +2509,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 # 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
                 trace.final_score = 1.0 if is_api_season_matched else 0.9
                 trace.finish()
+
+                # 匹配歧义检测：top1/top2 分数接近时触发 match_ambiguous
+                self._maybe_notify_match_ambiguous(trace, item, item.source or "")
+
             return bgm_data[0]["id"], is_api_season_matched, ""
         except Exception as e:
             detail = f"Bangumi API 搜索出错: {e}"

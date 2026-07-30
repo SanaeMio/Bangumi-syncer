@@ -425,7 +425,7 @@ smtp_use_tls = True
 email_from = from@x.com
 email_to = to@x.com
 email_subject = subj
-email_template_file = tpl.html
+template = tpl.html
 """
         cm = _config_manager_from_ini(tmp_path, ini)
         cm._migrate_email_config()

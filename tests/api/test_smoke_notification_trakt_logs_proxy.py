@@ -343,7 +343,7 @@ async def test_create_notification_email(app_notif):
                         "email_from": "a@x",
                         "email_to": "b@x",
                         "email_subject": "subj",
-                        "email_template_file": "",
+                        "template": "",
                         "types": "mark_failed",
                     },
                 )
@@ -385,7 +385,7 @@ async def test_update_notification_email_success(app_notif):
         "email_from": "",
         "email_to": "to@x",
         "email_subject": "",
-        "email_template_file": "",
+        "template": "",
         "types": "mark_failed",
     }
 
@@ -421,7 +421,7 @@ async def test_get_notification_emails_list(app_notif):
     cfg.set("notify-email-1", "email_from", "")
     cfg.set("notify-email-1", "email_to", "t@x")
     cfg.set("notify-email-1", "email_subject", "")
-    cfg.set("notify-email-1", "email_template_file", "")
+    cfg.set("notify-email-1", "template", "")
     cfg.set("notify-email-1", "types", "mark_failed")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
@@ -447,7 +447,8 @@ async def test_post_notification_email_test_by_id(app_notif):
 
 
 @pytest.mark.asyncio
-async def test_delete_webhook_reindexes_remaining(app_notif):
+async def test_delete_webhook_preserves_remaining_ids(app_notif):
+    """删除 webhook 后保留剩余配置的原始 ID，不重新索引"""
     cfg = configparser.ConfigParser()
     for wid, url in ((1, "http://first"), (2, "http://second")):
         sec = f"notify-webhook-{wid}"
@@ -468,10 +469,10 @@ async def test_delete_webhook_reindexes_remaining(app_notif):
 
     assert r.status_code == 200
     assert r.json()["status"] == "success"
-    assert "notify-webhook-2" not in cfg.sections()
-    assert cfg.has_section("notify-webhook-1")
-    assert cfg.get("notify-webhook-1", "url") == "http://second"
-    assert cfg.get("notify-webhook-1", "id") == "1"
+    assert "notify-webhook-1" not in cfg.sections()
+    assert cfg.has_section("notify-webhook-2")
+    assert cfg.get("notify-webhook-2", "url") == "http://second"
+    assert cfg.get("notify-webhook-2", "id") == "2"
 
 
 @pytest.mark.asyncio
@@ -550,7 +551,8 @@ async def test_network_diagnose_tcp_and_http_success(app_logs_proxy):
 
 
 @pytest.mark.asyncio
-async def test_delete_email_reindexes_remaining(app_notif):
+async def test_delete_email_preserves_remaining_ids(app_notif):
+    """删除 email 后保留剩余配置的原始 ID，不重新索引"""
     cfg = configparser.ConfigParser()
     for eid, server in ((1, "smtp-first"), (2, "smtp-second")):
         sec = f"notify-email-{eid}"
@@ -565,7 +567,7 @@ async def test_delete_email_reindexes_remaining(app_notif):
         cfg.set(sec, "email_from", "")
         cfg.set(sec, "email_to", "t@x")
         cfg.set(sec, "email_subject", "")
-        cfg.set(sec, "email_template_file", "")
+        cfg.set(sec, "template", "")
         cfg.set(sec, "types", "mark_failed")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
@@ -576,10 +578,10 @@ async def test_delete_email_reindexes_remaining(app_notif):
 
     assert r.status_code == 200
     assert r.json()["status"] == "success"
-    assert "notify-email-2" not in cfg.sections()
-    assert cfg.has_section("notify-email-1")
-    assert cfg.get("notify-email-1", "smtp_server") == "smtp-second"
-    assert cfg.get("notify-email-1", "id") == "1"
+    assert "notify-email-1" not in cfg.sections()
+    assert cfg.has_section("notify-email-2")
+    assert cfg.get("notify-email-2", "smtp_server") == "smtp-second"
+    assert cfg.get("notify-email-2", "id") == "2"
 
 
 @pytest.mark.asyncio
@@ -596,7 +598,7 @@ async def test_update_notification_email_new_password(app_notif):
     cfg.set("notify-email-1", "email_from", "")
     cfg.set("notify-email-1", "email_to", "t@x")
     cfg.set("notify-email-1", "email_subject", "")
-    cfg.set("notify-email-1", "email_template_file", "")
+    cfg.set("notify-email-1", "template", "")
     cfg.set("notify-email-1", "types", "mark_failed")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):
@@ -890,7 +892,7 @@ async def test_create_email_save_failure(app_notif):
                         "email_from": "",
                         "email_to": "b@x",
                         "email_subject": "",
-                        "email_template_file": "",
+                        "template": "",
                         "types": "mark_failed",
                     },
                 )
@@ -933,7 +935,7 @@ async def test_update_email_optional_fields_exercise_setters(app_notif):
         "email_from": "f@x",
         "email_to": "t@x",
         "email_subject": "sub",
-        "email_template_file": "tpl.txt",
+        "template": "tpl.txt",
         "types": "mark_failed",
     }
 
@@ -957,7 +959,7 @@ async def test_update_email_optional_fields_exercise_setters(app_notif):
                             "smtp_use_tls": False,
                             "email_from": "x@x",
                             "email_subject": "new",
-                            "email_template_file": "other.tpl",
+                            "template": "other.tpl",
                             "types": "all",
                         },
                     )
@@ -979,7 +981,7 @@ async def test_delete_email_save_failure(app_notif):
     cfg.set("notify-email-1", "email_from", "")
     cfg.set("notify-email-1", "email_to", "t@x")
     cfg.set("notify-email-1", "email_subject", "")
-    cfg.set("notify-email-1", "email_template_file", "")
+    cfg.set("notify-email-1", "template", "")
     cfg.set("notify-email-1", "types", "mark_failed")
 
     with patch("app.core.config.config_manager.get_config_parser", return_value=cfg):

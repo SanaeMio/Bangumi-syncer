@@ -400,7 +400,7 @@ class TestNotifierSendEmailByConfig:
             "email_from": "from@example.com",
             "email_to": "to@example.com",
             "email_subject": "",
-            "email_template_file": "",
+            "template": "",
         }
         data = {"title": "测试", "timestamp": "2024-01-01"}
 
@@ -802,17 +802,27 @@ class TestGetNotifier:
 
 
 class TestNotificationServiceNotify:
-    """测试 NotificationService.notify() 便捷入口（替代原 send_notify）"""
+    """测试 NotificationService.notify() 便捷入口
+
+    新架构下 NotificationService 不再依赖 ``_notifier``，
+    而是通过 :class:`ChannelRegistry` 分发到各渠道。
+    这里测试：
+    1. 数据构造正确
+    2. 渠道分发被调用
+    3. 异常时返回 False
+    """
 
     def _make_service(self) -> NotificationService:
-        """构造一个用 mock notifier 的 NotificationService 实例"""
+        """构造一个 Mock 了 channel_registry 的 NotificationService"""
         svc = NotificationService()
-        svc._notifier = MagicMock()
+        svc.channel_registry = MagicMock()
+        svc.channel_registry.all.return_value = []
+        svc.channel_registry.iter_enabled.return_value = []
         svc._db_manager = MagicMock()
         return svc
 
     def test_notify_with_item(self):
-        """测试发送通知带 item：应委托给 notifier.send_notification_by_type"""
+        """测试发送通知带 item：应完成数据构造、渠道分发"""
         svc = self._make_service()
 
         item = MagicMock()
@@ -825,7 +835,8 @@ class TestNotificationServiceNotify:
 
         result = svc.notify("mark_success", item=item, source="custom")
         assert result is True
-        svc._notifier.send_notification_by_type.assert_called_once()
+        # 渠道分发应被调用一次（即使没有注册渠道）
+        svc.channel_registry.iter_enabled.assert_called()
 
     def test_notify_without_item(self):
         """测试发送通知不带 item"""
@@ -833,12 +844,12 @@ class TestNotificationServiceNotify:
 
         result = svc.notify("mark_success", title="测试")
         assert result is True
-        svc._notifier.send_notification_by_type.assert_called_once()
+        svc.channel_registry.iter_enabled.assert_called()
 
     def test_notify_exception_returns_false(self):
         """测试发送通知异常时返回 False"""
         svc = self._make_service()
-        svc._notifier.send_notification_by_type.side_effect = Exception("发送失败")
+        svc.channel_registry.all.side_effect = Exception("发送失败")
 
         result = svc.notify("mark_success")
         assert result is False

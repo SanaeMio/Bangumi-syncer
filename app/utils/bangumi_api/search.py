@@ -51,6 +51,13 @@ class SearchMixin:
                 status_code=res.status_code,
                 error_message="BangumiApi: 未授权, access_token不正确或未设置",
             )
+            # 同时触发 token 过期事件
+            notification_service.notify(
+                "bangumi_token_expired",
+                user_name=self.username,
+                status_code=res.status_code,
+                error_message="BangumiApi: 未授权, access_token不正确或未设置",
+            )
             if os.name == "nt":
                 os.startfile(f"{self.next_base}/demo/access-token")
             raise ValueError("BangumiApi: 未授权, access_token不正确或未设置")

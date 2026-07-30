@@ -869,9 +869,7 @@ class ConfigManager:
         email_from = config.get("notification", "email_from", fallback="")
         email_to = config.get("notification", "email_to", fallback="")
         email_subject = config.get("notification", "email_subject", fallback="")
-        email_template_file = config.get(
-            "notification", "email_template_file", fallback=""
-        )
+        template = config.get("notification", "template", fallback="")
 
         # 删除旧的邮件配置字段
         if config.has_option("notification", "email_enabled"):
@@ -892,6 +890,9 @@ class ConfigManager:
             config.remove_option("notification", "email_to")
         if config.has_option("notification", "email_subject"):
             config.remove_option("notification", "email_subject")
+        if config.has_option("notification", "template"):
+            config.remove_option("notification", "template")
+        # 清理旧字段名（如果存在）
         if config.has_option("notification", "email_template_file"):
             config.remove_option("notification", "email_template_file")
 
@@ -914,7 +915,7 @@ class ConfigManager:
             config.set("notify-email-1", "email_from", email_from)
             config.set("notify-email-1", "email_to", email_to)
             config.set("notify-email-1", "email_subject", email_subject)
-            config.set("notify-email-1", "email_template_file", email_template_file)
+            config.set("notify-email-1", "template", template)
 
             # 迁移策略：只启用错误通知类型，保持原有行为
             config.set("notify-email-1", "types", "mark_failed")

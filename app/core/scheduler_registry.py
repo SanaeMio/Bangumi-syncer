@@ -181,6 +181,18 @@ class SchedulerRegistry:
                     if isinstance(inst_status, dict):
                         for jid, jinfo in inst_status.items():
                             jobs.append({"job_id": str(jid), **jinfo})
+                        # SectionMeta 未提供 display_name 时，回退到 instance job 的 name
+                        if display_name == sid and inst_status:
+                            first_name = next(
+                                (
+                                    j.get("name")
+                                    for j in inst_status.values()
+                                    if j.get("name")
+                                ),
+                                None,
+                            )
+                            if first_name:
+                                display_name = first_name
                 except Exception as e:
                     logger.debug("获取 %s 调度器状态失败: %s", sid, e)
 

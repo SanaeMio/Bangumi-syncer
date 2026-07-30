@@ -16,6 +16,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from ...core.config import config_manager
 from ...core.logging import logger
+from ..base.notifier_helpers import notify_scheduler_failure
 from .models import SummaryJobConfig
 from .service import summary_service
 
@@ -143,8 +144,15 @@ class SummaryScheduler:
             )
         except asyncio.TimeoutError:
             logger.error(f"Summary job '{job_config.name}' timed out ({timeout}s)")
+            notify_scheduler_failure(
+                "summary",
+                f"任务 '{job_config.name}' 超时 ({timeout}s)",
+                timeout=True,
+                job_name=job_config.name,
+            )
         except Exception as e:
             logger.error(f"Summary job '{job_config.name}' failed: {e}")
+            notify_scheduler_failure("summary", str(e), job_name=job_config.name)
 
     def reload_job_if_running(self) -> None:
         """配置变更后刷新任务（由 Web UI 保存流程调用）。"""

@@ -4493,6 +4493,20 @@ pre {
 
 /* ========== 配置页面专用样式 ========== */
 
+/* 通知规则：选项悬停高亮（事件与渠道复用） */
+.rule-channel-item {
+    transition: background-color 0.15s ease;
+    cursor: pointer;
+}
+
+.rule-channel-item:hover {
+    background-color: var(--bs-gray-100, rgba(0, 0, 0, 0.04));
+}
+
+.rule-channel-item:has(input:checked) {
+    background-color: rgba(13, 110, 253, 0.08);
+}
+
 /* 密码显示/隐藏按钮样式 */
 .password-toggle-btn {
     z-index: 10;

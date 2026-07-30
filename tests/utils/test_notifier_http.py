@@ -59,7 +59,7 @@ def mock_config_with_email():
         "email_from": "from@example.com",
         "email_to": "to@example.com",
         "email_subject": "",
-        "email_template_file": "",
+        "template": "",
         "enabled": "true",
         "types": "all",
     }
@@ -392,7 +392,7 @@ def test_email_notification_no_recipient(mock_smtp, mock_config_with_email):
         "email_from": "from@example.com",
         "email_to": "",  # 无收件人
         "email_subject": "",
-        "email_template_file": "",
+        "template": "",
         "enabled": "true",
         "types": "all",
     }

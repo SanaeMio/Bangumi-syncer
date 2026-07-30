@@ -14,6 +14,7 @@ from ...core.logging import logger
 from ...models.sync import CustomItem
 from ...utils.http_base import AsyncHttpClient
 from ..base.models import BaseSyncResult
+from ..base.notifier_helpers import notify_source_event
 from .client import (
     discover_devices,
     fetch_all_media_status,
@@ -107,10 +108,22 @@ class FongmiSyncService:
 
         devices = await self._resolve_devices(cfg)
         if not devices:
+            notify_source_event(
+                "fongmi", "failed", error_message="未发现任何 fongmi 设备"
+            )
             return FongmiSyncResult(False, "未发现任何 fongmi 设备", 0, 0, 0, 0)
 
         min_percent = int(cfg.get("min_percent") or 95)
         records = await fetch_completed_records(devices, min_percent)
+
+        # 拉取成功但记录为空 → 触发空结果通知
+        if not records:
+            notify_source_event(
+                "fongmi",
+                "empty",
+                message="未拉取到任何已完成的观看记录",
+                device_count=len(devices),
+            )
 
         from ..sync_service import sync_service  # 延迟导入避免循环依赖
 
