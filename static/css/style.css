@@ -6566,3 +6566,150 @@ main.app-main>*:nth-child(12) {
         transform: none;
     }
 }
+
+/* ========== 调度器状态卡 ========== */
+.sched-cell {
+    border: 1px solid var(--app-glass-border);
+    border-radius: var(--app-radius-card-sm);
+    background-color: var(--app-bg-card);
+    padding: 0.85rem 0.95rem;
+    height: 100%;
+    transition: box-shadow 0.22s var(--app-ease-smooth),
+        border-color 0.22s var(--app-ease-smooth);
+}
+
+.sched-cell:hover {
+    box-shadow: var(--app-shadow-card-hover);
+    border-color: rgba(var(--app-primary-rgb), 0.25);
+}
+
+.sched-cell__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px dashed var(--app-glass-border);
+}
+
+.sched-cell__icon {
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    color: #fff;
+    background: linear-gradient(145deg, var(--app-primary), var(--app-primary-hover));
+    flex-shrink: 0;
+}
+
+.sched-cell__name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--app-text);
+    line-height: 1.3;
+    word-break: break-all;
+}
+
+.sched-cell__empty {
+    font-size: 0.78rem;
+    color: var(--app-text-muted);
+    padding: 0.55rem 0;
+    text-align: center;
+}
+
+.sched-jobs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.sched-job {
+    padding: 0.5rem 0.6rem;
+    border-radius: 10px;
+    background-color: var(--app-bg-card-header);
+    border: 1px solid var(--app-glass-border);
+}
+
+.sched-job__name {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--app-text);
+    margin-bottom: 0.35rem;
+    word-break: break-all;
+}
+
+.sched-job__dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+}
+
+.sched-job__dot--on {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+
+.sched-job__dot--off {
+    background: #9ca3af;
+    box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.18);
+}
+
+.sched-job__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.35rem;
+}
+
+.sched-job__tag {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 6px;
+    color: var(--app-text-muted);
+    background-color: rgba(var(--app-primary-rgb), 0.08);
+    border: 1px solid rgba(var(--app-primary-rgb), 0.12);
+    font-family: var(--app-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    word-break: break-all;
+}
+
+.sched-job__next {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.76rem;
+    color: var(--app-text);
+    line-height: 1.4;
+}
+
+.sched-job__next-abs {
+    font-weight: 600;
+}
+
+.sched-job__next-rel {
+    color: var(--app-primary);
+    font-size: 0.72rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 5px;
+    background-color: var(--app-primary-soft);
+}
+
+.sched-job__next--idle {
+    color: var(--app-text-muted);
+    font-size: 0.74rem;
+}
+
+#scheduler-status-summary {
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+}
