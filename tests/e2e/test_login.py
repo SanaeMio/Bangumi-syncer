@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import pytest
+from playwright._impl._errors import Error as PlaywrightError
 
 pytestmark = pytest.mark.e2e
 
@@ -71,10 +72,14 @@ def test_logout_redirects_to_login(page, base_url: str):
     )
 
     # 再访问 dashboard，应重定向到 login
-    # 重定向会被 playwright 视为"导航被打断"，用 domcontentloaded 避免报错
-    page.goto(f"{base_url}/dashboard", wait_until="domcontentloaded")
-    # 重定向可能在 goto 返回后才完成，给一点时间让 URL 稳定
-    page.wait_for_timeout(500)
+    # 用 wait_until="commit" 让 goto 在响应头到达后立即返回，避免
+    # 服务端 302 重定向引发 "Navigation is interrupted by another navigation" 异常。
+    # commit 后浏览器会继续跟随重定向到 /login，用 wait_for_function 等 URL 稳定。
+    try:
+        page.goto(f"{base_url}/dashboard", wait_until="commit")
+    except PlaywrightError:
+        # 重定向场景下 commit 也可能抛 "已导航到别处"，忽略后由下方 wait 兜底
+        pass
     page.wait_for_function(
         "() => window.location.pathname.includes('/login')",
         timeout=10000,
