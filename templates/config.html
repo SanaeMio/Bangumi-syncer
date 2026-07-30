@@ -417,6 +417,43 @@ function getNotificationTypeCheckboxes(prefix) {
     return Array.from(document.querySelectorAll(`[id^="${prefix}"]:checked`)).map(cb => cb.value).join(',') || 'all';
 }
 
+/**
+ * 从 /api/notification/types 动态加载通知类型复选框
+ * 替代原先硬编码在 HTML 中的 13 种类型，新增类型只需在 NotificationTypeRegistry 登记
+ * @param {string} containerId - 容器元素 ID，如 'webhook-types-container'
+ * @param {string} prefix - 复选框 ID 前缀，如 'webhook-type-' 或 'email-type-'
+ */
+async function loadNotificationTypes(containerId, prefix) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    // 已填充则跳过（避免重复加载）
+    if (container.children.length > 0) return;
+    try {
+        const json = await apiFetch('/api/notification/types');
+        const types = json.data || [];
+        const frag = document.createDocumentFragment();
+        types.forEach(function (t) {
+            const div = document.createElement('div');
+            div.className = 'form-check';
+            const input = document.createElement('input');
+            input.className = 'form-check-input';
+            input.type = 'checkbox';
+            input.id = prefix + t.id;
+            input.value = t.id;
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = prefix + t.id;
+            label.textContent = t.display_name + ' (' + t.id + ')';
+            div.appendChild(input);
+            div.appendChild(label);
+            frag.appendChild(div);
+        });
+        container.appendChild(frag);
+    } catch (e) {
+        console.error('加载通知类型失败:', e);
+    }
+}
+
 function scrollConfigSection(targetId) {
     const el = document.getElementById(targetId);
     if (!el) {
@@ -495,6 +532,9 @@ function refreshConfigPageToc() {
 
 document.addEventListener('DOMContentLoaded', function() {
     refreshConfigPageToc();
+    // 预加载通知类型复选框（webhook / email 共用同一份类型列表）
+    loadNotificationTypes('webhook-types-container', 'webhook-type-');
+    loadNotificationTypes('email-types-container', 'email-type-');
     // 初始化工具提示
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -2136,98 +2176,9 @@ async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
                             <div id="webhook-types-container"
                                  class="border rounded p-3"
                                  style="max-height: 200px;
-                                        overflow-y: auto">
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-request_received"
-                                           value="request_received">
-                                    <label class="form-check-label" for="webhook-type-request_received">收到同步请求 (request_received)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-bangumi_id_found"
-                                           value="bangumi_id_found">
-                                    <label class="form-check-label" for="webhook-type-bangumi_id_found">匹配到番剧 (bangumi_id_found)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-mark_success"
-                                           value="mark_success">
-                                    <label class="form-check-label" for="webhook-type-mark_success">同步成功 (mark_success)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-mark_failed"
-                                           value="mark_failed">
-                                    <label class="form-check-label" for="webhook-type-mark_failed">同步失败 (mark_failed)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-mark_skipped"
-                                           value="mark_skipped">
-                                    <label class="form-check-label" for="webhook-type-mark_skipped">已看过跳过 (mark_skipped)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-config_error"
-                                           value="config_error">
-                                    <label class="form-check-label" for="webhook-type-config_error">配置错误 (config_error)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-anime_not_found"
-                                           value="anime_not_found">
-                                    <label class="form-check-label" for="webhook-type-anime_not_found">未找到番剧 (anime_not_found)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-episode_not_found"
-                                           value="episode_not_found">
-                                    <label class="form-check-label" for="webhook-type-episode_not_found">未找到剧集 (episode_not_found)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-api_auth_error"
-                                           value="api_auth_error">
-                                    <label class="form-check-label" for="webhook-type-api_auth_error">API认证失败 (api_auth_error)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-api_error"
-                                           value="api_error">
-                                    <label class="form-check-label" for="webhook-type-api_error">API错误 (api_error)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-api_retry_failed"
-                                           value="api_retry_failed">
-                                    <label class="form-check-label" for="webhook-type-api_retry_failed">API重试失败 (api_retry_failed)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-ip_locked"
-                                           value="ip_locked">
-                                    <label class="form-check-label" for="webhook-type-ip_locked">IP被锁定 (ip_locked)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="webhook-type-pending_candidate"
-                                           value="pending_candidate">
-                                    <label class="form-check-label" for="webhook-type-pending_candidate">候选待确认 (pending_candidate)</label>
-                                </div>
+                                        overflow-y: auto"
+                                 data-types-prefix="webhook-type-">
+                                <!-- 通知类型复选框由 loadNotificationTypes() 从 /api/notification/types 动态加载 -->
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
                         </div>
@@ -2430,98 +2381,9 @@ async function loadSummaryNotificationTypes(containerId, selectedTypesStr) {
                             <div id="email-types-container"
                                  class="border rounded p-3"
                                  style="max-height: 200px;
-                                        overflow-y: auto">
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-request_received"
-                                           value="request_received">
-                                    <label class="form-check-label" for="email-type-request_received">收到同步请求 (request_received)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-bangumi_id_found"
-                                           value="bangumi_id_found">
-                                    <label class="form-check-label" for="email-type-bangumi_id_found">匹配到番剧 (bangumi_id_found)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-mark_success"
-                                           value="mark_success">
-                                    <label class="form-check-label" for="email-type-mark_success">同步成功 (mark_success)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-mark_failed"
-                                           value="mark_failed">
-                                    <label class="form-check-label" for="email-type-mark_failed">同步失败 (mark_failed)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-mark_skipped"
-                                           value="mark_skipped">
-                                    <label class="form-check-label" for="email-type-mark_skipped">已看过跳过 (mark_skipped)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-config_error"
-                                           value="config_error">
-                                    <label class="form-check-label" for="email-type-config_error">配置错误 (config_error)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-anime_not_found"
-                                           value="anime_not_found">
-                                    <label class="form-check-label" for="email-type-anime_not_found">未找到番剧 (anime_not_found)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-episode_not_found"
-                                           value="episode_not_found">
-                                    <label class="form-check-label" for="email-type-episode_not_found">未找到剧集 (episode_not_found)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-api_auth_error"
-                                           value="api_auth_error">
-                                    <label class="form-check-label" for="email-type-api_auth_error">API认证失败 (api_auth_error)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-api_error"
-                                           value="api_error">
-                                    <label class="form-check-label" for="email-type-api_error">API错误 (api_error)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-api_retry_failed"
-                                           value="api_retry_failed">
-                                    <label class="form-check-label" for="email-type-api_retry_failed">API重试失败 (api_retry_failed)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-ip_locked"
-                                           value="ip_locked">
-                                    <label class="form-check-label" for="email-type-ip_locked">IP被锁定 (ip_locked)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="email-type-pending_candidate"
-                                           value="pending_candidate">
-                                    <label class="form-check-label" for="email-type-pending_candidate">候选待确认 (pending_candidate)</label>
-                                </div>
+                                        overflow-y: auto"
+                                 data-types-prefix="email-type-">
+                                <!-- 通知类型复选框由 loadNotificationTypes() 从 /api/notification/types 动态加载 -->
                             </div>
                             <div class="form-text">勾选需要的通知类型，不勾选则接收所有类型</div>
                         </div>
