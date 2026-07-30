@@ -479,6 +479,10 @@ class ArchiveImporter:
             # 批量读取 subject 表，归一化后插入 FTS5
             # subject 表已按 type 过滤（仅保留 2/6），此处无需再过滤
             cursor = conn.execute("SELECT id, name, name_cn, infobox FROM subject")
+            insert_sql = (
+                "INSERT INTO subject_fts(rowid, name, name_cn, aliases) "
+                "VALUES (?, ?, ?, ?)"
+            )
             batch: list[tuple[int, str, str, str]] = []
             count = 0
             while True:
@@ -494,21 +498,14 @@ class ArchiveImporter:
                     if not norm_name and not norm_cn and not aliases:
                         continue
                     batch.append((sid, norm_name, norm_cn, aliases))
-                if batch:
-                    conn.executemany(
-                        "INSERT INTO subject_fts(rowid, name, name_cn, aliases) "
-                        "VALUES (?, ?, ?, ?)",
-                        batch,
-                    )
+                # 攒满 _BATCH_SIZE 再批量插入（与 _import_table 一致）
+                if len(batch) >= _BATCH_SIZE:
+                    conn.executemany(insert_sql, batch)
                     count += len(batch)
                     batch.clear()
             # 插入剩余
             if batch:
-                conn.executemany(
-                    "INSERT INTO subject_fts(rowid, name, name_cn, aliases) "
-                    "VALUES (?, ?, ?, ?)",
-                    batch,
-                )
+                conn.executemany(insert_sql, batch)
                 count += len(batch)
                 batch.clear()
             # optimize 合并索引段，提升查询性能
@@ -516,9 +513,10 @@ class ArchiveImporter:
             conn.commit()
             logger.info(f"bangumi_archive: FTS5 trigram 索引构建完成，{count} 条标题")
         except sqlite3.OperationalError as e:
-            # FTS5 不可用（老版本 SQLite）时跳过，查询层会降级
+            # FTS5 不可用（老版本 SQLite）时跳过，查询层会降级到 API
             logger.warning(
-                f"bangumi_archive: FTS5 trigram 索引构建失败（SQLite 版本可能过低）: {e}"
+                f"bangumi_archive: FTS5 trigram 索引构建失败: {e}。"
+                f"需 SQLite ≥ 3.34.0 且启用 FTS5 扩展，查询将降级到 API。"
             )
 
     def _vacuum(self, db_path: Path) -> None:
@@ -534,7 +532,7 @@ class ArchiveImporter:
         """清空数据库（删除文件，释放磁盘）
 
         用于双库模式：导入成功切换后清空旧库。
-        同时清理对应的 .index 磁盘缓存，避免旧索引残留占用空间（~460MB）。
+        同时清理 WAL/SHM 文件，以及旧版本（FTS5 改造前）残留的 .index 磁盘缓存。
         """
         try:
             if db_path.exists():
@@ -548,16 +546,19 @@ class ArchiveImporter:
                         sidecar.unlink()
                     except OSError:
                         pass
-            # 清理对应的 .index 磁盘缓存文件
+            # 清理旧版本残留的 .index 磁盘缓存（FTS5 改造后已废弃，
+            # 仅为从旧版升级的用户清理残留文件，新装用户无此文件）
             # db_path 名为 bangumi_archive_{a|b}.db，对应缓存为 bangumi_archive_{a|b}.index
             index_path = db_path.with_suffix(".index")
             if index_path.exists():
                 try:
                     index_path.unlink()
-                    logger.info(f"bangumi_archive: 已清理旧索引缓存 {index_path.name}")
+                    logger.info(
+                        f"bangumi_archive: 已清理旧版索引缓存 {index_path.name}"
+                    )
                 except OSError as e:
                     logger.warning(
-                        f"bangumi_archive: 清理索引缓存失败 {index_path}: {e}"
+                        f"bangumi_archive: 清理旧版索引缓存失败 {index_path}: {e}"
                     )
         except OSError as e:
             logger.warning(f"bangumi_archive: 清空数据库失败 {db_path}: {e}")
