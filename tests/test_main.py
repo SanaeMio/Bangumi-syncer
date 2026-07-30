@@ -18,7 +18,7 @@ class TestMainApp:
         with patch("app.main.startup_info"):
             with patch("app.main.config_manager"):
                 with patch("app.main.mapping_service"):
-                    with patch("app.main.trakt_scheduler"):
+                    with patch("app.main.register_schedulers"):
                         from app.main import app
 
                         assert app is not None
@@ -28,7 +28,7 @@ class TestMainApp:
         with patch("app.main.startup_info"):
             with patch("app.main.config_manager"):
                 with patch("app.main.mapping_service"):
-                    with patch("app.main.trakt_scheduler"):
+                    with patch("app.main.register_schedulers"):
                         from app.main import app
 
                         assert app.title is not None
@@ -38,7 +38,7 @@ class TestMainApp:
         with patch("app.main.startup_info"):
             with patch("app.main.config_manager"):
                 with patch("app.main.mapping_service"):
-                    with patch("app.main.trakt_scheduler"):
+                    with patch("app.main.register_schedulers"):
                         from app.main import app
 
                         assert app.version is not None
@@ -48,7 +48,7 @@ class TestMainApp:
         with patch("app.main.startup_info"):
             with patch("app.main.config_manager"):
                 with patch("app.main.mapping_service"):
-                    with patch("app.main.trakt_scheduler"):
+                    with patch("app.main.register_schedulers"):
                         from app.main import app
 
                         # 检查应用有路由
@@ -59,7 +59,7 @@ class TestMainApp:
         with patch("app.main.startup_info"):
             with patch("app.main.config_manager"):
                 with patch("app.main.mapping_service"):
-                    with patch("app.main.trakt_scheduler"):
+                    with patch("app.main.register_schedulers"):
                         from app.main import app
 
                         assert app.description is not None
@@ -84,12 +84,9 @@ def _main_lifespan_mocks(**replace: object):
         "app.main.config_manager.get_scheduler_config": {
             "return_value": {"startup_delay": 0}
         },
-        "app.main.trakt_scheduler.start": {"new": AsyncMock(return_value=True)},
-        "app.main.feiniu_scheduler.start": {"new": AsyncMock(return_value=True)},
-        "app.main.fongmi_scheduler.start": {"new": AsyncMock(return_value=True)},
-        "app.main.trakt_scheduler.stop": {"new": AsyncMock()},
-        "app.main.feiniu_scheduler.stop": {"new": AsyncMock()},
-        "app.main.fongmi_scheduler.stop": {"new": AsyncMock()},
+        "app.main.register_schedulers": {},
+        "app.main.scheduler_registry.start_all": {"new": AsyncMock()},
+        "app.main.scheduler_registry.stop_all": {"new": AsyncMock()},
         "asyncio.sleep": {"new": AsyncMock()},
     }
     merged = {**defaults, **replace}
@@ -137,24 +134,16 @@ def test_main_startup_feiniu_watermark_failure_only_logs():
             pass
 
 
-def test_main_startup_delayed_scheduler_trakt_start_fails():
+def test_main_startup_delayed_scheduler_start_fails():
+    """start_all 抛异常时仅记录日志，不影响应用启动"""
     from app.main import app
 
     with _main_lifespan_mocks(
         **{
-            "app.main.trakt_scheduler.start": {"new": AsyncMock(return_value=False)},
-            "app.main.feiniu_scheduler.start": {"new": AsyncMock(return_value=True)},
+            "app.main.scheduler_registry.start_all": {
+                "new": AsyncMock(side_effect=RuntimeError("start fail"))
+            },
         }
-    ):
-        with TestClient(app):
-            pass
-
-
-def test_main_startup_delayed_scheduler_feiniu_start_fails():
-    from app.main import app
-
-    with _main_lifespan_mocks(
-        **{"app.main.feiniu_scheduler.start": {"new": AsyncMock(return_value=False)}}
     ):
         with TestClient(app):
             pass
@@ -171,27 +160,14 @@ def test_main_startup_create_task_failure_logged():
             pass
 
 
-def test_main_shutdown_trakt_stop_failure_logged():
+def test_main_shutdown_stop_all_failure_logged():
+    """stop_all 抛异常时仅记录日志，不影响应用关闭"""
     from app.main import app
 
     with _main_lifespan_mocks(
         **{
-            "app.main.trakt_scheduler.stop": {
-                "new": AsyncMock(side_effect=RuntimeError("stop trakt"))
-            },
-        }
-    ):
-        with TestClient(app):
-            pass
-
-
-def test_main_shutdown_feiniu_stop_failure_logged():
-    from app.main import app
-
-    with _main_lifespan_mocks(
-        **{
-            "app.main.feiniu_scheduler.stop": {
-                "new": AsyncMock(side_effect=RuntimeError("stop feiniu"))
+            "app.main.scheduler_registry.stop_all": {
+                "new": AsyncMock(side_effect=RuntimeError("stop fail"))
             },
         }
     ):

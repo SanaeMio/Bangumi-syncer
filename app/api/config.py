@@ -25,10 +25,7 @@ from ..core.config_secret_crypto import (
 )
 from ..core.logging import logger
 from ..core.security import security_manager
-from ..services.bangumi_archive_scheduler import bangumi_archive_scheduler
-from ..services.feiniu.scheduler import feiniu_scheduler
 from ..services.feiniu.sync_service import feiniu_sync_service
-from ..services.fongmi.scheduler import fongmi_scheduler
 from ..services.llm import reset_llm_client
 from .deps import get_current_user_flexible
 
@@ -306,37 +303,19 @@ async def update_config(
                 feiniu_sync_service.clear_min_update_watermark()
                 logger.info("飞牛已关闭：已清除同步起点水位")
 
-        try:
-            await feiniu_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("飞牛调度器随配置更新: %s", ex)
+        # 调度器联动统一走 registry（feiniu/fongmi/archive/replay）
+        from ..core.scheduler_registry import scheduler_registry
 
-        try:
-            await fongmi_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("fongmi 调度器随配置更新: %s", ex)
+        await scheduler_registry.apply_config_by_section("feiniu")
+        await scheduler_registry.apply_config_by_section("fongmi")
 
         # 重置 LLM 客户端单例以使用最新配置
         reset_llm_client()
 
-        try:
-            # 重新加载 BangumiArchive 配置（data_dir 等可能变化）
-            from ..utils.bangumi_archive import bangumi_archive
-
-            bangumi_archive.reload_config()
-            await bangumi_archive_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("BangumiArchive 调度器随配置更新: %s", ex)
-
-        try:
-            # 同步 BangumiReplay 调度器状态（enabled/replay_cron 变化时重建定时任务）
-            from ..services.bangumi_replay_scheduler import (
-                bangumi_replay_scheduler,
-            )
-
-            await bangumi_replay_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("BangumiReplay 调度器随配置更新: %s", ex)
+        # BangumiArchive / BangumiReplay 通过 registry 统一联动
+        # （archive 的 pre_reload_hook 已在 JobSpec 中声明，自动执行 reload_config）
+        await scheduler_registry.apply_config_by_section("bangumi-archive")
+        await scheduler_registry.apply_config_by_section("bangumi-replay")
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:

@@ -14,7 +14,7 @@ class TestPagesEndpoints:
         """测试获取首页"""
         with patch("app.main.config_manager"):
             with patch("app.main.mapping_service"):
-                with patch("app.main.trakt_scheduler"):
+                with patch("app.main.register_schedulers"):
                     from app.main import app
 
                     client = TestClient(app)
@@ -26,7 +26,7 @@ class TestPagesEndpoints:
         """测试获取 Trakt 页面"""
         with patch("app.main.config_manager"):
             with patch("app.main.mapping_service"):
-                with patch("app.main.trakt_scheduler"):
+                with patch("app.main.register_schedulers"):
                     from app.main import app
 
                     client = TestClient(app)
@@ -42,7 +42,7 @@ class TestConfigEndpoints:
         """测试获取配置页面"""
         with patch("app.main.config_manager"):
             with patch("app.main.mapping_service"):
-                with patch("app.main.trakt_scheduler"):
+                with patch("app.main.register_schedulers"):
                     from app.main import app
 
                     client = TestClient(app)
@@ -58,7 +58,7 @@ class TestMappingsEndpoints:
         """测试获取映射页面"""
         with patch("app.main.config_manager"):
             with patch("app.main.mapping_service"):
-                with patch("app.main.trakt_scheduler"):
+                with patch("app.main.register_schedulers"):
                     from app.main import app
 
                     client = TestClient(app)
