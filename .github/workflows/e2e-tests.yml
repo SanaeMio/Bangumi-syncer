@@ -1,0 +1,46 @@
+name: E2E Tests
+
+on:
+  push:
+    branches:
+      - main
+      - refactor/frontend
+    paths:
+      - 'app/**'
+      - 'templates/**'
+      - 'static/**'
+      - 'tests/e2e/**'
+      - 'tests/conftest.py'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'templates/**'
+      - 'static/**'
+      - 'tests/e2e/**'
+      - 'tests/conftest.py'
+      - 'pyproject.toml'
+
+jobs:
+  e2e_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.9
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install Playwright browsers
+        run: uv run playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        run: uv run pytest tests/e2e/ -m e2e --browser chromium -v
