@@ -10,10 +10,13 @@
             <div class="config-sidebar">
                 <nav class="card mb-3 config-page-toc" aria-label="配置页目录">
                     <div class="card-header py-2 px-3">
-                        <span class="config-page-toc__kicker text-muted fw-semibold text-uppercase">本页跳转</span>
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-list-ul me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title small">本页跳转</h6>
+                        </div>
                     </div>
                     <div class="card-body py-2 px-2">
-                        <div id="config-page-toc-links" class="d-flex flex-column gap-1 small"></div>
+                        <div id="config-page-toc-links" class="d-flex flex-column gap-1"></div>
                     </div>
                 </nav>
                 <div id="config-section-actions" class="card mb-3">
@@ -47,11 +50,13 @@
                     </div>
                 </div>
                 <div class="card mb-3 border-info border-opacity-25">
-                    <div class="card-body p-2">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="bi bi-bug me-2 text-info"></i>
-                            <span class="fw-semibold small text-info">调试工具</span>
+                    <div class="card-header py-2 px-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-bug me-2 text-info card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title small text-info">调试工具</h6>
                         </div>
+                    </div>
+                    <div class="card-body p-2">
                         <p class="text-muted small mb-2">测试同步与网络诊断功能已移至专门页面。</p>
                         <a href="{{ '/debug' | p }}" class="btn btn-outline-info btn-sm w-100">
                             <i class="bi bi-arrow-right-circle me-1"></i>前往调试工具
@@ -454,40 +459,35 @@ function refreshConfigPageToc() {
     const modeSelect = document.getElementById('sync-mode');
     const mode = modeSelect ? modeSelect.value : 'single';
     wrap.replaceChildren();
-    const items = [
-        { id: 'config-section-sync', label: '同步', mode: 'always' },
-        { id: 'config-section-bgm', label: 'Bangumi', mode: 'single' },
-        { id: 'multi-user-section', label: '多用户', mode: 'multi' },
-        { id: 'config-section-advanced', label: '高级', mode: 'always' },
-        { id: 'config-section-auth', label: 'Web 认证', mode: 'always' },
-        { id: 'config-section-bangumi-data', label: 'Data', mode: 'always' },
-        { id: 'config-section-llm', label: 'LLM', mode: 'always' },
-        { id: 'config-section-summary', label: 'AI总结', mode: 'always' },
-        { id: 'config-section-notify', label: '通知', mode: 'always' },
-        { id: 'config-section-feiniu', label: '飞牛', mode: 'always' },
-        { id: 'config-section-fongmi', label: 'fongmi', mode: 'always' },
-        { id: 'config-section-bangumi-archive', label: 'bangumi archive', mode: 'always' },
-        { id: 'config-section-bangumi-replay', label: 'bangumi replay', mode: 'always' },
-    ];
-    items.forEach(function (item) {
+    // id/mode/label 全部从 DOM 读取，新增配置卡片无需改此函数。
+    // - id：取元素 id（[id^="config-section-"] 或 #multi-user-section）
+    // - mode：取 data-toc-mode（默认 always）
+    // - label：取 .card-header-title 文本，可用 data-toc-label 覆盖
+    const form = document.getElementById('config-form');
+    if (!form) {
+        return;
+    }
+    const cards = form.querySelectorAll('[id^="config-section-"], #multi-user-section');
+    cards.forEach(function (target) {
+        const itemMode = target.dataset.tocMode || 'always';
         const show =
-            item.mode === 'always' ||
-            (item.mode === 'single' && mode === 'single') ||
-            (item.mode === 'multi' && mode === 'multi');
+            itemMode === 'always' ||
+            (itemMode === 'single' && mode === 'single') ||
+            (itemMode === 'multi' && mode === 'multi');
         if (!show) {
             return;
         }
-        const target = document.getElementById(item.id);
-        if (!target) {
-            return;
-        }
+        const titleEl = target.querySelector('.card-header-title');
+        const label =
+            target.dataset.tocLabel ||
+            (titleEl ? titleEl.textContent.trim() : target.id);
         const a = document.createElement('a');
         a.className = 'config-page-toc__link';
-        a.href = '#' + item.id;
-        a.textContent = item.label;
+        a.href = '#' + target.id;
+        a.textContent = label;
         a.addEventListener('click', function (event) {
             event.preventDefault();
-            scrollConfigSection(item.id);
+            scrollConfigSection(target.id);
         });
         wrap.appendChild(a);
     });

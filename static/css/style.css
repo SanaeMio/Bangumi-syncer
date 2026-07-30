@@ -3016,6 +3016,9 @@ textarea.form-control:focus {
     top: 1rem;
     max-height: calc(100vh - 2rem);
     overflow-y: auto;
+    /* 给卡片阴影留出空间，避免被 overflow 裁切（overflow-y:auto 会让 overflow-x 计算为 auto） */
+    padding: 0.5rem;
+    margin: -0.5rem;
 }
 
 .config-page-toc {
@@ -3023,27 +3026,27 @@ textarea.form-control:focus {
     z-index: 5;
 }
 
-.config-page-toc__kicker {
-    font-size: 0.7rem;
-    letter-spacing: 0.06em;
-}
-
-/* 竖向 TOC 链接：满宽、左对齐、悬停高亮 */
+/* 竖向 TOC 链接：复用主导航 .sidebar .nav-link 的视觉变量 */
 .config-page-toc__link {
-    display: block;
-    padding: 0.35rem 0.6rem;
-    border-radius: 0.3rem;
-    color: inherit;
+    display: flex;
+    align-items: center;
+    color: var(--app-text-muted);
+    font-weight: 500;
+    font-size: 0.9rem;
+    padding: 0.5rem 0.75rem;
+    margin: 0 0.25rem;
+    border-radius: var(--app-radius-btn);
     text-decoration: none;
-    font-size: 0.85rem;
-    line-height: 1.2;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition: color 0.22s var(--app-ease-smooth),
+        background-color 0.22s var(--app-ease-smooth),
+        transform 0.24s var(--app-ease-smooth);
 }
 
 .config-page-toc__link:hover,
 .config-page-toc__link:focus {
-    background-color: rgba(13, 110, 253, 0.1);
-    color: var(--bs-primary);
+    color: var(--app-text);
+    background-color: var(--app-surface-hover);
+    transform: translateX(2px);
     text-decoration: none;
 }
 
