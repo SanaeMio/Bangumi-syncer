@@ -60,6 +60,13 @@ _DEFAULT_UPDATE_CRON = "0 8 * * 3"
 # 进度缓存保留时长（秒）：任务结束后保留 30 分钟
 _PROGRESS_CACHE_TTL = 1800
 
+# 进度历史日志最大长度：超过后丢弃最早的事件
+# 避免 SSE 连接时 json.dumps 序列化巨大历史阻塞事件循环
+_PROGRESS_LOG_MAX = 200
+
+# 进度 Queue 最大长度：避免下载阶段推送过快导致无界堆积
+_PROGRESS_QUEUE_MAX = 100
+
 
 class ArchiveStage(str, Enum):
     """导入流程的阶段枚举（细粒度）"""
@@ -388,7 +395,7 @@ class BangumiArchive:
         return self._current_task_id
 
     def _create_progress_queue(self, task_id: str) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=_PROGRESS_QUEUE_MAX)
         self._progress_queues[task_id] = queue
         return queue
 
@@ -425,15 +432,23 @@ class BangumiArchive:
         )
         # 持久化缓存（覆盖式：保留最新）
         self._progress_cache[task_id] = event
-        # 历史日志（追加）
-        self._progress_logs.setdefault(task_id, []).append(event)
+        # 历史日志（追加，限制最大长度避免 SSE 序列化巨大历史）
+        logs = self._progress_logs.setdefault(task_id, [])
+        logs.append(event)
+        if len(logs) > _PROGRESS_LOG_MAX:
+            del logs[: len(logs) - _PROGRESS_LOG_MAX]
         # 实时队列
         queue = self._progress_queues.get(task_id)
         if queue is not None:
             try:
                 queue.put_nowait(event.to_dict())
             except asyncio.QueueFull:
-                pass
+                # 队列满（SSE 消费慢），丢弃最旧事件腾出空间
+                try:
+                    queue.get_nowait()
+                    queue.put_nowait(event.to_dict())
+                except asyncio.QueueEmpty:
+                    pass
 
     # ===== 更新流程入口 =====
 

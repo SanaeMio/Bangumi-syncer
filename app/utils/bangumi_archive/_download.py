@@ -240,20 +240,28 @@ class ArchiveDownloader:
                 total = int(resp.headers.get("content-length", 0))
                 downloaded = 0
                 last_reported = 0
+                # 按大小节流：每 10MB 推送一次进度，避免每 8KB chunk 推送
+                # 导致 _progress_logs 暴涨 + SSE 序列化巨大历史阻塞事件循环
+                _PROGRESS_INTERVAL = 10 * 1024 * 1024
 
                 with open(zip_path, "wb") as f:
                     async for chunk in resp.aiter_bytes(chunk_size=_CHUNK_SIZE):
                         f.write(chunk)
                         downloaded += len(chunk)
                         if total > 0:
-                            pct = 10 + int(downloaded / total * 50)
-                            self._emit(
-                                task_id,
-                                ArchiveStage.DOWNLOADING,
-                                pct,
-                                f"正在从{source_label}下载... {_fmt_size(downloaded)} / {_fmt_size(total)}",
-                            )
-                        elif downloaded - last_reported >= 512 * 1024:
+                            if (
+                                downloaded - last_reported >= _PROGRESS_INTERVAL
+                                or downloaded == total
+                            ):
+                                last_reported = downloaded
+                                pct = 10 + int(downloaded / total * 50)
+                                self._emit(
+                                    task_id,
+                                    ArchiveStage.DOWNLOADING,
+                                    pct,
+                                    f"正在从{source_label}下载... {_fmt_size(downloaded)} / {_fmt_size(total)}",
+                                )
+                        elif downloaded - last_reported >= _PROGRESS_INTERVAL:
                             last_reported = downloaded
                             self._emit(
                                 task_id,
