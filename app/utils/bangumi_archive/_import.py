@@ -351,14 +351,13 @@ class ArchiveImporter:
             conn.commit()
 
             # 准备 INSERT 语句
-            # 新建库（target_db.unlink 后建表），主键不可能冲突，用 INSERT 而非
-            # INSERT OR REPLACE，省去唯一性检查开销（约快 30-50%）
+            # 用 INSERT OR IGNORE 而非 INSERT OR REPLACE：
+            # - 比 INSERT OR REPLACE 快（不触发 DELETE+INSERT，仅忽略冲突行）
+            # - dump 可能含重复主键（如 subject_relation 复合主键重复），OR IGNORE 静默跳过
             fields = schema["fields"]
             placeholders = ",".join(["?"] * len(fields))
             col_names = ",".join(f'"{f}"' for f in fields)
-            insert_sql = (
-                f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
-            )
+            insert_sql = f"INSERT OR IGNORE INTO {table_name} ({col_names}) VALUES ({placeholders})"
 
             # 批量读取并插入
             count = 0

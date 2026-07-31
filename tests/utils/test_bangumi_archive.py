@@ -238,6 +238,48 @@ class TestArchiveImporter:
         finally:
             conn.close()
 
+    @pytest.mark.asyncio
+    async def test_import_ignores_duplicate_primary_key(
+        self, tmp_path: Path, temp_db_path: Path
+    ):
+        """dump 中存在重复主键时应静默跳过，不报 UNIQUE constraint 错误
+
+        subject_relation 复合主键 (subject_id, relation_type, related_subject_id)
+        在真实 dump 中可能出现重复行，INSERT OR IGNORE 静默跳过冲突行。
+        """
+        zip_path = tmp_path / "dup.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            subj_lines = [
+                json.dumps({"id": 1, "type": 2, "name": "A"}),
+                json.dumps({"id": 2, "type": 2, "name": "B"}),
+            ]
+            zf.writestr("subject.jsonlines", "\n".join(subj_lines))
+            zf.writestr("episode.jsonlines", "")
+            # 两行重复主键
+            rel = json.dumps(
+                {
+                    "subject_id": 1,
+                    "relation_type": 1,
+                    "related_subject_id": 2,
+                    "order": 1,
+                }
+            )
+            zf.writestr("subject-relations.jsonlines", "\n".join([rel, rel]))
+
+        importer = ArchiveImporter()
+        row_counts, _ = await importer.import_all(
+            zip_path=zip_path, target_db=temp_db_path, task_id="test", progress_cb=None
+        )
+
+        # count 是读取行数（含重复），DB 里实际只 1 行（OR IGNORE 去重）
+        assert row_counts["subject_relation"] == 2
+        conn = sqlite3.connect(str(temp_db_path))
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM subject_relation").fetchone()[0]
+        finally:
+            conn.close()
+        assert count == 1
+
     def test_clear_database_removes_file(self, tmp_path: Path):
         """clear_database 应删除库文件"""
         db_path = tmp_path / "to_clean.db"
