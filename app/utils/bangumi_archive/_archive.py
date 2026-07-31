@@ -669,7 +669,16 @@ class BangumiArchive:
             self._write_active_file(new_active)
             self._save_meta(self._meta)
 
-        # 清空旧库
+        # 先 invalidate FTS5 查询层，断开与旧 active 库的连接
+        # 否则 Windows 上 clear_database 删除旧库会因文件被占用失败 (WinError 32)
+        try:
+            from ._title_index import archive_title_index
+
+            archive_title_index.invalidate()
+        except Exception as e:
+            logger.warning(f"bangumi_archive FTS5 查询层 invalidate 失败: {e}")
+
+        # 清空旧库（FTS5 连接已断开，可安全删除）
         old_db = self.get_inactive_db_path()
         self._push_progress(
             task_id, ArchiveStage.CLEANING, 98, f"清空旧库 {old_db.name}"
@@ -681,13 +690,10 @@ class BangumiArchive:
             f"rows={row_counts}, duration={duration_sec:.1f}s"
         )
 
-        # active 库切换后，invalidate 让 FTS5 查询层重连到新库
-        # FTS5 表在导入时已构建，无需后台重建
+        # 重建 FTS5 查询层连接到新 active 库
+        # FTS5 表在导入时已构建，无需后台重建，仅需重连
         # 用 to_thread 包裹避免 _ensure_built 同步阻塞事件循环导致前端白屏
         try:
-            from ._title_index import archive_title_index
-
-            archive_title_index.invalidate()
             await asyncio.to_thread(archive_title_index.build_in_background)
         except Exception as e:
             logger.warning(f"bangumi_archive FTS5 查询层重连失败: {e}")
