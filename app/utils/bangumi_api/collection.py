@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 
 import httpx
@@ -19,6 +20,52 @@ from ...utils.bangumi_constants import (
 
 class CollectionMixin:
     """收藏/章节状态相关方法（供 BangumiApi 组合）"""
+
+    def list_user_collections(
+        self,
+        subject_type: Optional[int] = None,
+        collection_type: Optional[int] = None,
+        limit: int = 30,
+        max_total: int = 500,
+    ) -> list[dict[str, Any]]:
+        """批量获取用户收藏列表（分页拉满）
+
+        用于"番剧放送日历"获取用户"在看"列表等场景。
+
+        Args:
+            subject_type: 条目类型过滤（2=动画, 6=三次元），None=全部
+            collection_type: 收藏类型过滤（1=想看 2=看过 3=在看 4=搁置 5=抛弃），
+                             None=全部
+            limit: 单页大小（Bangumi API 上限 50）
+            max_total: 最多拉取总数，防止异常用户收藏过多拖慢请求
+
+        Returns:
+            list[dict]，每个 dict 含 subject_id, type, name, name_cn 等字段
+            （对齐 Bangumi API /v0/users/{username}/collections 返回的 data 项）
+        """
+        results: list[dict[str, Any]] = []
+        offset = 0
+        # 防御性上限：单次调用最多拉 max_total 条，避免异常场景无限拉取
+        limit = min(max(1, limit), 50)
+        max_total = max(limit, max_total)
+        while offset < max_total:
+            params: dict[str, Any] = {"limit": limit, "offset": offset}
+            if subject_type is not None:
+                params["subject_type"] = subject_type
+            if collection_type is not None:
+                params["type"] = collection_type
+            res = self.get(f"users/{self.username}/collections", params=params)
+            # self.get 已解析为 dict；返回结构 {data: [...], total: N}
+            data = res.get("data") if isinstance(res, dict) else None
+            if not data:
+                break
+            results.extend(data)
+            total = res.get("total", 0) if isinstance(res, dict) else 0
+            offset += len(data)
+            # 拉满或已到 max_total
+            if offset >= total or offset >= max_total:
+                break
+        return results[:max_total]
 
     def get_subject_collection(self, subject_id: int) -> dict[str, Any]:
         res = self.get(f"users/{self.username}/collections/{subject_id}")
@@ -257,3 +304,62 @@ def is_replay_enabled() -> bool:
     供 sync_service 判断是否走"入队"分支；未启用时直接抛错让原有重试逻辑生效。
     """
     return bool(config_manager.get("bangumi-replay", "enabled", fallback=True))
+
+
+# ===== 用户"在看"列表缓存（供放送日历视图使用） =====
+# 模块级 TTL 缓存：username -> (timestamp, subject_ids_set)
+# 缓存命中避免每次访问日历都拉一遍收藏列表（Bangumi API 限流友好）
+_watching_cache: dict[str, tuple[float, set[int]]] = {}
+_WATCHING_CACHE_TTL = 3600  # 1 小时
+
+
+def get_watching_subject_ids(api: Any) -> set[int]:
+    """获取用户"在看"番剧的 subject_id 集合（带 1 小时 TTL 缓存）
+
+    同时拉取动画(2)和三次元(6)两类"在看"收藏，合并返回。
+    API 失败时返回缓存值（若有），否则返回空集合。
+
+    Args:
+        api: BangumiApi 实例（需已配置 username）
+
+    Returns:
+        set[int]：在看条目的 subject_id 集合
+    """
+    username = api.username
+    if not username:
+        return set()
+
+    now = time.time()
+    cached = _watching_cache.get(username)
+    if cached and (now - cached[0]) < _WATCHING_CACHE_TTL:
+        return cached[1]
+
+    try:
+        # 动画(2) + 三次元(6) 的"在看"(type=3)
+        anime_watching = api.list_user_collections(subject_type=2, collection_type=3)
+        real_watching = api.list_user_collections(subject_type=6, collection_type=3)
+        ids = {
+            item.get("subject_id")
+            for item in (anime_watching + real_watching)
+            if item.get("subject_id")
+        }
+        # 写缓存
+        _watching_cache[username] = (now, ids)
+        return ids
+    except Exception as e:
+        logger.warning(f"获取用户在看列表失败，使用缓存降级: {e}")
+        if cached:
+            return cached[1]
+        return set()
+
+
+def invalidate_watching_cache(username: Optional[str] = None) -> None:
+    """失效在看列表缓存
+
+    Args:
+        username: 指定用户失效；None 则清空全部缓存
+    """
+    if username is None:
+        _watching_cache.clear()
+    else:
+        _watching_cache.pop(username, None)
