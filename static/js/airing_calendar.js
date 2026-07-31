@@ -46,11 +46,15 @@
    * 拉取放送数据并渲染。
    */
   function loadAiringCalendar() {
+    var row = document.getElementById('airing-calendar-row')
     var container = document.getElementById('airing-calendar-container')
     var summary = document.getElementById('airing-calendar-summary')
-    if (!container) return
+    if (!row || !container) return
 
     state.loading = true
+    // 进入加载态前确保行可见，避免上次 archive_enabled=false 把行隐藏后，
+    // 本次请求失败时错误提示也无法显示
+    row.style.display = ''
     container.innerHTML =
       '<div class="text-center py-3 app-text-muted-block"><div class="spinner-border spinner-border-sm" role="status"></div></div>'
     if (summary) summary.classList.add('d-none')
@@ -73,6 +77,10 @@
       .catch(function (err) {
         state.loading = false
         console.error('加载在追番剧放送失败:', err)
+        // catch 分支必须重置 display，否则上次 archive 未启用时 row 被隐藏，
+        // 错误提示永远看不见
+        row.style.display = ''
+        if (summary) summary.classList.add('d-none')
         container.innerHTML =
           '<div class="text-center py-3 app-text-muted-block"><i class="bi bi-exclamation-triangle d-block mb-1"></i><span class="small">加载失败</span></div>'
       })
