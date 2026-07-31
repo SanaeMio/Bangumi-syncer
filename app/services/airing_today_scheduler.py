@@ -22,7 +22,7 @@ from ..utils.bangumi_api.factory import (
 )
 from ..utils.bangumi_archive import bangumi_archive
 from ..utils.bangumi_archive._store import archive_store
-from .base.notifier_helpers import notify_airing_today
+from .base.notifier_helpers import notify_airing_today, notify_scheduler_failure
 from .base.scheduler import BaseScheduler
 
 
@@ -76,8 +76,14 @@ class AiringTodayScheduler(BaseScheduler):
             )
         except asyncio.TimeoutError:
             logger.error(f"AiringToday 定时任务超时 ({timeout} 秒)")
+            notify_scheduler_failure(
+                "AiringToday",
+                f"定时任务超时 ({timeout} 秒)",
+                timeout=True,
+            )
         except Exception as e:
             logger.error(f"AiringToday 定时任务失败: {e}")
+            notify_scheduler_failure("AiringToday", str(e))
 
     async def _fetch_and_notify(self, only_watching: bool) -> None:
         """查询今日放送并发通知（可被 await 包装超时）"""

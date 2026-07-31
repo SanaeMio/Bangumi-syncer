@@ -312,6 +312,9 @@ class TestRunSyncJob:
             patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
             patch("app.services.airing_today_scheduler.archive_store"),
             patch("app.services.airing_today_scheduler.notify_airing_today"),
+            patch(
+                "app.services.airing_today_scheduler.notify_scheduler_failure"
+            ) as mock_fail,
             patch("app.services.airing_today_scheduler.config_manager") as cm,
             patch(
                 "app.services.airing_today_scheduler._build_bangumi_api",
@@ -329,6 +332,10 @@ class TestRunSyncJob:
             )
             # 不应抛出
             await s._run_sync_job()
+
+        # 超时应触发 scheduler_job_failed 通知
+        mock_fail.assert_called_once()
+        assert mock_fail.call_args.kwargs.get("timeout") is True
 
     @pytest.mark.asyncio
     async def test_payload_truncates_to_50_episodes(self):
