@@ -472,7 +472,7 @@ class TestBangumiArchive:
 
     def test_disk_space_check_passes(self, isolated_archive: BangumiArchive):
         """磁盘空间足够时不抛异常"""
-        isolated_archive._check_disk_space()  # 不抛异常即通过
+        isolated_archive.check_disk_space()  # 不抛异常即通过
 
     def test_validate_row_counts_passes(self, isolated_archive: BangumiArchive):
         """subject/episode 有数据时校验通过"""

@@ -540,8 +540,10 @@ class BangumiArchive:
             )
             # 上传流程同样检查磁盘空间，与下载流程保持一致
             # 避免解压/导入阶段磁盘写满导致中途失败
+            # 注意：API 层在保存文件前已做一次提前检查，这里作为解压导入前的
+            # 最后防线（从 API 调用到此处可能间隔数秒，磁盘可能被其他进程占用）
             self._push_progress(task_id, ArchiveStage.CHECKING, 1, "检查磁盘空间")
-            self._check_disk_space()
+            self.check_disk_space()
             await self._do_import(
                 task_id=task_id,
                 zip_path=zip_path,
@@ -583,7 +585,7 @@ class BangumiArchive:
 
         # 1. 检查磁盘空间
         self._push_progress(task_id, ArchiveStage.CHECKING, 1, "检查磁盘空间")
-        self._check_disk_space()
+        self.check_disk_space()
 
         # 2. 拉取 latest.json
         self._push_progress(
@@ -749,7 +751,13 @@ class BangumiArchive:
 
         return cb
 
-    def _check_disk_space(self) -> None:
+    def check_disk_space(self) -> None:
+        """检查 data_dir 所在磁盘可用空间是否足够导入
+
+        公开方法，供 API 层在上传文件保存前提前调用，与下载流程对称。
+        内部流程（_do_update / import_local_zip）在解压导入前也会调用，
+        作为最后一道防线。
+        """
         required_mb = self.min_disk_space_mb
         try:
             usage = shutil.disk_usage(str(self.data_dir))

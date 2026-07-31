@@ -172,6 +172,13 @@ async def import_local_zip(
     if not filename:
         raise HTTPException(status_code=400, detail="文件名无效")
 
+    # 提前检查磁盘空间：在保存上传文件之前就失败，避免用户上传数百 MB 后才报错
+    # 与下载流程对称（下载在 _do_update 起始处检查，上传在此处检查）
+    try:
+        bangumi_archive.check_disk_space()
+    except RuntimeError as e:
+        raise HTTPException(status_code=507, detail=str(e)) from e
+
     # 保存到 data_dir/.tmp/<task_id>/ 下的临时文件
     # 与下载流程统一，避免使用系统 temp 导致跨磁盘空间检查盲区
     tmp_root = bangumi_archive.get_tmp_dir()
