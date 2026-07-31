@@ -269,7 +269,7 @@ SECTIONS: dict[str, SectionMeta] = {
         order=545,
         scheduler_id="airing_today",
         fields=(
-            FieldMeta(name="enabled", loose_true=True),
+            FieldMeta(name="enabled", default_true=True),
             FieldMeta(name="cron", default="0 9 * * *"),
             FieldMeta(name="only_watching", default_true=True),
         ),
