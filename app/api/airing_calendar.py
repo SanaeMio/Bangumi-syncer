@@ -11,12 +11,13 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from ..core.config import config_manager
 from ..core.logging import logger
 from ..utils.bangumi_api.collection import (
     get_watching_subject_ids,
@@ -102,8 +103,9 @@ async def get_airing_calendar(
     if days not in _ALLOWED_DAYS:
         days = 30
 
-    # 计算日期范围
-    today = date.today()
+    # 计算日期范围：使用调度器配置时区的"今日"，避免服务器系统时区
+    # （Docker 默认 UTC）与 [scheduler] timezone 不一致导致日期错位
+    today = config_manager.today_in_scheduler_tz()
     end_date = today + timedelta(days=days - 1)
     start_str = today.isoformat()
     end_str = end_date.isoformat()

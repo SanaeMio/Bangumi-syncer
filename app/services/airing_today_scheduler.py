@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
 from typing import Any
 
 from ..core.config import config_manager
@@ -79,7 +78,8 @@ class AiringTodayScheduler(BaseScheduler):
             logger.warning("AiringToday: Archive 数据未导入，跳过")
             return
 
-        today_str = date.today().isoformat()
+        # 使用调度器配置时区的"今日"，与 cron 调度保持同一日期边界
+        today_str = config_manager.today_in_scheduler_tz().isoformat()
         subject_ids: set[int] | None = None
         actual_only_watching = False
 

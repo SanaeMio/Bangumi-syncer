@@ -6,6 +6,7 @@ import os
 import platform
 import threading
 from configparser import ConfigParser
+from datetime import date as _date
 from pathlib import Path
 from typing import Any, Optional
 
@@ -523,6 +524,30 @@ class ConfigManager:
         result_config["timezone"] = tz.strip() or "Asia/Shanghai"
 
         return result_config
+
+    def get_scheduler_timezone(self) -> str:
+        """获取调度器配置的时区名（默认 Asia/Shanghai）
+
+        供需要与 cron 调度保持同一"今日"边界的模块使用，
+        避免服务器系统时区与配置时区不一致导致日期错位。
+        """
+        return self.get_scheduler_config().get("timezone", "Asia/Shanghai")
+
+    def today_in_scheduler_tz(self) -> _date:
+        """返回调度器时区下的今日 date
+
+        服务器系统时区（Docker 默认 UTC）可能与 [scheduler] timezone 不一致，
+        date.today() 取系统时区会导致跨时区场景下"今日"错位。
+        """
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        tz_name = self.get_scheduler_timezone()
+        try:
+            return datetime.now(ZoneInfo(tz_name)).date()
+        except Exception:
+            # 时区名无效等异常降级到系统本地日期
+            return _date.today()
 
     def get_feiniu_config(self) -> dict[str, Any]:
         """飞牛 trimmedia 同步配置（默认关闭）"""
