@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import tempfile
+import shutil
+import time
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -171,20 +172,25 @@ async def import_local_zip(
     if not filename:
         raise HTTPException(status_code=400, detail="文件名无效")
 
-    # 保存到临时文件
-    tmp_dir = Path(tempfile.mkdtemp(prefix="bangumi_archive_upload_"))
+    # 提前检查磁盘空间：在保存上传文件之前就失败，避免用户上传数百 MB 后才报错
+    # 与下载流程对称（下载在 _do_update 起始处检查，上传在此处检查）
+    try:
+        bangumi_archive.check_disk_space()
+    except RuntimeError as e:
+        raise HTTPException(status_code=507, detail=str(e)) from e
+
+    # 保存到 data_dir/.tmp/<task_id>/ 下的临时文件
+    # 与下载流程统一，避免使用系统 temp 导致跨磁盘空间检查盲区
+    tmp_root = bangumi_archive.get_tmp_dir()
+    tmp_dir = tmp_root / f"upload_{int(time.time() * 1000)}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = tmp_dir / filename
 
     def _cleanup_tmp() -> None:
         """清理临时文件与目录（幂等，多次调用安全）"""
         try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-        try:
             if tmp_dir.exists():
-                tmp_dir.rmdir()
+                shutil.rmtree(tmp_dir, ignore_errors=True)
         except OSError:
             pass
 
@@ -252,19 +258,33 @@ async def progress_stream(
 
     async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
         # 1. 推送历史日志（刷新恢复用）
+        # 若历史最后一条已是终态，说明任务已结束，推完历史即返回
+        last_stage: Optional[str] = None
+        # 记录已推送的最大 timestamp，用于跳过 queue 中已存在于 history 的事件
+        # 避免 history + queue 重复推送（如 checking/fetching_latest 出现两次）
+        last_ts = 0.0
         if history:
+            last_stage = history[-1].get("stage")
+            last_ts = history[-1].get("timestamp", 0)
             yield {
                 "event": "history",
                 "data": json.dumps({"events": history}, ensure_ascii=False),
             }
+            if last_stage in ("done", "error", "skipped"):
+                return
 
-        # 2. 推送缓存中的最新进度
+        # 2. 推送缓存中的最新进度（可能比 history 最后一条更新）
+        # 用 timestamp 判断是否已推送，避免同 stage 不同 percent 被跳过
+        # (如 downloading 30% → 45%，stage 相同但 percent 更新)
         if cached:
-            yield {
-                "event": "progress",
-                "data": json.dumps(cached.to_dict(), ensure_ascii=False),
-            }
-            # 若任务已结束，直接返回
+            if cached.timestamp > last_ts:
+                last_ts = cached.timestamp
+                yield {
+                    "event": "progress",
+                    "data": json.dumps(cached.to_dict(), ensure_ascii=False),
+                }
+            # 终态判断独立于 stage 是否变化，避免 cached 为终态但与 history
+            # 最后一条 stage 相同时漏掉 return
             if cached.stage in ("done", "error", "skipped"):
                 return
 
@@ -277,6 +297,10 @@ async def progress_stream(
                 p = await asyncio.wait_for(queue.get(), timeout=30.0)
             except asyncio.TimeoutError:
                 yield {"event": "ping", "data": ""}
+                continue
+
+            # 跳过已推送的事件（按 timestamp 去重，避免 history 与 queue 重复）
+            if p.get("timestamp", 0) <= last_ts:
                 continue
 
             yield {

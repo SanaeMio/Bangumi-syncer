@@ -444,9 +444,21 @@
                         });
                         const logEl = document.getElementById('archive-progress-log');
                         logEl.scrollTop = logEl.scrollHeight;
-                        // 渲染最新进度
-                        const latest = data.events[data.events.length - 1];
-                        _renderProgress(latest);
+                        // 逐步渲染进度条（动画重放，避免直接跳到最终值）
+                        // 仅对非终态事件或历史最后一条做动画，终态最后一条直接渲染
+                        const events = data.events;
+                        let idx = 0;
+                        function _replayStep() {
+                            if (idx >= events.length) return;
+                            const ev = events[idx];
+                            _renderProgress(ev);
+                            idx++;
+                            if (idx < events.length) {
+                                // 还有后续事件，短延迟后继续（让用户看到进度条变化）
+                                setTimeout(_replayStep, 80);
+                            }
+                        }
+                        _replayStep();
                     }
                 } catch (err) {
                     console.error('解析 history 事件失败:', err);

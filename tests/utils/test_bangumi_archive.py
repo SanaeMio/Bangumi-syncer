@@ -238,6 +238,48 @@ class TestArchiveImporter:
         finally:
             conn.close()
 
+    @pytest.mark.asyncio
+    async def test_import_ignores_duplicate_primary_key(
+        self, tmp_path: Path, temp_db_path: Path
+    ):
+        """dump 中存在重复主键时应静默跳过，不报 UNIQUE constraint 错误
+
+        subject_relation 复合主键 (subject_id, relation_type, related_subject_id)
+        在真实 dump 中可能出现重复行，INSERT OR IGNORE 静默跳过冲突行。
+        """
+        zip_path = tmp_path / "dup.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            subj_lines = [
+                json.dumps({"id": 1, "type": 2, "name": "A"}),
+                json.dumps({"id": 2, "type": 2, "name": "B"}),
+            ]
+            zf.writestr("subject.jsonlines", "\n".join(subj_lines))
+            zf.writestr("episode.jsonlines", "")
+            # 两行重复主键
+            rel = json.dumps(
+                {
+                    "subject_id": 1,
+                    "relation_type": 1,
+                    "related_subject_id": 2,
+                    "order": 1,
+                }
+            )
+            zf.writestr("subject-relations.jsonlines", "\n".join([rel, rel]))
+
+        importer = ArchiveImporter()
+        row_counts, _ = await importer.import_all(
+            zip_path=zip_path, target_db=temp_db_path, task_id="test", progress_cb=None
+        )
+
+        # count 是读取行数（含重复），DB 里实际只 1 行（OR IGNORE 去重）
+        assert row_counts["subject_relation"] == 2
+        conn = sqlite3.connect(str(temp_db_path))
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM subject_relation").fetchone()[0]
+        finally:
+            conn.close()
+        assert count == 1
+
     def test_clear_database_removes_file(self, tmp_path: Path):
         """clear_database 应删除库文件"""
         db_path = tmp_path / "to_clean.db"
@@ -430,7 +472,7 @@ class TestBangumiArchive:
 
     def test_disk_space_check_passes(self, isolated_archive: BangumiArchive):
         """磁盘空间足够时不抛异常"""
-        isolated_archive._check_disk_space()  # 不抛异常即通过
+        isolated_archive.check_disk_space()  # 不抛异常即通过
 
     def test_validate_row_counts_passes(self, isolated_archive: BangumiArchive):
         """subject/episode 有数据时校验通过"""
@@ -535,6 +577,57 @@ class TestBangumiArchive:
         # 不应切换
         assert archive.data_dir == data_dir
         assert archive.db_a_path == data_dir / "bangumi_archive_a.db"
+
+    def test_cleanup_stale_tmp_removes_old_dirs(self, isolated_archive: BangumiArchive):
+        """_cleanup_stale_tmp 删除超过阈值的残留子目录，保留新目录"""
+        import os
+        import time as _time
+
+        from app.utils.bangumi_archive._archive import _TMP_DIR_MAX_AGE_SEC
+
+        tmp_dir = isolated_archive.get_tmp_dir()
+        # 模拟两个残留目录：一个过期，一个未过期
+        stale_dir = tmp_dir / "upload_old_crash"
+        fresh_dir = tmp_dir / "upload_new"
+        stale_dir.mkdir(parents=True, exist_ok=True)
+        fresh_dir.mkdir(parents=True, exist_ok=True)
+        (stale_dir / "dump.zip").write_bytes(b"fake")
+        (fresh_dir / "dump.zip").write_bytes(b"fake")
+
+        # 将 stale_dir 的 mtime 改为超过阈值
+        old_time = _time.time() - _TMP_DIR_MAX_AGE_SEC - 60
+        os.utime(stale_dir, (old_time, old_time))
+
+        isolated_archive._cleanup_stale_tmp()
+
+        assert not stale_dir.exists(), "过期残留目录应被删除"
+        assert fresh_dir.exists(), "未过期目录应保留"
+
+    def test_cleanup_stale_tmp_skips_active_task_dir(
+        self, isolated_archive: BangumiArchive
+    ):
+        """_cleanup_stale_tmp 不删除正在进行的任务目录（即使已过期）"""
+        import os
+        import time as _time
+
+        from app.utils.bangumi_archive._archive import _TMP_DIR_MAX_AGE_SEC
+
+        tmp_dir = isolated_archive.get_tmp_dir()
+        # 模拟正在进行的任务目录（已过期但不应被删）
+        active_task_id = "20260731_120000"
+        active_dir = tmp_dir / active_task_id
+        active_dir.mkdir(parents=True, exist_ok=True)
+        (active_dir / "dump.zip").write_bytes(b"fake")
+        old_time = _time.time() - _TMP_DIR_MAX_AGE_SEC - 60
+        os.utime(active_dir, (old_time, old_time))
+
+        # 标记为正在进行的任务
+        isolated_archive._import_in_progress = True
+        isolated_archive._current_task_id = active_task_id
+
+        isolated_archive._cleanup_stale_tmp()
+
+        assert active_dir.exists(), "正在进行的任务目录不应被删除"
 
 
 class TestBackgroundIndexBuildOnStartup:

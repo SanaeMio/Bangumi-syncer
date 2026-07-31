@@ -37,8 +37,10 @@ from ...core.logging import logger
 _DB_NAMES = ("a", "b")
 
 # 磁盘空间阈值（MB），低于此值跳过导入
-# 导入峰值 = 双库（a+b 各 ~0.8GB）+ 临时下载 zip ~0.4GB + WAL 余量 ≈ 2.4GB
-# 阈值设为 3000MB，预留充足空间避免导入中途写满
+# 下载/上传/解压/导入全部在 data_dir/.tmp/ 完成，不再使用系统 temp
+# 双库仅在导入时并存：active 库(0.8GB) + 新库(0.8GB)
+# 解压后立即删除 zip，导入峰值 = active 库(0.8GB) + 解压(1GB) + 新库(0.8GB) + WAL 余量 ≈ 2.6GB
+# 阈值设为 3000MB，预留约 400MB 余量避免导入中途写满
 _DEFAULT_MIN_DISK_SPACE_MB = 3000
 
 # 镜像源 fallback（与 upgrade_service 一致）
@@ -57,6 +59,17 @@ _DEFAULT_UPDATE_CRON = "0 8 * * 3"
 
 # 进度缓存保留时长（秒）：任务结束后保留 30 分钟
 _PROGRESS_CACHE_TTL = 1800
+
+# 进度历史日志最大长度：超过后丢弃最早的事件
+# 避免 SSE 连接时 json.dumps 序列化巨大历史阻塞事件循环
+_PROGRESS_LOG_MAX = 200
+
+# 进度 Queue 最大长度：避免下载阶段推送过快导致无界堆积
+_PROGRESS_QUEUE_MAX = 100
+
+# .tmp 残留目录清理阈值（秒）：超过此年龄的子目录视为崩溃残留，启动时清理
+# 导入任务最多几分钟，超过 1 天必然是残留；保守取 1 天避免误删正在进行的任务
+_TMP_DIR_MAX_AGE_SEC = 24 * 3600
 
 
 class ArchiveStage(str, Enum):
@@ -163,6 +176,8 @@ class BangumiArchive:
         self._progress_cache: dict[str, ProgressEvent] = {}
         # 进度历史日志（按 task_id）：所有阶段变化记录
         self._progress_logs: dict[str, list[ProgressEvent]] = {}
+        # 启动时清理上次崩溃残留的 .tmp 子目录（非阻塞，失败仅记录日志）
+        self._cleanup_stale_tmp()
         # 启动时后台预构建标题索引（enabled 且 active DB 存在时）
         # 构建期间 try_search 自动降级到 API，构建完成后查询走 Archive
         self._maybe_start_background_index_build()
@@ -315,6 +330,59 @@ class BangumiArchive:
     def get_inactive_db_path(self) -> Path:
         return self.db_b_path if self._meta.active == "a" else self.db_a_path
 
+    def get_tmp_dir(self) -> Path:
+        """获取临时工作目录（下载/上传/解压统一在此完成）
+
+        方案 B：所有临时文件都放在 data_dir/.tmp/ 下，与数据库同磁盘，
+        避免系统 temp 与 data_dir 跨磁盘导致的空间检查盲区。
+        调用方负责清理自己创建的子目录。
+        """
+        tmp_dir = self.data_dir / ".tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        return tmp_dir
+
+    def _cleanup_stale_tmp(self) -> None:
+        """启动时清理 .tmp 下超过阈值的残留子目录
+
+        崩溃场景下 data_dir/.tmp/upload_* 或 task_id 子目录可能残留，
+        长期累积会占用磁盘。此处遍历 .tmp 下的一级子目录，删除修改时间
+        超过 _TMP_DIR_MAX_AGE_SEC 的目录。
+
+        非阻塞：清理失败仅记录 warning，不影响启动。
+        安全：只删除 .tmp 下的子目录，不删除 .tmp 本身；不删除正在进行的
+        任务目录（_import_in_progress 时跳过 current_task_id 对应目录）。
+        """
+        tmp_dir = self.data_dir / ".tmp"
+        if not tmp_dir.exists():
+            return
+        now = time.time()
+        # 正在进行的任务目录名（避免误删）
+        active_task_dir = self._current_task_id if self._import_in_progress else None
+        try:
+            for child in tmp_dir.iterdir():
+                if not child.is_dir():
+                    continue
+                # 跳过正在进行的任务目录
+                if active_task_dir and child.name == active_task_dir:
+                    continue
+                try:
+                    mtime = child.stat().st_mtime
+                except OSError:
+                    continue
+                age = now - mtime
+                if age < _TMP_DIR_MAX_AGE_SEC:
+                    continue
+                try:
+                    shutil.rmtree(child, ignore_errors=True)
+                    logger.info(
+                        f"bangumi_archive: 清理残留临时目录 {child.name} "
+                        f"(age={int(age / 3600)}h)"
+                    )
+                except OSError as e:
+                    logger.warning(f"bangumi_archive: 清理临时目录 {child} 失败: {e}")
+        except OSError as e:
+            logger.warning(f"bangumi_archive: 遍历 .tmp 目录失败: {e}")
+
     def get_meta(self) -> ArchiveMeta:
         with self._lock:
             return ArchiveMeta(
@@ -375,7 +443,7 @@ class BangumiArchive:
         return self._current_task_id
 
     def _create_progress_queue(self, task_id: str) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=_PROGRESS_QUEUE_MAX)
         self._progress_queues[task_id] = queue
         return queue
 
@@ -412,15 +480,23 @@ class BangumiArchive:
         )
         # 持久化缓存（覆盖式：保留最新）
         self._progress_cache[task_id] = event
-        # 历史日志（追加）
-        self._progress_logs.setdefault(task_id, []).append(event)
+        # 历史日志（追加，限制最大长度避免 SSE 序列化巨大历史）
+        logs = self._progress_logs.setdefault(task_id, [])
+        logs.append(event)
+        if len(logs) > _PROGRESS_LOG_MAX:
+            del logs[: len(logs) - _PROGRESS_LOG_MAX]
         # 实时队列
         queue = self._progress_queues.get(task_id)
         if queue is not None:
             try:
                 queue.put_nowait(event.to_dict())
             except asyncio.QueueFull:
-                pass
+                # 队列满（SSE 消费慢），丢弃最旧事件腾出空间
+                try:
+                    queue.get_nowait()
+                    queue.put_nowait(event.to_dict())
+                except asyncio.QueueEmpty:
+                    pass
 
     # ===== 更新流程入口 =====
 
@@ -510,6 +586,12 @@ class BangumiArchive:
                 5,
                 f"已接收上传文件: {zip_path.name}",
             )
+            # 上传流程同样检查磁盘空间，与下载流程保持一致
+            # 避免解压/导入阶段磁盘写满导致中途失败
+            # 注意：API 层在保存文件前已做一次提前检查，这里作为解压导入前的
+            # 最后防线（从 API 调用到此处可能间隔数秒，磁盘可能被其他进程占用）
+            self._push_progress(task_id, ArchiveStage.CHECKING, 1, "检查磁盘空间")
+            self.check_disk_space()
             await self._do_import(
                 task_id=task_id,
                 zip_path=zip_path,
@@ -551,7 +633,7 @@ class BangumiArchive:
 
         # 1. 检查磁盘空间
         self._push_progress(task_id, ArchiveStage.CHECKING, 1, "检查磁盘空间")
-        self._check_disk_space()
+        self.check_disk_space()
 
         # 2. 拉取 latest.json
         self._push_progress(
@@ -585,7 +667,9 @@ class BangumiArchive:
             10,
             f"开始下载 {latest.get('name', 'archive.zip')}",
         )
-        zip_path = await downloader.download(latest, task_id=task_id)
+        zip_path = await downloader.download(
+            latest, task_id=task_id, tmp_dir=self.get_tmp_dir()
+        )
 
         # 4.5 SHA256 校验
         digest = latest.get("digest", "")
@@ -602,11 +686,12 @@ class BangumiArchive:
                 cleanup_zip=True,  # 下载的 zip 导入后删除
             )
         finally:
-            # 兜底清理：解压临时目录
+            # 兜底清理：整个任务临时子目录（含 zip 残留 + 解压目录）
+            # zip 与解压目录都在 .tmp/<task_dir>/ 下
             try:
-                temp_extract_dir = zip_path.parent / f"{zip_path.stem}_extracted"
-                if temp_extract_dir.exists():
-                    shutil.rmtree(temp_extract_dir, ignore_errors=True)
+                task_tmp_dir = zip_path.parent
+                if task_tmp_dir.exists() and task_tmp_dir != self.get_tmp_dir():
+                    shutil.rmtree(task_tmp_dir, ignore_errors=True)
             except OSError:
                 pass
 
@@ -629,12 +714,6 @@ class BangumiArchive:
 
         # 解压 + 导入到 inactive 库
         target_db = self.get_inactive_db_path()
-        self._push_progress(
-            task_id,
-            ArchiveStage.IMPORTING,
-            65,
-            f"导入到 {target_db.name}",
-        )
         importer = ArchiveImporter()
         row_counts, duration_sec = await importer.import_all(
             zip_path=zip_path,
@@ -664,7 +743,16 @@ class BangumiArchive:
             self._write_active_file(new_active)
             self._save_meta(self._meta)
 
-        # 清空旧库
+        # 先 invalidate FTS5 查询层，断开与旧 active 库的连接
+        # 否则 Windows 上 clear_database 删除旧库会因文件被占用失败 (WinError 32)
+        try:
+            from ._title_index import archive_title_index
+
+            archive_title_index.invalidate()
+        except Exception as e:
+            logger.warning(f"bangumi_archive FTS5 查询层 invalidate 失败: {e}")
+
+        # 清空旧库（FTS5 连接已断开，可安全删除）
         old_db = self.get_inactive_db_path()
         self._push_progress(
             task_id, ArchiveStage.CLEANING, 98, f"清空旧库 {old_db.name}"
@@ -676,24 +764,15 @@ class BangumiArchive:
             f"rows={row_counts}, duration={duration_sec:.1f}s"
         )
 
-        # active 库切换后，invalidate 让 FTS5 查询层重连到新库
-        # FTS5 表在导入时已构建，无需后台重建
+        # 重建 FTS5 查询层连接到新 active 库
+        # FTS5 表在导入时已构建，无需后台重建，仅需重连
+        # 用 to_thread 包裹避免 _ensure_built 同步阻塞事件循环导致前端白屏
         try:
-            from ._title_index import archive_title_index
-
-            archive_title_index.invalidate()
-            archive_title_index.build_in_background()
+            await asyncio.to_thread(archive_title_index.build_in_background)
         except Exception as e:
             logger.warning(f"bangumi_archive FTS5 查询层重连失败: {e}")
 
-        # 清理下载的 zip（导入完成后统一清理）
-        if cleanup_zip:
-            try:
-                if zip_path.exists():
-                    zip_path.unlink()
-                    logger.debug(f"已删除下载文件: {zip_path}")
-            except OSError as e:
-                logger.warning(f"删除下载文件失败: {e}")
+        # zip 已在 import_all 解压后立即删除，此处无需再清理
 
     def _make_progress_cb(
         self, task_id: str
@@ -720,7 +799,13 @@ class BangumiArchive:
 
         return cb
 
-    def _check_disk_space(self) -> None:
+    def check_disk_space(self) -> None:
+        """检查 data_dir 所在磁盘可用空间是否足够导入
+
+        公开方法，供 API 层在上传文件保存前提前调用，与下载流程对称。
+        内部流程（_do_update / import_local_zip）在解压导入前也会调用，
+        作为最后一道防线。
+        """
         required_mb = self.min_disk_space_mb
         try:
             usage = shutil.disk_usage(str(self.data_dir))
