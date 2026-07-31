@@ -251,19 +251,23 @@ async def progress_stream(
 
     async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
         # 1. 推送历史日志（刷新恢复用）
+        # 若历史最后一条已是终态，说明任务已结束，推完历史即返回
+        last_stage: Optional[str] = None
         if history:
+            last_stage = history[-1].get("stage")
             yield {
                 "event": "history",
                 "data": json.dumps({"events": history}, ensure_ascii=False),
             }
+            if last_stage in ("done", "error", "skipped"):
+                return
 
-        # 2. 推送缓存中的最新进度
-        if cached:
+        # 2. 推送缓存中的最新进度（可能比 history 最后一条更新）
+        if cached and cached.stage != last_stage:
             yield {
                 "event": "progress",
                 "data": json.dumps(cached.to_dict(), ensure_ascii=False),
             }
-            # 若任务已结束，直接返回
             if cached.stage in ("done", "error", "skipped"):
                 return
 
