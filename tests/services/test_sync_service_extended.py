@@ -21,7 +21,7 @@ from app.models.sync import CustomItem
 def patched_sync_deps():
     with patch("app.services.sync_service.config_manager") as mock_cfg:
         with patch("app.services.sync_service.database_manager"):
-            with patch("app.services.sync_service.send_notify"):
+            with patch("app.services.sync_service.notification_service"):
                 with patch("app.services.sync_service.mapping_service"):
                     yield mock_cfg
 
@@ -49,7 +49,7 @@ class TestSyncServiceHelperMethods:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -76,7 +76,7 @@ class TestSyncServiceHelperMethods:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -216,7 +216,7 @@ class TestSyncServiceHelperMethods:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -235,7 +235,7 @@ class TestSyncServiceHelperMethods:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -263,7 +263,7 @@ class TestSyncServiceHelperMethods:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -418,7 +418,7 @@ class TestPlexSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch("app.services.plex.sync_service.extract_plex_data"),
         ):
@@ -527,7 +527,7 @@ class TestEmbySync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -549,7 +549,7 @@ class TestEmbySync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -576,7 +576,7 @@ class TestEmbySync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -684,7 +684,7 @@ class TestJellyfinSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch("app.services.jellyfin.sync_service.extract_jellyfin_data"),
         ):
@@ -705,7 +705,7 @@ class TestJellyfinSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch("app.services.jellyfin.sync_service.extract_jellyfin_data"),
         ):
@@ -767,7 +767,7 @@ class TestAsyncMethods:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch(
                 "app.services.sync_service.SyncService.sync_custom_item"
@@ -804,7 +804,7 @@ class TestAsyncMethods:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch("app.services.plex.sync_service.extract_plex_data") as mock_extract,
             patch(

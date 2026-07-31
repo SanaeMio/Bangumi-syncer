@@ -13,10 +13,11 @@ from ...core.background_tasks import register_background_task
 from ...core.database import database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
+from ...services.base.notifier_helpers import notify_source_event
 from ...services.mapping_service import mapping_service
+from ...services.notification_service import notification_service
 from ...services.sync_service import sync_service
 from ...utils.media_type_detector import detect_media_type
-from ...utils.notifier import send_notify
 from .auth import trakt_auth_service
 from .client import TraktClient, TraktClientFactory
 from .models import TraktHistoryItem, TraktSyncResult
@@ -407,6 +408,12 @@ class TraktSyncService:
             history_items = await client.get_all_watched_history(start_date=start_date)
 
             if not history_items:
+                notify_source_event(
+                    "trakt",
+                    "empty",
+                    user_id=user_id,
+                    message="没有新的观看历史需要同步",
+                )
                 return TraktSyncResult(
                     success=True,
                     message="没有新的观看历史需要同步",
@@ -509,6 +516,9 @@ class TraktSyncService:
 
         except Exception as e:
             logger.error(f"同步观看历史失败: {e}")
+            notify_source_event(
+                "trakt", "failed", user_id=user_id, error_message=str(e)
+            )
             return TraktSyncResult(
                 success=False,
                 message=f"同步观看历史失败: {str(e)}",
@@ -571,19 +581,7 @@ class TraktSyncService:
     ) -> None:
         """Trakt 转 CustomItem 前失败：webhook/邮件 + 应用内 sync_records。"""
         ctx = self._trakt_item_failure_context(user_id, item, reason)
-        send_notify(
-            "mark_failed",
-            item=None,
-            source="trakt",
-            error_type="trakt_title_unresolved",
-            user_name=ctx["user_name"],
-            title=ctx["title"],
-            ori_title=ctx["ori_title"],
-            season=ctx["season"],
-            episode=ctx["episode"],
-            error_message=reason,
-        )
-        database_manager.log_sync_record(
+        record_id = database_manager.log_sync_record(
             user_name=ctx["user_name"],
             title=ctx["title"],
             ori_title=ctx["ori_title"],
@@ -593,6 +591,19 @@ class TraktSyncService:
             message=reason,
             source="trakt",
             media_type=ctx["media_type"],
+        )
+        notification_service.notify(
+            "mark_failed",
+            item=None,
+            source="trakt",
+            in_app_ref_id=record_id,
+            error_type="trakt_title_unresolved",
+            user_name=ctx["user_name"],
+            title=ctx["title"],
+            ori_title=ctx["ori_title"],
+            season=ctx["season"],
+            episode=ctx["episode"],
+            error_message=reason,
         )
 
     def _record_sync_history(

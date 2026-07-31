@@ -317,7 +317,7 @@ class TestRequestWithRetry:
         mock_resp.status_code = 503
         mock_session.request.return_value = mock_resp
         with (
-            patch("app.utils.notifier.send_notify"),
+            patch("app.services.notification_service.notification_service"),
             pytest.raises(httpx.HTTPStatusError),
         ):
             api._request_with_retry("GET", mock_session, "https://example.com")

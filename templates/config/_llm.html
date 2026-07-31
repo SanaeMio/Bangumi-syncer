@@ -1,0 +1,76 @@
+                <div id="config-section-llm" class="card shadow-sm config-card mb-4">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-robot me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">LLM 配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">API 地址</label>
+                                <input class="form-control"
+                                       id="llm-api-base"
+                                       name="llm.api_base"
+                                       placeholder="https://api.openai.com/v1">
+                                <small class="text-muted">OpenAI 兼容接口请以 /v1 结尾填写完整地址, 具体以 Provider 文档为准</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">API 密钥</label>
+                                <input type="password"
+                                       class="form-control"
+                                       id="llm-api-key"
+                                       name="llm.api_key"
+                                       placeholder="sk-...">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">模型</label>
+                                <input class="form-control"
+                                       id="llm-model"
+                                       name="llm.model"
+                                       placeholder="gpt-4o-mini">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">最大 Token</label>
+                                <input type="number"
+                                       class="form-control"
+                                       data-type="number"
+                                       id="llm-max-tokens"
+                                       name="llm.max_tokens"
+                                       value="2000">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">温度</label>
+                                <input type="number"
+                                       step="0.1"
+                                       class="form-control"
+                                       data-type="float"
+                                       id="llm-temperature"
+                                       name="llm.temperature"
+                                       value="0.7">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">超时(秒)</label>
+                                <input type="number"
+                                       class="form-control"
+                                       data-type="number"
+                                       id="llm-timeout"
+                                       name="llm.timeout"
+                                       value="60">
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="button" class="btn btn-primary" onclick="saveLLMAndTest()">
+                                    <i class="bi bi-lightning-charge me-1"></i>保存并测试
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-muted small mt-3 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>请使用您信任的 LLM 服务提供商。API 密钥将加密存储，测试连接会产生少量 Token 消耗。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- AI 追番总结 -->
+        <div class="row">
+            <div class="col-12">

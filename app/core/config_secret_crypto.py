@@ -12,6 +12,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .config_schema import is_sensitive_field as _is_sensitive_field
 from .logging import logger
 
 LLM_SECTION = "llm"
@@ -20,25 +21,13 @@ PREFIX = "BGS1:"
 _HKDF_SALT = b"bangumi-syncer-config-v1"
 _HKDF_INFO = b"config-secret-fernet-v1"
 
-_EXCLUDED_BANGUMI_LIKE = frozenset({"bangumi-data", "bangumi-mapping"})
-
 
 def is_sensitive_ini_field(section: str, option: str) -> bool:
-    if option == "access_token":
-        if section == "bangumi":
-            return True
-        if section.startswith("bangumi-") and section not in _EXCLUDED_BANGUMI_LIKE:
-            return True
-        return False
-    if section == "auth" and option == "webhook_key":
-        return True
-    if section.startswith("email-") and option == "smtp_password":
-        return True
-    if section == "trakt" and option == "client_secret":
-        return True
-    if section == LLM_SECTION and option == "api_key":
-        return True
-    return False
+    """判断字段是否敏感（委托给 SectionMeta 注册表）
+
+    保留原函数名以兼容现有调用方，内部改为从 SectionMeta 派生。
+    """
+    return _is_sensitive_field(section, option)
 
 
 def _derive_fernet_key(master: str) -> bytes:

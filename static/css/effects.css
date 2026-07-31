@@ -1,0 +1,564 @@
+/* 视觉效果：氛围背景 / 玻璃拟态 / 调度器状态卡 / Cron 预览 */
+/* ========== 氛围背景层 ========== */
+
+.app-body {
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    overflow-x: hidden;
+}
+
+.app-body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 78% 58% at 0% 0%, var(--app-ambient-a), transparent 70%),
+        radial-gradient(ellipse 62% 48% at 100% 8%, var(--app-ambient-b), transparent 68%),
+        radial-gradient(ellipse 70% 52% at 50% 100%, var(--app-ambient-c), transparent 72%),
+        linear-gradient(165deg,
+            color-mix(in srgb, var(--app-bg) 72%, #ffffff) 0%,
+            var(--app-bg) 48%,
+            color-mix(in srgb, var(--app-bg) 88%, var(--app-primary-soft)) 100%);
+}
+
+[data-theme="dark"] .app-body::before {
+    background:
+        radial-gradient(ellipse 80% 58% at 8% 0%, var(--app-ambient-a), transparent 70%),
+        radial-gradient(ellipse 65% 50% at 100% 0%, var(--app-ambient-b), transparent 70%),
+        var(--app-bg);
+}
+
+@keyframes ambientDrift {
+    0% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    100% {
+        transform: translate(-1.5%, 1%) scale(1.02);
+    }
+}
+
+/* ========== 玻璃拟态扩展 ========== */
+
+.modal-backdrop.show {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.modal-content {
+    border: 1px solid var(--app-glass-border);
+    border-radius: 24px;
+    background: var(--app-bg-card);
+    box-shadow: var(--app-shadow-elevated);
+}
+
+.dropdown-menu {
+    border: 1px solid var(--app-glass-border);
+    border-radius: 14px;
+    background: var(--app-bg-card);
+    box-shadow: var(--app-shadow-card-hover);
+}
+
+.navbar.d-md-none {
+    border-bottom-color: var(--app-glass-border) !important;
+    background: var(--app-bg-card) !important;
+    backdrop-filter: var(--app-blur);
+    -webkit-backdrop-filter: var(--app-blur);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .navbar.d-md-none,
+[data-theme="dark"] nav.navbar.navbar-expand-md.navbar-light.d-md-none.fixed-top,
+[data-theme="dark"] .app-mobile-navbar {
+    background: var(--app-bg-card) !important;
+    border-bottom-color: var(--app-glass-border) !important;
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-nav .nav-link {
+    color: var(--app-text-muted);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-nav .nav-link:hover,
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-nav .nav-link:focus {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-nav .nav-link.active {
+    color: var(--app-primary);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-nav .nav-link.active i {
+    color: var(--app-primary);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-toggler {
+    border-color: var(--app-border-strong);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-toggler:focus {
+    box-shadow: 0 0 0 0.2rem rgba(var(--app-primary-rgb), 0.28);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .navbar-toggler-icon {
+    filter: brightness(0) invert(1);
+    opacity: 0.88;
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .dropdown-menu {
+    background: var(--app-bg-card);
+    border-color: var(--app-glass-border);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .dropdown-item {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .navbar.navbar-light.d-md-none .dropdown-item:hover,
+[data-theme="dark"] .navbar.navbar-light.d-md-none .dropdown-item:focus {
+    background: var(--app-bg-hover);
+    color: var(--app-text);
+}
+
+.header-theme-switcher {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-hover-bg: rgba(var(--app-primary-rgb), 0.06);
+}
+
+.app-data-table thead th {
+    background: var(--app-bg);
+    border-bottom-color: var(--app-divider);
+}
+
+.nav-tabs .nav-link {
+    border-radius: 12px 12px 0 0;
+    transition: color 0.22s var(--app-ease-smooth), background-color 0.22s var(--app-ease-smooth);
+}
+
+.nav-tabs .nav-link.active {
+    background: var(--app-primary-soft);
+    border-color: var(--app-glass-border) var(--app-glass-border) transparent;
+    color: var(--app-primary);
+}
+
+.badge {
+    border-radius: var(--app-radius-pill);
+    font-weight: 600;
+}
+
+.login-card {
+    border: 1px solid var(--app-glass-border) !important;
+    border-radius: 24px !important;
+    background: var(--app-bg-card) !important;
+    box-shadow: var(--app-shadow-elevated) !important;
+}
+
+.auth-standalone-card {
+    max-width: 500px;
+    margin: 100px auto;
+    padding: 30px;
+    text-align: center;
+    border: 1px solid var(--app-glass-border);
+    border-radius: 24px;
+    background: var(--app-bg-card);
+    box-shadow: var(--app-shadow-elevated);
+}
+
+.auth-standalone-card .auth-standalone-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+.auth-standalone-card .auth-standalone-icon--success {
+    color: var(--app-green);
+}
+
+.auth-standalone-card .auth-standalone-icon--error {
+    color: var(--app-red);
+}
+
+.trakt-status-connected {
+    color: var(--app-green);
+}
+
+.trakt-status-disconnected {
+    color: var(--app-red);
+}
+
+.trakt-status-pending {
+    color: var(--app-orange);
+}
+
+.status-connected {
+    color: var(--app-green);
+}
+
+.status-disconnected {
+    color: var(--app-red);
+}
+
+.status-pending {
+    color: var(--app-orange);
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spinner-border 0.75s linear infinite;
+}
+
+@keyframes spinner-border {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    border-radius: var(--app-radius-pill);
+    background: linear-gradient(180deg, var(--app-primary), var(--app-primary-hover));
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+/* 玻璃降级 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+
+    .card,
+    .stats-card,
+    .modal-content,
+    .dropdown-menu,
+    .navbar.d-md-none,
+    .header-theme-colors,
+    .login-card,
+    .auth-standalone-card {
+        background: var(--app-bg-card);
+    }
+}
+
+/* 移动端性能与动效降级 */
+@media (max-width: 767.98px) {
+    .app-body::before {
+        animation: none;
+    }
+
+    .card,
+    .stats-card {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        background: var(--app-bg-card);
+    }
+
+    .card:hover,
+    .stats-card:hover {
+        transform: none;
+    }
+
+    main.app-main>* {
+        animation: none !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-body::before {
+        animation: none;
+    }
+
+    .header-theme-colors {
+        transition: none;
+    }
+
+    main.app-main>* {
+        animation: none !important;
+    }
+
+    .card:hover,
+    .stats-card:hover,
+    .btn-primary:hover {
+        transform: none;
+    }
+}
+
+/* ========== 调度器状态卡 ==========
+   任务项复用最近同步卡的 .sync-timeline / .tl-track / .tl-item 样式，
+   状态点复用 .tl-dot--success / .tl-dot--idle（见 .tl-dot 段）。
+   仅保留摘要徽章的样式。 */
+#scheduler-status-summary {
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+}
+
+/* ========== 五段式 Cron 实时预览（悬浮弹窗） ========== */
+.cron-popover {
+    position: absolute;
+    z-index: 1080;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    background-color: var(--app-bg-card);
+    border: 1px solid var(--app-glass-border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    padding: 0.6rem 0.75rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+    pointer-events: none;
+}
+
+.cron-popover--show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.cron-preview {
+    border: 1px solid var(--app-glass-border);
+    border-radius: 10px;
+    background-color: var(--app-bg-card-header);
+    padding: 0.55rem 0.7rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.cron-preview--error {
+    border-color: rgba(220, 38, 38, 0.4);
+    background-color: rgba(220, 38, 38, 0.06);
+    color: #dc2626;
+}
+
+.cron-preview__desc {
+    font-weight: 600;
+    color: var(--app-text);
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.45rem;
+    border-bottom: 1px dashed var(--app-glass-border);
+    word-break: break-all;
+}
+
+.cron-fields {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+@media (max-width: 575.98px) {
+    .cron-fields {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.cron-field {
+    border: 1px solid var(--app-glass-border);
+    border-radius: 6px;
+    background-color: var(--app-bg-card);
+    padding: 0.3rem 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+    user-select: none;
+}
+
+.cron-field:hover {
+    border-color: rgba(var(--app-primary-rgb), 0.5);
+    box-shadow: 0 0 0 2px rgba(var(--app-primary-rgb), 0.1);
+}
+
+.cron-field:active {
+    transform: scale(0.97);
+}
+
+.cron-field--expanded {
+    border-color: var(--app-primary);
+    box-shadow: 0 0 0 2px rgba(var(--app-primary-rgb), 0.2);
+}
+
+.cron-field__caret {
+    font-size: 0.6rem;
+    margin-left: 0.2rem;
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+
+.cron-field:hover .cron-field__caret {
+    opacity: 1;
+}
+
+/* 预设按钮组 */
+.cron-presets {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid rgba(var(--app-primary-rgb), 0.2);
+    border-radius: 8px;
+    background-color: rgba(var(--app-primary-rgb), 0.04);
+}
+
+.cron-presets__title {
+    font-size: 0.7rem;
+    color: var(--app-text-muted);
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+}
+
+.cron-presets__grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.cron-presets__btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--app-glass-border);
+    border-radius: 6px;
+    background-color: var(--app-bg-card);
+    color: var(--app-text);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.cron-presets__btn:hover {
+    border-color: var(--app-primary);
+    color: var(--app-primary);
+}
+
+.cron-presets__btn--active {
+    border-color: var(--app-primary);
+    background-color: var(--app-primary-soft);
+    color: var(--app-primary);
+    font-weight: 600;
+}
+
+.cron-presets__btn code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.65rem;
+    color: var(--app-text-muted);
+    font-weight: 400;
+}
+
+.cron-presets__btn--active code {
+    color: var(--app-primary);
+}
+
+.cron-field--all {
+    border-color: rgba(34, 197, 94, 0.25);
+    background-color: rgba(34, 197, 94, 0.06);
+}
+
+.cron-field--some {
+    border-color: rgba(var(--app-primary-rgb), 0.3);
+    background-color: var(--app-primary-soft);
+}
+
+.cron-field__label {
+    font-size: 0.68rem;
+    color: var(--app-text-muted);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+.cron-field__raw {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--app-text);
+    font-weight: 600;
+    word-break: break-all;
+    min-height: 1em;
+}
+
+.cron-field__summary {
+    font-size: 0.68rem;
+    color: var(--app-text-muted);
+}
+
+.cron-field--all .cron-field__summary {
+    color: #16a34a;
+}
+
+.cron-field--some .cron-field__summary {
+    color: var(--app-primary);
+    font-weight: 600;
+}
+
+.cron-next {
+    border-top: 1px dashed var(--app-glass-border);
+    padding-top: 0.45rem;
+}
+
+.cron-next__title {
+    font-size: 0.7rem;
+    color: var(--app-text-muted);
+    margin-bottom: 0.3rem;
+    font-weight: 600;
+}
+
+.cron-next__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.cron-next__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.74rem;
+}
+
+.cron-next__abs {
+    color: var(--app-text);
+    font-weight: 500;
+}
+
+.cron-next__rel {
+    color: var(--app-primary);
+    font-size: 0.7rem;
+    padding: 0.02rem 0.35rem;
+    border-radius: 4px;
+    background-color: var(--app-primary-soft);
+}
+
+.cron-next__item--empty {
+    color: var(--app-text-muted);
+    justify-content: center;
+    padding: 0.2rem 0;
+}

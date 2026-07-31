@@ -326,7 +326,9 @@ class TestSyncMovieWatchingMatchFields:
                         with patch(
                             "app.services.sync_service.database_manager"
                         ) as mock_db:
-                            with patch("app.services.sync_service.send_notify"):
+                            with patch(
+                                "app.services.sync_service.notification_service"
+                            ):
                                 with patch(
                                     "app.services.sync_service.config_manager"
                                 ) as mock_cfg:

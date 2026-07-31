@@ -1,0 +1,698 @@
+/* 主题基础：变量 / 暗色模式 / 通用工具类 */
+/* 清新简洁的自定义样式 */
+
+:root {
+    --app-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+    --app-radius-card: 24px;
+    --app-radius-card-sm: 16px;
+    --app-radius-pill: 999px;
+    --app-radius-input: var(--app-radius-pill);
+    --app-radius-btn: 14px;
+    --app-radius-shell: 28px;
+    --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.03), 0 2px 8px rgba(15, 23, 42, 0.04);
+    --app-shadow-card-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 8px 18px rgba(15, 23, 42, 0.06);
+    --app-shadow-card-strong: 0 4px 12px rgba(15, 23, 42, 0.06), 0 12px 28px rgba(15, 23, 42, 0.05);
+    --app-shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
+    --app-blur: blur(10px);
+    --app-brand-logo-height: 32px;
+    --app-sidebar-logo-width: 175px;
+    --app-sidebar-logo-height: 100px;
+
+    /* 主题色 - 默认班娘粉 */
+    --app-primary: #f09199;
+    --app-primary-rgb: 240, 145, 153;
+    --app-primary-soft: rgba(240, 145, 153, 0.1);
+    --app-primary-hover: #e08189;
+    --app-gradient-primary: linear-gradient(135deg, var(--app-primary), var(--app-primary-hover));
+    --theme-dot-color: #f09199;
+
+    /* 氛围光晕（同色系、低饱和，避免脏灰混色） */
+    --app-ambient-a: rgba(240, 145, 153, 0.11);
+    --app-ambient-b: rgba(240, 145, 153, 0.07);
+    --app-ambient-c: rgba(240, 145, 153, 0.04);
+
+    /* 玻璃面板 */
+    --app-glass-bg: rgba(255, 255, 255, 0.94);
+    --app-glass-border: rgba(30, 30, 36, 0.06);
+
+    /* 浅色模式：主题晕染画布 + 白色内容面（随 data-color 主色轻微变色） */
+    --app-bg: color-mix(in srgb, #ffffff 90%, var(--app-primary));
+    --app-bg-card: #ffffff;
+    --app-bg-shell: color-mix(in srgb, #ffffff 96%, var(--app-primary));
+    --app-bg-card-rgb: 255, 255, 255;
+    --app-bg-sidebar-start: color-mix(in srgb, #ffffff 94%, var(--app-primary));
+    --app-bg-sidebar-mid: color-mix(in srgb, #ffffff 92%, var(--app-primary));
+    --app-bg-sidebar-end: color-mix(in srgb, #ffffff 90%, var(--app-primary));
+    --app-bg-sidebar-surface: transparent;
+    --app-bg-card-header: color-mix(in srgb, #ffffff 90%, var(--app-primary-soft));
+    --app-bg-hover: rgba(var(--app-primary-rgb), 0.07);
+    --app-bg-input: color-mix(in srgb, #ffffff 98%, var(--app-primary));
+    --app-text: #1a1a22;
+    --app-text-muted: #6e6e7a;
+    --app-text-dim: #45454f;
+    --app-border: rgba(30, 30, 36, 0.08);
+    --app-border-strong: rgba(30, 30, 36, 0.12);
+    --app-divider: rgba(30, 30, 36, 0.05);
+    --app-surface-hover: rgba(255, 255, 255, 0.58);
+
+    /* 语义色彩（柔和，与主题按钮风格一致） */
+    --app-green: #52a67d;
+    --app-green-rgb: 82, 166, 125;
+    --app-green-hover: #459670;
+    --app-green-soft: rgba(82, 166, 125, 0.12);
+    --app-gradient-green: linear-gradient(135deg, #52a67d, #459670);
+    --app-red: #e0707a;
+    --app-red-rgb: 224, 112, 122;
+    --app-red-hover: #d4626c;
+    --app-red-soft: rgba(224, 112, 122, 0.12);
+    --app-gradient-red: linear-gradient(135deg, #e0707a, #d4626c);
+    --app-orange: #f0a060;
+    --app-orange-rgb: 240, 160, 96;
+    --app-orange-hover: #e89450;
+    --app-orange-soft: rgba(240, 160, 96, 0.12);
+    --app-gradient-orange: linear-gradient(135deg, #f0a060, #e89450);
+    --app-cyan: #5ec4db;
+    --app-cyan-rgb: 94, 196, 219;
+    --app-cyan-hover: #4fb8d0;
+    --app-cyan-soft: rgba(94, 196, 219, 0.12);
+    --app-gradient-cyan: linear-gradient(135deg, #5ec4db, #4fb8d0);
+    --app-purple: #a682e6;
+    --app-purple-rgb: 166, 130, 230;
+    --app-purple-hover: #9570d8;
+    --app-purple-soft: rgba(166, 130, 230, 0.12);
+    --app-gradient-purple: linear-gradient(135deg, #a682e6, #9570d8);
+    --app-gray: #8a939c;
+    --app-gray-rgb: 138, 147, 156;
+    --app-gray-hover: #7d868f;
+    --app-gray-soft: rgba(138, 147, 156, 0.12);
+    --app-gradient-gray: linear-gradient(135deg, #8a939c, #7d868f);
+
+    /* 映射到 Bootstrap 变量 */
+    --bs-primary: var(--app-primary);
+    --bs-primary-rgb: var(--app-primary-rgb);
+    --bs-link-color: var(--app-primary);
+    --bs-link-color-rgb: var(--app-primary-rgb);
+    --bs-link-hover-color: var(--app-primary-hover);
+    --bs-progress-bar-bg: var(--app-primary);
+    --bs-progress-bg: var(--app-bg-hover);
+    --bs-pagination-active-bg: var(--app-primary);
+    --bs-pagination-active-border-color: var(--app-primary);
+    --bs-nav-pills-link-active-bg: var(--app-primary);
+    --bs-list-group-active-bg: var(--app-primary);
+    --bs-list-group-active-border-color: var(--app-primary);
+    --bs-dropdown-link-active-bg: var(--app-primary);
+}
+
+/* btn-primary 跟随主题色 */
+.btn-primary {
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: transparent;
+    --bs-btn-hover-bg: transparent;
+    --bs-btn-hover-border-color: transparent;
+    --bs-btn-focus-shadow-rgb: var(--app-primary-rgb);
+    --bs-btn-active-bg: transparent;
+    --bs-btn-active-border-color: transparent;
+    --bs-btn-disabled-bg: rgba(var(--app-primary-rgb), 0.45);
+    --bs-btn-disabled-border-color: transparent;
+    background: var(--app-gradient-primary) !important;
+    border: none !important;
+    box-shadow: 0 2px 10px rgba(var(--app-primary-rgb), 0.22);
+    transition: transform 0.22s var(--app-ease-smooth), box-shadow 0.22s var(--app-ease-smooth),
+        filter 0.22s var(--app-ease-smooth);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    filter: brightness(1.03);
+    box-shadow: 0 4px 14px rgba(var(--app-primary-rgb), 0.28);
+    transform: translateY(-1px);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+    filter: brightness(0.98);
+}
+
+/* btn-outline-primary 跟随主题色（柔和描边） */
+.btn-outline-primary {
+    --bs-btn-color: var(--app-primary);
+    --bs-btn-border-color: rgba(var(--app-primary-rgb), 0.42);
+    --bs-btn-bg: var(--app-primary-soft);
+    --bs-btn-hover-color: var(--app-primary-hover);
+    --bs-btn-hover-bg: rgba(var(--app-primary-rgb), 0.16);
+    --bs-btn-hover-border-color: rgba(var(--app-primary-rgb), 0.58);
+    --bs-btn-focus-shadow-rgb: var(--app-primary-rgb);
+    --bs-btn-active-color: var(--app-primary-hover);
+    --bs-btn-active-bg: rgba(var(--app-primary-rgb), 0.16);
+    --bs-btn-active-border-color: rgba(var(--app-primary-rgb), 0.58);
+    --bs-btn-disabled-color: var(--app-primary);
+    --bs-btn-disabled-border-color: rgba(var(--app-primary-rgb), 0.42);
+}
+
+/* ========== ACG 主题色 ========== */
+
+[data-color="sakura"] {
+    --app-primary: #f09199;
+    --app-primary-rgb: 240, 145, 153;
+    --app-primary-soft: rgba(240, 145, 153, 0.1);
+    --app-primary-hover: #e08189;
+    --theme-dot-color: #f09199;
+    --app-ambient-a: rgba(240, 145, 153, 0.12);
+    --app-ambient-b: rgba(240, 145, 153, 0.08);
+    --app-ambient-c: rgba(240, 145, 153, 0.05);
+}
+
+[data-color="amber"] {
+    --app-primary: #f78c50;
+    --app-primary-rgb: 247, 140, 80;
+    --app-primary-soft: rgba(247, 140, 80, 0.1);
+    --app-primary-hover: #e67a40;
+    --theme-dot-color: #f78c50;
+    --app-ambient-a: rgba(247, 140, 80, 0.09);
+    --app-ambient-b: rgba(247, 140, 80, 0.05);
+    --app-ambient-c: rgba(247, 140, 80, 0.03);
+}
+
+[data-color="sakuragi"] {
+    --app-primary: #e9485e;
+    --app-primary-rgb: 233, 72, 94;
+    --app-primary-soft: rgba(233, 72, 94, 0.1);
+    --app-primary-hover: #d63d52;
+    --theme-dot-color: #e9485e;
+    --app-ambient-a: rgba(233, 72, 94, 0.09);
+    --app-ambient-b: rgba(233, 72, 94, 0.05);
+    --app-ambient-c: rgba(233, 72, 94, 0.03);
+}
+
+[data-color="sanae"] {
+    --app-primary: #8cb48c;
+    --app-primary-rgb: 140, 180, 140;
+    --app-primary-soft: rgba(140, 180, 140, 0.12);
+    --app-primary-hover: #7aa37a;
+    --theme-dot-color: #8cb48c;
+    --app-ambient-a: rgba(140, 180, 140, 0.09);
+    --app-ambient-b: rgba(140, 180, 140, 0.05);
+    --app-ambient-c: rgba(140, 180, 140, 0.03);
+}
+
+[data-color="hatsune"] {
+    --app-primary: #39c5bb;
+    --app-primary-rgb: 57, 197, 187;
+    --app-primary-soft: rgba(57, 197, 187, 0.1);
+    --app-primary-hover: #2eb3a9;
+    --theme-dot-color: #39c5bb;
+    --app-ambient-a: rgba(57, 197, 187, 0.09);
+    --app-ambient-b: rgba(57, 197, 187, 0.05);
+    --app-ambient-c: rgba(57, 197, 187, 0.03);
+}
+
+[data-color="tianyi"] {
+    --app-primary: #00a2ff;
+    --app-primary-rgb: 0, 162, 255;
+    --app-primary-soft: rgba(0, 162, 255, 0.1);
+    --app-primary-hover: #0090e8;
+    --theme-dot-color: #00a2ff;
+    --app-ambient-a: rgba(0, 162, 255, 0.09);
+    --app-ambient-b: rgba(0, 162, 255, 0.05);
+    --app-ambient-c: rgba(0, 162, 255, 0.03);
+}
+
+[data-color="violet"] {
+    --app-primary: #a682e6;
+    --app-primary-rgb: 166, 130, 230;
+    --app-primary-soft: rgba(166, 130, 230, 0.1);
+    --app-primary-hover: #9570d8;
+    --theme-dot-color: #a682e6;
+    --app-ambient-a: rgba(166, 130, 230, 0.09);
+    --app-ambient-b: rgba(166, 130, 230, 0.05);
+    --app-ambient-c: rgba(166, 130, 230, 0.03);
+}
+
+
+/* ========== 暗色模式 ========== */
+
+[data-theme="dark"] {
+    --app-bg: #1a1b24;
+    --app-bg-card: #24262f;
+    --app-bg-shell: color-mix(in srgb, var(--app-bg-card) 94%, var(--app-primary-soft));
+    --app-bg-card-rgb: 36, 38, 47;
+    --app-bg-sidebar-start: #24262f;
+    --app-bg-sidebar-mid: #24262f;
+    --app-bg-sidebar-end: #24262f;
+    --app-bg-card-header: #2c2e38;
+    --app-bg-hover: rgba(255, 255, 255, 0.07);
+    --app-bg-input: rgba(255, 255, 255, 0.07);
+    --app-glass-bg: #24262f;
+    --app-glass-border: rgba(255, 255, 255, 0.11);
+    --app-text: #f7f3ff;
+    --app-text-muted: #ada8c1;
+    --app-text-dim: #d8d1ee;
+    --app-border: rgba(255, 255, 255, 0.14);
+    --app-border-strong: rgba(255, 255, 255, 0.22);
+    --app-divider: rgba(255, 255, 255, 0.08);
+    --app-surface-hover: rgba(255, 255, 255, 0.08);
+    --app-bg-sidebar-surface: transparent;
+    --app-shadow-card: 0 4px 20px rgba(0, 0, 0, 0.22);
+    --app-shadow-card-hover: 0 8px 28px rgba(0, 0, 0, 0.28);
+    --app-shadow-card-strong: 0 12px 36px rgba(0, 0, 0, 0.32);
+    --app-shadow-elevated: 0 16px 48px rgba(0, 0, 0, 0.3);
+
+    /* 暗色语义色彩（降低亮度，减轻刺眼感） */
+    --app-green: #2ea66e;
+    --app-green-rgb: 46, 166, 110;
+    --app-green-hover: #289660;
+    --app-green-soft: rgba(46, 166, 110, 0.14);
+    --app-gradient-green: linear-gradient(135deg, #2ea66e, #289660);
+    --app-red: #e85d6a;
+    --app-red-rgb: 232, 93, 106;
+    --app-red-hover: #d95561;
+    --app-red-soft: rgba(232, 93, 106, 0.14);
+    --app-gradient-red: linear-gradient(135deg, #e85d6a, #d95561);
+    --app-orange: #f0923a;
+    --app-orange-rgb: 240, 146, 58;
+    --app-orange-hover: #e08634;
+    --app-orange-soft: rgba(240, 146, 58, 0.14);
+    --app-gradient-orange: linear-gradient(135deg, #f0923a, #e08634);
+    --app-cyan: #3dd5f3;
+    --app-cyan-rgb: 61, 213, 243;
+    --app-cyan-hover: #36c5e0;
+    --app-cyan-soft: rgba(61, 213, 243, 0.14);
+    --app-gradient-cyan: linear-gradient(135deg, #3dd5f3, #36c5e0);
+    --app-purple: #a78bfa;
+    --app-purple-rgb: 167, 139, 250;
+    --app-purple-hover: #9678f0;
+    --app-purple-soft: rgba(167, 139, 250, 0.14);
+    --app-gradient-purple: linear-gradient(135deg, #a78bfa, #9678f0);
+    --app-gray: #868e96;
+    --app-gray-rgb: 134, 142, 150;
+    --app-gray-hover: #787f87;
+    --app-gray-soft: rgba(134, 142, 150, 0.14);
+    --app-gradient-gray: linear-gradient(135deg, #868e96, #787f87);
+
+    /* 覆盖 Bootstrap 变量 */
+    --bs-body-bg: #1a1b24;
+    --bs-body-color: #f7f3ff;
+    --bs-secondary-color: #ada8c1;
+    --bs-card-bg: #24262f;
+    --bs-card-border-color: rgba(255, 255, 255, 0.14);
+    --bs-table-bg: rgba(255, 255, 255, 0.06);
+    --bs-table-hover-bg: rgba(255, 255, 255, 0.06);
+    --bs-border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* 暗色模式：保留各色相，适度降亮度（避免灰化失真） */
+[data-theme="dark"][data-color="sakura"] {
+    --app-primary: #c88692;
+    --app-primary-rgb: 200, 134, 146;
+    --app-primary-hover: #b87884;
+    --app-primary-soft: rgba(200, 134, 146, 0.12);
+    --theme-dot-color: #c88692;
+    --app-ambient-a: rgba(200, 134, 146, 0.05);
+    --app-ambient-b: rgba(200, 134, 146, 0.03);
+    --app-ambient-c: rgba(200, 134, 146, 0.018);
+}
+
+[data-theme="dark"][data-color="amber"] {
+    --app-primary: #d08858;
+    --app-primary-rgb: 208, 136, 88;
+    --app-primary-hover: #bf7a4c;
+    --app-primary-soft: rgba(208, 136, 88, 0.12);
+    --theme-dot-color: #d08858;
+    --app-ambient-a: rgba(208, 136, 88, 0.05);
+    --app-ambient-b: rgba(208, 136, 88, 0.03);
+    --app-ambient-c: rgba(208, 136, 88, 0.018);
+}
+
+[data-theme="dark"][data-color="sakuragi"] {
+    --app-primary: #c54e62;
+    --app-primary-rgb: 197, 78, 98;
+    --app-primary-hover: #b44558;
+    --app-primary-soft: rgba(197, 78, 98, 0.12);
+    --theme-dot-color: #c54e62;
+    --app-ambient-a: rgba(197, 78, 98, 0.05);
+    --app-ambient-b: rgba(197, 78, 98, 0.03);
+    --app-ambient-c: rgba(197, 78, 98, 0.018);
+}
+
+[data-theme="dark"][data-color="sanae"] {
+    --app-primary: #7da67d;
+    --app-primary-rgb: 125, 166, 125;
+    --app-primary-hover: #6f966f;
+    --app-primary-soft: rgba(125, 166, 125, 0.12);
+    --theme-dot-color: #7da67d;
+    --app-ambient-a: rgba(125, 166, 125, 0.05);
+    --app-ambient-b: rgba(125, 166, 125, 0.03);
+    --app-ambient-c: rgba(125, 166, 125, 0.018);
+}
+
+[data-theme="dark"][data-color="hatsune"] {
+    --app-primary: #45b5ad;
+    --app-primary-rgb: 69, 181, 173;
+    --app-primary-hover: #3da39c;
+    --app-primary-soft: rgba(69, 181, 173, 0.12);
+    --theme-dot-color: #45b5ad;
+    --app-ambient-a: rgba(69, 181, 173, 0.05);
+    --app-ambient-b: rgba(69, 181, 173, 0.03);
+    --app-ambient-c: rgba(69, 181, 173, 0.018);
+}
+
+[data-theme="dark"][data-color="tianyi"] {
+    --app-primary: #5a9ecc;
+    --app-primary-rgb: 90, 158, 204;
+    --app-primary-hover: #4f8eb8;
+    --app-primary-soft: rgba(90, 158, 204, 0.12);
+    --theme-dot-color: #5a9ecc;
+    --app-ambient-a: rgba(90, 158, 204, 0.05);
+    --app-ambient-b: rgba(90, 158, 204, 0.03);
+    --app-ambient-c: rgba(90, 158, 204, 0.018);
+}
+
+[data-theme="dark"][data-color="violet"] {
+    --app-primary: #9a7cc4;
+    --app-primary-rgb: 154, 124, 196;
+    --app-primary-hover: #8a6eb2;
+    --app-primary-soft: rgba(154, 124, 196, 0.12);
+    --theme-dot-color: #9a7cc4;
+    --app-ambient-a: rgba(154, 124, 196, 0.05);
+    --app-ambient-b: rgba(154, 124, 196, 0.03);
+    --app-ambient-c: rgba(154, 124, 196, 0.018);
+}
+
+[data-theme="dark"][data-color] .btn-primary,
+[data-theme="dark"][data-color] .sidebar .nav-link.active,
+[data-theme="dark"][data-color] .stats-icon {
+    filter: saturate(0.96) brightness(0.97);
+}
+
+[data-theme="dark"][data-color] .btn-primary:hover,
+[data-theme="dark"][data-color] .btn-primary:focus {
+    filter: saturate(0.98) brightness(1);
+}
+
+[data-theme="dark"] .btn-primary {
+    box-shadow: none;
+}
+
+[data-theme="dark"] .sidebar .nav-link.active {
+    box-shadow: none;
+}
+
+[data-theme="dark"] .stats-card:hover .stats-icon,
+[data-theme="dark"] .card:hover .stats-icon {
+    box-shadow: none;
+}
+
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+    box-shadow: 0 0 0 3px rgba(var(--app-primary-rgb), 0.12);
+}
+
+[data-theme="dark"] .pagination .page-item.active .page-link {
+    box-shadow: none;
+    filter: saturate(0.96) brightness(0.97);
+}
+
+[data-theme="dark"] body {
+    background-color: var(--app-bg);
+    color: var(--app-text);
+}
+
+/* 暗色模式下覆盖 Bootstrap 的 text-muted */
+[data-theme="dark"] .text-muted {
+    color: var(--app-text-muted) !important;
+}
+
+/* 暗色模式下覆盖 Bootstrap 的 border-light */
+[data-theme="dark"] .border-light {
+    border-color: var(--app-border) !important;
+}
+
+/* 主题切换波纹动画 */
+@keyframes themeRippleExpand {
+    from {
+        clip-path: circle(0px at var(--ripple-x, 50%) var(--ripple-y, 50%));
+    }
+
+    to {
+        clip-path: circle(var(--ripple-r, 150vmax) at var(--ripple-x, 50%) var(--ripple-y, 50%));
+    }
+}
+
+/* View Transitions API 明暗切换 */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+    z-index: 1;
+}
+
+::view-transition-new(root) {
+    z-index: 9999;
+}
+
+/* 暗色模式下拉菜单 */
+[data-theme="dark"] .dropdown-menu {
+    background-color: var(--app-bg-card);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .dropdown-item {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] .dropdown-item:hover,
+[data-theme="dark"] .dropdown-item:focus {
+    background-color: var(--app-bg-hover);
+    color: var(--app-text);
+}
+
+/* 暗色模式导航栏 toggler 图标 */
+[data-theme="dark"] .navbar-toggler-icon {
+    filter: invert(1);
+}
+
+.app-brand-logo {
+    height: var(--app-brand-logo-height);
+    width: auto;
+    object-fit: contain;
+}
+
+.app-sidebar-logo {
+    width: var(--app-sidebar-logo-width);
+    height: var(--app-sidebar-logo-height);
+    object-fit: contain;
+}
+
+.app-sidebar-brand-link {
+    transition: opacity 0.2s ease, transform 0.22s var(--app-ease-smooth);
+}
+
+.app-sidebar-brand-link:hover {
+    opacity: 0.92;
+    transform: scale(1.02);
+}
+
+html {
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+}
+
+/* 使用系统字体替代Google Fonts */
+body,
+.navbar,
+.sidebar,
+.btn,
+.form-control,
+.form-select {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+body {
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* 侧边栏：与主区同画布，仅保留轻分隔 */
+.sidebar {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    z-index: 100;
+    padding: 0;
+    height: 100%;
+    min-height: 100%;
+    border-right: 1px solid var(--app-divider);
+    background: transparent;
+}
+
+.sidebar .nav-link {
+    color: var(--app-text-muted);
+    font-weight: 500;
+    padding: 0.75rem 1rem;
+    transition: color 0.22s var(--app-ease-smooth), background-color 0.22s var(--app-ease-smooth),
+        transform 0.24s var(--app-ease-smooth), box-shadow 0.22s var(--app-ease-smooth);
+    border-radius: var(--app-radius-btn);
+    margin: 0 0.5rem;
+    display: flex;
+    align-items: center;
+    border-left: none;
+}
+
+.sidebar .nav-link:hover {
+    color: var(--app-text);
+    background-color: var(--app-surface-hover);
+    transform: translateX(2px);
+}
+
+.sidebar .nav-link.active {
+    color: var(--app-primary) !important;
+    background: var(--app-gradient-primary);
+    background-size: 100%;
+    box-shadow: 0 2px 10px rgba(var(--app-primary-rgb), 0.18);
+    margin-left: 0.5rem;
+    font-weight: 600;
+}
+
+.sidebar .nav-link.active,
+.sidebar .nav-link.active i {
+    color: #fff !important;
+}
+
+.sidebar .nav-link i {
+    width: 1.25rem;
+    text-align: center;
+}
+
+/* 桌面端：圆角外框应用壳，侧栏与主区在同一面板内 */
+@media (min-width: 768px) {
+    body.app-body {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh;
+        min-height: 100dvh;
+        padding: 0.625rem;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .app-shell {
+        flex: 1 1 auto;
+        margin: 0;
+        width: 100%;
+        min-height: 0;
+        box-sizing: border-box;
+        border: 1px solid var(--app-glass-border);
+        border-radius: var(--app-radius-shell);
+        background: var(--app-bg-shell);
+        box-shadow: var(--app-shadow-card);
+        overflow-x: hidden;
+        overflow-y: auto;
+        scroll-behavior: smooth;
+    }
+
+    .app-shell__layout {
+        min-height: auto;
+        align-items: stretch;
+    }
+
+    .app-shell .sidebar {
+        min-height: auto;
+        align-self: stretch;
+    }
+
+    .app-shell .app-main {
+        min-height: auto;
+    }
+}
+
+/* 主内容区域 */
+main {
+    padding-top: 0;
+}
+
+main.app-main>.d-flex:first-child {
+    position: relative;
+    z-index: 20;
+}
+
+/* 卡片样式 */
+.card {
+    border: 1px solid var(--app-glass-border);
+    border-radius: var(--app-radius-card);
+    background-color: var(--app-bg-card);
+    box-shadow: var(--app-shadow-card);
+    transition: box-shadow 0.24s var(--app-ease-smooth), border-color 0.22s var(--app-ease-smooth);
+    overflow: hidden;
+}
+
+.card:hover {
+    box-shadow: var(--app-shadow-card-hover);
+}
+
+.card-header {
+    border-bottom: 1px solid var(--app-divider);
+    border-radius: var(--app-radius-card) var(--app-radius-card) 0 0 !important;
+    padding: 1.25rem;
+    background-color: var(--app-bg-card);
+    color: var(--app-text-muted);
+    transition: border-color 0.22s var(--app-ease-smooth);
+}
+
+/* 全站通用工具类 */
+.app-page-title {
+    color: var(--app-text);
+}
+
+.app-mobile-navbar {
+    background-color: var(--app-bg-card);
+}
+
+.sidebar-user-block {
+    border-color: var(--app-border) !important;
+}
+
+.sidebar-user-text {
+    color: var(--app-text-muted);
+}
+
+.stats-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+}
+
+.stats-value {
+    color: var(--app-text);
+}
+
+.stats-value--compact {
+    font-size: 0.95rem;
+    word-break: break-all;
+}
+
+.card-header-icon {
+    color: var(--app-primary);
+}
+
+.card-header-title {
+    color: var(--app-text);
+}
+
+.app-text-muted-block {
+    color: var(--app-text-muted);
+}
+
+.app-detail-box {
+    background-color: var(--app-bg-card-header);
+    color: var(--app-text-muted);
+}
+

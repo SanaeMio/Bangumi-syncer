@@ -73,6 +73,7 @@ export default defineConfig(
         'getting-started.md',
         'quick-start',
         'configuration.md',
+        'notification-configuration.md',
         'mapping.md',
         'bangumi-archive.md',
         'bangumi-replay.md',

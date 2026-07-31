@@ -25,10 +25,7 @@ from ..core.config_secret_crypto import (
 )
 from ..core.logging import logger
 from ..core.security import security_manager
-from ..services.bangumi_archive_scheduler import bangumi_archive_scheduler
-from ..services.feiniu.scheduler import feiniu_scheduler
 from ..services.feiniu.sync_service import feiniu_sync_service
-from ..services.fongmi.scheduler import fongmi_scheduler
 from ..services.llm import reset_llm_client
 from .deps import get_current_user_flexible
 
@@ -232,6 +229,36 @@ async def get_config(
         raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
 
 
+@router.get("/config/schema")
+async def get_config_schema(
+    request: Request, current_user: dict = Depends(get_current_user_flexible)
+) -> dict[str, Any]:
+    """获取配置段元数据 schema
+
+    暴露 SectionMeta 注册表（段排序、可见性、敏感字段、关联调度器）以及
+    字段级元数据（默认值、default_true/loose_true 布尔语义），供前端动态
+    驱动表单默认值回填与 checkbox 语义，替代散落的硬编码字典。
+    """
+    from ..core.config_schema import serialize_schema
+
+    return {"status": "success", "data": serialize_schema()}
+
+
+@router.get("/scheduler/status")
+async def get_scheduler_status(
+    request: Request, current_user: dict = Depends(get_current_user_flexible)
+) -> dict[str, Any]:
+    """获取所有已注册调度器的运行状态
+
+    返回 SchedulerRegistry.get_status_list() 的结果，包含每个调度器的
+    display_name（来自 SectionMeta）和 job 列表（trigger / next_run_time），
+    供配置页侧栏调度器状态卡展示。
+    """
+    from ..core.scheduler_registry import scheduler_registry
+
+    return {"status": "success", "data": scheduler_registry.get_status_list()}
+
+
 @router.post("/config")
 async def update_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
@@ -306,37 +333,38 @@ async def update_config(
                 feiniu_sync_service.clear_min_update_watermark()
                 logger.info("飞牛已关闭：已清除同步起点水位")
 
-        try:
-            await feiniu_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("飞牛调度器随配置更新: %s", ex)
+        # ── 统一联动：遍历本次变更的 section，通过 SectionMeta 驱动 ──
+        from ..core.config_schema import (
+            multi_instance_prefixes,
+            scheduler_id_for_section,
+        )
+        from ..core.scheduler_registry import scheduler_registry
 
-        try:
-            await fongmi_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("fongmi 调度器随配置更新: %s", ex)
+        changed_sections = set()
+        for section in data.keys():
+            normalized = section.replace("_", "-")
+            # 多实例段归一化：webhook-1 → webhook, email-2 → email
+            for prefix in multi_instance_prefixes():
+                if normalized.startswith(f"{prefix}-"):
+                    normalized = prefix
+                    break
+            changed_sections.add(normalized)
+        if multi_accounts is not None:
+            changed_sections.add("bangumi")
 
-        # 重置 LLM 客户端单例以使用最新配置
-        reset_llm_client()
+        for section in changed_sections:
+            # 调度器联动（通过 SectionMeta.scheduler_id 反查）
+            sid = scheduler_id_for_section(section)
+            if sid:
+                await scheduler_registry.apply_config_by_section(section)
 
-        try:
-            # 重新加载 BangumiArchive 配置（data_dir 等可能变化）
-            from ..utils.bangumi_archive import bangumi_archive
+            # 通知配置段（notify-webhook / notify-email）无需显式重载：
+            # Notifier 每次 send_notification_by_type 都实时读取配置，
+            # 配置保存后下一次通知自动生效。
 
-            bangumi_archive.reload_config()
-            await bangumi_archive_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("BangumiArchive 调度器随配置更新: %s", ex)
-
-        try:
-            # 同步 BangumiReplay 调度器状态（enabled/replay_cron 变化时重建定时任务）
-            from ..services.bangumi_replay_scheduler import (
-                bangumi_replay_scheduler,
-            )
-
-            await bangumi_replay_scheduler.apply_config_after_save()
-        except Exception as ex:
-            logger.debug("BangumiReplay 调度器随配置更新: %s", ex)
+            # LLM 客户端重置（llm 段或 summary 段变更时）
+            if section in ("llm", "summary"):
+                reset_llm_client()
 
         # 如果密码被更新，需要重新初始化安全管理器以确保运行时状态一致
         if password_updated:

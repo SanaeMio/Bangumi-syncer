@@ -1,0 +1,29 @@
+                <div id="config-section-summary" class="card shadow-sm config-card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-journal-text me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">AI 追番总结</h6>
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-primary"
+                                onclick="showSummaryJobModal()">
+                            <i class="bi bi-plus-lg me-1"></i>新建任务
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="summary-jobs-list" class="row g-3">
+                            <!-- Job cards rendered here by renderSummaryJobs() -->
+                        </div>
+                        <div id="summary-jobs-empty"
+                             class="app-empty-state app-empty-state--sm"
+                             style="display:none">
+                            <i class="bi bi-inbox app-empty-state__icon"></i>
+                            <p class="text-muted mt-3 mb-0">还没有追番总结任务，点击上方按钮创建</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 通知配置 -->
+        <div class="row">
+            <div class="col-12">

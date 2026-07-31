@@ -1,0 +1,67 @@
+name: E2E Tests
+
+on:
+  push:
+    branches:
+      - '**'    # 所有分支都触发测试
+    tags-ignore:
+      - 'v*'      # 忽略版本 Tag (交给 release.yml 处理)
+    paths:
+      - 'app/**'
+      - 'templates/**'
+      - 'static/**'
+      - 'tests/e2e/**'
+      - 'tests/conftest.py'
+      - 'pyproject.toml'
+      - '.github/workflows/e2e-tests.yml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'templates/**'
+      - 'static/**'
+      - 'tests/e2e/**'
+      - 'tests/conftest.py'
+      - 'pyproject.toml'
+      - '.github/workflows/e2e-tests.yml'
+
+jobs:
+  e2e_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.9
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install Playwright browsers
+        run: uv run playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        # 失败捕获参数来自 pyproject.toml [tool.pytest.ini_options.playwright]
+        # 显式带上 --output 确保产物路径与上传步骤一致
+        # 注意：trace 选项是 --tracing（不是 --trace，后者是 pytest 内置断点调试选项）
+        # 用 = 语法绑定选项值，避免值被误解析为独立路径参数
+        run: |
+          mkdir -p test-results/e2e
+          uv run pytest tests/e2e/ -m e2e --browser chromium -v \
+            --screenshot=only-on-failure \
+            --video=retain-on-failure \
+            --tracing=retain-on-failure \
+            --output=test-results/e2e
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-artifacts
+          path: test-results/e2e/
+          retention-days: 7

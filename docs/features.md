@@ -11,7 +11,7 @@ order: 2
 - 🧠 **智能推理条目**：自动把媒体库标题对齐到 Bangumi 条目，减轻多季、译名不一致带来的困扰，仍对不上时也可用 **[自定义映射](/mapping)** 手工指定「标题 → 条目 ID」来兜底。
 - 🔌 **常见媒体栈都能接**：已内置适配 **Plex**（[Tautulli](/usage/tautulli)、[官方 Webhooks](/usage/plex-webhooks)）、**[Emby](/usage/emby)**、**[Jellyfin](/usage/jellyfin)** 与 **[自定义 Webhook](/usage/custom-webhook)**。另可按需启用 **[Trakt定时同步](/usage/trakt)**、**[飞牛定时同步](/usage/feiniu)** 、**[fongmi定时同步](/usage/fongmi)** 等，覆盖了绝大多数场景。
 - 👥 **多用户同步**：多用户模式下按 **媒体服务器用户名** 路由到不同 Bangumi 账号，数据互不混杂；仪表板可按用户维度查看同步分布。
-- 🛡️ **安全与告警**：可选 Web 登录、会话超时、HTTPS Cookie、登录失败锁定等，同步过程支持 **Webhook / 邮件** 通知，模板与类型可高度自定义，便于接入Telegram、钉钉、企业微信、邮箱等外部系统。
+- 🛡️ **安全与告警**：可选 Web 登录、会话超时、HTTPS Cookie、登录失败锁定等，同步过程支持 **Webhook / 邮件 / 企业微信 / 钉钉** 四类通知渠道，通知规则按事件分类（同步流程/匹配质量/数据源/调度任务/Bangumi API/系统运维）订阅，模板与类型可高度自定义，便于接入 Telegram、钉钉、企业微信、邮箱等外部系统。
 - 🧩 **匹配记录可追溯**：保留完整的匹配过程，可直观地了解匹配过程以便排查问题。「同步记录」详情页提供流水线摘要、各阶段步骤卡（含搜索参数、API 返回摘要、错误堆栈、驱动原始数据）与步骤耗时表，支持点击跳转高亮。
 - 🔄 **离线容错与自动补发（Replay）**：开启 [Bangumi Replay 待同步队列补发](/bangumi-replay) 后，当 Bangumi API 短暂不可达时，已匹配的写操作会进入本地队列暂存，API 恢复后自动补发；**入队后立即触发补发**，秒级恢复体验，与 cron 定时调度形成双保险。
 - 🗄️ **可选本地归档（Archive）**：开启 [Bangumi Archive 离线查询层](/bangumi-archive) 后，把 Bangumi 全站数据快照下载到本地 SQLite，同步优先查本地、未命中再回退 API，能显著降低延迟与对官方 API 的依赖，跨季续集链等查询也能一次拿到完整结果。与 Replay 搭配可覆盖「API 完全不可达」的端到端无网场景。

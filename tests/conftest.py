@@ -532,6 +532,7 @@ if HAS_PYTEST_PLAYWRIGHT:
         env["PYTHONPATH"] = project_root
 
         # 使用 sys.executable 确保使用正确的 Python 解释器
+        # stdout/stderr 用 DEVNULL 避免 PIPE 缓冲区满导致进程阻塞
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -544,8 +545,8 @@ if HAS_PYTEST_PLAYWRIGHT:
                 "8000",
             ],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         # 等待服务器启动

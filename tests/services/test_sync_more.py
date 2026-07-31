@@ -128,7 +128,7 @@ class TestSyncServiceHelper:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -155,7 +155,7 @@ class TestSyncServiceHelper:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {

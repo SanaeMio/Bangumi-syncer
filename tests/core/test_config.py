@@ -396,8 +396,8 @@ webhook_template = {"t":2}
         with patch.object(cm, "_save_config", wraps=cm._save_config):
             cm._migrate_webhook_config()
         cfg = cm.get_config_parser()
-        assert cfg.has_section("webhook-1")
-        assert cfg.get("webhook-1", "url") == "http://hook"
+        assert cfg.has_section("notify-webhook-1")
+        assert cfg.get("notify-webhook-1", "url") == "http://hook"
 
         p2 = tmp_path / "config2.ini"
         p2.write_text(
@@ -425,13 +425,13 @@ smtp_use_tls = True
 email_from = from@x.com
 email_to = to@x.com
 email_subject = subj
-email_template_file = tpl.html
+template = tpl.html
 """
         cm = _config_manager_from_ini(tmp_path, ini)
         cm._migrate_email_config()
         cfg = cm.get_config_parser()
-        assert cfg.has_section("email-1")
-        assert cfg.get("email-1", "smtp_server") == "smtp.example.com"
+        assert cfg.has_section("notify-email-1")
+        assert cfg.get("notify-email-1", "smtp_server") == "smtp.example.com"
 
     def test_migrate_email_incomplete_removes_notification(self, tmp_path):
         ini = """[notification]

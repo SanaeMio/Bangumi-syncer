@@ -1,0 +1,134 @@
+                <div id="config-section-auth" class="card mb-4">
+                    <div class="card-header py-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-shield-lock me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">Web认证配置</h6>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-check me-1 text-success"></i>启用Web认证
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="是否启用Web管理界面认证，建议在外网环境下启用。禁用后任何人都可以访问管理界面"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="auth-enabled"
+                                           name="auth.enabled">
+                                    <label class="form-check-label" for="auth-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="auth-username" class="form-label fw-semibold">
+                                    <i class="bi bi-person me-1 text-primary"></i>管理员用户名
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="Web管理界面的登录用户名"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="auth-username"
+                                       name="auth.username"
+                                       placeholder="admin">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="auth-password" class="form-label fw-semibold">
+                                    <i class="bi bi-key me-1 text-warning"></i>管理员密码
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="Web管理界面的登录密码。留空表示不修改当前密码"></i>
+                                </label>
+                                <div class="position-relative">
+                                    <input type="password"
+                                           class="form-control pe-5"
+                                           id="auth-password"
+                                           name="auth.password"
+                                           placeholder="留空表示不修改密码">
+                                    <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn"
+                                            type="button"
+                                            id="toggle-auth-password-visibility">
+                                        <i class="bi bi-eye text-muted" id="auth-password-visibility-icon"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="session-timeout" class="form-label fw-semibold">
+                                    <i class="bi bi-clock me-1 text-info"></i>会话超时时间
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="登录会话的超时时间（秒），默认3600秒（1小时）"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       data-type="number"
+                                       id="session-timeout"
+                                       name="auth.session_timeout"
+                                       placeholder="3600"
+                                       min="300"
+                                       max="86400">
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-shield-lock me-1 text-success"></i>启用HTTPS安全Cookie
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="启用后Cookie只在HTTPS连接下传输，提高安全性。仅在使用HTTPS时启用"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="https-only"
+                                           name="auth.https_only">
+                                    <label class="form-check-label" for="https-only">启用</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="max-login-attempts" class="form-label fw-semibold">
+                                    <i class="bi bi-shield-x me-1 text-warning"></i>最大登录尝试次数
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="单个IP地址的最大登录失败次数，超过后将被锁定"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       data-type="number"
+                                       id="max-login-attempts"
+                                       name="auth.max_login_attempts"
+                                       placeholder="5"
+                                       min="1"
+                                       max="20">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="lockout-duration" class="form-label fw-semibold">
+                                    <i class="bi bi-clock-history me-1 text-danger"></i>锁定时间（秒）
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="IP被锁定的时间长度（秒），默认900秒（15分钟）"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       data-type="number"
+                                       id="lockout-duration"
+                                       name="auth.lockout_duration"
+                                       placeholder="900"
+                                       min="60"
+                                       max="86400">
+                            </div>
+                        </div>
+                        <div class="alert alert-warning mt-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>安全提醒：</strong>在外网环境下强烈建议启用认证功能。修改密码后需要重新登录。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Bangumi-data配置 -->
+        <div class="row">
+            <div class="col-12">
