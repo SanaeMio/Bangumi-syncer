@@ -267,12 +267,17 @@ async def progress_stream(
                 return
 
         # 2. 推送缓存中的最新进度（可能比 history 最后一条更新）
-        if cached and cached.stage != last_stage:
-            last_ts = max(last_ts, cached.timestamp)
-            yield {
-                "event": "progress",
-                "data": json.dumps(cached.to_dict(), ensure_ascii=False),
-            }
+        # 用 timestamp 判断是否已推送，避免同 stage 不同 percent 被跳过
+        # (如 downloading 30% → 45%，stage 相同但 percent 更新)
+        if cached:
+            if cached.timestamp > last_ts:
+                last_ts = cached.timestamp
+                yield {
+                    "event": "progress",
+                    "data": json.dumps(cached.to_dict(), ensure_ascii=False),
+                }
+            # 终态判断独立于 stage 是否变化，避免 cached 为终态但与 history
+            # 最后一条 stage 相同时漏掉 return
             if cached.stage in ("done", "error", "skipped"):
                 return
 
