@@ -165,7 +165,7 @@ archive 数据来自 Bangumi 官方 dump，可能存在数据延迟或边缘情�
 
 ### 6.6 磁盘占用过大
 
-- 导入峰值 = 双库（a+b 各 ~0.8GB）+ 临时下载 zip ~0.4GB + WAL 余量 ≈ **2.4GB**（FTS5 contentless 表不重复存储原始内容）
+- 双库**仅在导入时短暂并存**，解压后立即删 zip，导入峰值 = active 库 ~0.8GB + 解压 ~1GB + 新库 ~0.8GB + WAL 余量 ≈ **2.6GB**（FTS5 contentless 表不重复存储原始内容）
 - 导入成功切换 active 指针后，旧库（db / db-wal / db-shm）会自动清理，常态占用约 **1.3GB**（仅 active 库）
 - 旧版本（FTS5 改造前）残留的 `bangumi_archive_*.index` 缓存文件会在清空旧库时一并清理；若从旧版升级后仍有残留，可手动删除 `data_dir` 下的 `.index` 文件
 - 若磁盘紧张可关闭 archive，并删除 `data_dir` 下的 `bangumi_archive_*.db` 文件

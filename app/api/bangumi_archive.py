@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import tempfile
+import shutil
+import time
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -171,20 +172,18 @@ async def import_local_zip(
     if not filename:
         raise HTTPException(status_code=400, detail="文件名无效")
 
-    # 保存到临时文件
-    tmp_dir = Path(tempfile.mkdtemp(prefix="bangumi_archive_upload_"))
+    # 保存到 data_dir/.tmp/<task_id>/ 下的临时文件
+    # 与下载流程统一，避免使用系统 temp 导致跨磁盘空间检查盲区
+    tmp_root = bangumi_archive.get_tmp_dir()
+    tmp_dir = tmp_root / f"upload_{int(time.time() * 1000)}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = tmp_dir / filename
 
     def _cleanup_tmp() -> None:
         """清理临时文件与目录（幂等，多次调用安全）"""
         try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-        try:
             if tmp_dir.exists():
-                tmp_dir.rmdir()
+                shutil.rmtree(tmp_dir, ignore_errors=True)
         except OSError:
             pass
 

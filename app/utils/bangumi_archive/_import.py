@@ -221,6 +221,17 @@ class ArchiveImporter:
             if progress_cb:
                 progress_cb(task_id, "extracting", 65, "解压完成")
 
+            # 解压完成后立即删除 zip，释放磁盘空间（数据已落到 extract_dir）
+            # 降低导入阶段磁盘峰值：zip(0.4GB) + 解压(1GB) + 新库(0.8GB) → 解压(1GB) + 新库(0.8GB)
+            try:
+                if zip_path.exists():
+                    zip_path.unlink()
+                    logger.debug(
+                        f"bangumi_archive: 解压完成，已删除 zip {zip_path.name}"
+                    )
+            except OSError as e:
+                logger.warning(f"bangumi_archive: 解压后删除 zip 失败: {e}")
+
             # 2. 删除目标库（如存在），全新建立
             if target_db.exists():
                 target_db.unlink()

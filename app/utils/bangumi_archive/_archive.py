@@ -37,8 +37,10 @@ from ...core.logging import logger
 _DB_NAMES = ("a", "b")
 
 # 磁盘空间阈值（MB），低于此值跳过导入
-# 导入峰值 = 双库（a+b 各 ~0.8GB）+ 临时下载 zip ~0.4GB + WAL 余量 ≈ 2.4GB
-# 阈值设为 3000MB，预留充足空间避免导入中途写满
+# 下载/上传/解压/导入全部在 data_dir/.tmp/ 完成，不再使用系统 temp
+# 双库仅在导入时并存：active 库(0.8GB) + 新库(0.8GB)
+# 解压后立即删除 zip，导入峰值 = active 库(0.8GB) + 解压(1GB) + 新库(0.8GB) + WAL 余量 ≈ 2.6GB
+# 阈值设为 3000MB，预留约 400MB 余量避免导入中途写满
 _DEFAULT_MIN_DISK_SPACE_MB = 3000
 
 # 镜像源 fallback（与 upgrade_service 一致）
@@ -315,6 +317,17 @@ class BangumiArchive:
     def get_inactive_db_path(self) -> Path:
         return self.db_b_path if self._meta.active == "a" else self.db_a_path
 
+    def get_tmp_dir(self) -> Path:
+        """获取临时工作目录（下载/上传/解压统一在此完成）
+
+        方案 B：所有临时文件都放在 data_dir/.tmp/ 下，与数据库同磁盘，
+        避免系统 temp 与 data_dir 跨磁盘导致的空间检查盲区。
+        调用方负责清理自己创建的子目录。
+        """
+        tmp_dir = self.data_dir / ".tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        return tmp_dir
+
     def get_meta(self) -> ArchiveMeta:
         with self._lock:
             return ArchiveMeta(
@@ -574,7 +587,9 @@ class BangumiArchive:
             10,
             f"开始下载 {latest.get('name', 'archive.zip')}",
         )
-        zip_path = await downloader.download(latest, task_id=task_id)
+        zip_path = await downloader.download(
+            latest, task_id=task_id, tmp_dir=self.get_tmp_dir()
+        )
 
         # 4.5 SHA256 校验
         digest = latest.get("digest", "")
@@ -591,11 +606,12 @@ class BangumiArchive:
                 cleanup_zip=True,  # 下载的 zip 导入后删除
             )
         finally:
-            # 兜底清理：解压临时目录
+            # 兜底清理：整个任务临时子目录（含 zip 残留 + 解压目录）
+            # zip 与解压目录都在 .tmp/<task_dir>/ 下
             try:
-                temp_extract_dir = zip_path.parent / f"{zip_path.stem}_extracted"
-                if temp_extract_dir.exists():
-                    shutil.rmtree(temp_extract_dir, ignore_errors=True)
+                task_tmp_dir = zip_path.parent
+                if task_tmp_dir.exists() and task_tmp_dir != self.get_tmp_dir():
+                    shutil.rmtree(task_tmp_dir, ignore_errors=True)
             except OSError:
                 pass
 
@@ -675,14 +691,7 @@ class BangumiArchive:
         except Exception as e:
             logger.warning(f"bangumi_archive FTS5 查询层重连失败: {e}")
 
-        # 清理下载的 zip（导入完成后统一清理）
-        if cleanup_zip:
-            try:
-                if zip_path.exists():
-                    zip_path.unlink()
-                    logger.debug(f"已删除下载文件: {zip_path}")
-            except OSError as e:
-                logger.warning(f"删除下载文件失败: {e}")
+        # zip 已在 import_all 解压后立即删除，此处无需再清理
 
     def _make_progress_cb(
         self, task_id: str

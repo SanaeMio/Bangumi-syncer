@@ -16,7 +16,6 @@ import asyncio
 import hashlib
 import re
 import shutil
-import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -115,15 +114,18 @@ class ArchiveDownloader:
 
     # ===== zip 下载 =====
 
-    async def download(self, latest: dict[str, Any], task_id: str) -> Path:
+    async def download(
+        self, latest: dict[str, Any], task_id: str, tmp_dir: Path
+    ) -> Path:
         """下载 dump zip 文件
 
         Args:
             latest: latest.json 解析后的字典
             task_id: 任务 ID（供进度回调）
+            tmp_dir: 临时工作目录（data_dir/.tmp/），zip 下载到其下的任务子目录
 
         Returns:
-            下载的 zip 文件路径（临时目录）
+            下载的 zip 文件路径（tmp_dir/<task_id>/zip_filename）
         """
         download_url = latest.get("browser_download_url", "")
         if not download_url:
@@ -131,9 +133,11 @@ class ArchiveDownloader:
 
         urls = self._build_download_urls(download_url)
 
-        temp_dir = Path(tempfile.mkdtemp(prefix="bangumi_archive_"))
+        # 在 tmp_dir 下为本次任务创建独立子目录，便于导入后统一清理
+        task_dir = tmp_dir / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
         zip_filename = latest.get("name") or "dump.zip"
-        zip_path = temp_dir / zip_filename
+        zip_path = task_dir / zip_filename
 
         if self.http_proxy:
             logger.info(f"bangumi_archive: 使用代理 {self.http_proxy}")
@@ -193,7 +197,7 @@ class ArchiveDownloader:
                     logger.warning(f"bangumi_archive: {source_label}下载失败: {e}")
 
         try:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            shutil.rmtree(task_dir, ignore_errors=True)
         except OSError:
             pass
 
