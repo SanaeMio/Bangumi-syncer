@@ -191,7 +191,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         # 重新加载 Archive 短路配置（配置变更后调用方可立即生效）
         self._archive.reload_config()
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def get(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
         logger.debug(
             f"BangumiApi GET请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
@@ -207,7 +207,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         path: str,
         _json: dict[str, Any],
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> httpx.Response:
         logger.debug(
             f"BangumiApi POST请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
@@ -222,7 +222,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         path: str,
         _json: dict[str, Any],
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> httpx.Response:
         res = self._request_with_retry(
             "PUT", self.req, f"{self.host}/{path}", json=_json, params=params
         )
@@ -234,7 +234,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         path: str,
         _json: dict[str, Any],
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> httpx.Response:
         res = self._request_with_retry(
             "PATCH", self.req, f"{self.host}/{path}", json=_json, params=params
         )
