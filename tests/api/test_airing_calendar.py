@@ -48,10 +48,9 @@ def mock_archive_enabled():
 
 @pytest.fixture
 def mock_no_bangumi_config():
-    """mock 无 Bangumi 账号配置"""
-    with patch.object(
-        airing_calendar.config_manager,
-        "get_active_bangumi_config",
+    """mock 无 Bangumi 账号配置（_build_bangumi_api 返回 None）"""
+    with patch(
+        "app.api.airing_calendar._build_bangumi_api",
         return_value=None,
     ):
         yield
@@ -169,9 +168,8 @@ class TestAiringCalendarEndpoint:
     ):
         """only_watching=True 但无 Bangumi 配置时降级为全部放送"""
         with (
-            patch.object(
-                airing_calendar.config_manager,
-                "get_active_bangumi_config",
+            patch(
+                "app.api.airing_calendar._build_bangumi_api",
                 return_value=None,
             ),
             patch.object(
@@ -199,20 +197,13 @@ class TestAiringCalendarEndpoint:
     @pytest.mark.asyncio
     async def test_only_watching_with_config(self, app_with_auth, mock_archive_enabled):
         """only_watching=True 有配置时调用 get_watching_subject_ids 过滤"""
-        mock_cfg = {
-            "username": "testuser",
-            "access_token": "token",
-            "private": False,
-        }
+        mock_api = MagicMock()
+        mock_api.username = "testuser"
         with (
-            patch.object(
-                airing_calendar.config_manager,
-                "get_active_bangumi_config",
-                return_value=mock_cfg,
+            patch(
+                "app.api.airing_calendar._build_bangumi_api",
+                return_value=mock_api,
             ),
-            patch.object(
-                airing_calendar.config_manager, "get_dev_http_snapshot"
-            ) as mock_snap,
             patch(
                 "app.api.airing_calendar.get_watching_subject_ids",
                 return_value={1, 2},
@@ -222,14 +213,7 @@ class TestAiringCalendarEndpoint:
                 "get_episodes_by_airdate",
                 return_value=[],
             ) as mock_query,
-            patch("app.api.airing_calendar.BangumiApi"),
         ):
-            mock_snap.return_value = {
-                "script_proxy": None,
-                "ssl_verify": True,
-                "bgm_api_proxy": None,
-                "bgm_next_proxy": None,
-            }
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
                 base_url="http://test",
@@ -245,6 +229,8 @@ class TestAiringCalendarEndpoint:
         # subject_ids 应为 {1, 2}
         call_kwargs = mock_query.call_args.kwargs
         assert call_kwargs["subject_ids"] == {1, 2}
+        # 临时 api 实例应被关闭（资源释放）
+        mock_api.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_days_normalized(

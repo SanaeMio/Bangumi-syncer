@@ -240,3 +240,19 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         )
         self.mark_api_reachable()
         return self._check_auth_error(res)
+
+    def close(self) -> None:
+        """关闭底层 httpx.Client，释放连接池资源
+
+        BangumiApi 持有两个 SyncHttpClient（req / _req_not_auth），
+        短生命周期实例（如放送日历/今日放送提醒中临时构造的）应在使用完毕后调用 close()，
+        避免连接池句柄泄漏。长生命周期实例（如 sync_service 主客户端）无需调用。
+        """
+        try:
+            self.req.close()
+        except Exception as e:
+            logger.debug(f"关闭 BangumiApi.req 失败: {e}")
+        try:
+            self._req_not_auth.close()
+        except Exception as e:
+            logger.debug(f"关闭 BangumiApi._req_not_auth 失败: {e}")

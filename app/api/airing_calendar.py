@@ -17,12 +17,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from ..core.config import config_manager
 from ..core.logging import logger
-from ..utils.bangumi_api import BangumiApi
 from ..utils.bangumi_api.collection import (
     get_watching_subject_ids,
     invalidate_watching_cache,
+)
+from ..utils.bangumi_api.factory import (
+    build_bangumi_api_from_active_config as _build_bangumi_api,
 )
 from ..utils.bangumi_archive import bangumi_archive
 from ..utils.bangumi_archive._store import archive_store
@@ -60,30 +61,6 @@ class AiringCalendarResponse(BaseModel):
     total_episodes: int = Field(description="总放送集数")
     only_watching: bool = Field(description="是否仅展示在追番剧")
     archive_enabled: bool = Field(description="Archive 是否启用")
-
-
-def _build_bangumi_api() -> Optional[BangumiApi]:
-    """从配置构造 BangumiApi 实例（兼容单/多用户模式）
-
-    单用户模式读 [bangumi] 段，多用户模式取首个有效账号段。
-    仅当 username 和 access_token 均非空才返回实例。
-
-    Returns:
-        BangumiApi 实例；若无有效配置返回 None
-    """
-    cfg = config_manager.get_active_bangumi_config()
-    if not cfg or not cfg.get("username") or not cfg.get("access_token"):
-        return None
-    dev_snapshot = config_manager.get_dev_http_snapshot()
-    return BangumiApi(
-        username=cfg["username"],
-        access_token=cfg["access_token"],
-        private=cfg.get("private", False),
-        http_proxy=dev_snapshot["script_proxy"],
-        ssl_verify=dev_snapshot["ssl_verify"],
-        bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
-        bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
-    )
 
 
 @router.get("", response_model=AiringCalendarResponse)
@@ -153,6 +130,9 @@ async def get_airing_calendar(
             except Exception as e:
                 logger.warning(f"获取在看列表失败，降级为全部放送: {e}")
                 subject_ids = None
+            finally:
+                # 临时构造的 BangumiApi 持有 httpx.Client 连接池，需显式释放
+                api.close()
         # 无 Bangumi 配置或获取失败：降级为全部放送
     # 查询 Archive
     rows = archive_store.get_episodes_by_airdate(

@@ -17,33 +17,14 @@ from typing import Any
 
 from ..core.config import config_manager
 from ..core.logging import logger
-from ..utils.bangumi_api import BangumiApi
 from ..utils.bangumi_api.collection import get_watching_subject_ids
+from ..utils.bangumi_api.factory import (
+    build_bangumi_api_from_active_config as _build_bangumi_api,
+)
 from ..utils.bangumi_archive import bangumi_archive
 from ..utils.bangumi_archive._store import archive_store
 from .base.notifier_helpers import notify_airing_today
 from .base.scheduler import BaseScheduler
-
-
-def _build_bangumi_api() -> BangumiApi | None:
-    """从配置构造 BangumiApi 实例（兼容单/多用户模式）
-
-    单用户模式读 [bangumi] 段，多用户模式取首个有效账号段。
-    仅当 username 和 access_token 均非空才返回实例。
-    """
-    cfg = config_manager.get_active_bangumi_config()
-    if not cfg or not cfg.get("username") or not cfg.get("access_token"):
-        return None
-    dev_snapshot = config_manager.get_dev_http_snapshot()
-    return BangumiApi(
-        username=cfg["username"],
-        access_token=cfg["access_token"],
-        private=cfg.get("private", False),
-        http_proxy=dev_snapshot["script_proxy"],
-        ssl_verify=dev_snapshot["ssl_verify"],
-        bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
-        bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
-    )
 
 
 class AiringTodayScheduler(BaseScheduler):
@@ -114,6 +95,9 @@ class AiringTodayScheduler(BaseScheduler):
                         f"AiringToday: 获取在看列表失败，降级为全部放送: {e}"
                     )
                     subject_ids = None
+                finally:
+                    # 临时构造的 BangumiApi 持有 httpx.Client 连接池，需显式释放
+                    api.close()
 
         # 查询今日放送（在线程中执行 SQLite 查询）
         rows = await asyncio.to_thread(
