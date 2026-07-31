@@ -683,11 +683,12 @@ class BangumiArchive:
 
         # active 库切换后，invalidate 让 FTS5 查询层重连到新库
         # FTS5 表在导入时已构建，无需后台重建
+        # 用 to_thread 包裹避免 _ensure_built 同步阻塞事件循环导致前端白屏
         try:
             from ._title_index import archive_title_index
 
             archive_title_index.invalidate()
-            archive_title_index.build_in_background()
+            await asyncio.to_thread(archive_title_index.build_in_background)
         except Exception as e:
             logger.warning(f"bangumi_archive FTS5 查询层重连失败: {e}")
 

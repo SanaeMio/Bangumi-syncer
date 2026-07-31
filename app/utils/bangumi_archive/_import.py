@@ -31,7 +31,8 @@ from ...core.logging import logger
 from ..bangumi_constants import ARCHIVE_ALLOWED_SUBJECT_TYPES
 
 # JSON Lines 批量插入大小
-_BATCH_SIZE = 5000
+# 配合显式 BEGIN 事务，整表导入单次 commit；50000 行/批减少 executemany 调用次数
+_BATCH_SIZE = 50000
 
 # 进度回调签名: (task_id, percent, message) -> None
 ProgressCb = Callable[[str, int, str], None]
@@ -350,58 +351,67 @@ class ArchiveImporter:
             conn.commit()
 
             # 准备 INSERT 语句
+            # 新建库（target_db.unlink 后建表），主键不可能冲突，用 INSERT 而非
+            # INSERT OR REPLACE，省去唯一性检查开销（约快 30-50%）
             fields = schema["fields"]
             placeholders = ",".join(["?"] * len(fields))
             col_names = ",".join(f'"{f}"' for f in fields)
-            insert_sql = f"INSERT OR REPLACE INTO {table_name} ({col_names}) VALUES ({placeholders})"
+            insert_sql = (
+                f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+            )
 
             # 批量读取并插入
             count = 0
             batch: list[tuple] = []
-            schema["optional_fields"]
 
-            with open(jsonl_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError as e:
-                        logger.warning(
-                            f"bangumi_archive: {table_name} 行解析失败，跳过: {e}"
-                        )
-                        continue
-                    if not isinstance(row, dict):
-                        continue
-
-                    # type 过滤：subject 表仅保留动画(2)与三次元(6)
-                    # 业务层查询时仅放行这两种类型，其他类型导入即浪费磁盘
-                    if table_name == "subject":
-                        if row.get("type") not in ARCHIVE_ALLOWED_SUBJECT_TYPES:
+            # 显式开启事务，整表导入单次 commit
+            # 避免每批 commit 触发 WAL 刷盘（84 万行 / 5000 = 168 次 commit → 1 次）
+            conn.execute("BEGIN")
+            try:
+                with open(jsonl_path, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            row = json.loads(line)
+                        except json.JSONDecodeError as e:
+                            logger.warning(
+                                f"bangumi_archive: {table_name} 行解析失败，跳过: {e}"
+                            )
+                            continue
+                        if not isinstance(row, dict):
                             continue
 
-                    # 提取字段（optional 字段缺失时填 None）
-                    values = []
-                    for field in fields:
-                        v = row.get(field)
-                        # list/dict 类型序列化为 JSON 字符串存储
-                        if isinstance(v, (list, dict)):
-                            v = json.dumps(v, ensure_ascii=False)
-                        values.append(v)
-                    batch.append(tuple(values))
-                    count += 1
+                        # type 过滤：subject 表仅保留动画(2)与三次元(6)
+                        # 业务层查询时仅放行这两种类型，其他类型导入即浪费磁盘
+                        if table_name == "subject":
+                            if row.get("type") not in ARCHIVE_ALLOWED_SUBJECT_TYPES:
+                                continue
 
-                    if len(batch) >= _BATCH_SIZE:
+                        # 提取字段（optional 字段缺失时填 None）
+                        values = []
+                        for field in fields:
+                            v = row.get(field)
+                            # list/dict 类型序列化为 JSON 字符串存储
+                            if isinstance(v, (list, dict)):
+                                v = json.dumps(v, ensure_ascii=False)
+                            values.append(v)
+                        batch.append(tuple(values))
+                        count += 1
+
+                        if len(batch) >= _BATCH_SIZE:
+                            conn.executemany(insert_sql, batch)
+                            batch.clear()
+
+                    # 插入剩余
+                    if batch:
                         conn.executemany(insert_sql, batch)
-                        conn.commit()
                         batch.clear()
-
-                # 插入剩余
-                if batch:
-                    conn.executemany(insert_sql, batch)
-                    conn.commit()
-                    batch.clear()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
             logger.debug(
                 f"bangumi_archive: {table_name} 导入 {count} 行 (from {jsonl_path.name})"
@@ -425,15 +435,17 @@ class ArchiveImporter:
         conn.execute("PRAGMA synchronous=NORMAL")
         try:
             # episode 孤儿行
+            # NOT EXISTS 走 subject 主键索引，比 NOT IN 物化子查询更快
             cur = conn.execute(
-                "DELETE FROM episode WHERE subject_id NOT IN (SELECT id FROM subject)"
+                "DELETE FROM episode WHERE NOT EXISTS "
+                "(SELECT 1 FROM subject WHERE subject.id = episode.subject_id)"
             )
             ep_removed = cur.rowcount
             # subject_relation 孤儿行（任一端指向被丢弃条目即删除）
             cur = conn.execute(
                 "DELETE FROM subject_relation "
-                "WHERE subject_id NOT IN (SELECT id FROM subject) "
-                "OR related_subject_id NOT IN (SELECT id FROM subject)"
+                "WHERE NOT EXISTS (SELECT 1 FROM subject WHERE subject.id = subject_relation.subject_id) "
+                "OR NOT EXISTS (SELECT 1 FROM subject WHERE subject.id = subject_relation.related_subject_id)"
             )
             rel_removed = cur.rowcount
             conn.commit()
