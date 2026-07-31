@@ -527,6 +527,10 @@ class BangumiArchive:
                 5,
                 f"已接收上传文件: {zip_path.name}",
             )
+            # 上传流程同样检查磁盘空间，与下载流程保持一致
+            # 避免解压/导入阶段磁盘写满导致中途失败
+            self._push_progress(task_id, ArchiveStage.CHECKING, 1, "检查磁盘空间")
+            self._check_disk_space()
             await self._do_import(
                 task_id=task_id,
                 zip_path=zip_path,
