@@ -20,6 +20,7 @@ import pytest
 from app.utils.bangumi_archive._archive import ArchiveMeta, BangumiArchive
 from app.utils.bangumi_archive._download import ArchiveDownloader
 from app.utils.bangumi_archive._import import ArchiveImporter
+from app.utils.bangumi_archive._store import ArchiveStore
 
 # ===== ArchiveMeta 测试 =====
 
@@ -186,6 +187,7 @@ class TestArchiveImporter:
             index_names = {row[0] for row in indexes}
             assert "idx_subject_name" in index_names
             assert "idx_episode_subject" in index_names
+            assert "idx_episode_airdate" in index_names  # 放送日历视图用
             assert "idx_relation_subject" in index_names
         finally:
             conn.close()
@@ -337,6 +339,115 @@ class TestArchiveImporter:
         # 不应抛异常
         importer.clear_database(db_path)
         assert not db_path.exists()
+
+
+# ===== ArchiveStore 按日期查询测试 =====
+
+
+class TestArchiveStoreAiringQuery:
+    """ArchiveStore.get_episodes_by_airdate 按日期范围查询"""
+
+    @pytest.fixture
+    def store_with_data(self, tmp_path: Path) -> ArchiveStore:
+        """构造含多条 episode/subject 的测试库"""
+        db_path = tmp_path / "test_archive.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(
+            """
+            CREATE TABLE subject (
+                id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT,
+                date TEXT, favorite INTEGER
+            );
+            CREATE TABLE episode (
+                id INTEGER PRIMARY KEY, name TEXT, name_cn TEXT,
+                airdate TEXT, subject_id INTEGER, sort INTEGER, type INTEGER
+            );
+            INSERT INTO subject (id, type, name, name_cn, date, favorite) VALUES
+                (1, 2, 'Anime A', '动画A', '2026-01-01', 10),
+                (2, 2, 'Anime B', '动画B', '2026-01-02', 5),
+                (3, 6, 'Real C', '三次元C', '2026-01-03', 3),
+                (4, 1, 'Book D', '书籍D', '2026-01-04', 0);
+            INSERT INTO episode (id, name, name_cn, airdate, subject_id, sort, type) VALUES
+                (101, 'EP01', '第一集', '2026-02-01', 1, 1, 0),
+                (102, 'EP02', '第二集', '2026-02-08', 1, 2, 0),
+                (201, 'EP01', '第一集', '2026-02-01', 2, 1, 0),
+                (301, 'EP01', '第一集', '2026-02-15', 3, 1, 0),
+                (401, 'EP01', '第一集', '2026-02-01', 4, 1, 0),
+                (103, 'SP', '特别篇', '', 1, 3, 0);
+            CREATE INDEX idx_episode_airdate ON episode(airdate);
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        from app.utils.bangumi_archive import _archive
+
+        # 保存原值，teardown 时恢复，避免污染全局单例
+        orig_db_a = _archive.bangumi_archive.db_a_path
+        orig_active = _archive.bangumi_archive._meta.active
+        _archive.bangumi_archive.db_a_path = db_path
+        _archive.bangumi_archive._meta.active = "a"
+
+        store = ArchiveStore()
+        yield store
+
+        # teardown：关闭连接并恢复全局单例状态
+        store.close()
+        _archive.bangumi_archive.db_a_path = orig_db_a
+        _archive.bangumi_archive._meta.active = orig_active
+
+    def test_date_range_filter(self, store_with_data: ArchiveStore):
+        """日期范围查询只返回范围内的 episode"""
+        results = store_with_data.get_episodes_by_airdate("2026-02-01", "2026-02-01")
+        # 2026-02-01 有 subject 1, 2, 4 的 EP01（subject 4 是书籍 type=1，被过滤）
+        assert len(results) == 2
+        subject_ids = {r["subject_id"] for r in results}
+        assert subject_ids == {1, 2}
+
+    def test_subject_types_filter(self, store_with_data: ArchiveStore):
+        """默认仅返回 type=2(动画) 和 type=6(三次元)，排除书籍"""
+        results = store_with_data.get_episodes_by_airdate("2026-02-01", "2026-02-28")
+        types = {r["subject_type"] for r in results}
+        assert types == {2, 6}  # 不含 type=1 的书籍
+
+    def test_empty_airdate_excluded(self, store_with_data: ArchiveStore):
+        """airdate 为空的 episode 应被排除"""
+        results = store_with_data.get_episodes_by_airdate("2026-01-01", "2026-12-31")
+        # subject 1 的 SP（id=103）airdate='' 应被排除
+        ep_ids = {r["episode_id"] for r in results}
+        assert 103 not in ep_ids
+
+    def test_subject_ids_filter(self, store_with_data: ArchiveStore):
+        """subject_ids 非空时仅返回这些 subject 的 episode"""
+        results = store_with_data.get_episodes_by_airdate(
+            "2026-02-01", "2026-02-28", subject_ids={1}
+        )
+        assert len(results) == 2  # subject 1 的 EP01 和 EP02
+        assert all(r["subject_id"] == 1 for r in results)
+
+    def test_empty_subject_ids(self, store_with_data: ArchiveStore):
+        """subject_ids 为空集合时应返回空列表（不构造 IN () SQL）"""
+        results = store_with_data.get_episodes_by_airdate(
+            "2026-02-01", "2026-02-28", subject_ids=set()
+        )
+        assert results == []
+
+    def test_join_subject_fields(self, store_with_data: ArchiveStore):
+        """结果应包含 JOIN subject 的 name/name_cn/type"""
+        results = store_with_data.get_episodes_by_airdate("2026-02-15", "2026-02-15")
+        assert len(results) == 1
+        r = results[0]
+        assert r["subject_id"] == 3
+        assert r["subject_name"] == "Real C"
+        assert r["subject_name_cn"] == "三次元C"
+        assert r["subject_type"] == 6
+        assert r["airdate"] == "2026-02-15"
+
+    def test_ordered_by_airdate(self, store_with_data: ArchiveStore):
+        """结果按 airdate 升序排列"""
+        results = store_with_data.get_episodes_by_airdate("2026-02-01", "2026-02-28")
+        dates = [r["airdate"] for r in results]
+        assert dates == sorted(dates)
 
 
 # ===== ArchiveDownloader 测试 =====
