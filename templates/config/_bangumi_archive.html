@@ -68,14 +68,14 @@
                                     <i class="bi bi-hdd me-1 text-success"></i>磁盘阈值 (MB)
                                     <i class="bi bi-question-circle ms-1 text-muted"
                                        data-bs-toggle="tooltip"
-                                       title="低于此可用空间时跳过导入，避免磁盘写满。默认 2000MB（双库 ~2.8GB + 索引 ~1GB + zip ~0.4GB）。"></i>
+                                       title="低于此可用空间时跳过导入，避免磁盘写满。默认 3000MB（导入峰值 = 双库 a+b 各 ~0.8GB + 临时 zip ~0.4GB + WAL 余量 ≈ 2.4GB）。"></i>
                                 </label>
                                 <input type="number"
                                        class="form-control"
                                        id="bangumi-archive-min-disk-space"
                                        name="bangumi_archive.min_disk_space_mb"
                                        min="100"
-                                       value="2000">
+                                       value="3000">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label fw-semibold">

@@ -1,17 +1,16 @@
-"""Archive 标题索引单元测试
+"""Archive 标题索引单元测试（FTS5 trigram 方案）
 
 覆盖：
 - ArchiveTitleIndex 构建 / 命中 / 失效重建
 - 精确匹配（name / name_cn / infobox 别名）
 - 模糊匹配（rapidfuzz，typo 容错）
+- FTS5 trigram 预筛（精确 phrase + 模糊 OR）
 - active 库路径切换自动重建
 """
 
 from __future__ import annotations
 
-import json
 import sqlite3
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -250,64 +249,62 @@ class TestFuzzyMatch:
         assert any(sid in (1, 3) for sid, _ in results)
 
 
-# ===== bigram 倒排索引 =====
+# ===== FTS5 trigram 预筛 =====
 
 
-class TestBigramIndex:
-    """bigram 倒排索引预筛测试"""
+class TestFTS5Index:
+    """FTS5 trigram 预筛测试（替代原 bigram 倒排索引）"""
 
-    def test_extract_bigrams_basic(self) -> None:
-        """_extract_bigrams 应提取相邻字符对"""
-        from app.utils.bangumi_archive._title_index import _extract_bigrams
+    def test_score_candidate_substring_short_circuit(self) -> None:
+        """子串包含应直接得 100 分"""
+        from app.utils.bangumi_archive._fts_query import _score_candidate
 
-        assert _extract_bigrams("完美世界") == {"完美", "美世", "世界"}
-        assert _extract_bigrams("ab") == {"ab"}
-        assert _extract_bigrams("a") == set()  # 短标题返回空集
-        assert _extract_bigrams("") == set()
+        # 'test' 是 'test anime' 的子串
+        assert _score_candidate("test", "testanime") == 100.0
 
-    def test_bigram_index_built(self, title_index_with_db) -> None:
-        """构建后 _bigram_index 应被填充"""
+    def test_score_candidate_exact_match(self) -> None:
+        """完全相同应得 100 分"""
+        from app.utils.bangumi_archive._fts_query import _score_candidate
+
+        assert _score_candidate("testanime", "testanime") == 100.0
+
+    def test_collect_candidates_exact_phrase_match(self, title_index_with_db) -> None:
+        """精确模式（phrase MATCH）应返回子串命中的候选"""
         index, _ = title_index_with_db
-        # 归一化后 'test anime' → 'testanime'，bigram 'te' 应在索引中
-        assert "te" in index._bigram_index
-        assert "es" in index._bigram_index
-        assert "testanime" in index._bigram_index["te"]
+        conn = index._ensure_conn()
+        assert conn is not None
+        # phrase MATCH 'testanime' 命中 subject 1 和 3
+        candidates = index._collect_candidates_fts(conn, "testanime", fuzzy=False)
+        assert 1 in candidates
+        assert 3 in candidates
 
-    def test_collect_candidates_returns_relevant(self, title_index_with_db) -> None:
-        """_collect_candidates_by_bigram 应返回相关候选"""
+    def test_collect_candidates_fuzzy_or_match(self, title_index_with_db) -> None:
+        """模糊模式（trigram OR）应能命中含 typo 的查询"""
         index, _ = title_index_with_db
-        candidates = index._collect_candidates_by_bigram("testanime")
-        assert "testanime" in candidates
-        assert "测试动画" not in candidates  # 中文不应被 bigram "te" 命中
-
-    def test_collect_candidates_handles_unknown_bigram(
-        self, title_index_with_db
-    ) -> None:
-        """query 含未知 bigram 时仍能从已知 bigram 找到候选"""
-        index, _ = title_index_with_db
-        # "testanme" 含 'nm' 不在索引中，但 'te', 'es', 'st' 等都在
-        candidates = index._collect_candidates_by_bigram("testanme")
-        assert "testanime" in candidates
+        conn = index._ensure_conn()
+        assert conn is not None
+        # 'testanme' 的 trigram 与 'testanime' 大量重叠，OR 预筛应命中
+        candidates = index._collect_candidates_fts(conn, "testanme", fuzzy=True)
+        assert 1 in candidates
 
     def test_collect_candidates_empty_for_no_hits(self, title_index_with_db) -> None:
-        """所有 bigram 都未命中时返回空列表"""
+        """完全无 trigram 命中时返回空列表"""
         index, _ = title_index_with_db
-        # 用 archive 中不存在的字符
-        candidates = index._collect_candidates_by_bigram("zzzzz")
+        conn = index._ensure_conn()
+        assert conn is not None
+        candidates = index._collect_candidates_fts(conn, "zzzzzzz", fuzzy=True)
         assert candidates == []
 
-    def test_score_candidate_substring_short_circuit(self, title_index_with_db) -> None:
-        """子串包含应直接得 100 分"""
+    def test_collect_candidates_short_query_falls_back_to_like(
+        self, title_index_with_db
+    ) -> None:
+        """2 字符查询回退 subject 表 LIKE（含 infobox）"""
         index, _ = title_index_with_db
-        # 'test' 是 'test anime' 的子串
-        score = index._score_candidate("test", "test anime")
-        assert score == 100.0
-
-    def test_score_candidate_exact_match(self, title_index_with_db) -> None:
-        """完全相同应得 100 分"""
-        index, _ = title_index_with_db
-        score = index._score_candidate("test anime", "test anime")
-        assert score == 100.0
+        conn = index._ensure_conn()
+        assert conn is not None
+        # 'ta' 在 infobox alias=TA 中，LIKE 应命中 subject 1
+        candidates = index._collect_candidates_fts(conn, "ta", fuzzy=False)
+        assert 1 in candidates
 
 
 # ===== 失效与重建 =====
@@ -348,9 +345,9 @@ class TestInvalidateAndRebuild:
             lambda: new_db,
         )
 
-        # 路径变化后 is_ready 仍为 True（内存索引未失效），但 _built_path 不匹配
-        # find_subject_ids_* 不检查路径，仍返回旧索引结果
-        # 需显式 invalidate + _ensure_built 重建
+        # 路径变化后 is_ready 返回 False（_built_path 不匹配，见 is_ready 实现）
+        # find_subject_ids_* 在 is_ready=False 时直接返回空列表，
+        # 需显式 invalidate + _ensure_built 重建连接与 FTS5 表
         index.invalidate()
         assert index._ensure_built() is True
         ids = index.find_subject_ids_by_title("Test Anime")
@@ -406,145 +403,20 @@ class TestGlobalSingleton:
         assert isinstance(archive_title_index, ArchiveTitleIndex)
 
 
-# ===== 磁盘缓存 =====
-
-
-class TestDiskCache:
-    """磁盘缓存：构建后写入 JSON，下次启动直接加载"""
-
-    def test_build_writes_cache_file(self, tmp_path: Path, monkeypatch) -> None:
-        """构建完成后应写入磁盘缓存文件"""
-        db_path = tmp_path / "test_archive_a.db"
-        _create_test_db(db_path)
-        index = ArchiveTitleIndex()
-        monkeypatch.setattr(
-            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
-            lambda: db_path,
-        )
-
-        assert index._ensure_built() is True
-
-        cache_path = index._get_cache_path(db_path)
-        assert cache_path.exists()
-        # 缓存文件应包含 header + title_to_ids + bigram_index 三行
-        with open(cache_path, "rb") as f:
-            header = json.loads(f.readline())
-            data = json.loads(f.readline())
-            bigram_data = json.loads(f.readline())
-        assert header["format_version"] == 3
-        assert header["db_mtime"] == db_path.stat().st_mtime
-        assert header["db_size"] == db_path.stat().st_size
-        # 归一化后 'Test Anime' → 'testanime'
-        assert "testanime" in data
-        # bigram 倒排索引：应含 testanime 的 bigram
-        assert "te" in bigram_data  # "testanime" 的 bigram
-        assert "testanime" in bigram_data["te"]
-
-    def test_load_from_disk_skips_db_build(self, tmp_path: Path, monkeypatch) -> None:
-        """磁盘缓存有效时，加载应跳过 DB 构建"""
-        db_path = tmp_path / "test_archive_a.db"
-        _create_test_db(db_path)
-        monkeypatch.setattr(
-            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
-            lambda: db_path,
-        )
-
-        # 第一次：从 DB 构建 + 写入缓存
-        index1 = ArchiveTitleIndex()
-        assert index1._ensure_built() is True
-        cache_path = index1._get_cache_path(db_path)
-        assert cache_path.exists()
-
-        # 第二次：新实例，应从磁盘缓存加载（不读 DB）
-        index2 = ArchiveTitleIndex()
-        # mock _build_internal 验证不被调用
-        build_internal_called = False
-        original_build = index2._build_internal
-
-        def spy_build(*args, **kwargs):
-            nonlocal build_internal_called
-            build_internal_called = True
-            return original_build(*args, **kwargs)
-
-        index2._build_internal = spy_build
-        assert index2._ensure_built() is True
-        assert build_internal_called is False, "磁盘缓存有效时不应调用 _build_internal"
-        # 查询应正常工作
-        assert sorted(index2.find_subject_ids_by_title("Test Anime")) == [1, 3]
-
-    def test_cache_invalidated_when_db_mtime_changes(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
-        """DB mtime 变化后缓存应失效，触发重建"""
-        db_path = tmp_path / "test_archive_a.db"
-        _create_test_db(db_path)
-        monkeypatch.setattr(
-            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
-            lambda: db_path,
-        )
-
-        # 第一次构建 + 写缓存
-        index1 = ArchiveTitleIndex()
-        assert index1._ensure_built() is True
-        cache_path = index1._get_cache_path(db_path)
-        assert cache_path.exists()
-
-        # 修改 DB（mtime 变化）
-        time.sleep(0.01)
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("INSERT INTO subject (id, type, name) VALUES (999, 2, 'New')")
-        conn.commit()
-        conn.close()
-
-        # 新实例：缓存应失效（mtime 不符），从 DB 重建
-        index2 = ArchiveTitleIndex()
-        assert index2._ensure_built() is True
-        # 新条目应被索引
-        assert 999 in index2.find_subject_ids_by_title("New")
-
-    def test_cache_invalidated_when_format_version_mismatch(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
-        """缓存 format_version 不匹配时失效"""
-        db_path = tmp_path / "test_archive_a.db"
-        _create_test_db(db_path)
-        monkeypatch.setattr(
-            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
-            lambda: db_path,
-        )
-
-        # 写入一个旧版本缓存
-        cache_path = db_path.parent / "bangumi_archive_a.index"
-        db_stat = db_path.stat()
-        with open(cache_path, "w", encoding="utf-8") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "format_version": 0,  # 旧版本
-                        "db_mtime": db_stat.st_mtime,
-                        "db_size": db_stat.st_size,
-                    }
-                )
-            )
-            f.write("\n")
-            f.write(json.dumps({"dummy": [1]}))
-
-        index = ArchiveTitleIndex()
-        # 旧版本缓存应被忽略，从 DB 重建
-        assert index._ensure_built() is True
-        assert sorted(index.find_subject_ids_by_title("Test Anime")) == [1, 3]
-
-
 # ===== 后台构建 =====
 
 
 class TestBackgroundBuild:
-    """后台构建：build_in_background 启动线程，is_ready 控制降级"""
+    """构建触发：build_in_background 同步初始化，is_ready 控制降级
 
-    def test_build_in_background_starts_thread(
+    FTS5 方案下 build_in_background 为同步 no-op（表在导入时已建好），
+    仅触发一次连接检查让 is_ready 状态正确，不启动后台线程。
+    """
+
+    def test_build_in_background_initiates_connection(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """build_in_background 应启动后台线程"""
+        """build_in_background 应同步初始化连接，使 is_ready=True"""
         db_path = tmp_path / "test_archive_a.db"
         _create_test_db(db_path)
         monkeypatch.setattr(
@@ -556,9 +428,8 @@ class TestBackgroundBuild:
         assert index.is_ready is False
 
         index.build_in_background()
-        # 等待后台线程完成
-        if index._build_thread is not None:
-            index._build_thread.join(timeout=5)
+        # FTS5 方案下不启动后台线程，同步完成
+        assert index._build_thread is None
         assert index.is_ready is True
         assert sorted(index.find_subject_ids_by_title("Test Anime")) == [1, 3]
 
@@ -580,30 +451,6 @@ class TestBackgroundBuild:
         # 已就绪时不应启动新线程
         index.build_in_background()
         assert index._build_thread is None
-
-    def test_build_in_background_loads_disk_cache(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
-        """build_in_background 应优先加载磁盘缓存（同步加载，~ms 级）"""
-        db_path = tmp_path / "test_archive_a.db"
-        _create_test_db(db_path)
-        monkeypatch.setattr(
-            "app.utils.bangumi_archive._archive.bangumi_archive.get_active_db_path",
-            lambda: db_path,
-        )
-
-        # 预先构建 + 写缓存
-        index1 = ArchiveTitleIndex()
-        assert index1._ensure_built() is True
-        cache_path = index1._get_cache_path(db_path)
-        assert cache_path.exists()
-
-        # 新实例：build_in_background 应直接加载缓存，不启动线程
-        index2 = ArchiveTitleIndex()
-        index2.build_in_background()
-        # 磁盘缓存加载是同步的，应立即可用
-        assert index2.is_ready is True
-        assert index2._build_thread is None  # 未启动后台线程
 
     def test_build_in_background_skips_when_db_missing(
         self, tmp_path: Path, monkeypatch

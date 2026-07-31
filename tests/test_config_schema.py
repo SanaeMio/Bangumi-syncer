@@ -285,7 +285,7 @@ class TestFieldMeta:
             == "./data/archive"
         )
         assert (
-            config_schema.field_default("bangumi-archive", "min_disk_space_mb") == 2000
+            config_schema.field_default("bangumi-archive", "min_disk_space_mb") == 3000
         )
 
     def test_replay_defaults(self):

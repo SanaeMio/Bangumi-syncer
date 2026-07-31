@@ -207,7 +207,7 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="ssl_verify", default_true=True),
             FieldMeta(name="update_cron", default="0 8 * * 3"),
             FieldMeta(name="data_dir", default="./data/archive"),
-            FieldMeta(name="min_disk_space_mb", default=2000),
+            FieldMeta(name="min_disk_space_mb", default=3000),
         ),
     ),
     "bangumi-replay": SectionMeta(
