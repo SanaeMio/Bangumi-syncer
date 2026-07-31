@@ -1675,3 +1675,202 @@ main.app-main>*:nth-child(12) {
     background: var(--app-bg-hover, #2a2a3a);
 }
 
+/* ========== 番剧放送日历 ========== */
+
+.airing-calendar-card {
+    min-height: 0;
+}
+
+/* 工具栏按钮 active 态 */
+.airing-days-btn.active,
+#airing-only-watching.active {
+    background-color: var(--app-primary);
+    border-color: var(--app-primary);
+    color: #fff;
+}
+
+#airing-only-watching {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* 日历网格：7 列 */
+.airing-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.airing-grid__head {
+    text-align: center;
+    padding: 4px 0;
+    font-size: 0.72rem;
+    color: var(--app-text-muted);
+    font-weight: 500;
+}
+
+.airing-grid__wd {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* 日期格子 */
+.airing-grid__cell {
+    min-height: 110px;
+    padding: 6px 8px;
+    background: var(--app-bg-hover);
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.airing-grid__cell--placeholder {
+    background: transparent;
+    border: 1px dashed transparent;
+    min-height: 0;
+    padding: 0;
+}
+
+.airing-grid__cell--empty {
+    opacity: 0.55;
+}
+
+.airing-grid__cell--weekend {
+    background: rgba(var(--app-primary-rgb), 0.04);
+}
+
+.airing-grid__cell--today {
+    border-color: var(--app-primary);
+    background: rgba(var(--app-primary-rgb), 0.08);
+    box-shadow: 0 0 0 1px var(--app-primary) inset;
+}
+
+.airing-grid__date {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px;
+    border-bottom: 1px solid var(--app-border);
+    padding-bottom: 3px;
+}
+
+.airing-grid__day-num {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--app-text);
+    line-height: 1;
+}
+
+.airing-grid__cell--today .airing-grid__day-num {
+    color: var(--app-primary);
+}
+
+.airing-grid__day-wd {
+    font-size: 0.65rem;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+}
+
+/* 放送列表 */
+.airing-grid__eps {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow: hidden;
+}
+
+.airing-grid__ep {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    background: var(--app-bg-card);
+    border-left: 2px solid var(--app-primary);
+    cursor: default;
+    overflow: hidden;
+}
+
+.airing-grid__ep--anime {
+    border-left-color: var(--app-primary);
+}
+
+.airing-grid__ep--real {
+    border-left-color: #f59e0b;
+}
+
+.airing-grid__ep-sort {
+    flex-shrink: 0;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.68rem;
+    min-width: 22px;
+}
+
+.airing-grid__ep-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text);
+}
+
+.airing-grid__more {
+    text-align: center;
+    font-size: 0.68rem;
+    color: var(--app-text-muted);
+    padding: 1px 0;
+    cursor: default;
+}
+
+/* 响应式：小屏改为每日一行（横向滚动） */
+@media (max-width: 767.98px) {
+    .airing-grid {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+
+    .airing-grid__head {
+        display: none;
+    }
+
+    .airing-grid__cell--placeholder {
+        display: none;
+    }
+
+    .airing-grid__cell {
+        min-height: 0;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+    }
+
+    .airing-grid__date {
+        flex: 0 0 56px;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        border-bottom: none;
+        border-right: 1px solid var(--app-border);
+        padding-bottom: 0;
+        padding-right: 8px;
+    }
+
+    .airing-grid__eps {
+        flex: 1 1 auto;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .airing-grid__ep {
+        flex: 0 1 auto;
+        max-width: 100%;
+    }
+}
+

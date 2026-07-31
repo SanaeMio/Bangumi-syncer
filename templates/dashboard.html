@@ -300,6 +300,47 @@
             </div>
         </div>
     </div>
+    <!-- 番剧放送日历（仅在 Archive 启用时展示） -->
+    <div class="row g-4 mb-4" id="airing-calendar-row" style="display:none;">
+        <div class="col-12">
+            <div class="card airing-calendar-card">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-calendar-week me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">番剧放送日历</h6>
+                            <span id="airing-calendar-summary"
+                                  class="badge rounded-pill bg-secondary ms-2 small fw-normal d-none"></span>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button"
+                                    class="btn btn-outline-secondary airing-days-btn"
+                                    data-days="7">7天</button>
+                            <button type="button"
+                                    class="btn btn-outline-secondary airing-days-btn active"
+                                    data-days="14">14天</button>
+                            <button type="button"
+                                    class="btn btn-outline-secondary airing-days-btn"
+                                    data-days="30">30天</button>
+                            <button type="button"
+                                    class="btn btn-outline-secondary"
+                                    id="airing-only-watching"
+                                    data-active="true">
+                                <i class="bi bi-eye"></i> 仅我在追
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body px-3 pt-2 pb-3">
+                    <div id="airing-calendar-container">
+                        <div class="text-center py-3 app-text-muted-block">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- 调度器状态卡（与最近同步卡同尺寸：col-xl-5 col-lg-6） -->
     <div class="row g-4 mb-4">
         <div class="col-xl-5 col-lg-6 d-flex">
@@ -380,4 +421,5 @@
     <script defer src="{{ '/static/js/inbox.js' | static_v }}"></script>
     <script>window.__DASHBOARD_DATA__ = { poster_cache_ns: {{ poster_cache_ns | tojson }} };</script>
     <script defer src="{{ '/static/js/dashboard.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/airing_calendar.js' | static_v }}"></script>
 {% endblock %}
