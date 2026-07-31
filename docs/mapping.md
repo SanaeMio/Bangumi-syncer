@@ -1,6 +1,6 @@
 ---
 title: 🔀 自定义映射
-order: 25
+order: 37
 ---
 
 # 🔀 自定义映射
@@ -68,4 +68,4 @@ order: 25
 
 - 同步仍失败？看 [排错说明](/troubleshooting) 第 4、5 节。
 - 想理解程序为何没匹配上？在 **「同步记录」** 详情查看完整匹配过程（含搜索参数、候选列表、各阶段耗时），或在 **「调试工具」** 发起测试匹配。
-- API 不可达时想仍能匹配新条目？看 [🔄 Bangumi Replay 待同步队列补发](/bangumi-replay) 与 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)。
+- API 不可达时想仍能匹配新条目？看 [🔄 Bangumi Replay 待同步队列补发](/config/bangumi-replay) 与 [🗄️ Bangumi Archive 离线查询层](/config/bangumi-archive)。

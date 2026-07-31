@@ -1,6 +1,6 @@
 ---
 title: ⚡ 快速上手
-order: 3
+order: 5
 ---
 
 # ⚡ 快速上手
@@ -21,35 +21,34 @@ order: 3
 
 进入 **「配置管理」** → **同步配置**，选择「单用户」模式，然后在 **Bangumi 账号配置** 中填写：
 
-- **用户名**：Bangumi 个人主页 `@` 后面的数字
+- **用户名**：Bangumi 个人主页URL `https://bgm.tv/user/xxx` 最后面的 `xxx`
 - **访问令牌**：[点击生成](https://next.bgm.tv/demo/access-token)
 - **媒体服务器用户名**：你在 Plex / Emby / Jellyfin 等媒体库里的登录名
 
 ::: warning 媒体服务器用户名是必须的
-媒体服务器用户名是同步与否的关键依据，请不要忘记设置，这关系到是否会触发同步动作。
+媒体服务器用户名是多用户和同步与否的关键依据，请不要忘记设置，这关系到是否会触发同步动作。
 fongmi 的用户名比较特殊，为设备名，在日志里可以看到相关信息。
 :::
 
-完整字段说明见 [配置说明](/configuration)。
+完整字段说明见 [配置说明](/config/)。
 
 ## 第 3 步：接入媒体源
 
 选择你使用的播放端，按对应文档配置 Webhook：
 
-| 播放端 | 文档 | Webhook 地址 |
-|--------|------|-------------|
-| Plex（Tautulli） | [文档](/usage/tautulli) | `http://主机IP:8000/Custom` |
-| Plex Pass 原生 | [文档](/usage/plex-webhooks) | `http://主机IP:8000/Plex` |
-| Emby | [文档](/usage/emby) | `http://主机IP:8000/Emby` |
-| Jellyfin | [文档](/usage/jellyfin) | `http://主机IP:8000/Jellyfin` |
-| 通用 Webhook | [文档](/usage/custom-webhook) | `http://主机IP:8000/Custom` |
+| 播放端           | 文档                          | Webhook 地址                  |
+| ---------------- | ----------------------------- | ----------------------------- |
+| Plex（Tautulli） | [文档](/usage/tautulli)       | `http://主机IP:8000/Custom`   |
+| Plex Pass 原生   | [文档](/usage/plex-webhooks)  | `http://主机IP:8000/Plex`     |
+| Emby             | [文档](/usage/emby)           | `http://主机IP:8000/Emby`     |
+| Jellyfin         | [文档](/usage/jellyfin)       | `http://主机IP:8000/Jellyfin` |
+| 通用 Webhook     | [文档](/usage/custom-webhook) | `http://主机IP:8000/Custom`   |
 
-
-| 同步源 | 文档 |
-|--------|------|
-| Trakt 同步 | [文档](/usage/trakt) |
-| 飞牛同步 | [文档](/usage/feiniu) |
-| fongmi | [文档](/usage/fongmi) |
+| 同步源     | 文档                  |
+| ---------- | --------------------- |
+| Trakt 同步 | [文档](/usage/trakt)  |
+| 飞牛同步   | [文档](/usage/feiniu) |
+| fongmi     | [文档](/usage/fongmi) |
 
 更多媒体源移步 [接入使用](/usage/)。
 
@@ -64,5 +63,5 @@ fongmi 的用户名比较特殊，为设备名，在日志里可以看到相关�
 :::
 
 ::: tip 想进一步加速与降低 API 依赖？
-同步量大、网络不稳定或想降低对 Bangumi 官方 API 的依赖时，可启用 [🗄️ Bangumi Archive 离线查询层](/bangumi-archive)：把全站数据快照下载到本地，命中后零 API 调用、毫秒级返回。
+同步量大、网络不稳定或想降低对 Bangumi 官方 API 的依赖时，可启用 [🗄️ Bangumi Archive 离线查询层](/config/bangumi-archive)：把全站数据快照下载到本地，命中后零 API 调用、毫秒级返回；开启后可大幅提升匹配率。
 :::
