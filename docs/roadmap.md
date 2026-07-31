@@ -49,6 +49,8 @@ order: 40
 
 ✅ 候选确认与手动指定 Bangumi ID（确认即补发，无需手动重试）
 
+✅ 番剧放送日历与今日提醒（复用 Archive `episode.airdate` 数据，仪表板按 7/14/30 天展示放送日程，支持「仅我在追」筛选；可启用「今日放送提醒」定时任务，每日推送当日放送汇总到 Webhook / 邮件 / 企业微信 / 钉钉）
+
 以上能力已陆续实现，如果您有好的功能建议，欢迎提一个 [Issues](https://github.com/SanaeMio/Bangumi-syncer/issues) 进行交流。
 
 ## 接下来

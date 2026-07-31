@@ -239,6 +239,22 @@ volumes:
 
 默认 `data_dir = ./data/archive`，对应容器内 `/app/data/archive`。
 
+## 番剧放送日历与今日提醒
+
+Archive 导入的 `episode` 表包含 `airdate` 字段（章节首播日期），系统在启用 Archive 时会自动为该列建立索引，可直接以低成本按日期范围查询未来放送日程。
+
+基于这份数据，系统在 **Archive 启用时** 额外提供两项能力（Archive 未启用时自动隐藏，不消耗资源）：
+
+- **仪表板番剧放送日历卡片**：查看未来 7/14/30 天的放送日程，支持「仅我在追」筛选（需配置 Bangumi 账号，调用 Bangumi API 获取在看列表，1 小时 TTL 缓存，失败时降级为全部放送）。数据来源于本地 `episode.airdate`，不额外请求 API。
+- **今日放送提醒定时任务**：每日通过 Cron 查询当日放送番剧章节，汇总后通过 Webhook / 邮件 / 企业微信 / 钉钉推送。配置段为 `[notify-airing-today]`，通知类型为 `airing_today`（归入「调度任务」分类），需在「通知配置」中订阅该事件才会真正推送。详见 [⚙️ 配置说明 · 今日放送提醒](/configuration#今日放送提醒)。
+
+::: tip 仅在 Archive 启用时可用
+放送日历与今日放送提醒**依赖 Archive 的 `episode.airdate` 数据**，未启用 Archive 时：
+- 仪表板不显示放送日历卡片
+- `airing_today` 定时任务自动跳过执行（即使 `enabled = true`）
+- Archive 数据未导入（db 文件不存在）时同样跳过，不触发通知
+:::
+
 ## 接下来
 
 - 想了解写降级与待同步队列补发？看 [🔄 Bangumi Replay 待同步队列补发](/bangumi-replay)。
