@@ -39,7 +39,15 @@ class AiringTodayScheduler(BaseScheduler):
             config_manager.get("notify-airing-today", "enabled", fallback=True)
         ):
             return False
-        bangumi_archive.reload_config()
+        # reload_config 可能因配置非法或目录创建失败抛异常，
+        # 此时视为 Archive 未启用，跳过本轮任务而非让调度器报错
+        try:
+            bangumi_archive.reload_config()
+        except Exception as e:
+            logger.warning(
+                f"AiringToday: bangumi_archive.reload_config 失败，视为未启用: {e}"
+            )
+            return False
         return bangumi_archive.enabled
 
     def _get_driver_config(self) -> dict:

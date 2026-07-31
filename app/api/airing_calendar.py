@@ -80,7 +80,21 @@ async def get_airing_calendar(
     "仅我在追"模式需配置 Bangumi 账号（调用收藏列表 API）。
     """
     # 仅在 Archive 开启时可用
-    bangumi_archive.reload_config()
+    # reload_config 可能因配置非法（int 转换失败）或目录创建失败抛异常，
+    # 此时应降级为 archive_disabled 而非让 API 500
+    try:
+        bangumi_archive.reload_config()
+    except Exception as e:
+        logger.warning(
+            f"airing-calendar: bangumi_archive.reload_config 失败，降级为 archive_disabled: {e}"
+        )
+        return AiringCalendarResponse(
+            status="archive_disabled",
+            days=[],
+            total_episodes=0,
+            only_watching=False,
+            archive_enabled=False,
+        )
     if not bangumi_archive.enabled:
         return AiringCalendarResponse(
             status="archive_disabled",
