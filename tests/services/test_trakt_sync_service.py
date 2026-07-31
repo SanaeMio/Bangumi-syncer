@@ -223,7 +223,7 @@ class TestSyncWatchedHistory:
         mock_client.get_all_watched_history = AsyncMock(return_value=[item])
         with (
             patch("app.services.trakt.sync_service.database_manager") as mock_db,
-            patch("app.services.trakt.sync_service.send_notify") as mock_notify,
+            patch("app.services.trakt.sync_service.notification_service") as mock_ns,
             patch.object(
                 service,
                 "_convert_trakt_history_to_custom_item",
@@ -236,8 +236,8 @@ class TestSyncWatchedHistory:
             )
             assert result.skipped_count == 0
             assert result.error_count == 1
-            mock_notify.assert_called_once()
-            assert mock_notify.call_args.args[0] == "mark_failed"
+            mock_ns.notify.assert_called_once()
+            assert mock_ns.notify.call_args.args[0] == "mark_failed"
             mock_db.log_sync_record.assert_called_once()
             assert mock_db.log_sync_record.call_args.kwargs["status"] == "error"
             assert mock_db.log_sync_record.call_args.kwargs["source"] == "trakt"
@@ -257,7 +257,7 @@ class TestSyncWatchedHistory:
         mock_client.get_all_watched_history = AsyncMock(return_value=[item])
         with (
             patch("app.services.trakt.sync_service.database_manager") as mock_db,
-            patch("app.services.trakt.sync_service.send_notify") as mock_notify,
+            patch("app.services.trakt.sync_service.notification_service") as mock_ns,
         ):
             mock_db.get_trakt_synced_set.return_value = set()
             result = await service._sync_watched_history(
@@ -265,7 +265,7 @@ class TestSyncWatchedHistory:
             )
             assert result.skipped_count == 0
             assert result.error_count == 1
-            mock_notify.assert_called_once()
+            mock_ns.notify.assert_called_once()
             mock_db.log_sync_record.assert_called_once()
 
     @pytest.mark.asyncio
@@ -312,7 +312,7 @@ class TestSyncWatchedHistory:
         mock_client.get_all_watched_history = AsyncMock(return_value=[item])
         with (
             patch("app.services.trakt.sync_service.database_manager") as mock_db,
-            patch("app.services.trakt.sync_service.send_notify") as mock_notify,
+            patch("app.services.trakt.sync_service.notification_service") as mock_ns,
         ):
             mock_db.get_trakt_synced_set.return_value = set()
             result = await service._sync_watched_history(
@@ -320,7 +320,7 @@ class TestSyncWatchedHistory:
             )
             assert result.skipped_count == 1
             assert result.error_count == 0
-            mock_notify.assert_not_called()
+            mock_ns.notify.assert_not_called()
             mock_db.log_sync_record.assert_not_called()
 
     @pytest.mark.asyncio
@@ -593,12 +593,12 @@ class TestTraktPreconvertFailure:
         service = _make_service()
         item = _make_episode_item()
         with (
-            patch("app.services.trakt.sync_service.send_notify") as mock_notify,
+            patch("app.services.trakt.sync_service.notification_service") as mock_ns,
             patch("app.services.trakt.sync_service.database_manager") as mock_db,
         ):
             service._report_preconvert_failure("uid", item, "测试失败")
-            mock_notify.assert_called_once()
-            kwargs = mock_notify.call_args.kwargs
+            mock_ns.notify.assert_called_once()
+            kwargs = mock_ns.notify.call_args.kwargs
             assert kwargs["error_type"] == "trakt_title_unresolved"
             assert kwargs["error_message"] == "测试失败"
             mock_db.log_sync_record.assert_called_once()
@@ -622,7 +622,7 @@ class TestTraktPreconvertFailure:
         with (
             patch("app.services.trakt.sync_service.bangumi_data") as mock_bd,
             patch("app.services.trakt.sync_service.database_manager") as mock_db,
-            patch("app.services.trakt.sync_service.send_notify") as mock_notify,
+            patch("app.services.trakt.sync_service.notification_service") as mock_ns,
         ):
             mock_bd.get_title_by_tmdb_id.return_value = None
             mock_db.get_trakt_synced_set.return_value = set()
@@ -631,7 +631,7 @@ class TestTraktPreconvertFailure:
             )
             assert result.error_count == 1
             assert result.skipped_count == 0
-            mock_notify.assert_called_once()
+            mock_ns.notify.assert_called_once()
             mock_db.log_sync_record.assert_called_once()
 
 

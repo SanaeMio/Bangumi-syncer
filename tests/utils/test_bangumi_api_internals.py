@@ -151,7 +151,7 @@ class TestRequestWithRetry:
         assert res.status_code == 200
         m.assert_called_once()
 
-    @patch("app.utils.notifier.send_notify")
+    @patch("app.services.notification_service.notification_service")
     def test_http_500_exhausts_retries_and_notifies(self, _notify):
         """重试耗尽后（SyncHttpClient 内部处理），503 触发通知和 HTTPStatusError"""
         api = BangumiApi()
@@ -159,7 +159,7 @@ class TestRequestWithRetry:
         api.req.request = MagicMock(return_value=bad)
         with pytest.raises(httpx.HTTPStatusError):
             api._request_with_retry("GET", api.req, "https://bgm.test/r")
-        _notify.assert_called_once()
+        _notify.notify.assert_called_once()
 
     @patch.object(BangumiApi, "_diagnose_network_issue")
     @patch.object(BangumiApi, "_try_direct_connection", return_value=None)
@@ -185,14 +185,14 @@ class TestRequestWithRetry:
 
 
 class TestCheckAuthAndGetMe:
-    @patch("app.utils.notifier.send_notify")
+    @patch("app.services.notification_service.notification_service")
     def test_check_auth_error_401_raises(self, _notify):
         api = BangumiApi(username="u")
         res = MagicMock(status_code=401)
         with pytest.raises(ValueError, match="access_token"):
             api._check_auth_error(res)
 
-    @patch("app.utils.notifier.send_notify")
+    @patch("app.services.notification_service.notification_service")
     @patch.object(BangumiApi, "get")
     def test_get_me_client_error_not_nt(self, mock_get, _notify):
         r = MagicMock()

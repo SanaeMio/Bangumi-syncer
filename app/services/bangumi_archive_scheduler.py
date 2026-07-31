@@ -11,6 +11,7 @@ import asyncio
 from ..core.config import config_manager
 from ..core.logging import logger
 from ..utils.bangumi_archive import bangumi_archive
+from .base.notifier_helpers import notify_scheduler_failure
 from .base.scheduler import BaseScheduler
 
 
@@ -45,8 +46,14 @@ class BangumiArchiveScheduler(BaseScheduler):
             await asyncio.wait_for(bangumi_archive.run_update(), timeout=timeout)
         except asyncio.TimeoutError:
             logger.error(f"BangumiArchive 定时更新超时 ({timeout} 秒)")
+            notify_scheduler_failure(
+                "BangumiArchive",
+                f"定时更新超时 ({timeout} 秒)",
+                timeout=True,
+            )
         except Exception as e:
             logger.error(f"BangumiArchive 定时更新失败: {e}")
+            notify_scheduler_failure("BangumiArchive", str(e))
 
 
 bangumi_archive_scheduler = BangumiArchiveScheduler()

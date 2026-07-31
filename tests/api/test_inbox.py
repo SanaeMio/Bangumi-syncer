@@ -74,7 +74,7 @@ async def test_inbox_summary(
 
     db_path = temp_dir / "inbox.db"
     db = DatabaseManager(str(db_path))
-    db.log_sync_record(
+    record_id = db.log_sync_record(
         user_name="u",
         title="番剧",
         ori_title=None,
@@ -83,6 +83,10 @@ async def test_inbox_summary(
         status="error",
         message="失败原因",
         source="test",
+    )
+    # P4.5：显式创建站内信（log_sync_record 不再自动写站内信）
+    db.insert_notification(
+        "sync_failed", "同步失败：番剧 S1E1", "失败原因", ref_id=record_id
     )
 
     with (
@@ -111,7 +115,7 @@ async def test_inbox_list_and_read_all(
 
     db_path = temp_dir / "inbox2.db"
     db = DatabaseManager(str(db_path))
-    db.log_sync_record(
+    record_id = db.log_sync_record(
         user_name="u",
         title="番剧",
         ori_title=None,
@@ -120,6 +124,10 @@ async def test_inbox_list_and_read_all(
         status="error",
         message="err",
         source="test",
+    )
+    # P4.5：显式创建站内信
+    db.insert_notification(
+        "sync_failed", "同步失败：番剧 S1E2", "err", ref_id=record_id
     )
 
     with (
@@ -167,6 +175,8 @@ async def test_mark_single_read(
         message="x",
         source="test",
     )
+    # P4.5：显式创建站内信
+    db.insert_notification("sync_failed", "同步失败：番剧 S1E3", "x", ref_id=record_id)
     notifs = db.list_in_app_notifications()
     notif_id = notifs[0]["id"]
 
@@ -227,7 +237,7 @@ async def test_inbox_notification_aggregation(
     db_path = temp_dir / "inbox_agg.db"
     db = DatabaseManager(str(db_path))
     for ep in (1, 2):
-        db.log_sync_record(
+        record_id = db.log_sync_record(
             user_name="u",
             title="同一番剧",
             ori_title=None,
@@ -236,6 +246,13 @@ async def test_inbox_notification_aggregation(
             status="error",
             message=f"err{ep}",
             source="test",
+        )
+        # P4.5：显式创建站内信
+        db.insert_notification(
+            "sync_failed",
+            f"同步失败：同一番剧 S1E{ep}",
+            f"err{ep}",
+            ref_id=record_id,
         )
 
     with (
@@ -266,7 +283,7 @@ async def test_inbox_read_all_by_category(
 
     db_path = temp_dir / "inbox_cat_read.db"
     db = DatabaseManager(str(db_path))
-    db.log_sync_record(
+    record_id = db.log_sync_record(
         user_name="u",
         title="番剧",
         ori_title=None,
@@ -276,6 +293,8 @@ async def test_inbox_read_all_by_category(
         message="e",
         source="test",
     )
+    # P4.5：显式创建站内信
+    db.insert_notification("sync_failed", "同步失败：番剧 S1E1", "e", ref_id=record_id)
 
     with (
         patch(

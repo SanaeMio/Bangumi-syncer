@@ -178,14 +178,15 @@ class HttpLayerMixin:
 
         # 重试耗尽后仍返回重试状态码（429/500/502/503/504）
         if res.status_code in RETRY_STATUS_CODES:
-            from ..notifier import send_notify
+            from ...services.notification_service import notification_service
 
-            send_notify(
-                "api_error",
+            # 重试耗尽触发 api_retry_failed，便于用户精确订阅"重试失败"事件
+            notification_service.notify(
+                "api_retry_failed",
                 status_code=res.status_code,
                 url=url,
                 method=method,
-                error_message=f"HTTP {res.status_code} 错误，已达到最大重试次数",
+                error_message=f"HTTP {res.status_code} 重试 {session._max_retries} 次后仍失败",
                 retry_count=session._max_retries,
             )
             # 服务端 5xx/429 持续不可用，同样标记不可达
@@ -206,10 +207,17 @@ class HttpLayerMixin:
             logger.error(error_msg)
 
             # 发送API认证失败通知（webhook和邮件）
-            from ..notifier import send_notify
+            from ...services.notification_service import notification_service
 
-            send_notify(
+            notification_service.notify(
                 "api_auth_error",
+                user_name=self.username,
+                status_code=res.status_code,
+                error_message=error_msg,
+            )
+            # 同时触发 token 过期事件，便于用户精细订阅该场景
+            notification_service.notify(
+                "bangumi_token_expired",
                 user_name=self.username,
                 status_code=res.status_code,
                 error_message=error_msg,

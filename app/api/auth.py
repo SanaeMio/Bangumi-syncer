@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ..core.logging import logger
 from ..core.security import security_manager
-from ..utils.notifier import send_notify
+from ..services.notification_service import notification_service
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -93,7 +93,7 @@ async def login(request: Request, response: Response) -> dict[str, Any]:
                 # 发送IP锁定通知（通知触发职责由 API 层承担，避免 core 反向依赖 utils）
                 attempts_info = security_manager.get_login_attempts(client_ip)
                 auth_config = security_manager.get_auth_config()
-                send_notify(
+                notification_service.notify(
                     "ip_locked",
                     ip=client_ip,
                     locked_until=lockout_str,
@@ -113,6 +113,16 @@ async def login(request: Request, response: Response) -> dict[str, Any]:
                 logger.warning(
                     f"用户 {username} 登录失败，IP: {client_ip}，剩余尝试次数: {remaining_attempts}"
                 )
+                try:
+                    notification_service.notify(
+                        "auth_login_failed",
+                        source="auth",
+                        username=username,
+                        ip=client_ip,
+                        remaining_attempts=remaining_attempts,
+                    )
+                except Exception:
+                    pass
                 raise HTTPException(
                     status_code=401,
                     detail=f"用户名或密码错误（剩余尝试次数: {remaining_attempts}）",

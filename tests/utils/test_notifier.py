@@ -5,7 +5,8 @@
 import smtplib
 from unittest.mock import MagicMock, mock_open, patch
 
-from app.utils.notifier import Notifier, get_notifier, send_notify
+from app.services.notification_service import NotificationService
+from app.utils.notifier import Notifier, get_notifier
 
 
 class TestNotifier:
@@ -399,7 +400,7 @@ class TestNotifierSendEmailByConfig:
             "email_from": "from@example.com",
             "email_to": "to@example.com",
             "email_subject": "",
-            "email_template_file": "",
+            "template": "",
         }
         data = {"title": "测试", "timestamp": "2024-01-01"}
 
@@ -800,14 +801,29 @@ class TestGetNotifier:
             assert isinstance(notifier, Notifier)
 
 
-class TestSendNotify:
-    """测试便捷通知函数"""
+class TestNotificationServiceNotify:
+    """测试 NotificationService.notify() 便捷入口
 
-    @patch("app.utils.notifier.get_notifier")
-    def test_send_notify_with_item(self, mock_get_notifier):
-        """测试发送通知带item"""
-        mock_notifier = MagicMock()
-        mock_get_notifier.return_value = mock_notifier
+    新架构下 NotificationService 不再依赖 ``_notifier``，
+    而是通过 :class:`ChannelRegistry` 分发到各渠道。
+    这里测试：
+    1. 数据构造正确
+    2. 渠道分发被调用
+    3. 异常时返回 False
+    """
+
+    def _make_service(self) -> NotificationService:
+        """构造一个 Mock 了 channel_registry 的 NotificationService"""
+        svc = NotificationService()
+        svc.channel_registry = MagicMock()
+        svc.channel_registry.all.return_value = []
+        svc.channel_registry.iter_enabled.return_value = []
+        svc._db_manager = MagicMock()
+        return svc
+
+    def test_notify_with_item(self):
+        """测试发送通知带 item：应完成数据构造、渠道分发"""
+        svc = self._make_service()
 
         item = MagicMock()
         item.user_name = "test"
@@ -817,25 +833,25 @@ class TestSendNotify:
         item.episode = 5
         item.source = "emby"
 
-        result = send_notify("mark_success", item=item, source="custom")
+        result = svc.notify("mark_success", item=item, source="custom")
         assert result is True
-        mock_notifier.send_notification_by_type.assert_called_once()
+        # 渠道分发应被调用一次（即使没有注册渠道）
+        svc.channel_registry.iter_enabled.assert_called()
 
-    @patch("app.utils.notifier.get_notifier")
-    def test_send_notify_without_item(self, mock_get_notifier):
-        """测试发送通知不带item"""
-        mock_notifier = MagicMock()
-        mock_get_notifier.return_value = mock_notifier
+    def test_notify_without_item(self):
+        """测试发送通知不带 item"""
+        svc = self._make_service()
 
-        result = send_notify("mark_success", title="测试")
+        result = svc.notify("mark_success", title="测试")
         assert result is True
+        svc.channel_registry.iter_enabled.assert_called()
 
-    @patch("app.utils.notifier.get_notifier")
-    def test_send_notify_exception(self, mock_get_notifier):
-        """测试发送通知异常"""
-        mock_get_notifier.side_effect = Exception("初始化失败")
+    def test_notify_exception_returns_false(self):
+        """测试发送通知异常时返回 False"""
+        svc = self._make_service()
+        svc.channel_registry.all.side_effect = Exception("发送失败")
 
-        result = send_notify("mark_success")
+        result = svc.notify("mark_success")
         assert result is False
 
 
@@ -845,7 +861,7 @@ class TestNotifierGetConfigs:
     def test_get_webhook_configs(self):
         """测试获取webhook配置"""
         mock_config_parser = MagicMock()
-        mock_config_parser.sections.return_value = ["webhook-1", "general"]
+        mock_config_parser.sections.return_value = ["notify-webhook-1", "general"]
         mock_config = MagicMock()
         mock_config.get_config_parser.return_value = mock_config_parser
         mock_config.get_section.return_value = {
@@ -861,7 +877,7 @@ class TestNotifierGetConfigs:
     def test_get_email_configs(self):
         """测试获取邮件配置"""
         mock_config_parser = MagicMock()
-        mock_config_parser.sections.return_value = ["email-1", "general"]
+        mock_config_parser.sections.return_value = ["notify-email-1", "general"]
         mock_config = MagicMock()
         mock_config.get_config_parser.return_value = mock_config_parser
         mock_config.get_section.return_value = {
@@ -894,7 +910,7 @@ class TestNotifierSendNotificationByType:
         mock_instance.post.return_value = mock_response
 
         mock_config_parser = MagicMock()
-        mock_config_parser.sections.return_value = ["webhook-1"]
+        mock_config_parser.sections.return_value = ["notify-webhook-1"]
         mock_config = MagicMock()
         mock_config.get_config_parser.return_value = mock_config_parser
         mock_config.get_section.return_value = {
@@ -914,7 +930,7 @@ class TestNotifierSendNotificationByType:
         """测试通知冷却"""
         mock_config = MagicMock()
         notifier = Notifier(mock_config)
-        notifier._last_notification_time = {"webhook-1_mark_success": 9999999999}
+        notifier._last_notification_time = {"notify-webhook-1_mark_success": 9999999999}
 
         data = {"title": "测试"}
         notifier.send_notification_by_type("mark_success", data)

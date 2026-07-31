@@ -1,0 +1,39 @@
+        <div class="row">
+            <div class="col-12">
+                <div id="config-section-notify" class="card shadow-sm config-card mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-bell me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">通知配置</h6>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    onclick="showChannelConfigModal()">
+                                <i class="bi bi-sliders me-1"></i>渠道配置
+                            </button>
+                            <button type="button"
+                                    class="btn btn-sm btn-primary"
+                                    onclick="showNotificationRuleModal()">
+                                <i class="bi bi-plus-lg me-1"></i>新建配置
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="notification-rules-list" class="row g-3">
+                            <!-- 规则卡片由 renderNotificationRules() 渲染 -->
+                        </div>
+                        <div id="notification-rules-empty"
+                             class="app-empty-state app-empty-state--sm"
+                             style="display:none">
+                            <i class="bi bi-inbox app-empty-state__icon"></i>
+                            <p class="text-muted mt-3 mb-0">还没有通知规则，点击上方按钮创建</p>
+                        </div>
+                        <div class="alert alert-info mt-4 mb-0">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>提示：</strong>规则按顺序匹配，特定事件发生时会自动发送通知（60秒冷却时间）。先通过「渠道配置」添加底层渠道，再在规则中选择使用。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>

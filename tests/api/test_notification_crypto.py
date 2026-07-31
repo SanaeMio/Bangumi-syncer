@@ -40,7 +40,7 @@ async def test_create_email_passes_smtp_password_through_encrypt(app_with_auth):
         "email_from": "",
         "email_to": "to@example.com",
         "email_subject": "",
-        "email_template_file": "",
+        "template": "",
         "types": "mark_failed",
     }
 
@@ -58,6 +58,8 @@ async def test_create_email_passes_smtp_password_through_encrypt(app_with_auth):
             response = await client.post("/api/notification/emails", json=email_payload)
 
     assert response.status_code == 200
-    enc_mock.assert_called_once_with("email-1", "smtp_password", "plain-smtp-secret")
-    assert parser.get("email-1", "smtp_password") == "BGS1:wrapped-smtp"
+    enc_mock.assert_called_once_with(
+        "notify-email-1", "smtp_password", "plain-smtp-secret"
+    )
+    assert parser.get("notify-email-1", "smtp_password") == "BGS1:wrapped-smtp"
     save_mock.assert_called_once()

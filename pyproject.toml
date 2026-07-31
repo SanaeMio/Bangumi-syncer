@@ -31,6 +31,7 @@ dev = [
     "responses>=0.25.0",
     "respx>=0.22.0",
     "pytest-xdist>=3.8.0",
+    "pytest-playwright>=0.7.1",
 ]
 
 [tool.ruff]
@@ -69,11 +70,15 @@ indent = 4
 # 最大行长度
 max_line_length = 120
 
+# 子模板（HTML 片段，非完整文档）跳过 djlint 检查：
+# djlint 会误判片段的闭合标签，这些片段通过主模板 {% include %} 组装
+exclude = "templates/config/_.*\\.html"
+
 [tool.pytest.ini_options]
 # 基础配置
 minversion = "6.0"
 pythonpath = "."    # ✅ 关键修复：将根目录加入搜索路径
-addopts = "-ra -q --durations=5"  # 运行时参数：显示额外汇总、精简输出、列出最慢的5个测试
+addopts = "-ra -q --durations=5 -m 'not e2e'"  # 默认排除 E2E（需服务器+浏览器，用 -m e2e 单独跑）
 testpaths = [
 ]
 
@@ -99,7 +104,13 @@ filterwarnings = [
 markers = [
     "asyncio: mark test as async",
     "performance: mark test as a performance test",
+    "e2e: mark test as an end-to-end test (requires playwright + server, slow)",
 ]
+
+# E2E 失败捕获参数（pytest-playwright CLI 选项）
+# 本地跑 E2E：uv run pytest tests/e2e/ -m e2e --browser chromium
+# 这些参数不在 ini 中配置（pytest-playwright 不识别 ini 段），由 CI workflow 显式传入：
+#   --screenshot only-on-failure --video retain-on-failure --trace retain-on-failure --output test-results/e2e
 
 # Coverage configuration
 [tool.coverage.run]

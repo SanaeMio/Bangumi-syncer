@@ -16,6 +16,10 @@ from ...core.config import config_manager
 from ...core.database import database_manager
 from ...core.logging import logger
 from ...models.trakt import TraktConfig
+from ..base.notifier_helpers import (
+    notify_batch_sync_summary,
+    notify_scheduler_failure,
+)
 from .auth import trakt_auth_service
 from .sync_service import trakt_sync_service
 
@@ -203,8 +207,15 @@ class TraktScheduler:
 
         except asyncio.TimeoutError:
             logger.error(f"用户 {user_id} 的同步任务超时 ({timeout}秒)")
+            notify_scheduler_failure(
+                "trakt",
+                f"用户 {user_id} 的同步任务超时 ({timeout}秒)",
+                timeout=True,
+                user_id=user_id,
+            )
         except Exception as e:
             logger.error(f"用户 {user_id} 的同步任务执行失败: {e}")
+            notify_scheduler_failure("trakt", str(e), user_id=user_id)
 
     async def sync_user_data(self, user_id: str) -> None:
         """执行用户数据同步（定时任务回调）"""
@@ -253,6 +264,18 @@ class TraktScheduler:
                 logger.info(f"用户 {user_id} 的 Trakt 数据同步成功: {result.message}")
             else:
                 logger.error(f"用户 {user_id} 的 Trakt 数据同步失败: {result.message}")
+
+            # 批量同步汇总通知
+            elapsed = time.time() - start_time
+            notify_batch_sync_summary(
+                "trakt",
+                total=result.synced_count + result.skipped_count + result.error_count,
+                succeeded=result.synced_count,
+                failed=result.error_count,
+                skipped=result.skipped_count,
+                user_id=user_id,
+                duration=round(elapsed, 2),
+            )
 
             elapsed_time = time.time() - start_time
             logger.info(

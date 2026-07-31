@@ -267,6 +267,20 @@ async def release_info(
         except Exception:
             update_available = None
 
+        # 有新版本时触发通知（60s 冷却避免刷新轰炸）
+        if update_available:
+            try:
+                from ..services.notification_service import notification_service
+
+                notification_service.notify(
+                    "app_upgrade_available",
+                    source="app-release",
+                    current_version=current,
+                    latest_version=latest,
+                )
+            except Exception:
+                pass
+
     latest_disp = get_display_version(latest) if latest else None
 
     current_cmp = normalize_version_label(current)

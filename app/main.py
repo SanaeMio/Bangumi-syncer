@@ -7,7 +7,7 @@ import os
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
 from .api.app_release import router as app_release_router
@@ -40,16 +40,12 @@ from .core.config import config_manager
 from .core.database import database_manager
 from .core.logging import logger
 from .core.public_url import get_public_base_path
+from .core.scheduler_registry import scheduler_registry
 from .core.startup_info import startup_info
-from .services.bangumi_archive_scheduler import bangumi_archive_scheduler
-from .services.bangumi_replay_scheduler import bangumi_replay_scheduler
-from .services.feiniu.scheduler import feiniu_scheduler
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
-from .services.fongmi.scheduler import fongmi_scheduler
 from .services.mapping_service import mapping_service
-from .services.summary.scheduler import summary_scheduler
+from .services.scheduler_bootstrap import register_all as register_schedulers
 from .services.sync_service import sync_service
-from .services.trakt.scheduler import trakt_scheduler
 
 # 创建FastAPI应用（root_path 便于反代子路径下 OpenAPI 等）
 _app_kw: dict = {
@@ -99,25 +95,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"启动时清理旧同步记录失败（不影响主流程）: {e}")
 
     try:
+        register_schedulers()
         scheduler_config = config_manager.get_scheduler_config()
         startup_delay = scheduler_config.get("startup_delay", 30)
-        logger.info(f"Trakt 调度器将在 {startup_delay} 秒后启动...")
+        logger.info(f"调度器将在 {startup_delay} 秒后启动...")
 
         async def delayed_scheduler_start() -> None:
             await asyncio.sleep(startup_delay)
-            for name, coro in [
-                ("Trakt", trakt_scheduler.start),
-                ("飞牛", feiniu_scheduler.start),
-                ("fongmi", fongmi_scheduler.start),
-                ("Summary", summary_scheduler.start),
-                ("BangumiArchive", bangumi_archive_scheduler.start),
-                ("BangumiReplay", bangumi_replay_scheduler.start),
-            ]:
-                try:
-                    ok = await coro()
-                    logger.info(f"{name} 调度器启动{'成功' if ok else '失败'}")
-                except Exception as e:
-                    logger.error(f"{name} 调度器启动异常: {e}")
+            await scheduler_registry.start_all()
 
         register_background_task(delayed_scheduler_start())
     except Exception as e:
@@ -134,19 +119,10 @@ async def lifespan(app: FastAPI):
     cancel_background_tasks()
     await wait_background_tasks(timeout=5.0)
 
-    for name, coro in [
-        ("Trakt", trakt_scheduler.stop),
-        ("飞牛", feiniu_scheduler.stop),
-        ("fongmi", fongmi_scheduler.stop),
-        ("Summary", summary_scheduler.stop),
-        ("BangumiArchive", bangumi_archive_scheduler.stop),
-        ("BangumiReplay", bangumi_replay_scheduler.stop),
-    ]:
-        try:
-            await coro()
-            logger.info(f"{name} 调度器已停止")
-        except Exception as e:
-            logger.error(f"停止{name}调度器失败: {e}")
+    try:
+        await scheduler_registry.stop_all()
+    except Exception as e:
+        logger.error(f"停止调度器失败: {e}")
 
     try:
         sync_service.shutdown()
@@ -193,6 +169,37 @@ app.include_router(fongmi_router)
 app.include_router(upgrade_router)
 app.include_router(bangumi_archive_router)
 app.include_router(bangumi_replay_router)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CSP 响应头（纵深防御，限制外域资源加载 + 禁用内联事件外的脚本注入）
+# ─────────────────────────────────────────────────────────────────────────
+# 现状：base.html 含内联防闪烁脚本，需保留 'unsafe-inline'
+# 外域资源：仅 <a href> 跳转（bgm.tv / github.com），无外域 script/img 加载
+# 图片：通过 /api/bgm/subjects/posters 后端代理 + data: 占位符
+_CSP_HEADER = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'"
+)
+
+
+@app.middleware("http")
+async def csp_middleware(request: Request, call_next):
+    """为所有 HTML 响应附加 Content-Security-Policy 头"""
+    response = await call_next(request)
+    # 仅对 HTML 页面附加，避免静态资源 / API JSON 误伤
+    ctype = response.headers.get("content-type", "")
+    if "text/html" in ctype:
+        response.headers["Content-Security-Policy"] = _CSP_HEADER
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+    return response
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ class TestSyncServiceInit:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -41,7 +41,7 @@ class TestSyncServiceInit:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -68,7 +68,7 @@ class TestSyncCustomItem:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager") as mock_db,
-            patch("app.services.sync_service.send_notify") as mock_notify,
+            patch("app.services.sync_service.notification_service") as mock_notify,
             patch("app.services.sync_service.mapping_service") as mock_mapping,
             patch("app.services.sync_service.BangumiApi") as MockBgmApi,
         ):
@@ -112,7 +112,7 @@ class TestSyncCustomItem:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.models.sync import CustomItem
@@ -140,7 +140,7 @@ class TestSyncCustomItem:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -323,7 +323,7 @@ class TestSyncCustomItem:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             # 配置为单用户模式，但请求用户名不匹配
@@ -395,7 +395,7 @@ class TestSyncTaskStatus:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -423,7 +423,7 @@ class TestSyncTaskStatus:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -445,7 +445,7 @@ class TestCleanupOldTasks:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -513,7 +513,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get(mark_watching_enabled=False)
@@ -528,7 +528,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -554,7 +554,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -569,7 +569,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -585,7 +585,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get(blocked_keywords="广告,跳过")
@@ -604,7 +604,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager") as mock_db,
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -630,7 +630,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -648,7 +648,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -671,7 +671,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -692,7 +692,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager") as mock_db,
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -713,7 +713,7 @@ class TestSyncMovieWatching:
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
             patch("app.services.sync_service.database_manager") as mock_db,
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = self._cfg_get()
@@ -739,7 +739,7 @@ class TestPlexSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch("app.services.plex.sync_service.extract_plex_data"),
         ):
@@ -761,7 +761,7 @@ class TestPlexSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.models.sync import SyncResponse
@@ -795,7 +795,7 @@ class TestEmbySync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -817,7 +817,7 @@ class TestEmbySync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -843,7 +843,7 @@ class TestEmbySync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.models.sync import SyncResponse
@@ -873,7 +873,7 @@ class TestEmbySync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -901,7 +901,7 @@ class TestJellyfinSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -922,7 +922,7 @@ class TestJellyfinSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -936,7 +936,7 @@ class TestJellyfinSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService
@@ -950,7 +950,7 @@ class TestJellyfinSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.models.sync import SyncResponse
@@ -983,7 +983,7 @@ class TestJellyfinSync:
         with (
             patch("app.services.sync_service.config_manager"),
             patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.send_notify"),
+            patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             from app.services.sync_service import SyncService

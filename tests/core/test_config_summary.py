@@ -222,7 +222,7 @@ class TestRenameNotificationType:
         )
         assert updated >= 2  # webhook-1 + email-1
         config = cm.get_config_parser()
-        wh_types = config.get("webhook-1", "types")
+        wh_types = config.get("notify-webhook-1", "types")
         assert "watching_summary_旧任务" not in wh_types
         assert "watching_summary_新任务" in wh_types
         assert "mark_success" in wh_types
@@ -234,7 +234,7 @@ class TestRenameNotificationType:
             "watching_summary_旧任务", "watching_summary_新任务"
         )
         config = cm.get_config_parser()
-        em_types = config.get("email-1", "types")
+        em_types = config.get("notify-email-1", "types")
         assert "watching_summary_旧任务" not in em_types
         assert "watching_summary_新任务" in em_types
 
@@ -244,7 +244,7 @@ class TestRenameNotificationType:
             "watching_summary_旧任务", "watching_summary_新任务"
         )
         config = cm.get_config_parser()
-        assert config.get("webhook-2", "types") == "all"
+        assert config.get("notify-webhook-2", "types") == "all"
 
     def test_no_match_returns_zero(self, tmp_path):
         cm = _cm_from_ini(tmp_path, _RENAME_INI)
@@ -260,4 +260,4 @@ class TestRenameNotificationType:
         )
         cm2 = _cm_from_ini(tmp_path, cm.active_config_path.read_text(encoding="utf-8"))
         config = cm2.get_config_parser()
-        assert "watching_summary_新任务" in config.get("webhook-1", "types")
+        assert "watching_summary_新任务" in config.get("notify-webhook-1", "types")

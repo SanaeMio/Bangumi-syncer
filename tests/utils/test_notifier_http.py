@@ -25,7 +25,7 @@ def mock_config_with_webhook():
     """创建带 webhook 配置的 mock config"""
     config = MagicMock()
     config_parser = MagicMock()
-    config_parser.sections.return_value = ["webhook-1"]
+    config_parser.sections.return_value = ["notify-webhook-1"]
 
     # Mock webhook config
     webhook_config = {
@@ -46,7 +46,7 @@ def mock_config_with_email():
     """创建带邮件配置的 mock config"""
     config = MagicMock()
     config_parser = MagicMock()
-    config_parser.sections.return_value = ["email-1"]
+    config_parser.sections.return_value = ["notify-email-1"]
 
     # Mock email config
     email_config = {
@@ -59,7 +59,7 @@ def mock_config_with_email():
         "email_from": "from@example.com",
         "email_to": "to@example.com",
         "email_subject": "",
-        "email_template_file": "",
+        "template": "",
         "enabled": "true",
         "types": "all",
     }
@@ -109,7 +109,7 @@ def test_webhook_notification_with_template(mock_config_with_webhook):
     # Mock 带 template 的 webhook 配置
     config = MagicMock()
     config_parser = MagicMock()
-    config_parser.sections.return_value = ["webhook-1"]
+    config_parser.sections.return_value = ["notify-webhook-1"]
 
     webhook_config = {
         "id": "1",
@@ -156,7 +156,7 @@ def test_webhook_get_request(mock_config_with_webhook):
     # Mock GET 方法的 webhook
     config = MagicMock()
     config_parser = MagicMock()
-    config_parser.sections.return_value = ["webhook-1"]
+    config_parser.sections.return_value = ["notify-webhook-1"]
 
     webhook_config = {
         "id": "1",
@@ -233,7 +233,7 @@ def test_webhook_filter_by_type(mock_config_with_webhook):
     # 配置只接收 mark_success 类型
     config = MagicMock()
     config_parser = MagicMock()
-    config_parser.sections.return_value = ["webhook-1"]
+    config_parser.sections.return_value = ["notify-webhook-1"]
 
     webhook_config = {
         "id": "1",
@@ -281,7 +281,7 @@ def test_webhook_disabled(mock_config_with_webhook):
     # 配置禁用 - 使用布尔值 False
     config = MagicMock()
     config_parser = MagicMock()
-    config_parser.sections.return_value = ["webhook-1"]
+    config_parser.sections.return_value = ["notify-webhook-1"]
 
     webhook_config = {
         "id": "1",
@@ -380,7 +380,7 @@ def test_email_notification_no_recipient(mock_smtp, mock_config_with_email):
     # 修改配置，移除收件人
     config = MagicMock()
     config_parser = MagicMock()
-    config_parser.sections.return_value = ["email-1"]
+    config_parser.sections.return_value = ["notify-email-1"]
 
     email_config = {
         "id": "1",
@@ -392,7 +392,7 @@ def test_email_notification_no_recipient(mock_smtp, mock_config_with_email):
         "email_from": "from@example.com",
         "email_to": "",  # 无收件人
         "email_subject": "",
-        "email_template_file": "",
+        "template": "",
         "enabled": "true",
         "types": "all",
     }

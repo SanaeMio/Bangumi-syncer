@@ -18,6 +18,11 @@ from typing import Any
 
 from ..core.config import config_manager
 from ..core.logging import logger
+from .base.notifier_helpers import (
+    notify_batch_sync_summary,
+    notify_queue_size_warning,
+    notify_scheduler_failure,
+)
 from .base.scheduler import BaseScheduler
 
 
@@ -62,6 +67,16 @@ class BangumiReplayScheduler(BaseScheduler):
             logger.debug("📚 待同步队列为空，本轮跳过")
             return
 
+        # 队列堆积预警（默认阈值 100）
+        queue_threshold = int(
+            config_manager.get("bangumi-replay", "queue_size_threshold", fallback=100)
+        )
+        if queue_threshold > 0 and pending_count >= queue_threshold:
+            logger.warning(
+                f"📚 待同步队列堆积 {pending_count} 条，已超过阈值 {queue_threshold}"
+            )
+            notify_queue_size_warning(pending_count, queue_threshold)
+
         # 探测 API 可达性
         if not await self._probe_api():
             logger.debug("📚 Bangumi API 仍不可达，本轮补发跳过")
@@ -85,10 +100,21 @@ class BangumiReplayScheduler(BaseScheduler):
                     f"成功 {stats['success']}，失败 {stats['failed']}，"
                     f"仍不可达 {stats['still_unreachable']}"
                 )
+                notify_batch_sync_summary(
+                    "bangumi-replay",
+                    total=stats["total"],
+                    succeeded=stats["success"],
+                    failed=stats["failed"],
+                    skipped=stats["still_unreachable"],
+                )
         except asyncio.TimeoutError:
             logger.error("📚 待同步队列补发超时")
+            notify_scheduler_failure(
+                "bangumi-replay", "待同步队列补发超时", timeout=True
+            )
         except Exception as e:
             logger.error(f"📚 待同步队列补发异常: {e}")
+            notify_scheduler_failure("bangumi-replay", str(e))
 
     def trigger_immediate_run(self) -> None:
         """队列有新条目入队时立即触发一次补发（异步、防抖）

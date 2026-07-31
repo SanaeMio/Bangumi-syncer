@@ -591,9 +591,13 @@ class TestDatabaseDockerAndTrakt:
         with patch("app.core.database.sqlite3.connect", side_effect=OSError("x")):
             assert db.update_sync_record_status(1, "ok") is False
 
-    def test_error_sync_record_creates_in_app_notification(
+    def test_error_sync_record_no_longer_creates_in_app_notification(
         self, temp_dir, reset_singletons
     ):
+        """P4.5：log_sync_record 移除隐式站内信副作用后，error 记录不再自动写站内信。
+
+        站内信由 notification_service.notify() 显式触发，数据库层只负责记录 sync_records。
+        """
         db_path = temp_dir / "inbox_notify.db"
         with patch("app.core.database.logger"):
             from app.core.database import DatabaseManager
@@ -612,6 +616,16 @@ class TestDatabaseDockerAndTrakt:
         )
         assert record_id == 1
 
+        # 副作用移除：不再自动写站内信
+        assert db.list_in_app_notifications() == []
+
+        # 显式调用 insert_notification 仍可正常写入
+        db.insert_notification(
+            "sync_failed",
+            "同步失败：测试番剧 S1E5",
+            "未找到番剧",
+            ref_id=record_id,
+        )
         notifs = db.list_in_app_notifications()
         assert len(notifs) == 1
         assert notifs[0]["type"] == "sync_failed"
@@ -626,16 +640,9 @@ class TestDatabaseDockerAndTrakt:
 
             db = DatabaseManager(str(db_path))
 
-        db.log_sync_record(
-            user_name="u",
-            title="A",
-            ori_title=None,
-            season=1,
-            episode=1,
-            status="error",
-            message="e",
-            source="test",
-        )
+        # P4.5：站内信由 notification_service.notify() 显式创建，
+        # 此处直接调用 insert_notification 模拟显式写入
+        db.insert_notification("sync_failed", "同步失败：A S1E1", "e", ref_id=1)
         assert db.count_unread_notifications() == 1
 
         notif_id = db.list_in_app_notifications()[0]["id"]
@@ -646,16 +653,7 @@ class TestDatabaseDockerAndTrakt:
         assert "ann-a" in db.get_read_announcement_ids()
         assert db.mark_all_announcements_read(["ann-b", "ann-c"]) == 2
 
-        db.log_sync_record(
-            user_name="u",
-            title="B",
-            ori_title=None,
-            season=1,
-            episode=2,
-            status="error",
-            message="e2",
-            source="test",
-        )
+        db.insert_notification("sync_failed", "同步失败：B S1E2", "e2", ref_id=2)
         assert db.mark_all_notifications_read() == 1
         assert db.count_unread_notifications() == 0
 
@@ -725,6 +723,13 @@ class TestDatabaseDockerAndTrakt:
             message="fail",
             source="test",
         )
+        # P4.5：显式创建站内信（关联 sync_records.id）
+        db.insert_notification(
+            "sync_failed",
+            "同步失败：联动番剧 S1E1",
+            "fail",
+            ref_id=record_id,
+        )
         assert db.count_unread_notifications() == 1
         assert db.update_sync_record_status(record_id, "success", "ok") is True
         assert db.count_unread_notifications() == 0
@@ -736,26 +741,9 @@ class TestDatabaseDockerAndTrakt:
 
             db = DatabaseManager(str(db_path))
 
-        db.log_sync_record(
-            user_name="u",
-            title="组内番剧",
-            ori_title=None,
-            season=1,
-            episode=1,
-            status="error",
-            message="e1",
-            source="test",
-        )
-        db.log_sync_record(
-            user_name="u",
-            title="组内番剧",
-            ori_title=None,
-            season=1,
-            episode=2,
-            status="error",
-            message="e2",
-            source="test",
-        )
+        # P4.5：显式创建两条同标题站内信，模拟 notification_service.notify() 写入
+        db.insert_notification("sync_failed", "同步失败：组内番剧 S1E1", "e1", ref_id=1)
+        db.insert_notification("sync_failed", "同步失败：组内番剧 S1E2", "e2", ref_id=2)
         assert db.count_unread_notifications() == 2
         first_id = db.list_in_app_notifications()[0]["id"]
         assert db.mark_notification_group_read(first_id) == 2

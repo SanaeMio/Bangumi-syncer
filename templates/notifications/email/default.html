@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8">
+        <title>Bangumi-Syncer 通知</title>
+        <style>
+        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; color: #333; background-color: #f5f5f5; margin: 0; padding: 10px; }
+        .email-container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        .email-header { background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 16px 20px; text-align: center; }
+        .email-header h2 { margin: 0; font-size: 18px; font-weight: 600; }
+        .email-content { padding: 20px; }
+        .info-grid { display: table; width: 100%; border-collapse: collapse; margin: 12px 0; }
+        .info-row { display: table-row; }
+        .info-label { display: table-cell; padding: 6px 10px; background-color: #f8f9fa; border: 1px solid #e9ecef; font-weight: 600; color: #495057; width: 100px; font-size: 13px; }
+        .info-value { display: table-cell; padding: 6px 10px; background-color: white; border: 1px solid #e9ecef; color: #333; font-size: 13px; }
+        .email-footer { background-color: #f8f9fa; padding: 12px 20px; text-align: center; font-size: 11px; color: #6c757d; border-top: 1px solid #e9ecef; }
+        .emoji { font-size: 1.1em; }
+        </style>
+    </head>
+    <body>
+        <div class="email-container">
+            <div class="email-header">
+                <h2>
+                    <span class="emoji">{type_icon}</span> {type_display_name}
+                </h2>
+            </div>
+            <div class="email-content">
+                <div class="info-grid">
+                    <div class="info-row">
+                        <div class="info-label">
+                            <span class="emoji">📅</span> 时间
+                        </div>
+                        <div class="info-value">{timestamp}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">
+                            <span class="emoji">📺</span> 番剧
+                        </div>
+                        <div class="info-value">{title} S{season}E{episode}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">
+                            <span class="emoji">👤</span> 用户
+                        </div>
+                        <div class="info-value">{user_name}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">
+                            <span class="emoji">📡</span> 来源
+                        </div>
+                        <div class="info-value">{source}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="email-footer">
+                <p>
+                    本邮件由 <strong>Bangumi-Syncer</strong> 自动发送 · {timestamp}
+                </p>
+            </div>
+        </div>
+    </body>
+</html>

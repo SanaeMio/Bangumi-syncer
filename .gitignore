@@ -51,6 +51,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Playwright E2E 产物（截图/视频/trace，仅失败时生成）
+test-results/
+
 # Translations
 *.mo
 *.pot

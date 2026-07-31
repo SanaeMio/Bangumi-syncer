@@ -43,10 +43,17 @@ class SearchMixin:
         res = self.get("me")
         if 400 <= res.status_code < 500:
             # 发送API认证失败通知
-            from ..notifier import send_notify
+            from ...services.notification_service import notification_service
 
-            send_notify(
+            notification_service.notify(
                 "api_auth_error",
+                user_name=self.username,
+                status_code=res.status_code,
+                error_message="BangumiApi: 未授权, access_token不正确或未设置",
+            )
+            # 同时触发 token 过期事件
+            notification_service.notify(
+                "bangumi_token_expired",
                 user_name=self.username,
                 status_code=res.status_code,
                 error_message="BangumiApi: 未授权, access_token不正确或未设置",

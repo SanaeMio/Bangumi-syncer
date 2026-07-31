@@ -12,6 +12,7 @@ from ...core.logging import logger
 from ...models.sync import CustomItem
 from ...utils.media_type_detector import detect_media_type
 from ..base.models import BaseSyncResult
+from ..base.notifier_helpers import notify_source_event
 from .models import FeiniuWatchRecord
 from .reader import fetch_completed_watch_records
 
@@ -148,8 +149,20 @@ class FeiniuSyncService:
         # 前置阻塞 I/O（文件校验 + SQLite 水位 + 跨库读取 + 已同步集合）合并到线程执行
         prepared = await asyncio.to_thread(self._prepare_sync_data, db_path, uf, cfg)
         if isinstance(prepared, FeiniuSyncResult):
+            # 准备阶段失败（如文件不存在）→ 触发拉取失败通知
+            if not prepared.success:
+                notify_source_event("feiniu", "failed", error_message=prepared.message)
             return prepared
         records, synced_set = prepared
+
+        # 拉取成功但记录为空 → 触发空结果通知
+        if not records:
+            notify_source_event(
+                "feiniu",
+                "empty",
+                message="飞牛数据库未拉取到任何观看记录",
+                user_filter=uf,
+            )
 
         from ..sync_service import sync_service  # 延迟导入避免循环依赖
 

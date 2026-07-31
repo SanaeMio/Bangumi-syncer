@@ -102,8 +102,8 @@ PARALLEL_JOBS=$((CPU_CORES > 4 ? 4 : CPU_CORES))
 echo "    检测到 $CPU_CORES 个 CPU 核心，将使用 -n $PARALLEL_JOBS 进行并行测试。"
 # --- 新增逻辑结束 ---
 
-echo "    Running: $PY_RUN pytest tests/ -n $PARALLEL_JOBS --dist=loadscope -m 'not slow'"
-if ! $PY_RUN pytest tests/ -n $PARALLEL_JOBS --dist=loadscope -m 'not slow'; then
+echo "    Running: $PY_RUN pytest tests/ -n $PARALLEL_JOBS --dist=loadscope -m 'not slow and not e2e'"
+if ! $PY_RUN pytest tests/ -n $PARALLEL_JOBS --dist=loadscope -m 'not slow and not e2e'; then
     echo "❌ 单元测试失败，提交已阻止（或使用 git commit --no-verify 跳过）"
     exit 1
 fi

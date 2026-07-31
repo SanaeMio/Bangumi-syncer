@@ -481,6 +481,17 @@ class BangumiArchive:
                 self._meta.last_error = str(e)
                 self._meta.last_error_at = datetime.now(timezone.utc).isoformat()
                 self._save_meta(self._meta)
+            try:
+                from ...services.notification_service import notification_service
+
+                notification_service.notify(
+                    "archive_build_failed",
+                    source="bangumi-archive",
+                    error_message=str(e),
+                    task_id=task_id,
+                )
+            except Exception:
+                pass
             raise
         finally:
             with self._lock:
@@ -743,6 +754,21 @@ class BangumiArchive:
         try:
             usage = shutil.disk_usage(str(self.data_dir))
             available_mb = usage.free // (1024 * 1024)
+            # 磁盘预警：可用空间低于阈值的 1.5 倍时触发（仍允许流程继续）
+            warning_mb = int(required_mb * 1.5)
+            if available_mb >= required_mb and available_mb < warning_mb:
+                try:
+                    from ...services.notification_service import notification_service
+
+                    notification_service.notify(
+                        "archive_disk_warning",
+                        source="bangumi-archive",
+                        available_mb=available_mb,
+                        required_mb=required_mb,
+                        warning_threshold_mb=warning_mb,
+                    )
+                except Exception:
+                    pass
             if available_mb < required_mb:
                 raise RuntimeError(
                     f"磁盘空间不足: 需要 {required_mb}MB, 可用 {available_mb}MB"

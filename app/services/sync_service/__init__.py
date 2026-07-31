@@ -36,8 +36,8 @@ from ...utils.bangumi_constants import (
 )
 from ...utils.bangumi_data import BangumiData, bangumi_data
 from ...utils.media_type_detector import detect_media_type
-from ...utils.notifier import send_notify
 from ..mapping_service import mapping_service
+from ..notification_service import notification_service
 from .match_trace import MatchCandidate, MatchTrace
 from .retry import MARK_QUEUED, RetryMixin
 from .season_info import SeasonInfoMixin
@@ -556,7 +556,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         # 沉淀成功后触发通知（不影响主流程）
         try:
             top = candidates[0] if candidates else {}
-            send_notify(
+            notification_service.notify(
                 "pending_candidate",
                 item,
                 actual_source,
@@ -566,6 +566,49 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
         except Exception as e:
             logger.warning(f"发送候选待确认通知失败（不影响主流程）: {e}")
+
+    def _maybe_notify_match_ambiguous(
+        self,
+        trace: MatchTrace,
+        item: CustomItem,
+        actual_source: str,
+        *,
+        score_diff_threshold: float = 0.05,
+    ) -> None:
+        """匹配成功但 top1/top2 候选分数接近时触发 match_ambiguous 通知
+
+        Args:
+            trace: 已 finish 的 MatchTrace
+            item: 当前同步条目
+            actual_source: 实际来源
+            score_diff_threshold: top1 与 top2 分数差小于该值视为歧义（默认 0.05）
+        """
+        try:
+            candidates = self._collect_candidates_from_trace(trace)
+            if len(candidates) < 2:
+                return
+            top1_score = float(candidates[0].get("score", 0.0))
+            top2_score = float(candidates[1].get("score", 0.0))
+            if top1_score - top2_score >= score_diff_threshold:
+                return
+
+            from ..notification_service import notification_service
+
+            notification_service.notify(
+                "match_ambiguous",
+                item=item,
+                source=actual_source,
+                final_subject_id=trace.final_subject_id,
+                top1_score=top1_score,
+                top2_score=top2_score,
+                top1_name=candidates[0].get("name_cn") or candidates[0].get("name", ""),
+                top2_name=candidates[1].get("name_cn") or candidates[1].get("name", ""),
+                top1_subject_id=candidates[0].get("subject_id"),
+                top2_subject_id=candidates[1].get("subject_id"),
+                score_diff=round(top1_score - top2_score, 4),
+            )
+        except Exception as e:
+            logger.debug(f"发送 match_ambiguous 通知失败（可忽略）: {e}")
 
     def test_match(self, item: CustomItem) -> dict[str, Any]:
         """测试匹配过程，返回匹配追踪详情（不执行实际同步、不发通知、不写库）
@@ -625,7 +668,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         try:
             actual_source = item.source if item.source else source
             logger.info(f"接收到剧场版在看请求：{item}")
-            send_notify("request_received", item, actual_source)
+            notification_service.notify("request_received", item, actual_source)
 
             if not config_manager.get(
                 "sync", "movie_playback_start_mark_watching", fallback=True
@@ -667,7 +710,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 logger.error(f"无法为用户 {item.user_name} 创建bangumi API实例")
                 return SyncResponse(status="error", message="bangumi配置错误")
 
-            send_notify(
+            notification_service.notify(
                 "bangumi_id_found", item, actual_source, subject_id=str(subject_id)
             )
 
@@ -725,7 +768,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             f"📚 回填 sync_record_id 失败（不影响入队）: {link_err}"
                         )
                 try:
-                    send_notify(
+                    notification_service.notify(
                         "sync_queued",
                         item,
                         actual_source,
@@ -790,7 +833,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
         except Exception as e:
             logger.error(f"剧场版在看处理出错: {e}")
-            database_manager.log_sync_record(
+            record_id = database_manager.log_sync_record(
                 user_name=item.user_name if "item" in locals() else "unknown",
                 title=item.title if "item" in locals() else "unknown",
                 ori_title=item.ori_title if "item" in locals() else "",
@@ -807,10 +850,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 else "",
                 match_trace=trace.to_dict() if trace else None,
             )
-            send_notify(
+            notification_service.notify(
                 "mark_failed",
                 item if "item" in locals() else None,
                 actual_source if "actual_source" in locals() else source,
+                in_app_ref_id=record_id,
                 error_message=str(e),
                 error_type="sync_error",
                 additional_info=f"完整错误信息: {traceback.format_exc()}",
@@ -938,12 +982,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             trace.final_message = "未找到匹配的番剧"
         trace.finish()
 
-        send_notify(
-            "anime_not_found",
-            item,
-            actual_source,
-            error_message="未找到匹配的番剧",
-        )
         sync_record_id = database_manager.log_sync_record(
             user_name=item.user_name,
             title=item.title,
@@ -960,6 +998,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             match_score=trace.final_score,
             match_platform=self._extract_matched_platform(trace, None),
             match_trace=trace.to_dict(),
+        )
+        notification_service.notify(
+            "anime_not_found",
+            item,
+            actual_source,
+            in_app_ref_id=sync_record_id,
+            error_message="未找到匹配的番剧",
         )
         # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认
         # 关联 sync_record_id，便于候选确认后回写原记录状态形成闭环
@@ -1098,7 +1143,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
             )
 
-            send_notify(
+            notification_service.notify(
                 "mark_skipped",
                 item,
                 actual_source,
@@ -1113,7 +1158,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
             )
 
-            send_notify(
+            notification_service.notify(
                 "mark_success",
                 item,
                 actual_source,
@@ -1131,7 +1176,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
             )
 
-            send_notify(
+            notification_service.notify(
                 "mark_success",
                 item,
                 actual_source,
@@ -1256,7 +1301,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
             logger.info(f"接收到同步请求：{item}")
 
-            send_notify("request_received", item, actual_source)
+            notification_service.notify("request_received", item, actual_source)
 
             # 参数校验
             validation_error = self._normalize_custom_item_params(item, actual_source)
@@ -1403,13 +1448,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             "changed": False,
                             "error": f"未找到含 sort={item.episode} 的关联季条目",
                         }
-                    send_notify(
-                        "episode_not_found",
-                        item,
-                        actual_source,
-                        subject_id=subject_id,
-                        error_message="不存在或集数过多",
-                    )
                     # 与「未找到番剧」分支对称：写一条 error 同步记录，
                     # 便于在「同步记录」页面看到集数解析失败的情况
                     if trace:
@@ -1433,7 +1471,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         trace.final_status = "error"
                         trace.final_message = "未找到对应的剧集（不存在或集数过多）"
                         trace.finish()
-                    database_manager.log_sync_record(
+                    record_id = database_manager.log_sync_record(
                         user_name=item.user_name,
                         title=item.title,
                         ori_title=item.ori_title or "",
@@ -1452,6 +1490,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         else "",
                         match_trace=trace.to_dict() if trace else None,
                     )
+                    notification_service.notify(
+                        "episode_not_found",
+                        item,
+                        actual_source,
+                        in_app_ref_id=record_id,
+                        subject_id=subject_id,
+                        error_message="不存在或集数过多",
+                    )
                     status_holder[0] = "error"
                     return SyncResponse(status="error", message="未找到对应的剧集")
 
@@ -1469,7 +1515,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
 
             # 发送匹配成功的通知，使用解析后的正确季度ID
-            send_notify(
+            notification_service.notify(
                 "bangumi_id_found",
                 item,
                 actual_source,
@@ -1555,7 +1601,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         )
                 # 通知用户：同步已排队（非错误，是降级成功）
                 try:
-                    send_notify(
+                    notification_service.notify(
                         "sync_queued",
                         item,
                         actual_source,
@@ -1669,7 +1715,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.error(f"自定义同步处理出错: {e}")
 
             # 记录同步失败到数据库
-            database_manager.log_sync_record(
+            record_id = database_manager.log_sync_record(
                 user_name=item.user_name if "item" in locals() else "unknown",
                 title=item.title if "item" in locals() else "unknown",
                 ori_title=item.ori_title if "item" in locals() else "",
@@ -1687,10 +1733,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 match_trace=trace.to_dict() if trace else None,
             )
 
-            send_notify(
+            notification_service.notify(
                 "mark_failed",
                 item if "item" in locals() else None,
                 actual_source if "actual_source" in locals() else source,
+                in_app_ref_id=record_id,
                 error_message=str(e),
                 error_type="sync_error",
                 additional_info=f"完整错误信息: {traceback.format_exc()}",
@@ -1755,7 +1802,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 )
         else:
             logger.error(f"不支持的同步模式: {mode}")
-            send_notify(
+            notification_service.notify(
                 "config_error",
                 error_message=f"不支持的同步模式: {mode}",
                 config_type="sync_mode",
@@ -2462,6 +2509,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 # 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
                 trace.final_score = 1.0 if is_api_season_matched else 0.9
                 trace.finish()
+
+                # 匹配歧义检测：top1/top2 分数接近时触发 match_ambiguous
+                self._maybe_notify_match_ambiguous(trace, item, item.source or "")
+
             return bgm_data[0]["id"], is_api_season_matched, ""
         except Exception as e:
             detail = f"Bangumi API 搜索出错: {e}"
@@ -2659,7 +2710,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         # 补发成功，发通知（可选）
         try:
-            send_notify(
+            notification_service.notify(
                 "sync_replayed",
                 item,
                 record.get("source", "") or "replay",

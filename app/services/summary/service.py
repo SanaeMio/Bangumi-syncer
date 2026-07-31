@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 
 from app.core.database import database_manager
 from app.core.logging import logger
-from app.utils.notifier import get_notifier
 
 from ..llm import Message, get_llm_client
+from ..notification_service import notification_service
 from .models import SummaryJobConfig
 
 # 内部常量 —— 用户可自定义的 prompt 结构，不暴露到 config.ini
@@ -122,22 +122,26 @@ class SummaryService:
     def _send_success_notification(
         self, job_config: SummaryJobConfig, result: dict
     ) -> None:
-        """发送成功通知（webhook + 邮件）。"""
+        """发送成功通知（webhook + 邮件）。
+
+        P5：通过 notification_service.notify() 统一入口发送，仅走 webhook/email 渠道，
+        不写站内信（write_in_app=False）。
+        """
         user_name = job_config.user_name.strip() if job_config.user_name else ""
         usage = result["usage"]
-        data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "job_name": job_config.name,
-            "user_name": user_name,
-            "summary_text": result["summary_text"],
-            "date_range": f"{result['date_from']} ~ {result['date_to']}",
-            "record_count": result["record_count"],
-            "lookback_days": job_config.lookback_days,
-            "model": result["model"],
-            "tokens_used": usage.total_tokens if usage else 0,
-        }
-        get_notifier().send_notification_by_type(
-            f"watching_summary_{job_config.name}", data, skip_cooldown=True
+        notification_service.notify(
+            f"watching_summary_{job_config.name}",
+            source="summary",
+            skip_cooldown=True,
+            write_in_app=False,
+            job_name=job_config.name,
+            user_name=user_name,
+            summary_text=result["summary_text"],
+            date_range=f"{result['date_from']} ~ {result['date_to']}",
+            record_count=result["record_count"],
+            lookback_days=job_config.lookback_days,
+            model=result["model"],
+            tokens_used=usage.total_tokens if usage else 0,
         )
 
     def _send_failure_notification(
@@ -149,29 +153,29 @@ class SummaryService:
         inbox_title: str,
         inbox_body: str = "",
     ) -> None:
-        """发送失败通知（webhook + 邮件 + 收件箱）。"""
-        data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "job_name": job_config.name,
-            "user_name": job_config.user_name.strip() or "",
-            "summary_text": summary_text,
-            "date_range": "",
-            "record_count": 0,
-            "lookback_days": job_config.lookback_days,
-            "model": "",
-            "tokens_used": 0,
-        }
-        get_notifier().send_notification_by_type(
-            f"watching_summary_{job_config.name}", data, skip_cooldown=True
+        """发送失败通知（webhook + 邮件 + 收件箱）。
+
+        P4.7：通过 notification_service.notify() 统一入口发送，替代原先的
+        get_notifier().send_notification_by_type() + database_manager.insert_notification()
+        显式双调用。webhook/email 类型为 watching_summary_{name}（按 job 配置段），
+        站内信 type 由 inbox_type 显式指定（按失败原因），两者解耦。
+        """
+        notification_service.notify(
+            f"watching_summary_{job_config.name}",
+            source="summary",
+            skip_cooldown=True,
+            in_app_type=inbox_type,
+            in_app_title=inbox_title,
+            in_app_body=inbox_body or summary_text,
+            job_name=job_config.name,
+            user_name=job_config.user_name.strip() or "",
+            summary_text=summary_text,
+            date_range="",
+            record_count=0,
+            lookback_days=job_config.lookback_days,
+            model="",
+            tokens_used=0,
         )
-        try:
-            database_manager.insert_notification(
-                notif_type=inbox_type,
-                title=inbox_title,
-                body=inbox_body or summary_text,
-            )
-        except Exception as e:
-            logger.error(f"写入收件箱通知失败: {e}")
 
     def _format_records(self, records: list[dict]) -> str:
         """将同步记录格式化为紧凑的文本表格。"""

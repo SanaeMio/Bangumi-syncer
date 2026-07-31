@@ -311,7 +311,6 @@ class TraktConfigPage {
 
             const result = await apiFetch(`/api/records?limit=${this.pageSize}&offset=${(this.currentPage - 1) * this.pageSize}&source=trakt`);
             const data = result.data;
-            console.log('同步历史数据:', data);
             this.updateSyncHistoryDisplay(data);
         } catch (error) {
             console.error('加载同步历史失败:', error);
@@ -814,7 +813,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 全局函数，供子窗口调用
 function handleTraktAuthSuccess() {
-    console.log('Trakt 授权成功回调');
     // 重新加载配置
     const page = window.traktConfigPage;
     if (page && typeof page.loadConfig === 'function') {

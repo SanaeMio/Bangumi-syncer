@@ -677,7 +677,7 @@ def test_check_season_info_in_title(mock_config, mock_database):
 def _patched_sync_service_deps():
     with patch("app.services.sync_service.config_manager") as mock_cfg:
         with patch("app.services.sync_service.database_manager"):
-            with patch("app.services.sync_service.send_notify"):
+            with patch("app.services.sync_service.notification_service"):
                 with patch(
                     "app.services.sync_service.mapping_service"
                 ) as mock_mapping_service:
