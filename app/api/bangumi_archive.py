@@ -253,8 +253,12 @@ async def progress_stream(
         # 1. 推送历史日志（刷新恢复用）
         # 若历史最后一条已是终态，说明任务已结束，推完历史即返回
         last_stage: Optional[str] = None
+        # 记录已推送的最大 timestamp，用于跳过 queue 中已存在于 history 的事件
+        # 避免 history + queue 重复推送（如 checking/fetching_latest 出现两次）
+        last_ts = 0.0
         if history:
             last_stage = history[-1].get("stage")
+            last_ts = history[-1].get("timestamp", 0)
             yield {
                 "event": "history",
                 "data": json.dumps({"events": history}, ensure_ascii=False),
@@ -264,6 +268,7 @@ async def progress_stream(
 
         # 2. 推送缓存中的最新进度（可能比 history 最后一条更新）
         if cached and cached.stage != last_stage:
+            last_ts = max(last_ts, cached.timestamp)
             yield {
                 "event": "progress",
                 "data": json.dumps(cached.to_dict(), ensure_ascii=False),
@@ -280,6 +285,10 @@ async def progress_stream(
                 p = await asyncio.wait_for(queue.get(), timeout=30.0)
             except asyncio.TimeoutError:
                 yield {"event": "ping", "data": ""}
+                continue
+
+            # 跳过已推送的事件（按 timestamp 去重，避免 history 与 queue 重复）
+            if p.get("timestamp", 0) <= last_ts:
                 continue
 
             yield {

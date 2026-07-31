@@ -653,12 +653,6 @@ class BangumiArchive:
 
         # 解压 + 导入到 inactive 库
         target_db = self.get_inactive_db_path()
-        self._push_progress(
-            task_id,
-            ArchiveStage.IMPORTING,
-            65,
-            f"导入到 {target_db.name}",
-        )
         importer = ArchiveImporter()
         row_counts, duration_sec = await importer.import_all(
             zip_path=zip_path,

@@ -240,9 +240,9 @@ class ArchiveDownloader:
                 total = int(resp.headers.get("content-length", 0))
                 downloaded = 0
                 last_reported = 0
-                # 按大小节流：每 10MB 推送一次进度，避免每 8KB chunk 推送
+                # 按大小节流：每 100MB 推送一次进度，避免每 8KB chunk 推送
                 # 导致 _progress_logs 暴涨 + SSE 序列化巨大历史阻塞事件循环
-                _PROGRESS_INTERVAL = 10 * 1024 * 1024
+                _PROGRESS_INTERVAL = 100 * 1024 * 1024
 
                 with open(zip_path, "wb") as f:
                     async for chunk in resp.aiter_bytes(chunk_size=_CHUNK_SIZE):
