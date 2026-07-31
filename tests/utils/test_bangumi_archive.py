@@ -578,6 +578,57 @@ class TestBangumiArchive:
         assert archive.data_dir == data_dir
         assert archive.db_a_path == data_dir / "bangumi_archive_a.db"
 
+    def test_cleanup_stale_tmp_removes_old_dirs(self, isolated_archive: BangumiArchive):
+        """_cleanup_stale_tmp 删除超过阈值的残留子目录，保留新目录"""
+        import os
+        import time as _time
+
+        from app.utils.bangumi_archive._archive import _TMP_DIR_MAX_AGE_SEC
+
+        tmp_dir = isolated_archive.get_tmp_dir()
+        # 模拟两个残留目录：一个过期，一个未过期
+        stale_dir = tmp_dir / "upload_old_crash"
+        fresh_dir = tmp_dir / "upload_new"
+        stale_dir.mkdir(parents=True, exist_ok=True)
+        fresh_dir.mkdir(parents=True, exist_ok=True)
+        (stale_dir / "dump.zip").write_bytes(b"fake")
+        (fresh_dir / "dump.zip").write_bytes(b"fake")
+
+        # 将 stale_dir 的 mtime 改为超过阈值
+        old_time = _time.time() - _TMP_DIR_MAX_AGE_SEC - 60
+        os.utime(stale_dir, (old_time, old_time))
+
+        isolated_archive._cleanup_stale_tmp()
+
+        assert not stale_dir.exists(), "过期残留目录应被删除"
+        assert fresh_dir.exists(), "未过期目录应保留"
+
+    def test_cleanup_stale_tmp_skips_active_task_dir(
+        self, isolated_archive: BangumiArchive
+    ):
+        """_cleanup_stale_tmp 不删除正在进行的任务目录（即使已过期）"""
+        import os
+        import time as _time
+
+        from app.utils.bangumi_archive._archive import _TMP_DIR_MAX_AGE_SEC
+
+        tmp_dir = isolated_archive.get_tmp_dir()
+        # 模拟正在进行的任务目录（已过期但不应被删）
+        active_task_id = "20260731_120000"
+        active_dir = tmp_dir / active_task_id
+        active_dir.mkdir(parents=True, exist_ok=True)
+        (active_dir / "dump.zip").write_bytes(b"fake")
+        old_time = _time.time() - _TMP_DIR_MAX_AGE_SEC - 60
+        os.utime(active_dir, (old_time, old_time))
+
+        # 标记为正在进行的任务
+        isolated_archive._import_in_progress = True
+        isolated_archive._current_task_id = active_task_id
+
+        isolated_archive._cleanup_stale_tmp()
+
+        assert active_dir.exists(), "正在进行的任务目录不应被删除"
+
 
 class TestBackgroundIndexBuildOnStartup:
     """BangumiArchive 启动时触发标题索引后台构建"""

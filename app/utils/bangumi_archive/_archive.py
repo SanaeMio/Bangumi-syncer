@@ -67,6 +67,10 @@ _PROGRESS_LOG_MAX = 200
 # 进度 Queue 最大长度：避免下载阶段推送过快导致无界堆积
 _PROGRESS_QUEUE_MAX = 100
 
+# .tmp 残留目录清理阈值（秒）：超过此年龄的子目录视为崩溃残留，启动时清理
+# 导入任务最多几分钟，超过 1 天必然是残留；保守取 1 天避免误删正在进行的任务
+_TMP_DIR_MAX_AGE_SEC = 24 * 3600
+
 
 class ArchiveStage(str, Enum):
     """导入流程的阶段枚举（细粒度）"""
@@ -172,6 +176,8 @@ class BangumiArchive:
         self._progress_cache: dict[str, ProgressEvent] = {}
         # 进度历史日志（按 task_id）：所有阶段变化记录
         self._progress_logs: dict[str, list[ProgressEvent]] = {}
+        # 启动时清理上次崩溃残留的 .tmp 子目录（非阻塞，失败仅记录日志）
+        self._cleanup_stale_tmp()
         # 启动时后台预构建标题索引（enabled 且 active DB 存在时）
         # 构建期间 try_search 自动降级到 API，构建完成后查询走 Archive
         self._maybe_start_background_index_build()
@@ -334,6 +340,48 @@ class BangumiArchive:
         tmp_dir = self.data_dir / ".tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         return tmp_dir
+
+    def _cleanup_stale_tmp(self) -> None:
+        """启动时清理 .tmp 下超过阈值的残留子目录
+
+        崩溃场景下 data_dir/.tmp/upload_* 或 task_id 子目录可能残留，
+        长期累积会占用磁盘。此处遍历 .tmp 下的一级子目录，删除修改时间
+        超过 _TMP_DIR_MAX_AGE_SEC 的目录。
+
+        非阻塞：清理失败仅记录 warning，不影响启动。
+        安全：只删除 .tmp 下的子目录，不删除 .tmp 本身；不删除正在进行的
+        任务目录（_import_in_progress 时跳过 current_task_id 对应目录）。
+        """
+        tmp_dir = self.data_dir / ".tmp"
+        if not tmp_dir.exists():
+            return
+        now = time.time()
+        # 正在进行的任务目录名（避免误删）
+        active_task_dir = self._current_task_id if self._import_in_progress else None
+        try:
+            for child in tmp_dir.iterdir():
+                if not child.is_dir():
+                    continue
+                # 跳过正在进行的任务目录
+                if active_task_dir and child.name == active_task_dir:
+                    continue
+                try:
+                    mtime = child.stat().st_mtime
+                except OSError:
+                    continue
+                age = now - mtime
+                if age < _TMP_DIR_MAX_AGE_SEC:
+                    continue
+                try:
+                    shutil.rmtree(child, ignore_errors=True)
+                    logger.info(
+                        f"bangumi_archive: 清理残留临时目录 {child.name} "
+                        f"(age={int(age / 3600)}h)"
+                    )
+                except OSError as e:
+                    logger.warning(f"bangumi_archive: 清理临时目录 {child} 失败: {e}")
+        except OSError as e:
+            logger.warning(f"bangumi_archive: 遍历 .tmp 目录失败: {e}")
 
     def get_meta(self) -> ArchiveMeta:
         with self._lock:
