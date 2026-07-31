@@ -116,3 +116,26 @@ class TestAllTypes:
         ids = {t.id for t in types}
         assert WATCHING_SUMMARY_PREFIX in ids
         assert "mark_failed" in ids
+
+
+class TestAiringToday:
+    """airing_today 通知类型登记"""
+
+    def test_registered(self):
+        meta = get_type_meta("airing_today")
+        assert meta is not None
+        assert meta.display_name == "今日放送提醒"
+        assert meta.category == "scheduler"
+        assert meta.is_item_level is False
+        assert meta.visible_in_ui is True
+
+    def test_no_in_app_mapping(self):
+        """airing_today 不映射站内信（仅外部渠道）"""
+        assert resolve_in_app_type("airing_today") is None
+
+    def test_not_item_level(self):
+        assert is_item_level_type("airing_today") is False
+
+    def test_visible_in_ui(self):
+        visible_ids = {t.id for t in ui_visible_types()}
+        assert "airing_today" in visible_ids

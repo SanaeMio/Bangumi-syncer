@@ -124,3 +124,31 @@ def notify_source_event(
         )
     except Exception as e:
         logger.debug(f"发送 {notification_type} 通知失败（可忽略）: {e}")
+
+
+def notify_airing_today(
+    airdate: str,
+    total: int,
+    episodes: list[dict[str, Any]],
+    *,
+    only_watching: bool = True,
+) -> None:
+    """今日放送提醒通知
+
+    Args:
+        airdate: 日期 YYYY-MM-DD
+        total: 当日放送总集数
+        episodes: 放送章节列表（每项含 subject_name / ep_sort 等字段）
+        only_watching: 是否仅展示在追番剧
+    """
+    try:
+        notification_service.notify(
+            "airing_today",
+            source="scheduler:airing_today",
+            airdate=airdate,
+            total=total,
+            episodes=episodes,
+            only_watching=only_watching,
+        )
+    except Exception as e:
+        logger.debug(f"发送 airing_today 通知失败（可忽略）: {e}")
