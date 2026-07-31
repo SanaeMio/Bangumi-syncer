@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Optional
 
@@ -319,7 +320,10 @@ def is_replay_enabled() -> bool:
 # ===== 用户"在看"列表缓存（供放送日历视图使用） =====
 # 模块级 TTL 缓存：username -> (timestamp, subject_ids_set)
 # 缓存命中避免每次访问日历都拉一遍收藏列表（Bangumi API 限流友好）
+# 注意：get_watching_subject_ids 可能在 asyncio.to_thread 线程池中并发调用，
+# 缓存读写需持锁，避免 dict 在 clear/get/pop 之间出现竞态。
 _watching_cache: dict[str, tuple[float, set[int]]] = {}
+_watching_cache_lock = threading.Lock()
 _WATCHING_CACHE_TTL = 3600  # 1 小时
 
 
@@ -346,13 +350,15 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         raise ValueError("BangumiApi 未配置 username")
 
     now = time.time()
-    cached = _watching_cache.get(username)
-    if cached and (now - cached[0]) < _WATCHING_CACHE_TTL:
-        logger.debug(f"在看列表命中缓存: username={username}, {len(cached[1])} 部")
-        return cached[1]
+    with _watching_cache_lock:
+        cached = _watching_cache.get(username)
+        if cached and (now - cached[0]) < _WATCHING_CACHE_TTL:
+            logger.debug(f"在看列表命中缓存: username={username}, {len(cached[1])} 部")
+            return cached[1]
 
     try:
         # 动画(2) + 三次元(6) 的"在看"(type=3)
+        # API 调用在锁外执行，避免长时间持锁阻塞其他线程的缓存读
         anime_watching = api.list_user_collections(subject_type=2, collection_type=3)
         real_watching = api.list_user_collections(subject_type=6, collection_type=3)
         ids = {
@@ -361,13 +367,16 @@ def get_watching_subject_ids(api: Any) -> set[int]:
             if item.get("subject_id")
         }
         # 写缓存
-        _watching_cache[username] = (now, ids)
+        with _watching_cache_lock:
+            _watching_cache[username] = (now, ids)
         logger.info(
             f"获取在看列表成功: username={username}, 动画 {len(anime_watching)} + 三次元 {len(real_watching)} = {len(ids)} 部"
         )
         return ids
     except Exception as e:
         logger.warning(f"获取用户在看列表失败: username={username}, error={e}")
+        with _watching_cache_lock:
+            cached = _watching_cache.get(username)
         if cached:
             logger.info(f"使用缓存降级: username={username}, {len(cached[1])} 部")
             return cached[1]
@@ -381,7 +390,8 @@ def invalidate_watching_cache(username: Optional[str] = None) -> None:
     Args:
         username: 指定用户失效；None 则清空全部缓存
     """
-    if username is None:
-        _watching_cache.clear()
-    else:
-        _watching_cache.pop(username, None)
+    with _watching_cache_lock:
+        if username is None:
+            _watching_cache.clear()
+        else:
+            _watching_cache.pop(username, None)
