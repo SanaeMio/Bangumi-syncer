@@ -50,7 +50,9 @@ def mock_archive_enabled():
 def mock_no_bangumi_config():
     """mock 无 Bangumi 账号配置"""
     with patch.object(
-        airing_calendar.config_manager, "get_bangumi_configs", return_value={}
+        airing_calendar.config_manager,
+        "get_active_bangumi_config",
+        return_value=None,
     ):
         yield
 
@@ -169,8 +171,8 @@ class TestAiringCalendarEndpoint:
         with (
             patch.object(
                 airing_calendar.config_manager,
-                "get_bangumi_configs",
-                return_value={},
+                "get_active_bangumi_config",
+                return_value=None,
             ),
             patch.object(
                 airing_calendar.archive_store,
@@ -197,18 +199,16 @@ class TestAiringCalendarEndpoint:
     @pytest.mark.asyncio
     async def test_only_watching_with_config(self, app_with_auth, mock_archive_enabled):
         """only_watching=True 有配置时调用 get_watching_subject_ids 过滤"""
-        mock_configs = {
-            "bangumi-test": {
-                "username": "testuser",
-                "access_token": "token",
-                "private": False,
-            }
+        mock_cfg = {
+            "username": "testuser",
+            "access_token": "token",
+            "private": False,
         }
         with (
             patch.object(
                 airing_calendar.config_manager,
-                "get_bangumi_configs",
-                return_value=mock_configs,
+                "get_active_bangumi_config",
+                return_value=mock_cfg,
             ),
             patch.object(
                 airing_calendar.config_manager, "get_dev_http_snapshot"
@@ -250,7 +250,7 @@ class TestAiringCalendarEndpoint:
     async def test_days_normalized(
         self, app_with_auth, mock_archive_enabled, mock_no_bangumi_config
     ):
-        """days 非 7/14/30 时规范化为 14"""
+        """days 非 7/14/30 时规范化为 30"""
         with patch.object(
             airing_calendar.archive_store,
             "get_episodes_by_airdate",
@@ -264,7 +264,7 @@ class TestAiringCalendarEndpoint:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["days"]) == 14  # 规范化为 14
+        assert len(data["days"]) == 30  # 规范化为 30
 
     @pytest.mark.asyncio
     async def test_empty_days_have_correct_weekday(

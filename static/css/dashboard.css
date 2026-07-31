@@ -1675,202 +1675,174 @@ main.app-main>*:nth-child(12) {
     background: var(--app-bg-hover, #2a2a3a);
 }
 
-/* ========== 番剧放送日历 ========== */
+/* ========== 我在追的放送（番剧清单） ========== */
 
 .airing-calendar-card {
     min-height: 0;
 }
 
 /* 工具栏按钮 active 态 */
-.airing-days-btn.active,
-#airing-only-watching.active {
+.airing-type-btn.active {
     background-color: var(--app-primary);
     border-color: var(--app-primary);
     color: #fff;
 }
 
-#airing-only-watching {
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+/* 番剧清单容器 */
+.airing-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 520px;
+    overflow-y: auto;
+    padding-right: 2px;
 }
 
-/* 日历网格：7 列 */
-.airing-grid {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 6px;
-}
-
-.airing-grid__head {
-    text-align: center;
-    padding: 4px 0;
-    font-size: 0.72rem;
-    color: var(--app-text-muted);
-    font-weight: 500;
-}
-
-.airing-grid__wd {
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-/* 日期格子 */
-.airing-grid__cell {
-    min-height: 110px;
-    padding: 6px 8px;
+/* 单个番剧行 */
+.airing-list__row {
+    padding: 8px 10px;
     background: var(--app-bg-hover);
     border: 1px solid var(--app-border);
     border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
     transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
-.airing-grid__cell--placeholder {
-    background: transparent;
-    border: 1px dashed transparent;
-    min-height: 0;
-    padding: 0;
-}
-
-.airing-grid__cell--empty {
-    opacity: 0.55;
-}
-
-.airing-grid__cell--weekend {
-    background: rgba(var(--app-primary-rgb), 0.04);
-}
-
-.airing-grid__cell--today {
+.airing-list__row:hover {
     border-color: var(--app-primary);
-    background: rgba(var(--app-primary-rgb), 0.08);
-    box-shadow: 0 0 0 1px var(--app-primary) inset;
 }
 
-.airing-grid__date {
+/* 头部：标题 + 集数 */
+.airing-list__head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    gap: 4px;
-    border-bottom: 1px solid var(--app-border);
-    padding-bottom: 3px;
+    gap: 8px;
+    margin-bottom: 6px;
 }
 
-.airing-grid__day-num {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--app-text);
-    line-height: 1;
+.airing-list__title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-.airing-grid__cell--today .airing-grid__day-num {
+.airing-list__type {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.airing-list__type--anime {
+    background: rgba(var(--app-primary-rgb), 0.15);
     color: var(--app-primary);
 }
 
-.airing-grid__day-wd {
-    font-size: 0.65rem;
-    color: var(--app-text-muted);
-    text-transform: uppercase;
+.airing-list__type--real {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
 }
 
-/* 放送列表 */
-.airing-grid__eps {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    overflow: hidden;
-}
-
-.airing-grid__ep {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 5px;
-    border-radius: 4px;
-    font-size: 0.72rem;
-    line-height: 1.4;
-    background: var(--app-bg-card);
-    border-left: 2px solid var(--app-primary);
-    cursor: default;
-    overflow: hidden;
-}
-
-.airing-grid__ep--anime {
-    border-left-color: var(--app-primary);
-}
-
-.airing-grid__ep--real {
-    border-left-color: #f59e0b;
-}
-
-.airing-grid__ep-sort {
-    flex-shrink: 0;
-    color: var(--app-text-muted);
-    font-variant-numeric: tabular-nums;
-    font-size: 0.68rem;
-    min-width: 22px;
-}
-
-.airing-grid__ep-name {
-    flex: 1 1 auto;
+.airing-list__title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--app-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--app-text);
-}
-
-.airing-grid__more {
-    text-align: center;
-    font-size: 0.68rem;
-    color: var(--app-text-muted);
-    padding: 1px 0;
     cursor: default;
 }
 
-/* 响应式：小屏改为每日一行（横向滚动） */
+.airing-list__meta {
+    flex-shrink: 0;
+}
+
+.airing-list__count {
+    font-size: 0.72rem;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 章节列表 */
+.airing-list__eps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.airing-list__ep {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    background: var(--app-bg-card);
+    border: 1px solid var(--app-border);
+    cursor: default;
+    transition: background-color 0.15s ease;
+}
+
+.airing-list__ep:hover {
+    background: var(--app-bg-hover);
+}
+
+.airing-list__ep--today {
+    background: rgba(var(--app-primary-rgb), 0.12);
+    border-color: var(--app-primary);
+    color: var(--app-primary);
+    font-weight: 500;
+}
+
+.airing-list__ep--past {
+    opacity: 0.6;
+}
+
+.airing-list__ep-date {
+    font-size: 0.66rem;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.airing-list__ep--today .airing-list__ep-date {
+    color: var(--app-primary);
+}
+
+.airing-list__date--today {
+    color: var(--app-primary);
+    font-weight: 500;
+}
+
+.airing-list__ep-label {
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.airing-list__more {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: var(--app-text-muted);
+    background: var(--app-bg-card);
+    border: 1px dashed var(--app-border);
+    cursor: default;
+}
+
+/* 响应式：小屏紧凑 */
 @media (max-width: 767.98px) {
-    .airing-grid {
-        grid-template-columns: 1fr;
-        gap: 4px;
+    .airing-list {
+        max-height: none;
     }
 
-    .airing-grid__head {
-        display: none;
-    }
-
-    .airing-grid__cell--placeholder {
-        display: none;
-    }
-
-    .airing-grid__cell {
-        min-height: 0;
-        flex-direction: row;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 10px;
-    }
-
-    .airing-grid__date {
-        flex: 0 0 56px;
-        flex-direction: column;
-        align-items: flex-start;
-        justify-content: center;
-        border-bottom: none;
-        border-right: 1px solid var(--app-border);
-        padding-bottom: 0;
-        padding-right: 8px;
-    }
-
-    .airing-grid__eps {
-        flex: 1 1 auto;
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 4px;
-    }
-
-    .airing-grid__ep {
-        flex: 0 1 auto;
-        max-width: 100%;
+    .airing-list__title {
+        font-size: 0.82rem;
     }
 }
 

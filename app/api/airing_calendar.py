@@ -20,7 +20,10 @@ from pydantic import BaseModel, Field
 from ..core.config import config_manager
 from ..core.logging import logger
 from ..utils.bangumi_api import BangumiApi
-from ..utils.bangumi_api.collection import get_watching_subject_ids
+from ..utils.bangumi_api.collection import (
+    get_watching_subject_ids,
+    invalidate_watching_cache,
+)
 from ..utils.bangumi_archive import bangumi_archive
 from ..utils.bangumi_archive._store import archive_store
 from .deps import get_current_user_flexible
@@ -60,15 +63,17 @@ class AiringCalendarResponse(BaseModel):
 
 
 def _build_bangumi_api() -> Optional[BangumiApi]:
-    """从配置构造 BangumiApi 实例（取第一个有效 bangumi 账号配置）
+    """从配置构造 BangumiApi 实例（兼容单/多用户模式）
+
+    单用户模式读 [bangumi] 段，多用户模式取首个有效账号段。
+    仅当 username 和 access_token 均非空才返回实例。
 
     Returns:
         BangumiApi 实例；若无有效配置返回 None
     """
-    configs = config_manager.get_bangumi_configs()
-    if not configs:
+    cfg = config_manager.get_active_bangumi_config()
+    if not cfg or not cfg.get("username") or not cfg.get("access_token"):
         return None
-    cfg = next(iter(configs.values()))
     dev_snapshot = config_manager.get_dev_http_snapshot()
     return BangumiApi(
         username=cfg["username"],
@@ -83,8 +88,12 @@ def _build_bangumi_api() -> Optional[BangumiApi]:
 
 @router.get("", response_model=AiringCalendarResponse)
 async def get_airing_calendar(
-    days: int = Query(14, description="查询天数（7/14/30）"),
+    days: int = Query(30, description="查询天数（7/14/30）"),
     only_watching: bool = Query(True, description="仅展示在追番剧"),
+    subject_type: int = Query(
+        0, description="条目类型筛选（0=全部, 2=动画, 6=三次元）"
+    ),
+    refresh: bool = Query(False, description="强制刷新在看列表缓存"),
     user: dict = Depends(get_current_user_flexible),
 ) -> AiringCalendarResponse:
     """获取未来 N 天的番剧放送日程
@@ -114,13 +123,21 @@ async def get_airing_calendar(
 
     # 规范化 days 到允许值
     if days not in _ALLOWED_DAYS:
-        days = 14
+        days = 30
 
     # 计算日期范围
     today = date.today()
     end_date = today + timedelta(days=days - 1)
     start_str = today.isoformat()
     end_str = end_date.isoformat()
+
+    # 类型筛选：0=全部(2,6), 2=动画, 6=三次元
+    if subject_type == 2:
+        subject_types: tuple[int, ...] = (2,)
+    elif subject_type == 6:
+        subject_types = (6,)
+    else:
+        subject_types = (2, 6)
 
     # "仅我在追"过滤
     subject_ids: Optional[set[int]] = None
@@ -129,6 +146,8 @@ async def get_airing_calendar(
         api = _build_bangumi_api()
         if api is not None:
             try:
+                if refresh:
+                    invalidate_watching_cache(api.username)
                 subject_ids = get_watching_subject_ids(api)
                 actual_only_watching = True
             except Exception as e:
@@ -140,6 +159,7 @@ async def get_airing_calendar(
         start_date=start_str,
         end_date=end_str,
         subject_ids=subject_ids,
+        subject_types=subject_types,
     )
 
     # 按日期分组

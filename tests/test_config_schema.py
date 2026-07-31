@@ -335,8 +335,8 @@ class TestDefaultTrueFields:
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """default_true 字段：原 5 个 + sync.movie_*(2) + dev.ssl_verify + bangumi-data.*(2) + bangumi-archive.ssl_verify + bangumi-replay.enabled + notify-in-app.in_app_notification"""
-        assert len(config_schema.default_true_fields()) == 9
+        """default_true 字段：原 5 个 + sync.movie_*(2) + dev.ssl_verify + bangumi-data.*(2) + bangumi-archive.ssl_verify + bangumi-replay.enabled + notify-in-app.in_app_notification + notify-airing-today.only_watching"""
+        assert len(config_schema.default_true_fields()) == 10
 
 
 class TestLooseTrueFields:
@@ -359,8 +359,8 @@ class TestLooseTrueFields:
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """原硬编码共 4 个 loose_true 字段"""
-        assert len(config_schema.loose_true_fields()) == 4
+        """原硬编码共 4 个 loose_true 字段 + notify-airing-today.enabled"""
+        assert len(config_schema.loose_true_fields()) == 5
 
 
 class TestConfigDefaults:

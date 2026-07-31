@@ -55,12 +55,22 @@ class CollectionMixin:
             if collection_type is not None:
                 params["type"] = collection_type
             res = self.get(f"users/{self.username}/collections", params=params)
-            # self.get 已解析为 dict；返回结构 {data: [...], total: N}
-            data = res.get("data") if isinstance(res, dict) else None
+            # self.get 返回 httpx.Response；404 表示用户名不存在
+            if res.status_code == 404:
+                raise ValueError(
+                    f"Bangumi 用户 {self.username} 不存在（404），请检查配置的 username"
+                )
+            if res.status_code != 200:
+                raise RuntimeError(
+                    f"获取用户 {self.username} 收藏列表失败: HTTP {res.status_code}"
+                )
+            body = res.json()
+            # 返回结构 {data: [...], total: N}
+            data = body.get("data") if isinstance(body, dict) else None
             if not data:
                 break
             results.extend(data)
-            total = res.get("total", 0) if isinstance(res, dict) else 0
+            total = body.get("total", 0) if isinstance(body, dict) else 0
             offset += len(data)
             # 拉满或已到 max_total
             if offset >= total or offset >= max_total:
@@ -317,21 +327,28 @@ def get_watching_subject_ids(api: Any) -> set[int]:
     """获取用户"在看"番剧的 subject_id 集合（带 1 小时 TTL 缓存）
 
     同时拉取动画(2)和三次元(6)两类"在看"收藏，合并返回。
-    API 失败时返回缓存值（若有），否则返回空集合。
+    - 缓存命中：直接返回缓存值
+    - API 成功：写缓存并返回（可能为空集合，表示用户确实没在看）
+    - API 失败且有缓存：返回缓存值并记录警告
+    - API 失败且无缓存：抛异常，让调用方决定降级策略
 
     Args:
         api: BangumiApi 实例（需已配置 username）
 
     Returns:
-        set[int]：在看条目的 subject_id 集合
+        set[int]：在看条目的 subject_id 集合（可能为空）
+
+    Raises:
+        Exception: API 调用失败且无可用缓存时抛出
     """
     username = api.username
     if not username:
-        return set()
+        raise ValueError("BangumiApi 未配置 username")
 
     now = time.time()
     cached = _watching_cache.get(username)
     if cached and (now - cached[0]) < _WATCHING_CACHE_TTL:
+        logger.debug(f"在看列表命中缓存: username={username}, {len(cached[1])} 部")
         return cached[1]
 
     try:
@@ -345,12 +362,17 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         }
         # 写缓存
         _watching_cache[username] = (now, ids)
+        logger.info(
+            f"获取在看列表成功: username={username}, 动画 {len(anime_watching)} + 三次元 {len(real_watching)} = {len(ids)} 部"
+        )
         return ids
     except Exception as e:
-        logger.warning(f"获取用户在看列表失败，使用缓存降级: {e}")
+        logger.warning(f"获取用户在看列表失败: username={username}, error={e}")
         if cached:
+            logger.info(f"使用缓存降级: username={username}, {len(cached[1])} 部")
             return cached[1]
-        return set()
+        # 无缓存时抛出，让调用方降级（如改为全部放送）
+        raise
 
 
 def invalidate_watching_cache(username: Optional[str] = None) -> None:

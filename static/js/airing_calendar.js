@@ -1,42 +1,39 @@
-// 番剧放送日历视图：调用 /api/airing-calendar 渲染未来 N 天放送日程
-// 仅在 Archive 启用时由 dashboard.js 显示该卡片
+// 我在追的番剧放送清单：调用 /api/airing-calendar 渲染未来 30 天在追番剧的放送日程
+// 仅在 Archive 启用时显示该卡片（由 API 返回的 archive_enabled 控制）
+;(function () {
   'use strict'
 
-  // 当前状态
+  // 当前状态：固定 only_watching=true，仅展示在追番剧的放送日程
   var state = {
-    days: 14, // 7 / 14 / 30
-    onlyWatching: true,
+    days: 30, // 固定 30 天
+    subjectType: 0, // 0=全部, 2=动画, 6=三次元
     loading: false,
+    firstLoad: true, // 首次加载强制刷新在看列表缓存
   }
-
-  var ALLOWED_DAYS = [7, 14, 30]
-  var WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
   document.addEventListener('DOMContentLoaded', function () {
     var row = document.getElementById('airing-calendar-row')
     if (!row) return
 
-    // 工具栏：天数切换
-    var dayBtns = row.querySelectorAll('.airing-days-btn')
-    dayBtns.forEach(function (btn) {
+    // 工具栏：类型切换
+    var typeBtns = row.querySelectorAll('.airing-type-btn')
+    typeBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
-        var d = parseInt(btn.getAttribute('data-days'), 10)
-        if (ALLOWED_DAYS.indexOf(d) === -1 || d === state.days) return
-        state.days = d
-        dayBtns.forEach(function (b) {
-          b.classList.toggle('active', parseInt(b.getAttribute('data-days'), 10) === d)
+        var t = parseInt(btn.getAttribute('data-type'), 10)
+        if (t === state.subjectType) return
+        state.subjectType = t
+        typeBtns.forEach(function (b) {
+          b.classList.toggle('active', parseInt(b.getAttribute('data-type'), 10) === t)
         })
         loadAiringCalendar()
       })
     })
 
-    // 工具栏：仅我在追
-    var watchBtn = document.getElementById('airing-only-watching')
-    if (watchBtn) {
-      watchBtn.addEventListener('click', function () {
-        state.onlyWatching = !state.onlyWatching
-        watchBtn.setAttribute('data-active', state.onlyWatching ? 'true' : 'false')
-        watchBtn.classList.toggle('active', state.onlyWatching)
+    // 工具栏：刷新在看列表缓存
+    var refreshBtn = document.getElementById('airing-refresh')
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function () {
+        state.firstLoad = true
         loadAiringCalendar()
       })
     }
@@ -46,7 +43,7 @@
   })
 
   /**
-   * 拉取放送日历数据并渲染。
+   * 拉取放送数据并渲染。
    */
   function loadAiringCalendar() {
     var container = document.getElementById('airing-calendar-container')
@@ -60,26 +57,32 @@
 
     var params =
       'days=' + encodeURIComponent(state.days) +
-      '&only_watching=' + (state.onlyWatching ? 'true' : 'false')
+      '&only_watching=true' +
+      '&subject_type=' + encodeURIComponent(state.subjectType)
+    // 首次加载或手动刷新时强制刷新在看列表缓存
+    if (state.firstLoad) {
+      params += '&refresh=true'
+      state.firstLoad = false
+    }
 
     apiFetch('/api/airing-calendar?' + params, { method: 'GET' })
       .then(function (data) {
         state.loading = false
-        renderAiringCalendar(data)
+        renderAiringList(data)
       })
       .catch(function (err) {
         state.loading = false
-        console.error('加载放送日历失败:', err)
+        console.error('加载在追番剧放送失败:', err)
         container.innerHTML =
           '<div class="text-center py-3 app-text-muted-block"><i class="bi bi-exclamation-triangle d-block mb-1"></i><span class="small">加载失败</span></div>'
       })
   }
 
   /**
-   * 渲染整个日历视图。
+   * 渲染在追番剧清单。
    * @param {Object} data - /api/airing-calendar 响应
    */
-  function renderAiringCalendar(data) {
+  function renderAiringList(data) {
     var row = document.getElementById('airing-calendar-row')
     var container = document.getElementById('airing-calendar-container')
     var summary = document.getElementById('airing-calendar-summary')
@@ -103,11 +106,20 @@
       return
     }
 
+    // 降级提示：API 未能获取在看列表（无 Bangumi 账号或调用失败），不展示全部放送
+    if (!data.only_watching) {
+      container.innerHTML =
+        '<div class="text-center py-4 app-text-muted-block">' +
+        '<i class="bi bi-exclamation-circle d-block mb-2 fs-4"></i>' +
+        '<span class="small">无法获取在看列表，请检查 Bangumi 账号配置</span>' +
+        '</div>'
+      if (summary) summary.classList.add('d-none')
+      return
+    }
+
     // 空数据
     if (!data.days || data.days.length === 0 || data.total_episodes === 0) {
-      var emptyMsg = state.onlyWatching
-        ? '未来 ' + state.days + ' 天暂无在追番剧的放送日程'
-        : '未来 ' + state.days + ' 天暂无放送数据'
+      var emptyMsg = '未来 ' + state.days + ' 天暂无在追番剧的放送日程'
       container.innerHTML =
         '<div class="text-center py-4 app-text-muted-block">' +
         '<i class="bi bi-calendar-x d-block mb-2 fs-4"></i>' +
@@ -117,130 +129,188 @@
       return
     }
 
+    // 聚合：按 subject_id 分组
+    var groups = aggregateBySubject(data.days)
+    if (groups.length === 0) {
+      container.innerHTML =
+        '<div class="text-center py-4 app-text-muted-block">' +
+        '<i class="bi bi-calendar-x d-block mb-2 fs-4"></i>' +
+        '<span class="small">未来 ' + state.days + ' 天暂无在追番剧的放送日程</span>' +
+        '</div>'
+      if (summary) summary.classList.add('d-none')
+      return
+    }
+
     // 顶部摘要
     if (summary) {
-      var label = data.total_episodes + ' 集放送'
-      if (data.only_watching) label += ' · 仅在追'
-      summary.textContent = label
+      summary.textContent = groups.length + ' 部在追 · ' + data.total_episodes + ' 集'
       summary.classList.remove('d-none')
     }
 
-    // 构造日历网格：按周（7 列）排列
-    var html = buildCalendarGrid(data.days)
-    container.innerHTML = html
+    // 渲染列表
+    container.innerHTML = buildListHtml(groups)
   }
 
   /**
-   * 构造日历网格 HTML。
-   * 第一个格子从 today 的星期开始（前面补占位），每 7 天一行。
+   * 将按日期分组的 episodes 扁平化并按 subject_id 聚合。
    * @param {Array} days - [{date, weekday, episodes: [...]}, ...]
+   * @returns {Array} [{subject_id, subject_name, subject_name_cn, subject_type, episodes: [{airdate, ep_sort, ep_name, ep_name_cn}]}]
+   *                    按「最近一次放送日期升序」排序
    */
-  function buildCalendarGrid(days) {
-    if (!days.length) return ''
-    var todayStr = days[0].date
-    var firstWeekday = days[0].weekday // 0=周一 … 6=周日
-
-    var html = '<div class="airing-grid">'
-
-    // 表头：周一 … 周日
-    for (var h = 0; h < 7; h++) {
-      html +=
-        '<div class="airing-grid__head">' +
-        '<span class="airing-grid__wd">' + WEEKDAY_LABELS[h] + '</span>' +
-        '</div>'
-    }
-
-    // 前置占位（对齐到周几）
-    for (var p = 0; p < firstWeekday; p++) {
-      html += '<div class="airing-grid__cell airing-grid__cell--placeholder"></div>'
-    }
-
-    // 日期格子
+  function aggregateBySubject(days) {
+    var map = {}
+    var order = []
     for (var i = 0; i < days.length; i++) {
-      html += buildDayCellHtml(days[i], todayStr)
+      var d = days[i]
+      if (!d.episodes || !d.episodes.length) continue
+      for (var j = 0; j < d.episodes.length; j++) {
+        var ep = d.episodes[j]
+        var key = ep.subject_id
+        if (!map[key]) {
+          map[key] = {
+            subject_id: ep.subject_id,
+            subject_name: ep.subject_name || '',
+            subject_name_cn: ep.subject_name_cn || '',
+            subject_type: ep.subject_type || 0,
+            episodes: [],
+          }
+          order.push(key)
+        }
+        map[key].episodes.push({
+          airdate: ep.airdate,
+          ep_sort: ep.episode_sort,
+          ep_name: ep.episode_name || '',
+          ep_name_cn: ep.episode_name_cn || '',
+        })
+      }
     }
+    // 转数组并按最近放送日期升序（最早的放送排前面）
+    var list = order.map(function (k) { return map[k] })
+    list.sort(function (a, b) {
+      var aFirst = a.episodes[0] ? a.episodes[0].airdate : ''
+      var bFirst = b.episodes[0] ? b.episodes[0].airdate : ''
+      if (aFirst !== bFirst) return aFirst < bFirst ? -1 : 1
+      return a.subject_name.localeCompare(b.subject_name)
+    })
+    return list
+  }
 
-    // 末尾补齐到整行
-    var totalCells = firstWeekday + days.length
-    var tail = (7 - (totalCells % 7)) % 7
-    for (var t = 0; t < tail; t++) {
-      html += '<div class="airing-grid__cell airing-grid__cell--placeholder"></div>'
+  /**
+   * 构造番剧清单 HTML。
+   * @param {Array} groups - aggregateBySubject 返回值
+   */
+  function buildListHtml(groups) {
+    var todayStr = getTodayStr()
+    var html = '<div class="airing-list">'
+    for (var i = 0; i < groups.length; i++) {
+      html += buildSubjectRowHtml(groups[i], todayStr)
     }
-
     html += '</div>'
     return html
   }
 
   /**
-   * 单日格子 HTML。
-   * @param {Object} day - {date, weekday, episodes}
-   * @param {string} todayStr - 今日日期 YYYY-MM-DD
+   * 单个番剧行 HTML。
+   * @param {Object} g - 单个聚合番剧
+   * @param {string} todayStr - 今日 YYYY-MM-DD
    */
-  function buildDayCellHtml(day, todayStr) {
-    var isToday = day.date === todayStr
-    var isWeekend = day.weekday >= 5
-    var cellClass = 'airing-grid__cell'
-    if (isToday) cellClass += ' airing-grid__cell--today'
-    else if (isWeekend) cellClass += ' airing-grid__cell--weekend'
-    if (!day.episodes || !day.episodes.length) cellClass += ' airing-grid__cell--empty'
-
-    var html = '<div class="' + cellClass + '" data-date="' + escapeHtml(day.date) + '">'
-    // 日期头
-    html +=
-      '<div class="airing-grid__date">' +
-      '<span class="airing-grid__day-num">' + formatDayNum(day.date) + '</span>' +
-      '<span class="airing-grid__day-wd">' + WEEKDAY_LABELS[day.weekday] + '</span>' +
-      '</div>'
-
-    // 放送列表
-    if (day.episodes && day.episodes.length) {
-      html += '<div class="airing-grid__eps">'
-      // 单日最多展示 6 条，超出折叠
-      var maxShow = 6
-      var shown = day.episodes.slice(0, maxShow)
-      var hidden = day.episodes.length - shown.length
-      for (var i = 0; i < shown.length; i++) {
-        html += buildEpisodeItemHtml(shown[i])
-      }
-      if (hidden > 0) {
-        html +=
-          '<div class="airing-grid__more" title="共 ' + day.episodes.length + ' 集">+' + hidden + '</div>'
-      }
-      html += '</div>'
-    }
-
-    html += '</div>'
-    return html
-  }
-
-  /**
-   * 单条放送章节 HTML。
-   * @param {Object} ep - AiringEpisode
-   */
-  function buildEpisodeItemHtml(ep) {
-    var typeClass =
-      ep.subject_type === 6
-        ? 'airing-grid__ep--real'
-        : 'airing-grid__ep--anime'
-    var sortText = ep.episode_sort != null ? '#' + ep.episode_sort : ''
-    var name = ep.subject_name_cn || ep.subject_name || '未知条目'
-    var epName = ep.episode_name_cn || ep.episode_name || ''
-    var titleAttr = escapeHtml(name + (epName ? ' · ' + epName : ''))
+  function buildSubjectRowHtml(g, todayStr) {
+    var name = g.subject_name_cn || g.subject_name || '未知条目'
+    var typeBadge = g.subject_type === 6
+      ? '<span class="airing-list__type airing-list__type--real" title="三次元">三次元</span>'
+      : '<span class="airing-list__type airing-list__type--anime" title="动画">动画</span>'
+    var totalEps = g.episodes.length
 
     var html =
-      '<div class="airing-grid__ep ' + typeClass + '" title="' + titleAttr + '">' +
-      '<span class="airing-grid__ep-sort">' + escapeHtml(sortText) + '</span>' +
-      '<span class="airing-grid__ep-name">' + escapeHtml(truncate(name, 14)) + '</span>' +
-      '</div>'
+      '<div class="airing-list__row" data-subject-id="' + g.subject_id + '">' +
+      '<div class="airing-list__head">' +
+      '<div class="airing-list__title-wrap">' +
+      typeBadge +
+      '<span class="airing-list__title" title="' + escapeHtml(name) + '">' + escapeHtml(truncate(name, 22)) + '</span>' +
+      '</div>' +
+      '<div class="airing-list__meta">' +
+      '<span class="airing-list__count" title="未来 ' + state.days + ' 天共 ' + totalEps + ' 集">' + totalEps + ' 集</span>' +
+      '</div>' +
+      '</div>' +
+      '<div class="airing-list__eps">'
+
+    // 展示每集放送日期，最多展示 12 条，超出折叠
+    var maxShow = 12
+    var shown = g.episodes.slice(0, maxShow)
+    for (var k = 0; k < shown.length; k++) {
+      var ep = shown[k]
+      var epLabel = formatEpLabel(ep)
+      var dateLabel = formatDateLabel(ep.airdate, todayStr)
+      var cls = 'airing-list__ep'
+      if (isSameDay(ep.airdate, todayStr)) cls += ' airing-list__ep--today'
+      else if (isBeforeToday(ep.airdate, todayStr)) cls += ' airing-list__ep--past'
+      html +=
+        '<div class="' + cls + '" title="' + escapeHtml(epLabel + ' · ' + ep.airdate) + '">' +
+        '<span class="airing-list__ep-date ' + (isSameDay(ep.airdate, todayStr) ? 'airing-list__date--today' : '') + '">' + escapeHtml(dateLabel) + '</span>' +
+        '<span class="airing-list__ep-label">' + escapeHtml(epLabel) + '</span>' +
+        '</div>'
+    }
+    var hidden = totalEps - shown.length
+    if (hidden > 0) {
+      html += '<div class="airing-list__more" title="共 ' + totalEps + ' 集">+' + hidden + '</div>'
+    }
+
+    html += '</div></div>'
     return html
   }
 
   /**
-   * 从 YYYY-MM-DD 取日号（带 0 补齐的 DD）。
+   * 章节标签：#集号 或 章节名
    */
-  function formatDayNum(dateStr) {
+  function formatEpLabel(ep) {
+    if (ep.ep_sort != null && ep.ep_sort !== '') return '#' + ep.ep_sort
+    return ep.ep_name_cn || ep.ep_name || ''
+  }
+
+  /**
+   * 日期标签：今天/明天/后天/MM-DD
+   */
+  function formatDateLabel(dateStr, todayStr) {
+    if (isSameDay(dateStr, todayStr)) return '今天'
+    var diff = dayDiff(dateStr, todayStr)
+    if (diff === 1) return '明天'
+    if (diff === 2) return '后天'
+    // 超过 2 天显示 MM-DD
     var parts = String(dateStr).split('-')
-    return parts.length === 3 ? parts[2] : dateStr
+    return parts.length === 3 ? parts[1] + '-' + parts[2] : dateStr
+  }
+
+  /**
+   * 判断两个 YYYY-MM-DD 是否同一天
+   */
+  function isSameDay(a, b) {
+    return a === b
+  }
+
+  /**
+   * 判断 dateStr 是否早于 todayStr
+   */
+  function isBeforeToday(dateStr, todayStr) {
+    return dateStr < todayStr
+  }
+
+  /**
+   * 计算 dateStr 相对 todayStr 的天数差（dateStr - todayStr，正数表示未来）
+   */
+  function dayDiff(dateStr, todayStr) {
+    var d1 = new Date(dateStr + 'T00:00:00')
+    var d2 = new Date(todayStr + 'T00:00:00')
+    return Math.round((d1 - d2) / 86400000)
+  }
+
+  /**
+   * 获取今日 YYYY-MM-DD
+   */
+  function getTodayStr() {
+    var d = new Date()
+    var m = String(d.getMonth() + 1).padStart(2, '0')
+    var day = String(d.getDate()).padStart(2, '0')
+    return d.getFullYear() + '-' + m + '-' + day
   }
 
   /**

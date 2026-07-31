@@ -134,9 +134,7 @@ class TestRunSyncJob:
         s = AiringTodayScheduler()
         with (
             patch.object(s, "_is_enabled", return_value=False),
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ) as store,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
         ):
             await s._run_sync_job()
         store.get_episodes_by_airdate.assert_not_called()
@@ -148,15 +146,9 @@ class TestRunSyncJob:
         s._scheduler_config = {"job_timeout": 120}
         with (
             patch.object(s, "_is_enabled", return_value=True),
-            patch(
-                "app.services.airing_today_scheduler.bangumi_archive"
-            ) as ba,
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ) as store,
-            patch(
-                "app.services.airing_today_scheduler.notify_airing_today"
-            ) as notify,
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
+            patch("app.services.airing_today_scheduler.notify_airing_today") as notify,
         ):
             ba.get_active_db_path.return_value = _missing_path()
             await s._run_sync_job()
@@ -170,18 +162,10 @@ class TestRunSyncJob:
         s._scheduler_config = {"job_timeout": 120}
         with (
             patch.object(s, "_is_enabled", return_value=True),
-            patch(
-                "app.services.airing_today_scheduler.bangumi_archive"
-            ) as ba,
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ) as store,
-            patch(
-                "app.services.airing_today_scheduler.notify_airing_today"
-            ) as notify,
-            patch(
-                "app.services.airing_today_scheduler.config_manager"
-            ) as cm,
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
+            patch("app.services.airing_today_scheduler.notify_airing_today") as notify,
+            patch("app.services.airing_today_scheduler.config_manager") as cm,
             patch(
                 "app.services.airing_today_scheduler._build_bangumi_api",
                 return_value=None,
@@ -215,18 +199,10 @@ class TestRunSyncJob:
         ]
         with (
             patch.object(s, "_is_enabled", return_value=True),
-            patch(
-                "app.services.airing_today_scheduler.bangumi_archive"
-            ) as ba,
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ) as store,
-            patch(
-                "app.services.airing_today_scheduler.notify_airing_today"
-            ) as notify,
-            patch(
-                "app.services.airing_today_scheduler.config_manager"
-            ) as cm,
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
+            patch("app.services.airing_today_scheduler.notify_airing_today") as notify,
+            patch("app.services.airing_today_scheduler.config_manager") as cm,
             patch(
                 "app.services.airing_today_scheduler._build_bangumi_api",
                 return_value=None,
@@ -268,18 +244,10 @@ class TestRunSyncJob:
         ]
         with (
             patch.object(s, "_is_enabled", return_value=True),
-            patch(
-                "app.services.airing_today_scheduler.bangumi_archive"
-            ) as ba,
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ) as store,
-            patch(
-                "app.services.airing_today_scheduler.notify_airing_today"
-            ) as notify,
-            patch(
-                "app.services.airing_today_scheduler.config_manager"
-            ) as cm,
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
+            patch("app.services.airing_today_scheduler.notify_airing_today") as notify,
+            patch("app.services.airing_today_scheduler.config_manager") as cm,
             patch(
                 "app.services.airing_today_scheduler._build_bangumi_api",
                 return_value=mock_api,
@@ -310,18 +278,10 @@ class TestRunSyncJob:
         mock_api = MagicMock()
         with (
             patch.object(s, "_is_enabled", return_value=True),
-            patch(
-                "app.services.airing_today_scheduler.bangumi_archive"
-            ) as ba,
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ) as store,
-            patch(
-                "app.services.airing_today_scheduler.notify_airing_today"
-            ),
-            patch(
-                "app.services.airing_today_scheduler.config_manager"
-            ) as cm,
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
+            patch("app.services.airing_today_scheduler.notify_airing_today"),
+            patch("app.services.airing_today_scheduler.config_manager") as cm,
             patch(
                 "app.services.airing_today_scheduler._build_bangumi_api",
                 return_value=mock_api,
@@ -349,18 +309,10 @@ class TestRunSyncJob:
 
         with (
             patch.object(s, "_is_enabled", return_value=True),
-            patch(
-                "app.services.airing_today_scheduler.bangumi_archive"
-            ) as ba,
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ),
-            patch(
-                "app.services.airing_today_scheduler.notify_airing_today"
-            ),
-            patch(
-                "app.services.airing_today_scheduler.config_manager"
-            ) as cm,
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store"),
+            patch("app.services.airing_today_scheduler.notify_airing_today"),
+            patch("app.services.airing_today_scheduler.config_manager") as cm,
             patch(
                 "app.services.airing_today_scheduler._build_bangumi_api",
                 return_value=None,
@@ -399,18 +351,10 @@ class TestRunSyncJob:
         ]
         with (
             patch.object(s, "_is_enabled", return_value=True),
-            patch(
-                "app.services.airing_today_scheduler.bangumi_archive"
-            ) as ba,
-            patch(
-                "app.services.airing_today_scheduler.archive_store"
-            ) as store,
-            patch(
-                "app.services.airing_today_scheduler.notify_airing_today"
-            ) as notify,
-            patch(
-                "app.services.airing_today_scheduler.config_manager"
-            ) as cm,
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
+            patch("app.services.airing_today_scheduler.notify_airing_today") as notify,
+            patch("app.services.airing_today_scheduler.config_manager") as cm,
             patch(
                 "app.services.airing_today_scheduler._build_bangumi_api",
                 return_value=None,

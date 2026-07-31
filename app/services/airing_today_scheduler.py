@@ -26,11 +26,14 @@ from .base.scheduler import BaseScheduler
 
 
 def _build_bangumi_api() -> BangumiApi | None:
-    """从配置构造 BangumiApi 实例（取第一个有效 bangumi 账号配置）"""
-    configs = config_manager.get_bangumi_configs()
-    if not configs:
+    """从配置构造 BangumiApi 实例（兼容单/多用户模式）
+
+    单用户模式读 [bangumi] 段，多用户模式取首个有效账号段。
+    仅当 username 和 access_token 均非空才返回实例。
+    """
+    cfg = config_manager.get_active_bangumi_config()
+    if not cfg or not cfg.get("username") or not cfg.get("access_token"):
         return None
-    cfg = next(iter(configs.values()))
     dev_snapshot = config_manager.get_dev_http_snapshot()
     return BangumiApi(
         username=cfg["username"],
@@ -107,7 +110,9 @@ class AiringTodayScheduler(BaseScheduler):
                     subject_ids = await asyncio.to_thread(get_watching_subject_ids, api)
                     actual_only_watching = True
                 except Exception as e:
-                    logger.warning(f"AiringToday: 获取在看列表失败，降级为全部放送: {e}")
+                    logger.warning(
+                        f"AiringToday: 获取在看列表失败，降级为全部放送: {e}"
+                    )
                     subject_ids = None
 
         # 查询今日放送（在线程中执行 SQLite 查询）
