@@ -225,6 +225,18 @@ _TYPES: dict[str, NotificationTypeMeta] = {
         is_item_level=False,
         category="scheduler",
     ),
+    "airing_today": NotificationTypeMeta(
+        id="airing_today",
+        display_name="今日放送提醒",
+        icon="📺",
+        color="#0d6efd",
+        description="每日定时汇总当日放送的番剧章节(archive启用才可用)",
+        is_item_level=False,
+        category="scheduler",
+        # 写站内信，标题带放送日期与集数（"我的追番"定位下的简洁提示）
+        in_app_type="airing_today",
+        in_app_title_template="今日放送 {total} 集（{airdate}）",
+    ),
     # ═════════════════ Bangumi API ═════════════════
     "api_error": NotificationTypeMeta(
         id="api_error",

@@ -1,69 +1,60 @@
 ---
 title: 🧩 新驱动接入指南
-order: 2
+order: 9
 ---
 
 # 🧩 新驱动接入指南
 
-本文档介绍如何为 Bangumi-syncer 接入新的媒体服务器驱动。
+如何为 Bangumi-syncer 接入新的媒体服务器驱动。
 
-## 架构概览
+## 技术栈
 
-所有驱动最终都将各自的数据源转换为统一的 `CustomItem` 模型，再委托给共享的 `SyncService.sync_custom_item()` 完成同步。
+- **数据模型**：[Pydantic](https://docs.pydantic.dev/) v2（`CustomItem` / `SyncResponse`）
+- **Web 框架**：[FastAPI](https://fastapi.tiangolo.com/)（Webhook 型注册路由）
+- **调度器**：[APScheduler](https://apscheduler.readthedocs.io/)（拉取型继承 `BaseScheduler`）
+- **架构模式**：驱动委托模式（所有驱动最终委托 `SyncService.sync_custom_item()`）
 
-```
-外部数据源
-  │
-  ├─ Webhook 推送型（Emby/Jellyfin/Plex/Custom）
-  │    POST /{Driver} → API 层鉴权 → 驱动 sync_service → CustomItem
-  │
-  └─ 主动拉取型（飞牛/Fongmi/Trakt）
-       定时调度器 → 驱动 sync_service → 数据源读取 → CustomItem
-  │
-  ▼
-SyncService.sync_custom_item(item, source)
-  ├─ 权限/屏蔽校验
-  ├─ 查找番剧 ID（映射 → bangumi-data → API 搜索）
-  ├─ 解析季度/集 ID
-  ├─ 标记 Bangumi 观看状态
-  └─ 通知/记录/归档
-```
+---
 
 ## 驱动类型
 
 | 类型 | 特征 | 示例 | 需要的组件 |
-|------|------|------|-----------|
-| **Webhook 推送型** | 媒体服务器主动推送事件 | Emby/Jellyfin/Plex/Custom | `models.py` + `extractor.py` + `sync_service.py` |
-| **主动拉取型** | 定时读取外部数据源 | 飞牛/Fongmi/Trakt | `models.py` + `reader.py` + `sync_service.py` + `scheduler.py` |
+| --- | --- | --- | --- |
+| **Webhook 推送型** | 媒体服务器主动推送事件 | Emby / Jellyfin / Plex / Custom | `models.py` + `extractor.py` + `sync_service.py` |
+| **主动拉取型** | 定时读取外部数据源 | 飞牛 / Fongmi / Trakt | `models.py` + `reader.py` + `sync_service.py` + `scheduler.py` |
+
+数据流：
+
+```
+Webhook 型:  媒体服务器 ─POST→ API 鉴权 → extractor → CustomItem → SyncService
+拉取型:      Scheduler ─cron→ reader/client → CustomItem → SyncService
+```
+
+---
 
 ## 接入步骤
 
-以接入一个名为 `mydriver` 的新驱动为例。
+以接入 `mydriver` 为例。
 
 ### 1. 创建子包目录
 
 ```
 app/services/mydriver/
-  ├── __init__.py
-  ├── models.py        # 数据模型
-  ├── extractor.py     # Webhook 型：数据提取；拉取型改用 reader.py
-  └── sync_service.py  # 同步服务（必须）
+├── __init__.py
+├── models.py          # 数据模型
+├── extractor.py       # Webhook 型：数据提取；拉取型改用 reader.py
+├── sync_service.py    # 同步服务（必须）
+└── scheduler.py       # 仅拉取型
 ```
-
-拉取型还需 `scheduler.py`。
 
 ### 2. 实现数据模型（models.py）
 
-定义该驱动接收的原始数据结构（Pydantic 模型或 dataclass）。
+定义该驱动接收的原始数据结构（Pydantic 或 dataclass）：
 
 ```python
-"""MyDriver 数据模型"""
-from typing import Any
 from pydantic import BaseModel, Field
 
-
 class MyDriverWebhookData(BaseModel):
-    """MyDriver Webhook 报文模型"""
     event: str = Field(..., description="事件类型")
     title: str = Field(..., description="番剧标题")
     season: int = Field(..., description="季数")
@@ -71,145 +62,92 @@ class MyDriverWebhookData(BaseModel):
     user_name: str = Field(..., description="用户名")
 ```
 
-### 3. 实现数据提取（extractor.py）
+### 3. 实现数据提取（extractor.py / reader.py）
 
-将驱动专有数据转换为通用的 `CustomItem`。
+将驱动专有数据转换为统一的 `CustomItem`：
 
 ```python
-"""MyDriver 数据提取"""
 from ...models.sync import CustomItem
 
-
 def extract_mydriver_data(raw: dict) -> CustomItem:
-    """将 MyDriver 报文转换为 CustomItem"""
     return CustomItem(
         media_type="episode",
         title=raw["title"],
-        ori_title=raw.get("ori_title"),
         season=raw["season"],
         episode=raw["episode"],
-        release_date=raw.get("release_date", ""),
         user_name=raw["user_name"],
-        source="mydriver",
+        source="mydriver",          # 必须全局唯一
     )
 ```
 
 ### 4. 实现同步服务（sync_service.py）
 
-核心逻辑：校验数据 → 提取 CustomItem → 委托给共享 SyncService。
+核心逻辑：校验 → 提取 CustomItem → 委托共享 SyncService。
 
 ```python
-"""MyDriver 同步服务"""
-from __future__ import annotations
-
 from ...core.logging import logger
 from ...models.sync import SyncResponse
 from .extractor import extract_mydriver_data
 
 MYDRIVER_SYNC_SOURCE = "mydriver"
 
-
 class MyDriverSyncService:
-    """MyDriver 同步服务
-
-    由共享 SyncService 的 sync_mydriver_item 方法委托调用。
-    异步任务跟踪仍由 SyncService 负责。
-    """
-
     def sync_item(self, raw_data: dict, sync_svc=None) -> SyncResponse:
-        """处理 MyDriver 同步请求"""
         if sync_svc is None:
             from ..sync_service import sync_service as sync_svc
         try:
-            # 1. 校验必要字段
-            required = ["title", "season", "episode", "user_name"]
-            for field in required:
+            # 校验必要字段
+            for field in ("title", "season", "episode", "user_name"):
                 if field not in raw_data:
-                    return SyncResponse(
-                        status="error", message=f"缺少必要字段: {field}"
-                    )
+                    return SyncResponse(status="error", message=f"缺少必要字段: {field}")
 
-            # 2. 事件过滤（按需）
-            event = raw_data.get("event", "")
-            if event != "playback.completed":
-                return SyncResponse(status="ignored", message=f"事件 {event} 无需同步")
+            # 事件过滤（按需）
+            if raw_data.get("event") != "playback.completed":
+                return SyncResponse(status="ignored", message="事件无需同步")
 
-            # 3. 提取并转换
-            custom_item = extract_mydriver_data(raw_data)
-
-            # 4. 委托给共享 SyncService
-            return sync_svc.sync_custom_item(custom_item, source=MYDRIVER_SYNC_SOURCE)
-
+            # 委托共享 SyncService
+            item = extract_mydriver_data(raw_data)
+            return sync_svc.sync_custom_item(item, source=MYDRIVER_SYNC_SOURCE)
         except Exception as e:
-            logger.error(f"MyDriver 同步处理出错: {e}")
-            return SyncResponse(status="error", message=f"处理失败: {str(e)}")
-
+            logger.error(f"MyDriver 同步出错: {e}")
+            return SyncResponse(status="error", message=str(e))
 
 mydriver_sync_service = MyDriverSyncService()
 ```
 
-### 5. 实现 __init__.py
+::: tip 拉取型 `run_sync()` 模式
+拉取型驱动的 `sync_service` 提供 `async run_sync() -> BatchSyncResult`：读取数据源 → 转换为 `CustomItem` 列表 → 逐个委托 `sync_custom_item()` → 统计 synced/skipped/error + 进程内去重。参考 [feiniu/sync_service.py](https://github.com/SanaeMio/Bangumi-syncer/blob/main/app/services/feiniu/sync_service.py)。
+:::
+
+### 5. 注册 API 端点（仅 Webhook 型）
+
+在 `app/api/sync.py` 加路由，鉴权用全局 `webhook_key`：
 
 ```python
-from .extractor import extract_mydriver_data
-from .models import MyDriverWebhookData
-from .sync_service import mydriver_sync_service
-
-__all__ = ["extract_mydriver_data", "MyDriverWebhookData", "mydriver_sync_service"]
-```
-
-### 6. 注册 API 端点（Webhook 型）
-
-在 `app/api/sync.py` 中添加路由和委托方法：
-
-```python
-from ..services.mydriver import mydriver_sync_service
-
-
 @root_router.post("/MyDriver/{webhook_key}", status_code=202)
 async def mydriver_sync(request: Request, webhook_key: str):
-    """MyDriver Webhook 接口"""
     if not await _verify_webhook_auth(webhook_key):
-        return Response(
-            content='{"status": "error", "message": "认证失败"}',
-            status_code=401,
-            media_type="application/json",
-        )
-    body = await request.body()
-    raw_data = json.loads(body)
+        return Response(content='{"status":"error","message":"认证失败"}',
+                        status_code=401, media_type="application/json")
+    raw_data = json.loads(await request.body())
     task_id = await sync_service.sync_mydriver_item_async(raw_data)
-    return {"status": "accepted", "message": "MyDriver 同步请求已接收", "task_id": task_id}
+    return {"status": "accepted", "task_id": task_id}
 ```
 
-在 `app/services/sync_service.py` 中添加委托方法：
+在 `app/services/sync_service.py` 加委托方法：
 
 ```python
 async def sync_mydriver_item_async(self, raw_data: dict) -> str:
-    """异步处理 MyDriver 同步"""
-    return await self._submit_async(
-        "mydriver", mydriver_sync_service.sync_item, raw_data
-    )
-
-def sync_mydriver_item(self, raw_data: dict) -> SyncResponse:
-    """同步处理 MyDriver 同步"""
-    return mydriver_sync_service.sync_item(raw_data, self)
+    return await self._submit_async("mydriver", mydriver_sync_service.sync_item, raw_data)
 ```
 
-### 7. 实现调度器（仅拉取型）
+### 6. 实现调度器（仅拉取型）
 
-拉取型驱动需继承 `BaseScheduler`：
+继承 `BaseScheduler`，实现 3 个类属性 + 3 个方法（详见 [⏰ 调度器框架](./scheduler)）：
 
 ```python
-"""MyDriver 定时同步"""
-from __future__ import annotations
-
-import asyncio
-
-from ...core.config import config_manager
-from ...core.logging import logger
 from ..base.scheduler import BaseScheduler
-from .sync_service import mydriver_sync_service
-
+from ..base.notifier_helpers import notify_batch_sync_summary, notify_scheduler_failure
 
 class MyDriverScheduler(BaseScheduler):
     JOB_ID = "mydriver_sync"
@@ -218,95 +156,147 @@ class MyDriverScheduler(BaseScheduler):
 
     def _is_enabled(self) -> bool:
         cfg = config_manager.get_mydriver_config()
-        return cfg.get("enabled", False)
+        if not cfg.get("enabled"):
+            return False
+        return bool(cfg.get("api_url"))   # 校验外部依赖
 
     def _get_driver_config(self) -> dict:
         return config_manager.get_mydriver_config()
 
     async def _run_sync_job(self) -> None:
-        if not self._is_enabled():
-            return
-        timeout = self._scheduler_config.get("job_timeout", 300)
-        try:
-            await asyncio.wait_for(
-                mydriver_sync_service.run_sync(), timeout=timeout
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"MyDriver 定时同步超时 ({timeout} 秒)")
-
+        # 基类已处理超时；子类只管业务，异常不要向上抛
+        ...
 
 mydriver_scheduler = MyDriverScheduler()
 ```
 
-### 8. 添加配置项
+### 7. 注册配置与调度器
 
-在 `app/core/config.py` 中添加配置读取方法：
+**ConfigManager 读取方法**（`app/core/config.py`）：
 
 ```python
 def get_mydriver_config(self) -> dict:
-    """获取 MyDriver 配置"""
     return {
         "enabled": self.get("mydriver", "enabled", fallback=False),
         "sync_interval": self.get("mydriver", "sync_interval", fallback="*/10 * * * *"),
-        # ... 其他配置项
+        "api_url": self.get("mydriver", "api_url", fallback=""),
     }
 ```
 
-在 `config.example.ini` 中添加默认配置节（作为模板，`config.ini` 会在首次运行时自动复制）：
+**SectionMeta 注册**（`app/core/config_schema.py`，**关键**）—— 一行覆盖前端 TOC / 敏感字段加密 / 调度器联动 / env 覆盖：
+
+```python
+"mydriver": SectionMeta(
+    name="mydriver",
+    display_name="MyDriver 同步",
+    order=130,
+    scheduler_id="mydriver",            # 配置保存后联动调度器
+    env_overrides={"enabled": "MYDRIVER_ENABLED", "api_url": "MYDRIVER_API_URL"},
+    fields=(
+        FieldMeta(name="enabled", loose_true=True),
+        FieldMeta(name="sync_interval", default="*/10 * * * *"),
+    ),
+),
+```
+
+**默认配置节**（`config.example.ini`）：
 
 ```ini
 [mydriver]
 enabled = False
 sync_interval = */10 * * * *
+api_url =
 ```
 
-### 9. 编写测试
-
-在 `tests/services/mydriver/` 下创建测试：
+**调度器注册**（`app/services/scheduler_bootstrap.py`，仅拉取型）：
 
 ```python
-"""MyDriver 同步服务测试"""
-from unittest.mock import MagicMock, patch
+from .mydriver.scheduler import mydriver_scheduler
 
-from app.services.mydriver.sync_service import MyDriverSyncService
-
-
-def test_sync_item_success():
-    """测试同步成功"""
-    with patch("app.services.mydriver.sync_service.sync_service") as mock_svc:
-        mock_result = MagicMock()
-        mock_result.status = "success"
-        mock_svc.sync_custom_item.return_value = mock_result
-
-        svc = MyDriverSyncService()
-        result = svc.sync_item({
-            "title": "测试番剧",
-            "season": 1,
-            "episode": 1,
-            "user_name": "user",
-            "event": "playback.completed",
-        })
-
-        assert result.status == "success"
-        mock_svc.sync_custom_item.assert_called_once()
+scheduler_registry.register_spec(
+    JobSpec(scheduler_id="mydriver", runner=mydriver_scheduler)
+)
 ```
+
+注册后，用户在 Web 改 cron 保存即自动重建任务，**无需重启**。
+
+### 8. 编写测试
+
+详见 [🧪 测试与 CI](./testing)。至少覆盖：模型解析、extractor/reader、sync_service 委托、scheduler 启停。
+
+---
+
+## 常见参数
+
+### SectionMeta 关键字段
+
+| 字段 | 含义 |
+| --- | --- |
+| `order` | 前端 TOC 排序权重，越小越靠前 |
+| `scheduler_id` | 关联调度器，配置保存后自动联动 |
+| `is_multi_instance` | 多实例段（如 `notify-webhook-1`） |
+| `sensitive_fields` | 敏感字段集合，写入时自动加密 |
+| `env_overrides` | Docker 环境变量覆盖映射 |
+| `fields` | 字段元数据列表（`FieldMeta`） |
+
+### FieldMeta 布尔语义
+
+| 参数 | 含义 |
+| --- | --- |
+| `default=...` | 字段缺失/空字符串时回填的默认值 |
+| `default_true=True` | 默认 true：仅显式 `false` 时取消勾选 |
+| `loose_true=True` | 字符串 `'true'` 宽松匹配，undefined 视为 false |
+
+### BaseScheduler 类属性
+
+| 参数 | 说明 | 示例 |
+| --- | --- | --- |
+| `JOB_ID` | 任务唯一标识 | `"feiniu_trimmedia_sync"` |
+| `DEFAULT_CRON` | 默认 cron 表达式 | `"*/15 * * * *"` |
+| `DRIVER_NAME` | 日志与通知中展示的名称 | `"飞牛"` |
+
+---
+
+## 常见坑
+
+### 1. 不要直接调用 Bangumi API
+
+所有 Bangumi 调用必须通过 `sync_service.sync_custom_item()` 委托。直接调用会跳过权限校验、屏蔽关键词、用户路由，不写 `sync_records` 表，不发通知、不触发 Replay 入队，`MatchTrace` 缺失。
+
+### 2. `source` 必须全局唯一
+
+`CustomItem.source` 写入 `sync_records.source`，用于 dashboard 统计、记录筛选、通知模板 `{source}` 占位符。每个驱动的 `XXX_SYNC_SOURCE` 常量不要复用。
+
+### 3. `_is_enabled()` 要校验外部依赖
+
+不能只看 `enabled=True`，还要校验 db_path 存在 / API 地址非空 等，否则配置不完整时调度器空跑刷屏。
+
+### 4. 异常不要向上抛
+
+`sync_item()` 内部 try/except，异常时返回 `SyncResponse(status="error")`。向上抛会让 API 层返回 500，且不写 `sync_records`，用户看不到失败原因。
+
+### 5. Webhook 鉴权用全局 `webhook_key`
+
+不要在驱动配置里另起 key 字段，会造成配置分裂。统一用 `[auth] webhook_key` + `_verify_webhook_auth()`。
+
+### 6. 进程内去重（拉取型）
+
+同一资源在多轮调度中被重复读取时，需在 `sync_service` 维护进程内 set 去重。参考 `feiniu_sync_service` 的水位机制和 `fongmi_sync_service` 的 `_synced_keys`。
+
+### 7. 不要自己实现配置热更新
+
+`SectionMeta.scheduler_id` 会自动触发 `apply_config_after_save()` 重建任务。不要在驱动里监听配置变更。
+
+---
 
 ## 参考实现
 
-| 驱动 | 类型 | 路径 | 特点 |
-|------|------|------|------|
-| **Custom** | Webhook（最简） | `app/services/custom/` | 无 extractor/scheduler，直接接收 CustomItem |
-| **Emby** | Webhook | `app/services/emby/` | 标准 webhook 型，含 extractor |
-| **Jellyfin** | Webhook | `app/services/jellyfin/` | 与 Emby 类似 |
-| **Plex** | Webhook | `app/services/plex/` | 报文为 XML/表单，需特殊解析 |
-| **飞牛** | 拉取 | `app/services/feiniu/` | 读取 SQLite，含 reader.py + scheduler.py |
-| **Fongmi** | 拉取 | `app/services/fongmi/` | HTTP API 轮询，含 client.py + scheduler.py |
-| **Trakt** | 拉取 | `app/services/trakt/` | OAuth 认证，含 auth.py + client.py |
+| 驱动 | 类型 | 特点 |
+| --- | --- | --- |
+| [Custom](https://github.com/SanaeMio/Bangumi-syncer/blob/main/app/services/custom/) | Webhook（最简） | 直接接收 CustomItem，无 extractor/scheduler |
+| [Emby](https://github.com/SanaeMio/Bangumi-syncer/blob/main/app/services/emby/) | Webhook | 标准 webhook 型，含 extractor |
+| [飞牛](https://github.com/SanaeMio/Bangumi-syncer/blob/main/app/services/feiniu/) | 拉取 | 读 SQLite，含 reader + scheduler |
+| [Fongmi](https://github.com/SanaeMio/Bangumi-syncer/blob/main/app/services/fongmi/) | 拉取 | HTTP 轮询 + 设备发现 |
+| [Trakt](https://github.com/SanaeMio/Bangumi-syncer/blob/main/app/services/trakt/) | 拉取 | OAuth 认证 |
 
-## 关键约定
-
-1. **来源标识**：每个驱动定义 `XXX_SYNC_SOURCE` 常量（如 `"emby"`、`"feiniu"`），用于日志和数据库记录
-2. **委托模式**：驱动 sync_service 不直接调用 Bangumi API，统一委托给 `sync_service.sync_custom_item()`
-3. **异常处理**：驱动 sync_service 捕获异常后返回 `SyncResponse(status="error")`，不向上抛出
-4. **调度器继承**：拉取型驱动继承 `BaseScheduler`，只需实现 4 个抽象方法
-5. **鉴权统一**：Webhook 型驱动使用全局 `webhook_key` 鉴权，通过 `_verify_webhook_auth()` 验证
+**推荐阅读顺序**：先看 `custom/`（最简，<100 行）→ 再看 `emby/`（标准 webhook）→ 最后看 `feiniu/`（标准拉取型）。

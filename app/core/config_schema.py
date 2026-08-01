@@ -263,6 +263,19 @@ SECTIONS: dict[str, SectionMeta] = {
         order=540,
         is_multi_instance=True,
     ),
+    "notify-airing-today": SectionMeta(
+        name="notify-airing-today",
+        display_name="今日放送提醒",
+        order=545,
+        scheduler_id="airing_today",
+        # 该段驱动的通知类型：成功放送提醒 + 任务失败告警
+        notification_types=("airing_today", "scheduler_job_failed"),
+        fields=(
+            FieldMeta(name="enabled", default_true=True),
+            FieldMeta(name="cron", default="0 9 * * *"),
+            FieldMeta(name="only_watching", default_true=True),
+        ),
+    ),
     # ── AI 总结（order 600-699，多实例）──
     "summary": SectionMeta(
         name="summary",

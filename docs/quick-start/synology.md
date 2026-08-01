@@ -22,8 +22,10 @@ services:
     image: sanaemio/bangumi-syncer:latest
     container_name: bangumi-syncer
     network_mode: bridge
+    # fongmi 驱动的自动扫描局域网设备，需使用 `host` 网络模式
+    # network_mode: host
     ports:
-      - "8000:8000"
+      - '8000:8000'
     volumes:
       - ./config:/app/config
       - ./logs:/app/logs
@@ -41,7 +43,6 @@ services:
 6. 点击「下一步」，预览摘要，无误后点击「完成」并等待项目启动
 7. 浏览器访问 `http://群晖IP:8000` 进入 Web 管理界面
 8. **首次使用登录信息**：
-
    - 用户名：`admin`
    - 密码：`admin`
    - 登录后请立即在「配置管理」页面修改默认密码
@@ -50,6 +51,11 @@ services:
 
 ::: tip 配置文件持久化
 首次启动时 `entrypoint.sh` 会自动从镜像内置模板复制 `config.ini` 到挂载目录（`/docker/bangumi-syncer/config/config.ini`），容器重建后配置不会丢失。后续通过 Web 界面修改并保存的配置也会写入该挂载目录。
+:::
+
+::: tip 注意：如果你使用 fongmi 驱动，推荐使用 `host` 网络模式
+fongmi 驱动的自动扫描局域网设备，需使用 `host` 网络模式，
+`bridge` 网络模式下容器只能扫描到 `172.x.x.x` 网段，无法发现局域网设备。
 :::
 
 ## 方式二：通过 Container Manager 镜像仓库（原注册表）
@@ -62,7 +68,6 @@ services:
 4. 点击「映像」找到下载好的 `sanaemio/bangumi-syncer`，打开点击「运行」
 5. 容器名称：`bangumi-syncer`
 6. 在「高级设置」中：
-
    - 端口设置：本地端口 `8000`，容器端口 `8000`，默认 `TCP`
    - 卷：添加以下映射（路径可以根据自己情况调整）
      - `/docker/bangumi-syncer/config` → `/app/config`（默认选可读写）
@@ -71,7 +76,6 @@ services:
 
 7. 点击「下一步」，预览摘要无误后点击「完成」并等待容器启动，浏览器访问 `http://群晖IP:8000` 进入 Web 管理界面
 8. **首次使用登录信息**：
-
    - 用户名：`admin`
    - 密码：`admin`
    - 登录后请立即在「配置管理」页面修改默认密码

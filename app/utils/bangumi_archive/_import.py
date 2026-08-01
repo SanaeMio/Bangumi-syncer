@@ -124,6 +124,8 @@ _SCHEMA: dict[str, dict[str, Any]] = {
             "CREATE INDEX idx_episode_subject ON episode(subject_id)",
             "CREATE INDEX idx_episode_subject_sort ON episode(subject_id, sort)",
             "CREATE INDEX idx_episode_type ON episode(type)",
+            # 放送日历视图按 airdate 范围查询，ISO 日期字符串可直接比较
+            "CREATE INDEX idx_episode_airdate ON episode(airdate)",
         ],
     },
     "subject_relation": {

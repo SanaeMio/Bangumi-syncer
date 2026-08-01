@@ -30,4 +30,4 @@ order: 16
 
 ## 相关配置
 
-各字段的详细说明见 [配置说明 - 飞牛影视](/configuration#飞牛影视)。
+各字段的详细说明见 [配置说明 - 飞牛影视](/config/configuration#飞牛影视)。

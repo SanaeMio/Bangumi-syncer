@@ -300,8 +300,61 @@
             </div>
         </div>
     </div>
-    <!-- 调度器状态卡（与最近同步卡同尺寸：col-xl-5 col-lg-6） -->
+    <!-- 我在追的放送 + 调度器状态（同行；放送仅在 Archive 启用时展示，固定只显示在追番剧） -->
     <div class="row g-4 mb-4">
+        <div class="col-xl-7 col-lg-6 d-flex"
+             id="airing-calendar-row"
+             style="display: none">
+            <div class="card airing-calendar-card flex-fill">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-calendar-week me-2 card-header-icon"></i>
+                            <h6 class="m-0 fw-semibold card-header-title">我在追的放送</h6>
+                            <span id="airing-calendar-summary"
+                                  class="badge rounded-pill bg-secondary ms-2 small fw-normal d-none"></span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button"
+                                        class="btn btn-outline-secondary airing-type-btn active"
+                                        data-type="0">全部</button>
+                                <button type="button"
+                                        class="btn btn-outline-secondary airing-type-btn"
+                                        data-type="2">动画</button>
+                                <button type="button"
+                                        class="btn btn-outline-secondary airing-type-btn"
+                                        data-type="6">三次元</button>
+                                <button type="button"
+                                        class="btn btn-outline-secondary"
+                                        id="airing-refresh"
+                                        title="刷新在看列表缓存">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                            </div>
+                            <div class="dropdown d-none" id="airing-account-dropdown">
+                                <button class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                                        type="button"
+                                        data-bs-toggle="dropdown"
+                                        aria-expanded="false"
+                                        title="切换 Bangumi 账号">
+                                    <i class="bi bi-person-circle me-1"></i><span id="airing-account-label">账号</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" id="airing-account-menu">
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body px-3 pt-2 pb-3">
+                    <div id="airing-calendar-container">
+                        <div class="text-center py-3 app-text-muted-block">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="col-xl-5 col-lg-6 d-flex">
             <div class="card flex-fill">
                 <div class="card-header py-3">
@@ -380,4 +433,5 @@
     <script defer src="{{ '/static/js/inbox.js' | static_v }}"></script>
     <script>window.__DASHBOARD_DATA__ = { poster_cache_ns: {{ poster_cache_ns | tojson }} };</script>
     <script defer src="{{ '/static/js/dashboard.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/airing_calendar.js' | static_v }}"></script>
 {% endblock %}

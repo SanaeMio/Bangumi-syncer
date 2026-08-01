@@ -52,6 +52,12 @@ def register_all() -> None:
         JobSpec(scheduler_id="bangumi_replay", runner=bangumi_replay_scheduler)
     )
 
+    from .airing_today_scheduler import airing_today_scheduler
+
+    scheduler_registry.register_spec(
+        JobSpec(scheduler_id="airing_today", runner=airing_today_scheduler)
+    )
+
     # ── 命令式调度器（instance 注册）──
 
     from .trakt.scheduler import trakt_scheduler

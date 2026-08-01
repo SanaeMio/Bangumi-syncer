@@ -177,6 +177,61 @@ class ArchiveStore:
             logger.warning(f"bangumi_archive get_episodes 失败: {e}")
             return []
 
+    def get_episodes_by_airdate(
+        self,
+        start_date: str,
+        end_date: str,
+        subject_types: tuple[int, ...] = (2, 6),
+        subject_ids: Optional[set[int]] = None,
+    ) -> list[dict[str, Any]]:
+        """按 airdate 范围查询放送日程，JOIN subject 取条目名
+
+        用于"番剧放送日历"视图：给定日期范围，返回该范围内所有（或指定
+        条目的）剧集，按 airdate 升序排列。
+
+        Args:
+            start_date: 起始日期 YYYY-MM-DD（含）
+            end_date: 结束日期 YYYY-MM-DD（含）
+            subject_types: 条目类型过滤，默认仅动画(2)+三次元(6)
+            subject_ids: 非空时仅查询这些 subject 的剧集（用于"仅我在追"）；
+                         None 表示不过滤
+
+        Returns:
+            list[dict]，每个 dict 含：
+            - episode_id, subject_id, subject_name, subject_name_cn,
+              subject_type, ep_name, ep_name_cn, ep_sort, airdate
+        """
+        conn = self._get_connection()
+        if conn is None:
+            return []
+        try:
+            type_placeholders = ",".join("?" * len(subject_types))
+            sql = (
+                "SELECT e.id AS episode_id, e.subject_id AS subject_id, "
+                "e.name AS ep_name, e.name_cn AS ep_name_cn, "
+                "e.sort AS ep_sort, e.airdate AS airdate, "
+                "s.name AS subject_name, s.name_cn AS subject_name_cn, "
+                "s.type AS subject_type "
+                "FROM episode e "
+                "JOIN subject s ON e.subject_id = s.id "
+                "WHERE e.airdate BETWEEN ? AND ? "
+                "AND e.airdate != '' "
+                f"AND s.type IN ({type_placeholders})"
+            )
+            params: list[Any] = [start_date, end_date, *subject_types]
+            if subject_ids is not None:
+                if not subject_ids:  # 空集合：无匹配项
+                    return []
+                placeholders = ",".join("?" * len(subject_ids))
+                sql += f" AND e.subject_id IN ({placeholders})"
+                params.extend(subject_ids)
+            sql += " ORDER BY e.airdate, s.id, e.sort"
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error as e:
+            logger.warning(f"bangumi_archive get_episodes_by_airdate 失败: {e}")
+            return []
+
     def get_related_subjects(self, subject_id: int) -> list[dict[str, Any]]:
         """查询条目的关联条目
 

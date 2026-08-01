@@ -335,8 +335,8 @@ class TestDefaultTrueFields:
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """default_true 字段：原 5 个 + sync.movie_*(2) + dev.ssl_verify + bangumi-data.*(2) + bangumi-archive.ssl_verify + bangumi-replay.enabled + notify-in-app.in_app_notification"""
-        assert len(config_schema.default_true_fields()) == 9
+        """default_true 字段：原 5 个 + sync.movie_*(2) + dev.ssl_verify + bangumi-data.*(2) + bangumi-archive.ssl_verify + bangumi-replay.enabled + notify-in-app.in_app_notification + notify-airing-today.enabled + notify-airing-today.only_watching"""
+        assert len(config_schema.default_true_fields()) == 11
 
 
 class TestLooseTrueFields:

@@ -176,11 +176,16 @@ class BangumiArchive:
         self._progress_cache: dict[str, ProgressEvent] = {}
         # 进度历史日志（按 task_id）：所有阶段变化记录
         self._progress_logs: dict[str, list[ProgressEvent]] = {}
+        # 已补建索引的库路径集合：避免对同一库重复执行 CREATE INDEX IF NOT EXISTS
+        self._indexes_ensured_paths: set[str] = set()
         # 启动时清理上次崩溃残留的 .tmp 子目录（非阻塞，失败仅记录日志）
         self._cleanup_stale_tmp()
         # 启动时后台预构建标题索引（enabled 且 active DB 存在时）
         # 构建期间 try_search 自动降级到 API，构建完成后查询走 Archive
         self._maybe_start_background_index_build()
+        # 启动时为老库补建缺失的关键索引（如 idx_episode_airdate）
+        # 仅 _import.py 新建库时建索引，已导入的老库需补建
+        self._ensure_active_db_indexes()
 
     def _maybe_start_background_index_build(self) -> None:
         """启动时若 Archive 已启用且 active DB 存在，初始化 FTS5 查询层连接
@@ -282,6 +287,58 @@ class BangumiArchive:
             archive_shortcut.reload_config()
         except Exception as e:
             logger.warning(f"bangumi_archive 同步刷新 archive_shortcut 配置失败: {e}")
+        # 为 active 库补建缺失的关键索引（老库迁移用）
+        self._ensure_active_db_indexes()
+
+    # ===== 索引补建（老库迁移） =====
+
+    # 需要保证存在的关键索引（仅放送日历视图高频查询用到的）
+    # 与 _import.py 的 _SCHEMA["episode"]["index_sqls"] 对齐，但用 IF NOT EXISTS
+    _CRITICAL_INDEX_SQLS = (
+        "CREATE INDEX IF NOT EXISTS idx_episode_airdate ON episode(airdate)",
+        "CREATE INDEX IF NOT EXISTS idx_episode_subject ON episode(subject_id)",
+    )
+
+    def _ensure_active_db_indexes(self) -> None:
+        """为 active 库补建缺失的关键索引
+
+        背景：idx_episode_airdate 等索引只在 _import.py 新建库时创建，
+        早期版本导入的老库不会自动补建，30 天范围查询在 episode 大表上偏慢。
+
+        策略：
+        - 用单独的可写连接执行 CREATE INDEX IF NOT EXISTS（archive_store 的
+          连接是 query_only=ON，无法建索引）
+        - 用 _indexes_ensured_paths 集合按路径去重，同一库只执行一次
+        - active 切换后新库路径不在集合中，会再次执行（覆盖切换 active 指针场景）
+        - 失败仅记录 warning，不影响主流程
+        """
+        if not self.enabled:
+            return
+        try:
+            import sqlite3
+
+            active_db = self.get_active_db_path()
+            if not active_db.exists():
+                return
+            key = str(active_db)
+            with self._lock:
+                if key in self._indexes_ensured_paths:
+                    return
+                # 标记为已处理，即使下面失败也不重试（避免每次请求都尝试）
+                self._indexes_ensured_paths.add(key)
+            conn = sqlite3.connect(str(active_db))
+            try:
+                for sql in self._CRITICAL_INDEX_SQLS:
+                    try:
+                        conn.execute(sql)
+                    except sqlite3.Error as e:
+                        logger.warning(f"bangumi_archive: 补建索引失败 ({sql}): {e}")
+                conn.commit()
+                logger.debug(f"bangumi_archive: 索引补建完成 (active={active_db.name})")
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"bangumi_archive: _ensure_active_db_indexes 异常: {e}")
 
     # ===== meta 与 active 指针 =====
 

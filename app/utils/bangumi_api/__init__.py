@@ -191,7 +191,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         # 重新加载 Archive 短路配置（配置变更后调用方可立即生效）
         self._archive.reload_config()
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def get(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
         logger.debug(
             f"BangumiApi GET请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
@@ -207,7 +207,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         path: str,
         _json: dict[str, Any],
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> httpx.Response:
         logger.debug(
             f"BangumiApi POST请求: {self.host}/{path}, 代理: {self.http_proxy if self.http_proxy else '无'}"
         )
@@ -222,7 +222,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         path: str,
         _json: dict[str, Any],
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> httpx.Response:
         res = self._request_with_retry(
             "PUT", self.req, f"{self.host}/{path}", json=_json, params=params
         )
@@ -234,9 +234,25 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         path: str,
         _json: dict[str, Any],
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> httpx.Response:
         res = self._request_with_retry(
             "PATCH", self.req, f"{self.host}/{path}", json=_json, params=params
         )
         self.mark_api_reachable()
         return self._check_auth_error(res)
+
+    def close(self) -> None:
+        """关闭底层 httpx.Client，释放连接池资源
+
+        BangumiApi 持有两个 SyncHttpClient（req / _req_not_auth），
+        短生命周期实例（如放送日历/今日放送提醒中临时构造的）应在使用完毕后调用 close()，
+        避免连接池句柄泄漏。长生命周期实例（如 sync_service 主客户端）无需调用。
+        """
+        try:
+            self.req.close()
+        except Exception as e:
+            logger.debug(f"关闭 BangumiApi.req 失败: {e}")
+        try:
+            self._req_not_auth.close()
+        except Exception as e:
+            logger.debug(f"关闭 BangumiApi._req_not_auth 失败: {e}")
