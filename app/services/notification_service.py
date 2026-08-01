@@ -40,6 +40,18 @@ from ..utils.notifier.template_manager import (
     template_manager,
 )
 
+
+class _SafeFormatDict(dict):
+    """format_map 用的安全字典：缺失键返回空字符串而非抛 KeyError
+
+    用于站内信标题模板渲染，避免 data 中缺少某个占位符字段时
+    中断整个通知流程。
+    """
+
+    def __missing__(self, key: str) -> str:  # type: ignore[override]
+        return ""
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # 冷却策略
 # ─────────────────────────────────────────────────────────────────────────
@@ -519,16 +531,21 @@ class NotificationService:
         elif rendered.get("title"):
             title = rendered["title"] or ""
         elif meta and meta.in_app_title_template:
+            # 渲染站内信标题模板：支持 data 中任意字段作占位符
+            # 缺失字段降级为空字符串，避免 KeyError 中断通知流程
             media_type = data.get("media_type", "episode")
             ep_label = (
                 f"S{data.get('season', 0)}E{data.get('episode', 0)}"
                 if media_type == "episode"
                 else "剧场版"
             )
-            title = meta.in_app_title_template.format(
-                title=data.get("title", "unknown"),
-                ep_label=ep_label,
-            )
+            fmt_data = _SafeFormatDict(data)
+            fmt_data.setdefault("title", data.get("title", "unknown"))
+            fmt_data.setdefault("ep_label", ep_label)
+            try:
+                title = meta.in_app_title_template.format_map(fmt_data)
+            except Exception:
+                title = data.get("title", "unknown")
         else:
             title = data.get("title", "unknown")
 

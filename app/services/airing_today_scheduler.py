@@ -1,4 +1,4 @@
-"""今日放送提醒调度器
+"""今日放送提醒调度器（"我的追番"定位）
 
 继承 BaseScheduler，按 [notify-airing-today] cron 每日定时触发，
 查询今日放送并触发 airing_today 通知。
@@ -7,6 +7,11 @@
 
 前置条件：Bangumi Archive 已启用且已导入数据。
 "仅我在追"模式需配置 Bangumi 账号。
+
+失败语义（与"我的追番"卡片对齐）：
+- only_watching=True 时获取在看列表失败 → 不推送通知（"我的追番"语义下
+  全部放送对用户无意义，静默推送会误导）
+- only_watching=False（用户显式配置全部） → 正常推送全部今日放送
 """
 
 from __future__ import annotations
@@ -99,19 +104,26 @@ class AiringTodayScheduler(BaseScheduler):
 
         if only_watching:
             api = _build_bangumi_api()
-            if api is not None:
-                try:
-                    # 在线程中执行同步 IO 调用
-                    subject_ids = await asyncio.to_thread(get_watching_subject_ids, api)
-                    actual_only_watching = True
-                except Exception as e:
-                    logger.warning(
-                        f"AiringToday: 获取在看列表失败，降级为全部放送: {e}"
-                    )
-                    subject_ids = None
-                finally:
-                    # 临时构造的 BangumiApi 持有 httpx.Client 连接池，需显式释放
-                    api.close()
+            if api is None:
+                # only_watching=True 但未配置 Bangumi 账号：不推送
+                # （"我的追番"语义下全部放送无意义）
+                logger.warning(
+                    "AiringToday: only_watching=True 但未配置 Bangumi 账号，跳过本轮通知"
+                )
+                return
+            try:
+                # 在线程中执行同步 IO 调用
+                subject_ids = await asyncio.to_thread(get_watching_subject_ids, api)
+                actual_only_watching = True
+            except Exception as e:
+                # 获取失败：不降级为全部放送（与"我的追番"卡片语义对齐）
+                logger.warning(
+                    f"AiringToday: 获取在看列表失败，跳过本轮通知（不降级为全部放送）: {e}"
+                )
+                return
+            finally:
+                # 临时构造的 BangumiApi 持有 httpx.Client 连接池，需显式释放
+                api.close()
 
         # 查询今日放送（在线程中执行 SQLite 查询）
         rows = await asyncio.to_thread(

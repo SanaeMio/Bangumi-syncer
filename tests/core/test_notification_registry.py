@@ -129,9 +129,12 @@ class TestAiringToday:
         assert meta.is_item_level is False
         assert meta.visible_in_ui is True
 
-    def test_no_in_app_mapping(self):
-        """airing_today 不映射站内信（仅外部渠道）"""
-        assert resolve_in_app_type("airing_today") is None
+    def test_in_app_mapping(self):
+        """airing_today 映射到站内信，标题模板带放送日期与集数"""
+        assert resolve_in_app_type("airing_today") == "airing_today"
+        meta = get_type_meta("airing_today")
+        assert meta is not None
+        assert meta.in_app_title_template == "今日放送 {total} 集（{airdate}）"
 
     def test_not_item_level(self):
         assert is_item_level_type("airing_today") is False

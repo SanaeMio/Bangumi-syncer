@@ -224,8 +224,11 @@ class TestRunSyncJob:
         assert kwargs["airdate"]  # 自动取今天日期
 
     @pytest.mark.asyncio
-    async def test_only_watching_failure_degrades_to_all(self):
-        """获取在看列表失败时降级为全部放送（actual_only_watching=False）"""
+    async def test_only_watching_failure_skips_notify(self):
+        """获取在看列表失败时不推送通知（不降级为全部放送）
+
+        "我的追番"语义下全部放送对用户无意义，静默推送会误导。
+        """
         s = AiringTodayScheduler()
         s._scheduler_config = {"job_timeout": 120}
         mock_api = MagicMock()
@@ -264,11 +267,51 @@ class TestRunSyncJob:
             )
             await s._run_sync_job()
 
-        notify.assert_called_once()
-        assert notify.call_args.kwargs["only_watching"] is False
-        # subject_ids=None 时不应传 subject_ids 给查询
-        _args = store.get_episodes_by_airdate.call_args
-        assert _args.kwargs.get("subject_ids") is None
+        # 不应触发通知（不降级为全部放送）
+        notify.assert_not_called()
+        # 不应查询 Archive（避免无意义 IO）
+        store.get_episodes_by_airdate.assert_not_called()
+        # 临时 api 实例仍应被关闭（资源释放）
+        mock_api.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_only_watching_no_config_skips_notify(self):
+        """only_watching=True 但未配置 Bangumi 账号时不推送通知"""
+        s = AiringTodayScheduler()
+        s._scheduler_config = {"job_timeout": 120}
+        mock_rows = [
+            {
+                "episode_id": 101,
+                "subject_id": 1,
+                "subject_name": "Anime A",
+                "subject_name_cn": "",
+                "subject_type": 2,
+                "ep_sort": 1,
+                "ep_name": "",
+                "ep_name_cn": "",
+                "airdate": "2026-07-31",
+            }
+        ]
+        with (
+            patch.object(s, "_is_enabled", return_value=True),
+            patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
+            patch("app.services.airing_today_scheduler.archive_store") as store,
+            patch("app.services.airing_today_scheduler.notify_airing_today") as notify,
+            patch("app.services.airing_today_scheduler.config_manager") as cm,
+            patch(
+                "app.services.airing_today_scheduler._build_bangumi_api",
+                return_value=None,
+            ),
+        ):
+            ba.get_active_db_path.return_value = _existing_path()
+            store.get_episodes_by_airdate.return_value = mock_rows
+            cm.get.side_effect = _make_get_side_effect(
+                {("notify-airing-today", "only_watching"): True}
+            )
+            await s._run_sync_job()
+
+        notify.assert_not_called()
+        store.get_episodes_by_airdate.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_only_watching_success_filters_subject_ids(self):
