@@ -332,13 +332,9 @@ class BangumiArchive:
                     try:
                         conn.execute(sql)
                     except sqlite3.Error as e:
-                        logger.warning(
-                            f"bangumi_archive: 补建索引失败 ({sql}): {e}"
-                        )
+                        logger.warning(f"bangumi_archive: 补建索引失败 ({sql}): {e}")
                 conn.commit()
-                logger.debug(
-                    f"bangumi_archive: 索引补建完成 (active={active_db.name})"
-                )
+                logger.debug(f"bangumi_archive: 索引补建完成 (active={active_db.name})")
             finally:
                 conn.close()
         except Exception as e:
