@@ -14,16 +14,25 @@ from ...core.config import config_manager
 from . import BangumiApi
 
 
-def build_bangumi_api_from_active_config() -> BangumiApi | None:
+def build_bangumi_api_from_active_config(
+    section_name: str | None = None,
+) -> BangumiApi | None:
     """从配置构造 BangumiApi 实例（兼容单/多用户模式）
 
-    单用户模式读 [bangumi] 段，多用户模式取首个有效账号段。
-    仅当 username 和 access_token 均非空才返回实例。
+    Args:
+        section_name: 多用户模式下指定 ``[bangumi-{username}]`` 段名。
+            传入时直接从该段取配置（用于"我的追番"卡片切换账号）。
+            None 时按原逻辑：单用户读 ``[bangumi]``，多用户取首个有效账号。
 
     Returns:
         BangumiApi 实例；若无有效配置返回 None。调用方负责 close()。
     """
-    cfg = config_manager.get_active_bangumi_config()
+    # 指定段名且非单用户默认段：直接从多账号段表精确查找
+    if section_name and section_name != "bangumi":
+        configs = config_manager.get_bangumi_configs()
+        cfg = configs.get(section_name)
+    else:
+        cfg = config_manager.get_active_bangumi_config()
     if not cfg or not cfg.get("username") or not cfg.get("access_token"):
         return None
     dev_snapshot = config_manager.get_dev_http_snapshot()

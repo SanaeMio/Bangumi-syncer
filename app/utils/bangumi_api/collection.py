@@ -359,8 +359,15 @@ def get_watching_subject_ids(api: Any) -> set[int]:
     try:
         # 动画(2) + 三次元(6) 的"在看"(type=3)
         # API 调用在锁外执行，避免长时间持锁阻塞其他线程的缓存读
-        anime_watching = api.list_user_collections(subject_type=2, collection_type=3)
-        real_watching = api.list_user_collections(subject_type=6, collection_type=3)
+        # max_total=2000：放送日历"我的追番"视图需要完整在看列表，
+        # 默认 500 在重度用户场景会漏条目，提升到 2000 覆盖绝大多数用户
+        # （动画/三次元各 2000 上限，合计 4000 部在看）
+        anime_watching = api.list_user_collections(
+            subject_type=2, collection_type=3, max_total=2000
+        )
+        real_watching = api.list_user_collections(
+            subject_type=6, collection_type=3, max_total=2000
+        )
         ids = {
             item.get("subject_id")
             for item in (anime_watching + real_watching)

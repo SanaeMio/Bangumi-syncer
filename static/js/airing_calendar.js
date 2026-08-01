@@ -1,14 +1,17 @@
 // 我在追的番剧放送清单：调用 /api/airing-calendar 渲染未来 30 天在追番剧的放送日程
 // 仅在 Archive 启用时显示该卡片（由 API 返回的 archive_enabled 控制）
+// 多用户模式（[sync] mode=multi）下右上角显示账号切换 dropdown
 ;(function () {
   'use strict'
 
-  // 当前状态：固定 only_watching=true，仅展示在追番剧的放送日程
+  // 当前状态：仅展示在追番剧的放送日程（API 固定"我的追番"语义）
   var state = {
     days: 30, // 固定 30 天
     subjectType: 0, // 0=全部, 2=动画, 6=三次元
     loading: false,
     firstLoad: true, // 首次加载强制刷新在看列表缓存
+    account: null, // 多用户模式下当前选中的 Bangumi 账号段名
+    multiUser: false,
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -38,9 +41,81 @@
       })
     }
 
-    // 首次加载
-    loadAiringCalendar()
+    // 先加载账号列表（判断多用户模式 + 填充 dropdown），再拉取放送数据
+    loadBangumiAccounts().then(function () {
+      loadAiringCalendar()
+    })
   })
+
+  /**
+   * 加载 Bangumi 账号列表，多用户且 >1 账号时显示右上角切换 dropdown。
+   * 单用户或仅 1 个账号时隐藏 dropdown，按默认活跃账号查询。
+   */
+  function loadBangumiAccounts() {
+    return apiFetch('/api/airing-calendar/accounts', { method: 'GET' })
+      .then(function (data) {
+        var dropdown = document.getElementById('airing-account-dropdown')
+        var menu = document.getElementById('airing-account-menu')
+        var label = document.getElementById('airing-account-label')
+        if (!dropdown || !menu) {
+          state.multiUser = false
+          state.account = null
+          return
+        }
+
+        // 单用户模式或账号数 <=1：隐藏 dropdown，account 留空走默认
+        if (data.mode !== 'multi' || !data.accounts || data.accounts.length <= 1) {
+          dropdown.classList.add('d-none')
+          state.multiUser = false
+          state.account = null
+          return
+        }
+
+        // 多用户且 >1 账号：显示 dropdown
+        state.multiUser = true
+        dropdown.classList.remove('d-none')
+
+        // 默认选中后端返回的 active 账号
+        state.account = data.active || data.accounts[0].section_name
+
+        // 填充下拉菜单
+        menu.innerHTML = ''
+        data.accounts.forEach(function (acc) {
+          var li = document.createElement('li')
+          var a = document.createElement('a')
+          a.className = 'dropdown-item' + (acc.section_name === state.account ? ' active' : '')
+          a.href = '#'
+          a.textContent = acc.username
+          a.dataset.sectionName = acc.section_name
+          a.addEventListener('click', function (e) {
+            e.preventDefault()
+            if (state.account === acc.section_name) return
+            state.account = acc.section_name
+            state.firstLoad = true // 切换账号强制刷新在看列表缓存
+            // 更新菜单激活态与标签
+            menu.querySelectorAll('.dropdown-item').forEach(function (item) {
+              item.classList.toggle('active', item.dataset.sectionName === state.account)
+            })
+            label.textContent = acc.username
+            loadAiringCalendar()
+          })
+          li.appendChild(a)
+          menu.appendChild(li)
+        })
+
+        // 标签显示当前账号用户名
+        var current = data.accounts.find(function (a) {
+          return a.section_name === state.account
+        })
+        if (current) label.textContent = current.username
+      })
+      .catch(function (err) {
+        console.error('加载 Bangumi 账号列表失败:', err)
+        // 失败时按单用户模式继续（不阻塞放送日历加载）
+        state.multiUser = false
+        state.account = null
+      })
+  }
 
   /**
    * 拉取放送数据并渲染。
@@ -61,8 +136,11 @@
 
     var params =
       'days=' + encodeURIComponent(state.days) +
-      '&only_watching=true' +
       '&subject_type=' + encodeURIComponent(state.subjectType)
+    // 多用户模式传当前选中账号段名
+    if (state.account) {
+      params += '&account=' + encodeURIComponent(state.account)
+    }
     // 首次加载或手动刷新时强制刷新在看列表缓存
     if (state.firstLoad) {
       params += '&refresh=true'
@@ -114,8 +192,9 @@
       return
     }
 
-    // 降级提示：API 未能获取在看列表（无 Bangumi 账号或调用失败），不展示全部放送
-    if (!data.only_watching) {
+    // 在看列表不可用：未配置 Bangumi 账号或获取在看列表失败
+    // "我的追番"语义下不展示全部放送，提示用户检查账号配置
+    if (data.status === 'watching_unavailable') {
       container.innerHTML =
         '<div class="text-center py-4 app-text-muted-block">' +
         '<i class="bi bi-exclamation-circle d-block mb-2 fs-4"></i>' +
@@ -155,8 +234,10 @@
       summary.classList.remove('d-none')
     }
 
-    // 渲染列表
-    container.innerHTML = buildListHtml(groups)
+    // 渲染列表：用 API 返回的调度器时区 today 作为"今天/明天"判定基准，
+    // 避免浏览器本地时区与 [scheduler] timezone 不一致时标签错位
+    var todayStr = (data && data.today) ? data.today : getTodayStr()
+    container.innerHTML = buildListHtml(groups, todayStr)
   }
 
   /**
@@ -206,9 +287,9 @@
   /**
    * 构造番剧清单 HTML。
    * @param {Array} groups - aggregateBySubject 返回值
+   * @param {string} todayStr - 今日 YYYY-MM-DD（取 API 返回的调度器时区）
    */
-  function buildListHtml(groups) {
-    var todayStr = getTodayStr()
+  function buildListHtml(groups, todayStr) {
     var html = '<div class="airing-list">'
     for (var i = 0; i < groups.length; i++) {
       html += buildSubjectRowHtml(groups[i], todayStr)
@@ -312,7 +393,9 @@
   }
 
   /**
-   * 获取今日 YYYY-MM-DD
+   * 浏览器本地时区今日 YYYY-MM-DD
+   * 仅作为 API 未返回 today 字段时的兜底；正常应使用 API 返回的
+   * 调度器时区 today，避免跨时区时"今天/明天"标签与放送日期错位。
    */
   function getTodayStr() {
     var d = new Date()
