@@ -744,7 +744,19 @@ class EpisodesMixin:
                 # 避免重复走逐跳逻辑（archive 已确认链上无目标）
                 return None
 
-        # 降级路径：逐跳遍历（archive 未启用 / miss / prequel 方向）
+        if direction == "prequel":
+            # 前传方向：正式启用 RelationMixin.search_previous_subjects
+            # 内部优先 try_find_prequel_chain 短路、archive miss 时降级在线逐跳，
+            # 拿到完整前传链后复用 _find_episode_in_chain 批量遍历（与续集方向对称）。
+            chain = self.search_previous_subjects(start_id, max_hops=max_depth) or []
+            result = self._find_episode_in_chain(chain, target_ep, visited, deadline)
+            if result:
+                return result
+            # search_previous_subjects 已确认无前传链或无目标，返回 None
+            # （等价于原逐跳降级路径的终点，避免重复查询）
+            return None
+
+        # 降级路径：逐跳遍历（仅 sequel 方向 archive 未启用 / miss 时走到）
         current_id = start_id
         for _ in range(max_depth):
             if deadline is not None and time.monotonic() > deadline:
