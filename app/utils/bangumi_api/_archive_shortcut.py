@@ -416,6 +416,32 @@ class ArchiveShortcut:
             logger.warning(f"bangumi_archive 短路 find_sequel_chain 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
 
+    def try_find_prequel_chain(
+        self, subject_id: int, max_hops: int = 30
+    ) -> ShortcutResult:
+        """短路前传链查找（与 try_find_sequel_chain 对称）
+
+        用于 search_previous_subjects / get_series_subject_ids 的前传方向优化：
+        一次拿完整前传链，避免逐跳 API 调用。
+
+        Returns:
+            hit=True 时 data 是 list[int]（前传链 subject_id 列表，不含起始）
+            hit=False 时 data 为 None
+        """
+        if not self._enabled:
+            return ShortcutResult(False, None, "archive_disabled")
+        try:
+            chain = archive_store.find_prequel_chain(subject_id, max_hops=max_hops)
+            # 判断 subject 是否在 Archive 中存在
+            if not chain:
+                subject = archive_store.get_subject(subject_id)
+                if subject is None:
+                    return ShortcutResult(False, None, "archive_miss")
+            return ShortcutResult(True, chain, "archive_hit")
+        except Exception as e:
+            logger.warning(f"bangumi_archive 短路 find_prequel_chain 异常: {e}")
+            return ShortcutResult(False, None, "archive_error")
+
     def _find_subject_ids_for_title(self, title: str) -> tuple[list[int], bool]:
         """标题 → subject_id 列表 + 是否精确命中
 
