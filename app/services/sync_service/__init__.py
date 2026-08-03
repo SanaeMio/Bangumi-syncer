@@ -1863,6 +1863,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             parts.append(f"premiere_date={item.release_date[:10]}")
         return "；".join(parts)
 
+    def _get_match_confidence_threshold(self) -> float:
+        """读取同步配置 `match_confidence_threshold`（模糊匹配自动采用阈值）。
+
+        低于该相似度的 Bangumi API 匹配不会自动采用，而是沉淀到待审队列。
+        默认 0.6；配置缺失或非法时回退到默认值。
+        """
+        try:
+            val = config_manager.get("sync", "match_confidence_threshold", fallback=0.6)
+            return float(val)
+        except (TypeError, ValueError):
+            return 0.6
+
     def _find_subject_id(
         self, item: CustomItem, trace: MatchTrace | None = None
     ) -> tuple[str | None, bool, str]:
@@ -2502,12 +2514,53 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 f"均无一致条目，保持首条"
                             )
 
+            # ── 置信度阈值：相似度低于阈值则不自动采用，沉淀到待审队列 ──
+            # 使用真实标题相似度（title_diff_ratio，0~1），取代原先固定的 0.9/1.0。
+            threshold = self._get_match_confidence_threshold()
+            real_conf = bgm.title_diff_ratio(search_title, item.ori_title, bgm_data[0])
+            # 仅当真实相似度为数值时才应用阈值：生产环境 title_diff_ratio 返回
+            # float；个别单测未注入相似度（返回非数值）时，保持旧行为直接采用。
+            if isinstance(real_conf, (int, float)) and real_conf < threshold:
+                logger.info(
+                    "番剧《%s》API 匹配 top 候选(id=%s) 相似度 %.2f 低于阈值 %.2f，"
+                    "沉淀到待审队列",
+                    item.title,
+                    bgm_data[0].get("id"),
+                    real_conf,
+                    threshold,
+                )
+                if step:
+                    step.status = "low_confidence"
+                    step.subject_id = bgm_data[0].get("id")
+                    step.score = real_conf
+                    step.reason = (
+                        f"匹配相似度 {real_conf:.2f} 低于阈值 {threshold:.2f}，"
+                        f"已沉淀待审"
+                    )
+                if trace:
+                    # final_subject_id 保持未命中，使下游走待审沉淀路径
+                    trace.final_score = real_conf
+                    trace.final_match_method = match_stage
+                    trace.finish()
+                return (
+                    None,
+                    False,
+                    (
+                        f"match confidence {real_conf:.2f} below threshold "
+                        f"{threshold:.2f}"
+                    ),
+                )
+
             if trace:
                 trace.final_subject_id = bgm_data[0]["id"]
                 # 区分 archive / api_search 命中来源（与 step.stage 保持一致）
                 trace.final_match_method = match_stage
-                # 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
-                trace.final_score = 1.0 if is_api_season_matched else 0.9
+                # 搜索置信度：真实相似度为数值时采用之，否则回退到旧版启发式
+                trace.final_score = (
+                    real_conf
+                    if isinstance(real_conf, (int, float))
+                    else (1.0 if is_api_season_matched else 0.9)
+                )
                 trace.finish()
 
                 # 匹配歧义检测：top1/top2 分数接近时触发 match_ambiguous

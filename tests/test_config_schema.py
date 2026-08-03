@@ -298,6 +298,10 @@ class TestFieldMeta:
     def test_sync_mode_default(self):
         assert config_schema.field_default("sync", "mode") == "single"
 
+    def test_sync_match_confidence_threshold_default(self):
+        """功能三：置信度阈值默认 0.6（0~1 小数）。"""
+        assert config_schema.field_default("sync", "match_confidence_threshold") == 0.6
+
     def test_dev_retention_default(self):
         assert config_schema.field_default("dev", "sync_records_retention_days") == 0
 

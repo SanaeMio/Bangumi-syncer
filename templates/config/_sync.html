@@ -104,6 +104,23 @@
                                        placeholder="多个关键词用逗号分隔，如：物语系列,特典">
                             </div>
                             <div class="col-12">
+                                <label for="match-confidence-threshold" class="form-label">
+                                    模糊匹配置信度阈值
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="0~1 之间的小数。Bangumi API 模糊匹配得到的最佳候选相似度低于该阈值时，不会自动采用，而是沉淀到「待审队列」由人工确认。调高可避免误同步，调低则更激进地自动采用。"></i>
+                                </label>
+                                <input type="number"
+                                       class="form-control"
+                                       id="match-confidence-threshold"
+                                       name="sync.match_confidence_threshold"
+                                       data-type="float"
+                                       min="0"
+                                       max="1"
+                                       step="0.05"
+                                       placeholder="0.6">
+                            </div>
+                            <div class="col-12">
                                 <div class="row g-3 align-items-center mt-1">
                                     <div class="col-12 col-md-4">
                                         <div class="form-check form-switch mb-0">
