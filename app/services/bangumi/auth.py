@@ -226,22 +226,18 @@ class BangumiAuthService:
 
         激活策略：新建账号总是自动激活（用户主动授权说明想用此账号，对齐 Trakt
         行为）；更新已存在账号保留原激活状态。
+
+        注意：Bangumi OAuth 令牌响应仅携带 ``user_id``，不包含
+        ``username``/``nickname``/``avatar``。需用 access_token 调用
+        ``/v0/me`` 补全用户信息，否则 username 会回退为数字 ID，导致
+        ``/v0/users/{username}/collections`` 等接口 404。
         """
         access_token = token.get("access_token")
         refresh_token = token.get("refresh_token")
         expires_in = int(token.get("expires_in", 0) or 0)
         expires_at = int(time.time()) + expires_in if expires_in else 0
 
-        # Bangumi OAuth 令牌响应直接携带 user_id / username / nickname
         user_id = token.get("user_id")
-
-        # 处理 avatar（Bangumi OAuth 响应为 dict，回写时取 large/medium）
-        avatar = token.get("avatar")
-        avatar_url = ""
-        if isinstance(avatar, dict):
-            avatar_url = avatar.get("large") or avatar.get("medium") or ""
-        elif isinstance(avatar, str):
-            avatar_url = avatar
 
         # ── 定位目标账号 ──
         existing: dict = {}
@@ -264,15 +260,42 @@ class BangumiAuthService:
             section = self._active_section_name() or "bangumi"
             existing = get_bangumi_account(section) or {}
 
-        # 补全 avatar：新建账号时 existing 为空
-        if not avatar_url:
-            avatar_url = existing.get("avatar", "")
-
-        username = (
-            token.get("username")
-            or (str(user_id) if user_id is not None else "")
-            or existing.get("username", "")
-        )
+        # ── 补全用户信息（username/nickname/avatar）────────────
+        # Bangumi OAuth 令牌响应不携带 username/nickname/avatar，
+        # 需用 access_token 调用 /v0/me 获取，避免 username 回退为数字 ID
+        me_info = self._fetch_me_info(access_token) if access_token else None
+        if me_info:
+            # /v0/me 返回的 username 是字符串昵称，用于 API 路径
+            username = me_info.get("username") or existing.get("username", "")
+            nickname = me_info.get("nickname") or existing.get("nickname", "")
+            avatar_obj = me_info.get("avatar")
+            if isinstance(avatar_obj, dict):
+                avatar_url = (
+                    avatar_obj.get("large")
+                    or avatar_obj.get("medium")
+                    or avatar_obj.get("small")
+                    or ""
+                )
+            else:
+                avatar_url = existing.get("avatar", "")
+            # user_id 也以 /v0/me 为准（令牌响应的 user_id 可能不是字符串）
+            if me_info.get("id") is not None:
+                user_id = me_info.get("id")
+        else:
+            # /v0/me 调用失败时回退到令牌响应或已有记录
+            username = (
+                token.get("username")
+                or (str(user_id) if user_id is not None else "")
+                or existing.get("username", "")
+            )
+            nickname = token.get("nickname") or existing.get("nickname") or ""
+            avatar_raw = token.get("avatar")
+            if isinstance(avatar_raw, dict):
+                avatar_url = avatar_raw.get("large") or avatar_raw.get("medium") or ""
+            elif isinstance(avatar_raw, str):
+                avatar_url = avatar_raw
+            else:
+                avatar_url = existing.get("avatar", "")
 
         # 新建账号自动激活（用户主动授权说明想用此账号，对齐 Trakt 行为）；
         # 更新已存在账号保留原激活状态
@@ -293,7 +316,7 @@ class BangumiAuthService:
                 if user_id is not None
                 else existing.get("bangumi_user_id", "")
             ),
-            "nickname": token.get("nickname") or existing.get("nickname") or "",
+            "nickname": nickname,
             "avatar": avatar_url,
             "private": bool(existing.get("private") or False),
             "is_active": is_new_account or was_active,
@@ -301,6 +324,39 @@ class BangumiAuthService:
         save_bangumi_account(account)
         if is_new_account:
             set_active_bangumi_account(section)
+
+    @staticmethod
+    def _fetch_me_info(access_token: str) -> Optional[dict]:
+        """用 access_token 调用 /v0/me 获取当前用户信息。
+
+        失败时返回 None，不阻断令牌落地（username 会回退为 user_id，
+        用户可手动修正或重新授权）。
+        """
+        try:
+            from app.core.config import config_manager
+            from app.utils.bangumi_api import BangumiApi
+
+            dev = config_manager.get_dev_http_snapshot()
+            api = BangumiApi(
+                access_token=access_token,
+                private=True,
+                http_proxy=dev["script_proxy"],
+                ssl_verify=dev["ssl_verify"],
+                bgm_api_proxy=dev["bgm_api_proxy"],
+                bgm_next_proxy=dev["bgm_next_proxy"],
+            )
+            try:
+                return api.get_me()
+            finally:
+                api.close()
+        except Exception as e:
+            from app.core.logging import logger
+
+            logger.warning(
+                f"Bangumi OAuth: 调用 /v0/me 获取用户信息失败: {e}，"
+                f"username 将回退为 user_id（可能影响 /v0/users/{{username}} 接口）"
+            )
+            return None
 
     def _active_section_name(self) -> Optional[str]:
         """返回当前激活 Bangumi 账号配置段名（DB 为唯一真相源）。"""
