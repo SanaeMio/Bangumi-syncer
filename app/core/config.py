@@ -708,6 +708,10 @@ class ConfigManager:
                 _BANGUMI_NON_ACCOUNT_SECTIONS
             ):
                 continue
+            # 跳过遗留单用户段 [bangumi]（账号字段已迁移到 DB，
+            # 避免 decrypt_api_config_payload 解密后明文返回 access_token）
+            if section_name == "bangumi":
+                continue
             # 统一键名格式：将连字符转换为下划线
             normalized_key = section_name.replace("-", "_")
             result[normalized_key] = self.get_section(section_name)

@@ -195,6 +195,8 @@ async def update_config(
 
         # multi_accounts 已由 /api/bangumi/accounts 独立管理，忽略旧字段
         data.pop("multi_accounts", None)
+        # 遗留单用户段 [bangumi] 账号字段已迁移到 DB，忽略前端回写避免与 DB 真相源分裂
+        data.pop("bangumi", None)
 
         # 更新常规配置
         password_updated = False

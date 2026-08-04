@@ -216,10 +216,10 @@ async def test_update_config_with_empty_password(app_with_auth, mock_config_mana
 
 
 @pytest.mark.asyncio
-async def test_update_config_persists_bangumi_media_server_username(
+async def test_update_config_ignores_bangumi_section(
     app_with_auth, mock_config_manager, mock_security_manager
 ):
-    """POST /api/config 将 bangumi.media_server_username 交给 set_config。"""
+    """POST /api/config 忽略遗留 [bangumi] 段回写（账号已迁移到 DB）。"""
     mock_config_manager.get_feiniu_config.return_value = {"enabled": False}
 
     async with AsyncClient(
@@ -242,9 +242,10 @@ async def test_update_config_persists_bangumi_media_server_username(
             )
 
     assert response.status_code == 200
-    mock_config_manager.set_config.assert_any_call(
-        "bangumi", "media_server_username", "plex_a,jelly_b"
-    )
+    # bangumi 段已由 /api/bangumi/accounts 管理，set_config 不应以 "bangumi" 为 section
+    for call in mock_config_manager.set_config.call_args_list:
+        args, _ = call
+        assert args[0] != "bangumi"
 
 
 # ========== 异常路径测试 ==========

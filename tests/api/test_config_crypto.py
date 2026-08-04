@@ -95,7 +95,7 @@ async def test_update_config_skips_empty_bangumi_access_token(
 async def test_update_config_writes_non_empty_bangumi_access_token(
     app_with_auth, mock_config_manager, mock_security_manager
 ):
-    """非空 access_token 应触发 set_config。"""
+    """[bangumi] 段已迁移到 DB，非空 access_token 不应触发 set_config。"""
     async with AsyncClient(
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
@@ -111,10 +111,7 @@ async def test_update_config_writes_non_empty_bangumi_access_token(
         )
 
     assert response.status_code == 200
-    found = False
+    # bangumi 段由 /api/bangumi/accounts 管理，set_config 不应以 "bangumi" 为 section
     for call in mock_config_manager.set_config.call_args_list:
         args = call[0]
-        if len(args) >= 2 and args[0] == "bangumi" and args[1] == "access_token":
-            assert args[2] == "new-token-value"
-            found = True
-    assert found
+        assert not (len(args) >= 2 and args[0] == "bangumi")
