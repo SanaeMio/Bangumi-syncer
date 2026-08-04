@@ -13,6 +13,7 @@ from typing import Optional
 from app.core.accounts import (
     get_active_bangumi_account,
     get_bangumi_account,
+    list_bangumi_accounts,
     save_bangumi_account,
     set_active_bangumi_account,
 )
@@ -193,36 +194,69 @@ class BangumiAuthService:
 
     # ── 令牌落地与状态查询（Bangumi 特有，DB 为唯一真相源）────
     def _persist_token(self, token: dict, section: Optional[str] = None) -> None:
-        """将令牌写入数据库（upsert 账号；授权成功后激活该账号）。
+        """将令牌写入数据库（upsert 账号）。
 
-        若指定 ``section`` 不存在则新建账号（保留 token 中携带的身份字段），
-        已存在则合并 token 字段后 upsert，保留原 ``media_server_usernames`` 等配置。
+        定位策略（对齐 Trakt 的"授权后添加账号"语义）：
+
+        - ``section`` 显式传入（刷新场景）：更新指定 section 的 token
+        - ``section`` 为 None（授权场景）：按 token 中的 ``user_id`` 查找已存在账号，
+          找到则更新（保留 media_server_usernames 等用户配置），未找到则新建账号
+          到列表，section_name 取 ``bangumi-{user_id}``。
+
+        不强制激活新建账号，避免覆盖用户当前选择；但若账号列表为空（首次授权），
+        自动激活新建账号以保持开箱即用体验。
         """
-        section = section or self._active_section_name() or "bangumi"
-
         access_token = token.get("access_token")
         refresh_token = token.get("refresh_token")
         expires_in = int(token.get("expires_in", 0) or 0)
         expires_at = int(time.time()) + expires_in if expires_in else 0
 
-        existing = get_bangumi_account(section) or {}
+        # Bangumi OAuth 令牌响应直接携带 user_id / username / nickname
+        user_id = token.get("user_id")
 
         # 处理 avatar（Bangumi OAuth 响应为 dict，回写时取 large/medium）
         avatar = token.get("avatar")
+        avatar_url = ""
         if isinstance(avatar, dict):
             avatar_url = avatar.get("large") or avatar.get("medium") or ""
         elif isinstance(avatar, str):
             avatar_url = avatar
+
+        # ── 定位目标账号 ──
+        existing: dict = {}
+        if section:
+            # 显式指定 section（刷新场景）
+            existing = get_bangumi_account(section) or {}
+        elif user_id is not None:
+            # 授权场景：按 user_id 查找已存在账号，避免覆盖其他账号
+            user_id_str = str(user_id)
+            for acc in list_bangumi_accounts():
+                if str(acc.get("bangumi_user_id") or "") == user_id_str:
+                    existing = acc
+                    section = acc["section_name"]
+                    break
+            if not existing:
+                # 新账号：section_name 用 bangumi-{user_id}，避免与系统功能段冲突
+                section = f"bangumi-{user_id_str}"
         else:
+            # 无 user_id 也无 section：回退到激活账号（兼容边界场景）
+            section = self._active_section_name() or "bangumi"
+            existing = get_bangumi_account(section) or {}
+
+        # 补全 avatar：新建账号时 existing 为空
+        if not avatar_url:
             avatar_url = existing.get("avatar", "")
 
-        # Bangumi OAuth 令牌响应直接携带 user_id / username / nickname
-        user_id = token.get("user_id")
         username = (
             token.get("username")
             or (str(user_id) if user_id is not None else "")
             or existing.get("username", "")
         )
+
+        # 新建账号自动激活（用户主动授权说明想用此账号，对齐 Trakt 行为）；
+        # 更新已存在账号保留原激活状态
+        is_new_account = not existing
+        was_active = bool(existing.get("is_active") or False)
 
         account = {
             "section_name": section,
@@ -241,10 +275,11 @@ class BangumiAuthService:
             "nickname": token.get("nickname") or existing.get("nickname") or "",
             "avatar": avatar_url,
             "private": bool(existing.get("private") or False),
-            "is_active": True,
+            "is_active": is_new_account or was_active,
         }
         save_bangumi_account(account)
-        set_active_bangumi_account(section)
+        if is_new_account:
+            set_active_bangumi_account(section)
 
     def _active_section_name(self) -> Optional[str]:
         """返回当前激活 Bangumi 账号配置段名（DB 为唯一真相源）。"""

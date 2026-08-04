@@ -126,15 +126,15 @@ def test_exchange_code_persists_token_to_db(svc):
         result = svc.exchange_code_for_token("the-code", state)
 
     assert result["access_token"] == "AT"
-    # token 应写入 DB（store），而非 INI
-    acc = store.get("bangumi")
+    # token 应写入 DB（store），而非 INI；section_name 按 user_id 生成
+    acc = store.get("bangumi-myname")
     assert acc is not None
     assert acc["access_token"] == "AT"
     assert acc["refresh_token"] == "RT"
     assert acc["auth_method"] == "oauth"
     assert acc["bangumi_user_id"] == "myname"
     assert int(acc["expires_at"]) > 0
-    # 授权成功后激活该账号
+    # 新建账号授权成功后自动激活
     assert acc["is_active"] is True
     m.assert_called_once()
     # state 已被消费

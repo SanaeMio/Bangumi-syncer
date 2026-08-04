@@ -691,6 +691,10 @@
       if (popup.closed) {
         clearInterval(timer)
         const status = await refreshBangumiOAuthStatus()
+        // 授权成功后刷新账号列表（OAuth 授权会新增/更新账号到列表）
+        if (status && status.connected) {
+          await loadBangumiAccounts()
+        }
         restore()
         if (status && status.connected) {
           showAlert('Bangumi OAuth 授权已完成', 'success')
