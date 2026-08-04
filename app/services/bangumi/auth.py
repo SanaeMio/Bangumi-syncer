@@ -224,8 +224,8 @@ class BangumiAuthService:
           找到则更新（保留 media_server_usernames 等用户配置），未找到则新建账号
           到列表，section_name 取 ``bangumi-{user_id}``。
 
-        不强制激活新建账号，避免覆盖用户当前选择；但若账号列表为空（首次授权），
-        自动激活新建账号以保持开箱即用体验。
+        激活策略：新建账号总是自动激活（用户主动授权说明想用此账号，对齐 Trakt
+        行为）；更新已存在账号保留原激活状态。
         """
         access_token = token.get("access_token")
         refresh_token = token.get("refresh_token")
