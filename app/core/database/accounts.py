@@ -74,81 +74,58 @@ class BangumiAccountRepository(BaseRepository):
     """Bangumi 账号（含 OAuth 令牌）的增删改查。"""
 
     def save_account(self, account: dict) -> bool:
-        """保存或更新一个账号（按 section_name upsert）。"""
+        """保存或更新一个账号（按 section_name upsert）。
+
+        使用 ``INSERT ... ON CONFLICT DO UPDATE`` 单语句原子 upsert，
+        避免 SELECT-then-INSERT 在多 worker 并发下撞 UNIQUE 约束。
+        """
         section = account.get("section_name")
         if not section:
             return False
 
         def _write(conn):
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id FROM bangumi_accounts WHERE section_name = ?", (section,)
-            )
-            existing = cursor.fetchone()
             now = _now()
-            if existing:
-                cursor.execute(
-                    """
-                    UPDATE bangumi_accounts SET
-                        username = ?,
-                        media_server_usernames = ?,
-                        auth_method = ?,
-                        access_token = ?,
-                        refresh_token = ?,
-                        token_type = ?,
-                        expires_at = ?,
-                        bangumi_user_id = ?,
-                        nickname = ?,
-                        avatar = ?,
-                        private = ?,
-                        is_active = ?,
-                        updated_at = ?
-                    WHERE section_name = ?
-                    """,
-                    (
-                        account.get("username", ""),
-                        _to_json_list(account.get("media_server_usernames")),
-                        account.get("auth_method", "manual"),
-                        account.get("access_token"),
-                        account.get("refresh_token"),
-                        account.get("token_type", "Bearer"),
-                        account.get("expires_at"),
-                        account.get("bangumi_user_id", ""),
-                        account.get("nickname", ""),
-                        account.get("avatar", ""),
-                        1 if account.get("private") else 0,
-                        1 if account.get("is_active") else 0,
-                        now,
-                        section,
-                    ),
-                )
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO bangumi_accounts
-                    (section_name, username, media_server_usernames, auth_method,
-                     access_token, refresh_token, token_type, expires_at,
-                     bangumi_user_id, nickname, avatar, private, is_active, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        section,
-                        account.get("username", ""),
-                        _to_json_list(account.get("media_server_usernames")),
-                        account.get("auth_method", "manual"),
-                        account.get("access_token"),
-                        account.get("refresh_token"),
-                        account.get("token_type", "Bearer"),
-                        account.get("expires_at"),
-                        account.get("bangumi_user_id", ""),
-                        account.get("nickname", ""),
-                        account.get("avatar", ""),
-                        1 if account.get("private") else 0,
-                        1 if account.get("is_active") else 0,
-                        now,
-                        now,
-                    ),
-                )
+            cursor.execute(
+                """
+                INSERT INTO bangumi_accounts
+                (section_name, username, media_server_usernames, auth_method,
+                 access_token, refresh_token, token_type, expires_at,
+                 bangumi_user_id, nickname, avatar, private, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(section_name) DO UPDATE SET
+                    username = excluded.username,
+                    media_server_usernames = excluded.media_server_usernames,
+                    auth_method = excluded.auth_method,
+                    access_token = excluded.access_token,
+                    refresh_token = excluded.refresh_token,
+                    token_type = excluded.token_type,
+                    expires_at = excluded.expires_at,
+                    bangumi_user_id = excluded.bangumi_user_id,
+                    nickname = excluded.nickname,
+                    avatar = excluded.avatar,
+                    private = excluded.private,
+                    is_active = excluded.is_active,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    section,
+                    account.get("username", ""),
+                    _to_json_list(account.get("media_server_usernames")),
+                    account.get("auth_method", "manual"),
+                    account.get("access_token"),
+                    account.get("refresh_token"),
+                    account.get("token_type", "Bearer"),
+                    account.get("expires_at"),
+                    account.get("bangumi_user_id", ""),
+                    account.get("nickname", ""),
+                    account.get("avatar", ""),
+                    1 if account.get("private") else 0,
+                    1 if account.get("is_active") else 0,
+                    now,
+                    now,
+                ),
+            )
             return True
 
         return self._run_write(_write, error_msg="保存 Bangumi 账号失败", default=False)
