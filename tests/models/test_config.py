@@ -33,15 +33,13 @@ class TestConfigModels:
         from app.models.config import SyncConfig
 
         config = SyncConfig()
-        assert config.mode == "single"
         assert config.blocked_keywords == ""
 
     def test_sync_config_with_values(self):
         """Test SyncConfig with values"""
         from app.models.config import SyncConfig
 
-        config = SyncConfig(mode="multi", blocked_keywords="adult")
-        assert config.mode == "multi"
+        config = SyncConfig(blocked_keywords="adult")
         assert config.blocked_keywords == "adult"
 
     def test_dev_config_defaults(self):
@@ -136,30 +134,6 @@ class TestConfigModels:
         assert hasattr(config, "dev")
         assert hasattr(config, "bangumi_data")
         assert hasattr(config, "auth")
-
-    def test_config_data_with_multi_accounts(self):
-        """Test ConfigData with multi-accounts"""
-        from app.models.config import (
-            AuthConfig,
-            BangumiConfig,
-            BangumiDataConfig,
-            ConfigData,
-            DevConfig,
-            SyncConfig,
-        )
-
-        config = ConfigData(
-            bangumi=BangumiConfig(),
-            sync=SyncConfig(),
-            dev=DevConfig(),
-            bangumi_data=BangumiDataConfig(),
-            auth=AuthConfig(),
-            multi_accounts={
-                "account1": {"username": "user1", "access_token": "token1"},
-                "account2": {"username": "user2", "access_token": "token2"},
-            },
-        )
-        assert len(config.multi_accounts) == 2
 
     def test_config_response_model(self):
         """Test ConfigResponse model"""

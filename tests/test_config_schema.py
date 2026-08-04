@@ -296,9 +296,6 @@ class TestFieldMeta:
         assert config_schema.field_default("bangumi-replay", "replay_batch_size") == 20
         assert config_schema.field_default("bangumi-replay", "max_attempts") == 50
 
-    def test_sync_mode_default(self):
-        assert config_schema.field_default("sync", "mode") == "single"
-
     def test_sync_match_confidence_threshold_default(self):
         """功能三：置信度阈值默认 0.6（0~1 小数）。"""
         assert config_schema.field_default("sync", "match_confidence_threshold") == 0.6
@@ -370,9 +367,6 @@ class TestLooseTrueFields:
 
 class TestConfigDefaults:
     """config_defaults() 派生（替代 CONFIG_DEFAULTS）"""
-
-    def test_includes_sync_mode(self):
-        assert config_schema.config_defaults()["sync"]["mode"] == "single"
 
     def test_includes_bangumi_data_defaults(self):
         cd = config_schema.config_defaults()

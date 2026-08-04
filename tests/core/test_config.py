@@ -202,7 +202,7 @@ class TestConfigManagerBranches:
             d = cm.get_section("x")
             assert d.get("a") == "dec"
 
-    def test_get_bangumi_configs_and_user_mappings(self, tmp_path):
+    def test_get_bangumi_configs(self, tmp_path):
         ini = """
 [bangumi-data]
 enabled = false
@@ -218,8 +218,6 @@ access_token = t2
         cfgs = cm.get_bangumi_configs()
         assert "bangumi-main" in cfgs and "bangumi-alt" in cfgs
         assert "bangumi-data" not in cfgs
-        m = cm.get_user_mappings()
-        assert m["plex_a"] == "bangumi-main"
 
     def test_get_trakt_config_defaults_and_bool_strings(self, tmp_path):
         cm = _config_manager_from_ini(
@@ -287,47 +285,6 @@ access_token = t2
         assert f["min_percent"] == 85
         assert f["limit"] == 100
 
-    def test_get_all_config_multi_accounts(self, tmp_path):
-        ini = """
-[sync]
-mode = single
-[bangumi-main]
-username = u
-access_token = t
-display_name = 主账号
-[web]
-base_path = /
-"""
-        cm = _config_manager_from_ini(tmp_path, ini)
-        allc = cm.get_all_config()
-        assert "multi_accounts" in allc
-        assert "bangumi-main" in allc["multi_accounts"]
-        assert allc["multi_accounts"]["bangumi-main"]["display_name"] == "主账号"
-        assert "web" in allc
-
-    def test_get_all_config_multi_accounts_duplicate_display_names(self, tmp_path):
-        ini = """
-[sync]
-mode = multi
-[bangumi-alice]
-username = alice
-access_token = ta
-media_server_username = plex_a
-display_name = 家人
-[bangumi-bob]
-username = bob
-access_token = tb
-media_server_username = plex_b
-display_name = 家人
-"""
-        cm = _config_manager_from_ini(tmp_path, ini)
-        allc = cm.get_all_config()
-        assert len(allc["multi_accounts"]) == 2
-        assert "bangumi-alice" in allc["multi_accounts"]
-        assert "bangumi-bob" in allc["multi_accounts"]
-        assert allc["multi_accounts"]["bangumi-alice"]["display_name"] == "家人"
-        assert allc["multi_accounts"]["bangumi-bob"]["display_name"] == "家人"
-
     def test_get_all_config_archive_section_not_in_multi_accounts(self, tmp_path):
         """bangumi-archive 是系统功能段，不应被归入 multi_accounts。
         回归测试：此前 bangumi-archive 被误判为多账号段，
@@ -358,15 +315,6 @@ access_token = t
         if "multi_accounts" in allc:
             assert "bangumi-archive" not in allc["multi_accounts"]
             assert "bangumi-replay" not in allc["multi_accounts"]
-
-    def test_reload_multi_account_configs(self, tmp_path):
-        cm = _config_manager_from_ini(
-            tmp_path,
-            "[bangumi-main]\nusername=u\naccess_token=t\n",
-        )
-        with patch("app.core.config.logger") as mock_log:
-            cm.reload_multi_account_configs()
-        mock_log.info.assert_called()
 
     def test_needs_migration_webhook_only(self, tmp_path):
         cm = _config_manager_from_ini(
@@ -515,42 +463,6 @@ media_server_username = keep_me
         cm = _config_manager_from_ini(tmp_path, ini)
         assert cm.get("bangumi", "media_server_username") == "keep_me"
         assert not cm.get_config_parser().has_option("sync", "single_username")
-
-    def test_get_single_mode_media_usernames(self, tmp_path):
-        cm = _config_manager_from_ini(
-            tmp_path,
-            "[bangumi]\nmedia_server_username = u1,u2\n",
-        )
-        assert cm.get_single_mode_media_usernames() == ["u1", "u2"]
-
-    def test_get_user_mappings_expands_comma(self, tmp_path):
-        ini = """
-[bangumi-data]
-enabled = false
-[bangumi-main]
-username = u1
-access_token = t1
-media_server_username = alice,bob
-"""
-        cm = _config_manager_from_ini(tmp_path, ini)
-        m = cm.get_user_mappings()
-        assert m["alice"] == "bangumi-main"
-        assert m["bob"] == "bangumi-main"
-
-    def test_get_user_mappings_duplicate_last_section_wins(self, tmp_path):
-        ini = """
-[bangumi-a]
-username = ua
-access_token = ta
-media_server_username = dup
-[bangumi-b]
-username = ub
-access_token = tb
-media_server_username = dup
-"""
-        cm = _config_manager_from_ini(tmp_path, ini)
-        m = cm.get_user_mappings()
-        assert m["dup"] == "bangumi-b"
 
 
 class TestEnsureDefaultConfig:
