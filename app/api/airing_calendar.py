@@ -124,41 +124,31 @@ async def list_bangumi_accounts(
 ) -> BangumiAccountsResponse:
     """列出已配置的 Bangumi 账号（供"我的追番"卡片多用户切换）
 
-    - 单用户模式：返回 ``[bangumi]`` 段账号（accounts 0 或 1 项）
-    - 多用户模式：返回所有 ``[bangumi-*]`` 账号段
-
+    DB 为唯一真相源：返回 ``bangumi_accounts`` 表中所有有 username 的账号。
     仅返回 ``section_name`` 与 ``username``，不暴露 access_token。
-    """
-    mode = config_manager.get("sync", "mode", fallback="single")
-    accounts: list[BangumiAccountInfo] = []
-    active: Optional[str] = None
 
-    if mode == "multi":
-        configs = config_manager.get_bangumi_configs()
-        for section_name, cfg in configs.items():
+    ``mode`` 字段由账号数量推导（1=single，>1=multi），兼容前端 dropdown 显示逻辑。
+    """
+    from app.core.accounts import (
+        get_active_bangumi_account,
+        list_bangumi_accounts as _list_accounts,
+    )
+
+    accounts: list[BangumiAccountInfo] = []
+    for acc in _list_accounts():
+        if acc.get("username"):
             accounts.append(
                 BangumiAccountInfo(
-                    section_name=section_name,
-                    username=cfg.get("username", ""),
+                    section_name=acc["section_name"],
+                    username=acc["username"],
                 )
             )
-        # active 取首个用户映射对应段（与 get_active_bangumi_config 默认行为一致）
-        active_cfg = config_manager.get_active_bangumi_config()
-        if active_cfg:
-            for section_name, cfg in configs.items():
-                if cfg.get("username") == active_cfg.get("username"):
-                    active = section_name
-                    break
-    else:
-        # 单用户模式：读 [bangumi] 段
-        username = config_manager.get("bangumi", "username", fallback="")
-        token = config_manager.get("bangumi", "access_token", fallback="")
-        if username and token:
-            accounts.append(
-                BangumiAccountInfo(section_name="bangumi", username=username)
-            )
-            active = "bangumi"
 
+    active_acc = get_active_bangumi_account()
+    active = active_acc.get("section_name") if active_acc else None
+
+    # 列表长度=1 即单用户，无需 sync.mode 判断；mode 字段仅供前端 dropdown 显示判断
+    mode = "multi" if len(accounts) > 1 else "single"
     return BangumiAccountsResponse(mode=mode, accounts=accounts, active=active)
 
 

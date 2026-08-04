@@ -365,19 +365,24 @@ class TestAiringCalendarEndpoint:
 
 
 class TestBangumiAccountsEndpoint:
-    """GET /api/airing-calendar/accounts"""
+    """GET /api/airing-calendar/accounts
+
+    DB 为唯一真相源：端点从 ``app.core.accounts`` 读取账号列表，
+    ``mode`` 由账号数量推导（>1 为 multi，否则 single）。
+    """
 
     @pytest.mark.asyncio
     async def test_single_mode_with_config(self, app_with_auth):
         """单用户模式且已配置账号：返回 1 个账号，active='bangumi'"""
-        with patch.object(
-            airing_calendar.config_manager,
-            "get",
-            side_effect=lambda section, key, fallback=None: {
-                ("sync", "mode"): "single",
-                ("bangumi", "username"): "alice",
-                ("bangumi", "access_token"): "token123",
-            }.get((section, key), fallback),
+        with (
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi", "username": "alice"}],
+            ),
+            patch(
+                "app.core.accounts.get_active_bangumi_account",
+                return_value={"section_name": "bangumi", "username": "alice"},
+            ),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -395,15 +400,10 @@ class TestBangumiAccountsEndpoint:
 
     @pytest.mark.asyncio
     async def test_single_mode_no_config(self, app_with_auth):
-        """单用户模式但未配置账号：返回空列表"""
-        with patch.object(
-            airing_calendar.config_manager,
-            "get",
-            side_effect=lambda section, key, fallback=None: {
-                ("sync", "mode"): "single",
-                ("bangumi", "username"): "",
-                ("bangumi", "access_token"): "",
-            }.get((section, key), fallback),
+        """无账号配置：返回空列表，mode 由账号数量推导为 single"""
+        with (
+            patch("app.core.accounts.list_bangumi_accounts", return_value=[]),
+            patch("app.core.accounts.get_active_bangumi_account", return_value=None),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -419,28 +419,18 @@ class TestBangumiAccountsEndpoint:
 
     @pytest.mark.asyncio
     async def test_multi_mode_returns_all_accounts(self, app_with_auth):
-        """多用户模式：返回所有 [bangumi-*] 账号段"""
-        configs = {
-            "bangumi-alice": {"username": "alice", "access_token": "t1"},
-            "bangumi-bob": {"username": "bob", "access_token": "t2"},
-        }
+        """多用户模式：返回所有 Bangumi 账号段（>1 个账号推导为 multi）"""
         with (
-            patch.object(
-                airing_calendar.config_manager,
-                "get",
-                side_effect=lambda section, key, fallback=None: {
-                    ("sync", "mode"): "multi",
-                }.get((section, key), fallback),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[
+                    {"section_name": "bangumi-alice", "username": "alice"},
+                    {"section_name": "bangumi-bob", "username": "bob"},
+                ],
             ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_bangumi_configs",
-                return_value=configs,
-            ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_active_bangumi_config",
-                return_value={"username": "alice", "access_token": "t1"},
+            patch(
+                "app.core.accounts.get_active_bangumi_account",
+                return_value={"section_name": "bangumi-alice", "username": "alice"},
             ),
         ):
             async with AsyncClient(
@@ -460,25 +450,10 @@ class TestBangumiAccountsEndpoint:
 
     @pytest.mark.asyncio
     async def test_multi_mode_no_accounts(self, app_with_auth):
-        """多用户模式但无账号段：返回空列表"""
+        """无账号配置：返回空列表，mode 由账号数量推导为 single"""
         with (
-            patch.object(
-                airing_calendar.config_manager,
-                "get",
-                side_effect=lambda section, key, fallback=None: {
-                    ("sync", "mode"): "multi",
-                }.get((section, key), fallback),
-            ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_bangumi_configs",
-                return_value={},
-            ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_active_bangumi_config",
-                return_value=None,
-            ),
+            patch("app.core.accounts.list_bangumi_accounts", return_value=[]),
+            patch("app.core.accounts.get_active_bangumi_account", return_value=None),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -488,6 +463,7 @@ class TestBangumiAccountsEndpoint:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["mode"] == "multi"
+        # 0 个账号 → mode="single"（端点按账号数量推导）
+        assert data["mode"] == "single"
         assert data["accounts"] == []
         assert data["active"] is None

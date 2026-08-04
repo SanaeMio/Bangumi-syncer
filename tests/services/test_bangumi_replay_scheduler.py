@@ -224,9 +224,12 @@ class TestProbeApiSingleMode:
         mock_instance.get.return_value = MagicMock(status_code=200)
         with (
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(),
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = _bangumi_account_config()
             cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
             mock_cls.return_value = mock_instance
             result = await s._probe_api()
@@ -254,9 +257,12 @@ class TestProbeApiSingleMode:
         mock_instance.get.return_value = MagicMock(status_code=404)
         with (
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(),
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = _bangumi_account_config()
             cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
             mock_cls.return_value = mock_instance
             result = await s._probe_api()
@@ -271,9 +277,12 @@ class TestProbeApiSingleMode:
         mock_instance.get.return_value = MagicMock(status_code=500)
         with (
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(),
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = _bangumi_account_config()
             cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
             mock_cls.return_value = mock_instance
             result = await s._probe_api()
@@ -288,9 +297,12 @@ class TestProbeApiSingleMode:
         mock_instance.get.side_effect = ValueError("network error")
         with (
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(),
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = _bangumi_account_config()
             cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
             mock_cls.return_value = mock_instance
             result = await s._probe_api()
@@ -305,12 +317,13 @@ class TestProbeApiSingleMode:
         """single 模式 + username 为空 → False，且不实例化 BangumiApi"""
         s = BangumiReplayScheduler()
         with (
-            patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch("app.services.bangumi_replay_scheduler.config_manager"),
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(username=""),
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = _bangumi_account_config(
-                username=""
-            )
             result = await s._probe_api()
 
         assert result is False
@@ -321,12 +334,13 @@ class TestProbeApiSingleMode:
         """single 模式 + access_token 为空 → False，且不实例化 BangumiApi"""
         s = BangumiReplayScheduler()
         with (
-            patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch("app.services.bangumi_replay_scheduler.config_manager"),
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(access_token=""),
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = _bangumi_account_config(
-                access_token=""
-            )
             result = await s._probe_api()
 
         assert result is False
@@ -343,11 +357,12 @@ class TestProbeApiMultiMode:
         mock_instance.get.return_value = MagicMock(status_code=200)
         with (
             patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(username="u1", access_token="t1"),
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = _bangumi_account_config(
-                username="u1", access_token="t1"
-            )
             cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
             mock_cls.return_value = mock_instance
             result = await s._probe_api()
@@ -369,10 +384,13 @@ class TestProbeApiMultiMode:
         """multi 模式 + 无用户映射 → cfg 为空 → False"""
         s = BangumiReplayScheduler()
         with (
-            patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch("app.services.bangumi_replay_scheduler.config_manager"),
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=None,
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = None
             result = await s._probe_api()
 
         assert result is False
@@ -383,10 +401,13 @@ class TestProbeApiMultiMode:
         """multi 模式 + 映射指向不存在的配置段 → cfg 为空 → False"""
         s = BangumiReplayScheduler()
         with (
-            patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch("app.services.bangumi_replay_scheduler.config_manager"),
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=None,
+            ),
             patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
         ):
-            cm.get_active_bangumi_config.return_value = None
             result = await s._probe_api()
 
         assert result is False
