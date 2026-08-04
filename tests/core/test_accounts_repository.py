@@ -136,6 +136,13 @@ class TestOAuthStateRepository:
         assert db.delete_oauth_state("st3") is True
         assert db.get_oauth_state("st3") is None
 
+    def test_delete_state_returns_false_when_already_consumed(self, db):
+        """已消费的 state 二次删除返回 False（TOCTOU 防护的底层依赖）。"""
+        db.save_oauth_state("st_double", "bangumi-alpha", 9999999999)
+        assert db.delete_oauth_state("st_double") is True
+        # 并发场景下第二个 DELETE 命中 0 行，必须返回 False
+        assert db.delete_oauth_state("st_double") is False
+
     def test_cleanup_expired(self, db):
         db.save_oauth_state("live", "bangumi-alpha", 9999999999)
         db.save_oauth_state("dead", "bangumi-alpha", 100)

@@ -37,14 +37,24 @@ class OAuthService:
         return state
 
     def consume_state(self, provider_name: str, state: str) -> str | None:
-        """校验并消费 state，返回绑定的 account_key；无效/过期/不匹配返回 None。"""
+        """校验并消费 state，返回绑定的 account_key；无效/过期/不匹配返回 None。
+
+        使用 ``delete_oauth_state`` 的 rowcount 作为消费凭据，避免
+        SELECT-then-DELETE 在并发下双重消费 state 导致 CSRF 防护失效
+        （两个请求都通过 SELECT，第二个 DELETE 命中 0 行但旧实现未检查）。
+        """
         rec = database_manager.get_oauth_state(state)
         if not rec:
             return None
         if rec.get("provider") not in ("", provider_name):
             return None
-        database_manager.delete_oauth_state(state)
-        return rec.get("account_key")
+        # 原子消费：仅当 state 仍存在（rowcount>0）时才算消费成功；
+        # 并发场景下后到的 DELETE 命中 0 行，返回 None 拒绝回调。
+        if not database_manager.delete_oauth_state(state):
+            return None
+        # DB 列名为 section_name（save_oauth_state 的第二参数），
+        # 对 Trakt 场景存的是 user_id，对 Bangumi 场景存的是 section_name
+        return rec.get("section_name")
 
     # ── 授权 URL ────────────────────────────────────────────────
     def build_authorize_url(

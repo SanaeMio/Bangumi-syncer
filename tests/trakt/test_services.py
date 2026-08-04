@@ -19,7 +19,7 @@ def _fake_oauth_state(monkeypatch):
     def _save(state, section_name, expires_at, provider=""):
         store[state] = {
             "provider": provider,
-            "account_key": section_name,
+            "section_name": section_name,
             "expires_at": expires_at,
         }
 

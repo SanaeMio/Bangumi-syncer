@@ -78,7 +78,7 @@ def svc(monkeypatch):
     def _save_state(state, section_name, expires_at, provider=""):
         state_store[state] = {
             "provider": provider,
-            "account_key": section_name,
+            "section_name": section_name,
             "expires_at": expires_at,
         }
 
