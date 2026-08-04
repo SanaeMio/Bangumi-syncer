@@ -80,22 +80,20 @@ async def trakt_auth_callback(
         )
 
         if callback_response.success:
-            # 授权成功后自动将用户 ID 写入 media_server_username，
-            # 避免因漏填导致 Trakt 同步被用户名过滤拦截
-            existing = config_manager.get(
-                "bangumi", "media_server_username", fallback=""
-            ).strip()
-            if not existing:
-                config_manager.set("bangumi", "media_server_username", user_id)
-            else:
-                existing_users = {u.strip() for u in existing.split(",") if u.strip()}
-                if user_id not in existing_users:
-                    config_manager.set(
-                        "bangumi",
-                        "media_server_username",
-                        f"{existing},{user_id}",
-                    )
-            config_manager.save_config()
+            # 授权成功后自动将 Trakt user_id 追加到激活账号的 media_server_usernames，
+            # 避免因漏填导致 Trakt 同步被用户名过滤拦截（DB 为唯一真相源）
+            from ..core.accounts import (
+                get_active_bangumi_account,
+                save_bangumi_account,
+            )
+
+            acc = get_active_bangumi_account()
+            if acc:
+                existing_names = list(acc.get("media_server_usernames") or [])
+                if user_id not in existing_names:
+                    existing_names.append(user_id)
+                    acc["media_server_usernames"] = existing_names
+                    save_bangumi_account(acc)
             return redirect_public("/trakt/auth/success")
 
         return redirect_public(

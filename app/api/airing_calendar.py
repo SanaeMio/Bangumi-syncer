@@ -8,7 +8,7 @@
 不再支持"全部放送"模式——"我的追番"语义下全部放送对用户无意义，获取在看列表
 失败时返回 watching_unavailable 状态，由前端提示用户检查账号配置。
 
-多用户模式（``[sync] mode=multi``）下，前端可通过 ``account`` 参数指定要查看
+多账号场景下（DB 中账号数 > 1），前端可通过 ``account`` 参数指定要查看
 的 Bangumi 账号段名，实现卡片内切换账号。
 
 数据源：Bangumi Archive 的 episode.airdate（仅在 Archive 启用且已导入数据时可用）。

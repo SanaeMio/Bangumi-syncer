@@ -22,7 +22,6 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ..core.config import config_manager
 from ..core.database import database_manager
 from ..core.logging import logger
 from .deps import get_current_user_flexible
@@ -31,9 +30,13 @@ router = APIRouter(prefix="/api/bangumi_replay", tags=["bangumi-replay"])
 
 
 def _resolve_user_filter(current_user: dict) -> Optional[str]:
-    """多用户模式返回当前用户名（强制隔离），单用户模式返回 None（管理员可见全部）"""
-    mode = config_manager.get("sync", "mode", fallback="single")
-    if mode == "multi":
+    """多用户模式返回当前用户名（强制隔离），单用户模式返回 None（管理员可见全部）。
+
+    DB 列表化后无 sync.mode：按 DB 账号数量推导，>1 即多用户。
+    """
+    from ..core.accounts import count_bangumi_accounts
+
+    if count_bangumi_accounts() > 1:
         return current_user.get("username")
     return None
 
