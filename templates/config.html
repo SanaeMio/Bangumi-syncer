@@ -72,6 +72,7 @@
         <div class="col-lg-9">
             <form id="config-form" class="config-form">
                 {% include "config/_sync.html" %}
+                {% include "config/_blocked_keywords.html" %}
                 {% include
                 "config/_bangumi_account.html" %}
                 {% include "config/_multi_user.html" %}
@@ -772,6 +773,11 @@
     // 8. 刷新 cron 预览（populate 后 input.value 已更新）
     if (window.refreshAllCronPreviews) {
       window.refreshAllCronPreviews()
+    }
+
+    // 9. 初始化屏蔽关键词 chip 列表（隐藏 input 已被 ConfigForm.populate 填充）
+    if (window.BlockedKeywords) {
+      BlockedKeywords.initChips('blocked-keywords', 'blocked-keywords-chips')
     }
   }
 
