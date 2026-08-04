@@ -5,8 +5,9 @@ Bangumi 账号仓库（含 OAuth 令牌）。
 以「账号列表」作为唯一真相源：列表长度=1 即单用户，无需单/多分支判断。
 
 设计要点：
-- token（access_token / refresh_token）暂按明文存储，与既有 ``trakt_config`` 表保持一致；
-  根密钥外置（secret_key 移出 INI）作为独立安全项，后续可加加密层。
+- token（access_token / refresh_token）经 Fernet 对称加密后落库，密钥由
+  ``[auth] secret_key`` 经 HKDF 派生（复用 ``config_secret_crypto``）；
+  仓储层在写入时加密、读取时解密，上层无感知。
 - ``section_name`` 为账号唯一键：旧单用户段为 ``bangumi``，多用户段为 ``bangumi-{username}``。
 - ``is_active`` 取代「首个映射段即激活」的隐式逻辑，前端可切换激活账号。
 - OAuth 授权过程中的 CSRF state 存于独立的 ``oauth_states`` 表（带 TTL）。
@@ -16,6 +17,7 @@ import json
 import time
 from typing import Optional
 
+from ..config_secret_crypto import decrypt as _decrypt_token, encrypt as _encrypt_token
 from .base_repository import BaseRepository
 
 _BANGUMI_ACCOUNT_COLUMNS = [
@@ -114,8 +116,8 @@ class BangumiAccountRepository(BaseRepository):
                     account.get("username", ""),
                     _to_json_list(account.get("media_server_usernames")),
                     account.get("auth_method", "manual"),
-                    account.get("access_token"),
-                    account.get("refresh_token"),
+                    _encrypt_token(account.get("access_token") or ""),
+                    _encrypt_token(account.get("refresh_token") or ""),
                     account.get("token_type", "Bearer"),
                     account.get("expires_at"),
                     account.get("bangumi_user_id", ""),
@@ -239,8 +241,8 @@ class BangumiAccountRepository(BaseRepository):
                 WHERE section_name = ?
                 """,
                 (
-                    token.get("access_token"),
-                    token.get("refresh_token"),
+                    _encrypt_token(token.get("access_token") or ""),
+                    _encrypt_token(token.get("refresh_token") or ""),
                     token.get("token_type", "Bearer"),
                     token.get("expires_at"),
                     token.get("bangumi_user_id", ""),
@@ -270,6 +272,10 @@ def _row_to_account(row) -> dict:
     account["media_server_usernames"] = _from_json_list(
         account.get("media_server_usernames")
     )
+    # 仓储层透明解密：DB 中存储 BGS1: 前缀密文，读取时还原明文供上层使用；
+    # 历史明文数据（无前缀）decrypt 原样返回，平滑兼容
+    account["access_token"] = _decrypt_token(account.get("access_token"))
+    account["refresh_token"] = _decrypt_token(account.get("refresh_token"))
     account["private"] = bool(account.get("private"))
     account["is_active"] = bool(account.get("is_active"))
     return account

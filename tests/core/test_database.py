@@ -534,6 +534,48 @@ class TestDatabaseDockerAndTrakt:
             assert db.get_last_sync_time("a") == 100
             assert db.get_last_sync_time("ghost") is None
 
+    def test_trakt_token_encrypted_at_rest(self, temp_dir, reset_singletons):
+        """Trakt token 写入后 DB 中为密文，读取时还原明文。"""
+        with patch("app.core.database.logger"):
+            with patch(
+                "app.core.config_secret_crypto._master_secret",
+                return_value="test-secret-key-for-trakt-token",
+            ):
+                from app.core.database import DatabaseManager
+
+                db_path = temp_dir / "trakt_enc.db"
+                db = DatabaseManager(str(db_path))
+                now = 1_700_000_000
+                db.save_trakt_config(
+                    {
+                        "user_id": "u1",
+                        "access_token": "secret-at",
+                        "refresh_token": "secret-rt",
+                        "expires_at": now,
+                        "enabled": True,
+                        "sync_interval": "0 */6 * * *",
+                        "last_sync_time": None,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+                # 仓储层读取：明文
+                row = db.get_trakt_config("u1")
+                assert row["access_token"] == "secret-at"
+                assert row["refresh_token"] == "secret-rt"
+                # 直接查 DB：密文
+                conn = db._connection._get_connection()
+                raw = conn.execute(
+                    "SELECT access_token, refresh_token FROM trakt_config WHERE user_id = ?",
+                    ("u1",),
+                ).fetchone()
+                assert raw[0].startswith("BGS1:")
+                assert raw[0] != "secret-at"
+                assert raw[1].startswith("BGS1:")
+                # get_trakt_configs_with_sync_enabled 也应解密
+                enabled = db.get_trakt_configs_with_sync_enabled()
+                assert enabled[0]["access_token"] == "secret-at"
+
     def test_feiniu_watermark_invalid_meta_resets(self, temp_dir, reset_singletons):
         db_path = temp_dir / "wm_bad.db"
         with patch("app.core.database.logger"):

@@ -49,6 +49,7 @@ class DatabaseConnection:
         self._pending_sync_sync_record_id_migrated = False
         self._pending_candidates_sync_record_id_migrated = False
         self._bangumi_accounts_private_migrated = False
+        self._tokens_encrypted_migrated = False
         self._init_database()
 
     def close(self) -> None:
@@ -232,6 +233,58 @@ class DatabaseConnection:
         )
         self._bangumi_accounts_private_migrated = True
         logger.info("bangumi_accounts 已迁移：增加 private 列")
+
+    def _ensure_tokens_encrypted(self, cursor) -> None:
+        """一次性数据迁移：加密 DB 中的明文 token（access_token / refresh_token）。
+
+        仓储层已改为写入即加密，此处仅处理迁移前已落库的历史明文。
+        ``encrypt`` 幂等（已带 BGS1: 前缀则原样返回），``secret_key`` 为空时
+        返回明文（不设迁移标记，下次启动重试）。
+        """
+        if self._tokens_encrypted_migrated:
+            return
+        try:
+            from ..config_secret_crypto import PREFIX, _master_secret, encrypt
+
+            # 统一通过 _master_secret() 取密钥，与仓储层加解密保持一致
+            master = _master_secret()
+            if not master:
+                return
+
+            # bangumi_accounts
+            cursor.execute(
+                "SELECT section_name, access_token, refresh_token FROM bangumi_accounts "
+                "WHERE (access_token IS NOT NULL AND access_token != '' AND access_token NOT LIKE ?) "
+                "OR (refresh_token IS NOT NULL AND refresh_token != '' AND refresh_token NOT LIKE ?)",
+                (PREFIX + "%", PREFIX + "%"),
+            )
+            for section, at, rt in cursor.fetchall():
+                new_at = encrypt(at or "", master=master)
+                new_rt = encrypt(rt or "", master=master)
+                cursor.execute(
+                    "UPDATE bangumi_accounts SET access_token = ?, refresh_token = ? "
+                    "WHERE section_name = ?",
+                    (new_at, new_rt, section),
+                )
+
+            # trakt_config
+            cursor.execute(
+                "SELECT user_id, access_token, refresh_token FROM trakt_config "
+                "WHERE (access_token IS NOT NULL AND access_token != '' AND access_token NOT LIKE ?) "
+                "OR (refresh_token IS NOT NULL AND refresh_token != '' AND refresh_token NOT LIKE ?)",
+                (PREFIX + "%", PREFIX + "%"),
+            )
+            for user_id, at, rt in cursor.fetchall():
+                new_at = encrypt(at or "", master=master)
+                new_rt = encrypt(rt or "", master=master)
+                cursor.execute(
+                    "UPDATE trakt_config SET access_token = ?, refresh_token = ? "
+                    "WHERE user_id = ?",
+                    (new_at, new_rt, user_id),
+                )
+            self._tokens_encrypted_migrated = True
+        except Exception as e:
+            logger.warning(f"token 加密迁移失败（将在下次启动重试）: {e}")
 
     def _init_database(self) -> None:
         """初始化数据库"""
@@ -479,6 +532,9 @@ class DatabaseConnection:
             "CREATE INDEX IF NOT EXISTS idx_pending_candidates_sync_record_id "
             "ON pending_candidates(sync_record_id)"
         )
+
+        # 一次性数据迁移：加密历史明文 token（仓储层已改为写入即加密）
+        self._ensure_tokens_encrypted(cursor)
 
         conn.commit()
         logger.info(f"数据库初始化完成: {self.db_path}")

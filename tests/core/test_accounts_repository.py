@@ -16,6 +16,20 @@ def db(temp_dir, reset_singletons):
         yield DatabaseManager(str(db_path))
 
 
+@pytest.fixture
+def db_with_secret(temp_dir, reset_singletons):
+    """带 secret_key 的 DB 实例，使 token 加密真正生效。"""
+    with patch("app.core.database.logger"):
+        with patch(
+            "app.core.config_secret_crypto._master_secret",
+            return_value="test-secret-key-for-db-token-encryption",
+        ):
+            from app.core.database import DatabaseManager
+
+            db_path = temp_dir / "accounts_enc.db"
+            yield DatabaseManager(str(db_path))
+
+
 def _sample_account(section="bangumi-alpha", username="user_a"):
     return {
         "section_name": section,
@@ -117,6 +131,86 @@ class TestBangumiAccountRepository:
         db.save_bangumi_account(acc)
         got = db.get_bangumi_account("bangumi-alpha")
         assert got["media_server_usernames"] == ["plex-x", "emby-x"]
+
+    def test_token_encrypted_at_rest(self, db_with_secret):
+        """写入后 DB 中存储 BGS1: 密文，读取时还原明文。"""
+        db = db_with_secret
+        db.save_bangumi_account(_sample_account())
+        # 通过仓储层读取：应返回明文
+        got = db.get_bangumi_account("bangumi-alpha")
+        assert got["access_token"] == "AT"
+        assert got["refresh_token"] == "RT"
+        # 直接查 DB（绕过仓储层解密）：应为 BGS1: 密文
+        conn = db._connection._get_connection()
+        row = conn.execute(
+            "SELECT access_token, refresh_token FROM bangumi_accounts "
+            "WHERE section_name = ?",
+            ("bangumi-alpha",),
+        ).fetchone()
+        assert row[0].startswith("BGS1:")
+        assert row[0] != "AT"
+        assert row[1].startswith("BGS1:")
+        assert row[1] != "RT"
+
+    def test_update_token_encrypted(self, db_with_secret):
+        """update_bangumi_account_token 写入的 token 也应加密。"""
+        db = db_with_secret
+        db.save_bangumi_account(_sample_account())
+        db.update_bangumi_account_token(
+            "bangumi-alpha",
+            {
+                "access_token": "AT2",
+                "refresh_token": "RT2",
+                "token_type": "Bearer",
+                "expires_at": 1234567890,
+                "bangumi_user_id": "456",
+                "nickname": "",
+                "avatar": "",
+            },
+        )
+        got = db.get_bangumi_account("bangumi-alpha")
+        assert got["access_token"] == "AT2"
+        assert got["refresh_token"] == "RT2"
+        conn = db._connection._get_connection()
+        row = conn.execute(
+            "SELECT access_token FROM bangumi_accounts WHERE section_name = ?",
+            ("bangumi-alpha",),
+        ).fetchone()
+        assert row[0].startswith("BGS1:")
+
+    def test_plaintext_token_migration(self, db_with_secret):
+        """历史明文 token 在 _init_database 迁移后被加密。"""
+        db = db_with_secret
+        # 先写入一条账号（token 已加密）
+        db.save_bangumi_account(_sample_account())
+        # 直接写明文到 DB，模拟迁移前的历史数据
+        conn = db._connection._get_connection()
+        conn.execute(
+            "UPDATE bangumi_accounts SET access_token = 'PLAIN_AT', "
+            "refresh_token = 'PLAIN_RT' WHERE section_name = ?",
+            ("bangumi-alpha",),
+        )
+        conn.commit()
+        # 仓储层读取明文（decrypt 对无前缀返回原值）
+        got = db.get_bangumi_account("bangumi-alpha")
+        assert got["access_token"] == "PLAIN_AT"
+        # 手动触发迁移（模拟重启后 _init_database 调用）
+        db._connection._tokens_encrypted_migrated = False
+        cursor = conn.cursor()
+        db._connection._ensure_tokens_encrypted(cursor)
+        conn.commit()
+        # 迁移后 DB 中应为密文
+        row = conn.execute(
+            "SELECT access_token, refresh_token FROM bangumi_accounts "
+            "WHERE section_name = ?",
+            ("bangumi-alpha",),
+        ).fetchone()
+        assert row[0].startswith("BGS1:")
+        assert row[1].startswith("BGS1:")
+        # 仓储层读取仍为明文
+        got2 = db.get_bangumi_account("bangumi-alpha")
+        assert got2["access_token"] == "PLAIN_AT"
+        assert got2["refresh_token"] == "PLAIN_RT"
 
 
 class TestOAuthStateRepository:
