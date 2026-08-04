@@ -13,14 +13,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..core.config import (
-    _BANGUMI_NON_ACCOUNT_SECTIONS,
-    config_manager,
-    parse_media_server_username_value,
-)
+from ..core.config import config_manager
 from ..core.config_secret_crypto import (
     decrypt_api_config_payload,
-    encrypt_if_sensitive,
     is_sensitive_ini_field,
 )
 from ..core.logging import logger
@@ -132,79 +127,6 @@ def _cleanup_config_backups(strategy: str, data: dict) -> int:
     return deleted_count
 
 
-def _handle_multi_accounts_config(multi_accounts: dict[str, dict[str, Any]]) -> None:
-    """处理多账号配置"""
-    config = config_manager.get_config_parser()
-
-    # 清除现有的多账号 bangumi-* 配置段（保留非账号的系统功能段，
-    # 如 bangumi-data / bangumi-mapping / bangumi-archive）
-    sections_to_remove = [
-        section
-        for section in config.sections()
-        if section.startswith("bangumi-")
-        and section not in _BANGUMI_NON_ACCOUNT_SECTIONS
-    ]
-    for section in sections_to_remove:
-        config.remove_section(section)
-        logger.info(f"清除旧的多账号配置段: {section}")
-
-    # 添加新的多账号配置
-    for account_key, account_config in multi_accounts.items():
-        ms_raw = account_config.get("media_server_username")
-        if not account_config.get("username") or not account_config.get("access_token"):
-            logger.warning(f"跳过不完整的账号配置: {account_key}")
-            continue
-        if not parse_media_server_username_value(
-            str(ms_raw) if ms_raw is not None else ""
-        ):
-            logger.warning(
-                f"跳过不完整的账号配置（媒体服务器用户名为空）: {account_key}"
-            )
-            continue
-
-        # 生成配置段名称，使用 bangumi- 前缀
-        section_name = f"bangumi-{account_config['username']}"
-
-        # 确保配置段名称唯一
-        counter = 1
-        original_section_name = section_name
-        while config.has_section(section_name):
-            section_name = f"{original_section_name}-{counter}"
-            counter += 1
-
-        # 创建配置段
-        config.add_section(section_name)
-        config.set(section_name, "username", account_config["username"])
-        config.set(
-            section_name,
-            "access_token",
-            encrypt_if_sensitive(
-                section_name, "access_token", str(account_config["access_token"])
-            ),
-        )
-        config.set(
-            section_name,
-            "media_server_username",
-            account_config["media_server_username"],
-        )
-        config.set(
-            section_name, "private", str(account_config.get("private", False)).lower()
-        )
-
-        display_name = str(account_config.get("display_name") or "").strip()
-        if not display_name and account_key != account_config["username"]:
-            display_name = str(account_key).strip()
-
-        if display_name and display_name != account_config["username"]:
-            config.set(section_name, "display_name", display_name)
-
-        logger.info(
-            f"创建多账号配置段: {section_name} (媒体服务器用户: {account_config['media_server_username']})"
-        )
-
-    logger.info(f"多账号配置处理完成，共配置 {len(multi_accounts)} 个账号")
-
-
 @router.get("/config")
 async def get_config(
     request: Request, current_user: dict = Depends(get_current_user_flexible)
@@ -271,8 +193,8 @@ async def update_config(
             config_manager.get_feiniu_config().get("enabled", False)
         )
 
-        # 处理多账号配置
-        multi_accounts = data.pop("multi_accounts", None)
+        # multi_accounts 已由 /api/bangumi/accounts 独立管理，忽略旧字段
+        data.pop("multi_accounts", None)
 
         # 更新常规配置
         password_updated = False
@@ -315,10 +237,6 @@ async def update_config(
                     # 其他配置项正常保存（敏感项在 set_config 中加密）
                     config_manager.set_config(normalized_section, key, value)
 
-        # 处理多账号配置
-        if multi_accounts is not None:
-            _handle_multi_accounts_config(multi_accounts)
-
         # 保存配置
         config_manager.save_config()
 
@@ -349,8 +267,6 @@ async def update_config(
                     normalized = prefix
                     break
             changed_sections.add(normalized)
-        if multi_accounts is not None:
-            changed_sections.add("bangumi")
 
         for section in changed_sections:
             # 调度器联动（通过 SectionMeta.scheduler_id 反查）

@@ -113,7 +113,6 @@ SECTIONS: dict[str, SectionMeta] = {
         display_name="同步设置",
         order=20,
         fields=(
-            FieldMeta(name="mode", default="single"),
             FieldMeta(name="movie_playback_start_mark_watching", default_true=True),
             FieldMeta(name="movie_mark_subject_completed", default_true=True),
             # 模糊匹配置信度阈值（0~1）：低于该相似度的 Bangumi API 匹配
