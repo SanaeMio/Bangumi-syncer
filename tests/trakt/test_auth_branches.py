@@ -6,8 +6,42 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from app.core.database import database_manager as _dbm
 from app.models.trakt import TraktCallbackRequest, TraktConfig
 from app.services.trakt.auth import TraktAuthService
+
+
+@pytest.fixture(autouse=True)
+def _fake_oauth_state(monkeypatch):
+    """用内存替身隔离真实 oauth_states 表，使 CSRF state 测试可复现。"""
+    store: dict = {}
+
+    def _save(state, section_name, expires_at, provider=""):
+        store[state] = {
+            "provider": provider,
+            "account_key": section_name,
+            "expires_at": expires_at,
+        }
+
+    def _get(state):
+        return store.get(state)
+
+    def _del(state):
+        return store.pop(state, None) is not None
+
+    def _cleanup():
+        now = int(time.time())
+        expired = [
+            k for k, v in store.items() if v["expires_at"] and v["expires_at"] <= now
+        ]
+        for k in expired:
+            store.pop(k)
+        return len(expired)
+
+    monkeypatch.setattr(_dbm, "save_oauth_state", _save)
+    monkeypatch.setattr(_dbm, "get_oauth_state", _get)
+    monkeypatch.setattr(_dbm, "delete_oauth_state", _del)
+    monkeypatch.setattr(_dbm, "cleanup_oauth_states_expired", _cleanup)
 
 
 @pytest.fixture
@@ -86,23 +120,21 @@ class TestTraktAuthValidateAndOAuth:
     def test_verify_oauth_state_branches(self, svc):
         assert svc._verify_oauth_state("u", "s") is False
         svc._save_oauth_state("u", "s")
-        svc._oauth_states["u:s"]["created_at"] = "bad"
+        assert svc._verify_oauth_state("u", "s") is True
+        # 校验即消费：再次校验同一 state 失败
         assert svc._verify_oauth_state("u", "s") is False
+        # 不同 user_id 不匹配（已消费，校验失败）
         svc._save_oauth_state("u2", "s2")
-        svc._oauth_states["u2:s2"]["created_at"] = time.time() - 400
-        assert svc._verify_oauth_state("u2", "s2") is False
-        svc._save_oauth_state("u3", "s3")
-        assert svc._verify_oauth_state("u3", "s3") is True
-        assert "u3:s3" not in svc._oauth_states
+        assert svc._verify_oauth_state("other", "s2") is False
 
     def test_cleanup_expired_states(self, svc):
-        svc._oauth_states = {
-            "a:b": {"user_id": "a", "state": "b", "created_at": time.time() - 999},
-            "c:d": {"user_id": "c", "state": "d", "created_at": time.time()},
-        }
-        svc._cleanup_expired_states(max_age=300)
-        assert "a:b" not in svc._oauth_states
-        assert "c:d" in svc._oauth_states
+        svc._save_oauth_state("a", "a:s")
+        # 注入一个已过期的 state
+        _dbm.save_oauth_state("old", "x", 1, provider="trakt")
+        deleted = svc._cleanup_expired_states()
+        assert deleted >= 1
+        assert svc.extract_user_id_from_state("a:s") == "a"  # 未过期保留
+        assert svc.extract_user_id_from_state("old") is None  # 已过期清理
 
     def test_get_user_trakt_config(self, svc):
         with patch("app.services.trakt.auth.database_manager") as db:
@@ -130,52 +162,25 @@ class TestTraktAuthValidateAndOAuth:
             assert svc.disconnect_trakt("u") is False
 
 
-class _FakeAsyncClientCtx:
-    def __init__(self, post_coro):
-        self._post = post_coro
-
-    def prefix(self, text):
-        return self
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        return None
-
-    async def post(self, *a, **kw):
-        return await self._post()
-
-
 @pytest.mark.asyncio
 async def test_exchange_code_for_token_200_and_errors(svc):
     ok = MagicMock(status_code=200)
     ok.json.return_value = {"access_token": "a"}
-
-    async def ret_ok():
-        return ok
+    ok.raise_for_status = MagicMock()
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch(
-                "app.services.trakt.auth.AsyncHttpClient",
-                return_value=_FakeAsyncClientCtx(ret_ok),
-            ):
+            with patch("httpx.post", return_value=ok):
                 assert await svc._exchange_code_for_token("code") == {
                     "access_token": "a"
                 }
 
     bad = MagicMock(status_code=400, text="err")
-
-    async def ret_bad():
-        return bad
+    bad.raise_for_status = MagicMock(side_effect=Exception("bad"))
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch(
-                "app.services.trakt.auth.AsyncHttpClient",
-                return_value=_FakeAsyncClientCtx(ret_bad),
-            ):
+            with patch("httpx.post", return_value=bad):
                 assert await svc._exchange_code_for_token("c") is None
 
     with patch.object(svc, "_validate_config", return_value=False):
@@ -186,10 +191,7 @@ async def test_exchange_code_for_token_200_and_errors(svc):
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch(
-                "app.services.trakt.auth.AsyncHttpClient",
-                return_value=_FakeAsyncClientCtx(boom),
-            ):
+            with patch("httpx.post", side_effect=boom):
                 assert await svc._exchange_code_for_token("c") is None
 
 
@@ -197,16 +199,11 @@ async def test_exchange_code_for_token_200_and_errors(svc):
 async def test_refresh_access_token_paths(svc):
     ok = MagicMock(status_code=200)
     ok.json.return_value = {"access_token": "n"}
-
-    async def ret_ok():
-        return ok
+    ok.raise_for_status = MagicMock()
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch(
-                "app.services.trakt.auth.AsyncHttpClient",
-                return_value=_FakeAsyncClientCtx(ret_ok),
-            ):
+            with patch("httpx.post", return_value=ok):
                 assert await svc._refresh_access_token("rt") == {"access_token": "n"}
 
     async def boom():
@@ -214,10 +211,7 @@ async def test_refresh_access_token_paths(svc):
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch(
-                "app.services.trakt.auth.AsyncHttpClient",
-                return_value=_FakeAsyncClientCtx(boom),
-            ):
+            with patch("httpx.post", side_effect=boom):
                 assert await svc._refresh_access_token("rt") is None
 
 

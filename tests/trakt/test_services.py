@@ -7,7 +7,31 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.database import database_manager as _dbm
 from app.services.trakt.auth import TraktAuthService
+
+
+@pytest.fixture(autouse=True)
+def _fake_oauth_state(monkeypatch):
+    """用内存替身隔离真实 oauth_states 表，使 CSRF state 测试可复现。"""
+    store: dict = {}
+
+    def _save(state, section_name, expires_at, provider=""):
+        store[state] = {
+            "provider": provider,
+            "account_key": section_name,
+            "expires_at": expires_at,
+        }
+
+    def _get(state):
+        return store.get(state)
+
+    def _del(state):
+        return store.pop(state, None) is not None
+
+    monkeypatch.setattr(_dbm, "save_oauth_state", _save)
+    monkeypatch.setattr(_dbm, "get_oauth_state", _get)
+    monkeypatch.setattr(_dbm, "delete_oauth_state", _del)
 
 
 class TestTraktAuthService:
@@ -99,7 +123,7 @@ class TestTraktAuthService:
         """测试保存 OAuth 状态"""
         service = TraktAuthService()
         service._save_oauth_state("test_user", "test_state")
-        assert "test_user:test_state" in service._oauth_states
+        assert service.extract_user_id_from_state("test_state") == "test_user"
 
     def test_extract_user_id_from_state(self):
         """测试从 state 提取用户 ID"""

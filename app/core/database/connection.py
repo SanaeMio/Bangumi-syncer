@@ -346,6 +346,58 @@ class DatabaseConnection:
         """)
         self._ensure_pending_sync_queue_sync_record_id(cursor)
 
+        # Bangumi 账号（含 OAuth 令牌）：以「账号列表」为唯一真相源，
+        # 取代散落在 INI 各 [bangumi-*] 段的配置。
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bangumi_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                section_name TEXT NOT NULL UNIQUE,
+                username TEXT NOT NULL DEFAULT '',
+                media_server_usernames TEXT NOT NULL DEFAULT '[]',
+                auth_method TEXT NOT NULL DEFAULT 'manual',
+                access_token TEXT,
+                refresh_token TEXT,
+                token_type TEXT DEFAULT 'Bearer',
+                expires_at INTEGER,
+                bangumi_user_id TEXT DEFAULT '',
+                nickname TEXT DEFAULT '',
+                avatar TEXT DEFAULT '',
+                is_active BOOLEAN NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_section "
+            "ON bangumi_accounts(section_name)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_active "
+            "ON bangumi_accounts(is_active)"
+        )
+
+        # OAuth 授权过程中的 CSRF state（临时会话，带 TTL），替代临时 JSON 文件。
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS oauth_states (
+                state TEXT PRIMARY KEY,
+                section_name TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            )
+        """)
+        # 兼容旧库：补充 provider 列（已存在则忽略）
+        try:
+            cursor.execute(
+                "ALTER TABLE oauth_states ADD COLUMN provider TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_oauth_states_expire "
+            "ON oauth_states(expires_at)"
+        )
+
         # 创建二级索引以加速常用查询
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_timestamp ON sync_records(timestamp)"

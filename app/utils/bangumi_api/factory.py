@@ -33,6 +33,22 @@ def build_bangumi_api_from_active_config(
         cfg = configs.get(section_name)
     else:
         cfg = config_manager.get_active_bangumi_config()
+
+    # OAuth 令牌临近过期时静默续期（仅 oauth 授权且配置 refresh_token 时生效），
+    # 续期后重新读取，确保拿到最新 access_token。
+    if cfg and cfg.get("access_token"):
+        target = section_name if (section_name and section_name != "bangumi") else None
+        try:
+            from app.services.bangumi.auth import bangumi_auth_service
+
+            bangumi_auth_service.refresh_active_token_if_needed(target)
+        except Exception:
+            pass
+        if section_name and section_name != "bangumi":
+            cfg = config_manager.get_bangumi_configs().get(section_name) or cfg
+        else:
+            cfg = config_manager.get_active_bangumi_config() or cfg
+
     if not cfg or not cfg.get("username") or not cfg.get("access_token"):
         return None
     dev_snapshot = config_manager.get_dev_http_snapshot()

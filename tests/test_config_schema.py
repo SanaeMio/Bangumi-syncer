@@ -19,6 +19,7 @@ class TestNonAccountBangumiSections:
             "bangumi-mapping",
             "bangumi-archive",
             "bangumi-replay",
+            "bangumi-oauth",
         }
 
     def test_excludes_account_sections(self):
@@ -60,9 +61,9 @@ class TestEnvOverrides:
         assert overrides[("web", "base_path")] == "APPLICATION_ROOT"
 
     def test_count_matches_original(self):
-        """原硬编码共 14 条映射"""
+        """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条"""
         overrides = config_schema.all_env_overrides()
-        assert len(overrides) == 14
+        assert len(overrides) == 16
 
 
 class TestIsSensitiveField:

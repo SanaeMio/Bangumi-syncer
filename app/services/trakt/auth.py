@@ -1,14 +1,16 @@
 """
 Trakt.tv OAuth2 认证服务
+
+授权 URL 构建、令牌交换/刷新、CSRF state 管理统一委托给通用
+``app.services.oauth`` 抽象层；本模块仅保留 Trakt 特有的令牌落地
+（写入 trakt 配置表）与配置校验逻辑。
 """
 
-import secrets
 import time
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urlencode
 
-import httpx
+from app.services.oauth import get_oauth_service, get_provider
 
 from ...core.config import config_manager
 from ...core.database import database_manager
@@ -19,7 +21,21 @@ from ...models.trakt import (
     TraktCallbackResponse,
     TraktConfig,
 )
-from ...utils.http_base import AsyncHttpClient
+
+
+def get_trakt_app_credentials() -> tuple[str, str]:
+    """返回 (client_id, client_secret)，取自 INI ``[trakt]``。"""
+    cfg = config_manager.get_trakt_config() or {}
+    return (
+        (cfg.get("client_id", "") or "").strip(),
+        (cfg.get("client_secret", "") or "").strip(),
+    )
+
+
+def get_trakt_redirect_uri() -> str:
+    """返回 Trakt OAuth 回跳地址，取自 INI ``[trakt] redirect_uri``。"""
+    cfg = config_manager.get_trakt_config() or {}
+    return (cfg.get("redirect_uri", "") or "").strip()
 
 
 class TraktAuthService:
@@ -29,7 +45,7 @@ class TraktAuthService:
         self.base_url = "https://api.trakt.tv"
         self.auth_url = "https://trakt.tv/oauth/authorize"
         self.token_url = "https://api.trakt.tv/oauth/token"
-        self._oauth_states = {}
+        self.oauth = get_oauth_service()
         self.trakt_config = {}
 
     def _get_config(self) -> dict:
@@ -43,9 +59,9 @@ class TraktAuthService:
             logger.error("Trakt 配置未找到")
             return False
 
-        client_id = trakt_config.get("client_id", "").strip()
-        client_secret = trakt_config.get("client_secret", "").strip()
-        redirect_uri = trakt_config.get("redirect_uri", "").strip()
+        client_id = (trakt_config.get("client_id", "") or "").strip()
+        client_secret = (trakt_config.get("client_secret", "") or "").strip()
+        redirect_uri = (trakt_config.get("redirect_uri", "") or "").strip()
 
         if not client_id:
             logger.error("Trakt client_id 未配置")
@@ -70,23 +86,10 @@ class TraktAuthService:
         if not self._validate_config():
             return None
 
-        # 生成随机 state 参数防止 CSRF 攻击
-        state = secrets.token_urlsafe(32)
-
-        # 存储 state 到临时存储（这里简化处理，实际应使用缓存或数据库）
-        # 注意：生产环境应使用更安全的存储方式
-        self._save_oauth_state(user_id, state)
-
-        # 构建授权 URL
-        trakt_config = self._get_config()
-        params = {
-            "response_type": "code",
-            "client_id": trakt_config["client_id"],
-            "redirect_uri": trakt_config["redirect_uri"],
-            "state": state,
-        }
-
-        auth_url = f"{self.auth_url}?{urlencode(params)}"
+        # 生成并保存 state（统一落库，带 TTL，防 CSRF）
+        state = self.oauth.create_state("trakt", user_id)
+        provider = get_provider("trakt")
+        auth_url = self.oauth.build_authorize_url(provider, state=state)
 
         return TraktAuthResponse(auth_url=auth_url, state=state)
 
@@ -98,7 +101,7 @@ class TraktAuthService:
             if not self._validate_config():
                 return TraktCallbackResponse(success=False, message="Trakt 配置无效")
 
-            # 验证 state 参数（这里简化，实际应验证与存储的 state 匹配）
+            # 验证 state 参数（已落库，校验即消费）
             state = callback_request.state
             if not self._verify_oauth_state(user_id, state):
                 return TraktCallbackResponse(success=False, message="State 验证失败")
@@ -194,75 +197,21 @@ class TraktAuthService:
             return False
 
     async def _exchange_code_for_token(self, code: str) -> Optional[dict]:
-        """使用授权码交换访问令牌"""
+        """使用授权码交换访问令牌（委托通用 OAuth 服务）。"""
         try:
             if not self._validate_config():
                 return None
-
-            trakt_config = self._get_config()
-            data = {
-                "code": code,
-                "client_id": trakt_config["client_id"],
-                "client_secret": trakt_config["client_secret"],
-                "redirect_uri": trakt_config["redirect_uri"],
-                "grant_type": "authorization_code",
-            }
-
-            async with AsyncHttpClient(
-                label="Trakt-Auth", timeout=30.0, max_retries=0
-            ).prefix("🔑") as client:
-                response = await client.post(self.token_url, json=data)
-
-                if response.status_code == 200:
-                    token_data = response.json()
-                    logger.info("成功获取 Trakt 访问令牌")
-                    return token_data
-                else:
-                    logger.error(
-                        f"获取 Trakt 访问令牌失败: {response.status_code} - {response.text}"
-                    )
-                    return None
-
-        except httpx.RequestError as e:
-            logger.error(f"请求 Trakt 令牌接口失败: {e}")
-            return None
+            return self.oauth.exchange_code("trakt", code)
         except Exception as e:
             logger.error(f"交换 Trakt 令牌时发生错误: {e}")
             return None
 
     async def _refresh_access_token(self, refresh_token: str) -> Optional[dict]:
-        """使用刷新令牌获取新的访问令牌"""
+        """使用刷新令牌获取新的访问令牌（委托通用 OAuth 服务）。"""
         try:
             if not self._validate_config():
                 return None
-
-            trakt_config = self._get_config()
-            data = {
-                "refresh_token": refresh_token,
-                "client_id": trakt_config["client_id"],
-                "client_secret": trakt_config["client_secret"],
-                "redirect_uri": trakt_config["redirect_uri"],
-                "grant_type": "refresh_token",
-            }
-
-            async with AsyncHttpClient(
-                label="Trakt-Auth", timeout=30.0, max_retries=0
-            ).prefix("🔑") as client:
-                response = await client.post(self.token_url, json=data)
-
-                if response.status_code == 200:
-                    token_data = response.json()
-                    logger.info("成功刷新 Trakt 访问令牌")
-                    return token_data
-                else:
-                    logger.error(
-                        f"刷新 Trakt 访问令牌失败: {response.status_code} - {response.text}"
-                    )
-                    return None
-
-        except httpx.RequestError as e:
-            logger.error(f"请求 Trakt 令牌刷新接口失败: {e}")
-            return None
+            return self.oauth.refresh_token("trakt", refresh_token)
         except Exception as e:
             logger.error(f"刷新 Trakt 令牌时发生错误: {e}")
             return None
@@ -276,70 +225,24 @@ class TraktAuthService:
         buffer_seconds = 60
         return int(datetime.now().timestamp()) + expires_in - buffer_seconds
 
+    # ── CSRF state（统一落库，由通用 OAuth 服务管理）────────────
     def _save_oauth_state(self, user_id: str, state: str) -> None:
-        """保存 OAuth state 到临时存储（简化实现）"""
-        # 注意：生产环境应使用 Redis 或数据库存储 state，并设置过期时间
-        # 这里使用内存存储作为示例
-        if not hasattr(self, "_oauth_states"):
-            self._oauth_states = {}
-
-        self._oauth_states[f"{user_id}:{state}"] = {
-            "user_id": user_id,
-            "state": state,
-            "created_at": time.time(),
-        }
+        """保存 OAuth state（绑定到 user_id，带 TTL）。"""
+        expires_at = int(time.time()) + 600
+        database_manager.save_oauth_state(state, user_id, expires_at, provider="trakt")
 
     def extract_user_id_from_state(self, state: str) -> Optional[str]:
-        """从 state 中提取用户ID（简化实现）"""
-        if not hasattr(self, "_oauth_states"):
-            return None
-
-        for _, state_data in self._oauth_states.items():
-            if state_data["state"] == state:
-                return state_data["user_id"]
-
-        return None
+        """从 state 中提取用户ID（校验并消费）。"""
+        return self.oauth.consume_state("trakt", state)
 
     def _verify_oauth_state(self, user_id: str, state: str) -> bool:
-        """验证 OAuth state（简化实现）"""
-        if not hasattr(self, "_oauth_states"):
-            return False
+        """验证 OAuth state 是否匹配 user_id（校验即消费）。"""
+        account_key = self.oauth.consume_state("trakt", state)
+        return account_key == user_id
 
-        key = f"{user_id}:{state}"
-        state_data = self._oauth_states.get(key)
-
-        if not state_data:
-            return False
-
-        # 检查 state 是否过期（5分钟）
-        created_at = state_data["created_at"]
-        if not isinstance(created_at, (int, float)):
-            return False
-        if time.time() - created_at > 300:
-            del self._oauth_states[key]
-            return False
-
-        # 验证成功后删除 state
-        del self._oauth_states[key]
-        return True
-
-    def _cleanup_expired_states(self, max_age: int = 300) -> None:
-        """清理过期的 state"""
-        if not hasattr(self, "_oauth_states"):
-            return
-
-        current_time = time.time()
-        expired_keys = []
-        for key, state_data in self._oauth_states.items():
-            created_at = state_data["created_at"]
-            if (
-                isinstance(created_at, (int, float))
-                and current_time - created_at > max_age
-            ):
-                expired_keys.append(key)
-
-        for key in expired_keys:
-            del self._oauth_states[key]
+    def _cleanup_expired_states(self, max_age: int = 300) -> int:
+        """清理过期的 state，返回删除行数。"""
+        return database_manager.cleanup_oauth_states_expired()
 
     def get_user_trakt_config(self, user_id: str) -> Optional[TraktConfig]:
         """获取用户的 Trakt 配置"""

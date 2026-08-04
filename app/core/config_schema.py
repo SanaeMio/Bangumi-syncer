@@ -82,13 +82,31 @@ SECTIONS: dict[str, SectionMeta] = {
         name="bangumi",
         display_name="Bangumi 账号",
         order=10,
-        sensitive_fields=frozenset({"access_token"}),
+        sensitive_fields=frozenset({"access_token", "refresh_token"}),
         env_overrides={
             "username": "BANGUMI_USERNAME",
             "access_token": "BANGUMI_ACCESS_TOKEN",
             "media_server_username": "SINGLE_USERNAME",
             "private": "BANGUMI_PRIVATE",
         },
+    ),
+    "bangumi-oauth": SectionMeta(
+        name="bangumi-oauth",
+        display_name="Bangumi OAuth 应用",
+        order=11,
+        # 应用凭证（client_id/client_secret）用于完成 Bangumi 官方 OAuth 授权流。
+        # 该段非多账号段，需从账号段探测中排除。
+        sensitive_fields=frozenset({"client_secret"}),
+        visible_in_ui=False,
+        env_overrides={
+            "client_id": "BANGUMI_OAUTH_CLIENT_ID",
+            "client_secret": "BANGUMI_OAUTH_CLIENT_SECRET",
+        },
+        fields=(
+            FieldMeta(name="client_id", default=""),
+            FieldMeta(name="client_secret", default=""),
+            FieldMeta(name="redirect_uri", default=""),
+        ),
     ),
     "sync": SectionMeta(
         name="sync",

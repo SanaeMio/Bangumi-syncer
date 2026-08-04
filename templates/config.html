@@ -75,6 +75,7 @@
                 {% include
                 "config/_bangumi_account.html" %}
                 {% include "config/_multi_user.html" %}
+                {% include "config/_bangumi_oauth.html" %}
                 {% include "config/_advanced.html" %}
                 {% include "config/_auth.html" %}
                 {%
@@ -603,9 +604,127 @@
     } else {
       console.error('找不到恢复配置模态框元素')
     }
+    // Bangumi OAuth 授权交互
+    document
+      .getElementById('bangumi-oauth-connect')
+      ?.addEventListener('click', startBangumiOAuth)
+    document
+      .getElementById('bangumi-oauth-disconnect')
+      ?.addEventListener('click', disconnectBangumiOAuth)
+    refreshBangumiOAuthRedirect()
+    refreshBangumiOAuthStatus()
+
     // 先加载配置 schema（驱动默认值/布尔语义），再加载配置数据
     loadConfigSchema().then(() => loadConfig(false))
   })
+
+  // ── Bangumi OAuth ──────────────────────────────────────────
+  function escBangumiOAuth(s) {
+    return String(s == null ? '' : s).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]),
+    )
+  }
+
+  async function refreshBangumiOAuthRedirect() {
+    try {
+      const res = await apiFetch('/api/oauth/bangumi/redirect', {
+        skipAuthRedirect: true,
+      })
+      const input = document.getElementById('bangumi-oauth-redirect')
+      if (input && res && res.redirect_uri && !input.value.trim()) {
+        input.placeholder = res.redirect_uri
+      }
+    } catch (e) {
+      // 忽略未登录等错误
+    }
+  }
+
+  async function refreshBangumiOAuthStatus() {
+    try {
+      const status = await apiFetch('/api/oauth/bangumi/status', {
+        skipAuthRedirect: true,
+      })
+      renderBangumiOAuthStatus(status)
+    } catch (e) {
+      // 忽略未登录等错误
+    }
+  }
+
+  function renderBangumiOAuthStatus(status) {
+    const el = document.getElementById('bangumi-oauth-status')
+    if (!el || !status) return
+    if (status.connected) {
+      const exp = status.expires_at
+        ? new Date(status.expires_at * 1000).toLocaleString()
+        : '未知'
+      const expiredTag = status.expired
+        ? ' <span class="text-danger">(已过期，下次调用将自动刷新)</span>'
+        : ''
+      el.innerHTML =
+        '<div class="alert alert-success py-2 mb-0">已通过 OAuth 连接 Bangumi 账号：<b>' +
+        escBangumiOAuth(status.username) +
+        '</b><br>令牌过期时间：' +
+        exp +
+        expiredTag +
+        '</div>'
+    } else {
+      const method = status.auth_method === 'oauth' ? 'OAuth' : '手动令牌'
+      el.innerHTML =
+        '<div class="alert alert-secondary py-2 mb-0">尚未通过 OAuth 连接（当前认证方式：' +
+        method +
+        '）。</div>'
+    }
+  }
+
+  async function startBangumiOAuth() {
+    const clientIdEl = document.getElementById('bangumi-oauth-client-id')
+    const clientId = clientIdEl ? clientIdEl.value : ''
+    if (!clientId || !clientId.trim()) {
+      showAlert(
+        '请先在上方填写 Bangumi OAuth 的 Client ID / Client Secret 并保存配置',
+        'warning',
+      )
+      return
+    }
+    let authUrl
+    try {
+      const res = await apiFetch('/api/oauth/bangumi/start')
+      if (!res || !res.auth_url) {
+        showAlert(res && res.detail ? res.detail : '发起授权失败', 'danger')
+        return
+      }
+      authUrl = res.auth_url
+    } catch (e) {
+      showAlert('发起授权失败：' + e.message, 'danger')
+      return
+    }
+    const popup = window.open(authUrl, 'bangumi_oauth', 'width=600,height=720')
+    if (!popup) {
+      showAlert('浏览器拦截了授权弹窗，请允许弹窗后重试', 'warning')
+      return
+    }
+    const timer = setInterval(async () => {
+      if (popup.closed) {
+        clearInterval(timer)
+        await refreshBangumiOAuthStatus()
+        showAlert('Bangumi OAuth 授权已完成', 'success')
+      }
+    }, 1000)
+  }
+
+  async function disconnectBangumiOAuth() {
+    if (!window.confirm('确定断开 Bangumi OAuth 连接？将保留手动令牌以便继续同步。'))
+      return
+    try {
+      await apiFetch('/api/oauth/bangumi/disconnect', { method: 'POST' })
+      showAlert('已断开 Bangumi OAuth 连接', 'success')
+      await refreshBangumiOAuthStatus()
+    } catch (e) {
+      showAlert('断开连接失败：' + e.message, 'danger')
+    }
+  }
 
   async function loadConfig(showToast = true) {
     try {

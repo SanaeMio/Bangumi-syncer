@@ -14,6 +14,7 @@ from .api.airing_calendar import router as airing_calendar_router
 from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
 from .api.bangumi_archive import router as bangumi_archive_router
+from .api.bangumi_oauth import router as bangumi_oauth_router
 from .api.bangumi_replay import router as bangumi_replay_router
 from .api.bgm_poster import router as bgm_poster_router
 from .api.config import router as config_router
@@ -66,12 +67,22 @@ async def lifespan(app: FastAPI):
     startup_info.print_info("🚀 应用启动中...")
     startup_info.print_separator()
 
+    # 将旧 INI 账号段一次性迁移到数据库（幂等），账号以 DB 为唯一真相源
     try:
-        bangumi_configs = config_manager.get_bangumi_configs()
-        user_mappings = config_manager.get_user_mappings()
+        from app.core.accounts import migrate_ini_accounts_to_db
+
+        migrated = migrate_ini_accounts_to_db()
+        if migrated:
+            startup_info.print_success(f"迁移了 {migrated} 个 bangumi 账号到数据库")
+    except Exception as e:
+        startup_info.print_error(f"迁移 bangumi 账号到数据库失败: {e}")
+
+    try:
+        from app.core.accounts import list_bangumi_accounts
+
+        accounts = list_bangumi_accounts()
         mappings = mapping_service.get_all_mappings()
-        startup_info.print_success(f"加载了 {len(bangumi_configs)} 个bangumi账号配置")
-        startup_info.print_success(f"加载了 {len(user_mappings)} 个用户映射配置")
+        startup_info.print_success(f"加载了 {len(accounts)} 个 bangumi 账号（数据库）")
         startup_info.print_success(f"加载了 {len(mappings)} 个自定义映射")
     except Exception as e:
         startup_info.print_error(f"启动时加载配置信息失败: {e}")
@@ -169,6 +180,7 @@ app.include_router(feiniu_router)
 app.include_router(fongmi_router)
 app.include_router(upgrade_router)
 app.include_router(bangumi_archive_router)
+app.include_router(bangumi_oauth_router)
 app.include_router(bangumi_replay_router)
 app.include_router(airing_calendar_router)
 
