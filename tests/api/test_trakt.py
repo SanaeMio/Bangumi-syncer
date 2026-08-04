@@ -525,6 +525,55 @@ async def test_disconnect_trakt(
 
 
 @pytest.mark.asyncio
+async def test_get_trakt_config_does_not_leak_client_secret(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_config_manager,
+):
+    """GET /api/trakt/config 响应不应回传 client_secret 明文。
+
+    安全属性：client_secret 通过 client_secret_configured 布尔标记表达，
+    避免敏感凭证经 API 响应泄露。
+    """
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/config")
+
+    assert response.status_code == 200
+    data = response.json()
+    # 响应不应包含 client_secret 明文字段
+    assert "client_secret" not in data
+    # 应以 client_secret_configured 布尔标记替代
+    assert data["client_secret_configured"] is True
+    # client_id 仍正常返回（非敏感）
+    assert data["client_id"] == "test_client_id"
+
+
+@pytest.mark.asyncio
+async def test_get_trakt_config_secret_not_configured(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_config_manager,
+):
+    """client_secret 未配置时 client_secret_configured 为 False"""
+    mock_config_manager.get_trakt_config.return_value = {
+        "client_id": "test_client_id",
+        "client_secret": "",
+        "redirect_uri": "http://localhost:8000/api/trakt/auth/callback",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/config")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "client_secret" not in data
+    assert data["client_secret_configured"] is False
+
+
+@pytest.mark.asyncio
 async def test_disconnect_trakt_failure(
     app_with_auth,
     mock_trakt_auth_service,

@@ -29,6 +29,9 @@ class _FakeAccountStore:
         acc = self.accounts.get(section_name)
         return dict(acc) if acc else None
 
+    def list_all(self):
+        return [dict(acc) for acc in self.accounts.values()]
+
     def save(self, account):
         section = account.get("section_name")
         if not section:
@@ -67,6 +70,9 @@ def svc(monkeypatch):
         "app.services.bangumi.auth.get_active_bangumi_account", store.get_active
     )
     monkeypatch.setattr("app.services.bangumi.auth.get_bangumi_account", store.get)
+    monkeypatch.setattr(
+        "app.services.bangumi.auth.list_bangumi_accounts", store.list_all
+    )
     monkeypatch.setattr("app.services.bangumi.auth.save_bangumi_account", store.save)
     monkeypatch.setattr(
         "app.services.bangumi.auth.set_active_bangumi_account", store.set_active
@@ -153,6 +159,50 @@ def test_exchange_code_persists_token_to_db(svc):
     m.assert_called_once()
     # state 已被消费
     assert svc.verify_state(state) is False
+
+
+def test_exchange_code_re_authorize_updates_existing_account(svc):
+    """同一 user_id 重新授权应更新已存在账号而非新建，保留 media_server_usernames。"""
+    svc, store = svc
+    # 预置已有账号（带 media_server_usernames）
+    store.save(
+        {
+            "section_name": "bangumi-myname",
+            "username": "old_name",
+            "auth_method": "manual",
+            "access_token": "OLD_AT",
+            "refresh_token": "",
+            "bangumi_user_id": "myname",
+            "media_server_usernames": ["plex_user_a", "plex_user_b"],
+            "private": False,
+            "is_active": False,
+        }
+    )
+    _, state = svc.get_auth_url()
+    token = {
+        "access_token": "NEW_AT",
+        "refresh_token": "NEW_RT",
+        "expires_in": 3600,
+        "token_type": "Bearer",
+        "user_id": "myname",
+        "username": "new_name",
+    }
+    with patch("httpx.post", return_value=_mock_token_response(token)):
+        svc.exchange_code_for_token("the-code", state)
+
+    # 应更新已有账号，而非新建
+    acc = store.get("bangumi-myname")
+    assert acc is not None
+    assert acc["access_token"] == "NEW_AT"
+    assert acc["refresh_token"] == "NEW_RT"
+    assert acc["auth_method"] == "oauth"
+    assert acc["bangumi_user_id"] == "myname"
+    # media_server_usernames 应保留
+    assert acc["media_server_usernames"] == ["plex_user_a", "plex_user_b"]
+    # 账号总数应为 1（未新建）
+    assert len(store.accounts) == 1
+    # 更新已存在账号保留原激活状态（预置为 False，未变）
+    assert acc["is_active"] is False
 
 
 def test_exchange_code_rejects_bad_state(svc):
