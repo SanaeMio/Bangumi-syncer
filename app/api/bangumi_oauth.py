@@ -20,8 +20,8 @@ from .deps import get_current_user_flexible
 router = APIRouter(prefix="/api/oauth/bangumi", tags=["bangumi-oauth"])
 
 
-def _require_user(request: Request):
-    user = get_current_user_flexible(request)
+async def _require_user(request: Request):
+    user = await get_current_user_flexible(request)
     if not user:
         return None
     return user
@@ -29,7 +29,7 @@ def _require_user(request: Request):
 
 @router.get("/start")
 async def oauth_start(request: Request):
-    if not _require_user(request):
+    if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
     try:
         auth_url, state = bangumi_auth_service.get_auth_url()
@@ -68,21 +68,21 @@ async def oauth_close(result: str = "success"):
 
 @router.get("/status")
 async def oauth_status(request: Request):
-    if not _require_user(request):
+    if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
     return bangumi_auth_service.get_connection_status()
 
 
 @router.get("/redirect")
 async def oauth_redirect_uri(request: Request):
-    if not _require_user(request):
+    if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
     return {"redirect_uri": bangumi_auth_service.get_redirect_uri()}
 
 
 @router.post("/disconnect")
 async def oauth_disconnect(request: Request):
-    if not _require_user(request):
+    if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
     bangumi_auth_service.disconnect()
     return {"status": "success"}
