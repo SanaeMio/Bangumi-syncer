@@ -81,10 +81,22 @@ class DatabaseConnection:
         return self._conn
 
     def _execute_with_lock(self, fn):
-        """在锁保护下执行数据库操作"""
+        """在锁保护下执行数据库操作。
+
+        异常时主动 rollback，避免未提交事务悬挂在连接上被下一次写操作
+        意外提交（SQLite 默认 deferred 隔离，DML 一旦执行即开启事务）。
+        """
         with self._lock:
             conn = self._get_connection()
-            return fn(conn)
+            try:
+                return fn(conn)
+            except Exception:
+                # rollback 必须在锁内执行，避免与并发写操作的 commit 交织
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
 
     def _ensure_sync_records_media_type(self, cursor) -> None:
         """旧库迁移：为 sync_records 增加 media_type（历史数据为 episode）。"""
