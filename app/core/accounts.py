@@ -113,9 +113,11 @@ def migrate_ini_accounts_to_db() -> int:
     """一次性把旧 INI 账号段迁移到 DB（幂等）。返回迁移的账号数。
 
     仅在 DB 中不存在对应 section 时写入，避免覆盖已通过 DB 管理的账号。
+    迁移完成后清理 INI 中已入库的账号段，兑现"DB 为唯一真相源"。
     """
+    ini_accounts = _collect_ini_accounts()
     migrated = 0
-    for acc in _collect_ini_accounts():
+    for acc in ini_accounts:
         if database_manager.get_bangumi_account(acc["section_name"]):
             continue
         database_manager.save_bangumi_account(acc)
@@ -129,7 +131,62 @@ def migrate_ini_accounts_to_db() -> int:
         accounts = database_manager.list_bangumi_accounts()
         if not any(a.get("is_active") for a in accounts):
             database_manager.set_active_bangumi_account(accounts[0]["section_name"])
+
+    # 清理已迁移到 DB 的 INI 账号段（仅清理 DB 中已存在的段，确认迁移成功）
+    _cleanup_migrated_ini_sections(ini_accounts)
     return migrated
+
+
+def _cleanup_migrated_ini_sections(ini_accounts: list[dict]) -> None:
+    """清理 INI 中已迁移到 DB 的 bangumi 账号段。
+
+    只清理 DB 中已存在对应账号的段（确认迁移成功），绝不清理系统功能段
+    （如 bangumi-data）。清理后 INI 不再残留账号配置，避免双重真相源与
+    加密 token 密文残留。
+
+    注意：DB 检查必须在 config 锁外执行。仓储层 ``_row_to_account`` 解密
+    token 时会调 ``_master_secret()`` → ``config_manager.get()`` 需获取
+    ``ConfigManager._lock``，若在 config 锁内调 DB 会形成 AB-BA 死锁
+    （config_lock → db_lock vs db_lock → config_lock）。
+    """
+    from .config_schema import non_account_bangumi_sections
+    from .logging import logger
+
+    non_account = non_account_bangumi_sections()
+
+    # 1. 在 config 锁外检查 DB 中已存在的段（避免 AB-BA 死锁）
+    sections_to_remove: list[str] = []
+    for acc in ini_accounts:
+        section = acc["section_name"]
+        # 只清理 DB 中已存在的段（确认迁移成功，避免误删未迁移数据）
+        if not database_manager.get_bangumi_account(section):
+            continue
+        # 只清理账号段：[bangumi] 单用户段 或 [bangumi-*] 非系统功能段
+        if section == _BANGUMI_SECTION:
+            pass
+        elif section.startswith("bangumi-") and section not in non_account:
+            pass
+        else:
+            continue
+        sections_to_remove.append(section)
+
+    if not sections_to_remove:
+        return
+
+    # 2. 在 config 锁内执行 INI 段删除（仅操作 ConfigParser，不调 DB）
+    try:
+        with config_manager._lock:
+            config = config_manager._get_config_parser_nolock()
+            removed: list[str] = []
+            for section in sections_to_remove:
+                if config.has_section(section):
+                    config.remove_section(section)
+                    removed.append(section)
+            if removed:
+                config_manager._save_config(config)
+                logger.info("已清理 INI 中迁移完成的 bangumi 账号段: " + str(removed))
+    except Exception as e:
+        logger.warning(f"清理 INI bangumi 账号段失败（不影响 DB 迁移）: {e}")
 
 
 # ── 统一访问层（DB 为唯一真相源）───────────────────────────────

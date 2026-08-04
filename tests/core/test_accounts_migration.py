@@ -60,6 +60,11 @@ def test_migrate_ini_accounts_to_db(
     # 迁移后应有激活账号
     assert db.get_active_bangumi_account() is not None
 
+    # 迁移成功后 INI 中对应账号段应被清理
+    parser = ini_config.get_config_parser()
+    assert not parser.has_section("bangumi")
+    assert not parser.has_section("bangumi-foo")
+
 
 def test_migrate_is_idempotent(ini_config, temp_dir, reset_singletons, monkeypatch):
     import app.core.accounts as accounts_mod
@@ -76,6 +81,46 @@ def test_migrate_is_idempotent(ini_config, temp_dir, reset_singletons, monkeypat
     # 第二次不应再迁移（DB 中已存在）
     assert n2 == 0
     assert db.count_bangumi_accounts() == 2
+    # INI 中 bangumi 段在首次迁移后已清理，第二次无 INI 段可读
+    parser = ini_config.get_config_parser()
+    assert not parser.has_section("bangumi")
+    assert not parser.has_section("bangumi-foo")
+
+
+def test_migrate_preserves_non_account_sections(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """系统功能段（如 bangumi-data）不应被误清理。"""
+    ini = temp_dir / "config.ini"
+    ini.write_text(
+        "[bangumi]\n"
+        "username = u\n"
+        "access_token = AT\n"
+        "\n"
+        "[bangumi-data]\n"
+        "archive_path = /some/path\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CONFIG_FILE", str(ini))
+    from app.core.config import ConfigManager
+
+    cm = ConfigManager()
+    import app.core.accounts as accounts_mod
+    from app.core.database import DatabaseManager
+
+    db = DatabaseManager(str(temp_dir / "acc.db"))
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+    monkeypatch.setattr(accounts_mod, "config_manager", cm)
+
+    with patch("app.core.database.logger"):
+        n = accounts_mod.migrate_ini_accounts_to_db()
+
+    assert n == 1
+    parser = cm.get_config_parser()
+    # bangumi 账号段已清理
+    assert not parser.has_section("bangumi")
+    # bangumi-data 系统功能段保留
+    assert parser.has_section("bangumi-data")
 
 
 def test_migrate_skips_when_db_already_has_section(
