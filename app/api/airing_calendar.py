@@ -173,7 +173,8 @@ async def list_bangumi_accounts(
 def _resolve_accessible_account(user: dict, requested: Optional[str]) -> Optional[str]:
     """解析当前用户可访问的 Bangumi 账号段名，防止越权访问他人账号。
 
-    隔离策略（与 ``bangumi_replay._resolve_user_filter`` 同语义）：
+    隔离策略（与 ``bangumi_replay._resolve_user_filter`` 类似，但 bangumi_replay
+    对未映射已认证用户返回哨兵空集以保护观看元数据隐私）：
     - 认证禁用（自托管）：管理员可访问任意账号。
     - 单用户模式（账号数 <= 1）：无越权可能。
     - 多用户模式：

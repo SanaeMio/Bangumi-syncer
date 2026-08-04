@@ -28,6 +28,8 @@ from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/bangumi_replay", tags=["bangumi-replay"])
 
+_SENTINEL_NO_ACCESS = "__no_access__"
+
 
 def _resolve_user_filter(current_user: dict) -> Optional[str]:
     """多用户模式返回当前用户对应的媒体服务器用户名，单用户/管理员返回 None。
@@ -38,12 +40,14 @@ def _resolve_user_filter(current_user: dict) -> Optional[str]:
     "admin"），而 ``pending_sync_queue.user_name`` 存的是媒体服务器用户名
     （Plex/Emby/Jellyfin 推送）。两者不同命名空间，不能直接等同。
 
-    隔离策略：
+    隔离策略（对齐 airing_calendar，最小权限）：
     - 认证禁用（自托管常见）：返回 None，管理员可见全部任务。
-    - 认证开启 + 多用户：若当前应用登录名恰好等于某 Bangumi 账号绑定的
-      media_server_username，则返回该值（该用户只看自己的任务）；
-      否则返回 None（管理员/非媒体用户可见全部，便于排障）。
     - 单用户模式：返回 None。
+    - 多用户模式：
+      - 当前应用登录名绑定到某账号（媒体用户）：返回该值，只看自己的任务。
+      - 未映射的已认证用户：返回哨兵 ``__no_access__``，匹配空集，
+        避免泄露他人观看元数据（pending_sync_queue 含 title/season/episode
+        等隐私字段，比 airing_calendar 的在看列表更敏感）。
     """
     # 认证禁用时返回 None，避免自托管场景下管理员看到空队列
     if current_user.get("auth_disabled"):
@@ -57,13 +61,15 @@ def _resolve_user_filter(current_user: dict) -> Optional[str]:
         # DB 异常时回退到安全默认（管理员可见全部），避免阻断补发接口
         return None
 
-    if multi_user:
-        # 多用户模式：反查当前应用登录名是否是某账号的 media_server_username
-        login_name = current_user.get("username") or ""
-        if login_name and login_name in get_user_mappings():
-            return login_name
-        # 管理员或未映射用户：可见全部，便于排障与全局管理
-    return None
+    if not multi_user:
+        return None
+
+    # 多用户模式：反查当前应用登录名是否是某账号的 media_server_username
+    login_name = current_user.get("username") or ""
+    if login_name and login_name in get_user_mappings():
+        return login_name
+    # 未映射的已认证用户：返回哨兵匹配空集，避免泄露他人观看元数据
+    return _SENTINEL_NO_ACCESS
 
 
 def _filter_kwargs(user_name: Optional[str]) -> dict[str, Any]:
