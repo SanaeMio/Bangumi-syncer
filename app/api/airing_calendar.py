@@ -127,10 +127,16 @@ async def list_bangumi_accounts(
     DB 为唯一真相源：返回 ``bangumi_accounts`` 表中所有有 username 的账号。
     仅返回 ``section_name`` 与 ``username``，不暴露 access_token。
 
+    多用户隔离：认证开启且账号数 > 1 时，媒体用户（应用登录名绑定到某账号的
+    media_server_usernames）只能看到自己绑定的账号，避免泄露其他用户名；
+    管理员/非媒体用户可见全部。认证禁用（自托管）时全部可见。
+
     ``mode`` 字段由账号数量推导（1=single，>1=multi），兼容前端 dropdown 显示逻辑。
     """
     from app.core.accounts import (
+        count_bangumi_accounts,
         get_active_bangumi_account,
+        get_user_mappings,
         list_bangumi_accounts as _list_accounts,
     )
 
@@ -144,12 +150,67 @@ async def list_bangumi_accounts(
                 )
             )
 
+    # 多用户隔离：媒体用户只能看到自己绑定的账号，避免泄露其他用户名
+    if not user.get("auth_disabled"):
+        try:
+            if count_bangumi_accounts() > 1:
+                login_name = user.get("username") or ""
+                bound = get_user_mappings().get(login_name) if login_name else None
+                if bound:
+                    accounts = [a for a in accounts if a.section_name == bound]
+        except Exception:
+            # DB 异常时回退到全量返回，避免阻断卡片加载
+            pass
+
     active_acc = get_active_bangumi_account()
     active = active_acc.get("section_name") if active_acc else None
 
     # 列表长度=1 即单用户，无需 sync.mode 判断；mode 字段仅供前端 dropdown 显示判断
     mode = "multi" if len(accounts) > 1 else "single"
     return BangumiAccountsResponse(mode=mode, accounts=accounts, active=active)
+
+
+def _resolve_accessible_account(user: dict, requested: Optional[str]) -> Optional[str]:
+    """解析当前用户可访问的 Bangumi 账号段名，防止越权访问他人账号。
+
+    隔离策略（与 ``bangumi_replay._resolve_user_filter`` 同语义）：
+    - 认证禁用（自托管）：管理员可访问任意账号。
+    - 单用户模式（账号数 <= 1）：无越权可能。
+    - 多用户模式：
+      - 当前应用登录名绑定到某账号（是媒体用户）：只能访问该账号，
+        ``requested`` 指定其他账号时返回 None（越权）。
+      - 管理员/非媒体用户：可访问任意账号。
+
+    返回：
+    - ``"<section>"``: 用户受限且只能访问该段名。
+    - ``""``: 用户可自由访问任意账号（``requested`` 为空时）。
+    - ``None``: 用户无权访问 ``requested`` 账号（越权请求）。
+    """
+    # 认证禁用（自托管）：管理员可访问任意账号
+    if user.get("auth_disabled"):
+        return requested or ""
+
+    from app.core.accounts import count_bangumi_accounts, get_user_mappings
+
+    try:
+        multi_user = count_bangumi_accounts() > 1
+    except Exception:
+        # DB 异常回退到宽松默认（与 bangumi_replay 一致，避免阻断）
+        return requested or ""
+
+    if not multi_user:
+        return requested or ""
+
+    # 多用户：反查当前登录名是否绑定到某账号
+    login_name = user.get("username") or ""
+    bound_section = get_user_mappings().get(login_name) if login_name else None
+    if bound_section:
+        # 媒体用户：只能访问自己绑定的账号
+        if requested and requested != bound_section:
+            return None
+        return bound_section
+    # 管理员/非媒体用户：可访问任意账号
+    return requested or ""
 
 
 @router.get("", response_model=AiringCalendarResponse)
@@ -231,7 +292,21 @@ async def get_airing_calendar(
         subject_types = (2, 6)
 
     # "我的追番"必须配置 Bangumi 账号：按 account 段名构造（多用户切换）
-    api = _build_bangumi_api(account)
+    # 多用户隔离：校验当前用户是否有权访问指定 account，防止越权查看他人账号
+    accessible = _resolve_accessible_account(user, account)
+    if accessible is None:
+        # 越权请求：用户试图访问非自己绑定的账号
+        logger.warning(
+            f"airing-calendar: 用户 '{user.get('username')}' 越权访问账号 '{account}'，已拒绝"
+        )
+        return AiringCalendarResponse(
+            status="watching_unavailable",
+            days=[],
+            total_episodes=0,
+            archive_enabled=True,
+            today=today_str,
+        )
+    api = _build_bangumi_api(accessible or None)
     if api is None:
         # 未配置 Bangumi 账号或指定段不存在：返回 watching_unavailable
         return AiringCalendarResponse(
