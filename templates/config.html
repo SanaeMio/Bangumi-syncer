@@ -541,10 +541,10 @@
       return new bootstrap.Tooltip(tooltipTriggerEl)
     })
 
-    // 初始化令牌显示/隐藏功能
+    // 初始化令牌显示/隐藏功能（多账户迁移后该元素可能已不存在，需 null 保护避免中断后续绑定）
     document
       .getElementById('toggle-token-visibility')
-      .addEventListener('click', function () {
+      ?.addEventListener('click', function () {
         const tokenInput = document.getElementById('bangumi-access-token')
         const icon = document.getElementById('token-visibility-icon')
 
@@ -560,7 +560,7 @@
     // 初始化认证密码显示/隐藏功能
     document
       .getElementById('toggle-auth-password-visibility')
-      .addEventListener('click', function () {
+      ?.addEventListener('click', function () {
         const passwordInput = document.getElementById('auth-password')
         const icon = document.getElementById('auth-password-visibility-icon')
 
