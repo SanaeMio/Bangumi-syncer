@@ -42,6 +42,12 @@ class AccountInfo(BaseModel):
     auth_method: str = Field(default="manual", description="认证方式 manual/oauth")
     nickname: str = Field(default="", description="昵称（OAuth 授权时获取）")
     avatar: str = Field(default="", description="头像 URL")
+    bangumi_user_id: str = Field(
+        default="", description="Bangumi 用户 ID（OAuth 授权时获取）"
+    )
+    expires_at: Optional[int] = Field(
+        None, description="访问令牌过期时间戳（OAuth 账号，手动账号为 null）"
+    )
     private: bool = Field(default=False, description="观看记录仅自己可见")
     is_active: bool = Field(default=False, description="是否为当前激活账号")
     has_token: bool = Field(default=False, description="是否已配置访问令牌")
@@ -84,6 +90,8 @@ def _account_to_info(acc: dict[str, Any]) -> AccountInfo:
         auth_method=acc.get("auth_method", "manual"),
         nickname=acc.get("nickname", ""),
         avatar=acc.get("avatar", ""),
+        bangumi_user_id=acc.get("bangumi_user_id", ""),
+        expires_at=acc.get("expires_at"),
         private=bool(acc.get("private")),
         is_active=bool(acc.get("is_active")),
         has_token=bool(acc.get("access_token")),

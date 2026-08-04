@@ -338,18 +338,25 @@ class BangumiAuthService:
             "expired": expired,
         }
 
-    def disconnect(self) -> None:
-        """断开当前账号：回退到手动模式，清除 OAuth 刷新令牌（保留手动填写的访问令牌）。"""
-        section = self._active_section_name()
+    def disconnect(self, section: Optional[str] = None) -> bool:
+        """断开指定账号的 OAuth 关联：回退到手动模式，清除刷新令牌与过期时间。
+
+        保留已存在的访问令牌（``access_token``）以便手动模式继续同步；
+        若该账号本就非 OAuth 模式则视为成功但不做改动。
+
+        ``section`` 为空时回退到当前激活账号（兼容旧调用方）。
+        """
+        section = section or self._active_section_name()
         if not section:
-            return
+            return False
         acc = get_bangumi_account(section)
         if not acc:
-            return
+            return False
         acc["auth_method"] = "manual"
         acc["refresh_token"] = ""
         acc["expires_at"] = None
         save_bangumi_account(acc)
+        return True
 
 
 # 模块级单例（供 API 路由使用）

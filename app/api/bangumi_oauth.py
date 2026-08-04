@@ -90,8 +90,17 @@ async def oauth_status(request: Request):
 
 
 @router.post("/disconnect")
-async def oauth_disconnect(request: Request):
+async def oauth_disconnect(request: Request, section: str = ""):
+    """断开指定账号的 OAuth 关联。
+
+    ``section`` 为空时回退到当前激活账号（兼容旧行为）。断开后账号回退为
+    手动模式，保留已填写的访问令牌；账号记录本身不删除。
+    """
     if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
-    bangumi_auth_service.disconnect()
+    ok = bangumi_auth_service.disconnect(section=section or None)
+    if not ok:
+        return JSONResponse(
+            status_code=404, content={"detail": "未找到指定的 Bangumi 账号"}
+        )
     return {"status": "success"}

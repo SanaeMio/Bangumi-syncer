@@ -585,16 +585,12 @@
     } else {
       console.error('找不到恢复配置模态框元素')
     }
-    // Bangumi OAuth 授权交互
+    // Bangumi OAuth 授权交互（授权入口在「Bangumi 账号配置」卡片头部）
     document
       .getElementById('bangumi-oauth-connect')
       ?.addEventListener('click', startBangumiOAuth)
-    document
-      .getElementById('bangumi-oauth-disconnect')
-      ?.addEventListener('click', disconnectBangumiOAuth)
     // 监听 OAuth 弹窗的 postMessage 通知（close 页面发出）
     window.addEventListener('message', handleBangumiOAuthMessage)
-    refreshBangumiOAuthStatus()
 
     // 先加载配置 schema（驱动默认值/布尔语义），再加载配置数据
     loadConfigSchema().then(() => loadConfig(false))
@@ -609,55 +605,12 @@
     )
   }
 
-  async function refreshBangumiOAuthStatus() {
-    try {
-      const status = await apiFetch('/api/oauth/bangumi/status', {
-        skipAuthRedirect: true,
-      })
-      renderBangumiOAuthStatus(status)
-      return status
-    } catch (e) {
-      // 忽略未登录等错误
-      return null
-    }
-  }
-
-  function renderBangumiOAuthStatus(status) {
-    const el = document.getElementById('bangumi-oauth-status')
-    if (!el || !status) return
-    if (status.connected) {
-      const exp = status.expires_at
-        ? new Date(status.expires_at * 1000).toLocaleString()
-        : '未知'
-      const expiredTag = status.expired
-        ? ' <span class="text-danger">(已过期，下次调用将自动刷新)</span>'
-        : ''
-      el.innerHTML =
-        '<div class="alert alert-success py-2 mb-0">已通过 OAuth 连接 Bangumi 账号：<b>' +
-        escBangumiOAuth(status.username) +
-        '</b><br>令牌过期时间：' +
-        exp +
-        expiredTag +
-        '</div>'
-    } else {
-      const method = status.auth_method === 'oauth' ? 'OAuth' : '手动令牌'
-      el.innerHTML =
-        '<div class="alert alert-secondary py-2 mb-0">尚未通过 OAuth 连接（当前认证方式：' +
-        method +
-        '）。</div>'
-    }
-  }
-
   // OAuth 弹窗回调成功后通过 postMessage 通知父窗口（对齐
-  // jellyfin-plugin-bangumi 方案）；父窗口监听消息刷新状态和账号列表
+  // jellyfin-plugin-bangumi 方案）；父窗口监听消息刷新账号列表
   function handleBangumiOAuthMessage(event) {
     if (event.data !== 'BANGUMI-OAUTH-COMPLETE') return
-    refreshBangumiOAuthStatus().then((status) => {
-      if (status && status.connected) {
-        loadBangumiAccounts()
-        showAlert('Bangumi OAuth 授权已完成', 'success')
-      }
-    })
+    loadBangumiAccounts()
+    showAlert('Bangumi OAuth 授权已完成', 'success')
   }
 
   async function startBangumiOAuth() {
@@ -693,16 +646,13 @@
       restore()
       return
     }
-    // 弹窗关闭后按真实连接状态反馈（避免用户中途关闭却被提示成功）。
+    // 弹窗关闭后刷新账号列表（避免用户中途关闭却被提示成功）。
     // 正常授权完成的反馈由 postMessage 处理器完成，这里仅处理用户中途关闭的情况。
     const timer = setInterval(async () => {
       if (popup.closed) {
         clearInterval(timer)
-        const status = await refreshBangumiOAuthStatus()
+        await loadBangumiAccounts()
         restore()
-        if (!status || !status.connected) {
-          showAlert('Bangumi OAuth 授权未完成，请重试', 'warning')
-        }
       }
     }, 1000)
   }
@@ -731,15 +681,27 @@
     })
   }
 
-  async function disconnectBangumiOAuth() {
-    if (!window.confirm('确定断开 Bangumi OAuth 连接？将保留手动令牌以便继续同步。'))
+  // 断开指定账号的 OAuth 关联（按 section，回退为手动模式，保留 access_token）
+  async function disconnectBangumiAccountOAuth(btn) {
+    const card = btn.closest('[id^="bangumi-account-"]')
+    if (!card) return
+    const sectionName = card.dataset.sectionName || ''
+    if (!sectionName) return
+    if (
+      !window.confirm(
+        '确定断开此账号的 OAuth 连接？将回退为手动模式，保留已填写的访问令牌。',
+      )
+    )
       return
-    const btn = document.getElementById('bangumi-oauth-disconnect')
     await setButtonLoading(btn, '断开中...', async () => {
       try {
-        await apiFetch('/api/oauth/bangumi/disconnect', { method: 'POST' })
-        showAlert('已断开 Bangumi OAuth 连接', 'success')
-        await refreshBangumiOAuthStatus()
+        await apiFetch(
+          '/api/oauth/bangumi/disconnect?section=' +
+            encodeURIComponent(sectionName),
+          { method: 'POST' },
+        )
+        showAlert('已断开该账号的 OAuth 连接', 'success')
+        await loadBangumiAccounts()
       } catch (e) {
         showAlert('断开连接失败：' + e.message, 'danger')
       }
@@ -896,6 +858,7 @@
     accountDiv.className = 'border rounded p-3 mb-3'
     accountDiv.dataset.sectionName = sectionName
     accountDiv.dataset.isNew = isNew ? '1' : '0'
+    accountDiv.dataset.authMethod = authMethod
 
     const activeBadge = isActive
       ? '<span class="badge bg-success ms-2">激活中</span>'
@@ -903,6 +866,41 @@
     const oauthBadge =
       authMethod === 'oauth'
         ? '<span class="badge bg-info ms-1">OAuth</span>'
+        : ''
+
+    // OAuth 相关信息：授权方式、Bangumi 用户 ID、令牌过期时间
+    let oauthInfoHtml = ''
+    if (!isNew) {
+      const userIdText = acc.bangumi_user_id
+        ? escapeHtml(String(acc.bangumi_user_id))
+        : '-'
+      let expText = '未知'
+      if (authMethod === 'oauth' && acc.expires_at) {
+        const expTs = Number(acc.expires_at)
+        if (expTs > 0) {
+          const expired = expTs * 1000 <= Date.now()
+          expText =
+            new Date(expTs * 1000).toLocaleString() +
+            (expired ? '（已过期，下次调用将自动刷新）' : '')
+        }
+      }
+      oauthInfoHtml = `
+        <div class="col-12 mt-1">
+          <div class="small text-muted">
+            <span class="me-3">认证方式：${authMethod === 'oauth' ? 'OAuth 授权' : '手动令牌'}</span>
+            <span class="me-3">Bangumi 用户 ID：${userIdText}</span>
+            <span>令牌过期时间：${expText}</span>
+          </div>
+        </div>
+      `
+    }
+
+    // OAuth 账号提供「断开 OAuth」按钮（回退为手动模式，保留 access_token）
+    const disconnectBtn =
+      !isNew && authMethod === 'oauth'
+        ? `<button type="button" class="btn btn-outline-warning" onclick="disconnectBangumiAccountOAuth(this)">
+             <i class="bi bi-link-45deg"></i> 断开 OAuth
+           </button>`
         : ''
 
     accountDiv.innerHTML = `
@@ -923,6 +921,7 @@
                 <button type="button" class="btn btn-outline-primary" onclick="saveBangumiAccountRow(this)">
                     <i class="bi bi-save"></i> 保存
                 </button>
+                ${disconnectBtn}
                 <button type="button" class="btn btn-outline-danger" onclick="deleteBangumiAccountRow(this)">
                     <i class="bi bi-trash"></i> 删除
                 </button>
@@ -952,6 +951,7 @@
                 </div>
             </div>
         </div>
+        ${oauthInfoHtml}
         <div class="row mt-2">
             <div class="col-md-4">
                 <div class="form-check form-switch d-flex align-items-center mb-0">
@@ -1042,7 +1042,12 @@
       return
     }
 
-    if (!confirm('确定删除此 Bangumi 账号？此操作不可撤销。')) return
+    if (
+      !confirm(
+        '确定删除此 Bangumi 账号？将同时断开该账号的 OAuth 连接，此操作不可撤销。',
+      )
+    )
+      return
 
     try {
       const res = await apiFetch(`/api/bangumi/accounts/${encodeURIComponent(sectionName)}`, {

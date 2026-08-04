@@ -1,7 +1,8 @@
-{# Bangumi OAuth 应用凭证配置卡片：仅保存 Client ID/Secret 和展示连接状态。
-   OAuth 授权入口已移至「Bangumi 账号配置」卡片头部，与「手动添加」并列。
-   回调地址由前端动态生成（window.location.origin + /api/oauth/bangumi/callback），
-   无需配置。 #}
+{# Bangumi OAuth 应用凭证配置卡片：仅用于输入/保存 Client ID/Secret。
+   OAuth 授权、连接状态、断开操作均已移至「Bangumi 账号配置」卡片，
+   按账号维度管理（每条账号条目展示授权方式、令牌过期时间，并提供
+   OAuth 授权/断开按钮）。回调地址由前端动态生成
+   （window.location.origin + /api/oauth/bangumi/callback），无需配置。 #}
 <div class="card mb-3 config-section" id="config-section-bangumi-oauth" data-toc-mode="always">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span class="card-header-title">Bangumi OAuth 应用凭证</span>
@@ -12,7 +13,7 @@
       <a href="https://bgm.tv/dev/app" target="_blank" rel="noopener">bgm.tv/dev/app</a>
       创建应用后填写此处覆盖，或通过环境变量 BANGUMI_OAUTH_CLIENT_ID /
       BANGUMI_OAUTH_CLIENT_SECRET 注入。回调地址由系统自动按当前访问地址派生，
-      无需配置。
+      无需配置。授权与断开操作请在下方「Bangumi 账号配置」中按账号进行。
     </p>
 
     <div class="mb-3">
@@ -37,16 +38,6 @@
         placeholder="留空使用内置凭证"
         autocomplete="off"
       />
-    </div>
-
-    <div id="bangumi-oauth-status" class="mb-3"></div>
-
-    <button type="button" class="btn btn-outline-danger" id="bangumi-oauth-disconnect">
-      断开当前账号的 OAuth 连接
-    </button>
-    <div class="form-text mt-2">
-      断开后保留手动令牌继续同步；如需重新使用 OAuth，请在「Bangumi 账号配置」
-      卡片中点击「OAuth 授权」。
     </div>
   </div>
 </div>
