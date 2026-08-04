@@ -872,6 +872,7 @@ class EpisodesMixin:
         """在第一季中查找目标集数（遍历续集链）"""
         current_id = subject_id
         first_part = True
+        visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
             if not first_part:
                 current_info = self.get_subject(current_id)
@@ -901,6 +902,13 @@ class EpisodesMixin:
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
+            if next_id in visited:
+                logger.warning(
+                    f"_find_season_one_episode 检测到续集链环引用，终止遍历: "
+                    f"subject_id={subject_id}, next_id={next_id}"
+                )
+                break
+            visited.add(next_id)
             current_id = next_id
             first_part = False
         return self._episode_lookup_failed(subject_id, target_ep, release_date)
@@ -918,10 +926,18 @@ class EpisodesMixin:
         current_id = subject_id
         season_num = 1
         last_season_num = None
+        visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
+            if next_id in visited:
+                logger.warning(
+                    f"_find_multi_season_episode 检测到续集链环引用，终止遍历: "
+                    f"subject_id={subject_id}, next_id={next_id}"
+                )
+                break
+            visited.add(next_id)
             current_id = next_id
             current_info = self.get_subject(current_id)
             if not current_info:
