@@ -31,6 +31,7 @@ _BANGUMI_ACCOUNT_COLUMNS = [
     "bangumi_user_id",
     "nickname",
     "avatar",
+    "private",
     "is_active",
     "created_at",
     "updated_at",
@@ -99,6 +100,7 @@ class BangumiAccountRepository(BaseRepository):
                         bangumi_user_id = ?,
                         nickname = ?,
                         avatar = ?,
+                        private = ?,
                         is_active = ?,
                         updated_at = ?
                     WHERE section_name = ?
@@ -114,6 +116,7 @@ class BangumiAccountRepository(BaseRepository):
                         account.get("bangumi_user_id", ""),
                         account.get("nickname", ""),
                         account.get("avatar", ""),
+                        1 if account.get("private") else 0,
                         1 if account.get("is_active") else 0,
                         now,
                         section,
@@ -125,8 +128,8 @@ class BangumiAccountRepository(BaseRepository):
                     INSERT INTO bangumi_accounts
                     (section_name, username, media_server_usernames, auth_method,
                      access_token, refresh_token, token_type, expires_at,
-                     bangumi_user_id, nickname, avatar, is_active, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     bangumi_user_id, nickname, avatar, private, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         section,
@@ -140,6 +143,7 @@ class BangumiAccountRepository(BaseRepository):
                         account.get("bangumi_user_id", ""),
                         account.get("nickname", ""),
                         account.get("avatar", ""),
+                        1 if account.get("private") else 0,
                         1 if account.get("is_active") else 0,
                         now,
                         now,
@@ -288,6 +292,7 @@ def _row_to_account(row) -> dict:
     account["media_server_usernames"] = _from_json_list(
         account.get("media_server_usernames")
     )
+    account["private"] = bool(account.get("private"))
     account["is_active"] = bool(account.get("is_active"))
     return account
 

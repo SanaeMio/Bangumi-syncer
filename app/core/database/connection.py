@@ -48,6 +48,7 @@ class DatabaseConnection:
         self._match_fields_migrated = False
         self._pending_sync_sync_record_id_migrated = False
         self._pending_candidates_sync_record_id_migrated = False
+        self._bangumi_accounts_private_migrated = False
         self._init_database()
 
     def close(self) -> None:
@@ -201,6 +202,24 @@ class DatabaseConnection:
         )
         self._pending_candidates_sync_record_id_migrated = True
         logger.info("pending_candidates 已迁移：增加 sync_record_id 列")
+
+    def _ensure_bangumi_accounts_private(self, cursor) -> None:
+        """旧库迁移：为 bangumi_accounts 增加 private（收藏是否私有）。
+
+        与 INI [bangumi(-*)] private 字段对齐；DEFAULT 0 即公开，与既有 INI 默认值一致。
+        """
+        if self._bangumi_accounts_private_migrated:
+            return
+        cursor.execute("PRAGMA table_info(bangumi_accounts)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "private" in cols:
+            self._bangumi_accounts_private_migrated = True
+            return
+        cursor.execute(
+            "ALTER TABLE bangumi_accounts ADD COLUMN private BOOLEAN NOT NULL DEFAULT 0"
+        )
+        self._bangumi_accounts_private_migrated = True
+        logger.info("bangumi_accounts 已迁移：增加 private 列")
 
     def _init_database(self) -> None:
         """初始化数据库"""
@@ -362,11 +381,13 @@ class DatabaseConnection:
                 bangumi_user_id TEXT DEFAULT '',
                 nickname TEXT DEFAULT '',
                 avatar TEXT DEFAULT '',
+                private BOOLEAN NOT NULL DEFAULT 0,
                 is_active BOOLEAN NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
         """)
+        self._ensure_bangumi_accounts_private(cursor)
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_section "
             "ON bangumi_accounts(section_name)"
