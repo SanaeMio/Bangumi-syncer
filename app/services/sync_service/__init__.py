@@ -455,10 +455,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 return False, f"条目类型为 {stype}，仅支持动画/三次元"
             # archive 未命中或不完整：降级到 API
 
-        # 降级到 API：优先用单用户配置，其次多用户第一个可用配置
-        cfg = config_manager.get_active_bangumi_config("") or None
+        # 降级到 API：DB 为唯一真相源，取激活账号；无激活则取首个可用账号
+        from app.core import accounts as _accounts
+
+        cfg = _accounts.get_active_bangumi_config() or None
         if cfg is None:
-            configs = config_manager.get_bangumi_configs()
+            configs = _accounts.list_bangumi_configs()
             if not configs:
                 # 无可用配置时降级放行（不阻塞用户，映射写入后再由同步流程校验）
                 logger.warning(
@@ -1765,13 +1767,16 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         ):
             return True, ""
 
-        mode = config_manager.get("sync", "mode", fallback="single")
+        # DB 为唯一真相源：按账号数量推导单/多用户语义（列表长度=1 即单用户）
+        from app.core import accounts as _accounts
 
-        if mode == "single":
-            allowed = config_manager.get_single_mode_media_usernames()
+        accounts_list = _accounts.list_bangumi_accounts()
+        if len(accounts_list) <= 1:
+            # 单用户语义：检查 media_server_usernames 是否包含该用户
+            allowed = _accounts.get_single_mode_media_usernames()
             if not allowed:
                 logger.error(
-                    "未设置 Bangumi 配置中的 media_server_username（媒体服务器用户名），请检查配置"
+                    "未设置 Bangumi 账号的 media_server_usernames（媒体服务器用户名），请检查配置"
                 )
                 return False, (
                     "未配置媒体服务器用户名（media_server_username），"
@@ -1783,14 +1788,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     f"用户 {user_name} 不在允许同步的媒体服务器用户名列表中"
                     f"（当前配置: {', '.join(allowed)}）"
                 )
-        elif mode == "multi":
-            # 多用户模式，检查用户是否在映射配置中
-            user_mappings = config_manager.get_user_mappings()
+        else:
+            # 多用户语义：检查用户是否在映射中
+            user_mappings = _accounts.get_user_mappings()
             if user_name not in user_mappings:
                 logger.debug(f"多用户模式下用户 {user_name} 未配置映射，跳过")
                 return False, (
                     f"用户 {user_name} 未在用户映射中配置（多用户模式下"
-                    "需在 [sync] 段添加 媒体服务器用户名=bangumi-账号 映射）"
+                    "需在 Bangumi 账号中填写 media_server_username）"
                 )
 
             # 检查对应的bangumi配置是否存在且有效
@@ -1800,15 +1805,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 return False, (
                     f"用户 {user_name} 对应的 Bangumi 账号配置无效或缺少 access_token"
                 )
-        else:
-            logger.error(f"不支持的同步模式: {mode}")
-            notification_service.notify(
-                "config_error",
-                error_message=f"不支持的同步模式: {mode}",
-                config_type="sync_mode",
-                mode=mode,
-            )
-            return False, f"不支持的同步模式: {mode}（应为 single 或 multi）"
 
         return True, ""
 
@@ -2579,8 +2575,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             return None, False, detail
 
     def _get_bangumi_config_for_user(self, user_name: str) -> dict[str, str] | None:
-        """根据媒体服务器用户名获取对应的bangumi配置"""
-        return config_manager.get_active_bangumi_config(user_name)
+        """根据媒体服务器用户名获取对应的bangumi配置（DB 为唯一真相源）"""
+        from app.core import accounts as _accounts
+
+        return _accounts.get_bangumi_config_for_user(user_name)
 
     def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
         """根据用户名获取对应的BangumiApi实例

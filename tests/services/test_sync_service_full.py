@@ -34,7 +34,18 @@ def mock_config():
         mock_cm.get_single_mode_media_usernames.return_value = ["testuser"]
         mock_cm.get_user_mappings.return_value = {}
         mock_cm.get_bangumi_configs.return_value = {}
-        yield mock_cm
+
+        with (
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["testuser"],
+            ),
+        ):
+            yield mock_cm
 
 
 @pytest.fixture
@@ -374,7 +385,17 @@ def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
     service = SyncService()
     mock_instance = mock_bangumi_api.return_value
 
-    with patch("app.services.sync_service.config_manager") as mock_cfg:
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
 
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "movie_mark_subject_completed":
@@ -426,7 +447,17 @@ def test_sync_custom_item_anime_completes_collection(mock_database, mock_bangumi
     mock_instance.get_subject_collection.return_value = {"type": 3, "ep_status": 12}
     mock_instance.get_subject.return_value = {"eps": 12}
 
-    with patch("app.services.sync_service.config_manager") as mock_cfg:
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
 
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "anime_mark_subject_completed":
@@ -554,7 +585,17 @@ def test_sync_custom_item_blocked_keyword(mock_config, mock_database):
             return "blocked"
         return fallback or ""
 
-    with patch("app.services.sync_service.config_manager") as cm:
+    with (
+        patch("app.services.sync_service.config_manager") as cm,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
         cm.get.side_effect = get_side_effect
         cm.get_single_mode_media_usernames.return_value = ["testuser"]
         cm.get_user_mappings.return_value = {}
@@ -575,7 +616,17 @@ def test_sync_custom_item_no_permission(mock_config, mock_database):
             return "single"
         return fallback
 
-    with patch("app.services.sync_service.config_manager") as cm:
+    with (
+        patch("app.services.sync_service.config_manager") as cm,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["other_user"],
+        ),
+    ):
         cm.get.side_effect = get_side_effect
         cm.get_single_mode_media_usernames.return_value = ["other_user"]
         cm.get_user_mappings.return_value = {}
