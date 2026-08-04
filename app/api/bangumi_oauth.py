@@ -34,9 +34,18 @@ async def oauth_start(request: Request, redirect_uri: str = ""):
     /api/oauth/bangumi/callback``），
     浏览器能访问发起授权的地址，自然也能接收 302 重定向回来，无需公网固定
     回调。redirect_uri 会绑定到 state 落库，回调换 token 时还原。
+
+    安全：redirect_uri 必须以 ``/api/oauth/bangumi/callback`` 结尾，防止
+    攻击者诱导已登录用户将授权码导向外部站点。
     """
     if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
+    # 白名单校验：仅允许指向本服务的回调路径，防止 redirect_uri 被篡改导出授权码
+    if redirect_uri and not redirect_uri.endswith("/api/oauth/bangumi/callback"):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "回调地址必须以 /api/oauth/bangumi/callback 结尾"},
+        )
     try:
         auth_url, state = bangumi_auth_service.get_auth_url(
             redirect_uri=redirect_uri or None
@@ -46,7 +55,6 @@ async def oauth_start(request: Request, redirect_uri: str = ""):
     return {
         "auth_url": auth_url,
         "state": state,
-        "redirect_uri": bangumi_auth_service.get_redirect_uri(),
     }
 
 
