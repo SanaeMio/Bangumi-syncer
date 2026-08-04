@@ -268,10 +268,27 @@ def get_active_bangumi_config(
 
 
 def get_bangumi_config_for_user(user_name: str) -> Optional[dict[str, Any]]:
-    """按媒体服务器用户名获取对应 Bangumi 账号配置（``get_active_bangumi_config`` 别名）。
+    """按媒体服务器用户名获取对应 Bangumi 账号配置。
 
     供 ``sync_service._get_bangumi_config_for_user`` 切换到 DB 时直接替换。
+
+    多用户模式下空 user_name 不回退激活账号，避免数据串号（某条记录的
+    user_name 异常为空时，回退激活账号会把该记录同步到他人账号）。
+    单用户模式（账号数<=1）空 user_name 仍回退激活账号（只有一个账号，
+    无串号风险）。
     """
+    if not user_name:
+        try:
+            if database_manager.count_bangumi_accounts() > 1:
+                from .logging import logger
+
+                logger.warning(
+                    "多用户模式下 user_name 为空，不回退激活账号以避免数据串号；"
+                    "请检查上游是否正确传递媒体服务器用户名"
+                )
+                return None
+        except Exception:
+            pass
     return get_active_bangumi_config(user_name)
 
 
