@@ -120,10 +120,16 @@ class BangumiAuthService:
     def get_redirect_uri(self) -> str:
         return get_redirect_uri()
 
-    def get_auth_url(self) -> tuple[str, str]:
+    def get_auth_url(self, redirect_uri: Optional[str] = None) -> tuple[str, str]:
         """生成授权 URL 与一次性 state。
 
         返回 ``(auth_url, state)``；未配置 client_id 时抛出异常。
+
+        ``redirect_uri`` 接受前端动态传入的回调地址（浏览器能访问发起授权的地址，自然也能
+        接收 302 重定向回来，无需公网固定回调）。``redirect_uri`` 会绑定到
+        state 落库，回调换 token 时还原，保证 authorize 与 token 交换用同一
+        redirect_uri（OAuth 2.0 要求）。未传时回退 provider 默认（INI 配置或
+        站点公开基址推导）。
         """
         client_id, _ = self.get_app_credentials()
         if not client_id:
@@ -132,9 +138,18 @@ class BangumiAuthService:
                 "或通过环境变量 BANGUMI_OAUTH_CLIENT_ID 注入。"
             )
         account_key = self._active_section_name() or "bangumi"
-        state = self.oauth.create_state("bangumi", account_key)
+        # 将动态 redirect_uri 绑定到 state，回调时还原
+        effective_redirect = (redirect_uri or "").strip() or self.get_redirect_uri()
+        state = self.oauth.create_state(
+            "bangumi", account_key, redirect_uri=effective_redirect
+        )
         provider = get_provider("bangumi")
-        return self.oauth.build_authorize_url(provider, state=state), state
+        return (
+            self.oauth.build_authorize_url(
+                provider, state=state, redirect_uri_override=effective_redirect
+            ),
+            state,
+        )
 
     def verify_state(self, state: str) -> bool:
         """校验 state 是否有效（校验后消费，不可重复使用）。"""
@@ -142,9 +157,15 @@ class BangumiAuthService:
 
     def exchange_code_for_token(self, code: str, state: str) -> dict:
         """用授权码换取访问令牌并落地。state 无效时抛出异常。"""
-        if self.oauth.consume_state("bangumi", state) is None:
+        result = self.oauth.consume_state("bangumi", state)
+        if result is None:
             raise ValueError("OAuth state 校验失败，请重新发起授权")
-        token = self.oauth.exchange_code("bangumi", code)
+        # 从 state 还原发起授权时的 redirect_uri，保证 authorize 与 token
+        # 交换用同一 redirect_uri（OAuth 2.0 要求）；为空则用 provider 默认
+        redirect_uri = result.get("redirect_uri") or None
+        token = self.oauth.exchange_code(
+            "bangumi", code, redirect_uri_override=redirect_uri
+        )
         self._persist_token(token)
         return token
 

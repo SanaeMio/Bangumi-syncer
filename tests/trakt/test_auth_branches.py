@@ -16,11 +16,12 @@ def _fake_oauth_state(monkeypatch):
     """用内存替身隔离真实 oauth_states 表，使 CSRF state 测试可复现。"""
     store: dict = {}
 
-    def _save(state, section_name, expires_at, provider=""):
+    def _save(state, section_name, expires_at, provider="", redirect_uri=""):
         store[state] = {
             "provider": provider,
             "section_name": section_name,
             "expires_at": expires_at,
+            "redirect_uri": redirect_uri,
         }
 
     def _get(state):

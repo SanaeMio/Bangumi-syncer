@@ -592,7 +592,8 @@
     document
       .getElementById('bangumi-oauth-disconnect')
       ?.addEventListener('click', disconnectBangumiOAuth)
-    refreshBangumiOAuthRedirect()
+    // 监听 OAuth 弹窗的 postMessage 通知（close 页面发出）
+    window.addEventListener('message', handleBangumiOAuthMessage)
     refreshBangumiOAuthStatus()
 
     // 先加载配置 schema（驱动默认值/布尔语义），再加载配置数据
@@ -606,20 +607,6 @@
       (c) =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]),
     )
-  }
-
-  async function refreshBangumiOAuthRedirect() {
-    try {
-      const res = await apiFetch('/api/oauth/bangumi/redirect', {
-        skipAuthRedirect: true,
-      })
-      const input = document.getElementById('bangumi-oauth-redirect')
-      if (input && res && res.redirect_uri && !input.value.trim()) {
-        input.placeholder = res.redirect_uri
-      }
-    } catch (e) {
-      // 忽略未登录等错误
-    }
   }
 
   async function refreshBangumiOAuthStatus() {
@@ -661,15 +648,35 @@
     }
   }
 
+  // OAuth 弹窗回调成功后通过 postMessage 通知父窗口（对齐
+  // jellyfin-plugin-bangumi 方案）；父窗口监听消息刷新状态和账号列表
+  function handleBangumiOAuthMessage(event) {
+    if (event.data !== 'BANGUMI-OAUTH-COMPLETE') return
+    refreshBangumiOAuthStatus().then((status) => {
+      if (status && status.connected) {
+        loadBangumiAccounts()
+        showAlert('Bangumi OAuth 授权已完成', 'success')
+      }
+    })
+  }
+
   async function startBangumiOAuth() {
     const btn = document.getElementById('bangumi-oauth-connect')
     const restore = setButtonLoading(btn, '授权中...')
     let res
     try {
-      // 若表单中填入了 OAuth 凭证/回调地址，先保存再发起授权，
+      // 若表单中填入了 OAuth 凭证，先保存再发起授权，
       // 避免用户填完直接点授权但配置未持久化导致后端读到空 client_id
       await saveBangumiOAuthFieldsIfNeeded()
-      res = await apiFetch('/api/oauth/bangumi/start')
+      // 动态 redirect_uri：浏览器当前访问地址 + 回调路径。
+      // 对齐 jellyfin-plugin-bangumi 方案：浏览器能访问发起授权的地址，
+      // 自然也能接收 302 重定向回来，无需公网固定回调。
+      const redirectUri =
+        window.location.origin + '/api/oauth/bangumi/callback'
+      res = await apiFetch(
+        '/api/oauth/bangumi/start?redirect_uri=' +
+          encodeURIComponent(redirectUri),
+      )
     } catch (e) {
       showAlert('发起授权失败：' + e.message, 'danger')
       restore()
@@ -686,19 +693,14 @@
       restore()
       return
     }
-    // 弹窗关闭后按真实连接状态反馈（避免用户中途关闭却被提示成功）
+    // 弹窗关闭后按真实连接状态反馈（避免用户中途关闭却被提示成功）。
+    // 正常授权完成的反馈由 postMessage 处理器完成，这里仅处理用户中途关闭的情况。
     const timer = setInterval(async () => {
       if (popup.closed) {
         clearInterval(timer)
         const status = await refreshBangumiOAuthStatus()
-        // 授权成功后刷新账号列表（OAuth 授权会新增/更新账号到列表）
-        if (status && status.connected) {
-          await loadBangumiAccounts()
-        }
         restore()
-        if (status && status.connected) {
-          showAlert('Bangumi OAuth 授权已完成', 'success')
-        } else {
+        if (!status || !status.connected) {
           showAlert('Bangumi OAuth 授权未完成，请重试', 'warning')
         }
       }
@@ -706,27 +708,22 @@
   }
 
   // 保存 OAuth 凭证字段（仅当表单中有非空值时）。
-  // 用户填入 client_id/client_secret/redirect_uri 后直接点授权按钮时，
-  // 先持久化这三个字段，避免后端读到空 client_id 报错。
+  // 用户填入 client_id/client_secret 后直接点授权按钮时，
+  // 先持久化这两个字段，避免后端读到空 client_id 报错。
   async function saveBangumiOAuthFieldsIfNeeded() {
     const fields = {
       client_id: document.getElementById('bangumi-oauth-client-id')?.value || '',
       client_secret:
         document.getElementById('bangumi-oauth-client-secret')?.value || '',
-      redirect_uri:
-        document.getElementById('bangumi-oauth-redirect')?.value || '',
     }
-    // 三个字段全空：无需保存（可能使用内置凭证）
-    if (!fields.client_id && !fields.client_secret && !fields.redirect_uri) {
+    // 两个字段全空：无需保存（可能使用内置凭证）
+    if (!fields.client_id && !fields.client_secret) {
       return
     }
     const payload = { bangumi_oauth: {} }
-    // 仅提交非空字段（空 redirect_uri 让后端自动推导）
     if (fields.client_id) payload.bangumi_oauth.client_id = fields.client_id
     if (fields.client_secret)
       payload.bangumi_oauth.client_secret = fields.client_secret
-    if (fields.redirect_uri)
-      payload.bangumi_oauth.redirect_uri = fields.redirect_uri
     await apiFetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

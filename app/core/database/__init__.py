@@ -547,11 +547,20 @@ class DatabaseManager:
     # ------------------------------------------------------------------
 
     def save_oauth_state(
-        self, state: str, section_name: str, expires_at: int, provider: str = ""
+        self,
+        state: str,
+        section_name: str,
+        expires_at: int,
+        provider: str = "",
+        redirect_uri: str = "",
     ) -> bool:
         """保存一个 OAuth 授权 state（provider 用于区分不同来源）。"""
         return self._oauth_state.save_state(
-            state, section_name, expires_at, provider=provider
+            state,
+            section_name,
+            expires_at,
+            provider=provider,
+            redirect_uri=redirect_uri,
         )
 
     def get_oauth_state(self, state: str) -> Optional[dict]:

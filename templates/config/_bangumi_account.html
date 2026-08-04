@@ -7,11 +7,18 @@
                             <i class="bi bi-person-circle me-2 card-header-icon"></i>
                             <h6 class="m-0 fw-semibold card-header-title">Bangumi 账号配置</h6>
                         </div>
-                        <button type="button"
-                                class="btn btn-sm btn-primary"
-                                onclick="addBangumiAccountRow()">
-                            <i class="bi bi-plus-circle me-1"></i>添加账号
-                        </button>
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="btn btn-sm btn-primary"
+                                    id="bangumi-oauth-connect">
+                                <i class="bi bi-shield-lock me-1"></i>OAuth 授权
+                            </button>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    onclick="addBangumiAccountRow()">
+                                <i class="bi bi-plus-circle me-1"></i>手动添加
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="alert alert-info mb-3">

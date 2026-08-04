@@ -27,17 +27,30 @@ class OAuthService:
         return self.registry.get(name)
 
     # ── CSRF state（统一落库）──────────────────────────────────
-    def create_state(self, provider_name: str, account_key: str) -> str:
-        """生成并保存一个授权 state，返回其值。"""
+    def create_state(
+        self,
+        provider_name: str,
+        account_key: str,
+        redirect_uri: str = "",
+    ) -> str:
+        """生成并保存一个授权 state，返回其值。
+
+        ``redirect_uri`` 用于存发起授权时使用的回调地址，回调换 token 时
+        还原以保证 authorize 与 token 交换用同一 redirect_uri（OAuth 2.0 要求）。
+        """
         state = secrets.token_urlsafe(16)
         expires_at = int(time.time()) + OAUTH_STATE_TTL
         database_manager.save_oauth_state(
-            state, account_key, expires_at, provider=provider_name
+            state,
+            account_key,
+            expires_at,
+            provider=provider_name,
+            redirect_uri=redirect_uri,
         )
         return state
 
-    def consume_state(self, provider_name: str, state: str) -> str | None:
-        """校验并消费 state，返回绑定的 account_key；无效/过期/不匹配返回 None。
+    def consume_state(self, provider_name: str, state: str) -> dict | None:
+        """校验并消费 state，返回 ``{account_key, redirect_uri}``；无效/过期/不匹配返回 None。
 
         使用 ``delete_oauth_state`` 的 rowcount 作为消费凭据，避免
         SELECT-then-DELETE 在并发下双重消费 state 导致 CSRF 防护失效
@@ -54,7 +67,10 @@ class OAuthService:
             return None
         # DB 列名为 section_name（save_oauth_state 的第二参数），
         # 对 Trakt 场景存的是 user_id，对 Bangumi 场景存的是 section_name
-        return rec.get("section_name")
+        return {
+            "account_key": rec.get("section_name"),
+            "redirect_uri": rec.get("redirect_uri") or "",
+        }
 
     # ── 授权 URL ────────────────────────────────────────────────
     def build_authorize_url(
@@ -64,12 +80,17 @@ class OAuthService:
         state: str,
         scopes: list[str] | None = None,
         extra_params: dict | None = None,
+        redirect_uri_override: str | None = None,
     ) -> str:
         client_id, _ = provider.get_credentials()
         params: dict[str, Any] = dict(provider.extra_auth_params)
         params.setdefault("response_type", "code")
         params["client_id"] = client_id
-        params["redirect_uri"] = provider.get_redirect_uri()
+        params["redirect_uri"] = (
+            redirect_uri_override
+            if redirect_uri_override
+            else provider.get_redirect_uri()
+        )
         params["state"] = state
         scope = scopes if scopes is not None else provider.scopes
         if scope:
@@ -81,7 +102,13 @@ class OAuthService:
         return f"{provider.authorize_url}?{urlencode(params)}"
 
     # ── 令牌交换 / 刷新 ─────────────────────────────────────────
-    def exchange_code(self, provider_name: str, code: str) -> dict[str, Any]:
+    def exchange_code(
+        self,
+        provider_name: str,
+        code: str,
+        *,
+        redirect_uri_override: str | None = None,
+    ) -> dict[str, Any]:
         """用授权码向提供方令牌端点换取令牌（state 由调用方先行校验）。"""
         provider = self.get_provider(provider_name)
         client_id, client_secret = provider.get_credentials()
@@ -90,7 +117,11 @@ class OAuthService:
             "client_id": client_id,
             "client_secret": client_secret,
             "code": code,
-            "redirect_uri": provider.get_redirect_uri(),
+            "redirect_uri": (
+                redirect_uri_override
+                if redirect_uri_override
+                else provider.get_redirect_uri()
+            ),
         }
         resp = httpx.post(provider.token_url, data=payload, timeout=30.0)
         resp.raise_for_status()

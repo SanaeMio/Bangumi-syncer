@@ -469,13 +469,22 @@ class DatabaseConnection:
                 section_name TEXT NOT NULL,
                 provider TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL,
-                expires_at INTEGER NOT NULL
+                expires_at INTEGER NOT NULL,
+                redirect_uri TEXT NOT NULL DEFAULT ''
             )
         """)
         # 兼容旧库：补充 provider 列（已存在则忽略）
         try:
             cursor.execute(
                 "ALTER TABLE oauth_states ADD COLUMN provider TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass
+        # 兼容旧库：补充 redirect_uri 列（用于存发起授权时的 redirect_uri，
+        # 回调时还原以保证 authorize 与 token 交换用同一 redirect_uri）
+        try:
+            cursor.execute(
+                "ALTER TABLE oauth_states ADD COLUMN redirect_uri TEXT NOT NULL DEFAULT ''"
             )
         except Exception:
             pass

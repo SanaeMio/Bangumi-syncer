@@ -75,11 +75,12 @@ def svc(monkeypatch):
     # OAuth state 统一落库；测试中以内存替身隔离真实数据库
     state_store: dict = {}
 
-    def _save_state(state, section_name, expires_at, provider=""):
+    def _save_state(state, section_name, expires_at, provider="", redirect_uri=""):
         state_store[state] = {
             "provider": provider,
             "section_name": section_name,
             "expires_at": expires_at,
+            "redirect_uri": redirect_uri,
         }
 
     def _get_state(state):
@@ -110,6 +111,19 @@ def test_get_auth_url_contains_client_and_state(svc):
     assert "state=" in url and "redirect_uri=" in url
     assert svc.verify_state(state) is True
     assert svc.verify_state("not-a-real-state") is False
+
+
+def test_get_auth_url_accepts_dynamic_redirect_uri(svc):
+    """前端动态传入 redirect_uri 时应透传到授权 URL 并绑定到 state。"""
+    from urllib.parse import parse_qs, urlparse
+
+    svc, store = svc
+    custom = "http://192.168.1.10:8000/api/oauth/bangumi/callback"
+    url, state = svc.get_auth_url(redirect_uri=custom)
+    # 授权 URL 中应包含动态 redirect_uri
+    assert "redirect_uri=" in url
+    qs = parse_qs(urlparse(url).query)
+    assert qs["redirect_uri"] == [custom]
 
 
 def test_exchange_code_persists_token_to_db(svc):

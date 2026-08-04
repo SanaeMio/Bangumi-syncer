@@ -285,18 +285,27 @@ class OAuthStateRepository(BaseRepository):
     """OAuth 授权过程中的 CSRF state（临时会话，带 TTL）。"""
 
     def save_state(
-        self, state: str, section_name: str, expires_at: int, provider: str = ""
+        self,
+        state: str,
+        section_name: str,
+        expires_at: int,
+        provider: str = "",
+        redirect_uri: str = "",
     ) -> bool:
-        """保存一个授权 state（provider 用于区分不同 OAuth 来源）。"""
+        """保存一个授权 state（provider 用于区分不同 OAuth 来源）。
+
+        ``redirect_uri`` 用于存发起授权时使用的回调地址，回调换 token 时
+        还原以保证 authorize 与 token 交换用同一 redirect_uri（OAuth 2.0 要求）。
+        """
 
         def _write(conn):
             conn.execute(
                 """
                 INSERT OR REPLACE INTO oauth_states
-                (state, section_name, provider, created_at, expires_at)
-                VALUES (?, ?, ?, ?, ?)
+                (state, section_name, provider, created_at, expires_at, redirect_uri)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (state, section_name, provider, _now(), expires_at),
+                (state, section_name, provider, _now(), expires_at, redirect_uri),
             )
             return True
 
@@ -308,7 +317,7 @@ class OAuthStateRepository(BaseRepository):
         def _read(conn):
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT state, section_name, provider, created_at, expires_at "
+                "SELECT state, section_name, provider, created_at, expires_at, redirect_uri "
                 "FROM oauth_states WHERE state = ?",
                 (state,),
             )
@@ -321,6 +330,7 @@ class OAuthStateRepository(BaseRepository):
                 "provider": row[2],
                 "created_at": row[3],
                 "expires_at": row[4],
+                "redirect_uri": row[5] if len(row) > 5 else "",
             }
             if record["expires_at"] and _now() >= record["expires_at"]:
                 cursor.execute("DELETE FROM oauth_states WHERE state = ?", (state,))

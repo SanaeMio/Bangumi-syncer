@@ -1,10 +1,9 @@
 """Bangumi OAuth 2.0 相关接口。
 
-- ``GET  /api/oauth/bangumi/start``    生成授权 URL（需登录）
+- ``GET  /api/oauth/bangumi/start``    生成授权 URL（需登录，接受动态 redirect_uri）
 - ``GET  /api/oauth/bangumi/callback`` Bangumi 回调（用 code+state 换 token，免登录，靠 state 防 CSRF）
-- ``GET  /api/oauth/bangumi/close``    回调换 token 后关闭弹窗的小页面
+- ``GET  /api/oauth/bangumi/close``    回调换 token 后关闭弹窗的小页面（含 postMessage 通知父窗口）
 - ``GET  /api/oauth/bangumi/status``   当前连接状态（需登录）
-- ``GET  /api/oauth/bangumi/redirect`` 当前使用的 redirect_uri（需登录）
 - ``POST /api/oauth/bangumi/disconnect`` 断开 OAuth 关联（需登录）
 """
 
@@ -28,11 +27,20 @@ async def _require_user(request: Request):
 
 
 @router.get("/start")
-async def oauth_start(request: Request):
+async def oauth_start(request: Request, redirect_uri: str = ""):
+    """生成授权 URL。
+
+    ``redirect_uri`` 由前端动态传入（取 ``window.location.origin +
+    /api/oauth/bangumi/callback``），
+    浏览器能访问发起授权的地址，自然也能接收 302 重定向回来，无需公网固定
+    回调。redirect_uri 会绑定到 state 落库，回调换 token 时还原。
+    """
     if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
     try:
-        auth_url, state = bangumi_auth_service.get_auth_url()
+        auth_url, state = bangumi_auth_service.get_auth_url(
+            redirect_uri=redirect_uri or None
+        )
     except ValueError as e:
         return JSONResponse(status_code=400, content={"detail": str(e)})
     return {
@@ -56,12 +64,20 @@ async def oauth_callback(request: Request, code: str = "", state: str = ""):
 @router.get("/close")
 async def oauth_close(result: str = "success"):
     ok = result == "success"
+    message = "授权成功，正在关闭窗口…" if ok else "授权失败，请关闭窗口后重试"
+    # 通过 postMessage 通知父窗口（与 jellyfin-plugin-bangumi 一致），
+    # 父窗口监听消息后刷新 OAuth 状态和账号列表
     return HTMLResponse(
         "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
         "<title>Bangumi 授权</title></head><body style='font-family:sans-serif;"
         "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
-        f"<p>{'授权成功，正在关闭窗口…' if ok else '授权失败，请关闭窗口后重试'}</p>"
-        "<script>window.close();</script>"
+        f"<p>{message}</p>"
+        "<script>"
+        "if (window.opener) {"
+        "try { window.opener.postMessage('BANGUMI-OAUTH-COMPLETE', '*'); } catch (e) {}"
+        "}"
+        "window.close();"
+        "</script>"
         "</body></html>"
     )
 
@@ -71,13 +87,6 @@ async def oauth_status(request: Request):
     if not await _require_user(request):
         return JSONResponse(status_code=401, content={"detail": "未认证"})
     return bangumi_auth_service.get_connection_status()
-
-
-@router.get("/redirect")
-async def oauth_redirect_uri(request: Request):
-    if not await _require_user(request):
-        return JSONResponse(status_code=401, content={"detail": "未认证"})
-    return {"redirect_uri": bangumi_auth_service.get_redirect_uri()}
 
 
 @router.post("/disconnect")

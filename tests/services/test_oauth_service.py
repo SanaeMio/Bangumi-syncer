@@ -41,7 +41,21 @@ def service(db, monkeypatch):
 
 def test_consume_state_success(service, db):
     state = service.create_state("bangumi", "bangumi-alpha")
-    assert service.consume_state("bangumi", state) == "bangumi-alpha"
+    result = service.consume_state("bangumi", state)
+    assert result is not None
+    assert result["account_key"] == "bangumi-alpha"
+    assert result["redirect_uri"] == ""
+
+
+def test_consume_state_preserves_redirect_uri(service, db):
+    """create_state 传入的 redirect_uri 在 consume_state 时应原样返回。"""
+    state = service.create_state(
+        "bangumi", "bangumi-alpha", redirect_uri="http://example/cb"
+    )
+    result = service.consume_state("bangumi", state)
+    assert result is not None
+    assert result["account_key"] == "bangumi-alpha"
+    assert result["redirect_uri"] == "http://example/cb"
 
 
 def test_consume_state_rejects_double_consume(service, db):
@@ -53,7 +67,8 @@ def test_consume_state_rejects_double_consume(service, db):
     state = service.create_state("bangumi", "bangumi-alpha")
     first = service.consume_state("bangumi", state)
     second = service.consume_state("bangumi", state)
-    assert first == "bangumi-alpha"
+    assert first is not None
+    assert first["account_key"] == "bangumi-alpha"
     assert second is None
 
 
@@ -66,4 +81,6 @@ def test_consume_state_provider_mismatch_returns_none(service, db):
     # 用不同 provider 消费应失败，state 保留供正确 provider 重试
     assert service.consume_state("trakt", state) is None
     # 正确 provider 仍可消费
-    assert service.consume_state("bangumi", state) == "bangumi-alpha"
+    result = service.consume_state("bangumi", state)
+    assert result is not None
+    assert result["account_key"] == "bangumi-alpha"

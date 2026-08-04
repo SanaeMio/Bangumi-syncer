@@ -1,12 +1,18 @@
-{# Bangumi OAuth 授权卡片：替代手动粘贴 access_token，支持令牌自动续期与降级手动 #}
+{# Bangumi OAuth 应用凭证配置卡片：仅保存 Client ID/Secret 和展示连接状态。
+   OAuth 授权入口已移至「Bangumi 账号配置」卡片头部，与「手动添加」并列。
+   回调地址由前端动态生成（window.location.origin + /api/oauth/bangumi/callback），
+   无需配置。 #}
 <div class="card mb-3 config-section" id="config-section-bangumi-oauth" data-toc-mode="always">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span class="card-header-title">Bangumi OAuth 授权</span>
+    <span class="card-header-title">Bangumi OAuth 应用凭证</span>
   </div>
   <div class="card-body">
     <p class="text-muted small mb-3">
-      使用 Bangumi 官方 OAuth 完成授权，授权成功后自动添加为新账号到下方「Bangumi 账号」列表并设为激活。
-      令牌过期时自动用 refresh_token 续期；若取消授权或续期失败，仍可在账号列表中手动填写访问令牌继续同步（降级手动）。
+      应用凭证已内置（开箱即用）。如需自定义应用，可在
+      <a href="https://bgm.tv/dev/app" target="_blank" rel="noopener">bgm.tv/dev/app</a>
+      创建应用后填写此处覆盖，或通过环境变量 BANGUMI_OAUTH_CLIENT_ID /
+      BANGUMI_OAUTH_CLIENT_SECRET 注入。回调地址由系统自动按当前访问地址派生，
+      无需配置。
     </p>
 
     <div class="mb-3">
@@ -16,10 +22,9 @@
         class="form-control"
         id="bangumi-oauth-client-id"
         name="bangumi_oauth.client_id"
-        placeholder="在 bgm.tv/dev/app 创建应用后获取"
+        placeholder="留空使用内置凭证"
         autocomplete="off"
       />
-      <div class="form-text">应用凭证已内置（开箱即用）。如需自定义应用，可在 <a href="https://bgm.tv/dev/app" target="_blank" rel="noopener">bgm.tv/dev/app</a> 创建应用后填写此处覆盖，或通过环境变量 BANGUMI_OAUTH_CLIENT_ID / BANGUMI_OAUTH_CLIENT_SECRET 注入。回调地址填写下方「回调地址」。</div>
     </div>
 
     <div class="mb-3">
@@ -29,36 +34,19 @@
         class="form-control"
         id="bangumi-oauth-client-secret"
         name="bangumi_oauth.client_secret"
-        placeholder="应用密钥"
+        placeholder="留空使用内置凭证"
         autocomplete="off"
       />
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label" for="bangumi-oauth-redirect">回调地址（Redirect URI）</label>
-      <input
-        type="text"
-        class="form-control"
-        id="bangumi-oauth-redirect"
-        name="bangumi_oauth.redirect_uri"
-        placeholder="留空则自动使用本站点地址 + /api/oauth/bangumi/callback"
-        autocomplete="off"
-      />
-      <div class="form-text">需与 bgm.tv 应用配置中的回调地址完全一致。留空自动派生，可在上方「Bangumi OAuth 状态」中查看实际值。</div>
     </div>
 
     <div id="bangumi-oauth-status" class="mb-3"></div>
 
-    <div class="d-flex gap-2">
-      <button type="button" class="btn btn-primary" id="bangumi-oauth-connect">
-        使用 OAuth 连接 Bangumi
-      </button>
-      <button type="button" class="btn btn-outline-danger" id="bangumi-oauth-disconnect">
-        断开 OAuth 连接
-      </button>
-    </div>
+    <button type="button" class="btn btn-outline-danger" id="bangumi-oauth-disconnect">
+      断开当前账号的 OAuth 连接
+    </button>
     <div class="form-text mt-2">
-      提示：使用内置凭证时可直接点击「使用 OAuth 连接 Bangumi」；自定义凭证时请先填写并点击页面底部「保存配置」。
+      断开后保留手动令牌继续同步；如需重新使用 OAuth，请在「Bangumi 账号配置」
+      卡片中点击「OAuth 授权」。
     </div>
   </div>
 </div>
