@@ -313,9 +313,6 @@
     <script src="{{ '/static/js/cron-desc.js' | static_v }}"></script>
     <script src="{{ '/static/js/cron-preview.js' | static_v }}"></script>
     <script>
-  // 全局变量
-  let bangumiAccountCounter = 0
-
   // ========== 配置 Schema（从 /api/config/schema 动态加载） ==========
   // 替代原散落的 CONFIG_DEFAULTS / DEFAULT_TRUE_FIELDS / STRING_TRUE_FIELDS 硬编码字典，
   // 由后端 SectionMeta + FieldMeta 注册表作为单一真相源驱动。
@@ -505,35 +502,19 @@
     }
   }
 
-  /** 根据同步模式（单用户 / 多用户）生成本页目录，仅展示当前可见区块 */
+  /** 生成本页目录，展示所有配置区块（账号列表化后无需单/多用户切换） */
   function refreshConfigPageToc() {
     const wrap = document.getElementById('config-page-toc-links')
     if (!wrap) {
       return
     }
-    const modeSelect = document.getElementById('sync-mode')
-    const mode = modeSelect ? modeSelect.value : 'single'
     wrap.replaceChildren()
-    // id/mode/label 全部从 DOM 读取，新增配置卡片无需改此函数。
-    // - id：取元素 id（[id^="config-section-"] 或 #multi-user-section）
-    // - mode：取 data-toc-mode（默认 always）
-    // - label：取 .card-header-title 文本，可用 data-toc-label 覆盖
     const form = document.getElementById('config-form')
     if (!form) {
       return
     }
-    const cards = form.querySelectorAll(
-      '[id^="config-section-"], #multi-user-section',
-    )
+    const cards = form.querySelectorAll('[id^="config-section-"]')
     cards.forEach(function (target) {
-      const itemMode = target.dataset.tocMode || 'always'
-      const show =
-        itemMode === 'always' ||
-        (itemMode === 'single' && mode === 'single') ||
-        (itemMode === 'multi' && mode === 'multi')
-      if (!show) {
-        return
-      }
       const titleEl = target.querySelector('.card-header-title')
       const label =
         target.dataset.tocLabel ||
@@ -788,39 +769,17 @@
     document.getElementById('auth-password').value = ''
 
     // 6. UI 状态切换
-    toggleSyncMode()
     if (config.auth) {
       toggleWebhookKeySection()
     }
 
-    // 7. 多用户模式
-    if (config.sync && config.sync.mode === 'multi') {
-      populateMultiUserConfig(config.multi_accounts, config.user_mappings)
-    }
+    // 7. 加载 Bangumi 账号列表（DB 为唯一真相源，独立于 INI 配置）
+    loadBangumiAccounts()
 
     // 8. 刷新 cron 预览（populate 后 input.value 已更新）
     if (window.refreshAllCronPreviews) {
       window.refreshAllCronPreviews()
     }
-  }
-
-  function toggleSyncMode() {
-    const mode = document.getElementById('sync-mode').value
-    const singleBangumiSection = document.getElementById(
-      'single-user-bangumi-section',
-    )
-    const multiSection = document.getElementById('multi-user-section')
-
-    if (mode === 'single') {
-      // 单用户模式：显示 Bangumi 账号配置，隐藏多用户配置
-      singleBangumiSection.style.display = 'block'
-      multiSection.style.display = 'none'
-    } else {
-      // 多用户模式：隐藏 Bangumi 单用户账号卡片，显示多用户配置
-      singleBangumiSection.style.display = 'none'
-      multiSection.style.display = 'block'
-    }
-    refreshConfigPageToc()
   }
 
   function toggleWebhookKeySection() {
@@ -861,61 +820,104 @@
     }
   }
 
-  function populateMultiUserConfig(accounts, mappings) {
-    const accountsContainer = document.getElementById(
-      'bangumi-accounts-container',
-    )
+  // ========== Bangumi 账号列表管理（DB 为唯一真相源） ==========
+  let bangumiAccountCounter = 0
 
-    accountsContainer.innerHTML = ''
-
-    // 重置全局计数器
+  async function loadBangumiAccounts() {
+    const container = document.getElementById('bangumi-accounts-container')
+    if (!container) return
+    container.innerHTML = ''
     bangumiAccountCounter = 0
-
-    // 添加Bangumi账号
-    Object.entries(accounts || {}).forEach(([key, account]) => {
-      // 使用display_name作为显示名称，如果没有则使用配置段名
-      const displayName = account.display_name || key
-      addBangumiAccount(displayName, account)
-    })
+    try {
+      const res = await apiFetch('/api/bangumi/accounts')
+      if (res && res.data) {
+        res.data.forEach((acc) => {
+          addBangumiAccountRow(acc)
+        })
+        // 标记激活账号
+        if (res.active) {
+          updateActiveBadge(res.active)
+        }
+      }
+    } catch (e) {
+      console.error('加载 Bangumi 账号列表失败:', e)
+    }
   }
 
-  function addBangumiAccount(accountName = '', accountConfig = {}) {
+  function addBangumiAccountRow(accountData = null) {
     const container = document.getElementById('bangumi-accounts-container')
     const id = bangumiAccountCounter++
+    const isNew = accountData === null
+    const acc = accountData || {}
+    const sectionName = acc.section_name || ''
+    const isActive = acc.is_active || false
+    const authMethod = acc.auth_method || 'manual'
 
     const accountDiv = document.createElement('div')
     accountDiv.className = 'border rounded p-3 mb-3'
+    accountDiv.dataset.sectionName = sectionName
+    accountDiv.dataset.isNew = isNew ? '1' : '0'
+
+    const activeBadge = isActive
+      ? '<span class="badge bg-success ms-2">激活中</span>'
+      : ''
+    const oauthBadge =
+      authMethod === 'oauth'
+        ? '<span class="badge bg-info ms-1">OAuth</span>'
+        : ''
+
     accountDiv.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="mb-0">Bangumi账号 ${id + 1}</h6>
-            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeBangumiAccount(${id})">
-                <i class="bi bi-trash"></i>
-            </button>
+            <h6 class="mb-0">
+                Bangumi 账号 ${id + 1}
+                ${activeBadge}
+                ${oauthBadge}
+            </h6>
+            <div class="btn-group btn-group-sm">
+                ${
+                  !isActive
+                    ? `<button type="button" class="btn btn-outline-success" onclick="activateBangumiAccount('${sectionName}')">
+                         <i class="bi bi-check-circle"></i> 设为激活
+                       </button>`
+                    : ''
+                }
+                <button type="button" class="btn btn-outline-primary" onclick="saveBangumiAccountRow(this)">
+                    <i class="bi bi-save"></i> 保存
+                </button>
+                <button type="button" class="btn btn-outline-danger" onclick="deleteBangumiAccountRow(this)">
+                    <i class="bi bi-trash"></i> 删除
+                </button>
+            </div>
         </div>
-        <div class="row">
-            <div class="col-md-3">
-                <label class="form-label">账号备注</label>
-                <input type="text" class="form-control bangumi-account-name" value="${accountName}" placeholder="用户昵称或备注">
+        <div class="row g-2">
+            <div class="col-md-4">
+                <label class="form-label small">Bangumi 用户名</label>
+                <input type="text" class="form-control bangumi-account-username" value="${acc.username || ''}" placeholder="Bangumi 用户名或 UID">
             </div>
-            <div class="col-md-3">
-                <label class="form-label">Bangumi用户名</label>
-                <input type="text" class="form-control bangumi-account-username" value="${accountConfig.username || ''}" placeholder="Bangumi用户名">
+            <div class="col-md-4">
+                <label class="form-label small" title="Plex/Emby/Jellyfin 登录名，须与媒体服务器一致。多个用户名对应本 Bangumi 账号时可用英文逗号分隔。">
+                    媒体服务器用户名
+                </label>
+                <input type="text" class="form-control bangumi-account-media-username" value="${(acc.media_server_usernames || []).join(', ')}" placeholder="多个用英文逗号分隔">
             </div>
-            <div class="col-md-3">
-                <label class="form-label" title="Plex/Emby/Jellyfin 登录名，须与媒体服务器一致。多个用户名对应本 Bangumi 账号时可用英文逗号分隔。">媒体服务器用户名</label>
-                <input type="text" class="form-control bangumi-account-media-username" value="${accountConfig.media_server_username || ''}" placeholder="多个用英文逗号分隔">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">访问令牌</label>
-                <input type="password" class="form-control bangumi-account-token" value="${accountConfig.access_token || ''}" placeholder="访问令牌">
+            <div class="col-md-4">
+                <label class="form-label small">
+                    访问令牌
+                    ${authMethod === 'oauth' ? '<span class="text-muted">（由 OAuth 管理）</span>' : ''}
+                </label>
+                <div class="position-relative">
+                    <input type="password" class="form-control pe-5 bangumi-account-token" value="" placeholder="${authMethod === 'oauth' ? '已由 OAuth 授权' : '输入访问令牌'}">
+                    <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-1 password-toggle-btn" type="button" onclick="toggleTokenVisibility(this)">
+                        <i class="bi bi-eye text-muted"></i>
+                    </button>
+                </div>
             </div>
         </div>
         <div class="row mt-2">
             <div class="col-md-4">
-                <label class="form-label">观看记录仅自己可见</label>
                 <div class="form-check form-switch d-flex align-items-center mb-0">
-                    <input class="form-check-input me-2 bangumi-account-private" type="checkbox" id="bangumi-account-private-${id}" ${accountConfig.private ? 'checked' : ''}>
-                    <label class="form-check-label" for="bangumi-account-private-${id}">启用</label>
+                    <input class="form-check-input me-2 bangumi-account-private" type="checkbox" id="bangumi-account-private-${id}" ${acc.private ? 'checked' : ''}>
+                    <label class="form-check-label small" for="bangumi-account-private-${id}">观看记录仅自己可见</label>
                 </div>
             </div>
         </div>
@@ -925,11 +927,133 @@
     container.appendChild(accountDiv)
   }
 
-  function removeBangumiAccount(id) {
-    const element = document.getElementById(`bangumi-account-${id}`)
-    if (element) {
-      element.remove()
+  function toggleTokenVisibility(btn) {
+    const input = btn.parentElement.querySelector('input')
+    const icon = btn.querySelector('i')
+    if (input.type === 'password') {
+      input.type = 'text'
+      icon.className = 'bi bi-eye-slash text-muted'
+    } else {
+      input.type = 'password'
+      icon.className = 'bi bi-eye text-muted'
     }
+  }
+
+  async function saveBangumiAccountRow(btn) {
+    const card = btn.closest('[id^="bangumi-account-"]')
+    if (!card) return
+
+    const username = card.querySelector('.bangumi-account-username').value.trim()
+    const mediaUsername = card
+      .querySelector('.bangumi-account-media-username')
+      .value.trim()
+    const token = card.querySelector('.bangumi-account-token').value
+    const isPrivate = card.querySelector('.bangumi-account-private').checked
+    const sectionName = card.dataset.sectionName || ''
+    const isNew = card.dataset.isNew === '1'
+
+    if (!username) {
+      showAlert('用户名不能为空', 'danger')
+      return
+    }
+
+    const mediaUsernames = mediaUsername
+      ? mediaUsername.split(',').map((s) => s.trim()).filter(Boolean)
+      : []
+
+    // 新账号或手动账号必须有 token；OAuth 账号 token 可空（保留原值）
+    if (isNew && !token) {
+      showAlert('新账号需要填写访问令牌', 'danger')
+      return
+    }
+
+    try {
+      const res = await apiFetch('/api/bangumi/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          section_name: isNew ? null : sectionName,
+          username: username,
+          access_token: token,
+          media_server_usernames: mediaUsernames,
+          private: isPrivate,
+        }),
+      })
+      if (res.status === 'success') {
+        showAlert(res.message || '账号保存成功', 'success')
+        await loadBangumiAccounts()
+      } else {
+        showAlert(res.detail || '保存失败', 'danger')
+      }
+    } catch (e) {
+      showAlert('保存账号失败: ' + e.message, 'danger')
+    }
+  }
+
+  async function deleteBangumiAccountRow(btn) {
+    const card = btn.closest('[id^="bangumi-account-"]')
+    if (!card) return
+
+    const sectionName = card.dataset.sectionName || ''
+    const isNew = card.dataset.isNew === '1'
+
+    // 新增未保存的卡片：仅从 DOM 移除
+    if (isNew || !sectionName) {
+      card.remove()
+      return
+    }
+
+    if (!confirm('确定删除此 Bangumi 账号？此操作不可撤销。')) return
+
+    try {
+      const res = await apiFetch(`/api/bangumi/accounts/${encodeURIComponent(sectionName)}`, {
+        method: 'DELETE',
+      })
+      if (res.status === 'success') {
+        showAlert('账号已删除', 'success')
+        await loadBangumiAccounts()
+      } else {
+        showAlert(res.detail || '删除失败', 'danger')
+      }
+    } catch (e) {
+      showAlert('删除账号失败: ' + e.message, 'danger')
+    }
+  }
+
+  async function activateBangumiAccount(sectionName) {
+    if (!sectionName) return
+    try {
+      const res = await apiFetch(
+        `/api/bangumi/accounts/${encodeURIComponent(sectionName)}/activate`,
+        { method: 'POST' },
+      )
+      if (res.status === 'success') {
+        showAlert('已切换激活账号', 'success')
+        await loadBangumiAccounts()
+      } else {
+        showAlert(res.detail || '切换失败', 'danger')
+      }
+    } catch (e) {
+      showAlert('切换激活账号失败: ' + e.message, 'danger')
+    }
+  }
+
+  function updateActiveBadge(activeSection) {
+    document
+      .querySelectorAll('#bangumi-accounts-container [id^="bangumi-account-"]')
+      .forEach((card) => {
+        const section = card.dataset.sectionName
+        const titleEl = card.querySelector('h6')
+        if (!titleEl) return
+        // 移除旧 badge
+        titleEl.querySelectorAll('.badge').forEach((b) => b.remove())
+        if (section === activeSection) {
+          const badge = document.createElement('span')
+          badge.className = 'badge bg-success ms-2'
+          badge.textContent = '激活中'
+          titleEl.appendChild(badge)
+        }
+      })
   }
 
   async function saveConfig() {
@@ -983,43 +1107,7 @@
         configData.auth.password = authPassword
       }
 
-      // 5. 处理多用户配置
-      if (configData.sync.mode === 'multi') {
-        const multiAccounts = {}
-
-        // 收集Bangumi账号
-        document
-          .querySelectorAll(
-            '#bangumi-accounts-container > [id^="bangumi-account-"]',
-          )
-          .forEach((element) => {
-            const displayName = element
-              .querySelector('.bangumi-account-name')
-              .value.trim()
-            const username = element
-              .querySelector('.bangumi-account-username')
-              .value.trim()
-            const mediaUsername = element
-              .querySelector('.bangumi-account-media-username')
-              .value.trim()
-            const token = element.querySelector('.bangumi-account-token').value
-            const isPrivate = element.querySelector(
-              '.bangumi-account-private',
-            ).checked
-
-            if (username && mediaUsername && token) {
-              multiAccounts[element.id] = {
-                username: username,
-                access_token: token,
-                media_server_username: mediaUsername,
-                private: isPrivate,
-                display_name: displayName,
-              }
-            }
-          })
-
-        configData.multi_accounts = multiAccounts
-      }
+      // 5. Bangumi 账号由 /api/bangumi/accounts 独立管理，此处仅保存常规配置
 
       const result = await apiFetch('/api/config', {
         method: 'POST',

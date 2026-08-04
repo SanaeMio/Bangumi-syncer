@@ -11,21 +11,6 @@
                     <div class="card-body">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label for="sync-mode" class="form-label fw-semibold">
-                                    <i class="bi bi-gear me-1 text-success"></i>同步模式
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
-                                </label>
-                                <select class="form-select"
-                                        id="sync-mode"
-                                        name="sync.mode"
-                                        onchange="toggleSyncMode()">
-                                    <option value="single">单用户模式</option>
-                                    <option value="multi">多用户模式</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
                                 <label class="form-label fw-semibold">
                                     <i class="bi bi-shield-lock me-1 text-warning"></i>启用Webhook认证
                                     <i class="bi bi-question-circle ms-1 text-muted"
