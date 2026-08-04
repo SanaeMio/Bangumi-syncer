@@ -628,8 +628,10 @@
         skipAuthRedirect: true,
       })
       renderBangumiOAuthStatus(status)
+      return status
     } catch (e) {
       // 忽略未登录等错误
+      return null
     }
   }
 
@@ -660,37 +662,38 @@
   }
 
   async function startBangumiOAuth() {
-    const clientIdEl = document.getElementById('bangumi-oauth-client-id')
-    const clientId = clientIdEl ? clientIdEl.value : ''
-    if (!clientId || !clientId.trim()) {
-      showAlert(
-        '请先在上方填写 Bangumi OAuth 的 Client ID / Client Secret 并保存配置',
-        'warning',
-      )
-      return
-    }
-    let authUrl
+    const btn = document.getElementById('bangumi-oauth-connect')
+    const restore = setButtonLoading(btn, '授权中...')
+    let res
     try {
-      const res = await apiFetch('/api/oauth/bangumi/start')
-      if (!res || !res.auth_url) {
-        showAlert(res && res.detail ? res.detail : '发起授权失败', 'danger')
-        return
-      }
-      authUrl = res.auth_url
+      res = await apiFetch('/api/oauth/bangumi/start')
     } catch (e) {
       showAlert('发起授权失败：' + e.message, 'danger')
+      restore()
       return
     }
-    const popup = window.open(authUrl, 'bangumi_oauth', 'width=600,height=720')
+    if (!res || !res.auth_url) {
+      showAlert(res && res.detail ? res.detail : '发起授权失败', 'danger')
+      restore()
+      return
+    }
+    const popup = window.open(res.auth_url, 'bangumi_oauth', 'width=600,height=720')
     if (!popup) {
       showAlert('浏览器拦截了授权弹窗，请允许弹窗后重试', 'warning')
+      restore()
       return
     }
+    // 弹窗关闭后按真实连接状态反馈（避免用户中途关闭却被提示成功）
     const timer = setInterval(async () => {
       if (popup.closed) {
         clearInterval(timer)
-        await refreshBangumiOAuthStatus()
-        showAlert('Bangumi OAuth 授权已完成', 'success')
+        const status = await refreshBangumiOAuthStatus()
+        restore()
+        if (status && status.connected) {
+          showAlert('Bangumi OAuth 授权已完成', 'success')
+        } else {
+          showAlert('Bangumi OAuth 授权未完成，请重试', 'warning')
+        }
       }
     }, 1000)
   }
@@ -698,13 +701,16 @@
   async function disconnectBangumiOAuth() {
     if (!window.confirm('确定断开 Bangumi OAuth 连接？将保留手动令牌以便继续同步。'))
       return
-    try {
-      await apiFetch('/api/oauth/bangumi/disconnect', { method: 'POST' })
-      showAlert('已断开 Bangumi OAuth 连接', 'success')
-      await refreshBangumiOAuthStatus()
-    } catch (e) {
-      showAlert('断开连接失败：' + e.message, 'danger')
-    }
+    const btn = document.getElementById('bangumi-oauth-disconnect')
+    await setButtonLoading(btn, '断开中...', async () => {
+      try {
+        await apiFetch('/api/oauth/bangumi/disconnect', { method: 'POST' })
+        showAlert('已断开 Bangumi OAuth 连接', 'success')
+        await refreshBangumiOAuthStatus()
+      } catch (e) {
+        showAlert('断开连接失败：' + e.message, 'danger')
+      }
+    })
   }
 
   async function loadConfig(showToast = true) {
@@ -876,7 +882,7 @@
             <div class="btn-group btn-group-sm">
                 ${
                   !isActive
-                    ? `<button type="button" class="btn btn-outline-success" onclick="activateBangumiAccount('${sectionName}')">
+                    ? `<button type="button" class="btn btn-outline-success" onclick="activateBangumiAccount(this)">
                          <i class="bi bi-check-circle"></i> 设为激活
                        </button>`
                     : ''
@@ -892,13 +898,13 @@
         <div class="row g-2">
             <div class="col-md-4">
                 <label class="form-label small">Bangumi 用户名</label>
-                <input type="text" class="form-control bangumi-account-username" value="${acc.username || ''}" placeholder="Bangumi 用户名或 UID">
+                <input type="text" class="form-control bangumi-account-username" value="${escapeHtml(acc.username || '')}" placeholder="Bangumi 用户名或 UID">
             </div>
             <div class="col-md-4">
                 <label class="form-label small" title="Plex/Emby/Jellyfin 登录名，须与媒体服务器一致。多个用户名对应本 Bangumi 账号时可用英文逗号分隔。">
                     媒体服务器用户名
                 </label>
-                <input type="text" class="form-control bangumi-account-media-username" value="${(acc.media_server_usernames || []).join(', ')}" placeholder="多个用英文逗号分隔">
+                <input type="text" class="form-control bangumi-account-media-username" value="${escapeHtml((acc.media_server_usernames || []).join(', '))}" placeholder="多个用英文逗号分隔">
             </div>
             <div class="col-md-4">
                 <label class="form-label small">
@@ -1020,7 +1026,10 @@
     }
   }
 
-  async function activateBangumiAccount(sectionName) {
+  async function activateBangumiAccount(btn) {
+    const card = btn.closest('[id^="bangumi-account-"]')
+    if (!card) return
+    const sectionName = card.dataset.sectionName || ''
     if (!sectionName) return
     try {
       const res = await apiFetch(
