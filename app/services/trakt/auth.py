@@ -6,6 +6,7 @@ Trakt.tv OAuth2 认证服务
 （写入 trakt 配置表）与配置校验逻辑。
 """
 
+import asyncio
 import time
 from datetime import datetime
 from typing import Optional
@@ -47,6 +48,18 @@ class TraktAuthService:
         self.token_url = "https://api.trakt.tv/oauth/token"
         self.oauth = get_oauth_service()
         self.trakt_config = {}
+        # per-user 刷新锁：避免并发刷新重复调用 OAuth 接口
+        self._refresh_locks: dict[str, asyncio.Lock] = {}
+        self._locks_guard = asyncio.Lock()
+
+    async def _get_refresh_lock(self, user_id: str) -> asyncio.Lock:
+        """获取指定用户的刷新锁（per-user，避免不同用户互相阻塞）。"""
+        async with self._locks_guard:
+            lock = self._refresh_locks.get(user_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._refresh_locks[user_id] = lock
+            return lock
 
     def _get_config(self) -> dict:
         """获取最新的 Trakt 配置"""
@@ -142,54 +155,61 @@ class TraktAuthService:
             )
 
     async def refresh_token(self, user_id: str) -> bool:
-        """刷新过期的访问令牌"""
+        """刷新过期的访问令牌
+
+        使用 per-user asyncio.Lock 确保同一用户同一时刻只有一个刷新操作，
+        避免并发（手动同步 + 调度器）重复调用 OAuth refresh 接口或后刷新的
+        覆盖先刷新的导致 token 失效。持锁后 double-check 是否仍需刷新。
+        """
         try:
-            # 获取用户的 Trakt 配置
-            config_dict = database_manager.get_trakt_config(user_id)
-            if not config_dict:
-                logger.error(f"用户 {user_id} 的 Trakt 配置未找到")
-                return False
+            lock = await self._get_refresh_lock(user_id)
+            async with lock:
+                # 持锁后重新读取配置，可能已被并发协程刷新
+                config_dict = database_manager.get_trakt_config(user_id)
+                if not config_dict:
+                    logger.error(f"用户 {user_id} 的 Trakt 配置未找到")
+                    return False
 
-            config = TraktConfig.from_dict(config_dict)
-            if not config:
-                logger.error(f"用户 {user_id} 的 Trakt 配置无效")
-                return False
+                config = TraktConfig.from_dict(config_dict)
+                if not config:
+                    logger.error(f"用户 {user_id} 的 Trakt 配置无效")
+                    return False
 
-            # 检查是否需要刷新
-            if not config.refresh_if_needed():
-                logger.info(f"用户 {user_id} 的令牌尚未过期，无需刷新")
-                return True
+                # double-check：并发场景下可能已被其他协程刷新
+                if not config.refresh_if_needed():
+                    logger.info(f"用户 {user_id} 的令牌尚未过期，无需刷新")
+                    return True
 
-            if not config.refresh_token:
-                logger.error(f"用户 {user_id} 没有刷新令牌，需要重新授权")
-                return False
+                if not config.refresh_token:
+                    logger.error(f"用户 {user_id} 没有刷新令牌，需要重新授权")
+                    return False
 
-            # 使用刷新令牌获取新的访问令牌
-            refresh_data = await self._refresh_access_token(config.refresh_token)
+                # 使用刷新令牌获取新的访问令牌
+                refresh_data = await self._refresh_access_token(config.refresh_token)
 
-            if not refresh_data:
-                logger.error(f"用户 {user_id} 的令牌刷新失败")
-                return False
+                if not refresh_data:
+                    logger.error(f"用户 {user_id} 的令牌刷新失败")
+                    return False
 
-            # 更新配置
-            config.access_token = refresh_data["access_token"]
-            config.refresh_token = refresh_data.get(
-                "refresh_token", config.refresh_token
-            )
-            config.expires_at = self._calculate_expires_at(
-                refresh_data.get("expires_in")
-            )
-            config.updated_at = int(datetime.now().timestamp())
+                # 更新配置
+                config.access_token = refresh_data["access_token"]
+                config.refresh_token = refresh_data.get(
+                    "refresh_token", config.refresh_token
+                )
+                config.expires_at = self._calculate_expires_at(
+                    refresh_data.get("expires_in")
+                )
+                config.updated_at = int(datetime.now().timestamp())
 
-            # 保存到数据库
-            success = database_manager.save_trakt_config(config.to_dict())
+                # 保存到数据库
+                success = database_manager.save_trakt_config(config.to_dict())
 
-            if success:
-                logger.info(f"用户 {user_id} 的 Trakt 令牌刷新成功")
-                return True
-            else:
-                logger.error(f"用户 {user_id} 的 Trakt 令牌保存失败")
-                return False
+                if success:
+                    logger.info(f"用户 {user_id} 的 Trakt 令牌刷新成功")
+                    return True
+                else:
+                    logger.error(f"用户 {user_id} 的 Trakt 令牌保存失败")
+                    return False
 
         except Exception as e:
             logger.error(f"刷新 Trakt 令牌时发生错误: {e}")

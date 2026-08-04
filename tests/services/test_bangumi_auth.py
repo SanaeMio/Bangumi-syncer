@@ -246,6 +246,58 @@ def test_connection_status(svc):
     assert status["expired"] is False
 
 
+def test_refresh_if_needed_concurrent_no_duplicate_refresh(svc):
+    """并发场景下 refresh_active_token_if_needed 只应刷新一次。
+
+    模拟多线程并发：第一个线程持锁刷新后更新 expires_at，第二个线程
+    持锁后 double-check 发现不再临近过期，跳过刷新。
+    """
+    import threading
+
+    svc, store = svc
+    store.save(
+        {
+            "section_name": "bangumi",
+            "username": "u",
+            "auth_method": "oauth",
+            "access_token": "OLD_AT",
+            "refresh_token": "RT",
+            "expires_at": 1,  # 已过期
+            "media_server_usernames": [],
+            "private": False,
+            "is_active": True,
+        }
+    )
+
+    call_count = 0
+    original_post_response = _mock_token_response(
+        {"access_token": "NEW_AT", "expires_in": 7200, "token_type": "Bearer"}
+    )
+
+    def _counting_post(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_post_response
+
+    barrier = threading.Barrier(2)
+
+    def _worker():
+        barrier.wait()
+        svc.refresh_active_token_if_needed()
+
+    with patch("httpx.post", side_effect=_counting_post):
+        t1 = threading.Thread(target=_worker)
+        t2 = threading.Thread(target=_worker)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+    # 并发下只应调用一次 OAuth refresh 接口（锁 + double-check 生效）
+    assert call_count == 1
+    assert store.get("bangumi")["access_token"] == "NEW_AT"
+
+
 def test_disconnect_keeps_access_token_for_manual_fallback(svc):
     svc, store = svc
     store.save(

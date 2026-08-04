@@ -324,3 +324,58 @@ async def test_handle_callback_exception_returns_message(svc):
             r = await svc.handle_callback(cb, "u")
             assert r.success is False
             assert "boom" in r.message
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_concurrent_no_duplicate_refresh(svc):
+    """并发刷新同一用户只应调用一次 OAuth refresh 接口（per-user 锁 + double-check）。
+
+    第一个协程持锁刷新后更新配置（refresh_if_needed 返回 False），第二个协程
+    持锁后 double-check 发现无需刷新，跳过。
+    """
+    import asyncio
+
+    call_count = 0
+
+    cfg_first = MagicMock()
+    # 首次检查：需要刷新
+    cfg_first.refresh_if_needed.return_value = True
+    cfg_first.refresh_token = "rt"
+    cfg_first.to_dict.return_value = {}
+
+    cfg_after = MagicMock()
+    # 刷新后检查：不再需要刷新（double-check 命中）
+    cfg_after.refresh_if_needed.return_value = False
+
+    configs = [cfg_first, cfg_after]
+
+    def _from_dict(data):
+        return configs.pop(0) if configs else cfg_after
+
+    async def _counting_refresh(refresh_token):
+        nonlocal call_count
+        call_count += 1
+        # 模拟网络延迟，让两个协程有机会并发
+        await asyncio.sleep(0.01)
+        return {"access_token": "new", "expires_in": 3600}
+
+    with patch("app.services.trakt.auth.database_manager") as db:
+        db.get_trakt_config.return_value = {"user_id": "u"}
+        db.save_trakt_config.return_value = True
+        with patch.object(TraktConfig, "from_dict", side_effect=_from_dict):
+            with patch.object(
+                svc,
+                "_refresh_access_token",
+                new_callable=AsyncMock,
+                side_effect=_counting_refresh,
+            ):
+                with patch.object(svc, "_calculate_expires_at", return_value=1):
+                    results = await asyncio.gather(
+                        svc.refresh_token("u"),
+                        svc.refresh_token("u"),
+                    )
+
+    # 并发下只应调用一次 OAuth refresh 接口
+    assert call_count == 1
+    # 两个协程都应成功返回
+    assert all(results)

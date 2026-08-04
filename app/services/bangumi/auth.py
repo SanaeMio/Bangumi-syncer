@@ -6,6 +6,7 @@ Bangumi 特有的令牌落地（写入数据库 ``bangumi_accounts`` 表）与�
 """
 
 import os
+import threading
 import time
 from typing import Optional
 
@@ -68,6 +69,43 @@ class BangumiAuthService:
 
     def __init__(self) -> None:
         self.oauth = get_oauth_service()
+        # per-section 刷新锁：避免并发请求重复刷新同一账号 token
+        self._refresh_locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
+
+    def _get_refresh_lock(self, section: str) -> threading.Lock:
+        """获取指定账号的刷新锁（per-section，避免不同账号互相阻塞）。"""
+        with self._locks_guard:
+            lock = self._refresh_locks.get(section)
+            if lock is None:
+                lock = threading.Lock()
+                self._refresh_locks[section] = lock
+            return lock
+
+    @staticmethod
+    def _is_expiring_soon(acc: dict) -> bool:
+        """判断账号 token 是否临近过期（提前 1 小时阈值）。"""
+        expires_at = acc.get("expires_at")
+        if not expires_at:
+            return False
+        try:
+            expires_at_ts = int(expires_at)
+        except (TypeError, ValueError):
+            return False
+        return expires_at_ts - int(time.time()) <= 3600
+
+    def _do_refresh(self, section: str, acc: dict) -> bool:
+        """实际执行 token 刷新（不含锁，由调用方持锁后调用）。"""
+        refresh_token = (acc.get("refresh_token") or "").strip()
+        if not refresh_token:
+            return False
+        try:
+            token = self.oauth.refresh_token("bangumi", refresh_token)
+        except Exception:
+            # 刷新失败（如 refresh_token 已失效），交由上层提示重新授权
+            return False
+        self._persist_token(token, section)
+        return True
 
     def get_app_credentials(self) -> tuple[str, str]:
         return get_app_credentials()
@@ -104,26 +142,28 @@ class BangumiAuthService:
         return token
 
     def refresh_active_token(self, section: Optional[str] = None) -> bool:
-        """刷新当前激活账号的访问令牌；成功返回 True。"""
+        """刷新当前激活账号的访问令牌；成功返回 True。
+
+        使用 per-section 锁确保同一账号同一时刻只有一个刷新操作，
+        避免并发请求重复调用 OAuth refresh 接口（可能触发限流）或
+        后刷新的覆盖先刷新的导致 token 失效。
+        """
         section = section or self._active_section_name()
         if not section:
             return False
-        acc = get_bangumi_account(section)
-        if not acc:
-            return False
-        refresh_token = (acc.get("refresh_token") or "").strip()
-        if not refresh_token:
-            return False
-        try:
-            token = self.oauth.refresh_token("bangumi", refresh_token)
-        except Exception:
-            # 刷新失败（如 refresh_token 已失效），交由上层提示重新授权
-            return False
-        self._persist_token(token, section)
-        return True
+        lock = self._get_refresh_lock(section)
+        with lock:
+            acc = get_bangumi_account(section)
+            if not acc:
+                return False
+            return self._do_refresh(section, acc)
 
     def refresh_active_token_if_needed(self, section: Optional[str] = None) -> bool:
-        """按需刷新：仅当采用 OAuth 且临近/已经过期时才刷新。"""
+        """按需刷新：仅当采用 OAuth 且临近/已经过期时才刷新。
+
+        持锁后 double-check 过期时间，避免并发场景下多个线程同时触发刷新
+        重复调用 OAuth 接口（可能触发限流）或后刷新的使先刷新的 token 失效。
+        """
         section = section or self._active_section_name()
         if not section:
             return False
@@ -132,17 +172,18 @@ class BangumiAuthService:
             return False
         if (acc.get("auth_method") or "manual") != "oauth":
             return False
-        expires_at = acc.get("expires_at")
-        if not expires_at:
+        if not self._is_expiring_soon(acc):
             return False
-        try:
-            expires_at_ts = int(expires_at)
-        except (TypeError, ValueError):
-            return False
-        # 提前 1 小时刷新
-        if expires_at_ts - int(time.time()) > 3600:
-            return False
-        return self.refresh_active_token(section)
+        # 临近过期：加锁后 double-check，避免并发重复刷新
+        lock = self._get_refresh_lock(section)
+        with lock:
+            acc = get_bangumi_account(section)
+            if not acc or (acc.get("auth_method") or "manual") != "oauth":
+                return False
+            if not self._is_expiring_soon(acc):
+                # 已被并发线程刷新，无需重复
+                return False
+            return self._do_refresh(section, acc)
 
     # ── 令牌落地与状态查询（Bangumi 特有，DB 为唯一真相源）────
     def _persist_token(self, token: dict, section: Optional[str] = None) -> None:
