@@ -307,37 +307,6 @@ class BangumiAuthService:
         acc = get_active_bangumi_account()
         return acc.get("section_name") if acc else None
 
-    def get_connection_status(self) -> dict:
-        """返回当前 Bangumi 连接状态（供前端展示，从 DB 读取）。"""
-        acc = get_active_bangumi_account()
-        if not acc:
-            return {
-                "connected": False,
-                "auth_method": "manual",
-                "username": "",
-                "user_id": "",
-                "nickname": "",
-                "avatar": "",
-                "oauth_url": "",
-                "callback_path": OAUTH_CALLBACK_PATH,
-                "has_token": False,
-            }
-        access_token = (acc.get("access_token") or "").strip()
-        expires_at = acc.get("expires_at")
-        expired = bool(expires_at) and int(time.time()) >= int(expires_at)
-        return {
-            "connected": bool(access_token),
-            "auth_method": (acc.get("auth_method") or "manual").strip(),
-            "username": (acc.get("username") or "").strip(),
-            "user_id": (acc.get("bangumi_user_id") or "").strip(),
-            "nickname": (acc.get("nickname") or "").strip(),
-            "avatar": (acc.get("avatar") or "").strip(),
-            "oauth_url": "",
-            "callback_path": OAUTH_CALLBACK_PATH,
-            "has_token": bool(access_token),
-            "expired": expired,
-        }
-
     def disconnect(self, section: Optional[str] = None) -> bool:
         """断开指定账号的 OAuth 关联：回退到手动模式，清除刷新令牌与过期时间。
 

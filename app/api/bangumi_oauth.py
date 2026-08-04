@@ -3,7 +3,6 @@
 - ``GET  /api/oauth/bangumi/start``    生成授权 URL（需登录，接受动态 redirect_uri）
 - ``GET  /api/oauth/bangumi/callback`` Bangumi 回调（用 code+state 换 token，免登录，靠 state 防 CSRF）
 - ``GET  /api/oauth/bangumi/close``    回调换 token 后关闭弹窗的小页面（含 postMessage 通知父窗口）
-- ``GET  /api/oauth/bangumi/status``   当前连接状态（需登录）
 - ``POST /api/oauth/bangumi/disconnect`` 断开 OAuth 关联（需登录）
 """
 
@@ -88,13 +87,6 @@ async def oauth_close(result: str = "success"):
         "</script>"
         "</body></html>"
     )
-
-
-@router.get("/status")
-async def oauth_status(request: Request):
-    if not await _require_user(request):
-        return JSONResponse(status_code=401, content={"detail": "未认证"})
-    return bangumi_auth_service.get_connection_status()
 
 
 @router.post("/disconnect")

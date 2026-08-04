@@ -121,30 +121,22 @@ class TestTraktAuthService:
         assert result is None
 
     def test_save_oauth_state(self):
-        """测试保存 OAuth 状态"""
+        """测试保存 OAuth 状态（通过 create_state 预置，extract 校验消费）"""
         service = TraktAuthService()
-        service._save_oauth_state("test_user", "test_state")
-        assert service.extract_user_id_from_state("test_state") == "test_user"
+        state = service.oauth.create_state("trakt", "test_user")
+        assert service.extract_user_id_from_state(state) == "test_user"
 
     def test_extract_user_id_from_state(self):
         """测试从 state 提取用户 ID"""
         service = TraktAuthService()
-        service._save_oauth_state("test_user", "test_state_123")
-        user_id = service.extract_user_id_from_state("test_state_123")
-        assert user_id == "test_user"
+        state = service.oauth.create_state("trakt", "test_user_123")
+        user_id = service.extract_user_id_from_state(state)
+        assert user_id == "test_user_123"
 
-    def test_verify_oauth_state(self):
-        """测试验证 OAuth 状态"""
+    def test_extract_user_id_from_state_invalid(self):
+        """测试无效 state 返回 None"""
         service = TraktAuthService()
-        service._save_oauth_state("test_user", "test_state_456")
-        result = service._verify_oauth_state("test_user", "test_state_456")
-        assert result is True
-
-    def test_verify_oauth_state_invalid(self):
-        """测试验证无效 OAuth 状态"""
-        service = TraktAuthService()
-        result = service._verify_oauth_state("test_user", "invalid_state")
-        assert result is False
+        assert service.extract_user_id_from_state("invalid_state") is None
 
     def test_calculate_expires_at(self):
         """测试计算过期时间"""

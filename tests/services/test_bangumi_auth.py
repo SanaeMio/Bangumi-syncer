@@ -234,32 +234,6 @@ def test_refresh_active_token_if_needed_only_for_oauth(svc):
         assert svc.refresh_active_token_if_needed() is True
 
 
-def test_connection_status(svc):
-    svc, store = svc
-    # 无账号：未连接
-    assert svc.get_connection_status()["connected"] is False
-
-    # 有 oauth 账号：已连接
-    store.save(
-        {
-            "section_name": "bangumi",
-            "username": "u",
-            "auth_method": "oauth",
-            "access_token": "AT",
-            "bangumi_user_id": "123",
-            "expires_at": 9999999999,
-            "media_server_usernames": [],
-            "private": False,
-            "is_active": True,
-        }
-    )
-    status = svc.get_connection_status()
-    assert status["connected"] is True
-    assert status["username"] == "u"
-    assert status["user_id"] == "123"
-    assert status["expired"] is False
-
-
 def test_refresh_if_needed_concurrent_no_duplicate_refresh(svc):
     """并发场景下 refresh_active_token_if_needed 只应刷新一次。
 

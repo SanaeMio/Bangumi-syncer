@@ -115,26 +115,22 @@ class TestTraktAuthValidateAndOAuth:
 
     def test_extract_user_id_from_state(self, svc):
         assert svc.extract_user_id_from_state("nope") is None
-        svc._save_oauth_state("bob", "st1")
-        assert svc.extract_user_id_from_state("st1") == "bob"
+        state = svc.oauth.create_state("trakt", "bob")
+        assert svc.extract_user_id_from_state(state) == "bob"
 
-    def test_verify_oauth_state_branches(self, svc):
-        assert svc._verify_oauth_state("u", "s") is False
-        svc._save_oauth_state("u", "s")
-        assert svc._verify_oauth_state("u", "s") is True
-        # 校验即消费：再次校验同一 state 失败
-        assert svc._verify_oauth_state("u", "s") is False
-        # 不同 user_id 不匹配（已消费，校验失败）
-        svc._save_oauth_state("u2", "s2")
-        assert svc._verify_oauth_state("other", "s2") is False
+    def test_extract_user_id_double_consume_returns_none(self, svc):
+        """校验即消费：同一 state 第二次 extract 返回 None"""
+        state = svc.oauth.create_state("trakt", "u")
+        assert svc.extract_user_id_from_state(state) == "u"
+        assert svc.extract_user_id_from_state(state) is None
 
     def test_cleanup_expired_states(self, svc):
-        svc._save_oauth_state("a", "a:s")
+        state = svc.oauth.create_state("trakt", "a")
         # 注入一个已过期的 state
         _dbm.save_oauth_state("old", "x", 1, provider="trakt")
         deleted = svc._cleanup_expired_states()
         assert deleted >= 1
-        assert svc.extract_user_id_from_state("a:s") == "a"  # 未过期保留
+        assert svc.extract_user_id_from_state(state) == "a"  # 未过期保留
         assert svc.extract_user_id_from_state("old") is None  # 已过期清理
 
     def test_get_user_trakt_config(self, svc):

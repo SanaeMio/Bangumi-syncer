@@ -597,14 +597,6 @@
   })
 
   // ── Bangumi OAuth ──────────────────────────────────────────
-  function escBangumiOAuth(s) {
-    return String(s == null ? '' : s).replace(
-      /[&<>"']/g,
-      (c) =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]),
-    )
-  }
-
   // OAuth 弹窗回调成功后通过 postMessage 通知父窗口（对齐
   // jellyfin-plugin-bangumi 方案）；父窗口监听消息刷新账号列表
   function handleBangumiOAuthMessage(event) {

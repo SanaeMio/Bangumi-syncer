@@ -245,20 +245,10 @@ class TraktAuthService:
         return int(datetime.now().timestamp()) + expires_in - buffer_seconds
 
     # ── CSRF state（统一落库，由通用 OAuth 服务管理）────────────
-    def _save_oauth_state(self, user_id: str, state: str) -> None:
-        """保存 OAuth state（绑定到 user_id，带 TTL）。"""
-        expires_at = int(time.time()) + 600
-        database_manager.save_oauth_state(state, user_id, expires_at, provider="trakt")
-
     def extract_user_id_from_state(self, state: str) -> Optional[str]:
         """从 state 中提取用户ID（校验并消费）。"""
         result = self.oauth.consume_state("trakt", state)
         return result["account_key"] if result else None
-
-    def _verify_oauth_state(self, user_id: str, state: str) -> bool:
-        """验证 OAuth state 是否匹配 user_id（校验即消费）。"""
-        result = self.oauth.consume_state("trakt", state)
-        return result is not None and result["account_key"] == user_id
 
     def _cleanup_expired_states(self, max_age: int = 300) -> int:
         """清理过期的 state，返回删除行数。"""
