@@ -2,13 +2,19 @@
 
 授权 URL 构建、令牌交换/刷新、CSRF state 管理统一由
 ``app.services.oauth`` 的通用 ``OAuthService`` 处理；本模块仅负责
-Bangumi 特有的令牌落地（写入 INI / 后续数据库）与连接状态查询。
+Bangumi 特有的令牌落地（写入数据库 ``bangumi_accounts`` 表）与连接状态查询。
 """
 
 import os
 import time
 from typing import Optional
 
+from app.core.accounts import (
+    get_active_bangumi_account,
+    get_bangumi_account,
+    save_bangumi_account,
+    set_active_bangumi_account,
+)
 from app.core.config import config_manager
 from app.core.public_url import get_public_base_path
 from app.services.oauth import get_oauth_service, get_provider
@@ -102,9 +108,10 @@ class BangumiAuthService:
         section = section or self._active_section_name()
         if not section:
             return False
-        refresh_token = (
-            config_manager.get(section, "refresh_token", fallback="") or ""
-        ).strip()
+        acc = get_bangumi_account(section)
+        if not acc:
+            return False
+        refresh_token = (acc.get("refresh_token") or "").strip()
         if not refresh_token:
             return False
         try:
@@ -120,75 +127,87 @@ class BangumiAuthService:
         section = section or self._active_section_name()
         if not section:
             return False
-        auth_method = (
-            config_manager.get(section, "auth_method", fallback="manual") or "manual"
-        ).strip()
-        if auth_method != "oauth":
+        acc = get_bangumi_account(section)
+        if not acc:
             return False
-        expires_at = (
-            config_manager.get(section, "expires_at", fallback="") or ""
-        ).strip()
+        if (acc.get("auth_method") or "manual") != "oauth":
+            return False
+        expires_at = acc.get("expires_at")
         if not expires_at:
             return False
         try:
             expires_at_ts = int(expires_at)
-        except ValueError:
+        except (TypeError, ValueError):
             return False
         # 提前 1 小时刷新
         if expires_at_ts - int(time.time()) > 3600:
             return False
         return self.refresh_active_token(section)
 
-    # ── 令牌落地与状态查询（Bangumi 特有）──────────────────────
+    # ── 令牌落地与状态查询（Bangumi 特有，DB 为唯一真相源）────
     def _persist_token(self, token: dict, section: Optional[str] = None) -> None:
-        """将令牌写入配置（单用户为 [bangumi]，多用户为对应 [bangumi-*]）。"""
-        section = section or self._active_section_name()
-        if not section:
-            return
+        """将令牌写入数据库（upsert 账号；授权成功后激活该账号）。
+
+        若指定 ``section`` 不存在则新建账号（保留 token 中携带的身份字段），
+        已存在则合并 token 字段后 upsert，保留原 ``media_server_usernames`` 等配置。
+        """
+        section = section or self._active_section_name() or "bangumi"
+
         access_token = token.get("access_token")
         refresh_token = token.get("refresh_token")
         expires_in = int(token.get("expires_in", 0) or 0)
         expires_at = int(time.time()) + expires_in if expires_in else 0
-        config_manager.set(section, "access_token", access_token or "")
-        config_manager.set(section, "refresh_token", refresh_token or "")
-        config_manager.set(section, "auth_method", "oauth")
-        if expires_at:
-            config_manager.set(section, "expires_at", str(expires_at))
-        # Bangumi 令牌响应直接携带身份字段，无需二次请求
-        username = token.get("username") or token.get("user_id")
-        if username:
-            config_manager.set(section, "username", username)
-        user_id = token.get("user_id")
-        if user_id is not None:
-            config_manager.set(section, "user_id", str(user_id))
-        nickname = token.get("nickname")
-        if nickname:
-            config_manager.set(section, "nickname", nickname)
+
+        existing = get_bangumi_account(section) or {}
+
+        # 处理 avatar（Bangumi OAuth 响应为 dict，回写时取 large/medium）
         avatar = token.get("avatar")
         if isinstance(avatar, dict):
             avatar_url = avatar.get("large") or avatar.get("medium") or ""
-            if avatar_url:
-                config_manager.set(section, "avatar", avatar_url)
+        elif isinstance(avatar, str):
+            avatar_url = avatar
+        else:
+            avatar_url = existing.get("avatar", "")
+
+        # Bangumi OAuth 令牌响应直接携带 user_id / username / nickname
+        user_id = token.get("user_id")
+        username = (
+            token.get("username")
+            or (str(user_id) if user_id is not None else "")
+            or existing.get("username", "")
+        )
+
+        account = {
+            "section_name": section,
+            "username": username,
+            "media_server_usernames": existing.get("media_server_usernames") or [],
+            "auth_method": "oauth",
+            "access_token": access_token or "",
+            "refresh_token": refresh_token or "",
+            "token_type": token.get("token_type") or "Bearer",
+            "expires_at": expires_at or None,
+            "bangumi_user_id": (
+                str(user_id)
+                if user_id is not None
+                else existing.get("bangumi_user_id", "")
+            ),
+            "nickname": token.get("nickname") or existing.get("nickname") or "",
+            "avatar": avatar_url,
+            "private": bool(existing.get("private") or False),
+            "is_active": True,
+        }
+        save_bangumi_account(account)
+        set_active_bangumi_account(section)
 
     def _active_section_name(self) -> Optional[str]:
-        """返回当前激活 Bangumi 账号配置段名。"""
-        sync_mode = (
-            (config_manager.get("sync", "mode", fallback="") or "").strip().lower()
-        )
-        if sync_mode == "single":
-            return "bangumi"
-        # 多用户：从首个账号映射推断
-        mappings = config_manager.get_user_mappings()
-        for mapping in mappings:
-            bgm = mapping.get("bangumi")
-            if bgm:
-                return bgm
-        return None
+        """返回当前激活 Bangumi 账号配置段名（DB 为唯一真相源）。"""
+        acc = get_active_bangumi_account()
+        return acc.get("section_name") if acc else None
 
     def get_connection_status(self) -> dict:
-        """返回当前 Bangumi 连接状态（供前端展示）。"""
-        section = self._active_section_name()
-        if not section:
+        """返回当前 Bangumi 连接状态（供前端展示，从 DB 读取）。"""
+        acc = get_active_bangumi_account()
+        if not acc:
             return {
                 "connected": False,
                 "auth_method": "manual",
@@ -200,27 +219,16 @@ class BangumiAuthService:
                 "callback_path": OAUTH_CALLBACK_PATH,
                 "has_token": False,
             }
-        auth_method = (
-            config_manager.get(section, "auth_method", fallback="manual") or "manual"
-        ).strip()
-        access_token = (
-            config_manager.get(section, "access_token", fallback="") or ""
-        ).strip()
-        username = (config_manager.get(section, "username", fallback="") or "").strip()
-        user_id = (config_manager.get(section, "user_id", fallback="") or "").strip()
-        nickname = (config_manager.get(section, "nickname", fallback="") or "").strip()
-        avatar = (config_manager.get(section, "avatar", fallback="") or "").strip()
-        expires_at = (
-            config_manager.get(section, "expires_at", fallback="") or ""
-        ).strip()
+        access_token = (acc.get("access_token") or "").strip()
+        expires_at = acc.get("expires_at")
         expired = bool(expires_at) and int(time.time()) >= int(expires_at)
         return {
             "connected": bool(access_token),
-            "auth_method": auth_method,
-            "username": username,
-            "user_id": user_id,
-            "nickname": nickname,
-            "avatar": avatar,
+            "auth_method": (acc.get("auth_method") or "manual").strip(),
+            "username": (acc.get("username") or "").strip(),
+            "user_id": (acc.get("bangumi_user_id") or "").strip(),
+            "nickname": (acc.get("nickname") or "").strip(),
+            "avatar": (acc.get("avatar") or "").strip(),
             "oauth_url": "",
             "callback_path": OAUTH_CALLBACK_PATH,
             "has_token": bool(access_token),
@@ -232,9 +240,13 @@ class BangumiAuthService:
         section = self._active_section_name()
         if not section:
             return
-        config_manager.set(section, "auth_method", "manual")
-        config_manager.set(section, "refresh_token", "")
-        config_manager.set(section, "expires_at", "")
+        acc = get_bangumi_account(section)
+        if not acc:
+            return
+        acc["auth_method"] = "manual"
+        acc["refresh_token"] = ""
+        acc["expires_at"] = None
+        save_bangumi_account(acc)
 
 
 # 模块级单例（供 API 路由使用）
