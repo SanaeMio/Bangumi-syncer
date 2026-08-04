@@ -36,6 +36,20 @@
                 </div>
                 <h2>授权成功！</h2>
                 <p class="text-muted">Trakt.tv 授权已完成。</p>
+                {% if auto_added %}
+                    <div class="alert alert-warning mt-3 text-start" role="alert">
+                        <p class="mb-1">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <strong>已自动追加媒体服务器用户名</strong>
+                        </p>
+                        <p class="mb-1 small">
+                            为确保该用户的 Trakt 同步不被用户名过滤拦截，已自动将用户名
+                            <code>{{ auto_added }}</code> 追加到激活 Bangumi 账号
+                            <code>{{ account }}</code> 的「媒体服务器用户名」列表。
+                        </p>
+                        <p class="mb-0 small text-muted">如不需此行为，可在配置页对应账号中手动移除该用户名。</p>
+                    </div>
+                {% endif %}
                 <p class="text-muted">现在可以关闭此窗口并返回配置页面。</p>
                 <div class="mt-4">
                     <button id="close-button" class="btn btn-primary">
