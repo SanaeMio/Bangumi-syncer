@@ -47,9 +47,10 @@ def _to_json_list(value) -> str:
     if value is None:
         return "[]"
     if isinstance(value, str):
-        # 兼容 INI 中可能的逗号分隔写法
-        if "," in value:
-            return json.dumps([v.strip() for v in value.split(",") if v.strip()])
+        # 兼容 INI 中可能的逗号分隔写法（含中文逗号，与 parse_media_server_username_value 对齐）
+        normalized = value.replace("，", ",")
+        if "," in normalized:
+            return json.dumps([v.strip() for v in normalized.split(",") if v.strip()])
         return json.dumps([value]) if value.strip() else "[]"
     if isinstance(value, (list, tuple)):
         return json.dumps(list(value))

@@ -45,12 +45,18 @@ def _collect_ini_accounts() -> list[dict]:
     for section, cfg in config_manager.get_bangumi_configs().items():
         accounts.append(_cfg_to_account(section, cfg))
 
-    # 单用户段 [bangumi]（仅当真实存在且有 username 时）
+    # 单用户段 [bangumi]（仅当真实存在且有 username + access_token 时，
+    # 与多用户段 get_bangumi_configs 的过滤条件对齐，避免迁入"半配置"幽灵账号）
     if config_manager.get_config_parser().has_section(_BANGUMI_SECTION):
         username = config_manager.get(_BANGUMI_SECTION, "username", fallback="") or ""
-        if username.strip() and _BANGUMI_SECTION not in {
-            a["section_name"] for a in accounts
-        }:
+        access_token = (
+            config_manager.get(_BANGUMI_SECTION, "access_token", fallback="") or ""
+        )
+        if (
+            username.strip()
+            and access_token.strip()
+            and _BANGUMI_SECTION not in {a["section_name"] for a in accounts}
+        ):
             raw = {
                 "username": username,
                 "media_server_username": config_manager.get(
@@ -59,9 +65,7 @@ def _collect_ini_accounts() -> list[dict]:
                 "auth_method": config_manager.get(
                     _BANGUMI_SECTION, "auth_method", fallback="manual"
                 ),
-                "access_token": config_manager.get(
-                    _BANGUMI_SECTION, "access_token", fallback=""
-                ),
+                "access_token": access_token,
                 "refresh_token": config_manager.get(
                     _BANGUMI_SECTION, "refresh_token", fallback=""
                 ),
