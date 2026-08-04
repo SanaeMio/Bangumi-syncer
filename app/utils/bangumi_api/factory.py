@@ -45,8 +45,15 @@ def build_bangumi_api_from_active_config(
 
             # 指定 section 时按 section 续期；否则由 auth 服务自行取激活账号
             bangumi_auth_service.refresh_active_token_if_needed(section_name)
-        except Exception:
-            pass
+        except Exception as e:
+            # 续期失败不应阻断 api 构造（上层会用旧 token 尝试，失败时再提示重授权），
+            # 但必须记录日志，避免异常被静默吞没导致排障困难
+            from app.core.logging import logger
+
+            logger.warning(
+                f"build_bangumi_api: 刷新账号 '{section_name or '激活'}' 的 token 失败: {e}，"
+                f"将使用现有 token 继续（若已过期，上层调用可能返回 401）"
+            )
         # 续期可能更新了 DB，重新读取一次
         if section_name:
             cfg = get_bangumi_config_by_section(section_name) or cfg

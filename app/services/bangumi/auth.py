@@ -101,8 +101,14 @@ class BangumiAuthService:
             return False
         try:
             token = self.oauth.refresh_token("bangumi", refresh_token)
-        except Exception:
-            # 刷新失败（如 refresh_token 已失效），交由上层提示重新授权
+        except Exception as e:
+            # 刷新失败（如 refresh_token 已失效），交由上层提示重新授权；
+            # 记录日志避免异常被静默吞没导致排障困难
+            from app.core.logging import logger
+
+            logger.warning(
+                f"刷新账号 '{section}' 的 Bangumi token 失败: {e}，可能需要重新授权"
+            )
             return False
         self._persist_token(token, section)
         return True
