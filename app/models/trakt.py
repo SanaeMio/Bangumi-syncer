@@ -159,7 +159,9 @@ class TraktConfigResponse(BaseModel):
     is_connected: bool = Field(..., description="是否已连接 Trakt")
     token_expires_at: Optional[int] = Field(None, description="令牌过期时间")
     client_id: str = Field("", description="Trakt Client ID")
-    client_secret: str = Field("", description="Trakt Client Secret")
+    client_secret_configured: bool = Field(
+        False, description="Trakt Client Secret 是否已配置（不回传明文）"
+    )
     redirect_uri: str = Field("", description="OAuth 回调 URL")
 
 

@@ -156,7 +156,7 @@ async def get_trakt_config(
                 is_connected=False,
                 token_expires_at=None,
                 client_id=trakt_api_config.get("client_id", ""),
-                client_secret=trakt_api_config.get("client_secret", ""),
+                client_secret_configured=bool(trakt_api_config.get("client_secret")),
                 redirect_uri=trakt_api_config.get(
                     "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
                 ),
@@ -174,7 +174,7 @@ async def get_trakt_config(
             is_connected=is_connected,
             token_expires_at=config.expires_at,
             client_id=trakt_api_config.get("client_id", ""),
-            client_secret=trakt_api_config.get("client_secret", ""),
+            client_secret_configured=bool(trakt_api_config.get("client_secret")),
             redirect_uri=trakt_api_config.get(
                 "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
             ),
@@ -248,7 +248,7 @@ async def update_trakt_config(
             is_connected=is_connected,
             token_expires_at=config.expires_at,
             client_id=trakt_api_config.get("client_id", ""),
-            client_secret=trakt_api_config.get("client_secret", ""),
+            client_secret_configured=bool(trakt_api_config.get("client_secret")),
             redirect_uri=trakt_api_config.get(
                 "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
             ),

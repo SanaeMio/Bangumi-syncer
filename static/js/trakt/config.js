@@ -243,7 +243,11 @@ class TraktConfigPage {
             syncFilterEnabled.checked = config.sync_filter_enabled !== false;
         }
         clientId.value = config.client_id || '';
-        clientSecret.value = config.client_secret || '';
+        // 不回传 client_secret 明文，仅根据是否已配置调整 placeholder 提示
+        clientSecret.value = '';
+        clientSecret.placeholder = config.client_secret_configured
+            ? '已配置，留空则不修改'
+            : '从 trakt.tv/oauth/applications 获取';
         redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
     }
 
