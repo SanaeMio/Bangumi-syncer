@@ -15,6 +15,7 @@ order: 100
 | [⏰ 调度器框架](./scheduler)            | `BaseScheduler` 继承、`SchedulerRegistry` 注册、cron 与时区   |
 | [⚙️ 配置系统](./config)                 | `ConfigManager`、`SectionMeta` 注册表、`FieldMeta` 布尔语义   |
 | [🗄️ 数据库仓储层](./database)           | SQLite 表结构、Repository 模式、迁移机制                      |
+| [🔐 OAuth 集成](./oauth)                | `OAuthProvider` 注册表、`OAuthService` 通用流程、如何接入新提供方 |
 | [🔔 通知系统](./notifications)          | `NotificationChannel` 抽象、如何新增通知渠道                  |
 | [🧪 测试与 CI](./testing)               | pytest 组织、HTTP mock、CI 工作流                             |
 | [📦 开发环境](./environment)            | uv 安装、代码风格、依赖管理、文档协作                         |

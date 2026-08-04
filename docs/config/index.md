@@ -40,13 +40,17 @@ Web 界面背后对应一个 `config.ini` 文件（INI 格式），首次运行�
 
 | 段名 | 用途 |
 | --- | --- |
-| `[bangumi]` / `[bangumi-{user}]` | Bangumi 账号、Access Token（多账号用多段） |
-| `[sync]` | 同步模式、屏蔽关键词、评分下限 |
+| `[bangumi-oauth]` | Bangumi OAuth 应用凭证（Client ID / Secret，已内置可覆盖） |
+| `[sync]` | 同步行为、屏蔽关键词、评分下限 |
 | `[emby]` / `[jellyfin]` / `[plex]` | 各媒体服务器驱动配置 |
 | `[feiniu]` / `[fongmi]` / `[trakt]` | 拉取型驱动配置 |
 | `[notify-webhook-{n}]` / `[notify-email-{n}]` 等 | 通知渠道实例（可多实例） |
 | `[archive]` / `[replay]` | Archive 与 Replay 配置 |
 | `[scheduler]` | 调度器时区、任务超时 |
 | `[summary-{name}]` | AI 追番总结任务 |
+
+::: tip 账号存储位置
+Bangumi 账号（用户名、访问令牌、OAuth 令牌等）存储在 SQLite 数据库 `data/sync_records.db` 的 `bangumi_accounts` 表中，不再写入 `config.ini`。令牌加密存储，数据库文件泄露也不会暴露明文 token。
+:::
 
 具体字段含义请查看对应文档。
