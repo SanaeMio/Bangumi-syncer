@@ -117,12 +117,14 @@ def migrate_ini_accounts_to_db() -> int:
         database_manager.save_bangumi_account(acc)
         migrated += 1
 
-    # 若已有账号但无激活项，默认激活首个（旧单用户段或首个映射段）
+    # 若已有账号但无激活项，默认激活首个（旧单用户段或首个映射段）。
+    # 注意：get_active_bangumi_account 在无 is_active=1 时会回退返回首个账号，
+    # 因此不能用 `active is None` 判断，必须直接检查 is_active 标记，
+    # 否则 set_active 永不执行，DB 中所有账号 is_active=0。
     if database_manager.count_bangumi_accounts() > 0:
-        active = database_manager.get_active_bangumi_account()
-        if active is None:
-            first = database_manager.list_bangumi_accounts()[0]
-            database_manager.set_active_bangumi_account(first["section_name"])
+        accounts = database_manager.list_bangumi_accounts()
+        if not any(a.get("is_active") for a in accounts):
+            database_manager.set_active_bangumi_account(accounts[0]["section_name"])
     return migrated
 
 
