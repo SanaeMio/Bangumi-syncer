@@ -222,41 +222,37 @@ async def test_handle_callback_branches(svc):
         r = await svc.handle_callback(cb, "u")
         assert r.success is False
 
-    with patch.object(svc, "_validate_config", return_value=True):
-        with patch.object(svc, "_verify_oauth_state", return_value=False):
-            r = await svc.handle_callback(cb, "u")
-            assert "State" in r.message
+    # state 校验已由 API 回调入口（extract_user_id_from_state）完成，
+    # handle_callback 不再二次消费 state，故无 "State 验证失败" 分支
 
     with patch.object(svc, "_validate_config", return_value=True):
-        with patch.object(svc, "_verify_oauth_state", return_value=True):
-            with patch.object(
-                svc,
-                "_exchange_code_for_token",
-                new_callable=AsyncMock,
-                return_value=None,
-            ):
+        with patch.object(
+            svc,
+            "_exchange_code_for_token",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            r = await svc.handle_callback(cb, "u")
+            assert r.success is False
+
+    with patch.object(svc, "_validate_config", return_value=True):
+        with patch.object(
+            svc,
+            "_exchange_code_for_token",
+            new_callable=AsyncMock,
+            return_value={
+                "access_token": "a",
+                "refresh_token": "r",
+                "expires_in": 3600,
+            },
+        ):
+            with patch("app.services.trakt.auth.database_manager") as db:
+                db.save_trakt_config.return_value = False
                 r = await svc.handle_callback(cb, "u")
                 assert r.success is False
-
-    with patch.object(svc, "_validate_config", return_value=True):
-        with patch.object(svc, "_verify_oauth_state", return_value=True):
-            with patch.object(
-                svc,
-                "_exchange_code_for_token",
-                new_callable=AsyncMock,
-                return_value={
-                    "access_token": "a",
-                    "refresh_token": "r",
-                    "expires_in": 3600,
-                },
-            ):
-                with patch("app.services.trakt.auth.database_manager") as db:
-                    db.save_trakt_config.return_value = False
-                    r = await svc.handle_callback(cb, "u")
-                    assert r.success is False
-                    db.save_trakt_config.return_value = True
-                    r = await svc.handle_callback(cb, "u")
-                    assert r.success is True
+                db.save_trakt_config.return_value = True
+                r = await svc.handle_callback(cb, "u")
+                assert r.success is True
 
 
 @pytest.mark.asyncio
@@ -319,7 +315,12 @@ async def test_refresh_token_branches(svc):
 async def test_handle_callback_exception_returns_message(svc):
     cb = TraktCallbackRequest(code="c", state="st")
     with patch.object(svc, "_validate_config", return_value=True):
-        with patch.object(svc, "_verify_oauth_state", side_effect=RuntimeError("boom")):
+        with patch.object(
+            svc,
+            "_exchange_code_for_token",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("boom"),
+        ):
             r = await svc.handle_callback(cb, "u")
             assert r.success is False
             assert "boom" in r.message

@@ -72,7 +72,13 @@ async def trakt_auth_callback(
                 "/trakt/auth?status=error&message=" + quote("缺少 state 参数", safe="")
             )
 
-        user_id = trakt_auth_service.extract_user_id_from_state(state) or "default_user"
+        user_id = trakt_auth_service.extract_user_id_from_state(state)
+        if not user_id:
+            # state 无效/过期/已消费：直接拒绝，避免用占位用户写库
+            return redirect_public(
+                "/trakt/auth?status=error&message="
+                + quote("state 无效或已过期，请重新发起授权", safe="")
+            )
 
         callback_request = TraktCallbackRequest(code=code, state=state or "")
         callback_response = await trakt_auth_service.handle_callback(

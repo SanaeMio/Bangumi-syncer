@@ -96,15 +96,14 @@ class TraktAuthService:
     async def handle_callback(
         self, callback_request: TraktCallbackRequest, user_id: str
     ) -> TraktCallbackResponse:
-        """处理 OAuth 回调，使用授权码获取访问令牌"""
+        """处理 OAuth 回调，使用授权码获取访问令牌。
+
+        注意：state 校验由调用方（API 回调入口）通过 ``extract_user_id_from_state``
+        完成消费，此处不再二次消费 state，避免重复 DELETE 导致校验失败。
+        """
         try:
             if not self._validate_config():
                 return TraktCallbackResponse(success=False, message="Trakt 配置无效")
-
-            # 验证 state 参数（已落库，校验即消费）
-            state = callback_request.state
-            if not self._verify_oauth_state(user_id, state):
-                return TraktCallbackResponse(success=False, message="State 验证失败")
 
             # 使用授权码交换访问令牌
             token_data = await self._exchange_code_for_token(callback_request.code)
