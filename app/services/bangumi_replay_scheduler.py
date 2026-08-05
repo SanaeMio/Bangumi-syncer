@@ -157,10 +157,12 @@ class BangumiReplayScheduler(BaseScheduler):
         创建临时 BangumiApi 实例发请求；若无可用账号配置则跳过本轮。
         """
         try:
+            # DB 为唯一真相源：取激活账号配置（与 sync_service._get_bangumi_config_for_user 一致）
+            from app.core.accounts import get_active_bangumi_config
+
             from ..utils.bangumi_api import BangumiApi
 
-            # 按 sync.mode 读取账号配置（与 sync_service._get_bangumi_config_for_user 一致）
-            cfg = config_manager.get_active_bangumi_config()
+            cfg = get_active_bangumi_config()
             if not cfg or not cfg.get("username") or not cfg.get("access_token"):
                 logger.debug("📚 无可用账号配置用于探测 API")
                 return False

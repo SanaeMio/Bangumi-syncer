@@ -34,7 +34,18 @@ def mock_config():
         mock_cm.get_single_mode_media_usernames.return_value = ["testuser"]
         mock_cm.get_user_mappings.return_value = {}
         mock_cm.get_bangumi_configs.return_value = {}
-        yield mock_cm
+
+        with (
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["testuser"],
+            ),
+        ):
+            yield mock_cm
 
 
 @pytest.fixture
@@ -374,7 +385,17 @@ def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
     service = SyncService()
     mock_instance = mock_bangumi_api.return_value
 
-    with patch("app.services.sync_service.config_manager") as mock_cfg:
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
 
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "movie_mark_subject_completed":
@@ -426,7 +447,17 @@ def test_sync_custom_item_anime_completes_collection(mock_database, mock_bangumi
     mock_instance.get_subject_collection.return_value = {"type": 3, "ep_status": 12}
     mock_instance.get_subject.return_value = {"eps": 12}
 
-    with patch("app.services.sync_service.config_manager") as mock_cfg:
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
 
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "anime_mark_subject_completed":
@@ -554,7 +585,17 @@ def test_sync_custom_item_blocked_keyword(mock_config, mock_database):
             return "blocked"
         return fallback or ""
 
-    with patch("app.services.sync_service.config_manager") as cm:
+    with (
+        patch("app.services.sync_service.config_manager") as cm,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
         cm.get.side_effect = get_side_effect
         cm.get_single_mode_media_usernames.return_value = ["testuser"]
         cm.get_user_mappings.return_value = {}
@@ -575,7 +616,17 @@ def test_sync_custom_item_no_permission(mock_config, mock_database):
             return "single"
         return fallback
 
-    with patch("app.services.sync_service.config_manager") as cm:
+    with (
+        patch("app.services.sync_service.config_manager") as cm,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["other_user"],
+        ),
+    ):
         cm.get.side_effect = get_side_effect
         cm.get_single_mode_media_usernames.return_value = ["other_user"]
         cm.get_user_mappings.return_value = {}
@@ -1449,6 +1500,124 @@ def test_find_subject_id_api_hit_keeps_stage_as_api_search():
         # 不应出现 stage="archive"
         archive_steps = [s for s in trace.steps if s.stage == "archive"]
         assert len(archive_steps) == 0
+
+
+def test_find_subject_id_low_confidence_sediments_to_pending():
+    """功能三：API 匹配相似度低于 match_confidence_threshold 时沉淀待审，不自动采用。"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            if section == "sync" and key == "match_confidence_threshold":
+                return 0.6
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 67890,
+                "name": "API番剧",
+                "name_cn": "API番剧",
+                "platform": "TV",
+                "date": "2024-02-20",
+            }
+        ]
+        bgm.last_hit_source = ""
+        # 控制真实相似度为 0.5（低于阈值 0.6），模拟把握不大的模糊匹配
+        bgm.title_diff_ratio.return_value = 0.5
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, detail = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="API番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-02-20",
+                        ),
+                        trace=trace,
+                    )
+
+        # 未自动采用
+        assert sid is None
+        assert "confidence" in detail or "阈值" in detail
+        # 写回真实相似度（而非固定 0.9）
+        assert trace.final_score == 0.5
+        api_steps = [s for s in trace.steps if s.stage == "api_search"]
+        assert api_steps[0].status == "low_confidence"
+        # 候选已收集，可供下游沉淀到待审队列
+        assert len(service._collect_candidates_from_trace(trace)) > 0
+
+
+def test_find_subject_id_above_threshold_auto_accepts():
+    """功能三：API 匹配相似度 >= 阈值时自动采用，并写回真实相似度。"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            if section == "sync" and key == "match_confidence_threshold":
+                return 0.6
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 67890,
+                "name": "API番剧",
+                "name_cn": "API番剧",
+                "platform": "TV",
+                "date": "2024-02-20",
+            }
+        ]
+        bgm.last_hit_source = ""
+        # 真实相似度为 0.9（高于阈值 0.6）
+        bgm.title_diff_ratio.return_value = 0.9
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, detail = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="API番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-02-20",
+                        ),
+                        trace=trace,
+                    )
+
+        assert str(sid) == "67890"
+        assert trace.final_score == 0.9
+        assert trace.final_match_method == "api_search"
+        api_steps = [s for s in trace.steps if s.stage == "api_search"]
+        assert api_steps[0].status == "hit"
 
 
 def test_sync_custom_item_no_bgm_api_after_find_subject():

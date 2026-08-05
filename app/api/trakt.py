@@ -72,7 +72,13 @@ async def trakt_auth_callback(
                 "/trakt/auth?status=error&message=" + quote("缺少 state 参数", safe="")
             )
 
-        user_id = trakt_auth_service.extract_user_id_from_state(state) or "default_user"
+        user_id = trakt_auth_service.extract_user_id_from_state(state)
+        if not user_id:
+            # state 无效/过期/已消费：直接拒绝，避免用占位用户写库
+            return redirect_public(
+                "/trakt/auth?status=error&message="
+                + quote("state 无效或已过期，请重新发起授权", safe="")
+            )
 
         callback_request = TraktCallbackRequest(code=code, state=state or "")
         callback_response = await trakt_auth_service.handle_callback(
@@ -80,23 +86,40 @@ async def trakt_auth_callback(
         )
 
         if callback_response.success:
-            # 授权成功后自动将用户 ID 写入 media_server_username，
-            # 避免因漏填导致 Trakt 同步被用户名过滤拦截
-            existing = config_manager.get(
-                "bangumi", "media_server_username", fallback=""
-            ).strip()
-            if not existing:
-                config_manager.set("bangumi", "media_server_username", user_id)
-            else:
-                existing_users = {u.strip() for u in existing.split(",") if u.strip()}
-                if user_id not in existing_users:
-                    config_manager.set(
-                        "bangumi",
-                        "media_server_username",
-                        f"{existing},{user_id}",
+            # 授权成功后自动将 user_id（应用登录用户名，作为 Trakt 同步隔离标识）
+            # 追加到激活账号的 media_server_usernames，避免因漏填导致 Trakt 同步
+            # 被用户名过滤拦截（DB 为唯一真相源）。这是媒体驱动正常行为，需明显提示。
+            from ..core.accounts import (
+                get_active_bangumi_account,
+                save_bangumi_account,
+            )
+
+            acc = get_active_bangumi_account()
+            auto_added_user = ""
+            target_account = ""
+            if acc:
+                existing_names = list(acc.get("media_server_usernames") or [])
+                if user_id not in existing_names:
+                    existing_names.append(user_id)
+                    acc["media_server_usernames"] = existing_names
+                    save_bangumi_account(acc)
+                    auto_added_user = user_id
+                    target_account = acc.get("section_name", "")
+                    logger.info(
+                        f"Trakt 授权成功：已自动将用户名 '{user_id}' 追加到 "
+                        f"激活 Bangumi 账号 '{target_account}' 的 media_server_usernames，"
+                        f"确保该用户的 Trakt 同步不被过滤拦截。"
                     )
-            config_manager.save_config()
-            return redirect_public("/trakt/auth/success")
+            # 成功页通过 query 参数展示自动追加提示（仅新增时带参）
+            success_url = "/trakt/auth/success"
+            if auto_added_user:
+                success_url += (
+                    "?auto_added="
+                    + quote(auto_added_user, safe="")
+                    + "&account="
+                    + quote(target_account, safe="")
+                )
+            return redirect_public(success_url)
 
         return redirect_public(
             "/trakt/auth?status=error&message="
@@ -133,7 +156,7 @@ async def get_trakt_config(
                 is_connected=False,
                 token_expires_at=None,
                 client_id=trakt_api_config.get("client_id", ""),
-                client_secret=trakt_api_config.get("client_secret", ""),
+                client_secret_configured=bool(trakt_api_config.get("client_secret")),
                 redirect_uri=trakt_api_config.get(
                     "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
                 ),
@@ -151,7 +174,7 @@ async def get_trakt_config(
             is_connected=is_connected,
             token_expires_at=config.expires_at,
             client_id=trakt_api_config.get("client_id", ""),
-            client_secret=trakt_api_config.get("client_secret", ""),
+            client_secret_configured=bool(trakt_api_config.get("client_secret")),
             redirect_uri=trakt_api_config.get(
                 "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
             ),
@@ -225,7 +248,7 @@ async def update_trakt_config(
             is_connected=is_connected,
             token_expires_at=config.expires_at,
             client_id=trakt_api_config.get("client_id", ""),
-            client_secret=trakt_api_config.get("client_secret", ""),
+            client_secret_configured=bool(trakt_api_config.get("client_secret")),
             redirect_uri=trakt_api_config.get(
                 "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
             ),

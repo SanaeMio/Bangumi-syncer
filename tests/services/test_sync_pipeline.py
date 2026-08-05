@@ -18,7 +18,17 @@ from app.services.sync_service import SyncService
 
 @pytest.fixture
 def mock_config():
-    with patch("app.services.sync_service.config_manager") as mock_cm:
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cm,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
 
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "mode":

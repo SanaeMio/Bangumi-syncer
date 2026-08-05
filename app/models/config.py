@@ -2,7 +2,7 @@
 配置相关数据模型
 """
 
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +22,6 @@ class BangumiConfig(BaseModel):
 class SyncConfig(BaseModel):
     """同步配置模型"""
 
-    mode: str = Field("single", description="同步模式")
     blocked_keywords: str = Field("", description="屏蔽关键词")
 
 
@@ -66,9 +65,6 @@ class ConfigData(BaseModel):
     dev: DevConfig
     bangumi_data: BangumiDataConfig
     auth: AuthConfig
-    multi_accounts: dict[str, dict[str, Any]] = Field(
-        default_factory=dict, description="多账号配置"
-    )
 
 
 class ConfigResponse(BaseModel):
@@ -86,7 +82,6 @@ class ConfigUpdateRequest(BaseModel):
     dev: Optional[DevConfig] = None
     bangumi_data: Optional[BangumiDataConfig] = None
     auth: Optional[AuthConfig] = None
-    multi_accounts: Optional[dict[str, dict[str, Any]]] = None
 
 
 class ConfigUpdateResponse(BaseModel):

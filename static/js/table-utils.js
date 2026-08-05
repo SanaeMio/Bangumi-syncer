@@ -237,6 +237,30 @@ function formatMatchScore(score) {
 }
 
 /**
+ * 根据匹配分数渲染置信度等级徽章（高/中/低 着色）
+ * 阈值与后端 app/utils/confidence.py 保持一致：>=0.8 高，>=0.5 中，其余低。
+ * @param {number|null|undefined} score
+ * @returns {string} HTML 徽章字符串
+ */
+function confidenceBadge(score) {
+    let cls = 'bg-secondary';
+    let label = '未知';
+    if (typeof score === 'number') {
+        if (score >= 0.8) {
+            cls = 'bg-success';
+            label = '高';
+        } else if (score >= 0.5) {
+            cls = 'bg-warning text-dark';
+            label = '中';
+        } else {
+            cls = 'bg-danger';
+            label = '低';
+        }
+    }
+    return `<span class="badge rounded-pill ${cls}">${label}</span>`;
+}
+
+/**
  * 候选列表按 score 降序排序（无 score 的排在最后）
  * 返回新数组，不修改原数组
  * @param {Array} candidates

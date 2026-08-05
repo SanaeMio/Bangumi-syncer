@@ -84,7 +84,7 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.services.sync_service.config_manager.get_active_bangumi_config",
+                "app.core.accounts.get_active_bangumi_config",
                 return_value=cfg,
             ),
             patch(
@@ -120,7 +120,7 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.services.sync_service.config_manager.get_active_bangumi_config",
+                "app.core.accounts.get_active_bangumi_config",
                 return_value=cfg,
             ),
             patch(
@@ -150,7 +150,7 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.services.sync_service.config_manager.get_active_bangumi_config",
+                "app.core.accounts.get_active_bangumi_config",
                 return_value=cfg,
             ),
             patch(
@@ -172,11 +172,11 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.services.sync_service.config_manager.get_active_bangumi_config",
+                "app.core.accounts.get_active_bangumi_config",
                 return_value=None,
             ),
             patch(
-                "app.services.sync_service.config_manager.get_bangumi_configs",
+                "app.core.accounts.list_bangumi_configs",
                 return_value={},
             ),
         ):

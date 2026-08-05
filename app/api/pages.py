@@ -178,7 +178,13 @@ async def trakt_config_page(request: Request) -> HTMLResponse:
 @router.get("/trakt/auth/success", response_class=HTMLResponse)
 async def trakt_auth_success_page(request: Request) -> HTMLResponse:
     """Trakt 授权成功页面（不需要认证）"""
-    return templates.TemplateResponse(request, "trakt/auth_success.html")
+    auto_added = request.query_params.get("auto_added", "")
+    account = request.query_params.get("account", "")
+    return templates.TemplateResponse(
+        request,
+        "trakt/auth_success.html",
+        {"auto_added": auto_added, "account": account},
+    )
 
 
 @router.get("/trakt/auth", response_class=HTMLResponse)

@@ -280,7 +280,12 @@ class ConfigManager:
         self._last_modified = self.active_config_path.stat().st_mtime
 
     def get_bangumi_configs(self) -> dict[str, dict[str, Any]]:
-        """获取所有Bangumi配置"""
+        """获取所有 Bangumi 账号配置段（仅迁移用，DB 为唯一真相源）。
+
+        遍历 INI 中 ``bangumi-*`` 段（排除系统功能段），返回有 username+access_token 的段。
+        仅供 ``app.core.accounts._collect_ini_accounts`` 启动迁移使用，运行时请用
+        ``app.core.accounts.list_bangumi_configs``。
+        """
         config = self.get_config_parser()
         bangumi_configs = {}
 
@@ -296,70 +301,6 @@ class ConfigManager:
                     bangumi_configs[section_name] = section_config
 
         return bangumi_configs
-
-    def get_user_mappings(self) -> dict[str, str]:
-        """获取用户映射配置（media_server_username 支持逗号分隔多个媒体用户名）"""
-        bangumi_configs = self.get_bangumi_configs()
-        user_mappings: dict[str, str] = {}
-
-        for section_name, cfg in bangumi_configs.items():
-            raw = cfg.get("media_server_username", "")
-            if not raw:
-                continue
-            for name in parse_media_server_username_value(str(raw)):
-                prev = user_mappings.get(name)
-                if prev is not None and prev != section_name:
-                    logger.warning(
-                        "多用户映射中媒体服务器用户名 %r 重复：原指向配置段 %s，现被 %s 覆盖",
-                        name,
-                        prev,
-                        section_name,
-                    )
-                user_mappings[name] = section_name
-
-        return user_mappings
-
-    def get_single_mode_media_usernames(self) -> list[str]:
-        """单用户模式下允许的媒体服务器用户名列表（来自 [bangumi] media_server_username）。"""
-        raw = self.get("bangumi", "media_server_username", fallback="")
-        return parse_media_server_username_value(str(raw) if raw is not None else "")
-
-    def get_active_bangumi_config(
-        self, user_name: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
-        """按 sync.mode 读取指定用户的 Bangumi 账号配置
-
-        single 模式：忽略 user_name，读 [bangumi] 段，返回 username/access_token/private
-        multi 模式：按 user_name 查 [bangumi-*] 段；user_name 为 None 时取首个用户映射
-        无可用配置返回 None
-        """
-        mode = self.get("sync", "mode", fallback="single")
-
-        if mode == "single":
-            return {
-                "username": self.get("bangumi", "username", fallback=""),
-                "access_token": self.get("bangumi", "access_token", fallback=""),
-                "private": self.get("bangumi", "private", fallback=False),
-            }
-
-        if mode == "multi":
-            user_mappings = self.get_user_mappings()
-            bangumi_configs = self.get_bangumi_configs()
-            if user_name is None:
-                # 无指定用户时取首个用户映射对应账号段（用于 API 探测等无用户上下文场景）
-                if not user_mappings:
-                    return None
-                target_section = next(iter(user_mappings.values()))
-            else:
-                target_section = user_mappings.get(user_name)
-                if not target_section or target_section not in bangumi_configs:
-                    logger.error(
-                        f"多用户模式下未找到用户 {user_name} 的bangumi配置映射"
-                    )
-                    return None
-            return bangumi_configs.get(target_section)
-
-        return None
 
     def get_dev_http_snapshot(self) -> dict[str, Any]:
         """读取 [dev] 段影响 HTTP 请求的 4 字段快照
@@ -757,28 +698,23 @@ class ConfigManager:
     # ────────────────────────────────────────────────────────────────────
 
     def get_all_config(self) -> dict[str, dict[str, Any]]:
-        """获取所有配置"""
+        """获取所有配置（Bangumi 账号由 DB 管理，不在此返回）"""
         config = self.get_config_parser()
         result = {}
 
-        # 收集多账号配置
-        multi_accounts = {}
-
         for section_name in config.sections():
+            # 跳过 bangumi-* 账号段（已迁移到 DB，由 /api/bangumi/accounts 管理）
             if section_name.startswith("bangumi-") and section_name not in (
                 _BANGUMI_NON_ACCOUNT_SECTIONS
             ):
-                # 这是多账号配置段，收集到 multi_accounts 中
-                section_config = self.get_section(section_name)
-                multi_accounts[section_name] = section_config
-            else:
-                # 统一键名格式：将连字符转换为下划线
-                normalized_key = section_name.replace("-", "_")
-                result[normalized_key] = self.get_section(section_name)
-
-        # 添加多账号配置到结果中
-        if multi_accounts:
-            result["multi_accounts"] = multi_accounts
+                continue
+            # 跳过遗留单用户段 [bangumi]（账号字段已迁移到 DB，
+            # 避免 decrypt_api_config_payload 解密后明文返回 access_token）
+            if section_name == "bangumi":
+                continue
+            # 统一键名格式：将连字符转换为下划线
+            normalized_key = section_name.replace("-", "_")
+            result[normalized_key] = self.get_section(section_name)
 
         return result
 
@@ -786,23 +722,6 @@ class ConfigManager:
         """保存配置"""
         config = self.get_config_parser()
         self._save_config(config)
-
-    def reload_multi_account_configs(self) -> None:
-        """强制重新加载多账号配置"""
-        # 清除缓存
-        self._config_cache = None
-        self._last_modified = 0
-
-        # 重新加载配置
-        self._load_config()
-
-        # 获取配置以触发日志输出
-        bangumi_configs = self.get_bangumi_configs()
-        user_mappings = self.get_user_mappings()
-
-        logger.info("强制重新加载多账号配置")
-        logger.info(f"加载了 {len(bangumi_configs)} 个bangumi账号配置")
-        logger.info(f"加载了 {len(user_mappings)} 个用户映射配置")
 
     def _needs_migration(self) -> bool:
         """检查是否需要执行配置迁移"""

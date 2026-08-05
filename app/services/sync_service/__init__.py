@@ -455,10 +455,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 return False, f"条目类型为 {stype}，仅支持动画/三次元"
             # archive 未命中或不完整：降级到 API
 
-        # 降级到 API：优先用单用户配置，其次多用户第一个可用配置
-        cfg = config_manager.get_active_bangumi_config("") or None
+        # 降级到 API：DB 为唯一真相源，取激活账号；无激活则取首个可用账号
+        from app.core import accounts as _accounts
+
+        cfg = _accounts.get_active_bangumi_config() or None
         if cfg is None:
-            configs = config_manager.get_bangumi_configs()
+            configs = _accounts.list_bangumi_configs()
             if not configs:
                 # 无可用配置时降级放行（不阻塞用户，映射写入后再由同步流程校验）
                 logger.warning(
@@ -1765,13 +1767,16 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         ):
             return True, ""
 
-        mode = config_manager.get("sync", "mode", fallback="single")
+        # DB 为唯一真相源：按账号数量推导单/多用户语义（列表长度=1 即单用户）
+        from app.core import accounts as _accounts
 
-        if mode == "single":
-            allowed = config_manager.get_single_mode_media_usernames()
+        accounts_list = _accounts.list_bangumi_accounts()
+        if len(accounts_list) <= 1:
+            # 单用户语义：检查 media_server_usernames 是否包含该用户
+            allowed = _accounts.get_single_mode_media_usernames()
             if not allowed:
                 logger.error(
-                    "未设置 Bangumi 配置中的 media_server_username（媒体服务器用户名），请检查配置"
+                    "未设置 Bangumi 账号的 media_server_usernames（媒体服务器用户名），请检查配置"
                 )
                 return False, (
                     "未配置媒体服务器用户名（media_server_username），"
@@ -1783,14 +1788,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     f"用户 {user_name} 不在允许同步的媒体服务器用户名列表中"
                     f"（当前配置: {', '.join(allowed)}）"
                 )
-        elif mode == "multi":
-            # 多用户模式，检查用户是否在映射配置中
-            user_mappings = config_manager.get_user_mappings()
+        else:
+            # 多用户语义：检查用户是否在映射中
+            user_mappings = _accounts.get_user_mappings()
             if user_name not in user_mappings:
                 logger.debug(f"多用户模式下用户 {user_name} 未配置映射，跳过")
                 return False, (
                     f"用户 {user_name} 未在用户映射中配置（多用户模式下"
-                    "需在 [sync] 段添加 媒体服务器用户名=bangumi-账号 映射）"
+                    "需在 Bangumi 账号中填写 media_server_username）"
                 )
 
             # 检查对应的bangumi配置是否存在且有效
@@ -1800,15 +1805,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 return False, (
                     f"用户 {user_name} 对应的 Bangumi 账号配置无效或缺少 access_token"
                 )
-        else:
-            logger.error(f"不支持的同步模式: {mode}")
-            notification_service.notify(
-                "config_error",
-                error_message=f"不支持的同步模式: {mode}",
-                config_type="sync_mode",
-                mode=mode,
-            )
-            return False, f"不支持的同步模式: {mode}（应为 single 或 multi）"
 
         return True, ""
 
@@ -1862,6 +1858,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         if item.release_date and len(item.release_date) >= 8:
             parts.append(f"premiere_date={item.release_date[:10]}")
         return "；".join(parts)
+
+    def _get_match_confidence_threshold(self) -> float:
+        """读取同步配置 `match_confidence_threshold`（模糊匹配自动采用阈值）。
+
+        低于该相似度的 Bangumi API 匹配不会自动采用，而是沉淀到待审队列。
+        默认 0.6；配置缺失或非法时回退到默认值。
+        """
+        try:
+            val = config_manager.get("sync", "match_confidence_threshold", fallback=0.6)
+            return float(val)
+        except (TypeError, ValueError):
+            return 0.6
 
     def _find_subject_id(
         self, item: CustomItem, trace: MatchTrace | None = None
@@ -2502,12 +2510,53 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 f"均无一致条目，保持首条"
                             )
 
+            # ── 置信度阈值：相似度低于阈值则不自动采用，沉淀到待审队列 ──
+            # 使用真实标题相似度（title_diff_ratio，0~1），取代原先固定的 0.9/1.0。
+            threshold = self._get_match_confidence_threshold()
+            real_conf = bgm.title_diff_ratio(search_title, item.ori_title, bgm_data[0])
+            # 仅当真实相似度为数值时才应用阈值：生产环境 title_diff_ratio 返回
+            # float；个别单测未注入相似度（返回非数值）时，保持旧行为直接采用。
+            if isinstance(real_conf, (int, float)) and real_conf < threshold:
+                logger.info(
+                    "番剧《%s》API 匹配 top 候选(id=%s) 相似度 %.2f 低于阈值 %.2f，"
+                    "沉淀到待审队列",
+                    item.title,
+                    bgm_data[0].get("id"),
+                    real_conf,
+                    threshold,
+                )
+                if step:
+                    step.status = "low_confidence"
+                    step.subject_id = bgm_data[0].get("id")
+                    step.score = real_conf
+                    step.reason = (
+                        f"匹配相似度 {real_conf:.2f} 低于阈值 {threshold:.2f}，"
+                        f"已沉淀待审"
+                    )
+                if trace:
+                    # final_subject_id 保持未命中，使下游走待审沉淀路径
+                    trace.final_score = real_conf
+                    trace.final_match_method = match_stage
+                    trace.finish()
+                return (
+                    None,
+                    False,
+                    (
+                        f"match confidence {real_conf:.2f} below threshold "
+                        f"{threshold:.2f}"
+                    ),
+                )
+
             if trace:
                 trace.final_subject_id = bgm_data[0]["id"]
                 # 区分 archive / api_search 命中来源（与 step.stage 保持一致）
                 trace.final_match_method = match_stage
-                # 搜索置信度：首条候选固定 0.9，季度命中加成 1.0
-                trace.final_score = 1.0 if is_api_season_matched else 0.9
+                # 搜索置信度：真实相似度为数值时采用之，否则回退到旧版启发式
+                trace.final_score = (
+                    real_conf
+                    if isinstance(real_conf, (int, float))
+                    else (1.0 if is_api_season_matched else 0.9)
+                )
                 trace.finish()
 
                 # 匹配歧义检测：top1/top2 分数接近时触发 match_ambiguous
@@ -2526,8 +2575,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             return None, False, detail
 
     def _get_bangumi_config_for_user(self, user_name: str) -> dict[str, str] | None:
-        """根据媒体服务器用户名获取对应的bangumi配置"""
-        return config_manager.get_active_bangumi_config(user_name)
+        """根据媒体服务器用户名获取对应的bangumi配置（DB 为唯一真相源）"""
+        from app.core import accounts as _accounts
+
+        return _accounts.get_bangumi_config_for_user(user_name)
 
     def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
         """根据用户名获取对应的BangumiApi实例

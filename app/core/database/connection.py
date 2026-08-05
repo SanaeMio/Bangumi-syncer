@@ -48,6 +48,8 @@ class DatabaseConnection:
         self._match_fields_migrated = False
         self._pending_sync_sync_record_id_migrated = False
         self._pending_candidates_sync_record_id_migrated = False
+        self._bangumi_accounts_private_migrated = False
+        self._tokens_encrypted_migrated = False
         self._init_database()
 
     def close(self) -> None:
@@ -80,10 +82,22 @@ class DatabaseConnection:
         return self._conn
 
     def _execute_with_lock(self, fn):
-        """在锁保护下执行数据库操作"""
+        """在锁保护下执行数据库操作。
+
+        异常时主动 rollback，避免未提交事务悬挂在连接上被下一次写操作
+        意外提交（SQLite 默认 deferred 隔离，DML 一旦执行即开启事务）。
+        """
         with self._lock:
             conn = self._get_connection()
-            return fn(conn)
+            try:
+                return fn(conn)
+            except Exception:
+                # rollback 必须在锁内执行，避免与并发写操作的 commit 交织
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
 
     def _ensure_sync_records_media_type(self, cursor) -> None:
         """旧库迁移：为 sync_records 增加 media_type（历史数据为 episode）。"""
@@ -201,6 +215,76 @@ class DatabaseConnection:
         )
         self._pending_candidates_sync_record_id_migrated = True
         logger.info("pending_candidates 已迁移：增加 sync_record_id 列")
+
+    def _ensure_bangumi_accounts_private(self, cursor) -> None:
+        """旧库迁移：为 bangumi_accounts 增加 private（收藏是否私有）。
+
+        与 INI [bangumi(-*)] private 字段对齐；DEFAULT 0 即公开，与既有 INI 默认值一致。
+        """
+        if self._bangumi_accounts_private_migrated:
+            return
+        cursor.execute("PRAGMA table_info(bangumi_accounts)")
+        cols = [row[1] for row in cursor.fetchall()]
+        if "private" in cols:
+            self._bangumi_accounts_private_migrated = True
+            return
+        cursor.execute(
+            "ALTER TABLE bangumi_accounts ADD COLUMN private BOOLEAN NOT NULL DEFAULT 0"
+        )
+        self._bangumi_accounts_private_migrated = True
+        logger.info("bangumi_accounts 已迁移：增加 private 列")
+
+    def _ensure_tokens_encrypted(self, cursor) -> None:
+        """一次性数据迁移：加密 DB 中的明文 token（access_token / refresh_token）。
+
+        仓储层已改为写入即加密，此处仅处理迁移前已落库的历史明文。
+        ``encrypt`` 幂等（已带 BGS1: 前缀则原样返回），``secret_key`` 为空时
+        返回明文（不设迁移标记，下次启动重试）。
+        """
+        if self._tokens_encrypted_migrated:
+            return
+        try:
+            from ..config_secret_crypto import PREFIX, _master_secret, encrypt
+
+            # 统一通过 _master_secret() 取密钥，与仓储层加解密保持一致
+            master = _master_secret()
+            if not master:
+                return
+
+            # bangumi_accounts
+            cursor.execute(
+                "SELECT section_name, access_token, refresh_token FROM bangumi_accounts "
+                "WHERE (access_token IS NOT NULL AND access_token != '' AND access_token NOT LIKE ?) "
+                "OR (refresh_token IS NOT NULL AND refresh_token != '' AND refresh_token NOT LIKE ?)",
+                (PREFIX + "%", PREFIX + "%"),
+            )
+            for section, at, rt in cursor.fetchall():
+                new_at = encrypt(at or "", master=master)
+                new_rt = encrypt(rt or "", master=master)
+                cursor.execute(
+                    "UPDATE bangumi_accounts SET access_token = ?, refresh_token = ? "
+                    "WHERE section_name = ?",
+                    (new_at, new_rt, section),
+                )
+
+            # trakt_config
+            cursor.execute(
+                "SELECT user_id, access_token, refresh_token FROM trakt_config "
+                "WHERE (access_token IS NOT NULL AND access_token != '' AND access_token NOT LIKE ?) "
+                "OR (refresh_token IS NOT NULL AND refresh_token != '' AND refresh_token NOT LIKE ?)",
+                (PREFIX + "%", PREFIX + "%"),
+            )
+            for user_id, at, rt in cursor.fetchall():
+                new_at = encrypt(at or "", master=master)
+                new_rt = encrypt(rt or "", master=master)
+                cursor.execute(
+                    "UPDATE trakt_config SET access_token = ?, refresh_token = ? "
+                    "WHERE user_id = ?",
+                    (new_at, new_rt, user_id),
+                )
+            self._tokens_encrypted_migrated = True
+        except Exception as e:
+            logger.warning(f"token 加密迁移失败（将在下次启动重试）: {e}")
 
     def _init_database(self) -> None:
         """初始化数据库"""
@@ -346,6 +430,69 @@ class DatabaseConnection:
         """)
         self._ensure_pending_sync_queue_sync_record_id(cursor)
 
+        # Bangumi 账号（含 OAuth 令牌）：以「账号列表」为唯一真相源，
+        # 取代散落在 INI 各 [bangumi-*] 段的配置。
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bangumi_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                section_name TEXT NOT NULL UNIQUE,
+                username TEXT NOT NULL DEFAULT '',
+                media_server_usernames TEXT NOT NULL DEFAULT '[]',
+                auth_method TEXT NOT NULL DEFAULT 'manual',
+                access_token TEXT,
+                refresh_token TEXT,
+                token_type TEXT DEFAULT 'Bearer',
+                expires_at INTEGER,
+                bangumi_user_id TEXT DEFAULT '',
+                nickname TEXT DEFAULT '',
+                avatar TEXT DEFAULT '',
+                private BOOLEAN NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+        """)
+        self._ensure_bangumi_accounts_private(cursor)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_section "
+            "ON bangumi_accounts(section_name)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_active "
+            "ON bangumi_accounts(is_active)"
+        )
+
+        # OAuth 授权过程中的 CSRF state（临时会话，带 TTL），替代临时 JSON 文件。
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS oauth_states (
+                state TEXT PRIMARY KEY,
+                section_name TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                redirect_uri TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        # 兼容旧库：补充 provider 列（已存在则忽略）
+        try:
+            cursor.execute(
+                "ALTER TABLE oauth_states ADD COLUMN provider TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass
+        # 兼容旧库：补充 redirect_uri 列（用于存发起授权时的 redirect_uri，
+        # 回调时还原以保证 authorize 与 token 交换用同一 redirect_uri）
+        try:
+            cursor.execute(
+                "ALTER TABLE oauth_states ADD COLUMN redirect_uri TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_oauth_states_expire "
+            "ON oauth_states(expires_at)"
+        )
+
         # 创建二级索引以加速常用查询
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_timestamp ON sync_records(timestamp)"
@@ -394,6 +541,9 @@ class DatabaseConnection:
             "CREATE INDEX IF NOT EXISTS idx_pending_candidates_sync_record_id "
             "ON pending_candidates(sync_record_id)"
         )
+
+        # 一次性数据迁移：加密历史明文 token（仓储层已改为写入即加密）
+        self._ensure_tokens_encrypted(cursor)
 
         conn.commit()
         logger.info(f"数据库初始化完成: {self.db_path}")

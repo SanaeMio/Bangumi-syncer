@@ -82,7 +82,7 @@ SECTIONS: dict[str, SectionMeta] = {
         name="bangumi",
         display_name="Bangumi 账号",
         order=10,
-        sensitive_fields=frozenset({"access_token"}),
+        sensitive_fields=frozenset({"access_token", "refresh_token"}),
         env_overrides={
             "username": "BANGUMI_USERNAME",
             "access_token": "BANGUMI_ACCESS_TOKEN",
@@ -90,14 +90,34 @@ SECTIONS: dict[str, SectionMeta] = {
             "private": "BANGUMI_PRIVATE",
         },
     ),
+    "bangumi-oauth": SectionMeta(
+        name="bangumi-oauth",
+        display_name="Bangumi OAuth 应用",
+        order=11,
+        # 应用凭证（client_id/client_secret）用于完成 Bangumi 官方 OAuth 授权流。
+        # 该段非多账号段，需从账号段探测中排除。
+        sensitive_fields=frozenset({"client_secret"}),
+        visible_in_ui=False,
+        env_overrides={
+            "client_id": "BANGUMI_OAUTH_CLIENT_ID",
+            "client_secret": "BANGUMI_OAUTH_CLIENT_SECRET",
+        },
+        fields=(
+            FieldMeta(name="client_id", default=""),
+            FieldMeta(name="client_secret", default=""),
+            FieldMeta(name="redirect_uri", default=""),
+        ),
+    ),
     "sync": SectionMeta(
         name="sync",
         display_name="同步设置",
         order=20,
         fields=(
-            FieldMeta(name="mode", default="single"),
             FieldMeta(name="movie_playback_start_mark_watching", default_true=True),
             FieldMeta(name="movie_mark_subject_completed", default_true=True),
+            # 模糊匹配置信度阈值（0~1）：低于该相似度的 Bangumi API 匹配
+            # 不会自动采用，而是沉淀到待审队列由用户在 Web 界面人工确认。
+            FieldMeta(name="match_confidence_threshold", default=0.6),
         ),
     ),
     "auth": SectionMeta(

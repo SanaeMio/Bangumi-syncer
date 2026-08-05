@@ -19,6 +19,7 @@ class TestNonAccountBangumiSections:
             "bangumi-mapping",
             "bangumi-archive",
             "bangumi-replay",
+            "bangumi-oauth",
         }
 
     def test_excludes_account_sections(self):
@@ -60,9 +61,9 @@ class TestEnvOverrides:
         assert overrides[("web", "base_path")] == "APPLICATION_ROOT"
 
     def test_count_matches_original(self):
-        """原硬编码共 14 条映射"""
+        """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条"""
         overrides = config_schema.all_env_overrides()
-        assert len(overrides) == 14
+        assert len(overrides) == 16
 
 
 class TestIsSensitiveField:
@@ -295,8 +296,9 @@ class TestFieldMeta:
         assert config_schema.field_default("bangumi-replay", "replay_batch_size") == 20
         assert config_schema.field_default("bangumi-replay", "max_attempts") == 50
 
-    def test_sync_mode_default(self):
-        assert config_schema.field_default("sync", "mode") == "single"
+    def test_sync_match_confidence_threshold_default(self):
+        """功能三：置信度阈值默认 0.6（0~1 小数）。"""
+        assert config_schema.field_default("sync", "match_confidence_threshold") == 0.6
 
     def test_dev_retention_default(self):
         assert config_schema.field_default("dev", "sync_records_retention_days") == 0
@@ -365,9 +367,6 @@ class TestLooseTrueFields:
 
 class TestConfigDefaults:
     """config_defaults() 派生（替代 CONFIG_DEFAULTS）"""
-
-    def test_includes_sync_mode(self):
-        assert config_schema.config_defaults()["sync"]["mode"] == "single"
 
     def test_includes_bangumi_data_defaults(self):
         cd = config_schema.config_defaults()

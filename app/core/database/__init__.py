@@ -18,6 +18,7 @@ import sqlite3
 from typing import Any, Optional
 
 from ..logging import logger as logger
+from .accounts import BangumiAccountRepository, OAuthStateRepository
 from .connection import (
     FEINIU_MIN_UPDATE_WATERMARK_META_KEY as FEINIU_MIN_UPDATE_WATERMARK_META_KEY,
     INBOX_ERROR_BACKFILL_META_KEY as INBOX_ERROR_BACKFILL_META_KEY,
@@ -53,6 +54,8 @@ class DatabaseManager:
         self._inbox = InboxRepository(self._connection, self._feiniu)
         self._sync = SyncRecordsRepository(self._connection, self._inbox)
         self._trakt = TraktRepository(self._connection)
+        self._bangumi_accounts = BangumiAccountRepository(self._connection)
+        self._oauth_state = OAuthStateRepository(self._connection)
         self.llm_usage = LLMUsageRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         self._pending_sync = PendingSyncQueueRepository(self._connection)
@@ -502,6 +505,75 @@ class DatabaseManager:
     def get_trakt_synced_set(self, user_id: str) -> set[tuple[str, int]]:
         """批量获取已同步的 Trakt 条目集合，用于 O(1) 去重查找"""
         return self._trakt.get_trakt_synced_set(user_id)
+
+    # ------------------------------------------------------------------
+    # BangumiAccountRepository 转发（账号列表化：取代 INI [bangumi-*] 段）
+    # ------------------------------------------------------------------
+
+    def save_bangumi_account(self, account: dict) -> bool:
+        """保存或更新一个 Bangumi 账号（按 section_name upsert）。"""
+        return self._bangumi_accounts.save_account(account)
+
+    def get_bangumi_account(self, section_name: str) -> Optional[dict]:
+        """按 section_name 获取账号。"""
+        return self._bangumi_accounts.get_account(section_name)
+
+    def list_bangumi_accounts(self) -> list[dict]:
+        """列出全部账号（列表长度=1 即单用户，无需单/多判断）。"""
+        return self._bangumi_accounts.list_accounts()
+
+    def get_active_bangumi_account(self) -> Optional[dict]:
+        """获取当前激活账号；无激活时返回首个。"""
+        return self._bangumi_accounts.get_active_account()
+
+    def delete_bangumi_account(self, section_name: str) -> bool:
+        """删除账号。"""
+        return self._bangumi_accounts.delete_account(section_name)
+
+    def set_active_bangumi_account(self, section_name: str) -> bool:
+        """将指定账号设为激活。"""
+        return self._bangumi_accounts.set_active(section_name)
+
+    def update_bangumi_account_token(self, section_name: str, token: dict) -> bool:
+        """仅更新令牌相关字段（OAuth 授权/刷新后回写）。"""
+        return self._bangumi_accounts.update_token(section_name, token)
+
+    def count_bangumi_accounts(self) -> int:
+        """账号数量。"""
+        return self._bangumi_accounts.count_accounts()
+
+    # ------------------------------------------------------------------
+    # OAuthStateRepository 转发（OAuth 授权 CSRF state）
+    # ------------------------------------------------------------------
+
+    def save_oauth_state(
+        self,
+        state: str,
+        section_name: str,
+        expires_at: int,
+        provider: str = "",
+        redirect_uri: str = "",
+    ) -> bool:
+        """保存一个 OAuth 授权 state（provider 用于区分不同来源）。"""
+        return self._oauth_state.save_state(
+            state,
+            section_name,
+            expires_at,
+            provider=provider,
+            redirect_uri=redirect_uri,
+        )
+
+    def get_oauth_state(self, state: str) -> Optional[dict]:
+        """获取并校验 state（过期/不存在返回 None）。"""
+        return self._oauth_state.get_state(state)
+
+    def delete_oauth_state(self, state: str) -> bool:
+        """删除 state（授权完成后调用）。"""
+        return self._oauth_state.delete_state(state)
+
+    def cleanup_oauth_states_expired(self) -> int:
+        """清理过期 state，返回删除行数。"""
+        return self._oauth_state.cleanup_expired()
 
     # ------------------------------------------------------------------
     # FeiniuRepository 转发

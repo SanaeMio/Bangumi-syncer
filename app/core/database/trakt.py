@@ -5,6 +5,7 @@ Trakt 配置与同步历史仓库
 from datetime import datetime
 from typing import Optional
 
+from ..config_secret_crypto import decrypt as _decrypt_token, encrypt as _encrypt_token
 from .base_repository import BaseRepository
 
 
@@ -40,8 +41,8 @@ class TraktRepository(BaseRepository):
                     WHERE user_id = ?
                 """,
                     (
-                        config["access_token"],
-                        config["refresh_token"],
+                        _encrypt_token(config["access_token"] or ""),
+                        _encrypt_token(config["refresh_token"] or ""),
                         config["expires_at"],
                         1 if config.get("enabled", True) else 0,
                         config.get("sync_interval", "0 */6 * * *"),
@@ -61,8 +62,8 @@ class TraktRepository(BaseRepository):
                 """,
                     (
                         config["user_id"],
-                        config["access_token"],
-                        config["refresh_token"],
+                        _encrypt_token(config["access_token"] or ""),
+                        _encrypt_token(config["refresh_token"] or ""),
                         config["expires_at"],
                         1 if config.get("enabled", True) else 0,
                         config.get("sync_interval", "0 */6 * * *"),
@@ -121,6 +122,9 @@ class TraktRepository(BaseRepository):
         config = dict(zip(columns, row))
         config["enabled"] = bool(config["enabled"])
         config["sync_filter_enabled"] = bool(config["sync_filter_enabled"])
+        # 仓储层透明解密（与 bangumi_accounts 一致）
+        config["access_token"] = _decrypt_token(config.get("access_token"))
+        config["refresh_token"] = _decrypt_token(config.get("refresh_token"))
         return config
 
     def delete_trakt_config(self, user_id: str) -> bool:
@@ -264,6 +268,9 @@ class TraktRepository(BaseRepository):
             config = dict(zip(columns, row))
             config["enabled"] = bool(config["enabled"])
             config["sync_filter_enabled"] = bool(config["sync_filter_enabled"])
+            # 仓储层透明解密（与 bangumi_accounts 一致）
+            config["access_token"] = _decrypt_token(config.get("access_token"))
+            config["refresh_token"] = _decrypt_token(config.get("refresh_token"))
             configs.append(config)
 
         return configs

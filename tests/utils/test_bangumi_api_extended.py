@@ -982,6 +982,11 @@ class TestFindEpisodeAcrossSeasons:
             api._archive.try_find_sequel_chain = MagicMock(
                 return_value=ShortcutResult(False, None, "archive_miss")
             )
+
+        # 前传链短路默认 miss，避免 sequel 方向测试误触发（prequel 方向另有专门用例）
+        api._archive.try_find_prequel_chain = MagicMock(
+            return_value=ShortcutResult(False, None, "archive_miss")
+        )
         return api
 
     def test_archive_sequel_chain_finds_target_sort(self):
@@ -1111,6 +1116,10 @@ class TestFindEpisodeAcrossSeasons:
         api._archive.try_find_sequel_chain = MagicMock(
             return_value=ShortcutResult(True, [700, 300], "archive_hit")
         )
+        # 前传方向走 search_previous_subjects → try_find_prequel_chain（archive miss 降级在线逐跳）
+        api._archive.try_find_prequel_chain = MagicMock(
+            return_value=ShortcutResult(False, None, "archive_miss")
+        )
 
         result = api.find_episode_across_seasons(100, 102)
         assert result is not None
@@ -1140,3 +1149,119 @@ class TestFindEpisodeAcrossSeasons:
         assert result is None
         # archive hit 后不应降级到逐跳
         assert not api.get_related_subjects.called
+
+    def test_archive_prequel_chain_finds_target_sort(self):
+        """功能二（前传推断）：archive 命中走 try_find_prequel_chain 快路径批量定位。
+
+        场景：前传链 600 → 500 → 400（archive 返回 [500, 400]），
+        target_ep=102 应在 S3（subject 400, sort 101-150）。
+        验证：走 archive 快路径，不调用逐跳 get_related_subjects。
+        """
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        episodes = {
+            600: {"data": self._make_eps(251, 50, 60001), "total": 50},
+            500: {"data": self._make_eps(201, 50, 50001), "total": 50},
+            400: {"data": self._make_eps(101, 50, 40001), "total": 50},
+        }
+        related = {
+            600: [{"relation": "前传", "id": 500, "type": 2}],
+            500: [{"relation": "前传", "id": 400, "type": 2}],
+            400: [],
+        }
+        api = self._make_api_with_archive(
+            episodes, related, sequel_chain=None, archive_hit=True
+        )
+        # 覆盖前传链短路为命中（_make_api_with_archive 默认 miss）
+        api._archive.try_find_prequel_chain = MagicMock(
+            return_value=ShortcutResult(True, [500, 400], "archive_hit")
+        )
+
+        result = api.find_episode_across_seasons(600, 102)
+        assert result is not None
+        assert result[0] == 400
+        assert result[1] == 40002
+        # archive 命中快路径，不应走逐跳 get_related_subjects
+        assert not api.get_related_subjects.called
+
+    def test_archive_prequel_chain_no_target_returns_none(self):
+        """功能二（前传推断）：archive 命中但前传链上无 target_ep 时返回 None。
+
+        场景：archive 前传链 [500]，target_ep=1000 远超范围。
+        archive 已确认链上无目标，应直接返回 None 而非降级到逐跳。
+        """
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        episodes = {
+            600: {"data": self._make_eps(251, 50, 60001), "total": 50},
+            500: {"data": self._make_eps(201, 50, 50001), "total": 50},
+        }
+        related = {
+            600: [{"relation": "前传", "id": 500, "type": 2}],
+            500: [],
+        }
+        api = self._make_api_with_archive(
+            episodes, related, sequel_chain=None, archive_hit=True
+        )
+        api._archive.try_find_prequel_chain = MagicMock(
+            return_value=ShortcutResult(True, [500], "archive_hit")
+        )
+
+        result = api.find_episode_across_seasons(600, 1000)
+        assert result is None
+        assert not api.get_related_subjects.called
+
+    def test_archive_sequel_chain_navigates_to_target_season(self):
+        """功能一（续集累计定位）：archive 短路 try_find_next_sequel_id 逐跳找到目标季。
+
+        场景：S1=subject1(sort1-24)、S2=subject2(sort25-48)、S3=subject3(sort49-72)，
+        各季为独立 archive subject。target_season=2, ep=3 → subject2, sort=27 → ep_id 2002。
+        """
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        api = BangumiApi()
+        api._get_episode_sync_limits = MagicMock(return_value=(10, 9999))
+
+        eps = {
+            1: {"data": self._make_eps(1, 24, 1000), "total": 24},
+            2: {"data": self._make_eps(25, 24, 2000), "total": 24},
+            3: {"data": self._make_eps(49, 24, 3000), "total": 24},
+        }
+        api.get_episodes = MagicMock(
+            side_effect=lambda sid, *a, **kw: eps.get(
+                int(sid), {"data": [], "total": 0}
+            )
+        )
+        api.get_subject = MagicMock(
+            return_value={"type": 2, "name": "测试番剧", "platform": "TV"}
+        )
+
+        api._archive = MagicMock()
+        api._archive.enabled = True
+        api._archive.try_find_next_sequel_id = MagicMock(
+            side_effect=lambda sid: ShortcutResult(
+                True, {1: 2, 2: 3, 3: None}.get(int(sid)), "archive_hit"
+            )
+        )
+        api._archive.try_get_subject = MagicMock(
+            return_value=ShortcutResult(False, None, "archive_miss")
+        )
+        api._archive.try_get_episodes = MagicMock(
+            return_value=ShortcutResult(False, None, "archive_miss")
+        )
+        api._archive.try_find_sequel_chain = MagicMock(
+            return_value=ShortcutResult(False, None, "archive_miss")
+        )
+        api._archive.try_find_prequel_chain = MagicMock(
+            return_value=ShortcutResult(False, None, "archive_miss")
+        )
+
+        sid, eid = api.get_target_season_episode_id(
+            subject_id=1,
+            target_season=2,
+            target_ep=3,
+            is_season_subject_id=False,
+            release_date=None,
+        )
+        assert sid == 2
+        assert eid == 2002  # sort 27 -> id 2000 + (27 - 25)

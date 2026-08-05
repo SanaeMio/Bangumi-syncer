@@ -19,10 +19,13 @@ from ._archive_shortcut import archive_shortcut
 from .collection import CollectionMixin
 from .episodes import EpisodesMixin
 from .http_layer import HttpLayerMixin
+from .relations import RelationMixin
 from .search import SearchMixin
 
 
-class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
+class BangumiApi(
+    HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin, RelationMixin
+):
     def __init__(
         self,
         username: str | None = None,

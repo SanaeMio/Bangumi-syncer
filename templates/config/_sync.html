@@ -11,21 +11,6 @@
                     <div class="card-body">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label for="sync-mode" class="form-label fw-semibold">
-                                    <i class="bi bi-gear me-1 text-success"></i>同步模式
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="单用户模式：只同步一个用户\n多用户模式：同步多个用户"></i>
-                                </label>
-                                <select class="form-select"
-                                        id="sync-mode"
-                                        name="sync.mode"
-                                        onchange="toggleSyncMode()">
-                                    <option value="single">单用户模式</option>
-                                    <option value="multi">多用户模式</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
                                 <label class="form-label fw-semibold">
                                     <i class="bi bi-shield-lock me-1 text-warning"></i>启用Webhook认证
                                     <i class="bi bi-question-circle ms-1 text-muted"
@@ -91,17 +76,21 @@
                                 </div>
                             </div>
                             <div class="col-12">
-                                <label for="blocked-keywords" class="form-label fw-semibold">
-                                    <i class="bi bi-shield-x me-1 text-danger"></i>屏蔽关键词
+                                <label for="match-confidence-threshold" class="form-label">
+                                    模糊匹配置信度阈值
                                     <i class="bi bi-question-circle ms-1 text-muted"
                                        data-bs-toggle="tooltip"
-                                       title="屏蔽关键词列表，用逗号分隔。当番剧标题包含这些关键词时，将跳过同步处理。支持中文、英文、日文等多种语言的关键词"></i>
+                                       title="0~1 之间的小数。Bangumi API 模糊匹配得到的最佳候选相似度低于该阈值时，不会自动采用，而是沉淀到「待审队列」由人工确认。调高可避免误同步，调低则更激进地自动采用。"></i>
                                 </label>
-                                <input type="text"
+                                <input type="number"
                                        class="form-control"
-                                       id="blocked-keywords"
-                                       name="sync.blocked_keywords"
-                                       placeholder="多个关键词用逗号分隔，如：物语系列,特典">
+                                       id="match-confidence-threshold"
+                                       name="sync.match_confidence_threshold"
+                                       data-type="float"
+                                       min="0"
+                                       max="1"
+                                       step="0.05"
+                                       placeholder="0.6">
                             </div>
                             <div class="col-12">
                                 <div class="row g-3 align-items-center mt-1">

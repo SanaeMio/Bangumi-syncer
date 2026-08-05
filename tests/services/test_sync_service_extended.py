@@ -51,6 +51,14 @@ class TestSyncServiceHelperMethods:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["admin"],
+            ),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
@@ -78,6 +86,14 @@ class TestSyncServiceHelperMethods:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["plex_u", "emby_u"],
+            ),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
@@ -123,10 +139,20 @@ class TestSyncServiceHelperMethods:
             cfg.get_user_mappings.return_value = {}
             from app.services.sync_service import SyncService
 
-            svc = SyncService()
-            allowed, msg = svc._check_user_permission("ghost")
-            assert allowed is False
-            assert "ghost" in msg
+            with (
+                patch(
+                    "app.core.accounts.list_bangumi_accounts",
+                    return_value=[
+                        {"section_name": "bangumi-a"},
+                        {"section_name": "bangumi-b"},
+                    ],
+                ),
+                patch("app.core.accounts.get_user_mappings", return_value={}),
+            ):
+                svc = SyncService()
+                allowed, msg = svc._check_user_permission("ghost")
+                assert allowed is False
+                assert "ghost" in msg
 
     def test_check_user_permission_multi_mode_missing_bangumi_section(self):
         with patched_sync_deps() as cfg:
@@ -142,26 +168,27 @@ class TestSyncServiceHelperMethods:
             cfg.get_active_bangumi_config.return_value = None
             from app.services.sync_service import SyncService
 
-            svc = SyncService()
-            allowed, msg = svc._check_user_permission("u1")
-            assert allowed is False
-            assert "u1" in msg
-
-    def test_check_user_permission_unknown_mode_returns_false(self):
-        with patched_sync_deps() as cfg:
-
-            def get_side_effect(section, key, fallback=None):
-                if section == "sync" and key == "mode":
-                    return "weird"
-                return fallback
-
-            cfg.get.side_effect = get_side_effect
-            from app.services.sync_service import SyncService
-
-            svc = SyncService()
-            allowed, msg = svc._check_user_permission("u")
-            assert allowed is False
-            assert "weird" in msg
+            with (
+                patch(
+                    "app.core.accounts.list_bangumi_accounts",
+                    return_value=[
+                        {"section_name": "bangumi-a"},
+                        {"section_name": "bangumi-b"},
+                    ],
+                ),
+                patch(
+                    "app.core.accounts.get_user_mappings",
+                    return_value={"u1": "missing_section"},
+                ),
+                patch(
+                    "app.core.accounts.get_bangumi_config_for_user",
+                    return_value=None,
+                ),
+            ):
+                svc = SyncService()
+                allowed, msg = svc._check_user_permission("u1")
+                assert allowed is False
+                assert "u1" in msg
 
     def test_check_user_permission_test_source_skip(self):
         """测试来源 + test_skip_permission_check=True 时跳过校验"""
@@ -265,6 +292,14 @@ class TestSyncServiceHelperMethods:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.get_bangumi_config_for_user",
+                return_value={
+                    "username": "bgm_user",
+                    "access_token": "test_token",
+                    "private": False,
+                },
+            ),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("bangumi-testuser", "username"): "bgm_user",

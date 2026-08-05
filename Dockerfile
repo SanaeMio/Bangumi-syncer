@@ -33,6 +33,13 @@ ENV PYTHONUNBUFFERED=1 \
     DOCKER_CONTAINER=true \
     CONFIG_FILE=/app/config/config.ini
 
+# Bangumi OAuth 内置应用凭证（构建时通过 --build-arg 注入，来自 GitHub Actions Secrets）。
+# 未传入时为空，运行时回退到代码内置占位（开源仓库默认），不影响启动。
+ARG BANGUMI_OAUTH_CLIENT_ID=""
+ARG BANGUMI_OAUTH_CLIENT_SECRET=""
+ENV BANGUMI_OAUTH_CLIENT_ID=${BANGUMI_OAUTH_CLIENT_ID} \
+    BANGUMI_OAUTH_CLIENT_SECRET=${BANGUMI_OAUTH_CLIENT_SECRET}
+
 WORKDIR /app
 
 # 2. 安全优化：创建非 Root 用户，支持通过环境变量 PUID/PGID 指定用户ID
