@@ -21,9 +21,21 @@ from app.core.config import config_manager
 from app.core.public_url import get_public_base_path
 from app.services.oauth import get_oauth_service, get_provider
 
-# 应用级 OAuth 凭证（留空时由内置默认值与环境变量注入，详见配置文档）
-DEFAULT_OAUTH_CLIENT_ID = os.environ.get("BANGUMI_OAUTH_CLIENT_ID", "")
-DEFAULT_OAUTH_CLIENT_SECRET = os.environ.get("BANGUMI_OAUTH_CLIENT_SECRET", "")
+# Bangumi OAuth 应用凭证解析优先级：
+#   1) 配置文件 [bangumi-oauth] 段（用户在 UI 手动填写）
+#   2) 环境变量 BANGUMI_OAUTH_CLIENT_ID / BANGUMI_OAUTH_CLIENT_SECRET（运行时覆盖）
+#   3) 内置占位（仓库默认）。维护者在 GitHub Actions 的 Secrets 中配置真实官方应用凭证，
+#      由构建流程注入后随分发产物（Docker 镜像 / Release zip）内置，用户即可开箱即用授权，
+#      无需自行前往 bgm.tv/dev/app 注册；公开仓库源码中始终只是占位，不会泄露真实密钥。
+# 注意：占位字符串彼此独立，便于构建时用 sed 精确替换。
+BUILTIN_OAUTH_CLIENT_ID = "bgm_REPLACE_WITH_GH_CLIENT_ID"
+BUILTIN_OAUTH_CLIENT_SECRET = "REPLACE_WITH_GH_CLIENT_SECRET"
+DEFAULT_OAUTH_CLIENT_ID = os.environ.get(
+    "BANGUMI_OAUTH_CLIENT_ID", BUILTIN_OAUTH_CLIENT_ID
+)
+DEFAULT_OAUTH_CLIENT_SECRET = os.environ.get(
+    "BANGUMI_OAUTH_CLIENT_SECRET", BUILTIN_OAUTH_CLIENT_SECRET
+)
 
 # 本地回退地址（当未显式配置 redirect_uri 时使用）
 DEFAULT_LOCAL_BASE = "http://localhost:8000"
