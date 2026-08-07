@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.llm.constants import PROVIDER_OPENAI_COMPAT
+
 from .base_repository import BaseRepository
 
 
@@ -79,6 +81,8 @@ class LLMUsageRepository(BaseRepository):
 
         def _write(conn):
             cursor = conn.cursor()
+            # provider 默认值与 PROVIDER_OPENAI_COMPAT 保持一致
+            # （schema 迁移语义，保持字面量，SQL 中不能用 Python 常量）
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self._TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,7 +120,7 @@ class LLMUsageRepository(BaseRepository):
         job_id: int | None = None,
         job_name: str | None = None,
         model: str = "",
-        provider: str = "openai_compat",
+        provider: str = PROVIDER_OPENAI_COMPAT,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         total_tokens: int = 0,

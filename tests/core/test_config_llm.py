@@ -76,6 +76,18 @@ timeout = 120
         cfg = cm.get_llm_config()
         assert cfg["provider"] == "openai_compat"
 
+    def test_provider_empty_string_falls_back_to_default(self, tmp_path):
+        """provider 为空字符串时回退默认值，避免工厂报 Unsupported provider。"""
+        cm = _cm_from_ini(tmp_path, "[llm]\nprovider =\n")
+        cfg = cm.get_llm_config()
+        assert cfg["provider"] == "openai_compat"
+
+    def test_thinking_level_empty_string_falls_back_to_off(self, tmp_path):
+        """thinking_level 为空字符串时回退默认值 off。"""
+        cm = _cm_from_ini(tmp_path, "[llm]\nthinking_level =\n")
+        cfg = cm.get_llm_config()
+        assert cfg["thinking_level"] == "off"
+
     def test_type_coercion_numeric_fields(self, tmp_path):
         """max_tokens、temperature、timeout 的字符串值被强制转换为正确类型。"""
         ini = """[llm]

@@ -32,6 +32,8 @@ class TestLLMConfigResponse:
         assert model.max_tokens == 2000
         assert model.temperature == 0.7
         assert model.timeout == 60
+        assert model.provider == "openai_compat"
+        assert model.thinking_level == "off"
 
     def test_override_values(self):
         """验证显式字段值可被接受。"""

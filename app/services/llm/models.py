@@ -11,6 +11,8 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
+ThinkingLevel = Literal["off", "low", "medium", "high"]
+
 
 class TextBlock(BaseModel):
     """文本内容块。"""

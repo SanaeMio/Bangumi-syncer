@@ -22,6 +22,7 @@ from app.services.llm.models import (
     RedactedThinkingBlock,
     TextBlock,
     ThinkingBlock,
+    ThinkingLevel,
     Usage,
 )
 from app.services.llm.providers.base import BaseProvider
@@ -45,7 +46,13 @@ class AnthropicProvider(BaseProvider):
     """
 
     # thinking_level → Anthropic budget_tokens 映射
-    _THINKING_BUDGETS = {"off": 0, "low": 2048, "medium": 4096, "high": 8192}
+    # 键为 str：_thinking_enabled 需对无效值兜底为 0（ThinkingLevel 约束在构造参数）
+    _THINKING_BUDGETS: dict[str, int] = {
+        "off": 0,
+        "low": 2048,
+        "medium": 4096,
+        "high": 8192,
+    }
 
     def __init__(
         self,
@@ -56,7 +63,7 @@ class AnthropicProvider(BaseProvider):
         temperature: float = 0.7,
         timeout: int = 60,
         proxy: str | None = None,
-        thinking_level: str = "off",
+        thinking_level: ThinkingLevel = "off",
     ) -> None:
         """初始化 Anthropic provider。"""
         self.api_base = api_base.rstrip("/")

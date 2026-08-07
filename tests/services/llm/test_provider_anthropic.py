@@ -15,6 +15,7 @@ from app.services.llm.models import (
     RedactedThinkingBlock,
     TextBlock,
     ThinkingBlock,
+    ThinkingLevel,
 )
 from app.services.llm.providers.anthropic import AnthropicProvider
 
@@ -67,7 +68,7 @@ def _make_provider(
     max_tokens: int = 2000,
     temperature: float = 0.7,
     timeout: int = 60,
-    thinking_level: str = "off",
+    thinking_level: ThinkingLevel = "off",
 ) -> AnthropicProvider:
     """构造测试 provider，仅允许覆盖需要调整的参数。"""
     return AnthropicProvider(

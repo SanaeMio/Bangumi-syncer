@@ -588,8 +588,11 @@ class ConfigManager:
 
     def get_llm_config(self) -> dict[str, Any]:
         """获取 LLM 全局配置（含默认值）。"""
+        # 延迟 import 避免循环依赖：llm 包初始化会 import config_manager
+        from app.services.llm.constants import PROVIDER_OPENAI_COMPAT
+
         defaults: dict[str, Any] = {
-            "provider": "openai_compat",
+            "provider": PROVIDER_OPENAI_COMPAT,
             "api_base": "https://api.openai.com/v1",
             "api_key": "",
             "model": "gpt-4o-mini",
@@ -601,6 +604,11 @@ class ConfigManager:
         }
         raw = self.get_section(LLM_SECTION, {})
         merged: dict[str, Any] = {**defaults, **raw}
+        # 空字符串会覆盖默认值（{**defaults, **raw} 语义），对关键枚举字段兜底
+        if not merged.get("provider"):
+            merged["provider"] = PROVIDER_OPENAI_COMPAT
+        if not merged.get("thinking_level"):
+            merged["thinking_level"] = "off"
         # 确保类型正确（使用 is not None 以允许 0 等 falsy 值）
         if merged.get("max_tokens") is not None:
             merged["max_tokens"] = int(merged["max_tokens"])
