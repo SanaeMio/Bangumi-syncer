@@ -40,11 +40,8 @@
 ```python
 # app/services/llm/models.py
 
-class ContentBlockType:
-    TEXT = "text"
-    THINKING = "thinking"
-    REDACTED_THINKING = "redacted_thinking"
-    # TOOL_USE / TOOL_RESULT 在 Phase 2.1 扩展
+from typing import Literal
+from pydantic import BaseModel, Field
 
 class TextBlock(BaseModel):
     type: Literal["text"] = "text"
@@ -60,6 +57,7 @@ class RedactedThinkingBlock(BaseModel):
     data: str
 
 ContentBlock = TextBlock | ThinkingBlock | RedactedThinkingBlock
+# Phase 2.1 追加 ToolUseBlock / ToolResultBlock（Pydantic union 扩展向后兼容）
 
 class Message(BaseModel):
     role: Literal["system", "user", "assistant"]
@@ -70,13 +68,22 @@ class Message(BaseModel):
 
 ```python
 class ChatResponse(BaseModel):
-    content: str                   # 纯文本（无 tool call 时），老代码照常用
-    blocks: list[ContentBlock]     # 完整 blocks（含 tool_use/thinking），供 agent 循环用
-    stop_reason: str = ""          # end_turn | tool_use | max_tokens
+    content: str                        # 纯文本（无 tool call 时），老代码照常用
+    blocks: list[ContentBlock] = Field(default_factory=list)  # 完整 blocks，供 agent 循环用
+    stop_reason: str = ""               # end_turn | tool_use | max_tokens
     model: str = ""
     usage: Usage | None = None
     latency: int = 0
 ```
+
+> 注：不用常量类（`ContentBlockType`），`type` 字段由 `Literal` 做强约束（见"ContentBlock 设计含义"）。
+
+**str 与 list[ContentBlock] 的语义分层**：
+- 内部形态由开发方决定（与 API 提供方无关）：`str` = 纯文本便捷形态（等价 `list[TextBlock]`）；`list[ContentBlock]` = 富内容（工具调用等）。API 提供方只约束 wire 格式（OpenAI content 为 string/parts array、Anthropic content 恒为 blocks 数组），转换由 provider 适配器消化——同一份内部 str，发 OpenAI 是 `content: "文本"`，发 Anthropic 是 `content: [{type: "text", text: "文本"}]`
+- `str`：Phase 1 全部调用方使用（summary service、/api/llm/test、Phase 2 记忆注入）
+- `list[ContentBlock]`：Phase 1 无业务代码产生；Phase 2.1（tool_use/tool_result）与 Phase 3（agent loop）才产生（仍是开发方在 agent loop 实现中构造）。响应侧出现什么 block 由模型输出决定，但解析后的内部结构由我们定义
+- 两 provider 的处理现状：anthropic.py 的 `_to_wire_message` 已正确处理两种形态；openai_compat.py 仅正确处理 str（list 为未定义行为，纯 text block 恰能被 OpenAI content parts 接受，tool_use 需走 tool_calls）——刻意推迟到 Phase 2.2 处理
+- **不删除 str**：str 与 list 是并列形态、长期共存（类似 SDK 的 json=/data= 参数）。删除 str 需改模型+全部调用方+provider+测试，收益为零（每 provider 省一个 isinstance 分支）；纯文本场景（summary/llm test/记忆注入）用 str 最自然。Phase 2.2 重构方向是"补齐 list 处理"而非"移除 str"，重构后两 provider 均支持两种形态
 
 ## 双协议兼容：内部中立模型 + Wire 适配器
 
@@ -153,31 +160,61 @@ class AnthropicProvider(BaseProvider):
     - 第三方代理/网关 (如 openrouter, one-api 等)
     """
 
-    def __init__(self, config: LLMConfig):
-        self.base_url = config.base_url.rstrip("/")
-        self.api_key = config.api_key
-        self.model = config.model
-        self.max_tokens = config.max_tokens or 4096
-        self.thinking_level = config.get("thinking_level", "off")
-        self._http = httpx.AsyncClient(timeout=120)
+    # 与 OpenAICompatProvider 保持一致的分离参数签名，工厂 _build_provider 统一调用
+    def __init__(
+        self,
+        api_base: str,
+        api_key: str,
+        model: str = "claude-sonnet-4-6",
+        max_tokens: int = 2000,
+        temperature: float = 0.7,
+        timeout: int = 60,
+        proxy: str | None = None,
+        thinking_level: str = "off",
+    ) -> None:
+        self.api_base = api_base.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.timeout = timeout
+        self.proxy = proxy
+        self.thinking_level = thinking_level
 
     # thinking_level → Anthropic budget_tokens 映射
     _THINKING_BUDGETS = {"off": 0, "low": 2048, "medium": 4096, "high": 8192}
 
     async def chat(self, messages: list[Message], **kwargs: Any) -> ChatResponse:
-        # 1. 内部模型 → wire 格式（含 system 提取、content blocks 构建）
         body = self._build_request(messages, **kwargs)
-        # 2. 调用 POST /v1/messages
-        # 3. wire 格式 → 内部模型（解析 content blocks、usage、stop_reason）
-        data = await self._post("/v1/messages", body)
+        # 复用 create_async_client，与 OpenAICompatProvider 一致支持 proxy/ssl_verify
+        async with create_async_client(
+            proxy=self.proxy,
+            timeout=self.timeout,
+            follow_redirects=True,
+        ) as client:
+            response = await client.post(
+                f"{self.api_base}/messages",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                    "anthropic-version": "2023-06-01",
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
         return self._parse_response(data)
 
     def _build_request(self, messages, **kwargs) -> dict:
         """内部模型 → Anthropic wire 格式"""
-        system_parts = [m.content for m in messages if m.role == "system"]
+        system_parts = [
+            m.content for m in messages if m.role == "system"
+        ]
         body = {
             "model": kwargs.get("model", self.model),
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "temperature": kwargs.get("temperature", self.temperature),
             "messages": [self._to_wire_message(m) for m in messages if m.role != "system"],
         }
         if system_parts:
@@ -197,9 +234,53 @@ class AnthropicProvider(BaseProvider):
             return 0
         return self._THINKING_BUDGETS.get(level, 0)
 
+    def _to_wire_message(self, m: Message) -> dict:
+        """内部消息 → Anthropic wire 消息"""
+        if isinstance(m.content, str):
+            blocks = [{"type": "text", "text": m.content}]
+        else:
+            blocks = [block.model_dump(exclude_none=True) for block in m.content]
+        return {"role": m.role, "content": blocks}
+
     def _parse_response(self, data: dict) -> ChatResponse:
         """Anthropic wire 格式 → 内部模型"""
-        ...
+        blocks: list[ContentBlock] = []
+        text_parts: list[str] = []
+        for block in data.get("content", []):
+            btype = block.get("type")
+            if btype == "text":
+                blocks.append(TextBlock(text=block.get("text", "")))
+                text_parts.append(block.get("text", ""))
+            elif btype == "thinking":
+                blocks.append(ThinkingBlock(
+                    thinking=block.get("thinking", ""),
+                    signature=block.get("signature"),
+                ))
+            elif btype == "redacted_thinking":
+                blocks.append(RedactedThinkingBlock(data=block.get("data", "")))
+            else:
+                # 未知 block 类型（如 tool_use）：跳过 + warning，不崩溃（Phase 2.1 正式解析）
+                logger.warning(f"未知 content block 类型 {btype!r}，已跳过")
+
+        # Anthropic usage 字段映射：input_tokens → prompt_tokens, output_tokens → completion_tokens
+        usage = None
+        if "usage" in data:
+            u = data["usage"]
+            prompt = u.get("input_tokens", 0)
+            completion = u.get("output_tokens", 0)
+            usage = Usage(
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=prompt + completion,
+            )
+
+        return ChatResponse(
+            content="".join(text_parts),
+            blocks=blocks,
+            stop_reason=data.get("stop_reason", ""),
+            model=data.get("model", ""),
+            usage=usage,
+        )
 ```
 
 ## 配置
@@ -275,15 +356,18 @@ await llm_client.chat(messages)                          # 用全局默认
 | 新增 | `app/services/llm/providers/anthropic.py` | AnthropicProvider 实现 |
 | 修改 | `app/services/llm/models.py` | 扩展 Message 模型，新增 ContentBlock 类型（Text/Thinking/RedactedThinking） |
 | 修改 | `app/services/llm/providers/base.py` | BaseProvider.chat() 签名不变，确认兼容 |
-| 修改 | `app/services/llm/client.py` | 工厂方法新增 `anthropic_compat` 分支 |
+| 修改 | `app/services/llm/client.py` | `_PROVIDER_MAP` 新增 `anthropic_compat` 分支；`_build_provider` 为 anthropic 分支传 `thinking_level` |
 | 修改 | `app/core/config.py` | `get_llm_config()` 默认值新增 `thinking_level="off"` |
 | 修改 | `app/core/config_schema.py` | `[llm]` section 新增 `provider`/`thinking_level` 字段元数据 |
 | 修改 | `app/models/summary.py` | `LLMConfigResponse`/`LLMConfigUpdate` 增加 `provider`、`thinking_level` |
 | 修改 | `app/api/llm.py` | conf 接口透传新字段 |
+| 修改 | `config.example.ini` | `[llm]` 段补 `provider`、`thinking_level` 注释与默认值 |
 | 修改 | `templates/config/_llm.html` | Provider 下拉框 + 思考强度下拉框 |
+| 修改 | `templates/config.html` | `loadLLMConfig`/`saveLLMAndTest` JS 处理新字段 |
 
-> 总计：新增 1 个文件，修改 8 个文件
+> 总计：新增 1 个文件，修改 10 个文件
 > 注意：`OpenAICompatProvider` 在 Phase 1 完全不动（工具拆并见 Phase 2.1，适配重构见 Phase 2.2）
+> `_build_provider` 中 `thinking_level` 只传给 anthropic 分支（openai 分支构造函数无此参数，保持不动）
 
 ## 验证方式
 
