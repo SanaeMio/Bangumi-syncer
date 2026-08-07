@@ -121,6 +121,7 @@ class TestLLMClientChat:
         assert isinstance(response, ChatResponse)
         assert response.content == "Hello!"
         assert response.model == "gpt-4o-mini"
+        assert response.usage is not None
         assert response.usage.prompt_tokens == 10
         assert response.usage.completion_tokens == 5
         assert response.usage.total_tokens == 15
@@ -166,6 +167,7 @@ class TestLLMClientChat:
                 response = await client.chat(messages)
 
         assert response.content == "Retry OK"
+        assert response.usage is not None
         assert response.usage.total_tokens == 8
         assert mock_chat.await_count == 2
         mock_sleep.assert_awaited_once_with(1)
