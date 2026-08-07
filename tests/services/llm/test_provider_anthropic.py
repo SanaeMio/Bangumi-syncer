@@ -59,25 +59,25 @@ def _make_mock_client(  # noqa: PLR0913
     return mock_client
 
 
-def _make_provider(**overrides: object) -> AnthropicProvider:
-    """构造测试 provider，默认参数。"""
-    defaults: dict[str, object] = {
-        "api_base": "https://api.anthropic.com/v1",
-        "api_key": "sk-test",
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 2000,
-        "temperature": 0.7,
-        "timeout": 60,
-    }
-    defaults.update(overrides)
+def _make_provider(
+    *,
+    api_base: str = "https://api.anthropic.com/v1",
+    api_key: str = "sk-test",
+    model: str = "claude-sonnet-4-6",
+    max_tokens: int = 2000,
+    temperature: float = 0.7,
+    timeout: int = 60,
+    thinking_level: str = "off",
+) -> AnthropicProvider:
+    """构造测试 provider，仅允许覆盖需要调整的参数。"""
     return AnthropicProvider(
-        api_base=str(defaults["api_base"]),
-        api_key=str(defaults["api_key"]),
-        model=str(defaults["model"]),
-        max_tokens=int(defaults["max_tokens"]),
-        temperature=float(defaults["temperature"]),
-        timeout=int(defaults["timeout"]),
-        thinking_level=str(defaults.get("thinking_level", "off")),
+        api_base=api_base,
+        api_key=api_key,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout=timeout,
+        thinking_level=thinking_level,
     )
 
 
