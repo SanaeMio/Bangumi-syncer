@@ -16,6 +16,8 @@ class LLMConfigResponse(BaseModel):
     max_tokens: int = 2000
     temperature: float = 0.7
     timeout: int = 60
+    provider: str = "openai_compat"
+    thinking_level: str = "off"
 
 
 class LLMConfigUpdate(BaseModel):
@@ -27,6 +29,8 @@ class LLMConfigUpdate(BaseModel):
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
     timeout: Optional[int] = None
+    provider: Optional[str] = None
+    thinking_level: Optional[str] = None
 
 
 class LLMTestResponse(BaseModel):

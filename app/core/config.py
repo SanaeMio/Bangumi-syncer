@@ -596,6 +596,7 @@ class ConfigManager:
             "max_tokens": 2000,
             "temperature": 0.7,
             "timeout": 60,
+            "thinking_level": "off",
             "retention_days": 365,
         }
         raw = self.get_section(LLM_SECTION, {})
