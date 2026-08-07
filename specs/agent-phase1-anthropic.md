@@ -19,17 +19,19 @@
 ### 做什么
 
 - Messages API 格式的请求/响应处理
-- Content block 类型：`text`、`tool_use`、`tool_result`、`thinking`、`redacted_thinking`
+- Content block 类型：`text`、`thinking`、`redacted_thinking`（工具相关 block 见 Phase 2.1）
 - System prompt 作为顶层参数（而非 message role）
 - `stop_reason` 解析（`end_turn`、`tool_use`、`max_tokens`、`stop_sequence`）
-- Thinking budget 配置项
+- `thinking_level` 配置项（off/low/medium/high）
+- thinking 模型能力降级（claude-haiku 等不支持时忽略并 warning）
 
 ### 不做什么
 
 - 不实现 Agent 循环
-- 不实现工具调用执行（只做协议层的 content block 解析）
-- 不改 `OpenAICompatProvider` 的任何逻辑
+- 不实现工具调用（ToolUseBlock/ToolResultBlock 类型与转换见 Phase 2.1）
+- 不改 `OpenAICompatProvider` 的任何逻辑（openai 适配重构见 Phase 2.2）
 - 不添加 Function Calling 的适配层
+- 不解析 `tool_use` block——遇到未知 block 类型时**跳过并记录 warning，不崩溃**（正式解析在 Phase 2.1）
 
 ## 消息模型扩展
 
@@ -40,26 +42,13 @@
 
 class ContentBlockType:
     TEXT = "text"
-    TOOL_USE = "tool_use"
-    TOOL_RESULT = "tool_result"
     THINKING = "thinking"
     REDACTED_THINKING = "redacted_thinking"
+    # TOOL_USE / TOOL_RESULT 在 Phase 2.1 扩展
 
 class TextBlock(BaseModel):
     type: Literal["text"] = "text"
     text: str
-
-class ToolUseBlock(BaseModel):
-    type: Literal["tool_use"] = "tool_use"
-    id: str
-    name: str
-    input: dict = {}
-
-class ToolResultBlock(BaseModel):
-    type: Literal["tool_result"] = "tool_result"
-    tool_use_id: str
-    content: str
-    is_error: bool = False
 
 class ThinkingBlock(BaseModel):
     type: Literal["thinking"] = "thinking"
@@ -70,7 +59,7 @@ class RedactedThinkingBlock(BaseModel):
     type: Literal["redacted_thinking"] = "redacted_thinking"
     data: str
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ThinkingBlock | RedactedThinkingBlock
+ContentBlock = TextBlock | ThinkingBlock | RedactedThinkingBlock
 
 class Message(BaseModel):
     role: Literal["system", "user", "assistant"]
@@ -132,7 +121,17 @@ class ChatResponse(BaseModel):
 
 ### system prompt 差异由 provider 内部处理
 
-`AnthropicProvider._build_request` 中：从 messages 里抽出 `role=system` 的消息拼成顶层 `system` 参数（多个 system 消息用 `\n\n` 连接）。`OpenAICompatProvider` 照旧当作普通消息。
+两种协议对 system 的承载方式不同，差异收敛在各 provider 的 `_build_request` 内部：
+
+- **Anthropic**：system 是顶层参数。从 messages 里抽出 `role=system` 的消息拼成顶层 `system`（多个 system 消息用 `\n\n` 连接）
+- **OpenAI**：system 就是 messages 数组里的普通 `role=system` 消息，序列化无需任何特殊处理（现状代码 `{"role": m.role, "content": m.content}` 已正确，Phase 1 不改动）
+
+### ContentBlock 设计含义（内部归一化模型）
+
+- **没有统一的官方 protocol**。ContentBlock 是项目内部归一化模型（`app/services/llm/models.py` 中的 Pydantic union），不是外部标准。选择 Anthropic content block 形状的原因：① Anthropic 侧 1:1 映射、零转换成本；② OpenAI 的 wire 格式可无损转换到这个结构（拆并逻辑见 Phase 2.1）
+- **Phase 1 只定义文本/思考类 block**：`text`、`thinking`、`redacted_thinking`。工具类 block（`tool_use`/`tool_result`）在 Phase 2.1 扩展 union——Pydantic union 追加类型向后兼容，不影响现有类型
+- **未知 block 类型跳过不崩溃**：Phase 1 的 `_parse_response` 是通用解析器，若响应中出现未定义的 block 类型（如 `tool_use`），跳过该 block 并记录 warning，`content` 只取 text block。这是为 Phase 2.1/Phase 3 预置的容错行为，保证 Phase 1 期间 API 响应任何形态都不崩溃
+- 当前业务代码（summary service）只用纯文本，`Message.content: str` 旧用法保持不变，不受影响
 
 ### 兼容性保证
 
@@ -183,13 +182,20 @@ class AnthropicProvider(BaseProvider):
         }
         if system_parts:
             body["system"] = "\n\n".join(system_parts)
-        # thinking_level：每任务 kwargs 覆盖 > 全局默认
+        # thinking_level：每任务 kwargs 覆盖 > 全局默认；模型不支持时降级
         level = kwargs.get("thinking_level", self.thinking_level)
-        budget = self._THINKING_BUDGETS.get(level, 0)
+        budget = self._thinking_enabled(level, kwargs.get("model", self.model))
         if budget > 0:
             body["thinking"] = {"type": "enabled", "budget_tokens": budget}
             body["temperature"] = 1  # Anthropic 要求 thinking 开启时 temperature 必须为 1
         return body
+
+    def _thinking_enabled(self, level: str, model: str) -> int:
+        """返回 budget_tokens；模型不支持或 level=off 时返回 0"""
+        if model.startswith("claude-haiku"):
+            logger.warning(f"model {model} 不支持 extended thinking，已降级为 off")
+            return 0
+        return self._THINKING_BUDGETS.get(level, 0)
 
     def _parse_response(self, data: dict) -> ChatResponse:
         """Anthropic wire 格式 → 内部模型"""
@@ -232,6 +238,22 @@ thinking_level = off              # 新增字段: off | low | medium | high，�
 
 **为什么用枚举而非各协议的原始参数**：`budget_tokens`（token 数）与 `reasoning_effort`（枚举）单位不同，暴露给用户需要两套控件。统一为 `thinking_level` 后，前端一个下拉框搞定。缺省 `off` = 与现状行为完全一致，零回归风险。
 
+### thinking 开关的两个维度：配置 + 模型能力
+
+`thinking_level` 配置 ≠ 实际发送 thinking 参数。模型能力是第二道闸门：
+
+- Anthropic 的 extended thinking 只被部分模型支持（claude-opus-4.x / claude-sonnet-4.x 等）；**claude-haiku-* 不支持**，传 `thinking` 参数 API 会报错
+- Phase 1 实现**最小能力降级**：模型名以 `claude-haiku` 开头时，忽略 thinking 配置并记录 warning（行为等同 `off`）；未知模型按支持处理（让 API 报错自然暴露）
+
+```python
+def _thinking_enabled(self, level: str, model: str) -> int:
+    """返回 budget_tokens；模型不支持或 level=off 时返回 0"""
+    if model.startswith("claude-haiku"):
+        logger.warning(f"model {model} 不支持 extended thinking，已降级为 off")
+        return 0
+    return self._THINKING_BUDGETS.get(level, 0)
+```
+
 ### 全局默认 + 每任务覆盖（不需要每任务独立配置段）
 
 沿用现有 `LLMClient.chat(messages, **kwargs)` 的透传机制 —— `max_tokens` / `temperature` 现在就是这样被任务覆盖的：
@@ -251,9 +273,8 @@ await llm_client.chat(messages)                          # 用全局默认
 | 操作 | 文件 | 说明 |
 |------|------|------|
 | 新增 | `app/services/llm/providers/anthropic.py` | AnthropicProvider 实现 |
-| 修改 | `app/services/llm/models.py` | 扩展 Message 模型，新增 ContentBlock 类型 |
+| 修改 | `app/services/llm/models.py` | 扩展 Message 模型，新增 ContentBlock 类型（Text/Thinking/RedactedThinking） |
 | 修改 | `app/services/llm/providers/base.py` | BaseProvider.chat() 签名不变，确认兼容 |
-| 修改 | `app/services/llm/providers/openai_compat.py` | `thinking_level` → `reasoning_effort` 映射；tool_use/tool_result 拆并 |
 | 修改 | `app/services/llm/client.py` | 工厂方法新增 `anthropic_compat` 分支 |
 | 修改 | `app/core/config.py` | `get_llm_config()` 默认值新增 `thinking_level="off"` |
 | 修改 | `app/core/config_schema.py` | `[llm]` section 新增 `provider`/`thinking_level` 字段元数据 |
@@ -261,7 +282,8 @@ await llm_client.chat(messages)                          # 用全局默认
 | 修改 | `app/api/llm.py` | conf 接口透传新字段 |
 | 修改 | `templates/config/_llm.html` | Provider 下拉框 + 思考强度下拉框 |
 
-> 总计：新增 1 个文件，修改 9 个文件
+> 总计：新增 1 个文件，修改 8 个文件
+> 注意：`OpenAICompatProvider` 在 Phase 1 完全不动（工具拆并见 Phase 2.1，适配重构见 Phase 2.2）
 
 ## 验证方式
 
@@ -269,5 +291,7 @@ await llm_client.chat(messages)                          # 用全局默认
 2. 切换到 Anthropic provider 后，手动触发一个 AI 总结任务，确认正常生成并发送通知
 3. 设置 `thinking_level=medium`，确认响应中包含 thinking block 且不计入最终 content
 4. `thinking_level` 缺省 `off` 时行为与现状完全一致（回归验证）
-5. 保留 OpenAI 兼容模式，确认现有功能不受影响
-6. 详细验收用例见 `agent-phase1-test-plan.md`（BDD）
+5. 模型名以 `claude-haiku` 开头 + `thinking_level=medium` 时，请求体不含 thinking 参数且记录 warning（降级验证）
+6. 响应中出现未知 block 类型（如 `tool_use`）时，跳过并记录 warning，不崩溃（容错验证）
+7. 保留 OpenAI 兼容模式，确认现有功能不受影响
+8. 详细验收用例见 `agent-phase1-test-plan.md`（BDD，工具相关场景见 Phase 2.1/2.2 文档）
