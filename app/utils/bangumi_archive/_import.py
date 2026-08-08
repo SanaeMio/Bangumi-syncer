@@ -304,9 +304,36 @@ class ArchiveImporter:
             shutil.rmtree(extract_dir, ignore_errors=True)
 
     def _extract_zip(self, zip_path: Path, extract_dir: Path) -> None:
-        """解压 zip 到目标目录"""
+        """解压 zip 到目标目录（逐成员校验，防止 Zip-Slip 路径穿越）
+
+        本地上传入口（/api/bangumi_archive/import_local）的 zip 内容不可信，
+        若成员名含 ``../`` 或绝对路径，extractall 会写到 extract_dir 之外
+        （如覆盖 config.ini），因此逐成员校验后再解压，危险成员直接跳过。
+        """
+        extract_root = extract_dir.resolve()
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(extract_dir)
+            for member in zf.infolist():
+                # 1) 拒绝路径穿越：兼容 POSIX/Windows 分隔符的 .. 与绝对路径
+                norm_name = member.filename.replace("\\", "/")
+                first_part = norm_name.split("/", 1)[0]
+                if (
+                    norm_name.startswith("/")
+                    or ".." in norm_name.split("/")
+                    or ":" in first_part  # Windows 盘符（如 C:/...）
+                ):
+                    logger.warning(
+                        f"bangumi_archive: 跳过路径穿越风险成员（Zip-Slip）: "
+                        f"{member.filename!r}"
+                    )
+                    continue
+                # 2) 二次防线：解析后的目标路径必须仍在解压根目录内
+                target = (extract_dir / member.filename).resolve()
+                if not target.is_relative_to(extract_root):
+                    logger.warning(
+                        f"bangumi_archive: 跳过越界成员: {member.filename!r}"
+                    )
+                    continue
+                zf.extract(member, extract_dir)
         logger.info(f"bangumi_archive: 已解压 {zip_path.name} 到 {extract_dir}")
 
     def _find_jsonl(self, extract_dir: Path, table_name: str) -> Path | None:
