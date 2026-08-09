@@ -107,7 +107,7 @@ class TaskManagerMixin:
                 del self._sync_tasks[task_id]
 
         if old_tasks:
-            logger.info(f"清理了 {len(old_tasks)} 个旧的同步任务记录")
+            logger.debug(f"清理了 {len(old_tasks)} 个旧的同步任务记录")
 
     # ------------------------------------------------------------------
     # 媒体服务器同步委托

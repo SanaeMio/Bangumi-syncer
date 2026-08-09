@@ -33,7 +33,7 @@ class WebhookMixin:
             payload = self._build_payload_by_type(notification_type, data, template)
 
             # 发送请求
-            logger.info(f"📤 发送 {notification_type} 通知到: {url}")
+            logger.debug(f"📤 发送 {notification_type} 通知到: {url}")
 
             client = (
                 SyncHttpClient(label="Webhook", timeout=10.0, max_retries=0)

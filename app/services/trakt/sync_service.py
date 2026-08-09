@@ -181,7 +181,7 @@ class TraktSyncService:
                 skipped_count += 1
             else:
                 pending_items.append(item)
-        logger.info(f"去重后剩余 {len(pending_items)} 条待同步记录")
+        logger.debug(f"去重后剩余 {len(pending_items)} 条待同步记录")
         return pending_items, skipped_count
 
     def _collect_detail_fetch_tasks(
@@ -402,7 +402,7 @@ class TraktSyncService:
                 # 转换为 datetime，减去一天作为缓冲
                 last_sync_dt = datetime.fromtimestamp(config.last_sync_time)
                 start_date = last_sync_dt - timedelta(days=1)
-                logger.info(f"增量同步，从 {start_date.date()} 开始")
+                logger.debug(f"增量同步，从 {start_date.date()} 开始")
 
             # 获取所有观看历史（自动分页）
             history_items = await client.get_all_watched_history(start_date=start_date)
@@ -423,7 +423,7 @@ class TraktSyncService:
                     details={},
                 )
 
-            logger.info(f"获取到 {len(history_items)} 条观看历史记录")
+            logger.debug(f"获取到 {len(history_items)} 条观看历史记录")
 
             # 一次性加载已同步集合，后续 O(1) 查找（消除 N+1 查询）
             synced_set = await asyncio.to_thread(
@@ -454,7 +454,9 @@ class TraktSyncService:
                 else:
                     logger.warning(f"跳过不支持的类型或数据不完整的记录: {item}")
                     skipped_count += 1
-            logger.info(f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）")
+            logger.debug(
+                f"过滤后得到 {len(syncable_items)} 条可同步记录（剧集 + 电影）"
+            )
 
             # 增量同步时先过滤已同步记录，减少后续 API 请求
             pending_items, dedup_skipped = self._filter_already_synced(

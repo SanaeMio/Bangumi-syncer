@@ -220,7 +220,7 @@ class ArchiveShortcut:
             config_manager.get("bangumi-archive", "enabled", fallback=False)
         )
         if self._enabled:
-            logger.info("bangumi_archive 短路已启用，读操作将优先走 Archive")
+            logger.debug("bangumi_archive 短路已启用，读操作将优先走 Archive")
 
     @property
     def enabled(self) -> bool:

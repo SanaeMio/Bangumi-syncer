@@ -799,7 +799,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             else:
                 result_message = "播放开始：条目标记为在看"
 
-            logger.info(
+            logger.debug(
                 f"bgm: {item.title} {result_message} https://bgm.tv/subject/{subject_id}"
             )
 
@@ -1173,7 +1173,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """根据标记结果构建结果消息并发送通知。返回 result_message。"""
         if mark_status == 0:
             result_message = "已看过，不再重复标记"
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
             )
 
@@ -1188,7 +1188,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         elif mark_status == 1:
             result_message = "已标记为看过"
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
             )
 
@@ -1203,10 +1203,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         else:
             result_message = "已添加到收藏并标记为看过"
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}"
             )
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
             )
 
@@ -1269,7 +1269,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             bgm.change_collection_state(
                                 subject_id=str(bgm_se_id), state=2
                             )
-                            logger.info(
+                            logger.debug(
                                 f"bgm: {bgm_title or item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"
                             )
             except Exception as e:
@@ -1433,11 +1433,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         subject_id, item.episode
                     )
                 except Exception as e:
-                    logger.info(f"关联季条目链查找异常: {e}")
+                    logger.debug(f"关联季条目链查找异常: {e}")
                 if chain_pick:
                     chain_subject_id, chain_ep_id = chain_pick
                     prev_subject_id = subject_id
-                    logger.info(
+                    logger.debug(
                         f"通过关联季条目链找到目标集: 原 subject_id={prev_subject_id}, "
                         f"改选 subject_id={chain_subject_id}, ep_id={chain_ep_id}, "
                         f"目标 episode={item.episode}"
@@ -1984,7 +1984,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
                 if bangumi_data_result:
                     bangumi_data_id, matched_title, date_matched = bangumi_data_result
-                    logger.info(
+                    logger.debug(
                         f"通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}, "
                         f"匹配标题: {matched_title}, 日期匹配: {date_matched}"
                     )
@@ -2252,7 +2252,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             self._get_explicit_season_from_title(cand_name_cn) or 0,
                         )
                         if cand_season == 0:
-                            logger.info(
+                            logger.debug(
                                 f"首条候选为第{top_explicit_season}季，"
                                 f"改选无季度后缀的候选: "
                                 f"{cand_name_cn or cand_name}(id={cand.get('id')})"
@@ -2285,7 +2285,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 )
                             break
                     if not is_api_season_matched:
-                        logger.info(
+                        logger.debug(
                             f"首条候选明确为第{top_explicit_season}季，"
                             f"但候选列表中无无季度后缀的条目，保持首条"
                         )
@@ -2316,7 +2316,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     need_reselect = (
                         top_detected != request_media_type or not top_exact_match
                     )
-                    logger.info(
+                    logger.debug(
                         f"改选判定: 首条={top_name_cn or top_name} "
                         f"(id={bgm_data[0].get('id')}, detect={top_detected}, "
                         f"精确匹配={top_exact_match}), 请求类型={request_media_type}, "
@@ -2343,7 +2343,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         if top_detected == request_media_type and not top_exact_match:
                             episode_candidates.insert(0, bgm_data[0])
 
-                        logger.info(
+                        logger.debug(
                             f"episode_candidates 数={len(episode_candidates)}: "
                             + ", ".join(
                                 f"{c.get('name_cn') or c.get('name')}(id={c.get('id')},"
@@ -2356,14 +2356,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             best_cand = self._pick_mainline_episode_candidate(
                                 episode_candidates, item.title or ""
                             )
-                            logger.info(
+                            logger.debug(
                                 f"_pick_mainline_episode_candidate 择优结果: "
                                 f"{best_cand.get('name_cn') or best_cand.get('name')}"
                                 f"(id={best_cand.get('id')})"
                             )
                             # 仅当择优结果与当前首条不同时才改选并标记已匹配
                             if best_cand.get("id") != bgm_data[0].get("id"):
-                                logger.info(
+                                logger.debug(
                                     f"首条候选 {top_name_cn or top_name} "
                                     f"(detect={top_detected}, 精确匹配={top_exact_match}) "
                                     f"不够理想，改选主线剧集: "
@@ -2390,12 +2390,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                     else:
                                         related_list = []
                                 except Exception as e:
-                                    logger.info(
+                                    logger.debug(
                                         f"获取关联条目失败 (subject_id={top_id}): {e}"
                                     )
                                     related_list = []
 
-                                logger.info(
+                                logger.debug(
                                     f"关联条目数={len(related_list)} (top_id={top_id}): "
                                     + ", ".join(
                                         f"{r.get('name_cn') or r.get('name')}"
@@ -2448,7 +2448,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         other_match = rel
 
                                 chosen = mainline_match or other_match
-                                logger.info(
+                                logger.debug(
                                     f"关联条目改选: mainline_match="
                                     f"{mainline_match.get('id') if mainline_match else None}, "
                                     f"other_match="
@@ -2461,7 +2461,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         try:
                                             chosen_info = bgm.get_subject(chosen_id)
                                             if chosen_info and chosen_info.get("id"):
-                                                logger.info(
+                                                logger.debug(
                                                     f"首条候选媒体类型={top_detected} "
                                                     f"与请求 {request_media_type} 不一致，"
                                                     f"通过关联条目改选: "
@@ -2472,7 +2472,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                                 bgm_data[0] = chosen_info
                                                 is_api_season_matched = True
                                         except Exception as e:
-                                            logger.info(
+                                            logger.debug(
                                                 f"获取关联条目详情失败 "
                                                 f"(subject_id={chosen_id}): {e}"
                                             )
@@ -2536,7 +2536,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 )
 
                         if not is_api_season_matched:
-                            logger.info(
+                            logger.debug(
                                 f"首条候选媒体类型={top_detected} 与请求 "
                                 f"{request_media_type} 不一致，候选与关联条目中"
                                 f"均无一致条目，保持首条"

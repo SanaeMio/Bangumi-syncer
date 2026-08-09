@@ -376,7 +376,7 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         # 写缓存
         with _watching_cache_lock:
             _watching_cache[username] = (now, ids)
-        logger.info(
+        logger.debug(
             f"获取在看列表成功: username={username}, 动画 {len(anime_watching)} + 三次元 {len(real_watching)} = {len(ids)} 部"
         )
         return ids
@@ -385,7 +385,7 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         with _watching_cache_lock:
             cached = _watching_cache.get(username)
         if cached:
-            logger.info(f"使用缓存降级: username={username}, {len(cached[1])} 部")
+            logger.debug(f"使用缓存降级: username={username}, {len(cached[1])} 部")
             return cached[1]
         # 无缓存时抛出，让调用方降级（如改为全部放送）
         raise

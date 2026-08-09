@@ -118,7 +118,7 @@ class EmailSenderMixin:
                         pass
                     raise e
 
-            logger.info(
+            logger.debug(
                 f"✅ 邮件通知发送成功: {to_email} (配置ID={email_config.get('id')})"
             )
             return True

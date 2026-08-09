@@ -51,7 +51,7 @@ class RetryMixin:
                     subject_id=subject_id, ep_id=ep_id
                 )
                 if attempt > 0:
-                    logger.info(f"重试成功，第 {attempt + 1} 次尝试标记成功")
+                    logger.debug(f"重试成功，第 {attempt + 1} 次尝试标记成功")
                 return mark_status
             except _PendingSyncQueued as e:
                 # API 不可达：入队并返回 MARK_QUEUED，不再重试
@@ -110,7 +110,7 @@ class RetryMixin:
                     self._executor, bgm_api.mark_episode_watched, subject_id, ep_id
                 )
                 if attempt > 0:
-                    logger.info(f"异步重试成功，第 {attempt + 1} 次尝试标记成功")
+                    logger.debug(f"异步重试成功，第 {attempt + 1} 次尝试标记成功")
                 return mark_status
             except _PendingSyncQueued as e:
                 if is_replay_enabled() and queue_payload is not None:
