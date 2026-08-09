@@ -26,6 +26,7 @@ order: 45
 
 ## 🐛 Bug 修复
 
+- 修复 Replay 匹配阶段在 API 不可达时反复产出「未找到匹配的番剧」error 记录，改为直接跳过；探测成功后统一复位所有用户实例的不可达标记 `2026-08-09`
 - 修复 `_bangumi_archive.html` 多余 `</div>` 导致 Replay/Airing Today 段渲染在 form 外、配置数据保存丢失 `2026-07-31`
 - 修复 `airing_calendar.js` 缺少 IIFE 起始导致整个 JS 解析失败、卡片不显示 `2026-07-31`
 - 修复 `list_user_collections` 把 `httpx.Response` 当 dict 处理导致在看列表获取为空 `2026-07-31`
