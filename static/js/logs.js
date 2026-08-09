@@ -369,6 +369,15 @@
         if (group.source) {
             html += '<span class="badge rounded-pill bg-info">' + escapeHtml(group.source) + '</span>';
         }
+        if (group.run_id) {
+            html += '<span class="badge rounded-pill log-group-id-badge" title="run_id（单次同步）：' + escapeHtml(group.run_id) + '"><i class="bi bi-signpost-2"></i> ' + escapeHtml(group.run_id) + '</span>';
+        }
+        if (group.req_id) {
+            html += '<span class="badge rounded-pill log-group-id-badge" title="请求 ID（X-Request-ID）：' + escapeHtml(group.req_id) + '"><i class="bi bi-link-45deg"></i> ' + escapeHtml(group.req_id) + '</span>';
+        }
+        if (group.batch_id) {
+            html += '<span class="badge rounded-pill log-group-id-badge" title="批次 ID（批量补发一轮）：' + escapeHtml(group.batch_id) + '"><i class="bi bi-collection"></i> ' + escapeHtml(group.batch_id) + '</span>';
+        }
         html += '<span class="badge rounded-pill ' + statusBadgeClass(group.status) + '">' +
             statusLabel(group.status) + '</span>';
         if (group.ambiguous) {

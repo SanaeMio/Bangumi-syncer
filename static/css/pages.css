@@ -1159,6 +1159,22 @@ pre {
     font-weight: 600;
 }
 
+.log-group-badges .log-group-id-badge {
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    font-weight: 500;
+    max-width: 15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    color: var(--app-text-secondary, #8a8f98);
+    background: var(--app-bg-soft, rgba(128, 128, 128, 0.15));
+}
+
+.log-group-badges .log-group-id-badge .bi {
+    margin-right: 0.2rem;
+}
+
 .log-group-header-actions {
     display: flex;
     flex-wrap: nowrap;

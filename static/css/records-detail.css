@@ -281,6 +281,24 @@
     border-top: none;
 }
 
+.record-detail-assoc-line {
+    font-size: 0.75rem;
+    word-break: break-all;
+}
+
+.record-detail-assoc-line code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--app-border) 25%, transparent);
+}
+
+.record-detail-inline-msg__sep {
+    margin: 0 0.45rem;
+    color: var(--app-text-secondary, #8a8f98);
+}
+
 .record-detail-zone__head {
     display: flex;
     align-items: center;

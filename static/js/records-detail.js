@@ -644,8 +644,20 @@ function isRecordSyncSuccess(record) {
     return record.status === 'success' || record.status === 'retried';
 }
 
+function renderRecordAssociationIds(record) {
+    const parts = [];
+    if (record.run_id) {
+        parts.push('<code>' + escapeHtml(record.run_id) + '</code>');
+    }
+    if (record.batch_id) {
+        parts.push('批次 <code>' + escapeHtml(record.batch_id) + '</code>');
+    }
+    return parts.join('<span class="record-detail-inline-msg__sep">·</span>');
+}
+
 function renderSyncResultContent(record, trace) {
     const isSuccess = isRecordSyncSuccess(record);
+    const assocIds = renderRecordAssociationIds(record);
     const score = (trace && trace.final_score !== null && trace.final_score !== undefined)
         ? trace.final_score
         : record.match_score;
@@ -669,6 +681,10 @@ function renderSyncResultContent(record, trace) {
         if (links) {
             facts.push({ label: '链接', value: links, wide: true });
         }
+        const assocIds = renderRecordAssociationIds(record);
+        if (assocIds) {
+            facts.push({ label: '关联', value: assocIds, wide: true });
+        }
         body += renderRecordDetailFacts(facts);
     }
 
@@ -683,7 +699,10 @@ function renderSyncResultContent(record, trace) {
         if (!body || isNoMatch) {
             inlineClass += ' record-detail-inline-msg--only';
         }
-        body += `
+        const assocBlock = (isSuccess || !assocIds)
+            ? ''
+            : `<div class="record-detail-inline-msg record-detail-inline-msg--only"><span class="record-detail-inline-msg__label">关联</span><div class="record-detail-assoc-line">${assocIds}</div></div>`;
+        body += `${assocBlock}
             <div class="${inlineClass}">
                 <span class="record-detail-inline-msg__label">${msgLabel}</span>
                 <pre class="${messageClass} mb-0">${escapeHtml(messageText)}</pre>
