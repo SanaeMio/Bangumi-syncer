@@ -949,6 +949,38 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         }
         receive_step.raw_payload = item.raw_payload
 
+        # 批量快速降级：API 不可达（TTL 内）时，匹配链路的读接口已短路，
+        # 逐条完整匹配只会反复产出「未找到匹配的番剧」error 记录，
+        # 或等各自 TTL 到期后再次触发 10s×3 重试（无用重试）。
+        # 此时直接快速跳过本轮，不写 error 记录；恢复统一由补发调度器的
+        # 批量探测（_probe_api）驱动——探测成功后通过
+        # reset_all_api_unreachable_flags 一次性复位所有缓存实例。
+        # 仅补发模式（bangumi-replay enabled）开启时生效，关闭时保持原行为。
+        bgm = self._get_bangumi_api_for_user(item.user_name)
+        if is_replay_enabled() and bgm and bgm.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达，本轮跳过匹配: {item.title} "
+                f"S{item.season:02d}E{item.episode:02d}（等待批量探测复位）"
+            )
+            trace.finish()
+            # 尝试提前唤醒补发探测（内部有 500ms 防抖），
+            # API 一旦恢复即可统一复位，不必等下轮 cron
+            try:
+                from ..bangumi_replay_scheduler import bangumi_replay_scheduler
+
+                bangumi_replay_scheduler.trigger_immediate_run()
+            except Exception as e:
+                logger.debug(f"📚 触发补发探测失败: {e}")
+            return (
+                None,
+                False,
+                SyncResponse(
+                    status="ignored",
+                    message="Bangumi API 不可达：跳过本轮匹配，等待恢复后由补发调度器补发",
+                ),
+                trace,
+            )
+
         # 查找番剧ID及其是否为特定季度ID的标记
         subject_id, is_season_matched_id, subject_find_error = self._find_subject_id(
             item, trace=trace
@@ -2634,6 +2666,22 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         if self._bangumi_data_cache is None:
             self._bangumi_data_cache = bangumi_data
         return self._bangumi_data_cache
+
+    def reset_all_api_unreachable_flags(self) -> int:
+        """批量复位所有缓存 BangumiApi 实例的不可达标记，返回复位数量。
+
+        补发调度器批量探测成功（_probe_api）后调用：一次探测通过即统一恢复
+        全部用户实例，避免每个实例各自等 TTL 到期、每条同步任务各探一次的
+        「无用重试」堆积。探测失败时不调用，维持不可达状态。
+        """
+        count = 0
+        for _user_name, (api, _snapshot) in self._bangumi_api_cache.items():
+            if api.is_api_unreachable():
+                api.mark_api_reachable()
+                count += 1
+        if count:
+            logger.info(f"📚 已统一复位 {count} 个 BangumiApi 实例的不可达标记")
+        return count
 
     # ------------------------------------------------------------------
     # 待同步队列补发：API 恢复后由调度器或手动 API 触发
