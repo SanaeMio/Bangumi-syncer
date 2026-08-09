@@ -298,9 +298,9 @@ class SearchMixin:
         # 场景：fongmi/媒体库推送「完美世界 S06E279」，archive 禁用或 miss
         # 后降级到 API，原样发给 Bangumi API 会因季后缀导致无结果或低相似度
         # 命中，剥离后用核心标题「完美世界」更易命中。
-        # 延迟导入避免循环依赖，与 _archive_shortcut 内部使用同一函数保持
-        # API 与 archive 路径的剥离逻辑一致。
-        from ._archive_shortcut import (
+        # 标题归一化工具已下沉到 bangumi_archive/_title_normalize，
+        # API 与 archive 路径共用同一套剥离逻辑。
+        from ..bangumi_archive._title_normalize import (
             _MEDIA_PREFIX_VARIANTS,
             _split_title_segments,
             _strip_season_episode_suffix,

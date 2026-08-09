@@ -12,175 +12,29 @@
 
 第二期 A 接入路径：BangumiApi 的读方法首行先调 try_* 短路，
 命中即返回，未命中降级到原 API 调用（保持现有行为完全一致）。
+
+标题归一化、多策略标题匹配、subject 批量过滤已下沉到
+bangumi_archive 模块（_title_normalize / _title_index / _store），
+本模块仅负责命中判断 + 降级原因封装。
 """
 
 # ruff: noqa: UP045 — 与项目其他模块风格保持一致，使用 Optional[X]
 
 from __future__ import annotations
 
-import re
 from typing import Any, NamedTuple, Optional
 
 from ...core.config import config_manager
 from ...core.logging import logger
 from ..bangumi_archive._store import archive_store
+from ..bangumi_archive._title_index import archive_title_index
+from ..bangumi_archive._title_normalize import (
+    _MEDIA_PREFIX_VARIANTS,
+    _split_title_segments,
+    _strip_season_episode_suffix,
+    _strip_title_wrappers,
+)
 from ..bangumi_constants import RELATION_ID_SEQUEL
-
-# 季数/集数后缀剥离模式（按优先级排序，长模式在前）
-# 处理 fongmi/Plex/Jellyfin 等传入的「标题 S06E279」「标题 第N季」「标题 第二季」等格式，
-# 剥离后用核心标题去 archive 匹配（archive 中存的是第一季本体名，不含季后缀）
-_SEASON_EPISODE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # S06E279 / S6E27 / S01E01（含可选空格与分隔符）
-    re.compile(r"\s*S\s*\d+\s*E\s*\d+.*$", re.IGNORECASE),
-    # 第N季 / 第N期（阿拉伯数字）
-    re.compile(r"\s*第\s*\d+\s*[期季].*$"),
-    # 第N季 / 第N期（中文数字，含"十一"~"十九"）
-    re.compile(r"\s*第\s*[一二三四五六七八九十]+\s*[期季].*$"),
-    # 第二季 / 第二期（直接拼接，无"第"字前缀的少见情况，保留兼容）
-    re.compile(r"\s*[一二三四五六七八九十]+\s*[期季].*$"),
-    # Season N / 2nd season / Nth season
-    re.compile(r"\s*season\s*\d+.*$", re.IGNORECASE),
-    re.compile(r"\s*\d+(?:st|nd|rd|th)?\s*season.*$", re.IGNORECASE),
-    # 上半 / 下半 / 第2部分
-    re.compile(r"\s*(?:上|下)半.*$"),
-    re.compile(r"\s*第\s*\d+\s*部分.*$"),
-    # 第N部 / 第N章 / 第N篇（中文数字，含"十一"~"十九"）
-    # 注意：仅剥离末尾的"第N部"等后缀，避免误剥"第三部门"等复合词
-    re.compile(r"\s*第\s*\d+\s*部$"),
-    re.compile(r"\s*第\s*[一二三四五六七八九十]+\s*部$"),
-    # 罗马数字版本号后缀（末尾空格 + II/III/IV/VI/VII/VIII/IX/XI 等 2 字符以上）
-    # 仅匹配末尾，避免误剥"Star Wars: Episode IV"（中间 IV）
-    # 单字符 I 不剥离（容易误剥人名/缩写如 "Henry I"）
-    re.compile(r"\s+[IVX]{2,}$"),
-    # vN / ver.N / version N / vol.N 末尾版本号
-    re.compile(r"\s+(?:v|ver|version|vol)\.?\s*\d+$", re.IGNORECASE),
-)
-
-
-# try_search / try_search_old 遍历 ids 上限
-# 避免精确命中大量同名 subject（如 infobox 脏数据「台版|」归一化后
-# 「台版」命中上千条目）时，逐条调用 archive_store.get_subject 拖慢查询
-# 至数秒（极端场景实测 4972ms）。正常场景 limit=5，遍历 200 条已足够
-# 找到 5 条合格结果；若 200 条都被 type/air_date 过滤掉，说明匹配质量
-# 极低，停止遍历不影响实际命中率。
-_MAX_IDS_TO_FETCH = 200
-
-# 媒体前缀变体：当核心标题精确命中但全部被 type 过滤时，
-# 尝试给核心标题加这些前缀再匹配（如查询「クドわふたー」精确命中同名游戏，
-# type 过滤后空，尝试「劇場版 クドわふたー」精确命中剧场版动画）。
-# 顺序按常见度排序，劇場版最常见。
-_MEDIA_PREFIX_VARIANTS: tuple[str, ...] = (
-    "劇場版 ",
-    "剧场版 ",
-    "OVA ",
-    "OAD ",
-)
-
-# 标题主副分隔符：用于把「魔法少女小圆：叛逆的物语」拆成主段+副段。
-# 优先级按常见度排序：冒号（含全角）最常见，破折号次之。
-# 波浪号（～/〜/~）在日文标题中常作为副标题分隔，与「ー」长音符号不同。
-# 注意：〜 (U+301C WAVE DASH，日文标准) 与 ～ (U+FF5E 全角) 是不同字符，
-# 日文 archive 标题常用 U+301C，需同时包含。
-_TITLE_SPLIT_SEPARATORS: tuple[str, ...] = (
-    "：",
-    ":",
-    "～",  # 全角波浪号 U+FF5E
-    "〜",  # 日文波浪号 U+301C（archive 中常见）
-    "~",  # 半角波浪号 U+007E
-    "—",  # 全角破折号
-    "－",  # 全角连字符
-    "-",  # 半角连字符（最后，避免误分割复合词如 Spider-Man）
-)
-
-# 标题包裹符：用于剥离标题外层的书名号/方括号。
-# 如「「君の名は。」」→「君の名は。」
-_TITLE_WRAPPER_PAIRS: tuple[tuple[str, str], ...] = (
-    ("「", "」"),
-    ("『", "』"),
-    ("【", "】"),
-    ("《", "》"),
-    ("〈", "〉"),
-    ("[", "]"),
-    ("(", ")"),
-)
-
-
-def _strip_season_episode_suffix(title: str) -> str:
-    """剥离标题末尾的季数/集数后缀，返回核心标题。
-
-    场景：fongmi/媒体库传入「完美世界 S06E279」「完美世界 第六季」等，
-    archive 中存的是「完美世界」，直接匹配会因 fuzzy 阈值过低而 miss。
-    剥离后用核心标题再试，命中率显著提升。
-
-    保留策略：仅剥离能识别的后缀，无法识别时原样返回（不影响精确匹配）。
-    """
-    if not title:
-        return title
-    cleaned = title.strip()
-    for pattern in _SEASON_EPISODE_PATTERNS:
-        m = pattern.search(cleaned)
-        if m:
-            stripped = cleaned[: m.start()].strip()
-            # 剥离后需保留实质内容（长度 >= 2），避免误剥成空串
-            if len(stripped) >= 2:
-                return stripped
-    return cleaned
-
-
-def _strip_title_wrappers(title: str) -> str:
-    """剥离标题外层的书名号/方括号包裹
-
-    场景：媒体库推送「「君の名は。」」「『進撃の巨人』」时，
-    archive 中存的是无包裹的「君の名は。」「進撃の巨人」。
-    剥离外层包裹符让精确匹配能命中。
-
-    注意：仅剥离最外层一对，避免误剥嵌套结构。
-    标题内部仍含包裹符时（如「Re:ゼロ」）保持原样。
-    """
-    if not title:
-        return title
-    cleaned = title.strip()
-    for open_w, close_w in _TITLE_WRAPPER_PAIRS:
-        if len(cleaned) >= 2 and cleaned[0] == open_w and cleaned[-1] == close_w:
-            inner = cleaned[1:-1].strip()
-            # 剥离后需保留实质内容
-            if len(inner) >= 2:
-                return inner
-    return cleaned
-
-
-def _split_title_segments(title: str) -> list[str]:
-    """按主副分隔符拆分标题，返回非空段列表（已 strip）
-
-    场景：媒体库推送「魔法少女小圆：叛逆的物语」时，
-    archive 中可能仅存主标题「魔法少女小圆」。
-    拆分后用主段精确匹配，避免依赖低分模糊匹配。
-
-    拆分策略：
-    1. 优先按冒号（含全角）拆分，最常见的主副分隔
-    2. 次按破折号、波浪号拆分
-    3. 拆分后过滤空段和过短段（< 2 字符，避免误匹配）
-
-    Returns:
-        拆分后的段列表（按出现顺序），首段是主标题。
-        无分隔符时返回 [title]（单元素列表）。
-    """
-    if not title:
-        return []
-    cleaned = title.strip()
-    # 找出标题中首次出现的主副分隔符位置（按优先级）
-    # 一次拆分即可，避免过度拆分丢失语义
-    for sep in _TITLE_SPLIT_SEPARATORS:
-        idx = cleaned.find(sep)
-        if idx > 0:  # 0 表示分隔符在开头（如「:Re:从零...」），不算主副分隔
-            main = cleaned[:idx].strip()
-            sub = cleaned[idx + len(sep) :].strip()
-            if len(main) >= 2:
-                # 返回主段 + 副段（副段可空，调用方按需使用）
-                if sub:
-                    return [main, sub]
-                return [main]
-    return [cleaned]
 
 
 class ShortcutResult(NamedTuple):
@@ -442,225 +296,6 @@ class ArchiveShortcut:
             logger.warning(f"bangumi_archive 短路 find_prequel_chain 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
 
-    def _find_subject_ids_for_title(self, title: str) -> tuple[list[int], bool]:
-        """标题 → subject_id 列表 + 是否精确命中
-
-        匹配优先级（从最可靠到最不可靠）：
-        1. 剥离季数/集数后缀后的精确匹配（仅当标题含可识别后缀时触发）
-           场景 C：媒体库推送「X Season 2」「X 第二季」时，archive 中既有
-           「X」（主条目）又有「X Season 2」（衍生条目，如分季汇总）。
-           剥离后用核心标题「X」匹配，优先返回主条目，避免被同名的衍生条目屏蔽。
-           仅当 stripped != title 时触发，无后缀时跳过此步骤。
-        2. 原始标题精确匹配（最直接命中）
-           无后缀剥离时的主路径；有后缀剥离但剥离后未命中时的兜底。
-        3. 标题分割主段精确匹配
-           场景 A：archive 同时存在「X 第N期」(含季数) 和「X」(通用版本)，
-           查询「X 第N期：副标题」时剥离 `第N期：副标题` 命中通用版本「X」，
-           但主段「X 第N期」更具体，应优先返回主段对应 subject。
-           条件（有后缀剥离时）：主段长度 > 剥离后标题长度，避免
-           「Crow: The Legend S01E01」剥离后「Crow: The Legend」(17)
-           比主段「Crow」(4) 更具体时误用主段。
-           场景 B：纯主副标题分隔（无季数后缀），如查询
-           「宇宙戦艦ヤマト：叛逆的物语」时 archive 存「宇宙戦艦ヤマト」，
-           主段即主标题，应直接精确匹配。
-           条件（无后缀剥离时）：主段长度 >= 4，避免过短主段误匹配。
-        4. 剥离后模糊匹配（核心标题可能存在细微差异）
-        5. 原始标题模糊匹配（最后兜底，可能因公共子串误命中）
-
-        Returns:
-            (ids, is_exact) 元组：
-            - ids: 命中的 subject_id 列表
-            - is_exact: True 表示前三个优先级精确命中；
-                        False 表示仅模糊命中（兜底），调用方可据此
-                        决定是否尝试媒体前缀/标题分割后再回退模糊
-        """
-        from ..bangumi_archive._title_index import archive_title_index
-
-        # 1. 原始标题精确匹配
-        ids = archive_title_index.find_subject_ids_by_title(title)
-
-        # 2. 剥离季数/集数后缀后的精确匹配（与原始精确合并，原始优先）
-        # 场景 C：媒体库推送「X Season 2」时，archive 中既有「X」（主条目）
-        # 又有「X Season 2」（衍生条目）。剥离后用核心标题匹配，主条目
-        # 必须在返回列表中，避免被衍生条目屏蔽。
-        # 场景 A：archive name 本身含季数（如「X 第2期」），查询同名时
-        # ids 含期望条目（X 第2期），stripped_ids 含不同条目（X 主条目）。
-        # 必须同时返回两者，否则会丢期望条目（回归 96.5% → 99%+）。
-        # 顺序：原始 ids 优先（更具体），stripped_ids 作为补充（去重）。
-        # 场景 N：剥离后命中核心标题（如「快乐星猫」），但期望是含季数的
-        # 主段（如「快乐星猫第三季」）。尝试主段匹配，主段优先。
-        stripped = _strip_season_episode_suffix(title)
-        if stripped != title and stripped:
-            stripped_ids = archive_title_index.find_subject_ids_by_title(stripped)
-            if stripped_ids:
-                # 尝试主段匹配（主段含季数更具体）
-                # 场景 N：查询「快乐星猫第三季：叛逆的物语」剥离后命中
-                # 「快乐星猫」(116142)，但期望是「快乐星猫第三季」(417287)。
-                # 主段「快乐星猫第三季」(6 字) > stripped「快乐星猫」(4 字)，
-                # 主段精确匹配命中 417287，优先返回。
-                main_ids = self._try_main_segment_match(title, stripped)
-                if main_ids:
-                    # 主段优先（含季数更具体），stripped_ids 作为补充（去重）
-                    seen = set(main_ids)
-                    extra = [i for i in stripped_ids if i not in seen]
-                    return main_ids + extra, True
-                if ids:
-                    seen = set(ids)
-                    extra = [i for i in stripped_ids if i not in seen]
-                    return ids + extra, True
-                return stripped_ids, True
-
-        # 3. 主段精确匹配（即使 ids 为空也尝试）
-        # 场景 N：查询「Bewitched (Season 2) —后传—」时，剥离后是
-        # 「Bewitched (」（不完整，archive 中无此 name），原始精确也未命中，
-        # 但主段「Bewitched (Season 2)」精确匹配能直接命中期望 ID 118940。
-        # 若跳过主段匹配走模糊匹配，会命中多个 Bewitched Season N，期望 ID
-        # 被 limit 截断。所以即使 ids 为空，也要尝试主段匹配。
-        # 场景 B（无后缀剥离）：查询「宇宙戦艦ヤマト：叛逆的物语」时
-        # 原始精确未命中，主段「宇宙戦艦ヤマト」精确命中多个 subject。
-        # 场景 A（有后缀剥离）：archive 有「ふたりエッチ 第1期」(50598) 和
-        # 「ふたりエッチ」(102797)，查询「ふたりエッチ 第1期：叛逆的物语」
-        # 剥离后命中 102797（通用），但主段「ふたりエッチ 第1期」(11 字) >
-        # 剥离后「ふたりエッチ」(6 字)，主段更具体，优先返回 50598。
-        # 反例：查询「Crow: The Legend S01E01」剥离后「Crow: The Legend」(17 字)
-        # 比主段「Crow」(4 字) 更具体，不应触发主段精确匹配。
-        # 场景 C（无后缀剥离 + 媒体前缀变体）：查询
-        # 「前橋ウィッチーズ ～魔女見習いのエモエモリーズ～」（剥离劇場版前缀后）
-        # 时主段「前橋ウィッチーズ」命中 TV 版，但 archive 中有
-        # 「劇場版 前橋ウィッチーズ ～魔女見習いのエモエモリーズ～」，
-        # 应优先返回劇場版（更具体）。
-        main_ids = self._try_main_segment_match(title, stripped)
-        if main_ids:
-            if stripped == title and ids:
-                # 无后缀剥离 + ids 非空：原始 ids 是完整标题精确匹配，最具体。
-                # 仅当存在媒体前缀变体（劇場版/OVA/OAD + 原标题）时
-                # 优先返回变体，原始 ids 作为补充（去重）。
-                # 场景：查询「前橋ウィッチーズ ～副标题～」时主段命中 TV 版，
-                # 但 archive 中有「劇場版 前橋ウィッチーズ ～副标题～」，
-                # 应优先返回劇場版（更具体）。
-                # 反例（D1）：查询「牙狼〈GARO〉-GOLDSTORM- 翔」时
-                # ids=[124627, 124628] 含期望，main_ids=[29864] 不含期望，
-                # 直接返回 main_ids 会丢弃期望条目，必须合并 ids。
-                variant_ids_list: list[int] = []
-                for prefix in _MEDIA_PREFIX_VARIANTS:
-                    variant = f"{prefix}{title}"
-                    v_ids = archive_title_index.find_subject_ids_by_title(variant)
-                    if v_ids:
-                        variant_ids_list.extend(v_ids)
-                if variant_ids_list:
-                    # 媒体前缀变体优先，原始 ids 作为补充（去重）
-                    seen = set(variant_ids_list)
-                    fallback = [i for i in ids if i not in seen]
-                    return variant_ids_list + fallback, True
-                # 无变体：直接返回原始 ids（更具体的完整标题匹配）
-                return ids, True
-            # 有后缀剥离 或 ids 为空：main_ids 优先，原始 ids 作为补充（去重）
-            seen = set(main_ids)
-            fallback = [i for i in ids if i not in seen] if ids else []
-            return main_ids + fallback, True
-
-        # 4. 原始精确命中兜底
-        if ids:
-            return ids, True
-
-        # 5. 剥离后模糊匹配
-        if stripped != title and stripped:
-            fuzzy = archive_title_index.find_subject_ids_fuzzy(stripped)
-            if fuzzy:
-                return [sid for sid, _ in fuzzy], False
-
-        # 6. 原始标题模糊匹配（兜底）
-        fuzzy = archive_title_index.find_subject_ids_fuzzy(title)
-        return [sid for sid, _ in fuzzy], False
-
-    def _try_main_segment_match(self, title: str, stripped: str) -> list[int]:
-        """尝试主段精确匹配，返回主段对应的 subject_id 列表
-
-        条件：
-        - 有后缀剥离时（stripped != title）：主段长度 > stripped 长度
-          （主段比 stripped 更具体，含季数信息）
-          反例：「Crow: The Legend S01E01」剥离后「Crow: The Legend」(17 字)
-          比主段「Crow」(4 字) 更具体，不应触发主段匹配。
-        - 无后缀剥离时（stripped == title）：主段长度 >= 4
-          （纯主副标题分隔，主段足够长避免误匹配）
-
-        Args:
-            title: 原始查询标题
-            stripped: _strip_season_episode_suffix 剥离后的标题
-
-        Returns:
-            主段精确匹配的 subject_id 列表（可能为空）
-        """
-        from ..bangumi_archive._title_index import archive_title_index
-
-        segments = _split_title_segments(title)
-        if len(segments) < 2:
-            return []
-        main_segment = segments[0]
-        if stripped != title:
-            # 有后缀剥离：要求主段比 stripped 更具体
-            if len(main_segment) <= len(stripped):
-                return []
-        else:
-            # 无后缀剥离：主段足够长即可
-            if len(main_segment) < 4:
-                return []
-        return archive_title_index.find_subject_ids_by_title(main_segment)
-
-    def _fetch_and_filter_subjects(
-        self,
-        ids: list[int],
-        types_set: set[int],
-        start_date: str,
-        end_date: str,
-        limit: int,
-        skip_ids: Optional[set[int]] = None,
-    ) -> list[dict[str, Any]]:
-        """遍历 ids 拉取 subject + 按 type/air_date 过滤
-
-        Args:
-            ids: 待遍历的 subject_id 列表
-            types_set: 允许的 type 集合
-            start_date/end_date: air_date 区间过滤 [start, end)
-            limit: 最大返回数
-            skip_ids: 已遍历过的 subject_id（避免降级时重复遍历）
-
-        遍历上限 _MAX_IDS_TO_FETCH 防止极端场景拖慢查询。
-        """
-        results: list[dict[str, Any]] = []
-        # 注意：必须用 `is not None` 而非 `or`，因为空 set 是 falsy，
-        # `skip_ids or set()` 会创建新 set 导致跨步骤 skip_ids 共享失效，
-        # 后续步骤重复遍历已处理 id，调用方期望 skip_ids 被填充用于共享
-        skip = skip_ids if skip_ids is not None else set()
-        for idx, sid in enumerate(ids):
-            if idx >= _MAX_IDS_TO_FETCH:
-                logger.warning(
-                    f"bangumi_archive 遍历 ids 达上限 "
-                    f"{_MAX_IDS_TO_FETCH}（共 {len(ids)} 个），停止遍历"
-                )
-                break
-            if sid in skip:
-                continue
-            skip.add(sid)
-            subject = archive_store.get_subject(sid)
-            if subject is None:
-                continue
-            # type 过滤
-            if subject.get("type") not in types_set:
-                continue
-            # air_date 过滤：API filter 为 [">=start", "<end"]
-            # subject.date 缺失时不参与过滤（避免误删无日期条目）
-            subj_date = subject.get("date")
-            if isinstance(subj_date, str) and subj_date:
-                if start_date and subj_date < start_date:
-                    continue
-                if end_date and subj_date >= end_date:
-                    continue
-            results.append(subject)
-            if len(results) >= limit:
-                break
-        return results
-
     def try_search(
         self,
         title: str,
@@ -704,8 +339,6 @@ class ArchiveShortcut:
         if not self._enabled:
             return ShortcutResult(False, None, "archive_disabled")
         try:
-            from ..bangumi_archive._title_index import archive_title_index
-
             # 索引未就绪时降级到 API，并懒触发后台构建
             if not archive_title_index.is_ready:
                 archive_title_index.build_in_background()
@@ -731,7 +364,7 @@ class ArchiveShortcut:
                         )
                         if not variant_ids:
                             continue
-                        results = self._fetch_and_filter_subjects(
+                        results = archive_store.get_subjects_by_ids_with_filter(
                             variant_ids,
                             types_set,
                             start_date,
@@ -743,9 +376,9 @@ class ArchiveShortcut:
                             return ShortcutResult(True, results, "archive_hit")
 
             # 步骤 1：精确匹配（原始 + 剥离季后缀）
-            ids, is_exact = self._find_subject_ids_for_title(title)
+            ids, is_exact = archive_title_index.find_subject_ids_for_query_title(title)
             if ids:
-                results = self._fetch_and_filter_subjects(
+                results = archive_store.get_subjects_by_ids_with_filter(
                     ids, types_set, start_date, end_date, limit, skip_ids
                 )
                 if results:
@@ -765,7 +398,7 @@ class ArchiveShortcut:
                     variant_ids = archive_title_index.find_subject_ids_by_title(variant)
                     if not variant_ids:
                         continue
-                    results = self._fetch_and_filter_subjects(
+                    results = archive_store.get_subjects_by_ids_with_filter(
                         variant_ids,
                         types_set,
                         start_date,
@@ -787,7 +420,7 @@ class ArchiveShortcut:
                         main_segment
                     )
                     if main_ids:
-                        results = self._fetch_and_filter_subjects(
+                        results = archive_store.get_subjects_by_ids_with_filter(
                             main_ids,
                             types_set,
                             start_date,
@@ -804,7 +437,7 @@ class ArchiveShortcut:
             if unwrapped != title and len(unwrapped) >= 2:
                 unwrap_ids = archive_title_index.find_subject_ids_by_title(unwrapped)
                 if unwrap_ids:
-                    results = self._fetch_and_filter_subjects(
+                    results = archive_store.get_subjects_by_ids_with_filter(
                         unwrap_ids,
                         types_set,
                         start_date,
@@ -827,7 +460,7 @@ class ArchiveShortcut:
                     sid for sid, _ in archive_title_index.find_subject_ids_fuzzy(title)
                 ]
                 if fuzzy_ids:
-                    results = self._fetch_and_filter_subjects(
+                    results = archive_store.get_subjects_by_ids_with_filter(
                         fuzzy_ids,
                         types_set,
                         start_date,
@@ -865,35 +498,25 @@ class ArchiveShortcut:
         if not self._enabled:
             return ShortcutResult(False, None, "archive_disabled")
         try:
-            from ..bangumi_archive._title_index import archive_title_index
-
             # 索引未就绪时降级到 API，并懒触发后台构建
             if not archive_title_index.is_ready:
                 archive_title_index.build_in_background()
                 return ShortcutResult(False, None, "archive_miss")
 
-            ids, _is_exact = self._find_subject_ids_for_title(title)
+            ids, _is_exact = archive_title_index.find_subject_ids_for_query_title(title)
             if not ids:
                 return ShortcutResult(False, None, "archive_miss")
 
             # 拉取完整 subject + type 过滤
             # 旧版接口的 subject_type 即 API type（如 2=动画）
-            results: list[dict[str, Any]] = []
-            for idx, sid in enumerate(ids):
-                # 遍历上限：与 try_search 一致，避免极端场景拖慢查询
-                if idx >= _MAX_IDS_TO_FETCH:
-                    logger.warning(
-                        f"bangumi_archive try_search_old 遍历 ids 达上限 "
-                        f"{_MAX_IDS_TO_FETCH}（共 {len(ids)} 个），停止遍历"
-                    )
-                    break
-                subject = archive_store.get_subject(sid)
-                if subject is None:
-                    continue
-                # type 过滤（旧版接口按单一 type 查询）
-                if subject.get("type") != subject_type:
-                    continue
-                results.append(subject)
+            # 复用 store 的批量拉取能力：types_set={subject_type}，无 air_date 过滤
+            results = archive_store.get_subjects_by_ids_with_filter(
+                ids,
+                {subject_type},
+                "",
+                "",
+                len(ids),  # 旧版接口不限制 limit，全部拉取后由调用方截断
+            )
 
             if not results:
                 return ShortcutResult(False, None, "archive_miss")

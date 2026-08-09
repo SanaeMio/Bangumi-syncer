@@ -480,7 +480,7 @@ class TestTrySearchLazyBuild:
         shortcut._enabled = True
 
         with patch(
-            "app.utils.bangumi_archive._title_index.archive_title_index"
+            "app.utils.bangumi_api._archive_shortcut.archive_title_index"
         ) as mock_index:
             mock_index.is_ready = False
             mock_index.build_in_background = MagicMock()
@@ -498,7 +498,7 @@ class TestTrySearchLazyBuild:
         shortcut._enabled = True
 
         with patch(
-            "app.utils.bangumi_archive._title_index.archive_title_index"
+            "app.utils.bangumi_api._archive_shortcut.archive_title_index"
         ) as mock_index:
             mock_index.is_ready = False
             mock_index.build_in_background = MagicMock()
