@@ -682,3 +682,38 @@ class TestResetAllApiUnreachableFlags:
         svc = SyncService()
         svc._bangumi_api_cache = {}
         assert svc.reset_all_api_unreachable_flags() == 0
+
+    def test_concurrent_cache_write_during_iteration_no_error(self):
+        """遍历期间 _bangumi_api_cache 被并发写入不应触发 RuntimeError。
+
+        回归覆盖：reset_all_api_unreachable_flags 由补发调度器线程调用，
+        _get_bangumi_api_for_user 由 sync worker 线程调用并写入 cache。
+        直接遍历 dict 会在 size 变化时抛 "dictionary changed size during
+        iteration"；list() 快照遍历规避此问题。
+        """
+        svc = SyncService()
+
+        def make_api(unreachable: bool) -> MagicMock:
+            api = MagicMock()
+            api.is_api_unreachable.return_value = unreachable
+            return api
+
+        api1 = make_api(True)
+        svc._bangumi_api_cache = {
+            "u1": (api1, {"s": 1}),
+            "u2": (make_api(False), {"s": 2}),
+        }
+
+        # 模拟遍历期间的并发写入：首个实例处理后，另一线程往 cache 写入新条目
+        def on_is_unreachable():
+            svc._bangumi_api_cache["u3"] = (make_api(True), {"s": 3})
+            return True
+
+        api1.is_api_unreachable.side_effect = on_is_unreachable
+
+        # 不应抛 RuntimeError: dictionary changed size during iteration
+        count = svc.reset_all_api_unreachable_flags()
+
+        # u1 被复位（u3 在快照之后写入，本轮不遍历到，符合预期）
+        assert count == 1
+        api1.mark_api_reachable.assert_called_once()

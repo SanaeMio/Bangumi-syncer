@@ -2678,7 +2678,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         「无用重试」堆积。探测失败时不调用，维持不可达状态。
         """
         count = 0
-        for _user_name, (api, _snapshot) in self._bangumi_api_cache.items():
+        # 快照遍历：_get_bangumi_api_for_user（sync worker 线程）会并发写入
+        # _bangumi_api_cache，直接遍历 dict 在写入时触发
+        # "dictionary changed size during iteration"。GIL 下 list() 原子拷贝
+        # 引用，与既有"不加锁、接受偶发覆盖"的设计一致。
+        for _user_name, (api, _snapshot) in list(self._bangumi_api_cache.items()):
             if api.is_api_unreachable():
                 api.mark_api_reachable()
                 count += 1
