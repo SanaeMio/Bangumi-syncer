@@ -83,6 +83,7 @@ OAuth 授权所需的应用凭证（Client ID / Client Secret）已**内置，�
 - **调试模式**：打开后会打出更多运行细节，方便排查问题；日常使用建议关闭。
 - **日志级别**：控制输出到控制台与日志文件的日志程度，可选 `DEBUG` / `INFO` / `WARNING` / `ERROR`，默认 `INFO`，在 `config.ini` 的 `[dev]` 段 `log_level` 项配置（也可通过 `LOG_LEVEL` 环境变量覆盖）。低于该级别的日志不会写入控制台/日志文件；开启「调试模式」时始终按 `DEBUG` 级别输出。同步基本过程（开始、结束、失败原因）属于 `INFO`，其余细节多属于 `DEBUG`。
 - **日志轮转**：日志文件超过 20MB 时自动轮转，保留最近 2 份备份（`log.txt.1`、`log.txt.2`），避免单个文件无限增长。
+- **请求与批次关联**：每条日志行会附带 `[run:...]`（单次同步）、`[req:...]`（HTTP 请求，取值于或自动生成的 `X-Request-ID` 请求头）、`[batch:...]`（一轮批量补发）标签，便于在日志页/同步记录中串起一次完整调用链；`sync_records` 表会同步记录对应 `run_id` / `batch_id`。
 - **调度器时区**：定时任务（飞牛/fongmi/Trakt）使用的时区，IANA 格式（如 `Asia/Shanghai`、`America/New_York`、`UTC`）。在 `config.ini` 的 `[scheduler]` 段 `timezone` 项配置。Docker 部署也可通过 `TZ` 环境变量覆盖，优先级：`config.ini` > `TZ` 环境变量 > 默认值 `Asia/Shanghai`。
 - **同步记录保留天数**：程序每次启动时会自动清理超过指定天数的同步记录，控制数据库体积，避免长期运行后占用过大空间。默认不清理，可在 `config.ini` 的 `[dev]` 段 `sync_records_retention_days` 项修改：填 `0` 或负数表示**永不清理**（保留全部历史记录）；调试环境可设为 `7`–`14`，生产环境建议 `30`–`90`。清理后仪表板的热力图缓存会自动失效并重新加载。
 
