@@ -1191,6 +1191,21 @@ class TestTitleDiffRatio:
         ratio = BangumiApi.title_diff_ratio("遮天 第四季", None, data)
         assert ratio == 1.0
 
+    def test_decorator_and_whitespace_equivalence(self):
+        """仅差空格/修饰词（年番）的标题应识别为等价，不被低估误沉淀。
+
+        复现「斗破苍穹年番」类误沉淀：媒体库标题带"年番"修饰词且可能与
+        Bangumi 条目的空格写法不同，归一化后应判为完全匹配（>=0.9），
+        不再因空格/修饰词差异打出 0.56 这类低于阈值 0.6 的低分。
+        """
+        data = {"name": "斗破苍穹 年番", "name_cn": "斗破苍穹 年番"}
+        # 媒体库写法：修饰词紧贴、无空格
+        ratio_a = BangumiApi.title_diff_ratio("斗破苍穹年番", None, data)
+        # 媒体库写法：修饰词带空格
+        ratio_b = BangumiApi.title_diff_ratio("斗破苍穹 年番", None, data)
+        assert ratio_a >= 0.9
+        assert ratio_b >= 0.9
+
     def test_real_kamen_rider(self):
         """假面骑士加布 匹配 name_cn"""
         data = {"name": "仮面ライダーガヴ", "name_cn": "假面骑士加布"}

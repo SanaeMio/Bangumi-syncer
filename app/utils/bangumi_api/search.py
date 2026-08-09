@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import re
 from typing import Any
 
 import httpx
@@ -21,6 +22,44 @@ OLD_SEARCH_CANDIDATE_LIMIT = 15
 # 通常不含或以不同形式包含（如"遮天 第四季"）。匹配时应剥离后缀比较核心标题。
 # 注意：长后缀必须排在短后缀前面，确保优先匹配更具体的后缀。
 _TITLE_SUFFIXES = ("动画版", "动漫版", "真人版", "电影版", "TV版", "动画", "动漫")
+
+# 标题修饰词：在"核心标题"之外附加的播出形态/编排说明，如"年番""番外""特别篇"。
+# 这些词常在媒体库与 Bangumi 条目间不一致（"斗破苍穹年番" vs "斗破苍穹 年番"），
+# 但不影响作品身份，匹配相似度计算前应先去除，避免仅因空格/修饰词差异被误判低分。
+_TITLE_DECORATORS = (
+    "年番",
+    "半年番",
+    "季番",
+    "番外",
+    "外传",
+    "特别篇",
+    "总集篇",
+    "ova",
+    "oad",
+    "剧场版 ",
+    "OVA ",
+    "OAD ",
+)
+
+_RE_WHITESPACE = re.compile(r"\s+")
+
+
+def _normalize_title_for_match(text: str) -> str:
+    """匹配相似度用的标题归一化。
+
+    折叠空白（含全/半角空格、连续空格），并去除首尾及内部的修饰词
+    （"年番""番外"等，不区分有无空格），返回用于比较的规范化标题。
+    不改变原始 title_diff_ratio 调用方的入参。
+    """
+    if not text:
+        return ""
+    # 1. 折叠所有空白字符为无
+    norm = _RE_WHITESPACE.sub("", text)
+    # 2. 去除修饰词（处理"斗破苍穹年番"与"斗破苍穹 年番"两种写法）
+    for dec in _TITLE_DECORATORS:
+        # 修饰词前后可能带空格（已被折叠为空，此处直接去词）
+        norm = norm.replace(dec, "")
+    return norm.strip()
 
 
 def _strip_media_suffix(text: str) -> str:
@@ -518,8 +557,15 @@ class SearchMixin:
         防误判机制：当搜索标题和候选标题都含有媒体后缀（如"动画版"）时，
         若核心标题不相关（fuzz.ratio < 0.4 且不互相包含），则将最终得分
         限制在 0.4 以下，防止共享后缀（如"X动画版" vs "Y动画版"）导致误匹配。
+
+        归一化：比较前对标题做空格折叠与修饰词（年番/番外等）去除，
+        使"斗破苍穹年番"与"斗破苍穹 年番"这类仅差空格/修饰词的差异
+        被正确识别为等价，避免真实相似度被低估而误沉淀。
         """
         ori_title = ori_title or title
+        # 归一化用于相似度比较（不改变入参语义，日志/其他用途仍用原值）
+        norm_title = _normalize_title_for_match(title)
+        norm_ori = _normalize_title_for_match(ori_title)
         candidates = []
 
         # 提取基础候选项：原名与中文名
@@ -544,45 +590,50 @@ class SearchMixin:
                         candidates.append(alias_value)
                     break
 
-        # 预计算搜索标题的核心部分（剥离媒体后缀）
-        search_core = _strip_media_suffix(title)
-        search_stripped = search_core != title
-        ori_core = _strip_media_suffix(ori_title)
+        # 预计算搜索标题的核心部分（剥离媒体后缀）。
+        # 比较统一使用归一化标题（空格折叠 + 修饰词去除），避免仅差空格/
+        # "年番"等修饰词被低估；日志/展示等非比较用途仍走原始标题。
+        search_core = _strip_media_suffix(norm_title)
+        search_stripped = search_core != norm_title
+        ori_core = _strip_media_suffix(norm_ori)
 
         # 计算所有候选项的相似度，取最大值
         max_ratio = 0.0
         for candidate in candidates:
             if not candidate:
                 continue
+            # 候选同样做归一化，使"遮天 第四季"与"遮天第四季"等仅差空格/
+            # 修饰词的写法可被 fuzz 判为完全匹配，避免无谓的 0.9 上限。
+            norm_cand = _normalize_title_for_match(candidate)
 
             # 维度 1：原始 fuzz.ratio（保持向后兼容）
-            ratio_title = fuzz.ratio(candidate, title) / 100.0
-            ratio_ori = fuzz.ratio(candidate, ori_title) / 100.0
+            ratio_title = fuzz.ratio(norm_cand, norm_title) / 100.0
+            ratio_ori = fuzz.ratio(norm_cand, norm_ori) / 100.0
             score = max(ratio_title, ratio_ori)
 
             # 维度 2：核心标题包含检查
-            cand_core = _strip_media_suffix(candidate)
+            cand_core = _strip_media_suffix(norm_cand)
             if search_stripped and len(search_core) >= 2:
-                if search_core in candidate or candidate in search_core:
+                if search_core in norm_cand or norm_cand in search_core:
                     score = max(score, 0.9)
                 elif search_core in cand_core or cand_core in search_core:
                     score = max(score, 0.9)
             # 对 ori_title 也做包含检查（当 ori_title 与 title 不同时）
-            if ori_title != title and len(ori_core) >= 2 and ori_core != ori_title:
-                if ori_core in candidate or candidate in ori_core:
+            if norm_ori != norm_title and len(ori_core) >= 2 and ori_core != norm_ori:
+                if ori_core in norm_cand or norm_cand in ori_core:
                     score = max(score, 0.9)
                 elif ori_core in cand_core or cand_core in ori_core:
                     score = max(score, 0.9)
 
             # 维度 3：partial_ratio 打折（捕捉部分匹配）
-            partial_title = fuzz.partial_ratio(candidate, title) / 100.0 * 0.7
-            partial_ori = fuzz.partial_ratio(candidate, ori_title) / 100.0 * 0.7
+            partial_title = fuzz.partial_ratio(norm_cand, norm_title) / 100.0 * 0.7
+            partial_ori = fuzz.partial_ratio(norm_cand, norm_ori) / 100.0 * 0.7
             score = max(score, partial_title, partial_ori)
 
             # 防误判：双方都含媒体后缀但核心标题不相关时，限制得分上限。
             # 典型场景："遮天动画版" vs "剑来 动画版"，共享后缀"动画版"
             # 导致 fuzz.ratio 虚高，但核心"遮天"与"剑来"完全无关。
-            cand_stripped = cand_core != candidate
+            cand_stripped = cand_core != norm_cand
             if search_stripped and cand_stripped:
                 core_sim = fuzz.ratio(search_core, cand_core) / 100.0
                 core_related = (
@@ -591,7 +642,7 @@ class SearchMixin:
                     or cand_core in search_core
                 )
                 # ori_title 的核心与候选核心相关时不限制
-                if not core_related and ori_title != title:
+                if not core_related and norm_ori != norm_title:
                     ori_core_sim = fuzz.ratio(ori_core, cand_core) / 100.0
                     core_related = (
                         ori_core_sim >= 0.4
