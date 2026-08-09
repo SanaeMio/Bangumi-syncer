@@ -951,3 +951,30 @@ class ConfigManager:
 
 # 全局配置实例
 config_manager = ConfigManager()
+
+# 可注入钩子：默认返回模块级单例；测试/DI 可通过 set_config_manager 替换。
+# 注意：仅显式调用 get_config_manager() 的消费方会感知替换，
+# 直接 ``from ..core.config import config_manager`` 的代码仍用默认单例。
+_config_manager_override: Optional[ConfigManager] = None
+
+
+def get_config_manager() -> ConfigManager:
+    """获取全局配置管理器（优先返回被注入的实例）。"""
+    global _config_manager_override
+    return (
+        _config_manager_override
+        if _config_manager_override is not None
+        else config_manager
+    )
+
+
+def set_config_manager(instance: ConfigManager) -> None:
+    """替换配置管理器实例（测试/DI 注入）。"""
+    global _config_manager_override
+    _config_manager_override = instance
+
+
+def reset_config_manager() -> None:
+    """复位配置管理器，恢复默认模块级单例。"""
+    global _config_manager_override
+    _config_manager_override = None

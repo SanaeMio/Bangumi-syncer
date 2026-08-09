@@ -2933,11 +2933,28 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 _sync_service: SyncService | None = None
 
 
+def get_sync_service() -> SyncService:
+    """获取全局同步服务单例（惰性创建）。"""
+    global _sync_service
+    if _sync_service is None:
+        _sync_service = SyncService()
+    return _sync_service
+
+
+def set_sync_service(instance: SyncService) -> None:
+    """替换同步服务实例（测试/DI 注入）。"""
+    global _sync_service
+    _sync_service = instance
+
+
+def reset_sync_service() -> None:
+    """复位同步服务单例，下次访问时重建。"""
+    global _sync_service
+    _sync_service = None
+
+
 def __getattr__(name: str) -> Any:
     """模块级懒加载，避免 import 时即创建 ThreadPoolExecutor。"""
-    global _sync_service
     if name == "sync_service":
-        if _sync_service is None:
-            _sync_service = SyncService()
-        return _sync_service
+        return get_sync_service()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

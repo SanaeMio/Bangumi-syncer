@@ -22,6 +22,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from ..core.container import Injectable
 from ..core.logging import logger
 from ..core.notification_registry import (
     get_type_meta,
@@ -562,8 +563,30 @@ class NotificationService:
             logger.debug(f"写站内信失败: {e}")
 
 
-# 模块级单例
-notification_service = NotificationService()
+# 模块级单例（惰性：首次访问时才创建，可经 set_notification_service 注入替换）
+_injectable = Injectable(NotificationService)
+
+
+def get_notification_service() -> NotificationService:
+    """获取通知服务单例（惰性创建）。"""
+    return _injectable.get()
+
+
+def set_notification_service(instance: NotificationService) -> None:
+    """替换通知服务实例（测试/DI 注入）。"""
+    _injectable.set(instance)
+
+
+def reset_notification_service() -> None:
+    """复位通知服务单例，下次访问时按工厂重建。"""
+    _injectable.reset()
+
+
+def __getattr__(name: str) -> Any:
+    """向后兼容：``from ...notification_service import notification_service`` 仍可访问。"""
+    if name == "notification_service":
+        return _injectable.get()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def notify(
@@ -573,4 +596,4 @@ def notify(
     **kwargs: Any,
 ) -> bool:
     """便捷函数：通过 NotificationService 发送通知"""
-    return notification_service.notify(notification_type, item, source, **kwargs)
+    return get_notification_service().notify(notification_type, item, source, **kwargs)
