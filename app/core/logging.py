@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 DEFAULT_DEV_LOG_FILE = "./log.txt"
 
 # 日志文件超过该大小后轮转（新内容写入 log.txt，旧内容保留为 log.txt.1/.2）
-MAX_LOG_FILE_SIZE = 2 * 1024 * 1024
+MAX_LOG_FILE_SIZE = 20 * 1024 * 1024
 MAX_LOG_BACKUPS = 2
 
 # 级别权重：数字越大越重要
