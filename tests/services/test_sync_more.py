@@ -229,3 +229,16 @@ class TestCustomItem:
         d = item.model_dump()
         assert d["media_type"] == "episode"
         assert d["title"] == "测试番剧"
+
+    def test_custom_item_defaults(self):
+        """来源与原始标题缺省为 None"""
+        item = CustomItem(
+            media_type="episode",
+            title="测试番剧",
+            season=1,
+            episode=1,
+            release_date="2024-01-01",
+            user_name="test",
+        )
+        assert item.source is None
+        assert item.ori_title is None
