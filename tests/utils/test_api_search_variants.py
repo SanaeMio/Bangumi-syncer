@@ -7,8 +7,11 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 from unittest.mock import MagicMock, patch
+
+import httpx
 
 from app.utils.bangumi_api import BangumiApi
 
@@ -357,3 +360,141 @@ class TestVariantCountLimit:
         assert result is None
         # 也不应产生大量变体调用
         assert len(seen) <= 5
+
+
+class TestReadApiUnreachableShortCircuit:
+    """API 不可达标记（TTL 内）下，读接口跳过实际请求直接返回空结果。
+
+    archive 已在方法内先行短路；此标记作用在 archive miss 后的 API 阶段，
+    避免每次调用都等待 10s×3 重试，拖垮同步流程。
+    """
+
+    def _unreachable(self, api: BangumiApi) -> None:
+        api._api_unreachable = True
+        api._api_unreachable_until = time.time() + 300
+
+    def test_search_skips_request(self) -> None:
+        api = _make_api()
+        self._unreachable(api)
+
+        with patch.object(api, "_request_with_retry") as mock_req:
+            result = api.search(
+                title="测试",
+                start_date="2024-01-01",
+                end_date="2024-01-03",
+            )
+
+        mock_req.assert_not_called()
+        assert result == []
+
+    def test_search_old_skips_request(self) -> None:
+        api = _make_api()
+        self._unreachable(api)
+
+        with patch.object(api, "_request_with_retry") as mock_req:
+            result = api.search_old(title="测试")
+
+        mock_req.assert_not_called()
+        assert result == []
+
+    def test_get_subject_skips_request(self) -> None:
+        api = _make_api()
+        self._unreachable(api)
+
+        with patch.object(api, "get") as mock_get:
+            result = api.get_subject(123)
+
+        mock_get.assert_not_called()
+        assert result == {}
+
+    def test_get_related_subjects_skips_request(self) -> None:
+        api = _make_api()
+        self._unreachable(api)
+
+        with patch.object(api, "get") as mock_get:
+            result = api.get_related_subjects(123)
+
+        mock_get.assert_not_called()
+        assert result == []
+
+    def test_get_episodes_skips_request(self) -> None:
+        api = _make_api()
+        self._unreachable(api)
+
+        with patch.object(api, "get") as mock_get:
+            result = api.get_episodes(123)
+
+        mock_get.assert_not_called()
+        assert result == {"data": [], "total": 0}
+
+    def test_unreachable_flag_expired_recovers_probe(self) -> None:
+        """TTL 过期后 is_api_unreachable 恢复探测，读接口不再跳过。"""
+        api = _make_api()
+        api._api_unreachable = True
+        api._api_unreachable_until = time.time() - 1  # 已过期
+
+        mock_resp = _mock_resp({"data": []})
+        with patch.object(api, "_request_with_retry", return_value=mock_resp):
+            result = api.search(
+                title="测试",
+                start_date="2024-01-01",
+                end_date="2024-01-03",
+            )
+
+        assert result == []
+        assert api._api_unreachable is False
+
+
+class TestBgmSearchNetworkResilience:
+    """网络错误时 bgm_search 不抛异常，而是继续 fallback 并返回 None"""
+
+    def test_connect_error_returns_none_not_raise(self) -> None:
+        """所有 API 请求抛 ConnectError 时，bgm_search 返回 None 而非抛出。"""
+        api = _make_api()
+
+        with patch.object(
+            api, "_request_with_retry", side_effect=httpx.ConnectError("net down")
+        ):
+            result = api.bgm_search(title="测试", ori_title=None, premiere_date="")
+
+        assert result is None
+
+    def test_precise_search_network_error_falls_back_to_old(self) -> None:
+        """精确搜索网络失败后仍继续 search_old 变体遍历（不中断）。"""
+        api = _make_api()
+        seen: list[str] = []
+
+        def fake_search(**kw):
+            raise httpx.ConnectError("net down")
+
+        def fake_search_old(title: str, list_only: bool = True, subject_type: int = 2):
+            seen.append(title)
+            return []
+
+        api.search = fake_search  # type: ignore[method-assign]
+        api.search_old = fake_search_old  # type: ignore[method-assign]
+
+        result = api.bgm_search(
+            title="测试", ori_title=None, premiere_date="2024-01-01"
+        )
+
+        assert result is None
+        # 精确搜索失败后仍进入 search_old 兜底，而不是中断
+        assert len(seen) > 0
+
+    def test_get_subject_network_error_skips_candidate(self) -> None:
+        """候选详情拉取网络失败时跳过该候选，不中断整个 fallback。"""
+        api = _make_api()
+
+        def fake_search_old(title: str, list_only: bool = True, subject_type: int = 2):
+            return [{"id": 999, "name": "测试", "name_cn": "测试"}]
+
+        def fake_get_subject(sid):
+            raise httpx.ConnectError("net down")
+
+        api.search_old = fake_search_old  # type: ignore[method-assign]
+        api.get_subject = fake_get_subject  # type: ignore[method-assign]
+
+        result = api.bgm_search(title="测试", ori_title=None, premiere_date="")
+
+        assert result is None

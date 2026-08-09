@@ -6,6 +6,7 @@ import datetime
 import os
 from typing import Any
 
+import httpx
 from rapidfuzz import fuzz
 
 from ...core.logging import logger
@@ -101,20 +102,33 @@ class SearchMixin:
         # archive 未命中/未启用：走 API，清空命中来源标记
         self.last_hit_source = ""
 
-        res = self._request_with_retry(
-            "POST",
-            self._req_not_auth,
-            f"{self.host}/search/subjects",
-            json={
-                "keyword": title,
-                "filter": {
-                    "type": subject_types if subject_types else [2],
-                    "air_date": [f">={start_date}", f"<{end_date}"],
-                    "nsfw": True,
+        # API 不可达短路：archive 已尝试且未命中，若 API 处于不可达 TTL 内，
+        # 跳过实际请求直接返回空结果（避免每次都等待 10s×3 重试拖垮同步流程）。
+        # 注意：不写入缓存，TTL 到期后下一次调用仍会恢复探测。
+        if self.is_api_unreachable():
+            logger.warning("📚 Bangumi API 不可达（TTL 内），search 返回空结果")
+            return [] if list_only else {"data": []}
+
+        try:
+            res = self._request_with_retry(
+                "POST",
+                self._req_not_auth,
+                f"{self.host}/search/subjects",
+                json={
+                    "keyword": title,
+                    "filter": {
+                        "type": subject_types if subject_types else [2],
+                        "air_date": [f">={start_date}", f"<{end_date}"],
+                        "nsfw": True,
+                    },
                 },
-            },
-            params={"limit": limit},
-        )
+                params={"limit": limit},
+            )
+        except httpx.HTTPError as e:
+            # 网络不可达/重试耗尽：_request_with_retry 已标记不可达并告警，
+            # 这里吞掉异常返回空结果，保证 bgm_search 等调用方继续走 fallback
+            logger.error(f"search API 请求失败（网络错误）: {e}")
+            res = {"data": []}
         try:
             res = res.json()
             # 确保返回的是字典类型
@@ -152,12 +166,21 @@ class SearchMixin:
         # archive 未命中/未启用：走 API，清空命中来源标记
         self.last_hit_source = ""
 
-        res = self._request_with_retry(
-            "GET",
-            self.req,
-            f"{self.api_base}/search/subject/{title}",
-            params={"type": subject_type},
-        )
+        # API 不可达短路（同 search）
+        if self.is_api_unreachable():
+            logger.warning("📚 Bangumi API 不可达（TTL 内），search_old 返回空结果")
+            return [] if list_only else {"results": 0, "list": []}
+
+        try:
+            res = self._request_with_retry(
+                "GET",
+                self.req,
+                f"{self.api_base}/search/subject/{title}",
+                params={"type": subject_type},
+            )
+        except httpx.HTTPError as e:
+            logger.error(f"search_old API 请求失败（网络错误）: {e}")
+            res = {"results": 0, "list": []}
         try:
             res = res.json()
             # 确保返回的是字典类型
@@ -183,7 +206,18 @@ class SearchMixin:
             self._put_cache("get_subject", subject_id, shortcut.data)
             return shortcut.data
 
-        res = self.get(f"subjects/{subject_id}")
+        # API 不可达短路（同 search）
+        if self.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达（TTL 内），get_subject({subject_id}) 返回空"
+            )
+            return {}
+
+        try:
+            res = self.get(f"subjects/{subject_id}")
+        except httpx.HTTPError as e:
+            logger.error(f"get_subject API 请求失败（网络错误）: {e}")
+            res = {}
         try:
             res = res.json()
             # 确保返回的是字典类型
@@ -204,13 +238,25 @@ class SearchMixin:
         if subject_id in self._cache["get_related_subjects"]:
             return self._cache["get_related_subjects"][subject_id]
 
-        # Archive 短路：本地命中即返回，未命中降级到 API
+        # Archive 短路：本地命中返回，未命中降级到 API
         shortcut = self._archive.try_get_related_subjects(subject_id)
         if shortcut.hit:
             self._put_cache("get_related_subjects", subject_id, shortcut.data)
             return shortcut.data
 
-        res = self.get(f"subjects/{subject_id}/subjects")
+        # API 不可达短路（同 search）
+        if self.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达（TTL 内），"
+                f"get_related_subjects({subject_id}) 返回空"
+            )
+            return []
+
+        try:
+            res = self.get(f"subjects/{subject_id}/subjects")
+        except httpx.HTTPError as e:
+            logger.error(f"get_related_subjects API 请求失败（网络错误）: {e}")
+            res = []
         try:
             res = res.json()
             # get_related_subjects 可能返回列表或字典，都是正常的
@@ -313,6 +359,10 @@ class SearchMixin:
                 logger.warning(
                     f"首播日期格式解析失败: {premiere_date}，降级至无日期模式搜索"
                 )
+            except httpx.HTTPError as e:
+                # 网络不可达/重试耗尽：精确搜索失败不中断，
+                # 降级到下方 search_old 无日期名称搜索
+                logger.error(f"精确搜索 API 失败（网络错误）: {e}")
 
         # 若精确搜索无结果或相似度低于阈值，使用旧版接口进行无日期名称搜索
         if not bgm_data or (
@@ -397,7 +447,12 @@ class SearchMixin:
                 # 旧版接口仅支持单一 type，按 subject_types 顺序尝试
                 types_to_try = subject_types if subject_types else [2]
                 for t_type in types_to_try:
-                    bgm_data_old = self.search_old(title=t, subject_type=t_type)
+                    try:
+                        bgm_data_old = self.search_old(title=t, subject_type=t_type)
+                    except httpx.HTTPError as e:
+                        # 网络错误不中断 fallback：跳过该变体继续尝试
+                        logger.error(f"search_old 网络失败({t!r}): {e}")
+                        bgm_data_old = []
 
                     if bgm_data_old and len(bgm_data_old) > 0:
                         # 旧版接口返回数据不含 infobox 别名信息，需拉取完整条目进行准确相似度计算。
@@ -409,7 +464,12 @@ class SearchMixin:
                             sid = entry.get("id")
                             if not sid:
                                 continue
-                            info = self.get_subject(sid)
+                            try:
+                                info = self.get_subject(sid)
+                            except httpx.HTTPError as e:
+                                # 单条候选详情失败跳过，不中断整个候选遍历
+                                logger.error(f"get_subject 网络失败(sid={sid}): {e}")
+                                continue
                             if info:
                                 candidates.append(info)
 
