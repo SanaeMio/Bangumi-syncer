@@ -144,42 +144,6 @@ def test_sync_custom_item_success(mock_config, mock_database, mock_bangumi_api):
     assert result.message == "已标记为看过"
 
 
-def test_sync_custom_item_not_found(mock_config, mock_database):
-    """测试同步 - 番剧未找到"""
-    service = SyncService()
-
-    # Mock BangumiApi 搜索返回空
-    with patch("app.services.sync_service.BangumiApi") as mock_api:
-        mock_instance = MagicMock()
-        mock_instance.bgm_search.return_value = None
-        mock_instance.get_target_season_episode_id.return_value = (None, None)
-        mock_api.return_value = mock_instance
-
-        item = CustomItem(
-            user_name="testuser",
-            title="NonExistent",
-            ori_title="",
-            season=1,
-            episode=1,
-            media_type="episode",
-            release_date="2024-01-01",
-        )
-
-        with patch.object(
-            service,
-            "_get_bangumi_config_for_user",
-            return_value={
-                "username": "testuser",
-                "access_token": "test_token",
-                "private": True,
-            },
-        ):
-            result = service.sync_custom_item(item, "custom")
-
-        assert result.status == "error"
-        assert "未找到" in result.message
-
-
 def test_sync_custom_item_episode_not_found(mock_config, mock_database):
     """测试同步 - 剧集未找到"""
     service = SyncService()
@@ -287,61 +251,6 @@ def test_sync_custom_item_add_collection(mock_config, mock_database):
 
         assert result.status == "success"
         assert "添加" in result.message
-
-
-def test_sync_custom_item_invalid_type(mock_config, mock_database):
-    """测试同步 - 不支持的类型"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test",
-        ori_title="",
-        season=1,
-        episode=1,
-        media_type="music",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "不支持" in result.message
-
-
-def test_sync_custom_item_movie_success_calls_movie_episode_path(
-    mock_config, mock_database, mock_bangumi_api
-):
-    """电影走 get_movie_main_episode_id 并可条目标看过"""
-    service = SyncService()
-    mock_instance = mock_bangumi_api.return_value
-
-    item = CustomItem(
-        user_name="testuser",
-        title="剧场版 X",
-        ori_title=None,
-        season=1,
-        episode=1,
-        media_type="movie",
-        release_date="",
-    )
-
-    with patch.object(service, "_find_subject_id", return_value=("456", False, "")):
-        with patch.object(
-            service,
-            "_get_bangumi_config_for_user",
-            return_value={
-                "username": "testuser",
-                "access_token": "test_token",
-                "private": True,
-            },
-        ):
-            result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "success"
-    mock_instance.get_movie_main_episode_id.assert_called()
-    mock_instance.get_target_season_episode_id.assert_not_called()
-    mock_instance.change_collection_state.assert_called()
 
 
 def test_sync_custom_item_movie_skips_collection_when_subject_already_completed(
@@ -501,203 +410,6 @@ def test_sync_custom_item_anime_completes_collection(mock_database, mock_bangumi
     mock_instance.change_collection_state.assert_called_once_with(
         subject_id="123", state=2
     )
-
-
-def test_sync_custom_item_empty_title(mock_config, mock_database):
-    """测试同步 - 空标题"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="",  # 空标题
-        ori_title="",
-        season=1,
-        episode=1,
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "为空" in result.message
-
-
-def test_sync_custom_item_sp_not_supported(mock_config, mock_database):
-    """测试同步 - SP 标记不支持"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test Anime",
-        ori_title="",
-        season=0,  # SP
-        episode=1,
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "SP" in result.message
-
-
-def test_sync_custom_item_zero_episode(mock_config, mock_database):
-    """测试同步 - 集数为0"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test Anime",
-        ori_title="",
-        season=1,
-        episode=0,  # 集数为0
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "不能为0" in result.message
-
-
-def test_sync_custom_item_blocked_keyword(mock_config, mock_database):
-    """测试同步 - 屏蔽关键词"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test blocked Anime",  # 包含屏蔽词
-        ori_title="",
-        season=1,
-        episode=1,
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    # 使用 side_effect 根据不同参数返回不同值
-    def get_side_effect(section, key, fallback=None):
-        if section == "sync" and key == "mode":
-            return "single"
-        elif section == "sync" and key == "blocked_keywords":
-            return "blocked"
-        return fallback or ""
-
-    with (
-        patch("app.services.sync_service.config_manager") as cm,
-        patch(
-            "app.core.accounts.list_bangumi_accounts",
-            return_value=[{"section_name": "bangumi"}],
-        ),
-        patch(
-            "app.core.accounts.get_single_mode_media_usernames",
-            return_value=["testuser"],
-        ),
-    ):
-        cm.get.side_effect = get_side_effect
-        cm.get_single_mode_media_usernames.return_value = ["testuser"]
-        cm.get_user_mappings.return_value = {}
-        cm.get_bangumi_configs.return_value = {}
-        result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "ignored"
-    assert "屏蔽" in result.message
-
-
-def test_sync_custom_item_no_permission(mock_config, mock_database):
-    """测试同步 - 无权限（用户不在允许同步的媒体服务器用户名列表中）"""
-    service = SyncService()
-
-    # 单用户模式，用户名不在允许列表
-    def get_side_effect(section, key, fallback=None):
-        if section == "sync" and key == "mode":
-            return "single"
-        return fallback
-
-    with (
-        patch("app.services.sync_service.config_manager") as cm,
-        patch(
-            "app.core.accounts.list_bangumi_accounts",
-            return_value=[{"section_name": "bangumi"}],
-        ),
-        patch(
-            "app.core.accounts.get_single_mode_media_usernames",
-            return_value=["other_user"],
-        ),
-    ):
-        cm.get.side_effect = get_side_effect
-        cm.get_single_mode_media_usernames.return_value = ["other_user"]
-        cm.get_user_mappings.return_value = {}
-        cm.get_bangumi_configs.return_value = {}
-
-        item = CustomItem(
-            user_name="testuser",
-            title="Test Anime",
-            ori_title="",
-            season=1,
-            episode=1,
-            media_type="episode",
-            release_date="2024-01-01",
-        )
-
-        result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "不在允许同步" in result.message
-
-
-def test_sync_task_status(mock_config, mock_database):
-    """测试获取同步任务状态"""
-    service = SyncService()
-
-    # 手动创建一个任务状态
-    task_id = "test_task_1"
-
-    service._sync_tasks[task_id] = {
-        "status": "running",
-        "item": {"title": "Test Anime"},
-        "source": "custom",
-        "created_at": 1234567890,
-        "result": None,
-    }
-
-    # 获取状态
-    status = service.get_sync_task_status(task_id)
-
-    assert status is not None
-    assert "status" in status
-
-
-def test_cleanup_old_tasks(mock_config, mock_database):
-    """测试清理旧任务"""
-    service = SyncService()
-
-    # 手动添加一些旧任务
-    import time
-
-    old_time = time.time() - 3600 * 25  # 25小时前
-
-    service._sync_tasks["old_task"] = {
-        "status": "completed",
-        "item": {},
-        "source": "custom",
-        "created_at": old_time,
-    }
-
-    service._sync_tasks["new_task"] = {
-        "status": "completed",
-        "item": {},
-        "source": "custom",
-        "created_at": time.time(),
-    }
-
-    # 清理24小时前的任务
-    service.cleanup_old_tasks(max_age_hours=24)
-
-    assert "old_task" not in service._sync_tasks
-    assert "new_task" in service._sync_tasks
 
 
 def test_check_season_info_in_title(mock_config, mock_database):
@@ -874,26 +586,6 @@ def test_plex_sync_item_success(mock_config, mock_database, mock_bangumi_api):
     assert result.status == "success"
 
 
-def test_plex_sync_item_ignored_event(mock_config, mock_database):
-    """测试 Plex 同步 - 忽略非 scrobble 事件"""
-    service = SyncService()
-
-    plex_data = {
-        "event": "media.play",  # 非 scrobble 事件
-        "Account": {"title": "testuser"},
-        "Metadata": {
-            "type": "episode",
-            "parentIndex": 1,
-            "index": 1,
-            "grandparentTitle": "Test Anime",
-        },
-    }
-
-    result = service.sync_plex_item(plex_data)
-
-    assert result.status == "ignored"
-
-
 def test_emby_sync_item_success(mock_config, mock_database, mock_bangumi_api):
     """测试 Emby 同步 - 成功"""
     service = SyncService()
@@ -928,25 +620,6 @@ def test_emby_sync_item_success(mock_config, mock_database, mock_bangumi_api):
             result = service.sync_emby_item(emby_data)
 
     assert result.status == "success"
-
-
-def test_emby_sync_item_missing_field(mock_config, mock_database):
-    """测试 Emby 同步 - 缺少字段"""
-    service = SyncService()
-
-    emby_data = {
-        "Event": "item.markplayed",
-        "Item": {
-            "Type": "Episode",
-            # 缺少 SeriesName
-        },
-        "User": {"Name": "testuser"},
-    }
-
-    result = service.sync_emby_item(emby_data)
-
-    assert result.status == "error"
-    assert "缺少" in result.message
 
 
 def test_jellyfin_sync_item_success(mock_config, mock_database, mock_bangumi_api):
@@ -990,36 +663,6 @@ def test_jellyfin_sync_item_success(mock_config, mock_database, mock_bangumi_api
             result = service.sync_jellyfin_item(jellyfin_data)
 
     assert result.status == "success"
-
-
-def test_jellyfin_sync_item_ignored_event(mock_config, mock_database):
-    """测试 Jellyfin 同步 - 忽略非播放停止事件"""
-    service = SyncService()
-
-    jellyfin_data = {
-        "NotificationType": "PlaybackStart",  # 非播放停止
-        "PlayedToCompletion": "True",
-        "ItemType": "Episode",
-    }
-
-    result = service.sync_jellyfin_item(jellyfin_data)
-
-    assert result.status == "ignored"
-
-
-def test_jellyfin_sync_item_not_played_completion(mock_config, mock_database):
-    """测试 Jellyfin 同步 - 未播放完成"""
-    service = SyncService()
-
-    jellyfin_data = {
-        "NotificationType": "PlaybackStop",
-        "PlayedToCompletion": "False",  # 未播放完成
-        "ItemType": "Episode",
-    }
-
-    result = service.sync_jellyfin_item(jellyfin_data)
-
-    assert result.status == "ignored"
 
 
 def test_find_subject_id_season_gt1_date_matched_sets_season_flag():

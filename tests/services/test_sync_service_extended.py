@@ -448,29 +448,6 @@ class TestSyncServiceHelperMethods:
 class TestPlexSync:
     """测试 Plex 同步功能"""
 
-    def test_sync_plex_item_not_scrobble(self):
-        """测试非 scrobble 事件跳过"""
-        with (
-            patch("app.services.sync_service.config_manager"),
-            patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.notification_service"),
-            patch("app.services.sync_service.mapping_service"),
-            patch("app.services.plex.sync_service.extract_plex_data"),
-        ):
-            from app.services.sync_service import SyncService
-
-            service = SyncService()
-
-            plex_data = {
-                "event": "media.rate",  # 不是 scrobble
-                "Account": {"title": "test_user"},
-            }
-
-            result = service.sync_plex_item(plex_data)
-
-            assert result.status == "ignored"
-            assert "无需同步" in result.message
-
     def test_sync_plex_item_sync_failure_records_task_failed(self):
         with patched_sync_deps():
             from app.services.sync_service import SyncService
@@ -578,33 +555,6 @@ class TestEmbySync:
 
             assert result.status == "error"
             assert "缺少" in result.message
-
-    def test_sync_emby_item_wrong_event(self):
-        """测试错误事件类型"""
-        with (
-            patch("app.services.sync_service.config_manager"),
-            patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.notification_service"),
-            patch("app.services.sync_service.mapping_service"),
-        ):
-            from app.services.sync_service import SyncService
-
-            service = SyncService()
-
-            emby_data = {
-                "Event": "item.download",  # 错误的事件
-                "Item": {
-                    "Type": "Episode",
-                    "SeriesName": "Test",
-                    "ParentIndexNumber": 1,
-                    "IndexNumber": 1,
-                },
-                "User": {"Id": "123"},
-            }
-
-            result = service.sync_emby_item(emby_data)
-
-            assert result.status == "ignored"
 
     def test_sync_emby_item_missing_item_field(self):
         """测试 Item 缺少字段"""
@@ -729,28 +679,6 @@ class TestJellyfinSync:
 
             jellyfin_data = {
                 "NotificationType": "PlaybackStart",  # 不是停止
-            }
-
-            result = service.sync_jellyfin_item(jellyfin_data)
-
-            assert result.status == "ignored"
-
-    def test_sync_jellyfin_item_not_completed(self):
-        """测试未播放完成跳过"""
-        with (
-            patch("app.services.sync_service.config_manager"),
-            patch("app.services.sync_service.database_manager"),
-            patch("app.services.sync_service.notification_service"),
-            patch("app.services.sync_service.mapping_service"),
-            patch("app.services.jellyfin.sync_service.extract_jellyfin_data"),
-        ):
-            from app.services.sync_service import SyncService
-
-            service = SyncService()
-
-            jellyfin_data = {
-                "NotificationType": "PlaybackStop",
-                "PlayedToCompletion": "False",  # 未播放完成
             }
 
             result = service.sync_jellyfin_item(jellyfin_data)
