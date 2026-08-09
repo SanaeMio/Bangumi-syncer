@@ -126,9 +126,11 @@ class SearchMixin:
             )
         except httpx.HTTPError as e:
             # 网络不可达/重试耗尽：_request_with_retry 已标记不可达并告警，
-            # 这里吞掉异常返回空结果，保证 bgm_search 等调用方继续走 fallback
+            # 这里直接返回空结果，保证 bgm_search 等调用方继续走 fallback。
+            # 不进入下方 .json() 逻辑：res 此时为占位 dict 会触发 AttributeError，
+            # 也会让"JSON解析失败"日志误导排查方向。
             logger.error(f"search API 请求失败（网络错误）: {e}")
-            res = {"data": []}
+            return [] if list_only else {"data": []}
         try:
             res = res.json()
             # 确保返回的是字典类型
@@ -179,15 +181,16 @@ class SearchMixin:
                 params={"type": subject_type},
             )
         except httpx.HTTPError as e:
+            # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
             logger.error(f"search_old API 请求失败（网络错误）: {e}")
-            res = {"results": 0, "list": []}
+            return [] if list_only else {"results": 0, "list": []}
         try:
             res = res.json()
             # 确保返回的是字典类型
             if not isinstance(res, dict):
                 logger.error(f"search_old API返回非字典类型: {type(res)}, 内容: {res}")
                 res = {"results": 0, "list": []}
-        except Exception as e:
+        except ValueError as e:
             logger.error(f"search_old JSON解析失败: {e}")
             res = {"results": 0, "list": []}
 
@@ -216,8 +219,9 @@ class SearchMixin:
         try:
             res = self.get(f"subjects/{subject_id}")
         except httpx.HTTPError as e:
+            # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
             logger.error(f"get_subject API 请求失败（网络错误）: {e}")
-            res = {}
+            return {}
         try:
             res = res.json()
             # 确保返回的是字典类型
@@ -255,8 +259,9 @@ class SearchMixin:
         try:
             res = self.get(f"subjects/{subject_id}/subjects")
         except httpx.HTTPError as e:
+            # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
             logger.error(f"get_related_subjects API 请求失败（网络错误）: {e}")
-            res = []
+            return []
         try:
             res = res.json()
             # get_related_subjects 可能返回列表或字典，都是正常的
@@ -265,7 +270,7 @@ class SearchMixin:
                     f"get_related_subjects API返回异常类型: {type(res)}, 内容: {res}"
                 )
                 res = []
-        except Exception as e:
+        except ValueError as e:
             logger.error(f"get_related_subjects JSON解析失败: {e}")
             res = []
 

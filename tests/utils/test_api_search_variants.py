@@ -498,3 +498,70 @@ class TestBgmSearchNetworkResilience:
         result = api.bgm_search(title="测试", ori_title=None, premiere_date="")
 
         assert result is None
+
+
+class TestNetworkErrorNoAttributeError:
+    """_request_with_retry 抛 HTTPError 时，search/get_subject 等读接口
+    不应抛 AttributeError（占位 dict 无 .json() 方法），应返回空结果。
+
+    回归覆盖：此前 except HTTPError 分支将 res 赋为 dict 后继续走 res.json()，
+    对 dict 调 .json() 触发 AttributeError，而 except ValueError 无法捕获，
+    导致首次 API 不可达时异常上抛、中断同步流程。
+    """
+
+    def test_search_http_error_returns_empty_not_attribute_error(self) -> None:
+        api = _make_api()
+
+        with patch.object(
+            api, "_request_with_retry", side_effect=httpx.ConnectError("net down")
+        ):
+            result = api.search(
+                title="测试",
+                start_date="2024-01-01",
+                end_date="2024-01-03",
+            )
+
+        assert result == []
+
+    def test_search_http_error_dict_mode(self) -> None:
+        api = _make_api()
+
+        with patch.object(
+            api, "_request_with_retry", side_effect=httpx.ConnectError("net down")
+        ):
+            result = api.search(
+                title="测试",
+                start_date="2024-01-01",
+                end_date="2024-01-03",
+                list_only=False,
+            )
+
+        assert result == {"data": []}
+
+    def test_search_old_http_error_returns_empty_not_attribute_error(self) -> None:
+        api = _make_api()
+
+        with patch.object(
+            api, "_request_with_retry", side_effect=httpx.ConnectError("net down")
+        ):
+            result = api.search_old(title="测试")
+
+        assert result == []
+
+    def test_get_subject_http_error_returns_empty_not_attribute_error(self) -> None:
+        api = _make_api()
+
+        with patch.object(api, "get", side_effect=httpx.ConnectError("net down")):
+            result = api.get_subject(123)
+
+        assert result == {}
+
+    def test_get_related_subjects_http_error_returns_empty_not_attribute_error(
+        self,
+    ) -> None:
+        api = _make_api()
+
+        with patch.object(api, "get", side_effect=httpx.ConnectError("net down")):
+            result = api.get_related_subjects(123)
+
+        assert result == []
