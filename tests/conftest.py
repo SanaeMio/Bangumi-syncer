@@ -56,6 +56,16 @@ _cfg.set("bangumi-replay", "enabled", "false")
 with open(_TEST_CONFIG_INI, "w", encoding="utf-8") as _f:
     _cfg.write(_f)
 
+# ===== 隔离数据库：所有测试写入临时 data 目录，避免污染真实 data/sync_records.db =====
+# 部分测试（如匹配失败路径）直接使用全局 database_manager 记录同步结果，
+# 若未 mock 会写入项目根 data/sync_records.db。此处将全局单例整体重定向到
+# 临时配置目录下的 data/，在 app 模块（service/api 等）被导入前完成，
+# 确保后续所有 `from app.core.database import database_manager` 拿到的是测试实例。
+import app.core.database as _database_module  # noqa: E402
+
+_TEST_DB_PATH = str(_TEST_CONFIG_DIR / "data" / "sync_records.db")
+_database_module.database_manager = _database_module.DatabaseManager(_TEST_DB_PATH)
+
 from app.core.config import config_manager  # noqa: E402
 from app.core.database import database_manager  # noqa: E402
 from app.models.trakt import TraktConfig  # noqa: E402

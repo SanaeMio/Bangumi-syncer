@@ -580,6 +580,9 @@ class TestFindMatchingSubjectQuickDegrade:
             patch.object(svc, "_find_subject_id") as mock_find,
             patch("app.services.sync_service.is_replay_enabled", return_value=True),
             patch("app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"),
+            # 匹配失败分支会写同步记录 / 发通知，mock 避免真实 I/O
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.notification_service"),
         ):
             mock_find.return_value = (None, False, None)
             svc._find_matching_subject(self._make_item(), actual_source="plex")
@@ -596,6 +599,8 @@ class TestFindMatchingSubjectQuickDegrade:
             patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
             patch.object(svc, "_find_subject_id") as mock_find,
             patch("app.services.sync_service.is_replay_enabled", return_value=False),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.notification_service"),
         ):
             mock_find.return_value = (None, False, None)
             svc._find_matching_subject(self._make_item(), actual_source="plex")
@@ -610,6 +615,8 @@ class TestFindMatchingSubjectQuickDegrade:
             patch.object(svc, "_get_bangumi_api_for_user", return_value=None),
             patch.object(svc, "_find_subject_id") as mock_find,
             patch("app.services.sync_service.is_replay_enabled", return_value=True),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.notification_service"),
         ):
             mock_find.return_value = (None, False, None)
             svc._find_matching_subject(self._make_item(), actual_source="plex")
