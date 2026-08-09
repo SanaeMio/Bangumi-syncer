@@ -70,6 +70,27 @@ def _make_config_manager(rules: list[dict], in_app_enabled: bool = True):
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def test_no_rules_skips_channel_dispatch():
+    """无规则时停发外部渠道通知（渠道只是配置，规则是发布闸门）"""
+    channel = _FakeChannel("notify-webhook-1")
+    service = NotificationService(channel_registry=ChannelRegistry())
+    service.channel_registry.register(channel)
+    service.cooldown.cooldown_seconds = 0
+
+    cfg_mgr = _make_config_manager(rules=[])
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        result = service.notify("mark_failed", source="test")
+
+    assert result is True
+    assert len(channel.send_calls) == 0
+
+
 def test_rule_routes_to_specified_channel():
     """规则匹配时，notify() 应调用规则中指定的渠道"""
     channel = _FakeChannel("notify-webhook-1")

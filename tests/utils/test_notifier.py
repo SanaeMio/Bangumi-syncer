@@ -822,7 +822,7 @@ class TestNotificationServiceNotify:
         return svc
 
     def test_notify_with_item(self):
-        """测试发送通知带 item：应完成数据构造、渠道分发"""
+        """测试发送通知带 item：无规则时停发外部渠道，仅完成数据构造与站内信"""
         svc = self._make_service()
 
         item = MagicMock()
@@ -835,8 +835,8 @@ class TestNotificationServiceNotify:
 
         result = svc.notify("mark_success", item=item, source="custom")
         assert result is True
-        # 渠道分发应被调用一次（即使没有注册渠道）
-        svc.channel_registry.iter_enabled.assert_called()
+        # 无通知规则 = 停发外部渠道，不应进行渠道分发
+        svc.channel_registry.iter_enabled.assert_not_called()
 
     def test_notify_without_item(self):
         """测试发送通知不带 item"""
@@ -844,7 +844,7 @@ class TestNotificationServiceNotify:
 
         result = svc.notify("mark_success", title="测试")
         assert result is True
-        svc.channel_registry.iter_enabled.assert_called()
+        svc.channel_registry.iter_enabled.assert_not_called()
 
     def test_notify_exception_returns_false(self):
         """测试发送通知异常时返回 False"""

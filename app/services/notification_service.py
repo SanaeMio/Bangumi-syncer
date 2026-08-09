@@ -7,10 +7,13 @@
 核心职责：
 1. 构造统一的数据 payload
 2. 通过 :class:`NotificationTemplateManager` 为每个渠道渲染模板
-3. 通过 :class:`ChannelRegistry` 找到订阅该事件的所有启用渠道
+3. 依据通知规则（``notify-rule`` 段）选定目标渠道；无规则时停发外部渠道
 4. 执行冷却检查（委托给 :class:`CooldownPolicy`）
 5. 分发到各渠道发送，收集结果
 6. 按站内信映射写入数据库
+
+注意：规则是发布闸门——未配置任何 ``notify-rule`` 时只写站内信，
+渠道配置仅作为连接参数，不参与路由。
 
 调用方只需：
 ``notification_service.notify(type, item, source, **kwargs)``
@@ -253,8 +256,8 @@ class NotificationService:
                     notification_type, data, skip_cooldown, _cfg_mgr
                 )
             else:
-                # 传统模式：所有启用渠道自行判断 types
-                self._dispatch_to_channels(notification_type, data, skip_cooldown)
+                # 无规则 = 停发外部渠道：渠道只是连接配置，规则才是发布闸门
+                logger.debug(f"无通知规则，跳过 {notification_type} 外部渠道通知")
 
             # 2. 写站内信
             if write_in_app:
@@ -355,35 +358,6 @@ class NotificationService:
         return data
 
     # ── 渠道分发 ──────────────────────────────────────────────────────
-
-    def _dispatch_to_channels(
-        self,
-        notification_type: str,
-        data: dict[str, Any],
-        skip_cooldown: bool,
-    ) -> None:
-        """将事件分发到所有匹配的外部渠道（webhook / email）"""
-        for channel in self.channel_registry.iter_enabled(notification_type):
-            if channel.channel_type == "in_app":
-                continue  # 站内信走单独路径
-
-            if not self.cooldown.allow(
-                channel.channel_id, notification_type, data, skip_cooldown
-            ):
-                continue
-
-            try:
-                # 模板渲染
-                rendered = self._render_for_channel(channel, notification_type, data)
-
-                # 发送
-                result = channel.send(notification_type, rendered["payload"], rendered)
-                if not result.success:
-                    logger.warning(
-                        f"渠道 {channel.channel_id} 发送失败: {result.message}"
-                    )
-            except Exception as e:
-                logger.error(f"渠道 {channel.channel_id} 发送异常: {e}")
 
     def _dispatch_by_rules(
         self,

@@ -23,7 +23,7 @@ order: 6
 ```
 notification_service.notify(event_type, item, source, **kwargs)
   ├─ 构造 payload → 查 NotificationRegistry 取类型元数据
-  ├─ 查通知规则 → 命中的规则按 channel_ids 选渠道
+  ├─ 查通知规则 → 命中的规则按 channel_ids 选渠道（无规则则停发外部渠道）
   ├─ 渲染模板（默认 / 自定义文件 / 内联 JSON）→ 发送
   └─ 冷却分桶（item 级别 60 秒去重）
 ```
