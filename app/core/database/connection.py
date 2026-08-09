@@ -188,6 +188,22 @@ class DatabaseConnection:
             ),
         )
 
+    def _ensure_sync_records_link_fields(self, cursor) -> None:
+        """旧库迁移：为 sync_records 增加 run_id/batch_id（日志关联字段）。
+
+        - run_id: 本次同步的 run 标识（与日志行 [run:...] 对应）
+        - batch_id: 所属批次（如一轮批量补发，与日志行 [batch:...] 对应）
+        """
+        self._ensure_columns(
+            cursor,
+            "sync_records",
+            [
+                ("run_id", "TEXT DEFAULT ''"),
+                ("batch_id", "TEXT DEFAULT ''"),
+            ],
+            message="sync_records 已迁移：增加 run_id/batch_id 列（请求/批次关联）",
+        )
+
     def _ensure_trakt_config_sync_filter(self, cursor) -> None:
         """旧库迁移：为 trakt_config 增加 sync_filter_enabled（默认开启）。"""
         self._ensure_columns(
@@ -312,13 +328,16 @@ class DatabaseConnection:
                 match_method TEXT DEFAULT '',
                 match_score REAL,
                 match_platform TEXT DEFAULT '',
-                match_trace TEXT DEFAULT ''
+                match_trace TEXT DEFAULT '',
+                run_id TEXT DEFAULT '',
+                batch_id TEXT DEFAULT ''
             )
         """)
 
         self._ensure_sync_records_media_type(cursor)
         self._ensure_sync_records_bgm_title(cursor)
         self._ensure_sync_records_match_fields(cursor)
+        self._ensure_sync_records_link_fields(cursor)
 
         # 创建 Trakt 配置表
         cursor.execute("""

@@ -361,7 +361,7 @@
     }
 
     function stripRunTagFromLine(line) {
-        return line.replace(/ \[run:[^\]]+\]/, '');
+        return line.replace(/ \[(?:run|req|batch):[^\]]+\]/g, '');
     }
 
     function renderGroupBadges(group) {

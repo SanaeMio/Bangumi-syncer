@@ -7,8 +7,12 @@ from unittest.mock import MagicMock, patch
 
 from app.core.logging import (
     Logger,
+    batch_log_context,
     effective_dev_log_file_raw,
+    get_batch_id,
+    get_request_id,
     get_sync_run_id,
+    new_batch_id,
     new_inline_sync_run_id,
     new_retry_sync_run_id,
     normalize_log_level,
@@ -456,6 +460,39 @@ class TestSyncLogContext:
         logger.info("plain message")
         captured = capsys.readouterr()
         assert "[run:" not in captured.out
+
+
+class TestRequestBatchContext:
+    """request_id / batch_id 上下文与日志格式"""
+
+    def test_request_id_default_empty(self):
+        assert get_request_id() == ""
+
+    def test_batch_id_default_empty(self):
+        assert get_batch_id() == ""
+
+    def test_batch_log_context_sets_and_resets(self):
+        with batch_log_context("batch_1_100"):
+            assert get_batch_id() == "batch_1_100"
+        assert get_batch_id() == ""
+
+    def test_new_batch_id_format(self):
+        bid = new_batch_id()
+        assert bid.startswith("batch_")
+
+    def test_log_includes_req_and_batch_fields(self, capsys):
+        logger = _make_logger()
+        with batch_log_context("batch_9_1"):
+            logger.info("batch message")
+        captured = capsys.readouterr()
+        assert "[batch:batch_9_1]" in captured.out
+
+    def test_log_omits_req_batch_when_absent(self, capsys):
+        logger = _make_logger()
+        logger.info("plain message")
+        captured = capsys.readouterr()
+        assert "[req:" not in captured.out
+        assert "[batch:" not in captured.out
 
 
 class TestLoggerLogToFile:

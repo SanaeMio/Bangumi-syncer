@@ -51,6 +51,27 @@ def get_sync_run_id() -> Optional[str]:
     return sync_run_id.get()
 
 
+# 请求关联 ID（由 HTTP 中间件注入，随 copy_context 进入工作线程）
+log_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "log_request_id", default=""
+)
+
+# 批次关联 ID（批量补发等过程覆盖多个 run）
+log_batch_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "log_batch_id", default=""
+)
+
+
+def get_request_id() -> str:
+    """当前请求关联 ID；无请求上下文时返回空字符串。"""
+    return log_request_id.get()
+
+
+def get_batch_id() -> str:
+    """当前批次关联 ID；无批次上下文时返回空字符串。"""
+    return log_batch_id.get()
+
+
 @contextmanager
 def sync_log_context(run_id: str) -> Iterator[str]:
     """在作用域内为日志行附加 [run:...] 标记。"""
@@ -59,6 +80,21 @@ def sync_log_context(run_id: str) -> Iterator[str]:
         yield run_id
     finally:
         sync_run_id.reset(token)
+
+
+@contextmanager
+def batch_log_context(bid: str) -> Iterator[str]:
+    """在作用域内为日志行附加 [batch:...] 标记（通常包裹一批 run）。"""
+    token = log_batch_id.set(bid)
+    try:
+        yield bid
+    finally:
+        log_batch_id.reset(token)
+
+
+def new_batch_id() -> str:
+    """生成唯一批次 ID。"""
+    return f"batch_{int(time.time() * 1000)}"
 
 
 def new_inline_sync_run_id(counter: int) -> str:
@@ -320,6 +356,12 @@ class Logger:
         run_id = get_sync_run_id()
         if run_id:
             head += f" [run:{run_id}]"
+        rid = get_request_id()
+        if rid:
+            head += f" [req:{rid}]"
+        bid = get_batch_id()
+        if bid:
+            head += f" [batch:{bid}]"
         return f"{head} {message}"
 
     def log(

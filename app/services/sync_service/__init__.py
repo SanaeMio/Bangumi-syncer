@@ -10,6 +10,7 @@ import json
 import threading
 import time  # noqa: F401
 import traceback
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -18,8 +19,10 @@ from rapidfuzz import fuzz
 from ...core.config import config_manager
 from ...core.database import database_manager
 from ...core.logging import (
+    batch_log_context,
     get_sync_run_id,
     logger,
+    new_batch_id,
     new_inline_sync_run_id,
     new_retry_sync_run_id,
     sync_log_context,
@@ -2855,7 +2858,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         )
         consecutive_unreachable = 0
 
-        for record in records:
+        for record in self._iter_batch(records):
             record_id = int(record.get("id", 0))
             result = self.replay_pending_item(record)
             sync_record_id = result.get("sync_record_id")
@@ -2923,6 +2926,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             "failed": failed,
             "still_unreachable": still_unreachable,
         }
+
+    def _iter_batch(self, records: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+        """逐条产出补发记录，期间持有批次上下文（[batch:...] 与 batch_id 落库）。
+
+        生成器形式：循环体无需整体缩进，break/提前退出时生成器关闭，
+        finally 自动复位批次上下文。
+        """
+        with batch_log_context(new_batch_id()):
+            yield from records
 
     def _load_custom_mappings(self) -> dict[str, str]:
         """从外部JSON文件读取自定义映射配置"""

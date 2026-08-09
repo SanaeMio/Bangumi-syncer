@@ -105,3 +105,46 @@ class TestGroupLogLines:
         result = group_log_lines(lines)
         assert result["groups"] == []
         assert len(result["orphans"]) == 1
+
+
+def _tagged_line(run_id: str, req_id: str, batch_id: str, message: str) -> str:
+    tags = f" [run:{run_id}]"
+    if req_id:
+        tags += f" [req:{req_id}]"
+    if batch_id:
+        tags += f" [batch:{batch_id}]"
+    return f"[2026/07/16 09:00:01.123] [INFO]{tags} {message}"
+
+
+class TestGroupTagExtraction:
+    def test_extracts_req_and_batch_tags(self):
+        lines = [
+            _tagged_line(
+                "sync_a", "req_abc", "batch_1_100", "同步开始: 番剧A S01E01 (plex)"
+            ),
+            _tagged_line(
+                "sync_a", "req_abc", "batch_1_100", "同步结束: status=success"
+            ),
+        ]
+        group = group_log_lines(lines)["groups"][0]
+        assert group["req_id"] == "req_abc"
+        assert group["batch_id"] == "batch_1_100"
+
+    def test_empty_tags_when_absent(self):
+        lines = [
+            "[2026/07/16 09:00:01.000] [INFO] [run:sync_a] 同步开始: 番剧A S01E01 (plex)",
+        ]
+        group = group_log_lines(lines)["groups"][0]
+        assert group["req_id"] == ""
+        assert group["batch_id"] == ""
+
+    def test_mixed_run_level_grouping_unchanged(self):
+        lines = [
+            _tagged_line("sync_a", "req", "", "同步开始: 番剧A S01E01 (plex)"),
+            _tagged_line("sync_b", "", "batch", "同步开始: 番剧B S01E02 (emby)"),
+        ]
+        result = group_log_lines(lines)
+        assert {g["run_id"] for g in result["groups"]} == {"sync_a", "sync_b"}
+        by_run = {g["run_id"]: g for g in result["groups"]}
+        assert by_run["sync_a"]["req_id"] == "req"
+        assert by_run["sync_b"]["batch_id"] == "batch"
