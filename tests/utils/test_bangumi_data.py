@@ -2008,3 +2008,211 @@ class TestFindBangumiCandidates:
         assert result[0]["id"] == "111"  # exact 优先
         assert result[0]["score"] == 1.0
         assert result[1]["id"] == "222"  # partial 次之
+
+
+# ===== 以下自 test_bangumi_data_comprehensive.py / _internals.py 并入的独有用例 =====
+
+
+class TestBangumiDataComprehensiveMerged:
+    """自 test_bangumi_data_comprehensive.py 并入的强断言用例。"""
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_optimized_date_override(
+        self, mock_parse_data, mock_preload
+    ):
+        """日期择优机制：完全匹配的日期差距过大时，采用日期接近的部分匹配。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        mock_parse_data.return_value = [
+            {
+                "title": "玉响",
+                "titleTranslate": {"zh-Hans": ["玉响"]},
+                "begin": "2010-11-26",
+                "sites": [{"site": "bangumi", "id": "8452"}],
+            },
+            {
+                "title": "たまゆら～hitotose～",
+                "titleTranslate": {"zh-Hans": ["玉响～hitotose～", "玉响～1年～"]},
+                "begin": "2011-10-03",
+                "sites": [{"site": "bangumi", "id": "18605"}],
+            },
+        ]
+        result = data._find_bangumi_id_optimized(
+            title="玉响", ori_title="", release_date="2011-10-02", season=1
+        )
+        assert result is not None
+        assert result[0] == "18605"
+        assert result[1] == "玉响～hitotose～"
+        assert result[2] is True
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_date_override_rejected_by_safety_lock(
+        self, mock_parse_data, mock_preload
+    ):
+        """日期择优的安全校验：日期接近但名称完全不包含时，拒绝采用该匹配条目。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        mock_parse_data.return_value = [
+            {
+                "title": "魔法少女まどか☆マギカ",
+                "titleTranslate": {"zh-Hans": ["魔法少女小圆"]},
+                "begin": "2011-01-07",
+                "sites": [{"site": "bangumi", "id": "10001"}],
+            },
+            {
+                "title": "Fate/kaleid liner プリズマ☆イリヤ",
+                "titleTranslate": {"zh-Hans": ["魔法少女伊莉雅"]},
+                "begin": "2013-07-13",
+                "sites": [{"site": "bangumi", "id": "90009"}],
+            },
+        ]
+        result = data._find_bangumi_id_optimized(
+            title="魔法少女小圆", ori_title="", release_date="2013-07-12", season=1
+        )
+        assert result is not None
+        assert result[0] == "10001"
+        assert result[1] == "魔法少女小圆"
+        assert result[2] is False
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_ori_title_without_zh_hans(
+        self, mock_parse_data, mock_preload
+    ):
+        """条目无简中翻译时，仍可用 ori_title 与日文 title 精确匹配。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        mock_parse_data.return_value = [
+            {
+                "title": "劇場版サンプル映画",
+                "begin": "2020-03-15",
+                "sites": [{"site": "bangumi", "id": "123456"}],
+            },
+        ]
+        result = data.find_bangumi_id(
+            title="某中文片名",
+            ori_title="劇場版サンプル映画",
+            release_date="2020-03-15",
+            season=1,
+        )
+        assert result is not None
+        assert result[0] == "123456"
+        assert result[1] == "劇場版サンプル映画"
+
+    def test_calculate_match_score(self):
+        """计算匹配分数返回数值。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        item = {"name": "Test", "name_cn": "测试"}
+        result = data._calculate_match_score(item, "测试", "Test")
+        assert isinstance(result, (int, float))
+
+
+class TestBangumiDataCacheHelpersMerged:
+    """自 test_bangumi_data_internals.py 并入的缓存/下载边界用例。"""
+
+    def test_is_cache_valid_false_when_missing(self):
+        from unittest.mock import patch
+
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        with patch("os.path.exists", return_value=False):
+            assert data._is_cache_valid() is False
+
+    def test_is_cache_valid_false_on_mtime_error(self):
+        from unittest.mock import patch
+
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        with patch("os.path.exists", return_value=True):
+            with patch("os.path.getmtime", side_effect=OSError("no mtime")):
+                assert data._is_cache_valid() is False
+
+    def test_download_data_returns_false_on_request_failure(self):
+        from unittest.mock import patch
+
+        import httpx
+
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        with patch(
+            "app.utils.bangumi_data._request_with_retry",
+            side_effect=httpx.HTTPError("fail"),
+        ):
+            assert data._download_data() is False
+
+
+@patch("app.utils.bangumi_data.time.sleep")
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_raises_after_exhausted(mock_client_cls, _sleep):
+
+    import httpx
+    import pytest
+
+    from app.utils import bangumi_data
+
+    mock_client = mock_client_cls.return_value
+    mock_client.request.side_effect = httpx.ConnectError("down")
+    with pytest.raises(httpx.ConnectError):
+        bangumi_data._request_with_retry(
+            "https://example.test/data.json", max_retries=1, ssl_verify=True
+        )
+    assert mock_client.request.call_count == 2
+
+
+@patch("app.utils.bangumi_data.time.sleep")
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_connection_error_then_success(
+    mock_client_cls, _sleep
+):
+    from unittest.mock import MagicMock
+
+    import httpx
+
+    from app.utils import bangumi_data
+
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.raise_for_status = MagicMock()
+    ok.elapsed.total_seconds.return_value = 0.01
+    ok.headers = {}
+    ok.text = ""
+    mock_client = mock_client_cls.return_value
+    mock_client.request.side_effect = [httpx.ConnectError("down"), ok]
+    out = bangumi_data._request_with_retry(
+        "https://example.test/retry.json", max_retries=2, ssl_verify=True
+    )
+    assert out.status_code == 200
+    assert mock_client.request.call_count == 2
+
+
+@patch("app.utils.bangumi_data.time.sleep")
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_ssl_verify_false_sets_warnings(
+    mock_client_cls, _sleep
+):
+    from unittest.mock import MagicMock
+
+    from app.utils import bangumi_data
+
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.raise_for_status = MagicMock()
+    ok.elapsed.total_seconds.return_value = 0.01
+    ok.headers = {}
+    ok.text = ""
+    mock_client = mock_client_cls.return_value
+    mock_client.request.return_value = ok
+    bangumi_data._request_with_retry(
+        "https://example.test/x", max_retries=0, ssl_verify=False
+    )
+    mock_client_cls.assert_called_once()

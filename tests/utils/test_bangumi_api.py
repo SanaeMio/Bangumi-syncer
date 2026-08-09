@@ -1628,3 +1628,125 @@ class TestLongSeriesEpisodeSync:
             )
         mock_air.assert_called_once_with("899", "2008-05-20")
         assert result == ("899", 350)
+
+
+# ===== 以下自 test_bangumi_api_internals.py 并入的独有断言 =====
+
+
+def _session_resp_internals(status=200, json_body=None, json_exc=None):
+    from unittest.mock import MagicMock
+
+    r = MagicMock()
+    r.status_code = status
+    r.elapsed.total_seconds.return_value = 0.01
+    r.headers = {}
+    r.text = ""
+    if json_exc:
+        r.json.side_effect = json_exc
+    else:
+        r.json.return_value = json_body if json_body is not None else {}
+    return r
+
+
+class TestTryDirectConnectionInternals:
+    """直连时 timeout/proxies/close 等参数细节断言。"""
+
+    def test_get_success_adds_timeout_and_no_proxy(self):
+        from unittest.mock import MagicMock, patch
+
+        from app.utils.bangumi_api import BangumiApi
+
+        mock_sess = MagicMock()
+        out = _session_resp_internals(200, {})
+        mock_sess.request.return_value = out
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
+            api = BangumiApi(access_token="tok")
+            res = api._try_direct_connection("GET", "https://example.test/api")
+        assert res is out
+        call_kw = mock_sess.request.call_args.kwargs
+        assert call_kw["timeout"] == 15
+        assert call_kw.get("proxies") is None
+        mock_sess.close.assert_called_once()
+
+    def test_exception_reraises_after_close(self):
+        from unittest.mock import MagicMock, patch
+
+        import httpx
+        import pytest
+
+        from app.utils.bangumi_api import BangumiApi
+
+        mock_sess = MagicMock()
+        mock_sess.request.side_effect = httpx.TimeoutException("t")
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
+            api = BangumiApi()
+            with pytest.raises(httpx.TimeoutException):
+                api._try_direct_connection("GET", "https://example.test/x")
+        mock_sess.close.assert_called_once()
+
+
+class TestRequestWithRetryInternals:
+    """重试耗尽通知与 get_me 认证细节。"""
+
+    def test_http_500_exhausts_retries_and_notifies(self):
+        from unittest.mock import MagicMock, patch
+
+        import httpx
+        import pytest
+
+        from app.utils.bangumi_api import BangumiApi
+
+        api = BangumiApi()
+        bad = _session_resp_internals(500)
+        api.req.request = MagicMock(return_value=bad)
+        with (
+            pytest.raises(httpx.HTTPStatusError),
+            patch("app.services.notification_service.notification_service") as _notify,
+        ):
+            api._request_with_retry("GET", api.req, "https://bgm.test/r")
+        _notify.notify.assert_called_once()
+
+    def test_get_me_client_403_raises(self):
+        from unittest.mock import MagicMock, patch
+
+        import pytest
+
+        from app.utils.bangumi_api import BangumiApi
+
+        r = MagicMock()
+        r.status_code = 403
+        r.json.side_effect = AssertionError("should not json")
+        with (
+            patch.object(BangumiApi, "get", return_value=r),
+            patch("app.services.notification_service.notification_service"),
+            patch("os.name", "posix"),
+        ):
+            api = BangumiApi(username="u")
+            with pytest.raises(ValueError, match="未授权"):
+                api.get_me()
+
+
+class TestSearchJsonBranchesInternals:
+    """缓存命中时不应发起请求的断言。"""
+
+    def test_search_cache_hit_skips_request(self):
+        from unittest.mock import patch
+
+        from app.utils.bangumi_api import BangumiApi
+
+        api = BangumiApi()
+        key = ("kw", "2020-01-01", "2020-02-01", 5, True, (2,))
+        api._cache["search"][key] = [{"id": 9}]
+        with patch.object(api, "_request_with_retry") as m:
+            out = api.search("kw", "2020-01-01", "2020-02-01", limit=5, list_only=True)
+        m.assert_not_called()
+        assert out == [{"id": 9}]
+
+    def test_parse_iso_date_edges(self):
+        from app.utils.bangumi_api import BangumiApi
+
+        assert BangumiApi._parse_iso_date_ymd("") is None
+        assert BangumiApi._parse_iso_date_ymd("2020-01") is None
+        assert BangumiApi._parse_iso_date_ymd("2020-13-40") is None
+        d = BangumiApi._parse_iso_date_ymd("2024-06-15T12:00:00")
+        assert d.year == 2024 and d.month == 6 and d.day == 15
