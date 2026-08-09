@@ -8,7 +8,7 @@ import threading
 from configparser import ConfigParser
 from datetime import date as _date
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .config_schema import (
     all_env_overrides,
@@ -55,6 +55,14 @@ class ConfigManager:
         # 配置缓存
         self._config_cache: Optional[ConfigParser] = None
         self._last_modified = 0
+
+        # 配置变更追踪：版本号自增 + 变更监听回调。
+        # 供各模块的进程级缓存（watching/poster/bangumi-data 等）在配置
+        # 变更后统一失效，与 ``get_dev_http_snapshot`` + BangumiApi 实例
+        # 缓存的思路对齐：读配置的模块负责订阅失效，而不是每次现取。
+        self._config_version = 0
+        self._change_listeners: list[Callable[[], None]] = []
+        self._change_dirty = False
 
         # 初始化配置
         self._load_config()
@@ -148,6 +156,11 @@ class ConfigManager:
             else 0
         )
 
+        # 版本自增并标记待触发变更回调（由锁外的 _fire_pending_changes 统一触发）
+        # getattr 兜底：部分测试绕过 __init__ 构造实例（patch __init__）
+        self._config_version = getattr(self, "_config_version", 0) + 1
+        self._change_dirty = True
+
     def _apply_env_overrides(self, config: ConfigParser) -> None:
         """应用环境变量覆盖（映射来源：SectionMeta.env_overrides）"""
         env_overrides = all_env_overrides()
@@ -177,18 +190,69 @@ class ConfigManager:
         return self._config_cache
 
     def get_config_parser(self) -> ConfigParser:
-        """获取配置对象（线程安全）"""
+        """获取配置对象（线程安全）。
+
+        若检测到配置文件被外部修改，会重载配置并在锁外触发变更回调。
+        """
         with self._lock:
-            return self._get_config_parser_nolock()
+            config = self._get_config_parser_nolock()
+        self._fire_pending_changes()
+        return config
 
     def reload_config(self) -> None:
-        """重新加载配置（线程安全）"""
+        """重新加载配置（线程安全，重载完成后触发变更回调）"""
         with self._lock:
             self._load_config()
+        self._fire_pending_changes()
 
     def reload(self) -> None:
         """重新加载配置（别名）"""
         self.reload_config()
+
+    # ------------------------------------------------------------------
+    # 配置变更回调（供模块级缓存订阅失效）
+    # ------------------------------------------------------------------
+
+    def get_config_version(self) -> int:
+        """当前配置版本号（每次配置重载/保存自增）。
+
+        可用于进程级缓存 key 或只读比较，取到不变量后无需再轮询 mtime。
+        """
+        with self._lock:
+            return getattr(self, "_config_version", 0)
+
+    def register_config_change_listener(self, callback: Callable[[], None]) -> None:
+        """注册配置变更回调：配置重载或保存后触发，用于各模块缓存失效。
+
+        回调在锁外执行且捕获异常（单个回调失败不影响其他回调），
+        但回调内不要做耗时操作。
+        """
+        with self._lock:
+            if callback not in self._change_listeners:
+                self._change_listeners.append(callback)
+
+    def unregister_config_change_listener(self, callback: Callable[[], None]) -> None:
+        """注销配置变更回调。"""
+        with self._lock:
+            if callback in self._change_listeners:
+                self._change_listeners.remove(callback)
+
+    def _fire_pending_changes(self) -> None:
+        """在锁外触发待执行的变更回调（幂等：无未消费变更时直接返回）。
+
+        必须持有锁外的上下文调用，避免回调内部再次获取配置时死锁
+        （threading.Lock 不可重入）。
+        """
+        if not getattr(self, "_change_dirty", False):
+            return
+        with self._lock:
+            listeners = list(getattr(self, "_change_listeners", ()))
+            self._change_dirty = False
+        for cb in listeners:
+            try:
+                cb()
+            except Exception as e:
+                logger.warning(f"配置变更回调执行失败（不影响主流程）: {e}")
 
     def _get_master_secret(self, config: ConfigParser) -> str:
         """从配置中提取 master secret（不加锁，需已持有锁或外部调用）"""
@@ -255,6 +319,7 @@ class ConfigManager:
             stored = encrypt_if_sensitive(section, key, str(value), master=master)
             config.set(section, key, stored)
             self._save_config(config)
+        self._fire_pending_changes()
 
     def set(self, section: str, key: str, value: Any) -> None:
         """设置配置值（别名）"""
@@ -278,6 +343,10 @@ class ConfigManager:
         # 更新缓存
         self._config_cache = config
         self._last_modified = self.active_config_path.stat().st_mtime
+
+        # 保存即配置变更：版本自增并标记待触发变更回调
+        self._config_version = getattr(self, "_config_version", 0) + 1
+        self._change_dirty = True
 
     def get_bangumi_configs(self) -> dict[str, dict[str, Any]]:
         """获取所有 Bangumi 账号配置段（仅迁移用，DB 为唯一真相源）。
@@ -657,6 +726,7 @@ class ConfigManager:
                     config.set(section_name, field, str(config_data[field]))
 
             self._save_config(config)
+        self._fire_pending_changes()
 
     def delete_summary_config(self, name: str) -> None:
         """删除 [summary-{name}] 配置节。"""
@@ -666,6 +736,7 @@ class ConfigManager:
             if config.has_section(section_name):
                 config.remove_section(section_name)
                 self._save_config(config)
+        self._fire_pending_changes()
 
     def rename_notification_type(self, old_type: str, new_type: str) -> int:
         """将 webhook/邮件配置中的通知类型从 old_type 替换为 new_type。
@@ -693,6 +764,7 @@ class ConfigManager:
                 updated += 1
             if updated:
                 self._save_config(config)
+        self._fire_pending_changes()
         return updated
 
     # ────────────────────────────────────────────────────────────────────
@@ -722,6 +794,7 @@ class ConfigManager:
         """保存配置"""
         config = self.get_config_parser()
         self._save_config(config)
+        self._fire_pending_changes()
 
     def _needs_migration(self) -> bool:
         """检查是否需要执行配置迁移"""

@@ -402,3 +402,8 @@ def invalidate_watching_cache(username: Optional[str] = None) -> None:
             _watching_cache.clear()
         else:
             _watching_cache.pop(username, None)
+
+
+# 配置变更（账号/令牌等）时清空在看缓存，避免旧账号数据残留：
+# 与 BangumiApi 实例缓存按 dev 快照自动失效的思路统一，无需重启生效
+config_manager.register_config_change_listener(lambda: invalidate_watching_cache())

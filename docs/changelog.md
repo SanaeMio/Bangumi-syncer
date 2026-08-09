@@ -9,6 +9,7 @@ order: 45
 
 ## ✨ 新功能
 
+- config_manager 新增配置版本号与变更监听回调：「在看」缓存、封面前缀缓存、bangumi-data 配置在配置改动后自动失效/重读，无需重启即可生效 `2026-08-09`
 - 新增番剧放送日历视图与 API 端点，仪表板展示 30 天追番日程 `2026-07-31`
 - 新增 `airing_today` 今日放送提醒定时任务，每日推送当日放送汇总 `2026-07-31`
 - 新增 Bangumi Archive 离线查询层，把全站数据快照下载到本地 SQLite [#210](https://github.com/SanaeMio/Bangumi-syncer/pull/210) `2026-07-29`
