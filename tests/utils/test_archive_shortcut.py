@@ -655,19 +655,28 @@ class TestArchiveShortcutTrySearch:
         assert r.data[0]["id"] == 1
 
     @patch("app.utils.bangumi_api._archive_shortcut.archive_store")
-    @patch("app.utils.bangumi_archive._title_index.archive_title_index")
+    @patch("app.utils.bangumi_api._archive_shortcut.archive_title_index")
     def test_date_missing_not_filtered(
         self, mock_index: MagicMock, mock_store: MagicMock
     ) -> None:
-        """subject.date 缺失时不应被 air_date 过滤（避免误删无日期条目）"""
+        """subject.date 缺失时不应被 air_date 过滤（避免误删无日期条目）
+
+        try_search 命中后通过 get_subjects_by_ids_with_filter 拉取并按 type/air_date
+        过滤；subject.date 为空字符串时该层应保留条目（_store 侧 is_exact 保护），
+        故 hit=True。注意 patch 目标必须是 _archive_shortcut 中实际引用的
+        archive_title_index，否则 mock 不生效。
+        """
         mock_index.find_subject_ids_by_title.return_value = [1]
+        mock_index.find_subject_ids_for_query_title.return_value = ([1], True)
         mock_index.find_subject_ids_fuzzy.return_value = []
-        mock_store.get_subject.return_value = {
-            "id": 1,
-            "type": 2,
-            "name": "Test",
-            "date": "",  # 空日期
-        }
+        mock_store.get_subjects_by_ids_with_filter.return_value = [
+            {
+                "id": 1,
+                "type": 2,
+                "name": "Test",
+                "date": "",  # 空日期
+            }
+        ]
 
         r = self.shortcut.try_search(
             "Test", start_date="2026-01-01", end_date="2026-02-01"
