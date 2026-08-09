@@ -107,6 +107,12 @@ def new_retry_sync_run_id(record_id: int) -> str:
     return f"retry_{record_id}_{int(time.time())}"
 
 
+def new_sync_run_id(prefix: str = "sync") -> str:
+    """通用同步 run_id 生成器（用于未显式包裹 sync_log_context 的同步入口，
+    保证每条同步记录都有关联 run_id，从而可在日志页按 run 跳转定位）。"""
+    return f"{prefix}_{int(time.time() * 1000)}"
+
+
 def resolve_dev_log_file_path(raw: str) -> Path:
     """将配置中的 log_file 转为绝对 Path（仅将以 ./ 开头的视为相对项目根）。"""
     if raw.startswith("./"):

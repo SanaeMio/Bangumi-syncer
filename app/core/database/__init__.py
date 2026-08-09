@@ -212,6 +212,10 @@ class DatabaseManager:
         """更新同步记录的状态"""
         return self._sync.update_sync_record_status(record_id, status, message)
 
+    def update_sync_record_run_id(self, record_id: int, run_id: str) -> bool:
+        """回填同步记录的 run_id，用于重试回写原记录关联。"""
+        return self._sync.update_sync_record_run_id(record_id, run_id)
+
     # ------------------------------------------------------------------
     # PendingCandidatesRepository 转发
     # ------------------------------------------------------------------

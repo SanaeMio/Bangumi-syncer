@@ -644,83 +644,6 @@ function isRecordSyncSuccess(record) {
     return record.status === 'success' || record.status === 'retried';
 }
 
-function renderRecordAssociationIds(record) {
-    const parts = [];
-    if (record.run_id) {
-        parts.push('<code>' + escapeHtml(record.run_id) + '</code>');
-    }
-    if (record.batch_id) {
-        parts.push('批次 <code>' + escapeHtml(record.batch_id) + '</code>');
-    }
-    return parts.join('<span class="record-detail-inline-msg__sep">·</span>');
-}
-
-function renderSyncResultContent(record, trace) {
-    const isSuccess = isRecordSyncSuccess(record);
-    const assocIds = renderRecordAssociationIds(record);
-    const score = (trace && trace.final_score !== null && trace.final_score !== undefined)
-        ? trace.final_score
-        : record.match_score;
-    const method = record.match_method || (trace && trace.final_match_method) || '';
-    const subjectId = record.subject_id || (trace && trace.final_subject_id);
-    const episodeId = record.episode_id || (trace && trace.final_episode_id);
-    let body = '';
-
-    if (isSuccess) {
-        const facts = [];
-        if (record.bgm_title) {
-            facts.push({ label: 'Bangumi 条目', value: escapeHtml(record.bgm_title), wide: true });
-        }
-        if (method) {
-            facts.push({ label: '匹配方式', value: renderMatchMethodBadge(method) });
-        }
-        if (score !== null && score !== undefined) {
-            facts.push({ label: '置信度', value: `${(score * 100).toFixed(0)}%` });
-        }
-        const links = renderBangumiLinkPills(subjectId, episodeId);
-        if (links) {
-            facts.push({ label: '链接', value: links, wide: true });
-        }
-        const assocIds = renderRecordAssociationIds(record);
-        if (assocIds) {
-            facts.push({ label: '关联', value: assocIds, wide: true });
-        }
-        body += renderRecordDetailFacts(facts);
-    }
-
-    const messageText = normalizeRecordText(record.message);
-    if (messageText) {
-        const isNoMatch = isMatchFailure(record, trace);
-        const messageClass = record.status === 'error'
-            ? 'record-detail-message record-detail-message--error'
-            : 'record-detail-message';
-        const msgLabel = (isSuccess || isNoMatch) ? '消息' : '同步结果';
-        let inlineClass = 'record-detail-inline-msg';
-        if (!body || isNoMatch) {
-            inlineClass += ' record-detail-inline-msg--only';
-        }
-        const assocBlock = (isSuccess || !assocIds)
-            ? ''
-            : `<div class="record-detail-inline-msg record-detail-inline-msg--only"><span class="record-detail-inline-msg__label">关联</span><div class="record-detail-assoc-line">${assocIds}</div></div>`;
-        body += `${assocBlock}
-            <div class="${inlineClass}">
-                <span class="record-detail-inline-msg__label">${msgLabel}</span>
-                <pre class="${messageClass} mb-0">${escapeHtml(messageText)}</pre>
-            </div>
-        `;
-    } else if (!isSuccess) {
-        body += `<div class="record-detail-result-status">${renderSyncStatusBadge(record.status)}${renderSyncSubStatusBadge(record)}</div>`;
-    }
-
-    if (!body) {
-        body = '<p class="record-detail-empty-hint mb-0">无结果信息</p>';
-    }
-
-    const variant = isSuccess ? 'result' : 'result-error';
-    const hint = isSuccess ? '已成功同步到 Bangumi' : '同步未成功或已忽略';
-    return renderRecordDetailZone(variant, '同步结果', hint, body, 'record-section-result');
-}
-
 function renderBangumiLinkPills(subjectId, episodeId) {
     const pills = [];
     if (subjectId) {
@@ -831,10 +754,19 @@ function updateRecordDetailModalChrome(record) {
     }
 
     if (subtitleEl) {
-        subtitleEl.innerHTML = [
+        const parts = [
             `<span>${escapeHtml(record.timestamp || '')}</span>`,
             renderSourceBadge(record.source),
-        ].join('<span class="record-detail-meta-dot">·</span>');
+        ];
+        const runId = (record.run_id || '').trim();
+        if (runId) {
+            parts.push(
+                `<a class="record-detail-modal__chip record-detail-modal__chip--link" ` +
+                `href="${appUrl('/logs')}?run_id=${encodeURIComponent(runId)}" target="_blank">` +
+                `<i class="bi bi-card-list"></i> 同步日志</a>`
+            );
+        }
+        subtitleEl.innerHTML = parts.join('<span class="record-detail-meta-dot">·</span>');
     }
 
     if (headerEl) {
@@ -1100,5 +1032,4 @@ async function showRecordDetail(recordId, options) {
 }
 
 window.renderSyncDetailContent = renderSyncDetailContent;
-window.renderSyncResultContent = renderSyncResultContent;
 window.showRecordDetail = showRecordDetail;

@@ -7,7 +7,11 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
-from ..logging import get_batch_id, get_sync_run_id, logger
+from ..logging import (
+    get_batch_id,
+    get_sync_run_id,
+    logger,
+)
 from .base_repository import BaseRepository
 
 
@@ -292,6 +296,27 @@ class SyncRecordsRepository(BaseRepository):
         else:
             logger.warning(f"记录 {record_id} 不存在，无法更新")
             return False
+
+    def update_sync_record_run_id(self, record_id: int, run_id: str) -> bool:
+        """回填同步记录的 run_id，用于重试将原 run 关联回原记录详情页。"""
+
+        def _write(conn):
+            cursor = conn.execute(
+                """
+                UPDATE sync_records
+                SET run_id = ?
+                WHERE id = ?
+            """,
+                (run_id, record_id),
+            )
+            return cursor.rowcount
+
+        affected_rows = self._run_write(
+            _write,
+            error_msg="回填同步记录 run_id 失败",
+            default=False,
+        )
+        return affected_rows > 0
 
     def get_match_records(
         self,
