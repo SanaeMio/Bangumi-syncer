@@ -5,6 +5,8 @@
 import smtplib
 from unittest.mock import MagicMock, mock_open, patch
 
+import pytest
+
 from app.services.notification_service import NotificationService
 from app.utils.notifier import Notifier, get_notifier
 
@@ -1013,3 +1015,569 @@ class TestTypeMatches:
     def test_single_type_no_comma(self):
         assert Notifier._type_matches("mark_success", "mark_success") is True
         assert Notifier._type_matches("mark_failed", "mark_success") is False
+
+
+class TestNotifierMergedExtended:
+    """test_notifier_extended.py 并入的独有用例。"""
+
+    def test_replace_template_nested(self):
+        """测试嵌套模板变量替换"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        template = {"key": {"nested": "{value}"}}
+        data = {"value": "test"}
+        result = notifier._replace_template_variables(template, data)
+        assert result["key"]["nested"] == "test"
+
+    def test_replace_template_list_items(self):
+        """测试列表中的模板变量"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        template = [{"name": "{item}"}]
+        data = {"item": "value"}
+        result = notifier._replace_template_variables(template, data)
+        assert result[0]["name"] == "value"
+
+    def test_replace_template_mixed(self):
+        """测试混合类型模板"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        template = {"string": "{name}", "number": 123, "list": ["{item}"]}
+        data = {"name": "test", "item": "value"}
+        result = notifier._replace_template_variables(template, data)
+        assert result["string"] == "test"
+        assert result["number"] == 123
+        assert result["list"][0] == "value"
+
+
+class TestNotifierMergedFull:
+    """test_notifier_full.py 并入的独有用例。"""
+
+    def test_get_webhook_configs_empty(self):
+        """测试获取空 webhook 配置"""
+        mock_config = MagicMock()
+        mock_config.get_config_parser.return_value.sections.return_value = []
+
+        notifier = Notifier(mock_config)
+        result = notifier._get_webhook_configs()
+        assert result == []
+
+    def test_get_email_configs_empty(self):
+        """测试获取空邮件配置"""
+        mock_config = MagicMock()
+        mock_config.get_config_parser.return_value.sections.return_value = []
+
+        notifier = Notifier(mock_config)
+        result = notifier._get_email_configs()
+        assert result == []
+
+    def test_should_send_notification_different_types(self):
+        """测试不同类型通知独立冷却"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        # 类型1可以发送
+        result1 = notifier._should_send_notification("type1")
+        assert result1 is True
+
+        # 类型2可以发送（不同类型独立冷却）
+        result2 = notifier._should_send_notification("type2")
+        assert result2 is True
+
+        # 再次发送类型1被冷却阻止
+        result3 = notifier._should_send_notification("type1")
+        assert result3 is False
+
+    def test_replace_template_edge_cases(self):
+        """测试模板替换边界情况"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        # 测试空字符串
+        result = notifier._replace_template_variables("", {})
+        assert result == ""
+
+        # 测试 None
+        result = notifier._replace_template_variables(None, {})
+        assert result is None
+
+    def test_send_email_smtp_exception(self):
+        """测试 SMTP 发送异常"""
+        import smtplib
+
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        email_config = {
+            "id": "1",
+            "smtp_server": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_username": "user@example.com",
+            "smtp_password": "pass",
+            "email_from": "from@example.com",
+            "email_to": "to@example.com",
+        }
+
+        with (
+            patch("app.utils.notifier.email_sender.smtplib.SMTP") as mock_smtp,
+            patch.object(notifier, "_load_email_template", return_value=None),
+            patch.object(
+                notifier, "_build_simple_email_html", return_value="<html></html>"
+            ),
+            patch.object(notifier, "_build_email_text_by_type", return_value="text"),
+        ):
+            mock_server = MagicMock()
+            mock_server.send_message.side_effect = smtplib.SMTPException("send failed")
+            mock_smtp.return_value = mock_server
+
+            result = notifier._send_email_by_config(email_config, "mark_success", {})
+            assert result is False
+
+    def test_send_email_generic_exception(self):
+        """测试邮件发送通用异常"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        email_config = {
+            "id": "1",
+            "smtp_server": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_username": "user@example.com",
+            "smtp_password": "pass",
+            "email_from": "from@example.com",
+            "email_to": "to@example.com",
+        }
+
+        with (
+            patch(
+                "app.utils.notifier.email_sender.smtplib.SMTP",
+                side_effect=RuntimeError("connection error"),
+            ),
+            patch.object(notifier, "_load_email_template", return_value=None),
+            patch.object(
+                notifier, "_build_simple_email_html", return_value="<html></html>"
+            ),
+            patch.object(notifier, "_build_email_text_by_type", return_value="text"),
+        ):
+            result = notifier._send_email_by_config(email_config, "mark_success", {})
+            assert result is False
+
+    def test_build_email_subject_mark_failed(self):
+        """测试标记失败标题"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        subject = notifier._build_email_subject_by_type(
+            "mark_failed", {"title": "测试", "season": 1, "episode": 5}
+        )
+        assert "失败" in subject
+
+    def test_build_simple_email_html_with_url(self):
+        """测试带 URL 的 HTML"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {
+            "notification_type": "mark_success",
+            "title": "测试",
+            "url": "https://example.com",
+            "episode_id": "123",
+        }
+        html = notifier._build_simple_email_html(data)
+        assert "example.com" in html
+
+    def test_build_simple_email_html_with_episode(self):
+        """测试带集数信息的 HTML"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {
+            "notification_type": "mark_success",
+            "title": "测试",
+            "episode_id": "123",
+            "subject_id": "456",
+        }
+        html = notifier._build_simple_email_html(data)
+        assert "123" in html
+
+    def test_build_email_text_request_received(self):
+        """测试收到请求文本"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {
+            "title": "测试番剧",
+            "user_name": "user1",
+            "season": 1,
+            "episode": 5,
+            "source": "emby",
+        }
+        text = notifier._build_email_text_by_type("request_received", data)
+        assert "测试番剧" in text
+
+    def test_build_email_text_bangumi_id_found(self):
+        """测试找到 Bangumi ID 文本"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {
+            "subject_id": "12345",
+            "title": "测试番剧",
+            "user_name": "user1",
+            "season": 1,
+            "episode": 5,
+            "source": "emby",
+        }
+        text = notifier._build_email_text_by_type("bangumi_id_found", data)
+        assert "匹配" in text or "Bangumi" in text
+
+    def test_build_email_text_episode_not_found(self):
+        """测试未找到集数文本"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {
+            "title": "测试番剧",
+            "user_name": "user1",
+            "season": 1,
+            "episode": 99,
+            "subject_id": "123",
+            "source": "emby",
+        }
+        text = notifier._build_email_text_by_type("episode_not_found", data)
+        assert "99" in text
+
+    def test_build_email_text_api_auth_error(self):
+        """测试 API 认证错误文本"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {"status_code": 401, "error_message": "认证失败"}
+        text = notifier._build_email_text_by_type("api_auth_error", data)
+        assert "401" in text
+
+    def test_build_email_text_unknown_type(self):
+        """测试未知类型文本"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        text = notifier._build_email_text_by_type("unknown_type", {})
+        assert len(text) > 0
+
+    def test_build_simple_html_with_status_code(self):
+        """测试带状态码的 HTML"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {
+            "notification_type": "api_error",
+            "status_code": 404,
+            "url": "https://api.example.com",
+        }
+        html = notifier._build_simple_email_html(data)
+        assert "404" in html
+
+    def test_build_simple_html_mark_skipped(self):
+        """测试标记跳过 HTML"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        data = {
+            "notification_type": "mark_skipped",
+            "title": "测试番剧",
+            "user_name": "user1",
+            "season": 1,
+            "episode": 5,
+            "source": "emby",
+            "subject_id": "123",
+            "episode_id": "456",
+        }
+        html = notifier._build_simple_email_html(data)
+        assert "<html>" in html
+
+
+class TestNotifierMergedWatchingSummary:
+    """test_notifier_watching_summary.py 并入的独有用例。"""
+
+    @staticmethod
+    def _make_notifier() -> Notifier:
+        mock_config = MagicMock()
+        return Notifier(mock_config)
+
+    @staticmethod
+    def _make_watching_data() -> dict:
+        return {
+            "job_name": "MyDailySummary",
+            "timestamp": "2024-07-15 10:00:00",
+            "summary_text": "本周共追番5部，更新12集",
+            "date_range": "2024-07-08 ~ 2024-07-15",
+            "record_count": 12,
+            "user_name": "testuser",
+        }
+
+    def test_payload_for_watching_summary_has_expected_keys(self):
+        """watching_summary 的 payload 应包含所有预期字段。"""
+        notifier = self._make_notifier()
+        data = self._make_watching_data()
+
+        payload = notifier._build_payload_by_type("watching_summary", data, "")
+
+        assert payload["title"] == "📊 追番总结 - MyDailySummary"
+        assert payload["type"] == "watching_summary"
+        assert payload["timestamp"] == "2024-07-15 10:00:00"
+        assert payload["summary"] == "本周共追番5部，更新12集"
+        assert payload["date_range"] == "2024-07-08 ~ 2024-07-15"
+        assert payload["record_count"] == 12
+        assert payload["user_name"] == "testuser"
+
+    def test_payload_for_watching_summary_dad_has_expected_keys(self):
+        """watching_summary_dad 的 payload 应包含所有预期字段。"""
+        notifier = self._make_notifier()
+        data = self._make_watching_data()
+        data["job_name"] = "DadSummary"
+
+        payload = notifier._build_payload_by_type("watching_summary_dad", data, "")
+
+        assert payload["title"] == "📊 追番总结 - DadSummary"
+        assert payload["type"] == "watching_summary"
+        assert payload["summary"] == "本周共追番5部，更新12集"
+
+    def test_payload_handles_missing_fields_gracefully(self):
+        """数据字段缺失时应使用默认值。"""
+        notifier = self._make_notifier()
+        data: dict = {}
+
+        payload = notifier._build_payload_by_type("watching_summary", data, "")
+
+        assert payload["title"] == "📊 追番总结 - "
+        assert payload["summary"] == ""
+        assert payload["date_range"] == ""
+        assert payload["record_count"] == 0
+        assert payload["user_name"] == ""
+
+    def test_subject_for_watching_summary(self):
+        """邮件主题应包含 job_name 和正确的前缀。"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+        data = {"job_name": "WeeklyReport"}
+
+        result = notifier._build_email_subject_by_type("watching_summary", data)
+
+        assert "追番总结" in result
+        assert "WeeklyReport" in result
+        assert result.startswith("[Bangumi-Syncer]")
+
+    def test_subject_for_watching_summary_default_name(self):
+        """即使 job_name 缺失，邮件主题也应正常工作。"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+
+        result = notifier._build_email_subject_by_type("watching_summary", {})
+
+        assert "追番总结" in result
+
+    def test_dynamic_content_for_watching_summary_contains_key_info(self):
+        """动态 HTML 内容应包含 job_name、date_range、record_count、summary_text。"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+        data = {
+            "job_name": "DailySummary",
+            "date_range": "2024-07-01 ~ 2024-07-07",
+            "record_count": 8,
+            "summary_text": "本周更新8集",
+        }
+
+        result = notifier._build_email_dynamic_content("watching_summary", data)
+
+        assert "DailySummary" in result
+        assert "2024-07-01 ~ 2024-07-07" in result
+        assert "8" in result
+        assert "本周更新8集" in result
+
+    def test_dynamic_content_for_watching_summary_dad(self):
+        """动态 HTML 内容应支持 watching_summary_dad 变体。"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+        data = {
+            "job_name": "DadReport",
+            "date_range": "2024-07-01 ~ 2024-07-07",
+            "record_count": 5,
+            "summary_text": "爸爸的追番总结",
+        }
+
+        result = notifier._build_email_dynamic_content("watching_summary_dad", data)
+
+        assert "DadReport" in result
+        assert "爸爸的追番总结" in result
+
+    def test_mark_failed_payload_unchanged(self):
+        """mark_failed payload 仍应正常工作。"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+        data = {
+            "title": "测试番剧",
+            "error_message": "API错误",
+            "error_type": "connection",
+        }
+
+        payload = notifier._build_payload_by_type("mark_failed", data, "")
+
+        assert payload["title"] == "❌ 同步失败"
+        assert payload["error"] == "API错误"
+
+    def test_request_received_payload_unchanged(self):
+        """request_received payload 仍应正常工作。"""
+        mock_config = MagicMock()
+        notifier = Notifier(mock_config)
+        data = {"title": "测试番剧", "user_name": "test", "source": "emby"}
+
+        payload = notifier._build_payload_by_type("request_received", data, "")
+
+        assert payload["title"] == "📥 收到同步请求"
+        assert payload["anime"] == "测试番剧"
+
+
+class TestNotifierMergedHttp:
+    """test_notifier_http.py 并入的独有用例。"""
+
+    def test_webhook_filter_by_type(mock_config_with_webhook):
+        """测试 Webhook 按类型过滤"""
+        # 配置只接收 mark_success 类型
+        config = MagicMock()
+        config_parser = MagicMock()
+        config_parser.sections.return_value = ["notify-webhook-1"]
+
+        webhook_config = {
+            "id": "1",
+            "url": "https://webhook.example.com/notify",
+            "enabled": "true",
+            "method": "POST",
+            "headers": "",
+            "types": "mark_success",  # 只接收成功通知
+        }
+        config.get_section.return_value = webhook_config
+        config.get_config_parser.return_value = config_parser
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+        with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+            mock_instance = mock_cls.return_value
+            mock_instance.prefix.return_value = mock_instance
+            mock_instance.success_tpl.return_value = mock_instance
+            mock_instance.failure_tpl.return_value = mock_instance
+            mock_instance.post.return_value = mock_response
+
+            notifier = Notifier(config)
+
+            # 发送成功通知 - 应该发送
+            notifier.send_notification_by_type(
+                "mark_success",
+                {"timestamp": "2024-01-01 12:00:00"},
+            )
+            assert mock_instance.post.call_count == 1
+
+            # 发送失败通知 - 不应该发送
+            notifier.send_notification_by_type(
+                "mark_failed",
+                {"timestamp": "2024-01-01 12:00:00"},
+            )
+            # 没有新的请求
+            assert mock_instance.post.call_count == 1
+
+    def test_webhook_disabled(mock_config_with_webhook):
+        """测试禁用的 Webhook"""
+        # 配置禁用 - 使用布尔值 False
+        config = MagicMock()
+        config_parser = MagicMock()
+        config_parser.sections.return_value = ["notify-webhook-1"]
+
+        webhook_config = {
+            "id": "1",
+            "url": "https://webhook.example.com/notify",
+            "enabled": False,  # 禁用 - 使用布尔值
+            "method": "POST",
+            "headers": "",
+            "types": "all",
+        }
+        config.get_section.return_value = webhook_config
+        config.get_config_parser.return_value = config_parser
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.elapsed.total_seconds.return_value = 0.01
+        mock_response.headers = {}
+        mock_response.text = ""
+        with patch("app.utils.notifier.webhook.SyncHttpClient") as mock_cls:
+            mock_instance = mock_cls.return_value
+            mock_instance.prefix.return_value = mock_instance
+            mock_instance.success_tpl.return_value = mock_instance
+            mock_instance.failure_tpl.return_value = mock_instance
+            mock_instance.post.return_value = mock_response
+
+            notifier = Notifier(config)
+            _result = notifier.send_notification_by_type(
+                "mark_success",
+                {"timestamp": "2024-01-01 12:00:00"},
+            )
+
+            # 没有请求发出 - 当 enabled=False 时，_get_webhook_configs 应该过滤掉
+            assert mock_instance.post.call_count == 0
+
+        configs = notifier._get_webhook_configs()
+        # 验证所有配置都是禁用的
+        enabled_configs = [c for c in configs if c.get("enabled")]
+        assert len(enabled_configs) == 0
+
+    def test_should_send_notification_after_cooldown(mock_config):
+        """测试冷却时间后可以再次发送"""
+
+        notifier = Notifier(mock_config)
+
+        # 第一次发送
+        assert notifier._should_send_notification("test_type") is True
+
+        # 手动将上次的通知时间设置为很早之前（绕过冷却）
+        notifier._last_notification_time["test_type"] = 0
+
+        # 现在应该可以发送
+        assert notifier._should_send_notification("test_type") is True
+
+
+# 以下 fixtures 供 TestNotifierMergedHttp 使用（并入自 test_notifier_http.py）
+
+
+@pytest.fixture
+def mock_config():
+    """创建模拟的 config_manager"""
+    config = MagicMock()
+    config_parser = MagicMock()
+    config_parser.sections.return_value = []
+    config.get_config_parser.return_value = config_parser
+    return config
+
+
+@pytest.fixture
+def mock_config_with_webhook():
+    """创建带 webhook 配置的 mock config"""
+    config = MagicMock()
+    config_parser = MagicMock()
+    config_parser.sections.return_value = ["notify-webhook-1"]
+
+    # Mock webhook config
+    webhook_config = {
+        "id": "1",
+        "url": "https://webhook.example.com/notify",
+        "enabled": "true",
+        "method": "POST",
+        "headers": "",
+        "types": "all",
+    }
+    config.get_section.return_value = webhook_config
+    config.get_config_parser.return_value = config_parser
+    return config
