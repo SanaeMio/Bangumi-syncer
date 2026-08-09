@@ -112,6 +112,107 @@ class TestDatabaseManager:
         row = db.get_sync_record_by_id(1)
         assert row["media_type"] == "episode"
 
+    def test_migrate_adds_match_fields_columns(self, temp_dir, reset_singletons):
+        """旧表缺匹配追踪字段时自动补齐 4 列"""
+        db_path = temp_dir / "legacy_match_fields.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            """
+            CREATE TABLE sync_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                ori_title TEXT,
+                season INTEGER NOT NULL,
+                episode INTEGER NOT NULL,
+                subject_id TEXT,
+                episode_id TEXT,
+                status TEXT NOT NULL,
+                message TEXT,
+                source TEXT NOT NULL,
+                media_type TEXT NOT NULL DEFAULT 'episode',
+                bgm_title TEXT DEFAULT ''
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+        result = db.get_sync_records(limit=1)
+        assert result["records"] == []
+        cols = [
+            row[1]
+            for row in db._connection._get_connection().execute(
+                "PRAGMA table_info(sync_records)"
+            )
+        ]
+        for col in ("match_method", "match_score", "match_platform", "match_trace"):
+            assert col in cols
+
+    def test_ensure_columns_adds_only_missing_columns(self, temp_dir, reset_singletons):
+        """_ensure_columns 只补缺列，返回是否发生变更"""
+        db_path = temp_dir / "helper_migration.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            """CREATE TABLE sample_meta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            age INTEGER DEFAULT 0
+            )"""
+        )
+        conn.commit()
+        conn.close()
+
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseConnection
+
+            db = DatabaseConnection(str(db_path))
+            cursor = db._get_connection().cursor()
+            # 一半已存在、一半缺失 → 只补缺列并返回 True
+            changed = db._ensure_columns(
+                cursor,
+                "sample_meta",
+                [
+                    ("age", "INTEGER DEFAULT 0"),
+                    ("note", "TEXT DEFAULT ''"),
+                ],
+            )
+        assert changed is True
+        cols = [
+            row[1]
+            for row in db._get_connection().execute("PRAGMA table_info(sample_meta)")
+        ]
+        assert cols == ["id", "name", "age", "note"]
+
+    def test_ensure_columns_second_call_noop(self, temp_dir, reset_singletons):
+        """列已补齐后再次调用：返回 False 且不再发 ALTER（幂等）"""
+        db_path = temp_dir / "helper_idempotent.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE sample_meta (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+        conn.commit()
+        conn.close()
+
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseConnection
+
+            db = DatabaseConnection(str(db_path))
+            cursor = db._get_connection().cursor()
+            db._ensure_columns(cursor, "sample_meta", [("note", "TEXT DEFAULT ''")])
+            changed_twice = db._ensure_columns(
+                cursor, "sample_meta", [("note", "TEXT DEFAULT ''")]
+            )
+        assert changed_twice is False
+        cols = [
+            row[1]
+            for row in db._get_connection().execute("PRAGMA table_info(sample_meta)")
+        ]
+        assert cols == ["id", "note"]
+
     def test_get_sync_records_basic(self, temp_dir, reset_singletons):
         """测试基本获取同步记录。"""
         db_path = temp_dir / "test.db"
