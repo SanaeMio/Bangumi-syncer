@@ -146,10 +146,12 @@ SECTIONS: dict[str, SectionMeta] = {
         env_overrides={
             "script_proxy": "HTTP_PROXY",
             "debug": "DEBUG_MODE",
+            "log_level": "LOG_LEVEL",
         },
         fields=(
             FieldMeta(name="sync_records_retention_days", default=0),
             FieldMeta(name="ssl_verify", default_true=True),
+            FieldMeta(name="log_level", default="INFO"),
         ),
     ),
     # ── 媒体源驱动（order 100-199）──

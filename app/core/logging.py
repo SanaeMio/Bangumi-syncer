@@ -18,6 +18,24 @@ if TYPE_CHECKING:
 # 与 config.ini / Web 日志 API 对齐的默认相对路径（相对项目根）
 DEFAULT_DEV_LOG_FILE = "./log.txt"
 
+# 日志文件超过该大小后轮转（新内容写入 log.txt，旧内容保留为 log.txt.1/.2）
+MAX_LOG_FILE_SIZE = 2 * 1024 * 1024
+MAX_LOG_BACKUPS = 2
+
+# 级别权重：数字越大越重要
+_LEVEL_WEIGHT = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+
+
+def normalize_log_level(raw) -> str:
+    """将配置中的日志级别规范化为 DEBUG/INFO/WARNING/ERROR；无效值回退为 INFO。"""
+    value = str(raw or "").strip().upper()
+    if value == "WARN":
+        return "WARNING"
+    if value in _LEVEL_WEIGHT:
+        return value
+    return "INFO"
+
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # 同步日志关联 ID（线程内通过 ContextVar 传播）
@@ -104,6 +122,7 @@ class Logger:
 
         # 延迟获取debug_mode，避免循环依赖
         self._debug_mode = None
+        self._log_level: Optional[str] = None
         self._log_file_path: Optional[Path] = None
         # 不在 __init__ 中打开日志文件：模块执行 logger = Logger() 时，若此处导入
         # config，而 config 初始化链又 import logger，会触发 partially initialized 循环依赖。
@@ -186,7 +205,8 @@ class Logger:
         try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             mode = "a"
-            if log_path.exists() and log_path.stat().st_size >= 2 * 1024 * 1024:
+            if log_path.exists() and log_path.stat().st_size >= MAX_LOG_FILE_SIZE:
+                self._rotate_log_file(log_path)
                 mode = "w"
             self.log_file = open(log_path, mode, encoding="utf-8", buffering=1)
             self._log_file_path = log_path.resolve()
@@ -199,6 +219,22 @@ class Logger:
                 f"文件日志打开失败: {e!r} 路径={log_path}",
                 file=sys.stderr,
             )
+
+    def _rotate_log_file(self, log_path: Path) -> None:
+        """日志文件超出大小上限时轮转，保留最近的 MAX_LOG_BACKUPS 份备份。"""
+        for i in range(MAX_LOG_BACKUPS, 0, -1):
+            prev = log_path if i == 1 else Path(f"{log_path}.{i - 1}")
+            cur = Path(f"{log_path}.{i}")
+            if prev.exists():
+                if cur.exists():
+                    try:
+                        cur.unlink()
+                    except OSError:
+                        continue
+                try:
+                    prev.rename(cur)
+                except OSError:
+                    continue
 
     def _ensure_log_file_for_write(self) -> None:
         """若磁盘上日志路径已不存在，则关闭句柄并重新打开。"""
@@ -226,6 +262,29 @@ class Logger:
                 return False
             self._debug_mode = config_manager.get("dev", "debug", fallback=False)
         return self._debug_mode
+
+    @property
+    def log_level(self) -> str:
+        """当前配置的日志级别（DEBUG/INFO/WARNING/ERROR）。"""
+        if self._log_level is None:
+            # 延迟导入，避免循环依赖
+            try:
+                from .config import config_manager
+            except ImportError:
+                raw = "INFO"
+            else:
+                raw = config_manager.get("dev", "log_level", fallback="INFO")
+            self._log_level = normalize_log_level(raw)
+        return self._log_level
+
+    def log_level_enabled(self, level: Optional[str]) -> bool:
+        """判断某级别在当前阈值下是否输出到控制台/文件（监听器不受阈值限制）。"""
+        if self.debug_mode:
+            return True
+        return (
+            _LEVEL_WEIGHT.get((level or "INFO").upper(), 20)
+            >= _LEVEL_WEIGHT[self.log_level]
+        )
 
     @staticmethod
     def mix_host_gen(netloc: str) -> str:
@@ -274,6 +333,12 @@ class Logger:
         if silence:
             return
 
+        # 控制台/文件受阈值过滤；监听器不受限制（重试等场景仍需低级别日志）
+        if not self.log_level_enabled(level):
+            if self._listeners:
+                self._notify_listeners(self._format_log_line(*args, level=level), level)
+            return
+
         self._lazy_init_log_file_once()
 
         log_line = self._format_log_line(*args, level=level)
@@ -302,14 +367,6 @@ class Logger:
 
     def debug(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
         """DEBUG级别日志"""
-        # DEBUG级别只在调试模式下输出到控制台/文件
-        if not self.debug_mode:
-            # 即使 debug_mode 关闭，也通知监听器（用于重试时捕获 debug 日志）
-            if self._listeners and not silence:
-                mixed_args = self.mix_args_str(*args) if self.need_mix else args
-                log_line = self._format_log_line(*mixed_args, level=self.DEBUG)
-                self._notify_listeners(log_line, self.DEBUG)
-            return
         if not silence and self.need_mix:
             args = self.mix_args_str(*args)
         self.log(*args, end=end, silence=silence, level=self.DEBUG)

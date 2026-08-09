@@ -58,12 +58,13 @@ class TestEnvOverrides:
         overrides = config_schema.all_env_overrides()
         assert overrides[("dev", "script_proxy")] == "HTTP_PROXY"
         assert overrides[("dev", "debug")] == "DEBUG_MODE"
+        assert overrides[("dev", "log_level")] == "LOG_LEVEL"
         assert overrides[("web", "base_path")] == "APPLICATION_ROOT"
 
     def test_count_matches_original(self):
-        """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条"""
+        """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条、log_level 共 1 条"""
         overrides = config_schema.all_env_overrides()
-        assert len(overrides) == 16
+        assert len(overrides) == 17
 
 
 class TestIsSensitiveField:
