@@ -163,8 +163,12 @@ _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._~:+-]{1,64}$")
 async def request_context_middleware(request: Request, call_next):
     """为请求注入 request_id（X-Request-ID 头或生成的短 ID），日志行关联 [req:...]。
 
-    先于 csp_middleware 注册，保证最外层包裹：请求期间（含线程池任务，
-    经 copy_context 传播）内所有日志行都携带同一个 request_id。
+    注册顺序说明：本中间件先于 csp_middleware 注册，但 Starlette 的
+    add_middleware 用 insert(0, ...) 将后注册者置于更外层，故实际执行
+    顺序（外→内）为 csp_middleware → request_context_middleware → 路由。
+    request_id 在 call_next 之前经 contextvar 设置，请求期间（含线程池
+    任务，经 copy_context 传播）内所有日志行都携带同一个 request_id；
+    csp_middleware 仅在响应阶段追加安全头、不记日志，故最外层位置无影响。
     """
     raw = request.headers.get("X-Request-ID", "").strip()
     if _REQUEST_ID_RE.fullmatch(raw):
