@@ -171,6 +171,8 @@ class Logger:
         self._log_file_lazy_initialized = False
         # 日志监听器列表（用于实时捕获日志，如重试 SSE 推送）
         self._listeners: list[Callable[[str, str], None]] = []
+        # 是否已注册配置变更监听（幂等，避免重复注册）
+        self._config_change_listener_registered = False
 
     def add_listener(self, callback: Callable[[str, str], None]) -> None:
         """添加日志监听器
@@ -293,6 +295,26 @@ class Logger:
             )
             self._setup_log_file()
 
+    def _ensure_config_change_listener(self) -> None:
+        """注册配置变更监听：配置变更后失效日志级别/调试开关缓存（幂等）。
+
+        延迟到首次真正访问 config_manager 时才注册，避免模块初始化期
+        与 config 初始化链形成循环依赖（logger = Logger() 时不可 import config）。
+        """
+        if self._config_change_listener_registered:
+            return
+        try:
+            from .config import config_manager
+        except ImportError:
+            return
+        config_manager.register_config_change_listener(self._invalidate_config_cache)
+        self._config_change_listener_registered = True
+
+    def _invalidate_config_cache(self) -> None:
+        """配置变更回调：清空 log_level/debug_mode 缓存，下次访问重新读取。"""
+        self._debug_mode = None
+        self._log_level = None
+
     @property
     def debug_mode(self) -> bool:
         """获取调试模式状态"""
@@ -303,6 +325,7 @@ class Logger:
             except ImportError:
                 return False
             self._debug_mode = config_manager.get("dev", "debug", fallback=False)
+            self._ensure_config_change_listener()
         return self._debug_mode
 
     @property
@@ -317,6 +340,7 @@ class Logger:
             else:
                 raw = config_manager.get("dev", "log_level", fallback="INFO")
             self._log_level = normalize_log_level(raw)
+            self._ensure_config_change_listener()
         return self._log_level
 
     def log_level_enabled(self, level: Optional[str]) -> bool:
