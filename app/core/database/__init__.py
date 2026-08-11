@@ -212,6 +212,10 @@ class DatabaseManager:
         """更新同步记录的状态"""
         return self._sync.update_sync_record_status(record_id, status, message)
 
+    def update_sync_record_run_id(self, record_id: int, run_id: str) -> bool:
+        """回填同步记录的 run_id，用于重试回写原记录关联。"""
+        return self._sync.update_sync_record_run_id(record_id, run_id)
+
     # ------------------------------------------------------------------
     # PendingCandidatesRepository 转发
     # ------------------------------------------------------------------
@@ -677,11 +681,28 @@ class DatabaseManager:
 _database_manager: Optional[DatabaseManager] = None
 
 
+def get_database_manager() -> DatabaseManager:
+    """获取全局数据库管理器单例（惰性创建）。"""
+    global _database_manager
+    if _database_manager is None:
+        _database_manager = DatabaseManager()
+    return _database_manager
+
+
+def set_database_manager(instance: Optional[DatabaseManager]) -> None:
+    """替换数据库管理器实例（测试/DI 注入）。"""
+    global _database_manager
+    _database_manager = instance
+
+
+def reset_database_manager() -> None:
+    """复位数据库管理器单例，下次访问时重建。"""
+    global _database_manager
+    _database_manager = None
+
+
 def __getattr__(name: str):
     """模块级懒加载，避免 import 时即打开 SQLite 连接。"""
-    global _database_manager
     if name == "database_manager":
-        if _database_manager is None:
-            _database_manager = DatabaseManager()
-        return _database_manager
+        return get_database_manager()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

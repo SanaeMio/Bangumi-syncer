@@ -175,3 +175,8 @@ async def get_poster_urls(
 ) -> dict[int, str]:
     """异步批量解析封面 URL（Bangumi API 调用在线程池中执行）。"""
     return await asyncio.to_thread(get_poster_urls_sync, subject_ids, prefer_sizes)
+
+
+# [dev] 代理相关配置变更时清空进程级缓存：命名空间虽然已随配置变化，但
+# 旧条目带 24h TTL 仍会命中，配置变更后应整体失效（无需重启）
+config_manager.register_config_change_listener(clear_poster_service_caches)

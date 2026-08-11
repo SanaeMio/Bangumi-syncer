@@ -188,15 +188,15 @@ class FongmiSyncService:
     async def debug_scan(self) -> dict:
         """调试用：搜寻设备并拉取当前 /media 状态（不过滤完成）"""
         cfg = config_manager.get_fongmi_config()
-        logger.info(
+        logger.debug(
             f"fongmi 调试扫描开始：enabled={cfg.get('enabled')}, "
             f"devices={cfg.get('devices')!r}, auto_scan={cfg.get('auto_scan')}, "
             f"subnet={cfg.get('subnet')!r}"
         )
         devices = await self._resolve_devices(cfg)
-        logger.info(f"fongmi 调试扫描：发现 {len(devices)} 台设备")
+        logger.debug(f"fongmi 调试扫描：发现 {len(devices)} 台设备")
         media_list = await fetch_all_media_status(devices)
-        logger.info(f"fongmi 调试扫描：拉取到 {len(media_list)} 条媒体状态")
+        logger.debug(f"fongmi 调试扫描：拉取到 {len(media_list)} 条媒体状态")
         return {"discovered_devices": len(devices), "devices": media_list}
 
     async def debug_sync_one(

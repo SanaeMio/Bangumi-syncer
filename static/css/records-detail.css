@@ -70,6 +70,13 @@
     color: var(--app-text-muted);
 }
 
+/* head 内的运行日志链接：与其他 meta 文本齐平居中 */
+.record-detail-modal__subtitle .record-detail-modal__chip--link {
+    padding: 0.05rem 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
 .record-detail-modal__summary {
     margin-top: 0.4rem;
 }
@@ -279,6 +286,41 @@
     margin-top: 0;
     padding-top: 0;
     border-top: none;
+}
+
+.record-detail-assoc-line {
+    font-size: 0.75rem;
+    word-break: break-all;
+}
+
+.record-detail-assoc-line code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--app-border) 25%, transparent);
+}
+
+.record-detail-run-id-log-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-left: 0.35rem;
+    font-size: 0.72rem;
+    color: var(--app-text-secondary, #8a8f98);
+    text-decoration: none;
+    border-bottom: 1px dashed transparent;
+    transition: color 0.18s var(--app-ease-smooth, ease), border-color 0.18s var(--app-ease-smooth, ease);
+}
+
+.record-detail-run-id-log-link:hover {
+    color: var(--app-accent, #4f8cf0);
+    border-bottom-color: currentColor;
+}
+
+.record-detail-inline-msg__sep {
+    margin: 0 0.45rem;
+    color: var(--app-text-secondary, #8a8f98);
 }
 
 .record-detail-zone__head {

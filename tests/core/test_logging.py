@@ -7,10 +7,15 @@ from unittest.mock import MagicMock, patch
 
 from app.core.logging import (
     Logger,
+    batch_log_context,
     effective_dev_log_file_raw,
+    get_batch_id,
+    get_request_id,
     get_sync_run_id,
+    new_batch_id,
     new_inline_sync_run_id,
     new_retry_sync_run_id,
+    normalize_log_level,
     resolve_dev_log_file_path,
     resolved_dev_log_file_path,
     sync_log_context,
@@ -216,6 +221,97 @@ class TestLoggerFileOperations:
             mock_setup.assert_called_once()
 
 
+class TestLoggerLogLevel:
+    """[dev] log_level 阈值过滤"""
+
+    def test_normalize_valid(self):
+        assert normalize_log_level("DEBUG") == "DEBUG"
+        assert normalize_log_level("info") == "INFO"
+        assert normalize_log_level("Warn") == "WARNING"
+        assert normalize_log_level("error") == "ERROR"
+
+    def test_normalize_invalid(self):
+        assert normalize_log_level("") == "INFO"
+        assert normalize_log_level(None) == "INFO"
+        assert normalize_log_level("verbose") == "INFO"
+
+    def test_log_level_cache(self):
+        logger = _make_logger()
+        logger._debug_mode = False
+        logger._log_level = "WARNING"
+        assert logger.log_level == "WARNING"
+
+    def test_log_level_debug_override(self, capsys):
+        """debug 开关开启时始终按 DEBUG 输出"""
+        logger = _make_logger()
+        logger._debug_mode = True
+        logger._log_level = "WARNING"
+        logger.debug("debug line")
+        captured = capsys.readouterr()
+        assert "[DEBUG]" in captured.out
+
+    def test_threshold_filters_info(self, capsys):
+        """WARNING 阈值下 INFO 不输出到控制台，WARNING/ERROR 正常"""
+        logger = _make_logger()
+        logger._debug_mode = False
+        logger._log_level = "WARNING"
+        logger.info("hidden info")
+        logger.warning("visible warning")
+        logger.error("visible error")
+        captured = capsys.readouterr()
+        assert "hidden info" not in captured.out
+        assert "visible warning" in captured.out
+        assert "visible error" in captured.out
+
+    def test_listener_receives_below_threshold(self):
+        """低于阈值的日志仍推送监听器（重试 SSE 场景）"""
+        logger = _make_logger()
+        logger._debug_mode = False
+        logger._log_level = "WARNING"
+        seen = []
+        logger.add_listener(lambda line, level: seen.append((line, level)))
+        logger.info("low level line")
+        assert len(seen) == 1
+        assert "low level line" in seen[0][0]
+        assert "[INFO]" in seen[0][0]
+
+    def test_listener_notified_without_threshold(self, capsys):
+        """DEBUG 开启时监听器与输出均正常"""
+        logger = _make_logger()
+        logger._debug_mode = True
+        seen = []
+        logger.add_listener(lambda line, level: seen.append(level))
+        logger.debug("debug line")
+        assert seen == ["DEBUG"]
+        captured = capsys.readouterr()
+        assert "[DEBUG]" in captured.out
+
+
+class TestLoggerRotation:
+    """日志文件轮转"""
+
+    def test_rotate_log_file(self, tmp_path):
+        logger = _make_logger()
+        base = tmp_path / "log.txt"
+        base.write_text("a" * 100, encoding="utf-8")
+        (tmp_path / "log.txt.1").write_text("b", encoding="utf-8")
+        logger._rotate_log_file(base)
+        assert (tmp_path / "log.txt.1").read_text(encoding="utf-8") == "a" * 100
+        assert (tmp_path / "log.txt.2").read_text(encoding="utf-8") == "b"
+        assert not base.exists()
+
+    def test_rotate_log_file_overflow_backups_dropped(self, tmp_path):
+        logger = _make_logger()
+        base = tmp_path / "log.txt"
+        base.write_text("new", encoding="utf-8")
+        (tmp_path / "log.txt.1").write_text("1", encoding="utf-8")
+        (tmp_path / "log.txt.2").write_text("2", encoding="utf-8")
+        logger._rotate_log_file(base)
+        assert (tmp_path / "log.txt.1").read_text(encoding="utf-8") == "new"
+        assert (tmp_path / "log.txt.2").read_text(encoding="utf-8") == "1"
+        assert not (tmp_path / "log.txt.3").exists()
+
+
 class TestLoggerDebugMode:
     """Test debug_mode property"""
 
@@ -364,6 +460,39 @@ class TestSyncLogContext:
         logger.info("plain message")
         captured = capsys.readouterr()
         assert "[run:" not in captured.out
+
+
+class TestRequestBatchContext:
+    """request_id / batch_id 上下文与日志格式"""
+
+    def test_request_id_default_empty(self):
+        assert get_request_id() == ""
+
+    def test_batch_id_default_empty(self):
+        assert get_batch_id() == ""
+
+    def test_batch_log_context_sets_and_resets(self):
+        with batch_log_context("batch_1_100"):
+            assert get_batch_id() == "batch_1_100"
+        assert get_batch_id() == ""
+
+    def test_new_batch_id_format(self):
+        bid = new_batch_id()
+        assert bid.startswith("batch_")
+
+    def test_log_includes_req_and_batch_fields(self, capsys):
+        logger = _make_logger()
+        with batch_log_context("batch_9_1"):
+            logger.info("batch message")
+        captured = capsys.readouterr()
+        assert "[batch:batch_9_1]" in captured.out
+
+    def test_log_omits_req_batch_when_absent(self, capsys):
+        logger = _make_logger()
+        logger.info("plain message")
+        captured = capsys.readouterr()
+        assert "[req:" not in captured.out
+        assert "[batch:" not in captured.out
 
 
 class TestLoggerLogToFile:

@@ -436,3 +436,33 @@ class TestSecurityManager:
             assert len(token) > 0
             assert token in manager.active_sessions
             assert manager.active_sessions[token]["username"] == "testuser"
+
+
+class TestSecurityManagerExtendedInit:
+    """SecurityManager 构造与异常路径（并入自 test_security_extended.py）"""
+
+    @patch("app.core.security.config_manager")
+    def test_security_manager_init(self, mock_config):
+        """测试 SecurityManager 初始化"""
+        mock_config.get_config_parser.return_value = MagicMock()
+        from app.core.security import SecurityManager
+
+        sm = SecurityManager()
+        assert sm is not None
+        assert hasattr(sm, "active_sessions")
+        assert hasattr(sm, "login_attempts")
+
+    @patch("app.core.security.SecurityManager.cleanup_expired_sessions")
+    @patch("app.core.security.SecurityManager.cleanup_expired_lockouts")
+    @patch("app.core.security.SecurityManager.verify_password")
+    @patch("app.core.security.config_manager")
+    def test_authenticate_user_exception_returns_false(
+        self, mock_config, mock_verify, mock_cleanup_lockouts, mock_cleanup_sessions
+    ):
+        """verify_password 抛异常时 authenticate_user 应返回 False"""
+        mock_verify.side_effect = RuntimeError("verify boom")
+        mock_config.get_config_parser.return_value = MagicMock()
+        from app.core.security import SecurityManager
+
+        sm = SecurityManager()
+        assert sm.authenticate_user("admin", "x") is False

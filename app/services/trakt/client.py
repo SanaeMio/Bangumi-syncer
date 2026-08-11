@@ -265,7 +265,7 @@ class TraktClient:
                 seen.add(key)
                 unique_items.append(item)
 
-        logger.info(
+        logger.debug(
             f"获取到 {len(all_items)} 条历史记录，去重后 {len(unique_items)} 条"
         )
         return unique_items

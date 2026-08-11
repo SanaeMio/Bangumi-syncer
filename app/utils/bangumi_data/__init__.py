@@ -21,6 +21,7 @@ import httpx  # noqa: F401
 import ijson  # noqa: F401
 
 from ...core.config import config_manager
+from ...core.logging import logger
 from ._http import _BufferedResponse, _request_with_retry  # noqa: F401
 from .cache import CacheMixin
 from .index import IndexMixin
@@ -77,6 +78,47 @@ class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
         # 启动时构建标题精确匹配索引
         self._build_title_index()
 
+    def reload_config(self) -> None:
+        """配置变更后重读 bangumi-data 相关配置并清空内存缓存。
+
+        由 config_manager 的变更监听触发（改配置无需重启生效），
+        与 BangumiArchive.reload_config 的语义一致；重读失败时保留旧值。
+        """
+        try:
+            self.data_url = config_manager.get(
+                "bangumi-data",
+                "data_url",
+                fallback="https://unpkg.com/bangumi-data@0.3/dist/data.json",
+            )
+            self.local_cache_path = config_manager.get(
+                "bangumi-data",
+                "local_cache_path",
+                fallback="./bangumi_data_cache.json",
+            )
+            self.http_proxy = config_manager.get(
+                "bangumi-data",
+                "http_proxy",
+                fallback=config_manager.get("dev", "script_proxy", fallback=""),
+            )
+            self.ssl_verify = config_manager.get("dev", "ssl_verify", fallback=True)
+            self.use_cache = config_manager.get(
+                "bangumi-data", "use_cache", fallback=True
+            )
+            self.cache_ttl_days = config_manager.get(
+                "bangumi-data", "cache_ttl_days", fallback=7
+            )
+            self.verbose_logging = config_manager.get("dev", "debug", fallback=False)
+        except Exception as e:
+            logger.warning(f"bangumi-data 配置重读失败（保留旧值）: {e}")
+        # 清空内存缓存，下次访问按新配置重新加载
+        self.clear_cache()
+        self._cache_tmdb_mapping.clear()
+        self._cache_tmdb_begin.clear()
+        logger.info("bangumi-data 已按最新配置刷新")
+
 
 # 全局 bangumi_data 实例
 bangumi_data = BangumiData()
+
+# 配置变更（[bangumi-data] / [dev] 等）时刷新配置与缓存，无需重启生效
+config_manager.register_config_change_listener(bangumi_data.reload_config)

@@ -16,6 +16,7 @@ from typing import Any
 
 import regex as re
 
+from ..core.container import Injectable
 from ..core.logging import logger
 
 # 单条正则规则匹配的超时（秒）。
@@ -370,5 +371,27 @@ class MappingService:
         return self.update_custom_mappings(mappings)
 
 
-# 全局映射服务实例
-mapping_service = MappingService()
+# 全局映射服务实例（惰性：首次访问才创建，可经 set_mapping_service 注入替换）
+_injectable = Injectable(MappingService)
+
+
+def get_mapping_service() -> MappingService:
+    """获取全局映射服务单例（惰性创建）。"""
+    return _injectable.get()
+
+
+def set_mapping_service(instance: MappingService) -> None:
+    """替换映射服务实例（测试/DI 注入）。"""
+    _injectable.set(instance)
+
+
+def reset_mapping_service() -> None:
+    """复位映射服务单例，下次访问时按工厂重建。"""
+    _injectable.reset()
+
+
+def __getattr__(name: str) -> Any:
+    """向后兼容：``from ...mapping_service import mapping_service`` 仍可访问。"""
+    if name == "mapping_service":
+        return _injectable.get()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -368,6 +368,70 @@ class ArchiveStore:
         except sqlite3.Error:
             return 0
 
+    # ===== 批量查询（供 ArchiveShortcut 多策略匹配使用） =====
+
+    # try_search / try_search_old 遍历 ids 上限
+    # 避免精确命中大量同名 subject（如 infobox 脏数据「台版|」归一化后
+    # 「台版」命中上千条目）时，逐条调用 archive_store.get_subject 拖慢查询
+    # 至数秒（极端场景实测 4972ms）。正常场景 limit=5，遍历 200 条已足够
+    # 找到 5 条合格结果；若 200 条都被 type/air_date 过滤掉，说明匹配质量
+    # 极低，停止遍历不影响实际命中率。
+    MAX_IDS_TO_FETCH = 200
+
+    def get_subjects_by_ids_with_filter(
+        self,
+        ids: list[int],
+        types_set: set[int],
+        start_date: str,
+        end_date: str,
+        limit: int,
+        skip_ids: Optional[set[int]] = None,
+    ) -> list[dict[str, Any]]:
+        """遍历 ids 拉取 subject + 按 type/air_date 过滤
+
+        Args:
+            ids: 待遍历的 subject_id 列表
+            types_set: 允许的 type 集合
+            start_date/end_date: air_date 区间过滤 [start, end)
+            limit: 最大返回数
+            skip_ids: 已遍历过的 subject_id（避免降级时重复遍历）
+
+        遍历上限 MAX_IDS_TO_FETCH 防止极端场景拖慢查询。
+        """
+        results: list[dict[str, Any]] = []
+        # 注意：必须用 `is not None` 而非 `or`，因为空 set 是 falsy，
+        # `skip_ids or set()` 会创建新 set 导致跨步骤 skip_ids 共享失效，
+        # 后续步骤重复遍历已处理 id，调用方期望 skip_ids 被填充用于共享
+        skip = skip_ids if skip_ids is not None else set()
+        for idx, sid in enumerate(ids):
+            if idx >= self.MAX_IDS_TO_FETCH:
+                logger.warning(
+                    f"bangumi_archive 遍历 ids 达上限 "
+                    f"{self.MAX_IDS_TO_FETCH}（共 {len(ids)} 个），停止遍历"
+                )
+                break
+            if sid in skip:
+                continue
+            skip.add(sid)
+            subject = self.get_subject(sid)
+            if subject is None:
+                continue
+            # type 过滤
+            if subject.get("type") not in types_set:
+                continue
+            # air_date 过滤：API filter 为 [">=start", "<end"]
+            # subject.date 缺失时不参与过滤（避免误删无日期条目）
+            subj_date = subject.get("date")
+            if isinstance(subj_date, str) and subj_date:
+                if start_date and subj_date < start_date:
+                    continue
+                if end_date and subj_date >= end_date:
+                    continue
+            results.append(subject)
+            if len(results) >= limit:
+                break
+        return results
+
     # ===== 字段适配（Archive → BangumiApi 返回结构） =====
 
     @staticmethod

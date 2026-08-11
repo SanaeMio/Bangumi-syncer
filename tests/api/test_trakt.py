@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import deps, trakt
+from app.models.trakt import TraktConfig
 
 
 @pytest.fixture
@@ -662,3 +663,76 @@ async def test_trakt_auth_callback_exception(
             "/api/trakt/auth/callback?code=test_code&state=test_state"
         )
         assert response.status_code == 302
+
+
+# ===== 以下自 test_smoke_notification_trakt_logs_proxy.py 并入 =====
+
+
+@pytest.fixture
+def app_trakt():
+    app = FastAPI()
+    app.include_router(trakt.router)
+
+    async def mock_user():
+        return {"username": "admin"}
+
+    app.dependency_overrides[deps.get_current_user_flexible] = mock_user
+    yield app
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_trakt_sync_status_with_records(app_trakt):
+    tcfg = TraktConfig(
+        user_id="admin",
+        access_token="tok",
+        enabled=True,
+        last_sync_time=100,
+    )
+    with patch(
+        "app.api.trakt.trakt_auth_service.get_user_trakt_config", return_value=tcfg
+    ):
+        with patch(
+            "app.api.trakt.trakt_scheduler.get_user_job_status",
+            return_value=None,
+        ):
+            with patch(
+                "app.services.sync_service.database_manager.get_sync_records",
+                return_value={
+                    "records": [
+                        {"status": "success"},
+                        {"status": "error"},
+                    ],
+                    "total": 2,
+                },
+            ):
+                transport = ASGITransport(app=app_trakt)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
+                    r = await ac.get("/api/trakt/sync/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success_count"] == 1
+    assert body["error_count"] == 1
+    assert body["total_count"] == 2
+
+
+# ===== 以下自 smoke 并入 =====
+
+
+async def test_trakt_get_config_when_not_linked(app_trakt):
+    with patch(
+        "app.api.trakt.trakt_auth_service.get_user_trakt_config", return_value=None
+    ):
+        with patch(
+            "app.api.trakt.config_manager.get_trakt_config",
+            return_value={"client_id": "cid", "client_secret": "", "redirect_uri": ""},
+        ):
+            transport = ASGITransport(app=app_trakt)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                r = await ac.get("/api/trakt/config")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["is_connected"] is False
+    assert body["client_id"] == "cid"

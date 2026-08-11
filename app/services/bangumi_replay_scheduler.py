@@ -184,7 +184,20 @@ class BangumiReplayScheduler(BaseScheduler):
                 # GET /v0/subjects/1：系统条目，几乎必然存在
                 res = probe_api.get("subjects/1")
                 # 2xx 视为可达；404 也算可达（说明 API 通了，只是 1 不存在）
-                return 200 <= res.status_code < 500
+                reachable = 200 <= res.status_code < 500
+                if reachable:
+                    # 探测成功 → 统一复位 sync_service 缓存实例的不可达标记：
+                    # 一次探测通过即恢复全部用户实例，避免断网恢复后各实例
+                    # 各自等 TTL 到期再逐条探测的无用重试堆积
+                    try:
+                        from .sync_service import sync_service
+
+                        reset_count = sync_service.reset_all_api_unreachable_flags()
+                        if reset_count:
+                            logger.info(f"📚 探测成功，已统一复位 {reset_count} 个实例")
+                    except Exception as reset_err:
+                        logger.debug(f"📚 统一复位不可达标记失败: {reset_err}")
+                return reachable
             finally:
                 probe_api.req.close()
                 probe_api._req_not_auth.close()

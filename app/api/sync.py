@@ -567,11 +567,12 @@ async def retry_sync_record(
         )
 
         # 执行同步
-        with sync_log_context(new_retry_sync_run_id(record_id)):
+        retry_run_id = new_retry_sync_run_id(record_id)
+        with sync_log_context(retry_run_id):
             result = sync_service.sync_custom_item(retry_item, source=retry_source)
 
         # 重试结果回写原记录；queued 重试有结果时清理 pending_sync_queue
-        _finalize_retry(record_id, record.get("status", ""), result)
+        _finalize_retry(record_id, record.get("status", ""), result, retry_run_id)
 
         return {"status": "success", "message": "重试完成", "data": result.model_dump()}
 
@@ -613,10 +614,12 @@ def _cleanup_pending_for_queued_retry(record_id: int, original_status: str) -> N
         )
 
 
-def _finalize_retry(record_id: int, original_status: str, result) -> None:
+def _finalize_retry(
+    record_id: int, original_status: str, result, run_id: str = ""
+) -> None:
     """重试完成后回写原 sync_records 状态，并按需清理 pending_sync_queue。
 
-    - success/ignored：原记录改写为 retried；若原状态为 queued，清理 pending 行
+    - success/ignored：原记录改写为 retried，并回填本次重试的 run_id（便于详情页跳转日志）
     - error：保持原状态不变（仍可再次重试）
     """
     if result.status == "success":
@@ -625,6 +628,8 @@ def _finalize_retry(record_id: int, original_status: str, result) -> None:
             status="retried",
             message=f"已重试成功: {result.message}",
         )
+        if run_id:
+            sync_service.update_sync_record_run_id(record_id, run_id)
         _cleanup_pending_for_queued_retry(record_id, original_status)
     elif result.status == "ignored":
         sync_service.update_sync_record_status(
@@ -632,6 +637,8 @@ def _finalize_retry(record_id: int, original_status: str, result) -> None:
             status="retried",
             message=f"重试被忽略: {result.message}",
         )
+        if run_id:
+            sync_service.update_sync_record_run_id(record_id, run_id)
         _cleanup_pending_for_queued_retry(record_id, original_status)
 
 
@@ -695,8 +702,10 @@ async def retry_sync_record_stream(
             }
 
             # 在线程中执行同步任务（sync_custom_item 是同步方法，会阻塞事件循环）
+            retry_run_id = new_retry_sync_run_id(record_id)
+
             def _run_retry() -> Any:
-                with sync_log_context(new_retry_sync_run_id(record_id)):
+                with sync_log_context(retry_run_id):
                     return sync_service.sync_custom_item(
                         retry_item, source=retry_source
                     )
@@ -733,7 +742,7 @@ async def retry_sync_record_stream(
             result = await task
 
             # 重试结果回写原记录；queued 重试有结果时清理 pending_sync_queue
-            _finalize_retry(record_id, original_status, result)
+            _finalize_retry(record_id, original_status, result, retry_run_id)
 
             # 推送完成事件
             yield {

@@ -73,7 +73,7 @@ class OpenAICompatProvider(BaseProvider):
         url = f"{self.api_base}/chat/completions"
         model = kwargs.get("model", self.model)
         proxy_label = f", proxy={self.proxy}" if self.proxy else ""
-        logger.info(
+        logger.debug(
             f"LLM request: url={url}, model={model}, "
             f"timeout={self.timeout}s{proxy_label}"
         )

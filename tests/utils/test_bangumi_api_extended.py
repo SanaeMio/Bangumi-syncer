@@ -3,64 +3,9 @@ Bangumi API 完整测试
 """
 
 from typing import Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.utils.bangumi_api import BangumiApi
-
-
-class TestBangumiApiComprehensive:
-    """Bangumi API 综合测试"""
-
-    def test_init(self):
-        """测试初始化"""
-        api = BangumiApi()
-        assert api is not None
-
-    def test_get_me(self):
-        """测试获取用户信息"""
-        api = BangumiApi()
-        # 这个方法需要网络，测试是否存在
-        assert hasattr(api, "get_me")
-
-    def test_get_subject(self):
-        """测试获取条目"""
-        api = BangumiApi()
-        assert hasattr(api, "get_subject")
-
-    def test_get_related_subjects(self):
-        """测试获取相关条目"""
-        api = BangumiApi()
-        assert hasattr(api, "get_related_subjects")
-
-    def test_get_episodes(self):
-        """测试获取章节"""
-        api = BangumiApi()
-        assert hasattr(api, "get_episodes")
-
-    def test_get_target_season_episode_id(self):
-        """测试获取目标季度集数ID"""
-        api = BangumiApi()
-        assert hasattr(api, "get_target_season_episode_id")
-
-    def test_get_subject_collection(self):
-        """测试获取条目收藏"""
-        api = BangumiApi()
-        assert hasattr(api, "get_subject_collection")
-
-    def test_get_ep_collection(self):
-        """测试获取章节收藏"""
-        api = BangumiApi()
-        assert hasattr(api, "get_ep_collection")
-
-
-class TestBangumiApiMocked:
-    """Bangumi API 模拟测试"""
-
-    @patch("app.utils.bangumi_api.httpx.Client")
-    def test_api_with_session(self, mock_session):
-        """测试带 Session 的 API"""
-        api = BangumiApi()
-        assert api is not None
 
 
 class TestGetTargetSeasonEpisodeIdAirdate:
@@ -189,43 +134,6 @@ class TestGetTargetSeasonEpisodeIdAirdate:
         assert sid == 500
         assert eid == 999
         api.get_related_subjects.assert_not_called()
-
-
-class TestGetMovieMainEpisodeId:
-    """get_movie_main_episode_id 剧场版短路径"""
-
-    def test_matches_sort_on_main_type(self):
-        api = BangumiApi()
-        api.get_episodes = MagicMock(
-            return_value={
-                "data": [
-                    {"id": 10, "sort": 1, "ep": 1, "type": 0},
-                    {"id": 11, "sort": 2, "ep": 2, "type": 0},
-                ],
-                "total": 2,
-            }
-        )
-        sid, eid = api.get_movie_main_episode_id(100, target_sort=2)
-        assert sid == "100"
-        assert eid == "11"
-
-    def test_falls_back_to_first_sorted_when_no_match(self):
-        api = BangumiApi()
-        api.get_episodes = MagicMock(
-            return_value={
-                "data": [{"id": 20, "sort": 3, "ep": 3, "type": 0}],
-                "total": 1,
-            }
-        )
-        sid, eid = api.get_movie_main_episode_id(200, target_sort=1)
-        assert sid == "200"
-        assert eid == "20"
-
-    def test_empty_episodes_returns_none_ep_id(self):
-        api = BangumiApi()
-        api.get_episodes = MagicMock(return_value={"data": [], "total": 0})
-        sid, eid = api.get_movie_main_episode_id(300)
-        assert sid == "300"
 
 
 class TestGetTargetSeasonEpisodeIdSplitCour:

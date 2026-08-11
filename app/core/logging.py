@@ -18,6 +18,24 @@ if TYPE_CHECKING:
 # 与 config.ini / Web 日志 API 对齐的默认相对路径（相对项目根）
 DEFAULT_DEV_LOG_FILE = "./log.txt"
 
+# 日志文件超过该大小后轮转（新内容写入 log.txt，旧内容保留为 log.txt.1/.2）
+MAX_LOG_FILE_SIZE = 20 * 1024 * 1024
+MAX_LOG_BACKUPS = 2
+
+# 级别权重：数字越大越重要
+_LEVEL_WEIGHT = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+
+
+def normalize_log_level(raw) -> str:
+    """将配置中的日志级别规范化为 DEBUG/INFO/WARNING/ERROR；无效值回退为 INFO。"""
+    value = str(raw or "").strip().upper()
+    if value == "WARN":
+        return "WARNING"
+    if value in _LEVEL_WEIGHT:
+        return value
+    return "INFO"
+
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # 同步日志关联 ID（线程内通过 ContextVar 传播）
@@ -33,6 +51,27 @@ def get_sync_run_id() -> Optional[str]:
     return sync_run_id.get()
 
 
+# 请求关联 ID（由 HTTP 中间件注入，随 copy_context 进入工作线程）
+log_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "log_request_id", default=""
+)
+
+# 批次关联 ID（批量补发等过程覆盖多个 run）
+log_batch_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "log_batch_id", default=""
+)
+
+
+def get_request_id() -> str:
+    """当前请求关联 ID；无请求上下文时返回空字符串。"""
+    return log_request_id.get()
+
+
+def get_batch_id() -> str:
+    """当前批次关联 ID；无批次上下文时返回空字符串。"""
+    return log_batch_id.get()
+
+
 @contextmanager
 def sync_log_context(run_id: str) -> Iterator[str]:
     """在作用域内为日志行附加 [run:...] 标记。"""
@@ -43,6 +82,21 @@ def sync_log_context(run_id: str) -> Iterator[str]:
         sync_run_id.reset(token)
 
 
+@contextmanager
+def batch_log_context(bid: str) -> Iterator[str]:
+    """在作用域内为日志行附加 [batch:...] 标记（通常包裹一批 run）。"""
+    token = log_batch_id.set(bid)
+    try:
+        yield bid
+    finally:
+        log_batch_id.reset(token)
+
+
+def new_batch_id() -> str:
+    """生成唯一批次 ID。"""
+    return f"batch_{int(time.time() * 1000)}"
+
+
 def new_inline_sync_run_id(counter: int) -> str:
     """直调 sync_custom_item 时生成 run_id。"""
     return f"sync_inline_{counter}_{int(time.time())}"
@@ -51,6 +105,12 @@ def new_inline_sync_run_id(counter: int) -> str:
 def new_retry_sync_run_id(record_id: int) -> str:
     """手动重试同步记录时生成 run_id。"""
     return f"retry_{record_id}_{int(time.time())}"
+
+
+def new_sync_run_id(prefix: str = "sync") -> str:
+    """通用同步 run_id 生成器（用于未显式包裹 sync_log_context 的同步入口，
+    保证每条同步记录都有关联 run_id，从而可在日志页按 run 跳转定位）。"""
+    return f"{prefix}_{int(time.time() * 1000)}"
 
 
 def resolve_dev_log_file_path(raw: str) -> Path:
@@ -104,12 +164,15 @@ class Logger:
 
         # 延迟获取debug_mode，避免循环依赖
         self._debug_mode = None
+        self._log_level: Optional[str] = None
         self._log_file_path: Optional[Path] = None
         # 不在 __init__ 中打开日志文件：模块执行 logger = Logger() 时，若此处导入
         # config，而 config 初始化链又 import logger，会触发 partially initialized 循环依赖。
         self._log_file_lazy_initialized = False
         # 日志监听器列表（用于实时捕获日志，如重试 SSE 推送）
         self._listeners: list[Callable[[str, str], None]] = []
+        # 是否已注册配置变更监听（幂等，避免重复注册）
+        self._config_change_listener_registered = False
 
     def add_listener(self, callback: Callable[[str, str], None]) -> None:
         """添加日志监听器
@@ -186,7 +249,8 @@ class Logger:
         try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             mode = "a"
-            if log_path.exists() and log_path.stat().st_size >= 2 * 1024 * 1024:
+            if log_path.exists() and log_path.stat().st_size >= MAX_LOG_FILE_SIZE:
+                self._rotate_log_file(log_path)
                 mode = "w"
             self.log_file = open(log_path, mode, encoding="utf-8", buffering=1)
             self._log_file_path = log_path.resolve()
@@ -199,6 +263,22 @@ class Logger:
                 f"文件日志打开失败: {e!r} 路径={log_path}",
                 file=sys.stderr,
             )
+
+    def _rotate_log_file(self, log_path: Path) -> None:
+        """日志文件超出大小上限时轮转，保留最近的 MAX_LOG_BACKUPS 份备份。"""
+        for i in range(MAX_LOG_BACKUPS, 0, -1):
+            prev = log_path if i == 1 else Path(f"{log_path}.{i - 1}")
+            cur = Path(f"{log_path}.{i}")
+            if prev.exists():
+                if cur.exists():
+                    try:
+                        cur.unlink()
+                    except OSError:
+                        continue
+                try:
+                    prev.rename(cur)
+                except OSError:
+                    continue
 
     def _ensure_log_file_for_write(self) -> None:
         """若磁盘上日志路径已不存在，则关闭句柄并重新打开。"""
@@ -215,6 +295,26 @@ class Logger:
             )
             self._setup_log_file()
 
+    def _ensure_config_change_listener(self) -> None:
+        """注册配置变更监听：配置变更后失效日志级别/调试开关缓存（幂等）。
+
+        延迟到首次真正访问 config_manager 时才注册，避免模块初始化期
+        与 config 初始化链形成循环依赖（logger = Logger() 时不可 import config）。
+        """
+        if self._config_change_listener_registered:
+            return
+        try:
+            from .config import config_manager
+        except ImportError:
+            return
+        config_manager.register_config_change_listener(self._invalidate_config_cache)
+        self._config_change_listener_registered = True
+
+    def _invalidate_config_cache(self) -> None:
+        """配置变更回调：清空 log_level/debug_mode 缓存，下次访问重新读取。"""
+        self._debug_mode = None
+        self._log_level = None
+
     @property
     def debug_mode(self) -> bool:
         """获取调试模式状态"""
@@ -225,7 +325,32 @@ class Logger:
             except ImportError:
                 return False
             self._debug_mode = config_manager.get("dev", "debug", fallback=False)
+            self._ensure_config_change_listener()
         return self._debug_mode
+
+    @property
+    def log_level(self) -> str:
+        """当前配置的日志级别（DEBUG/INFO/WARNING/ERROR）。"""
+        if self._log_level is None:
+            # 延迟导入，避免循环依赖
+            try:
+                from .config import config_manager
+            except ImportError:
+                raw = "INFO"
+            else:
+                raw = config_manager.get("dev", "log_level", fallback="INFO")
+            self._log_level = normalize_log_level(raw)
+            self._ensure_config_change_listener()
+        return self._log_level
+
+    def log_level_enabled(self, level: Optional[str]) -> bool:
+        """判断某级别在当前阈值下是否输出到控制台/文件（监听器不受阈值限制）。"""
+        if self.debug_mode:
+            return True
+        return (
+            _LEVEL_WEIGHT.get((level or "INFO").upper(), 20)
+            >= _LEVEL_WEIGHT[self.log_level]
+        )
 
     @staticmethod
     def mix_host_gen(netloc: str) -> str:
@@ -261,6 +386,12 @@ class Logger:
         run_id = get_sync_run_id()
         if run_id:
             head += f" [run:{run_id}]"
+        rid = get_request_id()
+        if rid:
+            head += f" [req:{rid}]"
+        bid = get_batch_id()
+        if bid:
+            head += f" [batch:{bid}]"
         return f"{head} {message}"
 
     def log(
@@ -272,6 +403,12 @@ class Logger:
     ) -> None:
         """统一的日志输出方法"""
         if silence:
+            return
+
+        # 控制台/文件受阈值过滤；监听器不受限制（重试等场景仍需低级别日志）
+        if not self.log_level_enabled(level):
+            if self._listeners:
+                self._notify_listeners(self._format_log_line(*args, level=level), level)
             return
 
         self._lazy_init_log_file_once()
@@ -302,14 +439,6 @@ class Logger:
 
     def debug(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
         """DEBUG级别日志"""
-        # DEBUG级别只在调试模式下输出到控制台/文件
-        if not self.debug_mode:
-            # 即使 debug_mode 关闭，也通知监听器（用于重试时捕获 debug 日志）
-            if self._listeners and not silence:
-                mixed_args = self.mix_args_str(*args) if self.need_mix else args
-                log_line = self._format_log_line(*mixed_args, level=self.DEBUG)
-                self._notify_listeners(log_line, self.DEBUG)
-            return
         if not silence and self.need_mix:
             args = self.mix_args_str(*args)
         self.log(*args, end=end, silence=silence, level=self.DEBUG)

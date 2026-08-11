@@ -10,6 +10,7 @@ import json
 import threading
 import time  # noqa: F401
 import traceback
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -18,8 +19,10 @@ from rapidfuzz import fuzz
 from ...core.config import config_manager
 from ...core.database import database_manager
 from ...core.logging import (
+    batch_log_context,
     get_sync_run_id,
     logger,
+    new_batch_id,
     new_inline_sync_run_id,
     new_retry_sync_run_id,
     sync_log_context,
@@ -799,7 +802,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             else:
                 result_message = "播放开始：条目标记为在看"
 
-            logger.info(
+            logger.debug(
                 f"bgm: {item.title} {result_message} https://bgm.tv/subject/{subject_id}"
             )
 
@@ -948,6 +951,38 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             "sync_action": item.sync_action or "",
         }
         receive_step.raw_payload = item.raw_payload
+
+        # 批量快速降级：API 不可达（TTL 内）时，匹配链路的读接口已短路，
+        # 逐条完整匹配只会反复产出「未找到匹配的番剧」error 记录，
+        # 或等各自 TTL 到期后再次触发 10s×3 重试（无用重试）。
+        # 此时直接快速跳过本轮，不写 error 记录；恢复统一由补发调度器的
+        # 批量探测（_probe_api）驱动——探测成功后通过
+        # reset_all_api_unreachable_flags 一次性复位所有缓存实例。
+        # 仅补发模式（bangumi-replay enabled）开启时生效，关闭时保持原行为。
+        bgm = self._get_bangumi_api_for_user(item.user_name)
+        if is_replay_enabled() and bgm and bgm.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达，本轮跳过匹配: {item.title} "
+                f"S{item.season:02d}E{item.episode:02d}（等待批量探测复位）"
+            )
+            trace.finish()
+            # 尝试提前唤醒补发探测（内部有 500ms 防抖），
+            # API 一旦恢复即可统一复位，不必等下轮 cron
+            try:
+                from ..bangumi_replay_scheduler import bangumi_replay_scheduler
+
+                bangumi_replay_scheduler.trigger_immediate_run()
+            except Exception as e:
+                logger.debug(f"📚 触发补发探测失败: {e}")
+            return (
+                None,
+                False,
+                SyncResponse(
+                    status="ignored",
+                    message="Bangumi API 不可达：跳过本轮匹配，等待恢复后由补发调度器补发",
+                ),
+                trace,
+            )
 
         # 查找番剧ID及其是否为特定季度ID的标记
         subject_id, is_season_matched_id, subject_find_error = self._find_subject_id(
@@ -1141,7 +1176,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """根据标记结果构建结果消息并发送通知。返回 result_message。"""
         if mark_status == 0:
             result_message = "已看过，不再重复标记"
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
             )
 
@@ -1156,7 +1191,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         elif mark_status == 1:
             result_message = "已标记为看过"
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
             )
 
@@ -1171,10 +1206,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         else:
             result_message = "已添加到收藏并标记为看过"
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}"
             )
-            logger.info(
+            logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} 已标记为看过 https://bgm.tv/ep/{bgm_ep_id}"
             )
 
@@ -1237,7 +1272,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             bgm.change_collection_state(
                                 subject_id=str(bgm_se_id), state=2
                             )
-                            logger.info(
+                            logger.debug(
                                 f"bgm: {bgm_title or item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"
                             )
             except Exception as e:
@@ -1401,11 +1436,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         subject_id, item.episode
                     )
                 except Exception as e:
-                    logger.info(f"关联季条目链查找异常: {e}")
+                    logger.debug(f"关联季条目链查找异常: {e}")
                 if chain_pick:
                     chain_subject_id, chain_ep_id = chain_pick
                     prev_subject_id = subject_id
-                    logger.info(
+                    logger.debug(
                         f"通过关联季条目链找到目标集: 原 subject_id={prev_subject_id}, "
                         f"改选 subject_id={chain_subject_id}, ep_id={chain_ep_id}, "
                         f"目标 episode={item.episode}"
@@ -1952,7 +1987,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
                 if bangumi_data_result:
                     bangumi_data_id, matched_title, date_matched = bangumi_data_result
-                    logger.info(
+                    logger.debug(
                         f"通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}, "
                         f"匹配标题: {matched_title}, 日期匹配: {date_matched}"
                     )
@@ -2220,7 +2255,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             self._get_explicit_season_from_title(cand_name_cn) or 0,
                         )
                         if cand_season == 0:
-                            logger.info(
+                            logger.debug(
                                 f"首条候选为第{top_explicit_season}季，"
                                 f"改选无季度后缀的候选: "
                                 f"{cand_name_cn or cand_name}(id={cand.get('id')})"
@@ -2253,7 +2288,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 )
                             break
                     if not is_api_season_matched:
-                        logger.info(
+                        logger.debug(
                             f"首条候选明确为第{top_explicit_season}季，"
                             f"但候选列表中无无季度后缀的条目，保持首条"
                         )
@@ -2284,7 +2319,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     need_reselect = (
                         top_detected != request_media_type or not top_exact_match
                     )
-                    logger.info(
+                    logger.debug(
                         f"改选判定: 首条={top_name_cn or top_name} "
                         f"(id={bgm_data[0].get('id')}, detect={top_detected}, "
                         f"精确匹配={top_exact_match}), 请求类型={request_media_type}, "
@@ -2311,7 +2346,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         if top_detected == request_media_type and not top_exact_match:
                             episode_candidates.insert(0, bgm_data[0])
 
-                        logger.info(
+                        logger.debug(
                             f"episode_candidates 数={len(episode_candidates)}: "
                             + ", ".join(
                                 f"{c.get('name_cn') or c.get('name')}(id={c.get('id')},"
@@ -2324,14 +2359,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                             best_cand = self._pick_mainline_episode_candidate(
                                 episode_candidates, item.title or ""
                             )
-                            logger.info(
+                            logger.debug(
                                 f"_pick_mainline_episode_candidate 择优结果: "
                                 f"{best_cand.get('name_cn') or best_cand.get('name')}"
                                 f"(id={best_cand.get('id')})"
                             )
                             # 仅当择优结果与当前首条不同时才改选并标记已匹配
                             if best_cand.get("id") != bgm_data[0].get("id"):
-                                logger.info(
+                                logger.debug(
                                     f"首条候选 {top_name_cn or top_name} "
                                     f"(detect={top_detected}, 精确匹配={top_exact_match}) "
                                     f"不够理想，改选主线剧集: "
@@ -2358,12 +2393,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                     else:
                                         related_list = []
                                 except Exception as e:
-                                    logger.info(
+                                    logger.debug(
                                         f"获取关联条目失败 (subject_id={top_id}): {e}"
                                     )
                                     related_list = []
 
-                                logger.info(
+                                logger.debug(
                                     f"关联条目数={len(related_list)} (top_id={top_id}): "
                                     + ", ".join(
                                         f"{r.get('name_cn') or r.get('name')}"
@@ -2416,7 +2451,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         other_match = rel
 
                                 chosen = mainline_match or other_match
-                                logger.info(
+                                logger.debug(
                                     f"关联条目改选: mainline_match="
                                     f"{mainline_match.get('id') if mainline_match else None}, "
                                     f"other_match="
@@ -2429,7 +2464,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                         try:
                                             chosen_info = bgm.get_subject(chosen_id)
                                             if chosen_info and chosen_info.get("id"):
-                                                logger.info(
+                                                logger.debug(
                                                     f"首条候选媒体类型={top_detected} "
                                                     f"与请求 {request_media_type} 不一致，"
                                                     f"通过关联条目改选: "
@@ -2440,7 +2475,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                                 bgm_data[0] = chosen_info
                                                 is_api_season_matched = True
                                         except Exception as e:
-                                            logger.info(
+                                            logger.debug(
                                                 f"获取关联条目详情失败 "
                                                 f"(subject_id={chosen_id}): {e}"
                                             )
@@ -2504,7 +2539,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                                 )
 
                         if not is_api_season_matched:
-                            logger.info(
+                            logger.debug(
                                 f"首条候选媒体类型={top_detected} 与请求 "
                                 f"{request_media_type} 不一致，候选与关联条目中"
                                 f"均无一致条目，保持首条"
@@ -2634,6 +2669,26 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         if self._bangumi_data_cache is None:
             self._bangumi_data_cache = bangumi_data
         return self._bangumi_data_cache
+
+    def reset_all_api_unreachable_flags(self) -> int:
+        """批量复位所有缓存 BangumiApi 实例的不可达标记，返回复位数量。
+
+        补发调度器批量探测成功（_probe_api）后调用：一次探测通过即统一恢复
+        全部用户实例，避免每个实例各自等 TTL 到期、每条同步任务各探一次的
+        「无用重试」堆积。探测失败时不调用，维持不可达状态。
+        """
+        count = 0
+        # 快照遍历：_get_bangumi_api_for_user（sync worker 线程）会并发写入
+        # _bangumi_api_cache，直接遍历 dict 在写入时触发
+        # "dictionary changed size during iteration"。GIL 下 list() 原子拷贝
+        # 引用，与既有"不加锁、接受偶发覆盖"的设计一致。
+        for _user_name, (api, _snapshot) in list(self._bangumi_api_cache.items()):
+            if api.is_api_unreachable():
+                api.mark_api_reachable()
+                count += 1
+        if count:
+            logger.info(f"📚 已统一复位 {count} 个 BangumiApi 实例的不可达标记")
+        return count
 
     # ------------------------------------------------------------------
     # 待同步队列补发：API 恢复后由调度器或手动 API 触发
@@ -2807,7 +2862,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         )
         consecutive_unreachable = 0
 
-        for record in records:
+        for record in self._iter_batch(records):
             record_id = int(record.get("id", 0))
             result = self.replay_pending_item(record)
             sync_record_id = result.get("sync_record_id")
@@ -2876,6 +2931,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             "still_unreachable": still_unreachable,
         }
 
+    def _iter_batch(self, records: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+        """逐条产出补发记录，期间持有批次上下文（[batch:...] 与 batch_id 落库）。
+
+        生成器形式：循环体无需整体缩进，break/提前退出时生成器关闭，
+        finally 自动复位批次上下文。
+        """
+        with batch_log_context(new_batch_id()):
+            yield from records
+
     def _load_custom_mappings(self) -> dict[str, str]:
         """从外部JSON文件读取自定义映射配置"""
         return mapping_service.load_custom_mappings()
@@ -2885,11 +2949,28 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 _sync_service: SyncService | None = None
 
 
+def get_sync_service() -> SyncService:
+    """获取全局同步服务单例（惰性创建）。"""
+    global _sync_service
+    if _sync_service is None:
+        _sync_service = SyncService()
+    return _sync_service
+
+
+def set_sync_service(instance: SyncService) -> None:
+    """替换同步服务实例（测试/DI 注入）。"""
+    global _sync_service
+    _sync_service = instance
+
+
+def reset_sync_service() -> None:
+    """复位同步服务单例，下次访问时重建。"""
+    global _sync_service
+    _sync_service = None
+
+
 def __getattr__(name: str) -> Any:
     """模块级懒加载，避免 import 时即创建 ThreadPoolExecutor。"""
-    global _sync_service
     if name == "sync_service":
-        if _sync_service is None:
-            _sync_service = SyncService()
-        return _sync_service
+        return get_sync_service()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

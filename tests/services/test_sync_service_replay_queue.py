@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from app.models.sync import CustomItem
 from app.services.sync_service import SyncService
 from app.services.sync_service.retry import MARK_QUEUED
 from app.utils.bangumi_api import BangumiApi
@@ -525,3 +526,194 @@ class TestReplayPendingBatchWriteback:
         assert stats["success"] == 1
         # sync_record_id 为 None，不应调用 update_sync_record_status
         mock_update.assert_not_called()
+
+
+class TestFindMatchingSubjectQuickDegrade:
+    """API 不可达 + 补发开启时 _find_matching_subject 直接跳过本轮匹配"""
+
+    @staticmethod
+    def _make_item() -> CustomItem:
+        return CustomItem(
+            title="测试番剧",
+            release_date="2024-01-01",
+            season=1,
+            episode=3,
+            user_name="user1",
+            source="plex",
+            media_type="episode",
+        )
+
+    def test_skips_matching_when_api_unreachable_and_replay_enabled(self):
+        """不可达 + 补发开启 → ignored + 不进入匹配链路 + 唤醒探测"""
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.is_api_unreachable.return_value = True
+
+        with (
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
+            patch.object(svc, "_find_subject_id") as mock_find,
+            patch("app.services.sync_service.is_replay_enabled", return_value=True),
+            patch(
+                "app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"
+            ) as mock_sched,
+        ):
+            subject_id, is_season, err_resp, trace = svc._find_matching_subject(
+                self._make_item(), actual_source="plex"
+            )
+
+        assert subject_id is None
+        assert is_season is False
+        assert err_resp.status == "ignored"
+        assert "不可达" in err_resp.message
+        mock_find.assert_not_called()
+        mock_sched.trigger_immediate_run.assert_called_once()
+        assert trace.final_match_method == "failed"
+
+    def test_does_not_skip_when_api_reachable(self):
+        """API 可达时走正常匹配链路"""
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.is_api_unreachable.return_value = False
+
+        with (
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
+            patch.object(svc, "_find_subject_id") as mock_find,
+            patch("app.services.sync_service.is_replay_enabled", return_value=True),
+            patch("app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"),
+            # 匹配失败分支会写同步记录 / 发通知，mock 避免真实 I/O
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.notification_service"),
+        ):
+            mock_find.return_value = (None, False, None)
+            svc._find_matching_subject(self._make_item(), actual_source="plex")
+
+        mock_find.assert_called_once()
+
+    def test_does_not_skip_when_replay_disabled(self):
+        """补发关闭时保持原行为（即使不可达也进入匹配）"""
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.is_api_unreachable.return_value = True
+
+        with (
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
+            patch.object(svc, "_find_subject_id") as mock_find,
+            patch("app.services.sync_service.is_replay_enabled", return_value=False),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.notification_service"),
+        ):
+            mock_find.return_value = (None, False, None)
+            svc._find_matching_subject(self._make_item(), actual_source="plex")
+
+        mock_find.assert_called_once()
+
+    def test_does_not_skip_when_no_bangumi_api_instance(self):
+        """无可用 BangumiApi 缓存实例时不跳过（保持原行为）"""
+        svc = SyncService()
+
+        with (
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=None),
+            patch.object(svc, "_find_subject_id") as mock_find,
+            patch("app.services.sync_service.is_replay_enabled", return_value=True),
+            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.notification_service"),
+        ):
+            mock_find.return_value = (None, False, None)
+            svc._find_matching_subject(self._make_item(), actual_source="plex")
+
+        mock_find.assert_called_once()
+
+    def test_trigger_failure_does_not_raise(self):
+        """唤醒探测失败时仍返回 ignored，不影响跳过流程"""
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.is_api_unreachable.return_value = True
+
+        with (
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
+            patch.object(svc, "_find_subject_id") as mock_find,
+            patch("app.services.sync_service.is_replay_enabled", return_value=True),
+            patch(
+                "app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"
+            ) as mock_sched,
+        ):
+            mock_sched.trigger_immediate_run.side_effect = RuntimeError("boom")
+            subject_id, _, err_resp, _ = svc._find_matching_subject(
+                self._make_item(), actual_source="plex"
+            )
+
+        assert subject_id is None
+        assert err_resp.status == "ignored"
+        mock_find.assert_not_called()
+
+
+class TestResetAllApiUnreachableFlags:
+    """reset_all_api_unreachable_flags 统一复位缓存实例的不可达标记"""
+
+    def test_resets_only_unreachable_instances(self):
+        svc = SyncService()
+        api_unreachable = MagicMock()
+        api_unreachable.is_api_unreachable.return_value = True
+        api_reachable = MagicMock()
+        api_reachable.is_api_unreachable.return_value = False
+        svc._bangumi_api_cache = {
+            "u1": (api_unreachable, {"snapshot": 1}),
+            "u2": (api_reachable, {"snapshot": 2}),
+        }
+
+        count = svc.reset_all_api_unreachable_flags()
+
+        assert count == 1
+        api_unreachable.mark_api_reachable.assert_called_once()
+        api_reachable.mark_api_reachable.assert_not_called()
+
+    def test_returns_zero_when_none_unreachable(self):
+        svc = SyncService()
+        api = MagicMock()
+        api.is_api_unreachable.return_value = False
+        svc._bangumi_api_cache = {"u1": (api, None)}
+
+        count = svc.reset_all_api_unreachable_flags()
+
+        assert count == 0
+        api.mark_api_reachable.assert_not_called()
+
+    def test_returns_zero_when_cache_empty(self):
+        svc = SyncService()
+        svc._bangumi_api_cache = {}
+        assert svc.reset_all_api_unreachable_flags() == 0
+
+    def test_concurrent_cache_write_during_iteration_no_error(self):
+        """遍历期间 _bangumi_api_cache 被并发写入不应触发 RuntimeError。
+
+        回归覆盖：reset_all_api_unreachable_flags 由补发调度器线程调用，
+        _get_bangumi_api_for_user 由 sync worker 线程调用并写入 cache。
+        直接遍历 dict 会在 size 变化时抛 "dictionary changed size during
+        iteration"；list() 快照遍历规避此问题。
+        """
+        svc = SyncService()
+
+        def make_api(unreachable: bool) -> MagicMock:
+            api = MagicMock()
+            api.is_api_unreachable.return_value = unreachable
+            return api
+
+        api1 = make_api(True)
+        svc._bangumi_api_cache = {
+            "u1": (api1, {"s": 1}),
+            "u2": (make_api(False), {"s": 2}),
+        }
+
+        # 模拟遍历期间的并发写入：首个实例处理后，另一线程往 cache 写入新条目
+        def on_is_unreachable():
+            svc._bangumi_api_cache["u3"] = (make_api(True), {"s": 3})
+            return True
+
+        api1.is_api_unreachable.side_effect = on_is_unreachable
+
+        # 不应抛 RuntimeError: dictionary changed size during iteration
+        count = svc.reset_all_api_unreachable_flags()
+
+        # u1 被复位（u3 在快照之后写入，本轮不遍历到，符合预期）
+        assert count == 1
+        api1.mark_api_reachable.assert_called_once()

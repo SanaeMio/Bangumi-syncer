@@ -7,6 +7,8 @@ import re
 import time
 from typing import Any
 
+import httpx
+
 from ...core.config import config_manager
 from ...core.logging import logger
 from ...utils.bangumi_constants import (
@@ -50,16 +52,31 @@ class EpisodesMixin:
         limit: int = _EPISODES_PAGE_LIMIT,
         offset: int = 0,
     ) -> dict:
-        """单次分页请求章节列表（不写入实例缓存）。"""
-        res = self.get(
-            "episodes",
-            params={
-                "subject_id": subject_id,
-                "type": _type,
-                "limit": limit,
-                "offset": offset,
-            },
-        )
+        """单次分页请求章节列表（不写入实例缓存）。
+
+        API 不可达（TTL 内）时跳过实际请求直接返回空分页，
+        archive 短路已在 get_episodes 层先行处理。
+        """
+        if self.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达（TTL 内），get_episodes({subject_id}) 返回空"
+            )
+            return {"data": [], "total": 0}
+        try:
+            res = self.get(
+                "episodes",
+                params={
+                    "subject_id": subject_id,
+                    "type": _type,
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+        except httpx.HTTPError as e:
+            # 网络不可达/重试耗尽：吞掉异常返回空分页，
+            # 保证调用方（章节查找/续集链遍历）继续降级而不是崩溃
+            logger.error(f"get_episodes API 请求失败（网络错误）: {e}")
+            return {"data": [], "total": 0}
         try:
             payload = res.json()
             if not isinstance(payload, dict):

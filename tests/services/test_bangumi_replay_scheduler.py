@@ -619,3 +619,84 @@ class TestTriggerImmediateRun:
             # 500ms 内再次触发，应被防抖丢弃
             s.trigger_immediate_run()
         assert fake_scheduler.add_job.call_count == 1
+
+
+# ----------------------------------------------------------------------
+# 7. 探测成功后统一复位 sync_service 缓存实例的不可达标记
+# ----------------------------------------------------------------------
+
+
+class TestProbeApiResetsUnreachableFlags:
+    """_probe_api 探测成功时调用 reset_all_api_unreachable_flags"""
+
+    @pytest.mark.asyncio
+    async def test_reset_called_when_probe_succeeds(self):
+        """探测 200 → 复位缓存实例的不可达标记"""
+        s = BangumiReplayScheduler()
+        mock_instance = MagicMock()
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_sync_service = MagicMock()
+        mock_sync_service.reset_all_api_unreachable_flags.return_value = 2
+        with (
+            patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(),
+            ),
+            patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
+            patch("app.services.sync_service.sync_service", mock_sync_service),
+        ):
+            cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
+            mock_cls.return_value = mock_instance
+            result = await s._probe_api()
+
+        assert result is True
+        mock_sync_service.reset_all_api_unreachable_flags.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reset_not_called_when_probe_fails(self):
+        """探测失败（5xx）→ 维持不可达状态，不调用复位"""
+        s = BangumiReplayScheduler()
+        mock_instance = MagicMock()
+        mock_instance.get.return_value = MagicMock(status_code=500)
+        mock_sync_service = MagicMock()
+        with (
+            patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(),
+            ),
+            patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
+            patch("app.services.sync_service.sync_service", mock_sync_service),
+        ):
+            cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
+            mock_cls.return_value = mock_instance
+            result = await s._probe_api()
+
+        assert result is False
+        mock_sync_service.reset_all_api_unreachable_flags.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reset_failure_does_not_affect_probe_result(self):
+        """复位过程抛异常时降级为 debug 日志，探测结果仍为 True"""
+        s = BangumiReplayScheduler()
+        mock_instance = MagicMock()
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_sync_service = MagicMock()
+        mock_sync_service.reset_all_api_unreachable_flags.side_effect = RuntimeError(
+            "boom"
+        )
+        with (
+            patch("app.services.bangumi_replay_scheduler.config_manager") as cm,
+            patch(
+                "app.core.accounts.get_active_bangumi_config",
+                return_value=_bangumi_account_config(),
+            ),
+            patch("app.utils.bangumi_api.BangumiApi") as mock_cls,
+            patch("app.services.sync_service.sync_service", mock_sync_service),
+        ):
+            cm.get_dev_http_snapshot.return_value = _dev_http_snapshot()
+            mock_cls.return_value = mock_instance
+            result = await s._probe_api()
+
+        assert result is True

@@ -9,6 +9,9 @@ order: 45
 
 ## ✨ 新功能
 
+- 日志分级：新增 `[dev] log_level` 配置（默认 `INFO`，可用 `LOG_LEVEL` 环境变量覆盖），低于阈值的日志不再写入控制台/日志文件 `2026-08-09`
+- 请求/批次关联：HTTP 请求经 `X-Request-ID` 生成/透传 `[req:...]` 标签，一次同步一个 `[run:...]` 标签，批量补发一轮一个 `[batch:...]` 标签，同步记录同时落库 `run_id` / `batch_id`，可串联一次完整调用链；日志页分组卡与同步记录详情页均展示对应 ID 徽章 `2026-08-09`
+- config_manager 新增配置版本号与变更监听回调：「在看」缓存、封面前缀缓存、bangumi-data 配置在配置改动后自动失效/重读，无需重启即可生效 `2026-08-09`
 - 新增番剧放送日历视图与 API 端点，仪表板展示 30 天追番日程 `2026-07-31`
 - 新增 `airing_today` 今日放送提醒定时任务，每日推送当日放送汇总 `2026-07-31`
 - 新增 Bangumi Archive 离线查询层，把全站数据快照下载到本地 SQLite [#210](https://github.com/SanaeMio/Bangumi-syncer/pull/210) `2026-07-29`
@@ -26,6 +29,9 @@ order: 45
 
 ## 🐛 Bug 修复
 
+- 修复通知在删除规则后仍广播到所有渠道：无 `notify-rule` 时改为**停发外部渠道**（仅写站内信），渠道不再兜底按自身 `types` 订阅，规则成为发布的唯一闸门 `2026-08-09`
+
+- 修复 Replay 匹配阶段在 API 不可达时反复产出「未找到匹配的番剧」error 记录，改为直接跳过；探测成功后统一复位所有用户实例的不可达标记 `2026-08-09`
 - 修复 `_bangumi_archive.html` 多余 `</div>` 导致 Replay/Airing Today 段渲染在 form 外、配置数据保存丢失 `2026-07-31`
 - 修复 `airing_calendar.js` 缺少 IIFE 起始导致整个 JS 解析失败、卡片不显示 `2026-07-31`
 - 修复 `list_user_collections` 把 `httpx.Response` 当 dict 处理导致在看列表获取为空 `2026-07-31`
@@ -66,6 +72,8 @@ order: 45
 
 ## 🚀 优化
 
+- 日志文件超过 20MB 自动轮转，保留最近 2 份备份（`log.txt.1`、`log.txt.2`） `2026-08-09`
+- 同步路径日志收敛：单集标记、匹配细节、网络诊断等大量细节下移为 `DEBUG`，默认 `INFO` 下日志噪音显著降低 `2026-08-09`
 - `BangumiApi` 实例按用户缓存，避免重复构造 `httpx.Client` [#210](https://github.com/SanaeMio/Bangumi-syncer/pull/210) `2026-07-29`
 - Archive 标题索引后台构建 + 磁盘缓存，消除首次查询 111s 阻塞 [#210](https://github.com/SanaeMio/Bangumi-syncer/pull/210) `2026-07-29`
 - 优化 Archive 导入性能，临时文件统一到 `data_dir/.tmp/` 并解压后立即删 zip [#220](https://github.com/SanaeMio/Bangumi-syncer/pull/220) `2026-07-31`

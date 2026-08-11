@@ -42,13 +42,9 @@ class DatabaseConnection:
 
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
-        self._media_type_migrated = False
-        self._bgm_title_migrated = False
-        self._trakt_filter_migrated = False
-        self._match_fields_migrated = False
-        self._pending_sync_sync_record_id_migrated = False
-        self._pending_candidates_sync_record_id_migrated = False
-        self._bangumi_accounts_private_migrated = False
+        # 已确认存在（或已补上）的列集合，避免每次读写前的 ensure_schema
+        # 回调重复执行 PRAGMA table_info
+        self._migrated_columns: set[tuple[str, str]] = set()
         self._tokens_encrypted_migrated = False
         self._init_database()
 
@@ -99,40 +95,74 @@ class DatabaseConnection:
                     pass
                 raise
 
+    def _ensure_columns(
+        self,
+        cursor,
+        table: str,
+        columns: list[tuple[str, str]],
+        message: Optional[str] = None,
+    ) -> bool:
+        """简单版 schema 迁移：幂等地为表补齐缺失列。
+
+        新字段上线时只需在 ``columns`` 追加 ``(列名, DDL)``，无需再手写
+        PRAGMA table_info + ALTER TABLE 样板。每个 (表, 列) 每个进程只
+        检查一次，之后直接短路，避免写入路径上的 ensure_schema 回调重复
+        执行 PRAGMA。
+
+        Args:
+            cursor: 待执行的游标。
+            table: 表名（内部常量，非用户输入）。
+            columns: ``[(列名, DDL), ...]``，如 ``[("media_type",
+                "TEXT DEFAULT 'episode'")]``。
+            message: 至少补上一列时输出的迁移日志；None 则静默。
+
+        Returns:
+            本次是否新增了列（可用于触发列相关的数据回填）。
+        """
+        missing = [
+            (name, decl)
+            for name, decl in columns
+            if (table, name) not in self._migrated_columns
+        ]
+        if not missing:
+            return False
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        added: list[str] = []
+        for name, decl in missing:
+            self._migrated_columns.add((table, name))
+            if name not in existing:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                added.append(name)
+        if added and message:
+            logger.info(message)
+        return bool(added)
+
     def _ensure_sync_records_media_type(self, cursor) -> None:
         """旧库迁移：为 sync_records 增加 media_type（历史数据为 episode）。"""
-        if self._media_type_migrated:
-            return
-        cursor.execute("PRAGMA table_info(sync_records)")
-        cols = [row[1] for row in cursor.fetchall()]
-        if "media_type" in cols:
-            self._media_type_migrated = True
-            return
-        cursor.execute(
-            "ALTER TABLE sync_records ADD COLUMN media_type TEXT DEFAULT 'episode'"
-        )
-        cursor.execute(
-            """
-            UPDATE sync_records
-            SET media_type = 'episode'
-            WHERE media_type IS NULL OR TRIM(COALESCE(media_type, '')) = ''
-            """
-        )
-        self._media_type_migrated = True
-        logger.info("sync_records 已迁移：增加 media_type 列并回填 episode")
+        if self._ensure_columns(
+            cursor,
+            "sync_records",
+            [("media_type", "TEXT DEFAULT 'episode'")],
+            message="sync_records 已迁移：增加 media_type 列",
+        ):
+            cursor.execute(
+                """
+                UPDATE sync_records
+                SET media_type = 'episode'
+                WHERE media_type IS NULL OR TRIM(COALESCE(media_type, '')) = ''
+                """
+            )
+            logger.info("sync_records 已迁移：media_type 回填 episode")
 
     def _ensure_sync_records_bgm_title(self, cursor) -> None:
         """旧库迁移：为 sync_records 增加 bgm_title（Bangumi 平台标题）。"""
-        if self._bgm_title_migrated:
-            return
-        cursor.execute("PRAGMA table_info(sync_records)")
-        cols = [row[1] for row in cursor.fetchall()]
-        if "bgm_title" in cols:
-            self._bgm_title_migrated = True
-            return
-        cursor.execute("ALTER TABLE sync_records ADD COLUMN bgm_title TEXT DEFAULT ''")
-        self._bgm_title_migrated = True
-        logger.info("sync_records 已迁移：增加 bgm_title 列")
+        self._ensure_columns(
+            cursor,
+            "sync_records",
+            [("bgm_title", "TEXT DEFAULT ''")],
+            message="sync_records 已迁移：增加 bgm_title 列",
+        )
 
     def _ensure_sync_records_match_fields(self, cursor) -> None:
         """旧库迁移：为 sync_records 增加匹配追踪字段。
@@ -143,40 +173,45 @@ class DatabaseConnection:
         - match_platform: 命中条目的 platform（TV/OVA/剧场版/日剧/电影...）
         - match_trace: JSON 字符串，完整匹配过程（仅 debug 模式写入）
         """
-        if self._match_fields_migrated:
-            return
-        cursor.execute("PRAGMA table_info(sync_records)")
-        cols = [row[1] for row in cursor.fetchall()]
-        need_commit = False
-        for col, decl in [
-            ("match_method", "TEXT DEFAULT ''"),
-            ("match_score", "REAL"),
-            ("match_platform", "TEXT DEFAULT ''"),
-            ("match_trace", "TEXT DEFAULT ''"),
-        ]:
-            if col not in cols:
-                cursor.execute(f"ALTER TABLE sync_records ADD COLUMN {col} {decl}")
-                need_commit = True
-        if need_commit:
-            logger.info(
-                "sync_records 已迁移：增加匹配追踪字段（match_method/match_score/match_platform/match_trace）"
-            )
-        self._match_fields_migrated = True
+        self._ensure_columns(
+            cursor,
+            "sync_records",
+            [
+                ("match_method", "TEXT DEFAULT ''"),
+                ("match_score", "REAL"),
+                ("match_platform", "TEXT DEFAULT ''"),
+                ("match_trace", "TEXT DEFAULT ''"),
+            ],
+            message=(
+                "sync_records 已迁移：增加匹配追踪字段"
+                "（match_method/match_score/match_platform/match_trace）"
+            ),
+        )
+
+    def _ensure_sync_records_link_fields(self, cursor) -> None:
+        """旧库迁移：为 sync_records 增加 run_id/batch_id（日志关联字段）。
+
+        - run_id: 本次同步的 run 标识（与日志行 [run:...] 对应）
+        - batch_id: 所属批次（如一轮批量补发，与日志行 [batch:...] 对应）
+        """
+        self._ensure_columns(
+            cursor,
+            "sync_records",
+            [
+                ("run_id", "TEXT DEFAULT ''"),
+                ("batch_id", "TEXT DEFAULT ''"),
+            ],
+            message="sync_records 已迁移：增加 run_id/batch_id 列（请求/批次关联）",
+        )
 
     def _ensure_trakt_config_sync_filter(self, cursor) -> None:
         """旧库迁移：为 trakt_config 增加 sync_filter_enabled（默认开启）。"""
-        if self._trakt_filter_migrated:
-            return
-        cursor.execute("PRAGMA table_info(trakt_config)")
-        cols = [row[1] for row in cursor.fetchall()]
-        if "sync_filter_enabled" in cols:
-            self._trakt_filter_migrated = True
-            return
-        cursor.execute(
-            "ALTER TABLE trakt_config ADD COLUMN sync_filter_enabled BOOLEAN DEFAULT 1"
+        self._ensure_columns(
+            cursor,
+            "trakt_config",
+            [("sync_filter_enabled", "BOOLEAN DEFAULT 1")],
+            message="trakt_config 已迁移：增加 sync_filter_enabled 列",
         )
-        self._trakt_filter_migrated = True
-        logger.info("trakt_config 已迁移：增加 sync_filter_enabled 列")
 
     def _ensure_pending_sync_queue_sync_record_id(self, cursor) -> None:
         """旧库迁移：为 pending_sync_queue 增加 sync_record_id（关联 sync_records 行）。
@@ -184,18 +219,12 @@ class DatabaseConnection:
         用于补发回写：补发成功/放弃时，通过此字段定位原始 queued 同步记录，
         把 status 从 queued 改为 success/error，形成状态闭环。
         """
-        if self._pending_sync_sync_record_id_migrated:
-            return
-        cursor.execute("PRAGMA table_info(pending_sync_queue)")
-        cols = [row[1] for row in cursor.fetchall()]
-        if "sync_record_id" in cols:
-            self._pending_sync_sync_record_id_migrated = True
-            return
-        cursor.execute(
-            "ALTER TABLE pending_sync_queue ADD COLUMN sync_record_id INTEGER"
+        self._ensure_columns(
+            cursor,
+            "pending_sync_queue",
+            [("sync_record_id", "INTEGER")],
+            message="pending_sync_queue 已迁移：增加 sync_record_id 列",
         )
-        self._pending_sync_sync_record_id_migrated = True
-        logger.info("pending_sync_queue 已迁移：增加 sync_record_id 列")
 
     def _ensure_pending_candidates_sync_record_id(self, cursor) -> None:
         """旧库迁移：为 pending_candidates 增加 sync_record_id（关联 sync_records 行）。
@@ -203,36 +232,24 @@ class DatabaseConnection:
         用于候选确认后回写原 sync_records 状态（error → retried/success），
         形成「候选确认即补发」的闭环。
         """
-        if self._pending_candidates_sync_record_id_migrated:
-            return
-        cursor.execute("PRAGMA table_info(pending_candidates)")
-        cols = [row[1] for row in cursor.fetchall()]
-        if "sync_record_id" in cols:
-            self._pending_candidates_sync_record_id_migrated = True
-            return
-        cursor.execute(
-            "ALTER TABLE pending_candidates ADD COLUMN sync_record_id INTEGER"
+        self._ensure_columns(
+            cursor,
+            "pending_candidates",
+            [("sync_record_id", "INTEGER")],
+            message="pending_candidates 已迁移：增加 sync_record_id 列",
         )
-        self._pending_candidates_sync_record_id_migrated = True
-        logger.info("pending_candidates 已迁移：增加 sync_record_id 列")
 
     def _ensure_bangumi_accounts_private(self, cursor) -> None:
         """旧库迁移：为 bangumi_accounts 增加 private（收藏是否私有）。
 
         与 INI [bangumi(-*)] private 字段对齐；DEFAULT 0 即公开，与既有 INI 默认值一致。
         """
-        if self._bangumi_accounts_private_migrated:
-            return
-        cursor.execute("PRAGMA table_info(bangumi_accounts)")
-        cols = [row[1] for row in cursor.fetchall()]
-        if "private" in cols:
-            self._bangumi_accounts_private_migrated = True
-            return
-        cursor.execute(
-            "ALTER TABLE bangumi_accounts ADD COLUMN private BOOLEAN NOT NULL DEFAULT 0"
+        self._ensure_columns(
+            cursor,
+            "bangumi_accounts",
+            [("private", "BOOLEAN NOT NULL DEFAULT 0")],
+            message="bangumi_accounts 已迁移：增加 private 列",
         )
-        self._bangumi_accounts_private_migrated = True
-        logger.info("bangumi_accounts 已迁移：增加 private 列")
 
     def _ensure_tokens_encrypted(self, cursor) -> None:
         """一次性数据迁移：加密 DB 中的明文 token（access_token / refresh_token）。
@@ -311,13 +328,16 @@ class DatabaseConnection:
                 match_method TEXT DEFAULT '',
                 match_score REAL,
                 match_platform TEXT DEFAULT '',
-                match_trace TEXT DEFAULT ''
+                match_trace TEXT DEFAULT '',
+                run_id TEXT DEFAULT '',
+                batch_id TEXT DEFAULT ''
             )
         """)
 
         self._ensure_sync_records_media_type(cursor)
         self._ensure_sync_records_bgm_title(cursor)
         self._ensure_sync_records_match_fields(cursor)
+        self._ensure_sync_records_link_fields(cursor)
 
         # 创建 Trakt 配置表
         cursor.execute("""
@@ -473,21 +493,17 @@ class DatabaseConnection:
                 redirect_uri TEXT NOT NULL DEFAULT ''
             )
         """)
-        # 兼容旧库：补充 provider 列（已存在则忽略）
-        try:
-            cursor.execute(
-                "ALTER TABLE oauth_states ADD COLUMN provider TEXT NOT NULL DEFAULT ''"
-            )
-        except Exception:
-            pass
-        # 兼容旧库：补充 redirect_uri 列（用于存发起授权时的 redirect_uri，
-        # 回调时还原以保证 authorize 与 token 交换用同一 redirect_uri）
-        try:
-            cursor.execute(
-                "ALTER TABLE oauth_states ADD COLUMN redirect_uri TEXT NOT NULL DEFAULT ''"
-            )
-        except Exception:
-            pass
+        # 兼容旧库：补充 provider（已存在则跳过）与 redirect_uri 列
+        # （redirect_uri 用于存发起授权时的 redirect_uri，回调时还原以保证
+        # authorize 与 token 交换用同一 redirect_uri）
+        self._ensure_columns(
+            cursor,
+            "oauth_states",
+            [
+                ("provider", "TEXT NOT NULL DEFAULT ''"),
+                ("redirect_uri", "TEXT NOT NULL DEFAULT ''"),
+            ],
+        )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_oauth_states_expire "
             "ON oauth_states(expires_at)"

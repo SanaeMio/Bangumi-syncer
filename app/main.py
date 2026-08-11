@@ -4,7 +4,9 @@
 
 import asyncio
 import os
+import re
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -41,7 +43,7 @@ from .core.background_tasks import (
 )
 from .core.config import config_manager
 from .core.database import database_manager
-from .core.logging import logger
+from .core.logging import log_request_id, logger
 from .core.public_url import get_public_base_path
 from .core.scheduler_registry import scheduler_registry
 from .core.startup_info import startup_info
@@ -151,6 +153,38 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(**_app_kw, lifespan=lifespan)
+
+
+# X-Request-ID 透传/生成规则：仅接受可见 ASCII 标点类安全字符，
+# 拒绝 ]/[ 等会破坏日志行头结构的字符；缺失或不合法时自动生成。
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._~:+-]{1,64}$")
+
+
+async def request_context_middleware(request: Request, call_next):
+    """为请求注入 request_id（X-Request-ID 头或生成的短 ID），日志行关联 [req:...]。
+
+    注册顺序说明：本中间件先于 csp_middleware 注册，但 Starlette 的
+    add_middleware 用 insert(0, ...) 将后注册者置于更外层，故实际执行
+    顺序（外→内）为 csp_middleware → request_context_middleware → 路由。
+    request_id 在 call_next 之前经 contextvar 设置，请求期间（含线程池
+    任务，经 copy_context 传播）内所有日志行都携带同一个 request_id；
+    csp_middleware 仅在响应阶段追加安全头、不记日志，故最外层位置无影响。
+    """
+    raw = request.headers.get("X-Request-ID", "").strip()
+    if _REQUEST_ID_RE.fullmatch(raw):
+        rid = raw
+    else:
+        rid = uuid4().hex[:12]
+    token = log_request_id.set(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        log_request_id.reset(token)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
+app.middleware("http")(request_context_middleware)
 
 
 # 创建静态文件和模板目录

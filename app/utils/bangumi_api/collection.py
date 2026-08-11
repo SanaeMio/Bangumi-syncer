@@ -376,7 +376,7 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         # 写缓存
         with _watching_cache_lock:
             _watching_cache[username] = (now, ids)
-        logger.info(
+        logger.debug(
             f"获取在看列表成功: username={username}, 动画 {len(anime_watching)} + 三次元 {len(real_watching)} = {len(ids)} 部"
         )
         return ids
@@ -385,7 +385,7 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         with _watching_cache_lock:
             cached = _watching_cache.get(username)
         if cached:
-            logger.info(f"使用缓存降级: username={username}, {len(cached[1])} 部")
+            logger.debug(f"使用缓存降级: username={username}, {len(cached[1])} 部")
             return cached[1]
         # 无缓存时抛出，让调用方降级（如改为全部放送）
         raise
@@ -402,3 +402,8 @@ def invalidate_watching_cache(username: Optional[str] = None) -> None:
             _watching_cache.clear()
         else:
             _watching_cache.pop(username, None)
+
+
+# 配置变更（账号/令牌等）时清空在看缓存，避免旧账号数据残留：
+# 与 BangumiApi 实例缓存按 dev 快照自动失效的思路统一，无需重启生效
+config_manager.register_config_change_listener(lambda: invalidate_watching_cache())
