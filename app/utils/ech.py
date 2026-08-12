@@ -44,6 +44,9 @@ CONTEXT_TTL_SECONDS = 1200
 FAILED_TTL_SECONDS = 60
 # DoH 查询超时
 DOH_TIMEOUT_SECONDS = 10.0
+# DoH 查询在调用方线程上最多阻塞的秒数：超时返回 None（本次降级普通 TLS），
+# 查询在后台 daemon 线程继续，完成后写入缓存供后续调用命中
+BLOCK_TIMEOUT_SECONDS = 1.5
 
 ECH_CONFIG_SOURCE_HOST = "cloudflare-ech.com"
 
@@ -51,6 +54,8 @@ _cache_lock = threading.Lock()
 _cache: dict[str, tuple[float, ssl.SSLContext | None]] = {}
 # per-key 单飞锁：缓存过期时只允许一个线程发起 DoH 查询，其余等待复用
 _inflight: dict[str, threading.Lock] = {}
+# per-key 后台查询完成事件：新调用者等待进行中的查询而非重复发起
+_bg_events: dict[str, threading.Event] = {}
 _utls_available: bool | None = None
 # 缓存缺失哨兵（与"缓存了 None 失败结果"区分）
 _MISS = object()
@@ -294,11 +299,31 @@ def _write_cache(key: str, ctx: ssl.SSLContext | None) -> None:
         _cache[key] = (time.monotonic(), ctx)
 
 
+def _query_ech_context_from_doh() -> ssl.SSLContext | None:
+    """DoH 查询 + utls 构建（在后台线程执行）。"""
+    ech_config = _query_ech_config()
+    if ech_config is None:
+        return None
+    return _build_ech_context(ech_config)
+
+
+def _doh_background_worker(key: str, done: threading.Event) -> None:
+    """后台 DoH 查询线程：无论成败都写缓存（失败短 TTL），完成时置事件。"""
+    try:
+        ctx = _query_ech_context_from_doh()
+    except Exception as e:  # 兜底：查询路径内部已捕获大部分异常
+        logger.warning(f"[ECH] 后台 DoH 查询异常，降级为普通 TLS: {e}")
+        ctx = None
+    _write_cache(key, ctx)
+    done.set()
+
+
 def get_ech_ssl_context() -> ssl.SSLContext | None:
     """获取带 ECH 的 SSLContext（缓存 + TTL + 配置变化自动失效 + 并发单飞）。
 
-    manual 模式直接使用 ``[dev] ech_ech_config``；doh 模式查询 DoH。
-    任何失败路径均返回 None（调用方保持原 verify 行为）。
+    manual 模式直接使用 ``[dev] ech_ech_config``；doh 模式在后台线程查询，
+    调用方最多等待 BLOCK_TIMEOUT_SECONDS（超时本次降级普通 TLS，查询继续
+    完成后写入缓存）。任何失败路径均返回 None（调用方保持原 verify 行为）。
     """
     mode = ech_mode()
     if mode == "off":
@@ -326,14 +351,32 @@ def get_ech_ssl_context() -> ssl.SSLContext | None:
     if cached is not _MISS:
         return cached
 
+    if mode == "manual":
+        with _inflight.setdefault(key, threading.Lock()):
+            # double-checked：等待期间可能已有其他线程填充缓存
+            cached = _read_cache(key)
+            if cached is not _MISS:
+                return cached
+            ctx = _build_ech_context(ech_config)
+            _write_cache(key, ctx)
+            return ctx
+
     with _inflight.setdefault(key, threading.Lock()):
         # double-checked：等待期间可能已有其他线程填充缓存
         cached = _read_cache(key)
         if cached is not _MISS:
             return cached
-
-        ctx = _query_ech_config() if mode != "manual" else ech_config
-        if isinstance(ctx, bytes):
-            ctx = _build_ech_context(ctx)
-        _write_cache(key, ctx)
-        return ctx
+        done = _bg_events.setdefault(key, threading.Event())
+        if done.is_set():
+            done.clear()  # 上一轮查询已结束，本轮重新发起
+        threading.Thread(
+            target=_doh_background_worker, args=(key, done), daemon=True
+        ).start()
+        done.wait(BLOCK_TIMEOUT_SECONDS)
+        if not done.is_set():
+            # 超时：查询仍在后台继续，本次降级普通 TLS；完成后写缓存供后续调用
+            return None
+        # 查询已完成：直接取原始缓存条目（不判 TTL，刚写入必有效）
+        with _cache_lock:
+            cached = _cache.get(key)
+        return cached[1] if cached is not None else None

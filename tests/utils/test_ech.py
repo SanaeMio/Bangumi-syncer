@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import struct
 import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -265,6 +266,55 @@ def test_get_ech_context_doh_fallback_to_wire():
         assert hasattr(ctx, "set_ech_configs")
 
 
+def test_get_ech_context_doh_does_not_block(monkeypatch):
+    """DoH 查询慢时调用方不被阻塞：BLOCK_TIMEOUT 内返回 None 降级。"""
+    started = threading.Event()
+
+    def slow_fetch(doh_url: str, proxy: str | None) -> str:
+        started.set()
+        time.sleep(5)
+        return (
+            '{"Answer": [{"name": "cloudflare-ech.com.", "type": 65, '
+            '"data": "1 . ech=' + VALID_ECH_B64 + '"}]}'
+        )
+
+    with (
+        _patch_dev_config({"ech_mode": "doh"}),
+        patch("app.utils.ech._fetch_doh_json", side_effect=slow_fetch),
+    ):
+        begin = time.monotonic()
+        ctx = get_ech_ssl_context()
+        elapsed = time.monotonic() - begin
+        assert ctx is None  # 超时降级
+        assert started.is_set()
+        assert elapsed < 5, "不应被慢查询阻塞"
+
+
+def test_get_ech_context_doh_background_fills_cache(monkeypatch):
+    """超时返回后，后台查询完成会写入缓存，下次调用直接命中。"""
+    monkeypatch.setattr(ech_module, "BLOCK_TIMEOUT_SECONDS", 0.2)
+    fetch_calls = {"n": 0}
+
+    def slow_fetch(doh_url: str, proxy: str | None) -> str:
+        fetch_calls["n"] += 1
+        time.sleep(1.0)  # 比 BLOCK_TIMEOUT 长，主线程必然超时
+        return (
+            '{"Answer": [{"name": "cloudflare-ech.com.", "type": 65, '
+            '"data": "1 . ech=' + VALID_ECH_B64 + '"}]}'
+        )
+
+    with (
+        _patch_dev_config({"ech_mode": "doh"}),
+        patch("app.utils.ech._fetch_doh_json", side_effect=slow_fetch),
+        patch("app.utils.ech._fetch_doh_wire", side_effect=httpx.ConnectError("x")),
+    ):
+        assert get_ech_ssl_context() is None  # 超时降级
+        time.sleep(1.5)  # 等后台线程完成
+        ctx = get_ech_ssl_context()
+        assert ctx is not None  # 缓存已由后台填充
+        assert fetch_calls["n"] == 1  # 未重复查询
+
+
 def test_get_ech_context_cache_and_ttl(monkeypatch):
     """缓存生效：TTL 内不重复 fetch；过期后重新 fetch。"""
     fetch_calls = {"n": 0}
@@ -299,6 +349,7 @@ def test_get_ech_context_cache_and_ttl(monkeypatch):
 
 def test_get_ech_context_singleflight(monkeypatch):
     """缓存过期后并发调用只触发一次 DoH 查询（单飞去重）。"""
+    monkeypatch.setattr(ech_module, "BLOCK_TIMEOUT_SECONDS", 10)
     fetch_calls = {"n": 0}
     fetch_started = threading.Event()
     release = threading.Event()
