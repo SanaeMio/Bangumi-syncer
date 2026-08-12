@@ -40,6 +40,8 @@ DEFAULT_DOH_URL = "https://dns.alidns.com/resolve"
 DEFAULT_ECH_HOSTS = "bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv"
 # ECH 配置缓存 TTL（秒）；到期后重新查询 DoH 以跟随配置轮换
 CONTEXT_TTL_SECONDS = 1200
+# 获取失败结果的缓存 TTL（秒）：短暂失效，避免瞬时 DoH 抖动让 ECH 长时间失联
+FAILED_TTL_SECONDS = 60
 # DoH 查询超时
 DOH_TIMEOUT_SECONDS = 10.0
 
@@ -47,7 +49,11 @@ ECH_CONFIG_SOURCE_HOST = "cloudflare-ech.com"
 
 _cache_lock = threading.Lock()
 _cache: dict[str, tuple[float, ssl.SSLContext | None]] = {}
+# per-key 单飞锁：缓存过期时只允许一个线程发起 DoH 查询，其余等待复用
+_inflight: dict[str, threading.Lock] = {}
 _utls_available: bool | None = None
+# 缓存缺失哨兵（与"缓存了 None 失败结果"区分）
+_MISS = object()
 
 
 # ── 配置读取 ───────────────────────────────────────────────────────────────
@@ -147,7 +153,8 @@ def _parse_dns_json(text: str) -> bytes | None:
         if "ech=" in entry:
             ech_b64 = entry.split("ech=", 1)[1].split()[0].strip()
             try:
-                return base64.b64decode(ech_b64)
+                # RFC 9460 的 ech= 是不带 padding 的 base64，补齐后再解码
+                return base64.b64decode(ech_b64 + "=" * (-len(ech_b64) % 4))
             except ValueError:
                 logger.warning(
                     f"ECH DoH 解析失败: ech= 字段非法 ({ECH_CONFIG_SOURCE_HOST})"
@@ -263,8 +270,32 @@ def _query_ech_config() -> bytes | None:
     return None
 
 
+def _read_cache(key: str) -> object:
+    """读取未过期的缓存；缺失/过期返回 _MISS 哨兵。
+
+    成功结果 TTL 为 CONTEXT_TTL_SECONDS，失败结果（缓存的 None）为
+    较短的 FAILED_TTL_SECONDS，避免瞬时 DoH 抖动造成长时间静默失效。
+    """
+    with _cache_lock:
+        cached = _cache.get(key)
+        if cached is None:
+            return _MISS
+        now = time.monotonic()
+        ctx = cached[1]
+        ttl = CONTEXT_TTL_SECONDS if ctx is not None else FAILED_TTL_SECONDS
+        if now - cached[0] < ttl:
+            return ctx
+        return _MISS
+
+
+def _write_cache(key: str, ctx: ssl.SSLContext | None) -> None:
+    with _cache_lock:
+        # 构建失败也缓存，避免每次请求重复查询 DoH（失败用短 TTL）
+        _cache[key] = (time.monotonic(), ctx)
+
+
 def get_ech_ssl_context() -> ssl.SSLContext | None:
-    """获取带 ECH 的 SSLContext（缓存 + TTL + 配置变化自动失效）。
+    """获取带 ECH 的 SSLContext（缓存 + TTL + 配置变化自动失效 + 并发单飞）。
 
     manual 模式直接使用 ``[dev] ech_ech_config``；doh 模式查询 DoH。
     任何失败路径均返回 None（调用方保持原 verify 行为）。
@@ -284,22 +315,25 @@ def get_ech_ssl_context() -> ssl.SSLContext | None:
             return None
         key = f"manual:{ech_b64}"
     else:
+        # utls 不可用则直接降级，避免白跑 DoH 网络查询
+        if not _utls_available_check():
+            logger.warning("[ECH] utls 依赖不可用，降级为普通 TLS")
+            return None
         doh_url, use_proxy = _doh_settings()
         key = f"doh:{doh_url}:{use_proxy}"
 
-    now = time.monotonic()
-    with _cache_lock:
-        cached = _cache.get(key)
-        if cached and now - cached[0] < CONTEXT_TTL_SECONDS:
-            return cached[1]
+    cached = _read_cache(key)
+    if cached is not _MISS:
+        return cached
 
-    ctx = _query_ech_config() if mode != "manual" else ech_config
-    if ctx is None and mode != "manual":
-        ctx = None
-    elif isinstance(ctx, bytes):
-        ctx = _build_ech_context(ctx)
+    with _inflight.setdefault(key, threading.Lock()):
+        # double-checked：等待期间可能已有其他线程填充缓存
+        cached = _read_cache(key)
+        if cached is not _MISS:
+            return cached
 
-    with _cache_lock:
-        # 缓存优先：构建失败也缓存 None，避免每次请求重复查询 DoH
-        _cache[key] = (now, ctx)
-    return ctx
+        ctx = _query_ech_config() if mode != "manual" else ech_config
+        if isinstance(ctx, bytes):
+            ctx = _build_ech_context(ctx)
+        _write_cache(key, ctx)
+        return ctx
