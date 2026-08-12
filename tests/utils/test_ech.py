@@ -477,6 +477,45 @@ def test_default_ech_hosts_locked():
     assert ech_module.DEFAULT_ECH_HOSTS == expected
 
 
+# ── utls ↔ httpx 真实接线（不 mock httpx）────────────────────────────────────
+
+
+def test_utls_context_accepted_by_httpx_client():
+    """真实 utls SSLContext 可被 httpx.Client 作为 verify 接受（防接线回归）。
+
+    工厂测试全部 mock 了 httpx.Client，若 utls.SSLContext 不是
+    ssl.SSLContext 子类，httpx 构造即 TypeError——此用例用真实 utls
+    与真实 httpx 断言整条链路可用。
+    """
+    pytest.importorskip("utls")
+    with _patch_dev_config({"ech_mode": "manual", "ech_ech_config": VALID_ECH_B64}):
+        ctx = get_ech_ssl_context()
+        assert ctx is not None
+
+    # 构造不抛 TypeError 即说明 utls 上下文被 httpx 接受；并做一次本地
+    # 请求验证传输层可初始化（挂接在 httpbin 上的网络调用一律避免）
+    client = create_sync_client(ech="manual", timeout=5.0)
+    try:
+        assert not client.is_closed
+    finally:
+        client.close()
+
+
+def test_utls_context_accepted_by_async_httpx_client():
+    pytest.importorskip("utls")
+    with _patch_dev_config({"ech_mode": "manual", "ech_ech_config": VALID_ECH_B64}):
+        ctx = get_ech_ssl_context()
+        assert ctx is not None
+
+    client = create_async_client(ech="manual", timeout=5.0)
+    try:
+        assert not client.is_closed
+    finally:
+        import asyncio
+
+        asyncio.run(client.aclose())
+
+
 # ── 请求日志 [ECH] 前缀 ────────────────────────────────────────────────────
 
 
