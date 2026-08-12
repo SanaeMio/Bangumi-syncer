@@ -315,7 +315,7 @@ async def test_get_sync_records_include_poster(
         == "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg"
     )
     assert records[1]["poster_url"] is None
-    mock_posters.assert_awaited_once_with([123])
+    mock_posters.assert_awaited_once_with([123], user_name=None)
 
 
 @pytest.mark.asyncio

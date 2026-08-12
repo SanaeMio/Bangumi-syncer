@@ -287,7 +287,7 @@ async def get_sync_records(
                 for r in result["records"]
                 if (sid := normalize_subject_id(r.get("subject_id"))) is not None
             ]
-            poster_map = await get_poster_urls(subject_ids)
+            poster_map = await get_poster_urls(subject_ids, user_name=user_name)
             for record in result["records"]:
                 sid = normalize_subject_id(record.get("subject_id"))
                 record["poster_url"] = poster_map.get(sid) if sid else None

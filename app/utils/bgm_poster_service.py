@@ -116,20 +116,24 @@ def _apply_image_proxy(raw_url: str) -> str:
 
 def _build_watching_poster_map(
     prefer_sizes: tuple[str, ...] | None = None,
+    user_name: str | None = None,
 ) -> dict[int, str]:
-    """从当前激活账号的「在看」列表批量预取封面地址（至多 3 页，60s 内单飞）。
+    """从「在看」列表批量预取封面地址（至多 3 页，60s 内单飞）。
+
+    user_name 缺省用当前激活账号；多用户模式下按媒体服务器用户名反查
+    对应 Bangumi 账号，避免用他人账号的收藏预取导致命中率下降。
 
     封面 URL 无法从条目 ID 推导（hash 随机），逐个拉取 subject 成本高；
     在看列表接口每条记录自带 images，可一次性覆盖时间线的大多数条目。
     未命中（历史记录/已弃番）的条目由调用方回退逐 ID 拉取。
 
     Returns:
-        {subject_id: 封面 URL}；无激活账号、无令牌、API 不可达或请求失败时
+        {subject_id: 封面 URL}；无账号、无令牌、API 不可达或请求失败时
         返回空 dict（调用方回退到逐 ID 拉取，不影响封面可用性）。
     """
     from app.core import accounts as _accounts
 
-    cfg = _accounts.get_active_bangumi_config()
+    cfg = _accounts.get_active_bangumi_config(user_name)
     if not cfg or not cfg.get("username") or not cfg.get("access_token"):
         return {}
 
@@ -236,11 +240,13 @@ def _resolve_poster_url_sync(
 def get_poster_urls_sync(
     subject_ids: list[Any],
     prefer_sizes: tuple[str, ...] | None = None,
+    user_name: str | None = None,
 ) -> dict[int, str]:
     """同步批量解析封面 URL；失败条目跳过；未缓存条目并行请求。
 
-    优化：未缓存条目先尝试从当前激活账号的「在看」列表批量提取
+    优化：未缓存条目先尝试从「在看」列表批量提取
     （1 个请求覆盖时间线大多数条目），未命中的少量条目再逐个拉取兜底。
+    user_name 缺省用激活账号，多用户模式下按媒体用户名反查账号预取。
     """
     sizes = prefer_sizes if prefer_sizes is not None else timeline_poster_size_order()
     result: dict[int, str] = {}
@@ -263,7 +269,7 @@ def get_poster_urls_sync(
         return result
 
     # 在看列表批量预取（仅当存在未缓存条目时发起，命中后同样写入 24h 缓存）
-    watching_map = _build_watching_poster_map(sizes)
+    watching_map = _build_watching_poster_map(sizes, user_name)
     for subject_id in list(to_fetch):
         url = watching_map.get(subject_id)
         if url:
@@ -295,9 +301,12 @@ def get_poster_urls_sync(
 async def get_poster_urls(
     subject_ids: list[Any],
     prefer_sizes: tuple[str, ...] | None = None,
+    user_name: str | None = None,
 ) -> dict[int, str]:
     """异步批量解析封面 URL（Bangumi API 调用在线程池中执行）。"""
-    return await asyncio.to_thread(get_poster_urls_sync, subject_ids, prefer_sizes)
+    return await asyncio.to_thread(
+        get_poster_urls_sync, subject_ids, prefer_sizes, user_name
+    )
 
 
 # [dev] 代理相关配置变更时清空进程级缓存：命名空间虽然已随配置变化，但

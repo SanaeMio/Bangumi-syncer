@@ -112,7 +112,7 @@ async def test_get_subjects_posters_batch_success(app_bgm_poster):
         "123": "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg",
         "456": "https://img-proxy.example.com/pic/cover/s/d/e/f.jpg",
     }
-    mock_get.assert_awaited_once_with([123, 456])
+    mock_get.assert_awaited_once_with([123, 456], user_name=None)
 
 
 @pytest.mark.asyncio

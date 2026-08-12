@@ -163,7 +163,19 @@ async def test_get_poster_urls_async():
         result = await get_poster_urls([1])
 
     assert result == {1: "https://example.com/1.jpg"}
-    mock_sync.assert_called_once_with([1], None)
+    mock_sync.assert_called_once_with([1], None, None)
+
+
+@pytest.mark.asyncio
+async def test_get_poster_urls_async_passes_user_name():
+    with patch(
+        "app.utils.bgm_poster_service.get_poster_urls_sync",
+        return_value={},
+    ) as mock_sync:
+        result = await get_poster_urls([1], user_name="tv-user")
+
+    assert result == {}
+    mock_sync.assert_called_once_with([1], None, "tv-user")
 
 
 def test_get_poster_urls_sync_parallel_partial_failure():
@@ -324,6 +336,34 @@ def test_watching_prefetch_miss_falls_back_to_individual():
         2: "https://lain.bgm.tv/pic/cover/s/a/b/2.jpg",
     }
     mock_bgm.get_subject.assert_called_once_with(1, use_archive=False)
+
+
+def test_watching_prefetch_uses_user_specific_account():
+    """多用户模式传 user_name 时，预取用对应账号的在看列表而非激活账号。"""
+    mock_api = MagicMock()
+    mock_api.list_user_collections.return_value = [
+        _watching_item(21, "https://lain.bgm.tv/pic/cover/s/a/b/21.jpg"),
+    ]
+    mock_shared = MagicMock()
+    mock_shared.is_api_unreachable.return_value = False
+
+    with (
+        patch(
+            "app.core.accounts.get_active_bangumi_config",
+            return_value=_active_account_cfg(),
+        ) as mock_get_cfg,
+        patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
+        patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
+        patch(
+            "app.utils.bgm_poster_service.get_shared_bangumi_api",
+            return_value=mock_shared,
+        ),
+    ):
+        result = get_poster_urls_sync([21], user_name="tv-user")
+
+    assert result == {21: "https://lain.bgm.tv/pic/cover/s/a/b/21.jpg"}
+    mock_get_cfg.assert_called_once_with("tv-user")
+    mock_api.list_user_collections.assert_called_once()
 
 
 def test_watching_prefetch_applies_image_proxy():
