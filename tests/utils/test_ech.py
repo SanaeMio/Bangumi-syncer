@@ -361,3 +361,86 @@ def test_factory_async_ech_passthrough():
     ):
         create_async_client(ech="manual")
         assert mock_client_cls.call_args.kwargs["verify"] is fake_ctx
+
+
+# ── 请求日志 [ECH] 前缀 ────────────────────────────────────────────────────
+
+
+def _fake_response():
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.elapsed.total_seconds.return_value = 0.1
+    resp.text = "{}"
+    resp.headers = {}
+    return resp
+
+
+def test_request_log_ech_tag_on_target_host():
+    """命中 ech_hosts 的请求，日志行带 [ECH] 前缀（要求 ECH 上下文实际生效）。"""
+    from app.utils import http_base as http_base_module
+    from app.utils.http_base import SyncHttpClient
+
+    fake_ctx = MagicMock()
+    fake_client = MagicMock()
+    fake_client.request.return_value = _fake_response()
+    with (
+        patch("app.utils.ech.get_ech_ssl_context", return_value=fake_ctx),
+        patch(
+            "app.utils.http_base.create_sync_client", return_value=fake_client
+        ) as mock_factory,
+        patch.object(http_base_module.logger, "debug") as mock_debug,
+    ):
+        client = SyncHttpClient(label="Bangumi", ech="doh")
+        assert client._ech_active is True
+        client.get("https://api.bgm.tv/v0/subjects/1")
+
+    assert mock_factory.call_args.kwargs["ech"] == "doh"
+    debug_calls = [str(c[0]) for c in mock_debug.call_args_list if c.args]
+    assert any(
+        "[ECH] [Bangumi] 请求 → GET https://api.bgm.tv/v0/subjects/1" in s
+        for s in debug_calls
+    )
+    assert any(
+        "[ECH] [Bangumi] GET https://api.bgm.tv/v0/subjects/1 → 200" in s
+        for s in debug_calls
+    )
+    assert any("[ECH] [Bangumi] 响应 ← 200" in s for s in debug_calls)
+
+
+def test_request_log_no_ech_tag_off_domain():
+    """非 ech_hosts 域名（或 ECH 未生效）不打 [ECH] 前缀。"""
+    from app.utils import http_base as http_base_module
+    from app.utils.http_base import SyncHttpClient
+
+    fake_client = MagicMock()
+    fake_client.request.return_value = _fake_response()
+    with (
+        patch("app.utils.ech.get_ech_ssl_context", return_value=MagicMock()),
+        patch("app.utils.http_base.create_sync_client", return_value=fake_client),
+        patch.object(http_base_module.logger, "debug") as mock_debug,
+    ):
+        client = SyncHttpClient(label="Bangumi", ech="doh")
+        client.get("https://example.com/api")
+
+    debug_calls = [str(c[0]) for c in mock_debug.call_args_list if c.args]
+    assert all("[ECH]" not in s for s in debug_calls)
+
+
+def test_request_log_no_ech_tag_when_context_unavailable():
+    """ECH 上下文构建失败（降级普通 TLS）→ 即使命中域名也不打 [ECH]。"""
+    from app.utils import http_base as http_base_module
+    from app.utils.http_base import SyncHttpClient
+
+    fake_client = MagicMock()
+    fake_client.request.return_value = _fake_response()
+    with (
+        patch("app.utils.ech.get_ech_ssl_context", return_value=None),
+        patch("app.utils.http_base.create_sync_client", return_value=fake_client),
+        patch.object(http_base_module.logger, "debug") as mock_debug,
+    ):
+        client = SyncHttpClient(label="Bangumi", ech="doh")
+        assert client._ech_active is False
+        client.get("https://api.bgm.tv/v0/subjects/1")
+
+    debug_calls = [str(c[0]) for c in mock_debug.call_args_list if c.args]
+    assert all("[ECH]" not in s for s in debug_calls)
