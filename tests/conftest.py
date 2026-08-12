@@ -56,6 +56,22 @@ _cfg.set("bangumi-replay", "enabled", "false")
 with open(_TEST_CONFIG_INI, "w", encoding="utf-8") as _f:
     _cfg.write(_f)
 
+
+# ===== 事件循环兜底 =====
+# pytest-xdist 并行（Windows + Python 3.9）下，同步测试可能被分到从未
+# 创建事件循环的 worker 主线程；此类测试构造 asyncio.Lock()/Queue() 等
+# 对象时会抛 "There is no current event loop"。autouse fixture 在每条测试
+# setup 阶段确保 MainThread 存在可用循环；async 测试由 pytest-asyncio 的
+# event_loop fixture 自行创建（set_event_loop 覆盖，不受影响）。
+@pytest.fixture(autouse=True)
+def _ensure_main_thread_loop():
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    yield
+
+
 # ===== 隔离数据库：所有测试写入临时 data 目录，避免污染真实 data/sync_records.db =====
 # 部分测试（如匹配失败路径）直接使用全局 database_manager 记录同步结果，
 # 若未 mock 会写入项目根 data/sync_records.db。此处将全局单例整体重定向到
