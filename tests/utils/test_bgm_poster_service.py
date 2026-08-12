@@ -208,6 +208,8 @@ def test_watching_prefetch_hits_skips_individual_fetch():
     mock_api.list_user_collections.return_value = [
         _watching_item(1, "https://lain.bgm.tv/pic/cover/s/a/b/1.jpg"),
     ]
+    mock_shared = MagicMock()
+    mock_shared.is_api_unreachable.return_value = False
 
     with (
         patch(
@@ -216,16 +218,78 @@ def test_watching_prefetch_hits_skips_individual_fetch():
         ),
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
-        patch("app.utils.bgm_poster_service.get_shared_bangumi_api") as mock_shared,
+        patch(
+            "app.utils.bgm_poster_service.get_shared_bangumi_api",
+            return_value=mock_shared,
+        ),
     ):
         result = get_poster_urls_sync([1])
 
     assert result == {1: "https://lain.bgm.tv/pic/cover/s/a/b/1.jpg"}
     mock_api.list_user_collections.assert_called_once_with(
-        collection_type=3, limit=50, max_total=500
+        collection_type=3, limit=50, max_total=500, max_pages=3
     )
     mock_api.close.assert_called_once()
-    mock_shared.assert_not_called()
+    mock_shared.is_api_unreachable.assert_called_once_with()
+
+
+def test_watching_prefetch_skipped_when_api_unreachable():
+    """共享实例记录 API 不可达（TTL 内）时跳过预取，直接逐 ID 兜底。"""
+    mock_api = MagicMock()
+    mock_shared = MagicMock()
+    mock_shared.is_api_unreachable.return_value = True
+    mock_shared.get_subject.return_value = {
+        "id": 4,
+        "images": {"small": "https://lain.bgm.tv/pic/cover/s/c/d/4.jpg"},
+    }
+
+    with (
+        patch(
+            "app.core.accounts.get_active_bangumi_config",
+            return_value=_active_account_cfg(),
+        ),
+        patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
+        patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
+        patch(
+            "app.utils.bgm_poster_service.get_shared_bangumi_api",
+            return_value=mock_shared,
+        ),
+    ):
+        result = get_poster_urls_sync([4])
+
+    assert result == {4: "https://lain.bgm.tv/pic/cover/s/c/d/4.jpg"}
+    mock_api.list_user_collections.assert_not_called()
+    mock_api.close.assert_not_called()
+    mock_shared.get_subject.assert_called_once_with(4, use_archive=False)
+
+
+def test_watching_prefetch_short_cache_singleflight():
+    """在看预取结果 60s 内复用：并发/重复调用不重复拉分页。"""
+    mock_api = MagicMock()
+    mock_api.list_user_collections.return_value = [
+        _watching_item(11, "https://lain.bgm.tv/pic/cover/s/a/b/11.jpg"),
+    ]
+    mock_shared = MagicMock()
+    mock_shared.is_api_unreachable.return_value = False
+
+    with (
+        patch(
+            "app.core.accounts.get_active_bangumi_config",
+            return_value=_active_account_cfg(),
+        ),
+        patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
+        patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
+        patch(
+            "app.utils.bgm_poster_service.get_shared_bangumi_api",
+            return_value=mock_shared,
+        ),
+    ):
+        first = get_poster_urls_sync([11])
+        second = get_poster_urls_sync([11, 22])
+
+    assert first == {11: "https://lain.bgm.tv/pic/cover/s/a/b/11.jpg"}
+    assert 11 in second
+    assert mock_api.list_user_collections.call_count == 1
 
 
 def test_watching_prefetch_miss_falls_back_to_individual():
@@ -239,6 +303,7 @@ def test_watching_prefetch_miss_falls_back_to_individual():
         "id": 1,
         "images": {"small": "https://lain.bgm.tv/pic/cover/s/c/d/1.jpg"},
     }
+    mock_bgm.is_api_unreachable.return_value = False
 
     with (
         patch(
@@ -267,6 +332,8 @@ def test_watching_prefetch_applies_image_proxy():
     mock_api.list_user_collections.return_value = [
         _watching_item(7, "https://lain.bgm.tv/pic/cover/s/x/y/7.jpg"),
     ]
+    mock_shared = MagicMock()
+    mock_shared.is_api_unreachable.return_value = False
 
     def fake_get(section, key, fallback=""):
         if section == "dev" and key == "bgm_image_proxy":
@@ -283,6 +350,10 @@ def test_watching_prefetch_applies_image_proxy():
             "app.utils.bgm_poster_service.config_manager.get",
             side_effect=fake_get,
         ),
+        patch(
+            "app.utils.bgm_poster_service.get_shared_bangumi_api",
+            return_value=mock_shared,
+        ),
     ):
         result = get_poster_urls_sync([7])
 
@@ -298,6 +369,7 @@ def test_watching_prefetch_failure_falls_back_silently():
         "id": 3,
         "images": {"small": "https://lain.bgm.tv/pic/cover/s/c/d/3.jpg"},
     }
+    mock_bgm.is_api_unreachable.return_value = False
 
     with (
         patch(

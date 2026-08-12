@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -19,9 +20,15 @@ from .bgm_image_url import (
 )
 
 _POSTER_URL_TTL_SECONDS = 24 * 60 * 60
+# 在看列表预取结果短缓存：避免并发请求（时间线+放送日历）各自重复拉分页
+_WATCHING_TTL_SECONDS = 60
+# 预取分页上限：控制在看拉取的最坏耗时（limit=50 时最多 3 页 150 条）
+_WATCHING_MAX_PAGES = 3
 
-_bgm_api_instances: dict[tuple[str, bool, str], BangumiApi] = {}
+_bgm_api_instances: dict[tuple[str, bool, str, str], BangumiApi] = {}
 _poster_url_cache: dict[tuple[str, int], tuple[str, float]] = {}
+_watching_lock = threading.Lock()
+_watching_map_cache: dict[tuple, tuple[dict[int, str], float]] = {}
 
 
 def _dev_config(key: str, fallback: Any = "") -> Any:
@@ -69,6 +76,7 @@ def clear_poster_service_caches() -> None:
     """清空进程级 poster URL 缓存（主要用于测试）。"""
     _poster_url_cache.clear()
     _bgm_api_instances.clear()
+    _watching_map_cache.clear()
 
 
 def normalize_subject_id(value: Any) -> int | None:
@@ -109,20 +117,33 @@ def _apply_image_proxy(raw_url: str) -> str:
 def _build_watching_poster_map(
     prefer_sizes: tuple[str, ...] | None = None,
 ) -> dict[int, str]:
-    """从当前激活账号的「在看」列表一次拉取全部封面地址（1 个请求）。
+    """从当前激活账号的「在看」列表批量预取封面地址（至多 3 页，60s 内单飞）。
 
     封面 URL 无法从条目 ID 推导（hash 随机），逐个拉取 subject 成本高；
     在看列表接口每条记录自带 images，可一次性覆盖时间线的大多数条目。
     未命中（历史记录/已弃番）的条目由调用方回退逐 ID 拉取。
 
     Returns:
-        {subject_id: 封面 URL}；无激活账号、无令牌或请求失败时返回空 dict
-        （调用方回退到逐 ID 拉取，不影响封面可用性）。
+        {subject_id: 封面 URL}；无激活账号、无令牌、API 不可达或请求失败时
+        返回空 dict（调用方回退到逐 ID 拉取，不影响封面可用性）。
     """
     from app.core import accounts as _accounts
 
     cfg = _accounts.get_active_bangumi_config()
     if not cfg or not cfg.get("username") or not cfg.get("access_token"):
+        return {}
+
+    cache_key = _watching_cache_key(cfg, prefer_sizes)
+    now = time.monotonic()
+    with _watching_lock:
+        cached = _watching_map_cache.get(cache_key)
+        if cached and now - cached[1] < _WATCHING_TTL_SECONDS:
+            return cached[0]
+
+    # 共享实例记录 API 不可达（TTL 内）时跳过预取，避免新建实例白跑分页
+    shared = get_shared_bangumi_api()
+    if shared.is_api_unreachable():
+        logger.debug("Bangumi API 不可达（TTL 内），跳过在看列表封面预取")
         return {}
 
     dev_snapshot = config_manager.get_dev_http_snapshot()
@@ -138,7 +159,10 @@ def _build_watching_poster_map(
     )
     try:
         items = api.list_user_collections(
-            collection_type=COLLECTION_TYPE_DOING, limit=50, max_total=500
+            collection_type=COLLECTION_TYPE_DOING,
+            limit=50,
+            max_total=500,
+            max_pages=_WATCHING_MAX_PAGES,
         )
     except Exception as e:
         logger.warning(f"从在看列表预取封面失败，回退逐 ID 拉取: {e}")
@@ -157,7 +181,27 @@ def _build_watching_poster_map(
         raw_url = extract_poster_url(subject, prefer_sizes=prefer_sizes)
         if raw_url:
             result[sid] = _apply_image_proxy(raw_url)
+
+    with _watching_lock:
+        _watching_map_cache[cache_key] = (result, time.monotonic())
     return result
+
+
+def _watching_cache_key(
+    cfg: dict[str, Any], prefer_sizes: tuple[str, ...] | None
+) -> tuple:
+    """在看预取缓存键：代理/改写配置 + 激活账号 + 尺寸偏好。"""
+    snapshot = config_manager.get_dev_http_snapshot()
+    return (
+        snapshot["script_proxy"],
+        snapshot["ssl_verify"],
+        snapshot["bgm_api_proxy"],
+        snapshot["bgm_next_proxy"],
+        snapshot["ech_mode"],
+        _poster_cache_namespace(),
+        cfg.get("username"),
+        prefer_sizes,
+    )
 
 
 def _resolve_poster_url_sync(
