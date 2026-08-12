@@ -162,12 +162,13 @@ def test_build_dns_query_structure():
     assert b"cloudflare" in q and b"\x03ech\x03com\x00" in q
 
 
+def _qname_bytes(name: str) -> bytes:
+    """域名 → DNS wire 格式。"""
+    return b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\x00"
+
+
 def _build_wire_response() -> bytes:
     """构造 RFC 8484 响应：1 条 HTTPS(65) 记录，含 ech 参数(key=5)与 alpn(key=1)。"""
-
-    def qname(name: str) -> bytes:
-        return b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\x00"
-
     rdata = (
         struct.pack(">H", 1)  # SVCB priority=1
         + b"\x00"  # target = root
@@ -182,12 +183,37 @@ def _build_wire_response() -> bytes:
         + rdata
     )
     header = struct.pack(">HHHHHH", 0x1234, 0x8180, 1, 1, 0, 0)
-    question = qname("cloudflare-ech.com") + struct.pack(">HH", 65, 1)
+    question = _qname_bytes("cloudflare-ech.com") + struct.pack(">HH", 65, 1)
     return header + question + answer
 
 
 def test_parse_wire_response_extracts_ech():
     assert _parse_wire_response(_build_wire_response()) == VALID_ECH
+
+
+def test_parse_wire_response_multiple_answers_skips_cname():
+    """ancount>1 且首条为 CNAME 时仍能正确定位 HTTPS 记录。"""
+    qname = b"\x03ech\x03cdn\x0bcloudflare\x03com\x00"
+    cname_answer = (
+        b"\xc0\x0c"  # NAME 压缩指针 → question 的 QNAME
+        + struct.pack(">HHIH", 5, 1, 60, len(qname))  # type=CNAME
+        + qname
+    )
+    rdata = (
+        struct.pack(">H", 1)  # SVCB priority=1
+        + b"\x00"  # target = root
+        + struct.pack(">HH", 5, len(VALID_ECH))  # ech
+        + VALID_ECH
+    )
+    https_answer = (
+        b"\xc0\x0c"
+        + struct.pack(">HHIH", 65, 1, 60, len(rdata))  # type=HTTPS
+        + rdata
+    )
+    header = struct.pack(">HHHHHH", 0x1234, 0x8180, 1, 2, 0, 0)
+    question = _qname_bytes("cloudflare-ech.com") + struct.pack(">HH", 65, 1)
+    raw = header + question + cname_answer + https_answer
+    assert _parse_wire_response(raw) == VALID_ECH
 
 
 def test_parse_wire_response_garbage_returns_none():
@@ -225,6 +251,18 @@ def test_get_ech_context_doh_success():
         ):
             ech_module._cache.clear()
             assert get_ech_ssl_context() is None
+
+
+def test_get_ech_context_doh_fallback_to_wire():
+    """dns-json 无 ech= 字段时自动回退 wireformat 查询。"""
+    with (
+        _patch_dev_config({"ech_mode": "doh"}),
+        patch("app.utils.ech._fetch_doh_json", return_value='{"Answer": []}'),
+        patch("app.utils.ech._fetch_doh_wire", return_value=_build_wire_response()),
+    ):
+        ctx = get_ech_ssl_context()
+        assert ctx is not None
+        assert hasattr(ctx, "set_ech_configs")
 
 
 def test_get_ech_context_cache_and_ttl(monkeypatch):
