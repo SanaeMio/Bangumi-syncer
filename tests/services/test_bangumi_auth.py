@@ -1,15 +1,37 @@
 """Bangumi OAuth 认证服务单元测试。
 
 BangumiAuthService 已切换到 DB accounts 为唯一真相源，本测试用内存 dict
-模拟 ``app.core.accounts`` 的 DB 访问层，并 mock httpx.post 模拟令牌端点。
+模拟 ``app.core.accounts`` 的 DB 访问层，并 mock token 端点模拟令牌请求。
 """
 
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.core.database import database_manager as _dbm
 from app.services.bangumi.auth import BangumiAuthService
+
+
+@contextmanager
+def _mock_token_endpoint(**post_kwargs):
+    """模拟 token 端点：替换 http_client.create_sync_client 返回的 client.post。
+
+    用法与 ``patch("httpx.post", ...)`` 相同：可传 ``return_value`` /
+    ``side_effect``；yield 出的 mock 即 ``client.post``（支持
+    ``assert_called_once`` / ``call_args`` 断言）。
+    """
+    client = MagicMock()
+    # httpx.Client.__enter__ 返回 self；模拟该语义，否则 with 体绑定的
+    # 是 __enter__() 的独立 mock，post 断言会作用到错误的 mock 上。
+    client.__enter__.return_value = client
+    post_mock = client.post
+    if post_kwargs.get("return_value") is not None:
+        post_mock.return_value = post_kwargs["return_value"]
+    if post_kwargs.get("side_effect") is not None:
+        post_mock.side_effect = post_kwargs["side_effect"]
+    with patch("app.utils.http_client.create_sync_client", return_value=client) as _:
+        yield post_mock
 
 
 class _FakeAccountStore:
@@ -142,7 +164,7 @@ def test_exchange_code_persists_token_to_db(svc):
         "token_type": "Bearer",
         "user_id": "myname",
     }
-    with patch("httpx.post", return_value=_mock_token_response(token)) as m:
+    with _mock_token_endpoint(return_value=_mock_token_response(token)) as m:
         result = svc.exchange_code_for_token("the-code", state)
 
     assert result["access_token"] == "AT"
@@ -187,7 +209,7 @@ def test_exchange_code_re_authorize_updates_existing_account(svc):
         "user_id": "myname",
         "username": "new_name",
     }
-    with patch("httpx.post", return_value=_mock_token_response(token)):
+    with _mock_token_endpoint(return_value=_mock_token_response(token)):
         svc.exchange_code_for_token("the-code", state)
 
     # 应更新已有账号，而非新建
@@ -207,7 +229,7 @@ def test_exchange_code_re_authorize_updates_existing_account(svc):
 
 def test_exchange_code_rejects_bad_state(svc):
     svc, _ = svc
-    with patch("httpx.post") as m:
+    with _mock_token_endpoint() as m:
         with pytest.raises(ValueError):
             svc.exchange_code_for_token("code", "bogus-state")
     m.assert_not_called()
@@ -229,7 +251,7 @@ def test_refresh_active_token(svc):
         }
     )
     new_token = {"access_token": "NEW_AT", "expires_in": 7200, "token_type": "Bearer"}
-    with patch("httpx.post", return_value=_mock_token_response(new_token)) as m:
+    with _mock_token_endpoint(return_value=_mock_token_response(new_token)) as m:
         ok = svc.refresh_active_token()
     assert ok is True
     assert store.get("bangumi")["access_token"] == "NEW_AT"
@@ -253,7 +275,7 @@ def test_refresh_active_token_missing_refresh(svc):
             "is_active": True,
         }
     )
-    with patch("httpx.post") as m:
+    with _mock_token_endpoint() as m:
         assert svc.refresh_active_token() is False
     m.assert_not_called()
 
@@ -273,14 +295,14 @@ def test_refresh_active_token_if_needed_only_for_oauth(svc):
             "is_active": True,
         }
     )
-    with patch("httpx.post") as m:
+    with _mock_token_endpoint() as m:
         assert svc.refresh_active_token_if_needed() is False
     m.assert_not_called()
 
     # 设为 oauth 且已过期：应触发刷新
     store.accounts["bangumi"]["auth_method"] = "oauth"
     store.accounts["bangumi"]["expires_at"] = 1  # 过去的时间戳，视为已过期
-    with patch("httpx.post", return_value=_mock_token_response({"access_token": "X"})):
+    with _mock_token_endpoint(return_value=_mock_token_response({"access_token": "X"})):
         assert svc.refresh_active_token_if_needed() is True
 
 
@@ -323,7 +345,7 @@ def test_refresh_if_needed_concurrent_no_duplicate_refresh(svc):
         barrier.wait()
         svc.refresh_active_token_if_needed()
 
-    with patch("httpx.post", side_effect=_counting_post):
+    with _mock_token_endpoint(side_effect=_counting_post):
         t1 = threading.Thread(target=_worker)
         t2 = threading.Thread(target=_worker)
         t1.start()

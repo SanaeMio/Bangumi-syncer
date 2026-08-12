@@ -209,6 +209,7 @@ def _dev_http_snapshot(**overrides) -> dict:
         "ssl_verify": True,
         "bgm_api_proxy": "",
         "bgm_next_proxy": "",
+        "ech_mode": "off",
     }
     snap.update(overrides)
     return snap
@@ -243,6 +244,7 @@ class TestProbeApiSingleMode:
             ssl_verify=True,
             bgm_api_proxy="",
             bgm_next_proxy="",
+            ech_mode="off",
         )
         mock_instance.mark_api_reachable.assert_called_once()
         mock_instance.get.assert_called_once_with("subjects/1")
@@ -377,6 +379,7 @@ class TestProbeApiMultiMode:
             ssl_verify=True,
             bgm_api_proxy="",
             bgm_next_proxy="",
+            ech_mode="off",
         )
 
     @pytest.mark.asyncio

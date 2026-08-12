@@ -362,8 +362,8 @@ class TestLooseTrueFields:
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """原硬编码共 4 个 loose_true 字段"""
-        assert len(config_schema.loose_true_fields()) == 4
+        """原硬编码 4 个 loose_true 字段；ECH 改造新增 dev.ech_doh_use_proxy 第 5 个"""
+        assert len(config_schema.loose_true_fields()) == 5
 
 
 class TestConfigDefaults:

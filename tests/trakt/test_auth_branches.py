@@ -11,6 +11,22 @@ from app.models.trakt import TraktCallbackRequest, TraktConfig
 from app.services.trakt.auth import TraktAuthService
 
 
+def _mock_token_post(*, return_value=None, side_effect=None):
+    """模拟令牌端点：替换 http_client.create_sync_client 返回的 client.post。
+
+    语义与 ``patch("httpx.post", ...)`` 一致；``side_effect`` 需为同步函数
+    （client.post 是同步调用）。
+    """
+    client = MagicMock()
+    client.__enter__.return_value = client  # httpx.Client.__enter__ 返回 self
+    post = client.post
+    if return_value is not None:
+        post.return_value = return_value
+    if side_effect is not None:
+        post.side_effect = side_effect
+    return patch("app.utils.http_client.create_sync_client", return_value=client)
+
+
 @pytest.fixture(autouse=True)
 def _fake_oauth_state(monkeypatch):
     """用内存替身隔离真实 oauth_states 表，使 CSRF state 测试可复现。"""
@@ -167,7 +183,7 @@ async def test_exchange_code_for_token_200_and_errors(svc):
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch("httpx.post", return_value=ok):
+            with _mock_token_post(return_value=ok):
                 assert await svc._exchange_code_for_token("code") == {
                     "access_token": "a"
                 }
@@ -177,18 +193,18 @@ async def test_exchange_code_for_token_200_and_errors(svc):
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch("httpx.post", return_value=bad):
+            with _mock_token_post(return_value=bad):
                 assert await svc._exchange_code_for_token("c") is None
 
     with patch.object(svc, "_validate_config", return_value=False):
         assert await svc._exchange_code_for_token("c") is None
 
-    async def boom():
+    def _sync_boom(*args, **kwargs):
         raise httpx.RequestError("x", request=MagicMock())
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch("httpx.post", side_effect=boom):
+            with _mock_token_post(side_effect=_sync_boom):
                 assert await svc._exchange_code_for_token("c") is None
 
 
@@ -200,15 +216,15 @@ async def test_refresh_access_token_paths(svc):
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch("httpx.post", return_value=ok):
+            with _mock_token_post(return_value=ok):
                 assert await svc._refresh_access_token("rt") == {"access_token": "n"}
 
-    async def boom():
+    def _sync_boom(*args, **kwargs):
         raise RuntimeError("inner")
 
     with patch.object(svc, "_validate_config", return_value=True):
         with patch.object(svc, "_get_config", return_value=_valid_trakt_cfg()):
-            with patch("httpx.post", side_effect=boom):
+            with _mock_token_post(side_effect=_sync_boom):
                 assert await svc._refresh_access_token("rt") is None
 
 

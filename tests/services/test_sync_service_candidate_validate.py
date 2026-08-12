@@ -78,6 +78,7 @@ class TestValidateSubjectId:
             "ssl_verify": True,
             "bgm_api_proxy": "",
             "bgm_next_proxy": "",
+            "ech_mode": "off",
         }
         with (
             patch(
@@ -114,6 +115,7 @@ class TestValidateSubjectId:
             "ssl_verify": True,
             "bgm_api_proxy": "",
             "bgm_next_proxy": "",
+            "ech_mode": "off",
         }
         with (
             patch(
@@ -144,6 +146,7 @@ class TestValidateSubjectId:
             "ssl_verify": True,
             "bgm_api_proxy": "",
             "bgm_next_proxy": "",
+            "ech_mode": "off",
         }
         with (
             patch(
