@@ -55,10 +55,24 @@ VALID_ECH_B64 = base64.b64encode(VALID_ECH).decode()
 
 @pytest.fixture(autouse=True)
 def _clear_ech_cache(monkeypatch):
-    """每个测试前清空 ECH 模块缓存（ctx 缓存 / utls 可用性）。"""
+    """每个测试前清空 ECH 模块缓存（ctx 缓存 / utls 可用性 / 后台查询状态）。
+
+    清空前等待仍在进行中的后台查询结束，避免其完成时写入缓存污染下一用例。
+    """
+
+    def _drain_pending():
+        with ech_module._bg_lock:
+            events = list(ech_module._bg_pending.values())
+        for ev in events:
+            ev.wait(timeout=5)
+
+    _drain_pending()
     ech_module._cache.clear()
     ech_module._utls_available = None
+    with ech_module._bg_lock:
+        ech_module._bg_pending.clear()
     yield
+    _drain_pending()
     ech_module._cache.clear()
 
 
@@ -267,12 +281,15 @@ def test_get_ech_context_doh_fallback_to_wire():
 
 
 def test_get_ech_context_doh_does_not_block(monkeypatch):
-    """DoH 查询慢时调用方不被阻塞：BLOCK_TIMEOUT 内返回 None 降级。"""
+    """DoH 查询慢时调用方不被阻塞：超时阈值内返回 None 降级，后台不挂起调用方。"""
+    monkeypatch.setattr(ech_module, "FIRST_QUERY_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(ech_module, "BLOCK_TIMEOUT_SECONDS", 0.2)
     started = threading.Event()
+    release = threading.Event()
 
     def slow_fetch(doh_url: str, proxy: str | None) -> str:
         started.set()
-        time.sleep(5)
+        release.wait(timeout=5)  # 主线程超时后仍不返回，模拟慢查询
         return (
             '{"Answer": [{"name": "cloudflare-ech.com.", "type": 65, '
             '"data": "1 . ech=' + VALID_ECH_B64 + '"}]}'
@@ -288,11 +305,51 @@ def test_get_ech_context_doh_does_not_block(monkeypatch):
         assert ctx is None  # 超时降级
         assert started.is_set()
         assert elapsed < 5, "不应被慢查询阻塞"
+        release.set()  # 放行后台线程，避免其跨测试写缓存
+
+
+def test_get_ech_context_doh_singleflight_after_timeout(monkeypatch):
+    """单飞在超时后仍保持：后台查询进行期间再次调用只等待、不重复发起。"""
+    monkeypatch.setattr(ech_module, "FIRST_QUERY_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(ech_module, "BLOCK_TIMEOUT_SECONDS", 0.2)
+    fetch_calls = {"n": 0}
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_fetch(doh_url: str, proxy: str | None) -> str:
+        fetch_calls["n"] += 1
+        started.set()
+        release.wait(timeout=5)
+        return (
+            '{"Answer": [{"name": "cloudflare-ech.com.", "type": 65, '
+            '"data": "1 . ech=' + VALID_ECH_B64 + '"}]}'
+        )
+
+    with (
+        _patch_dev_config({"ech_mode": "doh"}),
+        patch("app.utils.ech._fetch_doh_json", side_effect=slow_fetch),
+        patch("app.utils.ech._fetch_doh_wire", side_effect=httpx.ConnectError("x")),
+    ):
+        assert get_ech_ssl_context() is None  # 首次：超时降级
+        assert started.is_set()
+        assert get_ech_ssl_context() is None  # 前一轮仍在进行 → 只等待
+        assert fetch_calls["n"] == 1, "超时后不应重复发起 DoH 查询"
+        release.set()  # 放行后台线程
+        deadline = time.monotonic() + 3
+        ctx = None
+        while time.monotonic() < deadline:
+            ctx = get_ech_ssl_context()
+            if ctx is not None:
+                break
+            time.sleep(0.05)
+        assert ctx is not None  # 后台完成后缓存生效
+        assert fetch_calls["n"] == 1
 
 
 def test_get_ech_context_doh_background_fills_cache(monkeypatch):
     """超时返回后，后台查询完成会写入缓存，下次调用直接命中。"""
     monkeypatch.setattr(ech_module, "BLOCK_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(ech_module, "FIRST_QUERY_TIMEOUT_SECONDS", 0.2)
     fetch_calls = {"n": 0}
 
     def slow_fetch(doh_url: str, proxy: str | None) -> str:
