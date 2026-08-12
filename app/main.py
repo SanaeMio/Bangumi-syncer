@@ -230,18 +230,48 @@ app.include_router(airing_calendar_router)
 #           或用户配置的图片反代），img-src 动态放行这些图片域名
 _CSP_DEFAULT_IMG_HOSTS = ["https://*.lain.bgm.tv"]
 
+# CSS 源码级数据里 netloc 允许的字符：字母数字 + 点 + 连字符（+ 可选用 ":" 端口与 IPv6 方括号）
+_CSP_NETLOC_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:[]"
+)
+
+
+def _is_csp_safe_netloc(netloc: str) -> bool:
+    """校验 netloc 是否可作为 CSP host-source：仅允许域名/IPv6/端口字面量。
+
+    拒绝分号、引号、空格、@（userinfo）、控制字符等，防止配置值破坏整条
+    CSP 策略（CSP 注入 / 指令吞并）。
+    """
+    if not netloc or not all(c in _CSP_NETLOC_CHARS for c in netloc):
+        return False
+    if netloc.startswith(":") or netloc.endswith(":") or netloc.startswith("["):
+        # 端口不能悬空；IPv6 需成对括号包裹且包含 ":"（简化校验，防格式畸形）
+        if netloc.startswith("["):
+            return ":" in netloc and netloc.endswith("]")
+        return False
+    return True
+
 
 def _build_csp_header() -> str:
     """构建 CSP 头：img-src 额外放行 Bangumi 图片 CDN 及已配置的图片反代域名。"""
     img_hosts = list(_CSP_DEFAULT_IMG_HOSTS)
-    proxy = str(config_manager.get("dev", "bgm_image_proxy", fallback="") or "").strip()
-    if proxy:
-        try:
+    try:
+        proxy = str(
+            config_manager.get("dev", "bgm_image_proxy", fallback="") or ""
+        ).strip()
+        if proxy:
             parsed = urllib.parse.urlsplit(proxy)
-            if parsed.scheme in ("http", "https") and parsed.netloc:
+            # 仅接受"scheme://主机[:端口]"：拒绝带路径/userinfo/畸形字符的值，
+            # 防止配置值破坏整条 CSP 策略
+            if (
+                parsed.scheme in ("http", "https")
+                and parsed.netloc
+                and parsed.path in ("", "/")
+                and _is_csp_safe_netloc(parsed.netloc)
+            ):
                 img_hosts.append(f"{parsed.scheme}://{parsed.netloc}")
-        except ValueError:
-            pass
+    except ValueError:
+        pass
     img_src = "'self' data: " + " ".join(img_hosts)
     return (
         "default-src 'self'; "
