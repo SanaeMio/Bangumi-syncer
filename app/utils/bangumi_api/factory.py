@@ -71,4 +71,5 @@ def build_bangumi_api_from_active_config(
         ssl_verify=dev_snapshot["ssl_verify"],
         bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
         bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
+        ech_mode=dev_snapshot["ech_mode"],
     )

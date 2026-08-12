@@ -123,7 +123,7 @@ class OAuthService:
                 else provider.get_redirect_uri()
             ),
         }
-        resp = httpx.post(provider.token_url, data=payload, timeout=30.0)
+        resp = self._post_token(provider.token_url, payload)
         resp.raise_for_status()
         return resp.json()
 
@@ -138,6 +138,16 @@ class OAuthService:
             "refresh_token": refresh_token,
             "redirect_uri": provider.get_redirect_uri(),
         }
-        resp = httpx.post(provider.token_url, data=payload, timeout=30.0)
+        resp = self._post_token(provider.token_url, payload)
         resp.raise_for_status()
         return resp.json()
+
+    def _post_token(self, token_url: str, payload: dict[str, Any]) -> httpx.Response:
+        """向令牌端点发 POST（bangumi 域走 ECH，其他提供方走普通 TLS）。"""
+        from app.core.config import config_manager
+        from app.utils.http_client import create_sync_client
+
+        mode = str(config_manager.get("dev", "ech_mode", fallback="off") or "").strip()
+        ech = mode if "bgm.tv" in token_url else False
+        with create_sync_client(ech=ech, timeout=30.0) as client:
+            return client.post(token_url, data=payload)

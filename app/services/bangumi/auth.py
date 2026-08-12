@@ -356,6 +356,7 @@ class BangumiAuthService:
                 ssl_verify=dev["ssl_verify"],
                 bgm_api_proxy=dev["bgm_api_proxy"],
                 bgm_next_proxy=dev["bgm_next_proxy"],
+                ech_mode=dev["ech_mode"],
             )
             try:
                 return api.get_me()

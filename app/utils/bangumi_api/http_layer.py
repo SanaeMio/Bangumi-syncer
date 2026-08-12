@@ -30,6 +30,7 @@ class HttpLayerMixin:
             SyncHttpClient(
                 label="Bangumi-直连",
                 verify=self.ssl_verify,
+                ech=getattr(self, "ech_mode", "off"),
                 max_retries=0,
             )
             .prefix("📚")

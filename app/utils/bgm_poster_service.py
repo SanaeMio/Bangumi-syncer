@@ -29,13 +29,14 @@ def _dev_config(key: str, fallback: Any = "") -> Any:
 
 def _bangumi_api_config_key(
     dev_snapshot: dict[str, Any] | None = None,
-) -> tuple[str, bool, str]:
+) -> tuple[str, bool, str, str]:
     if dev_snapshot is None:
         dev_snapshot = config_manager.get_dev_http_snapshot()
     return (
         str(dev_snapshot["script_proxy"] or ""),
         bool(dev_snapshot["ssl_verify"]),
         str(dev_snapshot["bgm_api_proxy"] or ""),
+        str(dev_snapshot["ech_mode"] or ""),
     )
 
 
@@ -52,11 +53,12 @@ def get_shared_bangumi_api() -> BangumiApi:
     key = _bangumi_api_config_key(dev_snapshot)
     api = _bgm_api_instances.get(key)
     if api is None:
-        http_proxy, ssl_verify, bgm_api_proxy = key
+        http_proxy, ssl_verify, bgm_api_proxy, ech_mode = key
         api = BangumiApi(
             http_proxy=http_proxy,
             ssl_verify=ssl_verify,
             bgm_api_proxy=bgm_api_proxy,
+            ech_mode=ech_mode,
         )
         _bgm_api_instances[key] = api
     return api
