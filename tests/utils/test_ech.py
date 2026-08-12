@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import struct
+import threading
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -147,6 +148,12 @@ def test_parse_dns_json_invalid_base64_returns_none():
     assert not _parse_dns_json(text)
 
 
+def test_parse_dns_json_unpadded_base64_ok():
+    """ech= 为无 padding base64（RFC 9460）：解码正确且不抛异常。"""
+    text = '{"Answer": [{"name": "x.", "type": 65, "data": "1 . ech=AA"}]}'
+    assert _parse_dns_json(text) == b"\x00"
+
+
 def test_build_dns_query_structure():
     """wireformat 查询含 HTTPS QTYPE(65) 与 OPT。"""
     q = _build_dns_query()
@@ -249,6 +256,70 @@ def test_get_ech_context_cache_and_ttl(monkeypatch):
         monkeypatch.setattr(ech_module, "CONTEXT_TTL_SECONDS", -1)
         ech_module._cache.clear()
         assert get_ech_ssl_context() is not None
+        assert fetch_calls["n"] == 2
+
+
+def test_get_ech_context_singleflight(monkeypatch):
+    """缓存过期后并发调用只触发一次 DoH 查询（单飞去重）。"""
+    fetch_calls = {"n": 0}
+    fetch_started = threading.Event()
+    release = threading.Event()
+
+    def fake_fetch(doh_url: str, proxy: str | None) -> str:
+        fetch_calls["n"] += 1
+        fetch_started.set()
+        release.wait(timeout=5)
+        return (
+            '{"Answer": [{"name": "cloudflare-ech.com.", "type": 65, '
+            '"data": "1 . ech=' + VALID_ECH_B64 + '"}]}'
+        )
+
+    results: list = []
+
+    def worker() -> None:
+        results.append(get_ech_ssl_context())
+
+    with (
+        _patch_dev_config({"ech_mode": "doh"}),
+        patch.object(ech_module, "_fetch_doh_json", side_effect=fake_fetch),
+        patch.object(
+            ech_module, "_fetch_doh_wire", side_effect=httpx.ConnectError("x")
+        ),
+    ):
+        threads = [threading.Thread(target=worker) for _ in range(6)]
+        for t in threads:
+            t.start()
+        assert fetch_started.wait(timeout=5), "首个 fetch 未开始"
+        assert fetch_calls["n"] == 1, "并发期间只应有一次 fetch"
+        release.set()
+        for t in threads:
+            t.join(timeout=5)
+        assert all(r is not None for r in results)
+        assert fetch_calls["n"] == 1
+
+
+def test_get_ech_context_failure_short_ttl(monkeypatch):
+    """失败（None）结果用短 TTL：60s 内不重试，之后重新查询。"""
+    fetch_calls = {"n": 0}
+
+    def fake_fetch(doh_url: str, proxy: str | None) -> str:
+        fetch_calls["n"] += 1
+        return '{"Answer": []}'
+
+    with (
+        _patch_dev_config({"ech_mode": "doh"}),
+        patch.object(ech_module, "_fetch_doh_json", side_effect=fake_fetch),
+        patch.object(
+            ech_module, "_fetch_doh_wire", side_effect=httpx.ConnectError("x")
+        ),
+    ):
+        assert get_ech_ssl_context() is None
+        assert get_ech_ssl_context() is None
+        assert fetch_calls["n"] == 1  # 失败结果被缓存
+
+        # 成功 TTL 还很远，但失败 TTL 已过期 → 重新查询
+        monkeypatch.setattr(ech_module, "FAILED_TTL_SECONDS", -1)
+        assert get_ech_ssl_context() is None
         assert fetch_calls["n"] == 2
 
 
@@ -361,6 +432,49 @@ def test_factory_async_ech_passthrough():
     ):
         create_async_client(ech="manual")
         assert mock_client_cls.call_args.kwargs["verify"] is fake_ctx
+
+
+def test_factory_ech_skipped_when_verify_disabled():
+    """verify=False 时不注入 ECH 上下文：避免静默重开证书校验。
+
+    自签/中间人代理环境显式关闭验证，ECH 与代理 MITM 不兼容会直接失败。"""
+    with (
+        patch("app.utils.http_client.httpx.Client") as mock_client_cls,
+        patch(
+            "app.utils.ech.get_ech_ssl_context", return_value=MagicMock()
+        ) as mock_ctx,
+    ):
+        create_sync_client(ech="doh", verify=False)
+        assert mock_client_cls.call_args.kwargs["verify"] is False
+        mock_ctx.assert_not_called()
+
+    with (
+        patch("app.utils.http_client.httpx.AsyncClient") as mock_client_cls,
+        patch(
+            "app.utils.ech.get_ech_ssl_context", return_value=MagicMock()
+        ) as mock_ctx,
+    ):
+        create_async_client(ech=True, verify=False)
+        assert mock_client_cls.call_args.kwargs["verify"] is False
+        mock_ctx.assert_not_called()
+
+
+def test_default_doh_url_locked():
+    """默认 DoH 端点必须与 config_schema / config.py / config.example.ini 一致。"""
+    from app.core import config_schema
+    from app.utils.ech import DEFAULT_DOH_URL
+
+    assert DEFAULT_DOH_URL == "https://dns.alidns.com/resolve"
+    assert config_schema.field_default("dev", "ech_doh_url") == DEFAULT_DOH_URL
+
+
+def test_default_ech_hosts_locked():
+    """默认 ech_hosts 列表各层一致。"""
+    from app.core import config_schema
+
+    expected = "bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv"
+    assert config_schema.field_default("dev", "ech_hosts") == expected
+    assert ech_module.DEFAULT_ECH_HOSTS == expected
 
 
 # ── 请求日志 [ECH] 前缀 ────────────────────────────────────────────────────

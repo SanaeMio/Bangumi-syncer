@@ -144,10 +144,17 @@ class OAuthService:
 
     def _post_token(self, token_url: str, payload: dict[str, Any]) -> httpx.Response:
         """向令牌端点发 POST（bangumi 域走 ECH，其他提供方走普通 TLS）。"""
+        from urllib.parse import urlparse
+
         from app.core.config import config_manager
+        from app.utils.ech import is_ech_host
         from app.utils.http_client import create_sync_client
 
         mode = str(config_manager.get("dev", "ech_mode", fallback="off") or "").strip()
-        ech = mode if "bgm.tv" in token_url else False
-        with create_sync_client(ech=ech, timeout=30.0) as client:
+        host = urlparse(token_url).hostname or ""
+        ech = mode if is_ech_host(host) else False
+        # 令牌端点不跟随重定向：避免含凭据的 POST 被 3xx 重发到第三方
+        with create_sync_client(
+            ech=ech, timeout=30.0, follow_redirects=False
+        ) as client:
             return client.post(token_url, data=payload)
