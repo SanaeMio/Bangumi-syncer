@@ -323,7 +323,7 @@ class TestBangumiApiArchiveIntegration:
         api._archive.try_get_subject.assert_called_once_with(1)
         api.get.assert_not_called()
         # 命中应写入缓存
-        assert api._cache["get_subject"][1] == archive_data
+        assert api._cache["get_subject"][(1, True)] == archive_data
 
     @patch("app.utils.bangumi_api.httpx.Client")
     def test_get_subject_archive_miss_falls_back_to_api(
@@ -351,7 +351,7 @@ class TestBangumiApiArchiveIntegration:
         """缓存命中时应跳过 Archive 和 API（缓存优先）"""
         api = BangumiApi()
         cached = {"id": 1, "name": "Cached"}
-        api._put_cache("get_subject", 1, cached)
+        api._put_cache("get_subject", (1, True), cached)
 
         api._archive = MagicMock()
         api.get = MagicMock()
@@ -361,6 +361,38 @@ class TestBangumiApiArchiveIntegration:
         assert result == cached
         api._archive.try_get_subject.assert_not_called()
         api.get.assert_not_called()
+
+    @patch("app.utils.bangumi_api.httpx.Client")
+    def test_get_subject_cache_isolates_archive_and_api(
+        self, _mock_http: MagicMock
+    ) -> None:
+        """Archive 与 API 数据不得共用缓存槽：先 Archive 命中再 use_archive=False
+        时应走 API 拿到含 images 的数据（修复前会返回无 images 的 Archive 缓存）"""
+        api = BangumiApi()
+        api._archive = MagicMock()
+        api._archive.try_get_subject.return_value = _mock_archive_hit(
+            {"id": 1, "name": "Archive Hit"}
+        )
+
+        archive_result = api.get_subject(1)
+        assert archive_result == {"id": 1, "name": "Archive Hit"}
+
+        api_data = {
+            "id": 1,
+            "name": "From API",
+            "images": {"large": "https://lain.bgm.tv/x.jpg"},
+        }
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = api_data
+        api.get = MagicMock(return_value=mock_resp)
+
+        api_result = api.get_subject(1, use_archive=False)
+
+        assert api_result == api_data
+        assert api_result["images"]["large"] == "https://lain.bgm.tv/x.jpg"
+        # 两槽位互不干扰
+        assert api._cache["get_subject"][(1, True)]["name"] == "Archive Hit"
+        assert api._cache["get_subject"][(1, False)]["name"] == "From API"
 
     @patch("app.utils.bangumi_api.httpx.Client")
     def test_get_subject_use_archive_false_skips_archive(

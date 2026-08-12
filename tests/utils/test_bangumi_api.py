@@ -570,7 +570,7 @@ class TestGetSubject:
 
     def test_cache_hit(self):
         api = BangumiApi()
-        api._cache["get_subject"]["123"] = {"id": 123}
+        api._cache["get_subject"][("123", True)] = {"id": 123}
         assert api.get_subject("123") == {"id": 123}
 
     def test_non_dict_response(self):
