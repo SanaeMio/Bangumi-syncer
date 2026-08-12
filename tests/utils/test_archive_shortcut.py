@@ -362,6 +362,32 @@ class TestBangumiApiArchiveIntegration:
         api._archive.try_get_subject.assert_not_called()
         api.get.assert_not_called()
 
+    @patch("app.utils.bangumi_api.httpx.Client")
+    def test_get_subject_use_archive_false_skips_archive(
+        self, _mock_http: MagicMock
+    ) -> None:
+        """use_archive=False（封面等需要 images 的场景）应跳过 Archive 直接走 API"""
+        api = BangumiApi()
+        api._archive = MagicMock()
+        api._archive.try_get_subject.return_value = _mock_archive_hit(
+            {"id": 1, "name": "Archive Hit"}
+        )
+
+        api_data = {
+            "id": 1,
+            "name": "From API",
+            "images": {"large": "https://lain.bgm.tv/x.jpg"},
+        }
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = api_data
+        api.get = MagicMock(return_value=mock_resp)
+
+        result = api.get_subject(1, use_archive=False)
+
+        assert result == api_data
+        api._archive.try_get_subject.assert_not_called()
+        api.get.assert_called_once_with("subjects/1")
+
     # ---- get_related_subjects ----
 
     @patch("app.utils.bangumi_api.httpx.Client")

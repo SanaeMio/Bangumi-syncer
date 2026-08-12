@@ -10,6 +10,7 @@ from typing import Any
 from ..core.config import config_manager
 from ..core.logging import logger
 from ..utils.bangumi_api import BangumiApi
+from ..utils.bangumi_constants import COLLECTION_TYPE_DOING
 from .bgm_image_url import (
     build_poster_cache_namespace,
     extract_poster_url,
@@ -99,6 +100,66 @@ def _set_cached_poster_url(subject_id: int, namespace: str, url: str) -> None:
     )
 
 
+def _apply_image_proxy(raw_url: str) -> str:
+    """按 [dev] bgm_image_proxy 改写 lain.bgm.tv 图片地址。"""
+    image_proxy = str(_dev_config("bgm_image_proxy", "") or "").strip()
+    return rewrite_bgm_image_url(raw_url, image_proxy)
+
+
+def _build_watching_poster_map(
+    prefer_sizes: tuple[str, ...] | None = None,
+) -> dict[int, str]:
+    """从当前激活账号的「在看」列表一次拉取全部封面地址（1 个请求）。
+
+    封面 URL 无法从条目 ID 推导（hash 随机），逐个拉取 subject 成本高；
+    在看列表接口每条记录自带 images，可一次性覆盖时间线的大多数条目。
+    未命中（历史记录/已弃番）的条目由调用方回退逐 ID 拉取。
+
+    Returns:
+        {subject_id: 封面 URL}；无激活账号、无令牌或请求失败时返回空 dict
+        （调用方回退到逐 ID 拉取，不影响封面可用性）。
+    """
+    from app.core import accounts as _accounts
+
+    cfg = _accounts.get_active_bangumi_config()
+    if not cfg or not cfg.get("username") or not cfg.get("access_token"):
+        return {}
+
+    dev_snapshot = config_manager.get_dev_http_snapshot()
+    api = BangumiApi(
+        username=cfg["username"],
+        access_token=cfg["access_token"],
+        private=cfg.get("private", False),
+        http_proxy=dev_snapshot["script_proxy"],
+        ssl_verify=dev_snapshot["ssl_verify"],
+        bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
+        bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
+        ech_mode=dev_snapshot["ech_mode"],
+    )
+    try:
+        items = api.list_user_collections(
+            collection_type=COLLECTION_TYPE_DOING, limit=50, max_total=500
+        )
+    except Exception as e:
+        logger.warning(f"从在看列表预取封面失败，回退逐 ID 拉取: {e}")
+        return {}
+    finally:
+        api.close()
+
+    result: dict[int, str] = {}
+    for item in items:
+        subject = item.get("subject") if isinstance(item, dict) else None
+        if not isinstance(subject, dict):
+            continue
+        sid = normalize_subject_id(subject.get("id"))
+        if sid is None:
+            continue
+        raw_url = extract_poster_url(subject, prefer_sizes=prefer_sizes)
+        if raw_url:
+            result[sid] = _apply_image_proxy(raw_url)
+    return result
+
+
 def _resolve_poster_url_sync(
     subject_id: int,
     prefer_sizes: tuple[str, ...] | None = None,
@@ -110,7 +171,8 @@ def _resolve_poster_url_sync(
 
     bgm = get_shared_bangumi_api()
     try:
-        subject = bgm.get_subject(subject_id)
+        # 封面图需要 API 的 images 字段，Archive 数据不含，须绕过 Archive 短路
+        subject = bgm.get_subject(subject_id, use_archive=False)
     except Exception as e:
         logger.warning("获取条目 %s 封面失败: %s", subject_id, e)
         return None
@@ -122,8 +184,7 @@ def _resolve_poster_url_sync(
     if not raw_url:
         return None
 
-    image_proxy = str(_dev_config("bgm_image_proxy", "") or "").strip()
-    poster_url = rewrite_bgm_image_url(raw_url, image_proxy)
+    poster_url = _apply_image_proxy(raw_url)
     _set_cached_poster_url(subject_id, namespace, poster_url)
     return poster_url
 
@@ -132,7 +193,11 @@ def get_poster_urls_sync(
     subject_ids: list[Any],
     prefer_sizes: tuple[str, ...] | None = None,
 ) -> dict[int, str]:
-    """同步批量解析封面 URL；失败条目跳过；未缓存条目并行请求。"""
+    """同步批量解析封面 URL；失败条目跳过；未缓存条目并行请求。
+
+    优化：未缓存条目先尝试从当前激活账号的「在看」列表批量提取
+    （1 个请求覆盖时间线大多数条目），未命中的少量条目再逐个拉取兜底。
+    """
     sizes = prefer_sizes if prefer_sizes is not None else timeline_poster_size_order()
     result: dict[int, str] = {}
     seen: set[int] = set()
@@ -149,6 +214,18 @@ def get_poster_urls_sync(
             result[subject_id] = cached
         else:
             to_fetch.append(subject_id)
+
+    if not to_fetch:
+        return result
+
+    # 在看列表批量预取（仅当存在未缓存条目时发起，命中后同样写入 24h 缓存）
+    watching_map = _build_watching_poster_map(sizes)
+    for subject_id in list(to_fetch):
+        url = watching_map.get(subject_id)
+        if url:
+            result[subject_id] = url
+            _set_cached_poster_url(subject_id, namespace, url)
+            to_fetch.remove(subject_id)
 
     if not to_fetch:
         return result

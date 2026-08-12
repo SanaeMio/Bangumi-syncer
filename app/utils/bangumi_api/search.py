@@ -237,16 +237,19 @@ class SearchMixin:
         self._put_cache("search_old", cache_key, result)
         return result
 
-    def get_subject(self, subject_id: int) -> dict[str, Any]:
+    def get_subject(self, subject_id: int, use_archive: bool = True) -> dict[str, Any]:
         # 使用实例缓存避免内存泄漏
         if subject_id in self._cache["get_subject"]:
             return self._cache["get_subject"][subject_id]
 
-        # Archive 短路：本地命中即返回，未命中降级到 API（保持原行为）
-        shortcut = self._archive.try_get_subject(subject_id)
-        if shortcut.hit:
-            self._put_cache("get_subject", subject_id, shortcut.data)
-            return shortcut.data
+        # Archive 短路：本地命中即返回，未命中降级到 API（保持原行为）。
+        # 注意：Archive 数据不含 images 封面字段，需要封面图的调用方
+        # （如 BgmPosterService）应传 use_archive=False 走 API。
+        if use_archive:
+            shortcut = self._archive.try_get_subject(subject_id)
+            if shortcut.hit:
+                self._put_cache("get_subject", subject_id, shortcut.data)
+                return shortcut.data
 
         # API 不可达短路（同 search）
         if self.is_api_unreachable():
