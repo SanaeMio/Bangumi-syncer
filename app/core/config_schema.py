@@ -152,6 +152,14 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="sync_records_retention_days", default=0),
             FieldMeta(name="ssl_verify", default_true=True),
             FieldMeta(name="log_level", default="INFO"),
+            FieldMeta(name="ech_mode", default="off"),
+            FieldMeta(name="ech_doh_url", default="https://dns.alidns.com/resolve"),
+            FieldMeta(name="ech_doh_use_proxy", loose_true=True),
+            FieldMeta(
+                name="ech_hosts",
+                default="bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv",
+            ),
+            FieldMeta(name="ech_ech_config", default=""),
         ),
     ),
     # ── 媒体源驱动（order 100-199）──

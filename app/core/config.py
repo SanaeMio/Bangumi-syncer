@@ -372,16 +372,26 @@ class ConfigManager:
         return bangumi_configs
 
     def get_dev_http_snapshot(self) -> dict[str, Any]:
-        """读取 [dev] 段影响 HTTP 请求的 4 字段快照
+        """读取 [dev] 段影响 HTTP 请求的字段快照
 
-        返回 dict 含 script_proxy/ssl_verify/bgm_api_proxy/bgm_next_proxy，
-        默认值与原各处拼装保持一致（""/True/""/""）。
+        返回 dict 含 script_proxy/ssl_verify/bgm_api_proxy/bgm_next_proxy 与
+        ECH 相关字段（ech_mode/ech_doh_url/ech_doh_use_proxy/ech_hosts/ech_ech_config），
+        ECH 默认值与其他层（config_schema / ech.py 常量）保持一致。
         """
         return {
             "script_proxy": self.get("dev", "script_proxy", fallback=""),
             "ssl_verify": self.get("dev", "ssl_verify", fallback=True),
             "bgm_api_proxy": self.get("dev", "bgm_api_proxy", fallback=""),
             "bgm_next_proxy": self.get("dev", "bgm_next_proxy", fallback=""),
+            "ech_mode": self.get("dev", "ech_mode", fallback="off"),
+            "ech_doh_url": self.get(
+                "dev", "ech_doh_url", fallback="https://dns.alidns.com/resolve"
+            ),
+            "ech_doh_use_proxy": self.get("dev", "ech_doh_use_proxy", fallback=False),
+            "ech_hosts": self.get(
+                "dev", "ech_hosts", fallback="bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv"
+            ),
+            "ech_ech_config": self.get("dev", "ech_ech_config", fallback=""),
         }
 
     def _migrate_sync_single_username_to_bangumi(self, config: ConfigParser) -> None:

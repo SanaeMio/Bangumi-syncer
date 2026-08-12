@@ -1,8 +1,10 @@
 """Bangumi 条目封面（仪表板时间线海报）API。"""
 
+# ruff: noqa: UP045 — Pydantic v2 在 Python 3.9 下解析 ``str | None`` 会失败，此处保留 Optional
+
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -38,9 +40,14 @@ async def get_subject_poster(
 @router.get("/subjects/posters")
 async def get_subjects_posters(
     subject_ids: list[int] = Query(default=[]),
+    user_name: Optional[str] = Query(default=None),
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
-    """批量返回条目封面图 URL（缺失条目不出现在 posters 中）。"""
+    """批量返回条目封面图 URL（缺失条目不出现在 posters 中）。
+
+    user_name：多用户模式下按媒体服务器用户名对应账号预取「在看」列表
+    以提升命中率；缺省用激活账号。
+    """
     ids: list[int] = []
     seen: set[int] = set()
     for raw_id in subject_ids:
@@ -53,7 +60,7 @@ async def get_subjects_posters(
         return {"status": "success", "posters": {}}
 
     try:
-        poster_map = await get_poster_urls(ids)
+        poster_map = await get_poster_urls(ids, user_name=user_name)
     except Exception as e:
         logger.warning("批量获取封面失败: %s", e)
         raise HTTPException(status_code=502, detail="获取条目信息失败") from e

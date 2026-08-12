@@ -35,6 +35,7 @@ class BangumiApi(
         ssl_verify: bool = True,
         bgm_api_proxy: str | None = None,
         bgm_next_proxy: str | None = None,
+        ech_mode: str | None = None,
     ) -> None:
         self.api_base = (
             bgm_api_proxy.rstrip("/") if bgm_api_proxy else "https://api.bgm.tv"
@@ -49,6 +50,9 @@ class BangumiApi(
         self.private = private
         self.http_proxy = http_proxy
         self.ssl_verify = ssl_verify
+        # ECH 模式（"off"/"doh"/"manual"）；None 时按全局 [dev] ech_mode 处理，
+        # 由 SyncHttpClient → create_sync_client(ech=…) 注入带 ECH 的 utls 上下文
+        self.ech_mode = ech_mode or "off"
         # 使用 SyncHttpClient 封装 httpx.Client（统一日志/重试）
         # max_retries=3：重试由 SyncHttpClient 内置处理，_request_with_retry 仅负责代理回退
         # timeout=10.0：单次请求 10s 超时，避免错误 subject_id 触发链式调用时
@@ -58,6 +62,7 @@ class BangumiApi(
                 label="Bangumi",
                 proxy=http_proxy,
                 verify=ssl_verify,
+                ech=self.ech_mode,
                 follow_redirects=True,
                 max_retries=3,
                 timeout=10.0,
@@ -71,6 +76,7 @@ class BangumiApi(
                 label="Bangumi",
                 proxy=http_proxy,
                 verify=ssl_verify,
+                ech=self.ech_mode,
                 follow_redirects=True,
                 max_retries=3,
                 timeout=10.0,

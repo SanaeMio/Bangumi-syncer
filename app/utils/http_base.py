@@ -28,6 +28,7 @@ import json as _json
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -57,6 +58,16 @@ class HttpClientBase:
         self._backoff_base = backoff_base
         self._backoff_cap = backoff_cap
         self._client_kwargs = client_kwargs
+        # 该 client 是否实际注入了 ECH 上下文（ech 启用且 ECH 上下文构建成功）
+        self._ech_active = False
+        ech_arg = client_kwargs.get("ech")
+        if ech_arg:
+            from .http_client import _ech_enabled
+
+            if _ech_enabled(ech_arg):
+                from .ech import get_ech_ssl_context
+
+                self._ech_active = get_ech_ssl_context() is not None
         # 日志钩子默认值
         self._prefix: str = ""
         self._success_msg: Callable[[httpx.Response, str], str] | None = None
@@ -133,11 +144,22 @@ class HttpClientBase:
 
     # ===== 日志输出（分层） =====
 
+    def _ech_tag(self, url: str) -> str:
+        """请求命中 ECH 目标域名时返回 "[ECH] " 前缀，否则空串。"""
+        if not self._ech_active:
+            return ""
+        from .ech import is_ech_host
+
+        host = urlparse(url).hostname or ""
+        return "[ECH] " if is_ech_host(host) else ""
+
     def _log_request(self, method: str, url: str, **kwargs: Any) -> None:
         """DEBUG: 请求详情（method, url, headers, params, body）"""
         if self._silent_request:
             return
-        parts: list[str] = [f"[{self._label}] 请求 → {method.upper()} {url}"]
+        parts: list[str] = [
+            f"{self._ech_tag(url)}[{self._label}] 请求 → {method.upper()} {url}"
+        ]
 
         headers = kwargs.get("headers")
         if headers:
@@ -169,13 +191,13 @@ class HttpClientBase:
             return
         elapsed = response.elapsed.total_seconds()
         logger.debug(
-            f"{self._prefix}[{self._label}] {method.upper()} {url} "
+            f"{self._ech_tag(url)}{self._prefix}[{self._label}] {method.upper()} {url} "
             f"→ {response.status_code} ({elapsed:.2f}s)"
         )
 
         # DEBUG: 响应详情
         parts: list[str] = [
-            f"[{self._label}] 响应 ← {response.status_code} ({elapsed:.2f}s)"
+            f"{self._ech_tag(url)}[{self._label}] 响应 ← {response.status_code} ({elapsed:.2f}s)"
         ]
         parts.append(f"  Headers: {dict(response.headers)}")
         body = response.text[:500] if response.text else "<空>"
@@ -187,7 +209,7 @@ class HttpClientBase:
         if self._silent_failure:
             return
         logger.info(
-            f"{self._prefix}[{self._label}] {method.upper()} {url} "
+            f"{self._ech_tag(url)}{self._prefix}[{self._label}] {method.upper()} {url} "
             f"→ {type(error).__name__}: {error}"
         )
 

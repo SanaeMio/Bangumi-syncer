@@ -261,6 +261,23 @@ class TestFieldMeta:
     def test_auth_default_username(self):
         assert config_schema.field_default("auth", "username") == "admin"
 
+    def test_dev_ech_fields_registered(self):
+        """[dev] 段 5 个 ECH 字段全部登记（前端表单依赖 schema 驱动回填）。"""
+        meta = config_schema.SECTIONS["dev"]
+        names = {f.name for f in meta.fields}
+        assert {
+            "ech_mode",
+            "ech_doh_url",
+            "ech_doh_use_proxy",
+            "ech_hosts",
+            "ech_ech_config",
+        } <= names
+        assert config_schema.field_default("dev", "ech_ech_config") == ""
+        assert (
+            config_schema.field_default("dev", "ech_doh_url")
+            == "https://dns.alidns.com/resolve"
+        )
+
     def test_auth_default_session_timeout(self):
         assert config_schema.field_default("auth", "session_timeout") == 3600
 
@@ -362,8 +379,8 @@ class TestLooseTrueFields:
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """原硬编码共 4 个 loose_true 字段"""
-        assert len(config_schema.loose_true_fields()) == 4
+        """原硬编码 4 个 loose_true 字段；ECH 改造新增 dev.ech_doh_use_proxy 第 5 个"""
+        assert len(config_schema.loose_true_fields()) == 5
 
 
 class TestConfigDefaults:

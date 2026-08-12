@@ -33,6 +33,7 @@ Web 界面背后对应一个 `config.ini` 文件（INI 格式），首次运行�
 | [🔀 自定义映射](/mapping) | 标题对不上时手工指定「标题 → 条目 ID」的兜底机制 |
 | [🗄️ Bangumi Archive](./bangumi-archive) | 本地归档，把全站数据快照下载到本地，优先查本地降低 API 依赖 |
 | [🔄 Bangumi Replay](./bangumi-replay) | 写降级与自动补发，API 不可达时入队暂存、恢复后自动补发 |
+| [🛠️ 自建 ECH DoH（进阶）](./self-hosted-doh) | 需要一定门槛：自行部署 DoH 服务（Total-ECH），自定义 ECH 配置来源与优选 IP |
 
 ## 配置段速查
 

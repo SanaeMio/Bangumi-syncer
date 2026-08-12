@@ -28,6 +28,7 @@ class CollectionMixin:
         collection_type: Optional[int] = None,
         limit: int = 30,
         max_total: int = 500,
+        max_pages: int | None = None,
     ) -> list[dict[str, Any]]:
         """批量获取用户收藏列表（分页拉满）
 
@@ -39,6 +40,8 @@ class CollectionMixin:
                              None=全部
             limit: 单页大小（Bangumi API 上限 50）
             max_total: 最多拉取总数，防止异常用户收藏过多拖慢请求
+            max_pages: 最多拉取页数（None=不限），供封面预取等对时效与
+                       耗时敏感的调用方限流，避免 API 故障时长时间串行分页
 
         Returns:
             list[dict]，每个 dict 含 subject_id, type, name, name_cn 等字段
@@ -46,10 +49,14 @@ class CollectionMixin:
         """
         results: list[dict[str, Any]] = []
         offset = 0
+        pages = 0
         # 防御性上限：单次调用最多拉 max_total 条，避免异常场景无限拉取
         limit = min(max(1, limit), 50)
         max_total = max(limit, max_total)
         while offset < max_total:
+            pages += 1
+            if max_pages is not None and pages > max_pages:
+                break
             params: dict[str, Any] = {"limit": limit, "offset": offset}
             if subject_type is not None:
                 params["subject_type"] = subject_type

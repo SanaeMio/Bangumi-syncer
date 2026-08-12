@@ -481,6 +481,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             ssl_verify=dev_snapshot["ssl_verify"],
             bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
             bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
+            ech_mode=dev_snapshot["ech_mode"],
         )
         try:
             data = api.get_subject(sid)
@@ -2644,6 +2645,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             "ssl_verify": dev_snapshot["ssl_verify"],
             "bgm_api_proxy": dev_snapshot["bgm_api_proxy"],
             "bgm_next_proxy": dev_snapshot["bgm_next_proxy"],
+            "ech_mode": dev_snapshot["ech_mode"],
         }
 
         # 缓存命中：实例存在且配置快照未变化
@@ -2660,6 +2662,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             ssl_verify=config_snapshot["ssl_verify"],
             bgm_api_proxy=config_snapshot["bgm_api_proxy"],
             bgm_next_proxy=config_snapshot["bgm_next_proxy"],
+            ech_mode=config_snapshot["ech_mode"],
         )
         self._bangumi_api_cache[user_name] = (api, config_snapshot)
         return api
