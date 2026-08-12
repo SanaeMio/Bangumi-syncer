@@ -22,10 +22,18 @@ from typing import Any
 import httpx
 
 
+def _ech_enabled(ech: bool | str) -> bool:
+    """ECH 开关归一：False/"off"/"0"/"false" 均视为关闭。"""
+    if isinstance(ech, bool):
+        return ech
+    return str(ech).strip().lower() not in ("", "off", "0", "false", "none")
+
+
 def create_sync_client(
     *,
     proxy: str | None = None,
     verify: bool = True,
+    ech: bool | str = False,
     timeout: float = 30.0,
     follow_redirects: bool = True,
     headers: dict | None = None,
@@ -36,6 +44,9 @@ def create_sync_client(
     Args:
         proxy: 代理地址（httpx 0.28+ 使用 proxy 单数参数）
         verify: 是否验证 SSL 证书
+        ech: ECH 模式开关（"off"/False 关闭；"doh"/"manual"/True 启用）。
+            启用时 verify 替换为带 ECH 的 utls SSLContext，
+            ECH 配置获取失败则自动降级为原 verify 行为（普通 TLS）。
         timeout: 请求超时时间（秒）
         follow_redirects: 是否跟随重定向
         headers: 自定义请求头
@@ -49,6 +60,12 @@ def create_sync_client(
         "timeout": timeout,
         "follow_redirects": follow_redirects,
     }
+    if _ech_enabled(ech):
+        from app.utils.ech import get_ech_ssl_context
+
+        ech_verify = get_ech_ssl_context()
+        if ech_verify is not None:
+            kwargs["verify"] = ech_verify
     if proxy:
         kwargs["proxy"] = proxy
     if headers:
@@ -61,6 +78,7 @@ def create_async_client(
     *,
     proxy: str | None = None,
     verify: bool = True,
+    ech: bool | str = False,
     timeout: float = 30.0,
     follow_redirects: bool = True,
     headers: dict | None = None,
@@ -71,6 +89,7 @@ def create_async_client(
     Args:
         proxy: 代理地址（httpx 0.28+ 使用 proxy 单数参数）
         verify: 是否验证 SSL 证书
+        ech: ECH 模式开关（同 create_sync_client）
         timeout: 请求超时时间（秒）
         follow_redirects: 是否跟随重定向
         headers: 自定义请求头
@@ -84,6 +103,12 @@ def create_async_client(
         "timeout": timeout,
         "follow_redirects": follow_redirects,
     }
+    if _ech_enabled(ech):
+        from app.utils.ech import get_ech_ssl_context
+
+        ech_verify = get_ech_ssl_context()
+        if ech_verify is not None:
+            kwargs["verify"] = ech_verify
     if proxy:
         kwargs["proxy"] = proxy
     if headers:
