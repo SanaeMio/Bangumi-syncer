@@ -376,7 +376,7 @@ class ConfigManager:
 
         返回 dict 含 script_proxy/ssl_verify/bgm_api_proxy/bgm_next_proxy 与
         ECH 相关字段（ech_mode/ech_doh_url/ech_doh_use_proxy/ech_hosts/ech_ech_config），
-        默认值与原各处拼装保持一致（""/True/""/"" / "off"/默认 DoH/False/""）。
+        ECH 默认值与其他层（config_schema / ech.py 常量）保持一致。
         """
         return {
             "script_proxy": self.get("dev", "script_proxy", fallback=""),
@@ -388,7 +388,9 @@ class ConfigManager:
                 "dev", "ech_doh_url", fallback="https://dns.alidns.com/resolve"
             ),
             "ech_doh_use_proxy": self.get("dev", "ech_doh_use_proxy", fallback=False),
-            "ech_hosts": self.get("dev", "ech_hosts", fallback=""),
+            "ech_hosts": self.get(
+                "dev", "ech_hosts", fallback="bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv"
+            ),
             "ech_ech_config": self.get("dev", "ech_ech_config", fallback=""),
         }
 

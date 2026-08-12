@@ -261,6 +261,23 @@ class TestFieldMeta:
     def test_auth_default_username(self):
         assert config_schema.field_default("auth", "username") == "admin"
 
+    def test_dev_ech_fields_registered(self):
+        """[dev] 段 5 个 ECH 字段全部登记（前端表单依赖 schema 驱动回填）。"""
+        meta = config_schema.SECTIONS["dev"]
+        names = {f.name for f in meta.fields}
+        assert {
+            "ech_mode",
+            "ech_doh_url",
+            "ech_doh_use_proxy",
+            "ech_hosts",
+            "ech_ech_config",
+        } <= names
+        assert config_schema.field_default("dev", "ech_ech_config") == ""
+        assert (
+            config_schema.field_default("dev", "ech_doh_url")
+            == "https://dns.alidns.com/resolve"
+        )
+
     def test_auth_default_session_timeout(self):
         assert config_schema.field_default("auth", "session_timeout") == 3600
 

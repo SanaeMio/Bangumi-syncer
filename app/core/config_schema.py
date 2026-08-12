@@ -159,6 +159,7 @@ SECTIONS: dict[str, SectionMeta] = {
                 name="ech_hosts",
                 default="bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv",
             ),
+            FieldMeta(name="ech_ech_config", default=""),
         ),
     ),
     # ── 媒体源驱动（order 100-199）──
