@@ -385,7 +385,7 @@ class ConfigManager:
             "bgm_next_proxy": self.get("dev", "bgm_next_proxy", fallback=""),
             "ech_mode": self.get("dev", "ech_mode", fallback="off"),
             "ech_doh_url": self.get(
-                "dev", "ech_doh_url", fallback="https://dns.google/resolve"
+                "dev", "ech_doh_url", fallback="https://dns.alidns.com/resolve"
             ),
             "ech_doh_use_proxy": self.get("dev", "ech_doh_use_proxy", fallback=False),
             "ech_hosts": self.get("dev", "ech_hosts", fallback=""),

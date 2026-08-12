@@ -8,7 +8,7 @@ utls SSLContext，供 httpx ``verify=`` 注入（见 http_client 两工厂的 ``
 配置项（均在 ``[dev]`` 段，与代理 script_proxy / ssl_verify 同段）：
 
 - ``ech_mode``: ``off``（默认，不启用）/ ``doh``（自动查询）/ ``manual``（直接提供 base64 配置）
-- ``ech_doh_url``: 默认 ``https://dns.google/resolve``；兼容 dns-json（``?name=&type=``）
+- ``ech_doh_url``: 默认 ``https://dns.alidns.com/resolve``（阿里公共 DNS，国内直连稳定）；备选方案海外网络可改 ``https://dns.google/resolve``；兼容 dns-json（``?name=&type=``）
   与 RFC 8484 wireformat（POST application/dns-message）两种 DoH 端点
 - ``ech_doh_use_proxy``: DoH 查询是否走 ``[dev] script_proxy``，默认否（直连，更利于 SRI 隐私）
 - ``ech_hosts``: 逗号分隔的 ECH 目标域名，默认 ``bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv``
@@ -35,7 +35,7 @@ from app.core.config import config_manager
 from app.core.logging import logger
 
 # 默认 DoH 端点（dns-json 格式，可被 [dev] ech_doh_url 覆盖，方案 B Worker 亦走此链路）
-DEFAULT_DOH_URL = "https://dns.google/resolve"
+DEFAULT_DOH_URL = "https://dns.alidns.com/resolve"
 # 默认 ECH 目标域名（后缀匹配）
 DEFAULT_ECH_HOSTS = "bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv"
 # ECH 配置缓存 TTL（秒）；到期后重新查询 DoH 以跟随配置轮换

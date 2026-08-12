@@ -153,7 +153,7 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="ssl_verify", default_true=True),
             FieldMeta(name="log_level", default="INFO"),
             FieldMeta(name="ech_mode", default="off"),
-            FieldMeta(name="ech_doh_url", default="https://dns.google/resolve"),
+            FieldMeta(name="ech_doh_url", default="https://dns.alidns.com/resolve"),
             FieldMeta(name="ech_doh_use_proxy", loose_true=True),
             FieldMeta(
                 name="ech_hosts",
