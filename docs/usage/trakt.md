@@ -40,7 +40,7 @@ order: 15
 ## Bearer 凭证模式（备选，无需创建 Trakt 应用）
 
 不想创建 Trakt 应用 / 无法配置回调地址时，可改用 **Bearer 凭证模式**：
-直接提供 Trakt 账号的 access_token 与 refresh_token，数据走官方数据域
+直接提供 Trakt 账号的 refresh_token，数据走官方数据域
 `apiz.trakt.tv`，无需 Client ID / Secret / 回调地址。
 
 ### 方式一：通过邮箱一键登录（推荐）
@@ -64,8 +64,7 @@ Trakt 同步记录能正确路由。
 2. 按 F12 打开开发者工具 → Application → Local Storage
 3. 展开 `https://auth.trakt.tv`，找到 `oidc.user:https://auth.trakt.tv:201dc70c...`
    键，复制其中的 `refresh_token`
-4. 在「Bearer 凭证」卡片中粘贴并保存（只需 refresh_token；access_token 可选，
-   保存时后端会用它验证并自动换新）
+4. 在「Bearer 凭证」卡片中粘贴并保存（只需 refresh_token，保存时后端会自动换取新的 access/refresh）
 
 ::: tip 凭证说明
 - 只需提供 **refresh_token**：保存时后端会立即验证并旋转刷新，自动换取新的
@@ -81,7 +80,7 @@ Trakt 同步记录能正确路由。
 API 应用与 Bearer 两种模式数据域不同（api.trakt.tv / apiz.trakt.tv），
 **切换必须提供对应模式的新凭证，不能复用另一模式的 token**：
 
-- 切换至 **Bearer**：需同时填写 access_token 与 refresh_token（或用「通过邮箱登录」）后保存
+- 切换至 **Bearer**：需填写 refresh_token（或用「通过邮箱登录」）后保存
 - 切换至 **API 应用**：需重新点击「授权 Trakt」完成 OAuth 授权
 
 仅切换界面上的 radio 而未保存不会改变已保存的模式。

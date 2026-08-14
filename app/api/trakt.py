@@ -222,9 +222,6 @@ async def update_trakt_config(
 
         config = trakt_auth_service.get_user_trakt_config(user_id)
 
-        has_access = bool(
-            update_request.access_token and update_request.access_token.strip()
-        )
         has_refresh = bool(
             update_request.refresh_token and update_request.refresh_token.strip()
         )
@@ -235,11 +232,7 @@ async def update_trakt_config(
         # 必须在调用 validate_and_save_bearer 之前执行，避免「已把 Bearer 凭证
         # 落库却返回 400」的副作用。
         # 1) 提供 Bearer 凭证却要求其他模式：矛盾，直接拒绝
-        if (
-            (has_refresh or has_access)
-            and target_mode is not None
-            and target_mode != "bearer"
-        ):
+        if has_refresh and target_mode is not None and target_mode != "bearer":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -272,8 +265,8 @@ async def update_trakt_config(
 
         # ---- Bearer 凭证 ----
         # 提供 refresh_token 则立即验证并刷新（旋转式），有效才落库。
-        # 实际只使用并验证 refresh_token（刷新成功即证明凭证对有效，且会换新
-        # access/refresh）；access_token 为可选展示字段，不被使用。
+        # 验证/续期只依赖 refresh_token（刷新成功即证明凭证对有效，且会换新
+        # access/refresh），无需也不接受 access_token。
         if has_refresh:
             result = await validate_and_save_bearer(
                 user_id, update_request.refresh_token.strip()
@@ -285,12 +278,6 @@ async def update_trakt_config(
                 )
             # 验证已落库（auth_type=bearer + 新 token），重新读取最新配置
             config = trakt_auth_service.get_user_trakt_config(user_id)
-        elif has_access:
-            # 只给了 access_token：无法校验/续期，明确提示需要 refresh_token
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Bearer 凭证校验需要 refresh_token（access_token 可选）",
-            )
 
         if not config:
             # 无既有配置且未提供 Bearer 凭证：视为未授权，保持 404

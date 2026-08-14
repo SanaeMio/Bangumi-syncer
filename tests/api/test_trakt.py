@@ -284,36 +284,12 @@ async def test_update_trakt_config_bearer_fields(
                 "/api/trakt/config",
                 json={
                     "auth_type": "bearer",
-                    "access_token": "access-tok",
                     "refresh_token": "refresh-tok",
                 },
             )
         assert response.status_code == 200
         mock_validate.assert_awaited_once_with("testuser", "refresh-tok")
         mock_trakt_auth_service.update_config_fields.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_update_trakt_config_bearer_partial_400(
-    app_with_auth,
-    mock_trakt_auth_service,
-    mock_trakt_scheduler,
-    mock_config_manager,
-    mock_database_manager,
-):
-    """只提供 access 或 refresh 其一 → 400"""
-    with patch(
-        "app.api.trakt.validate_and_save_bearer", new_callable=AsyncMock
-    ) as mock_validate:
-        async with AsyncClient(
-            transport=ASGITransport(app=app_with_auth), base_url="http://test"
-        ) as client:
-            response = await client.put(
-                "/api/trakt/config",
-                json={"auth_type": "bearer", "access_token": "only-access"},
-            )
-        assert response.status_code == 400
-        mock_validate.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -339,7 +315,6 @@ async def test_update_trakt_config_bearer_invalid_400(
             response = await client.put(
                 "/api/trakt/config",
                 json={
-                    "access_token": "bad-access",
                     "refresh_token": "bad-refresh",
                 },
             )
@@ -364,7 +339,7 @@ async def test_update_trakt_config_bearer_blank_keeps_existing(
         ) as client:
             response = await client.put(
                 "/api/trakt/config",
-                json={"auth_type": "oauth", "access_token": "", "refresh_token": ""},
+                json={"auth_type": "oauth", "refresh_token": ""},
             )
         assert response.status_code == 200
         mock_validate.assert_not_called()
@@ -449,7 +424,6 @@ async def test_switch_to_bearer_with_tokens_ok(
                 "/api/trakt/config",
                 json={
                     "auth_type": "bearer",
-                    "access_token": "access-tok",
                     "refresh_token": "refresh-tok",
                 },
             )
@@ -477,7 +451,6 @@ async def test_bearer_tokens_with_oauth_mode_rejected_no_side_effect(
                 "/api/trakt/config",
                 json={
                     "auth_type": "oauth",
-                    "access_token": "access-tok",
                     "refresh_token": "refresh-tok",
                 },
             )
@@ -526,31 +499,6 @@ async def test_update_bearer_refresh_only(
             )
         assert response.status_code == 200
         mock_validate.assert_awaited_once_with("testuser", "refresh-tok")
-
-
-@pytest.mark.asyncio
-async def test_update_bearer_access_only_400(
-    app_with_auth,
-    mock_trakt_auth_service,
-    mock_trakt_scheduler,
-    mock_config_manager,
-    mock_database_manager,
-):
-    """仅提供 access_token（无 refresh）：无法校验/续期，400 且不落库"""
-    with patch(
-        "app.api.trakt.validate_and_save_bearer", new_callable=AsyncMock
-    ) as mock_validate:
-        async with AsyncClient(
-            transport=ASGITransport(app=app_with_auth), base_url="http://test"
-        ) as client:
-            response = await client.put(
-                "/api/trakt/config",
-                json={"access_token": "access-tok"},
-            )
-        assert response.status_code == 400
-        assert "refresh_token" in response.json()["detail"]
-        mock_validate.assert_not_called()
-        mock_trakt_auth_service.update_config_fields.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -659,7 +607,6 @@ async def test_update_trakt_config_creates_bearer_when_no_config(
             response = await client.put(
                 "/api/trakt/config",
                 json={
-                    "access_token": "access-tok",
                     "refresh_token": "refresh-tok",
                 },
             )

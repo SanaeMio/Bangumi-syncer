@@ -301,14 +301,11 @@ class TraktConfigPage {
             syncSaveButton.disabled = false;
         }
 
-        // 连接状态：Bearer 模式不走 OAuth 授权，但保留「授权 Trakt」按钮作为
-        // 切换到 API 应用模式的入口（点击后走 OAuth 重新授权）；文案给出指引
-        if (authButton && config.auth_type === 'bearer') {
+        // 连接状态：Bearer 模式常驻隐藏「授权 Trakt」（OAuth 授权与 bearer 无关）；
+        // 仅当用户把模式切到 API 应用（从 bearer 切回 oauth）时显示，作为重新授权
+        // 入口。可见性由 toggleCredentialCards → updateAuthButtonVisibility 统一管理。
+        if (authButton) {
             authButton.classList.remove('d-none');
-            authButton.textContent = '授权 Trakt（切换至 API 应用）';
-        } else if (authButton) {
-            authButton.classList.remove('d-none');
-            authButton.textContent = '授权 Trakt';
         }
 
         syncEnabled.checked = config.enabled;
@@ -330,7 +327,6 @@ class TraktConfigPage {
         const authTypeOauth = document.getElementById('auth-type-oauth');
         const authTypeBearer = document.getElementById('auth-type-bearer');
         const authModeSaveButton = document.querySelector('#auth-mode-form button[type="submit"]');
-        const accessTokenInput = document.getElementById('bearer-access-token');
         const refreshTokenInput = document.getElementById('bearer-refresh-token');
         const bearerStatusInfo = document.getElementById('bearer-status-info');
 
@@ -352,12 +348,6 @@ class TraktConfigPage {
         }
         this.toggleCredentialCards();
         // 不回显 token；已配置时留空表示不修改
-        if (accessTokenInput) {
-            accessTokenInput.value = '';
-            accessTokenInput.placeholder = config.token_configured
-                ? '已配置，留空则不修改'
-                : '粘贴 access_token（32 字符）';
-        }
         if (refreshTokenInput) {
             refreshTokenInput.value = '';
             refreshTokenInput.placeholder = config.token_configured
@@ -437,23 +427,14 @@ class TraktConfigPage {
     }
 
     /**
-     * 保存 Bearer 凭证（refresh_token 必填，access_token 可选；
-     * 后端只使用并验证 refresh_token，成功后会旋转换新）
+     * 保存 Bearer 凭证（只需 refresh_token：后端用它验证并旋转刷新）
      */
     async saveBearerCred() {
-        const accessToken = document.getElementById('bearer-access-token');
         const refreshToken = document.getElementById('bearer-refresh-token');
 
-        const config = {};
-        // refresh_token 必填（后端校验与续期的依据）；access_token 可选
-        if (refreshToken && refreshToken.value.trim()) {
-            config.refresh_token = refreshToken.value.trim();
-        }
-        if (accessToken && accessToken.value.trim()) {
-            config.access_token = accessToken.value.trim();
-        }
-        if (!config.refresh_token) {
-            this.showNotification('请填写 Refresh Token（Access Token 可选）', 'warning');
+        const refresh = (refreshToken && refreshToken.value.trim()) || '';
+        if (!refresh) {
+            this.showNotification('请填写 Refresh Token', 'warning');
             return;
         }
 
@@ -463,7 +444,7 @@ class TraktConfigPage {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(config)
+                body: JSON.stringify({ refresh_token: refresh })
             });
             this.showNotification('Bearer 凭证保存成功', 'success');
             this.updateConfigDisplay(result);
@@ -680,6 +661,33 @@ class TraktConfigPage {
     }
 
     /**
+     * 控制「授权 Trakt」按钮可见性：
+     * - Bearer 模式常驻隐藏（OAuth 授权与 bearer 无关，避免误导）
+     * - 仅当用户把凭证模式切到 API 应用（从 bearer 切回 oauth）时显示，
+     *   作为重新授权（切换）入口
+     */
+    updateAuthButtonVisibility() {
+        const authButton = document.getElementById('auth-button');
+        if (!authButton) {
+            return;
+        }
+        const radio = document.querySelector('input[name="auth_type"]:checked');
+        const selected = radio ? radio.value : this._savedAuthType;
+        const switchingToOauth =
+            selected === 'oauth' && this._savedAuthType === 'bearer';
+        authButton.classList.toggle('d-none', selected === 'bearer');
+        if (selected === 'bearer') {
+            return;
+        }
+        authButton.textContent = switchingToOauth
+            ? '授权 Trakt（切换至 API 应用）'
+            : '授权 Trakt';
+        if (switchingToOauth) {
+            authButton.disabled = false;
+        }
+    }
+
+    /**
      * 根据当前选中的凭证模式按需显示凭证相关卡片：
      * API 应用（oauth）→ 显示「API 配置」卡片；Bearer → 显示「Bearer 凭证」卡片。
      * 同时给出模式切换的操作指引（与已保存模式不一致时）。
@@ -708,6 +716,7 @@ class TraktConfigPage {
                 hint.classList.add('d-none');
             }
         }
+        this.updateAuthButtonVisibility();
     }
 
 

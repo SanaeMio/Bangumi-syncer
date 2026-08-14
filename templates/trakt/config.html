@@ -126,13 +126,6 @@
                                placeholder="粘贴 refresh_token（32 字符）"
                                autocomplete="off"
                                required>
-                        <label for="bearer-access-token" class="form-label mt-2">Access Token（可选）</label>
-                        <input type="password"
-                               class="form-control"
-                               id="bearer-access-token"
-                               name="access_token"
-                               placeholder="可选，仅备选粘贴；保存后会自动获取"
-                               autocomplete="off">
                         <div class="form-text">
                             只需 <strong>Refresh Token</strong>：保存时后端会用它验证并旋转刷新，
                             自动换取新的 access/refresh。不会回显；已配置时留空表示不修改。
@@ -169,8 +162,7 @@
                                         <code>oidc.user:https://auth.trakt.tv:201dc70c...</code> 键
                                     </li>
                                     <li>
-                                        复制其中的 <code>refresh_token</code> 粘贴到上方输入框（
-                                        <code>access_token</code> 可留空，保存时会自动获取）
+                                        复制其中的 <code>refresh_token</code> 粘贴到上方输入框并保存
                                     </li>
                                 </ol>
                                 <div class="mb-0">保存时后端会立即验证并旋转刷新凭证（refresh 为旋转式，旧值作废）。</div>
