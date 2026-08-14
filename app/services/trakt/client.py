@@ -17,15 +17,37 @@ from ...utils.http_base import AsyncHttpClient
 # ===== 数据模型导入 =====
 from .models import TraktCollectionItem, TraktHistoryItem, TraktRatingItem
 
+# trakt 官方静态 client_id（硬编码于前端，实测 apiz 数据域 + oauth/token 刷新均可用）
+TRAKT_API_KEY = "201dc70c5ec6af530f12f079ea1922733f6e1085ad7b02f36d8e011b75bcea7d"
+# trakt 官方 OAuth2 token 刷新端点
+TRAKT_OAUTH_TOKEN_URL = "https://auth.trakt.tv/oauth/token"
+
+
+class TraktAuthError(Exception):
+    """Trakt 认证失败（401）：access token 失效，需刷新凭证后重试。
+
+    与普通 API 错误区分：此异常必须向上传播到同步层，由同步层
+    触发「刷新凭证 → 重建客户端 → 重试」流程，而不是被吞掉返回空数据。
+    """
+
 
 # ===== Trakt 客户端 =====
 class TraktClient:
-    """Trakt.tv API 异步客户端"""
+    """Trakt.tv API 异步客户端
 
-    def __init__(self, access_token: str) -> None:
+    auth_type 决定数据域与 api key：
+    - oauth：api.trakt.tv + 用户注册的 client_id（授权码流程）
+    - bearer：apiz.trakt.tv + trakt 官方静态 client_id（从浏览器粘贴 access/refresh）
+    """
+
+    def __init__(self, access_token: str, auth_type: str = "oauth") -> None:
         self.access_token = access_token
-        self.base_url = "https://api.trakt.tv"
-        self.client_id = config_manager.get_trakt_config().get("client_id", "")
+        if auth_type == "bearer":
+            self.base_url = "https://apiz.trakt.tv"
+            self.client_id = TRAKT_API_KEY
+        else:
+            self.base_url = "https://api.trakt.tv"
+            self.client_id = config_manager.get_trakt_config().get("client_id", "")
 
         # 请求头
         self.headers = {
@@ -113,7 +135,7 @@ class TraktClient:
                     return {}  # 无内容
                 elif response.status_code == 401:
                     logger.error("Trakt 认证失败，令牌可能已过期")
-                    raise ValueError("认证失败")
+                    raise TraktAuthError("Trakt 认证失败（401），令牌可能已过期")
                 elif response.status_code == 429:
                     # 速率限制，等待后重试
                     retry_after_str = response.headers.get("Retry-After", "60")
@@ -133,6 +155,9 @@ class TraktClient:
                         continue
                     return None
 
+            except TraktAuthError:
+                # 401：token 已失效，重试无意义，立即向上传播
+                raise
             except httpx.RequestError as e:
                 logger.error(f"Trakt API 请求错误: {e}")
                 if attempt < self.max_retries - 1:
@@ -212,6 +237,8 @@ class TraktClient:
 
             return history_items
 
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"获取观看历史失败: {e}")
             return []
@@ -251,6 +278,8 @@ class TraktClient:
                 # 避免请求过快，小延迟
                 await asyncio.sleep(0.1)
 
+            except TraktAuthError:
+                raise
             except Exception as e:
                 logger.error(f"获取第 {page} 页观看历史失败: {e}")
                 break
@@ -302,6 +331,8 @@ class TraktClient:
 
             return rating_items
 
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"获取评分失败: {e}")
             return []
@@ -338,6 +369,8 @@ class TraktClient:
 
             return collection_items
 
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"获取收藏失败: {e}")
             return []
@@ -351,6 +384,8 @@ class TraktClient:
 
             return data if isinstance(data, dict) else None
 
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"获取用户信息失败: {e}")
             return None
@@ -364,6 +399,8 @@ class TraktClient:
 
             return data if isinstance(data, dict) else None
 
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"获取电影 {trakt_id} 信息失败: {e}")
             return None
@@ -383,6 +420,8 @@ class TraktClient:
             data = await self._make_request("GET", endpoint, params)
 
             return data if isinstance(data, dict) else None
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"获取剧集 {trakt_id} 信息失败: {e}")
             return None
@@ -398,6 +437,8 @@ class TraktClient:
 
             return data if isinstance(data, dict) else None
 
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"获取剧集详情失败: {e}")
             return None
@@ -407,6 +448,8 @@ class TraktClient:
         try:
             data = await self.get_user_profile()
             return data is not None
+        except TraktAuthError:
+            raise
         except Exception as e:
             logger.error(f"测试 Trakt 连接失败: {e}")
             return False
@@ -419,10 +462,12 @@ class TraktClientFactory:
     """Trakt 客户端工厂"""
 
     @staticmethod
-    async def create_client(access_token: str) -> Optional[TraktClient]:
+    async def create_client(
+        access_token: str, auth_type: str = "oauth"
+    ) -> Optional[TraktClient]:
         """创建 Trakt 客户端"""
         try:
-            client = TraktClient(access_token)
+            client = TraktClient(access_token, auth_type=auth_type)
             # 测试连接
             success = await client.test_connection()
             if success:
@@ -430,6 +475,9 @@ class TraktClientFactory:
             else:
                 await client.close()
                 return None
+        except TraktAuthError:
+            # 认证失败：向上传播，由同步层刷新凭证后重试
+            raise
         except Exception as e:
             logger.error(f"创建 Trakt 客户端失败: {e}")
             return None

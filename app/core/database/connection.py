@@ -213,6 +213,21 @@ class DatabaseConnection:
             message="trakt_config 已迁移：增加 sync_filter_enabled 列",
         )
 
+    def _ensure_trakt_config_auth_type(self, cursor) -> None:
+        """旧库迁移：为 trakt_config 增加凭证模式字段（oauth / bearer）。
+
+        同时补 sync_filter_enabled（老库可能两个列都缺）：three 处读写路径
+        的 SELECT 同时引用 sync_filter_enabled 与 auth_type，任一缺失都会在
+        首次读写时炸掉，因此两个 ensure 必须都跑。
+        """
+        self._ensure_trakt_config_sync_filter(cursor)
+        self._ensure_columns(
+            cursor,
+            "trakt_config",
+            [("auth_type", "TEXT DEFAULT 'oauth'")],
+            message="trakt_config 已迁移：增加 auth_type 凭证模式字段",
+        )
+
     def _ensure_pending_sync_queue_sync_record_id(self, cursor) -> None:
         """旧库迁移：为 pending_sync_queue 增加 sync_record_id（关联 sync_records 行）。
 
@@ -352,7 +367,8 @@ class DatabaseConnection:
                 sync_filter_enabled BOOLEAN DEFAULT 1,
                 last_sync_time INTEGER,
                 created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
+                updated_at INTEGER NOT NULL,
+                auth_type TEXT DEFAULT 'oauth'
             )
         """)
 

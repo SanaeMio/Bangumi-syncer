@@ -462,6 +462,105 @@ class TestLogging:
             msg = ml.debug.call_args[0][0]
             assert "Body(Form)" in msg
 
+    def test_log_request_redacts_sensitive_headers(self):
+        """Authorization / Cookie 头值在 DEBUG 日志中脱敏"""
+        client = SyncHttpClient(label="T")
+        with patch("app.utils.http_base.logger") as ml:
+            client._log_request(
+                "GET",
+                "http://example.com",
+                headers={
+                    "Authorization": "Bearer secret-access-token",
+                    "Cookie": "__Secure-better-auth.session_token=abc123",
+                    "X-Custom": "keep-me",
+                },
+            )
+            msg = ml.debug.call_args[0][0]
+            assert "secret-access-token" not in msg
+            assert "abc123" not in msg
+            assert "keep-me" in msg
+
+    def test_log_request_redacts_sensitive_json_keys(self):
+        """JSON 请求体敏感键（refresh_token / otp / code / client_secret）脱敏"""
+        client = SyncHttpClient(label="T")
+        with patch("app.utils.http_base.logger") as ml:
+            client._log_request(
+                "POST",
+                "http://example.com",
+                json={
+                    "grant_type": "refresh_token",
+                    "refresh_token": "rotating-refresh",
+                    "client_id": "public-id",
+                },
+            )
+            msg = ml.debug.call_args[0][0]
+            assert "rotating-refresh" not in msg
+            assert "public-id" in msg
+
+    def test_log_request_redacts_sensitive_form_data(self):
+        """表单串中的 otp 脱敏、email 保留"""
+        client = SyncHttpClient(label="T")
+        with patch("app.utils.http_base.logger") as ml:
+            client._log_request(
+                "POST",
+                "http://example.com",
+                data="email=user%40example.com&otp=123456",
+            )
+            msg = ml.debug.call_args[0][0]
+            assert "123456" not in msg
+            assert "user%40example.com" in msg
+
+    def test_log_success_redacts_response_body(self):
+        """响应体 JSON 中的 access_token / refresh_token 脱敏"""
+        resp = _mock_response(
+            status_code=200,
+            text='{"access_token": "tok-1", "refresh_token": "tok-2", "expires_in": 3600}',
+            headers={"Set-Cookie": "session=xyz; Path=/"},
+        )
+        client = SyncHttpClient(label="T").prefix("🚀").success_tpl("成功")
+        with patch("app.utils.http_base.logger") as ml:
+            client._log_success(resp, "POST", "http://example.com")
+            msg = ml.debug.call_args[0][0]
+            assert "tok-1" not in msg
+            assert "tok-2" not in msg
+            assert "xyz" not in msg
+            assert "expires_in" in msg
+
+    def test_log_success_redacts_code_state_in_location_header(self):
+        """302 Location 头中的授权 code / state 脱敏（授权码/CSRF 不得进日志）"""
+        resp = _mock_response(
+            status_code=302,
+            text="",
+            headers={
+                "Location": (
+                    "https://app.trakt.tv/callback?code=AUTHCODE123&state=CSRF456"
+                )
+            },
+        )
+        client = SyncHttpClient(label="T")
+        with patch("app.utils.http_base.logger") as ml:
+            client._log_success(resp, "GET", "http://example.com")
+            msg = ml.debug.call_args[0][0]
+            assert "AUTHCODE123" not in msg
+            assert "CSRF456" not in msg
+
+    def test_log_success_redacts_code_state_in_json_url(self):
+        """JSON 回跳负载 url 字段中的 code / state 脱敏"""
+        resp = _mock_response(
+            status_code=200,
+            text=(
+                '{"redirect": true, '
+                '"url": "https://app.trakt.tv/callback?code=SECRETCODE&state=SECRETSTATE"}'
+            ),
+            headers={},
+        )
+        client = SyncHttpClient(label="T")
+        with patch("app.utils.http_base.logger") as ml:
+            client._log_success(resp, "GET", "http://example.com")
+            msg = ml.debug.call_args[0][0]
+            assert "SECRETCODE" not in msg
+            assert "SECRETSTATE" not in msg
+
     def test_log_success_debug_only(self):
         resp = _mock_response(status_code=200, text="hello", headers={"X": "1"})
         client = SyncHttpClient(label="T").prefix("🚀").success_tpl("成功")

@@ -28,13 +28,40 @@ import json as _json
 import time
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 import httpx
 
 from ..core.logging import logger
 from .http_client import create_async_client, create_sync_client
 from .retry import RETRY_EXCEPTIONS, RETRY_STATUS_CODES, compute_backoff_delay
+
+# ===== 敏感信息脱敏 =====
+# 键名（头 / JSON / 表单字段）包含以下子串即视为敏感，DEBUG 详情日志中值置 ***。
+# 避免 email_login / token 刷新等请求把 OTP、cookie、access/refresh token
+# 写进日志（log.txt）。
+_SENSITIVE_KEY_PARTS = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "otp",
+    "verifier",
+    "cookie",
+    "authorization",
+    "api_key",
+    "apikey",
+)
+# 精确匹配的敏感键（避免 "code" 子串误伤 status_code / country_code 等）
+_SENSITIVE_EXACT_KEYS = {"code", "state", "id_token"}
+
+
+def _is_sensitive_key(name: str) -> bool:
+    """判断键名是否敏感（头 / JSON 键 / 表单字段名）。"""
+    low = str(name).lower()
+    return low in _SENSITIVE_EXACT_KEYS or any(
+        part in low for part in _SENSITIVE_KEY_PARTS
+    )
 
 
 class HttpClientBase:
@@ -153,8 +180,84 @@ class HttpClientBase:
         host = urlparse(url).hostname or ""
         return "[ECH] " if is_ech_host(host) else ""
 
+    # ===== 敏感信息脱敏（DEBUG 详情日志不得泄漏 token/验证码/会话） =====
+
+    def _redact_url_query(self, value: Any) -> Any:
+        """对 URL 字符串中的敏感 query 参数（code/state 等）脱敏。
+
+        授权回调的 code/state 出现在 302 Location 头与 JSON url 字段里，
+        仅按键名脱敏覆盖不到，必须对 URL query 逐项处理。
+        """
+        if not isinstance(value, str) or "?" not in value:
+            return value
+        try:
+            parts = urlparse(value)
+            if not parts.query:
+                return value
+            pairs = parse_qsl(parts.query, keep_blank_values=True)
+            query = "&".join(
+                f"{k}=***" if _is_sensitive_key(k) else f"{k}={v}" for k, v in pairs
+            )
+            return urlunparse(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    parts.path,
+                    parts.params,
+                    query,
+                    parts.fragment,
+                )
+            )
+        except ValueError:
+            return value
+
+    def _redact_headers(self, headers: Any) -> dict:
+        """请求/响应头脱敏：Authorization / Cookie / Set-Cookie 等敏感头值置 ***；
+        URL 型头值（如 Location）中的 code/state 参数脱敏。"""
+        return {
+            k: ("***" if _is_sensitive_key(k) else self._redact_url_query(v))
+            for k, v in dict(headers).items()
+        }
+
+    def _redact_body(self, body: Any) -> Any:
+        """请求体脱敏：dict 按敏感键置 *** 并对 URL 型字符串值脱敏；
+        表单串按 k=v 解析后逐项脱敏。"""
+        if isinstance(body, dict):
+            return {
+                k: ("***" if _is_sensitive_key(k) else self._redact_url_query(v))
+                for k, v in body.items()
+            }
+        if isinstance(body, str):
+            pairs = []
+            for pair in body.split("&"):
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    pairs.append(f"{k}=***" if _is_sensitive_key(k) else pair)
+                else:
+                    pairs.append(pair)
+            return "&".join(pairs)
+        return body
+
+    def _redact_response_body(self, text: str) -> str:
+        """响应体脱敏：JSON 对象的敏感键（如 /oauth/token 的 access/refresh）置 ***，
+        URL 型字符串值（如授权回跳 url）中的 code/state 参数脱敏。"""
+        if not text:
+            return "<空>"
+        try:
+            data = _json.loads(text)
+        except (ValueError, TypeError):
+            return text[:500]
+        if isinstance(data, dict):
+            try:
+                return _json.dumps(
+                    self._redact_body(data), ensure_ascii=False, default=str
+                )[:500]
+            except (TypeError, ValueError):
+                return text[:500]
+        return text[:500]
+
     def _log_request(self, method: str, url: str, **kwargs: Any) -> None:
-        """DEBUG: 请求详情（method, url, headers, params, body）"""
+        """DEBUG: 请求详情（method, url, headers, params, body，敏感字段脱敏）"""
         if self._silent_request:
             return
         parts: list[str] = [
@@ -163,30 +266,30 @@ class HttpClientBase:
 
         headers = kwargs.get("headers")
         if headers:
-            parts.append(f"  Headers: {dict(headers)}")
+            parts.append(f"  Headers: {self._redact_headers(headers)}")
 
         params = kwargs.get("params")
         if params:
-            parts.append(f"  Params: {dict(params)}")
+            parts.append(f"  Params: {self._redact_body(params)}")
 
         json_body = kwargs.get("json")
         if json_body is not None:
             try:
                 parts.append(
                     f"  Body(JSON): "
-                    f"{_json.dumps(json_body, ensure_ascii=False, default=str)[:500]}"
+                    f"{_json.dumps(self._redact_body(json_body), ensure_ascii=False, default=str)[:500]}"
                 )
             except (TypeError, ValueError):
                 parts.append("  Body(JSON): <无法序列化>")
 
         data_body = kwargs.get("data")
         if data_body is not None:
-            parts.append(f"  Body(Form): {data_body}")
+            parts.append(f"  Body(Form): {self._redact_body(data_body)}")
 
         logger.debug("\n".join(parts))
 
     def _log_success(self, response: httpx.Response, method: str, url: str) -> None:
-        """DEBUG: 成功摘要（prefix + 技术信息）+ 响应详情"""
+        """DEBUG: 成功摘要（prefix + 技术信息）+ 响应详情（敏感字段脱敏）"""
         if self._silent_request:
             return
         elapsed = response.elapsed.total_seconds()
@@ -199,9 +302,8 @@ class HttpClientBase:
         parts: list[str] = [
             f"{self._ech_tag(url)}[{self._label}] 响应 ← {response.status_code} ({elapsed:.2f}s)"
         ]
-        parts.append(f"  Headers: {dict(response.headers)}")
-        body = response.text[:500] if response.text else "<空>"
-        parts.append(f"  Body: {body}")
+        parts.append(f"  Headers: {self._redact_headers(response.headers)}")
+        parts.append(f"  Body: {self._redact_response_body(response.text)}")
         logger.debug("\n".join(parts))
 
     def _log_failure(self, error: Exception, method: str, url: str) -> None:

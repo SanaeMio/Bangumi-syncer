@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.services.trakt.client import TraktAuthError
 from app.services.trakt.models import (
     TraktCollectionItem,
     TraktHistoryItem,
@@ -91,7 +92,39 @@ class TestSyncUserTraktData:
             mock_auth.get_user_trakt_config.return_value = cfg
             result = await service.sync_user_trakt_data("user1")
             assert result.success is False
-            assert "未授权" in result.message
+            assert "未配置凭证" in result.message
+
+    @pytest.mark.asyncio
+    async def test_bearer_mode_uses_bearer_client(self):
+        """bearer 模式：走正常同步，client 以 auth_type=bearer 创建"""
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch("app.services.trakt.sync_service.database_manager"),
+            patch.object(
+                service,
+                "_sync_watched_history",
+                new_callable=AsyncMock,
+                return_value=MagicMock(
+                    synced_count=1, skipped_count=0, error_count=0, details={}
+                ),
+            ),
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "bearer"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            cfg.last_sync_time = None
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            mock_factory.create_client = AsyncMock(return_value=mock_client)
+            result = await service.sync_user_trakt_data("user1")
+            assert result.success is True
+            mock_factory.create_client.assert_awaited_once_with(
+                "tok", auth_type="bearer"
+            )
 
     @pytest.mark.asyncio
     async def test_token_expired_refresh_fail(self):
@@ -158,6 +191,219 @@ class TestSyncUserTraktData:
             result = await service.sync_user_trakt_data("user1")
             assert result.success is False
             assert "同步失败" in result.message
+
+    @pytest.mark.asyncio
+    async def test_sync_401_refresh_and_retry_success(self):
+        """同步中 401：刷新凭证 + 重建客户端后重试成功"""
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch("app.services.trakt.sync_service.database_manager"),
+            patch.object(
+                service, "_sync_watched_history", new_callable=AsyncMock
+            ) as mock_sync,
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "oauth"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            cfg.last_sync_time = None
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_auth.refresh_token = AsyncMock(return_value=True)
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            mock_factory.create_client = AsyncMock(return_value=mock_client)
+            mock_sync.side_effect = [
+                TraktAuthError("401"),
+                MagicMock(synced_count=1, skipped_count=0, error_count=0, details={}),
+            ]
+
+            result = await service.sync_user_trakt_data("user1")
+
+            assert result.success is True
+            assert mock_sync.await_count == 2
+            mock_auth.refresh_token.assert_awaited_once_with("user1")
+            # 首次创建 + 刷新后重建
+            assert mock_factory.create_client.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_sync_401_refresh_fail(self):
+        """同步中 401 且刷新失败：返回明确错误"""
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch.object(
+                service, "_sync_watched_history", new_callable=AsyncMock
+            ) as mock_sync,
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "oauth"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_auth.refresh_token = AsyncMock(return_value=False)
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            mock_factory.create_client = AsyncMock(return_value=mock_client)
+            mock_sync.side_effect = [TraktAuthError("401")]
+
+            result = await service.sync_user_trakt_data("user1")
+
+            assert result.success is False
+            assert "刷新失败" in result.message
+            assert mock_sync.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_sync_401_retry_still_fails(self):
+        """刷新后重试仍 401：只重试一次，返回明确错误"""
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch.object(
+                service, "_sync_watched_history", new_callable=AsyncMock
+            ) as mock_sync,
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "oauth"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_auth.refresh_token = AsyncMock(return_value=True)
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            mock_factory.create_client = AsyncMock(return_value=mock_client)
+            mock_sync.side_effect = [TraktAuthError("401"), TraktAuthError("401")]
+
+            result = await service.sync_user_trakt_data("user1")
+
+            assert result.success is False
+            assert "刷新后仍失败" in result.message
+            assert mock_sync.await_count == 2  # 首次 + 重试一次
+
+    @pytest.mark.asyncio
+    async def test_sync_401_on_create_client_retries(self):
+        """创建客户端时 401：同样触发刷新重建后重试"""
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch("app.services.trakt.sync_service.database_manager"),
+            patch.object(
+                service, "_sync_watched_history", new_callable=AsyncMock
+            ) as mock_sync,
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "oauth"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            cfg.last_sync_time = None
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_auth.refresh_token = AsyncMock(return_value=True)
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            mock_factory.create_client = AsyncMock(
+                side_effect=[TraktAuthError("401"), mock_client]
+            )
+            mock_sync.return_value = MagicMock(
+                synced_count=1, skipped_count=0, error_count=0, details={}
+            )
+
+            result = await service.sync_user_trakt_data("user1")
+
+            assert result.success is True
+            assert mock_factory.create_client.await_count == 2
+            mock_auth.refresh_token.assert_awaited_once_with("user1")
+
+    @pytest.mark.asyncio
+    async def test_sync_401_propagates_from_real_history_path(self):
+        """真实路径（不 mock 整段 _sync_watched_history）：拉历史中途 401 时
+        TraktAuthError 必须向上传播（不被 except Exception 吞掉），外层
+        刷新重建后重试成功。
+
+        对应评审点：_sync_watched_history 曾用 except Exception 把
+        TraktAuthError 收成普通失败结果，CI 靠 mock 整段函数保持绿色。
+        """
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch("app.services.trakt.sync_service.database_manager"),
+            patch("app.services.trakt.sync_service.notify_source_event"),
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "oauth"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            cfg.last_sync_time = None
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_auth.refresh_token = AsyncMock(return_value=True)
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            # 首次拉历史直接 401（真实走 _sync_watched_history 内部），重试后为空
+            mock_client.get_all_watched_history = AsyncMock(
+                side_effect=[TraktAuthError("401"), []]
+            )
+            mock_factory.create_client = AsyncMock(return_value=mock_client)
+
+            result = await service.sync_user_trakt_data("user1")
+
+            assert result.success is True
+            assert mock_client.get_all_watched_history.await_count == 2
+            assert mock_auth.refresh_token.await_count == 1
+            assert mock_factory.create_client.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_sync_401_bearer_refresh(self):
+        """bearer 模式 401：走 /oauth/token 旋转刷新（refresh_user_bearer）"""
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch("app.services.trakt.sync_service.database_manager"),
+            patch(
+                "app.services.trakt.sync_service.refresh_user_bearer",
+                new_callable=AsyncMock,
+            ) as mock_refresh,
+            patch.object(
+                service, "_sync_watched_history", new_callable=AsyncMock
+            ) as mock_sync,
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "bearer"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            cfg.last_sync_time = None
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_refresh.return_value = "ok"
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            mock_factory.create_client = AsyncMock(return_value=mock_client)
+            mock_sync.side_effect = [
+                TraktAuthError("401"),
+                MagicMock(synced_count=1, skipped_count=0, error_count=0, details={}),
+            ]
+
+            result = await service.sync_user_trakt_data("user1")
+
+            assert result.success is True
+            mock_refresh.assert_awaited_once_with("user1", force=True)
+
+
+class TestFetchDetailsBatch401:
+    """详情批量获取中的 401 传播"""
+
+    @pytest.mark.asyncio
+    async def test_401_propagates(self):
+        service = _make_service()
+        client = AsyncMock()
+        client.get_show_info = AsyncMock(side_effect=TraktAuthError("401"))
+        with pytest.raises(TraktAuthError):
+            await service._fetch_details_batch(
+                [("1", "episode", 100)], client, True, {}, {}
+            )
 
 
 class TestSyncWatchedHistory:
@@ -340,6 +586,17 @@ class TestSyncWatchedHistory:
             "u", mock_client, MagicMock(), False
         )
         assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_trakt_auth_error_propagates(self):
+        """_sync_watched_history 中 401 必须向上传播（不吞成普通失败结果）"""
+        service = _make_service()
+        mock_client = AsyncMock()
+        mock_client.get_all_watched_history = AsyncMock(
+            side_effect=TraktAuthError("401")
+        )
+        with pytest.raises(TraktAuthError):
+            await service._sync_watched_history("u", mock_client, MagicMock(), False)
 
 
 class TestConvertTraktHistoryToCustomItem:

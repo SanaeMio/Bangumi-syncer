@@ -488,6 +488,10 @@ class DatabaseManager:
         """删除用户的 Trakt 配置"""
         return self._trakt.delete_trakt_config(user_id)
 
+    def update_trakt_config_fields(self, user_id: str, fields: dict) -> bool:
+        """只更新 Trakt 配置的指定字段（不触碰凭证列，避免覆盖并发旋转的 token）。"""
+        return self._trakt.update_trakt_config_fields(user_id, fields)
+
     def save_trakt_sync_history(self, history: dict) -> bool:
         """保存 Trakt 同步历史记录"""
         return self._trakt.save_trakt_sync_history(history)

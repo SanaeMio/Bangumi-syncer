@@ -266,6 +266,14 @@ class TraktAuthService:
         """保存或更新 Trakt 配置（API 层入口，避免跨层直访数据库）"""
         return database_manager.save_trakt_config(config.to_dict())
 
+    def update_config_fields(self, user_id: str, fields: dict) -> bool:
+        """更新配置的非凭证字段（enabled/sync_interval/sync_filter_enabled/auth_type）。
+
+                与 save_config 不同：只写指定列，不触碰 access_token/refresh_token/
+        expires_at，避免用早先读到的旧 token 覆盖并发刷新旋转后的新 token。
+        """
+        return database_manager.update_trakt_config_fields(user_id, fields)
+
     def disconnect_trakt(self, user_id: str) -> bool:
         """断开 Trakt 连接，删除配置"""
         success = database_manager.delete_trakt_config(user_id)

@@ -19,8 +19,9 @@ from ...services.notification_service import notification_service
 from ...services.sync_service import sync_service
 from ...utils.media_type_detector import detect_media_type
 from .auth import trakt_auth_service
-from .client import TraktClient, TraktClientFactory
+from .client import TraktAuthError, TraktClient, TraktClientFactory
 from .models import TraktHistoryItem, TraktSyncResult
+from .token_refresher import STATUS_OK as BEARER_REFRESH_OK, refresh_user_bearer
 
 
 class TraktSyncService:
@@ -66,7 +67,7 @@ class TraktSyncService:
         if not config.access_token:
             return TraktSyncResult(
                 success=False,
-                message="Trakt 未授权，请先完成 OAuth 授权",
+                message="Trakt 未配置凭证，请先授权或填写 Bearer 凭证",
                 error_count=1,
                 synced_count=0,
                 skipped_count=0,
@@ -76,8 +77,7 @@ class TraktSyncService:
         # 检查令牌是否过期
         if config.is_token_expired():
             logger.warning(f"用户 {user_id} 的 Trakt 令牌已过期，尝试刷新")
-            success = await trakt_auth_service.refresh_token(user_id)
-            if not success:
+            if not await self._refresh_trakt_token(user_id, config):
                 return TraktSyncResult(
                     success=False,
                     message="Trakt 令牌过期且刷新失败",
@@ -102,52 +102,103 @@ class TraktSyncService:
                 details={},
             )
 
-        client = await TraktClientFactory.create_client(config.access_token)
-        if not client:
-            return TraktSyncResult(
-                success=False,
-                message="创建 Trakt 客户端失败",
-                error_count=1,
-                synced_count=0,
-                skipped_count=0,
-                details={},
-            )
-
+        # 同步主体；遇到 401（TraktAuthError）自动刷新凭证并重建客户端重试一次。
+        # 首次创建客户端也在循环内：创建时 401 同样触发刷新重试。
+        client: Optional[TraktClient] = None
+        auth_retried = False
         try:
-            synced_count = 0
-            skipped_count = 0
-            error_count = 0
-            details = {}
+            while True:
+                try:
+                    if client is None:
+                        client = await TraktClientFactory.create_client(
+                            config.access_token, auth_type=config.auth_type
+                        )
+                        if not client:
+                            return TraktSyncResult(
+                                success=False,
+                                message="创建 Trakt 客户端失败",
+                                error_count=1,
+                                synced_count=0,
+                                skipped_count=0,
+                                details={},
+                            )
 
-            # 同步观看历史（评分与收藏同步暂未实现）
-            if "history" in sync_types:
-                logger.info(f"开始同步用户 {user_id} 的 Trakt 观看历史")
-                history_result = await self._sync_watched_history(
-                    user_id, client, config, full_sync
-                )
-                synced_count += history_result.synced_count
-                skipped_count += history_result.skipped_count
-                error_count += history_result.error_count
-                details["history"] = history_result.details
+                    synced_count = 0
+                    skipped_count = 0
+                    error_count = 0
+                    details = {}
 
-            # 更新最后同步时间（只要没有错误就更新）
-            if error_count == 0 and config is not None:
-                config.last_sync_time = int(time.time())
-                await asyncio.to_thread(
-                    database_manager.save_trakt_config, config.to_dict()
-                )
+                    # 同步观看历史（评分与收藏同步暂未实现）
+                    if "history" in sync_types:
+                        logger.info(f"开始同步用户 {user_id} 的 Trakt 观看历史")
+                        history_result = await self._sync_watched_history(
+                            user_id, client, config, full_sync
+                        )
+                        synced_count += history_result.synced_count
+                        skipped_count += history_result.skipped_count
+                        error_count += history_result.error_count
+                        details["history"] = history_result.details
 
-            success = error_count == 0
+                    # 更新最后同步时间（只要没有错误就更新）
+                    # 只写 last_sync_time，不触碰 token 列：避免用本次同步开始时
+                    # 读到的旧 token 覆盖并发刷新（心跳等）旋转后的新 token
+                    if error_count == 0 and config is not None:
+                        config.last_sync_time = int(time.time())
+                        await asyncio.to_thread(
+                            database_manager.update_trakt_config_fields,
+                            config.user_id,
+                            {"last_sync_time": config.last_sync_time},
+                        )
 
-            return TraktSyncResult(
-                success=success,
-                message=f"同步完成: {synced_count} 成功, {skipped_count} 跳过, {error_count} 失败",
-                synced_count=synced_count,
-                skipped_count=skipped_count,
-                error_count=error_count,
-                details=details,
-            )
+                    success = error_count == 0
 
+                    return TraktSyncResult(
+                        success=success,
+                        message=f"同步完成: {synced_count} 成功, {skipped_count} 跳过, {error_count} 失败",
+                        synced_count=synced_count,
+                        skipped_count=skipped_count,
+                        error_count=error_count,
+                        details=details,
+                    )
+                except TraktAuthError:
+                    if auth_retried:
+                        logger.error(f"用户 {user_id} 刷新凭证后仍认证失败")
+                        return TraktSyncResult(
+                            success=False,
+                            message="Trakt 认证失败且刷新后仍失败",
+                            error_count=1,
+                            synced_count=0,
+                            skipped_count=0,
+                            details={},
+                        )
+                    auth_retried = True
+                    logger.warning(f"用户 {user_id} 同步中遇到 401，刷新凭证后重试")
+                    if not await self._refresh_trakt_token(user_id, config):
+                        return TraktSyncResult(
+                            success=False,
+                            message="Trakt 认证失败且刷新失败",
+                            error_count=1,
+                            synced_count=0,
+                            skipped_count=0,
+                            details={},
+                        )
+                    # 重新读取配置并重建客户端（旋转式刷新已换新 token）
+                    config = await asyncio.to_thread(
+                        trakt_auth_service.get_user_trakt_config, user_id
+                    )
+                    if config is None:
+                        return TraktSyncResult(
+                            success=False,
+                            message="Trakt 配置不存在",
+                            error_count=1,
+                            synced_count=0,
+                            skipped_count=0,
+                            details={},
+                        )
+                    if client is not None:
+                        await client.close()
+                    client = None  # 强制重建（刷新已换新 token）
+                    continue
         except Exception as e:
             logger.error(f"同步 Trakt 数据失败: {e}")
             return TraktSyncResult(
@@ -159,7 +210,21 @@ class TraktSyncService:
                 details={},
             )
         finally:
-            await client.close()
+            if client is not None:
+                await client.close()
+
+    async def _refresh_trakt_token(self, user_id: str, config) -> bool:
+        """按凭证模式刷新 Trakt token。
+
+        - oauth：走既有授权码流程（trakt_auth_service）
+        - bearer：用 refresh_token 走官方 /oauth/token 旋转刷新。
+          401 路径必须 force=True：本地 expires_at 可能仍认为有效（提前吊销/
+          时钟差/粘贴了已旋转过的 token），按 slack 跳过会把「认证失败」
+          误判成「刷新失败」。
+        """
+        if config.auth_type == "bearer":
+            return await refresh_user_bearer(user_id, force=True) == BEARER_REFRESH_OK
+        return await trakt_auth_service.refresh_token(user_id)
 
     def _filter_already_synced(
         self,
@@ -268,10 +333,14 @@ class TraktSyncService:
             *[_fetch_one(t, it, tid_int) for t, it, tid_int in fetch_tasks],
             return_exceptions=True,
         )
-        for tid, resp in results:
-            if isinstance(resp, Exception):
-                logger.debug(f"获取 Trakt 详情失败: {resp}")
+        for result in results:
+            if isinstance(result, Exception):
+                if isinstance(result, TraktAuthError):
+                    # 401：token 失效，向上传播触发整体刷新重试
+                    raise result
+                logger.debug(f"获取 Trakt 详情失败: {result}")
                 continue
+            tid, resp = result
             if resp:
                 ot = resp.get("original_title")
                 if ot:
@@ -516,6 +585,9 @@ class TraktSyncService:
                 details={"items": details},
             )
 
+        except TraktAuthError:
+            # 401：token 失效，向上传播触发整体刷新重试（不当作普通失败结果）
+            raise
         except Exception as e:
             logger.error(f"同步观看历史失败: {e}")
             notify_source_event(

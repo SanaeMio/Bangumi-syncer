@@ -52,7 +52,7 @@ async def test_sync_user_trakt_data_no_token():
         result = await service.sync_user_trakt_data("user1")
 
         assert result.success is False
-        assert "未授权" in result.message
+        assert "未配置凭证" in result.message
 
 
 @pytest.mark.asyncio
@@ -210,6 +210,7 @@ async def test_sync_user_trakt_data_empty_history_success():
         patch("app.services.trakt.sync_service.database_manager") as mock_db,
     ):
         cfg = MagicMock()
+        cfg.user_id = "u1"
         cfg.access_token = "tok"
         cfg.is_token_expired.return_value = False
         mock_auth.get_user_trakt_config.return_value = cfg
@@ -221,7 +222,12 @@ async def test_sync_user_trakt_data_empty_history_success():
         svc = TraktSyncService()
         r = await svc.sync_user_trakt_data("u1")
         assert r.success is True
-        mock_db.save_trakt_config.assert_called()
+        # 同步完成：只更新 last_sync_time（不触碰 token 列）
+        mock_db.update_trakt_config_fields.assert_called()
+        assert mock_db.update_trakt_config_fields.call_args[0][0] == "u1"
+        assert set(mock_db.update_trakt_config_fields.call_args[0][1].keys()) == {
+            "last_sync_time"
+        }
 
 
 @pytest.mark.asyncio

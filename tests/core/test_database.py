@@ -760,6 +760,58 @@ class TestDatabaseDockerAndTrakt:
                 enabled = db.get_trakt_configs_with_sync_enabled()
                 assert enabled[0]["access_token"] == "secret-at"
 
+    def test_update_trakt_config_fields_does_not_touch_tokens(
+        self, temp_dir, reset_singletons
+    ):
+        """部分字段更新：只写白名单列，不覆盖既有 token（防并发旋转被旧值覆盖）"""
+        with patch("app.core.database.logger"):
+            with patch(
+                "app.core.config_secret_crypto._master_secret",
+                return_value="test-secret-key-for-trakt-token",
+            ):
+                from app.core.database import DatabaseManager
+
+                db_path = temp_dir / "trakt_partial.db"
+                db = DatabaseManager(str(db_path))
+                now = 1_700_000_000
+                db.save_trakt_config(
+                    {
+                        "user_id": "u1",
+                        "access_token": "orig-at",
+                        "refresh_token": "orig-rt",
+                        "expires_at": now,
+                        "enabled": True,
+                        "sync_interval": "0 */6 * * *",
+                        "last_sync_time": None,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+
+                # 只更新非凭证字段，并尝试注入 token 列（应被白名单忽略）
+                assert (
+                    db.update_trakt_config_fields(
+                        "u1",
+                        {
+                            "enabled": False,
+                            "sync_interval": "0 */12 * * *",
+                            "auth_type": "bearer",
+                            "access_token": "EVIL-NEW-TOKEN",
+                            "refresh_token": "EVIL-NEW-REFRESH",
+                            "expires_at": 1,
+                        },
+                    )
+                    is True
+                )
+                row = db.get_trakt_config("u1")
+                assert row["enabled"] is False
+                assert row["sync_interval"] == "0 */12 * * *"
+                assert row["auth_type"] == "bearer"
+                # token 列保持不变
+                assert row["access_token"] == "orig-at"
+                assert row["refresh_token"] == "orig-rt"
+                assert row["expires_at"] == now
+
     def test_feiniu_watermark_invalid_meta_resets(self, temp_dir, reset_singletons):
         db_path = temp_dir / "wm_bad.db"
         with patch("app.core.database.logger"):

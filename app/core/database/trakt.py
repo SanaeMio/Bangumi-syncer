@@ -37,6 +37,7 @@ class TraktRepository(BaseRepository):
                         sync_interval = ?,
                         sync_filter_enabled = ?,
                         last_sync_time = ?,
+                        auth_type = ?,
                         updated_at = ?
                     WHERE user_id = ?
                 """,
@@ -48,6 +49,7 @@ class TraktRepository(BaseRepository):
                         config.get("sync_interval", "0 */6 * * *"),
                         1 if config.get("sync_filter_enabled", True) else 0,
                         config.get("last_sync_time"),
+                        config.get("auth_type", "oauth"),
                         int(datetime.now().timestamp()),
                         config["user_id"],
                     ),
@@ -57,8 +59,9 @@ class TraktRepository(BaseRepository):
                     """
                     INSERT INTO trakt_config
                     (user_id, access_token, refresh_token, expires_at, enabled,
-                     sync_interval, sync_filter_enabled, last_sync_time, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     sync_interval, sync_filter_enabled, last_sync_time, auth_type,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         config["user_id"],
@@ -69,6 +72,7 @@ class TraktRepository(BaseRepository):
                         config.get("sync_interval", "0 */6 * * *"),
                         1 if config.get("sync_filter_enabled", True) else 0,
                         config.get("last_sync_time"),
+                        config.get("auth_type", "oauth"),
                         config.get("created_at", int(datetime.now().timestamp())),
                         int(datetime.now().timestamp()),
                     ),
@@ -79,7 +83,7 @@ class TraktRepository(BaseRepository):
             _write,
             error_msg="保存 Trakt 配置失败",
             default=False,
-            ensure_schema=self._conn._ensure_trakt_config_sync_filter,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
         )
 
     def get_trakt_config(self, user_id: str) -> Optional[dict]:
@@ -91,7 +95,7 @@ class TraktRepository(BaseRepository):
                 """SELECT id, user_id, access_token, refresh_token,
                           expires_at, enabled, sync_interval,
                           sync_filter_enabled, last_sync_time,
-                          created_at, updated_at
+                          auth_type, created_at, updated_at
                    FROM trakt_config WHERE user_id = ?""",
                 (user_id,),
             )
@@ -101,7 +105,7 @@ class TraktRepository(BaseRepository):
             _read,
             error_msg="获取 Trakt 配置失败",
             default=None,
-            ensure_schema=self._conn._ensure_trakt_config_sync_filter,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
         )
         if not row:
             return None
@@ -116,6 +120,7 @@ class TraktRepository(BaseRepository):
             "sync_interval",
             "sync_filter_enabled",
             "last_sync_time",
+            "auth_type",
             "created_at",
             "updated_at",
         ]
@@ -140,6 +145,51 @@ class TraktRepository(BaseRepository):
             _write, error_msg="删除 Trakt 配置失败", default=False
         )
         return affected > 0
+
+    def update_trakt_config_fields(self, user_id: str, fields: dict) -> bool:
+        """只更新指定字段（白名单），不触碰 access_token/refresh_token/expires_at。
+
+        用于 API 层保存 enabled / sync_interval / sync_filter_enabled / auth_type
+        等非凭证字段：若用全量 save_trakt_config，会用早先读到的旧 token 覆盖
+        并发刷新（心跳/定时同步/手动同步）旋转后的新 token。
+        """
+        _ALLOWED = {
+            "enabled",
+            "sync_interval",
+            "sync_filter_enabled",
+            "last_sync_time",
+            "auth_type",
+        }
+
+        def _write(conn):
+            cursor = conn.cursor()
+            sets: list[str] = []
+            values: list = []
+            for key, value in fields.items():
+                if key not in _ALLOWED:
+                    continue
+                sets.append(f"{key} = ?")
+                if key in ("enabled", "sync_filter_enabled"):
+                    values.append(1 if value else 0)
+                else:
+                    values.append(value)
+            if not sets:
+                return True
+            sets.append("updated_at = ?")
+            values.append(int(datetime.now().timestamp()))
+            values.append(user_id)
+            cursor.execute(
+                f"UPDATE trakt_config SET {', '.join(sets)} WHERE user_id = ?",
+                values,
+            )
+            return True
+
+        return self._run_write(
+            _write,
+            error_msg="更新 Trakt 配置字段失败",
+            default=False,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
+        )
 
     def save_trakt_sync_history(self, history: dict) -> bool:
         """保存 Trakt 同步历史记录"""
@@ -236,7 +286,7 @@ class TraktRepository(BaseRepository):
                 """SELECT id, user_id, access_token, refresh_token,
                           expires_at, enabled, sync_interval,
                           sync_filter_enabled, last_sync_time,
-                          created_at, updated_at
+                          auth_type, created_at, updated_at
                    FROM trakt_config WHERE enabled = 1"""
             )
             return cursor.fetchall()
@@ -245,7 +295,7 @@ class TraktRepository(BaseRepository):
             _read,
             error_msg="获取启用同步的 Trakt 配置失败",
             default=[],
-            ensure_schema=self._conn._ensure_trakt_config_sync_filter,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
         )
         if not rows:
             return []
@@ -260,6 +310,7 @@ class TraktRepository(BaseRepository):
             "sync_interval",
             "sync_filter_enabled",
             "last_sync_time",
+            "auth_type",
             "created_at",
             "updated_at",
         ]
