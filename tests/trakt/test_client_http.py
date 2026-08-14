@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from app.services.trakt.client import TraktClient, TraktClientFactory
+from app.services.trakt.client import TraktAuthError, TraktClient, TraktClientFactory
 
 
 @pytest.fixture
@@ -82,6 +82,50 @@ async def test_get_watched_history(mock_config):
     assert len(result) == 1
     assert result[0].show["title"] == "Test Show"
     assert mock_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_watched_history_401_propagates(mock_config):
+    """观看历史 401：传播 TraktAuthError 而非静默返回空列表"""
+    mock_route = respx.get("https://api.trakt.tv/sync/history").mock(
+        return_value=httpx.Response(
+            401,
+            headers={
+                "Content-Type": "application/json",
+                "X-RateLimit-Remaining": "999",
+                "X-RateLimit-Reset": "9999999999",
+            },
+        )
+    )
+
+    client = TraktClient(access_token="expired_token")
+    async with client:
+        with pytest.raises(TraktAuthError):
+            await client.get_watched_history()
+
+    assert mock_route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_all_watched_history_401_propagates(mock_config):
+    """分页全量历史 401：传播 TraktAuthError"""
+    respx.get("https://api.trakt.tv/sync/history").mock(
+        return_value=httpx.Response(
+            401,
+            headers={
+                "Content-Type": "application/json",
+                "X-RateLimit-Remaining": "999",
+                "X-RateLimit-Reset": "9999999999",
+            },
+        )
+    )
+
+    client = TraktClient(access_token="expired_token")
+    async with client:
+        with pytest.raises(TraktAuthError):
+            await client.get_all_watched_history()
 
 
 @pytest.mark.asyncio
@@ -260,7 +304,7 @@ async def test_test_connection(mock_config):
 @pytest.mark.asyncio
 @respx.mock
 async def test_test_connection_failure(mock_config):
-    """测试连接失败"""
+    """测试连接失败（401 = 认证失败，传播 TraktAuthError）"""
     mock_route = respx.get("https://api.trakt.tv/users/me").mock(
         return_value=httpx.Response(
             401,
@@ -275,9 +319,9 @@ async def test_test_connection_failure(mock_config):
 
     client = TraktClient(access_token="invalid_token")
     async with client:
-        result = await client.test_connection()
+        with pytest.raises(TraktAuthError):
+            await client.test_connection()
 
-    assert result is False
     assert mock_route.called
 
 

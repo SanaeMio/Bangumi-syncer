@@ -13,6 +13,9 @@ from ..core.config import config_manager
 from ..core.logging import logger
 from ..core.public_url import redirect_public
 from ..models.trakt import (
+    TOKEN_STATUS_ACTIVE,
+    TOKEN_STATUS_EXPIRED,
+    TOKEN_STATUS_NOT_CONFIGURED,
     TraktApiConfigUpdateRequest,
     TraktAuthRequest,
     TraktAuthResponse,
@@ -22,11 +25,13 @@ from ..models.trakt import (
     TraktManualSyncRequest,
     TraktManualSyncResponse,
     TraktSyncStatusResponse,
+    normalize_auth_type,
 )
 from ..services.sync_service import sync_service
 from ..services.trakt.auth import trakt_auth_service
 from ..services.trakt.scheduler import trakt_scheduler
 from ..services.trakt.sync_service import trakt_sync_service
+from ..services.trakt.token_refresher import validate_and_save_bearer
 
 router = APIRouter(prefix="/api/trakt", tags=["trakt"])
 
@@ -160,10 +165,20 @@ async def get_trakt_config(
                 redirect_uri=trakt_api_config.get(
                     "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
                 ),
+                auth_type="oauth",
+                token_configured=False,
+                token_status=TOKEN_STATUS_NOT_CONFIGURED,
             )
 
-        # 检查令牌是否有效
-        is_connected = bool(config.access_token) and not config.is_token_expired()
+        # 连接状态与凭证状态：两种模式均基于 access_token 与 expires_at 计算
+        token_configured = bool(config.access_token)
+        if token_configured and not config.is_token_expired():
+            token_status = TOKEN_STATUS_ACTIVE
+        elif token_configured:
+            token_status = TOKEN_STATUS_EXPIRED
+        else:
+            token_status = TOKEN_STATUS_NOT_CONFIGURED
+        is_connected = token_status == TOKEN_STATUS_ACTIVE
 
         return TraktConfigResponse(
             user_id=config.user_id,
@@ -178,6 +193,9 @@ async def get_trakt_config(
             redirect_uri=trakt_api_config.get(
                 "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
             ),
+            auth_type=config.auth_type,
+            token_configured=token_configured,
+            token_status=token_status,
         )
 
     except Exception as e:
@@ -199,15 +217,44 @@ async def update_trakt_config(
 
         config = trakt_auth_service.get_user_trakt_config(user_id)
 
+        has_access = bool(
+            update_request.access_token and update_request.access_token.strip()
+        )
+        has_refresh = bool(
+            update_request.refresh_token and update_request.refresh_token.strip()
+        )
+
+        # Bearer 凭证：非空则立即验证并刷新（旋转式），有效才落库
+        if has_access or has_refresh:
+            if not (has_access and has_refresh):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Bearer 凭证需同时提供 access_token 与 refresh_token",
+                )
+            result = await validate_and_save_bearer(
+                user_id,
+                update_request.access_token.strip(),
+                update_request.refresh_token.strip(),
+            )
+            if not result["success"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=result["message"],
+                )
+            # 验证已落库（auth_type=bearer + 新 token），重新读取最新配置
+            config = trakt_auth_service.get_user_trakt_config(user_id)
+
         if not config:
+            # 无既有配置且未提供 Bearer 凭证：视为未授权，保持 404
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Trakt 配置未找到，请先完成授权",
+                detail="Trakt 配置未找到，请先完成授权或填写 Bearer 凭证",
             )
 
         enable = update_request.enabled
         sync_interval = update_request.sync_interval
         sync_filter_enabled = update_request.sync_filter_enabled
+        auth_type = update_request.auth_type
 
         # 更新配置
         if enable is not None:
@@ -218,6 +265,10 @@ async def update_trakt_config(
 
         if sync_filter_enabled is not None:
             config.sync_filter_enabled = sync_filter_enabled
+
+        # 凭证模式：切换只改标记（另一模式凭证共用字段，切换时互相覆盖）
+        if auth_type is not None:
+            config.auth_type = normalize_auth_type(auth_type)
 
         # 保存到数据库
         success = trakt_auth_service.save_config(config)
@@ -234,8 +285,15 @@ async def update_trakt_config(
             if enable:
                 trakt_scheduler.add_user_job(user_id, sync_interval)
 
-        # 返回更新后的配置
-        is_connected = bool(config.access_token) and not config.is_token_expired()
+        # 返回更新后的配置（凭证状态与 GET 一致，token 不回显）
+        token_configured = bool(config.access_token)
+        if token_configured and not config.is_token_expired():
+            token_status = TOKEN_STATUS_ACTIVE
+        elif token_configured:
+            token_status = TOKEN_STATUS_EXPIRED
+        else:
+            token_status = TOKEN_STATUS_NOT_CONFIGURED
+        is_connected = token_status == TOKEN_STATUS_ACTIVE
         # 从配置文件获取 API 配置
         trakt_api_config = config_manager.get_trakt_config()
 
@@ -252,6 +310,9 @@ async def update_trakt_config(
             redirect_uri=trakt_api_config.get(
                 "redirect_uri", "http://localhost:8000/api/trakt/auth/callback"
             ),
+            auth_type=config.auth_type,
+            token_configured=token_configured,
+            token_status=token_status,
         )
 
     except HTTPException:

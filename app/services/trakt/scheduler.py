@@ -22,6 +22,7 @@ from ..base.notifier_helpers import (
 )
 from .auth import trakt_auth_service
 from .sync_service import trakt_sync_service
+from .token_refresher import heartbeat_all_users
 
 
 class TraktScheduler:
@@ -63,6 +64,9 @@ class TraktScheduler:
             # 为所有启用同步的用户创建定时任务
             self._schedule_all_users()
 
+            # Bearer 凭证每日心跳（自动续期）
+            self._schedule_token_heartbeat()
+
             return True
 
         except Exception as e:
@@ -81,6 +85,36 @@ class TraktScheduler:
         except Exception as e:
             logger.error(f"停止调度器失败: {e}")
             return False
+
+    def _schedule_token_heartbeat(self) -> None:
+        """注册 Bearer 凭证每日心跳任务（自动续期）。
+
+        access_token 7 天过期，refresh_token 旋转式；每日凌晨 4 点检查一次，
+        按 expires_at 智能触发（剩余 <1 天才真正刷新），远低于 7 天窗口，
+        即使个别心跳因网络失败也能在失效前多轮重试。
+        """
+        try:
+            if not self.scheduler or not self.scheduler.running:
+                logger.error("调度器未运行，无法注册 Bearer 心跳任务")
+                return
+            self.scheduler.add_job(
+                func=self._token_heartbeat_wrapper,
+                trigger=CronTrigger(hour="4"),
+                id="trakt_token_heartbeat",
+                name="Trakt Bearer 每日续期心跳",
+                replace_existing=True,
+            )
+            logger.info("Trakt Bearer 每日心跳任务已注册（每天 04:00）")
+        except Exception as e:
+            logger.error(f"注册 Trakt Bearer 心跳任务失败: {e}")
+
+    async def _token_heartbeat_wrapper(self) -> None:
+        """Bearer 心跳任务包装器：处理异常并通知。"""
+        try:
+            await heartbeat_all_users()
+        except Exception as e:
+            logger.error(f"Trakt Bearer 心跳执行失败: {e}")
+            notify_scheduler_failure("trakt", f"Bearer 心跳执行失败: {e}")
 
     def _schedule_all_users(self) -> None:
         """为所有启用同步的用户创建定时任务"""

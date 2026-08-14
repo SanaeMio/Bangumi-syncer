@@ -37,6 +37,7 @@ class TraktRepository(BaseRepository):
                         sync_interval = ?,
                         sync_filter_enabled = ?,
                         last_sync_time = ?,
+                        auth_type = ?,
                         updated_at = ?
                     WHERE user_id = ?
                 """,
@@ -48,6 +49,7 @@ class TraktRepository(BaseRepository):
                         config.get("sync_interval", "0 */6 * * *"),
                         1 if config.get("sync_filter_enabled", True) else 0,
                         config.get("last_sync_time"),
+                        config.get("auth_type", "oauth"),
                         int(datetime.now().timestamp()),
                         config["user_id"],
                     ),
@@ -57,8 +59,9 @@ class TraktRepository(BaseRepository):
                     """
                     INSERT INTO trakt_config
                     (user_id, access_token, refresh_token, expires_at, enabled,
-                     sync_interval, sync_filter_enabled, last_sync_time, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     sync_interval, sync_filter_enabled, last_sync_time, auth_type,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         config["user_id"],
@@ -69,6 +72,7 @@ class TraktRepository(BaseRepository):
                         config.get("sync_interval", "0 */6 * * *"),
                         1 if config.get("sync_filter_enabled", True) else 0,
                         config.get("last_sync_time"),
+                        config.get("auth_type", "oauth"),
                         config.get("created_at", int(datetime.now().timestamp())),
                         int(datetime.now().timestamp()),
                     ),
@@ -79,7 +83,7 @@ class TraktRepository(BaseRepository):
             _write,
             error_msg="保存 Trakt 配置失败",
             default=False,
-            ensure_schema=self._conn._ensure_trakt_config_sync_filter,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
         )
 
     def get_trakt_config(self, user_id: str) -> Optional[dict]:
@@ -91,7 +95,7 @@ class TraktRepository(BaseRepository):
                 """SELECT id, user_id, access_token, refresh_token,
                           expires_at, enabled, sync_interval,
                           sync_filter_enabled, last_sync_time,
-                          created_at, updated_at
+                          auth_type, created_at, updated_at
                    FROM trakt_config WHERE user_id = ?""",
                 (user_id,),
             )
@@ -101,7 +105,7 @@ class TraktRepository(BaseRepository):
             _read,
             error_msg="获取 Trakt 配置失败",
             default=None,
-            ensure_schema=self._conn._ensure_trakt_config_sync_filter,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
         )
         if not row:
             return None
@@ -116,6 +120,7 @@ class TraktRepository(BaseRepository):
             "sync_interval",
             "sync_filter_enabled",
             "last_sync_time",
+            "auth_type",
             "created_at",
             "updated_at",
         ]
@@ -236,7 +241,7 @@ class TraktRepository(BaseRepository):
                 """SELECT id, user_id, access_token, refresh_token,
                           expires_at, enabled, sync_interval,
                           sync_filter_enabled, last_sync_time,
-                          created_at, updated_at
+                          auth_type, created_at, updated_at
                    FROM trakt_config WHERE enabled = 1"""
             )
             return cursor.fetchall()
@@ -245,7 +250,7 @@ class TraktRepository(BaseRepository):
             _read,
             error_msg="获取启用同步的 Trakt 配置失败",
             default=[],
-            ensure_schema=self._conn._ensure_trakt_config_sync_filter,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
         )
         if not rows:
             return []
@@ -260,6 +265,7 @@ class TraktRepository(BaseRepository):
             "sync_interval",
             "sync_filter_enabled",
             "last_sync_time",
+            "auth_type",
             "created_at",
             "updated_at",
         ]

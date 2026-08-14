@@ -35,6 +35,50 @@ def test_trakt_config_from_dict_none():
     assert TraktConfig.from_dict(None) is None
 
 
+def test_trakt_config_bearer_fields_roundtrip():
+    """Bearer 凭证字段（复用 access/refresh/expires_at）to_dict / from_dict 往返一致"""
+    cfg = TraktConfig(
+        user_id="u1",
+        access_token="access-token",
+        refresh_token="refresh-token",
+        expires_at=1_700_000_000,
+        auth_type="bearer",
+    )
+    d = cfg.to_dict()
+    assert d["auth_type"] == "bearer"
+    assert d["access_token"] == "access-token"
+    assert d["refresh_token"] == "refresh-token"
+    assert d["expires_at"] == 1_700_000_000
+
+    restored = TraktConfig.from_dict(d)
+    assert restored.auth_type == "bearer"
+    assert restored.access_token == "access-token"
+    assert restored.refresh_token == "refresh-token"
+    assert restored.expires_at == 1_700_000_000
+
+
+def test_trakt_config_auth_type_defaults_and_validation():
+    """auth_type 默认值与非法的回退逻辑"""
+    cfg = TraktConfig(user_id="u1")
+    assert cfg.auth_type == "oauth"
+
+    # 非法值回退 oauth
+    assert TraktConfig(user_id="u1", auth_type="hack").auth_type == "oauth"
+    assert TraktConfig(user_id="u1", auth_type="cookie").auth_type == "oauth"
+
+    # from_dict 同样回退
+    restored = TraktConfig.from_dict(
+        {"user_id": "u1", "access_token": "t", "auth_type": "hack"}
+    )
+    assert restored.auth_type == "oauth"
+
+    # bearer 模式保留
+    restored_b = TraktConfig.from_dict(
+        {"user_id": "u1", "access_token": "t", "auth_type": "bearer"}
+    )
+    assert restored_b.auth_type == "bearer"
+
+
 def test_trakt_config_from_dict_enabled_variants():
     base = {
         "user_id": "u",

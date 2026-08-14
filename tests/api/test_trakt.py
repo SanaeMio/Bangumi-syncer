@@ -2,6 +2,7 @@
 Trakt API测试
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -45,10 +46,12 @@ def mock_trakt_auth_service():
             user_id="test_user",
             enabled=True,
             sync_interval="0 */6 * * *",
+            sync_filter_enabled=True,
             last_sync_time=None,
             access_token="test_token",
             is_token_expired=lambda: False,
             expires_at=None,
+            auth_type="oauth",
             to_dict=lambda: {},
         )
         mock_auth.disconnect_trakt.return_value = True
@@ -241,6 +244,210 @@ async def test_update_trakt_config(
             json={"enabled": True, "sync_interval": "0 */6 * * *"},
         )
         assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_config_bearer_fields(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """更新凭证模式与 Bearer 凭证（保存时验证并刷新）"""
+    with patch(
+        "app.api.trakt.validate_and_save_bearer", new_callable=AsyncMock
+    ) as mock_validate:
+        mock_validate.return_value = {
+            "success": True,
+            "message": "凭证有效，已保存",
+            "expires_at": 1_700_000_000,
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.put(
+                "/api/trakt/config",
+                json={
+                    "auth_type": "bearer",
+                    "access_token": "access-tok",
+                    "refresh_token": "refresh-tok",
+                },
+            )
+        assert response.status_code == 200
+        mock_validate.assert_awaited_once_with("testuser", "access-tok", "refresh-tok")
+        config = mock_trakt_auth_service.get_user_trakt_config.return_value
+        assert config.auth_type == "bearer"
+        mock_trakt_auth_service.save_config.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_config_bearer_partial_400(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """只提供 access 或 refresh 其一 → 400"""
+    with patch(
+        "app.api.trakt.validate_and_save_bearer", new_callable=AsyncMock
+    ) as mock_validate:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.put(
+                "/api/trakt/config",
+                json={"auth_type": "bearer", "access_token": "only-access"},
+            )
+        assert response.status_code == 400
+        mock_validate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_config_bearer_invalid_400(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """凭证验证失败 → 400 且不保存"""
+    with patch(
+        "app.api.trakt.validate_and_save_bearer", new_callable=AsyncMock
+    ) as mock_validate:
+        mock_validate.return_value = {
+            "success": False,
+            "message": "凭证无效或已过期（invalid_grant），请重新从浏览器复制",
+            "expires_at": None,
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.put(
+                "/api/trakt/config",
+                json={
+                    "access_token": "bad-access",
+                    "refresh_token": "bad-refresh",
+                },
+            )
+        assert response.status_code == 400
+        mock_trakt_auth_service.save_config.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_config_bearer_blank_keeps_existing(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """token 留空表示不修改（不触发验证，保留现有凭证）"""
+    with patch(
+        "app.api.trakt.validate_and_save_bearer", new_callable=AsyncMock
+    ) as mock_validate:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.put(
+                "/api/trakt/config",
+                json={"auth_type": "oauth", "access_token": "", "refresh_token": ""},
+            )
+        assert response.status_code == 200
+        mock_validate.assert_not_called()
+        config = mock_trakt_auth_service.get_user_trakt_config.return_value
+        assert config.auth_type == "oauth"
+        mock_trakt_auth_service.save_config.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_trakt_config_bearer_status(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """GET 返回 Bearer 凭证状态，但不回显 token 本身"""
+    config = mock_trakt_auth_service.get_user_trakt_config.return_value
+    config.auth_type = "bearer"
+    config.access_token = "secret-token"
+    config.expires_at = 1_700_000_000
+    config.is_token_expired = lambda: False
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["auth_type"] == "bearer"
+        assert data["token_configured"] is True
+        assert data["token_status"] == "active"
+        assert data["token_expires_at"] == 1_700_000_000
+        # token 值绝不回显
+        assert "access_token" not in data
+        assert "secret-token" not in json.dumps(data)
+
+
+@pytest.mark.asyncio
+async def test_get_trakt_config_bearer_expired_status(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """凭证过期时 token_status 为 expired"""
+    config = mock_trakt_auth_service.get_user_trakt_config.return_value
+    config.auth_type = "bearer"
+    config.access_token = "tok"
+    config.expires_at = 1_000_000_000
+    config.is_token_expired = lambda: True
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/trakt/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["token_status"] == "expired"
+        assert data["is_connected"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_trakt_config_creates_bearer_when_no_config(
+    app_with_auth,
+    mock_trakt_auth_service,
+    mock_trakt_scheduler,
+    mock_config_manager,
+    mock_database_manager,
+):
+    """无既有配置时可通过 Bearer 凭证直接创建（不依赖 OAuth 授权）"""
+    existing = mock_trakt_auth_service.get_user_trakt_config.return_value
+    mock_trakt_auth_service.get_user_trakt_config.side_effect = [None, existing]
+    with patch(
+        "app.api.trakt.validate_and_save_bearer", new_callable=AsyncMock
+    ) as mock_validate:
+        mock_validate.return_value = {
+            "success": True,
+            "message": "凭证有效，已保存",
+            "expires_at": 1_700_000_000,
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.put(
+                "/api/trakt/config",
+                json={
+                    "access_token": "access-tok",
+                    "refresh_token": "refresh-tok",
+                },
+            )
+        assert response.status_code == 200
+        mock_validate.assert_awaited_once_with("testuser", "access-tok", "refresh-tok")
+        mock_trakt_auth_service.save_config.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -78,6 +78,12 @@ class TraktConfigPage {
             this.saveApiConfig();
         });
 
+        // 保存凭证配置表单
+        document.getElementById('auth-mode-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveAuthMode();
+        });
+
         // 手动同步按钮
         document.getElementById('manual-sync-button').addEventListener('click', () => {
             this.triggerManualSync(false);
@@ -207,6 +213,15 @@ class TraktConfigPage {
             authButton.disabled = false;
             disconnectButton.disabled = true;
             syncSaveButton.disabled = true;
+            // 无配置时仍允许填写 Bearer 凭证直接创建（不依赖 OAuth 授权）
+            const authModeSaveButton = document.querySelector('#auth-mode-form button[type="submit"]');
+            if (authModeSaveButton) {
+                authModeSaveButton.disabled = false;
+            }
+            const bearerStatusInfo = document.getElementById('bearer-status-info');
+            if (bearerStatusInfo) {
+                bearerStatusInfo.innerHTML = '<span class="text-muted"><i class="bi bi-dash-circle me-1"></i>未配置 Bearer 凭证</span>';
+            }
             return;
         }
 
@@ -249,6 +264,103 @@ class TraktConfigPage {
             ? '已配置，留空则不修改'
             : '从 trakt.tv/oauth/applications 获取';
         redirectUri.value = config.redirect_uri || 'http://localhost:8000/api/trakt/auth/callback';
+
+        // 凭证模式
+        const authTypeOauth = document.getElementById('auth-type-oauth');
+        const authTypeBearer = document.getElementById('auth-type-bearer');
+        const authModeSaveButton = document.querySelector('#auth-mode-form button[type="submit"]');
+        const accessTokenInput = document.getElementById('bearer-access-token');
+        const refreshTokenInput = document.getElementById('bearer-refresh-token');
+        const bearerStatusInfo = document.getElementById('bearer-status-info');
+
+        if (authTypeOauth && authTypeBearer) {
+            authTypeOauth.checked = config.auth_type !== 'bearer';
+            authTypeBearer.checked = config.auth_type === 'bearer';
+        }
+        if (authModeSaveButton) {
+            authModeSaveButton.disabled = false;
+        }
+        // 不回显 token；已配置时留空表示不修改
+        if (accessTokenInput) {
+            accessTokenInput.value = '';
+            accessTokenInput.placeholder = config.token_configured
+                ? '已配置，留空则不修改'
+                : '粘贴 access_token（32 字符）';
+        }
+        if (refreshTokenInput) {
+            refreshTokenInput.value = '';
+            refreshTokenInput.placeholder = config.token_configured
+                ? '已配置，留空则不修改'
+                : '粘贴 refresh_token（32 字符）';
+        }
+        if (bearerStatusInfo) {
+            bearerStatusInfo.innerHTML = this.renderTokenStatus(config);
+        }
+    }
+
+    /**
+     * 渲染 Bearer 凭证状态信息（token 本身绝不回显）
+     */
+    renderTokenStatus(config) {
+        if (!config || !config.token_configured) {
+            return '<span class="text-muted"><i class="bi bi-dash-circle me-1"></i>未配置 Bearer 凭证</span>';
+        }
+
+        const status = config.token_status || 'not_configured';
+        const expiresAt = config.token_expires_at;
+
+        let icon = '<i class="bi bi-check-circle text-success me-1"></i>';
+        let statusText = '有效';
+        if (status === 'expired') {
+            icon = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>';
+            statusText = '已失效，请重新填写';
+        }
+
+        const parts = [`<span>${icon}${statusText}</span>`];
+        if (expiresAt) {
+            const remainDays = Math.ceil((expiresAt - Math.floor(Date.now() / 1000)) / 86400);
+            parts.push(`<span class="ms-2 text-muted">剩余 ${remainDays > 0 ? remainDays : 0} 天</span>`);
+        }
+        return parts.join('');
+    }
+
+    /**
+     * 保存凭证模式与 Bearer 凭证（留空表示不修改）
+     */
+    async saveAuthMode() {
+        const authType = document.querySelector('input[name="auth_type"]:checked');
+        if (!authType) {
+            this.showNotification('请选择凭证模式', 'warning');
+            return;
+        }
+        const accessToken = document.getElementById('bearer-access-token');
+        const refreshToken = document.getElementById('bearer-refresh-token');
+
+        const config = {
+            auth_type: authType.value
+        };
+        // 留空表示不修改；非空则一并提交（后端会同时校验两值并立即验证）
+        if (accessToken && accessToken.value.trim()) {
+            config.access_token = accessToken.value.trim();
+        }
+        if (refreshToken && refreshToken.value.trim()) {
+            config.refresh_token = refreshToken.value.trim();
+        }
+
+        try {
+            const result = await apiFetch('/api/trakt/config', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(config)
+            });
+            this.showNotification('凭证配置保存成功', 'success');
+            this.updateConfigDisplay(result);
+        } catch (error) {
+            console.error('保存凭证配置失败:', error);
+            this.showNotification(`保存凭证配置失败: ${error.message}`, 'danger');
+        }
     }
 
 

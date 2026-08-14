@@ -52,7 +52,7 @@ async def test_sync_user_trakt_data_no_token():
         result = await service.sync_user_trakt_data("user1")
 
         assert result.success is False
-        assert "未授权" in result.message
+        assert "未配置凭证" in result.message
 
 
 @pytest.mark.asyncio

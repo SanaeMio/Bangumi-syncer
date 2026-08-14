@@ -5,15 +5,30 @@ Trakt.tv 相关数据模型
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# 合法凭证模式
+TRAKT_AUTH_TYPES = ("oauth", "bearer")
+
+# 凭证状态（基于 access_token 与 expires_at 计算，不落库）
+TOKEN_STATUS_ACTIVE = "active"
+TOKEN_STATUS_EXPIRED = "expired"
+TOKEN_STATUS_NOT_CONFIGURED = "not_configured"
+
+
+def normalize_auth_type(value: Optional[str]) -> str:
+    """规范化凭证模式，非法值回退为 oauth。"""
+    return value if value in TRAKT_AUTH_TYPES else "oauth"
 
 
 class TraktConfig(BaseModel):
     """Trakt 配置模型（Pydantic）"""
 
     user_id: str = Field(..., description="用户ID", min_length=1)
-    access_token: str = Field(..., description="访问令牌", min_length=1)
-    refresh_token: Optional[str] = Field(None, description="刷新令牌")
+    access_token: str = Field("", description="访问令牌（加密存储，不回显）")
+    refresh_token: Optional[str] = Field(
+        None, description="刷新令牌（旋转式，加密存储）"
+    )
     expires_at: Optional[int] = Field(None, description="令牌过期时间戳")
     enabled: bool = Field(True, description="是否启用 Trakt 同步")
     sync_interval: str = Field("0 */6 * * *", description="同步间隔 (Cron 表达式)")
@@ -27,6 +42,15 @@ class TraktConfig(BaseModel):
         default_factory=lambda: int(datetime.now().timestamp()),
         description="更新时间戳",
     )
+
+    # 凭证模式（互斥切换：oauth / bearer）。两种模式复用同一组
+    # access_token / refresh_token / expires_at 字段，切换时互相覆盖。
+    auth_type: str = Field("oauth", description="凭证模式: oauth / bearer")
+
+    @field_validator("auth_type")
+    @classmethod
+    def _validate_auth_type(cls, v: str) -> str:
+        return normalize_auth_type(v)
 
     def is_token_expired(self) -> bool:
         """检查访问令牌是否已过期"""
@@ -54,6 +78,7 @@ class TraktConfig(BaseModel):
             "last_sync_time": self.last_sync_time,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "auth_type": self.auth_type,
         }
 
     @classmethod
@@ -72,7 +97,7 @@ class TraktConfig(BaseModel):
 
         return cls(
             user_id=data["user_id"],
-            access_token=data["access_token"],
+            access_token=data.get("access_token", ""),
             refresh_token=data.get("refresh_token"),
             expires_at=data.get("expires_at"),
             enabled=enabled,
@@ -81,6 +106,7 @@ class TraktConfig(BaseModel):
             last_sync_time=data.get("last_sync_time"),
             created_at=data.get("created_at", int(datetime.now().timestamp())),
             updated_at=data.get("updated_at", int(datetime.now().timestamp())),
+            auth_type=normalize_auth_type(data.get("auth_type")),
         )
 
 
@@ -163,6 +189,15 @@ class TraktConfigResponse(BaseModel):
         False, description="Trakt Client Secret 是否已配置（不回传明文）"
     )
     redirect_uri: str = Field("", description="OAuth 回调 URL")
+    # 凭证状态（token 本身绝不回显）
+    auth_type: str = Field("oauth", description="凭证模式: oauth / bearer")
+    token_configured: bool = Field(
+        False, description="是否已配置凭证（access_token 非空）"
+    )
+    token_status: str = Field(
+        "not_configured",
+        description="凭证状态: active / expired / not_configured",
+    )
 
 
 class TraktConfigUpdateRequest(BaseModel):
@@ -171,6 +206,13 @@ class TraktConfigUpdateRequest(BaseModel):
     enabled: Optional[bool] = Field(None, description="是否启用")
     sync_interval: Optional[str] = Field(None, description="同步间隔")
     sync_filter_enabled: Optional[bool] = Field(None, description="是否启用类型过滤")
+    auth_type: Optional[str] = Field(None, description="凭证模式: oauth / bearer")
+    access_token: Optional[str] = Field(
+        None, description="Bearer access_token（留空=不修改；不回显）"
+    )
+    refresh_token: Optional[str] = Field(
+        None, description="Bearer refresh_token（留空=不修改；不回显）"
+    )
 
 
 class TraktApiConfigUpdateRequest(BaseModel):
