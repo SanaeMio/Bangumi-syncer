@@ -4,8 +4,57 @@
 {% block page_title %}Trakt.tv 配置{% endblock %}
 {% block content %}
     <p class="app-page-intro">配置 Trakt.tv 数据同步到 Bangumi</p>
-    <!-- API 配置卡片 -->
+    <!-- 凭证模式卡片 -->
     <div class="card mb-4">
+        <div class="card-header py-3">
+            <h6 class="mb-0 card-header-title">
+                <i class="bi bi-shield-lock me-2 card-header-icon"></i>凭证模式
+            </h6>
+        </div>
+        <div class="card-body">
+            <form id="auth-mode-form">
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <label class="form-label">选择凭证模式</label>
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="radio"
+                                   name="auth_type"
+                                   id="auth-type-oauth"
+                                   value="oauth">
+                            <label class="form-check-label" for="auth-type-oauth">
+                                API 应用
+                                <span class="text-muted small">（推荐，令牌自动续期）</span>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="radio"
+                                   name="auth_type"
+                                   id="auth-type-bearer"
+                                   value="bearer">
+                            <label class="form-check-label" for="auth-type-bearer">
+                                Bearer Token
+                                <span class="text-muted small">（从浏览器粘贴，自动续期）</span>
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            两种凭证互斥；切换只改模式标记，另一模式凭证字段会被覆盖。
+                            API 应用模式需先在「API 配置」卡片填写应用凭证后点击「授权 Trakt」；
+                            选择 Bearer 后请在下方「Bearer 凭证」卡片填写凭证（保存时立即验证并自动刷新）。
+                        </div>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <button type="submit" class="btn btn-primary" disabled>
+                        <i class="bi bi-save me-1"></i>保存凭证模式
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- API 配置卡片（仅 API 应用模式下显示） -->
+    <div class="card mb-4 d-none" id="api-config-card">
         <div class="card-header py-3">
             <h6 class="mb-0 card-header-title">
                 <i class="bi bi-key me-2 card-header-icon"></i>API 配置
@@ -54,95 +103,66 @@
             </form>
         </div>
     </div>
-    <!-- 凭证模式卡片 -->
-    <div class="card mb-4">
+    <!-- Bearer 凭证卡片（仅 Bearer 模式下显示） -->
+    <div class="card mb-4 d-none" id="bearer-cred-card">
         <div class="card-header py-3">
             <h6 class="mb-0 card-header-title">
-                <i class="bi bi-shield-lock me-2 card-header-icon"></i>凭证模式
+                <i class="bi bi-key me-2 card-header-icon"></i>Bearer 凭证
             </h6>
         </div>
         <div class="card-body">
-            <form id="auth-mode-form">
+            <form id="bearer-cred-form">
                 <div class="row mb-3">
                     <div class="col-md-6">
-                        <label class="form-label">凭证模式</label>
-                        <div class="form-check">
-                            <input class="form-check-input"
-                                   type="radio"
-                                   name="auth_type"
-                                   id="auth-type-oauth"
-                                   value="oauth">
-                            <label class="form-check-label" for="auth-type-oauth">
-                                OAuth 授权
-                                <span class="text-muted small">（推荐，令牌自动续期）</span>
-                            </label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input"
-                                   type="radio"
-                                   name="auth_type"
-                                   id="auth-type-bearer"
-                                   value="bearer">
-                            <label class="form-check-label" for="auth-type-bearer">
-                                Bearer Token
-                                <span class="text-muted small">（从浏览器粘贴，自动续期）</span>
-                            </label>
-                        </div>
-                        <div class="form-text">
-                            两种凭证互斥；切换只改模式标记，另一模式凭证字段会被覆盖。
-                            Bearer 凭证保存时会立即验证并自动刷新。
-                        </div>
+                        <label for="bearer-access-token" class="form-label">Access Token</label>
+                        <input type="password"
+                               class="form-control"
+                               id="bearer-access-token"
+                               name="access_token"
+                               placeholder="粘贴 access_token（32 字符）"
+                               autocomplete="off">
+                        <label for="bearer-refresh-token" class="form-label mt-2">Refresh Token</label>
+                        <input type="password"
+                               class="form-control"
+                               id="bearer-refresh-token"
+                               name="refresh_token"
+                               placeholder="粘贴 refresh_token（32 字符）"
+                               autocomplete="off">
+                        <div class="form-text">不会回显；已配置时留空表示不修改</div>
                     </div>
                     <div class="col-md-6">
-                        <div id="bearer-input-group">
-                            <label for="bearer-access-token" class="form-label">Access Token</label>
-                            <input type="password"
-                                   class="form-control"
-                                   id="bearer-access-token"
-                                   name="access_token"
-                                   placeholder="粘贴 access_token（32 字符）"
-                                   autocomplete="off">
-                            <label for="bearer-refresh-token" class="form-label mt-2">Refresh Token</label>
-                            <input type="password"
-                                   class="form-control"
-                                   id="bearer-refresh-token"
-                                   name="refresh_token"
-                                   placeholder="粘贴 refresh_token（32 字符）"
-                                   autocomplete="off">
-                            <div class="form-text">不会回显；已配置时留空表示不修改</div>
-                            <div class="mt-2">
-                                <button class="btn btn-outline-secondary btn-sm"
-                                        type="button"
-                                        data-bs-toggle="collapse"
-                                        data-bs-target="#bearer-help">
-                                    <i class="bi bi-question-circle me-1"></i>如何获取 token？
-                                </button>
-                            </div>
-                            <div class="collapse mt-2" id="bearer-help">
-                                <div class="small text-muted border rounded p-2">
-                                    <ol class="mb-2 ps-3">
-                                        <li>
-                                            用浏览器登录 <a href="https://app.trakt.tv" target="_blank" rel="noopener">app.trakt.tv</a>
-                                        </li>
-                                        <li>按 F12 打开开发者工具 → Application → Local Storage</li>
-                                        <li>
-                                            展开 <code>https://auth.trakt.tv</code>，找到
-                                            <code>oidc.user:https://auth.trakt.tv:201dc70c...</code> 键
-                                        </li>
-                                        <li>
-                                            复制其中 <code>access_token</code> 与 <code>refresh_token</code> 的值分别粘贴到上方两个输入框
-                                        </li>
-                                    </ol>
-                                    <div class="mb-0">保存时后端会立即验证并刷新凭证（refresh 为旋转式，旧值作废）。</div>
-                                </div>
+                        <div id="bearer-status-info" class="small"></div>
+                        <div class="mt-2">
+                            <button class="btn btn-outline-secondary btn-sm"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#bearer-help">
+                                <i class="bi bi-question-circle me-1"></i>如何获取 token？
+                            </button>
+                        </div>
+                        <div class="collapse mt-2" id="bearer-help">
+                            <div class="small text-muted border rounded p-2">
+                                <ol class="mb-2 ps-3">
+                                    <li>
+                                        用浏览器登录 <a href="https://app.trakt.tv" target="_blank" rel="noopener">app.trakt.tv</a>
+                                    </li>
+                                    <li>按 F12 打开开发者工具 → Application → Local Storage</li>
+                                    <li>
+                                        展开 <code>https://auth.trakt.tv</code>，找到
+                                        <code>oidc.user:https://auth.trakt.tv:201dc70c...</code> 键
+                                    </li>
+                                    <li>
+                                        复制其中 <code>access_token</code> 与 <code>refresh_token</code> 的值分别粘贴到上方两个输入框
+                                    </li>
+                                </ol>
+                                <div class="mb-0">保存时后端会立即验证并刷新凭证（refresh 为旋转式，旧值作废）。</div>
                             </div>
                         </div>
-                        <div id="bearer-status-info" class="mt-2 small"></div>
                     </div>
                 </div>
                 <div class="text-end">
                     <button type="submit" class="btn btn-primary" disabled>
-                        <i class="bi bi-save me-1"></i>保存凭证配置
+                        <i class="bi bi-save me-1"></i>保存 Bearer 凭证
                     </button>
                 </div>
             </form>

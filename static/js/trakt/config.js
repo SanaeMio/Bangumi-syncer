@@ -78,10 +78,23 @@ class TraktConfigPage {
             this.saveApiConfig();
         });
 
-        // 保存凭证配置表单
+        // 保存凭证模式表单
         document.getElementById('auth-mode-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveAuthMode();
+        });
+
+        // 保存 Bearer 凭证表单
+        document.getElementById('bearer-cred-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveBearerCred();
+        });
+
+        // 凭证模式切换时按需显示凭证相关卡片
+        document.querySelectorAll('input[name="auth_type"]').forEach((radio) => {
+            radio.addEventListener('change', () => {
+                this.toggleCredentialCards();
+            });
         });
 
         // 手动同步按钮
@@ -218,10 +231,15 @@ class TraktConfigPage {
             if (authModeSaveButton) {
                 authModeSaveButton.disabled = false;
             }
+            const bearerCredSaveButton = document.querySelector('#bearer-cred-form button[type="submit"]');
+            if (bearerCredSaveButton) {
+                bearerCredSaveButton.disabled = false;
+            }
             const bearerStatusInfo = document.getElementById('bearer-status-info');
             if (bearerStatusInfo) {
                 bearerStatusInfo.innerHTML = '<span class="text-muted"><i class="bi bi-dash-circle me-1"></i>未配置 Bearer 凭证</span>';
             }
+            this.toggleCredentialCards();
             return;
         }
 
@@ -280,6 +298,11 @@ class TraktConfigPage {
         if (authModeSaveButton) {
             authModeSaveButton.disabled = false;
         }
+        const bearerCredSaveButton = document.querySelector('#bearer-cred-form button[type="submit"]');
+        if (bearerCredSaveButton) {
+            bearerCredSaveButton.disabled = false;
+        }
+        this.toggleCredentialCards();
         // 不回显 token；已配置时留空表示不修改
         if (accessTokenInput) {
             accessTokenInput.value = '';
@@ -325,7 +348,7 @@ class TraktConfigPage {
     }
 
     /**
-     * 保存凭证模式与 Bearer 凭证（留空表示不修改）
+     * 保存凭证模式（oauth / bearer，切换只改模式标记）
      */
     async saveAuthMode() {
         const authType = document.querySelector('input[name="auth_type"]:checked');
@@ -333,18 +356,43 @@ class TraktConfigPage {
             this.showNotification('请选择凭证模式', 'warning');
             return;
         }
+
+        try {
+            const result = await apiFetch('/api/trakt/config', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    auth_type: authType.value
+                })
+            });
+            this.showNotification('凭证模式保存成功', 'success');
+            this.updateConfigDisplay(result);
+        } catch (error) {
+            console.error('保存凭证模式失败:', error);
+            this.showNotification(`保存凭证模式失败: ${error.message}`, 'danger');
+        }
+    }
+
+    /**
+     * 保存 Bearer 凭证（留空表示不修改；非空则后端同时校验两值并立即验证）
+     */
+    async saveBearerCred() {
         const accessToken = document.getElementById('bearer-access-token');
         const refreshToken = document.getElementById('bearer-refresh-token');
 
-        const config = {
-            auth_type: authType.value
-        };
+        const config = {};
         // 留空表示不修改；非空则一并提交（后端会同时校验两值并立即验证）
         if (accessToken && accessToken.value.trim()) {
             config.access_token = accessToken.value.trim();
         }
         if (refreshToken && refreshToken.value.trim()) {
             config.refresh_token = refreshToken.value.trim();
+        }
+        if (!config.access_token && !config.refresh_token) {
+            this.showNotification('请填写 Bearer 凭证（Access Token 与 Refresh Token）', 'warning');
+            return;
         }
 
         try {
@@ -355,11 +403,28 @@ class TraktConfigPage {
                 },
                 body: JSON.stringify(config)
             });
-            this.showNotification('凭证配置保存成功', 'success');
+            this.showNotification('Bearer 凭证保存成功', 'success');
             this.updateConfigDisplay(result);
         } catch (error) {
-            console.error('保存凭证配置失败:', error);
-            this.showNotification(`保存凭证配置失败: ${error.message}`, 'danger');
+            console.error('保存 Bearer 凭证失败:', error);
+            this.showNotification(`保存 Bearer 凭证失败: ${error.message}`, 'danger');
+        }
+    }
+
+    /**
+     * 根据当前选中的凭证模式按需显示凭证相关卡片：
+     * API 应用（oauth）→ 显示「API 配置」卡片；Bearer → 显示「Bearer 凭证」卡片
+     */
+    toggleCredentialCards() {
+        const authType = document.querySelector('input[name="auth_type"]:checked');
+        const isBearer = authType && authType.value === 'bearer';
+        const bearerCard = document.getElementById('bearer-cred-card');
+        if (bearerCard) {
+            bearerCard.classList.toggle('d-none', !isBearer);
+        }
+        const apiConfigCard = document.getElementById('api-config-card');
+        if (apiConfigCard) {
+            apiConfigCard.classList.toggle('d-none', isBearer);
         }
     }
 
