@@ -247,3 +247,31 @@ class TraktManualSyncResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
     message: str = Field(..., description="消息")
     job_id: Optional[str] = Field(None, description="任务ID")
+
+
+class TraktEmailLoginStartRequest(BaseModel):
+    """Trakt 邮箱登录：发送验证码请求模型"""
+
+    email: str = Field(..., description="Trakt 账号邮箱")
+
+
+class TraktEmailLoginStartResponse(BaseModel):
+    """Trakt 邮箱登录：发送验证码响应模型"""
+
+    success: bool = Field(..., description="是否成功")
+    message: str = Field(..., description="消息")
+    retry_after: Optional[int] = Field(None, description="冷却剩余秒数（限流时）")
+
+
+class TraktEmailLoginCompleteRequest(BaseModel):
+    """Trakt 邮箱登录：提交验证码请求模型"""
+
+    otp: str = Field(..., description="6 位验证码")
+
+
+class TraktEmailLoginCompleteResponse(BaseModel):
+    """Trakt 邮箱登录：提交验证码响应模型"""
+
+    success: bool = Field(..., description="是否成功")
+    message: str = Field(..., description="消息")
+    expires_at: Optional[int] = Field(None, description="凭证过期时间戳")

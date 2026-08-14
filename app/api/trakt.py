@@ -22,6 +22,10 @@ from ..models.trakt import (
     TraktCallbackRequest,
     TraktConfigResponse,
     TraktConfigUpdateRequest,
+    TraktEmailLoginCompleteRequest,
+    TraktEmailLoginCompleteResponse,
+    TraktEmailLoginStartRequest,
+    TraktEmailLoginStartResponse,
     TraktManualSyncRequest,
     TraktManualSyncResponse,
     TraktSyncStatusResponse,
@@ -29,6 +33,7 @@ from ..models.trakt import (
 )
 from ..services.sync_service import sync_service
 from ..services.trakt.auth import trakt_auth_service
+from ..services.trakt.email_login import complete_email_login, start_email_login
 from ..services.trakt.scheduler import trakt_scheduler
 from ..services.trakt.sync_service import trakt_sync_service
 from ..services.trakt.token_refresher import validate_and_save_bearer
@@ -364,6 +369,46 @@ async def update_trakt_api_config(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"更新 API 配置失败: {str(e)}",
         )
+
+
+@router.post("/email-login/start", response_model=TraktEmailLoginStartResponse)
+async def trakt_email_login_start(
+    request: TraktEmailLoginStartRequest,
+    current_user: dict = Depends(deps.get_current_user_flexible),
+) -> TraktEmailLoginStartResponse:
+    """邮箱登录：发送验证码到指定邮箱"""
+    user_id = current_user.get("username", "default_user")
+    result = await start_email_login(user_id, request.email)
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"],
+        )
+    return TraktEmailLoginStartResponse(
+        success=True,
+        message=result["message"],
+        retry_after=result.get("retry_after"),
+    )
+
+
+@router.post("/email-login/complete", response_model=TraktEmailLoginCompleteResponse)
+async def trakt_email_login_complete(
+    request: TraktEmailLoginCompleteRequest,
+    current_user: dict = Depends(deps.get_current_user_flexible),
+) -> TraktEmailLoginCompleteResponse:
+    """邮箱登录：提交验证码，完成后自动获取并存储 Bearer 凭证"""
+    user_id = current_user.get("username", "default_user")
+    result = await complete_email_login(user_id, request.otp)
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result["message"],
+        )
+    return TraktEmailLoginCompleteResponse(
+        success=True,
+        message=result["message"],
+        expires_at=result.get("expires_at"),
+    )
 
 
 @router.get("/sync/status", response_model=TraktSyncStatusResponse)

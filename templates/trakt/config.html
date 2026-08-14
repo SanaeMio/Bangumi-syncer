@@ -133,6 +133,15 @@
                     <div class="col-md-6">
                         <div id="bearer-status-info" class="small"></div>
                         <div class="mt-2">
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm"
+                                    id="email-login-btn"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#email-login-modal">
+                                <i class="bi bi-box-arrow-in-right me-1"></i>通过邮箱登录
+                            </button>
+                        </div>
+                        <div class="mt-2">
                             <button class="btn btn-outline-secondary btn-sm"
                                     type="button"
                                     data-bs-toggle="collapse"
@@ -408,6 +417,76 @@
                             <button class="btn btn-outline-secondary ms-2" data-bs-dismiss="modal">取消</button>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 邮箱登录弹窗 -->
+    <div class="modal fade"
+         id="email-login-modal"
+         tabindex="-1"
+         aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title">
+                        <i class="bi bi-envelope me-2"></i>Trakt 邮箱登录
+                    </h6>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 步骤 1：输入邮箱 -->
+                    <div id="email-login-step-1">
+                        <p class="text-muted small mb-3">
+                            输入 Trakt 账号邮箱，我们将发送一封含 6 位验证码的登录邮件（5 分钟内有效）。
+                            若该邮箱尚未注册 Trakt 账号，将自动创建。
+                        </p>
+                        <div class="mb-3">
+                            <label for="email-login-email" class="form-label">邮箱地址</label>
+                            <input type="email"
+                                   class="form-control"
+                                   id="email-login-email"
+                                   placeholder="you@example.com"
+                                   autocomplete="off">
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-primary" id="email-login-send-btn">
+                                <i class="bi bi-send me-1"></i>发送验证码
+                            </button>
+                        </div>
+                    </div>
+                    <!-- 步骤 2：输入验证码 -->
+                    <div id="email-login-step-2" class="d-none">
+                        <p class="text-muted small mb-3">
+                            验证码已发送至 <strong id="email-login-sent-to"></strong>，请查收邮件并输入。
+                        </p>
+                        <div class="mb-3">
+                            <label for="email-login-otp" class="form-label">6 位验证码</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="email-login-otp"
+                                   placeholder="123456"
+                                   maxlength="6"
+                                   inputmode="numeric"
+                                   autocomplete="one-time-code">
+                        </div>
+                        <div class="text-end">
+                            <button type="button"
+                                    class="btn btn-outline-secondary me-2"
+                                    id="email-login-resend-btn"
+                                    disabled>
+                                <i class="bi bi-arrow-clockwise me-1"></i>重新发送
+                            </button>
+                            <button type="button" class="btn btn-primary" id="email-login-submit-btn">
+                                <i class="bi bi-box-arrow-in-right me-1"></i>登录并保存
+                            </button>
+                        </div>
+                    </div>
+                    <!-- 错误提示 -->
+                    <div id="email-login-error" class="alert alert-danger d-none mt-3 mb-0"></div>
                 </div>
             </div>
         </div>

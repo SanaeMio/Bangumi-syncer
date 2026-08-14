@@ -97,6 +97,33 @@ class TraktConfigPage {
             });
         });
 
+        // 邮箱登录弹窗
+        document.getElementById('email-login-send-btn').addEventListener('click', () => {
+            this.sendEmailCode();
+        });
+        document.getElementById('email-login-submit-btn').addEventListener('click', () => {
+            this.completeEmailLogin();
+        });
+        document.getElementById('email-login-resend-btn').addEventListener('click', () => {
+            this.sendEmailCode();
+        });
+        const emailOtpInput = document.getElementById('email-login-otp');
+        if (emailOtpInput) {
+            emailOtpInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.completeEmailLogin();
+                }
+            });
+        }
+        // 弹窗关闭时重置为步骤 1
+        const emailLoginModalEl = document.getElementById('email-login-modal');
+        if (emailLoginModalEl) {
+            emailLoginModalEl.addEventListener('hidden.bs.modal', () => {
+                this.resetEmailLoginModal();
+            });
+        }
+
         // 手动同步按钮
         document.getElementById('manual-sync-button').addEventListener('click', () => {
             this.triggerManualSync(false);
@@ -408,6 +435,175 @@ class TraktConfigPage {
         } catch (error) {
             console.error('保存 Bearer 凭证失败:', error);
             this.showNotification(`保存 Bearer 凭证失败: ${error.message}`, 'danger');
+        }
+    }
+
+    /**
+     * 邮箱登录：发送验证码（弹窗步骤 1）
+     */
+    async sendEmailCode() {
+        const emailInput = document.getElementById('email-login-email');
+        const email = (emailInput && emailInput.value.trim()) || '';
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            this.showEmailLoginError('请输入有效的邮箱地址');
+            return;
+        }
+        this.hideEmailLoginError();
+        const sendBtn = document.getElementById('email-login-send-btn');
+        const resendBtn = document.getElementById('email-login-resend-btn');
+        if (sendBtn) {
+            sendBtn.disabled = true;
+        }
+        if (resendBtn) {
+            resendBtn.disabled = true;
+        }
+        try {
+            const result = await apiFetch('/api/trakt/email-login/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            // 成功：进入步骤 2
+            const sentTo = document.getElementById('email-login-sent-to');
+            if (sentTo) {
+                sentTo.textContent = email;
+            }
+            this.showEmailLoginStep(2);
+            this.startResendCountdown((result && result.retry_after) || 60);
+        } catch (error) {
+            this.showEmailLoginError(error.message || '发送验证码失败');
+            if (sendBtn) {
+                sendBtn.disabled = false;
+            }
+        }
+    }
+
+    /**
+     * 邮箱登录：提交验证码，完成登录（弹窗步骤 2）
+     */
+    async completeEmailLogin() {
+        const otpInput = document.getElementById('email-login-otp');
+        const otp = (otpInput && otpInput.value.trim()) || '';
+        if (!/^\d{6}$/.test(otp)) {
+            this.showEmailLoginError('请输入 6 位数字验证码');
+            return;
+        }
+        this.hideEmailLoginError();
+        const submitBtn = document.getElementById('email-login-submit-btn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+        }
+        try {
+            const result = await apiFetch('/api/trakt/email-login/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ otp })
+            });
+            this.showNotification((result && result.message) || '登录成功，Bearer 凭证已保存', 'success');
+            // 关闭弹窗并刷新页面状态（Bearer 模式 + active）
+            const modalEl = document.getElementById('email-login-modal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                modal.hide();
+            }
+            this.loadConfig();
+        } catch (error) {
+            this.showEmailLoginError(error.message || '登录失败，请重试');
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+            }
+        }
+    }
+
+    /**
+     * 邮箱登录：重发验证码冷却倒计时（重新发送按钮禁用期间显示剩余秒数）
+     */
+    startResendCountdown(seconds) {
+        const resendBtn = document.getElementById('email-login-resend-btn');
+        const sendBtn = document.getElementById('email-login-send-btn');
+        let remain = Math.max(1, parseInt(seconds, 10) || 60);
+        const tick = () => {
+            if (resendBtn) {
+                resendBtn.disabled = true;
+                resendBtn.textContent = `重新发送（${remain}s）`;
+            }
+            remain -= 1;
+            if (remain < 0) {
+                if (resendBtn) {
+                    resendBtn.disabled = false;
+                    resendBtn.textContent = '重新发送';
+                }
+                if (sendBtn) {
+                    sendBtn.disabled = false;
+                }
+                if (this._emailLoginCountdown) {
+                    clearTimeout(this._emailLoginCountdown);
+                    this._emailLoginCountdown = null;
+                }
+                return;
+            }
+            this._emailLoginCountdown = setTimeout(tick, 1000);
+        };
+        tick();
+    }
+
+    /**
+     * 邮箱登录：切换弹窗步骤（1 输入邮箱 / 2 输入验证码）
+     */
+    showEmailLoginStep(step) {
+        const step1 = document.getElementById('email-login-step-1');
+        const step2 = document.getElementById('email-login-step-2');
+        if (step1) {
+            step1.classList.toggle('d-none', step !== 1);
+        }
+        if (step2) {
+            step2.classList.toggle('d-none', step !== 2);
+        }
+        if (step === 2) {
+            const otpInput = document.getElementById('email-login-otp');
+            if (otpInput) {
+                otpInput.focus();
+            }
+        }
+    }
+
+    /**
+     * 邮箱登录：错误提示
+     */
+    showEmailLoginError(message) {
+        const el = document.getElementById('email-login-error');
+        if (el) {
+            el.textContent = message;
+            el.classList.remove('d-none');
+        }
+    }
+
+    hideEmailLoginError() {
+        const el = document.getElementById('email-login-error');
+        if (el) {
+            el.classList.add('d-none');
+        }
+    }
+
+    /**
+     * 邮箱登录：弹窗关闭时重置为步骤 1
+     */
+    resetEmailLoginModal() {
+        if (this._emailLoginCountdown) {
+            clearTimeout(this._emailLoginCountdown);
+            this._emailLoginCountdown = null;
+        }
+        this.hideEmailLoginError();
+        this.showEmailLoginStep(1);
+        const resendBtn = document.getElementById('email-login-resend-btn');
+        const sendBtn = document.getElementById('email-login-send-btn');
+        if (resendBtn) {
+            resendBtn.disabled = true;
+            resendBtn.textContent = '重新发送';
+        }
+        if (sendBtn) {
+            sendBtn.disabled = false;
         }
     }
 

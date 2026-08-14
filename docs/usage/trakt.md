@@ -37,6 +37,41 @@ order: 15
 授权成功后，系统会自动把你登录本程序的用户名追加到**当前激活的 Bangumi 账号**的「媒体服务器用户名」列表里（如果尚未存在），并在成功页弹出提示。这是为了让 Trakt 同步的观看记录能正确路由到对应的 Bangumi 账号，避免被用户名过滤拦截。如果你不希望如此，可在「Bangumi 账号配置」里手动移除该用户名。
 :::
 
+## Bearer 凭证模式（备选，无需创建 Trakt 应用）
+
+不想创建 Trakt 应用 / 无法配置回调地址时，可改用 **Bearer 凭证模式**：
+直接提供 Trakt 账号的 access_token 与 refresh_token，数据走官方数据域
+`apiz.trakt.tv`，无需 Client ID / Secret / 回调地址。
+
+### 方式一：通过邮箱一键登录（推荐）
+
+1. 进入「Trakt 配置」页面，在顶部「凭证模式」卡片选择 **Bearer Token**
+2. 在「Bearer 凭证」卡片点击 **通过邮箱登录**
+3. 弹窗中输入 **Trakt 账号邮箱** 并点击「发送验证码」
+4. 到邮箱查收 **6 位验证码**（5 分钟内有效），输入后点击「登录并保存」
+5. 登录成功会自动获取并保存 Access Token / Refresh Token，并切换为
+   Bearer 模式；token 全程在服务端流转，不会回显到页面
+
+::: tip 自动补充用户名
+邮箱登录成功后，同样会自动把你登录本程序的用户名追加到激活的 Bangumi
+账号的「媒体服务器用户名」列表（与 API 应用模式授权成功行为一致），确保
+Trakt 同步记录能正确路由。
+:::
+
+### 方式二：从浏览器手动粘贴
+
+1. 用浏览器登录 [app.trakt.tv](https://app.trakt.tv)
+2. 按 F12 打开开发者工具 → Application → Local Storage
+3. 展开 `https://auth.trakt.tv`，找到 `oidc.user:https://auth.trakt.tv:201dc70c...`
+   键，复制其中 `access_token` 与 `refresh_token`
+4. 在「Bearer 凭证」卡片中分别粘贴到两个输入框并保存
+
+::: tip 凭证说明
+- 保存时后端会立即验证并刷新凭证；refresh_token 为旋转式，旧值立即作废
+- 已配置时输入框留空表示不修改；token 绝不回显
+- 凭证剩余不足 1 天时，每日定时任务会自动续期，无需手动刷新
+:::
+
 ## 4. 同步配置
 
 - **启用同步**：开启定时同步功能
