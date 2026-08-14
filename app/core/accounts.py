@@ -11,10 +11,17 @@ Bangumi 账号统一访问层（全列表化重构的核心）。
 
 from typing import Any, Optional
 
-from .config import config_manager
+from .config import config_manager, parse_media_server_username_value
 from .database import database_manager
 
 _BANGUMI_SECTION = "bangumi"
+
+
+def _to_str(value) -> str:
+    """规范化配置值为字符串（兼容 get() 将纯数字转为 int）。"""
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _to_int(value):
@@ -48,13 +55,15 @@ def _collect_ini_accounts() -> list[dict]:
     # 单用户段 [bangumi]（仅当真实存在且有 username + access_token 时，
     # 与多用户段 get_bangumi_configs 的过滤条件对齐，避免迁入"半配置"幽灵账号）
     if config_manager.get_config_parser().has_section(_BANGUMI_SECTION):
-        username = config_manager.get(_BANGUMI_SECTION, "username", fallback="") or ""
-        access_token = (
-            config_manager.get(_BANGUMI_SECTION, "access_token", fallback="") or ""
+        username = _to_str(
+            config_manager.get(_BANGUMI_SECTION, "username", fallback="")
+        )
+        access_token = _to_str(
+            config_manager.get(_BANGUMI_SECTION, "access_token", fallback="")
         )
         if (
-            username.strip()
-            and access_token.strip()
+            username
+            and access_token
             and _BANGUMI_SECTION not in {a["section_name"] for a in accounts}
         ):
             raw = {
@@ -91,19 +100,28 @@ def _collect_ini_accounts() -> list[dict]:
     return accounts
 
 
+def _normalize_media_server_usernames(raw) -> list[str]:
+    """规范化 media_server_username（兼容 get() 将纯数字转为 int）。"""
+    if isinstance(raw, (list, tuple)):
+        return list(raw)
+    return parse_media_server_username_value(raw)
+
+
 def _cfg_to_account(section_name: str, cfg: dict) -> dict:
     return {
         "section_name": section_name,
-        "username": (cfg.get("username") or "").strip(),
-        "media_server_usernames": cfg.get("media_server_username") or [],
-        "auth_method": cfg.get("auth_method") or "manual",
-        "access_token": cfg.get("access_token") or "",
-        "refresh_token": cfg.get("refresh_token") or "",
-        "token_type": cfg.get("token_type") or "Bearer",
+        "username": _to_str(cfg.get("username")),
+        "media_server_usernames": _normalize_media_server_usernames(
+            cfg.get("media_server_username")
+        ),
+        "auth_method": _to_str(cfg.get("auth_method")) or "manual",
+        "access_token": _to_str(cfg.get("access_token")),
+        "refresh_token": _to_str(cfg.get("refresh_token")),
+        "token_type": _to_str(cfg.get("token_type")) or "Bearer",
         "expires_at": _to_int(cfg.get("expires_at")),
-        "bangumi_user_id": cfg.get("bangumi_user_id") or "",
-        "nickname": cfg.get("nickname") or "",
-        "avatar": cfg.get("avatar") or "",
+        "bangumi_user_id": _to_str(cfg.get("bangumi_user_id")),
+        "nickname": _to_str(cfg.get("nickname")),
+        "avatar": _to_str(cfg.get("avatar")),
         "private": _to_bool(cfg.get("private")),
         "is_active": False,
     }
