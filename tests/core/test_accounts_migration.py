@@ -147,3 +147,36 @@ def test_migrate_skips_when_db_already_has_section(
     # 仅 bangumi 被迁移，bangumi-foo 已存在故跳过
     assert n == 1
     assert db.get_bangumi_account("bangumi-foo")["username"] == "prefilled"
+
+
+def test_migrate_numeric_username_from_ini(temp_dir, reset_singletons, monkeypatch):
+    """纯数字 username（get() 会转为 int）应能正常迁移。"""
+    ini = temp_dir / "config.ini"
+    ini.write_text(
+        "[bangumi-321246]\n"
+        "username = 321246\n"
+        "access_token = AT_NUM\n"
+        "media_server_username = 999\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CONFIG_FILE", str(ini))
+    from app.core.config import ConfigManager
+
+    cm = ConfigManager()
+    import app.core.accounts as accounts_mod
+    from app.core.database import DatabaseManager
+
+    db = DatabaseManager(str(temp_dir / "acc.db"))
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+    monkeypatch.setattr(accounts_mod, "config_manager", cm)
+
+    with patch("app.core.database.logger"):
+        n = accounts_mod.migrate_ini_accounts_to_db()
+
+    assert n == 1
+    acc = db.get_bangumi_account("bangumi-321246")
+    assert acc is not None
+    assert acc["username"] == "321246"
+    assert isinstance(acc["username"], str)
+    assert acc["access_token"] == "AT_NUM"
+    assert acc["media_server_usernames"] == ["999"]

@@ -56,6 +56,8 @@ def _to_json_list(value) -> str:
         return json.dumps([value]) if value.strip() else "[]"
     if isinstance(value, (list, tuple)):
         return json.dumps(list(value))
+    if isinstance(value, (int, float)):
+        return json.dumps([str(value)])
     return "[]"
 
 

@@ -169,6 +169,7 @@ class Logger:
         # 不在 __init__ 中打开日志文件：模块执行 logger = Logger() 时，若此处导入
         # config，而 config 初始化链又 import logger，会触发 partially initialized 循环依赖。
         self._log_file_lazy_initialized = False
+        self._log_file_import_warned = False
         # 日志监听器列表（用于实时捕获日志，如重试 SSE 推送）
         self._listeners: list[Callable[[str, str], None]] = []
         # 是否已注册配置变更监听（幂等，避免重复注册）
@@ -221,21 +222,27 @@ class Logger:
         """首次写日志前再绑定文件与 config（避免与 config 模块循环导入）。"""
         if self._log_file_lazy_initialized:
             return
-        self._log_file_lazy_initialized = True
-        self._setup_log_file()
+        if self._setup_log_file():
+            self._log_file_lazy_initialized = True
 
-    def _setup_log_file(self) -> None:
-        """设置日志文件（成功/跳过/失败均向 stderr 输出一行，便于排查）"""
+    def _setup_log_file(self) -> bool:
+        """设置日志文件（成功/跳过/失败均向 stderr 输出一行，便于排查）。
+
+        返回 True 表示已尝试绑定 config（含显式禁用文件日志）；False 表示
+        config 尚未可导入，调用方应稍后重试。
+        """
         self._close_log_file_handle()
 
         try:
             from .config import config_manager
         except ImportError as e:
-            print(
-                f"文件日志未启用: 无法导入 config（{e!r}），仅输出到控制台",
-                file=sys.stderr,
-            )
-            return
+            if not self._log_file_import_warned:
+                print(
+                    f"文件日志未启用: 无法导入 config（{e!r}），仅输出到控制台",
+                    file=sys.stderr,
+                )
+                self._log_file_import_warned = True
+            return False
 
         raw = effective_dev_log_file_raw(config_manager)
         if raw is None:
@@ -243,7 +250,7 @@ class Logger:
                 "文件日志已禁用: [dev] log_file 为空（留空则禁用）",
                 file=sys.stderr,
             )
-            return
+            return True
 
         log_path = resolve_dev_log_file_path(raw)
         try:
@@ -263,6 +270,7 @@ class Logger:
                 f"文件日志打开失败: {e!r} 路径={log_path}",
                 file=sys.stderr,
             )
+        return True
 
     def _rotate_log_file(self, log_path: Path) -> None:
         """日志文件超出大小上限时轮转，保留最近的 MAX_LOG_BACKUPS 份备份。"""
@@ -336,9 +344,8 @@ class Logger:
             try:
                 from .config import config_manager
             except ImportError:
-                raw = "INFO"
-            else:
-                raw = config_manager.get("dev", "log_level", fallback="INFO")
+                return "INFO"
+            raw = config_manager.get("dev", "log_level", fallback="INFO")
             self._log_level = normalize_log_level(raw)
             self._ensure_config_change_listener()
         return self._log_level

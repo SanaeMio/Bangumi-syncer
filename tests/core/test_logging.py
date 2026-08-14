@@ -147,8 +147,8 @@ class TestLoggerFileOperations:
         logger._close_log_file_handle()
         # 不应抛出异常
 
-    def test_setup_log_file_import_error(self):
-        """导入 config 失败时跳过文件日志"""
+    def test_setup_log_file_import_error(self, capsys):
+        """导入 config 失败时跳过文件日志且可稍后重试"""
         logger = _make_logger()
         import sys
 
@@ -156,12 +156,30 @@ class TestLoggerFileOperations:
         saved = sys.modules.pop("app.core.config", None)
         sys.modules["app.core.config"] = None  # type: ignore[assignment]
         try:
-            logger._setup_log_file()
+            assert logger._setup_log_file() is False
+            assert logger._log_file_import_warned is True
+            err = capsys.readouterr()
+            assert "文件日志未启用" in err.err
+            # 第二次失败不再重复警告
+            assert logger._setup_log_file() is False
+            assert capsys.readouterr().err == ""
         finally:
             if saved is not None:
                 sys.modules["app.core.config"] = saved
             else:
                 sys.modules.pop("app.core.config", None)
+
+    def test_lazy_init_retries_after_config_import_failure(self):
+        """config 尚未就绪时保持未初始化，成功后再标记完成"""
+        logger = _make_logger()
+        with patch.object(
+            logger, "_setup_log_file", side_effect=[False, True]
+        ) as mock_setup:
+            logger._lazy_init_log_file_once()
+            assert not logger._log_file_lazy_initialized
+            logger._lazy_init_log_file_once()
+            assert logger._log_file_lazy_initialized
+            assert mock_setup.call_count == 2
 
     def test_setup_log_file_raw_none(self):
         """log_file 配置为空时禁用文件日志"""
@@ -240,6 +258,22 @@ class TestLoggerLogLevel:
         logger._debug_mode = False
         logger._log_level = "WARNING"
         assert logger.log_level == "WARNING"
+
+    def test_log_level_not_cached_on_import_error(self):
+        """config 尚未可导入时不缓存 log_level，便于后续重试读取配置"""
+        logger = _make_logger()
+        import sys
+
+        saved = sys.modules.pop("app.core.config", None)
+        sys.modules["app.core.config"] = None  # type: ignore[assignment]
+        try:
+            assert logger.log_level == "INFO"
+            assert logger._log_level is None
+        finally:
+            if saved is not None:
+                sys.modules["app.core.config"] = saved
+            else:
+                sys.modules.pop("app.core.config", None)
 
     def test_log_level_debug_override(self, capsys):
         """debug 开关开启时始终按 DEBUG 输出"""
