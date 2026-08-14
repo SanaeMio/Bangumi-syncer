@@ -228,18 +228,55 @@ async def update_trakt_config(
         has_refresh = bool(
             update_request.refresh_token and update_request.refresh_token.strip()
         )
+        auth_type = update_request.auth_type
+        target_mode = normalize_auth_type(auth_type) if auth_type is not None else None
 
-        # Bearer 凭证：非空则立即验证并刷新（旋转式），有效才落库
-        if has_access or has_refresh:
-            if not (has_access and has_refresh):
+        # ---- 凭证模式切换前置校验 ----
+        # 必须在调用 validate_and_save_bearer 之前执行，避免「已把 Bearer 凭证
+        # 落库却返回 400」的副作用。
+        # 1) 提供 Bearer 凭证却要求其他模式：矛盾，直接拒绝
+        if (
+            (has_refresh or has_access)
+            and target_mode is not None
+            and target_mode != "bearer"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "已提供 Bearer 凭证会保存为 Bearer 模式；如需使用 API 应用模式，"
+                    "请点击「授权 Trakt」完成授权（无需填写 token）"
+                ),
+            )
+        # 2) 切换模式但未提供对应凭证：拒绝（oauth/bearer 数据域不同，不能只改标记）
+        if (
+            target_mode is not None
+            and config is not None
+            and target_mode != config.auth_type
+        ):
+            if target_mode == "oauth":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Bearer 凭证需同时提供 access_token 与 refresh_token",
+                    detail=(
+                        "切换至 API 应用模式需重新授权，请点击「授权 Trakt」完成授权"
+                    ),
                 )
+            # target_mode == bearer
+            if not has_refresh:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "切换至 Bearer 模式需提供 refresh_token"
+                        "（或使用「通过邮箱登录」）"
+                    ),
+                )
+
+        # ---- Bearer 凭证 ----
+        # 提供 refresh_token 则立即验证并刷新（旋转式），有效才落库。
+        # 实际只使用并验证 refresh_token（刷新成功即证明凭证对有效，且会换新
+        # access/refresh）；access_token 为可选展示字段，不被使用。
+        if has_refresh:
             result = await validate_and_save_bearer(
-                user_id,
-                update_request.access_token.strip(),
-                update_request.refresh_token.strip(),
+                user_id, update_request.refresh_token.strip()
             )
             if not result["success"]:
                 raise HTTPException(
@@ -248,6 +285,12 @@ async def update_trakt_config(
                 )
             # 验证已落库（auth_type=bearer + 新 token），重新读取最新配置
             config = trakt_auth_service.get_user_trakt_config(user_id)
+        elif has_access:
+            # 只给了 access_token：无法校验/续期，明确提示需要 refresh_token
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bearer 凭证校验需要 refresh_token（access_token 可选）",
+            )
 
         if not config:
             # 无既有配置且未提供 Bearer 凭证：视为未授权，保持 404
@@ -256,33 +299,37 @@ async def update_trakt_config(
                 detail="Trakt 配置未找到，请先完成授权或填写 Bearer 凭证",
             )
 
+        # ---- 更新非凭证字段 ----
         enable = update_request.enabled
         sync_interval = update_request.sync_interval
         sync_filter_enabled = update_request.sync_filter_enabled
-        auth_type = update_request.auth_type
-
-        # 更新配置
+        # 只写 enabled/sync_interval/sync_filter_enabled/auth_type 这些列，
+        # 不触碰 access_token/refresh_token/expires_at：避免用本请求早先读到的
+        # 旧 token 覆盖并发刷新（心跳/定时同步/手动同步）旋转后的新 token。
+        updates: dict = {}
         if enable is not None:
             config.enabled = enable
+            updates["enabled"] = enable
 
         if sync_interval is not None:
             config.sync_interval = sync_interval
+            updates["sync_interval"] = sync_interval
 
         if sync_filter_enabled is not None:
             config.sync_filter_enabled = sync_filter_enabled
+            updates["sync_filter_enabled"] = sync_filter_enabled
 
-        # 凭证模式：切换只改标记（另一模式凭证共用字段，切换时互相覆盖）
         if auth_type is not None:
-            config.auth_type = normalize_auth_type(auth_type)
+            config.auth_type = target_mode
+            updates["auth_type"] = target_mode
 
-        # 保存到数据库
-        success = trakt_auth_service.save_config(config)
-
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="保存配置失败",
-            )
+        if updates:
+            success = trakt_auth_service.update_config_fields(user_id, updates)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="保存配置失败",
+                )
 
         if enable is not None and sync_interval is not None:
             # sync_interval 可能被更新了, 需要先移除旧的作业再添加新的作业
@@ -379,6 +426,15 @@ async def trakt_email_login_start(
     """邮箱登录：发送验证码到指定邮箱"""
     user_id = current_user.get("username", "default_user")
     result = await start_email_login(user_id, request.email)
+    if result.get("rate_limited"):
+        # 冷却限流：429 + retry_after，前端据此启动倒计时而非卡死按钮
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": result["message"],
+                "retry_after": result.get("retry_after"),
+            },
+        )
     if not result["success"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

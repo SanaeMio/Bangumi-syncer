@@ -1,7 +1,7 @@
 """
 Trakt 邮箱登录服务（邮箱 + 验证码 → 自动获取 Bearer 凭证）
 
-协议（firefox-reversed 逆向实测，见 docs/trakt-login-protocol.md / trakt-data-api.md）：
+协议（firefox-reversed 逆向实测，见 docs/development/trakt-login-protocol.md）：
 1. ``POST https://auth.trakt.tv/auth/magic``  body: ``email=<urlencoded>``
    → 向邮箱发送登录邮件（6 位 OTP，5 分钟有效，新邮件作废旧 OTP）
 2. ``POST https://auth.trakt.tv/auth/magic/submit``  body: ``email=...&otp=<6位>``
@@ -17,9 +17,12 @@ Trakt 邮箱登录服务（邮箱 + 验证码 → 自动获取 Bearer 凭证）
 设计要点：
 - OTP / session cookie / code / token 全程在服务端流转，前端只传 email 与 otp
 - pending 登录会话存内存（按 user_id 隔离），5 分钟过期，单会话覆盖
-- 发信限流：同一用户 60 秒内不能重复发（Trakt 有 rate limit）
+- OTP 提交失败有次数上限（MAX_OTP_ATTEMPTS），超限作废会话，防止无限重试
+- 发信限流：同一用户 60 秒内不能重复发（Trakt 有 rate limit），冷却期返回 429
+- 并发安全：_pending 的读写由 asyncio.Lock 保护，避免会话被并发覆盖/误删
 """
 
+import asyncio
 import base64
 import hashlib
 import re
@@ -34,7 +37,11 @@ from ...core.logging import logger
 from ...models.trakt import TraktConfig
 from ...utils.http_base import AsyncHttpClient
 from .client import TRAKT_API_KEY
-from .token_refresher import DEFAULT_EXPIRES_IN, USER_AGENT
+from .token_refresher import (
+    DEFAULT_EXPIRES_IN,
+    USER_AGENT,
+    _get_refresh_lock,
+)
 
 # 登录域
 AUTH_BASE = "https://auth.trakt.tv"
@@ -46,6 +53,8 @@ SCOPE = "public openid profile email offline_access"
 PENDING_TTL = 300
 # 同用户发信冷却（秒），防 Trakt rate limit
 RESEND_COOLDOWN = 60
+# OTP 提交失败次数上限（防无限重试 / 暴力尝试），超限作废会话需重新发信
+MAX_OTP_ATTEMPTS = 5
 
 # 响应头中的会话 cookie 名（Better Auth）
 SESSION_COOKIE_NAME = "__Secure-better-auth.session_token"
@@ -61,21 +70,24 @@ class _PendingLogin:
     verifier: str
     state: str
     created_at: float
+    attempts: int = 0  # OTP 提交失败次数（超 MAX_OTP_ATTEMPTS 作废）
 
 
 # 按 user_id 隔离的进行中登录会话（内存态；重启丢失则重新发起即可）
 _pending: dict[str, _PendingLogin] = {}
+# 保护 _pending 读写的锁（start/complete 可并发触发）
+_pending_lock = asyncio.Lock()
 
 
 # ===== PKCE =====
 
 
-def _generate_pkce() -> tuple[str, str]:
-    """生成 PKCE verifier 与 S256 challenge。"""
-    verifier = secrets.token_urlsafe(32)  # 43 字符
-    digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return verifier, challenge
+def _generate_pkce() -> str:
+    """生成 PKCE verifier（43 字符）。
+
+    S256 challenge 在 _oidc_authorize 中由 verifier 现场计算，无需此处生成。
+    """
+    return secrets.token_urlsafe(32)
 
 
 def _resolve_expires_at(data: dict) -> int:
@@ -195,7 +207,8 @@ async def _oidc_authorize(
             query = parse_qs(urlparse(location).query)
             state_back = query.get("state", [""])[0]
             code = query.get("code", [""])[0]
-            if state_back and state_back != state:
+            # fail-closed：state 缺失或与发起时不匹配一律拒绝
+            if state_back != state:
                 return "", "授权状态校验失败，请重新发起登录"
             if code:
                 return code, ""
@@ -210,7 +223,8 @@ async def _oidc_authorize(
             query = parse_qs(urlparse(data["url"]).query)
             state_back = query.get("state", [""])[0]
             code = query.get("code", [""])[0]
-            if state_back and state_back != state:
+            # fail-closed：state 缺失或与发起时不匹配一律拒绝
+            if state_back != state:
                 return "", "授权状态校验失败，请重新发起登录"
             if code:
                 return code, ""
@@ -281,25 +295,39 @@ def _ensure_media_server_username(user_id: str) -> None:
     )
 
 
-async def _persist_tokens(user_id: str, tokens: dict) -> int:
-    """Bearer 凭证落库（auth_type=bearer + access/refresh/expires_at）。"""
-    config_dict = database_manager.get_trakt_config(user_id)
-    config = (
-        TraktConfig.from_dict(config_dict)
-        if config_dict
-        else TraktConfig(user_id=user_id)
-    )
-    config.auth_type = "bearer"
-    config.access_token = tokens["access_token"]
-    config.refresh_token = tokens["refresh_token"]  # 旋转式，落库新值
-    config.expires_at = _resolve_expires_at(tokens)
-    database_manager.save_trakt_config(config.to_dict())
-    _ensure_media_server_username(user_id)
-    logger.info(
-        f"用户 {user_id} 通过邮箱登录完成，Bearer 凭证已保存，"
-        f"有效期至 {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(config.expires_at))}"
-    )
-    return config.expires_at
+async def _persist_tokens(user_id: str, tokens: dict) -> Optional[int]:
+    """Bearer 凭证落库（auth_type=bearer + access/refresh/expires_at）。
+
+    与刷新共用 per-user 刷新锁：持锁后重读配置再写，避免与心跳/同步的
+    并发旋转互相覆盖。
+
+    Returns:
+        expires_at；响应缺字段时返回 None（不落库，避免 KeyError 500）。
+    """
+    access = tokens.get("access_token") or ""
+    refresh = tokens.get("refresh_token") or ""
+    if not access or not refresh:
+        logger.error(f"用户 {user_id} 邮箱登录：token 响应缺少 access/refresh，不落库")
+        return None
+    lock = await _get_refresh_lock(user_id)
+    async with lock:
+        config_dict = database_manager.get_trakt_config(user_id)
+        config = (
+            TraktConfig.from_dict(config_dict)
+            if config_dict
+            else TraktConfig(user_id=user_id)
+        )
+        config.auth_type = "bearer"
+        config.access_token = access
+        config.refresh_token = refresh  # 旋转式，落库新值
+        config.expires_at = _resolve_expires_at(tokens)
+        database_manager.save_trakt_config(config.to_dict())
+        _ensure_media_server_username(user_id)
+        logger.info(
+            f"用户 {user_id} 通过邮箱登录完成，Bearer 凭证已保存，"
+            f"有效期至 {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(config.expires_at))}"
+        )
+        return config.expires_at
 
 
 # ===== 对外接口 =====
@@ -309,38 +337,43 @@ async def start_email_login(user_id: str, email: str) -> dict:
     """开始邮箱登录：校验邮箱 → 发验证码 → 记录 PKCE pending 会话。
 
     Returns:
-        {"success": bool, "message": str, "retry_after": Optional[int]}
+        {"success": bool, "message": str, "retry_after": Optional[int],
+         "rate_limited": bool}
     """
     email = (email or "").strip().lower()
     if not _EMAIL_RE.fullmatch(email):
         return {"success": False, "message": "邮箱格式无效", "retry_after": None}
 
     now = time.time()
-    prev = _pending.get(user_id)
-    if prev and now - prev.created_at < RESEND_COOLDOWN:
-        wait = int(RESEND_COOLDOWN - (now - prev.created_at))
-        return {
-            "success": False,
-            "message": f"发送过于频繁，请 {wait} 秒后再试",
-            "retry_after": wait,
-        }
+    # 冷却检查 + 发信 + 写入 pending 持同一把锁原子完成：并发 start 无法在
+    # 冷却检查与真正发信之间插入第二次发信（避免绕过 60s 冷却 / 重复发信）。
+    async with _pending_lock:
+        prev = _pending.get(user_id)
+        if prev and now - prev.created_at < RESEND_COOLDOWN:
+            wait = int(RESEND_COOLDOWN - (now - prev.created_at))
+            return {
+                "success": False,
+                "message": f"发送过于频繁，请 {wait} 秒后再试",
+                "retry_after": wait,
+                "rate_limited": True,
+            }
 
-    verifier, _ = _generate_pkce()
-    ok, err = await _send_magic(email)
-    if not ok:
-        return {
-            "success": False,
-            "message": f"发送验证码失败: {err}",
-            "retry_after": None,
-        }
+        verifier = _generate_pkce()
+        ok, err = await _send_magic(email)
+        if not ok:
+            return {
+                "success": False,
+                "message": f"发送验证码失败: {err}",
+                "retry_after": None,
+            }
 
-    # 只有发信成功才建立 pending（verifier/state 与本次邮件一一对应）
-    _pending[user_id] = _PendingLogin(
-        email=email,
-        verifier=verifier,
-        state=secrets.token_hex(16),
-        created_at=now,
-    )
+        # 只有发信成功才建立 pending（verifier/state 与本次邮件一一对应）
+        _pending[user_id] = _PendingLogin(
+            email=email,
+            verifier=verifier,
+            state=secrets.token_hex(16),
+            created_at=now,
+        )
     return {
         "success": True,
         "message": f"验证码已发送至 {email}，请查收邮件（5 分钟内有效）",
@@ -355,35 +388,50 @@ async def complete_email_login(user_id: str, otp: str) -> dict:
         {"success": bool, "message": str, "expires_at": Optional[int]}
     """
     otp = (otp or "").strip()
-    pending = _pending.get(user_id)
-    if not pending or time.time() - pending.created_at > PENDING_TTL:
-        _pending.pop(user_id, None)
-        return {
-            "success": False,
-            "message": "登录会话已过期，请重新发送验证码",
-            "expires_at": None,
-        }
-    if not (otp.isdigit() and len(otp) == 6):
-        return {
-            "success": False,
-            "message": "请输入 6 位数字验证码",
-            "expires_at": None,
-        }
+    async with _pending_lock:
+        pending = _pending.get(user_id)
+        if not pending or time.time() - pending.created_at > PENDING_TTL:
+            _pending.pop(user_id, None)
+            return {
+                "success": False,
+                "message": "登录会话已过期，请重新发送验证码",
+                "expires_at": None,
+            }
+        if not (otp.isdigit() and len(otp) == 6):
+            return {
+                "success": False,
+                "message": "请输入 6 位数字验证码",
+                "expires_at": None,
+            }
+        # 网络调用前先检查并占用一次提交名额：并发提交在计数更新前无法
+        # 全部打到上游，严格限制 OTP 尝试次数不超过 MAX_OTP_ATTEMPTS
+        if pending.attempts >= MAX_OTP_ATTEMPTS:
+            if _pending.get(user_id) is pending:
+                _pending.pop(user_id, None)
+            return {
+                "success": False,
+                "message": "验证码错误次数过多，请重新发送验证码",
+                "expires_at": None,
+            }
+        pending.attempts += 1
+        session = pending  # 持对象引用，后续不再依赖 dict 中的会话
 
-    ok, err, session_cookie = await _submit_otp(pending.email, otp)
+    ok, err, session_cookie = await _submit_otp(session.email, otp)
     if not ok:
-        # OTP 无效/失败：保留 pending 供用户重试（5 分钟内）
+        # OTP 无效/失败：保留 pending 供重试（次数已在网络调用前占用）
         return {"success": False, "message": err, "expires_at": None}
 
     # OTP 已提交成功：本次会话已消费，无论后续成败都清理 pending
-    _pending.pop(user_id, None)
+    async with _pending_lock:
+        if _pending.get(user_id) is session:
+            _pending.pop(user_id, None)
     try:
         code, err = await _oidc_authorize(
-            session_cookie, pending.state, pending.verifier
+            session_cookie, session.state, session.verifier
         )
         if not code:
             return {"success": False, "message": err, "expires_at": None}
-        tokens, err = await _exchange_code(code, pending.verifier)
+        tokens, err = await _exchange_code(code, session.verifier)
         if not tokens:
             return {"success": False, "message": err, "expires_at": None}
     except Exception as e:  # noqa: BLE001
@@ -391,6 +439,12 @@ async def complete_email_login(user_id: str, otp: str) -> dict:
         return {"success": False, "message": f"登录流程异常: {e}", "expires_at": None}
 
     expires_at = await _persist_tokens(user_id, tokens)
+    if expires_at is None:
+        return {
+            "success": False,
+            "message": "登录响应缺少令牌字段，请重新发送验证码重试",
+            "expires_at": None,
+        }
     return {
         "success": True,
         "message": "登录成功，Bearer 凭证已保存并切换为 Bearer 模式",

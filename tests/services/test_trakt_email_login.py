@@ -1,5 +1,6 @@
 """Trakt 邮箱登录服务测试（邮箱 + 验证码 → 自动获取 Bearer 凭证）。"""
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -147,6 +148,7 @@ class TestStartEmailLogin:
             assert second["success"] is False
             assert "过于频繁" in second["message"]
             assert second["retry_after"] is not None
+            assert second.get("rate_limited") is True
             # 发信应只被调用一次（第二次被限流拦截）
             assert email_login._send_magic.await_count == 1
 
@@ -204,6 +206,41 @@ class TestOidcAuthorize:
                 "redirect": True,
                 "url": "https://app.trakt.tv/callback?code=CODE123&state=WRONG",
             },
+        )
+        with patch(
+            "app.services.trakt.email_login.AsyncHttpClient",
+            return_value=_FakeHttp(resp),
+        ):
+            code, err = await _oidc_authorize("cookie", "state123", "verifier")
+
+            assert code == ""
+            assert "状态校验失败" in err
+
+    @pytest.mark.asyncio
+    async def test_json_redirect_missing_state_rejected(self):
+        """JSON 跳转负载缺 state（空值）：fail-closed 拒绝"""
+        resp = _FakeResp(
+            status=200,
+            payload={
+                "redirect": True,
+                "url": "https://app.trakt.tv/callback?code=CODE123",
+            },
+        )
+        with patch(
+            "app.services.trakt.email_login.AsyncHttpClient",
+            return_value=_FakeHttp(resp),
+        ):
+            code, err = await _oidc_authorize("cookie", "state123", "verifier")
+
+            assert code == ""
+            assert "状态校验失败" in err
+
+    @pytest.mark.asyncio
+    async def test_redirect_302_missing_state_rejected(self):
+        """302 Location 缺 state：fail-closed 拒绝"""
+        resp = _FakeResp(
+            status=302,
+            location="https://app.trakt.tv/callback?code=CODE302",
         )
         with patch(
             "app.services.trakt.email_login.AsyncHttpClient",
@@ -311,6 +348,98 @@ class TestCompleteEmailLogin:
             assert "u1" in email_login._pending  # 保留，可重试
 
     @pytest.mark.asyncio
+    async def test_otp_attempt_limit_invalidates_session(self):
+        """OTP 连续失败超过上限：会话作废，需重新发送验证码。
+
+        名额在网络调用前占用（并发提交也无法绕过上限），因此第
+        MAX+1 次提交会被拒绝。
+        """
+        from app.services.trakt.email_login import MAX_OTP_ATTEMPTS
+
+        with (
+            patch(
+                "app.services.trakt.email_login._send_magic",
+                new_callable=AsyncMock,
+                return_value=(True, ""),
+            ),
+            patch(
+                "app.services.trakt.email_login._submit_otp",
+                new_callable=AsyncMock,
+                return_value=(False, "验证码无效或已过期，请重新输入或重新发送", ""),
+            ),
+        ):
+            await start_email_login("u1", "user@example.com")
+
+            # 前 MAX 次：均打到上游（无效 OTP，保留会话）
+            for _ in range(MAX_OTP_ATTEMPTS):
+                result = await complete_email_login("u1", "000000")
+                assert "次数过多" not in result["message"]
+
+            # 第 MAX+1 次：达到上限，拒绝并作废会话
+            result = await complete_email_login("u1", "000000")
+
+            assert result["success"] is False
+            assert "次数过多" in result["message"]
+            assert "u1" not in email_login._pending  # 会话已作废
+
+    @pytest.mark.asyncio
+    async def test_concurrent_otp_submit_cannot_exceed_limit(self):
+        """并发提交 OTP：名额在网络调用前占用，上游调用次数不超过上限。"""
+        from app.services.trakt.email_login import MAX_OTP_ATTEMPTS
+
+        with (
+            patch(
+                "app.services.trakt.email_login._send_magic",
+                new_callable=AsyncMock,
+                return_value=(True, ""),
+            ),
+            patch(
+                "app.services.trakt.email_login._submit_otp",
+                new_callable=AsyncMock,
+                return_value=(False, "验证码无效或已过期，请重新输入或重新发送", ""),
+            ) as mock_submit,
+        ):
+            await start_email_login("u1", "user@example.com")
+
+            # 并发发起远超上限的提交，全部并发执行
+            results = await asyncio.gather(
+                *[
+                    complete_email_login("u1", "000000")
+                    for _ in range(MAX_OTP_ATTEMPTS * 3)
+                ]
+            )
+
+            # 打到上游的调用不超过上限
+            assert mock_submit.await_count <= MAX_OTP_ATTEMPTS
+            # 至少有一次「次数过多」拒绝
+            assert any("次数过多" in r["message"] for r in results)
+            # 会话最终作废
+            assert "u1" not in email_login._pending
+
+    @pytest.mark.asyncio
+    async def test_otp_attempts_below_limit_keeps_pending(self):
+        """OTP 失败未达上限：会话保留，可继续重试"""
+        with (
+            patch(
+                "app.services.trakt.email_login._send_magic",
+                new_callable=AsyncMock,
+                return_value=(True, ""),
+            ),
+            patch(
+                "app.services.trakt.email_login._submit_otp",
+                new_callable=AsyncMock,
+                return_value=(False, "验证码无效或已过期，请重新输入或重新发送", ""),
+            ),
+        ):
+            await start_email_login("u1", "user@example.com")
+
+            result = await complete_email_login("u1", "000000")
+
+            assert result["success"] is False
+            assert email_login._pending["u1"].attempts == 1
+            assert "u1" in email_login._pending
+
+    @pytest.mark.asyncio
     async def test_full_success_saves_bearer(self):
         """完整成功链路：提交 OTP → OIDC → 落库 + 追加媒体用户名 + 清理 pending"""
         with (
@@ -393,6 +522,63 @@ class TestCompleteEmailLogin:
             assert "授权" in result["message"]
             mock_db.save_trakt_config.assert_not_called()
             assert "u1" not in email_login._pending
+
+    @pytest.mark.asyncio
+    async def test_exchange_response_missing_tokens_not_saved(self):
+        """token 响应缺 access/refresh 字段：不落库，返回明确错误"""
+        with (
+            patch(
+                "app.services.trakt.email_login._send_magic",
+                new_callable=AsyncMock,
+                return_value=(True, ""),
+            ),
+            patch(
+                "app.services.trakt.email_login._submit_otp",
+                new_callable=AsyncMock,
+                return_value=(True, "", "__Secure-better-auth.session_token=abc123"),
+            ),
+            patch(
+                "app.services.trakt.email_login._oidc_authorize",
+                new_callable=AsyncMock,
+                return_value=("code123", ""),
+            ),
+            patch(
+                "app.services.trakt.email_login._exchange_code",
+                new_callable=AsyncMock,
+                return_value=({"expires_in": 3600}, ""),
+            ),
+            patch("app.services.trakt.email_login.database_manager") as mock_db,
+        ):
+            await start_email_login("u1", "user@example.com")
+
+            result = await complete_email_login("u1", "123456")
+
+            assert result["success"] is False
+            assert "缺少令牌字段" in result["message"]
+            mock_db.save_trakt_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_persist_tokens_uses_refresh_lock(self):
+        """邮箱登录落库与刷新共用 per-user 锁（防止并发旋转互相覆盖）"""
+        lock = asyncio.Lock()
+        with (
+            patch("app.services.trakt.email_login.database_manager") as mock_db,
+            patch(
+                "app.services.trakt.email_login._get_refresh_lock",
+                new_callable=AsyncMock,
+                return_value=lock,
+            ) as mock_lock,
+            patch("app.services.trakt.email_login._ensure_media_server_username"),
+        ):
+            mock_db.get_trakt_config.return_value = None
+
+            expires_at = await email_login._persist_tokens("u1", _token_response())
+
+            assert expires_at is not None
+            mock_lock.assert_awaited_once_with("u1")
+            assert not lock.locked()  # 落库后已释放
+            saved = mock_db.save_trakt_config.call_args[0][0]
+            assert saved["auth_type"] == "bearer"
 
     @pytest.mark.asyncio
     async def test_exchange_failure_clears_pending(self):

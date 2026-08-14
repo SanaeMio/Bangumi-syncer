@@ -140,10 +140,14 @@ class TraktSyncService:
                         details["history"] = history_result.details
 
                     # 更新最后同步时间（只要没有错误就更新）
+                    # 只写 last_sync_time，不触碰 token 列：避免用本次同步开始时
+                    # 读到的旧 token 覆盖并发刷新（心跳等）旋转后的新 token
                     if error_count == 0 and config is not None:
                         config.last_sync_time = int(time.time())
                         await asyncio.to_thread(
-                            database_manager.save_trakt_config, config.to_dict()
+                            database_manager.update_trakt_config_fields,
+                            config.user_id,
+                            {"last_sync_time": config.last_sync_time},
                         )
 
                     success = error_count == 0
@@ -213,10 +217,13 @@ class TraktSyncService:
         """按凭证模式刷新 Trakt token。
 
         - oauth：走既有授权码流程（trakt_auth_service）
-        - bearer：用 refresh_token 走官方 /oauth/token 旋转刷新
+        - bearer：用 refresh_token 走官方 /oauth/token 旋转刷新。
+          401 路径必须 force=True：本地 expires_at 可能仍认为有效（提前吊销/
+          时钟差/粘贴了已旋转过的 token），按 slack 跳过会把「认证失败」
+          误判成「刷新失败」。
         """
         if config.auth_type == "bearer":
-            return await refresh_user_bearer(user_id) == BEARER_REFRESH_OK
+            return await refresh_user_bearer(user_id, force=True) == BEARER_REFRESH_OK
         return await trakt_auth_service.refresh_token(user_id)
 
     def _filter_already_synced(
@@ -578,6 +585,9 @@ class TraktSyncService:
                 details={"items": details},
             )
 
+        except TraktAuthError:
+            # 401：token 失效，向上传播触发整体刷新重试（不当作普通失败结果）
+            raise
         except Exception as e:
             logger.error(f"同步观看历史失败: {e}")
             notify_source_event(

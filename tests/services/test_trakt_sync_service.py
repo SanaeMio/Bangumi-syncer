@@ -318,6 +318,44 @@ class TestSyncUserTraktData:
             mock_auth.refresh_token.assert_awaited_once_with("user1")
 
     @pytest.mark.asyncio
+    async def test_sync_401_propagates_from_real_history_path(self):
+        """真实路径（不 mock 整段 _sync_watched_history）：拉历史中途 401 时
+        TraktAuthError 必须向上传播（不被 except Exception 吞掉），外层
+        刷新重建后重试成功。
+
+        对应评审点：_sync_watched_history 曾用 except Exception 把
+        TraktAuthError 收成普通失败结果，CI 靠 mock 整段函数保持绿色。
+        """
+        service = _make_service()
+        with (
+            patch("app.services.trakt.sync_service.trakt_auth_service") as mock_auth,
+            patch("app.services.trakt.sync_service.TraktClientFactory") as mock_factory,
+            patch("app.services.trakt.sync_service.database_manager"),
+            patch("app.services.trakt.sync_service.notify_source_event"),
+        ):
+            cfg = MagicMock()
+            cfg.auth_type = "oauth"
+            cfg.access_token = "tok"
+            cfg.is_token_expired.return_value = False
+            cfg.last_sync_time = None
+            mock_auth.get_user_trakt_config.return_value = cfg
+            mock_auth.refresh_token = AsyncMock(return_value=True)
+            mock_client = AsyncMock()
+            mock_client.close = AsyncMock()
+            # 首次拉历史直接 401（真实走 _sync_watched_history 内部），重试后为空
+            mock_client.get_all_watched_history = AsyncMock(
+                side_effect=[TraktAuthError("401"), []]
+            )
+            mock_factory.create_client = AsyncMock(return_value=mock_client)
+
+            result = await service.sync_user_trakt_data("user1")
+
+            assert result.success is True
+            assert mock_client.get_all_watched_history.await_count == 2
+            assert mock_auth.refresh_token.await_count == 1
+            assert mock_factory.create_client.await_count == 2
+
+    @pytest.mark.asyncio
     async def test_sync_401_bearer_refresh(self):
         """bearer 模式 401：走 /oauth/token 旋转刷新（refresh_user_bearer）"""
         service = _make_service()
@@ -351,7 +389,7 @@ class TestSyncUserTraktData:
             result = await service.sync_user_trakt_data("user1")
 
             assert result.success is True
-            mock_refresh.assert_awaited_once_with("user1")
+            mock_refresh.assert_awaited_once_with("user1", force=True)
 
 
 class TestFetchDetailsBatch401:
@@ -548,6 +586,17 @@ class TestSyncWatchedHistory:
             "u", mock_client, MagicMock(), False
         )
         assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_trakt_auth_error_propagates(self):
+        """_sync_watched_history 中 401 必须向上传播（不吞成普通失败结果）"""
+        service = _make_service()
+        mock_client = AsyncMock()
+        mock_client.get_all_watched_history = AsyncMock(
+            side_effect=TraktAuthError("401")
+        )
+        with pytest.raises(TraktAuthError):
+            await service._sync_watched_history("u", mock_client, MagicMock(), False)
 
 
 class TestConvertTraktHistoryToCustomItem:

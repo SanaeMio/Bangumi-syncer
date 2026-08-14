@@ -63,13 +63,28 @@ Trakt 同步记录能正确路由。
 1. 用浏览器登录 [app.trakt.tv](https://app.trakt.tv)
 2. 按 F12 打开开发者工具 → Application → Local Storage
 3. 展开 `https://auth.trakt.tv`，找到 `oidc.user:https://auth.trakt.tv:201dc70c...`
-   键，复制其中 `access_token` 与 `refresh_token`
-4. 在「Bearer 凭证」卡片中分别粘贴到两个输入框并保存
+   键，复制其中的 `refresh_token`
+4. 在「Bearer 凭证」卡片中粘贴并保存（只需 refresh_token；access_token 可选，
+   保存时后端会用它验证并自动换新）
 
 ::: tip 凭证说明
-- 保存时后端会立即验证并刷新凭证；refresh_token 为旋转式，旧值立即作废
+- 只需提供 **refresh_token**：保存时后端会立即验证并旋转刷新，自动换取新的
+  access_token / refresh_token；refresh_token 为旋转式，旧值立即作废
+  （保存后你刚从浏览器复制的那份 refresh_token 不再可用）
 - 已配置时输入框留空表示不修改；token 绝不回显
 - 凭证剩余不足 1 天时，每日定时任务会自动续期，无需手动刷新
+- 同一邮箱 60 秒内重复发信会被限流（429，前端自动倒计时）；验证码连续输错
+  5 次会话作废，需重新发送
+:::
+
+::: warning 凭证模式切换
+API 应用与 Bearer 两种模式数据域不同（api.trakt.tv / apiz.trakt.tv），
+**切换必须提供对应模式的新凭证，不能复用另一模式的 token**：
+
+- 切换至 **Bearer**：需同时填写 access_token 与 refresh_token（或用「通过邮箱登录」）后保存
+- 切换至 **API 应用**：需重新点击「授权 Trakt」完成 OAuth 授权
+
+仅切换界面上的 radio 而未保存不会改变已保存的模式。
 :::
 
 ## 4. 同步配置

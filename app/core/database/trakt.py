@@ -146,6 +146,51 @@ class TraktRepository(BaseRepository):
         )
         return affected > 0
 
+    def update_trakt_config_fields(self, user_id: str, fields: dict) -> bool:
+        """只更新指定字段（白名单），不触碰 access_token/refresh_token/expires_at。
+
+        用于 API 层保存 enabled / sync_interval / sync_filter_enabled / auth_type
+        等非凭证字段：若用全量 save_trakt_config，会用早先读到的旧 token 覆盖
+        并发刷新（心跳/定时同步/手动同步）旋转后的新 token。
+        """
+        _ALLOWED = {
+            "enabled",
+            "sync_interval",
+            "sync_filter_enabled",
+            "last_sync_time",
+            "auth_type",
+        }
+
+        def _write(conn):
+            cursor = conn.cursor()
+            sets: list[str] = []
+            values: list = []
+            for key, value in fields.items():
+                if key not in _ALLOWED:
+                    continue
+                sets.append(f"{key} = ?")
+                if key in ("enabled", "sync_filter_enabled"):
+                    values.append(1 if value else 0)
+                else:
+                    values.append(value)
+            if not sets:
+                return True
+            sets.append("updated_at = ?")
+            values.append(int(datetime.now().timestamp()))
+            values.append(user_id)
+            cursor.execute(
+                f"UPDATE trakt_config SET {', '.join(sets)} WHERE user_id = ?",
+                values,
+            )
+            return True
+
+        return self._run_write(
+            _write,
+            error_msg="更新 Trakt 配置字段失败",
+            default=False,
+            ensure_schema=self._conn._ensure_trakt_config_auth_type,
+        )
+
     def save_trakt_sync_history(self, history: dict) -> bool:
         """保存 Trakt 同步历史记录"""
 

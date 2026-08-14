@@ -39,10 +39,14 @@
                             </label>
                         </div>
                         <div class="form-text">
-                            两种凭证互斥；切换只改模式标记，另一模式凭证字段会被覆盖。
-                            API 应用模式需先在「API 配置」卡片填写应用凭证后点击「授权 Trakt」；
-                            选择 Bearer 后请在下方「Bearer 凭证」卡片填写凭证（保存时立即验证并自动刷新）。
+                            两种凭证互斥且数据域不同（API 应用走 api.trakt.tv，Bearer 走
+                            apiz.trakt.tv），切换需提供对应模式的新凭证，不能复用另一模式的 token：
+                            API 应用模式需先在「API 配置」卡片填写应用凭证后点击「授权 Trakt」重新授权；
+                            Bearer 模式需在下方「Bearer 凭证」卡片填写凭证（或「通过邮箱登录」）后保存。
+                            未保存就切换 radio 不会改变已保存的模式。
                         </div>
+                        <div id="auth-mode-hint"
+                             class="alert alert-warning alert-sm small mt-2 mb-0 d-none"></div>
                     </div>
                 </div>
                 <div class="text-end">
@@ -114,21 +118,25 @@
             <form id="bearer-cred-form">
                 <div class="row mb-3">
                     <div class="col-md-6">
-                        <label for="bearer-access-token" class="form-label">Access Token</label>
-                        <input type="password"
-                               class="form-control"
-                               id="bearer-access-token"
-                               name="access_token"
-                               placeholder="粘贴 access_token（32 字符）"
-                               autocomplete="off">
-                        <label for="bearer-refresh-token" class="form-label mt-2">Refresh Token</label>
+                        <label for="bearer-refresh-token" class="form-label">Refresh Token</label>
                         <input type="password"
                                class="form-control"
                                id="bearer-refresh-token"
                                name="refresh_token"
                                placeholder="粘贴 refresh_token（32 字符）"
+                               autocomplete="off"
+                               required>
+                        <label for="bearer-access-token" class="form-label mt-2">Access Token（可选）</label>
+                        <input type="password"
+                               class="form-control"
+                               id="bearer-access-token"
+                               name="access_token"
+                               placeholder="可选，仅备选粘贴；保存后会自动获取"
                                autocomplete="off">
-                        <div class="form-text">不会回显；已配置时留空表示不修改</div>
+                        <div class="form-text">
+                            只需 <strong>Refresh Token</strong>：保存时后端会用它验证并旋转刷新，
+                            自动换取新的 access/refresh。不会回显；已配置时留空表示不修改。
+                        </div>
                     </div>
                     <div class="col-md-6">
                         <div id="bearer-status-info" class="small"></div>
@@ -161,11 +169,18 @@
                                         <code>oidc.user:https://auth.trakt.tv:201dc70c...</code> 键
                                     </li>
                                     <li>
-                                        复制其中 <code>access_token</code> 与 <code>refresh_token</code> 的值分别粘贴到上方两个输入框
+                                        复制其中的 <code>refresh_token</code> 粘贴到上方输入框（
+                                        <code>access_token</code> 可留空，保存时会自动获取）
                                     </li>
                                 </ol>
-                                <div class="mb-0">保存时后端会立即验证并刷新凭证（refresh 为旋转式，旧值作废）。</div>
+                                <div class="mb-0">保存时后端会立即验证并旋转刷新凭证（refresh 为旋转式，旧值作废）。</div>
                             </div>
+                        </div>
+                        <div class="alert alert-warning alert-sm small mt-2 mb-2">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            <strong>保存会立即旋转 refresh_token：</strong>你刚从浏览器复制的那份
+                            refresh_token 会在保存瞬间作废（Trakt 官网会话也可能被踢下线），
+                            保存成功后请使用系统自动保存的新凭证。
                         </div>
                     </div>
                 </div>

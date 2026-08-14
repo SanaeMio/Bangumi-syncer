@@ -214,7 +214,13 @@ class DatabaseConnection:
         )
 
     def _ensure_trakt_config_auth_type(self, cursor) -> None:
-        """旧库迁移：为 trakt_config 增加凭证模式字段（oauth / bearer）。"""
+        """旧库迁移：为 trakt_config 增加凭证模式字段（oauth / bearer）。
+
+        同时补 sync_filter_enabled（老库可能两个列都缺）：three 处读写路径
+        的 SELECT 同时引用 sync_filter_enabled 与 auth_type，任一缺失都会在
+        首次读写时炸掉，因此两个 ensure 必须都跑。
+        """
+        self._ensure_trakt_config_sync_filter(cursor)
         self._ensure_columns(
             cursor,
             "trakt_config",

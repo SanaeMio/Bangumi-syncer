@@ -8,6 +8,10 @@ class TraktConfigPage {
         this.pageSize = APP_TABLE_PAGE_SIZE;
         this.authWindow = null;
         this.authPollInterval = null;
+        // 凭证模式 radio 是否有未保存的改动（避免保存其他配置时被服务器值弹回）
+        this._authModeDirty = false;
+        // 服务器端已保存的凭证模式（保存凭证模式失败时用于回滚）
+        this._savedAuthType = 'oauth';
 
         // 存储实例到全局变量
         window.traktConfigPage = this;
@@ -90,9 +94,11 @@ class TraktConfigPage {
             this.saveBearerCred();
         });
 
-        // 凭证模式切换时按需显示凭证相关卡片
+        // 凭证模式切换时按需显示凭证相关卡片；记录未保存状态，避免
+        // 之后保存同步配置等操作把 radio 弹回服务器端旧值
         document.querySelectorAll('input[name="auth_type"]').forEach((radio) => {
             radio.addEventListener('change', () => {
+                this._authModeDirty = true;
                 this.toggleCredentialCards();
             });
         });
@@ -295,6 +301,16 @@ class TraktConfigPage {
             syncSaveButton.disabled = false;
         }
 
+        // 连接状态：Bearer 模式不走 OAuth 授权，但保留「授权 Trakt」按钮作为
+        // 切换到 API 应用模式的入口（点击后走 OAuth 重新授权）；文案给出指引
+        if (authButton && config.auth_type === 'bearer') {
+            authButton.classList.remove('d-none');
+            authButton.textContent = '授权 Trakt（切换至 API 应用）';
+        } else if (authButton) {
+            authButton.classList.remove('d-none');
+            authButton.textContent = '授权 Trakt';
+        }
+
         syncEnabled.checked = config.enabled;
         syncInterval.value = config.sync_interval || '0 */6 * * *';
         
@@ -319,8 +335,13 @@ class TraktConfigPage {
         const bearerStatusInfo = document.getElementById('bearer-status-info');
 
         if (authTypeOauth && authTypeBearer) {
-            authTypeOauth.checked = config.auth_type !== 'bearer';
-            authTypeBearer.checked = config.auth_type === 'bearer';
+            // 服务器端已保存的模式（用于保存失败时回滚）
+            this._savedAuthType = config.auth_type === 'bearer' ? 'bearer' : 'oauth';
+            // 有未保存的模式改动时不弹回 radio（避免保存其他配置时被覆盖）
+            if (!this._authModeDirty) {
+                authTypeOauth.checked = config.auth_type !== 'bearer';
+                authTypeBearer.checked = config.auth_type === 'bearer';
+            }
         }
         if (authModeSaveButton) {
             authModeSaveButton.disabled = false;
@@ -375,7 +396,7 @@ class TraktConfigPage {
     }
 
     /**
-     * 保存凭证模式（oauth / bearer，切换只改模式标记）
+     * 保存凭证模式（oauth / bearer；切换需提供对应模式凭证，由后端校验）
      */
     async saveAuthMode() {
         const authType = document.querySelector('input[name="auth_type"]:checked');
@@ -394,31 +415,45 @@ class TraktConfigPage {
                     auth_type: authType.value
                 })
             });
+            this._authModeDirty = false;
+            this._savedAuthType = result.auth_type === 'bearer' ? 'bearer' : 'oauth';
             this.showNotification('凭证模式保存成功', 'success');
             this.updateConfigDisplay(result);
         } catch (error) {
             console.error('保存凭证模式失败:', error);
+            // 模式切换被后端拒绝（如切 bearer 未提供凭证 / 切 oauth 未重新授权）：
+            // 回滚 radio 到已保存模式并恢复对应卡片，避免界面与库不一致
+            this._authModeDirty = false;
+            const saved = this._savedAuthType;
+            const oauthRadio = document.getElementById('auth-type-oauth');
+            const bearerRadio = document.getElementById('auth-type-bearer');
+            if (oauthRadio && bearerRadio) {
+                oauthRadio.checked = saved !== 'bearer';
+                bearerRadio.checked = saved === 'bearer';
+            }
+            this.toggleCredentialCards();
             this.showNotification(`保存凭证模式失败: ${error.message}`, 'danger');
         }
     }
 
     /**
-     * 保存 Bearer 凭证（留空表示不修改；非空则后端同时校验两值并立即验证）
+     * 保存 Bearer 凭证（refresh_token 必填，access_token 可选；
+     * 后端只使用并验证 refresh_token，成功后会旋转换新）
      */
     async saveBearerCred() {
         const accessToken = document.getElementById('bearer-access-token');
         const refreshToken = document.getElementById('bearer-refresh-token');
 
         const config = {};
-        // 留空表示不修改；非空则一并提交（后端会同时校验两值并立即验证）
-        if (accessToken && accessToken.value.trim()) {
-            config.access_token = accessToken.value.trim();
-        }
+        // refresh_token 必填（后端校验与续期的依据）；access_token 可选
         if (refreshToken && refreshToken.value.trim()) {
             config.refresh_token = refreshToken.value.trim();
         }
-        if (!config.access_token && !config.refresh_token) {
-            this.showNotification('请填写 Bearer 凭证（Access Token 与 Refresh Token）', 'warning');
+        if (accessToken && accessToken.value.trim()) {
+            config.access_token = accessToken.value.trim();
+        }
+        if (!config.refresh_token) {
+            this.showNotification('请填写 Refresh Token（Access Token 可选）', 'warning');
             return;
         }
 
@@ -440,6 +475,7 @@ class TraktConfigPage {
 
     /**
      * 邮箱登录：发送验证码（弹窗步骤 1）
+     * 冷却限流（429）时携带 retry_after 启动倒计时，失败时重新启用按钮。
      */
     async sendEmailCode() {
         const emailInput = document.getElementById('email-login-email');
@@ -458,23 +494,59 @@ class TraktConfigPage {
             resendBtn.disabled = true;
         }
         try {
-            const result = await apiFetch('/api/trakt/email-login/start', {
+            // returnResponse：需要读取 429 的 retry_after 与错误 detail
+            const response = await apiFetch('/api/trakt/email-login/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
+                body: JSON.stringify({ email }),
+                returnResponse: true,
             });
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (_) { /* 非 JSON 错误体 */ }
+
+            if (!response.ok) {
+                // 429 冷却：detail 为 {message, retry_after}，启动倒计时而非卡死按钮
+                const detail = data.detail;
+                const isRateLimited = response.status === 429;
+                const retryAfter =
+                    detail && typeof detail === 'object' ? detail.retry_after : null;
+                this.showEmailLoginError(
+                    (detail && (typeof detail === 'object' ? detail.message : detail)) ||
+                        `发送失败（${response.status}）`
+                );
+                this.enableEmailSendButtons();
+                if (isRateLimited && retryAfter) {
+                    this.startResendCountdown(Number(retryAfter));
+                }
+                return;
+            }
+
             // 成功：进入步骤 2
             const sentTo = document.getElementById('email-login-sent-to');
             if (sentTo) {
                 sentTo.textContent = email;
             }
             this.showEmailLoginStep(2);
-            this.startResendCountdown((result && result.retry_after) || 60);
+            this.startResendCountdown((data && data.retry_after) || 60);
         } catch (error) {
             this.showEmailLoginError(error.message || '发送验证码失败');
-            if (sendBtn) {
-                sendBtn.disabled = false;
-            }
+            this.enableEmailSendButtons();
+        }
+    }
+
+    /**
+     * 邮箱登录：重新启用发送/重发按钮（非限流失败时）
+     */
+    enableEmailSendButtons() {
+        const sendBtn = document.getElementById('email-login-send-btn');
+        const resendBtn = document.getElementById('email-login-resend-btn');
+        if (sendBtn) {
+            sendBtn.disabled = false;
+        }
+        if (resendBtn) {
+            resendBtn.disabled = false;
         }
     }
 
@@ -609,7 +681,8 @@ class TraktConfigPage {
 
     /**
      * 根据当前选中的凭证模式按需显示凭证相关卡片：
-     * API 应用（oauth）→ 显示「API 配置」卡片；Bearer → 显示「Bearer 凭证」卡片
+     * API 应用（oauth）→ 显示「API 配置」卡片；Bearer → 显示「Bearer 凭证」卡片。
+     * 同时给出模式切换的操作指引（与已保存模式不一致时）。
      */
     toggleCredentialCards() {
         const authType = document.querySelector('input[name="auth_type"]:checked');
@@ -621,6 +694,19 @@ class TraktConfigPage {
         const apiConfigCard = document.getElementById('api-config-card');
         if (apiConfigCard) {
             apiConfigCard.classList.toggle('d-none', isBearer);
+        }
+        const hint = document.getElementById('auth-mode-hint');
+        if (hint) {
+            const selected = authType ? authType.value : this._savedAuthType;
+            if (selected !== this._savedAuthType) {
+                hint.textContent =
+                    selected === 'bearer'
+                        ? '切换至 Bearer 模式需在下方卡片填写 Refresh Token（或使用「通过邮箱登录」）并保存，否则无法完成切换。'
+                        : '切换至 API 应用模式需重新授权，请点击「授权 Trakt」完成授权。';
+                hint.classList.remove('d-none');
+            } else {
+                hint.classList.add('d-none');
+            }
         }
     }
 

@@ -22,7 +22,11 @@ from ..base.notifier_helpers import (
 )
 from .auth import trakt_auth_service
 from .sync_service import trakt_sync_service
-from .token_refresher import heartbeat_all_users
+from .token_refresher import (
+    STATUS_OK as BEARER_REFRESH_OK,
+    heartbeat_all_users,
+    refresh_user_bearer,
+)
 
 
 class TraktScheduler:
@@ -274,10 +278,18 @@ class TraktScheduler:
                 logger.info(f"用户 {user_id} 的 Trakt 同步已禁用，跳过")
                 return
 
-            # 检查令牌是否需要刷新
+            # 检查令牌是否需要刷新（按凭证模式分流：bearer 走 /oauth/token
+            # 旋转刷新，oauth 走既有授权码流程；纯 Bearer 用户无 Client ID/
+            # Secret，不能走 trakt_auth_service.refresh_token）
             if config.is_token_expired():
                 logger.info(f"用户 {user_id} 的 Trakt 令牌已过期，尝试刷新")
-                success = await trakt_auth_service.refresh_token(user_id)
+                if config.auth_type == "bearer":
+                    success = (
+                        await refresh_user_bearer(user_id, force=True)
+                        == BEARER_REFRESH_OK
+                    )
+                else:
+                    success = await trakt_auth_service.refresh_token(user_id)
                 if not success:
                     logger.error(f"用户 {user_id} 的 Trakt 令牌刷新失败，跳过同步")
                     return

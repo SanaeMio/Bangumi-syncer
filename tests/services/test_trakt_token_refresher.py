@@ -1,5 +1,6 @@
 """Trakt Bearer 凭证续期服务测试。"""
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -60,7 +61,7 @@ class TestValidateAndSaveBearer:
             mock_db.get_trakt_config.return_value = _make_config_dict()
             mock_call.return_value = ("ok", _token_response(), None)
 
-            result = await validate_and_save_bearer("u1", "tok1", "ref1")
+            result = await validate_and_save_bearer("u1", "ref1")
 
             assert result["success"] is True
             saved = mock_db.save_trakt_config.call_args[0][0]
@@ -81,7 +82,7 @@ class TestValidateAndSaveBearer:
         ):
             mock_call.return_value = ("invalid_grant", None, "invalid refresh token")
 
-            result = await validate_and_save_bearer("u1", "tok1", "bad")
+            result = await validate_and_save_bearer("u1", "bad")
 
             assert result["success"] is False
             assert "invalid_grant" in result["message"]
@@ -99,7 +100,7 @@ class TestValidateAndSaveBearer:
         ):
             mock_call.return_value = ("error", None, "timeout")
 
-            result = await validate_and_save_bearer("u1", "tok1", "ref1")
+            result = await validate_and_save_bearer("u1", "ref1")
 
             assert result["success"] is False
             mock_db.save_trakt_config.assert_not_called()
@@ -117,7 +118,7 @@ class TestValidateAndSaveBearer:
             mock_db.get_trakt_config.return_value = None
             mock_call.return_value = ("ok", _token_response(), None)
 
-            result = await validate_and_save_bearer("u1", "tok1", "ref1")
+            result = await validate_and_save_bearer("u1", "ref1")
 
             assert result["success"] is True
             saved = mock_db.save_trakt_config.call_args[0][0]
@@ -215,6 +216,96 @@ class TestRefreshUserBearer:
                 auth_type="oauth", refresh_token=None
             )
             assert (await refresh_user_bearer("u1")) == STATUS_SKIPPED
+
+    @pytest.mark.asyncio
+    async def test_force_skips_slack_check(self):
+        """force=True 时忽略 expires_at slack，剩余 >1 天也强制刷新（401 路径）"""
+        with (
+            patch("app.services.trakt.token_refresher.database_manager") as mock_db,
+            patch(
+                "app.services.trakt.token_refresher._call_oauth_token",
+                new_callable=AsyncMock,
+            ) as mock_call,
+        ):
+            mock_db.get_trakt_config.return_value = _make_config_dict(
+                expires_at=int(time.time()) + 6 * 86400  # 剩余 6 天
+            )
+            mock_call.return_value = ("ok", _token_response(), None)
+
+            status = await refresh_user_bearer("u1", force=True)
+
+            assert status == STATUS_OK
+            mock_call.assert_awaited_once()
+            saved = mock_db.save_trakt_config.call_args[0][0]
+            assert saved["access_token"] == "newaccess"
+
+    @pytest.mark.asyncio
+    async def test_ok_response_missing_tokens_keeps_state(self):
+        """ok 响应缺 token 字段：STATUS_FAILED 且不落库"""
+        with (
+            patch("app.services.trakt.token_refresher.database_manager") as mock_db,
+            patch(
+                "app.services.trakt.token_refresher._call_oauth_token",
+                new_callable=AsyncMock,
+            ) as mock_call,
+        ):
+            mock_db.get_trakt_config.return_value = _make_config_dict(expires_at=0)
+            mock_call.return_value = ("ok", {"expires_in": 604800}, None)
+
+            status = await refresh_user_bearer("u1", force=True)
+
+            assert status == STATUS_FAILED
+            mock_db.save_trakt_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_refresh_serialized_by_lock(self):
+        """并发刷新被 per-user 锁串行化：第二个刷新读到第一次落库后的新 refresh。
+
+        无锁时两个协程会同时读到旧 refresh（r1），各自旋转后互相覆盖；
+        有锁 + 持锁重读时，第二次调用应以第一次的新 refresh（newrefresh）
+        发起 /oauth/token。
+        """
+        with (
+            patch("app.services.trakt.token_refresher.database_manager") as mock_db,
+            patch(
+                "app.services.trakt.token_refresher._call_oauth_token",
+                new_callable=AsyncMock,
+            ) as mock_call,
+        ):
+            # 模拟真实存储：save 后 get 返回新值（否则并发重读永远拿到旧 config）
+            store = _make_config_dict(expires_at=0)
+
+            def _fake_get(uid):
+                return dict(store)
+
+            def _fake_save(cfg):
+                store.clear()
+                store.update(cfg)
+
+            mock_db.get_trakt_config.side_effect = _fake_get
+            mock_db.save_trakt_config.side_effect = _fake_save
+            # 每次刷新都返回同一组新 token（旋转式）；记录每次调用使用的 refresh
+            mock_call.side_effect = [
+                ("ok", _token_response(), None),
+                ("ok", _token_response(), None),
+            ]
+
+            r1, r2 = await asyncio.gather(
+                refresh_user_bearer("u1", force=True),
+                refresh_user_bearer("u1", force=True),
+            )
+
+            assert r1 == STATUS_OK
+            assert r2 == STATUS_OK
+            # 两次都真的调了 /oauth/token
+            assert mock_call.await_count == 2
+            # 第二次调用用的是第一次落库后的新 refresh（持锁重读）
+            assert mock_call.await_args_list[0][0][0] == "ref1"
+            assert mock_call.await_args_list[1][0][0] == "newrefresh"
+            # 落库两次，最终是旋转后的新 token
+            assert mock_db.save_trakt_config.call_count == 2
+            final_saved = mock_db.save_trakt_config.call_args[0][0]
+            assert final_saved["refresh_token"] == "newrefresh"
 
 
 class TestHeartbeatAllUsers:

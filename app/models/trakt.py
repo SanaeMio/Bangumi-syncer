@@ -207,11 +207,11 @@ class TraktConfigUpdateRequest(BaseModel):
     sync_interval: Optional[str] = Field(None, description="同步间隔")
     sync_filter_enabled: Optional[bool] = Field(None, description="是否启用类型过滤")
     auth_type: Optional[str] = Field(None, description="凭证模式: oauth / bearer")
-    access_token: Optional[str] = Field(
-        None, description="Bearer access_token（留空=不修改；不回显）"
-    )
     refresh_token: Optional[str] = Field(
-        None, description="Bearer refresh_token（留空=不修改；不回显）"
+        None, description="Bearer refresh_token（必填；验证/续期依据；不回显）"
+    )
+    access_token: Optional[str] = Field(
+        None, description="Bearer access_token（可选，仅展示用途，不被使用；不回显）"
     )
 
 
