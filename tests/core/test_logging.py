@@ -565,3 +565,71 @@ class TestLoggerLogToFile:
         assert "secret123" not in result[0]
         assert "host.com" not in result[0]
         assert "realuser" not in result[0]
+
+
+class TestPercentFormatting:
+    """Test stdlib-style % placeholder formatting"""
+
+    def test_scheduler_startup_message(self, capsys):
+        """调度器启动日志：%s 占位符应被替换"""
+        logger = _make_logger()
+        logger.info("%s 调度器启动%s", "feiniu", "成功")
+        captured = capsys.readouterr()
+        assert "feiniu 调度器启动成功" in captured.out
+        assert "%s" not in captured.out
+
+    def test_accounts_duplicate_mapping_warning(self, capsys):
+        """多用户映射重复：%r 与 %s 均应替换"""
+        logger = _make_logger()
+        logger.warning(
+            "多用户映射中媒体服务器用户名 %r 重复：原指向配置段 %s，现被 %s 覆盖",
+            "user_a",
+            "section_old",
+            "section_new",
+        )
+        captured = capsys.readouterr()
+        assert "多用户映射中媒体服务器用户名 'user_a' 重复" in captured.out
+        assert "原指向配置段 section_old，现被 section_new 覆盖" in captured.out
+        assert "%r" not in captured.out
+        assert "%s" not in captured.out
+
+    def test_float_precision_formatting(self, capsys):
+        """%.2f 浮点占位符"""
+        logger = _make_logger()
+        logger.info("相似度 %.2f 低于阈值 %.2f", 0.456, 0.50)
+        captured = capsys.readouterr()
+        assert "相似度 0.46 低于阈值 0.50" in captured.out
+
+    def test_multiline_embedded_content(self, capsys):
+        """\\n%s 多行内容嵌入"""
+        logger = _make_logger()
+        logger._debug_mode = True
+        logger.debug("fongmi 设备连接详情:\n%s", "line1\nline2")
+        captured = capsys.readouterr()
+        assert "fongmi 设备连接详情:\nline1\nline2" in captured.out
+        assert "%s" not in captured.out
+
+    def test_fallback_join_without_placeholders(self, capsys):
+        """无占位符的多参数仍用空格拼接"""
+        logger = _make_logger()
+        logger.info("part1", "part2")
+        captured = capsys.readouterr()
+        assert "part1 part2" in captured.out
+
+    def test_literal_percent_sign(self, capsys):
+        """单参数字面量 %% 输出为 %"""
+        logger = _make_logger()
+        logger.info("进度 100%%")
+        captured = capsys.readouterr()
+        assert "进度 100%" in captured.out
+
+    def test_percent_formatting_with_mix(self, capsys):
+        """脱敏与 % 格式化同时生效"""
+        logger = _make_logger()
+        logger.need_mix = True
+        logger.user_name = "realuser"
+        logger.info("用户 %s 登录", "realuser")
+        captured = capsys.readouterr()
+        assert "用户 _hide_user_ 登录" in captured.out
+        assert "realuser" not in captured.out
+        assert "%s" not in captured.out
