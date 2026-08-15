@@ -1929,6 +1929,37 @@ class TestTmdbMappingMultiSeason:
             assert len(sao) > 3
 
 
+class TestReloadConfigRebuildTmdbMapping:
+    """reload_config 清空映射后首次查询懒重建"""
+
+    def test_reload_config_clears_tmdb_mapping(self):
+        """配置刷新后 TMDB 标题/日期映射被清空"""
+        data = _make_data()
+        data._cache_tmdb_mapping = {"tv/old": "旧标题"}
+        data._cache_tmdb_begin = {"tv/old": "旧日期"}
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            mock_cm.get.return_value = ""
+            data.reload_config()
+            assert data._cache_tmdb_mapping == {}
+            assert data._cache_tmdb_begin == {}
+
+    def test_get_title_by_tmdb_id_lazy_rebuilds_mapping(self):
+        """映射清空后首次查询懒重建标题/日期映射"""
+        data = _make_data()
+        data._cache_tmdb_mapping = {}
+        data._cache_tmdb_begin = {}
+        items = [
+            {
+                "title": "番剧A",
+                "begin": "2026-07-17T00:00:00.000Z",
+                "sites": [{"site": "tmdb", "id": "tv/12345"}],
+            }
+        ]
+        with patch.object(data, "_parse_data", return_value=items):
+            assert data.get_title_by_tmdb_id("tv/12345") == "番剧A"
+            assert data.get_begin_by_tmdb_id("tv/12345") == "2026-07-17T00:00:00.000Z"
+
+
 class TestFindBangumiCandidates:
     """find_bangumi_candidates 候选回传测试"""
 
