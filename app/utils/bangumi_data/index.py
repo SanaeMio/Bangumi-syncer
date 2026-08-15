@@ -145,6 +145,11 @@ class IndexMixin:
                         self._title_index.setdefault(zh_title, []).append(item)
         logger.info(f"标题索引构建完成，共 {len(self._title_index)} 个唯一标题")
 
+    def _ensure_tmdb_mapping(self) -> None:
+        """TMDB 映射为空时懒重建（reload_config 清空映射后首次查询触发）。"""
+        if not self._cache_tmdb_mapping:
+            self._build_tmdb_mapping()
+
     def get_title_by_tmdb_id(
         self, tmdb_id: str, season: int | None = None
     ) -> str | None:
@@ -157,6 +162,7 @@ class IndexMixin:
         Returns:
             番剧名或 None
         """
+        self._ensure_tmdb_mapping()
         if season is not None:
             title = self._cache_tmdb_mapping.get(f"{tmdb_id}/season/{season}", None)
             if title:
@@ -173,6 +179,7 @@ class IndexMixin:
         Returns:
             开始日期字符串（空字符串表示未找到）
         """
+        self._ensure_tmdb_mapping()
         if not hasattr(self, "_cache_tmdb_begin"):
             return ""
         if season is not None:
