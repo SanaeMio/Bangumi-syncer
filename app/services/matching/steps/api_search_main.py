@@ -538,16 +538,16 @@ class APISearchStep(MatchStepBase):
     ) -> dict | None:
         """从关联条目中择优选择主线故事条目
 
-        媒体类型判定改用 _detect_candidate_media_type（结合 subject type 字段），
-        不再依赖 rel.get("type") 字段过滤 —— 该字段在 API 路径是 subject type
-        （2=anime/6=real），在 archive 路径是 relation_type（2=prequel/3=sequel），
-        两条路径语义不一致会导致 archive 路径下召回不全。
+        媒体类型判定用 _detect_candidate_media_type（结合 subject type 字段），
+        并保留 subject type 过滤：仅保留动画(2)/三次元(6)，排除书籍(1)/音乐(3)/
+        游戏(4)等非影视条目 —— 防止 detect_media_type 仅凭标题关键词把原作小说
+        误判为 episode 后选中（场景：《斗破苍穹年番》关联到原作小说 type=1）。
         """
         (
             RELATION_ID_PARENT_STORY,
             RELATIONS,
-            _,
-            _,
+            SUBJECT_TYPE_ANIME,
+            SUBJECT_TYPE_REAL,
             _,
             _detect_candidate_media_type,
             _,
@@ -558,6 +558,9 @@ class APISearchStep(MatchStepBase):
         other_match = None
         for rel in related_list:
             if not isinstance(rel, dict):
+                continue
+            rel_type = rel.get("type")
+            if rel_type not in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
                 continue
             rel_name = rel.get("name", "")
             rel_name_cn = rel.get("name_cn", "") or rel_name

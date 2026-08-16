@@ -180,26 +180,25 @@ class TestVerifyP02PickRelatedSubject:
         assert result["relation"] == "主线故事"
 
     def test_verify_archive_relation_type_field_semantic(self) -> None:
-        """archive 路径 type=3（relation_type=续集）：应返回该条目
+        """关联条目 type 字段始终为 subject type：type=6 正常返回
 
-        archive 关联条目的 type 字段是 relation_type（2=前传/3=续集），
-        修复后不再用 type 字段过滤，改用 _detect_candidate_media_type 判定媒体类型，
-        archive 路径下 type=3 的续集条目能被正确召回。
+        related_list 只来自 bgm.get_related_subjects()（API 调用），
+        type 字段语义始终是 subject type，不区分 archive/API 路径。
+        type=6（三次元）应通过过滤并返回。
         """
         related_list = [
             {
-                "type": 3,  # archive 路径：relation_type=续集
-                "name": "测试番剧",
-                "name_cn": "测试番剧",
+                "type": 6,  # SUBJECT_TYPE_REAL
+                "name": "测试日剧",
+                "name_cn": "测试日剧",
                 "relation": "续集",
             }
         ]
         result = APISearchStep._pick_related_subject(
             related_list,
-            request_media_type="episode",
-            search_title="测试番剧",
+            request_media_type="real_action",
+            search_title="测试日剧",
         )
-        # 期望行为：type=3 在 archive 路径表示续集，是有效关联，应返回该条目
         assert result is not None
         assert result["relation"] == "续集"
 
@@ -225,6 +224,35 @@ class TestVerifyP02PickRelatedSubject:
         # type=2 在 API 路径是 subject_type=动画，通过过滤，正常返回
         assert result is not None
         assert result["relation"] == "续集"
+
+    def test_verify_novel_related_subject_excluded(self) -> None:
+        """回归测试：原作小说（type=1）等非影视条目应从关联改选中排除
+
+        场景：《斗破苍穹年番》关联到原作小说《斗破苍穹》type=1。
+        detect_media_type 仅凭标题关键词会把小说误判为 episode，
+        若无 type 过滤，关联改选会选中小说导致后续集数解析失败。
+        """
+        related_list = [
+            {
+                "type": 1,  # SUBJECT_TYPE_BOOK：原作小说
+                "name": "斗破苍穹",
+                "name_cn": "斗破苍穹",
+                "relation": "改编自",
+            },
+            {
+                "type": 2,  # SUBJECT_TYPE_ANIME
+                "name": "斗破苍穹年番",
+                "name_cn": "斗破苍穹年番",
+                "relation": "主线故事",
+            },
+        ]
+        result = APISearchStep._pick_related_subject(
+            related_list,
+            request_media_type="episode",
+            search_title="斗破苍穹年番",
+        )
+        assert result is not None
+        assert result["type"] == 2
 
 
 # ===== P0-3: get_target_season_episode_id 返回类型不一致（已修复） =====
