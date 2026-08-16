@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import airing_calendar, deps
+from app.core.config import config_manager
 
 
 @pytest.fixture
@@ -134,9 +135,9 @@ class TestAiringCalendarEndpoint:
         self, app_with_auth, mock_archive_enabled, mock_bangumi_config_with_watching
     ):
         """正常查询返回按日期分组的结果（有 Bangumi 配置 + 在看列表）"""
-        from datetime import date, timedelta
+        from datetime import timedelta
 
-        today = date.today()
+        today = config_manager.today_in_scheduler_tz()
         today_str = today.isoformat()
         tomorrow_str = (today + timedelta(days=1)).isoformat()
 
@@ -343,9 +344,7 @@ class TestAiringCalendarEndpoint:
         self, app_with_auth, mock_archive_enabled, mock_bangumi_config_with_watching
     ):
         """空日期格子也应有正确的 weekday"""
-        from datetime import date
-
-        today = date.today()
+        today = config_manager.today_in_scheduler_tz()
         with patch.object(
             airing_calendar.archive_store,
             "get_episodes_by_airdate",
