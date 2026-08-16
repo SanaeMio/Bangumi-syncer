@@ -107,6 +107,10 @@ class MatchTrace:
     final_match_method: str = (
         ""  # custom_mapping / bangumi_data / archive / api_search / failed
     )
+    # 细粒度匹配方式（激活死状态 bgm.last_match_method）：
+    # exact / prefix_variant / season_stripped / media_suffix_stripped /
+    # unwrapped / main_segment / fuzzy / cross_season_chain
+    final_match_method_detail: str = ""
     final_score: float | None = None
     # 新增：同步最终状态/消息/动作（用于流水线最后一步 result）
     final_status: str = ""
@@ -175,6 +179,7 @@ class MatchTrace:
             "final_subject_id": self.final_subject_id,
             "final_episode_id": self.final_episode_id,
             "final_match_method": self.final_match_method,
+            "final_match_method_detail": self.final_match_method_detail,
             "final_score": round(self.final_score, 4)
             if self.final_score is not None
             else None,
