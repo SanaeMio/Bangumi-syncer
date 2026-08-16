@@ -453,3 +453,58 @@ def test_match_trace_to_dict_serializes_final_status():
     assert d["final_status"] == "success"
     assert d["final_message"] == "已标记为看过"
     assert d["final_action"] == "1"
+
+
+@pytest.mark.parametrize(
+    "path,expected_detail,expected_label",
+    [
+        ("chain", "cross_season_chain", "前传/续集链"),
+        (
+            "franchise_archive",
+            "cross_season_franchise_archive",
+            "同 IP 闭包（本地归档）",
+        ),
+        ("franchise_online", "cross_season_franchise_online", "同 IP 改编一跳（在线）"),
+        ("", "cross_season_chain", "跨季链"),
+    ],
+)
+def test_cross_season_fallback_writes_match_path_to_trace(
+    path, expected_detail, expected_label
+):
+    """_cross_season_fallback 应按命中路径写入 trace 细粒度匹配方式与 reason
+
+    前端根据 final_match_method_detail 渲染徽章、按 processed_payload.match_path
+    渲染跨季链表格的命中路径列。
+    """
+    from app.services.sync_service.match_trace import MatchTrace
+    from app.services.sync_service.orchestrator import SyncOrchestrator
+
+    bgm = MagicMock()
+    bgm.find_episode_across_seasons.return_value = (999, "9981")
+    bgm.last_cross_season_path = path
+
+    item = CustomItem(
+        user_name="u",
+        title="凡人修仙传",
+        season=1,
+        episode=120,
+        source="fongmi",
+        media_type="tv",
+        release_date="2023-01-01",
+    )
+
+    orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)
+    orchestrator._sync = MagicMock()
+    trace = MatchTrace()
+    sid, eid = orchestrator._cross_season_fallback(
+        bgm, item, subject_id="100", bgm_se_id="100", trace=trace
+    )
+
+    assert sid == 999
+    assert eid == "9981"
+    assert trace.final_match_method_detail == expected_detail
+    trace.finish()
+    cross_step = trace.steps[-1]
+    assert cross_step.status == "hit"
+    assert cross_step.processed_payload["match_path"] == path
+    assert expected_label in cross_step.reason

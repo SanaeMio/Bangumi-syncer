@@ -1266,6 +1266,8 @@ class TestFindEpisodeFranchiseFallback:
         assert result is not None
         assert result[0] == 900
         assert result[1] == 90020  # sort 120 -> id 90001 + (120 - 101)
+        # 命中路径标记：archive 闭包 → franchise_archive（前端徽章用）
+        assert api.last_cross_season_path == "franchise_archive"
 
     def test_archive_franchise_closure_empty_falls_back_online(self):
         """Archive 闭包命中但为空时，降级到在线一跳仍能找到改编条目"""
@@ -1286,6 +1288,7 @@ class TestFindEpisodeFranchiseFallback:
         assert result is not None
         assert result[0] == 900
         assert result[1] == 90020
+        assert api.last_cross_season_path == "franchise_online"
 
     def test_online_one_hop_finds_live_action(self):
         """Archive miss：在线一跳改编邻居（不 BFS）找到网剧目标集"""
@@ -1300,6 +1303,7 @@ class TestFindEpisodeFranchiseFallback:
         assert result is not None
         assert result[0] == 900
         assert result[1] == 90020
+        assert api.last_cross_season_path == "franchise_online"
 
     def test_online_one_hop_skips_book_type(self):
         """一跳改编邻居是书籍（type=1）时应跳过，返回 None"""

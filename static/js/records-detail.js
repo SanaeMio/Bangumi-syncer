@@ -340,17 +340,27 @@ function renderEpisodeResolveTable(step) {
     });
 }
 
-// cross_season step 表格：展示跨季链查找的变更过程
+// cross_season step 表格：展示跨季链/同 IP 改编查找的变更过程
 function renderCrossSeasonTable(step) {
     if (!step || step.stage !== 'cross_season' || !step.processed_payload) {
         return '';
     }
-    return renderPayloadTable(step.processed_payload, {
+    const pathText = {
+        chain: '前传/续集链',
+        franchise_archive: '同 IP 闭包（本地归档）',
+        franchise_online: '同 IP 改编一跳（在线）',
+    }[step.processed_payload.match_path] || '';
+    const payload = { ...step.processed_payload };
+    if (pathText) {
+        payload.match_path = pathText;
+    }
+    return renderPayloadTable(payload, {
         input_subject_id: '输入条目 ID',
         output_subject_id: '输出条目 ID',
         output_episode_id: '输出剧集 ID',
         target_episode: '目标集',
         changed: '是否变更',
+        match_path: '命中路径',
         subject_url: '条目链接',
         episode_url: '剧集链接',
         error: '错误',

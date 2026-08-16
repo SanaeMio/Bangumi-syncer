@@ -125,6 +125,14 @@ class BangumiApi(
         # （对应设计文档 §11/§13.3 的 final_match_method 预测性标记）。
         self.last_match_method: str = ""
 
+        # 最近一次跨季链查找（find_episode_across_seasons）的命中路径：
+        # ""=未命中 / 当前 subject 直接命中；"chain"=前传/续集链；
+        # "franchise_archive"=同 IP 闭包（本地归档，含改编边）；
+        # "franchise_online"=同 IP 改编一跳（在线）。
+        # orchestrator._cross_season_fallback 据此区分 trace 细粒度匹配方式，
+        # 前端详情页/列表页展示对应徽章（见 badges.js renderMatchMethodDetailBadge）。
+        self.last_cross_season_path: str = ""
+
         # 如果禁用SSL验证，输出警告（httpx 无需抑制 urllib3 警告）
         if not ssl_verify:
             logger.warning(

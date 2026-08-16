@@ -445,15 +445,31 @@ class SyncOrchestrator:
         if chain_pick:
             chain_subject_id, chain_ep_id = chain_pick
             prev_subject_id = subject_id
+            # 跨季链命中路径：chain=前传/续集链；franchise_archive=同 IP 闭包
+            # （本地归档，含改编边）；franchise_online=同 IP 改编一跳（在线）。
+            # 由 episodes.find_episode_across_seasons 各命中点回填。
+            cross_path = getattr(bgm, "last_cross_season_path", "") or ""
+            detail_by_path = {
+                "chain": "cross_season_chain",
+                "franchise_archive": "cross_season_franchise_archive",
+                "franchise_online": "cross_season_franchise_online",
+            }
+            match_method_detail = detail_by_path.get(cross_path, "cross_season_chain")
+            path_label = {
+                "chain": "前传/续集链",
+                "franchise_archive": "同 IP 闭包（本地归档）",
+                "franchise_online": "同 IP 改编一跳（在线）",
+            }.get(cross_path, "跨季链")
             logger.debug(
-                f"通过关联季条目链找到目标集: 原 subject_id={prev_subject_id}, "
+                f"通过关联季条目链找到目标集({path_label}): "
+                f"原 subject_id={prev_subject_id}, "
                 f"改选 subject_id={chain_subject_id}, ep_id={chain_ep_id}, "
                 f"目标 episode={item.episode}"
             )
             cross_step.status = "hit"
             cross_step.subject_id = str(chain_subject_id)
             cross_step.reason = (
-                f"跨季链查找命中：原 subject_id={prev_subject_id} → "
+                f"跨季链查找命中（{path_label}）：原 subject_id={prev_subject_id} → "
                 f"chain_subject_id={chain_subject_id}, "
                 f"ep_id={chain_ep_id} (目标 episode={item.episode})"
             )
@@ -463,14 +479,15 @@ class SyncOrchestrator:
                 "output_episode_id": str(chain_ep_id),
                 "target_episode": item.episode,
                 "changed": str(prev_subject_id) != str(chain_subject_id),
+                "match_path": cross_path,
                 "subject_url": f"https://bgm.tv/subject/{chain_subject_id}",
                 "episode_url": f"https://bgm.tv/ep/{chain_ep_id}",
             }
             trace.final_subject_id = str(chain_subject_id)
             trace.final_episode_id = str(chain_ep_id)
-            # 跨季链命中：粗粒度记 archive，细粒度记 cross_season_chain
+            # 跨季链命中：粗粒度记 archive，细粒度记具体路径
             trace.final_match_method = "archive"
-            trace.final_match_method_detail = "cross_season_chain"
+            trace.final_match_method_detail = match_method_detail
             return chain_subject_id, chain_ep_id
 
         logger.error(

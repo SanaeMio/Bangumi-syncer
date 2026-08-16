@@ -671,6 +671,9 @@ class EpisodesMixin:
         if not target_ep:
             return None
 
+        # 重置跨季链命中路径标记（供 orchestrator 区分 chain / 同 IP 改编）
+        self.last_cross_season_path = ""
+
         # 整体 deadline：链式 API 调用累计耗时超过 60s 立即放弃
         # （防御错误 subject_id 触发的长链遍历占用 sync 线程池）
         deadline = time.monotonic() + _CROSS_SEASON_DEADLINE_SECONDS
@@ -724,6 +727,7 @@ class EpisodesMixin:
                 subject_id, target_ep, direction, visited, max_depth, deadline
             )
             if result:
+                self.last_cross_season_path = "chain"
                 return result
         # 同 IP 改编兜底：续集/前传链覆盖不到「改编」等跨媒体边
         # （如动画 ↔ 真人网剧同名场景：凡人修仙传等）。
@@ -782,6 +786,7 @@ class EpisodesMixin:
                     allowed_types=(SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL),
                 )
                 if result:
+                    self.last_cross_season_path = "franchise_archive"
                     return result
             # archive 命中但闭包为空或未找到：archive 数据可能不完整，
             # 继续在线一跳检查
@@ -847,6 +852,7 @@ class EpisodesMixin:
                 return None
             found = self._find_episode_by_sort(rid, target_ep)
             if found:
+                self.last_cross_season_path = "franchise_online"
                 logger.debug(
                     f"通过同 IP 改编一跳找到目标集: subject_id={rid}, "
                     f"sort={target_ep}, ep_id={found['id']}"

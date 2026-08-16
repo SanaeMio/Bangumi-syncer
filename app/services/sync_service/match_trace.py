@@ -112,7 +112,8 @@ class MatchTrace:
     )
     # 细粒度匹配方式（激活死状态 bgm.last_match_method）：
     # exact / prefix_variant / season_stripped / media_suffix_stripped /
-    # unwrapped / main_segment / fuzzy / cross_season_chain
+    # unwrapped / main_segment / fuzzy / cross_season_chain /
+    # cross_season_franchise_archive / cross_season_franchise_online
     final_match_method_detail: str = ""
     final_score: float | None = None
     # 新增：同步最终状态/消息/动作（用于流水线最后一步 result）

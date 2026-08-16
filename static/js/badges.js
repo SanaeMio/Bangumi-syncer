@@ -101,7 +101,8 @@ function renderMatchMethodBadge(method) {
 
 // 细粒度匹配方式徽章：对应 MatchTrace.final_match_method_detail
 // exact / prefix_variant / season_stripped / media_suffix_stripped /
-// unwrapped / main_segment / fuzzy / cross_season_chain
+// unwrapped / main_segment / fuzzy / cross_season_chain /
+// cross_season_franchise_archive / cross_season_franchise_online
 function renderMatchMethodDetailBadge(detail) {
     if (!detail) {
         return '';
@@ -115,6 +116,8 @@ function renderMatchMethodDetailBadge(detail) {
         main_segment: ['secondary', '主段'],
         fuzzy: ['warning', '模糊匹配'],
         cross_season_chain: ['primary', '跨季链'],
+        cross_season_franchise_archive: ['purple', '同IP改编·归档'],
+        cross_season_franchise_online: ['info', '同IP改编·在线'],
     };
     const [color, text] = badges[detail] || ['secondary', detail];
     return `<span class="badge rounded-pill bg-${color} bg-opacity-75" style="font-size:0.75em">${text}</span>`;
