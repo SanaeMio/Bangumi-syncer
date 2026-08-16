@@ -1164,20 +1164,28 @@ class TestBangumiApiSearchArchiveIntegration:
 
     @patch("app.utils.bangumi_api.httpx.Client")
     def test_search_archive_hit_skips_api(self, _mock_http: MagicMock) -> None:
-        """Archive 命中时不应调用 API"""
+        """阶段五：search() 移除 archive 短路后，archive 命中状态不影响 search()，
+        search() 直接走 API。archive 短路已提升为 ArchiveShortcutStep（管道层）。
+        """
         api = BangumiApi()
         archive_data = [{"id": 1, "name": "Test", "type": 2}]
         api._archive = MagicMock()
+        # archive 命中状态不再影响 search()（短路已移到 ArchiveShortcutStep）
         api._archive.try_search.return_value = _mock_archive_hit(archive_data)
-        api._request_with_retry = MagicMock()
+
+        api_data = {"data": archive_data}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = api_data
+        api._request_with_retry = MagicMock(return_value=mock_resp)
 
         result = api.search(
             title="Test", start_date="2026-01-01", end_date="2026-02-01"
         )
 
         assert result == archive_data
-        api._archive.try_search.assert_called_once()
-        api._request_with_retry.assert_not_called()
+        # search() 不再调 try_search（阶段五移到 ArchiveShortcutStep）
+        api._archive.try_search.assert_not_called()
+        api._request_with_retry.assert_called_once()
         # 命中应写入缓存
         cache_key = (
             "Test",
@@ -1191,12 +1199,16 @@ class TestBangumiApiSearchArchiveIntegration:
 
     @patch("app.utils.bangumi_api.httpx.Client")
     def test_search_archive_hit_list_only_false(self, _mock_http: MagicMock) -> None:
-        """list_only=False 时 Archive 命中应包装为 dict"""
+        """阶段五：list_only=False 时 search() 返回 API 的 dict（archive 不再参与）"""
         api = BangumiApi()
         archive_data = [{"id": 1, "name": "Test", "type": 2}]
         api._archive = MagicMock()
         api._archive.try_search.return_value = _mock_archive_hit(archive_data)
-        api._request_with_retry = MagicMock()
+
+        api_data = {"data": archive_data}
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = api_data
+        api._request_with_retry = MagicMock(return_value=mock_resp)
 
         result = api.search(
             title="Test",
@@ -1206,6 +1218,8 @@ class TestBangumiApiSearchArchiveIntegration:
         )
 
         assert result == {"data": archive_data}
+        api._archive.try_search.assert_not_called()
+        api._request_with_retry.assert_called_once()
 
     @patch("app.utils.bangumi_api.httpx.Client")
     def test_search_archive_miss_falls_back_to_api(self, _mock_http: MagicMock) -> None:

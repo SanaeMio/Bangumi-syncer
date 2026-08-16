@@ -60,6 +60,8 @@ def _make_mock_bangumi_api():
     """构造 mock BangumiApi：搜索命中 + 集数命中 + mark 返回 1"""
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [
             {
                 "id": 577198,
@@ -338,6 +340,8 @@ def test_pipeline_terminates_with_result_miss_on_episode_not_found(
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (None, None)
         mock_instance.find_episode_across_seasons.return_value = None

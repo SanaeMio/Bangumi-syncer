@@ -117,18 +117,26 @@ class APISearchStep(MatchStepBase):
         }
 
         try:
-            bgm_data = bgm.bgm_search(
-                title=search_title,
-                ori_title=item.ori_title or "",
-                premiere_date=premiere_date or "",
-                is_movie=(item.media_type == "movie"),
-                subject_types=subject_types,
-            )
+            # 阶段五：检测 ctx.bgm_data 是否已有数据（来自 ArchiveShortcutStep 命中）
+            # archive 命中时跳过 bgm_search()，直接走候选排序 + post_search 改选
+            if ctx.bgm_data:
+                bgm_data = ctx.bgm_data
+                is_archive_hit = True
+            else:
+                bgm_data = bgm.bgm_search(
+                    title=search_title,
+                    ori_title=item.ori_title or "",
+                    premiere_date=premiere_date or "",
+                    is_movie=(item.media_type == "movie"),
+                    subject_types=subject_types,
+                )
+                # 判断命中来源：archive 短路命中标记为 "archive"，否则 "api_search"
+                is_archive_hit = bool(bgm and bgm.last_hit_source == "archive")
 
             first = bgm_data[0] if bgm_data else {}
             api_response_summary = {
                 "total_candidates": len(bgm_data) if bgm_data else 0,
-                "is_archive_hit": bool(bgm and bgm.last_hit_source == "archive"),
+                "is_archive_hit": is_archive_hit,
                 "first_subject_id": first.get("id"),
                 "first_name": first.get("name") or "",
                 "first_name_cn": first.get("name_cn") or "",
@@ -144,8 +152,6 @@ class APISearchStep(MatchStepBase):
                     api_response_summary=api_response_summary,
                 )
 
-            # 判断命中来源：archive 短路命中标记为 "archive"，否则 "api_search"
-            is_archive_hit = bgm.last_hit_source == "archive"
             match_stage = "archive" if is_archive_hit else "api_search"
             ctx.match_stage = match_stage
 
@@ -218,11 +224,14 @@ class APISearchStep(MatchStepBase):
             # 命中：设置 ctx
             ctx.subject_id = bgm_data[0]["id"]
             ctx.is_season_matched_id = is_api_season_matched
-            # 细粒度匹配方式：优先取 bgm_search 内部 step 写入的 matched_variant_method
-            # （exact/prefix_variant/season_stripped 等），archive 命中时为空
-            ctx.match_method_detail = ctx.matched_variant_method or (
-                "exact" if is_archive_hit else ""
-            )
+            # 细粒度匹配方式：
+            # - archive 命中：保留 ArchiveShortcutStep 设置的 match_method_detail
+            #   （exact/fuzzy/prefix_variant/season_stripped 等，由 try_search 返回）
+            # - API 命中：取 bgm_search 内部 step 写入的 matched_variant_method
+            if is_archive_hit:
+                ctx.match_method_detail = ctx.match_method_detail or "exact"
+            else:
+                ctx.match_method_detail = ctx.matched_variant_method or ""
             # 歧义标记：top1/top2 分数差 < 0.05 时置 True，编排器据此发 match_ambiguous 通知
             # （原 _maybe_notify_match_ambiguous 逻辑前移到 step，通知职责留在编排器）
             if len(candidates) >= 2:

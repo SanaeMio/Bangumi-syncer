@@ -1320,25 +1320,31 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         from app.services.matching.context import MatchContext
         from app.services.matching.pipeline import MatchPipeline
         from app.services.matching.steps.api_search_main import APISearchStep
+        from app.services.matching.steps.archive_shortcut import ArchiveShortcutStep
         from app.services.matching.steps.bangumi_data import BangumiDataStep
         from app.services.matching.steps.custom_mapping import CustomMappingStep
         from app.services.matching.steps.normalize import NormalizeStep
 
         actual_trace = trace or MatchTrace()
-        # bgm 延迟到 APISearchStep 内部获取：custom_mapping/bangumi_data 不需要 bgm
+        # bgm 延迟到 ArchiveShortcutStep/APISearchStep 内部获取：
+        # custom_mapping/bangumi_data 不需要 bgm
         ctx = MatchContext(
             item=item,
-            bgm=None,  # APISearchStep 内部通过 service._get_bangumi_api_for_user 获取
+            bgm=None,  # ArchiveShortcutStep/APISearchStep 内部通过 service 获取
             trace=actual_trace,
             service=self,
         )
 
-        # 构建管道：Normalize → CustomMapping → BangumiData → APISearch
+        # 构建管道：Normalize → CustomMapping → BangumiData → ArchiveShortcut → APISearch
+        # ArchiveShortcut 与 APISearchStep 同级：archive 开启且命中时设置 ctx.bgm_data，
+        # APISearchStep 检测到已有数据后跳过 bgm_search()，直接走候选排序 + post_search 改选。
+        # archive 关闭/未命中时 APISearchStep 正常走 API 搜索（托底）。
         pipeline = MatchPipeline(
             [
                 NormalizeStep(),
                 CustomMappingStep(),
                 BangumiDataStep(),
+                ArchiveShortcutStep(),
                 APISearchStep(),
             ]
         )

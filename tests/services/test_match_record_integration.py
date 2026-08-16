@@ -409,6 +409,8 @@ class TestSeasonOneCandidateSelection:
             scores: title_diff_ratio 的返回值序列；None 时统一返回 0.85
         """
         bgm = MagicMock(bgm_search=MagicMock(return_value=candidates))
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        bgm._archive.enabled = False
         if scores is not None:
             bgm.title_diff_ratio = MagicMock(side_effect=list(scores))
         else:
@@ -598,6 +600,8 @@ class TestCandidateScoreFilling:
             },
         ]
         bgm = MagicMock(bgm_search=MagicMock(return_value=candidates))
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        bgm._archive.enabled = False
         bgm.title_diff_ratio = MagicMock(side_effect=[0.95, 0.72])
 
         trace = MatchTrace()
@@ -618,7 +622,9 @@ class TestCandidateScoreFilling:
 
         search_steps = [s for s in trace.steps if s.stage in ("api_search", "archive")]
         assert len(search_steps) >= 1
-        step = search_steps[0]
+        # 阶段五：archive step (skipped) 在前，api_search step (hit) 在后
+        # 取有 candidates 的命中 step
+        step = next(s for s in search_steps if s.candidates)
         assert len(step.candidates) == 2
         assert step.candidates[0].score == 0.95
         assert step.candidates[1].score == 0.72

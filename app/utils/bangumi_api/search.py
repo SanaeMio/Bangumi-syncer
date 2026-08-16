@@ -68,27 +68,13 @@ class SearchMixin:
         if cache_key in self._cache["search"]:
             return self._cache["search"][cache_key]
 
-        # Archive 短路：本地命中即返回，未命中降级到 API
-        shortcut = self._archive.try_search(
-            title,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit,
-            subject_types=subject_types,
-        )
-        if shortcut.hit:
-            data_list = shortcut.data or []
-            result = data_list if list_only else {"data": data_list}
-            self._put_cache("search", cache_key, result)
-            self.last_hit_source = "archive"
-            # 透传预测性匹配方式（精确 / 前缀变体 / 剥离派生等），供 sync_service 如实标注
-            self.last_match_method = shortcut.match_method
-            return result
-        # archive 未命中/未启用：走 API，清空命中来源标记
+        # 阶段五：archive 短路已提升为管道独立 step（ArchiveShortcutStep），
+        # search() 只做纯 API 调用。archive 命中/未命中由管道层处理。
+        # 清空命中来源标记（archive step 命中时会重新设置）
         self.last_hit_source = ""
         self.last_match_method = ""
 
-        # API 不可达短路：archive 已尝试且未命中，若 API 处于不可达 TTL 内，
+        # API 不可达短路：若 API 处于不可达 TTL 内，
         # 跳过实际请求直接返回空结果（避免每次都等待 10s×3 重试拖垮同步流程）。
         # 注意：不写入缓存，TTL 到期后下一次调用仍会恢复探测。
         if self.is_api_unreachable():
