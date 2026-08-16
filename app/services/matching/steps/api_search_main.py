@@ -149,6 +149,7 @@ class APISearchStep(MatchStepBase):
                     premiere_date=premiere_date or "",
                     is_movie=(item.media_type == "movie"),
                     subject_types=subject_types,
+                    trace=ctx.trace,
                 )
                 # 判断命中来源：archive 短路命中标记为 "archive"，否则 "api_search"
                 is_archive_hit = bool(bgm and bgm.last_hit_source == "archive")

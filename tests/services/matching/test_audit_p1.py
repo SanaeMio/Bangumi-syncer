@@ -324,32 +324,22 @@ class TestVerifyP03VariantMissClearsBgmData:
 
 
 class TestVerifyP04SubstepsTraceInMain:
-    """P1-4: bgm_search 子 step trace 应写入主 trace
+    """P1-4: bgm_search 子 step trace 应写入主 trace（已修复）
 
-    疑似问题：bgm_search（search.py line 235-260）创建独立 MatchContext + 空
+    修复前问题：bgm_search（search.py line 235-260）创建独立 MatchContext + 空
     MatchTrace，4 个子 step 的 trace 全部丢弃。主 trace 只能看到
     APISearchStep 一条汇总记录。
 
-    场景：运行完整 APISearchStep（bgm.bgm_search 实际执行 4 个子 step），
-    检查 ctx.trace 的 steps。期望包含 stage="api_search_date_exact" 或
-    "api_search_variant_fallback" 的子 step 记录，实际不包含。
+    修复后：bgm_search 接受可选 trace 参数，APISearchStep 传入 ctx.trace。
+    4 个子 step 的过程通过 trace.record_substep 追加到主 trace.steps
+    （不更新 final_* 汇总字段，由顶层 _record_trace 统一设置）。
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "P1-4 Confirmed: bgm_search 创建独立 MatchContext + 空 MatchTrace"
-            "（search.py line 235-248），4 个子 step 的 trace 全部丢弃。"
-            "主 trace 只能看到 APISearchStep 一条汇总记录，无法展示子 step 过程。"
-            "应将主 ctx.trace 传入 bgm_search，或让子 step 通过 ctx.parent_trace"
-            "追加记录。"
-        )
-    )
     def test_verify_substeps_trace_in_main(self) -> None:
-        """bgm_search 子 step trace 应写入主 trace
+        """bgm_search 子 step trace 应写入主 trace（已修复）
 
         使用真实 BangumiApi（mock search 方法）运行 APISearchStep，
-        bgm_search 内部 4 个子 step 实际执行但 trace 写入内部 ctx，
-        主 ctx.trace 不包含子 step 记录。
+        bgm_search 内部 4 个子 step 的过程记录追加到主 ctx.trace。
         """
         ctx = _build_ctx(title="测试番剧", season=1, media_type="episode")
         api = BangumiApi()

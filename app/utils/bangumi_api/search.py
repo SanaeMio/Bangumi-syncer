@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -12,6 +12,9 @@ from ..bangumi_archive._title_normalize import (
     _normalize_title_for_match,
     fuse_title_similarity,
 )
+
+if TYPE_CHECKING:
+    from app.services.sync_service.match_trace import MatchTrace
 
 # 兜底搜索（无日期模式）拉取候选条目的上限。
 # v0 search 返回完整 Subject（含 infobox），无需逐条 get_subject 补全，
@@ -217,11 +220,14 @@ class SearchMixin:
         premiere_date: str,
         is_movie: bool = False,
         subject_types: list[int] | None = None,
+        trace: MatchTrace | None = None,
     ) -> list[dict[str, Any]] | None:
         # 阶段二：bgm_search 拆为 4 个 step，本方法仅做薄包装：
         # 构建 ctx → 依次执行 step → 返回 ctx.bgm_data。
         # 死状态 last_match_method 仍写（兼容），同时写 ctx.matched_variant_method。
         # utils 层局部 import services.matching 是过渡，阶段三迁移调用点后清理。
+        # P1-4: trace 非 None 时，4 个子 step 的过程记录追加到主 trace，
+        # 供同步记录详情展示子 step 过程（不更新 final_* 汇总字段）。
         from app.models.sync import CustomItem
         from app.services.matching.context import MatchContext
         from app.services.matching.steps.api_search import (
@@ -247,11 +253,21 @@ class SearchMixin:
             subject_types=subject_types,
         )
 
-        SearchResetStep().execute(ctx)
-        DateExactSearchStep().execute(ctx)
-        VariantFallbackSearchStep().execute(ctx)
-        outcome = SearchFinalizeStep().execute(ctx)
-        if outcome.status == "miss":
+        # 子 step 依次执行，trace 非 None 时记录子 step 过程到主 trace
+        sub_steps = [
+            SearchResetStep(),
+            DateExactSearchStep(),
+            VariantFallbackSearchStep(),
+            SearchFinalizeStep(),
+        ]
+        outcome = None
+        for sub_step in sub_steps:
+            outcome = sub_step.execute(ctx)
+            if trace is not None:
+                trace.record_substep(sub_step.stage, outcome)
+            if outcome.is_terminal:
+                break
+        if outcome is None or outcome.status == "miss":
             return None
 
         logger.debug(

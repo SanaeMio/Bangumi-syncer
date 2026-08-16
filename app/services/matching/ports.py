@@ -10,7 +10,10 @@ Protocol 是 lint/类型检查层面的约束，运行时 BangumiApi 实例天�
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from app.services.sync_service.match_trace import MatchTrace
 
 
 @runtime_checkable
@@ -29,6 +32,7 @@ class BangumiSearchPort(Protocol):
         premiere_date: str = "",
         is_movie: bool = False,
         subject_types: list[int] | None = None,
+        trace: MatchTrace | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def search(

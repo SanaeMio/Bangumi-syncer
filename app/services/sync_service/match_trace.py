@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.services.matching.steps.base import StepOutcome
 
 
 @dataclass
@@ -161,6 +164,31 @@ class MatchTrace:
         # 且 final_score 有值，不应覆盖为 failed。
         if self.final_subject_id is None and not self.final_match_method:
             self.final_match_method = "failed"
+
+    def record_substep(self, stage: str, outcome: StepOutcome) -> None:
+        """记录子 step 到 trace（不更新 final_* 汇总字段）
+
+        供 bgm_search 子管道使用：4 个子 step（reset/date_exact/variant_fallback/
+        finalize）的过程记录追加到主 trace.steps，供同步记录详情展示子 step 过程。
+        但不更新 final_subject_id / final_match_method 等汇总字段 —— 这些由顶层
+        MatchPipeline._record_trace 在主 step（APISearchStep）命中时统一设置，
+        避免子 step 的中间命中/miss 状态污染最终汇总。
+        """
+        step = self.start_step(stage)
+        step.status = outcome.status
+        if outcome.subject_id:
+            step.subject_id = outcome.subject_id
+        if outcome.reason:
+            step.reason = outcome.reason
+        if outcome.score is not None:
+            step.score = outcome.score
+        if outcome.candidates:
+            step.candidates = outcome.candidates
+        if outcome.request_params:
+            step.request_params = outcome.request_params
+        if outcome.api_response_summary:
+            step.api_response_summary = outcome.api_response_summary
+        self._finish_current_step()
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典（用于 JSON 存储/传输）"""
