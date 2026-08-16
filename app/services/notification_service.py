@@ -311,10 +311,7 @@ class NotificationService:
                 types_str = str(cfg.get("types", "all")).strip()
                 # 空字符串或 "all" 表示订阅全部事件（与渠道 supports 行为一致）
                 if types_str and types_str != "all":
-                    lookup = notification_type
-                    if lookup.startswith("watching_summary"):
-                        lookup = "watching_summary"
-                    if lookup not in {
+                    if notification_type not in {
                         t.strip() for t in types_str.split(",") if t.strip()
                     }:
                         continue

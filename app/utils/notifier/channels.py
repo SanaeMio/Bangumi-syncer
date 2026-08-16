@@ -52,15 +52,13 @@ class NotificationChannel(abc.ABC):
         """判断该渠道是否订阅了指定通知类型
 
         约定：配置中的 ``types`` 字段为逗号分隔的类型列表，``"all"`` 表示全订阅。
+        订阅按类型 id 精确匹配：追番总结的 watching_summary_{name} 各自独立，
+        由前端按任务动态展示，用户可对单个任务单独开关。
         """
         types = str(self.config.get("types", "all")).strip()
         if not types or types == "all":
             return True
-        # watching_summary_* 归一化到 watching_summary
-        lookup = notification_type
-        if lookup.startswith("watching_summary"):
-            lookup = "watching_summary"
-        return lookup in {t.strip() for t in types.split(",") if t.strip()}
+        return notification_type in {t.strip() for t in types.split(",") if t.strip()}
 
     @abc.abstractmethod
     def send(

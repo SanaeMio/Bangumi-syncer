@@ -311,3 +311,59 @@ def test_api_reload_hook_swallows_exceptions():
         mock_svc.load_channels_from_config.side_effect = RuntimeError("boom")
         # 不应抛出
         _reload_notification_channels()
+
+
+def test_rule_watching_summary_exact_type_match():
+    """watching_summary_{name} 按类型 id 精确匹配，不再前缀归一化
+
+    规则订阅 watching_summary_每日总结 时：
+    - 发送 watching_summary_每日总结 → 触发
+    - 发送 watching_summary_周报 → 不触发（修复前会被前缀归一化误触发）
+    """
+    channel = _FakeChannel("notify-webhook-1")
+    service = NotificationService(channel_registry=ChannelRegistry())
+    service.channel_registry.register(channel)
+    service.cooldown.cooldown_seconds = 0
+
+    rules = [
+        {
+            "enabled": True,
+            "types": "watching_summary_每日总结",
+            "channels": "notify-webhook-1",
+        }
+    ]
+    cfg_mgr = _make_config_manager(rules)
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        service.notify("watching_summary_每日总结", source="test")
+
+    assert len(channel.send_calls) == 1
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        service.notify("watching_summary_周报", source="test")
+        service.notify("watching_summary", source="test")
+
+    assert len(channel.send_calls) == 1
+
+
+def test_channel_supports_watching_summary_exact():
+    """渠道 supports() 对 watching_summary_{name} 精确匹配"""
+    channel = _FakeChannel("notify-webhook-1")
+    channel.config["types"] = "watching_summary_每日总结"
+
+    assert channel.supports("watching_summary_每日总结") is True
+    assert channel.supports("watching_summary_周报") is False
+    assert channel.supports("watching_summary") is False
+
+    channel.config["types"] = "all"
+    assert channel.supports("watching_summary_每日总结") is True

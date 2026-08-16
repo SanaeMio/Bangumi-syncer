@@ -1016,6 +1016,23 @@ class TestTypeMatches:
         assert Notifier._type_matches("mark_success", "mark_success") is True
         assert Notifier._type_matches("mark_failed", "mark_success") is False
 
+    def test_watching_summary_exact_type(self):
+        """watching_summary_{name} 按类型 id 精确匹配（不再前缀归一化）"""
+        assert (
+            Notifier._type_matches(
+                "watching_summary_每日总结", "watching_summary_每日总结"
+            )
+            is True
+        )
+        assert (
+            Notifier._type_matches("watching_summary_每日总结", "watching_summary")
+            is False
+        )
+        assert (
+            Notifier._type_matches("watching_summary_每日总结", "watching_summary_周报")
+            is False
+        )
+
 
 class TestNotifierMergedExtended:
     """test_notifier_extended.py 并入的独有用例。"""
