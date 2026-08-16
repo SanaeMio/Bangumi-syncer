@@ -467,7 +467,8 @@ class APISearchStep(MatchStepBase):
             best_cand = service._pick_mainline_episode_candidate(
                 episode_candidates, item.title or ""
             )
-            if best_cand.get("id") != bgm_data[0].get("id"):
+            # picker 返回类型为 dict | None，需守卫 None 避免 AttributeError
+            if best_cand and best_cand.get("id") != bgm_data[0].get("id"):
                 bgm_data[0] = best_cand
                 is_api_season_matched = True
                 post_subject_id = best_cand.get("id")
