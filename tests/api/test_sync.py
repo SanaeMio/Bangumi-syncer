@@ -1868,3 +1868,85 @@ async def test_get_sync_records_db_error(app_with_auth):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.get("/api/records")
     assert r.status_code == 500
+
+
+def _retry_result(data):
+    result = MagicMock()
+    result.status = "success"
+    result.data = data
+    return result
+
+
+def test_backfill_match_fields_writes_when_present():
+    """重试结果含匹配字段时应回写原记录"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields"
+    ) as mock_update:
+        _backfill_match_fields_from_result(
+            1,
+            _retry_result(
+                {
+                    "match_method": "api_search",
+                    "match_trace": {"steps": []},
+                    "match_score": 0.9,
+                    "match_platform": "plex",
+                }
+            ),
+        )
+
+    mock_update.assert_called_once_with(
+        record_id=1,
+        match_method="api_search",
+        match_trace={"steps": []},
+        match_score=0.9,
+        match_platform="plex",
+    )
+
+
+def test_backfill_match_fields_skips_when_all_none():
+    """无匹配字段时不应触发 DB 写"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields"
+    ) as mock_update:
+        _backfill_match_fields_from_result(
+            1,
+            _retry_result(
+                {"match_method": None, "match_trace": None, "match_score": None}
+            ),
+        )
+
+    mock_update.assert_not_called()
+
+
+def test_backfill_match_fields_skips_without_data():
+    """重试结果无 data 时直接返回"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    result = MagicMock()
+    result.status = "success"
+    result.data = None
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields"
+    ) as mock_update:
+        _backfill_match_fields_from_result(1, result)
+
+    mock_update.assert_not_called()
+
+
+def test_backfill_match_fields_swallows_db_error():
+    """回写异常应被吞掉（日志告警），不影响重试主流程"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields",
+        side_effect=RuntimeError("db locked"),
+    ):
+        _backfill_match_fields_from_result(
+            1,
+            _retry_result({"match_method": "api_search"}),
+        )

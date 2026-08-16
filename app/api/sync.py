@@ -620,6 +620,8 @@ def _finalize_retry(
     """重试完成后回写原 sync_records 状态，并按需清理 pending_sync_queue。
 
     - success/ignored：原记录改写为 retried，并回填本次重试的 run_id（便于详情页跳转日志）
+      success 还会回写匹配字段（match_method/match_trace/score/platform），
+      覆盖原始失败记录留下的 "failed" 标记，避免详情页/列表页误判。
     - error：保持原状态不变（仍可再次重试）
     """
     if result.status == "success":
@@ -630,6 +632,7 @@ def _finalize_retry(
         )
         if run_id:
             sync_service.update_sync_record_run_id(record_id, run_id)
+        _backfill_match_fields_from_result(record_id, result)
         _cleanup_pending_for_queued_retry(record_id, original_status)
     elif result.status == "ignored":
         sync_service.update_sync_record_status(
@@ -639,7 +642,39 @@ def _finalize_retry(
         )
         if run_id:
             sync_service.update_sync_record_run_id(record_id, run_id)
+        _backfill_match_fields_from_result(record_id, result)
         _cleanup_pending_for_queued_retry(record_id, original_status)
+
+
+def _backfill_match_fields_from_result(record_id: int, result) -> None:
+    """从重试结果 data 回写原记录的匹配字段。
+
+    重试成功后，原始失败记录的 match_method 仍是 "failed"，
+    详情页 isMatchFailure 会误判失败、列表页"匹配方式"列也显示"失败"。
+    此方法用本次重试的 trace 覆盖原记录，让详情页/列表页与实际重试结果一致。
+    """
+    if not result or not getattr(result, "data", None):
+        return
+    data = result.data or {}
+    match_method = data.get("match_method")
+    match_trace = data.get("match_trace")
+    match_score = data.get("match_score")
+    match_platform = data.get("match_platform")
+    # 仅在有可回写字段时调用，避免无谓 DB 写
+    if not any(
+        v is not None for v in [match_method, match_trace, match_score, match_platform]
+    ):
+        return
+    try:
+        sync_service.update_sync_record_match_fields(
+            record_id=record_id,
+            match_method=match_method,
+            match_trace=match_trace,
+            match_score=match_score,
+            match_platform=match_platform,
+        )
+    except Exception as e:
+        logger.warning(f"回写记录 {record_id} 匹配字段失败: {e}")
 
 
 @router.get("/records/{record_id}/retry/stream")

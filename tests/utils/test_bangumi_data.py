@@ -2,6 +2,7 @@
 Bangumi 数据工具测试
 """
 
+import json
 import time
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -1958,6 +1959,191 @@ class TestReloadConfigRebuildTmdbMapping:
         with patch.object(data, "_parse_data", return_value=items):
             assert data.get_title_by_tmdb_id("tv/12345") == "番剧A"
             assert data.get_begin_by_tmdb_id("tv/12345") == "2026-07-17T00:00:00.000Z"
+
+
+class TestReloadConfigGranularInvalidation:
+    """reload_config 细粒度触发：仅 bangumi-data 专属配置变化才清空缓存"""
+
+    @staticmethod
+    def _reload_with(data, mock_cm, **overrides):
+        """构造 reload 场景：config_manager.get 返回当前值 + 指定覆盖。"""
+        defaults = {
+            "bangumi-data.data_url": data.data_url,
+            "bangumi-data.local_cache_path": data.local_cache_path,
+            "bangumi-data.use_cache": data.use_cache,
+            "bangumi-data.cache_ttl_days": data.cache_ttl_days,
+            "bangumi-data.http_proxy": data.http_proxy,
+            "dev.script_proxy": "",
+            "dev.ssl_verify": data.ssl_verify,
+            "dev.debug": data.verbose_logging,
+        }
+        for key, value in overrides.items():
+            defaults[key] = value
+
+        def get_side_effect(section, key, fallback=None):
+            return defaults.get(f"{section}.{key}", fallback)
+
+        mock_cm.get.side_effect = get_side_effect
+        return data
+
+    def test_unrelated_config_change_keeps_cache(self):
+        """无关配置（通知/同步等）变化不清空内存缓存与 TMDB 映射"""
+        data = _make_data()
+        data._data_cache = [{"title": "x"}]
+        data._cache_tmdb_mapping = {"tv/1": "旧标题"}
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            self._reload_with(data, mock_cm)  # 全部与旧值一致
+            data.reload_config()
+        assert data._data_cache == [{"title": "x"}]
+        assert data._cache_tmdb_mapping == {"tv/1": "旧标题"}
+        assert data._force_redownload is False
+
+    def test_cache_ttl_change_clears_cache(self):
+        """cache_ttl_days 变化应清空内存缓存与 TMDB 映射"""
+        data = _make_data()
+        data._data_cache = [{"title": "x"}]
+        data._cache_tmdb_mapping = {"tv/1": "旧标题"}
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            self._reload_with(data, mock_cm, **{"bangumi-data.cache_ttl_days": 30})
+            data.reload_config()
+        assert data._data_cache is None
+        assert data._cache_tmdb_mapping == {}
+        assert data._force_redownload is False
+
+    def test_data_url_change_sets_force_redownload(self):
+        """data_url 变化应清空缓存并置位强制重下标记"""
+        data = _make_data()
+        data._data_cache = [{"title": "x"}]
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            self._reload_with(
+                data,
+                mock_cm,
+                **{"bangumi-data.data_url": "https://mirror.example.com/data.json"},
+            )
+            data.reload_config()
+        assert data._data_cache is None
+        assert data._force_redownload is True
+
+
+class TestForceRedownloadOnUrlChange:
+    """数据源 URL 变更后 _ensure_fresh_data 应强制重下（mtime+TTL 无法感知）"""
+
+    def test_ensure_fresh_data_downloads_when_forced(self):
+        data = _make_data()
+        data._force_redownload = True
+        with (
+            patch.object(data, "_download_data", return_value=True) as mock_dl,
+            patch.object(data, "_is_cache_valid", return_value=True),
+        ):
+            assert data._ensure_fresh_data() is True
+        mock_dl.assert_called_once()
+
+    def test_ensure_fresh_data_clears_flag_after_download(self):
+        data = _make_data()
+        data._force_redownload = True
+        with patch.object(data, "_download_data", return_value=True):
+            data._ensure_fresh_data()
+        assert data._force_redownload is False
+
+    def test_ensure_fresh_data_skips_download_without_flag(self):
+        data = _make_data()
+        data._force_redownload = False
+        with (
+            patch.object(data, "_download_data") as mock_dl,
+            patch.object(data, "_is_cache_valid", return_value=True),
+        ):
+            data._ensure_fresh_data()
+        mock_dl.assert_not_called()
+
+
+class TestParseDataSymmetricRebuild:
+    """_parse_data 缓存 miss 时对称重建标题索引与 TMDB 映射"""
+
+    def test_parse_data_miss_rebuilds_tmdb_mapping(self, tmp_path):
+        data = _make_data()
+        data._data_cache = None
+        cache_file = tmp_path / "data.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "title": "番剧A",
+                            "begin": "2026-07-17T00:00:00.000Z",
+                            "sites": [{"site": "tmdb", "id": "tv/12345"}],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        data.local_cache_path = str(cache_file)
+        data.use_cache = True
+        with patch.object(data, "_ensure_fresh_data"):
+            results = list(data._parse_data())
+        assert len(results) == 1
+        # 对称重建：解析完成后 TMDB 映射已恢复（无需等首次查询）
+        assert data._cache_tmdb_mapping.get("tv/12345") == "番剧A"
+        assert data._cache_tmdb_begin.get("tv/12345") == "2026-07-17T00:00:00.000Z"
+
+
+class TestEnsureTmdbMappingConcurrency:
+    """_ensure_tmdb_mapping 双重检查锁防止并发重复构建"""
+
+    def test_concurrent_ensure_builds_once(self):
+        data = _make_data()
+        data._cache_tmdb_mapping = {}
+        data._data_cache = [{"title": "x"}]
+
+        import threading
+
+        barrier = threading.Barrier(4)
+        results = []
+
+        def worker():
+            barrier.wait()
+            results.append(data._ensure_tmdb_mapping())
+
+        def fake_build():
+            # 模拟构建完成：填充映射，使其余线程在锁外直接短路
+            data._cache_tmdb_mapping["tv/x"] = "x"
+
+        with patch.object(data, "_build_tmdb_mapping", side_effect=fake_build) as mb:
+            threads = [threading.Thread(target=worker) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        assert mb.call_count == 1
+        assert len(results) == 4
+
+    def test_ensure_parses_when_data_cache_empty(self, tmp_path):
+        """数据缓存缺失时 _ensure_tmdb_mapping 触发 _parse_data（对称重建）"""
+        data = _make_data()
+        data._cache_tmdb_mapping = {}
+        data._data_cache = None
+        cache_file = tmp_path / "data.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "title": "番剧A",
+                            "begin": "2026-07-17T00:00:00.000Z",
+                            "sites": [{"site": "tmdb", "id": "tv/12345"}],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        data.local_cache_path = str(cache_file)
+        data.use_cache = True
+        with patch.object(data, "_ensure_fresh_data"):
+            data._ensure_tmdb_mapping()
+        # _parse_data 被消费后对称重建已填充映射
+        assert data._cache_tmdb_mapping.get("tv/12345") == "番剧A"
+        assert data._data_cache is not None
 
 
 class TestFindBangumiCandidates:

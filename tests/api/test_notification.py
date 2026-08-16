@@ -1151,3 +1151,27 @@ async def test_delete_email_save_failure(app_notif):
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 r = await ac.delete("/api/notification/emails/1")
     assert r.json()["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_get_notification_types_with_summary_dynamic(app_with_auth):
+    """watching_summary_{name} 动态类型应按 summary 任务附加"""
+    with patch("app.api.notification.config_manager") as mock_cm:
+        mock_cm.get_summary_configs.return_value = [
+            {"name": "每日总结"},
+            {"name": "周报"},
+        ]
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_auth), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/notification/types")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    ids = {t["id"] for t in data}
+    assert "watching_summary_每日总结" in ids
+    assert "watching_summary_周报" in ids
+    # 动态类型带任务名展示与分类
+    summary = next(t for t in data if t["id"] == "watching_summary_每日总结")
+    assert summary["display_name"] == "追番总结 · 每日总结"
+    assert summary["category"] == "scheduler"

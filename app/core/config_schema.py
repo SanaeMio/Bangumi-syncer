@@ -238,6 +238,9 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="update_cron", default="0 8 * * 3"),
             FieldMeta(name="data_dir", default="./data/archive"),
             FieldMeta(name="min_disk_space_mb", default=3000),
+            # BK-tree 模糊匹配开关：默认关闭，开启后对归档标题构建 BK-tree
+            # 索引以支持编辑距离模糊查询，提升形近/缺字标题的召回率。
+            FieldMeta(name="use_bktree", loose_true=True),
         ),
     ),
     "bangumi-replay": SectionMeta(

@@ -318,6 +318,50 @@ class SyncRecordsRepository(BaseRepository):
         )
         return affected_rows > 0
 
+    def update_sync_record_match_fields(
+        self,
+        record_id: int,
+        match_method: Optional[str] = None,
+        match_trace: Optional[dict] = None,
+        match_score: Optional[float] = None,
+        match_platform: Optional[str] = None,
+    ) -> bool:
+        """回写同步记录的匹配字段，用于重试成功后覆盖原始失败记录的 match_method 等。
+
+        仅更新非 None 参数，避免覆盖未传入的字段。
+        """
+
+        def _write(conn):
+            set_clauses: list[str] = []
+            params: list = []
+            if match_method is not None:
+                set_clauses.append("match_method = ?")
+                params.append(match_method)
+            if match_trace is not None:
+                set_clauses.append("match_trace = ?")
+                params.append(json.dumps(match_trace, ensure_ascii=False))
+            if match_score is not None:
+                set_clauses.append("match_score = ?")
+                params.append(match_score)
+            if match_platform is not None:
+                set_clauses.append("match_platform = ?")
+                params.append(match_platform)
+            if not set_clauses:
+                return 0
+            params.append(record_id)
+            cursor = conn.execute(
+                f"UPDATE sync_records SET {', '.join(set_clauses)} WHERE id = ?",
+                params,
+            )
+            return cursor.rowcount
+
+        affected_rows = self._run_write(
+            _write,
+            error_msg="回写同步记录匹配字段失败",
+            default=False,
+        )
+        return affected_rows > 0
+
     def get_match_records(
         self,
         limit: int = 50,

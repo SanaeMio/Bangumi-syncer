@@ -321,19 +321,16 @@ def test_api_auth_error():
 
 def test_bgm_search_invalid_date_fallback():
     """测试 bgm_search: 遇到无效日期时使用无日期搜索"""
-    # 模拟无日期搜索成功
-    mock_search_old = _mock_response(
-        200, {"list": [{"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}]}
-    )
-    # 模拟获取条目详情
-    mock_subject = _mock_response(
-        200, {"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}
+    # v0 search 统一返回 data 字段（list_only=True 取 data）
+    mock_search = _mock_response(
+        200, {"data": [{"id": 999, "name": "Test Anime", "name_cn": "测试番剧"}]}
     )
 
     def request_side_effect(method, url, **kwargs):
-        if "search/subject" in url:
-            return mock_search_old
-        return mock_subject
+        # v0 search 接口：POST /v0/search/subjects
+        if "search/subjects" in url:
+            return mock_search
+        return _mock_response(200, {})
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value
@@ -349,47 +346,44 @@ def test_bgm_search_invalid_date_fallback():
 
 
 def test_bgm_search_alias_fallback_success():
-    """测试 bgm_search: 通过旧版接口与详情接口获取 infobox 别名进行匹配"""
-    # 模拟带日期搜索无结果
-    mock_post_resp = _mock_response(200, {"data": []})
+    """测试 bgm_search: 通过兜底搜索获取含 infobox 别名的完整数据进行匹配
 
-    # 模拟无日期搜索返回简略信息（无 infobox）
-    mock_search_old = _mock_response(
+    v0 search 返回完整 Subject（含 infobox），无需逐条 get_subject 补全。
+    精确搜索（带 air_date filter）返回空，兜底搜索（无 air_date filter）返回命中。
+    """
+    # 模拟精确搜索（带日期过滤）无结果
+    mock_precise_empty = _mock_response(200, {"data": []})
+
+    # 模拟兜底搜索返回含 infobox 别名的完整 Subject
+    mock_fallback_hit = _mock_response(
         200,
         {
-            "list": [
+            "data": [
                 {
                     "id": 139022,
                     "name": "Concrete Revolutio",
                     "name_cn": "Concrete Revolutio 超人幻想",
+                    "infobox": [
+                        {"key": "放送开始", "value": "2015年10月4日"},
+                        {
+                            "key": "别名",
+                            "value": [{"v": "具象革命 超人幻想"}, {"v": "コンレボ"}],
+                        },
+                    ],
                 }
             ]
         },
     )
 
-    # 模拟通过 ID 获取包含 infobox 别名的完整数据
-    mock_subject = _mock_response(
-        200,
-        {
-            "id": 139022,
-            "name": "Concrete Revolutio",
-            "name_cn": "Concrete Revolutio 超人幻想",
-            "infobox": [
-                {"key": "放送开始", "value": "2015年10月4日"},
-                {
-                    "key": "别名",
-                    "value": [{"v": "具象革命 超人幻想"}, {"v": "コンレボ"}],
-                },
-            ],
-        },
-    )
-
     def request_side_effect(method, url, **kwargs):
-        if method == "POST":
-            return mock_post_resp
-        if "search/subject" in url:
-            return mock_search_old
-        return mock_subject
+        if "search/subjects" in url:
+            # 通过 filter 中是否有 air_date 区分精确搜索和兜底搜索
+            json_body = kwargs.get("json", {})
+            filter_obj = json_body.get("filter", {})
+            if "air_date" in filter_obj:
+                return mock_precise_empty
+            return mock_fallback_hit
+        return _mock_response(200, {})
 
     with patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls:
         mock_client = mock_client_cls.return_value

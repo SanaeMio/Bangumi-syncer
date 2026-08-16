@@ -15,16 +15,59 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections import deque
 from pathlib import Path
 from typing import Any, Optional
 
 from ...core.logging import logger
 from ..bangumi_constants import (
+    RELATION_ID_PREQUEL,
     RELATION_ID_SEQUEL,
     RELATIONS,
 )
 from ._archive import bangumi_archive
 from ._wiki_parser import parse_infobox
+
+# 同 IP / 同系列关系图闭包所采用的关系类型集合（库 dump 编号）。
+# 数据依据（真实库 a.db 的 subject_relation.relation_type 分布）：
+#   1 相同系列 2132 / 2 前传 13249 / 3 续集 13281 / 4 外传 1189 /
+#   7 改编(同作者宇宙) 3903 / 8 同世界观 3084 / 9 续集(系列) 1352 /
+#   10 劇場版·总集编 6531 / 12 同系列 3864 —— 均属「同一作品/IP 宇宙」边
+# 排除噪声边（会把无关条目连进闭包，如 CLANNAD→京都动画粉丝感谢活动）：
+#   5 角色出演 1190 / 6 其他 2815 / 11 其他(恶搞/活动) 2794 /
+#   14 其他 465 / 99 其他·现实活动 3745
+#
+# 注意：此处的 relation_type 是 bangumi-data dump 的编号体系，与
+# bangumi_constants.RELATIONS（官方 web API 编号体系）不同——两套仅 2(前传)/3(续集) 重合。
+# 故离线（find_franchise_closure）直接用本元组按 relation_type IN 查库；
+# 在线降级（_bfs_franchise_closure_online）必须用 FRANCHISE_RELATION_CN_SET
+# 匹配 Bangumi 官方 API 返回的 relation 中文字段，二者不可混用。
+FRANCHISE_RELATION_TYPES = (1, 2, 3, 4, 7, 8, 9, 10, 12)
+
+# 在线降级（Bangumi 官方 web API）对应的「同 IP 宇宙」relation 中文名集合。
+# 来源：FRANCHISE_RELATION_TYPES 的库 dump 语义映射到官方 API 的中文名
+#   库1 相同系列 → 官方无直接对应，以「主线故事」近似（同一主线作品系列）
+#   库2/3 前传/续集 → 官方「前传」「续集」（编号一致）
+#   库4 外传 → 官方「番外篇」（官方 6）
+#   库7 改编(同作者宇宙) → 官方「改编」（官方 1）
+#   库8 同世界观 → 官方「相同世界观」（官方 8）
+#   库9 续集(系列) → 官方「续集」（已在集合内）
+#   库10 劇場版·总集编 → 官方「总集篇」（官方 4）+「不同演绎」（官方 10，含剧场版改编）
+#   库12 同系列 → 官方「主线故事」（官方 12）
+# 排除：官方 7「角色出演」/ 9「不同世界观」/ 14「联动」/ 99「其他」/ 5「全集」
+FRANCHISE_RELATION_CN_SET = frozenset(
+    {
+        "前传",
+        "续集",
+        "改编",
+        "番外篇",
+        "相同世界观",
+        "总集篇",
+        "不同演绎",
+        "主线故事",
+        "衍生",
+    }
+)
 
 
 class ArchiveStore:
@@ -285,6 +328,36 @@ class ArchiveStore:
             logger.warning(f"bangumi_archive find_related_by_relation 失败: {e}")
             return []
 
+    def find_related_by_relations(
+        self, subject_id: int, relation_types: tuple[int, ...]
+    ) -> list[int]:
+        """按多个关联类型 ID 一次性查询关联条目（同 IP 闭包用）
+
+        Args:
+            subject_id: 起始条目
+            relation_types: relation_type 元组（如 FRANCHISE_RELATION_TYPES）
+
+        Returns:
+            关联条目 ID 列表（按 order 排序）
+        """
+        if not relation_types:
+            return []
+        conn = self._get_connection()
+        if conn is None:
+            return []
+        try:
+            placeholders = ",".join("?" * len(relation_types))
+            rows = conn.execute(
+                f"SELECT related_subject_id FROM subject_relation "
+                f"WHERE subject_id = ? AND relation_type IN ({placeholders}) "
+                f'ORDER BY "order"',
+                (subject_id, *relation_types),
+            ).fetchall()
+            return [r[0] for r in rows]
+        except sqlite3.Error as e:
+            logger.warning(f"bangumi_archive find_related_by_relations 失败: {e}")
+            return []
+
     def find_sequel_chain(self, subject_id: int, max_hops: int = 30) -> list[int]:
         """预构图：沿续集链获取所有续作 subject_id
 
@@ -357,6 +430,82 @@ class ArchiveStore:
             current = next_id
         return chain
 
+    def find_series_closure(self, subject_id: int, max_hops: int = 64) -> list[int]:
+        """续集图 BFS 闭包：从 subject_id 出发沿续集+前传双向收集全部可达节点（含分支）
+
+        与 find_sequel_chain / find_prequel_chain（单链、每节点 LIMIT 1）不同，
+        本方法对每个节点取【全部】续集/前传边做连通分量闭包，不丢失分支型 IP
+        的兄弟续集/前传。
+
+        Args:
+            subject_id: 起始条目
+            max_hops: 最大节点数（含起始），防环与失控
+
+        Returns:
+            闭包 subject_id 列表（不含起始 subject_id，按 BFS 层序）
+        """
+        if self._get_connection() is None:
+            return []
+        seen: set[int] = {subject_id}
+        result: list[int] = []
+        queue: deque[int] = deque([subject_id])
+        while queue and len(seen) <= max_hops:
+            cur = queue.popleft()
+            if cur != subject_id:
+                result.append(cur)
+            # 合并续集+前传为单次 IN 查询，避免 N+1（与 find_franchise_closure 对称）
+            nbr_ids = self.find_related_by_relations(
+                cur, (RELATION_ID_SEQUEL, RELATION_ID_PREQUEL)
+            )
+            for rid in nbr_ids:
+                if rid and rid not in seen:
+                    seen.add(rid)
+                    queue.append(rid)
+        return result
+
+    def find_franchise_closure(
+        self,
+        subject_id: int,
+        relation_types: tuple[int, ...] = FRANCHISE_RELATION_TYPES,
+        max_hops: int = 64,
+    ) -> list[int]:
+        """同 IP / 同系列关系图 BFS 闭包：从 subject_id 出发沿全部「同作品」关系
+        类型（默认 FRANCHISE_RELATION_TYPES，含 相同系列/前传/续集/外传/改编/
+        同世界观/劇場版/同系列）双向收集连通分量（含分支）。
+
+        与 find_series_closure（仅 sequel+prequel）相比，额外并入 相同系列/外传/
+        改编/同世界观/劇場版/同系列 等关系，对分支型 IP（如高达全系列、CLAMP 宇宙、
+        Cartoon Network 动画宇宙）能多收回一个数量级的兄弟作品。已剔除 角色出演/
+        其他/活动 等噪声边。
+
+        Args:
+            subject_id: 起始条目
+            relation_types: 采用的关系类型集合（默认同 IP 集合，库 dump 编号）
+            max_hops: 最大节点数（含起始），防环与失控，与 find_series_closure
+                语义对齐。同 IP 宇宙可能很宽，调用方需要更多兄弟作品时可显式传
+                更大值（如 4096）；默认 64 覆盖绝大多数系列。
+
+        Returns:
+            闭包 subject_id 列表（不含起始 subject_id，按 BFS 层序）
+        """
+        if self._get_connection() is None:
+            return []
+        if not relation_types:
+            return []
+        seen: set[int] = {subject_id}
+        result: list[int] = []
+        queue: deque[int] = deque([subject_id])
+        while queue and len(seen) <= max_hops:
+            cur = queue.popleft()
+            if cur != subject_id:
+                result.append(cur)
+            nbr_ids = self.find_related_by_relations(cur, relation_types)
+            for rid in nbr_ids:
+                if rid and rid not in seen:
+                    seen.add(rid)
+                    queue.append(rid)
+        return result
+
     def count_rows(self, table_name: str) -> int:
         """查询表行数（供状态展示）"""
         conn = self._get_connection()
@@ -370,7 +519,7 @@ class ArchiveStore:
 
     # ===== 批量查询（供 ArchiveShortcut 多策略匹配使用） =====
 
-    # try_search / try_search_old 遍历 ids 上限
+    # try_search 遍历 ids 上限
     # 避免精确命中大量同名 subject（如 infobox 脏数据「台版|」归一化后
     # 「台版」命中上千条目）时，逐条调用 archive_store.get_subject 拖慢查询
     # 至数秒（极端场景实测 4972ms）。正常场景 limit=5，遍历 200 条已足够

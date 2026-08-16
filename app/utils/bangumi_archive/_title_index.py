@@ -9,7 +9,7 @@
 内存占用从 200-350MB 降到接近 0，查询性能提升 10-100 倍。
 
 迁移说明：
-- 原 _title_to_ids / _bigram_index 内存结构已移除
+- 原 _title_to_ids / _bigram_index 内存结构已删除（D-4 死代码清理）
 - 原磁盘缓存（.index 文件）已废弃，FTS5 表由 SQLite 自管理
 - 原 _build_internal / _save_to_disk / _load_from_disk 已移除
 - 原 build_in_background 改为轻量同步初始化（FTS5 表导入时已构建，
@@ -22,6 +22,8 @@
 # ruff: noqa: UP045 — 与项目其他模块风格保持一致，使用 Optional[X]
 
 from __future__ import annotations
+
+from typing import Optional
 
 from ._fts_query import (
     ArchiveFTSQuery,
@@ -45,22 +47,16 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
     实际逻辑全部继承自 ArchiveFTSQuery。
     """
 
-    # 兼容原测试访问的内部属性（FTS5 方案下不再有这些结构，
-    # 但部分测试直接访问，提供空值避免 AttributeError）
-    @property
-    def _title_to_ids(self) -> dict[str, list[int]]:
-        """已废弃：FTS5 方案下无内存索引"""
-        return {}
-
-    @property
-    def _bigram_index(self) -> dict[str, list[str]]:
-        """已废弃：FTS5 方案下无 bigram 索引"""
-        return {}
-
     # ===== 多策略标题匹配（从 _archive_shortcut.py 下沉） =====
 
-    def find_subject_ids_for_query_title(self, title: str) -> tuple[list[int], bool]:
+    def find_subject_ids_for_query_title(
+        self, title: str, year: Optional[int] = None
+    ) -> tuple[list[int], bool]:
         """标题 → subject_id 列表 + 是否精确命中
+
+        year：显式年份消歧（G1），透传给各精确匹配步骤的
+        find_subject_ids_by_title，使媒体库推送带首播 metadata 但标题不含
+        年份时（如「銀魂」+2006）也能触发同名多年版消歧。
 
         匹配优先级（从最可靠到最不可靠）：
         1. 剥离季数/集数后缀后的精确匹配（仅当标题含可识别后缀时触发）
@@ -95,7 +91,7 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
                         决定是否尝试媒体前缀/标题分割后再回退模糊
         """
         # 1. 原始标题精确匹配
-        ids = self.find_subject_ids_by_title(title)
+        ids = self.find_subject_ids_by_title(title, year=year)
 
         # 2. 剥离季数/集数后缀后的精确匹配（与原始精确合并，原始优先）
         # 场景 C：媒体库推送「X Season 2」时，archive 中既有「X」（主条目）
@@ -109,14 +105,14 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
         # 主段（如「快乐星猫第三季」）。尝试主段匹配，主段优先。
         stripped = _strip_season_episode_suffix(title)
         if stripped != title and stripped:
-            stripped_ids = self.find_subject_ids_by_title(stripped)
+            stripped_ids = self.find_subject_ids_by_title(stripped, year=year)
             if stripped_ids:
                 # 尝试主段匹配（主段含季数更具体）
                 # 场景 N：查询「快乐星猫第三季：叛逆的物语」剥离后命中
                 # 「快乐星猫」(116142)，但期望是「快乐星猫第三季」(417287)。
                 # 主段「快乐星猫第三季」(6 字) > stripped「快乐星猫」(4 字)，
                 # 主段精确匹配命中 417287，优先返回。
-                main_ids = self._try_main_segment_match(title, stripped)
+                main_ids = self._try_main_segment_match(title, stripped, year=year)
                 if main_ids:
                     # 主段优先（含季数更具体），stripped_ids 作为补充（去重）
                     seen = set(main_ids)
@@ -147,7 +143,7 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
         # 时主段「前橋ウィッチーズ」命中 TV 版，但 archive 中有
         # 「劇場版 前橋ウィッチーズ ～魔女見習いのエモエモリーズ～」，
         # 应优先返回劇場版（更具体）。
-        main_ids = self._try_main_segment_match(title, stripped)
+        main_ids = self._try_main_segment_match(title, stripped, year=year)
         if main_ids:
             if stripped == title and ids:
                 # 无后缀剥离 + ids 非空：原始 ids 是完整标题精确匹配，最具体。
@@ -162,7 +158,7 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
                 variant_ids_list: list[int] = []
                 for prefix in _MEDIA_PREFIX_VARIANTS:
                     variant = f"{prefix}{title}"
-                    v_ids = self.find_subject_ids_by_title(variant)
+                    v_ids = self.find_subject_ids_by_title(variant, year=year)
                     if v_ids:
                         variant_ids_list.extend(v_ids)
                 if variant_ids_list:
@@ -191,7 +187,9 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
         fuzzy = self.find_subject_ids_fuzzy(title)
         return [sid for sid, _ in fuzzy], False
 
-    def _try_main_segment_match(self, title: str, stripped: str) -> list[int]:
+    def _try_main_segment_match(
+        self, title: str, stripped: str, year: Optional[int] = None
+    ) -> list[int]:
         """尝试主段精确匹配，返回主段对应的 subject_id 列表
 
         条件：
@@ -221,7 +219,7 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
             # 无后缀剥离：主段足够长即可
             if len(main_segment) < 4:
                 return []
-        return self.find_subject_ids_by_title(main_segment)
+        return self.find_subject_ids_by_title(main_segment, year=year)
 
 
 # 全局单例（保留原名称，指向 FTS5 实现）

@@ -60,6 +60,8 @@ def _make_mock_bangumi_api():
     """构造 mock BangumiApi：搜索命中 + 集数命中 + mark 返回 1"""
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [
             {
                 "id": 577198,
@@ -190,7 +192,7 @@ def test_pipeline_receive_step_carries_raw_payload_and_sync_action(
 
 
 def test_pipeline_result_step_carries_episode_and_links(mock_config, mock_database):
-    """result step 应携带集数 + subject/ep 链接（processed_payload）"""
+    """result step 应携带集数 + subject/ep 链接（结构化 outputs）"""
     service = SyncService()
 
     item = CustomItem(
@@ -223,10 +225,9 @@ def test_pipeline_result_step_carries_episode_and_links(mock_config, mock_databa
     result_step = steps[-1]
     assert result_step["stage"] == "result"
     assert result_step["status"] == "hit"
-    payload = result_step["processed_payload"]
+    payload = result_step["outputs"]
     assert payload is not None
     assert payload["status"] == "success"
-    assert payload["episode"] == "S01E270"
     assert payload["subject_id"] == "577198"
     assert payload["episode_id"] == "1552069"
     assert payload["subject_url"] == "https://bgm.tv/subject/577198"
@@ -234,7 +235,7 @@ def test_pipeline_result_step_carries_episode_and_links(mock_config, mock_databa
 
 
 def test_pipeline_episode_resolve_step_records_change(mock_config, mock_database):
-    """episode_resolve step 应记录输入→输出变更过程（processed_payload）"""
+    """episode_resolve step 应记录输入→输出变更过程（结构化 inputs/outputs）"""
     service = SyncService()
 
     item = CustomItem(
@@ -266,16 +267,17 @@ def test_pipeline_episode_resolve_step_records_change(mock_config, mock_database
     steps = trace_data.get("steps") or []
     ep_step = next((s for s in steps if s["stage"] == "episode_resolve"), None)
     assert ep_step is not None, "流水线缺少 episode_resolve step"
-    payload = ep_step["processed_payload"]
-    assert payload is not None
-    assert payload["input_subject_id"] == "577198"
-    assert payload["request_season"] == 1
-    assert payload["request_episode"] == 270
-    assert payload["output_subject_id"] == "577198"
-    assert payload["output_episode_id"] == "1552069"
-    assert payload["changed"] is False
-    assert payload["subject_url"] == "https://bgm.tv/subject/577198"
-    assert payload["episode_url"] == "https://bgm.tv/ep/1552069"
+    inputs = ep_step["inputs"]
+    outputs = ep_step["outputs"]
+    assert inputs is not None
+    assert inputs["subject_id"] == "577198"
+    assert inputs["season"] == 1
+    assert inputs["episode"] == 270
+    assert outputs["subject_id"] == "577198"
+    assert outputs["episode_id"] == "1552069"
+    assert outputs["changed"] is False
+    assert outputs["subject_url"] == "https://bgm.tv/subject/577198"
+    assert outputs["episode_url"] == "https://bgm.tv/ep/1552069"
 
 
 def test_pipeline_full_stages_on_success(mock_config, mock_database):
@@ -338,6 +340,8 @@ def test_pipeline_terminates_with_result_miss_on_episode_not_found(
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (None, None)
         mock_instance.find_episode_across_seasons.return_value = None
@@ -449,3 +453,124 @@ def test_match_trace_to_dict_serializes_final_status():
     assert d["final_status"] == "success"
     assert d["final_message"] == "已标记为看过"
     assert d["final_action"] == "1"
+
+
+@pytest.mark.parametrize(
+    "path,expected_detail,expected_label",
+    [
+        ("chain", "cross_season_chain", "前传/续集链"),
+        (
+            "franchise_archive",
+            "cross_season_franchise_archive",
+            "同 IP 闭包（本地归档）",
+        ),
+        ("franchise_online", "cross_season_franchise_online", "同 IP 改编一跳（在线）"),
+        ("", "cross_season_chain", "跨季链"),
+    ],
+)
+def test_cross_season_step_writes_match_path_to_trace(
+    path, expected_detail, expected_label
+):
+    """CrossSeasonStep 应经结果链产出改选信息，ResultStep 结算 trace
+
+    前端根据 final_match_method_detail 渲染徽章、按 outputs.match_path
+    渲染跨季链表格的命中路径列。
+    """
+    from app.services.sync_service.context import ExecutionContext
+    from app.services.sync_service.match_trace import MatchTrace
+    from app.services.sync_service.pipeline import SyncPipeline
+    from app.services.sync_service.steps.cross_season import CrossSeasonStep
+    from app.services.sync_service.steps.result import ResultStep
+    from app.services.sync_service.steps.sync_action import SyncActionStep
+
+    bgm = MagicMock()
+    bgm.find_episode_across_seasons.return_value = (999, "9981")
+    bgm.last_cross_season_path = path
+    bgm.get_subject.return_value = {
+        "id": 999,
+        "name": "凡人修仙传",
+        "name_cn": "凡人修仙传",
+    }
+    service = MagicMock()
+    service._retry_mark_episode.return_value = 1
+    service._format_mark_status_message.return_value = "已标记为看过"
+
+    item = CustomItem(
+        user_name="u",
+        title="凡人修仙传",
+        season=1,
+        episode=120,
+        source="fongmi",
+        media_type="tv",
+        release_date="2023-01-01",
+    )
+    trace = MatchTrace()
+    ctx = ExecutionContext(
+        item=item,
+        bgm=bgm,
+        trace=trace,
+        service=service,
+        actual_source="fongmi",
+        subject_id="100",
+        is_season_matched_id=False,
+    )
+
+    pipeline = SyncPipeline([CrossSeasonStep(), SyncActionStep(), ResultStep()])
+    terminal = pipeline.run(ctx)
+    assert terminal is None
+
+    # 结果链：跨季改选覆盖上游产物，mark_status 由 sync_action 产出
+    assert ctx.current_outputs["subject_id"] == "999"
+    assert ctx.current_outputs["episode_id"] == "9981"
+    assert ctx.current_outputs["mark_status"] == 1
+    cross_outputs = ctx.step_outputs["cross_season"]
+    assert cross_outputs["match_path"] == path
+
+    cross_step = next(s for s in trace.steps if s.stage == "cross_season")
+    assert cross_step.status == "hit"
+    assert cross_step.outputs["match_path"] == path
+    assert expected_label in cross_step.reason
+
+    # final_* 由 ResultStep 统一结算（跨季改选覆写）
+    assert trace.final_subject_id == "999"
+    assert trace.final_episode_id == "9981"
+    assert trace.final_match_method == "archive"
+    assert trace.final_match_method_detail == expected_detail
+    assert trace.final_action == "1"
+    assert trace.final_status == "success"
+    assert ctx.current_outputs["bgm_title"] == "凡人修仙传"
+
+
+def test_cross_season_step_skipped_when_episode_resolved():
+    """集数解析已命中时 CrossSeasonStep 应返回 skipped 且不产出改选信息"""
+    from app.services.sync_service.context import ExecutionContext
+    from app.services.sync_service.match_trace import MatchTrace
+    from app.services.sync_service.steps.cross_season import CrossSeasonStep
+
+    bgm = MagicMock()
+    item = CustomItem(
+        user_name="u",
+        title="T",
+        season=1,
+        episode=1,
+        source="fongmi",
+        media_type="tv",
+        release_date="",
+    )
+    ctx = ExecutionContext(
+        item=item,
+        bgm=bgm,
+        trace=MatchTrace(),
+        service=MagicMock(),
+        actual_source="fongmi",
+        subject_id="100",
+        is_season_matched_id=False,
+    )
+
+    outcome = CrossSeasonStep().execute(ctx, {"subject_id": "100", "episode_id": "200"})
+
+    assert outcome.status == "skipped"
+    assert outcome.reason == "集数解析已命中，无需跨季回退"
+    assert "cross_season" not in ctx.step_outputs
+    assert ctx.current_outputs == {}
+    bgm.find_episode_across_seasons.assert_not_called()

@@ -1,0 +1,371 @@
+"""P0 疑似问题验证测试
+
+验证 3 个 P0 疑似问题修复后的行为：
+- P0-1: API 命中时 final_match_method_detail 应来自 bgm_search 的 out_meta 回传
+- P0-2: _pick_related_subject 死代码 + type 字段语义不一致
+- P0-3: get_target_season_episode_id 返回类型不一致 + D-2 死逻辑
+
+所有问题已修复，测试为普通测试（断言修复后行为且通过）。
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+from app.models.sync import CustomItem
+from app.services.matching.context import MatchContext
+from app.services.matching.steps.api_search_main import APISearchStep
+from app.services.sync_service.match_trace import MatchTrace
+from app.utils.bangumi_api import BangumiApi
+
+
+def _build_ctx(
+    title: str = "测试番剧",
+    ori_title: str | None = None,
+    season: int = 1,
+    media_type: str = "episode",
+) -> MatchContext:
+    """构建测试用 MatchContext（参考 test_steps.py 的 _build_ctx）"""
+    service = MagicMock()
+    return MatchContext(
+        item=CustomItem(
+            media_type=media_type,
+            title=title,
+            ori_title=ori_title,
+            season=season,
+            episode=1,
+            release_date="2024-01-15",
+            user_name="u",
+            source="test",
+        ),
+        bgm=None,
+        trace=MatchTrace(),
+        service=service,
+    )
+
+
+def _make_bgm_mock(candidate: dict) -> MagicMock:
+    """构建 bgm MagicMock（参考 test_steps.py 的 mock 模式）"""
+    bgm = MagicMock()
+    bgm.bgm_search.return_value = [candidate]
+    bgm.title_diff_ratio.return_value = 0.95
+    return bgm
+
+
+def _configure_service_mock(service: MagicMock, bgm: MagicMock) -> None:
+    """配置 service MagicMock 的匹配辅助方法"""
+    service._get_bangumi_api_for_user.return_value = bgm
+    service._sort_candidates_by_platform.side_effect = lambda data, **kw: data
+    service._get_match_confidence_threshold.return_value = 0.6
+    service._check_season_info_in_title.return_value = False
+    service._get_explicit_season_from_title.return_value = 0
+    service._pick_mainline_episode_candidate.return_value = bgm.bgm_search.return_value[
+        0
+    ]
+
+
+# ===== P0-1: API 命中时 final_match_method_detail 永远为空 =====
+
+
+class TestVerifyP01ApiSearchMatchMethodDetail:
+    """P0-1: API 命中时 match_method_detail 应来自 bgm_search 的 out_meta 回传
+
+    疑似问题：APISearchStep.execute API 命中分支读取
+    ``ctx.matched_variant_method``，但该字段只在 ``bgm_search`` 包装函数
+    创建的内部 ctx 中被 VariantFallbackSearchStep 设置。外部主 ctx 的
+    ``matched_variant_method`` 始终为 ``""``。
+
+    修复后：bgm_search 收尾时把内部 ctx.matched_variant_method 写入
+    out_meta["variant_method"]，APISearchStep 从 out_meta 读取（不再依赖
+    bgm 实例死状态 last_match_method，消除并发同用户多任务脏读）。
+    """
+
+    _CANDIDATE = {
+        "id": 12345,
+        "name": "测试番剧",
+        "name_cn": "测试番剧",
+        "platform": "TV",
+        "date": "2024-01-15",
+    }
+
+    def test_verify_api_search_hit_match_method_detail(self) -> None:
+        """API 命中 + 变体方法：match_method_detail 应为 out_meta 回传的值
+
+        场景：bgm_search 内部 VariantFallbackSearchStep 命中变体 "stripped"，
+        收尾时写入 out_meta["variant_method"]="stripped"。
+        修复后：APISearchStep 读 out_meta，match_method_detail == "stripped"。
+        """
+        ctx = _build_ctx(title="测试番剧")
+        bgm = _make_bgm_mock(self._CANDIDATE)
+
+        def _bgm_search_with_variant(**kw: object) -> list[dict]:
+            out_meta = kw.get("out_meta")  # type: ignore[union-attr]
+            if isinstance(out_meta, dict):
+                out_meta["variant_method"] = "stripped"
+            return [self._CANDIDATE]
+
+        bgm.bgm_search.side_effect = _bgm_search_with_variant
+        _configure_service_mock(ctx.service, bgm)
+
+        outcome = APISearchStep().execute(ctx)
+
+        assert outcome.status == "hit"
+        # 期望行为：match_method_detail 应反映 out_meta 回传的变体方法
+        assert ctx.match_method_detail == "stripped"
+
+    def test_verify_api_search_exact_hit_empty(self) -> None:
+        """API 精确命中（无变体）：match_method_detail 应为空字符串
+
+        精确命中时 bgm_search 未命中变体，out_meta["variant_method"]=""。
+        """
+        ctx = _build_ctx(title="测试番剧")
+        bgm = _make_bgm_mock(self._CANDIDATE)
+        _configure_service_mock(ctx.service, bgm)
+
+        outcome = APISearchStep().execute(ctx)
+
+        assert outcome.status == "hit"
+        # 精确命中应无变体方法
+        assert ctx.match_method_detail == ""
+
+
+# ===== P0-2: _pick_related_subject 死代码 + type 字段语义不一致 =====
+
+
+class TestVerifyP02PickRelatedSubject:
+    """P0-2: _pick_related_subject 死代码 + type 字段语义不一致
+
+    疑似问题 1 (D-1 死代码): mainline_match（line 533）初始化为 None 后
+        从未被赋值。命中 RELATION_ID_PARENT_STORY 时直接 ``return rel``，
+        其他情况只更新 other_match。最终 ``return mainline_match or other_match``
+        等价于 ``return other_match``。
+    疑似问题 2 (type 字段语义): 用 ``rel.get("type")`` 过滤
+        SUBJECT_TYPE_ANIME(2)/SUBJECT_TYPE_REAL(6)。但 API 路径 type 是
+        subject type，archive 路径 type 是 relation_type（2=prequel/3=sequel）。
+    """
+
+    def test_verify_mainline_match_dead_code(self) -> None:
+        """D-1: mainline_match 无赋值，命中 parent_story 直接 return
+
+        构造关联条目列表：第一个 non-parent-story（赋给 other_match），
+        第二个 parent_story（直接 return）。验证返回 parent_story 条目，
+        证明 mainline_match 变量无用（命中 parent_story 时直接 return）。
+        """
+        related_list = [
+            {
+                "type": 2,  # SUBJECT_TYPE_ANIME
+                "name": "测试番剧",
+                "name_cn": "测试番剧",
+                "relation": "续集",  # 非 parent_story → 赋给 other_match
+            },
+            {
+                "type": 2,  # SUBJECT_TYPE_ANIME
+                "name": "测试番剧",
+                "name_cn": "测试番剧",
+                "relation": "主线故事",  # parent_story → 直接 return
+            },
+        ]
+        result = APISearchStep._pick_related_subject(
+            related_list,
+            request_media_type="episode",
+            search_title="测试番剧",
+        )
+        # 命中 parent_story 直接 return，验证 mainline_match 无用
+        assert result is not None
+        assert result["relation"] == "主线故事"
+
+    def test_verify_archive_relation_type_field_semantic(self) -> None:
+        """关联条目 type 字段始终为 subject type：type=6 正常返回
+
+        related_list 只来自 bgm.get_related_subjects()（API 调用），
+        type 字段语义始终是 subject type，不区分 archive/API 路径。
+        type=6（三次元）应通过过滤并返回。
+        """
+        related_list = [
+            {
+                "type": 6,  # SUBJECT_TYPE_REAL
+                "name": "测试日剧",
+                "name_cn": "测试日剧",
+                "relation": "续集",
+            }
+        ]
+        result = APISearchStep._pick_related_subject(
+            related_list,
+            request_media_type="real_action",
+            search_title="测试日剧",
+        )
+        assert result is not None
+        assert result["relation"] == "续集"
+
+    def test_verify_api_relation_type_field_semantic(self) -> None:
+        """API 路径 type=2（subject_type=动画）：正常工作，返回该条目
+
+        API 关联条目的 type 字段是 subject_type（2=动画/6=三次元），
+        type=2 在 [2,6] 通过过滤，正常返回该条目。
+        """
+        related_list = [
+            {
+                "type": 2,  # API 路径：subject_type=动画
+                "name": "测试番剧",
+                "name_cn": "测试番剧",
+                "relation": "续集",
+            }
+        ]
+        result = APISearchStep._pick_related_subject(
+            related_list,
+            request_media_type="episode",
+            search_title="测试番剧",
+        )
+        # type=2 在 API 路径是 subject_type=动画，通过过滤，正常返回
+        assert result is not None
+        assert result["relation"] == "续集"
+
+    def test_verify_novel_related_subject_excluded(self) -> None:
+        """回归测试：原作小说（type=1）等非影视条目应从关联改选中排除
+
+        场景：《斗破苍穹年番》关联到原作小说《斗破苍穹》type=1。
+        detect_media_type 仅凭标题关键词会把小说误判为 episode，
+        若无 type 过滤，关联改选会选中小说导致后续集数解析失败。
+        """
+        related_list = [
+            {
+                "type": 1,  # SUBJECT_TYPE_BOOK：原作小说
+                "name": "斗破苍穹",
+                "name_cn": "斗破苍穹",
+                "relation": "改编自",
+            },
+            {
+                "type": 2,  # SUBJECT_TYPE_ANIME
+                "name": "斗破苍穹年番",
+                "name_cn": "斗破苍穹年番",
+                "relation": "主线故事",
+            },
+        ]
+        result = APISearchStep._pick_related_subject(
+            related_list,
+            request_media_type="episode",
+            search_title="斗破苍穹年番",
+        )
+        assert result is not None
+        assert result["type"] == 2
+
+
+# ===== P0-3: get_target_season_episode_id 返回类型不一致（已修复） =====
+
+
+class TestVerifyP03GetTargetSeasonEpisodeId:
+    """P0-3 + D-2: get_target_season_episode_id 返回类型与死逻辑（已修复）
+
+    修复前问题：
+    1. line 555, 568 ``if not target_ep: return subject_id`` 返回单 int，
+       调用方 ``bgm_se_id, bgm_ep_id = ...`` 解包抛 TypeError。
+    2. line 542, 252 ``return None, None if target_ep else None`` 死逻辑：
+       条件表达式两分支都返回 None，等价于 ``return None, None``。
+    3. ``_episode_lookup_failed`` 注解 ``-> int | None``，实际返回 tuple。
+
+    修复后：
+    - line 555, 568 改为 ``return subject_id, None``（保持 tuple 契约）
+    - line 542, 252 改为显式 ``return None, None``
+    - ``_episode_lookup_failed`` 注解改为 ``-> tuple[int | None, int | None]``
+    - ``get_target_season_episode_id`` 注解改为 ``-> tuple[int | None, int | None]``
+    """
+
+    _MOCK_SUBJECT = {"id": 123, "type": 2, "name": "test", "name_cn": ""}
+
+    def test_verify_target_ep_zero_unpack(self) -> None:
+        """P0-3 修复: target_ep=0 + is_season_subject_id 返回 tuple，解包不抛错
+
+        修复前: line 555 ``return subject_id`` 返回单 int，解包抛 TypeError。
+        修复后: line 558 ``return subject_id, None`` 返回 tuple，解包正常。
+        """
+        api = BangumiApi()
+        with (
+            patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)),
+            patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
+        ):
+            # target_ep=0 → if not target_ep: return subject_id, None（tuple）
+            result = api.get_target_season_episode_id(
+                123, 1, 0, is_season_subject_id=True
+            )
+            # 修复后：返回 tuple，解包不抛错
+            bgm_se_id, bgm_ep_id = result
+            assert bgm_se_id == 123
+            assert bgm_ep_id is None
+
+    def test_verify_target_ep_zero_season_one_unpack(self) -> None:
+        """P0-3 修复: target_ep=0 + target_season=1 返回 tuple，解包不抛错
+
+        修复前: line 568 ``return subject_id`` 返回单 int，解包抛 TypeError。
+        修复后: line 571 ``return subject_id, None`` 返回 tuple，解包正常。
+        """
+        api = BangumiApi()
+        with (
+            patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)),
+            patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
+        ):
+            # target_ep=0, target_season=1, is_season_subject_id=False
+            # → line 569 if not target_ep: return subject_id, None
+            result = api.get_target_season_episode_id(123, 1, 0)
+            bgm_se_id, bgm_ep_id = result
+            assert bgm_se_id == 123
+            assert bgm_ep_id is None
+
+    def test_verify_none_none_explicit_return(self) -> None:
+        """D-2 修复: line 545 显式 ``return None, None``（不再有死逻辑三元）
+
+        修复前: ``return None, None if target_ep else None``（死逻辑三元）
+        修复后: ``return None, None``（显式）
+        验证 target_season > max_season 时 target_ep=0 和 target_ep=5 返回值相同。
+        """
+        api = BangumiApi()
+        # target_season=101 > max_season=100，target_ep=0（falsy）
+        with patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)):
+            result_falsy = api.get_target_season_episode_id(123, 101, 0)
+        # target_season=101 > max_season=100，target_ep=5（truthy）
+        with patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)):
+            result_truthy = api.get_target_season_episode_id(123, 101, 5)
+        # 修复后：显式 return None, None，两分支一致
+        assert result_falsy == (None, None)
+        assert result_truthy == (None, None)
+
+    def test_verify_episode_lookup_failed_return_type(self) -> None:
+        """P0-3 修复: _episode_lookup_failed 注解已改为 tuple，返回 tuple
+
+        修复前: 注解 ``-> int | None``，实际返回 tuple（不一致）
+        修复后: 注解 ``-> tuple[int | None, int | None]``，返回 tuple（一致）
+        """
+        api = BangumiApi()
+        with patch.object(
+            api,
+            "_resolve_episode_by_airdate_in_subject",
+            return_value=(123, 456),
+        ):
+            result = api._episode_lookup_failed(
+                subject_id=123,
+                target_ep=5,
+                release_date="2024-01-15",
+            )
+        # 修复后：注解与返回值一致
+        assert isinstance(result, tuple)
+        assert result == (123, 456)
+
+    def test_verify_episode_lookup_failed_miss_returns_none_none(self) -> None:
+        """D-2 修复: line 255 显式 ``return None, None``（不再有死逻辑三元）
+
+        修复前: 末行 ``return None, None if target_ep else None``（死逻辑三元）
+        修复后: 末行 ``return None, None``（显式，保持 tuple 契约）
+        release_date=None + target_season=1 → 跳过两个 if 块 → 末行。
+        """
+        api = BangumiApi()
+        # release_date=None → 跳过第一个 if 块
+        # target_season=1（默认）→ 跳过第二个 if 块
+        # 到达末行 return None, None（显式）
+        result_truthy = api._episode_lookup_failed(
+            subject_id=123, target_ep=5, release_date=None
+        )
+        result_falsy = api._episode_lookup_failed(
+            subject_id=123, target_ep=0, release_date=None
+        )
+        # 修复后：显式 return None, None，两分支一致
+        assert result_truthy == (None, None)
+        assert result_falsy == (None, None)

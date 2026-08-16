@@ -409,6 +409,8 @@ class TestSeasonOneCandidateSelection:
             scores: title_diff_ratio 的返回值序列；None 时统一返回 0.85
         """
         bgm = MagicMock(bgm_search=MagicMock(return_value=candidates))
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        bgm._archive.enabled = False
         if scores is not None:
             bgm.title_diff_ratio = MagicMock(side_effect=list(scores))
         else:
@@ -471,7 +473,7 @@ class TestSeasonOneCandidateSelection:
                     ):
                         subject_id, is_matched, err = svc._find_subject_id(item)
         assert err == ""
-        assert subject_id == 328088  # 第一季本体
+        assert subject_id == "328088"  # 第一季本体
         assert is_matched is True
 
     def test_season1_keeps_top_when_no_seasonless_candidate(self):
@@ -520,7 +522,7 @@ class TestSeasonOneCandidateSelection:
                     ):
                         subject_id, is_matched, err = svc._find_subject_id(item)
         assert err == ""
-        assert subject_id == 111  # 保持首条
+        assert subject_id == "111"  # 保持首条
         assert is_matched is False
 
     def test_season1_keeps_top_when_top_is_seasonless(self):
@@ -562,7 +564,7 @@ class TestSeasonOneCandidateSelection:
                     ):
                         subject_id, is_matched, err = svc._find_subject_id(item)
         assert err == ""
-        assert subject_id == 333
+        assert subject_id == "333"
         # 首条无季度后缀，不触发改选逻辑，is_matched 保持 False
         assert is_matched is False
 
@@ -598,6 +600,8 @@ class TestCandidateScoreFilling:
             },
         ]
         bgm = MagicMock(bgm_search=MagicMock(return_value=candidates))
+        # 阶段五：ArchiveShortcutStep 检查 _archive.enabled，禁用以走 API 路径
+        bgm._archive.enabled = False
         bgm.title_diff_ratio = MagicMock(side_effect=[0.95, 0.72])
 
         trace = MatchTrace()
@@ -618,7 +622,9 @@ class TestCandidateScoreFilling:
 
         search_steps = [s for s in trace.steps if s.stage in ("api_search", "archive")]
         assert len(search_steps) >= 1
-        step = search_steps[0]
+        # 阶段五：archive step (skipped) 在前，api_search step (hit) 在后
+        # 取有 candidates 的命中 step
+        step = next(s for s in search_steps if s.candidates)
         assert len(step.candidates) == 2
         assert step.candidates[0].score == 0.95
         assert step.candidates[1].score == 0.72

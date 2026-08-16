@@ -2,78 +2,19 @@
 
 from __future__ import annotations
 
-import datetime
 import os
-import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
-from rapidfuzz import fuzz
 
 from ...core.logging import logger
-
-# 旧版搜索 API 拉取候选条目详情的最大数量。
-# 旧版接口可能返回数百条相关结果，对每条都调 get_subject 既慢又易触发限流。
-# 这里取一个相对宽裕的上限，既能让调用方在前 N 条里通过 detect_media_type
-# 找到正确条目（如"完美世界"剧场版之外的剧集条目），又避免拉取过多详情。
-OLD_SEARCH_CANDIDATE_LIMIT = 15
-
-# 媒体类型后缀：搜索标题常带此类后缀（如"遮天动画版"），而 Bangumi 条目标题
-# 通常不含或以不同形式包含（如"遮天 第四季"）。匹配时应剥离后缀比较核心标题。
-# 注意：长后缀必须排在短后缀前面，确保优先匹配更具体的后缀。
-_TITLE_SUFFIXES = ("动画版", "动漫版", "真人版", "电影版", "TV版", "动画", "动漫")
-
-# 标题修饰词：在"核心标题"之外附加的播出形态/编排说明，如"年番""番外""特别篇"。
-# 这些词常在媒体库与 Bangumi 条目间不一致（"斗破苍穹年番" vs "斗破苍穹 年番"），
-# 但不影响作品身份，匹配相似度计算前应先去除，避免仅因空格/修饰词差异被误判低分。
-_TITLE_DECORATORS = (
-    "年番",
-    "半年番",
-    "季番",
-    "番外",
-    "外传",
-    "特别篇",
-    "总集篇",
-    "ova",
-    "oad",
-    "剧场版 ",
-    "OVA ",
-    "OAD ",
+from ..bangumi_archive._title_normalize import (
+    _normalize_title_for_match,
+    fuse_title_similarity,
 )
 
-_RE_WHITESPACE = re.compile(r"\s+")
-
-
-def _normalize_title_for_match(text: str) -> str:
-    """匹配相似度用的标题归一化。
-
-    折叠空白（含全/半角空格、连续空格），并去除首尾及内部的修饰词
-    （"年番""番外"等，不区分有无空格），返回用于比较的规范化标题。
-    不改变原始 title_diff_ratio 调用方的入参。
-    """
-    if not text:
-        return ""
-    # 1. 折叠所有空白字符为无
-    norm = _RE_WHITESPACE.sub("", text)
-    # 2. 去除修饰词（处理"斗破苍穹年番"与"斗破苍穹 年番"两种写法）
-    for dec in _TITLE_DECORATORS:
-        # 修饰词前后可能带空格（已被折叠为空，此处直接去词）
-        norm = norm.replace(dec, "")
-    return norm.strip()
-
-
-def _strip_media_suffix(text: str) -> str:
-    """剥离标题末尾的媒体类型后缀，返回核心标题。
-
-    仅当剥离后仍有实质内容（长度 >= 2）时才执行剥离，
-    避免将"动画"等短标题误剥离为空串。
-    """
-    for suffix in _TITLE_SUFFIXES:
-        if text.endswith(suffix):
-            core = text[: -len(suffix)].strip()
-            if len(core) >= 2:
-                return core
-    return text
+if TYPE_CHECKING:
+    from app.services.sync_service.match_trace import MatchTrace
 
 
 class SearchMixin:
@@ -106,8 +47,8 @@ class SearchMixin:
     def search(
         self,
         title: str,
-        start_date: str,
-        end_date: str,
+        start_date: str = "",
+        end_date: str = "",
         limit: int = 5,
         list_only: bool = True,
         subject_types: list[int] | None = None,
@@ -124,24 +65,10 @@ class SearchMixin:
         if cache_key in self._cache["search"]:
             return self._cache["search"][cache_key]
 
-        # Archive 短路：本地命中即返回，未命中降级到 API
-        shortcut = self._archive.try_search(
-            title,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit,
-            subject_types=subject_types,
-        )
-        if shortcut.hit:
-            data_list = shortcut.data or []
-            result = data_list if list_only else {"data": data_list}
-            self._put_cache("search", cache_key, result)
-            self.last_hit_source = "archive"
-            return result
-        # archive 未命中/未启用：走 API，清空命中来源标记
-        self.last_hit_source = ""
+        # 阶段五：archive 短路已提升为管道独立 step（ArchiveShortcutStep），
+        # search() 只做纯 API 调用。archive 命中/未命中由管道层处理。
 
-        # API 不可达短路：archive 已尝试且未命中，若 API 处于不可达 TTL 内，
+        # API 不可达短路：若 API 处于不可达 TTL 内，
         # 跳过实际请求直接返回空结果（避免每次都等待 10s×3 重试拖垮同步流程）。
         # 注意：不写入缓存，TTL 到期后下一次调用仍会恢复探测。
         if self.is_api_unreachable():
@@ -149,17 +76,26 @@ class SearchMixin:
             return [] if list_only else {"data": []}
 
         try:
+            # air_date 过滤：start_date/end_date 任一为空时不加该 filter，
+            # 用于无日期兜底搜索（原 search_old 场景，v0 search 已替代 legacy 接口）
+            air_date_filter: list[str] = []
+            if start_date:
+                air_date_filter.append(f">={start_date}")
+            if end_date:
+                air_date_filter.append(f"<{end_date}")
+            subject_filter: dict[str, Any] = {
+                "type": subject_types if subject_types else [2],
+                "nsfw": True,
+            }
+            if air_date_filter:
+                subject_filter["air_date"] = air_date_filter
             res = self._request_with_retry(
                 "POST",
                 self._req_not_auth,
                 f"{self.host}/search/subjects",
                 json={
                     "keyword": title,
-                    "filter": {
-                        "type": subject_types if subject_types else [2],
-                        "air_date": [f">={start_date}", f"<{end_date}"],
-                        "nsfw": True,
-                    },
+                    "filter": subject_filter,
                 },
                 params={"limit": limit},
             )
@@ -182,59 +118,6 @@ class SearchMixin:
 
         result = res.get("data", []) if list_only else res
         self._put_cache("search", cache_key, result)
-        return result
-
-    def search_old(
-        self, title: str, list_only: bool = True, subject_type: int = 2
-    ) -> list[dict[str, Any]] | dict[str, Any]:
-        # 使用实例缓存避免内存泄漏
-        cache_key = (title, list_only, subject_type)
-        if cache_key in self._cache["search_old"]:
-            return self._cache["search_old"][cache_key]
-
-        # Archive 短路：本地命中即返回，未命中降级到 API
-        shortcut = self._archive.try_search_old(title, subject_type=subject_type)
-        if shortcut.hit:
-            data_list = shortcut.data or []
-            result = (
-                data_list
-                if list_only
-                else {"results": len(data_list), "list": data_list}
-            )
-            self._put_cache("search_old", cache_key, result)
-            self.last_hit_source = "archive"
-            return result
-        # archive 未命中/未启用：走 API，清空命中来源标记
-        self.last_hit_source = ""
-
-        # API 不可达短路（同 search）
-        if self.is_api_unreachable():
-            logger.warning("📚 Bangumi API 不可达（TTL 内），search_old 返回空结果")
-            return [] if list_only else {"results": 0, "list": []}
-
-        try:
-            res = self._request_with_retry(
-                "GET",
-                self.req,
-                f"{self.api_base}/search/subject/{title}",
-                params={"type": subject_type},
-            )
-        except httpx.HTTPError as e:
-            # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
-            logger.error(f"search_old API 请求失败（网络错误）: {e}")
-            return [] if list_only else {"results": 0, "list": []}
-        try:
-            res = res.json()
-            # 确保返回的是字典类型
-            if not isinstance(res, dict):
-                logger.error(f"search_old API返回非字典类型: {type(res)}, 内容: {res}")
-                res = {"results": 0, "list": []}
-        except ValueError as e:
-            logger.error(f"search_old JSON解析失败: {e}")
-            res = {"results": 0, "list": []}
-
-        result = res.get("list", []) if list_only else res
-        self._put_cache("search_old", cache_key, result)
         return result
 
     def get_subject(self, subject_id: int, use_archive: bool = True) -> dict[str, Any]:
@@ -328,225 +211,68 @@ class SearchMixin:
         premiere_date: str,
         is_movie: bool = False,
         subject_types: list[int] | None = None,
+        trace: MatchTrace | None = None,
+        out_meta: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]] | None:
-        bgm_data = None
-        start_date_str = "无日期"
-        end_date_str = "无日期"
+        # 阶段二：bgm_search 拆为 4 个 step，本方法仅做薄包装：
+        # 构建 ctx → 依次执行 step → 返回 ctx.bgm_data。
+        # 命中变体方法通过 out_meta 回传（out_meta["variant_method"]），
+        # 供 APISearchStep 设置 match_method_detail；不再写入本实例属性，
+        # 避免并发同用户多任务时共享状态脏读。
+        # utils 层局部 import services.matching 是过渡，阶段三迁移调用点后清理。
+        # P1-4: trace 非 None 时，4 个子 step 的过程记录追加到主 trace，
+        # 供同步记录详情展示子 step 过程（不更新 final_* 汇总字段）。
+        from app.models.sync import CustomItem
+        from app.services.matching.context import MatchContext
+        from app.services.matching.steps.api_search import (
+            DateExactSearchStep,
+            SearchFinalizeStep,
+            SearchResetStep,
+            VariantFallbackSearchStep,
+        )
+        from app.services.sync_service.match_trace import MatchTrace
 
-        # 重置命中来源标记：反映本次 bgm_search 的最终命中来源
-        # 内部 search/search_old 在 archive 命中时会置 "archive"，未命中时置 ""
-        # 调用方据此区分 archive / api_search 两种匹配路径
-        self.last_hit_source = ""
-
-        # 预计算剥离季数/集数后缀的标题变体（用于 API 查询提升匹配率）
-        # 场景：fongmi/媒体库推送「完美世界 S06E279」，archive 禁用或 miss
-        # 后降级到 API，原样发给 Bangumi API 会因季后缀导致无结果或低相似度
-        # 命中，剥离后用核心标题「完美世界」更易命中。
-        # 标题归一化工具已下沉到 bangumi_archive/_title_normalize，
-        # API 与 archive 路径共用同一套剥离逻辑。
-        from ..bangumi_archive._title_normalize import (
-            _MEDIA_PREFIX_VARIANTS,
-            _split_title_segments,
-            _strip_season_episode_suffix,
-            _strip_title_wrappers,
+        ctx = MatchContext(
+            item=CustomItem(
+                title=title,
+                ori_title=ori_title,
+                season=0,
+                episode=0,
+                release_date=premiere_date,
+                media_type="movie" if is_movie else "episode",
+                user_name="bgm_search",  # 占位，step 仅读 title/ori_title/release_date/media_type
+            ),
+            bgm=self,
+            trace=MatchTrace(),
+            subject_types=subject_types,
         )
 
-        stripped_title = _strip_season_episode_suffix(title)
-        stripped_ori = _strip_season_episode_suffix(ori_title) if ori_title else ""
-
-        # 尝试使用 v0 接口进行带首播日期的精确搜索
-        if premiere_date and len(premiere_date) >= 10:
-            try:
-                air_date = datetime.datetime.fromisoformat(premiere_date[:10])
-                start_date = air_date - datetime.timedelta(days=2)
-                end_date = air_date + datetime.timedelta(days=2)
-
-                start_date_str = start_date.strftime("%Y-%m-%d")
-                end_date_str = end_date.strftime("%Y-%m-%d")
-
-                if ori_title:
-                    bgm_data = self.search(
-                        title=ori_title,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-                bgm_data = bgm_data or self.search(
-                    title=title,
-                    start_date=start_date_str,
-                    end_date=end_date_str,
-                    subject_types=subject_types,
-                )
-                # 剥离季数/集数后缀变体（仅在与原 title 不同时尝试）
-                # 提升 API 场景匹配率：覆盖「完美世界 S06E279」类查询
-                if not bgm_data and stripped_title and stripped_title != title:
-                    bgm_data = self.search(
-                        title=stripped_title,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-                if not bgm_data and stripped_ori and stripped_ori != (ori_title or ""):
-                    bgm_data = self.search(
-                        title=stripped_ori,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-
-                if not bgm_data and is_movie:
-                    movie_search_title = ori_title or title
-                    movie_end_date = air_date + datetime.timedelta(days=200)
-                    end_date_str = movie_end_date.strftime("%Y-%m-%d")
-                    bgm_data = self.search(
-                        title=movie_search_title,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-            except ValueError:
-                logger.warning(
-                    f"首播日期格式解析失败: {premiere_date}，降级至无日期模式搜索"
-                )
-            except httpx.HTTPError as e:
-                # 网络不可达/重试耗尽：精确搜索失败不中断，
-                # 降级到下方 search_old 无日期名称搜索
-                logger.error(f"精确搜索 API 失败（网络错误）: {e}")
-
-        # 若精确搜索无结果或相似度低于阈值，使用旧版接口进行无日期名称搜索
-        if not bgm_data or (
-            bgm_data
-            and len(bgm_data) > 0
-            and self.title_diff_ratio(
-                title=title, ori_title=ori_title, bgm_data=bgm_data[0]
-            )
-            < 0.5
-        ):
-            # 构建搜索标题列表：原始 + 剥离后缀变体（去重，保持优先级）
-            # 原始标题在前（更精确），剥离后缀变体在后（兜底提升命中率）
-            # 额外复用 archive 路径的三种变体策略：
-            # 1. 书名号剥离：「「君の名は。」」→「君の名は。」
-            # 2. 标题分割主段：「魔法少女小圆：叛逆的物语」→「魔法少女小圆」
-            # 3. 媒体前缀变体：「クドわふたー」→「劇場版 クドわふたー」
-            # 仅在已有变体都未命中时尝试（避免对易匹配标题增加延迟）
-            seen_titles: set[str] = set()
-            search_titles: list[str] = []
-            for t in (ori_title, title, stripped_ori, stripped_title):
-                if t and t.strip() and t not in seen_titles:
-                    seen_titles.add(t)
-                    search_titles.append(t)
-
-            # 追加书名号剥离变体（与原始标题不同时才有意义）
-            # 同时作用于原始标题和剥离季数后缀后的标题：
-            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 S02E10 后
-            # 得到「『魔法少女小圆：叛逆的物语』」，再剥离外层 『』 才能拿到
-            # 「魔法少女小圆：叛逆的物语」供后续主段分割。
-            for t in (ori_title, title, stripped_ori, stripped_title):
-                if t:
-                    unwrapped = _strip_title_wrappers(t)
-                    if unwrapped != t and unwrapped not in seen_titles:
-                        seen_titles.add(unwrapped)
-                        search_titles.append(unwrapped)
-
-            # 追加标题分割主段变体（仅当主段长度 >= 4 时才尝试，避免过短误匹配）
-            # 同时对剥离季数后缀和书名号包裹后的标题做分割：
-            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 S02E10 + 外层『』后
-            # 得到「魔法少女小圆：叛逆的物语」，再分割主段得到「魔法少女小圆」。
-            split_bases: list[str] = []
-            for t in (stripped_ori, stripped_title):
-                if t:
-                    split_bases.append(t)
-                    unwrapped = _strip_title_wrappers(t)
-                    if unwrapped != t:
-                        split_bases.append(unwrapped)
-            for t in split_bases:
-                if t:
-                    segments = _split_title_segments(t)
-                    if segments and len(segments[0]) >= 4:
-                        main_seg = segments[0]
-                        if main_seg not in seen_titles:
-                            seen_titles.add(main_seg)
-                            search_titles.append(main_seg)
-
-            # 追加媒体前缀变体（仅当核心标题不含前缀时才拼接尝试）
-            # 用剥离后的标题拼前缀，避免对「劇場版 X」再次拼成「劇場版 劇場版 X」
-            # 同时对书名号剥离后标题和主段拼前缀：
-            # 场景「『魔法少女小圆：叛逆的物语』 S02E10」剥离 + 分割后得到
-            # 核心标题「魔法少女小圆」，拼前缀得到「劇場版 魔法少女小圆」更易命中。
-            media_prefix_bases: list[str] = []
-            for base in (stripped_ori, stripped_title):
-                if base:
-                    media_prefix_bases.append(base)
-                    unwrapped = _strip_title_wrappers(base)
-                    if unwrapped != base:
-                        media_prefix_bases.append(unwrapped)
-                    segments = _split_title_segments(unwrapped)
-                    if segments and len(segments[0]) >= 4:
-                        media_prefix_bases.append(segments[0])
-            for base in media_prefix_bases:
-                if base and not any(base.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
-                    for prefix in _MEDIA_PREFIX_VARIANTS:
-                        variant = f"{prefix}{base}"
-                        if variant not in seen_titles:
-                            seen_titles.add(variant)
-                            search_titles.append(variant)
-
-            found = False
-            for t in search_titles:
-                # 旧版接口仅支持单一 type，按 subject_types 顺序尝试
-                types_to_try = subject_types if subject_types else [2]
-                for t_type in types_to_try:
-                    try:
-                        bgm_data_old = self.search_old(title=t, subject_type=t_type)
-                    except httpx.HTTPError as e:
-                        # 网络错误不中断 fallback：跳过该变体继续尝试
-                        logger.error(f"search_old 网络失败({t!r}): {e}")
-                        bgm_data_old = []
-
-                    if bgm_data_old and len(bgm_data_old) > 0:
-                        # 旧版接口返回数据不含 infobox 别名信息，需拉取完整条目进行准确相似度计算。
-                        # 取前 OLD_SEARCH_CANDIDATE_LIMIT 条候选获取详情，供调用方做季度/媒体类型
-                        # 筛选（如 season=1 时首条为"第N季"需改选无季度后缀的第一季本体，
-                        # 或 media_type=episode 时首条为剧场版需改选剧集条目）。
-                        candidates: list[dict[str, Any]] = []
-                        for entry in bgm_data_old[:OLD_SEARCH_CANDIDATE_LIMIT]:
-                            sid = entry.get("id")
-                            if not sid:
-                                continue
-                            try:
-                                info = self.get_subject(sid)
-                            except httpx.HTTPError as e:
-                                # 单条候选详情失败跳过，不中断整个候选遍历
-                                logger.error(f"get_subject 网络失败(sid={sid}): {e}")
-                                continue
-                            if info:
-                                candidates.append(info)
-
-                        if candidates:
-                            # 保留相似度 > 0.3 的候选；全部低于阈值时视为未命中
-                            # 阈值从 0.5 下调到 0.3，让更多低相似度候选保留用于 trace 回传
-                            matched = [
-                                c
-                                for c in candidates
-                                if self.title_diff_ratio(title, ori_title, bgm_data=c)
-                                > 0.3
-                            ]
-                            if matched:
-                                bgm_data = matched
-                                found = True
-                                break
-                if found:
-                    break
-            else:
-                bgm_data = None
-
-        if not bgm_data or len(bgm_data) == 0:
+        # 子 step 依次执行，trace 非 None 时记录子 step 过程到主 trace
+        sub_steps = [
+            SearchResetStep(),
+            DateExactSearchStep(),
+            VariantFallbackSearchStep(),
+            SearchFinalizeStep(),
+        ]
+        outcome = None
+        for sub_step in sub_steps:
+            outcome = sub_step.execute(ctx)
+            if trace is not None:
+                trace.record_step(sub_step.stage, outcome)
+            if outcome.is_terminal:
+                break
+        if outcome is None or outcome.status == "miss":
+            # 回传空变体方法（调用方据此得知无变体命中）
+            if out_meta is not None:
+                out_meta["variant_method"] = ""
             return None
 
         logger.debug(
-            f"搜索日期区间: {start_date_str} 至 {end_date_str} | 结果: {bgm_data[0].get('name')}"
+            f"搜索日期区间: {ctx.start_date_str} 至 {ctx.end_date_str} | 结果: {ctx.bgm_data[0].get('name')}"
         )
-        return bgm_data
+        if out_meta is not None:
+            out_meta["variant_method"] = ctx.matched_variant_method
+        return ctx.bgm_data
 
     @staticmethod
     def title_diff_ratio(
@@ -571,13 +297,9 @@ class SearchMixin:
         # 归一化用于相似度比较（不改变入参语义，日志/其他用途仍用原值）
         norm_title = _normalize_title_for_match(title)
         norm_ori = _normalize_title_for_match(ori_title)
-        candidates = []
-
-        # 提取基础候选项：原名与中文名
-        if bgm_data.get("name"):
-            candidates.append(bgm_data["name"])
-        if bgm_data.get("name_cn"):
-            candidates.append(bgm_data["name_cn"])
+        cand_name = bgm_data.get("name") or None
+        cand_name_cn = bgm_data.get("name_cn") or None
+        cand_aliases: list[str] = []
 
         # 提取 infobox 中的别名，兼容多种历史数据格式
         infobox = bgm_data.get("infobox", [])
@@ -588,79 +310,32 @@ class SearchMixin:
                     if isinstance(alias_value, list):
                         for alias_item in alias_value:
                             if isinstance(alias_item, dict) and "v" in alias_item:
-                                candidates.append(alias_item["v"])
+                                cand_aliases.append(alias_item["v"])
                             elif isinstance(alias_item, str):
-                                candidates.append(alias_item)
+                                cand_aliases.append(alias_item)
                     elif isinstance(alias_value, str):
-                        candidates.append(alias_value)
+                        cand_aliases.append(alias_value)
                     break
 
-        # 预计算搜索标题的核心部分（剥离媒体后缀）。
-        # 比较统一使用归一化标题（空格折叠 + 修饰词去除），避免仅差空格/
-        # "年番"等修饰词被低估；日志/展示等非比较用途仍走原始标题。
-        search_core = _strip_media_suffix(norm_title)
-        search_stripped = search_core != norm_title
-        ori_core = _strip_media_suffix(norm_ori)
-
-        # 计算所有候选项的相似度，取最大值
-        max_ratio = 0.0
-        for candidate in candidates:
-            if not candidate:
-                continue
-            # 候选同样做归一化，使"遮天 第四季"与"遮天第四季"等仅差空格/
-            # 修饰词的写法可被 fuzz 判为完全匹配，避免无谓的 0.9 上限。
-            norm_cand = _normalize_title_for_match(candidate)
-
-            # 维度 1：原始 fuzz.ratio（保持向后兼容）
-            ratio_title = fuzz.ratio(norm_cand, norm_title) / 100.0
-            ratio_ori = fuzz.ratio(norm_cand, norm_ori) / 100.0
-            score = max(ratio_title, ratio_ori)
-
-            # 维度 2：核心标题包含检查
-            cand_core = _strip_media_suffix(norm_cand)
-            if search_stripped and len(search_core) >= 2:
-                if search_core in norm_cand or norm_cand in search_core:
-                    score = max(score, 0.9)
-                elif search_core in cand_core or cand_core in search_core:
-                    score = max(score, 0.9)
-            # 对 ori_title 也做包含检查（当 ori_title 与 title 不同时）
-            if norm_ori != norm_title and len(ori_core) >= 2 and ori_core != norm_ori:
-                if ori_core in norm_cand or norm_cand in ori_core:
-                    score = max(score, 0.9)
-                elif ori_core in cand_core or cand_core in ori_core:
-                    score = max(score, 0.9)
-
-            # 维度 3：partial_ratio 打折（捕捉部分匹配）
-            partial_title = fuzz.partial_ratio(norm_cand, norm_title) / 100.0 * 0.7
-            partial_ori = fuzz.partial_ratio(norm_cand, norm_ori) / 100.0 * 0.7
-            score = max(score, partial_title, partial_ori)
-
-            # 防误判：双方都含媒体后缀但核心标题不相关时，限制得分上限。
-            # 典型场景："遮天动画版" vs "剑来 动画版"，共享后缀"动画版"
-            # 导致 fuzz.ratio 虚高，但核心"遮天"与"剑来"完全无关。
-            cand_stripped = cand_core != norm_cand
-            if search_stripped and cand_stripped:
-                core_sim = fuzz.ratio(search_core, cand_core) / 100.0
-                core_related = (
-                    core_sim >= 0.4
-                    or search_core in cand_core
-                    or cand_core in search_core
-                )
-                # ori_title 的核心与候选核心相关时不限制
-                if not core_related and norm_ori != norm_title:
-                    ori_core_sim = fuzz.ratio(ori_core, cand_core) / 100.0
-                    core_related = (
-                        ori_core_sim >= 0.4
-                        or ori_core in cand_core
-                        or cand_core in ori_core
-                    )
-                if not core_related:
-                    score = min(score, 0.4)
-
-            max_ratio = max(max_ratio, score)
-
-            # 若发现完全匹配，提前返回
-            if max_ratio >= 1.0:
-                return 1.0
-
-        return max_ratio
+        # G2：统一委托给 bangumi_archive._title_normalize.fuse_title_similarity
+        # （Archive 模糊打分已改用同一实现），保留 API 路径切点：
+        # partial*0.7、无 token_set、核心包含 0.9、媒体后缀防误判开启。
+        # 候选名/别名同样用 _normalize_title_for_match 归一化，与原 title_diff_ratio
+        # 行为一致（原实现在循环内对候选做归一化）；fuse 假设入参已归一化。
+        norm_name = _normalize_title_for_match(cand_name) if cand_name else ""
+        norm_name_cn = (
+            _normalize_title_for_match(cand_name_cn) if cand_name_cn else None
+        )
+        norm_aliases = [_normalize_title_for_match(a) for a in cand_aliases] or None
+        return fuse_title_similarity(
+            norm_title,
+            norm_ori,
+            norm_name,
+            norm_name_cn,
+            norm_aliases,
+            partial_weight=0.7,
+            token_set_weight=0.0,
+            core_contains_weight=0.9,
+            media_suffix_guard=True,
+            substring_boost=False,
+        )

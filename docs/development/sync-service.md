@@ -41,21 +41,33 @@ order: 2
 
 ### 流水线
 
+同步流程由**两段管线**编排（`app/services/sync_service/orchestrator.py`）：
+
 ```
 sync_custom_item(item, source)
+  │ 匹配阶段：MatchPipeline（app/services/matching/pipeline.py）
   ├─ 1. receive           接收请求，记录原始字段
   ├─ 2. normalize         标题归一化（去发布组/分辨率等噪声）
   ├─ 3. custom_mapping    查自定义映射（精确 + 季度感知 + 正则规则）
   ├─ 4. bangumi_data      查 bangumi-data 离线数据集
   ├─ 5. api_search        Bangumi API 搜索（含 archive 短路）
   ├─ 6. post_search       搜索后处理（媒体类型改选 / 关联条目改选）
+  │ 执行阶段：SyncPipeline（app/services/sync_service/pipeline.py）
   ├─ 7. episode_resolve   季度集数解析（电影走短路径）
-  ├─ 8. cross_season      跨季链查找（episode=102 等连续编号）
+  ├─ 8. cross_season      跨季链查找（episode=102 等连续编号，解析未命中才执行）
   ├─ 9. sync_action       标记 Bangumi 看过（含 Replay 入队）
-  └─ 10. result           写库 + 发通知
+  └─ 10. result           结果结算（final_* 统一写入）+ 写库 + 发通知
 ```
 
-每一步都通过 `MatchTrace` 记录详细过程，最终写入 `sync_records` 表的 `match_trace` 字段，供「匹配记录」页面展示。
+每一步都通过 `MatchTrace` 记录详细过程（进入参数、输出、耗时 `elapsed_ms`），最终写入 `sync_records` 表的 `match_trace` 字段，供「匹配记录」页面展示。执行阶段每步由 `SyncPipeline._record_trace` 统一记录，`total_elapsed_ms` 覆盖包含 receive/result 的全流程。
+
+### Step 进出记录（inputs / outputs）
+
+自 2026-08 起，每一步的**结构化进出数据**由管线统一记录到 step 的 `inputs` / `outputs`：
+
+- **结果链传参**：执行阶段（`SyncPipeline`）维护"当前有效产物"，`step.execute(ctx, prev)` 直接拿到上一步产物，产出经 `outcome.outputs` 由管线 merge 回 `ExecutionContext.current_outputs`（同键覆盖、空值不覆盖，跨季改选即依赖覆盖语义），并记录到 `ctx.step_outputs[stage]`（线性管线每步恰好执行一次，重复执行时覆盖）。step 不再直接写 ctx 输出字段。
+- **匹配阶段**：`MatchPipeline` 把每步 `StepOutcome.inputs/outputs` 转发到 `MatchStep.inputs/outputs`；`bgm_search` 的 4 个子 step（api_search_reset / date_exact / variant_fallback / finalize）与主匹配 step（normalize / custom_mapping / bangumi_data / archive / api_search）均填充进出数据。
+- **展示**：前端「匹配记录」详情页对每个 step 渲染「输入」「输出」两个表格（产出值全部用表格展示）。旧记录（无 inputs/outputs）回退到基于 `processed_payload` 的特化表格。
 
 ### Mixin 拆分
 
@@ -99,12 +111,14 @@ APScheduler ──cron──> XxxScheduler._run_sync_job()
 
 ```
 sync_custom_item(item)
-  ├─ _find_subject_id(item)              三段式匹配
+  ├─ MatchPipeline（匹配阶段，app/services/matching/）
   │   ├─ mapping_service.find_mapping()   1. 自定义映射
   │   ├─ bangumi_data.find_bangumi_id()   2. bangumi-data 离线
   │   └─ BangumiApi.bgm_search()          3. Bangumi API 搜索
-  ├─ _resolve_season_episode()           解析季度与集 ID
-  ├─ _retry_mark_episode()               标记看过（含 Replay 入队）
+  ├─ SyncPipeline（执行阶段，app/services/sync_service/steps/）
+  │   ├─ _resolve_season_episode()           解析季度与集 ID
+  │   ├─ find_episode_across_seasons()       跨季链回退（未命中才执行）
+  │   └─ _retry_mark_episode()               标记看过（含 Replay 入队）
   ├─ _mark_subject_completed_if_needed() 全集看完时归档
   ├─ database_manager.log_sync_record()  写库
   └─ notification_service.notify()       发通知

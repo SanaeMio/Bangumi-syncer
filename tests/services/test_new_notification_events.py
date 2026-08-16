@@ -153,7 +153,10 @@ def test_notify_source_event_swallows_exceptions():
 
 
 def _make_trace_with_candidates(scores: list[float]):
-    """构造含指定分数候选的 MatchTrace"""
+    """构造含指定分数候选的 MatchTrace
+
+    模拟 APISearchStep 行为：top1/top2 分数差 < 0.05 时设置 is_ambiguous=True
+    """
     from app.services.sync_service.match_trace import MatchCandidate, MatchTrace
 
     trace = MatchTrace(
@@ -174,6 +177,9 @@ def _make_trace_with_candidates(scores: list[float]):
         )
     trace._finish_current_step()
     trace.final_subject_id = "1000"
+    # 模拟 APISearchStep 的歧义检测逻辑
+    if len(scores) >= 2:
+        trace.is_ambiguous = (scores[0] - scores[1]) < 0.05
     trace.finish()
     return trace
 
