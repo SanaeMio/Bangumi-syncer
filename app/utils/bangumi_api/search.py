@@ -234,32 +234,39 @@ class SearchMixin:
         is_movie: bool = False,
         subject_types: list[int] | None = None,
     ) -> list[dict[str, Any]] | None:
-        bgm_data = None
+        # 阶段二第一步：接入 SearchResetStep + SearchFinalizeStep 边界 step，
+        # 中间逻辑操作 ctx 字段。死状态 last_match_method 仍写（兼容），
+        # 同时写 ctx.matched_variant_method（阶段三 sync_service 消费）。
+        # utils 层局部 import services.matching 是过渡，阶段三迁移调用点后清理。
+        from app.models.sync import CustomItem
+        from app.services.matching.context import MatchContext
+        from app.services.matching.steps.api_search import (
+            SearchFinalizeStep,
+            SearchResetStep,
+        )
+        from app.services.sync_service.match_trace import MatchTrace
+
+        ctx = MatchContext(
+            item=CustomItem(
+                title=title,
+                ori_title=ori_title,
+                season=0,
+                episode=0,
+                release_date=premiere_date,
+                media_type="movie" if is_movie else "episode",
+                user_name="bgm_search",  # 占位，SearchResetStep 仅读 title/ori_title
+            ),
+            bgm=self,
+            trace=MatchTrace(),
+        )
+
+        # 阶段A：重置 + 预计算
+        SearchResetStep().execute(ctx)
+
         start_date_str = "无日期"
         end_date_str = "无日期"
 
-        # 重置命中来源标记：反映本次 bgm_search 的最终命中来源
-        # 内部 search 在 archive 命中时会置 "archive"，未命中时置 ""
-        # 调用方据此区分 archive / api_search 两种匹配路径
-        self.last_hit_source = ""
-        # 同步重置预测性匹配方式标记（命中后由命中变体回填）
-        self.last_match_method = ""
-
-        # 预计算剥离季数/集数后缀的标题变体（用于 API 查询提升匹配率）
-        # 场景：fongmi/媒体库推送「完美世界 S06E279」，archive 禁用或 miss
-        # 后降级到 API，原样发给 Bangumi API 会因季后缀导致无结果或低相似度
-        # 命中，剥离后用核心标题「完美世界」更易命中。
-        # 标题归一化工具已下沉到 bangumi_archive/_title_normalize，
-        # API 与 archive 路径共用同一套剥离逻辑。
-        from ..bangumi_archive._title_normalize import (
-            _strip_season_episode_suffix,
-            build_search_variants,
-        )
-
-        stripped_title = _strip_season_episode_suffix(title)
-        stripped_ori = _strip_season_episode_suffix(ori_title) if ori_title else ""
-
-        # 尝试使用 v0 接口进行带首播日期的精确搜索
+        # 阶段B：尝试使用 v0 接口进行带首播日期的精确搜索
         if premiere_date and len(premiere_date) >= 10:
             try:
                 air_date = datetime.datetime.fromisoformat(premiere_date[:10])
@@ -270,13 +277,13 @@ class SearchMixin:
                 end_date_str = end_date.strftime("%Y-%m-%d")
 
                 if ori_title:
-                    bgm_data = self.search(
+                    ctx.bgm_data = self.search(
                         title=ori_title,
                         start_date=start_date_str,
                         end_date=end_date_str,
                         subject_types=subject_types,
                     )
-                bgm_data = bgm_data or self.search(
+                ctx.bgm_data = ctx.bgm_data or self.search(
                     title=title,
                     start_date=start_date_str,
                     end_date=end_date_str,
@@ -284,26 +291,34 @@ class SearchMixin:
                 )
                 # 剥离季数/集数后缀变体（仅在与原 title 不同时尝试）
                 # 提升 API 场景匹配率：覆盖「完美世界 S06E279」类查询
-                if not bgm_data and stripped_title and stripped_title != title:
-                    bgm_data = self.search(
-                        title=stripped_title,
+                if (
+                    not ctx.bgm_data
+                    and ctx.stripped_title
+                    and ctx.stripped_title != title
+                ):
+                    ctx.bgm_data = self.search(
+                        title=ctx.stripped_title,
                         start_date=start_date_str,
                         end_date=end_date_str,
                         subject_types=subject_types,
                     )
-                if not bgm_data and stripped_ori and stripped_ori != (ori_title or ""):
-                    bgm_data = self.search(
-                        title=stripped_ori,
+                if (
+                    not ctx.bgm_data
+                    and ctx.stripped_ori
+                    and ctx.stripped_ori != (ori_title or "")
+                ):
+                    ctx.bgm_data = self.search(
+                        title=ctx.stripped_ori,
                         start_date=start_date_str,
                         end_date=end_date_str,
                         subject_types=subject_types,
                     )
 
-                if not bgm_data and is_movie:
+                if not ctx.bgm_data and is_movie:
                     movie_search_title = ori_title or title
                     movie_end_date = air_date + datetime.timedelta(days=200)
                     end_date_str = movie_end_date.strftime("%Y-%m-%d")
-                    bgm_data = self.search(
+                    ctx.bgm_data = self.search(
                         title=movie_search_title,
                         start_date=start_date_str,
                         end_date=end_date_str,
@@ -318,19 +333,19 @@ class SearchMixin:
                 # 降级到下方无日期模式搜索
                 logger.error(f"精确搜索 API 失败（网络错误）: {e}")
 
-        # 若精确搜索无结果或相似度低于阈值，使用 v0 接口无日期模式兜底搜索
-        if not bgm_data or (
-            bgm_data
-            and len(bgm_data) > 0
+        # 阶段C：若精确搜索无结果或相似度低于阈值，使用 v0 接口无日期模式兜底搜索
+        if not ctx.bgm_data or (
+            ctx.bgm_data
+            and len(ctx.bgm_data) > 0
             and self.title_diff_ratio(
-                title=title, ori_title=ori_title, bgm_data=bgm_data[0]
+                title=title, ori_title=ori_title, bgm_data=ctx.bgm_data[0]
             )
             < API_SIMILARITY_PRIMARY
         ):
             # 构建搜索标题列表：复用共享变体生成 build_search_variants，
             # 与 Archive 短路路径（try_search）使用同一套变体策略
-            # （原始 → 剥离季后缀 → 书名号剥离 → 标题分割主段 → 媒体前缀变体），
-            # 源头消除两路径变体策略的漂移。顺序与去重与重构前完全一致。
+            from ..bangumi_archive._title_normalize import build_search_variants
+
             search_titles = build_search_variants(title, ori_title or "")
 
             found = False
@@ -341,8 +356,7 @@ class SearchMixin:
                 types_to_try = subject_types if subject_types else [2]
                 for t_type in types_to_try:
                     try:
-                        # v0 search 无日期模式：start_date/end_date 为空时不加 air_date filter，
-                        # 返回完整 Subject（含 infobox），无需逐条 get_subject 补全。
+                        # v0 search 无日期模式：start_date/end_date 为空时不加 air_date filter
                         bgm_data_old = self.search(
                             title=t,
                             start_date="",
@@ -357,7 +371,6 @@ class SearchMixin:
 
                     if bgm_data_old:
                         # 保留相似度 > 0.3 的候选；全部低于阈值时视为未命中
-                        # 阈值从 0.5 下调到 0.3，让更多低相似度候选保留用于 trace 回传
                         matched = [
                             c
                             for c in bgm_data_old
@@ -365,26 +378,27 @@ class SearchMixin:
                             > API_SIMILARITY_FALLBACK
                         ]
                         if matched:
-                            bgm_data = matched
+                            ctx.bgm_data = matched
                             found = True
                             # 标注预测性匹配方式：本次命中来自哪个派生变体
-                            self.last_match_method = v.method
+                            # ctx.matched_variant_method 激活死状态（阶段三 sync_service 消费）
+                            ctx.matched_variant_method = v.method
+                            self.last_match_method = v.method  # 兼容
                             break
                 if found:
                     break
             else:
-                bgm_data = None
+                ctx.bgm_data = None
 
-        if not bgm_data or len(bgm_data) == 0:
-            # 清空预测性匹配方式标记，避免残留上次精确命中的 method 造成脏读
-            # （兜底全 miss 时调用方读 last_match_method 会误判为精确命中）
-            self.last_match_method = ""
+        # 阶段D：收尾
+        outcome = SearchFinalizeStep().execute(ctx)
+        if outcome.status == "miss":
             return None
 
         logger.debug(
-            f"搜索日期区间: {start_date_str} 至 {end_date_str} | 结果: {bgm_data[0].get('name')}"
+            f"搜索日期区间: {start_date_str} 至 {end_date_str} | 结果: {ctx.bgm_data[0].get('name')}"
         )
-        return bgm_data
+        return ctx.bgm_data
 
     @staticmethod
     def title_diff_ratio(
