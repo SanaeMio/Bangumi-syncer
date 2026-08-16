@@ -146,6 +146,35 @@ def test_rule_skips_non_matching_type():
     assert len(channel.send_calls) == 0
 
 
+def test_rule_watching_summary_exact_match():
+    """watching_summary_{name} 规则按具体任务名精确匹配，不归一化到通配。"""
+    channel = _FakeChannel("notify-webhook-1")
+    service = NotificationService(channel_registry=ChannelRegistry())
+    service.channel_registry.register(channel)
+    service.cooldown.cooldown_seconds = 0
+
+    rules = [
+        {
+            "enabled": True,
+            "types": "watching_summary_dad",
+            "channels": "notify-webhook-1",
+        }
+    ]
+    cfg_mgr = _make_config_manager(rules)
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        service.notify("watching_summary_dad", source="summary")
+        service.notify("watching_summary_other", source="summary")
+
+    assert len(channel.send_calls) == 1
+    assert channel.send_calls[0][0] == "watching_summary_dad"
+
+
 def test_rule_all_types_matches_everything():
     """types='all' 应匹配所有通知类型"""
     channel = _FakeChannel("notify-webhook-1")

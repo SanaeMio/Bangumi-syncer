@@ -377,6 +377,20 @@ class Logger:
             for i in args
         ]
 
+    @staticmethod
+    def _format_message(*args) -> str:
+        """将日志参数格式化为消息文本（兼容 stdlib 风格的 % 占位符）。"""
+        if not args:
+            return ""
+        if len(args) == 1:
+            return str(args[0])
+        if isinstance(args[0], str):
+            try:
+                return args[0] % args[1:]
+            except (TypeError, ValueError):
+                pass
+        return " ".join(str(i) for i in args)
+
     def _format_level_field(self, level: Optional[str]) -> str:
         """级别标签，如 [INFO]、[DEBUG]。"""
         if not level:

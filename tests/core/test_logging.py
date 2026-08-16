@@ -601,7 +601,7 @@ class TestPercentFormatting:
         assert "相似度 0.46 低于阈值 0.50" in captured.out
 
     def test_multiline_embedded_content(self, capsys):
-        """\n%s 多行内容嵌入"""
+        """\\n%s 多行内容嵌入"""
         logger = _make_logger()
         logger._debug_mode = True
         logger.debug("fongmi 设备连接详情:\n%s", "line1\nline2")
