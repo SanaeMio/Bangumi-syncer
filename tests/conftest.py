@@ -537,6 +537,35 @@ def _isolate_archive_shortcut(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _restore_injectable_singletons():
+    """保存和恢复 Injectable 单例（mapping_service / notification_service），
+    避免 test_container 等测试调用 reset_*_service() 后 _injectable 重建新实例，
+    导致后续测试中 ``from ... import mapping_service`` 获取的旧实例与
+    step 内部延迟导入获取的新实例不一致（patch.object 作用于旧实例无效）。
+    """
+    from app.services.mapping_service import (
+        _injectable as _ms_inj,
+    )
+    from app.services.notification_service import (
+        _injectable as _ns_inj,
+    )
+
+    _saved = (
+        _ms_inj._instance,
+        _ms_inj._loaded,
+        _ns_inj._instance,
+        _ns_inj._loaded,
+    )
+    yield
+    (
+        _ms_inj._instance,
+        _ms_inj._loaded,
+        _ns_inj._instance,
+        _ns_inj._loaded,
+    ) = _saved
+
+
 # Playwright 测试配置
 if HAS_PYTEST_PLAYWRIGHT:
     import subprocess
