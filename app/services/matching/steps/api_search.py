@@ -215,8 +215,10 @@ class VariantFallbackSearchStep(MatchStepBase):
                             subject_id=str(matched[0].get("id", "")),
                             reason=f"兜底变体命中: {v.method}",
                         )
-        # 全 miss：清空 bgm_data，避免残留精确搜索的低相似度结果
-        ctx.bgm_data = None
+        # 全 miss：保留 ctx.bgm_data（DateExactSearchStep 的低相似度候选），
+        # 不清空。这样 SearchFinalizeStep 返回 hit，APISearchStep 能拿到候选
+        # 执行置信度检查 → low_confidence 时沉淀为 pending_candidate 供用户确认。
+        # 若 DateExactSearchStep 本身也无结果，ctx.bgm_data 已为空，无需显式清空。
         return StepOutcome(status="miss", reason="变体兜底未命中")
 
 

@@ -218,14 +218,21 @@ class TestVariantFallbackSearchStep:
         assert ctx.matched_variant_method != ""
         assert ctx.bgm.last_match_method == ctx.matched_variant_method
 
-    def test_clears_bgm_data_on_full_miss(self):
-        """全 miss 时清空残留的低相似度精确搜索结果"""
+    def test_preserves_bgm_data_on_full_miss(self):
+        """全 miss 时保留 DateExactSearchStep 的低相似度候选（P1-3 修复）
+
+        修复前：全 miss 时 ctx.bgm_data = None，丢弃精确搜索候选，
+        导致 APISearchStep 无候选可沉淀为 pending_candidate。
+        修复后：全 miss 时保留 ctx.bgm_data，让 SearchFinalizeStep 返回 hit，
+        APISearchStep 能拿到候选执行置信度检查并沉淀。
+        """
         ctx = _build_ctx(title="测试", premiere_date="")
         ctx.bgm_data = [{"id": 1, "name": "其他"}]  # 精确搜索残留
         ctx.bgm.title_diff_ratio = lambda *a, **kw: 0.1  # 低于 PRIMARY 触发兜底
         ctx.bgm.search = lambda **kw: []  # 兜底也全 miss
         VariantFallbackSearchStep().execute(ctx)
-        assert ctx.bgm_data is None
+        # 保留低相似度候选供下游沉淀
+        assert ctx.bgm_data == [{"id": 1, "name": "其他"}]
 
 
 class TestSearchFinalizeStep:

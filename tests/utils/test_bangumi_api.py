@@ -1290,14 +1290,24 @@ class TestBgmSearch:
             assert result is None
 
     def test_low_similarity_triggers_fallback(self):
-        """精确搜索相似度低于0.5时触发兜底搜索"""
+        """精确搜索相似度低于0.5时触发兜底搜索（P1-3 修复后保留低相似度候选）
+
+        修复前：精确搜索命中低相似度候选(0.2) → 触发兜底 → 兜底全 miss →
+        清空 bgm_data → 返回 None，候选被丢弃无法沉淀。
+        修复后：兜底全 miss 时保留低相似度候选 → 返回非空列表，
+        供下游 APISearchStep 执行置信度检查并沉淀为 pending_candidate。
+        """
         api = BangumiApi()
         with (
             patch.object(api, "search", return_value=[{"id": 1}]),
             patch.object(api, "title_diff_ratio", return_value=0.2),
         ):
             result = api.bgm_search("title", "", "2024-01-15")
-            assert result is None
+            # 兜底被触发（search 被多次调用：日期精确 + 多个变体）
+            assert api.search.call_count > 1
+            # 修复后保留低相似度候选供沉淀
+            assert result is not None
+            assert len(result) > 0
 
     def test_v0_api_tries_stripped_title(self):
         """v0 API 路径：原始 title miss 时应尝试剥离后缀的变体

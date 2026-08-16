@@ -265,31 +265,21 @@ class TestVerifyP02IsAmbiguousUsesPreReselectTop2:
 
 
 class TestVerifyP03VariantMissClearsBgmData:
-    """P1-3: VariantFallbackSearchStep 全 miss 时应保留低相似度精确搜索候选
+    """P1-3: VariantFallbackSearchStep 全 miss 时应保留低相似度精确搜索候选（已修复）
 
-    疑似问题：VariantFallbackSearchStep 全 miss 时 ``ctx.bgm_data = None``
+    修复前问题：VariantFallbackSearchStep 全 miss 时 ``ctx.bgm_data = None``
     （line 219），丢弃 DateExactSearchStep 的低相似度候选。导致
     APISearchStep 返回 miss + is_terminal，不构建 candidates，无候选可沉淀。
 
-    场景：DateExactSearchStep 命中 0.4 分候选（< PRIMARY=0.5，触发兜底），
-    VariantFallbackSearchStep 全 miss（所有变体搜索返回空）。
-    期望 bgm_data 保留 0.4 候选（供 APISearchStep 沉淀），实际被清空为 None。
+    修复后：全 miss 时不清除 ctx.bgm_data，保留低相似度候选供沉淀。
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "P1-3 Confirmed: VariantFallbackSearchStep 全 miss 时 ctx.bgm_data = None"
-            "（line 219），丢弃 DateExactSearchStep 的低相似度候选。"
-            "应在全 miss 时保留原精确搜索候选（即使低相似度），"
-            "让 APISearchStep 有候选可沉淀供用户手动确认。"
-        )
-    )
     def test_verify_variant_miss_clears_bgm_data(self) -> None:
-        """VariantFallbackSearchStep 全 miss 应保留精确搜索候选
+        """VariantFallbackSearchStep 全 miss 应保留精确搜索候选（已修复）
 
         通过 bgm.bgm_search 包装函数运行 4 个子 step 管道：
         DateExactSearchStep 命中 0.4 分候选 + VariantFallbackSearchStep 全 miss。
-        期望 bgm_search 返回非空候选列表，实际返回 None。
+        修复后期望 bgm_search 返回非空候选列表（保留 0.4 分候选供沉淀）。
         """
         api = BangumiApi()
         candidate = {
