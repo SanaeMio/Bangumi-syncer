@@ -374,13 +374,17 @@ class TestLooseTrueFields:
     def test_includes_archive_enabled(self):
         assert "bangumi_archive.enabled" in config_schema.loose_true_fields()
 
+    def test_includes_archive_use_bktree(self):
+        assert "bangumi_archive.use_bktree" in config_schema.loose_true_fields()
+
     def test_uses_underscore_section_name(self):
         for path in config_schema.loose_true_fields():
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """原硬编码 4 个 loose_true 字段；ECH 改造新增 dev.ech_doh_use_proxy 第 5 个"""
-        assert len(config_schema.loose_true_fields()) == 5
+        """原硬编码 4 个 loose_true 字段；ECH 改造新增 dev.ech_doh_use_proxy 第 5 个；
+        archive BK-tree 开关新增 bangumi_archive.use_bktree 第 6 个"""
+        assert len(config_schema.loose_true_fields()) == 6
 
 
 class TestConfigDefaults:
@@ -419,6 +423,8 @@ class TestConfigDefaults:
         assert "enabled" not in cd.get("feiniu", {})
         # bangumi_archive.enabled 是 loose_true，不应在 config_defaults
         assert "enabled" not in cd.get("bangumi_archive", {})
+        # bangumi_archive.use_bktree 是 loose_true，不应在 config_defaults
+        assert "use_bktree" not in cd.get("bangumi_archive", {})
 
     def test_uses_underscore_section_keys(self):
         """所有 section 键用下划线形式（匹配前端 form name）"""
