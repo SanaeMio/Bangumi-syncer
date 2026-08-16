@@ -56,15 +56,11 @@ def _build_ctx(
 
 def _make_bgm_mock(
     candidates: list[dict] | None = None,
-    last_hit_source: str = "",
-    last_match_method: str = "",
     title_diff_ratio: float = 0.95,
 ) -> MagicMock:
     """构建 bgm MagicMock"""
     bgm = MagicMock()
     bgm.bgm_search.return_value = candidates if candidates is not None else []
-    bgm.last_hit_source = last_hit_source
-    bgm.last_match_method = last_match_method
     bgm.title_diff_ratio.return_value = title_diff_ratio
     bgm.get_related_subjects.return_value = []
     return bgm
@@ -143,7 +139,6 @@ class TestVerifyA51FanrenS01e81FullPath:
 
         bgm = _make_bgm_mock(
             candidates=api_candidates,
-            last_hit_source="archive",  # archive 命中标记
             title_diff_ratio=0.95,
         )
         # _pick_mainline_episode_candidate 返回动画版（触发改选）
@@ -155,6 +150,7 @@ class TestVerifyA51FanrenS01e81FullPath:
         ctx.bgm_data = [archive_candidate]
         ctx.match_stage = "archive"
         ctx.match_method_detail = "exact"
+        ctx.archive_hit = True
         ctx.bgm = bgm
 
         with patch("app.services.sync_service.config_manager") as mock_cfg:
@@ -210,7 +206,6 @@ class TestVerifyA52ArchiveSingleCandidateMethodDetail:
 
         bgm = _make_bgm_mock(
             candidates=[archive_candidate],
-            last_hit_source="archive",
             title_diff_ratio=0.95,
         )
         _configure_service_mock(ctx.service, bgm, threshold=0.6)
@@ -219,6 +214,7 @@ class TestVerifyA52ArchiveSingleCandidateMethodDetail:
         ctx.bgm_data = [archive_candidate]
         ctx.match_stage = "archive"
         ctx.match_method_detail = "exact"
+        ctx.archive_hit = True
         ctx.bgm = bgm
 
         # 通过 MatchPipeline.run 触发 _record_trace，验证 trace 透传
@@ -270,7 +266,6 @@ class TestVerifyA53LowConfidenceSedimentE2e:
 
         bgm = _make_bgm_mock(
             candidates=[candidate],
-            last_hit_source="",  # API 搜索命中
             title_diff_ratio=0.3,  # 低于阈值 0.6
         )
         _configure_service_mock(ctx.service, bgm, threshold=0.6)

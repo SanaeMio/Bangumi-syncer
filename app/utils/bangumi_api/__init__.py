@@ -112,17 +112,11 @@ class BangumiApi(
         # enabled=False 时所有 try_* 立即返回 archive_disabled，等价于原行为
         self._archive = archive_shortcut
 
-        # 最近一次读操作的命中来源（""=API/未命中，"archive"=本地归档命中）
-        # 由 search/get_subject/get_related_subjects 在 archive 短路命中时置 "archive"，
-        # 调用方（sync_service）据此把匹配过程步骤标记为 archive 而非 api_search。
-        # 每次 bgm_search 入口会重置为 ""，反映该次搜索的最终命中来源。
+        # 已废弃的死状态属性（兼容保留，不再写入/读取）：
+        # archive 命中来源改由 ctx.archive_hit 传递（ArchiveShortcutStep → APISearchStep），
+        # 命中变体方法改由 bgm_search 的 out_meta 回传。保留定义仅为避免
+        # 外部历史代码访问报错，匹配逻辑不再依赖。
         self.last_hit_source: str = ""
-
-        # 最近一次读操作的预测性匹配方式（""=未命中/精确，"prefix_variant"/
-        # "season_stripped"/"media_suffix_stripped"/... 见 _title_normalize.MATCH_METHOD_*）。
-        # 由 search/bgm_search 在 archive 命中或 API 兜底命中时，按产生命中的派生变体回填，
-        # 调用方据此把匹配过程步骤标记为"精确"还是"靠剥离/前缀预测推导"，不掩盖真实行为
-        # （对应设计文档 §11/§13.3 的 final_match_method 预测性标记）。
         self.last_match_method: str = ""
 
         # 最近一次跨季链查找（find_episode_across_seasons）的命中路径：

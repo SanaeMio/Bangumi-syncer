@@ -22,7 +22,8 @@ class ArchiveShortcutStep(MatchStepBase):
 
     - Archive 开启时优先走本地归档（``bgm._archive.try_search``）
     - 命中时设置 ``ctx.bgm_data`` + ``ctx.match_stage="archive"`` +
-      ``ctx.match_method_detail``，不终止（让 APISearchStep 做后续改选）
+      ``ctx.archive_hit=True`` + ``ctx.match_method_detail``，不终止（让
+      APISearchStep 做后续改选）
     - Archive 关闭/未命中时返回 skipped/miss，APISearchStep 正常走 API 搜索
     - trace 中有独立 ``stage="archive"`` step
     """
@@ -93,8 +94,7 @@ class ArchiveShortcutStep(MatchStepBase):
             )
         except Exception as e:
             logger.warning(f"archive 短路异常（降级到 API）: {e}")
-            bgm.last_hit_source = ""
-            bgm.last_match_method = ""
+            ctx.archive_hit = False
             return StepOutcome(
                 status="error",
                 reason=f"archive 短路异常: {e}",
@@ -102,9 +102,8 @@ class ArchiveShortcutStep(MatchStepBase):
             )
 
         if not shortcut.hit or not shortcut.data:
-            # archive 未命中：清空 last_hit_source（兼容 APISearchStep 判断）
-            bgm.last_hit_source = ""
-            bgm.last_match_method = ""
+            # archive 未命中：重置 archive_hit（APISearchStep 据此判定命中来源）
+            ctx.archive_hit = False
             return StepOutcome(
                 status="miss",
                 reason=f"archive 短路未命中: {shortcut.reason}",
@@ -112,8 +111,7 @@ class ArchiveShortcutStep(MatchStepBase):
             )
 
         # archive 命中：设置 ctx，不终止（让 APISearchStep 做候选排序 + post_search 改选）
-        bgm.last_hit_source = "archive"
-        bgm.last_match_method = shortcut.match_method
+        ctx.archive_hit = True
         ctx.bgm_data = shortcut.data
         ctx.match_stage = "archive"
         ctx.match_method_detail = shortcut.match_method or "exact"

@@ -33,7 +33,8 @@ class BangumiSearchPort(Protocol):
         is_movie: bool = False,
         subject_types: list[int] | None = None,
         trace: MatchTrace | None = None,
-    ) -> list[dict[str, Any]]: ...
+        out_meta: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]] | None: ...
 
     def search(
         self,
@@ -84,6 +85,8 @@ class BangumiSearchPort(Protocol):
     # API 可达性（读状态）
     def is_api_unreachable(self) -> bool: ...
 
-    # 命中来源标记（archive 短路协调，step 读取以区分 archive/api_search）
+    # 已废弃的死状态属性（兼容保留，不再写入/读取）：
+    # archive 命中来源改由 ctx.archive_hit 传递（ArchiveShortcutStep → APISearchStep），
+    # 命中变体方法改由 bgm_search 的 out_meta 回传。保留声明仅为历史兼容。
     last_hit_source: str
     last_match_method: str

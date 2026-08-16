@@ -23,8 +23,6 @@ def _build_ctx(
     subject_types=None,
 ) -> MatchContext:
     bgm = SimpleNamespace(
-        last_hit_source="archive",
-        last_match_method="exact",
         search=lambda **kw: [],
         title_diff_ratio=lambda *a, **kw: 0.9,
     )
@@ -46,11 +44,10 @@ def _build_ctx(
 
 
 class TestSearchResetStep:
-    def test_resets_bgm_state(self):
+    def test_resets_ctx_state(self):
         ctx = _build_ctx()
+        ctx.matched_variant_method = "prefix_variant"  # 上次搜索残留
         outcome = SearchResetStep().execute(ctx)
-        assert ctx.bgm.last_hit_source == ""
-        assert ctx.bgm.last_match_method == ""
         assert ctx.bgm_data is None
         assert ctx.matched_variant_method == ""
         assert outcome.status == "skipped"
@@ -216,7 +213,6 @@ class TestVariantFallbackSearchStep:
         ctx.bgm.title_diff_ratio = lambda *a, **kw: 0.9
         VariantFallbackSearchStep().execute(ctx)
         assert ctx.matched_variant_method != ""
-        assert ctx.bgm.last_match_method == ctx.matched_variant_method
 
     def test_preserves_bgm_data_on_full_miss(self):
         """全 miss 时保留 DateExactSearchStep 的低相似度候选（P1-3 修复）
@@ -242,7 +238,6 @@ class TestSearchFinalizeStep:
         outcome = SearchFinalizeStep().execute(ctx)
         assert outcome.status == "miss"
         assert outcome.is_terminal is True
-        assert ctx.bgm.last_match_method == ""
         assert ctx.matched_variant_method == ""
 
     def test_miss_when_empty_list(self):
@@ -264,8 +259,6 @@ class TestSearchFinalizeStep:
         """命中时不清空 matched_variant_method（由 variant_fallback 设置）"""
         ctx = _build_ctx()
         ctx.matched_variant_method = "prefix_variant"
-        ctx.bgm.last_match_method = "prefix_variant"
         ctx.bgm_data = [{"id": 12345, "name": "斗破苍穹年番"}]
         SearchFinalizeStep().execute(ctx)
-        assert ctx.bgm.last_match_method == "prefix_variant"
         assert ctx.matched_variant_method == "prefix_variant"

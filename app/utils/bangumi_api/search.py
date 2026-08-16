@@ -67,9 +67,6 @@ class SearchMixin:
 
         # 阶段五：archive 短路已提升为管道独立 step（ArchiveShortcutStep），
         # search() 只做纯 API 调用。archive 命中/未命中由管道层处理。
-        # 清空命中来源标记（archive step 命中时会重新设置）
-        self.last_hit_source = ""
-        self.last_match_method = ""
 
         # API 不可达短路：若 API 处于不可达 TTL 内，
         # 跳过实际请求直接返回空结果（避免每次都等待 10s×3 重试拖垮同步流程）。
@@ -215,10 +212,13 @@ class SearchMixin:
         is_movie: bool = False,
         subject_types: list[int] | None = None,
         trace: MatchTrace | None = None,
+        out_meta: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]] | None:
         # 阶段二：bgm_search 拆为 4 个 step，本方法仅做薄包装：
         # 构建 ctx → 依次执行 step → 返回 ctx.bgm_data。
-        # 死状态 last_match_method 仍写（兼容），同时写 ctx.matched_variant_method。
+        # 命中变体方法通过 out_meta 回传（out_meta["variant_method"]），
+        # 供 APISearchStep 设置 match_method_detail；不再写入本实例属性，
+        # 避免并发同用户多任务时共享状态脏读。
         # utils 层局部 import services.matching 是过渡，阶段三迁移调用点后清理。
         # P1-4: trace 非 None 时，4 个子 step 的过程记录追加到主 trace，
         # 供同步记录详情展示子 step 过程（不更新 final_* 汇总字段）。
@@ -262,11 +262,16 @@ class SearchMixin:
             if outcome.is_terminal:
                 break
         if outcome is None or outcome.status == "miss":
+            # 回传空变体方法（调用方据此得知无变体命中）
+            if out_meta is not None:
+                out_meta["variant_method"] = ""
             return None
 
         logger.debug(
             f"搜索日期区间: {ctx.start_date_str} 至 {ctx.end_date_str} | 结果: {ctx.bgm_data[0].get('name')}"
         )
+        if out_meta is not None:
+            out_meta["variant_method"] = ctx.matched_variant_method
         return ctx.bgm_data
 
     @staticmethod

@@ -110,7 +110,8 @@ class MatchTrace:
     final_match_method: str = (
         ""  # custom_mapping / bangumi_data / archive / api_search / failed
     )
-    # 细粒度匹配方式（激活死状态 bgm.last_match_method）：
+    # 细粒度匹配方式（替代死状态 bgm.last_match_method，经 ctx.match_method_detail
+    # / bgm_search out_meta 回传）：
     # exact / prefix_variant / season_stripped / media_suffix_stripped /
     # unwrapped / main_segment / fuzzy / cross_season_chain /
     # cross_season_franchise_archive / cross_season_franchise_online

@@ -282,11 +282,15 @@ class TestBgmSearchHitBehavior:
         assert idx_hit > idx_original
 
 
-class TestBgmSearchLastMatchMethod:
-    """last_match_method 预测性匹配方式标注的透传与脏读防护"""
+class TestBgmSearchOutMetaVariantMethod:
+    """bgm_search 命中变体方法经 out_meta 回传（替代死状态 last_match_method）"""
 
-    def test_fallback_hit_tags_match_method(self) -> None:
-        """兜底命中变体时应回填该变体的 method 到 last_match_method"""
+    def test_fallback_hit_tags_variant_in_out_meta(self) -> None:
+        """兜底命中变体时 out_meta["variant_method"] 应回填该变体的 method
+
+        修复后：bgm_search 不再写入 api.last_match_method 死状态（并发
+        同用户多任务时共享实例属性会脏读），改经 out_meta 显式回传。
+        """
         api = _make_api()
 
         def fake_search(
@@ -300,35 +304,28 @@ class TestBgmSearchLastMatchMethod:
 
         api.search = fake_search  # type: ignore[method-assign]
 
+        out_meta: dict[str, Any] = {}
         result = api.bgm_search(
-            title="完美世界 S06E279", ori_title=None, premiere_date=""
+            title="完美世界 S06E279",
+            ori_title=None,
+            premiere_date="",
+            out_meta=out_meta,
         )
 
         assert result is not None
         # season_stripped 变体命中后应回填 method
-        assert api.last_match_method == "season_stripped"
+        assert out_meta.get("variant_method") == "season_stripped"
+        # 不再写死状态（保持初始值，防脏读）
+        assert api.last_match_method == ""
 
-    def test_fallback_all_miss_clears_match_method(self) -> None:
-        """兜底全部变体未命中返回 None 时，last_match_method 应被清空（防脏读）
+    def test_fallback_all_miss_leaves_variant_empty(self) -> None:
+        """兜底全部变体未命中返回 None 时，out_meta 变体方法应为空
 
-        场景：精确搜索阶段命中 archive 设置了 last_match_method="exact"，
-        随后 title_diff_ratio 不达标进入兜底，兜底全 miss 返回 None。
-        若不清空，调用方读 last_match_method 会误判为精确命中。
+        修复后：全 miss 时 bgm_search 内部已清空 matched_variant_method，
+        out_meta["variant_method"] 回传空字符串，调用方不会误判变体命中。
         """
         api = _make_api()
 
-        # 模拟精确搜索阶段命中 archive（设置 last_match_method="exact"）
-        api._archive = MagicMock()
-        archive_hit = MagicMock()
-        archive_hit.hit = True
-        archive_hit.data = {"data": [{"id": 1, "name": "测试", "name_cn": "测试"}]}
-        archive_hit.match_method = "exact"
-        api._archive.try_search.return_value = archive_hit
-
-        # 但 title_diff_ratio 不达标（返回 0.1 < 0.5），进入兜底
-        api.title_diff_ratio = MagicMock(return_value=0.1)
-
-        # 兜底全部 miss
         def fake_search(
             title: str, start_date: str = "", end_date: str = "", **kwargs: Any
         ):
@@ -336,12 +333,29 @@ class TestBgmSearchLastMatchMethod:
 
         api.search = fake_search  # type: ignore[method-assign]
 
+        out_meta: dict[str, Any] = {}
+        result = api.bgm_search(
+            title="测试", ori_title=None, premiere_date="", out_meta=out_meta
+        )
+
+        assert result is None
+        assert out_meta.get("variant_method") == ""
+
+    def test_out_meta_optional_keeps_behavior(self) -> None:
+        """不传 out_meta 时行为不变（向后兼容）"""
+        api = _make_api()
+
+        def fake_search(
+            title: str, start_date: str = "", end_date: str = "", **kwargs: Any
+        ):
+            return [{"id": 100, "name": "测试", "name_cn": "测试"}]
+
+        api.search = fake_search  # type: ignore[method-assign]
+
         result = api.bgm_search(title="测试", ori_title=None, premiere_date="")
 
-        # 兜底全 miss 应返回 None
-        assert result is None
-        # 修复前：残留 "exact" 造成脏读；修复后：清空为 ""
-        assert api.last_match_method == ""
+        assert result is not None
+        assert result[0]["id"] == 100
 
 
 class TestBgmSearchPreciseSearchPath:

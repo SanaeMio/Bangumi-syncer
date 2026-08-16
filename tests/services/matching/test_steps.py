@@ -199,8 +199,6 @@ class TestAPISearchStep:
                 "date": "2024-01-15",
             }
         ]
-        bgm.last_hit_source = ""
-        bgm.last_match_method = ""
         bgm.title_diff_ratio.return_value = 0.95
         ctx.service._get_bangumi_api_for_user.return_value = bgm
         ctx.service._sort_candidates_by_platform.side_effect = lambda data, **kw: data
@@ -227,8 +225,10 @@ class TestAPISearchStep:
                 "date": "2024-01-15",
             }
         ]
-        bgm.last_hit_source = "archive"
         bgm.title_diff_ratio.return_value = 0.95
+        # 模拟 ArchiveShortcutStep 已命中：archive_hit 置 True
+        # （bgm_data 为空时 APISearchStep 仍走 bgm_search，但命中来源判定走 ctx）
+        ctx.archive_hit = True
         ctx.service._get_bangumi_api_for_user.return_value = bgm
         ctx.service._sort_candidates_by_platform.side_effect = lambda data, **kw: data
         ctx.service._get_match_confidence_threshold.return_value = 0.6
@@ -258,7 +258,6 @@ class TestAPISearchStep:
                 "date": "2024-01-15",
             }
         ]
-        bgm.last_hit_source = ""
         bgm.title_diff_ratio.return_value = 0.3
         ctx.service._get_bangumi_api_for_user.return_value = bgm
         ctx.service._sort_candidates_by_platform.side_effect = lambda data, **kw: data
@@ -307,7 +306,6 @@ class TestAPISearchStep:
                 "date": "2023-11-25",
             },
         ]
-        bgm.last_hit_source = ""
         bgm.title_diff_ratio.return_value = 1.0
         ctx.service._get_bangumi_api_for_user.return_value = bgm
         ctx.service._sort_candidates_by_platform.side_effect = lambda data, **kw: data

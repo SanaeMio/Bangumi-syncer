@@ -1,7 +1,7 @@
 """P0 疑似问题验证测试
 
 验证 3 个 P0 疑似问题修复后的行为：
-- P0-1: API 命中时 final_match_method_detail 应来自 bgm.last_match_method
+- P0-1: API 命中时 final_match_method_detail 应来自 bgm_search 的 out_meta 回传
 - P0-2: _pick_related_subject 死代码 + type 字段语义不一致
 - P0-3: get_target_season_episode_id 返回类型不一致 + D-2 死逻辑
 
@@ -44,16 +44,10 @@ def _build_ctx(
     )
 
 
-def _make_bgm_mock(
-    candidate: dict,
-    last_hit_source: str = "",
-    last_match_method: str = "",
-) -> MagicMock:
+def _make_bgm_mock(candidate: dict) -> MagicMock:
     """构建 bgm MagicMock（参考 test_steps.py 的 mock 模式）"""
     bgm = MagicMock()
     bgm.bgm_search.return_value = [candidate]
-    bgm.last_hit_source = last_hit_source
-    bgm.last_match_method = last_match_method
     bgm.title_diff_ratio.return_value = 0.95
     return bgm
 
@@ -74,13 +68,16 @@ def _configure_service_mock(service: MagicMock, bgm: MagicMock) -> None:
 
 
 class TestVerifyP01ApiSearchMatchMethodDetail:
-    """P0-1: API 命中时 match_method_detail 应来自 bgm.last_match_method
+    """P0-1: API 命中时 match_method_detail 应来自 bgm_search 的 out_meta 回传
 
-    疑似问题：APISearchStep.execute API 命中分支（line 254）读取
+    疑似问题：APISearchStep.execute API 命中分支读取
     ``ctx.matched_variant_method``，但该字段只在 ``bgm_search`` 包装函数
     创建的内部 ctx 中被 VariantFallbackSearchStep 设置。外部主 ctx 的
-    ``matched_variant_method`` 始终为 ``""``。只有 ``bgm.last_match_method``
-    （通过共享的 bgm 实例）能跨边界传递。
+    ``matched_variant_method`` 始终为 ``""``。
+
+    修复后：bgm_search 收尾时把内部 ctx.matched_variant_method 写入
+    out_meta["variant_method"]，APISearchStep 从 out_meta 读取（不再依赖
+    bgm 实例死状态 last_match_method，消除并发同用户多任务脏读）。
     """
 
     _CANDIDATE = {
@@ -92,45 +89,43 @@ class TestVerifyP01ApiSearchMatchMethodDetail:
     }
 
     def test_verify_api_search_hit_match_method_detail(self) -> None:
-        """API 命中 + 变体方法：match_method_detail 应为 bgm.last_match_method 的值
+        """API 命中 + 变体方法：match_method_detail 应为 out_meta 回传的值
 
         场景：bgm_search 内部 VariantFallbackSearchStep 命中变体 "stripped"，
-        通过共享 bgm 实例写入 bgm.last_match_method="stripped"。
-        外部主 ctx.matched_variant_method 始终为 "" （从未被设置）。
-        修复后：APISearchStep 读 bgm.last_match_method，match_method_detail == "stripped"。
+        收尾时写入 out_meta["variant_method"]="stripped"。
+        修复后：APISearchStep 读 out_meta，match_method_detail == "stripped"。
         """
         ctx = _build_ctx(title="测试番剧")
-        bgm = _make_bgm_mock(
-            self._CANDIDATE,
-            last_hit_source="",  # API 命中（非 archive）
-            last_match_method="stripped",  # VariantFallbackSearchStep 通过共享 bgm 设置
-        )
+        bgm = _make_bgm_mock(self._CANDIDATE)
+
+        def _bgm_search_with_variant(**kw: object) -> list[dict]:
+            out_meta = kw.get("out_meta")  # type: ignore[union-attr]
+            if isinstance(out_meta, dict):
+                out_meta["variant_method"] = "stripped"
+            return [self._CANDIDATE]
+
+        bgm.bgm_search.side_effect = _bgm_search_with_variant
         _configure_service_mock(ctx.service, bgm)
 
         outcome = APISearchStep().execute(ctx)
 
         assert outcome.status == "hit"
-        # 期望行为：match_method_detail 应反映 bgm.last_match_method
+        # 期望行为：match_method_detail 应反映 out_meta 回传的变体方法
         assert ctx.match_method_detail == "stripped"
 
     def test_verify_api_search_exact_hit_empty(self) -> None:
         """API 精确命中（无变体）：match_method_detail 应为空字符串
 
-        精确命中时 bgm.last_match_method="" （无变体方法）。
-        期望与实际均为 "" （此场景下 bug 被掩盖，行为恰好正确）。
+        精确命中时 bgm_search 未命中变体，out_meta["variant_method"]=""。
         """
         ctx = _build_ctx(title="测试番剧")
-        bgm = _make_bgm_mock(
-            self._CANDIDATE,
-            last_hit_source="",  # API 命中
-            last_match_method="",  # 精确命中，无变体方法
-        )
+        bgm = _make_bgm_mock(self._CANDIDATE)
         _configure_service_mock(ctx.service, bgm)
 
         outcome = APISearchStep().execute(ctx)
 
         assert outcome.status == "hit"
-        # 精确命中应无变体方法（期望行为与实际行为均为 ""）
+        # 精确命中应无变体方法
         assert ctx.match_method_detail == ""
 
 

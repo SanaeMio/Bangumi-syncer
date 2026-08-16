@@ -1,13 +1,14 @@
 """bgm_search 拆分 step（阶段二）
 
 把 ``BangumiApi.bgm_search()`` 的 4 阶段拆成独立 step：
-- ``SearchResetStep``             重置 bgm 状态 + 预计算 stripped_title/stripped_ori
+- ``SearchResetStep``             重置状态 + 预计算 stripped_title/stripped_ori
 - ``DateExactSearchStep``         带首播日期的精确搜索
 - ``VariantFallbackSearchStep``   无日期兜底变体搜索
 - ``SearchFinalizeStep``          全 miss 清空状态 / 命中收尾
 
 阶段二完成后 ``bgm_search`` 变为薄包装，依次调 4 个 step，
-状态全部走 ctx，死状态 ``bgm.last_match_method`` 仍写兼容。
+状态全部走 ctx，命中的变体方法经 ``bgm_search`` 的 out_meta 回传
+给主 ctx（不再写 bgm 实例死状态，避免并发脏读）。
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ FALLBACK_SEARCH_LIMIT = 15
 class SearchResetStep(MatchStepBase):
     """bgm_search 阶段A：状态重置 + 预计算剥离后缀的标题变体
 
-    - 重置 ``last_hit_source`` / ``last_match_method``（兼容其他读取点）
+    - 重置 ``ctx.matched_variant_method``（清除上次搜索残留）
     - 预计算 ``stripped_title`` / ``stripped_ori`` 写入 ctx
     - 清空 ``ctx.bgm_data``
     """
@@ -39,9 +40,6 @@ class SearchResetStep(MatchStepBase):
     stage = "api_search_reset"
 
     def execute(self, ctx: MatchContext) -> StepOutcome:
-        ctx.bgm.last_hit_source = ""
-        ctx.bgm.last_match_method = ""
-
         from app.utils.bangumi_archive._title_normalize import (
             _strip_season_episode_suffix,
         )
@@ -153,7 +151,8 @@ class VariantFallbackSearchStep(MatchStepBase):
     触发条件：精确搜索无结果 或 首条相似度 < API_SIMILARITY_PRIMARY。
     - 构造搜索变体（原始 → 剥离季后缀 → 书名号剥离 → 标题分割主段 → 媒体前缀变体）
     - 逐变体×type 笛卡尔积尝试，保留相似度 > API_SIMILARITY_FALLBACK 的候选
-    - 命中变体时标注 ``ctx.matched_variant_method``（激活死状态 last_match_method）
+    - 命中变体时标注 ``ctx.matched_variant_method``（bgm_search 收尾时
+      经 out_meta 回传给主 ctx，替代死状态 last_match_method）
     """
 
     stage = "api_search_variant_fallback"
@@ -208,9 +207,8 @@ class VariantFallbackSearchStep(MatchStepBase):
                     if matched:
                         ctx.bgm_data = matched
                         # 标注预测性匹配方式：本次命中来自哪个派生变体
-                        # ctx.matched_variant_method 激活死状态（阶段三 sync_service 消费）
+                        # （bgm_search 收尾时经 out_meta 回传给主 ctx）
                         ctx.matched_variant_method = v.method
-                        ctx.bgm.last_match_method = v.method  # 兼容
                         return StepOutcome(
                             status="hit",
                             subject_id=str(matched[0].get("id", "")),
@@ -226,7 +224,7 @@ class VariantFallbackSearchStep(MatchStepBase):
 class SearchFinalizeStep(MatchStepBase):
     """bgm_search 阶段D：收尾
 
-    - 全 miss 时清空 ``last_match_method``（避免残留脏读），返回 miss
+    - 全 miss 时清空 ``ctx.matched_variant_method``（避免残留脏读），返回 miss
     - 命中时返回 hit + subject_id
     """
 
@@ -235,7 +233,6 @@ class SearchFinalizeStep(MatchStepBase):
     def execute(self, ctx: MatchContext) -> StepOutcome:
         if not ctx.bgm_data or len(ctx.bgm_data) == 0:
             # 清空预测性匹配方式标记，避免残留上次精确命中的 method 造成脏读
-            ctx.bgm.last_match_method = ""
             ctx.matched_variant_method = ""
             return StepOutcome(status="miss", reason="无匹配结果", is_terminal=True)
         subject_id = str(ctx.bgm_data[0].get("id", ""))

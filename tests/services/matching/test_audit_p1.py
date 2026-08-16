@@ -57,15 +57,11 @@ def _build_ctx(
 
 def _make_bgm_mock(
     candidates: list[dict] | None = None,
-    last_hit_source: str = "",
-    last_match_method: str = "",
     title_diff_ratio: float = 0.95,
 ) -> MagicMock:
     """构建 bgm MagicMock"""
     bgm = MagicMock()
     bgm.bgm_search.return_value = candidates if candidates is not None else []
-    bgm.last_hit_source = last_hit_source
-    bgm.last_match_method = last_match_method
     bgm.title_diff_ratio.return_value = title_diff_ratio
     return bgm
 
@@ -138,7 +134,6 @@ class TestVerifyP01ConfidenceUsesPreReselectScore:
                     "date": "2023-11-25",
                 },
             ],
-            last_hit_source="",
         )
 
         # title_diff_ratio 返回不同分数：原 top 0.3，动画版 0.95
@@ -219,7 +214,6 @@ class TestVerifyP02IsAmbiguousUsesPreReselectTop2:
                     "date": "2024-01-15",
                 },
             ],
-            last_hit_source="",
         )
 
         # title_diff_ratio 按候选 id 返回不同分数：

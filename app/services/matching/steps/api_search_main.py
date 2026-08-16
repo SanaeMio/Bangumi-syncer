@@ -143,6 +143,10 @@ class APISearchStep(MatchStepBase):
                 bgm_data = ctx.bgm_data
                 is_archive_hit = True
             else:
+                # bgm_search 内部 ctx 与主 ctx 分离，命中的变体方法通过
+                # out_meta 回传（替代旧实现经共享 bgm 实例的 last_match_method
+                # 隐式传递，消除并发同用户多任务时的脏读风险）
+                out_meta: dict[str, Any] = {}
                 bgm_data = bgm.bgm_search(
                     title=search_title,
                     ori_title=item.ori_title or "",
@@ -150,9 +154,10 @@ class APISearchStep(MatchStepBase):
                     is_movie=(item.media_type == "movie"),
                     subject_types=subject_types,
                     trace=ctx.trace,
+                    out_meta=out_meta,
                 )
                 # 判断命中来源：archive 短路命中标记为 "archive"，否则 "api_search"
-                is_archive_hit = bool(bgm and bgm.last_hit_source == "archive")
+                is_archive_hit = bool(ctx.archive_hit)
 
             first = bgm_data[0] if bgm_data else {}
             api_response_summary = {
@@ -258,13 +263,13 @@ class APISearchStep(MatchStepBase):
             # 细粒度匹配方式：
             # - archive 命中：保留 ArchiveShortcutStep 设置的 match_method_detail
             #   （exact/fuzzy/prefix_variant/season_stripped 等，由 try_search 返回）
-            # - API 命中：读 bgm.last_match_method（bgm_search 内部子 step 通过共享
-            #   bgm 实例传递变体方法，跨 ctx 边界存活；ctx.matched_variant_method
-            #   仅存在于 bgm_search 创建的内部 ctx，外部主 ctx 始终为空）
+            # - API 命中：读 bgm_search 通过 out_meta 回传的变体方法
+            #   （bgm_search 内部子 step 写入内部 ctx.matched_variant_method，
+            #   bgm_search 收尾时回传到 out_meta，跨 ctx 边界显式传递）
             if is_archive_hit:
                 ctx.match_method_detail = ctx.match_method_detail or "exact"
             else:
-                ctx.match_method_detail = getattr(bgm, "last_match_method", "") or ""
+                ctx.match_method_detail = out_meta.get("variant_method", "") or ""
             # 歧义标记：top1/top2 分数差 < 0.05 时置 True，编排器据此发 match_ambiguous 通知
             # （原 _maybe_notify_match_ambiguous 逻辑前移到 step，通知职责留在编排器）
             # 按 score 降序取 top-2，与 _collect_candidates_from_trace 行为一致（P1-2）：

@@ -61,15 +61,11 @@ def _build_ctx(
 
 def _make_bgm_mock(
     candidates: list[dict] | None = None,
-    last_hit_source: str = "",
-    last_match_method: str = "",
     title_diff_ratio: float = 0.95,
 ) -> MagicMock:
     """构建 bgm MagicMock"""
     bgm = MagicMock()
     bgm.bgm_search.return_value = candidates if candidates is not None else []
-    bgm.last_hit_source = last_hit_source
-    bgm.last_match_method = last_match_method
     bgm.title_diff_ratio.return_value = title_diff_ratio
     return bgm
 
@@ -131,7 +127,6 @@ class TestVerifyP01SubjectIdTypeConsistency:
                     "date": "2024-01-15",
                 }
             ],
-            last_hit_source="",
         )
         _configure_service_mock(ctx.service, bgm, threshold=0.6)
 
@@ -250,7 +245,6 @@ class TestVerifyP03CandidatesTopAfterReselect:
                     "date": "2023-11-25",
                 },
             ],
-            last_hit_source="",
         )
         bgm.title_diff_ratio.return_value = 0.95
         bgm.get_related_subjects.return_value = []
@@ -302,8 +296,6 @@ class TestVerifyP04DateExactMovieOverwriteEndDateStr:
         期望 ctx.end_date_str 保持原始 ±2 天的值，不被 movie 分支覆写。
         """
         bgm = SimpleNamespace(
-            last_hit_source="",
-            last_match_method="",
             search=lambda **kw: [],  # 所有搜索返回空（未命中）
             title_diff_ratio=lambda *a, **kw: 0.9,
         )

@@ -2,7 +2,8 @@
 
 替代当前用局部变量在 _find_subject_id / _sync_custom_item_body 间传递
 subject_id / bgm_se_id / bgm_ep_id 等状态的方式。步骤间显式传递状态，
-避免 bgm 实例属性的隐式传递（如 last_match_method 死状态）。
+不再依赖 bgm 实例属性的隐式传递（last_match_method / last_hit_source
+死状态已全部移除，改用 ctx.archive_hit 与 bgm_search 的 out_meta 回传）。
 """
 
 from __future__ import annotations
@@ -39,7 +40,12 @@ class MatchContext:
     subject_id: str | None = None
     is_season_matched_id: bool = False
     match_stage: str = ""  # archive / api_search
-    match_method_detail: str = ""  # 细粒度派生方式（激活死状态 last_match_method）
+    match_method_detail: str = ""  # 细粒度派生方式（替代死状态 last_match_method）
+    # archive 短路命中标记（替代死状态 bgm.last_hit_source）：
+    # ArchiveShortcutStep 命中时置 True，APISearchStep 据此区分 archive/api_search。
+    # 媒体类型不匹配降级清空 bgm_data 走 API 搜索时仍保持 True，
+    # 保证 stage_override 与 match_method_detail 保留 archive 语义。
+    archive_hit: bool = False
     final_score: float | None = None
     is_ambiguous: bool = False  # 歧义标记（原 _maybe_notify_match_ambiguous）
 
@@ -52,7 +58,7 @@ class MatchContext:
     stripped_title: str = ""
     stripped_ori: str = ""
     bgm_data: list[dict[str, Any]] | None = None  # bgm_search 返回的候选列表
-    matched_variant_method: str = ""  # 命中的变体 method（替代 bgm.last_match_method）
+    matched_variant_method: str = ""  # 命中的变体 method（bgm_search 内部 ctx 使用）
     # bgm_search 调用方传入的 subject_types，供各 step 读取
     subject_types: list[int] | None = None
     # 日期精确搜索结果（用于 debug 日志）

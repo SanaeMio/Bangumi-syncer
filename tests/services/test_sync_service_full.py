@@ -1158,8 +1158,6 @@ def test_find_subject_id_api_hit_keeps_stage_as_api_search():
                 "date": "2024-02-20",
             }
         ]
-        # 走 API 命中：last_hit_source 为空字符串
-        bgm.last_hit_source = ""
 
         trace = MatchTrace()
         with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
@@ -1221,7 +1219,6 @@ def test_find_subject_id_low_confidence_sediments_to_pending():
                 "date": "2024-02-20",
             }
         ]
-        bgm.last_hit_source = ""
         # 控制真实相似度为 0.5（低于阈值 0.6），模拟把握不大的模糊匹配
         bgm.title_diff_ratio.return_value = 0.5
 
@@ -1283,7 +1280,6 @@ def test_find_subject_id_above_threshold_auto_accepts():
                 "date": "2024-02-20",
             }
         ]
-        bgm.last_hit_source = ""
         # 真实相似度为 0.9（高于阈值 0.6）
         bgm.title_diff_ratio.return_value = 0.9
 
