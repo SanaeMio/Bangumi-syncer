@@ -247,11 +247,13 @@ class APISearchStep(MatchStepBase):
             # 细粒度匹配方式：
             # - archive 命中：保留 ArchiveShortcutStep 设置的 match_method_detail
             #   （exact/fuzzy/prefix_variant/season_stripped 等，由 try_search 返回）
-            # - API 命中：取 bgm_search 内部 step 写入的 matched_variant_method
+            # - API 命中：读 bgm.last_match_method（bgm_search 内部子 step 通过共享
+            #   bgm 实例传递变体方法，跨 ctx 边界存活；ctx.matched_variant_method
+            #   仅存在于 bgm_search 创建的内部 ctx，外部主 ctx 始终为空）
             if is_archive_hit:
                 ctx.match_method_detail = ctx.match_method_detail or "exact"
             else:
-                ctx.match_method_detail = ctx.matched_variant_method or ""
+                ctx.match_method_detail = getattr(bgm, "last_match_method", "") or ""
             # 歧义标记：top1/top2 分数差 < 0.05 时置 True，编排器据此发 match_ambiguous 通知
             # （原 _maybe_notify_match_ambiguous 逻辑前移到 step，通知职责留在编排器）
             if len(candidates) >= 2:
