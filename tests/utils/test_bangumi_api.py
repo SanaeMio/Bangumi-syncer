@@ -45,7 +45,6 @@ class TestBangumiApi:
     def test_init_sets_cache(self):
         api = BangumiApi()
         assert "search" in api._cache
-        assert "search_old" in api._cache
         assert "get_subject" in api._cache
         assert "get_related_subjects" in api._cache
         assert "get_episodes" in api._cache
@@ -82,7 +81,6 @@ class TestBangumiApi:
         cache_keys = list(api._cache.keys())
         expected_keys = [
             "search",
-            "search_old",
             "get_subject",
             "get_related_subjects",
             "get_episodes",
@@ -500,7 +498,7 @@ class TestHttpMethods:
 
 
 class TestSearchMethods:
-    """测试 search / search_old"""
+    """测试 search"""
 
     def test_search_cache_hit(self):
         api = BangumiApi()
@@ -534,35 +532,8 @@ class TestSearchMethods:
             result = api.search("title", "2024-01-01", "2024-12-31", list_only=False)
             assert "data" in result
 
-    def test_search_old_cache_hit(self):
-        api = BangumiApi()
-        api._cache["search_old"][("title", True, 2)] = [{"id": 1}]
-        result = api.search_old("title")
-        assert result == [{"id": 1}]
-
-    def test_search_old_non_dict(self):
-        api = BangumiApi()
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = "not a dict"
-        with patch.object(api, "_request_with_retry", return_value=mock_resp):
-            result = api.search_old("title")
-            assert result == []
-
-    def test_search_old_json_error(self):
-        api = BangumiApi()
-        mock_resp = MagicMock()
-        mock_resp.json.side_effect = ValueError("bad")
-        with patch.object(api, "_request_with_retry", return_value=mock_resp):
-            result = api.search_old("title")
-            assert result == []
-
-    def test_search_old_list_only_false(self):
-        api = BangumiApi()
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"results": 1, "list": [{"id": 1}]}
-        with patch.object(api, "_request_with_retry", return_value=mock_resp):
-            result = api.search_old("title", list_only=False)
-            assert "results" in result
+    # search_old 方法已删除（统一走 search），原 search_old 单测随之移除。
+    # 缓存命中/非字典响应/JSON 解析错误等行为由上方 search 对应用例覆盖。
 
 
 class TestGetSubject:
@@ -1271,23 +1242,33 @@ class TestBgmSearch:
             result = api.bgm_search("Movie", "ori", "2024-01-15", is_movie=True)
             assert result is not None
 
-    def test_fallback_to_search_old(self):
+    def test_fallback_to_search(self):
+        """精确搜索无结果时降级到兜底 search"""
         api = BangumiApi()
+
+        def mock_search(title, start_date="", end_date="", **kwargs):
+            if start_date or end_date:
+                return []  # 精确搜索返回空
+            return [{"id": 10}]  # 兜底搜索命中
+
         with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[{"id": 10}]),
-            patch.object(api, "get_subject", return_value={"id": 10, "name": "番"}),
+            patch.object(api, "search", side_effect=mock_search),
             patch.object(api, "title_diff_ratio", return_value=0.9),
         ):
             result = api.bgm_search("番", "", "2024-01-15")
             assert result is not None
 
-    def test_search_old_low_ratio_skips(self):
+    def test_fallback_low_ratio_skips(self):
+        """兜底搜索候选相似度低于阈值时跳过"""
         api = BangumiApi()
+
+        def mock_search(title, start_date="", end_date="", **kwargs):
+            if start_date or end_date:
+                return []
+            return [{"id": 10}]
+
         with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[{"id": 10}]),
-            patch.object(api, "get_subject", return_value={"id": 10, "name": "x"}),
+            patch.object(api, "search", side_effect=mock_search),
             patch.object(api, "title_diff_ratio", return_value=0.1),
         ):
             result = api.bgm_search("完全不同", "", "2024-01-15")
@@ -1295,30 +1276,23 @@ class TestBgmSearch:
 
     def test_no_date_search(self):
         api = BangumiApi()
-        with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[]),
-        ):
+        with patch.object(api, "search", return_value=[]):
             result = api.bgm_search("title", "", "")
             assert result is None
 
     def test_invalid_date_fallback(self):
         """无效日期降级到无日期搜索"""
         api = BangumiApi()
-        with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[]),
-        ):
+        with patch.object(api, "search", return_value=[]):
             result = api.bgm_search("title", "", "bad-date-format")
             assert result is None
 
-    def test_low_similarity_triggers_old_search(self):
-        """精确搜索相似度低于0.5时触发旧版搜索"""
+    def test_low_similarity_triggers_fallback(self):
+        """精确搜索相似度低于0.5时触发兜底搜索"""
         api = BangumiApi()
         with (
             patch.object(api, "search", return_value=[{"id": 1}]),
             patch.object(api, "title_diff_ratio", return_value=0.2),
-            patch.object(api, "search_old", return_value=[]),
         ):
             result = api.bgm_search("title", "", "2024-01-15")
             assert result is None
@@ -1362,7 +1336,6 @@ class TestBgmSearch:
 
         with (
             patch.object(api, "search", side_effect=mock_search),
-            patch.object(api, "search_old", return_value=[]),
             patch.object(api, "title_diff_ratio", return_value=0.9),
         ):
             # ori_title 含 S02E10 后缀，剥离后为 "Original"
@@ -1371,32 +1344,28 @@ class TestBgmSearch:
             assert "Original S02E10" in search_calls
             assert "Original" in search_calls
 
-    def test_search_old_tries_stripped_title(self):
-        """旧版 API 路径：应尝试剥离后缀的变体"""
+    def test_fallback_tries_stripped_title(self):
+        """兜底搜索路径：应尝试剥离后缀的变体"""
         api = BangumiApi()
-        search_old_calls = []
+        fallback_calls = []
 
-        def mock_search(title, **kwargs):
-            return []  # v0 API 全部 miss
-
-        def mock_search_old(title, **kwargs):
-            search_old_calls.append(title)
+        def mock_search(title, start_date="", end_date="", **kwargs):
+            if start_date or end_date:
+                return []  # 精确搜索全部 miss
+            # 兜底搜索记录调用
+            fallback_calls.append(title)
             if title == "完美世界":
-                return [{"id": 1}]
+                return [{"id": 1, "name": "完美世界"}]
             return []
 
         with (
             patch.object(api, "search", side_effect=mock_search),
-            patch.object(api, "search_old", side_effect=mock_search_old),
-            patch.object(
-                api, "get_subject", return_value={"id": 1, "name": "完美世界"}
-            ),
             patch.object(api, "title_diff_ratio", return_value=0.9),
         ):
             result = api.bgm_search("完美世界 S06E279", "", "2026-01-15")
             assert result is not None
-            # 旧版 API 应尝试剥离后缀的「完美世界」
-            assert "完美世界" in search_old_calls
+            # 兜底搜索应尝试剥离后缀的「完美世界」
+            assert "完美世界" in fallback_calls
 
     def test_no_suffix_skips_stripped_variant(self):
         """标题不含季数后缀时不应尝试 stripped 变体（避免重复查询）"""

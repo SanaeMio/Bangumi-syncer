@@ -102,7 +102,6 @@ class BangumiApi(
         _MAX_CACHE_SIZE = 200
         self._cache = {
             "search": OrderedDict(),
-            "search_old": OrderedDict(),
             "get_subject": OrderedDict(),
             "get_related_subjects": OrderedDict(),
             "get_episodes": OrderedDict(),
@@ -114,10 +113,17 @@ class BangumiApi(
         self._archive = archive_shortcut
 
         # 最近一次读操作的命中来源（""=API/未命中，"archive"=本地归档命中）
-        # 由 search/search_old/get_subject/get_related_subjects 在 archive 短路命中时置 "archive"，
+        # 由 search/get_subject/get_related_subjects 在 archive 短路命中时置 "archive"，
         # 调用方（sync_service）据此把匹配过程步骤标记为 archive 而非 api_search。
         # 每次 bgm_search 入口会重置为 ""，反映该次搜索的最终命中来源。
         self.last_hit_source: str = ""
+
+        # 最近一次读操作的预测性匹配方式（""=未命中/精确，"prefix_variant"/
+        # "season_stripped"/"media_suffix_stripped"/... 见 _title_normalize.MATCH_METHOD_*）。
+        # 由 search/bgm_search 在 archive 命中或 API 兜底命中时，按产生命中的派生变体回填，
+        # 调用方据此把匹配过程步骤标记为"精确"还是"靠剥离/前缀预测推导"，不掩盖真实行为
+        # （对应设计文档 §11/§13.3 的 final_match_method 预测性标记）。
+        self.last_match_method: str = ""
 
         # 如果禁用SSL验证，输出警告（httpx 无需抑制 urllib3 警告）
         if not ssl_verify:

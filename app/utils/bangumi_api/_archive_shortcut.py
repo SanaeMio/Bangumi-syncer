@@ -22,6 +22,7 @@ bangumi_archive 模块（_title_normalize / _title_index / _store），
 
 from __future__ import annotations
 
+import re
 from typing import Any, NamedTuple, Optional
 
 from ...core.config import config_manager
@@ -30,9 +31,12 @@ from ..bangumi_archive._store import archive_store
 from ..bangumi_archive._title_index import archive_title_index
 from ..bangumi_archive._title_normalize import (
     _MEDIA_PREFIX_VARIANTS,
+    MATCH_METHOD_EXACT,
+    MATCH_METHOD_FUZZY,
+    MATCH_METHOD_PREFIX_VARIANT,
     _split_title_segments,
     _strip_season_episode_suffix,
-    _strip_title_wrappers,
+    build_search_variants,
 )
 from ..bangumi_constants import RELATION_ID_SEQUEL
 
@@ -48,11 +52,15 @@ class ShortcutResult(NamedTuple):
             - archive_miss: Archive 启用但未命中该 id
             - archive_hit: Archive 命中
             - archive_error: Archive 查询异常
+        match_method: 命中时的匹配方式（预测性匹配标注），供调用方如实反映
+            本次命中是"精确匹配"还是"靠剥离/前缀预测推导"，取值见
+            _title_normalize.MATCH_METHOD_*。未命中时为 ""。
     """
 
     hit: bool
     data: Any
     reason: str
+    match_method: str = ""
 
 
 class ArchiveShortcut:
@@ -296,6 +304,65 @@ class ArchiveShortcut:
             logger.warning(f"bangumi_archive 短路 find_prequel_chain 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
 
+    def try_find_series_closure(
+        self, subject_id: int, max_hops: int = 64
+    ) -> ShortcutResult:
+        """短路续集图 BFS 闭包（双向：续集+前传，含分支）
+
+        用于 get_series_subject_ids_bfs / 场景 J 验证：一次拿完整系列闭包，
+        避免逐跳 LIMIT 1 丢失分支型 IP 的兄弟续集/前传。
+
+        Returns:
+            hit=True 时 data 是 list[int]（闭包 subject_id 列表，不含起始）
+            hit=False 时 data 为 None
+        """
+        if not self._enabled:
+            return ShortcutResult(False, None, "archive_disabled")
+        try:
+            closure = archive_store.find_series_closure(subject_id, max_hops=max_hops)
+            # 空闭包时需判断 Archive 是否含该 subject，以区分「确认无关联」与 miss
+            if not closure:
+                subject = archive_store.get_subject(subject_id)
+                if subject is None:
+                    return ShortcutResult(False, None, "archive_miss")
+            return ShortcutResult(True, closure, "archive_hit")
+        except Exception as e:
+            logger.warning(f"bangumi_archive 短路 find_series_closure 异常: {e}")
+            return ShortcutResult(False, None, "archive_error")
+
+    def try_find_franchise_closure(
+        self, subject_id: int, max_hops: int = 64
+    ) -> ShortcutResult:
+        """短路同 IP 关系图 BFS 闭包（相同系列/前传/续集/外传/改编/同世界观/劇場版/同系列，含分支）
+
+        用于 get_franchise_subject_ids_bfs / 场景 Q 验证：一次拿完整同 IP 闭包，
+        相对 try_find_series_closure（仅 sequel+prequel）多收回一个数量级的兄弟作品
+        （高达全系列、CLAMP 宇宙、Cartoon Network 动画宇宙等分支型 IP）。
+
+        Returns:
+            hit=True 时 data 是 list[int]（闭包 subject_id 列表，不含起始）
+            hit=False 时 data 为 None
+        """
+        if not self._enabled:
+            return ShortcutResult(False, None, "archive_disabled")
+        try:
+            from ..bangumi_archive._store import FRANCHISE_RELATION_TYPES
+
+            closure = archive_store.find_franchise_closure(
+                subject_id,
+                relation_types=FRANCHISE_RELATION_TYPES,
+                max_hops=max_hops,
+            )
+            # 空闭包时需判断 Archive 是否含该 subject，以区分「确认无关联」与 miss
+            if not closure:
+                subject = archive_store.get_subject(subject_id)
+                if subject is None:
+                    return ShortcutResult(False, None, "archive_miss")
+            return ShortcutResult(True, closure, "archive_hit")
+        except Exception as e:
+            logger.warning(f"bangumi_archive 短路 find_franchise_closure 异常: {e}")
+            return ShortcutResult(False, None, "archive_error")
+
     def try_search(
         self,
         title: str,
@@ -307,7 +374,7 @@ class ArchiveShortcut:
         """短路 search API（标题搜索）
 
         分场景匹配策略（按优先级从最可靠到最不可靠）：
-        0. 媒体前缀变体优先（劇場版/OVA/OAD + 原始 title）：
+        0. 媒体前缀变体优先（劇場版/剧场版/映画/映画版 + 原始 title）：
            仅当原始 title 不在 archive 中精确命中时触发，避免被部分同名的
            TV 版（如「X Season 2」主段匹配）抢占。
            场景 D：媒体库推送「進撃の巨人 Season2〜覚醒の咆哮〜」（剥离劇場版
@@ -316,7 +383,7 @@ class ArchiveShortcut:
            条件：原始 title 不在 archive 中精确命中，避免对 archive 中已存在的
            name（A 场景 query=archive name）误判为劇場版。
         1. 精确匹配（原始 + 剥离季后缀精确）：is_exact=True 时直接返回
-        2. 媒体前缀变体（劇場版/OVA/OAD + 剥离后核心标题）：
+        2. 媒体前缀变体（劇場版/剧场版/映画/映画版 + 剥离后核心标题）：
            仅在精确匹配未命中合格结果时尝试，避免被模糊兜底抢占
            场景：查询「クドわふたー」精确命中同名游戏（type=4）被过滤，
            尝试「劇場版 クドわふたー」精确命中剧场版动画（type=2）
@@ -348,6 +415,16 @@ class ArchiveShortcut:
             types_set: set[int] = set(subject_types) if subject_types else {2}
             skip_ids: set[int] = set()
 
+            # G1：从 start_date 抽取首播年份，显式透传给标题精确匹配做年份消歧。
+            # 此前 year 仅能从查询字符串自动抽取，媒体库推送带首播 metadata 但
+            # 标题不含年份时（如「銀魂」+2006），同名多年版消歧不触发。
+            # start_date 形如 "2006-01-01"，无日期/格式不符时 year=None（退化原行为）。
+            year: Optional[int] = None
+            if start_date:
+                m = re.search(r"(?:19|20)\d{2}", start_date)
+                if m:
+                    year = int(m.group(0))
+
             # 步骤 0：媒体前缀变体优先尝试（仅当原始 title 不在 archive 中精确命中时）
             # 场景 D：媒体库推送「X」（剥离劇場版前缀后的核心标题）时，archive 中
             # 没有「X」（完整同名），但有「劇場版 X」（剧场版完整同名）。应优先返回
@@ -355,12 +432,14 @@ class ArchiveShortcut:
             # 条件：原始 title 不在 archive 中精确命中，避免对 archive 中已存在的
             # name（A 场景）误判为劇場版。
             if not any(title.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
-                raw_ids = archive_title_index.find_subject_ids_by_title(title)
+                raw_ids = archive_title_index.find_subject_ids_by_title(
+                    title, year=year
+                )
                 if not raw_ids:  # 原始 title 不在 archive 中精确命中
                     for prefix in _MEDIA_PREFIX_VARIANTS:
                         variant = f"{prefix}{title}"
                         variant_ids = archive_title_index.find_subject_ids_by_title(
-                            variant
+                            variant, year=year
                         )
                         if not variant_ids:
                             continue
@@ -373,80 +452,85 @@ class ArchiveShortcut:
                             skip_ids,
                         )
                         if results:
-                            return ShortcutResult(True, results, "archive_hit")
+                            return ShortcutResult(
+                                True,
+                                results,
+                                "archive_hit",
+                                MATCH_METHOD_PREFIX_VARIANT,
+                            )
 
             # 步骤 1：精确匹配（原始 + 剥离季后缀）
-            ids, is_exact = archive_title_index.find_subject_ids_for_query_title(title)
+            ids, is_exact = archive_title_index.find_subject_ids_for_query_title(
+                title, year=year
+            )
             if ids:
                 results = archive_store.get_subjects_by_ids_with_filter(
                     ids, types_set, start_date, end_date, limit, skip_ids
                 )
                 if results:
-                    return ShortcutResult(True, results, "archive_hit")
+                    method = MATCH_METHOD_EXACT if is_exact else MATCH_METHOD_FUZZY
+                    return ShortcutResult(True, results, "archive_hit", method)
                 # 精确命中但被 type/air_date 过滤，继续尝试其他精确策略
                 # 模糊命中时也继续尝试（不直接降级模糊兜底）
 
-            # 步骤 2：媒体前缀变体尝试（用剥离后标题拼接）
-            # 场景：查询「クドわふたー」精确命中同名游戏（type=4）被过滤，
-            # 尝试「劇場版 クドわふたー」精确命中剧场版动画（type=2）
+            # 步骤 2-4：复用共享变体生成 build_search_variants，按 archive 优先级消费。
+            # 与 API 兜底路径（bgm_search）共用同一份候选池，消除两路径变体策略漂移；
+            # 优先级保持 archive 语义：媒体前缀变体早试 → 标题分割主段 → 书名号剥离
+            # （精确匹配由步骤 1 覆盖，模糊兜底由步骤 5 覆盖）。
+            variants = build_search_variants(title)
+
             stripped = _strip_season_episode_suffix(title)
             base_title = stripped if stripped and stripped != title else title
-            # 避免原标题已含媒体前缀时重复尝试
-            if not any(base_title.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
-                for prefix in _MEDIA_PREFIX_VARIANTS:
-                    variant = f"{prefix}{base_title}"
-                    variant_ids = archive_title_index.find_subject_ids_by_title(variant)
-                    if not variant_ids:
-                        continue
-                    results = archive_store.get_subjects_by_ids_with_filter(
-                        variant_ids,
-                        types_set,
-                        start_date,
-                        end_date,
-                        limit,
-                        skip_ids,
-                    )
-                    if results:
-                        return ShortcutResult(True, results, "archive_hit")
 
-            # 步骤 3：标题分割匹配
-            # 场景：查询「魔法少女小圆：叛逆的物语」时 archive 仅存「魔法少女小圆」
-            segments = _split_title_segments(title)
-            if len(segments) >= 2:
-                main_segment = segments[0]
-                # 主段不能与 base_title 相同（避免重复尝试）
-                if main_segment != base_title and len(main_segment) >= 2:
-                    main_ids = archive_title_index.find_subject_ids_by_title(
-                        main_segment
-                    )
-                    if main_ids:
-                        results = archive_store.get_subjects_by_ids_with_filter(
-                            main_ids,
-                            types_set,
-                            start_date,
-                            end_date,
-                            limit,
-                            skip_ids,
-                        )
-                        if results:
-                            return ShortcutResult(True, results, "archive_hit")
+            def _lookup(q: str) -> Optional[list]:
+                if not q or q == title:
+                    return None
+                v_ids = archive_title_index.find_subject_ids_by_title(q, year=year)
+                if not v_ids:
+                    return None
+                return archive_store.get_subjects_by_ids_with_filter(
+                    v_ids, types_set, start_date, end_date, limit, skip_ids
+                )
+
+            # 步骤 2：媒体前缀变体（核心标题拼 劇場版/剧场版/映画/映画版）
+            if not any(base_title.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
+                expected_prefix = {f"{p}{base_title}" for p in _MEDIA_PREFIX_VARIANTS}
+                for v in variants:
+                    if v.query in expected_prefix:
+                        res = _lookup(v.query)
+                        if res:
+                            return ShortcutResult(
+                                True, res, "archive_hit", MATCH_METHOD_PREFIX_VARIANT
+                            )
+
+            # 步骤 3：标题分割主段（主段长度 >= 4）
+            split_mains = set()
+            for _base in (title, stripped):
+                _segs = _split_title_segments(_base)
+                if len(_segs) >= 2 and len(_segs[0]) >= 2:
+                    split_mains.add(_segs[0])
+            for v in variants:
+                if any(v.query.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
+                    continue
+                if v.query == title:
+                    continue
+                if v.query not in split_mains:
+                    continue
+                res = _lookup(v.query)
+                if res:
+                    return ShortcutResult(True, res, "archive_hit", v.method)
 
             # 步骤 4：剥离书名号/方括号包裹后再精确匹配
-            # 场景：查询「「君の名は。」」时 archive 存「君の名は。」
-            unwrapped = _strip_title_wrappers(title)
-            if unwrapped != title and len(unwrapped) >= 2:
-                unwrap_ids = archive_title_index.find_subject_ids_by_title(unwrapped)
-                if unwrap_ids:
-                    results = archive_store.get_subjects_by_ids_with_filter(
-                        unwrap_ids,
-                        types_set,
-                        start_date,
-                        end_date,
-                        limit,
-                        skip_ids,
-                    )
-                    if results:
-                        return ShortcutResult(True, results, "archive_hit")
+            for v in variants:
+                if any(v.query.startswith(p) for p in _MEDIA_PREFIX_VARIANTS):
+                    continue
+                if v.query == title:
+                    continue
+                if v.query in split_mains:
+                    continue
+                res = _lookup(v.query)
+                if res:
+                    return ShortcutResult(True, res, "archive_hit", v.method)
 
             # 步骤 5：模糊兜底（最后尝试）
             # 仅在所有精确策略都未命中合格结果时使用
@@ -469,7 +553,12 @@ class ArchiveShortcut:
                         skip_ids,
                     )
                     if results:
-                        return ShortcutResult(True, results, "archive_hit")
+                        return ShortcutResult(
+                            True,
+                            results,
+                            "archive_hit",
+                            MATCH_METHOD_FUZZY,
+                        )
 
             return ShortcutResult(False, None, "archive_miss")
         except Exception as e:
@@ -481,49 +570,18 @@ class ArchiveShortcut:
         title: str,
         subject_type: int = 2,
     ) -> ShortcutResult:
-        """短路 search_old API（旧版标题搜索）
+        """已弃用：无日期搜索现统一走 try_search（start/end_date 传空字符串）。
 
-        旧版接口返回结构为 {results, list}，list_only=True 时取 list 字段。
-        与 try_search 不同：旧版接口不支持 air_date 过滤，仅按 type 过滤。
-
-        命中后调用方（bgm_search）会取前 N 条调 get_subject 拉详情，
-        由于 get_subject 也接入了 Archive 短路，整条链路全走 Archive。
-
-        索引未就绪时返回 archive_miss 降级到 API，并懒触发后台构建。
-
-        Returns:
-            hit=True 时 data 是 list[dict]（对齐旧版 API 的 list 字段）
-            hit=False 时 data 为 None，调用方应走 API
+        保留方法签名仅为过渡期兼容，内部直接委托 try_search。
+        新代码请改用 try_search(title, start_date="", end_date="", subject_types=[subject_type])。
         """
-        if not self._enabled:
-            return ShortcutResult(False, None, "archive_disabled")
-        try:
-            # 索引未就绪时降级到 API，并懒触发后台构建
-            if not archive_title_index.is_ready:
-                archive_title_index.build_in_background()
-                return ShortcutResult(False, None, "archive_miss")
-
-            ids, _is_exact = archive_title_index.find_subject_ids_for_query_title(title)
-            if not ids:
-                return ShortcutResult(False, None, "archive_miss")
-
-            # 拉取完整 subject + type 过滤
-            # 旧版接口的 subject_type 即 API type（如 2=动画）
-            # 复用 store 的批量拉取能力：types_set={subject_type}，无 air_date 过滤
-            results = archive_store.get_subjects_by_ids_with_filter(
-                ids,
-                {subject_type},
-                "",
-                "",
-                len(ids),  # 旧版接口不限制 limit，全部拉取后由调用方截断
-            )
-
-            if not results:
-                return ShortcutResult(False, None, "archive_miss")
-            return ShortcutResult(True, results, "archive_hit")
-        except Exception as e:
-            logger.warning(f"bangumi_archive 短路 search_old 异常: {e}")
-            return ShortcutResult(False, None, "archive_error")
+        return self.try_search(
+            title,
+            start_date="",
+            end_date="",
+            limit=15,
+            subject_types=[subject_type],
+        )
 
 
 # 全局单例
