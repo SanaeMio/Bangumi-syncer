@@ -931,10 +931,10 @@ class TestFindEpisodeAcrossSeasons:
         assert not api.get_related_subjects.called
 
     def test_archive_sequel_chain_empty_returns_none_directly(self):
-        """archive 命中但链为空时直接返回 None，不走逐跳降级。
+        """archive 命中但链为空时降级到逐跳 API（关联数据可能不完整）。
 
         场景：subject 在 archive 中存在但无续集链（chain=[]）。
-        archive 已确认无续集，不应再走逐跳逻辑重复调用 API。
+        archive 关联数据可能不完整，应降级到逐跳 API 查找续集。
         """
         episodes = {
             100: {"data": self._make_eps(1, 50, 10001), "total": 50},
@@ -950,11 +950,11 @@ class TestFindEpisodeAcrossSeasons:
         )
 
         result = api.find_episode_across_seasons(100, 102)
+        # 100 和 200 都没有 sort=102，最终返回 None
         assert result is None
 
-        # archive hit 但链空，不应降级到逐跳（避免重复查询）
-        # 验证：未调用 _find_related_id_by_relation 内部的 get_related_subjects
-        assert not api.get_related_subjects.called
+        # archive hit 但链空，降级到逐跳（调 get_related_subjects 找续集）
+        assert api.get_related_subjects.called
 
     def test_archive_miss_falls_back_to_hop_by_hop(self):
         """archive miss 时降级到逐跳逻辑（保持原行为）。
@@ -1096,7 +1096,8 @@ class TestFindEpisodeAcrossSeasons:
         """功能二（前传推断）：archive 命中但前传链上无 target_ep 时返回 None。
 
         场景：archive 前传链 [500]，target_ep=1000 远超范围。
-        archive 已确认链上无目标，应直接返回 None 而非降级到逐跳。
+        600 的 sort 范围 251-300，1000 > 300 走 sequel 方向。
+        archive sequel_chain=None（空），降级到逐跳 API，但 600 无续集关联，返回 None。
         """
         from app.utils.bangumi_api._archive_shortcut import ShortcutResult
 
@@ -1116,8 +1117,10 @@ class TestFindEpisodeAcrossSeasons:
         )
 
         result = api.find_episode_across_seasons(600, 1000)
+        # 600 无续集，500 无 sort=1000，最终返回 None
         assert result is None
-        assert not api.get_related_subjects.called
+        # sequel 链空降级到逐跳，调 get_related_subjects 找续集
+        assert api.get_related_subjects.called
 
     def test_archive_sequel_chain_navigates_to_target_season(self):
         """功能一（续集累计定位）：archive 短路 try_find_next_sequel_id 逐跳找到目标季。

@@ -52,8 +52,9 @@ class RelationMixin:
             前传 subject_id 扁平列表（不含起始，由近到远）
         """
         res = self._archive.try_find_prequel_chain(subject_id, max_hops=max_hops)
-        if res.hit:
-            return res.data  # 空列表/None 均表示 Archive 已确认结果，不降级到 API
+        if res.hit and res.data:
+            return res.data  # archive 有前传链数据，直接返回
+        # archive miss / 链为空（关联数据可能不完整）：降级到 API 逐跳
         return self._walk_prequel_flat(subject_id, max_hops=max_hops)
 
     # ===== 系列全集 =====

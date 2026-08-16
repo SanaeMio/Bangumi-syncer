@@ -752,14 +752,15 @@ class EpisodesMixin:
             shortcut = self._archive.try_find_sequel_chain(start_id, max_hops=max_depth)
             if shortcut.hit:
                 chain = shortcut.data or []
-                result = self._find_episode_in_chain(
-                    chain, target_ep, visited, deadline
-                )
-                if result:
-                    return result
-                # archive 命中但链上未找到目标 ep，返回 None
-                # 避免重复走逐跳逻辑（archive 已确认链上无目标）
-                return None
+                if chain:
+                    result = self._find_episode_in_chain(
+                        chain, target_ep, visited, deadline
+                    )
+                    if result:
+                        return result
+                    # archive 链非空但未找到目标：信任 archive，不再逐跳
+                    return None
+                # archive 命中但续集链为空：关联数据可能不完整，降级到逐跳 API
 
         if direction == "prequel":
             # 前传方向：正式启用 RelationMixin.search_previous_subjects

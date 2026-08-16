@@ -103,9 +103,12 @@ class TestSearchPreviousSubjects:
         api._walk_prequel_flat.assert_not_called()
 
     def test_archive_hit_empty(self) -> None:
+        """archive 命中但链为空时降级到 API 逐跳（关联数据可能不完整）"""
         api = _make_api()
         api._archive.try_find_prequel_chain.return_value = _hit([])
+        api._walk_prequel_flat = MagicMock(return_value=[])
         assert api.search_previous_subjects(1) == []
+        api._walk_prequel_flat.assert_called_once()
 
     def test_archive_miss_falls_back_to_walk(self) -> None:
         """Archive 未命中时降级 _walk_prequel_flat"""
