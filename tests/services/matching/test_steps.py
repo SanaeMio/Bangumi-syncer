@@ -231,3 +231,58 @@ class TestAPISearchStep:
         assert outcome.is_terminal is True
         assert ctx.subject_id is None
         assert "below threshold" in ctx.failure_detail
+
+    def test_media_type_reselect_prefers_anime_over_real_action_with_same_title(self):
+        """回归测试：标题完全相同的真人剧（type=6）应通过 subject type 字段识别为 real_action，
+        并在请求为 episode 时改选动画版（type=2）候选。
+
+        场景：用户开启 ``enable_real_action``，搜索"凡人修仙传"时 API 同时返回
+        - 434076 真人剧（type=6, name="凡人修仙传", 标题无"日剧/真人版"关键词）
+        - 406306 动画版（type=2, name="凡人修仙传 新年番", 含 episode 81）
+
+        修复前：``detect_media_type`` 仅看标题，把真人剧误判为 episode，
+        ``need_reselect=False``，top 候选保留为真人剧，后续集数解析失败。
+        修复后：通过 subject ``type`` 字段正确识别真人剧为 real_action，
+        触发媒体类型改选，把 top 改为动画版（406306）。
+        """
+        ctx = _build_ctx(title="凡人修仙传", season=1)
+        bgm = MagicMock()
+        # API 返回：top 为真人剧（type=6），次为动画版（type=2）
+        bgm.bgm_search.return_value = [
+            {
+                "id": 434076,
+                "type": 6,  # SUBJECT_TYPE_REAL
+                "name": "凡人修仙传",
+                "name_cn": "凡人修仙传",
+                "platform": "TV",
+                "date": "2025-07-27",
+            },
+            {
+                "id": 406306,
+                "type": 2,  # SUBJECT_TYPE_ANIME
+                "name": "凡人修仙传 新年番",
+                "name_cn": "",
+                "platform": "TV",
+                "date": "2023-11-25",
+            },
+        ]
+        bgm.last_hit_source = ""
+        bgm.title_diff_ratio.return_value = 1.0
+        ctx.service._get_bangumi_api_for_user.return_value = bgm
+        ctx.service._sort_candidates_by_platform.side_effect = lambda data, **kw: data
+        ctx.service._get_match_confidence_threshold.return_value = 0.6
+        ctx.service._check_season_info_in_title.return_value = False
+        ctx.service._get_explicit_season_from_title.return_value = 0
+        # _pick_mainline_episode_candidate 应被调用并返回动画版候选
+        ctx.service._pick_mainline_episode_candidate.return_value = (
+            bgm.bgm_search.return_value[1]
+        )
+
+        outcome = APISearchStep().execute(ctx)
+
+        # 命中应改选到动画版 406306，而非真人剧 434076
+        assert outcome.status == "hit"
+        assert outcome.subject_id == 406306
+        assert ctx.subject_id == 406306
+        # _pick_mainline_episode_candidate 被调用（媒体类型改选触发）
+        ctx.service._pick_mainline_episode_candidate.assert_called_once()

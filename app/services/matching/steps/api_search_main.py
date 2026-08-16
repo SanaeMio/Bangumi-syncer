@@ -119,6 +119,26 @@ class APISearchStep(MatchStepBase):
         try:
             # 阶段五：检测 ctx.bgm_data 是否已有数据（来自 ArchiveShortcutStep 命中）
             # archive 命中时跳过 bgm_search()，直接走候选排序 + post_search 改选
+            #
+            # 媒体类型不匹配降级：archive 精确匹配可能只返回单一类型候选
+            # （如查询"凡人修仙传"只命中真人剧 type=6，动画版标题带后缀不精确匹配）。
+            # 此时 _media_type_reselect 在候选列表里找不到匹配项，改选失败。
+            # 检测到此场景时清空 ctx.bgm_data，降级走 API 搜索获取更多候选。
+            if ctx.bgm_data and item.media_type == "episode":
+                (_, _, _, _, _, _detect_candidate_media_type, _, _) = (
+                    _import_sync_helpers()
+                )
+                top_detected = _detect_candidate_media_type(ctx.bgm_data[0])
+                if top_detected == "real_action" and not any(
+                    _detect_candidate_media_type(c) == "episode"
+                    for c in ctx.bgm_data[1:]
+                ):
+                    logger.debug(
+                        "archive 命中但 top 媒体类型=real_action 不匹配 episode "
+                        "请求，候选列表无 episode 候选，降级 API 搜索"
+                    )
+                    ctx.bgm_data = None
+
             if ctx.bgm_data:
                 bgm_data = ctx.bgm_data
                 is_archive_hit = True
@@ -391,9 +411,9 @@ class APISearchStep(MatchStepBase):
             SUBJECT_TYPE_ANIME,
             SUBJECT_TYPE_REAL,
             _,
+            _detect_candidate_media_type,
             _,
             _,
-            detect_media_type,
         ) = _import_sync_helpers()
 
         service = ctx.service
@@ -402,10 +422,10 @@ class APISearchStep(MatchStepBase):
         post_subject_id = None
         is_api_season_matched = False
 
-        top_detected = detect_media_type(
-            title=bgm_data[0].get("name_cn", ""),
-            ori_title=bgm_data[0].get("name", ""),
-        )
+        # 使用 _detect_candidate_media_type（结合 subject type 字段判定三次元）：
+        # 真人剧 type=6 即使标题无"日剧/真人版"关键词也能正确识别为 real_action，
+        # 避免"凡人修仙传"查询返回真人剧（type=6, 标题完全相同）时误判为 episode
+        top_detected = _detect_candidate_media_type(bgm_data[0])
         top_name = (bgm_data[0].get("name") or "").strip()
         top_name_cn = (bgm_data[0].get("name_cn") or "").strip()
         request_title = (item.title or "").strip()
@@ -418,10 +438,7 @@ class APISearchStep(MatchStepBase):
         # 1) 候选列表里找媒体类型一致的条目
         episode_candidates = []
         for cand in bgm_data[1:]:
-            cand_detected = detect_media_type(
-                title=cand.get("name_cn", ""),
-                ori_title=cand.get("name", ""),
-            )
+            cand_detected = _detect_candidate_media_type(cand)
             if cand_detected == request_media_type:
                 episode_candidates.append(cand)
         if top_detected == request_media_type and not top_exact_match:

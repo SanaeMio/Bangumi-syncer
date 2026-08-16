@@ -83,8 +83,17 @@ def _extract_infobox_aliases(cand: dict) -> list[str]:
 
 
 def _detect_candidate_media_type(cand: dict) -> str:
-    """检测候选条目的媒体类型（用于 P0 media_type 字段）"""
+    """检测候选条目的媒体类型（用于 P0 media_type 字段）
+
+    优先用 Bangumi 条目 ``type`` 字段判定三次元：
+    - type=6 (SUBJECT_TYPE_REAL) → "real_action"
+      避免标题无三次元关键词但实际为真人剧的条目被误判为 episode
+      （场景：查询"凡人修仙传"返回真人剧 type=6，标题无"日剧/真人版"关键词）
+    - 其他 type（含动画 type=2）→ 继续按标题关键词细分 movie/ova/oad/episode
+    """
     try:
+        if cand.get("type") == SUBJECT_TYPE_REAL:
+            return "real_action"
         return detect_media_type(
             title=cand.get("name_cn", ""),
             ori_title=cand.get("name", ""),
