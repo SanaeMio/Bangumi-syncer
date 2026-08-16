@@ -1050,7 +1050,7 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
                 "date": "2024-01-15",
             }
         ]
-        # 关键：模拟 archive 短路命中（bgm_search 内部 search/search_old 走 archive）
+        # 关键：模拟 archive 短路命中（bgm_search 内部 search 走 archive）
         bgm.last_hit_source = "archive"
 
         trace = MatchTrace()
