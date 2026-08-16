@@ -130,6 +130,9 @@ class MatchTrace:
     _current_step: MatchStep | None = field(default=None, repr=False)
     _step_start: float = field(default=0.0, repr=False)
     _trace_start: float = field(default=0.0, repr=False)
+    # 幂等标记：finish() 已结算过（MatchPipeline.run 的 finally 与
+    # test_match 等外层调用方都会调 finish，重复调用不得覆盖已结算字段）
+    _finished: bool = field(default=False, repr=False)
 
     def start_step(self, stage: str) -> MatchStep:
         """开始一个新匹配阶段"""
@@ -154,7 +157,16 @@ class MatchTrace:
         self._step_start = 0.0
 
     def finish(self) -> None:
-        """完成整个匹配过程"""
+        """完成整个匹配过程（幂等：重复调用不覆盖已结算的字段）
+
+        MatchPipeline.run() 的 finally 总会调用 finish()；外层调用方
+        （如 test_match）在管道返回后可能再次调用。_finished 保证
+        total_elapsed_ms / failed 标记只结算一次，避免第二次调用
+        把管道结束到外层收尾之间的耗时也算进 total_elapsed_ms。
+        """
+        if self._finished:
+            return
+        self._finished = True
         self._finish_current_step()
         if self._trace_start > 0:
             self.total_elapsed_ms = int(

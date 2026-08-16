@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from app.models.sync import CustomItem
 from app.services.matching.context import MatchContext
 from app.services.matching.pipeline import MatchPipeline
@@ -212,3 +214,42 @@ def test_pipeline_build_result_maps_ctx():
     assert result.bgm_se_id is None  # episode_resolve 未执行
     assert result.trace is ctx.trace
     assert result.is_ambiguous is False
+
+
+def test_pipeline_outer_finish_is_idempotent():
+    """管道 run（finally 已 finish）后外层再调 finish() 不覆盖已结算字段
+
+    场景：MatchPipeline.run() 的 finally 总会调 trace.finish()，
+    test_match() 等外层调用方在 _find_subject_id 返回后还会再调一次。
+    第二次 finish() 不得重新结算 total_elapsed_ms（会把管道结束到
+    外层收尾之间的耗时也算进去），也不得重复标记 failed。
+    """
+    pipeline = MatchPipeline([_MissStep()])
+    ctx = _build_ctx()
+    pipeline.run(ctx)
+
+    # 管道已结算：全 miss 标记 failed
+    assert ctx.trace.final_match_method == "failed"
+    first_elapsed = ctx.trace.total_elapsed_ms
+
+    # 模拟 test_match 外层再 finish（间隔一段时间，若重新结算会变大）
+    time.sleep(0.01)
+    ctx.trace.finish()
+
+    assert ctx.trace.total_elapsed_ms == first_elapsed
+    assert ctx.trace.final_match_method == "failed"
+
+
+def test_double_finish_keeps_trace_fields():
+    """直接连续两次 finish() 幂等：字段不重复结算"""
+    trace = MatchTrace()
+    trace.start_step("api_search")
+    trace._finish_current_step()  # 结算当前 step，构造中间态
+    trace.finish()
+    first_elapsed = trace.total_elapsed_ms
+
+    trace.finish()
+
+    assert trace.total_elapsed_ms == first_elapsed
+    # steps 不因重复 finish 而重复追加
+    assert len(trace.steps) == 1
