@@ -223,6 +223,15 @@ class APISearchStep(MatchStepBase):
             ctx.match_method_detail = ctx.matched_variant_method or (
                 "exact" if is_archive_hit else ""
             )
+            # 歧义标记：top1/top2 分数差 < 0.05 时置 True，编排器据此发 match_ambiguous 通知
+            # （原 _maybe_notify_match_ambiguous 逻辑前移到 step，通知职责留在编排器）
+            if len(candidates) >= 2:
+                top1_s = candidates[0].score or 0.0
+                top2_s = candidates[1].score or 0.0
+                if isinstance(top1_s, (int, float)) and isinstance(
+                    top2_s, (int, float)
+                ):
+                    ctx.is_ambiguous = (top1_s - top2_s) < 0.05
 
             final_reason = reason
             if post_reason:

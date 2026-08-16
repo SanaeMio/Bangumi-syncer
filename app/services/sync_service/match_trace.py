@@ -116,6 +116,9 @@ class MatchTrace:
     final_status: str = ""
     final_message: str = ""
     final_action: str = ""
+    # 匹配歧义标记：APISearchStep 检测 top1/top2 分数差 < 0.05 时置 True，
+    # 编排器据此发送 match_ambiguous 通知（原 _maybe_notify_match_ambiguous 检测逻辑前移到 step）
+    is_ambiguous: bool = False
     # P2: 匹配阶段总耗时（不含 receive/result 阶段），用于性能排错
     total_elapsed_ms: int = 0
 
@@ -189,5 +192,6 @@ class MatchTrace:
             "final_status": self.final_status,
             "final_message": self.final_message,
             "final_action": self.final_action,
+            "is_ambiguous": self.is_ambiguous,
             "total_elapsed_ms": self.total_elapsed_ms,
         }
