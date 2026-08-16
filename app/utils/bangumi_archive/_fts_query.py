@@ -25,15 +25,24 @@ trigram tokenizer 说明：
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 import unicodedata
 from pathlib import Path
 from typing import Any, Optional
 
-from rapidfuzz import fuzz
+from rapidfuzz.distance import DamerauLevenshtein, JaroWinkler
 
 from ...core.logging import logger
+from ._title_normalize import (
+    ARCHIVE_FUZZY_THRESHOLD,
+    fuse_title_similarity,
+    strip_bracket_content,
+    strip_kana_variant,
+    strip_numeral_variant,
+    strip_year_suffix,
+)
 from ._wiki_parser import parse_infobox
 
 # infobox 中视为别名的 key（与原 _title_index.py 保持一致）
@@ -43,6 +52,13 @@ _ALIAS_KEYS = frozenset(
 
 # 模糊查询候选集上限（与原 _CANDIDATE_LIMIT 一致）
 _CANDIDATE_LIMIT = 200
+
+# BK-tree 模糊匹配容忍的编辑距离（单字符 typo：替换/插入/删除/换位）
+# 与 SymSpell 对称删除同为「编辑距离保证」族，召回性质一致；BK-tree
+# 额外内存约 69MB（56539 标题实测），是 SymSpell(363MB) 的省内存版。
+# 是否启用由 config.ini [bangumi-archive] use_bktree 控制（默认关闭，
+# 关闭时回退 trigram OR + 覆盖度预筛，零额外内存，适合小项目）。
+_MAX_FUZZY_DIST = 1
 
 # 精确查询分批大小（SQLite 默认占位符上限 999，留余量用 500）
 _EXACT_BATCH_SIZE = 500
@@ -69,16 +85,44 @@ def _normalize_key(text: str) -> str:
     return text.lower()
 
 
+def _normalize_key_deep(text: str) -> str:
+    """深度归一化（装饰剥离 + 轻量归一化），用于跨装饰精确匹配。
+
+    在原始标题文本上先剥除「括号及其内容 / 片假名长音与小书假名 /
+    数字编号 / 年份后缀」四类装饰，再走与 _normalize_key 一致的
+    NFKC + 去标点 + 小写。
+
+    用途：find_subject_ids_by_title / _match_exact 在原有 _normalize_key
+    精确相等之外，额外接受「深度归一化后相等」的命中。这样库方推送的
+    「ラジオ「内包」」与 archive 存的「ラジオ」、或「Name 2021」与「Name」
+    能互相命中，修复反向诊断定位的 R4/R5/R7/R9 真实缺口。
+
+    设计要点（避免回归）：
+    - 仅作「接受条件」的增量扩展，不改 FTS 存储内容，故不触发预建索引
+      失同步（_normalize_key 仍用于 FTS 构建与预筛）。
+    - 幂等：对已是深度归一化结果再调用，装饰已不在，结果不变。
+    - 空结果保护：若剥装饰后为空串，返回 ""，调用方需 guard 非空才采用，
+      避免 "" 与空标题误匹配。
+    """
+    if not isinstance(text, str) or not text:
+        return ""
+    # 在原始文本上剥装饰（括号/标点此时仍在）
+    t = strip_bracket_content(text)
+    t = strip_kana_variant(t)
+    t = strip_numeral_variant(t)
+    t = strip_year_suffix(t)
+    t = t.strip()
+    if not t:
+        return ""
+    return _normalize_key(t)
+
+
 def _score_candidate(query: str, candidate: str) -> float:
-    """多 scorer 融合计算候选标题相似度
+    """多 scorer 融合计算候选标题相似度（0~100）
 
-    与原 _title_index.py._score_candidate 完全一致，保证模糊匹配结果兼容。
-
-    融合策略（取最高分）：
-    - fuzz.ratio：基础整体相似度
-    - fuzz.partial_ratio * 0.9：子串包含关系
-    - fuzz.token_set_ratio * 0.95：词序差异容错
-    - 子串包含直接 100 分
+    委托给 bangumi_archive._title_normalize.fuse_title_similarity（G2 统一实现），
+    保留 Archive 历史切点：partial*0.9、token_set*0.95、子串包含直接 100 分，
+    不启用媒体后缀防误判（Archive FTS 空间已用 _normalize_key 对齐）。
     """
     if not query or not candidate:
         return 0.0
@@ -86,15 +130,21 @@ def _score_candidate(query: str, candidate: str) -> float:
         return 100.0
     if query in candidate or candidate in query:
         return 100.0
-
-    score = float(fuzz.ratio(query, candidate))
-    partial = fuzz.partial_ratio(query, candidate) * _PARTIAL_RATIO_WEIGHT
-    if partial > score:
-        score = partial
-    token_set = fuzz.token_set_ratio(query, candidate) * _TOKEN_SET_RATIO_WEIGHT
-    if token_set > score:
-        score = token_set
-    return score
+    return (
+        fuse_title_similarity(
+            query,
+            query,
+            candidate,
+            None,
+            None,
+            partial_weight=_PARTIAL_RATIO_WEIGHT,
+            token_set_weight=_TOKEN_SET_RATIO_WEIGHT,
+            core_contains_weight=0.0,
+            media_suffix_guard=False,
+            substring_boost=True,
+        )
+        * 100.0
+    )
 
 
 def _extract_alias_text(infobox_raw: Any) -> str:
@@ -122,6 +172,14 @@ def _extract_alias_text(infobox_raw: Any) -> str:
     return " ".join(aliases)
 
 
+def _year_of(date_str: Any) -> Optional[int]:
+    """从 date 字符串抽取 4 位年份（19xx/20xx），无则返回 None。"""
+    if not isinstance(date_str, str) or not date_str:
+        return None
+    m = re.search(r"(?:19|20)\d{2}", date_str)
+    return int(m.group(0)) if m else None
+
+
 class ArchiveFTSQuery:
     """基于 SQLite FTS5 trigram 的标题查询层
 
@@ -141,6 +199,16 @@ class ArchiveFTSQuery:
         self._build_thread: Optional[threading.Thread] = None
         # FTS5 表是否已在该库中构建（避免重复查询 sqlite_master）
         self._fts_ready: bool = False
+        # BK-tree 模糊匹配索引（内存，随 active 库切换重建）
+        self._bk_tree: Optional[dict] = None
+        self._bk_built_path: Optional[Path] = None
+        # BK-tree 后台异步构建状态：避免首次 fuzzy 查询阻塞 7-18s
+        self._bk_building: bool = False
+        self._bk_build_path: Optional[Path] = None
+        # BK-tree + 短查询 JaroWinkler 打分的启用开关。
+        # None = 由 config.ini [bangumi-archive] use_bktree 决定（默认关闭）；
+        # 非 None = 运行时显式覆盖（set_bktree_enabled 设置）。
+        self.use_bktree: Optional[bool] = None
 
     @property
     def is_ready(self) -> bool:
@@ -207,10 +275,15 @@ class ArchiveFTSQuery:
 
     @staticmethod
     def _check_fts_table_exists(conn: sqlite3.Connection) -> bool:
-        """检查 subject_fts 表是否存在且已填充数据
+        """检查 subject_fts 表是否存在且已填充真实数据
 
-        仅检查表存在不够：旧库升级场景下 DROP+CREATE+INSERT 可能因
-        异常中断导致空表。需验证行数 > 0 才认为就绪。
+        旧判断只看 ``COUNT(*) > 0``，但 contentless FTS5 不存储原文、
+        ``SELECT name`` 永远为空串，单凭行数无法区分「正常索引」与
+        「建在空数据上的空壳索引」。空壳索引行数也 > 0，却 MATCH 任何词
+        都命中 0，会让查询层静默退化且永不自愈（见 _ensure_built 短路逻辑）。
+
+        因此这里额外用一条确定存在的真实标题做 MATCH 探针：命中即视为
+        已就绪；命中 0 视为空壳，返回 False 触发 _build_fts_from_subject 重建。
         """
         try:
             r = conn.execute(
@@ -219,9 +292,33 @@ class ArchiveFTSQuery:
             ).fetchone()
             if r is None:
                 return False
-            # 验证表非空（空表无查询意义，且可能是构建中断的残留）
+            # 行数 > 0 是必要条件（表存在但未建/构建中断的残留仍可能为 0）
             cnt = conn.execute("SELECT COUNT(*) FROM subject_fts").fetchone()
-            return cnt[0] > 0
+            if cnt[0] == 0:
+                return False
+            # 内容探针：取一条确定存在、且含 ≥3 个可索引字符的 subject 名，
+            # 按与构建一致的归一化取前 3 字符作为 MATCH token（trigram 至少 3 字符）。
+            # 优先取较长的 name（ORDER BY LENGTH DESC），避免全库只有短标题（如
+            # 「銀魂」2 字符）时探针 token 不足 3 字符导致 MATCH 永远 0 命中、
+            # 误判为空壳触发无限重建。
+            probe = conn.execute(
+                "SELECT name FROM subject "
+                "WHERE name IS NOT NULL AND name <> '' "
+                "ORDER BY LENGTH(name) DESC LIMIT 1"
+            ).fetchone()
+            if probe is None:
+                # subject 表本身为空，无内容可索引，等同未就绪
+                return False
+            token = _normalize_key(probe[0])[:3]
+            if len(token) < 3:
+                # 标题归一化后不足 3 字符（如 CJK 2 字标题），trigram 无法 MATCH，
+                # 退化为行数判定，避免误杀合法短标题库
+                return cnt[0] > 0
+            hit = conn.execute(
+                "SELECT rowid FROM subject_fts WHERE name MATCH ? LIMIT 1",
+                (token,),
+            ).fetchone()
+            return hit is not None
         except sqlite3.Error:
             return False
 
@@ -259,6 +356,33 @@ class ArchiveFTSQuery:
                 pass
             return False
 
+    def _is_fts_empty_shell_or_missing(self) -> bool:
+        """只读探针：FTS 表缺失或为空壳（内容探针命中 0）返回 True。
+
+        仅用于 find_subject_ids_* 的未就绪守卫判断，决定是否需要查询时自愈重建。
+        关键：本方法打开一条独立只读连接检查，**不改动**实例的 ``_conn`` /
+        ``_built_path`` / ``_fts_ready`` 状态——否则会对「被显式 invalidate 的
+        功能正常库」误置为就绪，破坏「invalidate 后查询返回空、降级 API」契约
+        （见 test_not_ready_returns_empty_without_building，
+        test_invalidate_clears_index 要求 _built_path 仍为 None）。
+
+        返回值语义：
+        - True  → FTS 缺失或为空壳，应在查询时由 _ensure_built 自愈重建；
+        - False → FTS 功能正常（仅因 invalidate 暂未就绪），保持降级、不重建。
+        """
+        try:
+            active_path = self._get_active_path()
+            if not active_path.exists():
+                return True
+            conn = sqlite3.connect(str(active_path), check_same_thread=False)
+            try:
+                conn.execute("PRAGMA query_only=ON")
+                return not self._check_fts_table_exists(conn)
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return True
+
     def _build_fts_from_subject(self, conn: sqlite3.Connection) -> None:
         """从 subject 表构建 FTS5 索引（旧库升级/测试场景自动触发）
 
@@ -272,7 +396,7 @@ class ArchiveFTSQuery:
     def invalidate(self) -> None:
         """显式标记查询层失效（下次访问时重连）
 
-        active 库切换时由 _archive.py 调用。
+        active 库切换时由 _archive.py 调用。同时丢弃 BK-tree 内存索引。
         """
         with self._lock:
             self._fts_ready = False
@@ -283,6 +407,162 @@ class ArchiveFTSQuery:
                     pass
                 self._conn = None
             self._built_path = None
+            self._bk_tree = None
+            self._bk_built_path = None
+            self._bk_building = False
+            self._bk_build_path = None
+
+    def set_bktree_enabled(self, enabled: bool) -> None:
+        """运行时显式覆盖 BK-tree 模糊匹配开关
+
+        开启：使用 BK-tree 候选生成 + 短查询 JaroWinkler 打分，
+        编辑距离保证召回单字符 typo（替换/插入/删除/换位），约 69MB 额外内存。
+        关闭：回退到 trigram OR + 覆盖度预筛，无额外内存索引，适合内存敏感场景。
+
+        注意：默认由 config.ini [bangumi-archive] use_bktree 控制（默认关闭）。
+        本方法用于运行时临时覆盖配置文件的设定；active 库切换 invalidate 时
+        不会重置该覆盖值（覆盖是会话级的，配置是持久级的）。
+
+        开启时后台异步触发 BK-tree 构建（不阻塞调用方），首次 fuzzy 查询在
+        构建完成前走 OR+覆盖度兜底，构建完成后自动切换到 BK-tree 路径。
+        关闭时立即释放已缓存的 BK-tree 并复位构建态，不触发任何构建；即便
+        此前有后台构建在途，其结果也会因开关关闭而被丢弃（见 _build_bktree_worker）。
+        """
+        self.use_bktree = bool(enabled)
+        if enabled:
+            # 后台异步触发构建，避免阻塞；首次查询在就绪前走兜底
+            self._maybe_get_bktree()
+        else:
+            # 关闭：丢弃任何缓存的 BK-tree，释放内存，且不触发构建
+            with self._lock:
+                self._bk_tree = None
+                self._bk_built_path = None
+                self._bk_building = False
+
+    def _resolve_use_bktree(self) -> bool:
+        """解析 BK-tree 是否启用：运行时显式覆盖优先，否则读配置（默认关闭）
+
+        Returns:
+            True 表示启用 BK-tree 路径；False 表示回退 OR+覆盖度兜底。
+        """
+        if self.use_bktree is not None:
+            return self.use_bktree
+        try:
+            from ...core.config import get_config_manager
+
+            return bool(
+                get_config_manager().get_config(
+                    "bangumi-archive", "use_bktree", fallback=False
+                )
+            )
+        except Exception:  # pragma: no cover - 配置不可读时安全回退
+            return False
+
+    def _build_bktree_index(self, conn: sqlite3.Connection) -> Optional[dict]:
+        """纯构建逻辑：从给定连接读取 subject 表构建 BK-tree（不含缓存管理）
+
+        后台构建线程会自行开只读连接调用本方法；同步路径 _ensure_bktree
+        也复用本方法。返回 BK-tree 根节点，subject 表不可读时返回 None。
+        """
+        try:
+            items: list[tuple[str, int]] = []
+            for sid, name, name_cn in conn.execute(
+                "SELECT id, name, name_cn FROM subject"
+            ).fetchall():
+                for t in (name, name_cn):
+                    if not t:
+                        continue
+                    k = _normalize_key(t)
+                    if k:
+                        items.append((k, sid))
+            root: Optional[dict] = None
+            for k, sid in items:
+                if root is None:
+                    root = {"key": k, "sids": {sid}, "children": {}}
+                else:
+                    _bktree_add(root, k, sid)
+            return root
+        except sqlite3.Error as e:
+            logger.warning(f"bangumi_archive BK-tree 索引构建失败: {e}")
+            return None
+
+    def _ensure_bktree(self, conn: sqlite3.Connection) -> Optional[dict]:
+        """同步确保 BK-tree 就绪（阻塞构建，约 7-18s）
+
+        仅用于测试或显式需要立即就绪的场景。生产首次 fuzzy 查询走
+        _maybe_get_bktree 的后台异步构建，不阻塞调用方。
+        """
+        with self._lock:
+            if self._bk_tree is not None and self._bk_built_path == self._built_path:
+                return self._bk_tree
+            self._bk_tree = None
+            self._bk_built_path = None
+        root = self._build_bktree_index(conn)
+        with self._lock:
+            self._bk_tree = root
+            self._bk_built_path = self._built_path
+        return root
+
+    def _maybe_get_bktree(self) -> Optional[dict]:
+        """非阻塞获取 BK-tree：已就绪直接返回；否则后台异步触发构建并返回 None
+
+        首次 fuzzy 查询调用方据此走 OR+覆盖度兜底，后台构建完成后下一次查询
+        即命中 BK-tree 路径（编辑距离保证召回单字符 typo）。线程安全。
+
+        开关语义（源头保证）：仅在 BK-tree 启用（use_bktree 解析为 True，
+        即运行时 set_bktree_enabled(True) 或配置 use_bktree=true）时才可能
+        触发后台构建；关闭时**绝不**启动构建线程、也不持有任何缓存，直接返回
+        None 让调用方走 OR+覆盖度兜底。
+        """
+        # 关闭时不构建缓存：直接返回，不置 building 标志、不启动线程
+        if not self._resolve_use_bktree():
+            return None
+        with self._lock:
+            if self._bk_tree is not None and self._bk_built_path == self._built_path:
+                return self._bk_tree
+            if self._bk_building:
+                return None
+            self._bk_building = True
+            self._bk_build_path = self._built_path
+        # 锁外启动后台线程（daemon，避免进程退出挂起）；线程自行开只读连接
+        threading.Thread(target=self._build_bktree_worker, daemon=True).start()
+        return None
+
+    def _build_bktree_worker(self) -> None:
+        """后台构建 BK-tree：自行开只读连接，避免跨线程共享主线程连接
+
+        构建完成后仅当 active 库路径未变才采用结果（切换会 invalidate 改
+        _built_path）；否则丢弃由下次查询重新触发。无论成功失败都复位
+        _bk_building，确保不会死锁后续异步触发。
+        """
+        try:
+            with self._lock:
+                expect_path = self._bk_build_path
+            if expect_path is None:
+                return
+            try:
+                conn = sqlite3.connect(str(expect_path), check_same_thread=False)
+                conn.execute("PRAGMA query_only=ON")
+            except sqlite3.Error as e:
+                logger.warning(f"bangumi_archive BK-tree 后台连接失败: {e}")
+                return
+            try:
+                root = self._build_bktree_index(conn)
+            finally:
+                conn.close()
+            with self._lock:
+                # active 库切换（invalidate 改 _built_path）则丢弃，下次重触发；
+                # 构建过程中开关被关闭也丢弃，确保「关闭不持有缓存」
+                if (
+                    self._bk_build_path == expect_path
+                    and self._bk_build_path == self._built_path
+                    and self._resolve_use_bktree()
+                ):
+                    self._bk_tree = root
+                    self._bk_built_path = expect_path
+        finally:
+            with self._lock:
+                self._bk_building = False
 
     def build_in_background(self) -> None:
         """轻量同步初始化（兼容接口）
@@ -291,53 +571,117 @@ class ArchiveFTSQuery:
         _ensure_built()：对已就绪的库是轻量检查（仅查询 sqlite_master），
         对缺 subject_fts 的旧库会触发一次同步 FTS 构建（约 7s）。
         _archive.py 在导入完成后调用此方法以确保查询层就绪。
+
+        若配置启用 BK-tree（use_bktree=true），则后台异步触发 BK-tree 构建，
+        不阻塞导入完成；首次 fuzzy 查询在构建完成前走 OR+覆盖度兜底。
         """
         # 触发一次连接检查 + 必要时同步构建 FTS5
         self._ensure_built()
+        # 配置启用 BK-tree 时，后台异步构建（不阻塞首次查询）
+        if self._resolve_use_bktree():
+            self._maybe_get_bktree()
 
-    def find_subject_ids_by_title(self, title: str) -> list[int]:
+    def find_subject_ids_by_title(
+        self, title: str, year: Optional[int] = None
+    ) -> list[int]:
         """精确匹配标题 → subject_id 列表
 
         两阶段：
         1. FTS5 MATCH 预筛候选（trigram 子串命中，0.03ms）
-        2. 关联 subject 表取原始 name/name_cn/infobox，
+        2. 关联 subject 表取原始 name/name_cn/infobox/date，
            归一化后精确比对（contentless FTS5 表不支持 = 查询）
 
         候选集分批查询（每批 500），避免短标题 MATCH 命中数万条时
         超过 SQLite 占位符上限（默认 999）。
 
+        年份消歧（修复同名多义 / 翻拍痛点 R1+R2）：当查询含 4 位年份
+        （19xx/20xx）或显式传入 year 时，先按「去年份的裸标题」匹配，再在
+        多个同名候选中优先返回 date 年份相符者——查询 "銀魂 2006" 应优先
+        2006 版而非返回全部銀魂（含 2011/2017 版）。year 为 None 且无年份
+        时退化为原行为，不影响既有场景。
+
         Args:
             title: 查询标题（任意大小写/首尾空白）
+            year: 显式年份消歧（可选）；为 None 时自动从 title 抽取
 
         Returns:
             命中的 subject_id 列表（已排序），空列表表示未命中或未就绪
         """
         if not self.is_ready:
-            return []
-        key = _normalize_key(title)
-        if not key:
+            # 未就绪守卫：
+            # - FTS 功能正常但被显式 invalidate：保持降级（返回空），由调用方
+            #   显式 _ensure_built/build_in_background 重建（与 try_search 降级 API 契约一致，
+            #   见 test_not_ready_returns_empty_without_building / test_invalidate_clears_index）。
+            # - FTS 缺失或为空壳（内容探针命中 0）：查询时自愈重建，避免静默退化
+            #   （见 test_empty_shell_fts_self_heals_on_query）。
+            # 用只读探针区分二者，不预先翻转 _fts_ready（否则功能正常库会被误置就绪）。
+            if not self._is_fts_empty_shell_or_missing():
+                return []
+            if not self._ensure_built():
+                return []
+        # 年份消歧：自动从查询抽取 4 位年份（仅当未显式传入）
+        if year is None:
+            m = re.search(r"(?:19|20)\d{2}", title)
+            if m:
+                year = int(m.group(0))
+        # 去年份裸标题用于匹配（year 命中时仅用裸标题，避免 "2006" 干扰归一化）
+        match_title = title
+        if year is not None:
+            base = re.sub(r"(?:19|20)\d{2}", "", title)
+            if base and base != title:
+                match_title = base
+        key = _normalize_key(match_title)
+        deep_key = _normalize_key_deep(match_title)
+        if not key and not deep_key:
             return []
         conn = self._ensure_conn()
         if conn is None:
             return []
         try:
-            candidate_ids = self._collect_candidates_fts(conn, key)
+            # 精确/深度匹配候选召回：优先用归一化键等值索引（subject_key_index），
+            # 等值查询 O(log n) 且完整（不截断），修复短查询 LIKE 预筛 LIMIT 500
+            # 把高 id 真实匹配切掉的问题（反向诊断 R4/R5/R9 的真实缺口来源）。
+            # 索引不可用时回退原 FTS/LIKE 预筛，保证向后兼容。
+            candidate_ids = _collect_candidates_key_index(conn, key, deep_key)
+            if candidate_ids is None:
+                candidate_ids = self._collect_candidates_fts(conn, key)
+                if deep_key and deep_key != key:
+                    candidate_ids += self._collect_candidates_fts(conn, deep_key)
             if not candidate_ids:
                 return []
-            result: set[int] = set()
+            seen: set[int] = set()
+            ordered: list[int] = []
+            for cid in candidate_ids:
+                if cid not in seen:
+                    seen.add(cid)
+                    ordered.append(cid)
+            # (sid, lvl, date) —— date 用于年份消歧排序
+            result: list[tuple[int, int, str]] = []
             # 分批查询，避免超过 SQLite 占位符上限（999）
-            for i in range(0, len(candidate_ids), _EXACT_BATCH_SIZE):
-                batch = candidate_ids[i : i + _EXACT_BATCH_SIZE]
+            for i in range(0, len(ordered), _EXACT_BATCH_SIZE):
+                batch = ordered[i : i + _EXACT_BATCH_SIZE]
                 placeholders = ",".join("?" * len(batch))
                 rows = conn.execute(
-                    f"SELECT id, name, name_cn, infobox "
+                    f"SELECT id, name, name_cn, infobox, date "
                     f"FROM subject WHERE id IN ({placeholders})",
                     batch,
                 ).fetchall()
-                for sid, name, name_cn, infobox in rows:
-                    if self._match_exact(sid, name, name_cn, infobox, key):
-                        result.add(sid)
-            return sorted(result)
+                for sid, name, name_cn, infobox, sdate in rows:
+                    lvl = self._match_exact(sid, name, name_cn, infobox, key, deep_key)
+                    if lvl:
+                        result.append((sid, lvl, sdate or ""))
+            if year is not None and len(result) > 1:
+                # 年份消歧：date 年份相符者置顶（仍保留其余同名候选，不丢召回）
+                ym = [r for r in result if _year_of(r[2]) == year]
+                others = [r for r in result if _year_of(r[2]) != year]
+                ym.sort(key=lambda x: (-x[1], x[0]))
+                others.sort(key=lambda x: (-x[1], x[0]))
+                result = ym + others
+            else:
+                # 排序：精确匹配(key 级, lvl=2)优先于深度匹配(lvl=1)，同组内按 id 升序。
+                # 缓解「裸查询命中多个装饰变体」的过度合并（精确项排前）。
+                result.sort(key=lambda x: (-x[1], x[0]))
+            return [sid for sid, _, _ in result]
         except sqlite3.Error as e:
             logger.warning(f"bangumi_archive FTS5 精确查询异常: {e}")
             return []
@@ -349,28 +693,52 @@ class ArchiveFTSQuery:
         name_cn: Optional[str],
         infobox: Optional[str],
         key: str,
-    ) -> bool:
-        """判断单个 subject 是否与归一化后的 key 精确匹配"""
-        if name and _normalize_key(name) == key:
-            return True
-        if name_cn and _normalize_key(name_cn) == key:
-            return True
+        deep_key: str = "",
+    ) -> int:
+        """判断单个 subject 是否与归一化后的 key 匹配，返回匹配级别：
+
+        - 2：轻量归一化精确相等（原行为，最可靠）；
+        - 1：深度归一化相等（跨括号内容/片假名变体/数字编号/年份后缀装饰命中，
+             修复反向诊断 R4/R5/R7/R9 缺口）；
+        - 0：不匹配。
+        deep_key 为空时不采用深度匹配，避免空串误命中。
+        """
+        if name:
+            if _normalize_key(name) == key:
+                return 2
+            if deep_key and _normalize_key_deep(name) == deep_key:
+                return 1
+        if name_cn:
+            if _normalize_key(name_cn) == key:
+                return 2
+            if deep_key and _normalize_key_deep(name_cn) == deep_key:
+                return 1
         if infobox and key in _extract_alias_text(infobox).split():
-            return True
-        return False
+            return 2
+        return 0
 
     def find_subject_ids_fuzzy(
         self,
         title: str,
-        threshold: int = 80,
+        threshold: int = ARCHIVE_FUZZY_THRESHOLD,
         limit: int = 5,
     ) -> list[tuple[int, float]]:
         """模糊匹配标题 → [(subject_id, score), ...]
 
-        两阶段：
-        1. FTS5 MATCH 取候选（3+ 字符子串预筛，0.08ms）
-           2 字符查询回退 LIKE（203ms，但 2 字符标题占比 <1%）
-        2. rapidfuzz 多 scorer 精排（复用 _score_candidate）
+        可开关的双路径（由 config.ini [bangumi-archive] use_bktree 控制，
+        默认关闭；set_bktree_enabled 可运行时显式覆盖）：
+
+        「开启」：BK-tree 候选生成 + 短查询 JaroWinkler 打分。
+            BK-tree 对编辑距离 ≤1 的 typo（替换/插入/删除/换位）有数学保证的
+            召回，候选集极小（~1 条）；短查询（≤5 字符，1 字损毁率高）改用
+            JaroWinkler 相似度打分，避免 rapidfuzz.ratio 对短串过严。
+            约 69MB 额外内存（56539 标题实测）。
+
+        「关闭」（默认）：trigram OR 预筛 + trigram 覆盖度预筛（并集），再
+            rapidfuzz 精排，无额外内存索引。适合内存敏感的小项目。
+
+        两条路径最终都复用相同的 rapidfuzz 阈值（默认 80）打分契约，
+        差异仅在「候选如何从库中召回」。
 
         Args:
             title: 查询标题
@@ -382,7 +750,17 @@ class ArchiveFTSQuery:
             未就绪时返回空列表
         """
         if not self.is_ready:
-            return []
+            # 未就绪守卫：
+            # - FTS 功能正常但被显式 invalidate：保持降级（返回空），由调用方
+            #   显式 _ensure_built/build_in_background 重建（与 try_search 降级 API 契约一致，
+            #   见 test_not_ready_returns_empty_without_building / test_invalidate_clears_index）。
+            # - FTS 缺失或为空壳（内容探针命中 0）：查询时自愈重建，避免静默退化
+            #   （见 test_empty_shell_fts_self_heals_on_query）。
+            # 用只读探针区分二者，不预先翻转 _fts_ready（否则功能正常库会被误置就绪）。
+            if not self._is_fts_empty_shell_or_missing():
+                return []
+            if not self._ensure_built():
+                return []
         key = _normalize_key(title)
         if not key:
             return []
@@ -390,19 +768,58 @@ class ArchiveFTSQuery:
         if conn is None:
             return []
 
-        # 第一阶段：FTS5 预筛候选 subject_id（模糊模式：trigram OR 预筛）
+        # 路径一（可开关）：BK-tree + 短查询 JaroWinkler 打分
+        if self._resolve_use_bktree():
+            root = self._maybe_get_bktree()
+            if root is not None:
+                bk_cands = _query_bktree(root, key, max_dist=_MAX_FUZZY_DIST)
+                if len(bk_cands) > _CANDIDATE_LIMIT:
+                    bk_cands = bk_cands[:_CANDIDATE_LIMIT]
+                if bk_cands:
+                    bk_res = self._score_fuzzy_candidates(
+                        conn, bk_cands, title, threshold, limit, use_jw=True
+                    )
+                    if bk_res:
+                        return bk_res
+
+        # 路径二（兜底）：trigram OR 预筛 + trigram 覆盖度预筛（并集）
         candidate_ids = self._collect_candidates_fts(conn, key, fuzzy=True)
+        if len(key) >= 5:
+            seen = set(candidate_ids)
+            for c in _collect_candidates_coverage(conn, key):
+                if c not in seen:
+                    seen.add(c)
+                    candidate_ids.append(c)
         if not candidate_ids:
             return []
-
-        # 限制候选集大小，避免精排爆炸
         if len(candidate_ids) > _CANDIDATE_LIMIT:
             candidate_ids = candidate_ids[:_CANDIDATE_LIMIT]
+        return self._score_fuzzy_candidates(
+            conn, candidate_ids, title, threshold, limit, use_jw=False
+        )
 
-        # 第二阶段：拉取候选标题 + rapidfuzz 精排
+    def _score_fuzzy_candidates(
+        self,
+        conn: sqlite3.Connection,
+        candidate_ids: list[int],
+        title: str,
+        threshold: int,
+        limit: int,
+        use_jw: bool,
+    ) -> list[tuple[int, float]]:
+        """对候选 subject_id 拉取标题并打分，返回 [(sid, score)] 降序截断
+
+        Args:
+            use_jw: 是否对短查询（归一化后 ≤5 字符）改用 JaroWinkler 相似度。
+                短串 1 字损毁时 rapidfuzz.ratio 过严，JW 更稳；长查询仍用
+                _score_candidate 多 scorer 融合。
+        """
+        if not candidate_ids:
+            return []
+        key = _normalize_key(title)
+        short_query = use_jw and len(key) <= 5
         try:
             id_to_score: dict[int, float] = {}
-            # 批量拉取候选标题（含 infobox，用于别名精排）
             placeholders = ",".join("?" * len(candidate_ids))
             rows = conn.execute(
                 f"SELECT id, name, name_cn, infobox FROM subject WHERE id IN ({placeholders})",
@@ -417,11 +834,15 @@ class ArchiveFTSQuery:
                     cand_key = _normalize_key(candidate_title)
                     if not cand_key:
                         continue
-                    score = _score_candidate(key, cand_key)
+                    if short_query:
+                        score = JaroWinkler.similarity(key, cand_key) * 100
+                    else:
+                        score = _score_candidate(key, cand_key)
                     if score > best_score:
                         best_score = score
                 # aliases 精排：覆盖 typo 发生在别名、name/name_cn 相似度不够的场景
-                if infobox:
+                # （短查询停用别名，避免短查询下别名噪声拉低精度）
+                if infobox and not short_query:
                     alias_text = _extract_alias_text(infobox)
                     if alias_text:
                         for alias_key in alias_text.split():
@@ -438,7 +859,6 @@ class ArchiveFTSQuery:
         except sqlite3.Error as e:
             logger.warning(f"bangumi_archive FTS5 模糊精排异常: {e}")
             return []
-
         return sorted(id_to_score.items(), key=lambda x: -x[1])[:limit]
 
     @staticmethod
@@ -509,6 +929,219 @@ class ArchiveFTSQuery:
         except sqlite3.Error as e:
             logger.warning(f"bangumi_archive FTS5 候选预筛异常: {e}")
             return []
+
+
+# 归一化键等值索引表：为精确/深度匹配提供 O(log n) 的等值候选召回，
+# 取代短查询 LIKE 预筛的 LIMIT 截断（避免常见短查询丢失真实匹配）。
+_KEY_INDEX_TABLE = "subject_key_index"
+_KEY_INDEX_BUILD_BATCH = 5000
+# 模块级锁：保护 key_index 懒构建，避免多线程并发首次查询触发
+# `database is locked`（DROP/CREATE/INSERT/commit 非原子，需串行化）。
+# 注意：实例锁 self._lock 无法跨实例生效，故用模块级锁。
+_key_index_lock = threading.Lock()
+
+
+def _build_key_index(conn: sqlite3.Connection) -> None:
+    """构建归一化键等值索引（subject_key_index）。
+
+    对 subject 的 name / name_cn / infobox 别名计算轻量与深度归一化键，
+    写入 (k, sid) 行并建索引。精确/深度匹配时只需 ``WHERE k = ?`` 等值查询，
+    即得到完整候选集（不截断），从根本上修复短查询 LIKE 预筛 LIMIT 500
+    把高 id 真实匹配切掉的问题（反向诊断 R4/R5/R9 的真实缺口来源）。
+
+    构建会写入 archive DB 文件（与 subject_fts 表一致，受 query_only 切换保护）；
+    失败（如只读库）由调用方回退到原 FTS/LIKE 预筛。
+
+    调用方应持有 _key_index_lock 以避免并发构建冲突。
+    """
+    try:
+        conn.execute("PRAGMA query_only=OFF")
+        conn.execute(f"DROP TABLE IF EXISTS {_KEY_INDEX_TABLE}")
+        conn.execute(
+            f"CREATE TABLE {_KEY_INDEX_TABLE} (k TEXT NOT NULL, sid INTEGER NOT NULL)"
+        )
+        conn.execute(f"CREATE INDEX idx_{_KEY_INDEX_TABLE}_k ON {_KEY_INDEX_TABLE}(k)")
+        cursor = conn.execute("SELECT id, name, name_cn, infobox FROM subject")
+        rows_to_insert: list[tuple[str, int]] = []
+        while True:
+            rows = cursor.fetchmany(_KEY_INDEX_BUILD_BATCH)
+            if not rows:
+                break
+            for sid, name, name_cn, infobox in rows:
+                keys: set[str] = set()
+                if name:
+                    keys.add(_normalize_key(name))
+                    dk = _normalize_key_deep(name)
+                    if dk:
+                        keys.add(dk)
+                if name_cn:
+                    keys.add(_normalize_key(name_cn))
+                    dk = _normalize_key_deep(name_cn)
+                    if dk:
+                        keys.add(dk)
+                if infobox:
+                    for alias in _extract_alias_text(infobox).split():
+                        if alias:
+                            keys.add(alias)
+                for k in keys:
+                    if k:
+                        rows_to_insert.append((k, sid))
+        if rows_to_insert:
+            conn.executemany(
+                f"INSERT INTO {_KEY_INDEX_TABLE}(k, sid) VALUES (?, ?)",
+                rows_to_insert,
+            )
+        conn.commit()
+        conn.execute("PRAGMA query_only=ON")
+    except sqlite3.Error as e:
+        logger.warning(f"bangumi_archive 归一化键索引构建失败: {e}")
+        try:
+            conn.execute("PRAGMA query_only=ON")
+        except sqlite3.Error:
+            pass
+
+
+def _ensure_key_index(conn: sqlite3.Connection) -> bool:
+    """惰性确保当前连接的 archive DB 已构建归一化键索引。
+
+    通过「表名存在 + 内容非空」双重检测区分三种状态：
+    - 表不存在 → 构建后返回
+    - 表存在且非空 → 直接返回 True
+    - 表存在但为空（构建中断/OOM/进程被 kill 残留）→ 触发重建，避免静默失效
+
+    多线程并发首次查询时由 _key_index_lock 串行化构建，避免 `database is locked`。
+
+    Returns:
+        True 表示索引可用；False 表示不可用（调用方应回退原预筛）。
+    """
+    with _key_index_lock:
+        try:
+            r = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (_KEY_INDEX_TABLE,),
+            ).fetchone()
+            if r is not None:
+                # 表存在：追加 COUNT 探针，空表（损坏残留）触发重建
+                cnt = conn.execute(
+                    f"SELECT COUNT(*) FROM {_KEY_INDEX_TABLE}"
+                ).fetchone()
+                if cnt and cnt[0] > 0:
+                    return True
+                # 表存在但为空：落入重建路径
+        except sqlite3.Error:
+            return False
+        try:
+            _build_key_index(conn)
+            return True
+        except sqlite3.Error:
+            return False
+
+
+def _collect_candidates_key_index(
+    conn: sqlite3.Connection, key: str, deep_key: str
+) -> list[int] | None:
+    """通过归一化键等值索引召回精确/深度匹配候选。
+
+    返回按 (key, deep_key) 等值查询并集去重后的 sid 列表；索引不可用时返回
+    None（调用方回退原 FTS/LIKE 预筛）。结果完整（不截断），是修复短查询
+    预筛截断的关键。
+
+    注意：索引可用但等值查询返回空列表时返回 []（非 None），表示「确实无匹配」；
+    索引不可用（_ensure_key_index 失败）时返回 None，触发回退。两者由
+    _ensure_key_index 的 COUNT 探针保证区分——空表会被重建，不会静默失效。
+    """
+    if not _ensure_key_index(conn):
+        return None
+    try:
+        result: list[int] = []
+        seen: set[int] = set()
+        for k in (key, deep_key):
+            if not k:
+                continue
+            rows = conn.execute(
+                f"SELECT sid FROM {_KEY_INDEX_TABLE} WHERE k = ?", (k,)
+            ).fetchall()
+            for (sid,) in rows:
+                if sid not in seen:
+                    seen.add(sid)
+                    result.append(sid)
+        return result
+    except sqlite3.Error as e:
+        logger.warning(f"bangumi_archive 键索引等值查询异常: {e}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# BK-tree 模糊匹配（编辑距离保证召回单字符 typo；省内存版 SymSpell）
+# ---------------------------------------------------------------------------
+def _bktree_add(node: dict, key: str, sid: int) -> None:
+    """将 key→sid 插入 BK-tree 节点（按 Damerau-Levenshtein 距离分桶）"""
+    d = DamerauLevenshtein.distance(key, node["key"])
+    if d == 0:
+        node["sids"].add(sid)
+        return
+    child = node["children"].get(d)
+    if child is None:
+        node["children"][d] = {"key": key, "sids": {sid}, "children": {}}
+    else:
+        _bktree_add(child, key, sid)
+
+
+def _query_bktree(
+    root: Optional[dict], query: str, max_dist: int = _MAX_FUZZY_DIST
+) -> list[int]:
+    """在 BK-tree 中检索与 query 编辑距离 ≤ max_dist 的所有 subject_id
+
+    利用度量树剪枝：仅访问距离区间 [d-max_dist, d+max_dist] 的子树。
+    返回去重后的 sid 列表（可能含少量超出候选上限，调用方再截断）。
+    """
+    results: set[int] = set()
+    if root is None or not query:
+        return []
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        d = DamerauLevenshtein.distance(query, n["key"])
+        if d <= max_dist:
+            results |= n["sids"]
+        lo = d - max_dist
+        hi = d + max_dist
+        for cd, child in n["children"].items():
+            if lo <= cd <= hi:
+                stack.append(child)
+    return list(results)
+
+
+def _collect_candidates_coverage(
+    conn: sqlite3.Connection,
+    query: str,
+    max_dist: int = _MAX_FUZZY_DIST,
+    per_gram_limit: int = 500,
+) -> list[int]:
+    """trigram 覆盖度预筛：要求候选与查询共享 ≥ (trigram 数 − max_dist) 个 trigram
+
+    不像 trigram OR 那样「任一命中即可」（OR 会对含常见 trigram 的无关条目
+    召回爆炸），而是按覆盖度过滤，对单字符 typo 召回更稳、候选更少。
+    作为关闭 BK-tree 后的兜底预筛，与 OR 预筛取并集。
+    """
+    q_grams = [query[i : i + 3] for i in range(len(query) - 2)]
+    if not q_grams:
+        return []
+    min_shared = max(1, len(q_grams) - max_dist)
+    counts: dict[int, int] = {}
+    try:
+        for g in q_grams:
+            rows = conn.execute(
+                "SELECT rowid FROM subject_fts "
+                "WHERE name MATCH ? OR name_cn MATCH ? OR aliases MATCH ? LIMIT ?",
+                (g,) * 3 + (per_gram_limit,),
+            ).fetchall()
+            for (sid,) in rows:
+                counts[sid] = counts.get(sid, 0) + 1
+    except sqlite3.Error as e:
+        logger.warning(f"bangumi_archive 覆盖度候选预筛异常: {e}")
+        return []
+    return [sid for sid, c in counts.items() if c >= min_shared]
 
 
 # 全局单例

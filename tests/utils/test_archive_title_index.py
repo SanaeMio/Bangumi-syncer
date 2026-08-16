@@ -493,7 +493,11 @@ class TestTrySearchLazyBuild:
             mock_index.build_in_background.assert_called_once()
 
     def test_try_search_old_returns_miss_when_not_ready(self) -> None:
-        """索引未就绪时 try_search_old 返回 archive_miss"""
+        """索引未就绪时 try_search_old 返回 archive_miss
+
+        try_search_old 现为薄包装，内部委托 try_search(start_date="", end_date="")，
+        索引未就绪时同样降级到 API 并懒触发后台构建。
+        """
         shortcut = ArchiveShortcut()
         shortcut._enabled = True
 
