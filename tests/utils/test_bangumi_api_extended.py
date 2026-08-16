@@ -1178,3 +1178,192 @@ class TestFindEpisodeAcrossSeasons:
         )
         assert sid == 2
         assert eid == 2002  # sort 27 -> id 2000 + (27 - 25)
+
+
+class TestFindEpisodeFranchiseFallback:
+    """同 IP 改编兜底（find_episode_across_seasons 的 franchise 分支）
+
+    场景：凡人修仙传动画（type=2）与真人网剧（type=6）同名，「改编」边
+    不在续集/前传链上，链式遍历 miss 后应通过同 IP 闭包/一跳找到目标集。
+    """
+
+    @staticmethod
+    def _make_eps(start_sort: int, count: int, start_id: int = 10000):
+        eps = []
+        for i in range(count):
+            eps.append(
+                {
+                    "sort": start_sort + i,
+                    "ep": i + 1,
+                    "id": start_id + i,
+                    "type": 0,
+                    "airdate": "",
+                }
+            )
+        return eps
+
+    @staticmethod
+    def _make_api(episodes: dict, related: dict):
+        """构造 mock BangumiApi：archive 全 miss，链式/主题/闭包短路均不可用
+
+        try_find_franchise_closure 默认 miss，在线一跳用 get_related_subjects。
+        """
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        api = BangumiApi()
+
+        def get_episodes(sid, *args, **kwargs):
+            return episodes.get(int(sid), {"data": [], "total": 0})
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        def get_subject(sid):
+            sid = int(sid)
+            if sid == 900:
+                # 凡人修仙传真人网剧（三次元 type=6）
+                return {
+                    "type": 6,
+                    "name": "凡人修仙传",
+                    "name_cn": "",
+                    "platform": "WEB",
+                }
+            return {"type": 2, "name": f"S{sid}", "name_cn": "", "platform": "WEB"}
+
+        api.get_episodes = MagicMock(side_effect=get_episodes)
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api._fetch_episodes_page = MagicMock(return_value={"data": [], "total": 0})
+
+        api._archive = MagicMock()
+        api._archive.enabled = True
+        miss = ShortcutResult(False, None, "archive_miss")
+        api._archive.try_find_sequel_chain = MagicMock(return_value=miss)
+        api._archive.try_find_prequel_chain = MagicMock(return_value=miss)
+        api._archive.try_find_franchise_closure = MagicMock(return_value=miss)
+        api._archive.try_find_related_id_by_relation = MagicMock(return_value=miss)
+        api._archive.try_get_subject = MagicMock(return_value=miss)
+        api._archive.try_get_episodes = MagicMock(return_value=miss)
+        api._archive.try_get_related_subjects = MagicMock(return_value=miss)
+        return api
+
+    def test_archive_franchise_closure_finds_live_action(self):
+        """Archive 闭包命中：网剧改编条目（type=6，动画链外）内找到目标集"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            900: {"data": self._make_eps(101, 60, 90001), "total": 60},
+        }
+        # 链式边（续集/前传）为空；改编边只在 archive 闭包中（900 网剧）
+        related = {100: [], 900: []}
+        api = self._make_api(episodes, related)
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        api._archive.try_find_franchise_closure.return_value = ShortcutResult(
+            True, [900], "archive_hit"
+        )
+
+        result = api.find_episode_across_seasons(100, 120)
+        assert result is not None
+        assert result[0] == 900
+        assert result[1] == 90020  # sort 120 -> id 90001 + (120 - 101)
+
+    def test_archive_franchise_closure_empty_falls_back_online(self):
+        """Archive 闭包命中但为空时，降级到在线一跳仍能找到改编条目"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            900: {"data": self._make_eps(101, 60, 90001), "total": 60},
+        }
+        # 改编：100 的直接邻居 900（relation=改编，type=6 网剧）
+        related = {100: [{"relation": "改编", "id": 900, "type": 6}], 900: []}
+        api = self._make_api(episodes, related)
+        from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+
+        api._archive.try_find_franchise_closure.return_value = ShortcutResult(
+            True, [], "archive_hit"
+        )
+
+        result = api.find_episode_across_seasons(100, 120)
+        assert result is not None
+        assert result[0] == 900
+        assert result[1] == 90020
+
+    def test_online_one_hop_finds_live_action(self):
+        """Archive miss：在线一跳改编邻居（不 BFS）找到网剧目标集"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            900: {"data": self._make_eps(101, 60, 90001), "total": 60},
+        }
+        related = {100: [{"relation": "改编", "id": 900, "type": 6}], 900: []}
+        api = self._make_api(episodes, related)
+
+        result = api.find_episode_across_seasons(100, 120)
+        assert result is not None
+        assert result[0] == 900
+        assert result[1] == 90020
+
+    def test_online_one_hop_skips_book_type(self):
+        """一跳改编邻居是书籍（type=1）时应跳过，返回 None"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+        }
+        # 小说原作 type=1（非影视），不应命中
+        related = {100: [{"relation": "改编", "id": 700, "type": 1}], 700: []}
+
+        api = self._make_api(episodes, related)
+        api.get_subject = MagicMock(
+            return_value={
+                "type": 1,
+                "name": "凡人修仙传",
+                "name_cn": "",
+                "platform": "",
+            }
+        )
+        # 700 无章节数据
+        result = api.find_episode_across_seasons(100, 120)
+        assert result is None
+
+    def test_online_one_hop_skips_movie_name(self):
+        """一跳改编邻居标题含「剧场版」时应跳过（与链式行为一致）"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            900: {"data": self._make_eps(101, 60, 90001), "total": 60},
+        }
+        related = {100: [{"relation": "改编", "id": 900, "type": 6}], 900: []}
+        api = self._make_api(episodes, related)
+        api.get_subject = MagicMock(
+            return_value={
+                "type": 6,
+                "name": "凡人修仙传剧场版",
+                "name_cn": "",
+                "platform": "WEB",
+            }
+        )
+
+        result = api.find_episode_across_seasons(100, 120)
+        assert result is None
+
+    def test_online_one_hop_miss_returns_none(self):
+        """一跳改编邻居无目标 sort 时返回 None（行为与链式 miss 一致）"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            900: {"data": self._make_eps(101, 20, 90001), "total": 20},
+        }
+        related = {100: [{"relation": "改编", "id": 900, "type": 6}], 900: []}
+        api = self._make_api(episodes, related)
+
+        # sort 云投 500 远超所有条目范围
+        result = api.find_episode_across_seasons(100, 500)
+        assert result is None
+
+    def test_online_one_hop_skips_unrelated_relation(self):
+        """非同 IP 关系（如「不同世界观」）不应作为改编邻居命中"""
+        episodes = {
+            100: {"data": self._make_eps(1, 50, 10001), "total": 50},
+            900: {"data": self._make_eps(101, 60, 90001), "total": 60},
+        }
+        # relation=不同世界观（不在 FRANCHISE_RELATION_CN_SET）
+        related = {100: [{"relation": "不同世界观", "id": 900, "type": 6}], 900: []}
+        api = self._make_api(episodes, related)
+
+        result = api.find_episode_across_seasons(100, 120)
+        assert result is None

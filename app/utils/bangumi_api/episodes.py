@@ -18,6 +18,7 @@ from ...utils.bangumi_constants import (
     RELATION_ID_SEQUEL,
     RELATIONS,
     SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
 )
 from ...utils.text_constants import CN_NUM
 
@@ -724,6 +725,133 @@ class EpisodesMixin:
             )
             if result:
                 return result
+        # 同 IP 改编兜底：续集/前传链覆盖不到「改编」等跨媒体边
+        # （如动画 ↔ 真人网剧同名场景：凡人修仙传等）。
+        # 分层策略（archive 命中零成本全量闭包，在线仅一跳，见
+        # _try_find_episode_in_franchise 说明）：不引入在线完整 BFS。
+        franchise_result = self._try_find_episode_in_franchise(
+            subject_id, target_ep, visited, max_depth, deadline
+        )
+        if franchise_result:
+            return franchise_result
+        return None
+
+    def _try_find_episode_in_franchise(
+        self,
+        subject_id: int,
+        target_ep: int,
+        visited: set,
+        max_depth: int,
+        deadline: float | None = None,
+    ) -> tuple[int, int] | None:
+        """同 IP 改编链兜底：在 franchise 关系闭包内查找含 sort=target_ep 的条目
+
+        链式 sequel/prequel 遍历（_walk_chain_for_episode）只沿前传/续集边爬，
+        动画与真人剧（如凡人修仙传动画 ↔ 网剧）之间的「改编」边不在其中。
+        本方法在链式全部 miss 后兜底：
+
+        - Archive 命中：try_find_franchise_closure 一次本地 SQL 拿完整连通分量
+          （含改编/相同系列/外传等边，FRANCHISE_RELATION_TYPES），零 API 成本，
+          全量遍历找目标 sort。
+        - Archive miss / 未命中：不做在线完整 BFS（最坏 64 节点 × 2 次 API/节点
+          且 sort 等值匹配命中率低，成本与收益不成正比），仅一跳直接邻居检查
+          （改编关系通常就是起始条目的一跳邻居）。
+
+        Args:
+            subject_id: 起始条目
+            target_ep: 目标集数
+            visited: 已访问 subject_id 集合（防环，会被更新）
+            max_depth: archive 闭包最大节点数
+            deadline: 整体 deadline
+
+        Returns:
+            (subject_id, episode_id) 或 None
+        """
+        # Archive 快速路径：本地 SQL 闭包（含改编等边），零 API
+        shortcut = self._archive.try_find_franchise_closure(
+            subject_id, max_hops=max_depth
+        )
+        if shortcut.hit:
+            chain = shortcut.data or []
+            if chain:
+                result = self._find_episode_in_chain(
+                    chain,
+                    target_ep,
+                    visited,
+                    deadline,
+                    allowed_types=(SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL),
+                )
+                if result:
+                    return result
+            # archive 命中但闭包为空或未找到：archive 数据可能不完整，
+            # 继续在线一跳检查
+        # 在线降级：仅一跳直接邻居检查（不 BFS）
+        return self._try_online_franchise_one_hop(
+            subject_id, target_ep, visited, deadline
+        )
+
+    def _try_online_franchise_one_hop(
+        self,
+        subject_id: int,
+        target_ep: int,
+        visited: set,
+        deadline: float | None = None,
+    ) -> tuple[int, int] | None:
+        """在线一跳同 IP 改编检查：只查起始条目的直接邻居
+
+        「动画 ↔ 真人剧」改编场景通常就是一跳直连，一跳覆盖绝大多数同类场景；
+        不做在线完整 BFS（否则最坏 64 节点 × (get_related_subjects + get_subject)
+        约 128 次 API，且跨媒体 sort 等值命中率低，付出与收益不成正比）。
+
+        Args:
+            subject_id: 起始条目
+            target_ep: 目标集数
+            visited: 已访问 subject_id 集合（会被更新）
+            deadline: 整体 deadline
+
+        Returns:
+            (subject_id, episode_id) 或 None
+        """
+        from ..bangumi_archive._store import FRANCHISE_RELATION_CN_SET
+
+        if deadline is not None and time.monotonic() > deadline:
+            return None
+        related = self.get_related_subjects(subject_id)
+        if isinstance(related, dict):
+            items = related.get("data", [])
+        elif isinstance(related, list):
+            items = related
+        else:
+            return None
+        for rel in items:
+            if not isinstance(rel, dict):
+                continue
+            if (rel.get("relation") or "").strip() not in FRANCHISE_RELATION_CN_SET:
+                continue
+            rid = rel.get("id")
+            if not rid or rid in visited:
+                continue
+            if deadline is not None and time.monotonic() > deadline:
+                return None
+            visited.add(rid)
+            info = self.get_subject(rid)
+            if not info:
+                continue
+            if info.get("type") not in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
+                continue
+            # 跳过剧场版/电影（标题命中关键词），与链式路径行为一致
+            name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
+            if "剧场版" in name or "电影" in name:
+                continue
+            if deadline is not None and time.monotonic() > deadline:
+                return None
+            found = self._find_episode_by_sort(rid, target_ep)
+            if found:
+                logger.debug(
+                    f"通过同 IP 改编一跳找到目标集: subject_id={rid}, "
+                    f"sort={target_ep}, ep_id={found['id']}"
+                )
+                return rid, found["id"]
         return None
 
     def _walk_chain_for_episode(
@@ -842,6 +970,7 @@ class EpisodesMixin:
         target_ep: int,
         visited: set,
         deadline: float | None = None,
+        allowed_types: tuple[int, ...] = (SUBJECT_TYPE_ANIME,),
     ) -> tuple[int, int] | None:
         """在已知续集链上批量遍历查找含 sort=target_ep 的条目
 
@@ -851,10 +980,13 @@ class EpisodesMixin:
         - 已访问的 subject_id 跳过（防环）
 
         Args:
-            chain: 续集链 subject_id 列表（不含起始条目）
+            chain: 关联条目链 subject_id 列表（不含起始条目）
             target_ep: 目标集数
             visited: 已访问的 subject_id 集合（会被本方法更新）
             deadline: 整体 deadline
+            allowed_types: 允许的 subject type 集合。默认仅动画（2）；
+                同 IP 改编链（动画↔网剧）场景放行 (SUBJECT_TYPE_ANIME,
+                SUBJECT_TYPE_REAL)。
         """
         for current_id in chain:
             if current_id in visited:
@@ -872,7 +1004,7 @@ class EpisodesMixin:
             info = self.get_subject(current_id)
             if not info:
                 continue
-            if info.get("type") != SUBJECT_TYPE_ANIME:
+            if info.get("type") not in allowed_types:
                 continue
             # 跳过剧场版/电影（标题命中关键词）
             name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
