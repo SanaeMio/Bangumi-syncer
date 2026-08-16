@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import os
 from typing import Any
 
@@ -10,8 +9,6 @@ import httpx
 
 from ...core.logging import logger
 from ..bangumi_archive._title_normalize import (
-    API_SIMILARITY_FALLBACK,
-    API_SIMILARITY_PRIMARY,
     _normalize_title_for_match,
     fuse_title_similarity,
 )
@@ -19,6 +16,7 @@ from ..bangumi_archive._title_normalize import (
 # 兜底搜索（无日期模式）拉取候选条目的上限。
 # v0 search 返回完整 Subject（含 infobox），无需逐条 get_subject 补全，
 # 但仍需限制候选数量避免过多低相似度结果干扰匹配。
+# 常量定义保留在此处以兼容可能的外部引用，实际使用已迁移至 api_search step
 FALLBACK_SEARCH_LIMIT = 15
 
 
@@ -234,15 +232,17 @@ class SearchMixin:
         is_movie: bool = False,
         subject_types: list[int] | None = None,
     ) -> list[dict[str, Any]] | None:
-        # 阶段二第一步：接入 SearchResetStep + SearchFinalizeStep 边界 step，
-        # 中间逻辑操作 ctx 字段。死状态 last_match_method 仍写（兼容），
-        # 同时写 ctx.matched_variant_method（阶段三 sync_service 消费）。
+        # 阶段二：bgm_search 拆为 4 个 step，本方法仅做薄包装：
+        # 构建 ctx → 依次执行 step → 返回 ctx.bgm_data。
+        # 死状态 last_match_method 仍写（兼容），同时写 ctx.matched_variant_method。
         # utils 层局部 import services.matching 是过渡，阶段三迁移调用点后清理。
         from app.models.sync import CustomItem
         from app.services.matching.context import MatchContext
         from app.services.matching.steps.api_search import (
+            DateExactSearchStep,
             SearchFinalizeStep,
             SearchResetStep,
+            VariantFallbackSearchStep,
         )
         from app.services.sync_service.match_trace import MatchTrace
 
@@ -254,149 +254,22 @@ class SearchMixin:
                 episode=0,
                 release_date=premiere_date,
                 media_type="movie" if is_movie else "episode",
-                user_name="bgm_search",  # 占位，SearchResetStep 仅读 title/ori_title
+                user_name="bgm_search",  # 占位，step 仅读 title/ori_title/release_date/media_type
             ),
             bgm=self,
             trace=MatchTrace(),
+            subject_types=subject_types,
         )
 
-        # 阶段A：重置 + 预计算
         SearchResetStep().execute(ctx)
-
-        start_date_str = "无日期"
-        end_date_str = "无日期"
-
-        # 阶段B：尝试使用 v0 接口进行带首播日期的精确搜索
-        if premiere_date and len(premiere_date) >= 10:
-            try:
-                air_date = datetime.datetime.fromisoformat(premiere_date[:10])
-                start_date = air_date - datetime.timedelta(days=2)
-                end_date = air_date + datetime.timedelta(days=2)
-
-                start_date_str = start_date.strftime("%Y-%m-%d")
-                end_date_str = end_date.strftime("%Y-%m-%d")
-
-                if ori_title:
-                    ctx.bgm_data = self.search(
-                        title=ori_title,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-                ctx.bgm_data = ctx.bgm_data or self.search(
-                    title=title,
-                    start_date=start_date_str,
-                    end_date=end_date_str,
-                    subject_types=subject_types,
-                )
-                # 剥离季数/集数后缀变体（仅在与原 title 不同时尝试）
-                # 提升 API 场景匹配率：覆盖「完美世界 S06E279」类查询
-                if (
-                    not ctx.bgm_data
-                    and ctx.stripped_title
-                    and ctx.stripped_title != title
-                ):
-                    ctx.bgm_data = self.search(
-                        title=ctx.stripped_title,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-                if (
-                    not ctx.bgm_data
-                    and ctx.stripped_ori
-                    and ctx.stripped_ori != (ori_title or "")
-                ):
-                    ctx.bgm_data = self.search(
-                        title=ctx.stripped_ori,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-
-                if not ctx.bgm_data and is_movie:
-                    movie_search_title = ori_title or title
-                    movie_end_date = air_date + datetime.timedelta(days=200)
-                    end_date_str = movie_end_date.strftime("%Y-%m-%d")
-                    ctx.bgm_data = self.search(
-                        title=movie_search_title,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        subject_types=subject_types,
-                    )
-            except ValueError:
-                logger.warning(
-                    f"首播日期格式解析失败: {premiere_date}，降级至无日期模式搜索"
-                )
-            except httpx.HTTPError as e:
-                # 网络不可达/重试耗尽：精确搜索失败不中断，
-                # 降级到下方无日期模式搜索
-                logger.error(f"精确搜索 API 失败（网络错误）: {e}")
-
-        # 阶段C：若精确搜索无结果或相似度低于阈值，使用 v0 接口无日期模式兜底搜索
-        if not ctx.bgm_data or (
-            ctx.bgm_data
-            and len(ctx.bgm_data) > 0
-            and self.title_diff_ratio(
-                title=title, ori_title=ori_title, bgm_data=ctx.bgm_data[0]
-            )
-            < API_SIMILARITY_PRIMARY
-        ):
-            # 构建搜索标题列表：复用共享变体生成 build_search_variants，
-            # 与 Archive 短路路径（try_search）使用同一套变体策略
-            from ..bangumi_archive._title_normalize import build_search_variants
-
-            search_titles = build_search_variants(title, ori_title or "")
-
-            found = False
-            for v in search_titles:
-                t = v.query
-                # v0 接口支持多 type 数组，但兜底路径保留单 type 循环
-                # 以保持变体×type 笛卡尔积的尝试顺序（行为对齐原 search_old）
-                types_to_try = subject_types if subject_types else [2]
-                for t_type in types_to_try:
-                    try:
-                        # v0 search 无日期模式：start_date/end_date 为空时不加 air_date filter
-                        bgm_data_old = self.search(
-                            title=t,
-                            start_date="",
-                            end_date="",
-                            limit=FALLBACK_SEARCH_LIMIT,
-                            subject_types=[t_type],
-                        )
-                    except httpx.HTTPError as e:
-                        # 网络错误不中断 fallback：跳过该变体继续尝试
-                        logger.error(f"兜底搜索网络失败({t!r}): {e}")
-                        bgm_data_old = []
-
-                    if bgm_data_old:
-                        # 保留相似度 > 0.3 的候选；全部低于阈值时视为未命中
-                        matched = [
-                            c
-                            for c in bgm_data_old
-                            if self.title_diff_ratio(title, ori_title, bgm_data=c)
-                            > API_SIMILARITY_FALLBACK
-                        ]
-                        if matched:
-                            ctx.bgm_data = matched
-                            found = True
-                            # 标注预测性匹配方式：本次命中来自哪个派生变体
-                            # ctx.matched_variant_method 激活死状态（阶段三 sync_service 消费）
-                            ctx.matched_variant_method = v.method
-                            self.last_match_method = v.method  # 兼容
-                            break
-                if found:
-                    break
-            else:
-                ctx.bgm_data = None
-
-        # 阶段D：收尾
+        DateExactSearchStep().execute(ctx)
+        VariantFallbackSearchStep().execute(ctx)
         outcome = SearchFinalizeStep().execute(ctx)
         if outcome.status == "miss":
             return None
 
         logger.debug(
-            f"搜索日期区间: {start_date_str} 至 {end_date_str} | 结果: {ctx.bgm_data[0].get('name')}"
+            f"搜索日期区间: {ctx.start_date_str} 至 {ctx.end_date_str} | 结果: {ctx.bgm_data[0].get('name')}"
         )
         return ctx.bgm_data
 

@@ -46,6 +46,11 @@ class MatchContext:
     stripped_ori: str = ""
     bgm_data: list[dict[str, Any]] | None = None  # bgm_search 返回的候选列表
     matched_variant_method: str = ""  # 命中的变体 method（替代 bgm.last_match_method）
+    # bgm_search 调用方传入的 subject_types，供各 step 读取
+    subject_types: list[int] | None = None
+    # 日期精确搜索结果（用于 debug 日志）
+    start_date_str: str = "无日期"
+    end_date_str: str = "无日期"
 
     # 失败信息
     failure_detail: str = ""
