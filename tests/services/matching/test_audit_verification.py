@@ -182,18 +182,12 @@ class TestVerifyP02PickRelatedSubject:
         assert result is not None
         assert result["relation"] == "主线故事"
 
-    @pytest.mark.xfail(
-        reason=(
-            "P0-2 Confirmed: archive 路径 type=3 是 relation_type（续集），"
-            "但代码当作 subject_type 过滤（3 不在 [2,6]），条目被错误跳过返回 None。"
-        )
-    )
     def test_verify_archive_relation_type_field_semantic(self) -> None:
-        """archive 路径 type=3（relation_type=续集）：应返回该条目，实际被过滤返回 None
+        """archive 路径 type=3（relation_type=续集）：应返回该条目
 
         archive 关联条目的 type 字段是 relation_type（2=前传/3=续集），
-        但代码用 SUBJECT_TYPE_ANIME(2)/SUBJECT_TYPE_REAL(6) 过滤，
-        type=3 不在 [2,6] 被跳过。期望返回该条目，实际返回 None。
+        修复后不再用 type 字段过滤，改用 _detect_candidate_media_type 判定媒体类型，
+        archive 路径下 type=3 的续集条目能被正确召回。
         """
         related_list = [
             {

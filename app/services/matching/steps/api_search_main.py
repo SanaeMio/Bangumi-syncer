@@ -519,26 +519,28 @@ class APISearchStep(MatchStepBase):
     def _pick_related_subject(
         related_list: list[dict], request_media_type: str, search_title: str
     ) -> dict | None:
-        """从关联条目中择优选择主线故事条目"""
+        """从关联条目中择优选择主线故事条目
+
+        媒体类型判定改用 _detect_candidate_media_type（结合 subject type 字段），
+        不再依赖 rel.get("type") 字段过滤 —— 该字段在 API 路径是 subject type
+        （2=anime/6=real），在 archive 路径是 relation_type（2=prequel/3=sequel），
+        两条路径语义不一致会导致 archive 路径下召回不全。
+        """
         (
             RELATION_ID_PARENT_STORY,
             RELATIONS,
-            SUBJECT_TYPE_ANIME,
-            SUBJECT_TYPE_REAL,
             _,
             _,
             _,
-            detect_media_type,
+            _detect_candidate_media_type,
+            _,
+            _,
         ) = _import_sync_helpers()
         from rapidfuzz import fuzz
 
-        mainline_match = None
         other_match = None
         for rel in related_list:
             if not isinstance(rel, dict):
-                continue
-            rel_type = rel.get("type")
-            if rel_type not in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
                 continue
             rel_name = rel.get("name", "")
             rel_name_cn = rel.get("name_cn", "") or rel_name
@@ -546,7 +548,7 @@ class APISearchStep(MatchStepBase):
                 title_sim = fuzz.ratio(rel_name_cn, search_title)
                 if title_sim < 25:
                     continue
-            rel_detected = detect_media_type(title=rel_name_cn, ori_title=rel_name)
+            rel_detected = _detect_candidate_media_type(rel)
             if rel_detected != request_media_type:
                 continue
             rel_relation = (rel.get("relation") or "").strip()
@@ -554,7 +556,7 @@ class APISearchStep(MatchStepBase):
                 return rel
             if other_match is None:
                 other_match = rel
-        return mainline_match or other_match
+        return other_match
 
     @staticmethod
     def _detect_media_type(cand: dict) -> str:
