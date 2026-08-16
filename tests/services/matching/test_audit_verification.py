@@ -1,19 +1,16 @@
 """P0 疑似问题验证测试
 
-验证 3 个 P0 疑似问题是否真实存在：
-- P0-1: API 命中时 final_match_method_detail 永远为空
+验证 3 个 P0 疑似问题修复后的行为：
+- P0-1: API 命中时 final_match_method_detail 应来自 bgm.last_match_method
 - P0-2: _pick_related_subject 死代码 + type 字段语义不一致
-- P0-3: get_target_season_episode_id 返回类型不一致
+- P0-3: get_target_season_episode_id 返回类型不一致 + D-2 死逻辑
 
-Confirmed 问题用 @pytest.mark.xfail 标记（断言期望行为但当前失败，不破坏 CI）。
-Refuted 问题保留为普通测试（断言当前行为且通过）。
+所有问题已修复，测试为普通测试（断言修复后行为且通过）。
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.models.sync import CustomItem
 from app.services.matching.context import MatchContext
@@ -230,55 +227,72 @@ class TestVerifyP02PickRelatedSubject:
         assert result["relation"] == "续集"
 
 
-# ===== P0-3: get_target_season_episode_id 返回类型不一致 =====
+# ===== P0-3: get_target_season_episode_id 返回类型不一致（已修复） =====
 
 
 class TestVerifyP03GetTargetSeasonEpisodeId:
-    """P0-3: get_target_season_episode_id 返回类型不一致
+    """P0-3 + D-2: get_target_season_episode_id 返回类型与死逻辑（已修复）
 
-    疑似问题 1: line 555, 568 ``if not target_ep: return subject_id`` 返回
-        单个 int，但调用方用 ``bgm_se_id, bgm_ep_id = ...`` 解包，
-        当 target_ep 为 0/None 时抛 TypeError。
-    疑似问题 2 (D-2): line 542, 252 ``return None, None if target_ep else None``
-        条件表达式无论 target_ep 真假都返回 None，是死逻辑。
-    疑似问题 3: ``_episode_lookup_failed`` 注解 ``-> int | None``，但实际返回 tuple。
+    修复前问题：
+    1. line 555, 568 ``if not target_ep: return subject_id`` 返回单 int，
+       调用方 ``bgm_se_id, bgm_ep_id = ...`` 解包抛 TypeError。
+    2. line 542, 252 ``return None, None if target_ep else None`` 死逻辑：
+       条件表达式两分支都返回 None，等价于 ``return None, None``。
+    3. ``_episode_lookup_failed`` 注解 ``-> int | None``，实际返回 tuple。
+
+    修复后：
+    - line 555, 568 改为 ``return subject_id, None``（保持 tuple 契约）
+    - line 542, 252 改为显式 ``return None, None``
+    - ``_episode_lookup_failed`` 注解改为 ``-> tuple[int | None, int | None]``
+    - ``get_target_season_episode_id`` 注解改为 ``-> tuple[int | None, int | None]``
     """
 
     _MOCK_SUBJECT = {"id": 123, "type": 2, "name": "test", "name_cn": ""}
 
-    @pytest.mark.xfail(
-        reason=(
-            "P0-3 Confirmed: target_ep=0 时 line 555 `return subject_id` 返回单 int，"
-            "调用方 `bgm_se_id, bgm_ep_id = ...` 解包抛 TypeError。"
-            "应返回 tuple (subject_id, None) 才能与调用方解包一致。"
-        )
-    )
     def test_verify_target_ep_zero_unpack(self) -> None:
-        """target_ep=0 + is_season_subject_id：返回单值，解包应不抛错
+        """P0-3 修复: target_ep=0 + is_season_subject_id 返回 tuple，解包不抛错
 
-        触发 line 554-555: ``if not target_ep: return subject_id``。
-        调用方 ``bgm_se_id, bgm_ep_id = result`` 解包单 int 抛 TypeError。
-        期望行为：返回 tuple，解包不抛错。
+        修复前: line 555 ``return subject_id`` 返回单 int，解包抛 TypeError。
+        修复后: line 558 ``return subject_id, None`` 返回 tuple，解包正常。
         """
         api = BangumiApi()
         with (
             patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)),
             patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
         ):
-            # target_ep=0 → if not target_ep: return subject_id（单值）
+            # target_ep=0 → if not target_ep: return subject_id, None（tuple）
             result = api.get_target_season_episode_id(
                 123, 1, 0, is_season_subject_id=True
             )
-            # 期望行为：返回 tuple，解包不抛错
-            bgm_se_id, bgm_ep_id = result  # 实际抛 TypeError
+            # 修复后：返回 tuple，解包不抛错
+            bgm_se_id, bgm_ep_id = result
             assert bgm_se_id == 123
+            assert bgm_ep_id is None
 
-    def test_verify_none_if_target_ep_else_none_dead_logic(self) -> None:
-        """D-2: line 542 ``None, None if target_ep else None`` 死逻辑
+    def test_verify_target_ep_zero_season_one_unpack(self) -> None:
+        """P0-3 修复: target_ep=0 + target_season=1 返回 tuple，解包不抛错
 
-        无论 target_ep 真假，条件表达式两分支都返回 None，
-        最终返回 (None, None)。验证 target_season > max_season 时
-        target_ep=0 和 target_ep=5 返回值相同。
+        修复前: line 568 ``return subject_id`` 返回单 int，解包抛 TypeError。
+        修复后: line 571 ``return subject_id, None`` 返回 tuple，解包正常。
+        """
+        api = BangumiApi()
+        with (
+            patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)),
+            patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT),
+        ):
+            # target_ep=0, target_season=1, is_season_subject_id=False
+            # → line 569 if not target_ep: return subject_id, None
+            result = api.get_target_season_episode_id(123, 1, 0)
+            bgm_se_id, bgm_ep_id = result
+            assert bgm_se_id == 123
+            assert bgm_ep_id is None
+
+    def test_verify_none_none_explicit_return(self) -> None:
+        """D-2 修复: line 545 显式 ``return None, None``（不再有死逻辑三元）
+
+        修复前: ``return None, None if target_ep else None``（死逻辑三元）
+        修复后: ``return None, None``（显式）
+        验证 target_season > max_season 时 target_ep=0 和 target_ep=5 返回值相同。
         """
         api = BangumiApi()
         # target_season=101 > max_season=100，target_ep=0（falsy）
@@ -287,15 +301,15 @@ class TestVerifyP03GetTargetSeasonEpisodeId:
         # target_season=101 > max_season=100，target_ep=5（truthy）
         with patch.object(api, "_get_episode_sync_limits", return_value=(100, 9999)):
             result_truthy = api.get_target_season_episode_id(123, 101, 5)
-        # 死逻辑：两个分支都返回 (None, None)
+        # 修复后：显式 return None, None，两分支一致
         assert result_falsy == (None, None)
         assert result_truthy == (None, None)
 
     def test_verify_episode_lookup_failed_return_type(self) -> None:
-        """P0-3: _episode_lookup_failed 注解 -> int | None，实际返回 tuple
+        """P0-3 修复: _episode_lookup_failed 注解已改为 tuple，返回 tuple
 
-        mock _resolve_episode_by_airdate_in_subject 返回 tuple，
-        _episode_lookup_failed 直接返回该 tuple，与注解 int|None 不一致。
+        修复前: 注解 ``-> int | None``，实际返回 tuple（不一致）
+        修复后: 注解 ``-> tuple[int | None, int | None]``，返回 tuple（一致）
         """
         api = BangumiApi()
         with patch.object(
@@ -308,27 +322,27 @@ class TestVerifyP03GetTargetSeasonEpisodeId:
                 target_ep=5,
                 release_date="2024-01-15",
             )
-        # 注解声明 -> int | None，实际返回 tuple（与注解不一致）
+        # 修复后：注解与返回值一致
         assert isinstance(result, tuple)
         assert result == (123, 456)
 
-    def test_verify_episode_lookup_failed_dead_ternary(self) -> None:
-        """D-2: line 252 _episode_lookup_failed 末行死逻辑
+    def test_verify_episode_lookup_failed_miss_returns_none_none(self) -> None:
+        """D-2 修复: line 255 显式 ``return None, None``（不再有死逻辑三元）
 
-        release_date=None + target_season=1 → 跳过两个 if 块 → 末行
-        ``return None, None if target_ep else None``。
-        target_ep=5（truthy）和 target_ep=0（falsy）都返回 (None, None)。
+        修复前: 末行 ``return None, None if target_ep else None``（死逻辑三元）
+        修复后: 末行 ``return None, None``（显式，保持 tuple 契约）
+        release_date=None + target_season=1 → 跳过两个 if 块 → 末行。
         """
         api = BangumiApi()
         # release_date=None → 跳过第一个 if 块
         # target_season=1（默认）→ 跳过第二个 if 块
-        # 到达末行 return None, None if target_ep else None
+        # 到达末行 return None, None（显式）
         result_truthy = api._episode_lookup_failed(
             subject_id=123, target_ep=5, release_date=None
         )
         result_falsy = api._episode_lookup_failed(
             subject_id=123, target_ep=0, release_date=None
         )
-        # 死逻辑：两个分支都返回 (None, None)
+        # 修复后：显式 return None, None，两分支一致
         assert result_truthy == (None, None)
         assert result_falsy == (None, None)

@@ -68,18 +68,28 @@ class TestVerifyD01MainlineMatchDeadCode:
 
 
 class TestVerifyD02DeadTernaryLogic:
-    """D-2: ``None, None if target_ep else None`` 死逻辑（随 P0-3 验证）
+    """D-2: ``None, None if target_ep else None`` 死逻辑（随 P0-3 修复）
 
-    episodes.py 中 line 252、542 的 ``return None, None if target_ep else None``
+    修复前: episodes.py line 252、542 的 ``return None, None if target_ep else None``
     是死逻辑：条件表达式两分支都返回 None，无论 target_ep 真假都返回 (None, None)。
+    修复后: 两处改为显式 ``return None, None``，死逻辑三元表达式已移除。
     """
 
-    def test_verify_dead_ternary_in_episodes(self) -> None:
-        """D-2: 死逻辑表达式在 episodes.py 中出现 2 次（line 252, 542）"""
+    def test_verify_dead_ternary_removed_from_episodes(self) -> None:
+        """D-2 修复: 死逻辑表达式已从 episodes.py 中移除（0 次）"""
         filepath = _APP_ROOT / "utils" / "bangumi_api" / "episodes.py"
         content = filepath.read_text(encoding="utf-8")
         count = content.count("None, None if target_ep else None")
-        assert count == 2, f"expected 2 occurrences (lines 252, 542), got {count}"
+        assert count == 0, f"expected 0 occurrences (removed), got {count}"
+
+    def test_verify_explicit_none_none_return(self) -> None:
+        """D-2 修复: episodes.py 改为显式 ``return None, None``"""
+        filepath = _APP_ROOT / "utils" / "bangumi_api" / "episodes.py"
+        content = filepath.read_text(encoding="utf-8")
+        # _episode_lookup_failed 末行 + get_target_season_episode_id 越界分支
+        # 共 2 处显式 return None, None
+        count = content.count("return None, None")
+        assert count >= 2, f"expected >=2 explicit `return None, None`, got {count}"
 
 
 class TestVerifyD03TrySearchOldDeprecated:

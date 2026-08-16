@@ -230,12 +230,15 @@ class EpisodesMixin:
         target_ep: int,
         release_date: str | None,
         target_season: int = 1,
-    ) -> int | None:
+    ) -> tuple[int | None, int | None]:
         """季集匹配失败后的统一回退。
 
         回退顺序：
         1. 单条目 airdate 择优（需 release_date + 章节数 >= min_total）
         2. 连续编号推断（通过 ep 字段重置检测季度边界，无需 release_date）
+
+        返回 (subject_id, episode_id)；无回退命中时返回 (None, None)，
+        保持 tuple 契约以便调用方统一解包。
         """
         if release_date and target_ep:
             air_pick = self._resolve_episode_by_airdate_in_subject(
@@ -249,7 +252,7 @@ class EpisodesMixin:
             )
             if cont_pick is not None:
                 return cont_pick
-        return None, None if target_ep else None
+        return None, None
 
     def _try_resolve_continuous_season_episode(
         self,
@@ -535,11 +538,11 @@ class EpisodesMixin:
         target_ep: int,
         is_season_subject_id: bool = False,
         release_date: str | None = None,
-    ) -> int | None:
+    ) -> tuple[int | None, int | None]:
         max_season, max_episode = self._get_episode_sync_limits()
 
         if target_season > max_season or (target_ep and target_ep > max_episode):
-            return None, None if target_ep else None
+            return None, None
 
         # 获取根条目的 subject type 与 platform，续集链遍历时仅放行相同媒体类型/平台的条目
         root_info = self.get_subject(subject_id)
@@ -552,7 +555,7 @@ class EpisodesMixin:
                 f"直接尝试从指定季度ID匹配集数: {subject_id}, 目标季度: {target_season}, 目标集数: {target_ep}"
             )
             if not target_ep:
-                return subject_id
+                return subject_id, None
 
             found = self._find_episode_by_sort(subject_id, target_ep)
             if found:
@@ -565,7 +568,7 @@ class EpisodesMixin:
 
         if target_season == 1:
             if not target_ep:
-                return subject_id
+                return subject_id, None
             return self._find_season_one_episode(
                 subject_id, target_ep, root_type, root_platform, release_date
             )
@@ -1007,7 +1010,7 @@ class EpisodesMixin:
                 break
             if season_num == target_season:
                 if not target_ep:
-                    return current_id
+                    return current_id, None
                 if target_ep > 99:
                     found = self._find_episode_by_sort(current_id, target_ep)
                     if found:

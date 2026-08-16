@@ -62,7 +62,7 @@ class BangumiSearchPort(Protocol):
         target_ep: int,
         is_season_subject_id: bool,
         release_date: str | None = None,
-    ) -> tuple[str, int]: ...
+    ) -> tuple[str | int | None, str | int | None]: ...
 
     def get_movie_main_episode_id(
         self, subject_id: str, target_sort: int = 1

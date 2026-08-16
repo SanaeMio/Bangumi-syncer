@@ -963,7 +963,8 @@ class TestGetTargetSeasonEpisodeId:
             result = api.get_target_season_episode_id(
                 "123", 1, 0, is_season_subject_id=True
             )
-        assert result == "123"
+        # P0-3 修复: 返回 tuple (subject_id, None) 保持解包契约
+        assert result == ("123", None)
 
     def test_is_season_subject_id_match_sort(self):
         api = BangumiApi()
@@ -1014,7 +1015,8 @@ class TestGetTargetSeasonEpisodeId:
         api = BangumiApi()
         with patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT):
             result = api.get_target_season_episode_id("123", 1, 0)
-        assert result == "123"
+        # P0-3 修复: 返回 tuple (subject_id, None) 保持解包契约
+        assert result == ("123", None)
 
 
 class TestTitleDiffRatio:
