@@ -132,8 +132,9 @@ class TestRegisteredCacheInvalidation:
         # 给定一个明显不同的缓存路径作为探测值，确认 reload 会重读配置
         bd._data_cache = {"fake": "stale"}
         bd.reload_config()
-        # clear_cache 清空 _data_cache 且随后 lazy 重建
-        assert bd._data_cache is None
+        # 细粒度触发：bangumi-data 专属配置未变化时保留内存缓存
+        # （无关配置变更不再清空缓存，避免每次保存配置触发全量重建）
+        assert bd._data_cache == {"fake": "stale"}
         # 重读后的字段与 config_manager 当前值一致
         assert bd.local_cache_path == config_manager.get(
             "bangumi-data", "local_cache_path", fallback="./bangumi_data_cache.json"
