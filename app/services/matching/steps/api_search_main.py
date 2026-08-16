@@ -69,7 +69,7 @@ class APISearchStep(MatchStepBase):
             "sync", "enable_real_action", fallback=False
         )
         if item.media_type == "real_action":
-            subject_types = [2]  # SUBJECT_TYPE_REAL，避免循环导入用字面量
+            subject_types = [6]  # SUBJECT_TYPE_REAL，避免循环导入用字面量
         elif enable_real_action:
             subject_types = [2, 6]  # [ANIME, REAL]
         else:

@@ -68,7 +68,7 @@ class ArchiveShortcutStep(MatchStepBase):
             "sync", "enable_real_action", fallback=False
         )
         if item.media_type == "real_action":
-            subject_types = [2]
+            subject_types = [6]
         elif enable_real_action:
             subject_types = [2, 6]
         else:

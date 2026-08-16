@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from app.models.sync import CustomItem
 from app.services.matching.context import MatchContext
 from app.services.matching.steps.api_search_main import APISearchStep
+from app.services.matching.steps.archive_shortcut import ArchiveShortcutStep
 from app.services.matching.steps.bangumi_data import BangumiDataStep
 from app.services.matching.steps.custom_mapping import CustomMappingStep
 from app.services.matching.steps.normalize import NormalizeStep
@@ -174,6 +175,36 @@ class TestAPISearchStep:
         assert outcome.is_terminal is True
         assert ctx.failure_detail == "无法创建 Bangumi API 实例，无法搜索条目"
 
+    def test_real_action_searches_subject_type_real_only(self):
+        """回归测试：real_action 请求应只搜索 SUBJECT_TYPE_REAL(6)，
+        而非误写成 SUBJECT_TYPE_ANIME(2)（修复前真人剧永远搜不到）。"""
+        ctx = _build_ctx(title="某日剧", media_type="real_action")
+        bgm = MagicMock()
+        bgm.bgm_search.return_value = [
+            {
+                "id": 99999,
+                "name": "某日剧",
+                "name_cn": "某日剧",
+                "platform": "TV",
+                "date": "2024-01-15",
+            }
+        ]
+        bgm.last_hit_source = ""
+        bgm.last_match_method = ""
+        bgm.title_diff_ratio.return_value = 0.95
+        ctx.service._get_bangumi_api_for_user.return_value = bgm
+        ctx.service._sort_candidates_by_platform.side_effect = lambda data, **kw: data
+        ctx.service._get_match_confidence_threshold.return_value = 0.6
+        ctx.service._check_season_info_in_title.return_value = False
+        ctx.service._get_explicit_season_from_title.return_value = 0
+
+        with patch("app.services.sync_service.config_manager") as mock_cfg:
+            mock_cfg.get.side_effect = lambda s, k, fallback=None: fallback
+            outcome = APISearchStep().execute(ctx)
+
+        assert outcome.status == "hit"
+        assert bgm.bgm_search.call_args.kwargs["subject_types"] == [6]
+
     def test_archive_hit_sets_stage_override(self):
         ctx = _build_ctx()
         bgm = MagicMock()
@@ -287,3 +318,48 @@ class TestAPISearchStep:
         assert ctx.subject_id == "406306"
         # _pick_mainline_episode_candidate 被调用（媒体类型改选触发）
         ctx.service._pick_mainline_episode_candidate.assert_called_once()
+
+
+class TestArchiveShortcutStep:
+    def _bgm_with_archive(self):
+        bgm = MagicMock()
+        bgm._archive.enabled = True
+        return bgm
+
+    def test_real_action_searches_subject_type_real_only(self):
+        """回归测试：real_action 时 archive 短路应只搜索 SUBJECT_TYPE_REAL(6)。"""
+        ctx = _build_ctx(title="某日剧", media_type="real_action")
+        bgm = self._bgm_with_archive()
+        shortcut = MagicMock()
+        shortcut.hit = True
+        shortcut.match_method = "exact"
+        shortcut.reason = "exact"
+        shortcut.data = [
+            {
+                "id": 88888,
+                "name": "某日剧",
+                "name_cn": "某日剧",
+                "platform": "TV",
+                "date": "2024-01-15",
+            }
+        ]
+        bgm._archive.try_search.return_value = shortcut
+        ctx.service._get_bangumi_api_for_user.return_value = bgm
+
+        with patch("app.services.sync_service.config_manager") as mock_cfg:
+            mock_cfg.get.side_effect = lambda s, k, fallback=None: fallback
+            outcome = ArchiveShortcutStep().execute(ctx)
+
+        assert outcome.status == "hit"
+        assert bgm._archive.try_search.call_args.kwargs["subject_types"] == [6]
+
+    def test_disabled_skips_archive(self):
+        ctx = _build_ctx()
+        bgm = self._bgm_with_archive()
+        bgm._archive.enabled = False
+        ctx.service._get_bangumi_api_for_user.return_value = bgm
+
+        outcome = ArchiveShortcutStep().execute(ctx)
+
+        assert outcome.status == "skipped"
+        bgm._archive.try_search.assert_not_called()
