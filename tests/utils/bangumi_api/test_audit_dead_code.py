@@ -3,7 +3,7 @@
 用 ast 静态分析 + 行为测试验证 5 个死代码问题：
 - D-1: mainline_match 变量（api_search_main.py）只有初始化无赋值
 - D-2: ``None, None if target_ep else None`` 死逻辑（episodes.py）
-- D-3: try_search_old 已弃用方法无生产调用
+- D-3: try_search_old 已删除方法
 - D-4: _title_to_ids / _bigram_index 空属性无生产引用
 - D-5: search.py 的 FALLBACK_SEARCH_LIMIT 无引用
 
@@ -93,54 +93,42 @@ class TestVerifyD02DeadTernaryLogic:
 
 
 class TestVerifyD03TrySearchOldDeprecated:
-    """D-3: try_search_old 已弃用方法无生产调用
+    """D-3: try_search_old 方法已删除
 
-    _archive_shortcut.py line 568 定义了 try_search_old，标注"已弃用"，
-    内部直接委托 try_search。app/ 下无任何生产代码调用该方法。
+    _archive_shortcut.py 原定义了 try_search_old（标注"已弃用"），
+    内部直接委托 try_search。方法已删除，ArchiveShortcut 类不再拥有该方法。
     """
 
     def test_verify_try_search_old_no_production_callers(self) -> None:
-        """D-3: app/ 下无 try_search_old 的属性引用（无生产调用）"""
-        references: list[Path] = []
-        for f in _collect_python_files(_APP_ROOT):
-            tree = _parse_ast(f)
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Attribute) and node.attr == "try_search_old":
-                    references.append(f.relative_to(_APP_ROOT))
-        # 无生产代码引用 try_search_old
-        # （只有定义本身，定义是 FunctionDef 不是 Attribute）
-        assert len(references) == 0, (
-            f"try_search_old referenced in production: {references}"
-        )
-
-    def test_verify_try_search_old_defined_as_deprecated(self) -> None:
-        """D-3: try_search_old 在 _archive_shortcut.py 中有定义（标注已弃用）"""
+        """D-3: try_search_old 方法已从 ArchiveShortcut 类中删除（不存在）"""
         from app.utils.bangumi_api._archive_shortcut import ArchiveShortcut
 
-        # 方法存在（已弃用，保留签名）
-        assert hasattr(ArchiveShortcut, "try_search_old")
-        # 内部直接委托 try_search（不执行实际逻辑）
-        assert callable(ArchiveShortcut.try_search_old)
+        # 方法已删除，ArchiveShortcut 类不再拥有 try_search_old
+        assert not hasattr(ArchiveShortcut, "try_search_old")
 
 
 class TestVerifyD04EmptyProperties:
-    """D-4: _title_to_ids / _bigram_index 空属性无生产引用
+    """D-4: _title_to_ids / _bigram_index 属性已删除（死代码清理）
 
-    _title_index.py line 52-60 定义了 _title_to_ids / _bigram_index 两个
-    空属性（FTS5 方案下无内存索引）。app/ 下无生产代码访问这两个属性。
+    _title_index.py 原定义了 _title_to_ids / _bigram_index 两个空属性
+    （FTS5 方案下无内存索引，仅为兼容旧测试）。D-4 已删除这两个属性定义。
     """
 
-    def test_verify_title_to_ids_returns_empty(self) -> None:
-        """D-4: archive_title_index._title_to_ids 返回空 dict"""
+    def test_verify_title_to_ids_not_defined(self) -> None:
+        """D-4: archive_title_index 不再有 _title_to_ids 属性（已删除）"""
         from app.utils.bangumi_archive._title_index import archive_title_index
 
-        assert archive_title_index._title_to_ids == {}
+        assert not hasattr(archive_title_index, "_title_to_ids"), (
+            "_title_to_ids 属性应已删除（D-4 死代码清理）"
+        )
 
-    def test_verify_bigram_index_returns_empty(self) -> None:
-        """D-4: archive_title_index._bigram_index 返回空 dict"""
+    def test_verify_bigram_index_not_defined(self) -> None:
+        """D-4: archive_title_index 不再有 _bigram_index 属性（已删除）"""
         from app.utils.bangumi_archive._title_index import archive_title_index
 
-        assert archive_title_index._bigram_index == {}
+        assert not hasattr(archive_title_index, "_bigram_index"), (
+            "_bigram_index 属性应已删除（D-4 死代码清理）"
+        )
 
     def test_verify_no_production_access(self) -> None:
         """D-4: app/ 下无生产代码访问 _title_to_ids / _bigram_index 属性"""
@@ -154,18 +142,18 @@ class TestVerifyD04EmptyProperties:
                 ):
                     references.append((f.relative_to(_APP_ROOT), node.attr))
         # 无生产代码访问
-        # （只有定义在 _title_index.py，定义是 FunctionDef 不是 Attribute）
         assert len(references) == 0, (
             f"_title_to_ids/_bigram_index accessed in production: {references}"
         )
 
 
 class TestVerifyD05FallbackSearchLimitUnreferenced:
-    """D-5: search.py 的 FALLBACK_SEARCH_LIMIT 无引用
+    """D-5: search.py 的 FALLBACK_SEARCH_LIMIT 已删除（死代码清理）
 
-    search.py line 20 定义了 FALLBACK_SEARCH_LIMIT = 15，注释说"实际使用
-    已迁移至 api_search step"。app/ 下无任何模块通过 import 引用
-    search.py 的 FALLBACK_SEARCH_LIMIT；api_search.py 有独立的同名常量被引用。
+    search.py 原定义了 FALLBACK_SEARCH_LIMIT = 15，注释说"实际使用已迁移至
+    api_search step"。app/ 下无任何模块通过 import 引用 search.py 的
+    FALLBACK_SEARCH_LIMIT；api_search.py 有独立的同名常量被引用。
+    D-5 已删除 search.py 中的冗余常量定义。
     """
 
     def test_verify_no_import_of_fallback_search_limit(self) -> None:
@@ -179,14 +167,15 @@ class TestVerifyD05FallbackSearchLimitUnreferenced:
                         if alias.name == "FALLBACK_SEARCH_LIMIT":
                             importers.append((f.relative_to(_APP_ROOT), node.module))
         # 无任何模块通过 import 导入 FALLBACK_SEARCH_LIMIT
-        # （search.py 和 api_search.py 各自定义，不从对方导入）
         assert len(importers) == 0, f"FALLBACK_SEARCH_LIMIT imported by: {importers}"
 
-    def test_verify_search_py_defines_fallback_limit(self) -> None:
-        """D-5: search.py 中定义了 FALLBACK_SEARCH_LIMIT（但无外部引用）"""
-        from app.utils.bangumi_api.search import FALLBACK_SEARCH_LIMIT
+    def test_verify_search_py_no_longer_defines_fallback_limit(self) -> None:
+        """D-5: search.py 不再定义 FALLBACK_SEARCH_LIMIT（已删除）"""
+        import app.utils.bangumi_api.search as search_module
 
-        assert FALLBACK_SEARCH_LIMIT == 15
+        assert not hasattr(search_module, "FALLBACK_SEARCH_LIMIT"), (
+            "search.py 不应再定义 FALLBACK_SEARCH_LIMIT（D-5 死代码清理）"
+        )
 
     def test_verify_api_search_has_own_fallback_limit(self) -> None:
         """D-5: api_search.py 有独立的 FALLBACK_SEARCH_LIMIT 定义并被引用"""

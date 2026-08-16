@@ -565,24 +565,6 @@ class ArchiveShortcut:
             logger.warning(f"bangumi_archive 短路 search 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
 
-    def try_search_old(
-        self,
-        title: str,
-        subject_type: int = 2,
-    ) -> ShortcutResult:
-        """已弃用：无日期搜索现统一走 try_search（start/end_date 传空字符串）。
-
-        保留方法签名仅为过渡期兼容，内部直接委托 try_search。
-        新代码请改用 try_search(title, start_date="", end_date="", subject_types=[subject_type])。
-        """
-        return self.try_search(
-            title,
-            start_date="",
-            end_date="",
-            limit=15,
-            subject_types=[subject_type],
-        )
-
 
 # 全局单例
 archive_shortcut = ArchiveShortcut()

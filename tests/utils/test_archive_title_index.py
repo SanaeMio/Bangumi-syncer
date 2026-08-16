@@ -319,7 +319,6 @@ class TestInvalidateAndRebuild:
         # 失效
         index.invalidate()
         assert index._built_path is None
-        assert index._title_to_ids == {}
         # 失效后 is_ready=False，查询返回空（不触发同步构建）
         assert index.is_ready is False
         assert index.find_subject_ids_by_title("Test Anime") == []
@@ -490,27 +489,6 @@ class TestTrySearchLazyBuild:
             assert r.hit is False
             assert r.reason == "archive_miss"
             # 应懒触发后台构建
-            mock_index.build_in_background.assert_called_once()
-
-    def test_try_search_old_returns_miss_when_not_ready(self) -> None:
-        """索引未就绪时 try_search_old 返回 archive_miss
-
-        try_search_old 现为薄包装，内部委托 try_search(start_date="", end_date="")，
-        索引未就绪时同样降级到 API 并懒触发后台构建。
-        """
-        shortcut = ArchiveShortcut()
-        shortcut._enabled = True
-
-        with patch(
-            "app.utils.bangumi_api._archive_shortcut.archive_title_index"
-        ) as mock_index:
-            mock_index.is_ready = False
-            mock_index.build_in_background = MagicMock()
-
-            r = shortcut.try_search_old("Test")
-
-            assert r.hit is False
-            assert r.reason == "archive_miss"
             mock_index.build_in_background.assert_called_once()
 
     def test_try_search_skips_lazy_build_when_ready(self) -> None:

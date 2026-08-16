@@ -519,7 +519,7 @@ class ArchiveStore:
 
     # ===== 批量查询（供 ArchiveShortcut 多策略匹配使用） =====
 
-    # try_search / try_search_old 遍历 ids 上限
+    # try_search 遍历 ids 上限
     # 避免精确命中大量同名 subject（如 infobox 脏数据「台版|」归一化后
     # 「台版」命中上千条目）时，逐条调用 archive_store.get_subject 拖慢查询
     # 至数秒（极端场景实测 4972ms）。正常场景 limit=5，遍历 200 条已足够

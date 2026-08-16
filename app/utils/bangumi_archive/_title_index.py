@@ -9,7 +9,7 @@
 内存占用从 200-350MB 降到接近 0，查询性能提升 10-100 倍。
 
 迁移说明：
-- 原 _title_to_ids / _bigram_index 内存结构已移除
+- 原 _title_to_ids / _bigram_index 内存结构已删除（D-4 死代码清理）
 - 原磁盘缓存（.index 文件）已废弃，FTS5 表由 SQLite 自管理
 - 原 _build_internal / _save_to_disk / _load_from_disk 已移除
 - 原 build_in_background 改为轻量同步初始化（FTS5 表导入时已构建，
@@ -46,18 +46,6 @@ class ArchiveTitleIndex(ArchiveFTSQuery):
 
     实际逻辑全部继承自 ArchiveFTSQuery。
     """
-
-    # 兼容原测试访问的内部属性（FTS5 方案下不再有这些结构，
-    # 但部分测试直接访问，提供空值避免 AttributeError）
-    @property
-    def _title_to_ids(self) -> dict[str, list[int]]:
-        """已废弃：FTS5 方案下无内存索引"""
-        return {}
-
-    @property
-    def _bigram_index(self) -> dict[str, list[str]]:
-        """已废弃：FTS5 方案下无 bigram 索引"""
-        return {}
 
     # ===== 多策略标题匹配（从 _archive_shortcut.py 下沉） =====
 

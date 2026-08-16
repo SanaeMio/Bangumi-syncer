@@ -16,12 +16,6 @@ from ..bangumi_archive._title_normalize import (
 if TYPE_CHECKING:
     from app.services.sync_service.match_trace import MatchTrace
 
-# 兜底搜索（无日期模式）拉取候选条目的上限。
-# v0 search 返回完整 Subject（含 infobox），无需逐条 get_subject 补全，
-# 但仍需限制候选数量避免过多低相似度结果干扰匹配。
-# 常量定义保留在此处以兼容可能的外部引用，实际使用已迁移至 api_search step
-FALLBACK_SEARCH_LIMIT = 15
-
 
 class SearchMixin:
     """搜索与匹配相关方法（供 BangumiApi 组合）"""
