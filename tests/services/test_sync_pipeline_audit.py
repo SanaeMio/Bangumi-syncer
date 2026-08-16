@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.models.sync import CustomItem
 from app.services.matching.context import MatchContext
 from app.services.matching.pipeline import MatchPipeline
@@ -307,29 +305,21 @@ class TestVerifyA53LowConfidenceSedimentE2e:
 
 class TestVerifyA54CrossSeasonArchiveIncomplete:
     """A5-4: 当前 subject 无目标 sort → archive 续集链不完整（缺中间某季）→
-    应降级 API 查找
+    应降级 API 查找（已修复）
 
     场景：
     - subject1 (起始) sort 范围 1-50，不含 target_ep=102
     - archive 续集链命中 [subject2]（不完整链，subject2 sort 范围 51-100，不含 102）
     - 真实续集链 [subject2, subject3]（subject3 sort 范围 101-150，含 102）
-    - 期望：archive 链未找到目标时降级到逐跳 API，最终找到 subject3
-    - 实际：archive 链非空未找到目标时 return None，不降级（P1-5 Confirmed）
+    - 修复后：archive 链未找到目标时降级到逐 hop API，逐 hop 跳过已检查的
+      subject2（visited），继续找到 subject3
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "A5-4 / P1-5 Confirmed: _walk_chain_for_episode sequel 方向 archive 链"
-            "非空但未找到目标时 return None（episodes.py line 762），不再逐跳 API。"
-            "应在 archive 链未找到时降级到逐跳 _find_related_id_by_relation 路径，"
-            "与 archive miss / 空链时行为一致。"
-        )
-    )
     def test_verify_cross_season_archive_incomplete(self) -> None:
-        """archive 续集链不完整时应降级到逐跳 API 查找
+        """archive 续集链不完整时应降级到逐跳 API 查找（已修复）
 
         构造 archive 续集链命中但未找到目标，逐跳 API 能找到目标的场景。
-        期望降级到逐跳并返回 (subject3, ep_id)，实际直接返回 None。
+        修复后期望降级到逐跳并返回 (subject3, ep_id)。
         """
         api = BangumiApi()
 

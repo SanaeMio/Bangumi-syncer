@@ -1034,11 +1034,13 @@ class TestFindEpisodeAcrossSeasons:
         assert result[0] == 300
         assert result[1] == 30002
 
-    def test_archive_sequel_chain_no_target_returns_none(self):
-        """archive 命中但链上无 target_ep 时返回 None，不走逐跳降级。
+    def test_archive_sequel_chain_no_target_falls_back_to_hop_by_hop(self):
+        """archive 命中但链上无 target_ep 时降级到逐跳 API（P1-5 修复）。
 
-        场景：archive 链 [200] 但 S2 的 sort 范围不含 target_ep=1000。
-        archive 已确认链上无目标，应直接返回 None 而非降级到逐跳。
+        场景：archive 链 [200] 但 S2 的 sort 范围不含 target_ep=1000，
+        且 200 无续集。archive 链不完整时必须降级到逐跳 API 兜底，
+        否则真实链 [200, 300]（300 含目标）会因 archive 漏掉 300 而丢失。
+        本场景 200 无续集，降级后逐跳查到 200 仍无目标，最终返回 None。
         """
         episodes = {
             100: {"data": self._make_eps(1, 50, 10001), "total": 50},
@@ -1055,8 +1057,8 @@ class TestFindEpisodeAcrossSeasons:
 
         result = api.find_episode_across_seasons(100, 1000)
         assert result is None
-        # archive hit 后不应降级到逐跳
-        assert not api.get_related_subjects.called
+        # P1-5 修复：archive 链未命中目标时应降级到逐跳 API
+        assert api.get_related_subjects.called
 
     def test_archive_prequel_chain_finds_target_sort(self):
         """功能二（前传推断）：archive 命中走 try_find_prequel_chain 快路径批量定位。

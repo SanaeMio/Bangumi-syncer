@@ -16,8 +16,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.models.sync import CustomItem
 from app.services.matching.context import MatchContext
 from app.services.matching.pipeline import MatchPipeline
@@ -390,29 +388,21 @@ class TestVerifyP04SubstepsTraceInMain:
 
 
 class TestVerifyP05ArchiveSequelChainNonemptyMissNoFallback:
-    """P1-5: archive 续集链非空未找到目标时应降级逐跳 API
+    """P1-5: archive 续集链非空未找到目标时应降级逐跳 API（已修复）
 
-    疑似问题：sequel 方向 archive 链非空但未找到目标 episode → ``return None``
+    修复前问题：sequel 方向 archive 链非空但未找到目标 episode → ``return None``
     （episodes.py line 762），不再逐跳 API。
 
-    场景：archive_store.try_find_sequel_chain 返回 hit=True, data=[1001, 1002]
-    （都不含目标 sort），_find_episode_in_chain 返回 None。期望降级调用
-    get_related_subjects 逐跳查找，实际直接返回 None。
+    修复后：archive 链非空未找到目标时，降级到逐 hop API 路径。
+    逐 hop 路径跳过 archive 链已检查的 subject（visited），继续向链尾推进，
+    发现 archive 链外的后续条目。
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "P1-5 Confirmed: _walk_chain_for_episode sequel 方向 archive 链非空"
-            "但未找到目标时 return None（line 762），不再逐跳 API。"
-            "应在 archive 链未找到时降级到逐跳 _find_related_id_by_relation 路径，"
-            "与 archive miss / 空链时行为一致。"
-        )
-    )
     def test_verify_archive_sequel_chain_nonempty_miss_no_fallback(self) -> None:
-        """archive 续集链非空未找到目标应降级逐跳 API
+        """archive 续集链非空未找到目标应降级逐跳 API（已修复）
 
         构造 archive 续集链命中但未找到目标，逐跳 API 能找到目标的场景。
-        期望降级到逐跳并返回结果，实际直接返回 None。
+        修复后期望降级到逐跳并返回结果。
         """
         api = BangumiApi()
         api._archive = MagicMock()
@@ -482,27 +472,19 @@ class TestVerifyP05ArchiveSequelChainNonemptyMissNoFallback:
 
 
 class TestVerifyP06EmptySortsReturnsNoneDirectly:
-    """P1-6: find_episode_across_seasons 空 sorts 应尝试 prequel/sequel 方向
+    """P1-6: find_episode_across_seasons 空 sorts 应尝试 prequel/sequel 方向（已修复）
 
-    疑似问题：type0_rows 提取 sort 后若 ``not sorts`` 直接 ``return None``
+    修复前问题：type0_rows 提取 sort 后若 ``not sorts`` 直接 ``return None``
     （episodes.py line 690-693），不尝试 prequel/sequel 方向。
 
-    场景：get_episodes 返回空列表或全 SP 章节（无 type=0），mock 关联季查找
-    能找到目标 sort。期望尝试 prequel/sequel 方向并返回结果，实际直接返回 None。
+    修复后：sorts 为空时设置 directions = ["prequel", "sequel"]，两个方向都尝试。
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "P1-6 Confirmed: find_episode_across_seasons 在 sorts 为空时"
-            "直接 return None（line 692-693），不尝试 prequel/sequel 方向。"
-            "应在 sorts 为空时仍尝试遍历关联季，或至少两个方向都试。"
-        )
-    )
     def test_verify_empty_sorts_returns_none_directly(self) -> None:
-        """空 sorts 应尝试 prequel/sequel 方向
+        """空 sorts 应尝试 prequel/sequel 方向（已修复）
 
         构造 get_episodes 返回空（无 type=0 章节），mock 续集链能找到目标。
-        期望尝试 sequel 方向并返回结果，实际直接返回 None。
+        修复后期望尝试 sequel 方向并返回结果。
         """
         api = BangumiApi()
         api._archive = MagicMock()

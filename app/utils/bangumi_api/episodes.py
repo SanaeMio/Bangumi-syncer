@@ -693,18 +693,21 @@ class EpisodesMixin:
         type0_rows = [e for e in ep_info if e.get("type", 0) == 0]
         sorts = [e.get("sort", 0) for e in type0_rows if e.get("sort")]
         if not sorts:
-            return None
-        min_sort = min(sorts)
-        max_sort = max(sorts)
-
-        # 决定遍历方向
-        if target_ep < min_sort:
-            directions = ["prequel"]
-        elif target_ep > max_sort:
-            directions = ["sequel"]
-        else:
-            # target_ep 在范围内但未找到（如部分章节缺失），两个方向都试
+            # P1-6: 无 type=0 章节（空列表或全 SP），无法通过 sort 范围判断方向。
+            # 不直接返回 None，两个方向都尝试（prequel + sequel）。
             directions = ["prequel", "sequel"]
+        else:
+            min_sort = min(sorts)
+            max_sort = max(sorts)
+
+            # 决定遍历方向
+            if target_ep < min_sort:
+                directions = ["prequel"]
+            elif target_ep > max_sort:
+                directions = ["sequel"]
+            else:
+                # target_ep 在范围内但未找到（如部分章节缺失），两个方向都试
+                directions = ["prequel", "sequel"]
 
         visited = {subject_id}
         for direction in directions:
@@ -761,8 +764,10 @@ class EpisodesMixin:
                     )
                     if result:
                         return result
-                    # archive 链非空但未找到目标：信任 archive，不再逐跳
-                    return None
+                    # P1-5: archive 链非空但未找到目标，不再直接 return None。
+                    # archive 链可能不完整（缺少部分续集），降级到逐 hop API
+                    # 以发现 archive 链外的后续条目。chain 中已检查的 subject
+                    # 已加入 visited，逐 hop 会跳过它们继续向链尾推进。
                 # archive 命中但续集链为空：关联数据可能不完整，降级到逐跳 API
 
         if direction == "prequel":
@@ -777,7 +782,7 @@ class EpisodesMixin:
             # （等价于原逐跳降级路径的终点，避免重复查询）
             return None
 
-        # 降级路径：逐跳遍历（仅 sequel 方向 archive 未启用 / miss 时走到）
+        # 降级路径：逐跳遍历（sequel 方向 archive miss/空链/非空未命中时走到）
         current_id = start_id
         for _ in range(max_depth):
             if deadline is not None and time.monotonic() > deadline:
@@ -788,8 +793,17 @@ class EpisodesMixin:
                 )
                 return None
             next_id = self._find_related_id_by_relation(current_id, relation)
-            if not next_id or next_id in visited:
+            if not next_id:
                 return None
+            if next_id == current_id:
+                # 自环：关系数据异常，终止遍历
+                return None
+            if next_id in visited:
+                # P1-5: 已通过 archive 链检查过的 subject（如 _find_episode_in_chain
+                # 遍历过），跳过检查但继续沿链前进，发现 archive 链外的后续条目。
+                # max_depth 限制总迭代数，避免环导致无限循环。
+                current_id = next_id
+                continue
             visited.add(next_id)
             current_id = next_id
 
