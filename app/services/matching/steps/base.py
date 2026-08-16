@@ -31,6 +31,10 @@ class StepOutcome:
     request_params: dict[str, Any] = field(default_factory=dict)
     api_response_summary: dict[str, Any] = field(default_factory=dict)
     error_detail: dict[str, Any] = field(default_factory=dict)
+    # stage 覆盖：APISearchStep archive 短路命中时，trace.step.stage 应标记为 "archive"
+    # 而非 step.stage="api_search"，使归档匹配在同步记录详情中可见。
+    # 其他场景为 None，trace.step.stage 取 step.stage。
+    stage_override: str | None = None
 
 
 class MatchStepBase:
