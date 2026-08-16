@@ -62,9 +62,12 @@ _WATCHING_SUMMARY_META = NotificationTypeMeta(
     display_name="追番总结",
     icon="📊",
     color="#6c8ebf",
-    description="AI 追番总结任务完成/失败",
+    description="成功时发送总结正文，失败时发送失败提示",
     is_item_level=False,
-    visible_in_ui=False,  # 动态类型不在静态列表展示
+    # 通配类型不进入静态列表；具体任务类型 watching_summary_{name}
+    # 由 /api/notification/types 端点按 summary 任务动态附加
+    visible_in_ui=False,
+    category="scheduler",
 )
 
 

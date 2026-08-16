@@ -416,8 +416,6 @@
   async function loadNotificationTypes(containerId, prefix) {
     const container = document.getElementById(containerId)
     if (!container) return
-    // 已填充则跳过（避免重复加载）
-    if (container.children.length > 0) return
     try {
       const json = await apiFetch('/api/notification/types')
       const types = json.data || []
@@ -463,6 +461,8 @@
           frag.appendChild(div)
         })
       })
+      // 清空旧内容后重新填充，确保动态类型（如 summary 任务）变化后能刷新
+      container.innerHTML = ''
       container.appendChild(frag)
     } catch (e) {
       console.error('加载通知类型失败:', e)

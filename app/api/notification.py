@@ -901,7 +901,12 @@ async def get_notification_types(
 
     替代原先硬编码在 config.html 中的 13 种类型复选框。
     """
-    from ..core.notification_registry import CATEGORIES, ui_visible_types
+    from ..core.notification_registry import (
+        CATEGORIES,
+        WATCHING_SUMMARY_PREFIX,
+        get_type_meta,
+        ui_visible_types,
+    )
 
     types = [
         {
@@ -915,6 +920,23 @@ async def get_notification_types(
         }
         for t in ui_visible_types()
     ]
+    # 动态附加追番总结任务的 watching_summary_{name} 类型（每个任务一个可勾选项）
+    summary_meta = get_type_meta(WATCHING_SUMMARY_PREFIX)
+    for job in config_manager.get_summary_configs():
+        name = job.get("name")
+        if not name:
+            continue
+        types.append(
+            {
+                "id": f"{WATCHING_SUMMARY_PREFIX}_{name}",
+                "display_name": f"{summary_meta.display_name} · {name}",
+                "icon": summary_meta.icon,
+                "color": summary_meta.color,
+                "description": summary_meta.description,
+                "is_item_level": summary_meta.is_item_level,
+                "category": summary_meta.category,
+            }
+        )
     # 附加分类定义，前端动态读取，避免前后端重复维护
     categories = [{"id": k, "name": v} for k, v in CATEGORIES.items()]
     return {"status": "success", "data": types, "categories": categories}

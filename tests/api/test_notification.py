@@ -74,6 +74,46 @@ async def test_get_emails(app_with_auth):
         assert response.status_code in [200, 404, 500]
 
 
+@pytest.mark.asyncio
+async def test_get_notification_types_includes_summary_jobs(
+    app_with_auth, mock_config_manager
+):
+    """/api/notification/types 动态附加 summary 任务的 watching_summary_{name}"""
+    mock_config_manager.get_summary_configs.return_value = [
+        {"name": "每日总结"},
+        {"name": "每周总结"},
+    ]
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/notification/types")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "success"
+    type_ids = [t["id"] for t in result["data"]]
+    assert "watching_summary_每日总结" in type_ids
+    assert "watching_summary_每周总结" in type_ids
+    daily = next(t for t in result["data"] if t["id"] == "watching_summary_每日总结")
+    assert daily["display_name"] == "追番总结 · 每日总结"
+    assert daily["category"] == "scheduler"
+
+
+@pytest.mark.asyncio
+async def test_get_notification_types_without_summary_jobs(
+    app_with_auth, mock_config_manager
+):
+    """无 summary 任务时，不附加 watching_summary_{name} 类型"""
+    mock_config_manager.get_summary_configs.return_value = []
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/notification/types")
+    assert response.status_code == 200
+    result = response.json()
+    type_ids = [t["id"] for t in result["data"]]
+    assert not any(t.startswith("watching_summary_") for t in type_ids)
+
+
 # ========== 通知规则测试 ==========
 
 

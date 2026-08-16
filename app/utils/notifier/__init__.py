@@ -93,10 +93,7 @@ class Notifier(EmailHtmlMixin, WebhookMixin, EmailSenderMixin, TestHelpersMixin)
         if types == "all":
             return True
         type_list = [t.strip() for t in types.split(",")]
-        lookup = notification_type
-        if lookup.startswith("watching_summary"):
-            lookup = "watching_summary"
-        return lookup in type_list
+        return notification_type in type_list
 
     def _get_webhook_configs(self) -> list:
         config = self.config_manager.get_config_parser()
