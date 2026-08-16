@@ -14,8 +14,8 @@ class NormalizeStep(MatchStepBase):
     """标题归一化
 
     - 调用 sync_service.normalize_title 去噪
-    - 结果写入 ctx.normalized_title
-    - 始终 skipped（不参与命中/终止判定）
+    - 结果写入 ctx.normalized_title 与 trace.normalized_title（前端详情展示）
+    - 不参与命中/终止判定（非终端步骤）
     """
 
     stage = "normalize"
@@ -23,6 +23,7 @@ class NormalizeStep(MatchStepBase):
     def execute(self, ctx: MatchContext) -> StepOutcome:
         normalized = ctx.service.normalize_title(ctx.item.title)
         ctx.normalized_title = normalized
+        ctx.trace.normalized_title = normalized
         return StepOutcome(
             status="hit",
             reason=f"标题归一化：{ctx.item.title!r} → {normalized!r}",

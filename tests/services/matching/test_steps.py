@@ -52,6 +52,15 @@ class TestNormalizeStep:
         assert outcome.status == "hit"
         assert outcome.is_terminal is False
 
+    def test_writes_trace_normalized_title(self):
+        """归一化结果应回写 trace.normalized_title（前端详情展示）"""
+        ctx = _build_ctx(title="[发布组] 测试番剧 1080p")
+        ctx.service.normalize_title.return_value = "测试番剧"
+
+        NormalizeStep().execute(ctx)
+
+        assert ctx.trace.normalized_title == "测试番剧"
+
     def test_empty_title_passthrough(self):
         ctx = _build_ctx(title="")
         ctx.service.normalize_title.return_value = ""
@@ -59,6 +68,7 @@ class TestNormalizeStep:
         outcome = NormalizeStep().execute(ctx)
 
         assert ctx.normalized_title == ""
+        assert ctx.trace.normalized_title == ""
         assert outcome.status == "hit"
 
 
