@@ -19,11 +19,15 @@ class MatchPipeline:
 
     def run(self, ctx: MatchContext) -> MatchResult:
         """按顺序执行 steps，命中即终止，最终构建 MatchResult"""
-        for step in self._steps:
-            outcome = step.execute(ctx)
-            self._record_trace(ctx, step.stage, outcome)
-            if outcome.is_terminal:
-                break
+        try:
+            for step in self._steps:
+                outcome = step.execute(ctx)
+                self._record_trace(ctx, step.stage, outcome)
+                if outcome.is_terminal:
+                    break
+        finally:
+            # 确保 trace 始终 finish（即使 step 抛异常也保证 finish 被调用）
+            ctx.trace.finish()
         return self._build_result(ctx)
 
     def _record_trace(
@@ -35,7 +39,10 @@ class MatchPipeline:
         阶段三：逐步迁移各 step 后，此方法成为 trace 填充的唯一入口
         """
         trace = ctx.trace
-        step = trace.start_step(stage)
+        # trace.step.stage 优先取 outcome.stage_override（archive 短路命中时为 "archive"），
+        # 否则用 step.stage。final_match_method 优先取 stage_override，再取 ctx.match_stage。
+        effective_stage = outcome.stage_override or stage
+        step = trace.start_step(effective_stage)
         step.status = outcome.status
         if outcome.subject_id:
             step.subject_id = outcome.subject_id
@@ -58,11 +65,14 @@ class MatchPipeline:
         # 命中时更新 final_*（low_confidence 不设 final_subject_id）
         if outcome.status == "hit" and outcome.subject_id:
             trace.final_subject_id = outcome.subject_id
+            # final_match_method 优先级：stage_override > ctx.match_stage > stage
             trace.final_match_method = (
-                stage if stage != "api_search" else ctx.match_stage
+                outcome.stage_override or ctx.match_stage or stage
             )
             if outcome.score is not None:
                 trace.final_score = outcome.score
+            # 细粒度匹配方式：APISearchStep 命中时设置 ctx.match_method_detail
+            # （优先取 bgm_search step 写入的 matched_variant_method，archive 命中时为 exact）
             if ctx.match_method_detail:
                 trace.final_match_method_detail = ctx.match_method_detail
         elif outcome.status == "low_confidence":
@@ -70,6 +80,9 @@ class MatchPipeline:
             trace.final_match_method = ctx.match_stage or stage
             if outcome.score is not None:
                 trace.final_score = outcome.score
+            # 低置信度也记录细粒度匹配方式（供前端展示）
+            if ctx.match_method_detail:
+                trace.final_match_method_detail = ctx.match_method_detail
 
     def _build_result(self, ctx: MatchContext) -> MatchResult:
         """从 ctx 构建最终结果"""

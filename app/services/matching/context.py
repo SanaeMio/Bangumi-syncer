@@ -26,6 +26,10 @@ class MatchContext:
     item: CustomItem
     bgm: Any  # BangumiApi 实例（只读搜索句柄，阶段四拆分读写）
     trace: MatchTrace
+    # 阶段三：sync_service 实例句柄，供 step 调用 normalize_title /
+    # _get_bangumi_data / _check_season_info_in_title / _sort_candidates_by_platform
+    # 等方法。阶段四拆分读写后可移除。
+    service: Any = None
 
     # 阶段A输出：subject 匹配
     normalized_title: str = ""

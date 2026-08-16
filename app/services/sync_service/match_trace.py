@@ -153,7 +153,10 @@ class MatchTrace:
             self.total_elapsed_ms = int(
                 (time.perf_counter() - self._trace_start) * 1000
             )
-        if self.final_subject_id is None:
+        # final_subject_id 为空时标记 failed，但 low_confidence 除外：
+        # low_confidence 已由 _record_trace 设置 final_match_method（如 api_search），
+        # 且 final_score 有值，不应覆盖为 failed。
+        if self.final_subject_id is None and not self.final_match_method:
             self.final_match_method = "failed"
 
     def to_dict(self) -> dict[str, Any]:

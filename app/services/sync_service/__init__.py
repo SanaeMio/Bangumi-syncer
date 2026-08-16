@@ -14,8 +14,6 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from rapidfuzz import fuzz
-
 from ...core.config import config_manager
 from ...core.database import database_manager
 from ...core.logging import (
@@ -32,16 +30,16 @@ from ...utils.bangumi_api import BangumiApi
 from ...utils.bangumi_api.collection import _PendingSyncQueued, is_replay_enabled
 from ...utils.bangumi_constants import (
     COLLECTION_TYPE_DONE,
-    RELATION_ID_PARENT_STORY,
-    RELATIONS,
-    SUBJECT_TYPE_ANIME,
-    SUBJECT_TYPE_REAL,
+    RELATION_ID_PARENT_STORY as RELATION_ID_PARENT_STORY,
+    RELATIONS as RELATIONS,
+    SUBJECT_TYPE_ANIME as SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL as SUBJECT_TYPE_REAL,
 )
 from ...utils.bangumi_data import BangumiData, bangumi_data
-from ...utils.media_type_detector import detect_media_type
+from ...utils.media_type_detector import detect_media_type as detect_media_type
 from ..mapping_service import mapping_service
 from ..notification_service import notification_service
-from .match_trace import MatchCandidate, MatchTrace
+from .match_trace import MatchCandidate as MatchCandidate, MatchTrace
 from .retry import MARK_QUEUED, RetryMixin
 from .season_info import SeasonInfoMixin
 from .task_manager import TaskManagerMixin
@@ -1944,699 +1942,53 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         成功时 failure_detail 为空字符串；失败时为简短原因，供同步记录与日志使用。
 
         当传入 trace 时，会记录每个匹配阶段的详细过程。
+
+        阶段三：通过 MatchPipeline 编排 4 个 step（Normalize/CustomMapping/
+        BangumiData/APISearch），trace 填充收敛到 _record_trace 单一入口。
         """
-        # 阶段 0：标题归一化（仅用于 API 搜索阶段，自定义映射仍使用原始标题以保证键名一致）
-        normalized_title = self.normalize_title(item.title)
-        if trace:
-            trace.normalized_title = normalized_title
-            normalize_step = trace.start_step("normalize")
-            normalize_step.status = "hit"
-            normalize_step.reason = f"标题归一化：{item.title!r} → {normalized_title!r}"
-        else:
-            normalize_step = None  # noqa: F841
+        # 构建管道上下文
+        from app.services.matching.context import MatchContext
+        from app.services.matching.pipeline import MatchPipeline
+        from app.services.matching.steps.api_search_main import APISearchStep
+        from app.services.matching.steps.bangumi_data import BangumiDataStep
+        from app.services.matching.steps.custom_mapping import CustomMappingStep
+        from app.services.matching.steps.normalize import NormalizeStep
 
-        # 阶段 1：自定义映射（含季度感知 + 正则规则）
-        if trace:
-            step = trace.start_step("custom_mapping")
-        else:
-            step = None
-
-        mapping_subject_id, match_type, match_reason = mapping_service.find_mapping(
-            title=item.title,
-            ori_title=item.ori_title or "",
-            season=item.season,
+        actual_trace = trace or MatchTrace()
+        # bgm 延迟到 APISearchStep 内部获取：custom_mapping/bangumi_data 不需要 bgm
+        ctx = MatchContext(
+            item=item,
+            bgm=None,  # APISearchStep 内部通过 service._get_bangumi_api_for_user 获取
+            trace=actual_trace,
+            service=self,
         )
 
-        if mapping_subject_id:
-            logger.debug(
-                f"匹配到自定义映射（{match_type}）：{item.title}={mapping_subject_id} - {match_reason}"
-            )
-            if step:
-                step.status = "hit"
-                step.subject_id = mapping_subject_id
-                step.reason = match_reason
-                step.score = 1.0
-            if trace:
-                trace.final_subject_id = mapping_subject_id
-                trace.final_match_method = "custom_mapping"
-                trace.final_score = 1.0
-                trace.finish()
-            # 自定义映射的ID不视为特定季度的ID
-            return mapping_subject_id, False, ""
-
-        if step:
-            step.status = "miss"
-            step.reason = "自定义映射与正则规则均未命中"
-
-        # 阶段 2：bangumi-data 本地匹配
-        # 标记是否通过bangumi-data获取的ID
-        is_season_matched_id = False
-
-        if config_manager.get("bangumi_data", "enabled", fallback=True):
-            if trace:
-                step = trace.start_step("bangumi_data")
-            else:
-                step = None
-            try:
-                bgm_data = self._get_bangumi_data()
-                release_date = None
-
-                if item.release_date and len(item.release_date) >= 8:
-                    release_date = item.release_date[:10]
-                else:
-                    logger.debug("release_date为空或无效，尝试从bangumi-data中获取日期")
-
-                bangumi_data_result = bgm_data.find_bangumi_id(
-                    title=item.title,
-                    ori_title=item.ori_title,
-                    release_date=release_date,
-                    season=item.season,
-                    media_type=item.media_type,
-                )
-
-                if bangumi_data_result:
-                    bangumi_data_id, matched_title, date_matched = bangumi_data_result
-                    logger.debug(
-                        f"通过 bangumi-data 匹配到番剧 ID: {bangumi_data_id}, "
-                        f"匹配标题: {matched_title}, 日期匹配: {date_matched}"
-                    )
-
-                    # 判断逻辑：优先使用日期匹配结果
-                    if item.season > 1:
-                        if date_matched:
-                            # 通过日期匹配找到的，高可信度，直接标记为特定季度ID
-                            logger.debug("通过日期匹配找到番剧，标记为可信的季度ID")
-                            is_season_matched_id = True
-                        else:
-                            logger.debug(
-                                f"未通过日期匹配，检查标题 '{matched_title}' 是否包含第{item.season}季信息"
-                            )
-                            # 未通过日期匹配，检查匹配到的标题中是否包含季度信息
-                            title_has_season_info = self._check_season_info_in_title(
-                                matched_title, item.season
-                            )
-
-                            # 根据季度信息判断是否为特定季度ID
-                            if title_has_season_info:
-                                logger.debug(
-                                    f"匹配标题包含第{item.season}季信息，标记为特定季度ID"
-                                )
-                                is_season_matched_id = True
-                            else:
-                                logger.debug(
-                                    f"匹配标题不包含季度信息，将从系列ID开始遍历续集查找第{item.season}季"
-                                )
-                                is_season_matched_id = False
-                    else:
-                        # 第一季总是返回True
-                        is_season_matched_id = True
-
-                    if step:
-                        step.status = "hit"
-                        step.subject_id = bangumi_data_id
-                        step.reason = (
-                            f"bangumi-data 匹配命中：{matched_title}，"
-                            f"日期匹配={date_matched}，季度ID可信={is_season_matched_id}"
-                        )
-                        step.score = 1.0 if date_matched else 0.8
-                    if trace:
-                        trace.final_subject_id = bangumi_data_id
-                        trace.final_match_method = "bangumi_data"
-                        trace.final_score = 1.0 if date_matched else 0.8
-                        trace.finish()
-                    return bangumi_data_id, is_season_matched_id, ""
-                else:
-                    if step:
-                        step.status = "miss"
-                        step.reason = "bangumi-data 无匹配结果"
-                        # 阶段3.1：未命中时回传候选列表到 trace，供候选队列展示
-                        try:
-                            raw_candidates = bgm_data.find_bangumi_candidates(
-                                title=item.title,
-                                ori_title=item.ori_title,
-                                release_date=release_date,
-                                limit=5,
-                            )
-                            if raw_candidates:
-                                step.candidates = [
-                                    MatchCandidate(
-                                        subject_id=str(c.get("id", "")),
-                                        name=c.get("name", ""),
-                                        name_cn=c.get("name_cn", ""),
-                                        score=float(c.get("score", 0.0)),
-                                    )
-                                    for c in raw_candidates
-                                ]
-                                step.reason = (
-                                    f"bangumi-data 无精确命中，"
-                                    f"回传 {len(raw_candidates)} 条候选"
-                                )
-                        except Exception as cand_err:
-                            logger.debug(
-                                f"bangumi_data 候选回传失败（不影响主流程）: {cand_err}"
-                            )
-            except Exception as e:
-                logger.error(f"bangumi-data 匹配出错: {e}")
-                if step:
-                    step.status = "error"
-                    step.reason = f"bangumi-data 匹配异常：{e}"
-                    step.error_detail = _build_error_detail(e)
-        else:
-            if trace:
-                step = trace.start_step("bangumi_data")
-                step.status = "skipped"
-                step.reason = "bangumi-data 已禁用"
-
-        # 阶段 3：Bangumi API 搜索
-        if trace:
-            step = trace.start_step("api_search")
-        else:
-            step = None
-
-        # 根据配置与媒体类型决定搜索的条目类型：
-        # - 默认仅动画（type=2）
-        # - 开启三次元支持后扩展为 [2, 6]（动画 + 三次元，含日剧/电影）
-        # - media_type=real_action 时强制包含 type=6（三次元），无论全局开关
-        enable_real_action = config_manager.get(
-            "sync", "enable_real_action", fallback=False
+        # 构建管道：Normalize → CustomMapping → BangumiData → APISearch
+        pipeline = MatchPipeline(
+            [
+                NormalizeStep(),
+                CustomMappingStep(),
+                BangumiDataStep(),
+                APISearchStep(),
+            ]
         )
-        if item.media_type == "real_action":
-            subject_types = [SUBJECT_TYPE_REAL]
-        elif enable_real_action:
-            subject_types = [SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL]
-        else:
-            subject_types = [SUBJECT_TYPE_ANIME]
-        if step and (enable_real_action or item.media_type == "real_action"):
-            step.reason = f"搜索 type={subject_types}（media_type={item.media_type}）"
 
-        _ctx = (
-            f"user_name={item.user_name!r} source={item.source!r} "
-            f"S{item.season:02d}E{item.episode:02d} media_type={item.media_type!r} "
-            f"title={item.title!r} ori_title={item.ori_title!r}"
+        result = pipeline.run(ctx)
+
+        # 同步 trace 引用回调用方（调用方传 trace=None 时用局部 trace，无需同步）
+        if trace is not None:
+            # pipeline 已直接操作传入的 trace，无需额外同步
+            pass
+
+        # 匹配歧义检测：top1/top2 分数接近时触发 match_ambiguous
+        if result.subject_id and result.trace:
+            self._maybe_notify_match_ambiguous(result.trace, item, item.source or "")
+
+        return (
+            result.subject_id,
+            result.is_season_matched_id,
+            result.failure_detail,
         )
-        try:
-            # 使用对应用户的bangumi API实例进行搜索
-            bgm = self._get_bangumi_api_for_user(item.user_name)
-            if not bgm:
-                logger.error(f"bgm: 无法为用户创建 Bangumi API 实例进行搜索；{_ctx}")
-                if step:
-                    step.status = "error"
-                    step.reason = "无法创建 Bangumi API 实例"
-                    step.error_detail = {
-                        "type": "RuntimeError",
-                        "message": "无法为用户创建 Bangumi API 实例",
-                        "traceback": "",
-                    }
-                if trace:
-                    trace.finish()
-                return None, False, "无法创建 Bangumi API 实例，无法搜索条目"
-
-            premiere_date = None
-            if item.release_date and len(item.release_date) >= 8:
-                premiere_date = item.release_date[:10]
-
-            # 搜索时优先使用归一化标题（去除发布组/分辨率/编码等噪声），
-            # 若归一化结果为空则回退到原始标题
-            search_title = normalized_title or item.title
-
-            # P1: 记录实际发送给 API 的搜索参数
-            if step:
-                step.request_params = {
-                    "title": search_title,
-                    "ori_title": item.ori_title or "",
-                    "premiere_date": premiere_date or "",
-                    "is_movie": item.media_type == "movie",
-                    "subject_types": subject_types,
-                    "media_type": item.media_type,
-                    "season": item.season,
-                }
-
-            bgm_data = bgm.bgm_search(
-                title=search_title,
-                ori_title=item.ori_title or "",
-                premiere_date=premiere_date or "",
-                is_movie=(item.media_type == "movie"),
-                subject_types=subject_types,
-            )
-
-            # P1: 记录 API 返回质量摘要
-            if step:
-                first = bgm_data[0] if bgm_data else {}
-                step.api_response_summary = {
-                    "total_candidates": len(bgm_data) if bgm_data else 0,
-                    "is_archive_hit": bool(bgm and bgm.last_hit_source == "archive"),
-                    "first_subject_id": first.get("id"),
-                    "first_name": first.get("name") or "",
-                    "first_name_cn": first.get("name_cn") or "",
-                }
-
-            if not bgm_data:
-                logger.error(
-                    "bgm: 未查询到番剧信息，跳过；"
-                    f"{_ctx} premiere_date={premiere_date!r}"
-                )
-                if step:
-                    step.status = "miss"
-                    step.reason = "Bangumi API 搜索无结果"
-                if trace:
-                    trace.finish()
-                return None, False, "Bangumi 搜索无结果"
-
-            # 判断本次搜索最终命中来源：archive 短路命中标记为 "archive"，
-            # 否则（走 API 命中）保持 "api_search"。后续 step.stage / candidates.source /
-            # final_match_method 都据此区分，让"本地归档匹配"在同步记录详情中可见。
-            is_archive_hit = bgm.last_hit_source == "archive"
-            match_stage = "archive" if is_archive_hit else "api_search"
-            if step:
-                step.stage = match_stage
-
-            # top-N platform 加权排序：按放送形态重排候选，使最可能的目标排在首位
-            is_movie_request = item.media_type == "movie"
-            bgm_data = self._sort_candidates_by_platform(
-                bgm_data, is_movie=is_movie_request, limit=15
-            )
-            # 注：limit=15 与 OLD_SEARCH_CANDIDATE_LIMIT 一致，
-            # 保证 detect_media_type 改选时所有候选都可用，
-            # 后续 trace 候选收集单独取 top-5。
-
-            # 记录 search step（原始搜索结果，可能在后续 post_search step 中被改选）
-            original_top = bgm_data[0] if bgm_data else {}
-            original_top_id = original_top.get("id")
-            original_top_name = (
-                original_top.get("name_cn") or original_top.get("name") or ""
-            )
-            if step:
-                step.status = "hit"
-                step.subject_id = original_top_id
-                step.reason = (
-                    f"本地归档命中：{original_top_name}"
-                    if is_archive_hit
-                    else f"API 搜索命中：{original_top_name}"
-                )
-                for cand in bgm_data[:5]:
-                    step.candidates.append(
-                        MatchCandidate(
-                            subject_id=str(cand.get("id", "")),
-                            name=cand.get("name", ""),
-                            name_cn=cand.get("name_cn", ""),
-                            score=bgm.title_diff_ratio(
-                                search_title, item.ori_title, cand
-                            ),
-                            platform=cand.get("platform", ""),
-                            air_date=cand.get("date", ""),
-                            source=match_stage,
-                            media_type=_detect_candidate_media_type(cand),
-                            infobox_aliases=_extract_infobox_aliases(cand),
-                        )
-                    )
-
-            # 校验返回结果的标题是否包含目标季度信息，确认是否精准命中季度本体
-            is_api_season_matched = False
-            post_step = None  # post_search step（如果触发改选）
-
-            if item.season > 1:
-                returned_name = bgm_data[0].get("name", "")
-                returned_name_cn = bgm_data[0].get("name_cn", "")
-
-                if self._check_season_info_in_title(
-                    returned_name, item.season
-                ) or self._check_season_info_in_title(returned_name_cn, item.season):
-                    is_api_season_matched = True
-            if not is_api_season_matched:
-                # season == 1：首条候选可能明确声明了第N季（N>1，如"凡人修仙传 第五季"），
-                #   需在候选列表里寻找标题不含季度后缀的条目作为第一季本体。
-                # season > 1 且季度未匹配：首条候选可能是剧场版/衍生作
-                #   （如"完美世界剧场版 九劫焚天"），季度信息不在标题中，
-                #   需通过媒体类型与关联条目改选命中主线剧集。
-                top_name = bgm_data[0].get("name", "")
-                top_name_cn = bgm_data[0].get("name_cn", "")
-                top_explicit_season = max(
-                    self._get_explicit_season_from_title(top_name) or 0,
-                    self._get_explicit_season_from_title(top_name_cn) or 0,
-                )
-                if top_explicit_season > 1:
-                    # 在候选列表里寻找标题不含季度声明的条目（即第一季本体）
-                    for cand in bgm_data[1:]:
-                        cand_name = cand.get("name", "")
-                        cand_name_cn = cand.get("name_cn", "")
-                        cand_season = max(
-                            self._get_explicit_season_from_title(cand_name) or 0,
-                            self._get_explicit_season_from_title(cand_name_cn) or 0,
-                        )
-                        if cand_season == 0:
-                            logger.debug(
-                                f"首条候选为第{top_explicit_season}季，"
-                                f"改选无季度后缀的候选: "
-                                f"{cand_name_cn or cand_name}(id={cand.get('id')})"
-                            )
-                            if trace:
-                                post_step = trace.start_step("post_search")
-                            bgm_data[0] = cand
-                            is_api_season_matched = True
-                            if post_step:
-                                post_step.status = "hit"
-                                post_step.subject_id = cand.get("id")
-                                post_step.reason = (
-                                    f"季度改选：首条为第{top_explicit_season}季，"
-                                    f"改选无季度后缀的第一季本体"
-                                )
-                                post_step.candidates.append(
-                                    MatchCandidate(
-                                        subject_id=str(cand.get("id", "")),
-                                        name=cand.get("name", ""),
-                                        name_cn=cand.get("name_cn", ""),
-                                        score=bgm.title_diff_ratio(
-                                            search_title, item.ori_title, cand
-                                        ),
-                                        platform=cand.get("platform", ""),
-                                        air_date=cand.get("date", ""),
-                                        source="post_search",
-                                        media_type=_detect_candidate_media_type(cand),
-                                        infobox_aliases=_extract_infobox_aliases(cand),
-                                    )
-                                )
-                            break
-                    if not is_api_season_matched:
-                        logger.debug(
-                            f"首条候选明确为第{top_explicit_season}季，"
-                            f"但候选列表中无无季度后缀的条目，保持首条"
-                        )
-
-                # 媒体类型校验：若请求 episode 但首条候选标题命中剧场版/电影/OVA/OAD/真人版
-                # 关键词（如"完美世界"搜索首条返回"完美世界剧场版 九劫焚天"），
-                # 在候选列表里寻找 detect_media_type 与请求一致的条目。
-                # 仅在尚未通过季度改选时执行，避免覆盖上一步的正确结果。
-                request_media_type = (item.media_type or "").strip().lower()
-                if not is_api_season_matched and request_media_type:
-                    top_detected = detect_media_type(
-                        title=bgm_data[0].get("name_cn", ""),
-                        ori_title=bgm_data[0].get("name", ""),
-                    )
-                    # 判断首条候选标题是否与请求标题精确匹配
-                    # （如请求"完美世界"但首条是"完美世界双食记"，不算精确匹配）
-                    top_name = (bgm_data[0].get("name") or "").strip()
-                    top_name_cn = (bgm_data[0].get("name_cn") or "").strip()
-                    request_title = (item.title or "").strip()
-                    top_exact_match = request_title and request_title in {
-                        top_name,
-                        top_name_cn,
-                    }
-                    # 触发改选的条件：
-                    # 1) 首条 detect 与请求类型不一致（如 movie vs episode）
-                    # 2) 或首条标题与请求标题不精确匹配（如"完美世界双食记" vs "完美世界"）
-                    #     —— 此时可能在 episode 候选中存在更合适的主线条目
-                    need_reselect = (
-                        top_detected != request_media_type or not top_exact_match
-                    )
-                    logger.debug(
-                        f"改选判定: 首条={top_name_cn or top_name} "
-                        f"(id={bgm_data[0].get('id')}, detect={top_detected}, "
-                        f"精确匹配={top_exact_match}), 请求类型={request_media_type}, "
-                        f"need_reselect={need_reselect}, 候选数={len(bgm_data)}"
-                    )
-                    if need_reselect:
-                        if trace:
-                            post_step = trace.start_step("post_search")
-
-                        # 1) 先在候选列表里找媒体类型一致的条目
-                        #    可能有多个 episode 候选（如"完美世界"命中剧场版+衍生短番+多季），
-                        #    需要按"主线剧集优先级"择优，避免误选衍生短番（如双食记只有6集）。
-                        episode_candidates = []
-                        for cand in bgm_data[1:]:
-                            cand_detected = detect_media_type(
-                                title=cand.get("name_cn", ""),
-                                ori_title=cand.get("name", ""),
-                            )
-                            if cand_detected == request_media_type:
-                                episode_candidates.append(cand)
-
-                        # 如果首条 detect 一致但标题不精确匹配（如双食记），
-                        # 也加入候选，参与主线优先级择优
-                        if top_detected == request_media_type and not top_exact_match:
-                            episode_candidates.insert(0, bgm_data[0])
-
-                        logger.debug(
-                            f"episode_candidates 数={len(episode_candidates)}: "
-                            + ", ".join(
-                                f"{c.get('name_cn') or c.get('name')}(id={c.get('id')},"
-                                f" eps={c.get('eps') or c.get('total_episodes')})"
-                                for c in episode_candidates
-                            )
-                        )
-
-                        if episode_candidates:
-                            best_cand = self._pick_mainline_episode_candidate(
-                                episode_candidates, item.title or ""
-                            )
-                            logger.debug(
-                                f"_pick_mainline_episode_candidate 择优结果: "
-                                f"{best_cand.get('name_cn') or best_cand.get('name')}"
-                                f"(id={best_cand.get('id')})"
-                            )
-                            # 仅当择优结果与当前首条不同时才改选并标记已匹配
-                            if best_cand.get("id") != bgm_data[0].get("id"):
-                                logger.debug(
-                                    f"首条候选 {top_name_cn or top_name} "
-                                    f"(detect={top_detected}, 精确匹配={top_exact_match}) "
-                                    f"不够理想，改选主线剧集: "
-                                    f"{best_cand.get('name_cn') or best_cand.get('name')}"
-                                    f"(id={best_cand.get('id')})"
-                                )
-                                bgm_data[0] = best_cand
-                                is_api_season_matched = True
-
-                        # 2) 候选列表里没有一致的，调用关联条目 API 在关联条目里找。
-                        #    场景："完美世界"搜索首条是 542046 完美世界剧场版，
-                        #    其关联条目含 577198 完美世界 第六季（主线故事），
-                        #    可据此跳过剧场版命中主线剧集。
-                        related_list = []
-                        if not is_api_season_matched:
-                            top_id = bgm_data[0].get("id")
-                            if top_id:
-                                try:
-                                    related = bgm.get_related_subjects(top_id)
-                                    if isinstance(related, list):
-                                        related_list = related
-                                    elif isinstance(related, dict):
-                                        related_list = related.get("data", [])
-                                    else:
-                                        related_list = []
-                                except Exception as e:
-                                    logger.debug(
-                                        f"获取关联条目失败 (subject_id={top_id}): {e}"
-                                    )
-                                    related_list = []
-
-                                logger.debug(
-                                    f"关联条目数={len(related_list)} (top_id={top_id}): "
-                                    + ", ".join(
-                                        f"{r.get('name_cn') or r.get('name')}"
-                                        f"(id={r.get('id')},"
-                                        f" relation={r.get('relation')})"
-                                        for r in related_list
-                                        if isinstance(r, dict)
-                                    )
-                                )
-
-                                # 优先选 relation="主线故事" 且媒体类型一致的关联条目
-                                mainline_match = None
-                                other_match = None
-                                for rel in related_list:
-                                    if not isinstance(rel, dict):
-                                        continue
-                                    # 类型过滤：仅保留动画(2)/三次元(6)，排除书籍(1)/音乐(3)/游戏(4)等非影视条目，
-                                    # 防止 detect_media_type 仅凭标题关键词误判
-                                    # （典型场景：「斗破苍穹年番」关联到原作小说「斗破苍穹」type=1，需排除）
-                                    rel_type = rel.get("type")
-                                    if rel_type not in (
-                                        SUBJECT_TYPE_ANIME,
-                                        SUBJECT_TYPE_REAL,
-                                    ):
-                                        continue
-                                    rel_name = rel.get("name", "")
-                                    rel_name_cn = rel.get("name_cn", "") or rel_name
-                                    # 标题相关性校验：与搜索标题完全不相关的条目跳过，
-                                    # 防止同 IP 下无关条目（如游戏改动画）被误选
-                                    search_title = (item.title or "").strip()
-                                    if search_title and rel_name_cn:
-                                        title_sim = fuzz.ratio(
-                                            rel_name_cn, search_title
-                                        )
-                                        if title_sim < 25:
-                                            continue
-                                    rel_detected = detect_media_type(
-                                        title=rel_name_cn, ori_title=rel_name
-                                    )
-                                    if rel_detected != request_media_type:
-                                        continue
-                                    rel_relation = (rel.get("relation") or "").strip()
-                                    if (
-                                        rel_relation
-                                        == RELATIONS[RELATION_ID_PARENT_STORY]
-                                    ):
-                                        mainline_match = rel
-                                        break
-                                    if other_match is None:
-                                        other_match = rel
-
-                                chosen = mainline_match or other_match
-                                logger.debug(
-                                    f"关联条目改选: mainline_match="
-                                    f"{mainline_match.get('id') if mainline_match else None}, "
-                                    f"other_match="
-                                    f"{other_match.get('id') if other_match else None}, "
-                                    f"chosen={chosen.get('id') if chosen else None}"
-                                )
-                                if chosen:
-                                    chosen_id = chosen.get("id")
-                                    if chosen_id:
-                                        try:
-                                            chosen_info = bgm.get_subject(chosen_id)
-                                            if chosen_info and chosen_info.get("id"):
-                                                logger.debug(
-                                                    f"首条候选媒体类型={top_detected} "
-                                                    f"与请求 {request_media_type} 不一致，"
-                                                    f"通过关联条目改选: "
-                                                    f"{chosen_info.get('name_cn') or chosen_info.get('name')}"
-                                                    f"(id={chosen_id}, "
-                                                    f"relation={chosen.get('relation')})"
-                                                )
-                                                bgm_data[0] = chosen_info
-                                                is_api_season_matched = True
-                                        except Exception as e:
-                                            logger.debug(
-                                                f"获取关联条目详情失败 "
-                                                f"(subject_id={chosen_id}): {e}"
-                                            )
-
-                        # 记录 post_search step 结果
-                        if post_step:
-                            if (
-                                is_api_season_matched
-                                and bgm_data[0].get("id") != original_top_id
-                            ):
-                                post_step.status = "hit"
-                                post_step.subject_id = bgm_data[0].get("id")
-                                final_name = (
-                                    bgm_data[0].get("name_cn")
-                                    or bgm_data[0].get("name")
-                                    or ""
-                                )
-                                post_step.reason = (
-                                    f"搜索后处理改选：原首条 "
-                                    f"{original_top_name}(id={original_top_id}) "
-                                    f"→ {final_name}(id={bgm_data[0].get('id')})"
-                                )
-                            else:
-                                post_step.status = "miss"
-                                post_step.reason = (
-                                    "搜索后处理未改选：候选与关联条目中"
-                                    "均无一致条目，保持首条"
-                                )
-                            # 记录 episode 候选与关联条目作为 post_search 的候选
-                            for c in episode_candidates:
-                                post_step.candidates.append(
-                                    MatchCandidate(
-                                        subject_id=str(c.get("id", "")),
-                                        name=c.get("name", ""),
-                                        name_cn=c.get("name_cn", ""),
-                                        score=bgm.title_diff_ratio(
-                                            search_title, item.ori_title, c
-                                        ),
-                                        platform=c.get("platform", ""),
-                                        air_date=c.get("date", ""),
-                                        source="post_search",
-                                        media_type=_detect_candidate_media_type(c),
-                                        infobox_aliases=_extract_infobox_aliases(c),
-                                    )
-                                )
-                            for r in related_list:
-                                if not isinstance(r, dict):
-                                    continue
-                                post_step.candidates.append(
-                                    MatchCandidate(
-                                        subject_id=str(r.get("id", "")),
-                                        name=r.get("name", ""),
-                                        name_cn=r.get("name_cn", ""),
-                                        score=bgm.title_diff_ratio(
-                                            search_title, item.ori_title, r
-                                        ),
-                                        source="post_search_related",
-                                        media_type=_detect_candidate_media_type(r),
-                                        infobox_aliases=_extract_infobox_aliases(r),
-                                    )
-                                )
-
-                        if not is_api_season_matched:
-                            logger.debug(
-                                f"首条候选媒体类型={top_detected} 与请求 "
-                                f"{request_media_type} 不一致，候选与关联条目中"
-                                f"均无一致条目，保持首条"
-                            )
-
-            # ── 置信度阈值：相似度低于阈值则不自动采用，沉淀到待审队列 ──
-            # 使用真实标题相似度（title_diff_ratio，0~1），取代原先固定的 0.9/1.0。
-            threshold = self._get_match_confidence_threshold()
-            real_conf = bgm.title_diff_ratio(search_title, item.ori_title, bgm_data[0])
-            # 仅当真实相似度为数值时才应用阈值：生产环境 title_diff_ratio 返回
-            # float；个别单测未注入相似度（返回非数值）时，保持旧行为直接采用。
-            if isinstance(real_conf, (int, float)) and real_conf < threshold:
-                logger.info(
-                    "番剧《%s》API 匹配 top 候选(id=%s) 相似度 %.2f 低于阈值 %.2f，"
-                    "沉淀到待审队列",
-                    item.title,
-                    bgm_data[0].get("id"),
-                    real_conf,
-                    threshold,
-                )
-                if step:
-                    step.status = "low_confidence"
-                    step.subject_id = bgm_data[0].get("id")
-                    step.score = real_conf
-                    step.reason = (
-                        f"匹配相似度 {real_conf:.2f} 低于阈值 {threshold:.2f}，"
-                        f"已沉淀待审"
-                    )
-                if trace:
-                    # final_subject_id 保持未命中，使下游走待审沉淀路径
-                    trace.final_score = real_conf
-                    trace.final_match_method = match_stage
-                    trace.finish()
-                return (
-                    None,
-                    False,
-                    (
-                        f"match confidence {real_conf:.2f} below threshold "
-                        f"{threshold:.2f}"
-                    ),
-                )
-
-            if trace:
-                trace.final_subject_id = bgm_data[0]["id"]
-                # 区分 archive / api_search 命中来源（与 step.stage 保持一致）
-                trace.final_match_method = match_stage
-                # 搜索置信度：真实相似度为数值时采用之，否则回退到旧版启发式
-                trace.final_score = (
-                    real_conf
-                    if isinstance(real_conf, (int, float))
-                    else (1.0 if is_api_season_matched else 0.9)
-                )
-                trace.finish()
-
-                # 匹配歧义检测：top1/top2 分数接近时触发 match_ambiguous
-                self._maybe_notify_match_ambiguous(trace, item, item.source or "")
-
-            return bgm_data[0]["id"], is_api_season_matched, ""
-        except Exception as e:
-            detail = f"Bangumi API 搜索出错: {e}"
-            logger.error(f"bgm: {detail}；{_ctx}")
-            if step:
-                step.status = "error"
-                step.reason = detail
-                step.error_detail = _build_error_detail(e)
-            if trace:
-                trace.finish()
-            return None, False, detail
 
     def _get_bangumi_config_for_user(self, user_name: str) -> dict[str, str] | None:
         """根据媒体服务器用户名获取对应的bangumi配置（DB 为唯一真相源）"""
