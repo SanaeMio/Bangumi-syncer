@@ -1,7 +1,7 @@
 """集数解析 step：调用 _resolve_season_episode 解析季度与集数 ID
 
-输入（ctx）：subject_id / is_season_matched_id / item
-输出（ctx）：bgm_se_id / bgm_ep_id
+输入（ctx）：subject_id / is_season_matched_id / item（匹配阶段产物）
+产出（outputs）：subject_id / episode_id / changed / subject_url / episode_url
 """
 
 from __future__ import annotations
@@ -16,12 +16,12 @@ class EpisodeResolveStep(ExecutionStepBase):
 
     stage = "episode_resolve"
 
-    def execute(self, ctx: ExecutionContext) -> StepOutcome:
-        resolve_input = {
-            "input_subject_id": str(ctx.subject_id),
-            "input_is_season_id": bool(ctx.is_season_matched_id),
-            "request_season": ctx.item.season,
-            "request_episode": ctx.item.episode,
+    def execute(self, ctx: ExecutionContext, prev: dict | None = None) -> StepOutcome:
+        inputs = {
+            "subject_id": str(ctx.subject_id),
+            "is_season_id": bool(ctx.is_season_matched_id),
+            "season": ctx.item.season,
+            "episode": ctx.item.episode,
             "media_type": ctx.item.media_type,
             "release_date": ctx.item.release_date or "",
         }
@@ -32,15 +32,13 @@ class EpisodeResolveStep(ExecutionStepBase):
             )
         except ValueError as ve:
             if "认证失败" in str(ve) or "access_token" in str(ve):
-                ctx.bgm_se_id = None
-                ctx.bgm_ep_id = None
                 return StepOutcome(
                     status="error",
                     reason=f"认证失败: {ve}",
-                    processed_payload={
-                        **resolve_input,
-                        "output_subject_id": "",
-                        "output_episode_id": "",
+                    inputs=inputs,
+                    outputs={
+                        "subject_id": "",
+                        "episode_id": "",
                         "changed": False,
                         "error": str(ve),
                     },
@@ -49,8 +47,6 @@ class EpisodeResolveStep(ExecutionStepBase):
                 )
             raise ve
 
-        ctx.bgm_se_id = bgm_se_id
-        ctx.bgm_ep_id = bgm_ep_id
         changed = str(bgm_se_id) != str(ctx.subject_id) if bgm_se_id else False
 
         if bgm_ep_id:
@@ -61,10 +57,10 @@ class EpisodeResolveStep(ExecutionStepBase):
                     f"集数解析：subject={bgm_se_id} episode={ctx.item.episode} → "
                     f"ep_id={bgm_ep_id}"
                 ),
-                processed_payload={
-                    **resolve_input,
-                    "output_subject_id": str(bgm_se_id),
-                    "output_episode_id": str(bgm_ep_id),
+                inputs=inputs,
+                outputs={
+                    "subject_id": str(bgm_se_id),
+                    "episode_id": str(bgm_ep_id),
                     "changed": changed,
                     "subject_url": f"https://bgm.tv/subject/{bgm_se_id}",
                     "episode_url": f"https://bgm.tv/ep/{bgm_ep_id}",
@@ -75,10 +71,10 @@ class EpisodeResolveStep(ExecutionStepBase):
             status="miss",
             subject_id=str(bgm_se_id) if bgm_se_id else None,
             reason=f"集数解析未命中：subject={bgm_se_id} episode={ctx.item.episode}",
-            processed_payload={
-                **resolve_input,
-                "output_subject_id": str(bgm_se_id) if bgm_se_id else "",
-                "output_episode_id": "",
+            inputs=inputs,
+            outputs={
+                "subject_id": str(bgm_se_id) if bgm_se_id else "",
+                "episode_id": "",
                 "changed": changed,
                 "error": "未找到对应集数",
             },

@@ -78,20 +78,29 @@ class TestSyncPipelineExecution:
 
         ep_step, cross_step, action_step, result_step = ctx.trace.steps
         assert ep_step.status == "hit"
-        assert ep_step.processed_payload["output_subject_id"] == "100"
-        assert ep_step.processed_payload["output_episode_id"] == "200"
+        assert ep_step.outputs["subject_id"] == "100"
+        assert ep_step.outputs["episode_id"] == "200"
         assert cross_step.status == "skipped"
         assert cross_step.reason == "集数解析已命中，无需跨季回退"
         assert action_step.status == "hit"
-        assert action_step.processed_payload["mark_status"] == 1
+        assert action_step.outputs["mark_status"] == 1
         assert result_step.status == "hit"
-        assert result_step.processed_payload["status"] == "success"
-        assert result_step.processed_payload["bgm_title"] == "测试番剧"
-        assert result_step.processed_payload["message"] == "已标记为看过"
+        assert result_step.outputs["status"] == "success"
+        assert result_step.outputs["bgm_title"] == "测试番剧"
+        assert result_step.outputs["message"] == "已标记为看过"
 
         # 每步自动记录耗时
         for s in ctx.trace.steps:
             assert s.elapsed_ms >= 0
+
+        # 结果链：产出经管线统一 merge 进 current_outputs / step_outputs
+        assert ctx.current_outputs["subject_id"] == "100"
+        assert ctx.current_outputs["episode_id"] == "200"
+        assert ctx.current_outputs["mark_status"] == 1
+        assert ctx.current_outputs["message"] == "已标记为看过"
+        assert ctx.step_outputs["episode_resolve"]["episode_id"] == "200"
+        assert ctx.step_outputs["sync_action"]["mark_status"] == 1
+        assert "cross_season" not in ctx.step_outputs  # skipped 不产出
 
         # final_* 统一结算
         assert ctx.trace.final_episode_id == "200"
@@ -99,7 +108,6 @@ class TestSyncPipelineExecution:
         assert ctx.trace.final_status == "success"
         assert ctx.trace.final_message == "已标记为看过"
         assert ctx.trace.final_subject_id is None  # 匹配阶段结算，执行阶段不自动覆写
-        assert ctx.result_message == "已标记为看过"
 
     def test_episode_resolve_miss_triggers_cross_season_miss_terminal(self):
         """集数解析 miss → 跨季回退 miss → 以 (cross_season, miss) 终态短路"""
@@ -116,7 +124,8 @@ class TestSyncPipelineExecution:
         assert stage == "cross_season"
         assert outcome.status == "miss"
         assert outcome.is_terminal is True
-        assert ctx.bgm_ep_id is None
+        # 空值产物不覆盖上游（current_outputs 无 episode_id 键）
+        assert ctx.current_outputs.get("episode_id") is None
         # sync_action / result 未执行
         stages = [s.stage for s in ctx.trace.steps]
         assert stages == ["episode_resolve", "cross_season"]
@@ -133,15 +142,18 @@ class TestSyncPipelineExecution:
         ).run(ctx)
 
         assert terminal is None
-        assert ctx.bgm_se_id == "999"
-        assert ctx.bgm_ep_id == "9981"
+        # 跨季改选经结果链覆盖上游产物
+        assert ctx.current_outputs["subject_id"] == "999"
+        assert ctx.current_outputs["episode_id"] == "9981"
+        assert ctx.current_outputs["mark_status"] == 1
         assert ctx.trace.final_subject_id == "999"
         assert ctx.trace.final_episode_id == "9981"
         assert ctx.trace.final_match_method == "archive"
         assert ctx.trace.final_match_method_detail == "cross_season_chain"
         cross_step = ctx.trace.steps[1]
         assert cross_step.status == "hit"
-        assert cross_step.processed_payload["match_path"] == "chain"
+        assert cross_step.outputs["match_path"] == "chain"
+        assert ctx.step_outputs["cross_season"]["match_path"] == "chain"
 
     def test_sync_action_queued_is_terminal_without_result_step(self):
         """API 不可达入队：sync_action 以 hit 终态短路，无 result step"""
@@ -158,7 +170,7 @@ class TestSyncPipelineExecution:
         assert outcome.status == "hit"
         assert outcome.is_terminal is True
         assert "已入待同步队列" in outcome.reason
-        assert ctx.mark_status == MARK_QUEUED
+        assert ctx.current_outputs.get("mark_status") == MARK_QUEUED
         assert [s.stage for s in ctx.trace.steps] == [
             "episode_resolve",
             "cross_season",

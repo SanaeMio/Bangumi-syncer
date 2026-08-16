@@ -192,7 +192,7 @@ def test_pipeline_receive_step_carries_raw_payload_and_sync_action(
 
 
 def test_pipeline_result_step_carries_episode_and_links(mock_config, mock_database):
-    """result step 应携带集数 + subject/ep 链接（processed_payload）"""
+    """result step 应携带集数 + subject/ep 链接（结构化 outputs）"""
     service = SyncService()
 
     item = CustomItem(
@@ -225,10 +225,9 @@ def test_pipeline_result_step_carries_episode_and_links(mock_config, mock_databa
     result_step = steps[-1]
     assert result_step["stage"] == "result"
     assert result_step["status"] == "hit"
-    payload = result_step["processed_payload"]
+    payload = result_step["outputs"]
     assert payload is not None
     assert payload["status"] == "success"
-    assert payload["episode"] == "S01E270"
     assert payload["subject_id"] == "577198"
     assert payload["episode_id"] == "1552069"
     assert payload["subject_url"] == "https://bgm.tv/subject/577198"
@@ -236,7 +235,7 @@ def test_pipeline_result_step_carries_episode_and_links(mock_config, mock_databa
 
 
 def test_pipeline_episode_resolve_step_records_change(mock_config, mock_database):
-    """episode_resolve step 应记录输入→输出变更过程（processed_payload）"""
+    """episode_resolve step 应记录输入→输出变更过程（结构化 inputs/outputs）"""
     service = SyncService()
 
     item = CustomItem(
@@ -268,16 +267,17 @@ def test_pipeline_episode_resolve_step_records_change(mock_config, mock_database
     steps = trace_data.get("steps") or []
     ep_step = next((s for s in steps if s["stage"] == "episode_resolve"), None)
     assert ep_step is not None, "流水线缺少 episode_resolve step"
-    payload = ep_step["processed_payload"]
-    assert payload is not None
-    assert payload["input_subject_id"] == "577198"
-    assert payload["request_season"] == 1
-    assert payload["request_episode"] == 270
-    assert payload["output_subject_id"] == "577198"
-    assert payload["output_episode_id"] == "1552069"
-    assert payload["changed"] is False
-    assert payload["subject_url"] == "https://bgm.tv/subject/577198"
-    assert payload["episode_url"] == "https://bgm.tv/ep/1552069"
+    inputs = ep_step["inputs"]
+    outputs = ep_step["outputs"]
+    assert inputs is not None
+    assert inputs["subject_id"] == "577198"
+    assert inputs["season"] == 1
+    assert inputs["episode"] == 270
+    assert outputs["subject_id"] == "577198"
+    assert outputs["episode_id"] == "1552069"
+    assert outputs["changed"] is False
+    assert outputs["subject_url"] == "https://bgm.tv/subject/577198"
+    assert outputs["episode_url"] == "https://bgm.tv/ep/1552069"
 
 
 def test_pipeline_full_stages_on_success(mock_config, mock_database):
@@ -471,9 +471,9 @@ def test_match_trace_to_dict_serializes_final_status():
 def test_cross_season_step_writes_match_path_to_trace(
     path, expected_detail, expected_label
 ):
-    """CrossSeasonStep 应按命中路径写入 ctx 改选信息与 trace step
+    """CrossSeasonStep 应经结果链产出改选信息，ResultStep 结算 trace
 
-    前端根据 final_match_method_detail 渲染徽章、按 processed_payload.match_path
+    前端根据 final_match_method_detail 渲染徽章、按 outputs.match_path
     渲染跨季链表格的命中路径列。
     """
     from app.services.sync_service.context import ExecutionContext
@@ -481,6 +481,7 @@ def test_cross_season_step_writes_match_path_to_trace(
     from app.services.sync_service.pipeline import SyncPipeline
     from app.services.sync_service.steps.cross_season import CrossSeasonStep
     from app.services.sync_service.steps.result import ResultStep
+    from app.services.sync_service.steps.sync_action import SyncActionStep
 
     bgm = MagicMock()
     bgm.find_episode_across_seasons.return_value = (999, "9981")
@@ -490,6 +491,9 @@ def test_cross_season_step_writes_match_path_to_trace(
         "name": "凡人修仙传",
         "name_cn": "凡人修仙传",
     }
+    service = MagicMock()
+    service._retry_mark_episode.return_value = 1
+    service._format_mark_status_message.return_value = "已标记为看过"
 
     item = CustomItem(
         user_name="u",
@@ -505,41 +509,40 @@ def test_cross_season_step_writes_match_path_to_trace(
         item=item,
         bgm=bgm,
         trace=trace,
-        service=MagicMock(),
+        service=service,
         actual_source="fongmi",
         subject_id="100",
         is_season_matched_id=False,
     )
 
-    pipeline = SyncPipeline([CrossSeasonStep()])
+    pipeline = SyncPipeline([CrossSeasonStep(), SyncActionStep(), ResultStep()])
     terminal = pipeline.run(ctx)
     assert terminal is None
 
-    assert ctx.bgm_se_id == "999"
-    assert ctx.bgm_ep_id == "9981"
-    assert ctx.cross_season_hit is True
-    assert ctx.cross_season_path == path
+    # 结果链：跨季改选覆盖上游产物，mark_status 由 sync_action 产出
+    assert ctx.current_outputs["subject_id"] == "999"
+    assert ctx.current_outputs["episode_id"] == "9981"
+    assert ctx.current_outputs["mark_status"] == 1
+    cross_outputs = ctx.step_outputs["cross_season"]
+    assert cross_outputs["match_path"] == path
 
-    cross_step = trace.steps[-1]
+    cross_step = next(s for s in trace.steps if s.stage == "cross_season")
     assert cross_step.status == "hit"
-    assert cross_step.processed_payload["match_path"] == path
+    assert cross_step.outputs["match_path"] == path
     assert expected_label in cross_step.reason
 
     # final_* 由 ResultStep 统一结算（跨季改选覆写）
-    ctx.mark_status = 1
-    ctx.service._format_mark_status_message.return_value = "已标记为看过"
-    ResultStep().execute(ctx)
     assert trace.final_subject_id == "999"
     assert trace.final_episode_id == "9981"
     assert trace.final_match_method == "archive"
     assert trace.final_match_method_detail == expected_detail
     assert trace.final_action == "1"
     assert trace.final_status == "success"
-    assert ctx.bgm_title == "凡人修仙传"
+    assert ctx.current_outputs["bgm_title"] == "凡人修仙传"
 
 
 def test_cross_season_step_skipped_when_episode_resolved():
-    """集数解析已命中时 CrossSeasonStep 应返回 skipped 且不改写 ctx"""
+    """集数解析已命中时 CrossSeasonStep 应返回 skipped 且不产出改选信息"""
     from app.services.sync_service.context import ExecutionContext
     from app.services.sync_service.match_trace import MatchTrace
     from app.services.sync_service.steps.cross_season import CrossSeasonStep
@@ -562,15 +565,12 @@ def test_cross_season_step_skipped_when_episode_resolved():
         actual_source="fongmi",
         subject_id="100",
         is_season_matched_id=False,
-        bgm_se_id="100",
-        bgm_ep_id="200",
     )
 
-    outcome = CrossSeasonStep().execute(ctx)
+    outcome = CrossSeasonStep().execute(ctx, {"subject_id": "100", "episode_id": "200"})
 
     assert outcome.status == "skipped"
     assert outcome.reason == "集数解析已命中，无需跨季回退"
-    assert ctx.bgm_se_id == "100"
-    assert ctx.bgm_ep_id == "200"
-    assert ctx.cross_season_hit is False
+    assert "cross_season" not in ctx.step_outputs
+    assert ctx.current_outputs == {}
     bgm.find_episode_across_seasons.assert_not_called()

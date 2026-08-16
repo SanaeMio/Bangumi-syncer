@@ -6,12 +6,18 @@
   但推荐把通知 / 持久化 / 收藏归档等收口到编排器，step 内只保留不可分割的
   调用链（如 _retry_mark_episode 内部的入队）。
 
-step 只负责：读取 ctx 输入 → 执行变换 → 写回 ctx 输出 → 返回 StepOutcome。
-trace.step 的记录（含进入参数 processed_payload / 输出 / 耗时）由
-SyncPipeline._record_trace 统一完成，step 不直接操作 trace。
+step 的执行模式（结果链）：
+- 输入：execute(ctx, prev) 的 prev 为上游产物（SyncPipeline 传入的当前有效
+  产物），跨 step 结果不经 ctx 字段中转
+- 产出：outcome.outputs 由 SyncPipeline 统一 merge 进结果链
+  （ctx.current_outputs / ctx.step_outputs），step 不直接写 ctx 输出字段
+- trace.step 的记录（含进入参数 inputs / 产出 outputs / 耗时）由
+  SyncPipeline._record_trace 统一完成，step 不直接操作 trace
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from app.services.matching.steps.base import StepOutcome
 from app.services.sync_service.context import ExecutionContext
@@ -26,6 +32,11 @@ class ExecutionStepBase:
 
     stage: str
 
-    def execute(self, ctx: ExecutionContext) -> StepOutcome:
-        """执行该步骤，返回结果。子类必须实现。"""
+    def execute(
+        self, ctx: ExecutionContext, prev: dict[str, Any] | None = None
+    ) -> StepOutcome:
+        """执行该步骤，返回结果。子类必须实现。
+
+        prev：上游产物（当前有效产物，可能为空 dict 表示无前置产物）。
+        """
         raise NotImplementedError

@@ -1,7 +1,9 @@
 """跨季链回退 step：通过前传/续集链在关联季条目中查找含目标 sort 的章节
 
-仅在 episode_resolve 未命中（ctx.bgm_ep_id 为空）时执行，命中时更新
-ctx.bgm_se_id / bgm_ep_id 并记录改选信息（供 ResultStep 统一覆写 final_*）。
+仅在 episode_resolve 未命中（prev 无 episode_id）时执行（step 内部 gate）：
+- hit：outputs 的 subject_id / episode_id / match_path 经结果链 merge 覆盖
+  上游产物（即"跨季改选"语义），step 不写 ctx
+- miss：is_terminal（编排器据此走集数未找到分支），空值产物不覆盖上游
 """
 
 from __future__ import annotations
@@ -25,22 +27,23 @@ class CrossSeasonStep(ExecutionStepBase):
 
     stage = "cross_season"
 
-    def execute(self, ctx: ExecutionContext) -> StepOutcome:
-        if ctx.bgm_ep_id:
-            # 集数解析已命中，无需跨季回退（skipped 语义，由 step 内部 gate）
-            return StepOutcome(
-                status="skipped",
-                reason="集数解析已命中，无需跨季回退",
-            )
+    def execute(self, ctx: ExecutionContext, prev: dict | None = None) -> StepOutcome:
+        inputs = {
+            "subject_id": str(ctx.subject_id),
+            "target_episode": ctx.item.episode,
+        }
 
-        cross_input_subject = str(ctx.subject_id)
-        chain_pick = None
+        # gate：上游已有 ep_id（本季直接命中）则跳过
+        if prev and prev.get("episode_id"):
+            return StepOutcome(status="skipped", reason="集数解析已命中，无需跨季回退")
+
         try:
             chain_pick = ctx.bgm.find_episode_across_seasons(
                 ctx.subject_id, ctx.item.episode
             )
         except Exception:
             logger.debug(f"关联季条目链查找异常: {ctx.subject_id}", exc_info=True)
+            chain_pick = None
 
         if not chain_pick:
             logger.error(
@@ -50,11 +53,10 @@ class CrossSeasonStep(ExecutionStepBase):
             return StepOutcome(
                 status="miss",
                 reason=f"跨季链查找未命中含 sort={ctx.item.episode} 的季条目",
-                processed_payload={
-                    "input_subject_id": cross_input_subject,
-                    "output_subject_id": "",
-                    "output_episode_id": "",
-                    "target_episode": ctx.item.episode,
+                inputs=inputs,
+                outputs={
+                    "subject_id": "",
+                    "episode_id": "",
                     "changed": False,
                     "error": f"未找到含 sort={ctx.item.episode} 的关联季条目",
                 },
@@ -74,14 +76,8 @@ class CrossSeasonStep(ExecutionStepBase):
             f"目标 episode={ctx.item.episode}"
         )
 
-        # 改选结果写入 ctx，final_* 覆写由 ResultStep 统一结算
-        ctx.bgm_se_id = str(chain_subject_id)
-        ctx.bgm_ep_id = str(chain_ep_id)
-        ctx.cross_season_hit = True
-        ctx.cross_season_subject_id = str(chain_subject_id)
-        ctx.cross_season_ep_id = str(chain_ep_id)
-        ctx.cross_season_path = cross_path
-
+        # 改选结果经结果链 merge 覆盖上游产物（同键覆盖），final_* 覆写由
+        # ResultStep 统一结算
         return StepOutcome(
             status="hit",
             subject_id=str(chain_subject_id),
@@ -90,13 +86,14 @@ class CrossSeasonStep(ExecutionStepBase):
                 f"chain_subject_id={chain_subject_id}, "
                 f"ep_id={chain_ep_id} (目标 episode={ctx.item.episode})"
             ),
-            processed_payload={
-                "input_subject_id": cross_input_subject,
-                "output_subject_id": str(chain_subject_id),
-                "output_episode_id": str(chain_ep_id),
-                "target_episode": ctx.item.episode,
+            inputs=inputs,
+            outputs={
+                "subject_id": str(chain_subject_id),
+                "episode_id": str(chain_ep_id),
                 "changed": str(prev_subject_id) != str(chain_subject_id),
                 "match_path": cross_path,
+                "match_method_detail": match_method_detail,
+                "match_path_label": path_label,
                 "subject_url": f"https://bgm.tv/subject/{chain_subject_id}",
                 "episode_url": f"https://bgm.tv/ep/{chain_ep_id}",
             },

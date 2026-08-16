@@ -1,7 +1,8 @@
 """同步动作 step：调用 _retry_mark_episode 标记剧集为看过
 
-输入（ctx）：bgm_se_id / bgm_ep_id
-输出（ctx）：mark_status（0/1/2；-1=MARK_QUEUED 表示 API 不可达已入队）
+输入（prev 上游产物）：subject_id / episode_id（episode_resolve 或
+cross_season 改选后的当前有效产物）
+产出（outputs）：mark_status（0/1/2；-1=MARK_QUEUED 表示 API 不可达已入队）
 
 queued 与认证失败均为终态（is_terminal=True）：
 - queued：无 result step，由编排器走 _handle_queued 收尾
@@ -21,12 +22,19 @@ class SyncActionStep(ExecutionStepBase):
 
     stage = "sync_action"
 
-    def execute(self, ctx: ExecutionContext) -> StepOutcome:
+    def execute(self, ctx: ExecutionContext, prev: dict | None = None) -> StepOutcome:
+        outputs = prev or {}
+        bgm_se_id = str(outputs.get("subject_id") or ctx.subject_id)
+        bgm_ep_id = str(outputs.get("episode_id") or "")
+        inputs = {
+            "subject_id": bgm_se_id,
+            "episode_id": bgm_ep_id,
+        }
         try:
             mark_status = ctx.service._retry_mark_episode(
                 ctx.bgm,
-                ctx.bgm_se_id,
-                ctx.bgm_ep_id,
+                bgm_se_id,
+                bgm_ep_id,
                 queue_payload=ctx.item.model_dump(),
             )
         except ValueError as ve:
@@ -34,27 +42,21 @@ class SyncActionStep(ExecutionStepBase):
                 return StepOutcome(
                     status="error",
                     reason=f"认证失败: {ve}",
-                    processed_payload={
-                        "subject_id": str(ctx.bgm_se_id),
-                        "episode_id": str(ctx.bgm_ep_id),
-                        "error": str(ve),
-                    },
+                    inputs=inputs,
+                    outputs={"mark_status": "error", "error": str(ve)},
                     error_detail={"type": "auth_failed", "message": str(ve)},
                     is_terminal=True,
                 )
             raise ve
 
-        ctx.mark_status = mark_status
-
         if mark_status == MARK_QUEUED:
             # API 不可达：已入待同步队列，等待补发调度器重放（无 result step）
             return StepOutcome(
                 status="hit",
-                subject_id=str(ctx.bgm_se_id),
+                subject_id=bgm_se_id,
                 reason="API 不可达，已入待同步队列，等待补发调度器重放",
-                processed_payload={
-                    "subject_id": str(ctx.bgm_se_id),
-                    "episode_id": str(ctx.bgm_ep_id),
+                inputs=inputs,
+                outputs={
                     "mark_status": MARK_QUEUED,
                     "queued": True,
                 },
@@ -68,11 +70,8 @@ class SyncActionStep(ExecutionStepBase):
         }.get(mark_status, f"mark_status={mark_status}")
         return StepOutcome(
             status="hit",
-            subject_id=str(ctx.bgm_se_id),
+            subject_id=bgm_se_id,
             reason=f"mark_episode_watched 返回 {mark_status}（{action_label}）",
-            processed_payload={
-                "subject_id": str(ctx.bgm_se_id),
-                "episode_id": str(ctx.bgm_ep_id),
-                "mark_status": mark_status,
-            },
+            inputs=inputs,
+            outputs={"mark_status": mark_status},
         )

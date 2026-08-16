@@ -153,9 +153,13 @@ class SyncOrchestrator:
                     )
 
             # 11. bangumi_id_found 通知：使用解析后的正确季度 ID（cross_season
-            #     改选后 exec_ctx.bgm_se_id 可能是跨季条目，subject_id 仅为匹配阶段结果）
-            bgm_se_id = exec_ctx.bgm_se_id or subject_id
-            bgm_title = exec_ctx.bgm_title or self._fetch_bgm_title(bgm, str(bgm_se_id))
+            #     改选后 current_outputs 的 subject_id 可能是跨季条目，subject_id
+            #     仅为匹配阶段结果）。取值来源：结果链（SyncPipeline 统一回填）。
+            bgm_se_id = exec_ctx.current_outputs.get("subject_id") or subject_id
+            bgm_ep_id = exec_ctx.current_outputs.get("episode_id") or ""
+            bgm_title = exec_ctx.current_outputs.get(
+                "bgm_title"
+            ) or self._fetch_bgm_title(bgm, str(bgm_se_id))
             notification_service.notify(
                 "bangumi_id_found",
                 item,
@@ -166,16 +170,17 @@ class SyncOrchestrator:
 
             logger.debug(
                 f"bgm: 查询到 {bgm_title or item.title} (https://bgm.tv/subject/{bgm_se_id}) "
-                f"S{item.season:02d}E{item.episode:02d} (https://bgm.tv/ep/{exec_ctx.bgm_ep_id})"
+                f"S{item.season:02d}E{item.episode:02d} (https://bgm.tv/ep/{bgm_ep_id})"
             )
 
             # 12. API 不可达已入队：queued 收尾（无 result step）
-            if exec_ctx.mark_status == MARK_QUEUED:
+            mark_status = exec_ctx.current_outputs.get("mark_status")
+            if mark_status == MARK_QUEUED:
                 return self._handle_queued(
                     item,
                     actual_source,
                     bgm_se_id,
-                    exec_ctx.bgm_ep_id,
+                    bgm_ep_id,
                     bgm_title,
                     trace,
                     status_holder,
@@ -187,10 +192,10 @@ class SyncOrchestrator:
                 actual_source,
                 bgm,
                 bgm_se_id,
-                exec_ctx.bgm_ep_id,
+                bgm_ep_id,
                 bgm_title,
-                exec_ctx.mark_status,
-                exec_ctx.result_message,
+                mark_status,
+                exec_ctx.current_outputs.get("message", ""),
                 trace,
                 status_holder,
             )
