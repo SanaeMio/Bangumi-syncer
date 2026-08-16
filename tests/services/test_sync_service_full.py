@@ -1097,7 +1097,7 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
         assert str(sid) == "12345"
         # 验证 trace：final_match_method 应为 "archive"
         assert trace.final_match_method == "archive"
-        assert trace.final_subject_id == 12345
+        assert trace.final_subject_id == "12345"
         # 阶段五：ArchiveShortcutStep 和 APISearchStep（stage_override=archive）
         # 各产生一个 stage="archive" 的 step
         archive_steps = [s for s in trace.steps if s.stage == "archive"]
@@ -1163,7 +1163,7 @@ def test_find_subject_id_api_hit_keeps_stage_as_api_search():
 
         assert str(sid) == "67890"
         assert trace.final_match_method == "api_search"
-        assert trace.final_subject_id == 67890
+        assert trace.final_subject_id == "67890"
         api_steps = [s for s in trace.steps if s.stage == "api_search"]
         assert len(api_steps) == 1
         assert api_steps[0].status == "hit"
@@ -1388,7 +1388,7 @@ def test_find_subject_id_api_search_season_gt1_title_matched():
                     _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")
                 )
 
-    assert sid == 451757
+    assert sid == "451757"
     assert flag is True  # 核心断言：智能判定成功生效，阻止后续的链式爬取
     assert err == ""
 
@@ -1418,7 +1418,7 @@ def test_find_subject_id_api_search_season_gt1_title_not_matched():
                     _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")
                 )
 
-    assert sid == 146457
+    assert sid == "146457"
     assert flag is False  # 核心断言：智能判定未生效，安全地回退给后续的关系链爬虫去处理
     assert err == ""
 

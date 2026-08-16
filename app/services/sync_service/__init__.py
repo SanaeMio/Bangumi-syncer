@@ -972,7 +972,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     @staticmethod
     def _pick_mainline_episode_candidate(
         candidates: list[dict], request_title: str
-    ) -> dict:
+    ) -> dict | None:
         """在多个 episode 类型的候选中，按"主线剧集优先级"择优。
 
         场景："完美世界"搜索结果有 542046 剧场版（detect=movie 排除）、
@@ -991,10 +991,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             request_title: 请求侧标题（用于精确匹配判断）
 
         Returns:
-            最佳候选
+            最佳候选；空输入返回 None（调用方应用 if candidates 守卫避免传入空列表）
         """
         if not candidates:
-            return {}  # type: ignore[return-value]
+            return None
         if len(candidates) == 1:
             return candidates[0]
 

@@ -20,8 +20,6 @@ import inspect
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.models.sync import CustomItem
 from app.services.matching.context import MatchContext
 from app.services.matching.steps.api_search import DateExactSearchStep
@@ -101,31 +99,25 @@ def _configure_service_mock(
 
 
 class TestVerifyP01SubjectIdTypeConsistency:
-    """P2-1: ctx.subject_id 注解为 str | None，但 APISearchStep 存入 int
+    """P2-1: ctx.subject_id 注解为 str | None，APISearchStep 已统一 str() 转换（已修复）
 
-    疑似问题：``MatchContext.subject_id`` 注解为 ``str | None``（context.py line 39），
-    但 ``APISearchStep.execute`` 在 line 245 执行 ``ctx.subject_id = bgm_data[0]["id"]``，
-    而 Bangumi API / archive 返回的 ``id`` 字段为 int。其他 step
-    （ArchiveShortcutStep / VariantFallbackSearchStep / SearchFinalizeStep）
-    用 ``str(...)`` 转换，唯独 APISearchStep 命中分支不转换。
+    修复前问题：``APISearchStep.execute`` 在 line 245 执行
+    ``ctx.subject_id = bgm_data[0]["id"]``，而 Bangumi API / archive 返回的
+    ``id`` 字段为 int。其他 step（ArchiveShortcutStep / VariantFallbackSearchStep /
+    SearchFinalizeStep）用 ``str(...)`` 转换，唯独 APISearchStep 命中分支不转换。
+
+    修复后：APISearchStep 所有 subject_id 赋值点（low_confidence / hit outcome /
+    ctx.subject_id）均用 ``str(...)`` 转换，与注解 str | None 一致。
 
     场景：bgm_search 返回 ``{"id": 12345}``（int），运行 APISearchStep.execute，
-    期望 ``ctx.subject_id`` 为 str，实际为 int。
+    期望 ``ctx.subject_id`` 为 str。
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "P2-1 Confirmed: APISearchStep.execute line 245 "
-            "ctx.subject_id = bgm_data[0]['id'] 存入 int（API/archive 返回 int），"
-            "未用 str() 转换，与注解 str | None 不一致。"
-            "应在赋值时 str(bgm_data[0]['id'])，与其他 step 保持一致。"
-        )
-    )
     def test_verify_subject_id_type_consistency(self) -> None:
-        """subject_id 应为 str 类型（与注解一致）
+        """subject_id 应为 str 类型（与注解一致，已修复）
 
         构造 bgm_search 返回 int id 的候选，运行 APISearchStep。
-        期望 ctx.subject_id 为 str，实际为 int。
+        期望 ctx.subject_id 为 str。
         """
         ctx = _build_ctx(title="测试番剧", season=1, media_type="episode")
         bgm = _make_bgm_mock(
@@ -162,27 +154,19 @@ class TestVerifyP01SubjectIdTypeConsistency:
 
 
 class TestVerifyP02MatchTargetEpRowsAnnotation:
-    """P2-2: _match_target_ep_rows 注解为 dict | None，实际返回 list[dict]
+    """P2-2: _match_target_ep_rows 注解已修正为 list[dict[str, Any]]（已修复）
 
-    疑似问题：``_match_target_ep_rows``（episodes.py line 416-427）注解为
+    修复前问题：``_match_target_ep_rows``（episodes.py line 416-427）注解为
     ``-> dict[str, Any] | None``，但函数体构建 ``rows``（list）并 ``return rows``，
     实际返回 ``list[dict]``。注解与实际返回类型不符。
 
-    验证方法：用 inspect.signature 读取返回注解，断言应指示 list 类型。
+    修复后：注解改为 ``-> list[dict[str, Any]]``，与实际返回类型一致。
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "P2-2 Confirmed: _match_target_ep_rows 注解为 dict[str, Any] | None"
-            "（episodes.py line 418），但函数体 return rows（list[dict]）。"
-            "注解应改为 list[dict[str, Any]]。"
-        )
-    )
     def test_verify_match_target_ep_rows_annotation(self) -> None:
-        """_match_target_ep_rows 返回注解应指示 list 类型
+        """_match_target_ep_rows 返回注解应指示 list 类型（已修复）
 
-        读取函数返回注解，期望包含 "list"（正确描述返回类型），
-        实际注解为 "dict[str, Any] | None"（不含 "list"）。
+        读取函数返回注解，期望包含 "list"（正确描述返回类型）。
         """
         sig = inspect.signature(BangumiApi._match_target_ep_rows)
         return_annotation = sig.return_annotation
@@ -283,11 +267,12 @@ class TestVerifyP03CandidatesTopAfterReselect:
             outcome = APISearchStep().execute(ctx)
 
         # 期望行为：candidates[0] 与 ctx.subject_id 一致（改选后同步）
+        # P2-1 修复后 ctx.subject_id 为 str 类型
         assert outcome.status == "hit"
-        assert ctx.subject_id == 200
+        assert ctx.subject_id == "200"
         assert outcome.candidates, "candidates 不应为空"
         # 期望 candidates[0].subject_id == "200"（与 ctx.subject_id 一致）
-        assert outcome.candidates[0].subject_id == str(ctx.subject_id), (
+        assert outcome.candidates[0].subject_id == ctx.subject_id, (
             f"candidates[0].subject_id={outcome.candidates[0].subject_id!r}, "
             f"ctx.subject_id={ctx.subject_id!r}，二者不一致"
         )
@@ -299,22 +284,22 @@ class TestVerifyP03CandidatesTopAfterReselect:
 
 
 class TestVerifyP04DateExactMovieOverwriteEndDateStr:
-    """P2-4: movie 未命中时 ctx.end_date_str 被覆写为 +200 天
+    """P2-4: DateExactSearchStep movie 分支不再覆写 ctx.end_date_str（已修复）
 
-    疑似问题：DateExactSearchStep（api_search.py line 124-133）在 movie 未命中时
+    修复前问题：DateExactSearchStep（api_search.py line 124-133）在 movie 未命中时
     执行 ``ctx.end_date_str = movie_end_date.strftime(...)``，将 end_date_str
     从 ±2 天（line 81 设置）覆写为 +200 天。仅影响日志展示（end_date_str 用于
     debug 日志），不影响搜索逻辑。
 
-    验证方法：构造 movie 媒体类型 + 未命中场景，断言 ctx.end_date_str 被覆写
-    为 +200 天的值（确认行为存在）。
+    修复后：movie 分支使用局部变量 ``movie_end_date_str`` 传给 search，
+    ``ctx.end_date_str`` 保持原始 ±2 天的值，日志展示准确反映搜索区间。
     """
 
     def test_verify_date_exact_movie_overwrite_end_date_str(self) -> None:
-        """movie 未命中时 ctx.end_date_str 被覆写为 +200 天（确认行为存在）
+        """movie 未命中时 ctx.end_date_str 保持原始 ±2 天（已修复）
 
         构造 movie + 有效 premiere_date + search 全返回空。
-        期望 ctx.end_date_str 被覆写为 air_date + 200 天的值。
+        期望 ctx.end_date_str 保持原始 ±2 天的值，不被 movie 分支覆写。
         """
         bgm = SimpleNamespace(
             last_hit_source="",
@@ -340,22 +325,19 @@ class TestVerifyP04DateExactMovieOverwriteEndDateStr:
 
         outcome = DateExactSearchStep().execute(ctx)
 
-        # 计算 +200 天的期望值
-        air_date = datetime.datetime.fromisoformat("2024-01-15")
-        expected_end_date = (air_date + datetime.timedelta(days=200)).strftime(
-            "%Y-%m-%d"
-        )
         # 原始 ±2 天的 end_date_str
+        air_date = datetime.datetime.fromisoformat("2024-01-15")
         original_end_date = (air_date + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+        # +200 天的值（修复前会被覆写为此值）
+        movie_end_date = (air_date + datetime.timedelta(days=200)).strftime("%Y-%m-%d")
 
-        # 确认行为：ctx.end_date_str 被覆写为 +200 天的值
-        assert ctx.end_date_str == expected_end_date, (
-            f"期望 end_date_str 被覆写为 +200 天 ({expected_end_date})，"
+        # 修复后：ctx.end_date_str 保持原始 ±2 天的值
+        assert ctx.end_date_str == original_end_date, (
+            f"期望 end_date_str 保持原始 ±2 天 ({original_end_date})，"
             f"实际 {ctx.end_date_str!r}"
         )
-        assert ctx.end_date_str != original_end_date, (
-            f"end_date_str 不应保持原始 ±2 天值 ({original_end_date})，"
-            f"应被 movie 分支覆写为 +200 天"
+        assert ctx.end_date_str != movie_end_date, (
+            f"end_date_str 不应被 movie 分支覆写为 +200 天 ({movie_end_date})"
         )
         # movie 分支搜索仍 miss
         assert outcome.status == "miss"
@@ -491,31 +473,29 @@ class TestVerifyP05ArchiveEmptyChainHandlingSymmetric:
 
 
 class TestVerifyP06PickMainlineEmptyInput:
-    """P2-6: _pick_mainline_episode_candidate 空输入返回 {}
+    """P2-6: _pick_mainline_episode_candidate 空输入返回 None（已修复）
 
-    疑似问题：``_pick_mainline_episode_candidate``（sync_service/__init__.py
+    修复前问题：``_pick_mainline_episode_candidate``（sync_service/__init__.py
     line 996-997）在 ``candidates`` 为空时 ``return {}``（空 dict），
     带 ``# type: ignore[return-value]``。注解为 ``-> dict`` 但空输入返回 {}
     而非 None，调用方需额外判断。
 
-    验证方法：调用 ``_pick_mainline_episode_candidate([])``，断言返回值为 {}
-    （空 dict）。同时确认调用方 api_search_main.py line 447 有 ``if episode_candidates:``
+    修复后：返回类型改为 ``dict | None``，空输入返回 ``None``，移除
+    ``type: ignore``。调用方 api_search_main.py 已有 ``if episode_candidates:``
     守卫，不会传入空列表。
     """
 
     def test_verify_pick_mainline_empty_input(self) -> None:
-        """_pick_mainline_episode_candidate([]) 返回 {}（确认行为存在）
+        """_pick_mainline_episode_candidate([]) 返回 None（已修复）
 
-        调用静态方法传入空列表，断言返回值为空 dict（而非 None）。
+        调用静态方法传入空列表，断言返回值为 None。
         """
         from app.services.sync_service import SyncService
 
         result = SyncService._pick_mainline_episode_candidate([], "")
 
-        # 确认行为：返回 {}（空 dict），而非 None
-        assert result == {}, f"期望空 dict {{}}，实际 {result!r}"
-        assert isinstance(result, dict), f"期望 dict 类型，实际 {type(result).__name__}"
-        assert not result, "空 dict 应为 falsy"
+        # 修复后：返回 None 而非空 dict
+        assert result is None, f"期望 None，实际 {result!r}"
 
     def test_verify_pick_mainline_call_site_has_guard(self) -> None:
         """调用方 api_search_main.py 有 if episode_candidates 守卫

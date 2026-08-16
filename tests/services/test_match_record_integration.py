@@ -473,7 +473,7 @@ class TestSeasonOneCandidateSelection:
                     ):
                         subject_id, is_matched, err = svc._find_subject_id(item)
         assert err == ""
-        assert subject_id == 328088  # 第一季本体
+        assert subject_id == "328088"  # 第一季本体
         assert is_matched is True
 
     def test_season1_keeps_top_when_no_seasonless_candidate(self):
@@ -522,7 +522,7 @@ class TestSeasonOneCandidateSelection:
                     ):
                         subject_id, is_matched, err = svc._find_subject_id(item)
         assert err == ""
-        assert subject_id == 111  # 保持首条
+        assert subject_id == "111"  # 保持首条
         assert is_matched is False
 
     def test_season1_keeps_top_when_top_is_seasonless(self):
@@ -564,7 +564,7 @@ class TestSeasonOneCandidateSelection:
                     ):
                         subject_id, is_matched, err = svc._find_subject_id(item)
         assert err == ""
-        assert subject_id == 333
+        assert subject_id == "333"
         # 首条无季度后缀，不触发改选逻辑，is_matched 保持 False
         assert is_matched is False
 

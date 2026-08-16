@@ -121,14 +121,15 @@ class DateExactSearchStep(MatchStepBase):
                 )
 
             # 剧场版未命中时扩展日期范围再试一次（与剧集首播窗口 ±2 天不同）
+            # P2-4 修复：使用局部变量而非覆写 ctx.end_date_str，避免日志误导
             if not ctx.bgm_data and ctx.item.media_type == "movie":
                 movie_search_title = ctx.item.ori_title or ctx.item.title
                 movie_end_date = air_date + datetime.timedelta(days=200)
-                ctx.end_date_str = movie_end_date.strftime("%Y-%m-%d")
+                movie_end_date_str = movie_end_date.strftime("%Y-%m-%d")
                 ctx.bgm_data = ctx.bgm.search(
                     title=movie_search_title,
                     start_date=ctx.start_date_str,
-                    end_date=ctx.end_date_str,
+                    end_date=movie_end_date_str,
                     subject_types=subject_types,
                 )
         except ValueError:

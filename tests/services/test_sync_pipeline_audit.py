@@ -164,13 +164,14 @@ class TestVerifyA51FanrenS01e81FullPath:
             outcome = APISearchStep().execute(ctx)
 
         # 期望：archive 命中但媒体类型不匹配 → 降级 API → 改选动画版 406306
+        # P2-1 修复后 subject_id 为 str 类型
         assert outcome.status == "hit", (
             f"期望 hit，实际 {outcome.status}：{outcome.reason}"
         )
-        assert outcome.subject_id == 406306, (
-            f"期望 subject_id=406306（动画版），实际 {outcome.subject_id}"
+        assert outcome.subject_id == "406306", (
+            f"期望 subject_id='406306'（动画版），实际 {outcome.subject_id}"
         )
-        assert ctx.subject_id == 406306
+        assert ctx.subject_id == "406306"
         # archive 命中时 match_method_detail 保留 ArchiveShortcutStep 设置的 "exact"
         assert ctx.match_method_detail == "exact"
 
@@ -233,7 +234,7 @@ class TestVerifyA52ArchiveSingleCandidateMethodDetail:
             f"期望 final_match_method_detail='exact'，"
             f"实际 '{ctx.trace.final_match_method_detail}'"
         )
-        assert ctx.trace.final_subject_id == 123
+        assert ctx.trace.final_subject_id == "123"
 
 
 # ======================================================================

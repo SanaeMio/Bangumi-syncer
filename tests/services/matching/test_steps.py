@@ -200,7 +200,7 @@ class TestAPISearchStep:
         outcome = APISearchStep().execute(ctx)
 
         assert outcome.status == "hit"
-        assert outcome.subject_id == 12345
+        assert outcome.subject_id == "12345"
         assert outcome.stage_override == "archive"
         assert ctx.match_stage == "archive"
         assert ctx.match_method_detail == "exact"
@@ -281,8 +281,9 @@ class TestAPISearchStep:
         outcome = APISearchStep().execute(ctx)
 
         # 命中应改选到动画版 406306，而非真人剧 434076
+        # P2-1 修复后 subject_id 为 str 类型
         assert outcome.status == "hit"
-        assert outcome.subject_id == 406306
-        assert ctx.subject_id == 406306
+        assert outcome.subject_id == "406306"
+        assert ctx.subject_id == "406306"
         # _pick_mainline_episode_candidate 被调用（媒体类型改选触发）
         ctx.service._pick_mainline_episode_candidate.assert_called_once()

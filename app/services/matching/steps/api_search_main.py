@@ -240,7 +240,7 @@ class APISearchStep(MatchStepBase):
                 )
                 return StepOutcome(
                     status="low_confidence",
-                    subject_id=bgm_data[0].get("id"),
+                    subject_id=str(bgm_data[0].get("id")),
                     reason=(
                         f"匹配相似度 {real_conf:.2f} 低于阈值 {threshold:.2f}，已沉淀待审"
                     ),
@@ -253,7 +253,7 @@ class APISearchStep(MatchStepBase):
                 )
 
             # 命中：设置 ctx
-            ctx.subject_id = bgm_data[0]["id"]
+            ctx.subject_id = str(bgm_data[0]["id"])
             ctx.is_season_matched_id = is_api_season_matched
             # 细粒度匹配方式：
             # - archive 命中：保留 ArchiveShortcutStep 设置的 match_method_detail
@@ -287,7 +287,7 @@ class APISearchStep(MatchStepBase):
 
             return StepOutcome(
                 status="hit",
-                subject_id=bgm_data[0]["id"],
+                subject_id=str(bgm_data[0]["id"]),
                 reason=final_reason,
                 score=(
                     real_conf

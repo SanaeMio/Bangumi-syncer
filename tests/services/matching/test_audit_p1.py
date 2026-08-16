@@ -159,8 +159,9 @@ class TestVerifyP01ConfidenceUsesPreReselectScore:
             outcome = APISearchStep().execute(ctx)
 
         # 期望行为：改选后高置信度命中
+        # P2-1 修复后 subject_id 为 str 类型
         assert outcome.status == "hit"
-        assert outcome.subject_id == 406306
+        assert outcome.subject_id == "406306"
 
 
 # ======================================================================

@@ -418,7 +418,7 @@ class EpisodesMixin:
 
     def _match_target_ep_rows(
         self, ep_info: list, target_ep: int
-    ) -> dict[str, Any] | None:
+    ) -> list[dict[str, Any]]:
         """与 target_season>1 分支一致的章节匹配规则。"""
         rows = [i for i in ep_info if i.get("sort") == target_ep]
         if not rows:
