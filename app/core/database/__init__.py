@@ -216,6 +216,23 @@ class DatabaseManager:
         """回填同步记录的 run_id，用于重试回写原记录关联。"""
         return self._sync.update_sync_record_run_id(record_id, run_id)
 
+    def update_sync_record_match_fields(
+        self,
+        record_id: int,
+        match_method: Optional[str] = None,
+        match_trace: Optional[dict] = None,
+        match_score: Optional[float] = None,
+        match_platform: Optional[str] = None,
+    ) -> bool:
+        """回写同步记录的匹配字段，用于重试成功后覆盖原始失败记录的 match_method 等。"""
+        return self._sync.update_sync_record_match_fields(
+            record_id,
+            match_method=match_method,
+            match_trace=match_trace,
+            match_score=match_score,
+            match_platform=match_platform,
+        )
+
     # ------------------------------------------------------------------
     # PendingCandidatesRepository 转发
     # ------------------------------------------------------------------

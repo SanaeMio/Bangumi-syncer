@@ -650,6 +650,23 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """更新同步记录的状态"""
         return database_manager.update_sync_record_status(record_id, status, message)
 
+    def update_sync_record_match_fields(
+        self,
+        record_id: int,
+        match_method: str | None = None,
+        match_trace: dict | None = None,
+        match_score: float | None = None,
+        match_platform: str | None = None,
+    ) -> bool:
+        """回写同步记录的匹配字段，用于重试成功后覆盖原始失败记录的 match_method 等。"""
+        return database_manager.update_sync_record_match_fields(
+            record_id,
+            match_method=match_method,
+            match_trace=match_trace,
+            match_score=match_score,
+            match_platform=match_platform,
+        )
+
     def mark_pending_sync_synced_by_sync_record_id(self, sync_record_id: int) -> int:
         """按 sync_record_id 清理 pending_sync_queue 中的 pending 行。
 
@@ -1469,6 +1486,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     if trace:
                         trace.final_subject_id = str(chain_subject_id)
                         trace.final_episode_id = str(chain_ep_id)
+                        # 跨季链命中：日志明确"通过 archive 续集链找到目标集"，
+                        # 粗粒度记 archive，细粒度记 cross_season_chain
+                        trace.final_match_method = "archive"
+                        trace.final_match_method_detail = "cross_season_chain"
                 else:
                     logger.error(
                         f"bgm: {subject_id=} {item.season=} {item.episode=}, 不存在或集数过多，跳过"
@@ -1745,6 +1766,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     "episode": item.episode,
                     "subject_id": bgm_se_id,
                     "episode_id": bgm_ep_id,
+                    # 重试成功后回写原记录用：匹配方式 + 完整 trace + 置信度 + 平台
+                    "match_method": trace.final_match_method if trace else "",
+                    "match_trace": trace.to_dict() if trace else None,
+                    "match_score": trace.final_score if trace else None,
+                    "match_platform": self._extract_matched_platform(trace, bgm_se_id)
+                    if trace
+                    else "",
                 },
             )
             status_holder[0] = result.status
