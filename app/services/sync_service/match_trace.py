@@ -124,7 +124,8 @@ class MatchTrace:
     # 匹配歧义标记：APISearchStep 检测 top1/top2 分数差 < 0.05 时置 True，
     # 编排器据此发送 match_ambiguous 通知（原 _maybe_notify_match_ambiguous 检测逻辑前移到 step）
     is_ambiguous: bool = False
-    # P2: 匹配阶段总耗时（不含 receive/result 阶段），用于性能排错
+    # P2: 全流程总耗时（receive 开始到 result 结束，由编排器统一 finish 结算），
+    # 用于性能排错。执行阶段（SyncPipeline）的耗时会计入 total_elapsed_ms。
     total_elapsed_ms: int = 0
 
     # 内部计时

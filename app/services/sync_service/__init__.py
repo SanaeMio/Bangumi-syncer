@@ -1057,6 +1057,14 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             release_date=release_for_ep,
         )
 
+    def _format_mark_status_message(self, mark_status: int) -> str:
+        """根据标记结果构建结果消息（纯函数，供 ResultStep 与 _apply_sync_status 复用）"""
+        if mark_status == 0:
+            return "已看过，不再重复标记"
+        if mark_status == 1:
+            return "已标记为看过"
+        return "已添加到收藏并标记为看过"
+
     def _apply_sync_status(
         self,
         item: CustomItem,
@@ -1067,8 +1075,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         mark_status: int,
     ) -> str:
         """根据标记结果构建结果消息并发送通知。返回 result_message。"""
+        result_message = self._format_mark_status_message(mark_status)
         if mark_status == 0:
-            result_message = "已看过，不再重复标记"
             logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message}"
             )
@@ -1083,7 +1091,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
 
         elif mark_status == 1:
-            result_message = "已标记为看过"
             logger.debug(
                 f"bgm: {bgm_title or item.title} S{item.season:02d}E{item.episode:02d} {result_message} https://bgm.tv/ep/{bgm_ep_id}"
             )
@@ -1098,7 +1105,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )
 
         else:
-            result_message = "已添加到收藏并标记为看过"
             logger.debug(
                 f"bgm: {bgm_title or item.title} 已添加到收藏 https://bgm.tv/subject/{bgm_se_id}"
             )

@@ -5,8 +5,12 @@
 剥离原 sync_service._find_matching_subject / _sync_custom_item_body 的耦合：
 - DB 写入、通知、调度器触发统一收口到本编排器
 - trace→DB 的 finish+to_dict+log 样板统一收口到 _persist_sync_record
-- episode_resolve / cross_season 保留原逻辑（作为编排器方法，不作为管道 step，
-  避免 cross_season 修改 trace.final_* 与 pipeline._record_trace 冲突）
+- 匹配阶段由 MatchPipeline 编排（matching/pipeline.py）；集数解析 / 跨季回退 /
+  标记 / 结果结算由 SyncPipeline（本文件 _run_execution_pipeline 装配）编排，
+  step 实现见 steps/ 子包。episode_resolve / cross_season / sync_action / result
+  每步的进出数据与耗时由 SyncPipeline._record_trace 统一记录，final_* 由
+  ResultStep 统一结算（跨季改选覆写也在其中），编排器只负责终态分支与副作用
+  （通知 / 收藏归档 / 持久化）。
 - bgm 对象生命周期：编排器创建并注入匹配管道（只读），标记阶段用完整实例（写）
 """
 
@@ -17,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from ...core.logging import get_sync_run_id, logger, sync_log_context
 from ...models.sync import CustomItem, SyncResponse
+from .context import ExecutionContext
 from .match_trace import MatchTrace
 from .retry import MARK_QUEUED
 
@@ -115,26 +120,42 @@ class SyncOrchestrator:
             # 8. 匹配歧义通知（trace.is_ambiguous 由 APISearchStep 设置，编排器据此发通知）
             self._sync._maybe_notify_match_ambiguous(trace, item, actual_source)
 
-            # 9. 集数解析（episode_resolve + cross_season，保留原逻辑）
-            bgm_se_id, bgm_ep_id = self._resolve_episode_with_cross_season(
-                bgm, item, subject_id, is_season_matched_id, trace
+            # 9. 集数解析 → 跨季回退 → 标记 → 结果结算（执行阶段管线）
+            exec_ctx = self._run_execution_pipeline(
+                bgm, item, actual_source, subject_id, is_season_matched_id, trace
             )
 
-            if not bgm_ep_id:
-                # 集数不存在：不发 bangumi_id_found（旧实现 resolve 成功后
-                # 才通知，避免"已找到"与失败通知的矛盾序列）
-                return self._handle_episode_not_found(
-                    item, actual_source, trace, subject_id, status_holder
-                )
+            # 10. 终态分支（error / miss 短路；queued / success 继续收尾）
+            terminal = exec_ctx.terminal
+            if terminal is not None:
+                stage, outcome = terminal
+                if stage == "episode_resolve" and outcome.status == "error":
+                    # 认证失败等：走统一异常处理（保持原 raise 语义）
+                    err = ValueError(
+                        (outcome.error_detail or {}).get("message", outcome.reason)
+                    )
+                    return self._handle_sync_exception(
+                        item, source, actual_source, trace, err, status_holder
+                    )
+                if stage == "cross_season" and outcome.status == "miss":
+                    # 集数不存在：不发 bangumi_id_found（旧实现 resolve 成功后
+                    # 才通知，避免"已找到"与失败通知的矛盾序列）
+                    return self._handle_episode_not_found(
+                        item, actual_source, trace, subject_id, status_holder
+                    )
+                if stage == "sync_action" and outcome.status == "error":
+                    status_holder[0] = "error"
+                    return SyncResponse(
+                        status="error",
+                        message=(outcome.error_detail or {}).get(
+                            "message", outcome.reason
+                        ),
+                    )
 
-            # 10. bangumi_id_found 通知：使用解析后的正确季度 ID（cross_season
-            #     改选后 bgm_se_id 可能是跨季条目，subject_id 仅为匹配阶段结果）
-            subject_info = bgm.get_subject(bgm_se_id)
-            bgm_title = ""
-            if subject_info:
-                bgm_title = (
-                    subject_info.get("name_cn") or subject_info.get("name") or ""
-                )
+            # 11. bangumi_id_found 通知：使用解析后的正确季度 ID（cross_season
+            #     改选后 exec_ctx.bgm_se_id 可能是跨季条目，subject_id 仅为匹配阶段结果）
+            bgm_se_id = exec_ctx.bgm_se_id or subject_id
+            bgm_title = exec_ctx.bgm_title or self._fetch_bgm_title(bgm, str(bgm_se_id))
             notification_service.notify(
                 "bangumi_id_found",
                 item,
@@ -145,17 +166,31 @@ class SyncOrchestrator:
 
             logger.debug(
                 f"bgm: 查询到 {bgm_title or item.title} (https://bgm.tv/subject/{bgm_se_id}) "
-                f"S{item.season:02d}E{item.episode:02d} (https://bgm.tv/ep/{bgm_ep_id})"
+                f"S{item.season:02d}E{item.episode:02d} (https://bgm.tv/ep/{exec_ctx.bgm_ep_id})"
             )
 
-            # 12. 标记为看过
-            return self._mark_and_persist(
+            # 12. API 不可达已入队：queued 收尾（无 result step）
+            if exec_ctx.mark_status == MARK_QUEUED:
+                return self._handle_queued(
+                    item,
+                    actual_source,
+                    bgm_se_id,
+                    exec_ctx.bgm_ep_id,
+                    bgm_title,
+                    trace,
+                    status_holder,
+                )
+
+            # 13. 标记成功收尾：通知 + 收藏归档 + 持久化
+            return self._finalize_success(
                 item,
                 actual_source,
                 bgm,
                 bgm_se_id,
-                bgm_ep_id,
+                exec_ctx.bgm_ep_id,
                 bgm_title,
+                exec_ctx.mark_status,
+                exec_ctx.result_message,
                 trace,
                 status_holder,
             )
@@ -344,166 +379,61 @@ class SyncOrchestrator:
         return SyncResponse(status="error", message="未找到匹配的番剧")
 
     # ------------------------------------------------------------------
-    # 集数解析 + 跨季链（保留原 _sync_custom_item_body L1380-1559 逻辑）
+    # 执行阶段管线（episode_resolve → cross_season → sync_action → result）
     # ------------------------------------------------------------------
 
-    def _resolve_episode_with_cross_season(
+    def _run_execution_pipeline(
         self,
         bgm: Any,
         item: CustomItem,
+        actual_source: str,
         subject_id: str,
         is_season_matched_id: bool,
         trace: MatchTrace,
-    ) -> tuple[str, str]:
-        """集数解析 + 跨季链回退。返回 (bgm_se_id, bgm_ep_id)。
+    ) -> ExecutionContext:
+        """装配并运行执行阶段管线，返回携带终态信息的 ExecutionContext
 
-        - episode_resolve step：调用 _resolve_season_episode
-        - 若未命中 ep_id：cross_season step 调用 find_episode_across_seasons
-        - cross_season 命中时修改 subject_id 并标注 trace.final_*
+        terminal = (stage, outcome)：提前终止（error / miss / queued）。
+        None 表示全部 step 执行完（含 result step）。
         """
-        ep_resolve_step = trace.start_step("episode_resolve")
-        resolve_input = {
-            "input_subject_id": str(subject_id),
-            "input_is_season_id": bool(is_season_matched_id),
-            "request_season": item.season,
-            "request_episode": item.episode,
-            "media_type": item.media_type,
-            "release_date": item.release_date or "",
-        }
-
-        try:
-            bgm_se_id, bgm_ep_id = self._sync._resolve_season_episode(
-                bgm, item, subject_id, is_season_matched_id
-            )
-        except ValueError as ve:
-            if "认证失败" in str(ve) or "access_token" in str(ve):
-                ep_resolve_step.status = "error"
-                ep_resolve_step.reason = f"认证失败: {ve}"
-                ep_resolve_step.processed_payload = {
-                    **resolve_input,
-                    "output_subject_id": "",
-                    "output_episode_id": "",
-                    "changed": False,
-                    "error": str(ve),
-                }
-                raise
-            else:
-                raise ve
-
-        changed = str(bgm_se_id) != str(subject_id) if bgm_se_id else False
-        if bgm_ep_id:
-            ep_resolve_step.status = "hit"
-            ep_resolve_step.subject_id = str(bgm_se_id)
-            ep_resolve_step.reason = (
-                f"集数解析：subject={bgm_se_id} episode={item.episode} → "
-                f"ep_id={bgm_ep_id}"
-            )
-            ep_resolve_step.processed_payload = {
-                **resolve_input,
-                "output_subject_id": str(bgm_se_id),
-                "output_episode_id": str(bgm_ep_id),
-                "changed": changed,
-                "subject_url": f"https://bgm.tv/subject/{bgm_se_id}",
-                "episode_url": f"https://bgm.tv/ep/{bgm_ep_id}",
-            }
-        else:
-            ep_resolve_step.status = "miss"
-            ep_resolve_step.reason = (
-                f"集数解析未命中：subject={bgm_se_id} episode={item.episode}"
-            )
-            ep_resolve_step.processed_payload = {
-                **resolve_input,
-                "output_subject_id": str(bgm_se_id) if bgm_se_id else "",
-                "output_episode_id": "",
-                "changed": changed,
-                "error": "未找到对应集数",
-            }
-
-        if bgm_ep_id:
-            return bgm_se_id, bgm_ep_id
-
-        # 跨季链回退
-        return self._cross_season_fallback(bgm, item, subject_id, bgm_se_id, trace)
-
-    def _cross_season_fallback(
-        self,
-        bgm: Any,
-        item: CustomItem,
-        subject_id: str,
-        bgm_se_id: str,
-        trace: MatchTrace,
-    ) -> tuple[str, str]:
-        """跨季链查找：通过前传/续集链在关联季条目中查找含目标 sort 的章节"""
-        cross_step = trace.start_step("cross_season")
-        cross_input_subject = str(subject_id)
-        chain_pick = None
-        try:
-            chain_pick = bgm.find_episode_across_seasons(subject_id, item.episode)
-        except Exception as e:
-            logger.debug(f"关联季条目链查找异常: {e}")
-
-        if chain_pick:
-            chain_subject_id, chain_ep_id = chain_pick
-            prev_subject_id = subject_id
-            # 跨季链命中路径：chain=前传/续集链；franchise_archive=同 IP 闭包
-            # （本地归档，含改编边）；franchise_online=同 IP 改编一跳（在线）。
-            # 由 episodes.find_episode_across_seasons 各命中点回填。
-            cross_path = getattr(bgm, "last_cross_season_path", "") or ""
-            detail_by_path = {
-                "chain": "cross_season_chain",
-                "franchise_archive": "cross_season_franchise_archive",
-                "franchise_online": "cross_season_franchise_online",
-            }
-            match_method_detail = detail_by_path.get(cross_path, "cross_season_chain")
-            path_label = {
-                "chain": "前传/续集链",
-                "franchise_archive": "同 IP 闭包（本地归档）",
-                "franchise_online": "同 IP 改编一跳（在线）",
-            }.get(cross_path, "跨季链")
-            logger.debug(
-                f"通过关联季条目链找到目标集({path_label}): "
-                f"原 subject_id={prev_subject_id}, "
-                f"改选 subject_id={chain_subject_id}, ep_id={chain_ep_id}, "
-                f"目标 episode={item.episode}"
-            )
-            cross_step.status = "hit"
-            cross_step.subject_id = str(chain_subject_id)
-            cross_step.reason = (
-                f"跨季链查找命中（{path_label}）：原 subject_id={prev_subject_id} → "
-                f"chain_subject_id={chain_subject_id}, "
-                f"ep_id={chain_ep_id} (目标 episode={item.episode})"
-            )
-            cross_step.processed_payload = {
-                "input_subject_id": cross_input_subject,
-                "output_subject_id": str(chain_subject_id),
-                "output_episode_id": str(chain_ep_id),
-                "target_episode": item.episode,
-                "changed": str(prev_subject_id) != str(chain_subject_id),
-                "match_path": cross_path,
-                "subject_url": f"https://bgm.tv/subject/{chain_subject_id}",
-                "episode_url": f"https://bgm.tv/ep/{chain_ep_id}",
-            }
-            trace.final_subject_id = str(chain_subject_id)
-            trace.final_episode_id = str(chain_ep_id)
-            # 跨季链命中：粗粒度记 archive，细粒度记具体路径
-            trace.final_match_method = "archive"
-            trace.final_match_method_detail = match_method_detail
-            return chain_subject_id, chain_ep_id
-
-        logger.error(
-            f"bgm: {subject_id=} {item.season=} {item.episode=}, 不存在或集数过多，跳过"
+        from .pipeline import SyncPipeline
+        from .steps import (
+            CrossSeasonStep,
+            EpisodeResolveStep,
+            ResultStep,
+            SyncActionStep,
         )
-        cross_step.status = "miss"
-        cross_step.reason = f"跨季链查找未命中含 sort={item.episode} 的季条目"
-        cross_step.processed_payload = {
-            "input_subject_id": cross_input_subject,
-            "output_subject_id": "",
-            "output_episode_id": "",
-            "target_episode": item.episode,
-            "changed": False,
-            "error": f"未找到含 sort={item.episode} 的关联季条目",
-        }
-        return bgm_se_id, ""
+
+        exec_ctx = ExecutionContext(
+            item=item,
+            bgm=bgm,
+            trace=trace,
+            service=self._sync,
+            actual_source=actual_source,
+            subject_id=subject_id,
+            is_season_matched_id=is_season_matched_id,
+        )
+        pipeline = SyncPipeline(
+            [
+                EpisodeResolveStep(),
+                CrossSeasonStep(),
+                SyncActionStep(),
+                ResultStep(),
+            ]
+        )
+        exec_ctx.terminal = pipeline.run(exec_ctx)
+        return exec_ctx
+
+    @staticmethod
+    def _fetch_bgm_title(bgm: Any, bgm_se_id: str) -> str:
+        """获取条目标题（queued 分支 ResultStep 未执行时由编排器补取）"""
+        try:
+            subject_info = bgm.get_subject(bgm_se_id)
+            if subject_info:
+                return subject_info.get("name_cn") or subject_info.get("name") or ""
+        except Exception:
+            logger.debug(f"获取条目标题失败: {bgm_se_id}", exc_info=True)
+        return ""
 
     # ------------------------------------------------------------------
     # 集数未找到处理（原 L1508-1559）
@@ -562,10 +492,10 @@ class SyncOrchestrator:
         return SyncResponse(status="error", message="未找到对应的剧集")
 
     # ------------------------------------------------------------------
-    # 标记 + 持久化（原 L1583-1777）
+    # 标记成功收尾（ResultStep 已结算 final_*，此处只做副作用与持久化）
     # ------------------------------------------------------------------
 
-    def _mark_and_persist(
+    def _finalize_success(
         self,
         item: CustomItem,
         actual_source: str,
@@ -573,80 +503,19 @@ class SyncOrchestrator:
         bgm_se_id: str,
         bgm_ep_id: str,
         bgm_title: str,
+        mark_status: int,
+        result_message: str,
         trace: MatchTrace,
         status_holder: list[str],
     ) -> SyncResponse:
-        """标记为看过 + 持久化同步记录"""
-        sync_action_step = trace.start_step("sync_action")
-        try:
-            mark_status = self._sync._retry_mark_episode(
-                bgm,
-                bgm_se_id,
-                bgm_ep_id,
-                queue_payload=item.model_dump(),
-            )
-        except ValueError as ve:
-            if "认证失败" in str(ve) or "access_token" in str(ve):
-                sync_action_step.status = "error"
-                sync_action_step.reason = f"认证失败: {ve}"
-                status_holder[0] = "error"
-                return SyncResponse(status="error", message=str(ve))
-            raise ve
-
-        # API 不可达：已入待同步队列
-        if mark_status == MARK_QUEUED:
-            return self._handle_queued(
-                item,
-                actual_source,
-                bgm_se_id,
-                bgm_ep_id,
-                bgm_title,
-                trace,
-                sync_action_step,
-                status_holder,
-            )
-
-        sync_action_step.status = "hit"
-        sync_action_step.subject_id = str(bgm_se_id)
-        action_label = {
-            0: "已在看/看过（无变更）",
-            1: "已标记为看过",
-            2: "已添加收藏",
-        }.get(mark_status, f"mark_status={mark_status}")
-        sync_action_step.reason = (
-            f"mark_episode_watched 返回 {mark_status}（{action_label}）"
-        )
-        trace.final_action = str(mark_status)
-
-        result_message = self._sync._apply_sync_status(
+        """标记成功：通知 + 收藏归档 + 持久化 + 组装 SyncResponse"""
+        # 通知 mark_success/mark_skipped（result_message 已由 ResultStep 结算）
+        self._sync._apply_sync_status(
             item, actual_source, bgm_se_id, bgm_ep_id, bgm_title, mark_status
         )
 
         self._sync._mark_subject_completed_if_needed(item, bgm, bgm_se_id, bgm_title)
 
-        # 回填最终剧集 ID 到 trace
-        trace.final_episode_id = str(bgm_ep_id)
-
-        # result step
-        result_step = trace.start_step("result")
-        result_step.status = "hit"
-        result_step.subject_id = str(bgm_se_id)
-        result_step.reason = (
-            f"{result_message} · https://bgm.tv/subject/{bgm_se_id}"
-            + (f" · https://bgm.tv/ep/{bgm_ep_id}" if bgm_ep_id else "")
-        )
-        result_step.processed_payload = {
-            "status": "success",
-            "episode": f"S{item.season:02d}E{item.episode:02d}",
-            "subject_id": str(bgm_se_id),
-            "episode_id": str(bgm_ep_id) if bgm_ep_id else "",
-            "subject_url": f"https://bgm.tv/subject/{bgm_se_id}",
-            "episode_url": f"https://bgm.tv/ep/{bgm_ep_id}" if bgm_ep_id else "",
-            "bgm_title": bgm_title,
-            "message": result_message,
-        }
-        trace.final_status = "success"
-        trace.final_message = result_message
         trace.finish()
 
         self._persist_sync_record(
@@ -693,15 +562,14 @@ class SyncOrchestrator:
         bgm_ep_id: str,
         bgm_title: str,
         trace: MatchTrace,
-        sync_action_step: Any,
         status_holder: list[str],
     ) -> SyncResponse:
-        """API 不可达已入队：记录为 queued + 发 sync_queued 通知"""
+        """API 不可达已入队：记录为 queued + 发 sync_queued 通知
+
+        sync_action step 已由 SyncPipeline 记录（hit），此处收口 final_*。
+        """
         from . import notification_service
 
-        sync_action_step.status = "hit"
-        sync_action_step.subject_id = str(bgm_se_id)
-        sync_action_step.reason = "API 不可达，已入待同步队列，等待补发调度器重放"
         trace.final_action = "queued"
         trace.final_status = "queued"
         trace.final_message = "API 不可达，已入待同步队列"

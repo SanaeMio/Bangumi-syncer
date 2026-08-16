@@ -468,20 +468,28 @@ def test_match_trace_to_dict_serializes_final_status():
         ("", "cross_season_chain", "跨季链"),
     ],
 )
-def test_cross_season_fallback_writes_match_path_to_trace(
+def test_cross_season_step_writes_match_path_to_trace(
     path, expected_detail, expected_label
 ):
-    """_cross_season_fallback 应按命中路径写入 trace 细粒度匹配方式与 reason
+    """CrossSeasonStep 应按命中路径写入 ctx 改选信息与 trace step
 
     前端根据 final_match_method_detail 渲染徽章、按 processed_payload.match_path
     渲染跨季链表格的命中路径列。
     """
+    from app.services.sync_service.context import ExecutionContext
     from app.services.sync_service.match_trace import MatchTrace
-    from app.services.sync_service.orchestrator import SyncOrchestrator
+    from app.services.sync_service.pipeline import SyncPipeline
+    from app.services.sync_service.steps.cross_season import CrossSeasonStep
+    from app.services.sync_service.steps.result import ResultStep
 
     bgm = MagicMock()
     bgm.find_episode_across_seasons.return_value = (999, "9981")
     bgm.last_cross_season_path = path
+    bgm.get_subject.return_value = {
+        "id": 999,
+        "name": "凡人修仙传",
+        "name_cn": "凡人修仙传",
+    }
 
     item = CustomItem(
         user_name="u",
@@ -492,19 +500,77 @@ def test_cross_season_fallback_writes_match_path_to_trace(
         media_type="tv",
         release_date="2023-01-01",
     )
-
-    orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)
-    orchestrator._sync = MagicMock()
     trace = MatchTrace()
-    sid, eid = orchestrator._cross_season_fallback(
-        bgm, item, subject_id="100", bgm_se_id="100", trace=trace
+    ctx = ExecutionContext(
+        item=item,
+        bgm=bgm,
+        trace=trace,
+        service=MagicMock(),
+        actual_source="fongmi",
+        subject_id="100",
+        is_season_matched_id=False,
     )
 
-    assert sid == 999
-    assert eid == "9981"
-    assert trace.final_match_method_detail == expected_detail
-    trace.finish()
+    pipeline = SyncPipeline([CrossSeasonStep()])
+    terminal = pipeline.run(ctx)
+    assert terminal is None
+
+    assert ctx.bgm_se_id == "999"
+    assert ctx.bgm_ep_id == "9981"
+    assert ctx.cross_season_hit is True
+    assert ctx.cross_season_path == path
+
     cross_step = trace.steps[-1]
     assert cross_step.status == "hit"
     assert cross_step.processed_payload["match_path"] == path
     assert expected_label in cross_step.reason
+
+    # final_* 由 ResultStep 统一结算（跨季改选覆写）
+    ctx.mark_status = 1
+    ctx.service._format_mark_status_message.return_value = "已标记为看过"
+    ResultStep().execute(ctx)
+    assert trace.final_subject_id == "999"
+    assert trace.final_episode_id == "9981"
+    assert trace.final_match_method == "archive"
+    assert trace.final_match_method_detail == expected_detail
+    assert trace.final_action == "1"
+    assert trace.final_status == "success"
+    assert ctx.bgm_title == "凡人修仙传"
+
+
+def test_cross_season_step_skipped_when_episode_resolved():
+    """集数解析已命中时 CrossSeasonStep 应返回 skipped 且不改写 ctx"""
+    from app.services.sync_service.context import ExecutionContext
+    from app.services.sync_service.match_trace import MatchTrace
+    from app.services.sync_service.steps.cross_season import CrossSeasonStep
+
+    bgm = MagicMock()
+    item = CustomItem(
+        user_name="u",
+        title="T",
+        season=1,
+        episode=1,
+        source="fongmi",
+        media_type="tv",
+        release_date="",
+    )
+    ctx = ExecutionContext(
+        item=item,
+        bgm=bgm,
+        trace=MatchTrace(),
+        service=MagicMock(),
+        actual_source="fongmi",
+        subject_id="100",
+        is_season_matched_id=False,
+        bgm_se_id="100",
+        bgm_ep_id="200",
+    )
+
+    outcome = CrossSeasonStep().execute(ctx)
+
+    assert outcome.status == "skipped"
+    assert outcome.reason == "集数解析已命中，无需跨季回退"
+    assert ctx.bgm_se_id == "100"
+    assert ctx.bgm_ep_id == "200"
+    assert ctx.cross_season_hit is False
+    bgm.find_episode_across_seasons.assert_not_called()
