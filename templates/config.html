@@ -2772,10 +2772,12 @@
                                                   rows="5"
                                                   placeholder='{"content": "📢 {title} S{season}E{episode} - {notification_type}"}'></textarea>
                                         <div class="form-text">
-                                            支持 JSON 格式，可用变量：{timestamp}, {user_name}, {title},
-                                            {ori_title}, {bgm_title}, {season}, {episode}, {source},
-                                            {notification_type}, {error_message}, {subject_id},
-                                            {episode_id}
+                                            支持 JSON 格式，通用变量：{timestamp}, {user_name}, {title},
+                                            {ori_title}, {bgm_title}, {season}, {episode}, {source}, {error_type},
+                                            {error_message}, {notification_type}, {subject_id}, {episode_id}
+                                            <br>
+                                            追番总结事件：{job_name}, {summary_text}, {date_range}, {record_count},
+                                            {lookback_days}, {model}, {tokens_used}
                                         </div>
                                     </div>
                                     <div class="d-flex gap-2">
@@ -2913,10 +2915,12 @@
                                                value="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}"
                                                placeholder="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}" />
                                         <div class="form-text">
-                                            可用变量：{timestamp}, {user_name}, {title}, {ori_title},
+                                            通用变量：{timestamp}, {user_name}, {title}, {ori_title},
                                             {bgm_title}, {season}, {episode}, {source}, {error_type},
-                                            {error_message}, {notification_type}, {subject_id},
-                                            {episode_id}
+                                            {error_message}, {notification_type}, {subject_id}, {episode_id}
+                                            <br>
+                                            追番总结事件：{job_name}, {summary_text}, {date_range}, {record_count},
+                                            {lookback_days}, {model}, {tokens_used}
                                         </div>
                                     </div>
                                     <div class="mb-3">
