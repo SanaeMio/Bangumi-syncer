@@ -340,3 +340,49 @@ def test_key_index_empty_table_triggers_rebuild(tmp_path):
         assert 1 in ids, "空表应触发重建并命中"
     finally:
         q.invalidate()
+
+
+def test_ensure_built_concurrent_self_heal(tmp_path):
+    """并发自愈（查询路径 + build_in_background 同窗触发）应串行构建不踩踏
+
+    修复前：旧库升级首窗，两个线程在共享连接上同时 DROP/CREATE
+    VIRTUAL TABLE，后到者报 database is locked 被降级（下次查询才自愈）。
+    修复后：构建段加锁 + 双重检查，只构建一次，双方均返回 True。
+    """
+    import threading
+    from unittest.mock import patch
+
+    db = tmp_path / "heal.db"
+    _make_db(db)
+    q = archive_fts_query
+    q._get_active_path = lambda: db
+    q.invalidate()
+    try:
+        results: dict = {}
+        build_tids: list = []
+
+        real_build = ArchiveFTSQuery._build_fts_from_subject
+
+        def counting_build(self, conn):
+            build_tids.append(threading.get_ident())
+            return real_build(self, conn)
+
+        barrier = threading.Barrier(2)
+
+        def worker(name: str):
+            barrier.wait()
+            results[name] = q._ensure_built()
+
+        with patch.object(ArchiveFTSQuery, "_build_fts_from_subject", counting_build):
+            t1 = threading.Thread(target=worker, args=("a",))
+            t2 = threading.Thread(target=worker, args=("b",))
+            t1.start()
+            t2.start()
+            t1.join(30)
+            t2.join(30)
+
+        assert results == {"a": True, "b": True}, results
+        assert len(build_tids) == 1, f"并发自愈应只构建一次，实际 {len(build_tids)} 次"
+        assert q._fts_ready is True
+    finally:
+        q.invalidate()

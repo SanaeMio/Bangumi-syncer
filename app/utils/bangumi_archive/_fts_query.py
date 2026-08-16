@@ -341,23 +341,30 @@ class ArchiveFTSQuery:
         if self._fts_ready:
             return True
         # FTS5 表缺失：尝试从 subject 表自动构建（兼容旧库 + 测试场景）
-        # _ensure_conn 设置了 query_only=ON，需临时关闭以允许建表
-        try:
-            conn.execute("PRAGMA query_only=OFF")
-            self._build_fts_from_subject(conn)
-            conn.execute("PRAGMA query_only=ON")
-            self._fts_ready = self._check_fts_table_exists(conn)
-            return self._fts_ready
-        except sqlite3.Error as e:
-            logger.warning(
-                f"bangumi_archive FTS5 自动构建失败: {e}。"
-                f"需 SQLite ≥ 3.34.0 且启用 FTS5 扩展，查询将降级到 API。"
-            )
+        # _ensure_conn 设置了 query_only=ON，需临时关闭以允许建表。
+        # 构建段加锁串行化：查询路径与 build_in_background（导入后）可能
+        # 并发触发自愈，同一连接上同时 DROP/CREATE VIRTUAL TABLE 会互相
+        # 踩踏（database is locked 或索引被对方 DROP），加锁后等待方通过
+        # 双重检查直接复用首个线程的构建结果。
+        with self._lock:
+            if self._fts_ready:
+                return True
             try:
+                conn.execute("PRAGMA query_only=OFF")
+                self._build_fts_from_subject(conn)
                 conn.execute("PRAGMA query_only=ON")
-            except sqlite3.Error:
-                pass
-            return False
+                self._fts_ready = self._check_fts_table_exists(conn)
+                return self._fts_ready
+            except sqlite3.Error as e:
+                logger.warning(
+                    f"bangumi_archive FTS5 自动构建失败: {e}。"
+                    f"需 SQLite ≥ 3.34.0 且启用 FTS5 扩展，查询将降级到 API。"
+                )
+                try:
+                    conn.execute("PRAGMA query_only=ON")
+                except sqlite3.Error:
+                    pass
+                return False
 
     def _is_fts_empty_shell_or_missing(self) -> bool:
         """只读探针：FTS 表缺失或为空壳（内容探针命中 0）返回 True。
