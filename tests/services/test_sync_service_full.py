@@ -182,10 +182,18 @@ def test_sync_custom_item_episode_not_found(mock_config, mock_database):
                 "private": True,
             },
         ):
-            result = service.sync_custom_item(item, "custom")
+            with patch(
+                "app.services.sync_service.notification_service.notify"
+            ) as mock_notify:
+                result = service.sync_custom_item(item, "custom")
 
         assert result.status == "error"
         assert "剧集" in result.message
+        # 集数不存在时不应先发"已找到"通知（避免矛盾通知序列）
+        found_calls = [
+            c for c in mock_notify.call_args_list if c.args[0] == "bangumi_id_found"
+        ]
+        assert found_calls == []
 
 
 def test_sync_custom_item_already_watched(mock_config, mock_database):
@@ -219,10 +227,19 @@ def test_sync_custom_item_already_watched(mock_config, mock_database):
                 "private": True,
             },
         ):
-            result = service.sync_custom_item(item, "custom")
+            with patch(
+                "app.services.sync_service.notification_service.notify"
+            ) as mock_notify:
+                result = service.sync_custom_item(item, "custom")
 
         assert result.status == "success"
         assert "已看过" in result.message
+        # bangumi_id_found 使用集数解析后的条目 ID（resolve 成功后发送）
+        found_calls = [
+            c for c in mock_notify.call_args_list if c.args[0] == "bangumi_id_found"
+        ]
+        assert len(found_calls) == 1
+        assert found_calls[0].kwargs["subject_id"] == 123
 
 
 def test_sync_custom_item_add_collection(mock_config, mock_database):

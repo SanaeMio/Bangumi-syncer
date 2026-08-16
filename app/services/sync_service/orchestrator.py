@@ -115,8 +115,21 @@ class SyncOrchestrator:
             # 8. 匹配歧义通知（trace.is_ambiguous 由 APISearchStep 设置，编排器据此发通知）
             self._sync._maybe_notify_match_ambiguous(trace, item, actual_source)
 
-            # 9. bangumi_id_found 通知
-            subject_info = bgm.get_subject(subject_id)
+            # 9. 集数解析（episode_resolve + cross_season，保留原逻辑）
+            bgm_se_id, bgm_ep_id = self._resolve_episode_with_cross_season(
+                bgm, item, subject_id, is_season_matched_id, trace
+            )
+
+            if not bgm_ep_id:
+                # 集数不存在：不发 bangumi_id_found（旧实现 resolve 成功后
+                # 才通知，避免"已找到"与失败通知的矛盾序列）
+                return self._handle_episode_not_found(
+                    item, actual_source, trace, subject_id, status_holder
+                )
+
+            # 10. bangumi_id_found 通知：使用解析后的正确季度 ID（cross_season
+            #     改选后 bgm_se_id 可能是跨季条目，subject_id 仅为匹配阶段结果）
+            subject_info = bgm.get_subject(bgm_se_id)
             bgm_title = ""
             if subject_info:
                 bgm_title = (
@@ -126,25 +139,9 @@ class SyncOrchestrator:
                 "bangumi_id_found",
                 item,
                 actual_source,
-                subject_id=subject_id,
+                subject_id=bgm_se_id,
                 bgm_title=bgm_title,
             )
-
-            # 10. 集数解析（episode_resolve + cross_season，保留原逻辑）
-            bgm_se_id, bgm_ep_id = self._resolve_episode_with_cross_season(
-                bgm, item, subject_id, is_season_matched_id, trace
-            )
-
-            if not bgm_ep_id:
-                return self._handle_episode_not_found(
-                    item, actual_source, trace, subject_id, status_holder
-                )
-
-            # 11. 通过实例缓存获取 Bangumi 平台标题（subject_info 已在步骤 9 获取）
-            if not bgm_title and subject_info:
-                bgm_title = (
-                    subject_info.get("name_cn") or subject_info.get("name") or ""
-                )
 
             logger.debug(
                 f"bgm: 查询到 {bgm_title or item.title} (https://bgm.tv/subject/{bgm_se_id}) "
