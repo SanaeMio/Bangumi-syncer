@@ -31,6 +31,13 @@ class StepOutcome:
     request_params: dict[str, Any] = field(default_factory=dict)
     api_response_summary: dict[str, Any] = field(default_factory=dict)
     error_detail: dict[str, Any] = field(default_factory=dict)
+    # 结构化进出产物：本 step 执行时读入的输入 / 产出的输出，
+    # 前端按 inputs/outputs 分组以表格展示（"进去了什么，出来了什么"）。
+    # 与 processed_payload 的关系：processed_payload 为自由格式载荷
+    # （receive 的原始字段 / episode_resolve 的 input_*+output_* 打平键），
+    # inputs/outputs 为规范化的输入输出分组，二者可并存。
+    inputs: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, Any] = field(default_factory=dict)
     # stage 覆盖：APISearchStep archive 短路命中时，trace.step.stage 应标记为 "archive"
     # 而非 step.stage="api_search"，使归档匹配在同步记录详情中可见。
     # 其他场景为 None，trace.step.stage 取 step.stage。

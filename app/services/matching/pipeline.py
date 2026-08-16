@@ -37,30 +37,16 @@ class MatchPipeline:
 
         阶段一：仅基础填充（start_step + status + subject_id + reason + score）
         阶段三：逐步迁移各 step 后，此方法成为 trace 填充的唯一入口
+
+        step 级字段填充委托 MatchTrace.record_step（两管线共用同一实现，
+        消除 ~30 行重复）；命中 / 低置信度的 final_* 汇总覆写差异仍留在本方法。
         """
         trace = ctx.trace
         # trace.step.stage 优先取 outcome.stage_override（archive 短路命中时为 "archive"），
         # 否则用 step.stage。final_match_method 优先取 stage_override，再取 ctx.match_stage。
         effective_stage = outcome.stage_override or stage
-        step = trace.start_step(effective_stage)
-        step.status = outcome.status
-        if outcome.subject_id:
-            step.subject_id = outcome.subject_id
-        if outcome.reason:
-            step.reason = outcome.reason
-        if outcome.score is not None:
-            step.score = outcome.score
-        if outcome.candidates:
-            step.candidates = outcome.candidates
-        if outcome.processed_payload:
-            step.processed_payload = outcome.processed_payload
-        if outcome.request_params:
-            step.request_params = outcome.request_params
-        if outcome.api_response_summary:
-            step.api_response_summary = outcome.api_response_summary
-        if outcome.error_detail:
-            step.error_detail = outcome.error_detail
-        trace._finish_current_step()
+        # step 级字段（status/subject_id/reason/score/candidates/...）统一由 record_step 填充
+        trace.record_step(effective_stage, outcome)
 
         # 命中时更新 final_*（low_confidence 不设 final_subject_id）
         if outcome.status == "hit" and outcome.subject_id:

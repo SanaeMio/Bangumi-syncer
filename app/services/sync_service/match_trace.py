@@ -68,6 +68,11 @@ class MatchStep:
     request_params: dict[str, Any] | None = None
     # P1: API 返回质量摘要（候选总数/是否 archive 短路/首条摘要）
     api_response_summary: dict[str, Any] | None = None
+    # 结构化进出产物：本 step 执行时读入的输入 / 产出的输出
+    # （由 StepOutcome.inputs/outputs 经两条管线的 _record_trace 回填），
+    # 前端按 inputs/outputs 分组以表格展示；旧记录无此字段，前端回退特化表格。
+    inputs: dict[str, Any] | None = None
+    outputs: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +88,8 @@ class MatchStep:
             "error_detail": self.error_detail,
             "request_params": self.request_params,
             "api_response_summary": self.api_response_summary,
+            "inputs": self.inputs,
+            "outputs": self.outputs,
         }
 
 
@@ -180,13 +187,18 @@ class MatchTrace:
         if self.final_subject_id is None and not self.final_match_method:
             self.final_match_method = "failed"
 
-    def record_substep(self, stage: str, outcome: StepOutcome) -> None:
-        """记录子 step 到 trace（不更新 final_* 汇总字段）
+    def record_step(
+        self, stage: str, outcome: StepOutcome, *, with_candidates: bool = True
+    ) -> None:
+        """按 StepOutcome 记录一步到 trace（不更新 final_* 汇总字段）
 
-        供 bgm_search 子管道使用：4 个子 step（reset/date_exact/variant_fallback/
-        finalize）的过程记录追加到主 trace.steps，供同步记录详情展示子 step 过程。
-        但不更新 final_subject_id / final_match_method 等汇总字段 —— 这些由顶层
-        MatchPipeline._record_trace 在主 step（APISearchStep）命中时统一设置，
+        两条管线 + bgm_search 子管线的统一填充入口：
+        - MatchPipeline._record_trace 调用后在匹配命中时自行覆写 final_*
+        - SyncPipeline 直接调用（final_* 由 ResultStep 统一结算）
+        - bgm_search 子管线用它记录 4 个子 step（reset/date_exact/variant_fallback/
+          finalize）过程，追加到主 trace.steps，供同步记录详情展示子 step 过程
+
+        final_subject_id / final_match_method 等汇总字段不由本方法更新，
         避免子 step 的中间命中/miss 状态污染最终汇总。
         """
         step = self.start_step(stage)
@@ -197,12 +209,31 @@ class MatchTrace:
             step.reason = outcome.reason
         if outcome.score is not None:
             step.score = outcome.score
-        if outcome.candidates:
+        if with_candidates and outcome.candidates:
             step.candidates = outcome.candidates
+        if outcome.processed_payload:
+            step.processed_payload = outcome.processed_payload
         if outcome.request_params:
             step.request_params = outcome.request_params
         if outcome.api_response_summary:
             step.api_response_summary = outcome.api_response_summary
+        if outcome.error_detail:
+            step.error_detail = outcome.error_detail
+        if outcome.inputs:
+            step.inputs = outcome.inputs
+        if outcome.outputs:
+            step.outputs = outcome.outputs
+        self._finish_current_step()
+
+    def record_error_step(self, stage: str, e: Exception) -> None:
+        """记录 status=error 的 step（step 抛异常时由 SyncPipeline 调用）"""
+        step = self.start_step(stage)
+        step.status = "error"
+        step.reason = str(e)
+        step.error_detail = {
+            "type": type(e).__name__,
+            "message": str(e),
+        }
         self._finish_current_step()
 
     def to_dict(self) -> dict[str, Any]:

@@ -258,7 +258,7 @@ class SearchMixin:
         for sub_step in sub_steps:
             outcome = sub_step.execute(ctx)
             if trace is not None:
-                trace.record_substep(sub_step.stage, outcome)
+                trace.record_step(sub_step.stage, outcome)
             if outcome.is_terminal:
                 break
         if outcome is None or outcome.status == "miss":

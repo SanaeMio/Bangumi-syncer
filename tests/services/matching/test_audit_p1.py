@@ -324,7 +324,7 @@ class TestVerifyP04SubstepsTraceInMain:
     APISearchStep 一条汇总记录。
 
     修复后：bgm_search 接受可选 trace 参数，APISearchStep 传入 ctx.trace。
-    4 个子 step 的过程通过 trace.record_substep 追加到主 trace.steps
+    4 个子 step 的过程通过 trace.record_step 追加到主 trace.steps
     （不更新 final_* 汇总字段，由顶层 _record_trace 统一设置）。
     """
 
