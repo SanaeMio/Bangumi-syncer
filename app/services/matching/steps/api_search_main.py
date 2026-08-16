@@ -219,6 +219,16 @@ class APISearchStep(MatchStepBase):
             )
             candidates.extend(post_candidates)
 
+            # 改选后同步 candidates[0]：_post_search_reselect 可能原地修改 bgm_data[0]
+            # （季度改选/媒体类型改选/关联条目改选），需重建 candidates[0] 以反映
+            # 改选后的 top 候选。否则 candidates[0].score 仍为改选前原 top 的低分，
+            # 导致置信度检查误判 low_confidence（P1-1），且 candidates[0].subject_id
+            # 与 ctx.subject_id（= bgm_data[0]["id"]）不一致（P2-3）。
+            if bgm_data and bgm_data[0].get("id") != original_top_id:
+                candidates[0] = self._build_candidate(
+                    bgm_data[0], bgm, search_title, item, match_stage
+                )
+
             # 置信度阈值检查：复用 candidates[0].score（已通过 title_diff_ratio 计算），
             # 避免对同一 top 候选重复调用 title_diff_ratio
             threshold = service._get_match_confidence_threshold()
@@ -256,13 +266,19 @@ class APISearchStep(MatchStepBase):
                 ctx.match_method_detail = getattr(bgm, "last_match_method", "") or ""
             # 歧义标记：top1/top2 分数差 < 0.05 时置 True，编排器据此发 match_ambiguous 通知
             # （原 _maybe_notify_match_ambiguous 逻辑前移到 step，通知职责留在编排器）
+            # 按 score 降序取 top-2，与 _collect_candidates_from_trace 行为一致（P1-2）：
+            # 改选后 post_candidates 可能追加更高分候选，若仍用 candidates[0]/[1]（按
+            # bgm_data 原始顺序）会漏判歧义。
             if len(candidates) >= 2:
-                top1_s = candidates[0].score or 0.0
-                top2_s = candidates[1].score or 0.0
-                if isinstance(top1_s, (int, float)) and isinstance(
-                    top2_s, (int, float)
-                ):
-                    ctx.is_ambiguous = (top1_s - top2_s) < 0.05
+                # score 可能为非数值（mock 场景），用 isinstance 守卫避免排序比较失败
+                def _safe_score(c: MatchCandidate) -> float:
+                    s = c.score
+                    return s if isinstance(s, (int, float)) else 0.0
+
+                sorted_by_score = sorted(candidates, key=_safe_score, reverse=True)
+                top1_s = _safe_score(sorted_by_score[0])
+                top2_s = _safe_score(sorted_by_score[1])
+                ctx.is_ambiguous = (top1_s - top2_s) < 0.05
 
             final_reason = reason
             if post_reason:
