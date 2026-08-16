@@ -73,7 +73,7 @@ class BaseScheduler(abc.ABC):
 
             if not self._is_enabled():
                 logger.info(
-                    f"{name} 同步未启用，本次不注册定时任务（APScheduler 未创建）"
+                    f"{name} 同步未启用，本次不注册定时任务"
                 )
                 return True
 
