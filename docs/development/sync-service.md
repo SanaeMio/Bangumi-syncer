@@ -61,6 +61,14 @@ sync_custom_item(item, source)
 
 每一步都通过 `MatchTrace` 记录详细过程（进入参数、输出、耗时 `elapsed_ms`），最终写入 `sync_records` 表的 `match_trace` 字段，供「匹配记录」页面展示。执行阶段每步由 `SyncPipeline._record_trace` 统一记录，`total_elapsed_ms` 覆盖包含 receive/result 的全流程。
 
+### Step 进出记录（inputs / outputs）
+
+自 2026-08 起，每一步的**结构化进出数据**由管线统一记录到 step 的 `inputs` / `outputs`：
+
+- **结果链传参**：执行阶段（`SyncPipeline`）维护"当前有效产物"，`step.execute(ctx, prev)` 直接拿到上一步产物，产出经 `outcome.outputs` 由管线 merge 回 `ExecutionContext.current_outputs`（同键覆盖、空值不覆盖，跨季改选即依赖覆盖语义），并记录到 `ctx.step_outputs[stage]`（线性管线每步恰好执行一次，重复执行时覆盖）。step 不再直接写 ctx 输出字段。
+- **匹配阶段**：`MatchPipeline` 把每步 `StepOutcome.inputs/outputs` 转发到 `MatchStep.inputs/outputs`；`bgm_search` 的 4 个子 step（api_search_reset / date_exact / variant_fallback / finalize）与主匹配 step（normalize / custom_mapping / bangumi_data / archive / api_search）均填充进出数据。
+- **展示**：前端「匹配记录」详情页对每个 step 渲染「输入」「输出」两个表格（产出值全部用表格展示）。旧记录（无 inputs/outputs）回退到基于 `processed_payload` 的特化表格。
+
 ### Mixin 拆分
 
 `SyncService` 通过多个 Mixin 拆分职责：

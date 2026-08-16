@@ -52,7 +52,15 @@ class SearchResetStep(MatchStepBase):
         )
         ctx.bgm_data = None
         ctx.matched_variant_method = ""
-        return StepOutcome(status="skipped", reason="状态重置完成")
+        return StepOutcome(
+            status="skipped",
+            reason="状态重置完成",
+            inputs={"title": ctx.item.title, "ori_title": ctx.item.ori_title or ""},
+            outputs={
+                "stripped_title": ctx.stripped_title,
+                "stripped_ori": ctx.stripped_ori,
+            },
+        )
 
 
 class DateExactSearchStep(MatchStepBase):
@@ -68,8 +76,18 @@ class DateExactSearchStep(MatchStepBase):
     def execute(self, ctx: MatchContext) -> StepOutcome:
         premiere_date = ctx.item.release_date
         if not premiere_date or len(premiere_date) < 10:
-            return StepOutcome(status="skipped", reason="无有效日期，跳过精确搜索")
+            return StepOutcome(
+                status="skipped",
+                reason="无有效日期，跳过精确搜索",
+                inputs={"premiere_date": premiere_date or ""},
+            )
 
+        inputs = {
+            "title": ctx.item.title,
+            "ori_title": ctx.item.ori_title or "",
+            "premiere_date": premiere_date,
+            "subject_types": ctx.subject_types,
+        }
         try:
             air_date = datetime.datetime.fromisoformat(premiere_date[:10])
             start_date = air_date - datetime.timedelta(days=2)
@@ -77,6 +95,8 @@ class DateExactSearchStep(MatchStepBase):
 
             ctx.start_date_str = start_date.strftime("%Y-%m-%d")
             ctx.end_date_str = end_date.strftime("%Y-%m-%d")
+            inputs["start_date"] = ctx.start_date_str
+            inputs["end_date"] = ctx.end_date_str
 
             subject_types = ctx.subject_types
             # 依次尝试 ori_title → title → stripped_title → stripped_ori
@@ -134,15 +154,35 @@ class DateExactSearchStep(MatchStepBase):
             logger.warning(
                 f"首播日期格式解析失败: {premiere_date}，降级至无日期模式搜索"
             )
-            return StepOutcome(status="miss", reason="日期格式解析失败，降级兜底")
+            return StepOutcome(
+                status="miss",
+                reason="日期格式解析失败，降级兜底",
+                inputs=inputs,
+                outputs={"total_candidates": 0, "error": "日期格式解析失败"},
+            )
         except httpx.HTTPError as e:
             # 网络不可达/重试耗尽：精确搜索失败不中断，降级到阶段C
             logger.error(f"精确搜索 API 失败（网络错误）: {e}")
-            return StepOutcome(status="miss", reason="网络错误，降级兜底")
+            return StepOutcome(
+                status="miss",
+                reason="网络错误，降级兜底",
+                inputs=inputs,
+                outputs={"total_candidates": 0, "error": "网络错误"},
+            )
 
         if ctx.bgm_data:
-            return StepOutcome(status="hit", reason="日期精确搜索命中")
-        return StepOutcome(status="miss", reason="日期精确搜索未命中")
+            return StepOutcome(
+                status="hit",
+                reason="日期精确搜索命中",
+                inputs=inputs,
+                outputs={"total_candidates": len(ctx.bgm_data)},
+            )
+        return StepOutcome(
+            status="miss",
+            reason="日期精确搜索未命中",
+            inputs=inputs,
+            outputs={"total_candidates": 0},
+        )
 
 
 class VariantFallbackSearchStep(MatchStepBase):
@@ -166,13 +206,23 @@ class VariantFallbackSearchStep(MatchStepBase):
                 bgm_data=ctx.bgm_data[0],
             )
             if ratio >= API_SIMILARITY_PRIMARY:
-                return StepOutcome(status="skipped", reason="精确搜索已命中，跳过兜底")
+                return StepOutcome(
+                    status="skipped",
+                    reason="精确搜索已命中，跳过兜底",
+                    inputs={"title": ctx.item.title, "top_ratio": ratio},
+                )
 
         from app.utils.bangumi_archive._title_normalize import build_search_variants
 
         search_titles = build_search_variants(ctx.item.title, ctx.item.ori_title or "")
         subject_types = ctx.subject_types
         types_to_try = subject_types if subject_types else [2]
+        inputs = {
+            "title": ctx.item.title,
+            "ori_title": ctx.item.ori_title or "",
+            "variants": [v.query for v in search_titles],
+            "subject_types": types_to_try,
+        }
 
         for v in search_titles:
             t = v.query
@@ -213,12 +263,22 @@ class VariantFallbackSearchStep(MatchStepBase):
                             status="hit",
                             subject_id=str(matched[0].get("id", "")),
                             reason=f"兜底变体命中: {v.method}",
+                            inputs=inputs,
+                            outputs={
+                                "matched_variant_method": v.method,
+                                "total_candidates": len(matched),
+                            },
                         )
         # 全 miss：保留 ctx.bgm_data（DateExactSearchStep 的低相似度候选），
         # 不清空。这样 SearchFinalizeStep 返回 hit，APISearchStep 能拿到候选
         # 执行置信度检查 → low_confidence 时沉淀为 pending_candidate 供用户确认。
         # 若 DateExactSearchStep 本身也无结果，ctx.bgm_data 已为空，无需显式清空。
-        return StepOutcome(status="miss", reason="变体兜底未命中")
+        return StepOutcome(
+            status="miss",
+            reason="变体兜底未命中",
+            inputs=inputs,
+            outputs={"total_candidates": len(ctx.bgm_data) if ctx.bgm_data else 0},
+        )
 
 
 class SearchFinalizeStep(MatchStepBase):
@@ -231,13 +291,25 @@ class SearchFinalizeStep(MatchStepBase):
     stage = "api_search_finalize"
 
     def execute(self, ctx: MatchContext) -> StepOutcome:
+        inputs = {"title": ctx.item.title, "ori_title": ctx.item.ori_title or ""}
         if not ctx.bgm_data or len(ctx.bgm_data) == 0:
             # 清空预测性匹配方式标记，避免残留上次精确命中的 method 造成脏读
             ctx.matched_variant_method = ""
-            return StepOutcome(status="miss", reason="无匹配结果", is_terminal=True)
+            return StepOutcome(
+                status="miss",
+                reason="无匹配结果",
+                inputs=inputs,
+                outputs={"total_candidates": 0},
+                is_terminal=True,
+            )
         subject_id = str(ctx.bgm_data[0].get("id", ""))
         return StepOutcome(
             status="hit",
             subject_id=subject_id,
+            inputs=inputs,
+            outputs={
+                "subject_id": subject_id,
+                "total_candidates": len(ctx.bgm_data),
+            },
             is_terminal=True,
         )

@@ -29,6 +29,12 @@ class CustomMappingStep(MatchStepBase):
             season=ctx.item.season,
         )
 
+        mapping_inputs = {
+            "title": ctx.item.title,
+            "ori_title": ctx.item.ori_title or "",
+            "season": ctx.item.season,
+        }
+
         if mapping_subject_id:
             ctx.subject_id = mapping_subject_id
             ctx.match_stage = "custom_mapping"
@@ -38,7 +44,15 @@ class CustomMappingStep(MatchStepBase):
                 subject_id=mapping_subject_id,
                 reason=match_reason,
                 score=1.0,
+                inputs=mapping_inputs,
+                outputs={
+                    "subject_id": mapping_subject_id,
+                    "match_method": match_type or "",
+                    "match_reason": match_reason,
+                },
                 is_terminal=True,
             )
 
-        return StepOutcome(status="miss", reason="自定义映射与正则规则均未命中")
+        return StepOutcome(
+            status="miss", reason="自定义映射与正则规则均未命中", inputs=mapping_inputs
+        )

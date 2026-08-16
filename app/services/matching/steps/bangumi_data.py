@@ -32,11 +32,19 @@ class BangumiDataStep(MatchStepBase):
         if not config_manager.get("bangumi_data", "enabled", fallback=True):
             return StepOutcome(status="skipped", reason="bangumi-data 已禁用")
 
+        release_date = None
+        if ctx.item.release_date and len(ctx.item.release_date) >= 8:
+            release_date = ctx.item.release_date[:10]
+        inputs = {
+            "title": ctx.item.title,
+            "ori_title": ctx.item.ori_title or "",
+            "release_date": release_date or "",
+            "season": ctx.item.season,
+            "media_type": ctx.item.media_type,
+        }
+
         try:
             bgm_data = ctx.service._get_bangumi_data()
-            release_date = None
-            if ctx.item.release_date and len(ctx.item.release_date) >= 8:
-                release_date = ctx.item.release_date[:10]
 
             result = bgm_data.find_bangumi_id(
                 title=ctx.item.title,
@@ -78,6 +86,11 @@ class BangumiDataStep(MatchStepBase):
                 return StepOutcome(
                     status="miss",
                     reason=reason,
+                    inputs=inputs,
+                    outputs={
+                        "subject_id": "",
+                        "total_candidates": len(candidates),
+                    },
                     candidates=candidates,
                 )
 
@@ -98,6 +111,13 @@ class BangumiDataStep(MatchStepBase):
                     f"日期匹配={date_matched}，季度ID可信={is_season_matched_id}"
                 ),
                 score=1.0 if date_matched else 0.8,
+                inputs=inputs,
+                outputs={
+                    "subject_id": str(bangumi_data_id),
+                    "matched_title": matched_title,
+                    "date_matched": bool(date_matched),
+                    "is_season_matched_id": is_season_matched_id,
+                },
                 is_terminal=True,
             )
         except Exception as e:
@@ -107,6 +127,7 @@ class BangumiDataStep(MatchStepBase):
             return StepOutcome(
                 status="error",
                 reason=f"bangumi-data 匹配异常：{e}",
+                inputs=inputs,
                 error_detail=_build_error_detail(e),
             )
 

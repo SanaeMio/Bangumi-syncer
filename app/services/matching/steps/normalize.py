@@ -27,4 +27,6 @@ class NormalizeStep(MatchStepBase):
         return StepOutcome(
             status="hit",
             reason=f"标题归一化：{ctx.item.title!r} → {normalized!r}",
+            inputs={"title": ctx.item.title},
+            outputs={"normalized_title": normalized},
         )

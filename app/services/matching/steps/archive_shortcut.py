@@ -83,6 +83,12 @@ class ArchiveShortcutStep(MatchStepBase):
             "subject_types": subject_types,
             "source": "archive_shortcut",
         }
+        inputs = {
+            "title": search_title,
+            "start_date": start_date,
+            "end_date": end_date,
+            "subject_types": subject_types,
+        }
 
         try:
             shortcut = bgm._archive.try_search(
@@ -98,6 +104,8 @@ class ArchiveShortcutStep(MatchStepBase):
             return StepOutcome(
                 status="error",
                 reason=f"archive 短路异常: {e}",
+                inputs=inputs,
+                outputs={"subject_id": "", "error": str(e)},
                 request_params=request_params,
             )
 
@@ -107,6 +115,8 @@ class ArchiveShortcutStep(MatchStepBase):
             return StepOutcome(
                 status="miss",
                 reason=f"archive 短路未命中: {shortcut.reason}",
+                inputs=inputs,
+                outputs={"subject_id": "", "total_candidates": 0},
                 request_params=request_params,
             )
 
@@ -130,6 +140,13 @@ class ArchiveShortcutStep(MatchStepBase):
             status="hit",
             subject_id=str(first.get("id", "")),
             reason=f"archive 短路命中: {shortcut.match_method}",
+            inputs=inputs,
+            outputs={
+                "subject_id": str(first.get("id", "")),
+                "match_method": shortcut.match_method or "",
+                "total_candidates": len(shortcut.data),
+                "is_archive_hit": True,
+            },
             request_params=request_params,
             api_response_summary=api_response_summary,
             is_terminal=False,  # 不终止，让 APISearchStep 做后续改选

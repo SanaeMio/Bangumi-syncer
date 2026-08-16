@@ -91,6 +91,12 @@ class APISearchStep(MatchStepBase):
             return StepOutcome(
                 status="error",
                 reason="无法创建 Bangumi API 实例",
+                inputs={
+                    "title": item.title,
+                    "media_type": item.media_type,
+                    "subject_types": subject_types,
+                },
+                outputs={"subject_id": "", "error": "无法创建 Bangumi API 实例"},
                 error_detail={
                     "type": "RuntimeError",
                     "message": "无法为用户创建 Bangumi API 实例",
@@ -115,6 +121,7 @@ class APISearchStep(MatchStepBase):
             "media_type": item.media_type,
             "season": item.season,
         }
+        inputs = dict(request_params)
 
         try:
             # 阶段五：检测 ctx.bgm_data 是否已有数据（来自 ArchiveShortcutStep 命中）
@@ -173,6 +180,11 @@ class APISearchStep(MatchStepBase):
                 return StepOutcome(
                     status="miss",
                     reason="Bangumi API 搜索无结果",
+                    inputs=inputs,
+                    outputs={
+                        "subject_id": "",
+                        "total_candidates": 0,
+                    },
                     is_terminal=True,
                     request_params=request_params,
                     api_response_summary=api_response_summary,
@@ -250,6 +262,12 @@ class APISearchStep(MatchStepBase):
                         f"匹配相似度 {real_conf:.2f} 低于阈值 {threshold:.2f}，已沉淀待审"
                     ),
                     score=real_conf,
+                    inputs=inputs,
+                    outputs={
+                        "subject_id": str(bgm_data[0].get("id")),
+                        "score": real_conf,
+                        "total_candidates": len(bgm_data),
+                    },
                     candidates=candidates,
                     request_params=request_params,
                     api_response_summary=api_response_summary,
@@ -299,6 +317,20 @@ class APISearchStep(MatchStepBase):
                     if isinstance(real_conf, (int, float))
                     else (1.0 if is_api_season_matched else 0.9)
                 ),
+                inputs=inputs,
+                outputs={
+                    "subject_id": str(bgm_data[0]["id"]),
+                    "match_stage": match_stage,
+                    "is_season_matched_id": is_api_season_matched,
+                    "match_method_detail": ctx.match_method_detail or "",
+                    "total_candidates": len(bgm_data),
+                    "is_archive_hit": is_archive_hit,
+                    "score": (
+                        real_conf
+                        if isinstance(real_conf, (int, float))
+                        else (1.0 if is_api_season_matched else 0.9)
+                    ),
+                },
                 candidates=candidates,
                 request_params=request_params,
                 api_response_summary=api_response_summary,
@@ -322,6 +354,8 @@ class APISearchStep(MatchStepBase):
             return StepOutcome(
                 status="error",
                 reason=detail,
+                inputs=inputs,
+                outputs={"subject_id": "", "error": str(e)},
                 error_detail=_build_error_detail(e),
                 request_params=request_params,
                 is_terminal=True,

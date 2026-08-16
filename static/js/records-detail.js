@@ -1,42 +1,81 @@
-// 同步记录详情弹窗 —— 接收/匹配/流水线/结果渲染与详情弹窗控制（records / dashboard 共用）
+// 同步记录详情弹窗 —— 总览 / 耗时瀑布 / 步骤时间线渲染与弹窗控制（records / dashboard 共用）
+
+// ========== 耗时判定阈值 ==========
+// 单步耗时超过 SLOW_STEP_MS 且占总耗时 SLOW_STEP_SHARE 以上，或超过 HOT_STEP_MS，
+// 视为耗时偏高；超过 CRITICAL_STEP_MS 或占比 CRITICAL_STEP_SHARE 视为严重。
+const RD_TIMING = {
+    WARM_STEP_MS: 500,
+    SLOW_STEP_MS: 1000,
+    SLOW_STEP_SHARE: 0.3,
+    HOT_STEP_MS: 2000,
+    CRITICAL_STEP_MS: 3000,
+    CRITICAL_STEP_SHARE: 0.6,
+    SLOW_TOTAL_MS: 5000,
+};
+
+// 流水线阶段名映射（archive 短路命中时独立展示）
+const PIPELINE_STAGE_NAMES = {
+    receive: '接收请求',
+    normalize: '标题归一化',
+    custom_mapping: '自定义映射',
+    bangumi_data: 'bangumi-data 本地匹配',
+    archive: '本地归档匹配',
+    api_search: 'Bangumi API 搜索',
+    post_search: '搜索后处理',
+    cross_season: '跨季链查找',
+    episode_resolve: '集数解析',
+    sync_action: '同步动作',
+    result: '同步结果',
+    // bgm_search 子管线步骤（展示时归入「API 搜索内部流程」分组）
+    api_search_reset: '搜索预处理',
+    api_search_date_exact: '日期精确搜索',
+    api_search_variant_fallback: '变体兜底搜索',
+    api_search_finalize: '搜索结果确认',
+};
+
+// bgm_search 子管线阶段：在连续出现时折叠为一个分组，避免与主步骤平铺混淆
+const SUB_PIPELINE_STAGES = new Set([
+    'api_search_reset',
+    'api_search_date_exact',
+    'api_search_variant_fallback',
+    'api_search_finalize',
+]);
+
+function isSubPipelineStep(step) {
+    return SUB_PIPELINE_STAGES.has(step && step.stage);
+}
+
+function getPipelineStageName(stage) {
+    return PIPELINE_STAGE_NAMES[stage] || stage;
+}
+
+// step 显示名：ArchiveShortcutStep（stage=archive，request_params.source=archive_shortcut）
+// 与 APISearchStep 的 archive 覆盖命中区分开，前者是快速预检、后者是归档匹配定选
+function getStepDisplayName(step) {
+    if (step && step.stage === 'archive'
+        && step.request_params && step.request_params.source === 'archive_shortcut') {
+        return '归档预检';
+    }
+    return getPipelineStageName(step ? step.stage : '');
+}
+
+// step 状态元信息：文案 + 图标
+const STEP_STATUS_META = {
+    hit: { label: '命中', icon: 'bi-check-lg' },
+    miss: { label: '未命中', icon: 'bi-dash-lg' },
+    skipped: { label: '已跳过', icon: 'bi-skip-forward' },
+    error: { label: '出错', icon: 'bi-x-lg' },
+    low_confidence: { label: '低置信度', icon: 'bi-exclamation-lg' },
+};
+
+function getStepStatusMeta(status) {
+    return STEP_STATUS_META[status] || { label: status || '未知', icon: 'bi-question-lg' };
+}
+
+// ========== 通用工具 ==========
 
 function normalizeRecordText(value) {
     return String(value || '').trim();
-}
-
-function isMatchFailure(record, trace) {
-    // 优先根据 status 判断：成功类状态不算匹配失败
-    // 修复重试成功后原 match_method 仍是 failed 导致详情页误判的问题
-    if (record.status === 'success' || record.status === 'retried') {
-        return false;
-    }
-    if (record.match_method === 'failed') {
-        return true;
-    }
-    if (trace && trace.final_match_method === 'failed') {
-        return true;
-    }
-    return false;
-}
-
-function renderRecordDetailFacts(items) {
-    const rows = (items || []).filter((item) => {
-        const v = item.value;
-        return v !== null && v !== undefined && v !== '';
-    });
-    if (rows.length === 0) {
-        return '';
-    }
-    let html = '<dl class="record-detail-facts">';
-    rows.forEach((item) => {
-        const wideClass = item.wide ? ' record-detail-fact--wide' : '';
-        html += `<div class="record-detail-fact${wideClass}">`;
-        html += `<dt>${escapeHtml(item.label)}</dt>`;
-        html += `<dd>${item.value}</dd>`;
-        html += '</div>';
-    });
-    html += '</dl>';
-    return html;
 }
 
 function parseRecordMatchTrace(record) {
@@ -54,41 +93,72 @@ function parseRecordMatchTrace(record) {
     }
 }
 
-function getRecordReleaseDate(record, trace) {
-    const fromTrace = trace?.request_release_date
-        || parseRecordMatchTrace(record)?.request_release_date
-        || '';
-    return normalizeRecordText(fromTrace);
+function isMatchFailure(record, trace) {
+    // 优先根据 status 判断：成功类状态不算匹配失败
+    // 修复重试成功后原 match_method 仍是 failed 导致详情页误判的问题
+    if (record.status === 'success' || record.status === 'retried') {
+        return false;
+    }
+    if (record.match_method === 'failed') {
+        return true;
+    }
+    if (trace && trace.final_match_method === 'failed') {
+        return true;
+    }
+    return false;
 }
 
-function hasDisplayText(value) {
-    return !!normalizeRecordText(value);
+// 耗时格式化：<1000ms 显示毫秒，否则显示秒
+function formatElapsedMs(ms) {
+    const v = Math.max(0, Number(ms) || 0);
+    if (v < 1000) {
+        return `${Math.round(v)}ms`;
+    }
+    return `${(v / 1000).toFixed(2)}s`;
 }
 
-function renderRecordDetailZone(variant, title, hint, bodyHtml, sectionId) {
-    const icons = {
-        receive: 'bi-box-arrow-in-down',
-        match: 'bi-diagram-3',
-        steps: 'bi-signpost-split',
-        result: 'bi-clipboard2-check',
-        'result-error': 'bi-exclamation-circle',
-    };
-    const icon = icons[variant] || 'bi-info-circle';
-    const idAttr = sectionId ? ` id="${sectionId}"` : '';
-    return `
-        <section class="record-detail-zone record-detail-zone--${variant}"${idAttr}>
-            <header class="record-detail-zone__head">
-                <div class="record-detail-zone__icon" aria-hidden="true">
-                    <i class="bi ${icon}"></i>
-                </div>
-                <div class="record-detail-zone__titles">
-                    <h6 class="record-detail-zone__title">${escapeHtml(title)}</h6>
-                    ${hint ? `<p class="record-detail-zone__hint">${escapeHtml(hint)}</p>` : ''}
-                </div>
-            </header>
-            <div class="record-detail-zone__body">${bodyHtml}</div>
-        </section>
-    `;
+// 总耗时：优先 trace.total_elapsed_ms（含全流程），否则退化为各 step 求和
+function getTraceTotalMs(trace) {
+    if (!trace) {
+        return 0;
+    }
+    if (typeof trace.total_elapsed_ms === 'number' && trace.total_elapsed_ms > 0) {
+        return trace.total_elapsed_ms;
+    }
+    const steps = Array.isArray(trace.steps) ? trace.steps : [];
+    return steps.reduce((acc, s) => acc + Math.max(0, Number(s.elapsed_ms) || 0), 0);
+}
+
+// 单步耗时热度分级：'' 正常 / warm 略慢 / hot 偏高 / critical 严重
+function classifyStepHeat(elapsedMs, totalMs) {
+    const elapsed = Math.max(0, Number(elapsedMs) || 0);
+    if (elapsed <= 0) {
+        return '';
+    }
+    const share = totalMs > 0 ? elapsed / totalMs : 0;
+    if (elapsed >= RD_TIMING.CRITICAL_STEP_MS
+        || (share >= RD_TIMING.CRITICAL_STEP_SHARE && elapsed >= RD_TIMING.SLOW_STEP_MS)) {
+        return 'critical';
+    }
+    if (elapsed >= RD_TIMING.HOT_STEP_MS
+        || (elapsed >= RD_TIMING.SLOW_STEP_MS && share >= RD_TIMING.SLOW_STEP_SHARE)) {
+        return 'hot';
+    }
+    if (elapsed >= RD_TIMING.WARM_STEP_MS) {
+        return 'warm';
+    }
+    return '';
+}
+
+// 整体节奏评级：流畅 / 正常 / 偏慢
+function getOverallPace(totalMs) {
+    if (totalMs >= RD_TIMING.SLOW_TOTAL_MS) {
+        return { cls: 'slow', label: '整体偏慢' };
+    }
+    if (totalMs >= RD_TIMING.HOT_STEP_MS) {
+        return { cls: 'ok', label: '正常' };
+    }
+    return { cls: 'fast', label: '流畅' };
 }
 
 function getMediaTypeLabel(mediaType) {
@@ -102,152 +172,207 @@ function getMediaTypeLabel(mediaType) {
     return map[mt] || mediaType || '—';
 }
 
-function renderEpisodeFactValue(record, trace) {
-    const mediaType = trace?.request_media_type || record.media_type;
-    const isMovie = (mediaType || 'episode').toLowerCase() === 'movie';
-    if (isMovie) {
-        return '<span class="record-detail-chip">剧场版</span>';
-    }
-    const season = trace?.request_season ?? record.season ?? 0;
-    const episode = trace?.request_episode ?? record.episode ?? 0;
-    return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-}
+// ========== 总览卡（结果 + 耗时表现） ==========
 
-function renderMatchInputFacts(record, trace) {
-    const title = trace?.request_title || record.title;
-    const oriTitle = trace?.request_ori_title || record.ori_title;
-    const mediaType = trace?.request_media_type || record.media_type;
-    const user = trace?.request_user_name || record.user_name;
-    const facts = [];
-
-    if (hasDisplayText(title)) {
-        facts.push({ label: '匹配标题', value: escapeHtml(title), wide: true });
-    }
-    if (hasDisplayText(oriTitle)) {
-        facts.push({ label: '匹配原标题', value: escapeHtml(oriTitle), wide: true });
-    }
-    if (hasDisplayText(user)) {
-        facts.push({ label: '用户', value: escapeHtml(user) });
-    }
-    if (mediaType) {
-        facts.push({ label: '媒体类型', value: renderMediaTypeBadge(mediaType) });
-    }
-    facts.push({ label: '季 / 集', value: renderEpisodeFactValue(record, trace) });
-
-    if (hasDisplayText(trace?.normalized_title)) {
-        facts.push({ label: '归一化标题', value: escapeHtml(trace.normalized_title), wide: true });
-    }
-
-    const subsection = facts.length > 0
-        ? renderRecordDetailFacts(facts)
-        : '<p class="record-detail-empty-hint mb-0">无匹配输入信息</p>';
-    return subsection;
-}
-
-function renderMatchFailureBanner(record) {
-    const mapTitle = encodeURIComponent(record.title || '');
-    const mapSeason = record.season || 1;
-    return `
-        <div class="record-detail-banner record-detail-banner--warn record-detail-banner--steps">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <span class="flex-grow-1">未匹配到 Bangumi 条目，可添加自定义映射解决</span>
-            <a href="${appUrl('/mappings')}?title=${mapTitle}&season=${mapSeason}" class="record-detail-banner__action">
-                前往映射 <i class="bi bi-arrow-up-right"></i>
-            </a>
-        </div>
-    `;
-}
-
-function getMatchStepStatusLabel(status) {
-    const labels = {
-        hit: '命中',
-        miss: '未命中',
-        skipped: '已跳过',
-        error: '出错',
+function renderRecordHero(record, trace) {
+    const status = record.status || '';
+    const isSuccess = status === 'success' || status === 'retried';
+    const heroCls = isSuccess ? 'success' : (status === 'error' ? 'error' : 'neutral');
+    const statusTextMap = {
+        success: '同步成功',
+        retried: '重试成功',
+        error: '同步失败',
+        ignored: '已忽略',
+        queued: '已排队',
     };
-    return labels[status] || status || '未知';
-}
+    const statusText = statusTextMap[status] || status || '未知状态';
+    const statusIcon = isSuccess
+        ? 'bi-check-circle-fill'
+        : (status === 'error'
+            ? 'bi-x-circle-fill'
+            : (status === 'queued' ? 'bi-clock-history' : 'bi-dash-circle-fill'));
 
-// 流水线阶段名映射（11 阶段：archive 短路命中时独立展示）
-const PIPELINE_STAGE_NAMES = {
-    receive: '接收请求',
-    normalize: '标题归一化',
-    custom_mapping: '自定义映射',
-    bangumi_data: 'bangumi-data 本地匹配',
-    archive: '本地归档匹配',
-    api_search: 'Bangumi API 搜索',
-    post_search: '搜索后处理',
-    cross_season: '跨季链查找',
-    episode_resolve: '集数解析',
-    sync_action: '同步动作',
-    result: '同步结果',
-};
+    const message = normalizeRecordText(record.message || trace?.final_message);
+    const totalMs = getTraceTotalMs(trace);
+    const pace = getOverallPace(totalMs);
+    const steps = Array.isArray(trace?.steps) ? trace.steps : [];
 
-function getPipelineStageName(stage) {
-    return PIPELINE_STAGE_NAMES[stage] || stage;
-}
-
-// 流水线摘要卡：输入 → 输出
-function renderPipelineSummary(record, trace) {
-    const title = record.title || (trace && trace.request_title) || '';
-    const season = (trace && trace.request_season) || record.season || 1;
-    const episode = (trace && trace.request_episode) || record.episode || 0;
-    const source = record.source || (trace && trace.request_platform_hint) || '';
-    const mediaType = (trace && trace.request_media_type) || record.media_type || 'episode';
-
-    const isSuccess = record.status === 'success' || record.status === 'retried';
-    const statusClass = isSuccess ? 'success' : (record.status === 'error' ? 'error' : 'neutral');
-    const statusIcon = isSuccess ? 'bi-check-circle-fill' : (record.status === 'error' ? 'bi-x-circle-fill' : 'bi-dash-circle-fill');
-    const statusText = isSuccess ? '同步成功' : (record.status === 'error' ? '同步失败' : (record.status || '未知'));
-
-    const subjectId = record.subject_id || (trace && trace.final_subject_id);
-    const episodeId = record.episode_id || (trace && trace.final_episode_id);
-    const score = (trace && trace.final_score !== null && trace.final_score !== undefined)
-        ? trace.final_score
-        : record.match_score;
-    const bgmTitle = record.bgm_title || '';
-
-    // 输入区
-    let inputHtml = `<span class="record-pipeline-summary__title">${escapeHtml(title)}</span>`;
-    inputHtml += `<span class="record-pipeline-summary__episode">S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}</span>`;
-    if (source) {
-        inputHtml += `<span class="badge bg-secondary">${escapeHtml(source)}</span>`;
-    }
-    inputHtml += `<span class="badge bg-info">${escapeHtml(mediaType)}</span>`;
-
-    // 输出区
-    let outputHtml = `<i class="bi ${statusIcon} text-${isSuccess ? 'success' : (record.status === 'error' ? 'danger' : 'secondary')}"></i>`;
-    outputHtml += `<span class="record-pipeline-summary__status-text record-pipeline-summary__status-text--${statusClass}">${escapeHtml(statusText)}</span>`;
-    if (subjectId) {
-        outputHtml += `<a href="https://bgm.tv/subject/${escapeHtml(subjectId)}" target="_blank" class="record-pipeline-summary__link">`
-            + `<i class="bi bi-collection"></i>subject/${escapeHtml(subjectId)}`;
-        if (bgmTitle) {
-            outputHtml += ` ${escapeHtml(bgmTitle)}`;
+    // 耗时最高的步骤（用于慢步骤提示）
+    let slowest = null;
+    steps.forEach((s, i) => {
+        const elapsed = Math.max(0, Number(s.elapsed_ms) || 0);
+        if (!slowest || elapsed > slowest.elapsed) {
+            slowest = { idx: i + 1, name: getStepDisplayName(s), elapsed };
         }
-        outputHtml += `</a>`;
+    });
+
+    let slowHtml = '';
+    if (slowest && ['hot', 'critical'].includes(classifyStepHeat(slowest.elapsed, totalMs))) {
+        const share = totalMs > 0 ? Math.round((slowest.elapsed / totalMs) * 100) : 0;
+        slowHtml = `
+            <div class="record-detail-hero__slow">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <span class="record-detail-hero__slow-text">
+                    「${escapeHtml(slowest.name)}」耗时 ${formatElapsedMs(slowest.elapsed)}，占总耗时 ${share}%
+                </span>
+                <button type="button" class="record-detail-hero__slow-jump" onclick="jumpToRecordStep(${slowest.idx})">
+                    定位步骤
+                </button>
+            </div>`;
     }
-    if (episodeId) {
-        outputHtml += `<a href="https://bgm.tv/ep/${escapeHtml(episodeId)}" target="_blank" class="record-pipeline-summary__link">`
-            + `<i class="bi bi-play-circle"></i>ep/${escapeHtml(episodeId)}</a>`;
+
+    let ambiguousHtml = '';
+    if (trace?.is_ambiguous) {
+        ambiguousHtml = `
+            <div class="record-detail-hero__notice">
+                <i class="bi bi-intersect"></i>
+                <span>匹配结果存在歧义候选，建议核对最终命中的条目</span>
+            </div>`;
     }
-    if (score !== null && score !== undefined && isSuccess) {
-        outputHtml += `<span class="record-pipeline-summary__score">置信度 ${(score * 100).toFixed(0)}%</span>`;
-    }
+
+    const totalChip = totalMs > 0
+        ? `<div class="record-detail-hero__stat">
+                <span class="record-detail-hero__stat-label">总耗时</span>
+                <span class="record-detail-hero__stat-value">${formatElapsedMs(totalMs)}</span>
+                <span class="record-detail-hero__pace record-detail-hero__pace--${pace.cls}">${pace.label}</span>
+            </div>`
+        : '';
+    const stepsChip = steps.length > 0
+        ? `<div class="record-detail-hero__stat">
+                <span class="record-detail-hero__stat-label">流水线步骤</span>
+                <span class="record-detail-hero__stat-value">${steps.length}</span>
+            </div>`
+        : '';
 
     return `
-        <section class="record-pipeline-summary record-pipeline-summary--${statusClass}">
-            <div class="record-pipeline-summary__input">${inputHtml}</div>
-            <div class="record-pipeline-summary__arrow" aria-hidden="true">
-                <i class="bi bi-arrow-down"></i>
+        <section class="record-detail-hero record-detail-hero--${heroCls}">
+            <div class="record-detail-hero__top">
+                <div class="record-detail-hero__main">
+                    <span class="record-detail-hero__icon"><i class="bi ${statusIcon}"></i></span>
+                    <div class="record-detail-hero__text">
+                        <div class="record-detail-hero__status">${escapeHtml(statusText)}</div>
+                        ${message ? `<div class="record-detail-hero__message">${escapeHtml(message)}</div>` : ''}
+                    </div>
+                </div>
+                <div class="record-detail-hero__stats">${totalChip}${stepsChip}</div>
             </div>
-            <div class="record-pipeline-summary__output">${outputHtml}</div>
+            ${slowHtml}
+            ${ambiguousHtml}
         </section>
     `;
 }
 
-// 通用 payload 表格渲染：横向表头 + 单行数据
-// labels: 可选的 { key: 显示标签 } 映射；以 _url 结尾且非空的字段渲染为链接
-function renderPayloadTable(payload, labels) {
+// ========== 耗时瀑布（仅在有步骤耗时可见时展示） ==========
+
+function renderTimingWaterfall(trace) {
+    const steps = Array.isArray(trace?.steps) ? trace.steps : [];
+    if (steps.length === 0) {
+        return '';
+    }
+    const rows = steps.map((s, i) => ({
+        idx: i + 1,
+        stage: s.stage,
+        stageName: getStepDisplayName(s),
+        status: s.status || 'unknown',
+        elapsed: Math.max(0, Number(s.elapsed_ms) || 0),
+    }));
+    const sum = rows.reduce((acc, r) => acc + r.elapsed, 0);
+    if (sum <= 0) {
+        return '';
+    }
+    const totalMs = Math.max(getTraceTotalMs(trace), sum, 1);
+
+    // 全部步骤都很快（无 warm 及以上）时瀑布没有信息量，直接隐藏；
+    // 总览卡已展示总耗时与节奏评级
+    const hasVisibleHeat = rows.some((r) => classifyStepHeat(r.elapsed, totalMs) !== '');
+    if (!hasVisibleHeat) {
+        return '';
+    }
+
+    const segments = rows.map((r) => {
+        const pct = (r.elapsed / totalMs) * 100;
+        const heat = classifyStepHeat(r.elapsed, totalMs) || 'normal';
+        const shareText = `${pct.toFixed(0)}%`;
+        return `<button type="button"
+                class="record-detail-waterfall__seg record-detail-waterfall__seg--${heat}"
+                style="width:${pct.toFixed(2)}%"
+                onclick="jumpToRecordStep(${r.idx})"
+                title="${escapeHtml(r.stageName)} · ${formatElapsedMs(r.elapsed)} · ${shareText}"
+                aria-label="跳转到「${escapeHtml(r.stageName)}」，耗时 ${formatElapsedMs(r.elapsed)}"></button>`;
+    }).join('');
+
+    // 慢步骤图例：仅列出偏慢/严重的步骤，点击跳转
+    const slowChips = rows
+        .filter((r) => ['hot', 'critical'].includes(classifyStepHeat(r.elapsed, totalMs)))
+        .map((r) => {
+            const share = Math.round((r.elapsed / totalMs) * 100);
+            const heat = classifyStepHeat(r.elapsed, totalMs);
+            return `<button type="button"
+                    class="record-detail-waterfall__slow-chip record-detail-waterfall__slow-chip--${heat}"
+                    onclick="jumpToRecordStep(${r.idx})">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                ${escapeHtml(r.stageName)} ${formatElapsedMs(r.elapsed)} · ${share}%
+            </button>`;
+        }).join('');
+
+    return `
+        <section class="record-detail-waterfall">
+            <header class="record-detail-waterfall__head">
+                <h6 class="record-detail-waterfall__title"><i class="bi bi-stopwatch"></i>耗时分布</h6>
+                <span class="record-detail-waterfall__total">总耗时 <strong>${formatElapsedMs(totalMs)}</strong></span>
+            </header>
+            <div class="record-detail-waterfall__bar" role="list">${segments}</div>
+            ${slowChips ? `<div class="record-detail-waterfall__slow-list">${slowChips}</div>` : ''}
+        </section>
+    `;
+}
+
+// 耗时表点击跳转到对应步骤：展开目标卡片与所在分组后滚动高亮
+function jumpToRecordStep(idx) {
+    const target = document.getElementById(`record-step-${idx}`);
+    if (!target) return;
+    const card = target.querySelector('.record-detail-step__card');
+    if (card && card.tagName === 'DETAILS') {
+        card.open = true;
+    }
+    let parent = target.parentElement;
+    while (parent) {
+        if (parent.tagName === 'DETAILS') {
+            parent.open = true;
+        }
+        parent = parent.parentElement;
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('record-detail-step--flash');
+    void target.offsetWidth;
+    target.classList.add('record-detail-step--flash');
+}
+
+// ========== KV 网格（替代单行横表：字段多时更可读） ==========
+
+// 值格式化：布尔→是/否，空值→—，score/top_ratio→百分比，其余浮点保留 4 位
+function formatPayloadValueHtml(key, value) {
+    if (value === null || value === undefined || value === '') {
+        return { html: '—', empty: true };
+    }
+    if (typeof value === 'boolean') {
+        return { html: value ? '是' : '否' };
+    }
+    if (typeof value === 'number') {
+        if (key === 'score' || key === 'top_ratio') {
+            return { html: `${(value * 100).toFixed(1)}%` };
+        }
+        const rounded = Math.round(value * 10000) / 10000;
+        return { html: String(rounded) };
+    }
+    const str = String(value);
+    if (key.endsWith('_url')) {
+        return { html: `<a href="${escapeHtml(str)}" target="_blank" rel="noopener">${escapeHtml(str)}</a>` };
+    }
+    return { html: escapeHtml(str) };
+}
+
+function renderPayloadKv(payload, labels) {
     if (!payload || typeof payload !== 'object') {
         return '';
     }
@@ -256,33 +381,26 @@ function renderPayloadTable(payload, labels) {
         return '';
     }
     const labelMap = labels || {};
-    const headCells = keys.map((k) => {
+    const cells = keys.map((k) => {
         const label = labelMap[k] || k;
-        return `<th>${escapeHtml(label)}</th>`;
-    }).join('');
-    const bodyCells = keys.map((k) => {
         const v = payload[k];
-        const vv = (v === null || v === undefined) ? '' : String(v);
-        let valueCell;
-        if (k.endsWith('_url') && vv) {
-            valueCell = `<a href="${escapeHtml(vv)}" target="_blank" rel="noopener">${escapeHtml(vv)}</a>`;
-        } else {
-            valueCell = escapeHtml(vv);
-        }
-        return `<td>${valueCell}</td>`;
+        const { html, empty } = formatPayloadValueHtml(k, v);
+        const wideCls = !empty && String(v).length > 26 ? ' record-detail-kv__item--wide' : '';
+        const emptyCls = empty ? ' record-detail-kv__value--empty' : '';
+        return `<div class="record-detail-kv__item${wideCls}">
+            <span class="record-detail-kv__label">${escapeHtml(label)}</span>
+            <span class="record-detail-kv__value${emptyCls}">${html}</span>
+        </div>`;
     }).join('');
-    return '<div class="table-responsive">'
-        + '<table class="table table-sm table-bordered mb-0 record-detail-payload-table">'
-        + `<thead><tr>${headCells}</tr></thead>`
-        + `<tbody><tr>${bodyCells}</tr></tbody></table></div>`;
+    return `<div class="record-detail-kv">${cells}</div>`;
 }
 
-// receive step 输入字段表格：sync 开始时的输入
-function renderReceiveInputTable(step) {
+// receive step 输入字段：sync 开始时的输入
+function renderReceiveInputKv(step) {
     if (!step || step.stage !== 'receive' || !step.processed_payload) {
         return '';
     }
-    let html = renderPayloadTable(step.processed_payload, {
+    let html = renderPayloadKv(step.processed_payload, {
         source: '来源',
         user_name: '用户',
         title: '标题',
@@ -302,12 +420,12 @@ function renderReceiveInputTable(step) {
     return html;
 }
 
-// result step 结果表格：状态/集数/链接/消息
-function renderResultTable(step) {
+// result step 结果字段：状态/集数/链接/消息
+function renderResultKv(step) {
     if (!step || step.stage !== 'result' || !step.processed_payload) {
         return '';
     }
-    return renderPayloadTable(step.processed_payload, {
+    return renderPayloadKv(step.processed_payload, {
         status: '状态',
         episode: '集数',
         subject_id: '条目 ID',
@@ -319,12 +437,92 @@ function renderResultTable(step) {
     });
 }
 
-// episode_resolve step 表格：展示输入→输出的集数解析变更过程
-function renderEpisodeResolveTable(step) {
+// 通用结构化输入/输出字段标签（steps.inputs / steps.outputs 由管线统一记录）
+const COMMON_PAYLOAD_LABELS = {
+    subject_id: '条目 ID',
+    episode_id: '剧集 ID',
+    is_season_id: '是否季度 ID',
+    is_season_matched_id: '季度 ID 可信',
+    season: '季',
+    episode: '集',
+    target_episode: '目标集',
+    media_type: '媒体类型',
+    release_date: '发布日期',
+    title: '标题',
+    ori_title: '原始标题',
+    normalized_title: '归一化标题',
+    search_title: '搜索标题',
+    premiere_date: '首播日期',
+    start_date: '开始日期',
+    end_date: '结束日期',
+    subject_types: '条目类型',
+    is_movie: '剧场版',
+    changed: '是否变更',
+    match_path: '命中路径',
+    match_path_label: '命中路径描述',
+    match_method: '匹配方式',
+    match_method_detail: '匹配方式细节',
+    match_stage: '匹配阶段',
+    is_archive_hit: 'archive 命中',
+    mark_status: '标记状态',
+    queued: '已入队',
+    status: '状态',
+    message: '消息',
+    error: '错误',
+    score: '置信度',
+    total_candidates: '候选数',
+    matched_title: '匹配标题',
+    date_matched: '日期匹配',
+    stripped_title: '剥离后缀标题',
+    stripped_ori: '剥离后缀原标题',
+    variants: '搜索变体',
+    top_ratio: '首条相似度',
+    matched_variant_method: '命中变体',
+    subject_url: '条目链接',
+    episode_url: '剧集链接',
+    bgm_title: '番剧标题',
+};
+
+// 命中路径 → 中文描述（对齐后端 _PATH_DETAIL）
+const CROSS_SEASON_PATH_TEXT = {
+    chain: '前传/续集链',
+    franchise_archive: '同 IP 闭包（本地归档）',
+    franchise_online: '同 IP 改编一跳（在线）',
+};
+
+// 结构化输入/输出：上一步进去了什么、这一步出来了什么
+function renderStepInputsOutputs(step) {
+    const inputs = (step.inputs && typeof step.inputs === 'object' && Object.keys(step.inputs).length > 0)
+        ? step.inputs
+        : null;
+    const outputs = (step.outputs && typeof step.outputs === 'object' && Object.keys(step.outputs).length > 0)
+        ? step.outputs
+        : null;
+    if (!inputs && !outputs) {
+        return '';
+    }
+    let html = '';
+    if (inputs) {
+        html += `<div class="record-detail-step__io-title"><i class="bi bi-box-arrow-in-right"></i>输入</div>`;
+        html += renderPayloadKv(inputs, COMMON_PAYLOAD_LABELS);
+    }
+    if (outputs) {
+        const out = { ...outputs };
+        if (out.match_path) {
+            out.match_path = CROSS_SEASON_PATH_TEXT[out.match_path] || out.match_path;
+        }
+        html += `<div class="record-detail-step__io-title"><i class="bi bi-box-arrow-out-right"></i>输出</div>`;
+        html += renderPayloadKv(out, COMMON_PAYLOAD_LABELS);
+    }
+    return html;
+}
+
+// episode_resolve step：展示输入→输出的集数解析变更过程
+function renderEpisodeResolveKv(step) {
     if (!step || step.stage !== 'episode_resolve' || !step.processed_payload) {
         return '';
     }
-    return renderPayloadTable(step.processed_payload, {
+    return renderPayloadKv(step.processed_payload, {
         input_subject_id: '输入条目 ID',
         input_is_season_id: '是否季度 ID',
         request_season: '请求季',
@@ -340,21 +538,17 @@ function renderEpisodeResolveTable(step) {
     });
 }
 
-// cross_season step 表格：展示跨季链/同 IP 改编查找的变更过程
-function renderCrossSeasonTable(step) {
+// cross_season step：展示跨季链/同 IP 改编查找的变更过程
+function renderCrossSeasonKv(step) {
     if (!step || step.stage !== 'cross_season' || !step.processed_payload) {
         return '';
     }
-    const pathText = {
-        chain: '前传/续集链',
-        franchise_archive: '同 IP 闭包（本地归档）',
-        franchise_online: '同 IP 改编一跳（在线）',
-    }[step.processed_payload.match_path] || '';
+    const pathText = CROSS_SEASON_PATH_TEXT[step.processed_payload.match_path] || '';
     const payload = { ...step.processed_payload };
     if (pathText) {
         payload.match_path = pathText;
     }
-    return renderPayloadTable(payload, {
+    return renderPayloadKv(payload, {
         input_subject_id: '输入条目 ID',
         output_subject_id: '输出条目 ID',
         output_episode_id: '输出剧集 ID',
@@ -367,24 +561,25 @@ function renderCrossSeasonTable(step) {
     });
 }
 
-// P0: 渲染 step.error_detail 异常详情（可折叠）
-function renderStepErrorDetail(detail) {
+// step.error_detail 异常详情（status=error 时默认展开）
+function renderStepErrorDetail(detail, defaultOpen) {
     if (!detail) return '';
     const type = escapeHtml(detail.type || '');
     const message = escapeHtml(detail.message || '');
     const traceback = detail.traceback || '';
-    let html = `<details class="record-detail-error-detail record-detail-subpanel record-detail-subpanel--error mt-1">
+    const openAttr = defaultOpen ? ' open' : '';
+    let html = `<details class="record-detail-error-detail record-detail-subpanel record-detail-subpanel--error mt-1"${openAttr}>
         <summary class="record-detail-subpanel__summary record-detail-subpanel__summary--error"><i class="bi bi-bug-fill"></i>异常详情：${type}</summary>
         <div class="mt-1 small">
             <div class="text-danger"><strong>${type}</strong>: ${message}</div>`;
     if (traceback) {
-        html += `<pre class="mt-1 mb-0 p-2 bg-dark text-light rounded small" style="max-height:240px;overflow:auto">${escapeHtml(traceback)}</pre>`;
+        html += `<pre class="record-detail-traceback mt-1 mb-0">${escapeHtml(traceback)}</pre>`;
     }
     html += '</div></details>';
     return html;
 }
 
-// P1: 渲染 step.request_params 实际发送的搜索参数
+// step.request_params 实际发送的搜索参数
 function renderStepRequestParams(params) {
     if (!params) return '';
     const mediaTypeLabel = (t) => {
@@ -418,7 +613,7 @@ function renderStepRequestParams(params) {
     </details>`;
 }
 
-// P1: 渲染 step.api_response_summary API 返回质量摘要
+// step.api_response_summary API 返回质量摘要
 function renderStepApiResponseSummary(summary) {
     if (!summary) return '';
     const total = summary.total_candidates ?? 0;
@@ -430,7 +625,7 @@ function renderStepApiResponseSummary(summary) {
         : '<span class="record-detail-step__pill record-detail-step__pill--api"><i class="bi bi-cloud-fill"></i>API</span>';
     const totalBadge = `<span class="record-detail-step__pill record-detail-step__pill--count">候选 <strong>${total}</strong></span>`;
     const firstLink = firstId
-        ? `<a href="https://bgm.tv/subject/${escapeHtml(String(firstId))}" target="_blank" class="record-detail-step__pill record-detail-step__pill--link"><i class="bi bi-link-45deg"></i>${escapeHtml(firstName || String(firstId))}</a>`
+        ? `<a href="https://bgm.tv/subject/${escapeHtml(String(firstId))}" target="_blank" rel="noopener" class="record-detail-step__pill record-detail-step__pill--link"><i class="bi bi-link-45deg"></i>${escapeHtml(firstName || String(firstId))}</a>`
         : '<span class="record-detail-step__pill record-detail-step__pill--muted">无候选</span>';
     return `<details class="record-detail-api-summary record-detail-subpanel mt-1">
         <summary class="record-detail-subpanel__summary"><i class="bi bi-graph-up"></i>API 返回摘要</summary>
@@ -438,7 +633,217 @@ function renderStepApiResponseSummary(summary) {
     </details>`;
 }
 
-// 流水线渲染：10 阶段统一展示
+// ========== 步骤时间线 ==========
+
+// 单步耗时 chip：热度着色，hot/critical 带警示图标
+function renderStepTimeChip(elapsedMs, totalMs) {
+    const elapsed = Math.max(0, Number(elapsedMs) || 0);
+    const heat = classifyStepHeat(elapsed, totalMs);
+    const share = totalMs > 0 ? Math.round((elapsed / totalMs) * 100) : 0;
+    const heatCls = heat ? ` record-detail-step__time--${heat}` : '';
+    const icon = ['hot', 'critical'].includes(heat)
+        ? '<i class="bi bi-exclamation-triangle-fill"></i>'
+        : '<i class="bi bi-stopwatch"></i>';
+    const title = totalMs > 0 ? ` title="占总耗时 ${share}%"` : '';
+    return `<span class="record-detail-step__time${heatCls}"${title}>${icon}${formatElapsedMs(elapsed)}</span>`;
+}
+
+// 慢步骤说明（hot/critical 时展示占比）
+function renderStepSlowNote(elapsedMs, totalMs) {
+    const elapsed = Math.max(0, Number(elapsedMs) || 0);
+    const heat = classifyStepHeat(elapsed, totalMs);
+    if (!['hot', 'critical'].includes(heat)) {
+        return '';
+    }
+    const share = totalMs > 0 ? Math.round((elapsed / totalMs) * 100) : 0;
+    const label = heat === 'critical' ? '耗时严重' : '耗时偏高';
+    return `
+        <div class="record-detail-step__slow-note record-detail-step__slow-note--${heat}">
+            <i class="bi bi-speedometer2"></i>
+            ${label}：本步 ${formatElapsedMs(elapsed)}，约占总耗时 ${share}%，通常是网络请求或 Bangumi API 响应耗时
+        </div>`;
+}
+
+// 步骤详细内容（折叠区内）：异常 / 搜索参数 / API 摘要 / 候选 / 输入输出
+function renderStepDetailContent(step, status, elapsed, totalMs) {
+    const hasStructuredIO = !!(step.inputs && Object.keys(step.inputs).length > 0)
+        || !!(step.outputs && Object.keys(step.outputs).length > 0);
+
+    let body = '';
+
+    // 慢步骤提示
+    body += renderStepSlowNote(elapsed, totalMs);
+
+    // 异常详情（error 时默认展开）
+    if (step.error_detail) {
+        body += renderStepErrorDetail(step.error_detail, status === 'error');
+    }
+
+    // 搜索参数 / API 返回摘要
+    if (step.request_params) {
+        body += renderStepRequestParams(step.request_params);
+    }
+    if (step.api_response_summary) {
+        body += renderStepApiResponseSummary(step.api_response_summary);
+    }
+
+    // receive step：渲染 sync 开始时的输入字段
+    if (step.stage === 'receive') {
+        body += renderReceiveInputKv(step);
+    }
+
+    // 候选列表（多行数据保留表格）
+    if (step.candidates && step.candidates.length > 0) {
+        body += renderMatchCandidatesTable(step.candidates);
+    }
+
+    // 结构化输入/输出；旧记录回退到特化字段
+    if (hasStructuredIO) {
+        body += renderStepInputsOutputs(step);
+    } else {
+        if (step.stage === 'episode_resolve') {
+            body += renderEpisodeResolveKv(step);
+        }
+        if (step.stage === 'cross_season') {
+            body += renderCrossSeasonKv(step);
+        }
+        if (step.stage === 'result') {
+            body += renderResultKv(step);
+        }
+    }
+
+    return body;
+}
+
+// 单个步骤卡片：摘要行（阶段 + 状态 + reason + 耗时）常显，详情折叠；
+// error / low_confidence / 慢步骤默认展开
+function renderStepCard(step, idx, totalMs, opts) {
+    const options = opts || {};
+    const nested = !!options.nested;
+    const status = step.status || 'unknown';
+    const meta = getStepStatusMeta(status);
+    const stageName = getStepDisplayName(step);
+    const elapsed = Math.max(0, Number(step.elapsed_ms) || 0);
+    const heat = classifyStepHeat(elapsed, totalMs);
+
+    const detailHtml = renderStepDetailContent(step, status, elapsed, totalMs);
+    const expandable = !!detailHtml.trim();
+    const autoOpen = expandable
+        && (status === 'error' || status === 'low_confidence' || ['hot', 'critical'].includes(heat));
+
+    // 摘要行右侧：subject 链接 / 置信度 / 候选数 / 耗时 / 折叠箭头
+    let headMeta = '';
+    if (step.subject_id) {
+        headMeta += `<a href="https://bgm.tv/subject/${escapeHtml(String(step.subject_id))}" target="_blank" rel="noopener" class="record-detail-step__subject" title="在 Bangumi 查看条目" onclick="event.stopPropagation()">`
+            + `<i class="bi bi-collection"></i>subject/${escapeHtml(String(step.subject_id))}</a>`;
+    }
+    // ep 链接取自各 step 既有 JSON（outputs.episode_id 优先，回退 inputs.episode_id），
+    // 不依赖单独字段，老记录同样可显示
+    const stepEpId = (step.outputs && step.outputs.episode_id)
+        || (step.inputs && step.inputs.episode_id)
+        || null;
+    if (stepEpId) {
+        headMeta += `<a href="https://bgm.tv/ep/${escapeHtml(String(stepEpId))}" target="_blank" rel="noopener" class="record-detail-step__ep-link" title="在 Bangumi 查看剧集" onclick="event.stopPropagation()">`
+            + `<i class="bi bi-play-circle"></i>ep/${escapeHtml(String(stepEpId))}</a>`;
+    }
+    if (step.score !== null && step.score !== undefined) {
+        headMeta += `<span class="record-detail-step__score">${formatMatchScore(step.score)}</span>`;
+    }
+    if (step.candidates && step.candidates.length > 0) {
+        headMeta += `<span class="record-detail-step__cand-count">候选 ${step.candidates.length}</span>`;
+    }
+    headMeta += renderStepTimeChip(elapsed, totalMs);
+
+    const headInner = `
+            <span class="record-detail-step__head-line">
+                <strong class="record-detail-step__name">${escapeHtml(stageName)}</strong>
+                <span class="record-detail-step__badge record-detail-step__badge--${status}"><i class="bi ${meta.icon}"></i>${escapeHtml(meta.label)}</span>
+                ${headMeta}
+                ${expandable ? '<i class="bi bi-chevron-down record-detail-step__chevron" aria-hidden="true"></i>' : ''}
+            </span>
+            ${step.reason ? `<span class="record-detail-step__reason">${escapeHtml(step.reason)}</span>` : ''}`;
+
+    const slowCls = ['hot', 'critical'].includes(heat) ? ` record-detail-step--slow-${heat}` : '';
+    const nestedCls = nested ? ' record-detail-step--nested' : '';
+
+    let html = `<article class="record-detail-step record-detail-step--${status}${nestedCls}${slowCls}" id="record-step-${idx}" tabindex="-1">`;
+    if (!nested) {
+        html += '<div class="record-detail-step__rail" aria-hidden="true">';
+        html += `<span class="record-detail-step__index">${idx}</span>`;
+        if (!options.isLast) {
+            html += '<span class="record-detail-step__line"></span>';
+        }
+        html += '</div>';
+    } else {
+        html += `<span class="record-detail-step__dot record-detail-step__dot--${status}" aria-hidden="true"></span>`;
+    }
+
+    if (expandable) {
+        html += `<details class="record-detail-step__card"${autoOpen ? ' open' : ''}>`;
+        html += `<summary class="record-detail-step__head">${headInner}</summary>`;
+        html += `<div class="record-detail-step__content">${detailHtml}</div>`;
+        html += '</details>';
+    } else {
+        // 无附加信息：不可折叠的简洁卡片
+        html += `<div class="record-detail-step__card record-detail-step__card--plain">`;
+        html += `<header class="record-detail-step__head">${headInner}</header>`;
+        html += '</div>';
+    }
+    html += '</article>';
+    return html;
+}
+
+// bgm_search 子管线分组：连续的 api_search_* 子步骤折叠为一个分组展示
+function renderSubPipelineGroup(subSteps, startIdx, totalMs) {
+    const errorStep = subSteps.find((s) => s.status === 'error');
+    const hitStep = subSteps.find((s) => s.status === 'hit');
+    let outcomeCls = 'muted';
+    let outcomeText = '未命中';
+    if (errorStep) {
+        outcomeCls = 'error';
+        outcomeText = `${getPipelineStageName(errorStep.stage)}出错`;
+    } else if (hitStep) {
+        outcomeCls = 'hit';
+        outcomeText = `${getPipelineStageName(hitStep.stage)}命中`;
+    }
+
+    const shouldOpen = subSteps.some((s) => s.status === 'error'
+        || ['hot', 'critical'].includes(classifyStepHeat(s.elapsed_ms, totalMs)));
+
+    const inner = subSteps
+        .map((s, k) => renderStepCard(s, startIdx + k + 1, totalMs, { nested: true }))
+        .join('');
+
+    return `
+        <details class="record-detail-subgroup"${shouldOpen ? ' open' : ''}>
+            <summary class="record-detail-subgroup__head">
+                <i class="bi bi-diagram-2"></i>
+                <span class="record-detail-subgroup__title">API 搜索内部流程</span>
+                <span class="record-detail-subgroup__count">${subSteps.length} 步</span>
+                <span class="record-detail-subgroup__outcome record-detail-subgroup__outcome--${outcomeCls}">${escapeHtml(outcomeText)}</span>
+                <i class="bi bi-chevron-down record-detail-subgroup__chevron" aria-hidden="true"></i>
+            </summary>
+            <div class="record-detail-subgroup__steps">${inner}</div>
+        </details>
+    `;
+}
+
+// 匹配失败引导横幅
+function renderMatchFailureBanner(record) {
+    const mapTitle = encodeURIComponent(record.title || '');
+    const mapSeason = record.season || 1;
+    return `
+        <div class="record-detail-banner record-detail-banner--warn">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span class="flex-grow-1">未匹配到 Bangumi 条目，可添加自定义映射解决</span>
+            <a href="${appUrl('/mappings')}?title=${mapTitle}&season=${mapSeason}" class="record-detail-banner__action">
+                前往映射 <i class="bi bi-arrow-up-right"></i>
+            </a>
+        </div>
+    `;
+}
+
+// 流水线渲染：总览 + 耗时瀑布 + 步骤时间线（子管线步骤分组折叠）
 function renderPipelineHtml(record, trace) {
     if (!trace) {
         return `
@@ -453,290 +858,54 @@ function renderPipelineHtml(record, trace) {
         return '<p class="record-detail-empty-hint mb-0">匹配追踪为空，无步骤数据。</p>';
     }
 
-    let html = '<div class="record-detail-steps">';
+    const steps = trace.steps;
+    const totalMs = getTraceTotalMs(trace);
 
-    trace.steps.forEach((step, idx) => {
-        const status = step.status || 'unknown';
-        const stageName = getPipelineStageName(step.stage);
+    let html = renderRecordHero(record, trace);
+    html += renderTimingWaterfall(trace);
 
-        html += `<article class="record-detail-step record-detail-step--${status}" id="record-step-${idx + 1}" tabindex="-1">`;
-        html += '<div class="record-detail-step__rail" aria-hidden="true">';
-        html += `<span class="record-detail-step__index">${idx + 1}</span>`;
-        if (idx < trace.steps.length - 1) {
-            html += '<span class="record-detail-step__line"></span>';
-        }
-        html += '</div>';
-        html += '<div class="record-detail-step__card">';
-        html += '<header class="record-detail-step__head">';
-        html += `<strong class="record-detail-step__name">${escapeHtml(stageName)}</strong>`;
-        html += `<span class="record-detail-step__badge record-detail-step__badge--${status}">${getMatchStepStatusLabel(status)}</span>`;
-        if (step.score !== null && step.score !== undefined) {
-            html += `<span class="record-detail-step__score">${formatMatchScore(step.score)}</span>`;
-        }
-        html += `<span class="record-detail-step__time">${step.elapsed_ms || 0}ms</span>`;
-        html += '</header>';
-
-        if (step.reason) {
-            html += `<p class="record-detail-step__reason">${escapeHtml(step.reason)}</p>`;
-        }
-
-        // P0: error_detail 异常详情（status=error 时展示）
-        if (step.error_detail) {
-            html += renderStepErrorDetail(step.error_detail);
-        }
-
-        // P1: request_params 实际发送的搜索参数
-        if (step.request_params) {
-            html += renderStepRequestParams(step.request_params);
-        }
-
-        // P1: api_response_summary API 返回质量摘要
-        if (step.api_response_summary) {
-            html += renderStepApiResponseSummary(step.api_response_summary);
-        }
-
-        // receive step：渲染 sync 开始时的输入字段表格
-        if (step.stage === 'receive') {
-            html += renderReceiveInputTable(step);
-        }
-
-        if (step.candidates && step.candidates.length > 0) {
-            html += renderMatchCandidatesTable(step.candidates);
-        }
-
-        // episode_resolve step：渲染输入→输出变更过程表格
-        if (step.stage === 'episode_resolve') {
-            const t = renderEpisodeResolveTable(step);
-            if (t) {
-                html += `<div class="mt-2">${t}</div>`;
+    // 顶层条目列表（含分组占位），用于计算连接线是否收尾
+    const topLevel = [];
+    let i = 0;
+    while (i < steps.length) {
+        if (isSubPipelineStep(steps[i])) {
+            let j = i;
+            while (j < steps.length && isSubPipelineStep(steps[j])) {
+                j++;
             }
+            topLevel.push({ type: 'group', from: i, to: j });
+            i = j;
+        } else {
+            topLevel.push({ type: 'step', index: i });
+            i++;
         }
+    }
 
-        // cross_season step：渲染跨季链查找变更过程表格
-        if (step.stage === 'cross_season') {
-            const t = renderCrossSeasonTable(step);
-            if (t) {
-                html += `<div class="mt-2">${t}</div>`;
+    html += '<div class="record-detail-steps">';
+    topLevel.forEach((item, k) => {
+        const isLast = k === topLevel.length - 1;
+        if (item.type === 'group') {
+            const subSteps = steps.slice(item.from, item.to);
+            const groupHtml = renderSubPipelineGroup(subSteps, item.from, totalMs);
+            if (isLast) {
+                html += groupHtml;
+            } else {
+                html += `<div class="record-detail-steps__group-slot">${groupHtml}</div>`;
             }
+        } else {
+            html += renderStepCard(steps[item.index], item.index + 1, totalMs, { isLast });
         }
-
-        // result step：渲染结果表格（集数 + 链接 + 消息）
-        if (step.stage === 'result') {
-            const resultTable = renderResultTable(step);
-            if (resultTable) {
-                html += `<div class="mt-2">${resultTable}</div>`;
-            }
-        }
-
-        html += '</div></article>';
     });
-
     html += '</div>';
 
-    // P2: 步骤耗时汇总（每步耗时 + 总耗时 + 占比条）
-    html += renderStepTimings(trace);
-
-    return html;
-}
-
-// P2: 渲染步骤耗时汇总面板
-function renderStepTimings(trace) {
-    if (!trace || !Array.isArray(trace.steps) || trace.steps.length === 0) {
-        return '';
-    }
-    const rows = trace.steps
-        .map((s, idx) => ({
-            idx: idx + 1,
-            stage: s.stage,
-            stageName: getPipelineStageName(s.stage),
-            status: s.status,
-            elapsed: Math.max(0, Number(s.elapsed_ms) || 0),
-        }))
-        .filter((r) => r.elapsed > 0);
-
-    // 没有任何耗时数据则不展示
-    if (rows.length === 0) {
-        return '';
-    }
-
-    // 优先用 trace.total_elapsed_ms；否则用 steps 求和
-    const sumElapsed = rows.reduce((acc, r) => acc + r.elapsed, 0);
-    const totalElapsed = (typeof trace.total_elapsed_ms === 'number' && trace.total_elapsed_ms > 0)
-        ? trace.total_elapsed_ms
-        : sumElapsed;
-    const maxElapsed = rows.reduce((acc, r) => Math.max(acc, r.elapsed), 0);
-    const baseTotal = Math.max(totalElapsed, maxElapsed, 1);
-
-    const statusLabel = (st) => {
-        const m = { hit: '命中', miss: '未命中', skipped: '已跳过', error: '出错' };
-        return m[st] || st || '';
-    };
-
-    const formatMs = (ms) => {
-        if (ms < 1) return '0ms';
-        if (ms < 1000) return `${ms}ms`;
-        return `${(ms / 1000).toFixed(2)}s`;
-    };
-
-    const rowHtml = rows.map((r) => {
-        const pct = (r.elapsed / baseTotal) * 100;
-        const pctOfTotal = totalElapsed > 0 ? (r.elapsed / totalElapsed) * 100 : 0;
-        const isMax = r.elapsed === maxElapsed;
-        return `
-            <button type="button" class="record-detail-timings__row${isMax ? ' record-detail-timings__row--hot' : ''}" onclick="jumpToRecordStep(${r.idx})" title="跳转到「${escapeHtml(r.stageName)}」">
-                <span class="record-detail-timings__idx">${r.idx}</span>
-                <span class="record-detail-timings__name">${escapeHtml(r.stageName)}</span>
-                <span class="record-detail-timings__status record-detail-timings__status--${r.status}">${escapeHtml(statusLabel(r.status))}</span>
-                <span class="record-detail-timings__bar" aria-hidden="true">
-                    <span class="record-detail-timings__bar-fill" style="width:${pct.toFixed(1)}%"></span>
-                </span>
-                <span class="record-detail-timings__elapsed">${formatMs(r.elapsed)}</span>
-                <span class="record-detail-timings__pct">${pctOfTotal.toFixed(1)}%</span>
-            </button>`;
-    }).join('');
-
-    return `
-        <section class="record-detail-timings">
-            <header class="record-detail-timings__head">
-                <h6 class="record-detail-timings__title"><i class="bi bi-stopwatch"></i>步骤耗时</h6>
-                <span class="record-detail-timings__total">总执行时间 <strong>${formatMs(totalElapsed)}</strong></span>
-            </header>
-            <div class="record-detail-timings__rows">${rowHtml}</div>
-        </section>
-    `;
-}
-
-// 耗时表点击跳转到对应步骤并高亮
-function jumpToRecordStep(idx) {
-    const target = document.getElementById(`record-step-${idx}`);
-    if (!target) return;
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    target.classList.remove('record-detail-step--flash');
-    void target.offsetWidth;
-    target.classList.add('record-detail-step--flash');
-}
-
-function renderMatchStepsHtml(record, trace) {
-    // 旧调用方（debug 工具页）兼容：直接复用流水线渲染
-    return renderPipelineHtml(record, trace);
-}
-
-function renderMatchInputZone(record, trace) {
-    const body = renderMatchInputFacts(record, trace);
-
-    return renderRecordDetailZone(
-        'match',
-        '匹配信息',
-        '用于 Bangumi 条目识别的输入',
-        body,
-        'record-section-match',
-    );
-}
-
-function renderMatchStepsZone(record, trace) {
-    let body = renderMatchStepsHtml(record, trace);
     if (isMatchFailure(record, trace)) {
-        body += renderMatchFailureBanner(record);
+        html += renderMatchFailureBanner(record);
     }
 
-    return renderRecordDetailZone(
-        'steps',
-        '匹配步骤',
-        '各阶段匹配过程与候选结果',
-        body,
-        'record-section-steps',
-    );
-}
-
-function renderMatchDetailModalParts(record, trace) {
-    return {
-        match: renderMatchInputZone(record, trace),
-        steps: renderMatchStepsZone(record, trace),
-    };
-}
-
-function isRecordSyncSuccess(record) {
-    return record.status === 'success' || record.status === 'retried';
-}
-
-function renderBangumiLinkPills(subjectId, episodeId) {
-    const pills = [];
-    if (subjectId) {
-        pills.push(`
-            <a href="https://bgm.tv/subject/${subjectId}" target="_blank" rel="noopener"
-               class="record-detail-link-pill record-detail-link-pill--subject">
-                <i class="bi bi-collection"></i>条目 ${subjectId}
-            </a>
-        `);
-    }
-    if (episodeId) {
-        pills.push(`
-            <a href="https://bgm.tv/ep/${episodeId}" target="_blank" rel="noopener"
-               class="record-detail-link-pill record-detail-link-pill--episode">
-                <i class="bi bi-play-circle"></i>剧集 ${episodeId}
-            </a>
-        `);
-    }
-    if (pills.length === 0) {
-        return '';
-    }
-    return `<div class="record-detail-link-pills">${pills.join('')}</div>`;
-}
-
-function renderRecordDetailTileGrid(items) {
-    const rows = (items || []).filter((item) => {
-        const v = item.value;
-        return v !== null && v !== undefined && v !== '';
-    });
-    if (rows.length === 0) {
-        return '<p class="text-muted small mb-0">暂无信息</p>';
-    }
-    let html = '<div class="record-detail-grid">';
-    rows.forEach((item) => {
-        const wideClass = item.wide ? ' record-detail-tile--wide' : '';
-        html += `<div class="record-detail-tile${wideClass}">`;
-        html += `<span class="record-detail-tile__label">${escapeHtml(item.label)}</span>`;
-        html += `<span class="record-detail-tile__value">${item.value}</span>`;
-        html += '</div>';
-    });
-    html += '</div>';
     return html;
 }
 
-function renderRecordDetailBlock(title, icon, bodyHtml, sectionId) {
-    const idAttr = sectionId ? ` id="${sectionId}"` : '';
-    return `
-        <section class="record-detail-section"${idAttr}>
-            <div class="record-detail-section__head">
-                <i class="bi ${icon} card-header-icon"></i>
-                <h6 class="record-detail-section__title">${escapeHtml(title)}</h6>
-            </div>
-            <div class="record-detail-section__body">${bodyHtml}</div>
-        </section>
-    `;
-}
-
-function renderRecordDetailKvGrid(items) {
-    const rows = (items || []).filter((item) => {
-        const v = item.value;
-        return v !== null && v !== undefined && v !== '';
-    });
-    if (rows.length === 0) {
-        return '<p class="text-muted small mb-0">暂无信息</p>';
-    }
-    let html = '<dl class="row record-detail-kv mb-0">';
-    rows.forEach((item) => {
-        html += `<dt class="col-sm-4 col-md-3">${escapeHtml(item.label)}</dt>`;
-        html += `<dd class="col-sm-8 col-md-9">${item.value}</dd>`;
-    });
-    html += '</dl>';
-    return html;
-}
-
-function renderRecordDetailSection(title, icon, bodyHtml, extraClass) {
-    const sectionId = extraClass && extraClass.startsWith('id:') ? extraClass.slice(3) : '';
-    return renderRecordDetailBlock(title, icon, bodyHtml, sectionId || null);
-}
+// ========== 弹窗头部（保持轻量：身份事实 chips） ==========
 
 function getRecordEpisodeLabel(record) {
     const isMovie = (record.media_type || 'episode').toLowerCase() === 'movie';
@@ -816,90 +985,6 @@ function updateRecordDetailModalChrome(record) {
     }
 }
 
-function renderMatchDetailModalContent(record, trace) {
-    const parts = renderMatchDetailModalParts(record, trace);
-    return parts.match + parts.steps;
-}
-
-function renderSyncDetailContent(record, trace) {
-    const isMovie = (record.media_type || 'episode').toLowerCase() === 'movie';
-    const facts = [];
-
-    if (hasDisplayText(record.title)) {
-        facts.push({ label: '接收标题', value: escapeHtml(record.title), wide: true });
-    }
-    if (hasDisplayText(record.ori_title)) {
-        facts.push({ label: '接收原标题', value: escapeHtml(record.ori_title), wide: true });
-    }
-    if (hasDisplayText(record.user_name)) {
-        facts.push({ label: '用户名', value: escapeHtml(record.user_name) });
-    }
-    if (record.media_type) {
-        facts.push({ label: '媒体类型', value: renderMediaTypeBadge(record.media_type) });
-    }
-    facts.push({
-        label: '季 / 集',
-        value: isMovie ? '<span class="record-detail-chip">剧场版</span>' : getRecordEpisodeLabel(record),
-    });
-
-    const releaseDate = getRecordReleaseDate(record, trace);
-    if (releaseDate) {
-        facts.push({ label: '播出日期', value: escapeHtml(releaseDate) });
-    }
-
-    const body = renderRecordDetailFacts(facts) || '<p class="record-detail-empty-hint mb-0">无接收信息</p>';
-
-    return renderRecordDetailZone(
-        'receive',
-        '接收信息',
-        '媒体库推送的观看记录',
-        body,
-        'record-section-receive',
-    );
-}
-
-function renderMatchTraceLoading() {
-    return renderRecordDetailZone(
-        'match',
-        '匹配信息',
-        '用于 Bangumi 条目识别的输入',
-        `<div class="record-detail-loading" aria-busy="true">
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-            <span>加载匹配信息…</span>
-        </div>`,
-        'record-section-match',
-    );
-}
-
-function renderMatchStepsLoading() {
-    return renderRecordDetailZone(
-        'steps',
-        '匹配步骤',
-        '各阶段匹配过程与候选结果',
-        `<div class="record-detail-loading" aria-busy="true">
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-            <span>加载匹配步骤…</span>
-        </div>`,
-        'record-section-steps',
-    );
-}
-
-// ========== 同步记录详情弹窗（records / dashboard 共用） ==========
-
-let _recordDetailModal = null;
-const _matchTraceCache = {};
-
-function getRecordDetailModal() {
-    const modalEl = document.getElementById('recordDetailModal');
-    if (!modalEl) {
-        return null;
-    }
-    if (!_recordDetailModal) {
-        _recordDetailModal = new bootstrap.Modal(modalEl);
-    }
-    return _recordDetailModal;
-}
-
 // 弹窗头部核心信息 chips（仅展示 modal-title 里没有的字段）
 function renderPipelineSummaryChips(record, trace) {
     const t = trace || {};
@@ -950,12 +1035,12 @@ function renderPipelineSummaryChips(record, trace) {
         if (bgmTitle) {
             label += ` · ${bgmTitle}`;
         }
-        chips.push(`<a href="https://bgm.tv/subject/${escapeHtml(subjectId)}" target="_blank" class="record-detail-modal__chip record-detail-modal__chip--link"><i class="bi bi-collection"></i>${escapeHtml(label)}</a>`);
+        chips.push(`<a href="https://bgm.tv/subject/${escapeHtml(subjectId)}" target="_blank" rel="noopener" class="record-detail-modal__chip record-detail-modal__chip--link"><i class="bi bi-collection"></i>${escapeHtml(label)}</a>`);
     }
 
     // episode 链接
     if (episodeId) {
-        chips.push(`<a href="https://bgm.tv/ep/${escapeHtml(episodeId)}" target="_blank" class="record-detail-modal__chip record-detail-modal__chip--link"><i class="bi bi-play-circle"></i>ep/${escapeHtml(episodeId)}</a>`);
+        chips.push(`<a href="https://bgm.tv/ep/${escapeHtml(episodeId)}" target="_blank" rel="noopener" class="record-detail-modal__chip record-detail-modal__chip--link"><i class="bi bi-play-circle"></i>ep/${escapeHtml(episodeId)}</a>`);
     }
 
     // 置信度
@@ -966,7 +1051,6 @@ function renderPipelineSummaryChips(record, trace) {
     return `<div class="record-detail-modal__chips">${chips.join('')}</div>`;
 }
 
-// 弹窗头部核心信息 chips
 function setRecordSummaryHtml(record, trace) {
     const head = document.getElementById('record-detail-modal-summary');
     if (head) {
@@ -981,6 +1065,31 @@ function clearRecordSummaryHtml() {
     }
 }
 
+// ========== 弹窗加载流程 ==========
+
+function renderRecordDetailLoading() {
+    return `
+        <div class="record-detail-loading" aria-busy="true">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span>正在加载匹配详情…</span>
+        </div>
+    `;
+}
+
+let _recordDetailModal = null;
+const _matchTraceCache = {};
+
+function getRecordDetailModal() {
+    const modalEl = document.getElementById('recordDetailModal');
+    if (!modalEl) {
+        return null;
+    }
+    if (!_recordDetailModal) {
+        _recordDetailModal = new bootstrap.Modal(modalEl);
+    }
+    return _recordDetailModal;
+}
+
 async function loadMatchTraceContent(recordId, record) {
     const pipelineContent = document.getElementById('record-pipeline-content');
     if (!pipelineContent) {
@@ -988,7 +1097,7 @@ async function loadMatchTraceContent(recordId, record) {
     }
 
     setRecordSummaryHtml(record, parseRecordMatchTrace(record));
-    pipelineContent.innerHTML = renderMatchStepsLoading();
+    pipelineContent.innerHTML = renderRecordDetailLoading();
 
     try {
         let traceData = _matchTraceCache[recordId];
@@ -1042,7 +1151,7 @@ async function showRecordDetail(recordId, options) {
         const embeddedTrace = parseRecordMatchTrace(record);
         updateRecordDetailModalChrome(record);
         setRecordSummaryHtml(record, embeddedTrace);
-        pipelineContent.innerHTML = renderMatchStepsLoading();
+        pipelineContent.innerHTML = renderRecordDetailLoading();
         modal.show();
         await loadMatchTraceContent(recordId, record);
 
@@ -1058,5 +1167,5 @@ async function showRecordDetail(recordId, options) {
     }
 }
 
-window.renderSyncDetailContent = renderSyncDetailContent;
 window.showRecordDetail = showRecordDetail;
+window.jumpToRecordStep = jumpToRecordStep;
