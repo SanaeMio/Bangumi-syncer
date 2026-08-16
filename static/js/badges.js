@@ -99,6 +99,27 @@ function renderMatchMethodBadge(method) {
     return `<span class="badge rounded-pill bg-${color}">${text}</span>`;
 }
 
+// 细粒度匹配方式徽章：对应 MatchTrace.final_match_method_detail
+// exact / prefix_variant / season_stripped / media_suffix_stripped /
+// unwrapped / main_segment / fuzzy / cross_season_chain
+function renderMatchMethodDetailBadge(detail) {
+    if (!detail) {
+        return '';
+    }
+    const badges = {
+        exact: ['success', '精确命中'],
+        prefix_variant: ['info', '前缀变体'],
+        season_stripped: ['info', '剥离季号'],
+        media_suffix_stripped: ['info', '剥离后缀'],
+        unwrapped: ['info', '去包裹'],
+        main_segment: ['secondary', '主段'],
+        fuzzy: ['warning', '模糊匹配'],
+        cross_season_chain: ['primary', '跨季链'],
+    };
+    const [color, text] = badges[detail] || ['secondary', detail];
+    return `<span class="badge rounded-pill bg-${color} bg-opacity-75" style="font-size:0.75em">${text}</span>`;
+}
+
 function renderCandidateStatusBadge(status) {
     const badges = {
         pending: ['warning', '待确认'],
@@ -150,6 +171,7 @@ window.getStatusColor = getSyncRecordStatusColor;
 window.getStatusText = getSyncRecordStatusText;
 window.renderSyncStatusBadge = renderSyncStatusBadge;
 window.renderMatchMethodBadge = renderMatchMethodBadge;
+window.renderMatchMethodDetailBadge = renderMatchMethodDetailBadge;
 window.renderCandidateStatusBadge = renderCandidateStatusBadge;
 window.renderMediaTypeBadge = renderMediaTypeBadge;
 window.getSourceColor = getSourceColor;

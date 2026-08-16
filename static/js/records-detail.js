@@ -5,6 +5,11 @@ function normalizeRecordText(value) {
 }
 
 function isMatchFailure(record, trace) {
+    // 优先根据 status 判断：成功类状态不算匹配失败
+    // 修复重试成功后原 match_method 仍是 failed 导致详情页误判的问题
+    if (record.status === 'success' || record.status === 'retried') {
+        return false;
+    }
     if (record.match_method === 'failed') {
         return true;
     }
@@ -916,6 +921,18 @@ function renderPipelineSummaryChips(record, trace) {
 
     // 状态
     chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--status record-detail-modal__chip--status-${statusClass}"><i class="bi ${statusIcon}"></i>${escapeHtml(statusText)}</span>`);
+
+    // 匹配方式：粗粒度 final_match_method + 细粒度 final_match_method_detail
+    // 优先取 trace（更准确，重试成功后会回写），回退 record.match_method
+    const matchMethod = t.final_match_method || record.match_method || '';
+    const matchMethodDetail = t.final_match_method_detail || '';
+    if (matchMethod) {
+        let methodHtml = renderMatchMethodBadge(matchMethod);
+        if (matchMethodDetail) {
+            methodHtml += ' ' + renderMatchMethodDetailBadge(matchMethodDetail);
+        }
+        chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--match-method">${methodHtml}</span>`);
+    }
 
     // subject 链接
     if (subjectId) {
