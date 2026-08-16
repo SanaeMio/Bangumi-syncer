@@ -56,6 +56,9 @@ _CANDIDATE_LIMIT = 200
 # BK-tree 模糊匹配容忍的编辑距离（单字符 typo：替换/插入/删除/换位）
 # 与 SymSpell 对称删除同为「编辑距离保证」族，召回性质一致；BK-tree
 # 额外内存约 69MB（56539 标题实测），是 SymSpell(363MB) 的省内存版。
+# 注意：内存与构建时间随标题数线性增长（约 1.2MB/千标题），完整
+# 生产库（~84 万唯一标题）外推约 1GB 内存、分钟级构建，内存敏感
+# 的容器请先实测再开启。
 # 是否启用由 config.ini [bangumi-archive] use_bktree 控制（默认关闭，
 # 关闭时回退 trigram OR + 覆盖度预筛，零额外内存，适合小项目）。
 _MAX_FUZZY_DIST = 1
@@ -416,7 +419,8 @@ class ArchiveFTSQuery:
         """运行时显式覆盖 BK-tree 模糊匹配开关
 
         开启：使用 BK-tree 候选生成 + 短查询 JaroWinkler 打分，
-        编辑距离保证召回单字符 typo（替换/插入/删除/换位），约 69MB 额外内存。
+        编辑距离保证召回单字符 typo（替换/插入/删除/换位），约 69MB 额外内存
+        （56539 标题实测，随标题数线性增长，~1.2MB/千标题）。
         关闭：回退到 trigram OR + 覆盖度预筛，无额外内存索引，适合内存敏感场景。
 
         注意：默认由 config.ini [bangumi-archive] use_bktree 控制（默认关闭）。
@@ -732,7 +736,8 @@ class ArchiveFTSQuery:
             BK-tree 对编辑距离 ≤1 的 typo（替换/插入/删除/换位）有数学保证的
             召回，候选集极小（~1 条）；短查询（≤5 字符，1 字损毁率高）改用
             JaroWinkler 相似度打分，避免 rapidfuzz.ratio 对短串过严。
-            约 69MB 额外内存（56539 标题实测）。
+            约 69MB 额外内存（56539 标题实测，随标题数线性增长，
+            ~1.2MB/千标题；~84 万标题的完整生产库外推约 1GB）。
 
         「关闭」（默认）：trigram OR 预筛 + trigram 覆盖度预筛（并集），再
             rapidfuzz 精排，无额外内存索引。适合内存敏感的小项目。

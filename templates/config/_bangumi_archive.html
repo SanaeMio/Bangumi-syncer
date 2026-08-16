@@ -132,7 +132,7 @@
           <i
             class="bi bi-question-circle ms-1 text-muted"
             data-bs-toggle="tooltip"
-            title="默认关闭。开启后对归档标题构建 BK-tree 索引，支持编辑距离模糊查询，提升形近/缺字标题的召回率。首次启用会在后台异步构建（约数十秒），不阻塞查询。开启后大约会占用70MB RAM。"
+            title="默认关闭。开启后对归档标题构建 BK-tree 索引，支持编辑距离模糊查询，提升形近/缺字标题的召回率。首次启用会在后台异步构建，不阻塞查询。内存随标题数线性增长：56539 标题实测约 69MB，完整生产库（约84万标题）外推约 1GB，内存敏感环境请先实测再开启。"
           ></i>
         </label>
         <div class="form-check form-switch d-flex align-items-center mb-0">
