@@ -607,9 +607,13 @@ pydantic-core==2.41.5 \
     --hash=sha256:f41eb9797986d6ebac5e8edff36d5cef9de40def462311b3eb3eeded1431e425 \
     --hash=sha256:f547144f2966e1e16ae626d8ce72b4cfa0caedc7fa28052001c94fb2fcaa1c52
     # via pydantic
-pymdown-extensions==10.21.2 \
-    --hash=sha256:5c0fd2a2bea14eb39af8ff284f1066d898ab2187d81b889b75d46d4348c01638 \
-    --hash=sha256:c3f55a5b8a1d0edf6699e35dcbea71d978d34ff3fa79f3d807b8a5b3fa90fbdc
+pymdown-extensions==10.21.3 ; python_full_version < '3.10' \
+    --hash=sha256:72cfcf55f07aea0d4af2c4f11dd4e52466ddfb1bb819673146398e0bd3a77354 \
+    --hash=sha256:d7a5d08014fc571e80ca21dd6f854e31f94c489800350564d55d15b3c41e76b6
+    # via bangumi-syncer
+pymdown-extensions==11.0.1 ; python_full_version >= '3.10' \
+    --hash=sha256:db3943a62bab7e03af1364f0c4083e64b91fb097675a4b6cceccfbe9a77e5eb2 \
+    --hash=sha256:dd2905ae6fc5b75582fafb139a1266ffc754705efa902aa50067fa7ff4f94ec0
     # via bangumi-syncer
 python-dotenv==1.2.1 ; python_full_version < '3.10' \
     --hash=sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6 \
