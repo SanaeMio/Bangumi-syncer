@@ -80,7 +80,6 @@ class LLMUsageRepository(BaseRepository):
         def _write(conn):
             cursor = conn.cursor()
             # provider 默认值与 PROVIDER_OPENAI_COMPAT 保持一致
-            # （schema 迁移语义，保持字面量，SQL 中不能用 Python 常量）
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self._TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -2,8 +2,8 @@
 
 定义聊天交互的核心 Pydantic 模型：Message、ContentBlock、Usage 和 ChatResponse。
 
-Message.content 支持纯文本（str，旧用法）或 content blocks（list[ContentBlock]，
-Phase 2.1 起支持工具调用）。ContentBlock 是内部归一化模型，形状对齐 Anthropic
+Message.content 支持纯文本（str，旧用法）或 content blocks。
+ContentBlock 是内部归一化模型，形状对齐 Anthropic
 Messages API 的 content blocks，各 provider 负责与自己的 wire 格式互转。
 """
 
@@ -37,7 +37,6 @@ class RedactedThinkingBlock(BaseModel):
 
 
 ContentBlock = Union[TextBlock, ThinkingBlock, RedactedThinkingBlock]
-# Phase 2.1 追加 ToolUseBlock / ToolResultBlock（Pydantic union 扩展向后兼容）
 
 
 class Message(BaseModel):

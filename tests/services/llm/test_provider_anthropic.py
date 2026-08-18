@@ -1,7 +1,4 @@
-"""app.services.llm.providers.anthropic 测试（Phase 1）。
-
-对应 BDD 场景：Feature 1（1.1-1.7 请求构建）、Feature 2（2.1-2.5 响应解析）。
-"""
+"""app.services.llm.providers.anthropic 测试。"""
 
 from typing import Optional
 from unittest.mock import AsyncMock, Mock, patch

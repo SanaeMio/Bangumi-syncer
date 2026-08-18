@@ -1,4 +1,4 @@
-"""app.services.llm.models 测试（任务 1.1 + Phase 1 ContentBlock 扩展）。"""
+"""app.services.llm.models 测试。"""
 
 import pytest
 from pydantic import ValidationError

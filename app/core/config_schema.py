@@ -322,8 +322,6 @@ SECTIONS: dict[str, SectionMeta] = {
         display_name="LLM 配置",
         order=610,
         sensitive_fields=frozenset({"api_key"}),
-        # provider 默认值与 PROVIDER_OPENAI_COMPAT 一致（顶层 SECTIONS 构建
-        # 无法延迟 import llm 包，避免循环依赖，故保持字面量）
         fields=(
             FieldMeta(name="provider", default="openai_compat"),
             FieldMeta(name="max_tokens", default=2000),
