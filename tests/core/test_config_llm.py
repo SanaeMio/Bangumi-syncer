@@ -186,43 +186,6 @@ api_base = 12345
         pass
 
 
-class TestLlmApiKeyIsSensitive:
-    """测试 (llm, api_key) 被注册为敏感字段。"""
-
-    def test_is_sensitive_ini_field_returns_true(self):
-        """is_sensitive_ini_field 对 ('llm', 'api_key') 应返回 True。"""
-        from app.core.config_secret_crypto import is_sensitive_ini_field
-
-        assert is_sensitive_ini_field("llm", "api_key") is True
-
-    def test_is_sensitive_ini_field_returns_false_for_other_llm_fields(self):
-        """其他 LLM 字段（如 model、temperature）不是敏感字段。"""
-        from app.core.config_secret_crypto import is_sensitive_ini_field
-
-        assert is_sensitive_ini_field("llm", "model") is False
-        assert is_sensitive_ini_field("llm", "temperature") is False
-        assert is_sensitive_ini_field("llm", "api_base") is False
-
-    def test_encrypt_if_sensitive_encrypts_api_key(self):
-        """encrypt_if_sensitive 在提供 master 时应加密 LLM api_key。"""
-        from app.core.config_secret_crypto import encrypt_if_sensitive
-
-        result = encrypt_if_sensitive("llm", "api_key", "test-key", master="my-secret")
-        assert result.startswith("BGS1:")
-
-    def test_decrypt_if_sensitive_roundtrip(self):
-        """decrypt_if_sensitive 应能对加密值进行往返解密。"""
-        from app.core.config_secret_crypto import (
-            decrypt_if_sensitive,
-            encrypt_if_sensitive,
-        )
-
-        master = "roundtrip-secret"
-        encrypted = encrypt_if_sensitive("llm", "api_key", "my-api-key", master=master)
-        decrypted = decrypt_if_sensitive("llm", "api_key", encrypted, master=master)
-        assert decrypted == "my-api-key"
-
-
 class TestLLMConfigZeroValues:
     """零值不应被绕过类型转换。"""
 

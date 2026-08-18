@@ -211,14 +211,12 @@ class SchedulerRegistry:
         """启动所有已注册调度器（spec 优先，instance 随后）"""
         for sid, spec in self._specs.items():
             try:
-                ok = await spec.runner.start()
-                logger.info("%s 调度器启动%s", sid, "成功" if ok else "失败")
+                await spec.runner.start()
             except Exception as e:
                 logger.error("%s 调度器启动异常: %s", sid, e)
         for sid, inst in self._instances.items():
             try:
-                ok = await inst.start()
-                logger.info("%s 调度器启动%s", sid, "成功" if ok else "失败")
+                await inst.start()
             except Exception as e:
                 logger.error("%s 调度器启动异常: %s", sid, e)
 
@@ -227,13 +225,11 @@ class SchedulerRegistry:
         for sid, inst in self._instances.items():
             try:
                 await inst.stop()
-                logger.info("%s 调度器已停止", sid)
             except Exception as e:
                 logger.error("停止%s调度器失败: %s", sid, e)
         for sid, spec in self._specs.items():
             try:
                 await spec.runner.stop()
-                logger.info("%s 调度器已停止", sid)
             except Exception as e:
                 logger.error("停止%s调度器失败: %s", sid, e)
 

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.services.trakt.client import TraktClient, TraktClientFactory
+from app.services.trakt.client import TraktAuthError, TraktClient, TraktClientFactory
 
 
 @pytest.fixture
@@ -35,13 +35,14 @@ async def test_make_request_200_and_204(client):
 
 @pytest.mark.asyncio
 async def test_make_request_401_raises(client):
+    """401 抛专用 TraktAuthError（不重试、不吞掉）"""
     resp = MagicMock(status_code=401)
     resp.headers = httpx.Headers({})
     client._http = MagicMock()
     client._http.request = AsyncMock(return_value=resp)
     with patch.object(client, "_check_rate_limit", new_callable=AsyncMock):
         with patch.object(client, "_update_rate_limit"):
-            with pytest.raises(ValueError, match="认证失败"):
+            with pytest.raises(TraktAuthError, match="401"):
                 await client._make_request("GET", "/x")
 
 

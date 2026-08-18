@@ -7,6 +7,8 @@ import re
 import time
 from typing import Any
 
+import httpx
+
 from ...core.config import config_manager
 from ...core.logging import logger
 from ...utils.bangumi_constants import (
@@ -16,6 +18,7 @@ from ...utils.bangumi_constants import (
     RELATION_ID_SEQUEL,
     RELATIONS,
     SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
 )
 from ...utils.text_constants import CN_NUM
 
@@ -50,16 +53,31 @@ class EpisodesMixin:
         limit: int = _EPISODES_PAGE_LIMIT,
         offset: int = 0,
     ) -> dict:
-        """单次分页请求章节列表（不写入实例缓存）。"""
-        res = self.get(
-            "episodes",
-            params={
-                "subject_id": subject_id,
-                "type": _type,
-                "limit": limit,
-                "offset": offset,
-            },
-        )
+        """单次分页请求章节列表（不写入实例缓存）。
+
+        API 不可达（TTL 内）时跳过实际请求直接返回空分页，
+        archive 短路已在 get_episodes 层先行处理。
+        """
+        if self.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达（TTL 内），get_episodes({subject_id}) 返回空"
+            )
+            return {"data": [], "total": 0}
+        try:
+            res = self.get(
+                "episodes",
+                params={
+                    "subject_id": subject_id,
+                    "type": _type,
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+        except httpx.HTTPError as e:
+            # 网络不可达/重试耗尽：吞掉异常返回空分页，
+            # 保证调用方（章节查找/续集链遍历）继续降级而不是崩溃
+            logger.error(f"get_episodes API 请求失败（网络错误）: {e}")
+            return {"data": [], "total": 0}
         try:
             payload = res.json()
             if not isinstance(payload, dict):
@@ -213,12 +231,15 @@ class EpisodesMixin:
         target_ep: int,
         release_date: str | None,
         target_season: int = 1,
-    ) -> int | None:
+    ) -> tuple[int | None, int | None]:
         """季集匹配失败后的统一回退。
 
         回退顺序：
         1. 单条目 airdate 择优（需 release_date + 章节数 >= min_total）
         2. 连续编号推断（通过 ep 字段重置检测季度边界，无需 release_date）
+
+        返回 (subject_id, episode_id)；无回退命中时返回 (None, None)，
+        保持 tuple 契约以便调用方统一解包。
         """
         if release_date and target_ep:
             air_pick = self._resolve_episode_by_airdate_in_subject(
@@ -232,7 +253,7 @@ class EpisodesMixin:
             )
             if cont_pick is not None:
                 return cont_pick
-        return None, None if target_ep else None
+        return None, None
 
     def _try_resolve_continuous_season_episode(
         self,
@@ -398,7 +419,7 @@ class EpisodesMixin:
 
     def _match_target_ep_rows(
         self, ep_info: list, target_ep: int
-    ) -> dict[str, Any] | None:
+    ) -> list[dict[str, Any]]:
         """与 target_season>1 分支一致的章节匹配规则。"""
         rows = [i for i in ep_info if i.get("sort") == target_ep]
         if not rows:
@@ -518,11 +539,11 @@ class EpisodesMixin:
         target_ep: int,
         is_season_subject_id: bool = False,
         release_date: str | None = None,
-    ) -> int | None:
+    ) -> tuple[int | None, int | None]:
         max_season, max_episode = self._get_episode_sync_limits()
 
         if target_season > max_season or (target_ep and target_ep > max_episode):
-            return None, None if target_ep else None
+            return None, None
 
         # 获取根条目的 subject type 与 platform，续集链遍历时仅放行相同媒体类型/平台的条目
         root_info = self.get_subject(subject_id)
@@ -535,7 +556,7 @@ class EpisodesMixin:
                 f"直接尝试从指定季度ID匹配集数: {subject_id}, 目标季度: {target_season}, 目标集数: {target_ep}"
             )
             if not target_ep:
-                return subject_id
+                return subject_id, None
 
             found = self._find_episode_by_sort(subject_id, target_ep)
             if found:
@@ -548,7 +569,7 @@ class EpisodesMixin:
 
         if target_season == 1:
             if not target_ep:
-                return subject_id
+                return subject_id, None
             return self._find_season_one_episode(
                 subject_id, target_ep, root_type, root_platform, release_date
             )
@@ -650,6 +671,9 @@ class EpisodesMixin:
         if not target_ep:
             return None
 
+        # 重置跨季链命中路径标记（供 orchestrator 区分 chain / 同 IP 改编）
+        self.last_cross_season_path = ""
+
         # 整体 deadline：链式 API 调用累计耗时超过 60s 立即放弃
         # （防御错误 subject_id 触发的长链遍历占用 sync 线程池）
         deadline = time.monotonic() + _CROSS_SEASON_DEADLINE_SECONDS
@@ -673,18 +697,21 @@ class EpisodesMixin:
         type0_rows = [e for e in ep_info if e.get("type", 0) == 0]
         sorts = [e.get("sort", 0) for e in type0_rows if e.get("sort")]
         if not sorts:
-            return None
-        min_sort = min(sorts)
-        max_sort = max(sorts)
-
-        # 决定遍历方向
-        if target_ep < min_sort:
-            directions = ["prequel"]
-        elif target_ep > max_sort:
-            directions = ["sequel"]
-        else:
-            # target_ep 在范围内但未找到（如部分章节缺失），两个方向都试
+            # P1-6: 无 type=0 章节（空列表或全 SP），无法通过 sort 范围判断方向。
+            # 不直接返回 None，两个方向都尝试（prequel + sequel）。
             directions = ["prequel", "sequel"]
+        else:
+            min_sort = min(sorts)
+            max_sort = max(sorts)
+
+            # 决定遍历方向
+            if target_ep < min_sort:
+                directions = ["prequel"]
+            elif target_ep > max_sort:
+                directions = ["sequel"]
+            else:
+                # target_ep 在范围内但未找到（如部分章节缺失），两个方向都试
+                directions = ["prequel", "sequel"]
 
         visited = {subject_id}
         for direction in directions:
@@ -700,7 +727,137 @@ class EpisodesMixin:
                 subject_id, target_ep, direction, visited, max_depth, deadline
             )
             if result:
+                self.last_cross_season_path = "chain"
                 return result
+        # 同 IP 改编兜底：续集/前传链覆盖不到「改编」等跨媒体边
+        # （如动画 ↔ 真人网剧同名场景：凡人修仙传等）。
+        # 分层策略（archive 命中零成本全量闭包，在线仅一跳，见
+        # _try_find_episode_in_franchise 说明）：不引入在线完整 BFS。
+        franchise_result = self._try_find_episode_in_franchise(
+            subject_id, target_ep, visited, max_depth, deadline
+        )
+        if franchise_result:
+            return franchise_result
+        return None
+
+    def _try_find_episode_in_franchise(
+        self,
+        subject_id: int,
+        target_ep: int,
+        visited: set,
+        max_depth: int,
+        deadline: float | None = None,
+    ) -> tuple[int, int] | None:
+        """同 IP 改编链兜底：在 franchise 关系闭包内查找含 sort=target_ep 的条目
+
+        链式 sequel/prequel 遍历（_walk_chain_for_episode）只沿前传/续集边爬，
+        动画与真人剧（如凡人修仙传动画 ↔ 网剧）之间的「改编」边不在其中。
+        本方法在链式全部 miss 后兜底：
+
+        - Archive 命中：try_find_franchise_closure 一次本地 SQL 拿完整连通分量
+          （含改编/相同系列/外传等边，FRANCHISE_RELATION_TYPES），零 API 成本，
+          全量遍历找目标 sort。
+        - Archive miss / 未命中：不做在线完整 BFS（最坏 64 节点 × 2 次 API/节点
+          且 sort 等值匹配命中率低，成本与收益不成正比），仅一跳直接邻居检查
+          （改编关系通常就是起始条目的一跳邻居）。
+
+        Args:
+            subject_id: 起始条目
+            target_ep: 目标集数
+            visited: 已访问 subject_id 集合（防环，会被更新）
+            max_depth: archive 闭包最大节点数
+            deadline: 整体 deadline
+
+        Returns:
+            (subject_id, episode_id) 或 None
+        """
+        # Archive 快速路径：本地 SQL 闭包（含改编等边），零 API
+        shortcut = self._archive.try_find_franchise_closure(
+            subject_id, max_hops=max_depth
+        )
+        if shortcut.hit:
+            chain = shortcut.data or []
+            if chain:
+                result = self._find_episode_in_chain(
+                    chain,
+                    target_ep,
+                    visited,
+                    deadline,
+                    allowed_types=(SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL),
+                )
+                if result:
+                    self.last_cross_season_path = "franchise_archive"
+                    return result
+            # archive 命中但闭包为空或未找到：archive 数据可能不完整，
+            # 继续在线一跳检查
+        # 在线降级：仅一跳直接邻居检查（不 BFS）
+        return self._try_online_franchise_one_hop(
+            subject_id, target_ep, visited, deadline
+        )
+
+    def _try_online_franchise_one_hop(
+        self,
+        subject_id: int,
+        target_ep: int,
+        visited: set,
+        deadline: float | None = None,
+    ) -> tuple[int, int] | None:
+        """在线一跳同 IP 改编检查：只查起始条目的直接邻居
+
+        「动画 ↔ 真人剧」改编场景通常就是一跳直连，一跳覆盖绝大多数同类场景；
+        不做在线完整 BFS（否则最坏 64 节点 × (get_related_subjects + get_subject)
+        约 128 次 API，且跨媒体 sort 等值命中率低，付出与收益不成正比）。
+
+        Args:
+            subject_id: 起始条目
+            target_ep: 目标集数
+            visited: 已访问 subject_id 集合（会被更新）
+            deadline: 整体 deadline
+
+        Returns:
+            (subject_id, episode_id) 或 None
+        """
+        from ..bangumi_archive._store import FRANCHISE_RELATION_CN_SET
+
+        if deadline is not None and time.monotonic() > deadline:
+            return None
+        related = self.get_related_subjects(subject_id)
+        if isinstance(related, dict):
+            items = related.get("data", [])
+        elif isinstance(related, list):
+            items = related
+        else:
+            return None
+        for rel in items:
+            if not isinstance(rel, dict):
+                continue
+            if (rel.get("relation") or "").strip() not in FRANCHISE_RELATION_CN_SET:
+                continue
+            rid = rel.get("id")
+            if not rid or rid in visited:
+                continue
+            if deadline is not None and time.monotonic() > deadline:
+                return None
+            visited.add(rid)
+            info = self.get_subject(rid)
+            if not info:
+                continue
+            if info.get("type") not in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
+                continue
+            # 跳过剧场版/电影（标题命中关键词），与链式路径行为一致
+            name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
+            if "剧场版" in name or "电影" in name:
+                continue
+            if deadline is not None and time.monotonic() > deadline:
+                return None
+            found = self._find_episode_by_sort(rid, target_ep)
+            if found:
+                self.last_cross_season_path = "franchise_online"
+                logger.debug(
+                    f"通过同 IP 改编一跳找到目标集: subject_id={rid}, "
+                    f"sort={target_ep}, ep_id={found['id']}"
+                )
+                return rid, found["id"]
         return None
 
     def _walk_chain_for_episode(
@@ -735,16 +892,31 @@ class EpisodesMixin:
             shortcut = self._archive.try_find_sequel_chain(start_id, max_hops=max_depth)
             if shortcut.hit:
                 chain = shortcut.data or []
-                result = self._find_episode_in_chain(
-                    chain, target_ep, visited, deadline
-                )
-                if result:
-                    return result
-                # archive 命中但链上未找到目标 ep，返回 None
-                # 避免重复走逐跳逻辑（archive 已确认链上无目标）
-                return None
+                if chain:
+                    result = self._find_episode_in_chain(
+                        chain, target_ep, visited, deadline
+                    )
+                    if result:
+                        return result
+                    # P1-5: archive 链非空但未找到目标，不再直接 return None。
+                    # archive 链可能不完整（缺少部分续集），降级到逐 hop API
+                    # 以发现 archive 链外的后续条目。chain 中已检查的 subject
+                    # 已加入 visited，逐 hop 会跳过它们继续向链尾推进。
+                # archive 命中但续集链为空：关联数据可能不完整，降级到逐跳 API
 
-        # 降级路径：逐跳遍历（archive 未启用 / miss / prequel 方向）
+        if direction == "prequel":
+            # 前传方向：正式启用 RelationMixin.search_previous_subjects
+            # 内部优先 try_find_prequel_chain 短路、archive miss 时降级在线逐跳，
+            # 拿到完整前传链后复用 _find_episode_in_chain 批量遍历（与续集方向对称）。
+            chain = self.search_previous_subjects(start_id, max_hops=max_depth) or []
+            result = self._find_episode_in_chain(chain, target_ep, visited, deadline)
+            if result:
+                return result
+            # search_previous_subjects 已确认无前传链或无目标，返回 None
+            # （等价于原逐跳降级路径的终点，避免重复查询）
+            return None
+
+        # 降级路径：逐跳遍历（sequel 方向 archive miss/空链/非空未命中时走到）
         current_id = start_id
         for _ in range(max_depth):
             if deadline is not None and time.monotonic() > deadline:
@@ -755,8 +927,17 @@ class EpisodesMixin:
                 )
                 return None
             next_id = self._find_related_id_by_relation(current_id, relation)
-            if not next_id or next_id in visited:
+            if not next_id:
                 return None
+            if next_id == current_id:
+                # 自环：关系数据异常，终止遍历
+                return None
+            if next_id in visited:
+                # P1-5: 已通过 archive 链检查过的 subject（如 _find_episode_in_chain
+                # 遍历过），跳过检查但继续沿链前进，发现 archive 链外的后续条目。
+                # max_depth 限制总迭代数，避免环导致无限循环。
+                current_id = next_id
+                continue
             visited.add(next_id)
             current_id = next_id
 
@@ -795,6 +976,7 @@ class EpisodesMixin:
         target_ep: int,
         visited: set,
         deadline: float | None = None,
+        allowed_types: tuple[int, ...] = (SUBJECT_TYPE_ANIME,),
     ) -> tuple[int, int] | None:
         """在已知续集链上批量遍历查找含 sort=target_ep 的条目
 
@@ -804,10 +986,13 @@ class EpisodesMixin:
         - 已访问的 subject_id 跳过（防环）
 
         Args:
-            chain: 续集链 subject_id 列表（不含起始条目）
+            chain: 关联条目链 subject_id 列表（不含起始条目）
             target_ep: 目标集数
             visited: 已访问的 subject_id 集合（会被本方法更新）
             deadline: 整体 deadline
+            allowed_types: 允许的 subject type 集合。默认仅动画（2）；
+                同 IP 改编链（动画↔网剧）场景放行 (SUBJECT_TYPE_ANIME,
+                SUBJECT_TYPE_REAL)。
         """
         for current_id in chain:
             if current_id in visited:
@@ -825,7 +1010,7 @@ class EpisodesMixin:
             info = self.get_subject(current_id)
             if not info:
                 continue
-            if info.get("type") != SUBJECT_TYPE_ANIME:
+            if info.get("type") not in allowed_types:
                 continue
             # 跳过剧场版/电影（标题命中关键词）
             name = (info.get("name", "") or "") + (info.get("name_cn", "") or "")
@@ -860,6 +1045,7 @@ class EpisodesMixin:
         """在第一季中查找目标集数（遍历续集链）"""
         current_id = subject_id
         first_part = True
+        visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
             if not first_part:
                 current_info = self.get_subject(current_id)
@@ -889,6 +1075,13 @@ class EpisodesMixin:
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
+            if next_id in visited:
+                logger.warning(
+                    f"_find_season_one_episode 检测到续集链环引用，终止遍历: "
+                    f"subject_id={subject_id}, next_id={next_id}"
+                )
+                break
+            visited.add(next_id)
             current_id = next_id
             first_part = False
         return self._episode_lookup_failed(subject_id, target_ep, release_date)
@@ -906,10 +1099,18 @@ class EpisodesMixin:
         current_id = subject_id
         season_num = 1
         last_season_num = None
+        visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
+            if next_id in visited:
+                logger.warning(
+                    f"_find_multi_season_episode 检测到续集链环引用，终止遍历: "
+                    f"subject_id={subject_id}, next_id={next_id}"
+                )
+                break
+            visited.add(next_id)
             current_id = next_id
             current_info = self.get_subject(current_id)
             if not current_info:
@@ -961,7 +1162,7 @@ class EpisodesMixin:
                 break
             if season_num == target_season:
                 if not target_ep:
-                    return current_id
+                    return current_id, None
                 if target_ep > 99:
                     found = self._find_episode_by_sort(current_id, target_ep)
                     if found:

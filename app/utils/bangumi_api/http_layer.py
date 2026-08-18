@@ -23,13 +23,14 @@ class HttpLayerMixin:
         self, method: str, url: str, **kwargs: Any
     ) -> httpx.Response | None:
         """尝试直连（不使用代理）"""
-        logger.info(f"🔄 尝试直连: {url}")
+        logger.debug(f"🔄 尝试直连: {url}")
 
         # 创建一个临时的 SyncHttpClient，不使用代理
         temp_session = (
             SyncHttpClient(
                 label="Bangumi-直连",
                 verify=self.ssl_verify,
+                ech=getattr(self, "ech_mode", "off"),
                 max_retries=0,
             )
             .prefix("📚")
@@ -81,7 +82,7 @@ class HttpLayerMixin:
         hostname = parsed.hostname
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
-        logger.info(f"🔍 开始网络诊断 - 目标: {hostname}:{port}")
+        logger.debug(f"🔍 开始网络诊断 - 目标: {hostname}:{port}")
 
         # 1. DNS解析测试
         try:
@@ -89,13 +90,13 @@ class HttpLayerMixin:
                 hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM
             )
             ips = [ip[4][0] for ip in ip_list]
-            logger.info(f"✅ DNS解析成功: {hostname} -> {', '.join(set(ips))}")
+            logger.debug(f"✅ DNS解析成功: {hostname} -> {', '.join(set(ips))}")
         except socket.gaierror as e:
             logger.error(f"❌ DNS解析失败: {e}")
-            logger.info("💡 建议检查:")
-            logger.info("   1. 网络连接是否正常")
-            logger.info("   2. DNS设置是否正确 (可尝试8.8.8.8或114.114.114.114)")
-            logger.info("   3. 是否需要配置代理")
+            logger.debug("💡 建议检查:")
+            logger.debug("   1. 网络连接是否正常")
+            logger.debug("   2. DNS设置是否正确 (可尝试8.8.8.8或114.114.114.114)")
+            logger.debug("   3. 是否需要配置代理")
             return
         except Exception as e:
             logger.error(f"❌ DNS解析异常: {e}")
@@ -109,13 +110,13 @@ class HttpLayerMixin:
             sock.close()
 
             if result == 0:
-                logger.info(f"✅ TCP连接成功: {ips[0]}:{port}")
+                logger.debug(f"✅ TCP连接成功: {ips[0]}:{port}")
             else:
                 logger.error(f"❌ TCP连接失败: {ips[0]}:{port} (错误码: {result})")
-                logger.info("💡 建议检查:")
-                logger.info("   1. 防火墙设置")
-                logger.info("   2. 网络代理配置")
-                logger.info("   3. 是否需要VPN或其他网络工具")
+                logger.debug("💡 建议检查:")
+                logger.debug("   1. 防火墙设置")
+                logger.debug("   2. 网络代理配置")
+                logger.debug("   3. 是否需要VPN或其他网络工具")
         except OSError as e:
             logger.error(f"❌ TCP连接测试异常: {e}")
 
@@ -140,7 +141,7 @@ class HttpLayerMixin:
 
         # 如果之前代理已经失败过，直接使用直连
         if self.http_proxy and self._proxy_failed:
-            logger.info("💡 检测到代理之前已失败，本次请求直接使用直连")
+            logger.debug("💡 检测到代理之前已失败，本次请求直接使用直连")
             return self._try_direct_connection(method, url, **kwargs)
 
         try:
@@ -158,7 +159,7 @@ class HttpLayerMixin:
                     direct_result = self._try_direct_connection(method, url, **kwargs)
                     if direct_result:
                         self._proxy_failed = True
-                        logger.info("✅ 直连成功！已成功绕过代理问题")
+                        logger.debug("✅ 直连成功！已成功绕过代理问题")
                         return direct_result
                 except (httpx.HTTPError, ValueError) as direct_error:
                     logger.error(f"❌ 直连也失败了: {str(direct_error)}")

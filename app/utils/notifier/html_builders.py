@@ -76,7 +76,7 @@ class EmailHtmlMixin:
                 # 如果指定的模板不存在，尝试加载默认模板
                 logger.warning(f"邮件模板文件不存在: {template_path}")
                 if template_file != "templates/email_notification.html":
-                    logger.info("尝试加载默认模板")
+                    logger.debug("尝试加载默认模板")
                     default_template_path = os.path.join(
                         os.path.dirname(
                             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -86,7 +86,7 @@ class EmailHtmlMixin:
                     if os.path.exists(default_template_path):
                         with open(default_template_path, encoding="utf-8") as f:
                             template_content = f.read()
-                        logger.info("成功加载默认模板")
+                        logger.debug("成功加载默认模板")
                     else:
                         raise FileNotFoundError(
                             f"默认模板文件也不存在: {default_template_path}"

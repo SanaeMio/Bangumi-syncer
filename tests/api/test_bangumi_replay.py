@@ -254,6 +254,54 @@ class TestReplaySingleEndpoint:
         mock_database.update_sync_record_status.assert_not_called()
 
 
+class TestResolveUserFilterIsolation:
+    """多用户模式下 _resolve_user_filter 的越权隔离。"""
+
+    def test_auth_disabled_returns_none(self):
+        """认证禁用时返回 None（管理员可见全部）"""
+        from app.api.bangumi_replay import _resolve_user_filter
+
+        assert _resolve_user_filter({"auth_disabled": True}) is None
+
+    def test_multi_user_mapped_returns_login_name(self):
+        """多用户模式下映射命中的媒体用户返回其登录名（只看自己）"""
+        from app.api.bangumi_replay import _resolve_user_filter
+
+        with (
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"plex_alice": "bangumi-alice"},
+            ),
+        ):
+            result = _resolve_user_filter({"username": "plex_alice"})
+        assert result == "plex_alice"
+
+    def test_multi_user_unmapped_returns_sentinel_empty_set(self):
+        """多用户模式下未映射的已认证用户返回哨兵（匹配空集，不泄露他人数据）"""
+        from app.api.bangumi_replay import _resolve_user_filter
+
+        with (
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"plex_alice": "bangumi-alice"},
+            ),
+        ):
+            result = _resolve_user_filter({"username": "stranger"})
+        # 哨兵值应非 None（避免 _filter_kwargs 视为不过滤），且不可能匹配真实 user_name
+        assert result is not None
+        assert result == "__no_access__"
+
+    def test_single_user_returns_none(self):
+        """单用户模式返回 None（无越权可能）"""
+        from app.api.bangumi_replay import _resolve_user_filter
+
+        with patch("app.core.accounts.count_bangumi_accounts", return_value=1):
+            result = _resolve_user_filter({"username": "anyone"})
+        assert result is None
+
+
 class TestDeleteEndpoint:
     """DELETE /api/bangumi_replay/queue/{id}"""
 

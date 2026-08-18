@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import airing_calendar, deps
+from app.core.config import config_manager
 
 
 @pytest.fixture
@@ -134,9 +135,9 @@ class TestAiringCalendarEndpoint:
         self, app_with_auth, mock_archive_enabled, mock_bangumi_config_with_watching
     ):
         """正常查询返回按日期分组的结果（有 Bangumi 配置 + 在看列表）"""
-        from datetime import date, timedelta
+        from datetime import timedelta
 
-        today = date.today()
+        today = config_manager.today_in_scheduler_tz()
         today_str = today.isoformat()
         tomorrow_str = (today + timedelta(days=1)).isoformat()
 
@@ -343,9 +344,7 @@ class TestAiringCalendarEndpoint:
         self, app_with_auth, mock_archive_enabled, mock_bangumi_config_with_watching
     ):
         """空日期格子也应有正确的 weekday"""
-        from datetime import date
-
-        today = date.today()
+        today = config_manager.today_in_scheduler_tz()
         with patch.object(
             airing_calendar.archive_store,
             "get_episodes_by_airdate",
@@ -365,19 +364,24 @@ class TestAiringCalendarEndpoint:
 
 
 class TestBangumiAccountsEndpoint:
-    """GET /api/airing-calendar/accounts"""
+    """GET /api/airing-calendar/accounts
+
+    DB 为唯一真相源：端点从 ``app.core.accounts`` 读取账号列表，
+    ``mode`` 由账号数量推导（>1 为 multi，否则 single）。
+    """
 
     @pytest.mark.asyncio
     async def test_single_mode_with_config(self, app_with_auth):
         """单用户模式且已配置账号：返回 1 个账号，active='bangumi'"""
-        with patch.object(
-            airing_calendar.config_manager,
-            "get",
-            side_effect=lambda section, key, fallback=None: {
-                ("sync", "mode"): "single",
-                ("bangumi", "username"): "alice",
-                ("bangumi", "access_token"): "token123",
-            }.get((section, key), fallback),
+        with (
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi", "username": "alice"}],
+            ),
+            patch(
+                "app.core.accounts.get_active_bangumi_account",
+                return_value={"section_name": "bangumi", "username": "alice"},
+            ),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -395,15 +399,10 @@ class TestBangumiAccountsEndpoint:
 
     @pytest.mark.asyncio
     async def test_single_mode_no_config(self, app_with_auth):
-        """单用户模式但未配置账号：返回空列表"""
-        with patch.object(
-            airing_calendar.config_manager,
-            "get",
-            side_effect=lambda section, key, fallback=None: {
-                ("sync", "mode"): "single",
-                ("bangumi", "username"): "",
-                ("bangumi", "access_token"): "",
-            }.get((section, key), fallback),
+        """无账号配置：返回空列表，mode 由账号数量推导为 single"""
+        with (
+            patch("app.core.accounts.list_bangumi_accounts", return_value=[]),
+            patch("app.core.accounts.get_active_bangumi_account", return_value=None),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -419,28 +418,18 @@ class TestBangumiAccountsEndpoint:
 
     @pytest.mark.asyncio
     async def test_multi_mode_returns_all_accounts(self, app_with_auth):
-        """多用户模式：返回所有 [bangumi-*] 账号段"""
-        configs = {
-            "bangumi-alice": {"username": "alice", "access_token": "t1"},
-            "bangumi-bob": {"username": "bob", "access_token": "t2"},
-        }
+        """多用户模式：返回所有 Bangumi 账号段（>1 个账号推导为 multi）"""
         with (
-            patch.object(
-                airing_calendar.config_manager,
-                "get",
-                side_effect=lambda section, key, fallback=None: {
-                    ("sync", "mode"): "multi",
-                }.get((section, key), fallback),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[
+                    {"section_name": "bangumi-alice", "username": "alice"},
+                    {"section_name": "bangumi-bob", "username": "bob"},
+                ],
             ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_bangumi_configs",
-                return_value=configs,
-            ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_active_bangumi_config",
-                return_value={"username": "alice", "access_token": "t1"},
+            patch(
+                "app.core.accounts.get_active_bangumi_account",
+                return_value={"section_name": "bangumi-alice", "username": "alice"},
             ),
         ):
             async with AsyncClient(
@@ -460,25 +449,10 @@ class TestBangumiAccountsEndpoint:
 
     @pytest.mark.asyncio
     async def test_multi_mode_no_accounts(self, app_with_auth):
-        """多用户模式但无账号段：返回空列表"""
+        """无账号配置：返回空列表，mode 由账号数量推导为 single"""
         with (
-            patch.object(
-                airing_calendar.config_manager,
-                "get",
-                side_effect=lambda section, key, fallback=None: {
-                    ("sync", "mode"): "multi",
-                }.get((section, key), fallback),
-            ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_bangumi_configs",
-                return_value={},
-            ),
-            patch.object(
-                airing_calendar.config_manager,
-                "get_active_bangumi_config",
-                return_value=None,
-            ),
+            patch("app.core.accounts.list_bangumi_accounts", return_value=[]),
+            patch("app.core.accounts.get_active_bangumi_account", return_value=None),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -488,6 +462,291 @@ class TestBangumiAccountsEndpoint:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["mode"] == "multi"
+        # 0 个账号 → mode="single"（端点按账号数量推导）
+        assert data["mode"] == "single"
         assert data["accounts"] == []
         assert data["active"] is None
+
+
+class TestAiringCalendarAccessControl:
+    """多用户模式下 airing-calendar 的越权防护
+
+    认证开启且账号数 > 1 时，媒体用户（应用登录名绑定到某账号的
+    media_server_usernames）只能访问自己绑定的账号，不能通过 account
+    参数越权查看他人"在看"列表；管理员/非媒体用户可见全部。
+    """
+
+    @pytest.fixture
+    def app_with_media_user(self):
+        """模拟认证开启的媒体用户 alice（绑定到 bangumi-alice）"""
+        app = FastAPI()
+        app.include_router(airing_calendar.router)
+
+        async def mock_get_current_user(request=None, credentials=None):
+            # 无 auth_disabled → 认证开启
+            return {"username": "alice", "id": 2}
+
+        app.dependency_overrides[deps.get_current_user_flexible] = mock_get_current_user
+        yield app
+        app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_media_user_cannot_access_others_account(
+        self, app_with_media_user, mock_archive_enabled
+    ):
+        """媒体用户越权指定他人账号段名：返回 watching_unavailable，不构造 api"""
+        with (
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"alice": "bangumi-alice", "bob": "bangumi-bob"},
+            ),
+            patch("app.api.airing_calendar._build_bangumi_api") as mock_build,
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app_with_media_user),
+                base_url="http://test",
+            ) as client:
+                resp = await client.get(
+                    "/api/airing-calendar",
+                    params={"account": "bangumi-bob"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "watching_unavailable"
+        # 越权请求不应构造 BangumiApi（不调用 API、不泄露他人数据）
+        mock_build.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_media_user_can_access_own_account(
+        self, app_with_media_user, mock_archive_enabled
+    ):
+        """媒体用户访问自己绑定的账号：正常构造 api（用绑定段名）"""
+        mock_api = MagicMock()
+        mock_api.username = "alice"
+        with (
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"alice": "bangumi-alice", "bob": "bangumi-bob"},
+            ),
+            patch(
+                "app.api.airing_calendar._build_bangumi_api",
+                return_value=mock_api,
+            ) as mock_build,
+            patch(
+                "app.api.airing_calendar.get_watching_subject_ids",
+                return_value={1},
+            ),
+            patch.object(
+                airing_calendar.archive_store,
+                "get_episodes_by_airdate",
+                return_value=[],
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app_with_media_user),
+                base_url="http://test",
+            ) as client:
+                resp = await client.get(
+                    "/api/airing-calendar",
+                    params={"account": "bangumi-alice"},
+                )
+
+        assert resp.status_code == 200
+        # 应使用用户自己绑定的段名构造 api
+        mock_build.assert_called_once_with("bangumi-alice")
+        mock_api.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_media_user_account_param_force_bound(
+        self, app_with_media_user, mock_archive_enabled
+    ):
+        """媒体用户不传 account：自动使用自己绑定的账号"""
+        mock_api = MagicMock()
+        mock_api.username = "alice"
+        with (
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"alice": "bangumi-alice"},
+            ),
+            patch(
+                "app.api.airing_calendar._build_bangumi_api",
+                return_value=mock_api,
+            ) as mock_build,
+            patch(
+                "app.api.airing_calendar.get_watching_subject_ids",
+                return_value={1},
+            ),
+            patch.object(
+                airing_calendar.archive_store,
+                "get_episodes_by_airdate",
+                return_value=[],
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app_with_media_user),
+                base_url="http://test",
+            ) as client:
+                resp = await client.get("/api/airing-calendar")
+
+        assert resp.status_code == 200
+        # 未传 account 时强制使用绑定段名（而非激活账号）
+        mock_build.assert_called_once_with("bangumi-alice")
+
+    @pytest.mark.asyncio
+    async def test_admin_access_any_account(self, mock_archive_enabled):
+        """管理员（登录名未绑定到任何账号）可访问任意账号段名"""
+        app = FastAPI()
+        app.include_router(airing_calendar.router)
+
+        async def mock_admin_user(request=None, credentials=None):
+            # admin 不在 user_mappings 中 → 非媒体用户，可访问任意账号
+            return {"username": "admin", "id": 1}
+
+        app.dependency_overrides[deps.get_current_user_flexible] = mock_admin_user
+
+        mock_api = MagicMock()
+        mock_api.username = "bob"
+        with (
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"alice": "bangumi-alice", "bob": "bangumi-bob"},
+            ),
+            patch(
+                "app.api.airing_calendar._build_bangumi_api",
+                return_value=mock_api,
+            ) as mock_build,
+            patch(
+                "app.api.airing_calendar.get_watching_subject_ids",
+                return_value={1},
+            ),
+            patch.object(
+                airing_calendar.archive_store,
+                "get_episodes_by_airdate",
+                return_value=[],
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.get(
+                    "/api/airing-calendar",
+                    params={"account": "bangumi-bob"},
+                )
+
+        assert resp.status_code == 200
+        # admin 可访问任意账号，account 参数原样传递
+        mock_build.assert_called_once_with("bangumi-bob")
+        mock_api.close.assert_called_once()
+
+
+class TestAccountsEndpointAccessControl:
+    """/accounts 端点的多用户隔离：媒体用户只看到自己绑定的账号"""
+
+    @pytest.mark.asyncio
+    async def test_media_user_only_sees_own_account(self):
+        """认证开启 + 多用户：媒体用户只返回自己绑定的账号"""
+        app = FastAPI()
+        app.include_router(airing_calendar.router)
+
+        async def mock_alice(request=None, credentials=None):
+            return {"username": "alice", "id": 2}
+
+        app.dependency_overrides[deps.get_current_user_flexible] = mock_alice
+
+        with (
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[
+                    {
+                        "section_name": "bangumi-alice",
+                        "username": "alice",
+                        "media_server_usernames": ["alice"],
+                    },
+                    {
+                        "section_name": "bangumi-bob",
+                        "username": "bob",
+                        "media_server_usernames": ["bob"],
+                    },
+                ],
+            ),
+            patch(
+                "app.core.accounts.get_active_bangumi_account",
+                return_value={
+                    "section_name": "bangumi-alice",
+                    "username": "alice",
+                },
+            ),
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"alice": "bangumi-alice", "bob": "bangumi-bob"},
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.get("/api/airing-calendar/accounts")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # alice 只看到自己绑定的账号，不泄露 bob
+        assert len(data["accounts"]) == 1
+        assert data["accounts"][0]["section_name"] == "bangumi-alice"
+
+    @pytest.mark.asyncio
+    async def test_admin_sees_all_accounts(self):
+        """管理员（未绑定到任何账号）可见全部账号"""
+        app = FastAPI()
+        app.include_router(airing_calendar.router)
+
+        async def mock_admin(request=None, credentials=None):
+            return {"username": "admin", "id": 1}
+
+        app.dependency_overrides[deps.get_current_user_flexible] = mock_admin
+
+        with (
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[
+                    {
+                        "section_name": "bangumi-alice",
+                        "username": "alice",
+                        "media_server_usernames": ["alice"],
+                    },
+                    {
+                        "section_name": "bangumi-bob",
+                        "username": "bob",
+                        "media_server_usernames": ["bob"],
+                    },
+                ],
+            ),
+            patch(
+                "app.core.accounts.get_active_bangumi_account",
+                return_value={
+                    "section_name": "bangumi-alice",
+                    "username": "alice",
+                },
+            ),
+            patch("app.core.accounts.count_bangumi_accounts", return_value=2),
+            patch(
+                "app.core.accounts.get_user_mappings",
+                return_value={"alice": "bangumi-alice", "bob": "bangumi-bob"},
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.get("/api/airing-calendar/accounts")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # admin 可见全部账号
+        assert len(data["accounts"]) == 2

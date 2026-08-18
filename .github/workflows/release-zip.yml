@@ -29,6 +29,19 @@ jobs:
         run: |
           printf '%s\n' "{\"version\":\"${{ steps.ver.outputs.semver }}\",\"git_sha\":\"${{ github.sha }}\"}" > release_manifest.json
 
+      - name: Inject builtin OAuth credentials (if provided)
+        # 仅在仓库配置了 Secrets 时执行；未配置则保留占位，fork/普通克隆默认不开箱即用授权。
+        # GitHub Actions 不允许在 step/job 的 if 条件里使用 secrets 上下文，
+        # 因此把「是否配置了 Secret」的判断从 YAML if 挪到 shell 脚本里。
+        env:
+          BANGUMI_OAUTH_CLIENT_ID: ${{ secrets.BANGUMI_OAUTH_CLIENT_ID }}
+          BANGUMI_OAUTH_CLIENT_SECRET: ${{ secrets.BANGUMI_OAUTH_CLIENT_SECRET }}
+        run: |
+          if [ -n "$BANGUMI_OAUTH_CLIENT_ID" ] && [ -n "$BANGUMI_OAUTH_CLIENT_SECRET" ]; then
+            sed -i "s/bgm_REPLACE_WITH_GH_CLIENT_ID/${BANGUMI_OAUTH_CLIENT_ID}/g" app/services/bangumi/auth.py
+            sed -i "s/REPLACE_WITH_GH_CLIENT_SECRET/${BANGUMI_OAUTH_CLIENT_SECRET}/g" app/services/bangumi/auth.py
+          fi
+
       - name: Pack zip
         run: |
           zip -r "Bangumi-syncer.zip" \

@@ -52,6 +52,10 @@ class IndexMixin:
         - 均含标记时选元数据日期最早的条目。
         - 多条目时去除尾部季度标识符。
         """
+        # 幂等：无论从 __init__ / _parse_data 对称重建 / _ensure_tmdb_mapping
+        # 哪条路径进入，都从干净状态全量构建
+        self._cache_tmdb_mapping.clear()
+        self._cache_tmdb_begin.clear()
 
         candidates: dict[str, list[dict[str, Any]]] = {}
         for item in self._parse_data():
@@ -145,6 +149,21 @@ class IndexMixin:
                         self._title_index.setdefault(zh_title, []).append(item)
         logger.info(f"标题索引构建完成，共 {len(self._title_index)} 个唯一标题")
 
+    def _ensure_tmdb_mapping(self) -> None:
+        """TMDB 映射为空时懒重建（reload_config 清空映射后首次查询触发）。
+
+        双重检查锁防止并发同步 worker 重复解析与重复构建；
+        数据缓存缺失时先触发 _parse_data（解析完成后对称重建映射）。
+        """
+        if not self._cache_tmdb_mapping:
+            with self._build_lock:
+                if not self._cache_tmdb_mapping:
+                    if self._data_cache is None:
+                        # 生成器体在首个 yield 前完成解析与索引重建
+                        next(iter(self._parse_data()), None)
+                    if not self._cache_tmdb_mapping:
+                        self._build_tmdb_mapping()
+
     def get_title_by_tmdb_id(
         self, tmdb_id: str, season: int | None = None
     ) -> str | None:
@@ -157,6 +176,7 @@ class IndexMixin:
         Returns:
             番剧名或 None
         """
+        self._ensure_tmdb_mapping()
         if season is not None:
             title = self._cache_tmdb_mapping.get(f"{tmdb_id}/season/{season}", None)
             if title:
@@ -173,6 +193,7 @@ class IndexMixin:
         Returns:
             开始日期字符串（空字符串表示未找到）
         """
+        self._ensure_tmdb_mapping()
         if not hasattr(self, "_cache_tmdb_begin"):
             return ""
         if season is not None:

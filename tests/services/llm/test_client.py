@@ -138,8 +138,8 @@ class TestLLMClientChat:
         assert kwargs["completion_tokens"] == 5
         assert kwargs["total_tokens"] == 15
 
-        mock_logger.info.assert_called_once()
-        log_msg = mock_logger.info.call_args[0][0]
+        mock_logger.debug.assert_called_once()
+        log_msg = mock_logger.debug.call_args[0][0]
         assert "gpt-4o-mini" in log_msg
         assert "15" in log_msg
         assert "latency=" in log_msg
@@ -292,8 +292,8 @@ class TestLLMClientChat:
             client = _build_client(mock_chat)
             await client.chat([Message(role="user", content="Log test")])
 
-        mock_logger.info.assert_called_once()
-        log_msg = mock_logger.info.call_args[0][0]
+        mock_logger.debug.assert_called_once()
+        log_msg = mock_logger.debug.call_args[0][0]
         assert "test-model-v1" in log_msg
         assert "30" in log_msg
         assert "latency=" in log_msg

@@ -7,7 +7,11 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
-from ..logging import logger
+from ..logging import (
+    get_batch_id,
+    get_sync_run_id,
+    logger,
+)
 from .base_repository import BaseRepository
 
 
@@ -52,6 +56,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_media_type(cursor)
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
+            self._conn._ensure_sync_records_link_fields(cursor)
 
         def _write(conn):
             local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -61,8 +66,8 @@ class SyncRecordsRepository(BaseRepository):
             cursor = conn.execute(
                 """
                 INSERT INTO sync_records
-                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type, bgm_title, match_method, match_score, match_platform, match_trace)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type, bgm_title, match_method, match_score, match_platform, match_trace, run_id, batch_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     local_time,
@@ -82,6 +87,8 @@ class SyncRecordsRepository(BaseRepository):
                     match_score,
                     match_platform or "",
                     trace_json,
+                    get_sync_run_id() or "",
+                    get_batch_id() or "",
                 ),
             )
             record_id = cursor.lastrowid
@@ -112,6 +119,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_media_type(cursor)
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
+            self._conn._ensure_sync_records_link_fields(cursor)
 
         def _read(conn):
             cursor = conn.cursor()
@@ -159,7 +167,7 @@ class SyncRecordsRepository(BaseRepository):
             query = f"""
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
                        subject_id, episode_id, status, message, source, media_type, bgm_title,
-                       match_method, match_score, match_platform
+                       match_method, match_score, match_platform, run_id, batch_id
                 FROM sync_records{where_clause}
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
@@ -187,6 +195,8 @@ class SyncRecordsRepository(BaseRepository):
                         "match_method": row[14] or "",
                         "match_score": row[15],
                         "match_platform": row[16] or "",
+                        "run_id": row[17] or "",
+                        "batch_id": row[18] or "",
                     }
                 )
 
@@ -211,6 +221,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_media_type(cursor)
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
+            self._conn._ensure_sync_records_link_fields(cursor)
 
         def _read(conn):
             cursor = conn.cursor()
@@ -218,7 +229,7 @@ class SyncRecordsRepository(BaseRepository):
                 """
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
                        subject_id, episode_id, status, message, source, media_type, bgm_title,
-                       match_method, match_score, match_platform, match_trace
+                       match_method, match_score, match_platform, match_trace, run_id, batch_id
                 FROM sync_records
                 WHERE id = ?
             """,
@@ -252,6 +263,8 @@ class SyncRecordsRepository(BaseRepository):
                 "match_score": row[15],
                 "match_platform": row[16] or "",
                 "match_trace": row[17] or "",
+                "run_id": row[18] or "",
+                "batch_id": row[19] or "",
             }
         return None
 
@@ -284,6 +297,71 @@ class SyncRecordsRepository(BaseRepository):
             logger.warning(f"记录 {record_id} 不存在，无法更新")
             return False
 
+    def update_sync_record_run_id(self, record_id: int, run_id: str) -> bool:
+        """回填同步记录的 run_id，用于重试将原 run 关联回原记录详情页。"""
+
+        def _write(conn):
+            cursor = conn.execute(
+                """
+                UPDATE sync_records
+                SET run_id = ?
+                WHERE id = ?
+            """,
+                (run_id, record_id),
+            )
+            return cursor.rowcount
+
+        affected_rows = self._run_write(
+            _write,
+            error_msg="回填同步记录 run_id 失败",
+            default=False,
+        )
+        return affected_rows > 0
+
+    def update_sync_record_match_fields(
+        self,
+        record_id: int,
+        match_method: Optional[str] = None,
+        match_trace: Optional[dict] = None,
+        match_score: Optional[float] = None,
+        match_platform: Optional[str] = None,
+    ) -> bool:
+        """回写同步记录的匹配字段，用于重试成功后覆盖原始失败记录的 match_method 等。
+
+        仅更新非 None 参数，避免覆盖未传入的字段。
+        """
+
+        def _write(conn):
+            set_clauses: list[str] = []
+            params: list = []
+            if match_method is not None:
+                set_clauses.append("match_method = ?")
+                params.append(match_method)
+            if match_trace is not None:
+                set_clauses.append("match_trace = ?")
+                params.append(json.dumps(match_trace, ensure_ascii=False))
+            if match_score is not None:
+                set_clauses.append("match_score = ?")
+                params.append(match_score)
+            if match_platform is not None:
+                set_clauses.append("match_platform = ?")
+                params.append(match_platform)
+            if not set_clauses:
+                return 0
+            params.append(record_id)
+            cursor = conn.execute(
+                f"UPDATE sync_records SET {', '.join(set_clauses)} WHERE id = ?",
+                params,
+            )
+            return cursor.rowcount
+
+        affected_rows = self._run_write(
+            _write,
+            error_msg="回写同步记录匹配字段失败",
+            default=False,
+        )
+        return affected_rows > 0
+
     def get_match_records(
         self,
         limit: int = 50,
@@ -301,6 +379,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_media_type(cursor)
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
+            self._conn._ensure_sync_records_link_fields(cursor)
 
         def _read(conn):
             cursor = conn.cursor()
@@ -333,7 +412,7 @@ class SyncRecordsRepository(BaseRepository):
             query = f"""
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
                        subject_id, episode_id, status, message, source, media_type, bgm_title,
-                       match_method, match_score, match_platform
+                       match_method, match_score, match_platform, run_id, batch_id
                 FROM sync_records{where_clause}
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
@@ -361,6 +440,8 @@ class SyncRecordsRepository(BaseRepository):
                         "match_method": row[14] or "",
                         "match_score": row[15],
                         "match_platform": row[16] or "",
+                        "run_id": row[17] or "",
+                        "batch_id": row[18] or "",
                     }
                 )
 
@@ -468,7 +549,8 @@ class SyncRecordsRepository(BaseRepository):
             limit_clause = "LIMIT ?" if limit > 0 else ""
             query = f"""
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
-                       subject_id, episode_id, status, message, source, media_type, bgm_title
+                       subject_id, episode_id, status, message, source, media_type, bgm_title,
+                       run_id, batch_id
                 FROM sync_records
                 {where}
                 ORDER BY timestamp DESC
@@ -493,6 +575,8 @@ class SyncRecordsRepository(BaseRepository):
                     "source": row[11],
                     "media_type": row[12] or "episode",
                     "bgm_title": row[13] or "",
+                    "run_id": row[14] or "",
+                    "batch_id": row[15] or "",
                 }
                 for row in cursor.fetchall()
             ]

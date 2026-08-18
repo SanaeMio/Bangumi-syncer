@@ -341,6 +341,69 @@ class TestArchiveImporter:
         assert not db_path.exists()
 
 
+class TestExtractZipSecurity:
+    """_extract_zip 的 Zip-Slip 路径穿越防护
+
+    本地上传 zip 内容不可信，恶意成员（../、绝对路径）必须被跳过，
+    不得写出到解压根目录之外。
+    """
+
+    def _make_zip(self, zip_path: Path, entries: list[tuple[str, str]]) -> Path:
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for name, content in entries:
+                zf.writestr(name, content)
+        return zip_path
+
+    def test_skips_parent_traversal_members(self, tmp_path: Path):
+        """.. 穿越成员被跳过，且不写出到 extract_dir 之外"""
+        zip_path = self._make_zip(
+            tmp_path / "evil.zip", [("../../evil.txt", "pwn"), ("ok.txt", "fine")]
+        )
+        extract_dir = tmp_path / "out"
+        extract_dir.mkdir()
+
+        ArchiveImporter()._extract_zip(zip_path, extract_dir)
+
+        assert not (tmp_path / "evil.txt").exists()
+        assert list(extract_dir.iterdir()) == [extract_dir / "ok.txt"]
+
+    def test_skips_absolute_path_members(self, tmp_path: Path):
+        """绝对路径（POSIX 与 Windows 盘符）成员被跳过"""
+        zip_path = self._make_zip(
+            tmp_path / "abs.zip",
+            [("/etc/evil.txt", "pwn"), ("C:/Windows/evil.txt", "pwn")],
+        )
+        extract_dir = tmp_path / "out"
+        extract_dir.mkdir()
+
+        ArchiveImporter()._extract_zip(zip_path, extract_dir)
+
+        assert list(extract_dir.iterdir()) == []
+
+    def test_skips_windows_backslash_traversal(self, tmp_path: Path):
+        """Windows 反斜杠形式的 ..\\ 穿越成员被跳过"""
+        zip_path = self._make_zip(tmp_path / "bs.zip", [("..\\..\\evil.txt", "pwn")])
+        extract_dir = tmp_path / "out"
+        extract_dir.mkdir()
+
+        ArchiveImporter()._extract_zip(zip_path, extract_dir)
+
+        assert list(extract_dir.iterdir()) == []
+
+    def test_extracts_normal_nested_members(self, tmp_path: Path):
+        """正常嵌套目录成员照常解压，不影响既有功能"""
+        zip_path = self._make_zip(
+            tmp_path / "normal.zip",
+            [("subject.jsonlines", "data"), ("nested/episode.jsonlines", "e")],
+        )
+        extract_dir = tmp_path / "out"
+
+        ArchiveImporter()._extract_zip(zip_path, extract_dir)
+
+        assert (extract_dir / "subject.jsonlines").read_text() == "data"
+        assert (extract_dir / "nested" / "episode.jsonlines").read_text() == "e"
+
+
 # ===== ArchiveStore 按日期查询测试 =====
 
 

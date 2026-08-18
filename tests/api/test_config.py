@@ -123,7 +123,6 @@ async def test_get_config_schema(app_with_auth):
         assert "name_key" in s
         assert "-" not in s["name_key"]
     # 默认值示例
-    assert schema["config_defaults"]["sync"]["mode"] == "single"
     assert schema["config_defaults"]["llm"]["max_tokens"] == 2000
     # default_true / loose_true 字段使用下划线路径
     assert "bangumi_data.enabled" in schema["default_true_fields"]
@@ -217,10 +216,10 @@ async def test_update_config_with_empty_password(app_with_auth, mock_config_mana
 
 
 @pytest.mark.asyncio
-async def test_update_config_persists_bangumi_media_server_username(
+async def test_update_config_ignores_bangumi_section(
     app_with_auth, mock_config_manager, mock_security_manager
 ):
-    """POST /api/config 将 bangumi.media_server_username 交给 set_config。"""
+    """POST /api/config 忽略遗留 [bangumi] 段回写（账号已迁移到 DB）。"""
     mock_config_manager.get_feiniu_config.return_value = {"enabled": False}
 
     async with AsyncClient(
@@ -243,9 +242,10 @@ async def test_update_config_persists_bangumi_media_server_username(
             )
 
     assert response.status_code == 200
-    mock_config_manager.set_config.assert_any_call(
-        "bangumi", "media_server_username", "plex_a,jelly_b"
-    )
+    # bangumi 段已由 /api/bangumi/accounts 管理，set_config 不应以 "bangumi" 为 section
+    for call in mock_config_manager.set_config.call_args_list:
+        args, _ = call
+        assert args[0] != "bangumi"
 
 
 # ========== 异常路径测试 ==========
@@ -389,131 +389,6 @@ async def test_update_config_feiniu_scheduler_exception(
                 json={"sync": {"enabled": True}},
             )
     assert response.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_update_config_with_multi_accounts(
-    app_with_auth, mock_config_manager, mock_security_manager
-):
-    """测试更新配置包含多账号"""
-    mock_config_manager.get_feiniu_config.return_value = {"enabled": False}
-    mock_parser = MagicMock()
-    mock_parser.has_section.return_value = False
-    mock_config_manager.get_config_parser.return_value = mock_parser
-
-    with (
-        patch(
-            "app.api.config.encrypt_if_sensitive",
-            side_effect=lambda *a: a[2],
-        ),
-        patch(
-            "app.services.feiniu.scheduler.feiniu_scheduler.apply_config_after_save",
-            new_callable=AsyncMock,
-        ),
-    ):
-        async with AsyncClient(
-            transport=ASGITransport(app=app_with_auth), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                "/api/config",
-                json={
-                    "multi_accounts": {
-                        "user1": {
-                            "username": "bgm_user1",
-                            "access_token": "token1",
-                            "media_server_username": "emby_user1",
-                        }
-                    }
-                },
-            )
-    assert response.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_update_config_multi_accounts_incomplete(
-    app_with_auth, mock_config_manager, mock_security_manager
-):
-    """测试多账号配置不完整时跳过"""
-    mock_config_manager.get_feiniu_config.return_value = {"enabled": False}
-    mock_parser = MagicMock()
-    mock_parser.has_section.return_value = False
-    mock_config_manager.get_config_parser.return_value = mock_parser
-
-    with patch(
-        "app.services.feiniu.scheduler.feiniu_scheduler.apply_config_after_save",
-        new_callable=AsyncMock,
-    ):
-        async with AsyncClient(
-            transport=ASGITransport(app=app_with_auth), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                "/api/config",
-                json={
-                    "multi_accounts": {
-                        "incomplete": {
-                            "username": "",
-                            "access_token": "",
-                        }
-                    }
-                },
-            )
-    assert response.status_code == 200
-
-
-def test_handle_multi_accounts_config_preserves_bangumi_archive_section():
-    """多账号保存时不应清除 bangumi-archive 系统功能段。
-    回归测试：此前 _handle_multi_accounts_config 会清除所有 bangumi-* 段
-    （仅排除 bangumi-data/bangumi-mapping），导致 bangumi-archive 段被误删，
-    用户保存多账号后 archive enabled 配置永久丢失。
-    """
-    from configparser import ConfigParser
-
-    from app.api.config import _handle_multi_accounts_config
-
-    parser = ConfigParser()
-    parser.read_dict(
-        {
-            "bangumi-archive": {"enabled": "True", "data_dir": "./data/archive"},
-            "bangumi-replay": {"enabled": "True", "replay_cron": "*/10 * * * *"},
-            "bangumi-data": {"db_path": "./data/sync_records.db"},
-            "bangumi-mapping": {"types": "movie,tv"},
-            "bangumi-alice": {
-                "username": "alice",
-                "access_token": "ta",
-                "media_server_username": "plex_a",
-            },
-        }
-    )
-
-    with (
-        patch(
-            "app.api.config.config_manager.get_config_parser",
-            return_value=parser,
-        ),
-        patch("app.api.config.config_manager.save_config"),
-    ):
-        _handle_multi_accounts_config(
-            {
-                "bangumi-bob": {
-                    "username": "bob",
-                    "access_token": "tb",
-                    "media_server_username": "plex_b",
-                }
-            }
-        )
-
-    # bangumi-archive 段必须保留
-    assert parser.has_section("bangumi-archive")
-    assert parser.get("bangumi-archive", "enabled") == "True"
-    # bangumi-replay 段也必须保留（与 archive 解耦后同为系统功能段）
-    assert parser.has_section("bangumi-replay")
-    assert parser.get("bangumi-replay", "enabled") == "True"
-    # bangumi-data / bangumi-mapping 同样保留
-    assert parser.has_section("bangumi-data")
-    assert parser.has_section("bangumi-mapping")
-    # 旧的 bangumi-alice 段应被清除，新的 bangumi-bob 段应被创建
-    assert not parser.has_section("bangumi-alice")
-    assert parser.has_section("bangumi-bob")
 
 
 @pytest.mark.asyncio

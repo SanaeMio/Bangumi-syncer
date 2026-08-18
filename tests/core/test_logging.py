@@ -7,10 +7,15 @@ from unittest.mock import MagicMock, patch
 
 from app.core.logging import (
     Logger,
+    batch_log_context,
     effective_dev_log_file_raw,
+    get_batch_id,
+    get_request_id,
     get_sync_run_id,
+    new_batch_id,
     new_inline_sync_run_id,
     new_retry_sync_run_id,
+    normalize_log_level,
     resolve_dev_log_file_path,
     resolved_dev_log_file_path,
     sync_log_context,
@@ -142,8 +147,8 @@ class TestLoggerFileOperations:
         logger._close_log_file_handle()
         # 不应抛出异常
 
-    def test_setup_log_file_import_error(self):
-        """导入 config 失败时跳过文件日志"""
+    def test_setup_log_file_import_error(self, capsys):
+        """导入 config 失败时跳过文件日志且可稍后重试"""
         logger = _make_logger()
         import sys
 
@@ -151,12 +156,30 @@ class TestLoggerFileOperations:
         saved = sys.modules.pop("app.core.config", None)
         sys.modules["app.core.config"] = None  # type: ignore[assignment]
         try:
-            logger._setup_log_file()
+            assert logger._setup_log_file() is False
+            assert logger._log_file_import_warned is True
+            err = capsys.readouterr()
+            assert "文件日志未启用" in err.err
+            # 第二次失败不再重复警告
+            assert logger._setup_log_file() is False
+            assert capsys.readouterr().err == ""
         finally:
             if saved is not None:
                 sys.modules["app.core.config"] = saved
             else:
                 sys.modules.pop("app.core.config", None)
+
+    def test_lazy_init_retries_after_config_import_failure(self):
+        """config 尚未就绪时保持未初始化，成功后再标记完成"""
+        logger = _make_logger()
+        with patch.object(
+            logger, "_setup_log_file", side_effect=[False, True]
+        ) as mock_setup:
+            logger._lazy_init_log_file_once()
+            assert not logger._log_file_lazy_initialized
+            logger._lazy_init_log_file_once()
+            assert logger._log_file_lazy_initialized
+            assert mock_setup.call_count == 2
 
     def test_setup_log_file_raw_none(self):
         """log_file 配置为空时禁用文件日志"""
@@ -214,6 +237,113 @@ class TestLoggerFileOperations:
         with patch.object(logger, "_setup_log_file") as mock_setup:
             logger._ensure_log_file_for_write()
             mock_setup.assert_called_once()
+
+
+class TestLoggerLogLevel:
+    """[dev] log_level 阈值过滤"""
+
+    def test_normalize_valid(self):
+        assert normalize_log_level("DEBUG") == "DEBUG"
+        assert normalize_log_level("info") == "INFO"
+        assert normalize_log_level("Warn") == "WARNING"
+        assert normalize_log_level("error") == "ERROR"
+
+    def test_normalize_invalid(self):
+        assert normalize_log_level("") == "INFO"
+        assert normalize_log_level(None) == "INFO"
+        assert normalize_log_level("verbose") == "INFO"
+
+    def test_log_level_cache(self):
+        logger = _make_logger()
+        logger._debug_mode = False
+        logger._log_level = "WARNING"
+        assert logger.log_level == "WARNING"
+
+    def test_log_level_not_cached_on_import_error(self):
+        """config 尚未可导入时不缓存 log_level，便于后续重试读取配置"""
+        logger = _make_logger()
+        import sys
+
+        saved = sys.modules.pop("app.core.config", None)
+        sys.modules["app.core.config"] = None  # type: ignore[assignment]
+        try:
+            assert logger.log_level == "INFO"
+            assert logger._log_level is None
+        finally:
+            if saved is not None:
+                sys.modules["app.core.config"] = saved
+            else:
+                sys.modules.pop("app.core.config", None)
+
+    def test_log_level_debug_override(self, capsys):
+        """debug 开关开启时始终按 DEBUG 输出"""
+        logger = _make_logger()
+        logger._debug_mode = True
+        logger._log_level = "WARNING"
+        logger.debug("debug line")
+        captured = capsys.readouterr()
+        assert "[DEBUG]" in captured.out
+
+    def test_threshold_filters_info(self, capsys):
+        """WARNING 阈值下 INFO 不输出到控制台，WARNING/ERROR 正常"""
+        logger = _make_logger()
+        logger._debug_mode = False
+        logger._log_level = "WARNING"
+        logger.info("hidden info")
+        logger.warning("visible warning")
+        logger.error("visible error")
+        captured = capsys.readouterr()
+        assert "hidden info" not in captured.out
+        assert "visible warning" in captured.out
+        assert "visible error" in captured.out
+
+    def test_listener_receives_below_threshold(self):
+        """低于阈值的日志仍推送监听器（重试 SSE 场景）"""
+        logger = _make_logger()
+        logger._debug_mode = False
+        logger._log_level = "WARNING"
+        seen = []
+        logger.add_listener(lambda line, level: seen.append((line, level)))
+        logger.info("low level line")
+        assert len(seen) == 1
+        assert "low level line" in seen[0][0]
+        assert "[INFO]" in seen[0][0]
+
+    def test_listener_notified_without_threshold(self, capsys):
+        """DEBUG 开启时监听器与输出均正常"""
+        logger = _make_logger()
+        logger._debug_mode = True
+        seen = []
+        logger.add_listener(lambda line, level: seen.append(level))
+        logger.debug("debug line")
+        assert seen == ["DEBUG"]
+        captured = capsys.readouterr()
+        assert "[DEBUG]" in captured.out
+
+
+class TestLoggerRotation:
+    """日志文件轮转"""
+
+    def test_rotate_log_file(self, tmp_path):
+        logger = _make_logger()
+        base = tmp_path / "log.txt"
+        base.write_text("a" * 100, encoding="utf-8")
+        (tmp_path / "log.txt.1").write_text("b", encoding="utf-8")
+        logger._rotate_log_file(base)
+        assert (tmp_path / "log.txt.1").read_text(encoding="utf-8") == "a" * 100
+        assert (tmp_path / "log.txt.2").read_text(encoding="utf-8") == "b"
+        assert not base.exists()
+
+    def test_rotate_log_file_overflow_backups_dropped(self, tmp_path):
+        logger = _make_logger()
+        base = tmp_path / "log.txt"
+        base.write_text("new", encoding="utf-8")
+        (tmp_path / "log.txt.1").write_text("1", encoding="utf-8")
+        (tmp_path / "log.txt.2").write_text("2", encoding="utf-8")
+        logger._rotate_log_file(base)
+        assert (tmp_path / "log.txt.1").read_text(encoding="utf-8") == "new"
+        assert (tmp_path / "log.txt.2").read_text(encoding="utf-8") == "1"
+        assert not (tmp_path / "log.txt.3").exists()
 
 
 class TestLoggerDebugMode:
@@ -366,6 +496,39 @@ class TestSyncLogContext:
         assert "[run:" not in captured.out
 
 
+class TestRequestBatchContext:
+    """request_id / batch_id 上下文与日志格式"""
+
+    def test_request_id_default_empty(self):
+        assert get_request_id() == ""
+
+    def test_batch_id_default_empty(self):
+        assert get_batch_id() == ""
+
+    def test_batch_log_context_sets_and_resets(self):
+        with batch_log_context("batch_1_100"):
+            assert get_batch_id() == "batch_1_100"
+        assert get_batch_id() == ""
+
+    def test_new_batch_id_format(self):
+        bid = new_batch_id()
+        assert bid.startswith("batch_")
+
+    def test_log_includes_req_and_batch_fields(self, capsys):
+        logger = _make_logger()
+        with batch_log_context("batch_9_1"):
+            logger.info("batch message")
+        captured = capsys.readouterr()
+        assert "[batch:batch_9_1]" in captured.out
+
+    def test_log_omits_req_batch_when_absent(self, capsys):
+        logger = _make_logger()
+        logger.info("plain message")
+        captured = capsys.readouterr()
+        assert "[req:" not in captured.out
+        assert "[batch:" not in captured.out
+
+
 class TestLoggerLogToFile:
     """Test writing to log file"""
 
@@ -402,3 +565,71 @@ class TestLoggerLogToFile:
         assert "secret123" not in result[0]
         assert "host.com" not in result[0]
         assert "realuser" not in result[0]
+
+
+class TestPercentFormatting:
+    """Test stdlib-style % placeholder formatting"""
+
+    def test_scheduler_startup_message(self, capsys):
+        """调度器启动日志：%s 占位符应被替换"""
+        logger = _make_logger()
+        logger.info("%s 调度器启动%s", "feiniu", "成功")
+        captured = capsys.readouterr()
+        assert "feiniu 调度器启动成功" in captured.out
+        assert "%s" not in captured.out
+
+    def test_accounts_duplicate_mapping_warning(self, capsys):
+        """多用户映射重复：%r 与 %s 均应替换"""
+        logger = _make_logger()
+        logger.warning(
+            "多用户映射中媒体服务器用户名 %r 重复：原指向配置段 %s，现被 %s 覆盖",
+            "user_a",
+            "section_old",
+            "section_new",
+        )
+        captured = capsys.readouterr()
+        assert "多用户映射中媒体服务器用户名 'user_a' 重复" in captured.out
+        assert "原指向配置段 section_old，现被 section_new 覆盖" in captured.out
+        assert "%r" not in captured.out
+        assert "%s" not in captured.out
+
+    def test_float_precision_formatting(self, capsys):
+        """%.2f 浮点占位符"""
+        logger = _make_logger()
+        logger.info("相似度 %.2f 低于阈值 %.2f", 0.456, 0.50)
+        captured = capsys.readouterr()
+        assert "相似度 0.46 低于阈值 0.50" in captured.out
+
+    def test_multiline_embedded_content(self, capsys):
+        """\\n%s 多行内容嵌入"""
+        logger = _make_logger()
+        logger._debug_mode = True
+        logger.debug("fongmi 设备连接详情:\n%s", "line1\nline2")
+        captured = capsys.readouterr()
+        assert "fongmi 设备连接详情:\nline1\nline2" in captured.out
+        assert "%s" not in captured.out
+
+    def test_fallback_join_without_placeholders(self, capsys):
+        """无占位符的多参数仍用空格拼接"""
+        logger = _make_logger()
+        logger.info("part1", "part2")
+        captured = capsys.readouterr()
+        assert "part1 part2" in captured.out
+
+    def test_literal_percent_sign(self, capsys):
+        """单参数字面量 %% 输出为 %"""
+        logger = _make_logger()
+        logger.info("进度 100%%")
+        captured = capsys.readouterr()
+        assert "进度 100%" in captured.out
+
+    def test_percent_formatting_with_mix(self, capsys):
+        """脱敏与 % 格式化同时生效"""
+        logger = _make_logger()
+        logger.need_mix = True
+        logger.user_name = "realuser"
+        logger.info("用户 %s 登录", "realuser")
+        captured = capsys.readouterr()
+        assert "用户 _hide_user_ 登录" in captured.out
+        assert "realuser" not in captured.out
+        assert "%s" not in captured.out

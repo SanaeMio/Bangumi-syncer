@@ -8,7 +8,7 @@
 不再支持"全部放送"模式——"我的追番"语义下全部放送对用户无意义，获取在看列表
 失败时返回 watching_unavailable 状态，由前端提示用户检查账号配置。
 
-多用户模式（``[sync] mode=multi``）下，前端可通过 ``account`` 参数指定要查看
+多账号场景下（DB 中账号数 > 1），前端可通过 ``account`` 参数指定要查看
 的 Bangumi 账号段名，实现卡片内切换账号。
 
 数据源：Bangumi Archive 的 episode.airdate（仅在 Archive 启用且已导入数据时可用）。
@@ -124,42 +124,94 @@ async def list_bangumi_accounts(
 ) -> BangumiAccountsResponse:
     """列出已配置的 Bangumi 账号（供"我的追番"卡片多用户切换）
 
-    - 单用户模式：返回 ``[bangumi]`` 段账号（accounts 0 或 1 项）
-    - 多用户模式：返回所有 ``[bangumi-*]`` 账号段
-
+    DB 为唯一真相源：返回 ``bangumi_accounts`` 表中所有有 username 的账号。
     仅返回 ``section_name`` 与 ``username``，不暴露 access_token。
-    """
-    mode = config_manager.get("sync", "mode", fallback="single")
-    accounts: list[BangumiAccountInfo] = []
-    active: Optional[str] = None
 
-    if mode == "multi":
-        configs = config_manager.get_bangumi_configs()
-        for section_name, cfg in configs.items():
+    多用户隔离：认证开启且账号数 > 1 时，媒体用户（应用登录名绑定到某账号的
+    media_server_usernames）只能看到自己绑定的账号，避免泄露其他用户名；
+    管理员/非媒体用户可见全部。认证禁用（自托管）时全部可见。
+
+    ``mode`` 字段由账号数量推导（1=single，>1=multi），兼容前端 dropdown 显示逻辑。
+    """
+    from app.core.accounts import (
+        count_bangumi_accounts,
+        get_active_bangumi_account,
+        get_user_mappings,
+        list_bangumi_accounts as _list_accounts,
+    )
+
+    accounts: list[BangumiAccountInfo] = []
+    for acc in _list_accounts():
+        if acc.get("username"):
             accounts.append(
                 BangumiAccountInfo(
-                    section_name=section_name,
-                    username=cfg.get("username", ""),
+                    section_name=acc["section_name"],
+                    username=acc["username"],
                 )
             )
-        # active 取首个用户映射对应段（与 get_active_bangumi_config 默认行为一致）
-        active_cfg = config_manager.get_active_bangumi_config()
-        if active_cfg:
-            for section_name, cfg in configs.items():
-                if cfg.get("username") == active_cfg.get("username"):
-                    active = section_name
-                    break
-    else:
-        # 单用户模式：读 [bangumi] 段
-        username = config_manager.get("bangumi", "username", fallback="")
-        token = config_manager.get("bangumi", "access_token", fallback="")
-        if username and token:
-            accounts.append(
-                BangumiAccountInfo(section_name="bangumi", username=username)
-            )
-            active = "bangumi"
 
+    # 多用户隔离：媒体用户只能看到自己绑定的账号，避免泄露其他用户名
+    if not user.get("auth_disabled"):
+        try:
+            if count_bangumi_accounts() > 1:
+                login_name = user.get("username") or ""
+                bound = get_user_mappings().get(login_name) if login_name else None
+                if bound:
+                    accounts = [a for a in accounts if a.section_name == bound]
+        except Exception:
+            # DB 异常时回退到全量返回，避免阻断卡片加载
+            pass
+
+    active_acc = get_active_bangumi_account()
+    active = active_acc.get("section_name") if active_acc else None
+
+    # 列表长度=1 即单用户，无需 sync.mode 判断；mode 字段仅供前端 dropdown 显示判断
+    mode = "multi" if len(accounts) > 1 else "single"
     return BangumiAccountsResponse(mode=mode, accounts=accounts, active=active)
+
+
+def _resolve_accessible_account(user: dict, requested: Optional[str]) -> Optional[str]:
+    """解析当前用户可访问的 Bangumi 账号段名，防止越权访问他人账号。
+
+    隔离策略（与 ``bangumi_replay._resolve_user_filter`` 类似，但 bangumi_replay
+    对未映射已认证用户返回哨兵空集以保护观看元数据隐私）：
+    - 认证禁用（自托管）：管理员可访问任意账号。
+    - 单用户模式（账号数 <= 1）：无越权可能。
+    - 多用户模式：
+      - 当前应用登录名绑定到某账号（是媒体用户）：只能访问该账号，
+        ``requested`` 指定其他账号时返回 None（越权）。
+      - 管理员/非媒体用户：可访问任意账号。
+
+    返回：
+    - ``"<section>"``: 用户受限且只能访问该段名。
+    - ``""``: 用户可自由访问任意账号（``requested`` 为空时）。
+    - ``None``: 用户无权访问 ``requested`` 账号（越权请求）。
+    """
+    # 认证禁用（自托管）：管理员可访问任意账号
+    if user.get("auth_disabled"):
+        return requested or ""
+
+    from app.core.accounts import count_bangumi_accounts, get_user_mappings
+
+    try:
+        multi_user = count_bangumi_accounts() > 1
+    except Exception:
+        # DB 异常回退到宽松默认（与 bangumi_replay 一致，避免阻断）
+        return requested or ""
+
+    if not multi_user:
+        return requested or ""
+
+    # 多用户：反查当前登录名是否绑定到某账号
+    login_name = user.get("username") or ""
+    bound_section = get_user_mappings().get(login_name) if login_name else None
+    if bound_section:
+        # 媒体用户：只能访问自己绑定的账号
+        if requested and requested != bound_section:
+            return None
+        return bound_section
+    # 管理员/非媒体用户：可访问任意账号
+    return requested or ""
 
 
 @router.get("", response_model=AiringCalendarResponse)
@@ -241,7 +293,21 @@ async def get_airing_calendar(
         subject_types = (2, 6)
 
     # "我的追番"必须配置 Bangumi 账号：按 account 段名构造（多用户切换）
-    api = _build_bangumi_api(account)
+    # 多用户隔离：校验当前用户是否有权访问指定 account，防止越权查看他人账号
+    accessible = _resolve_accessible_account(user, account)
+    if accessible is None:
+        # 越权请求：用户试图访问非自己绑定的账号
+        logger.warning(
+            f"airing-calendar: 用户 '{user.get('username')}' 越权访问账号 '{account}'，已拒绝"
+        )
+        return AiringCalendarResponse(
+            status="watching_unavailable",
+            days=[],
+            total_episodes=0,
+            archive_enabled=True,
+            today=today_str,
+        )
+    api = _build_bangumi_api(accessible or None)
     if api is None:
         # 未配置 Bangumi 账号或指定段不存在：返回 watching_unavailable
         return AiringCalendarResponse(

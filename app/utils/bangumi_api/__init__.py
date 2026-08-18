@@ -19,10 +19,13 @@ from ._archive_shortcut import archive_shortcut
 from .collection import CollectionMixin
 from .episodes import EpisodesMixin
 from .http_layer import HttpLayerMixin
+from .relations import RelationMixin
 from .search import SearchMixin
 
 
-class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
+class BangumiApi(
+    HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin, RelationMixin
+):
     def __init__(
         self,
         username: str | None = None,
@@ -32,6 +35,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         ssl_verify: bool = True,
         bgm_api_proxy: str | None = None,
         bgm_next_proxy: str | None = None,
+        ech_mode: str | None = None,
     ) -> None:
         self.api_base = (
             bgm_api_proxy.rstrip("/") if bgm_api_proxy else "https://api.bgm.tv"
@@ -46,6 +50,9 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         self.private = private
         self.http_proxy = http_proxy
         self.ssl_verify = ssl_verify
+        # ECH 模式（"off"/"doh"/"manual"）；None 时按全局 [dev] ech_mode 处理，
+        # 由 SyncHttpClient → create_sync_client(ech=…) 注入带 ECH 的 utls 上下文
+        self.ech_mode = ech_mode or "off"
         # 使用 SyncHttpClient 封装 httpx.Client（统一日志/重试）
         # max_retries=3：重试由 SyncHttpClient 内置处理，_request_with_retry 仅负责代理回退
         # timeout=10.0：单次请求 10s 超时，避免错误 subject_id 触发链式调用时
@@ -55,6 +62,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
                 label="Bangumi",
                 proxy=http_proxy,
                 verify=ssl_verify,
+                ech=self.ech_mode,
                 follow_redirects=True,
                 max_retries=3,
                 timeout=10.0,
@@ -68,6 +76,7 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
                 label="Bangumi",
                 proxy=http_proxy,
                 verify=ssl_verify,
+                ech=self.ech_mode,
                 follow_redirects=True,
                 max_retries=3,
                 timeout=10.0,
@@ -93,7 +102,6 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         _MAX_CACHE_SIZE = 200
         self._cache = {
             "search": OrderedDict(),
-            "search_old": OrderedDict(),
             "get_subject": OrderedDict(),
             "get_related_subjects": OrderedDict(),
             "get_episodes": OrderedDict(),
@@ -104,11 +112,20 @@ class BangumiApi(HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin):
         # enabled=False 时所有 try_* 立即返回 archive_disabled，等价于原行为
         self._archive = archive_shortcut
 
-        # 最近一次读操作的命中来源（""=API/未命中，"archive"=本地归档命中）
-        # 由 search/search_old/get_subject/get_related_subjects 在 archive 短路命中时置 "archive"，
-        # 调用方（sync_service）据此把匹配过程步骤标记为 archive 而非 api_search。
-        # 每次 bgm_search 入口会重置为 ""，反映该次搜索的最终命中来源。
+        # 已废弃的死状态属性（兼容保留，不再写入/读取）：
+        # archive 命中来源改由 ctx.archive_hit 传递（ArchiveShortcutStep → APISearchStep），
+        # 命中变体方法改由 bgm_search 的 out_meta 回传。保留定义仅为避免
+        # 外部历史代码访问报错，匹配逻辑不再依赖。
         self.last_hit_source: str = ""
+        self.last_match_method: str = ""
+
+        # 最近一次跨季链查找（find_episode_across_seasons）的命中路径：
+        # ""=未命中 / 当前 subject 直接命中；"chain"=前传/续集链；
+        # "franchise_archive"=同 IP 闭包（本地归档，含改编边）；
+        # "franchise_online"=同 IP 改编一跳（在线）。
+        # orchestrator._cross_season_fallback 据此区分 trace 细粒度匹配方式，
+        # 前端详情页/列表页展示对应徽章（见 badges.js renderMatchMethodDetailBadge）。
+        self.last_cross_season_path: str = ""
 
         # 如果禁用SSL验证，输出警告（httpx 无需抑制 urllib3 警告）
         if not ssl_verify:

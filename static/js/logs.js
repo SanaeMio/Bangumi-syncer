@@ -6,6 +6,7 @@
 
     const DEFAULT_EXPAND_RECENT = 3;
     const COPY_FEEDBACK_MS = 2000;
+    const FOCUS_HIGHLIGHT_MS = 3000;
 
     let autoRefreshInterval = null;
     let clearLogsModal = null;
@@ -13,12 +14,15 @@
     let lastGrouped = null;
     /** @type {Record<string, boolean>} run_id -> true 表示折叠 */
     let groupCollapseState = {};
+    /** @type {?string} 待定位高亮的 run_id（来自 URL ?run_id=xxx，定位后清空） */
+    let pendingFocusRunId = null;
 
     document.addEventListener('DOMContentLoaded', function () {
         const modalEl = document.getElementById('clearLogsModal');
         if (modalEl) {
             clearLogsModal = new bootstrap.Modal(modalEl);
         }
+        applyUrlRunIdFocus();
         loadLogs();
         startAutoRefresh();
 
@@ -61,6 +65,79 @@
         }
     }
 
+    /**
+     * 解析 URL ?run_id=xxx：填充搜索框 [run:xxx] + 开启分组 + 标记待定位。
+     * 同步记录详情页「日志」链接跳转过来时携带 run_id，定位到对应分组卡片。
+     */
+    function applyUrlRunIdFocus() {
+        const params = new URLSearchParams(window.location.search);
+        const runId = (params.get('run_id') || '').trim();
+        if (!runId) {
+            return;
+        }
+        pendingFocusRunId = runId;
+        const groupedCheckbox = document.getElementById('grouped-view');
+        if (groupedCheckbox && !groupedCheckbox.checked) {
+            groupedCheckbox.checked = true;
+            lastGrouped = null;
+        }
+        const searchInput = document.getElementById('log-search');
+        if (searchInput) {
+            searchInput.value = '[run:' + runId + ']';
+        }
+        // 目标 run_id 的日志行可能不在默认的尾部 100 行内，自动切到「全部」
+        // 确保能定位到该次同步的完整日志（日志文件有轮转上限，全量可控）
+        const limitSelect = document.getElementById('log-lines-limit');
+        if (limitSelect && limitSelect.value !== 'all') {
+            limitSelect.value = 'all';
+        }
+        lastModified = null;
+    }
+
+    /**
+     * 定位并高亮指定 run_id 的分组卡片：展开 + 滚动到视区 + 临时高亮。
+     * 在分组渲染完成后调用，定位成功后清空 pendingFocusRunId（仅首次定位）。
+     */
+    function focusPendingGroupCard() {
+        if (!pendingFocusRunId) {
+            return;
+        }
+        const runId = pendingFocusRunId;
+        const container = document.getElementById('log-content');
+        const card = container
+            ? container.querySelector('.log-group-card[data-run-id="' + CSS.escape(runId) + '"]')
+            : null;
+        if (!card) {
+            return;
+        }
+        pendingFocusRunId = null;
+
+        const body = card.querySelector('.log-group-body');
+        if (body && body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            card.classList.remove('is-collapsed');
+            const toggleBtn = card.querySelector('.log-group-toggle');
+            if (toggleBtn) {
+                toggleBtn.setAttribute('aria-expanded', 'true');
+            }
+            groupCollapseState[runId] = false;
+        }
+
+        const scrollEl = getScrollContainer();
+        if (scrollEl) {
+            const cardRect = card.getBoundingClientRect();
+            const scrollRect = scrollEl.getBoundingClientRect();
+            scrollEl.scrollTop += cardRect.top - scrollRect.top - 12;
+        } else {
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        card.classList.add('log-group-card--focus');
+        setTimeout(function () {
+            card.classList.remove('log-group-card--focus');
+        }, FOCUS_HIGHLIGHT_MS);
+    }
+
     function getFilterParams() {
         const level = document.getElementById('log-level').value;
         const search = document.getElementById('log-search').value;
@@ -101,6 +178,7 @@
 
             if (grouped) {
                 displayGroupedLogs(data.data.groups || [], data.data.orphans || [], data.data.debug_mode);
+                focusPendingGroupCard();
             } else {
                 displayLogContent(data.data.content || '');
             }
@@ -361,13 +439,22 @@
     }
 
     function stripRunTagFromLine(line) {
-        return line.replace(/ \[run:[^\]]+\]/, '');
+        return line.replace(/ \[(?:run|req|batch):[^\]]+\]/g, '');
     }
 
     function renderGroupBadges(group) {
         let html = '';
         if (group.source) {
             html += '<span class="badge rounded-pill bg-info">' + escapeHtml(group.source) + '</span>';
+        }
+        if (group.run_id) {
+            html += '<span class="badge rounded-pill log-group-id-badge" title="run_id（单次同步）：' + escapeHtml(group.run_id) + '"><i class="bi bi-signpost-2"></i> ' + escapeHtml(group.run_id) + '</span>';
+        }
+        if (group.req_id) {
+            html += '<span class="badge rounded-pill log-group-id-badge" title="请求 ID（X-Request-ID）：' + escapeHtml(group.req_id) + '"><i class="bi bi-link-45deg"></i> ' + escapeHtml(group.req_id) + '</span>';
+        }
+        if (group.batch_id) {
+            html += '<span class="badge rounded-pill log-group-id-badge" title="批次 ID（批量补发一轮）：' + escapeHtml(group.batch_id) + '"><i class="bi bi-collection"></i> ' + escapeHtml(group.batch_id) + '</span>';
         }
         html += '<span class="badge rounded-pill ' + statusBadgeClass(group.status) + '">' +
             statusLabel(group.status) + '</span>';

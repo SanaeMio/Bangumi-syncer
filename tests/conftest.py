@@ -56,6 +56,32 @@ _cfg.set("bangumi-replay", "enabled", "false")
 with open(_TEST_CONFIG_INI, "w", encoding="utf-8") as _f:
     _cfg.write(_f)
 
+
+# ===== 事件循环兜底 =====
+# pytest-xdist 并行（Windows + Python 3.9）下，同步测试可能被分到从未
+# 创建事件循环的 worker 主线程；此类测试构造 asyncio.Lock()/Queue() 等
+# 对象时会抛 "There is no current event loop"。autouse fixture 在每条测试
+# setup 阶段确保 MainThread 存在可用循环；async 测试由 pytest-asyncio 的
+# event_loop fixture 自行创建（set_event_loop 覆盖，不受影响）。
+@pytest.fixture(autouse=True)
+def _ensure_main_thread_loop():
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    yield
+
+
+# ===== 隔离数据库：所有测试写入临时 data 目录，避免污染真实 data/sync_records.db =====
+# 部分测试（如匹配失败路径）直接使用全局 database_manager 记录同步结果，
+# 若未 mock 会写入项目根 data/sync_records.db。此处将全局单例整体重定向到
+# 临时配置目录下的 data/，在 app 模块（service/api 等）被导入前完成，
+# 确保后续所有 `from app.core.database import database_manager` 拿到的是测试实例。
+import app.core.database as _database_module  # noqa: E402
+
+_TEST_DB_PATH = str(_TEST_CONFIG_DIR / "data" / "sync_records.db")
+_database_module.database_manager = _database_module.DatabaseManager(_TEST_DB_PATH)
+
 from app.core.config import config_manager  # noqa: E402
 from app.core.database import database_manager  # noqa: E402
 from app.models.trakt import TraktConfig  # noqa: E402
@@ -509,6 +535,35 @@ def _isolate_archive_shortcut(monkeypatch):
     # mock reload_config 为 noop，防止 BangumiApi.init() 重新读取 config 启用
     monkeypatch.setattr(archive_shortcut, "reload_config", lambda: None)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _restore_injectable_singletons():
+    """保存和恢复 Injectable 单例（mapping_service / notification_service），
+    避免 test_container 等测试调用 reset_*_service() 后 _injectable 重建新实例，
+    导致后续测试中 ``from ... import mapping_service`` 获取的旧实例与
+    step 内部延迟导入获取的新实例不一致（patch.object 作用于旧实例无效）。
+    """
+    from app.services.mapping_service import (
+        _injectable as _ms_inj,
+    )
+    from app.services.notification_service import (
+        _injectable as _ns_inj,
+    )
+
+    _saved = (
+        _ms_inj._instance,
+        _ms_inj._loaded,
+        _ns_inj._instance,
+        _ns_inj._loaded,
+    )
+    yield
+    (
+        _ms_inj._instance,
+        _ms_inj._loaded,
+        _ns_inj._instance,
+        _ns_inj._loaded,
+    ) = _saved
 
 
 # Playwright 测试配置

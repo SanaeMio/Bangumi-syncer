@@ -1,5 +1,6 @@
 """
 同步日志分组解析：按 [run:xxx] 聚合，历史日志启发式回退。
+[req:xxx] / [batch:xxx] 为辅助关联标签，解析后随分组返回。
 """
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ from datetime import datetime
 from typing import Any
 
 RUN_ID_RE = re.compile(r"\[run:([^\]]+)\]")
+REQUEST_ID_RE = re.compile(r"\[req:([^\]]+)\]")
+BATCH_ID_RE = re.compile(r"\[batch:([^\]]+)\]")
 TIMESTAMP_RE = re.compile(r"^\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]")
 LEVEL_RE = re.compile(r"\[(DEBUG|INFO ?|WARN(?:ING)? ?|ERROR)\]")
 
@@ -146,6 +149,15 @@ def _count_levels(lines: list[str]) -> dict[str, int]:
     return dict(counts)
 
 
+def _first_tag(lines: list[str], regex: re.Pattern) -> str:
+    """取组内首个关联标签值（req/batch），无则空字符串。"""
+    for line in lines:
+        m = regex.search(line)
+        if m:
+            return m.group(1).strip() or ""
+    return ""
+
+
 def _build_group(
     run_id: str,
     lines: list[str],
@@ -158,6 +170,8 @@ def _build_group(
     duration = _duration_ms(timestamps)
     return {
         "run_id": run_id,
+        "req_id": _first_tag(lines, REQUEST_ID_RE),
+        "batch_id": _first_tag(lines, BATCH_ID_RE),
         "title": info["title"],
         "season": info["season"],
         "episode": info["episode"],

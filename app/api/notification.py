@@ -3,7 +3,8 @@
 """
 
 import asyncio
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -156,6 +157,400 @@ class NotificationRuleUpdate(BaseModel):
     template: Optional[str] = None
 
 
+# ========== 通用渠道 CRUD 处理器 ==========
+# webhook/email/wecom/dingtalk/rules 5 个渠道的 CRUD 逻辑高度同构，
+# 差异仅在：section 前缀、字段列表、敏感字段加密、test 实现。
+# ChannelHandler 通过字段定义 + 可选 test_fn 参数化这些差异，
+# 消除 5×5=25 个路由函数中的重复 try/except/section 遍历/max_id 计算逻辑。
+
+
+@dataclass
+class ChannelField:
+    """渠道配置字段定义
+
+    kind: "str" | "bool" | "int" —— 决定 set 时的 str() 转换
+    sensitive: True 时 create/update 走 encrypt_if_sensitive，list 返回掩码 "******"
+    """
+
+    name: str
+    kind: str = "str"
+    sensitive: bool = False
+    default: Any = ""
+
+
+class ChannelHandler:
+    """通用渠道 CRUD 处理器
+
+    封装 list/create/update/delete/test 五个操作的模板逻辑，
+    通过 section_prefix + fields + test_fn 参数化渠道差异。
+    """
+
+    def __init__(
+        self,
+        section_prefix: str,
+        display_name: str,
+        fields: list[ChannelField],
+        create_model: type,
+        update_model: type,
+        test_fn: Optional[Callable[[int], Any]] = None,
+        label: Optional[str] = None,
+    ):
+        self.section_prefix = section_prefix
+        self.display_name = display_name
+        self.fields = fields
+        self.create_model = create_model
+        self.update_model = update_model
+        self.test_fn = test_fn
+        # label 用于 get_notification_channels 的前端显示名，默认同 display_name
+        self.label = label or display_name
+
+    def _section_name(self, item_id: int) -> str:
+        return f"{self.section_prefix}{item_id}"
+
+    def _read_config(self, section_config) -> dict[str, Any]:
+        """从 section_config 读取字段，构造返回字典（敏感字段掩码）"""
+        data: dict[str, Any] = {"id": section_config.get("id")}
+        for f in self.fields:
+            if f.sensitive:
+                data[f.name] = "******" if section_config.get(f.name) else ""
+            else:
+                data[f.name] = section_config.get(f.name, f.default)
+        return data
+
+    def _set_field_create(
+        self, config, section_name: str, f: ChannelField, value: Any
+    ) -> None:
+        """create 时写入字段（value 来自 pydantic model，非 None）"""
+        if f.sensitive:
+            config.set(
+                section_name,
+                f.name,
+                encrypt_if_sensitive(section_name, f.name, value),
+            )
+        else:
+            config.set(section_name, f.name, str(value) if f.kind != "str" else value)
+
+    async def list_all(self) -> dict[str, Any]:
+        try:
+            configs = []
+            config = config_manager.get_config_parser()
+            for section_name in config.sections():
+                if section_name.startswith(self.section_prefix):
+                    section_config = config_manager.get_section(section_name)
+                    configs.append(self._read_config(section_config))
+            configs.sort(key=lambda x: int(x["id"]))
+            return {"status": "success", "data": configs}
+        except Exception as e:
+            logger.error(f"获取{self.display_name}配置失败: {e}")
+            return {
+                "status": "error",
+                "message": f"获取{self.display_name}配置失败: {str(e)}",
+            }
+
+    async def create(self, data) -> dict[str, Any]:
+        try:
+            config = config_manager.get_config_parser()
+
+            # 新 ID 取现有最大 ID + 1（避免复用已删除的 ID 导致规则引用错位）
+            max_id = 0
+            for section_name in config.sections():
+                if section_name.startswith(self.section_prefix):
+                    section_config = config_manager.get_section(section_name)
+                    try:
+                        max_id = max(max_id, int(section_config.get("id", 0)))
+                    except (TypeError, ValueError):
+                        continue
+
+            new_id = max_id + 1
+            section_name = self._section_name(new_id)
+
+            if not config.has_section(section_name):
+                config.add_section(section_name)
+
+            config.set(section_name, "id", str(new_id))
+            for f in self.fields:
+                self._set_field_create(config, section_name, f, getattr(data, f.name))
+
+            await asyncio.to_thread(config_manager._save_config, config)
+            _reload_notification_channels()
+
+            logger.info(f"创建{self.display_name}配置成功: ID={new_id}")
+
+            # 构造 create 返回 data：敏感字段掩码，其他字段原值
+            result: dict[str, Any] = {"id": new_id}
+            for f in self.fields:
+                value = getattr(data, f.name)
+                if f.sensitive:
+                    result[f.name] = "******" if value else ""
+                else:
+                    result[f.name] = value
+
+            return {
+                "status": "success",
+                "message": f"{self.display_name}配置创建成功",
+                "data": result,
+            }
+        except Exception as e:
+            logger.error(f"创建{self.display_name}配置失败: {e}")
+            return {
+                "status": "error",
+                "message": f"创建{self.display_name}配置失败: {str(e)}",
+            }
+
+    async def update(self, item_id: int, data) -> dict[str, Any]:
+        try:
+            section_name = self._section_name(item_id)
+            config = config_manager.get_config_parser()
+
+            if not config.has_section(section_name):
+                return {
+                    "status": "error",
+                    "message": f"{self.display_name}配置不存在: ID={item_id}",
+                }
+
+            for f in self.fields:
+                value = getattr(data, f.name)
+                if value is None:
+                    continue
+                if f.sensitive:
+                    # 敏感字段：非空且非掩码才更新
+                    if value.strip() and value != "******":
+                        config.set(
+                            section_name,
+                            f.name,
+                            encrypt_if_sensitive(section_name, f.name, value),
+                        )
+                else:
+                    config.set(
+                        section_name, f.name, str(value) if f.kind != "str" else value
+                    )
+
+            await asyncio.to_thread(config_manager._save_config, config)
+            _reload_notification_channels()
+
+            logger.info(f"更新{self.display_name}配置成功: ID={item_id}")
+
+            section_config = config_manager.get_section(section_name)
+            return {
+                "status": "success",
+                "message": f"{self.display_name}配置更新成功",
+                "data": self._read_config(section_config),
+            }
+        except Exception as e:
+            logger.error(f"更新{self.display_name}配置失败: {e}")
+            return {
+                "status": "error",
+                "message": f"更新{self.display_name}配置失败: {str(e)}",
+            }
+
+    async def delete(self, item_id: int) -> dict[str, Any]:
+        try:
+            section_name = self._section_name(item_id)
+            config = config_manager.get_config_parser()
+
+            if not config.has_section(section_name):
+                return {
+                    "status": "error",
+                    "message": f"{self.display_name}配置不存在: ID={item_id}",
+                }
+
+            # 删除配置段（保留其他段的原始 ID，避免破坏通知规则的渠道引用）
+            config.remove_section(section_name)
+
+            await asyncio.to_thread(config_manager._save_config, config)
+            _reload_notification_channels()
+
+            logger.info(f"删除{self.display_name}配置成功: ID={item_id}")
+
+            return {
+                "status": "success",
+                "message": f"{self.display_name}配置删除成功",
+            }
+        except Exception as e:
+            logger.error(f"删除{self.display_name}配置失败: {e}")
+            return {
+                "status": "error",
+                "message": f"删除{self.display_name}配置失败: {str(e)}",
+            }
+
+    async def test(self, item_id: int) -> dict[str, Any]:
+        if self.test_fn is None:
+            return {
+                "status": "error",
+                "message": f"{self.display_name}不支持测试",
+            }
+        try:
+            return await self.test_fn(item_id)
+        except Exception as e:
+            logger.error(f"测试{self.display_name}失败: {e}")
+            return {
+                "status": "error",
+                "message": f"测试{self.display_name}失败: {str(e)}",
+            }
+
+
+# ========== test_fn 工厂：webhook/email 走 notifier，wecom/dingtalk 走 Channel.send ==========
+
+
+async def _test_via_notifier(
+    channel_type: str, id_param: str, item_id: int
+) -> dict[str, Any]:
+    """webhook/email 通过 notifier.test_notification 测试"""
+    notifier = get_notifier()
+    results = await asyncio.to_thread(
+        notifier.test_notification,
+        notification_type=channel_type,
+        **{id_param: item_id},
+    )
+    return {"status": "success", "data": results}
+
+
+def _make_channel_send_test_fn(
+    channel_cls_name: str, section_prefix: str, display_name: str
+):
+    """wecom/dingtalk 通过直接构造 Channel.send 测试"""
+
+    async def test_fn(item_id: int) -> dict[str, Any]:
+        import time
+
+        from ..utils.notifier import channels_impl
+
+        channel_cls = getattr(channels_impl, channel_cls_name)
+        section_name = f"{section_prefix}{item_id}"
+        config = config_manager.get_config_parser()
+        if not config.has_section(section_name):
+            return {
+                "status": "error",
+                "message": f"{display_name}配置不存在: ID={item_id}",
+            }
+
+        cfg = config_manager.get_section(section_name)
+        channel = channel_cls(channel_id=section_name, config=cfg)
+
+        payload = {
+            "title": "🔧 测试通知",
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "anime": "测试番剧",
+            "episode": "S1E1",
+            "user": "test",
+            "source": "test",
+            "error": "",
+        }
+        result = await asyncio.to_thread(channel.send, "mark_success", payload, None)
+
+        return {
+            "status": "success" if result.success else "error",
+            "message": result.message or "测试成功",
+        }
+
+    return test_fn
+
+
+# ========== 5 个渠道的 handler 实例 ==========
+# 字段顺序与 create_model 一致；sensitive 字段会自动加密/掩码
+
+_WEBHOOK_FIELDS = [
+    ChannelField("enabled", kind="bool", default=False),
+    ChannelField("url"),
+    ChannelField("method", default="POST"),
+    ChannelField("headers"),
+    ChannelField("template"),
+    ChannelField("types", default="all"),
+]
+
+_EMAIL_FIELDS = [
+    ChannelField("enabled", kind="bool", default=False),
+    ChannelField("smtp_server"),
+    ChannelField("smtp_port", kind="int", default=587),
+    ChannelField("smtp_username"),
+    ChannelField("smtp_password", sensitive=True),
+    ChannelField("smtp_use_tls", kind="bool", default=True),
+    ChannelField("email_from"),
+    ChannelField("email_to"),
+    ChannelField("email_subject"),
+    ChannelField("template"),
+    ChannelField("types", default="mark_failed"),
+]
+
+_WECOM_FIELDS = [
+    ChannelField("enabled", kind="bool", default=False),
+    ChannelField("key", sensitive=True),
+    ChannelField("msg_type", default="text"),
+    ChannelField("template"),
+    ChannelField("types", default="all"),
+]
+
+_DINGTALK_FIELDS = [
+    ChannelField("enabled", kind="bool", default=False),
+    ChannelField("access_token", sensitive=True),
+    ChannelField("secret", sensitive=True),
+    ChannelField("msg_type", default="text"),
+    ChannelField("template"),
+    ChannelField("types", default="all"),
+]
+
+_RULE_FIELDS = [
+    ChannelField("name"),
+    ChannelField("enabled", kind="bool", default=False),
+    ChannelField("types", default="all"),
+    ChannelField("channels"),
+    ChannelField("template"),
+]
+
+# handler 字典：key 同时用作 get_notification_status 的返回键
+_CHANNEL_HANDLERS: dict[str, ChannelHandler] = {
+    "webhook": ChannelHandler(
+        section_prefix="notify-webhook-",
+        display_name="webhook",
+        fields=_WEBHOOK_FIELDS,
+        create_model=WebhookConfigCreate,
+        update_model=WebhookConfigUpdate,
+        test_fn=lambda id: _test_via_notifier("webhook", "webhook_id", id),
+        label="Webhook",
+    ),
+    "email": ChannelHandler(
+        section_prefix="notify-email-",
+        display_name="邮件",
+        fields=_EMAIL_FIELDS,
+        create_model=EmailConfigCreate,
+        update_model=EmailConfigUpdate,
+        test_fn=lambda id: _test_via_notifier("email", "email_id", id),
+        label="邮件",
+    ),
+    "wecom": ChannelHandler(
+        section_prefix="notify-wecom-",
+        display_name="企业微信",
+        fields=_WECOM_FIELDS,
+        create_model=WeComConfigCreate,
+        update_model=WeComConfigUpdate,
+        test_fn=_make_channel_send_test_fn(
+            "WeChatWorkChannel", "notify-wecom-", "企业微信"
+        ),
+        label="企业微信",
+    ),
+    "dingtalk": ChannelHandler(
+        section_prefix="notify-dingtalk-",
+        display_name="钉钉",
+        fields=_DINGTALK_FIELDS,
+        create_model=DingTalkConfigCreate,
+        update_model=DingTalkConfigUpdate,
+        test_fn=_make_channel_send_test_fn(
+            "DingTalkChannel", "notify-dingtalk-", "钉钉"
+        ),
+        label="钉钉",
+    ),
+    "rule": ChannelHandler(
+        section_prefix="notify-rule-",
+        display_name="通知规则",
+        fields=_RULE_FIELDS,
+        create_model=NotificationRuleCreate,
+        update_model=NotificationRuleUpdate,
+        test_fn=None,  # 通知规则不支持测试
+        label=None,
+    ),
+}
+
+
 @router.post("/notification/test")
 async def test_notification(
     request: NotificationTestRequest,
@@ -189,86 +584,23 @@ async def get_notification_status(
 ) -> dict[str, Any]:
     """获取通知配置状态"""
     try:
-        # 获取webhook配置数量
-        webhook_count = 0
-        webhook_enabled_count = 0
-        for section_name in config_manager.get_config_parser().sections():
-            if section_name.startswith("notify-webhook-"):
-                webhook_count += 1
-                section_config = config_manager.get_section(section_name)
-                if section_config.get("enabled", False):
-                    webhook_enabled_count += 1
-
-        # 获取邮件配置数量
-        email_count = 0
-        email_enabled_count = 0
-        for section_name in config_manager.get_config_parser().sections():
-            if section_name.startswith("notify-email-"):
-                email_count += 1
-                section_config = config_manager.get_section(section_name)
-                if section_config.get("enabled", False):
-                    email_enabled_count += 1
-
-        # 获取企业微信配置数量
-        wecom_count = 0
-        wecom_enabled_count = 0
-        for section_name in config_manager.get_config_parser().sections():
-            if section_name.startswith("notify-wecom-"):
-                wecom_count += 1
-                section_config = config_manager.get_section(section_name)
-                if section_config.get("enabled", False):
-                    wecom_enabled_count += 1
-
-        # 获取钉钉配置数量
-        dingtalk_count = 0
-        dingtalk_enabled_count = 0
-        for section_name in config_manager.get_config_parser().sections():
-            if section_name.startswith("notify-dingtalk-"):
-                dingtalk_count += 1
-                section_config = config_manager.get_section(section_name)
-                if section_config.get("enabled", False):
-                    dingtalk_enabled_count += 1
-
-        # 获取通知规则数量
-        rule_count = 0
-        rule_enabled_count = 0
-        for section_name in config_manager.get_config_parser().sections():
-            if section_name.startswith("notify-rule-"):
-                rule_count += 1
-                section_config = config_manager.get_section(section_name)
-                if section_config.get("enabled", False):
-                    rule_enabled_count += 1
-
-        return {
-            "status": "success",
-            "data": {
-                "webhook": {
-                    "total": webhook_count,
-                    "enabled": webhook_enabled_count,
-                    "configured": webhook_count > 0,
-                },
-                "email": {
-                    "total": email_count,
-                    "enabled": email_enabled_count,
-                    "configured": email_count > 0,
-                },
-                "wecom": {
-                    "total": wecom_count,
-                    "enabled": wecom_enabled_count,
-                    "configured": wecom_count > 0,
-                },
-                "dingtalk": {
-                    "total": dingtalk_count,
-                    "enabled": dingtalk_enabled_count,
-                    "configured": dingtalk_count > 0,
-                },
-                "rule": {
-                    "total": rule_count,
-                    "enabled": rule_enabled_count,
-                    "configured": rule_count > 0,
-                },
-            },
-        }
+        config = config_manager.get_config_parser()
+        sections = config.sections()
+        stats: dict[str, Any] = {}
+        for key, handler in _CHANNEL_HANDLERS.items():
+            total = 0
+            enabled = 0
+            for section_name in sections:
+                if section_name.startswith(handler.section_prefix):
+                    total += 1
+                    if config_manager.get_section(section_name).get("enabled", False):
+                        enabled += 1
+            stats[key] = {
+                "total": total,
+                "enabled": enabled,
+                "configured": total > 0,
+            }
+        return {"status": "success", "data": stats}
     except Exception as e:
         logger.error(f"获取通知状态失败: {e}")
         return {"status": "error", "message": f"获取通知状态失败: {str(e)}"}
@@ -280,32 +612,7 @@ async def get_notification_status(
 @router.get("/notification/webhooks")
 async def get_webhooks(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有webhook配置"""
-    try:
-        webhook_configs = []
-        config = config_manager.get_config_parser()
-
-        for section_name in config.sections():
-            if section_name.startswith("notify-webhook-"):
-                section_config = config_manager.get_section(section_name)
-                webhook_configs.append(
-                    {
-                        "id": section_config.get("id"),
-                        "enabled": section_config.get("enabled", False),
-                        "url": section_config.get("url", ""),
-                        "method": section_config.get("method", "POST"),
-                        "headers": section_config.get("headers", ""),
-                        "template": section_config.get("template", ""),
-                        "types": section_config.get("types", "all"),
-                    }
-                )
-
-        # 按ID排序
-        webhook_configs.sort(key=lambda x: int(x["id"]))
-
-        return {"status": "success", "data": webhook_configs}
-    except Exception as e:
-        logger.error(f"获取webhook配置失败: {e}")
-        return {"status": "error", "message": f"获取webhook配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["webhook"].list_all()
 
 
 @router.post("/notification/webhooks")
@@ -314,56 +621,7 @@ async def create_webhook(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """创建新的webhook配置"""
-    try:
-        config = config_manager.get_config_parser()
-
-        # 新 ID 取现有最大 ID + 1（避免复用已删除的 ID 导致规则引用错位）
-        max_id = 0
-        for section_name in config.sections():
-            if section_name.startswith("notify-webhook-"):
-                section_config = config_manager.get_section(section_name)
-                try:
-                    max_id = max(max_id, int(section_config.get("id", 0)))
-                except (TypeError, ValueError):
-                    continue
-
-        new_id = max_id + 1
-        section_name = f"notify-webhook-{new_id}"
-
-        # 创建新的配置段
-        if not config.has_section(section_name):
-            config.add_section(section_name)
-
-        config.set(section_name, "id", str(new_id))
-        config.set(section_name, "enabled", str(webhook_data.enabled))
-        config.set(section_name, "url", webhook_data.url)
-        config.set(section_name, "method", webhook_data.method)
-        config.set(section_name, "headers", webhook_data.headers)
-        config.set(section_name, "template", webhook_data.template)
-        config.set(section_name, "types", webhook_data.types)
-
-        # 保存配置
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"创建webhook配置成功: ID={new_id}")
-
-        return {
-            "status": "success",
-            "message": "Webhook配置创建成功",
-            "data": {
-                "id": new_id,
-                "enabled": webhook_data.enabled,
-                "url": webhook_data.url,
-                "method": webhook_data.method,
-                "headers": webhook_data.headers,
-                "template": webhook_data.template,
-                "types": webhook_data.types,
-            },
-        }
-    except Exception as e:
-        logger.error(f"创建webhook配置失败: {e}")
-        return {"status": "error", "message": f"创建webhook配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["webhook"].create(webhook_data)
 
 
 @router.put("/notification/webhooks/{webhook_id}")
@@ -373,52 +631,7 @@ async def update_webhook(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """更新webhook配置"""
-    try:
-        section_name = f"notify-webhook-{webhook_id}"
-        config = config_manager.get_config_parser()
-
-        # 检查配置段是否存在
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"Webhook配置不存在: ID={webhook_id}"}
-
-        # 更新配置
-        if webhook_data.enabled is not None:
-            config.set(section_name, "enabled", str(webhook_data.enabled))
-        if webhook_data.url is not None:
-            config.set(section_name, "url", webhook_data.url)
-        if webhook_data.method is not None:
-            config.set(section_name, "method", webhook_data.method)
-        if webhook_data.headers is not None:
-            config.set(section_name, "headers", webhook_data.headers)
-        if webhook_data.template is not None:
-            config.set(section_name, "template", webhook_data.template)
-        if webhook_data.types is not None:
-            config.set(section_name, "types", webhook_data.types)
-
-        # 保存配置
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"更新webhook配置成功: ID={webhook_id}")
-
-        # 返回更新后的配置
-        section_config = config_manager.get_section(section_name)
-        return {
-            "status": "success",
-            "message": "Webhook配置更新成功",
-            "data": {
-                "id": webhook_id,
-                "enabled": section_config.get("enabled", False),
-                "url": section_config.get("url", ""),
-                "method": section_config.get("method", "POST"),
-                "headers": section_config.get("headers", ""),
-                "template": section_config.get("template", ""),
-                "types": section_config.get("types", "all"),
-            },
-        }
-    except Exception as e:
-        logger.error(f"更新webhook配置失败: {e}")
-        return {"status": "error", "message": f"更新webhook配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["webhook"].update(webhook_id, webhook_data)
 
 
 @router.delete("/notification/webhooks/{webhook_id}")
@@ -426,27 +639,7 @@ async def delete_webhook(
     webhook_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """删除webhook配置"""
-    try:
-        section_name = f"notify-webhook-{webhook_id}"
-        config = config_manager.get_config_parser()
-
-        # 检查配置段是否存在
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"Webhook配置不存在: ID={webhook_id}"}
-
-        # 删除配置段（保留其他段的原始 ID，避免破坏通知规则的渠道引用）
-        config.remove_section(section_name)
-
-        # 保存配置
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"删除webhook配置成功: ID={webhook_id}")
-
-        return {"status": "success", "message": "Webhook配置删除成功"}
-    except Exception as e:
-        logger.error(f"删除webhook配置失败: {e}")
-        return {"status": "error", "message": f"删除webhook配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["webhook"].delete(webhook_id)
 
 
 @router.post("/notification/webhooks/{webhook_id}/test")
@@ -454,18 +647,7 @@ async def test_webhook(
     webhook_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """测试指定的webhook配置"""
-    try:
-        notifier = get_notifier()
-        results = await asyncio.to_thread(
-            notifier.test_notification,
-            notification_type="webhook",
-            webhook_id=webhook_id,
-        )
-
-        return {"status": "success", "data": results}
-    except Exception as e:
-        logger.error(f"测试webhook失败: {e}")
-        return {"status": "error", "message": f"测试webhook失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["webhook"].test(webhook_id)
 
 
 # ========== 邮件配置CRUD接口 ==========
@@ -512,38 +694,7 @@ async def get_default_template(
 @router.get("/notification/emails")
 async def get_emails(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有邮件配置"""
-    try:
-        email_configs = []
-        config = config_manager.get_config_parser()
-
-        for section_name in config.sections():
-            if section_name.startswith("notify-email-"):
-                section_config = config_manager.get_section(section_name)
-                email_config = {
-                    "id": section_config.get("id"),
-                    "enabled": section_config.get("enabled", False),
-                    "smtp_server": section_config.get("smtp_server", ""),
-                    "smtp_port": section_config.get("smtp_port", 587),
-                    "smtp_username": section_config.get("smtp_username", ""),
-                    "smtp_password": "******"
-                    if section_config.get("smtp_password")
-                    else "",
-                    "smtp_use_tls": section_config.get("smtp_use_tls", True),
-                    "email_from": section_config.get("email_from", ""),
-                    "email_to": section_config.get("email_to", ""),
-                    "email_subject": section_config.get("email_subject", ""),
-                    "template": section_config.get("template", ""),
-                    "types": section_config.get("types", "mark_failed"),
-                }
-                email_configs.append(email_config)
-
-        # 按ID排序
-        email_configs.sort(key=lambda x: int(x["id"]))
-
-        return {"status": "success", "data": email_configs}
-    except Exception as e:
-        logger.error(f"获取邮件配置失败: {e}")
-        return {"status": "error", "message": f"获取邮件配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["email"].list_all()
 
 
 @router.post("/notification/emails")
@@ -552,72 +703,7 @@ async def create_email(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """创建新的邮件配置"""
-    try:
-        config = config_manager.get_config_parser()
-
-        # 新 ID 取现有最大 ID + 1（避免复用已删除的 ID 导致规则引用错位）
-        max_id = 0
-        for section_name in config.sections():
-            if section_name.startswith("notify-email-"):
-                section_config = config_manager.get_section(section_name)
-                try:
-                    max_id = max(max_id, int(section_config.get("id", 0)))
-                except (TypeError, ValueError):
-                    continue
-
-        new_id = max_id + 1
-        section_name = f"notify-email-{new_id}"
-
-        # 创建新的配置段
-        if not config.has_section(section_name):
-            config.add_section(section_name)
-
-        config.set(section_name, "id", str(new_id))
-        config.set(section_name, "enabled", str(email_data.enabled))
-        config.set(section_name, "smtp_server", email_data.smtp_server)
-        config.set(section_name, "smtp_port", str(email_data.smtp_port))
-        config.set(section_name, "smtp_username", email_data.smtp_username)
-        config.set(
-            section_name,
-            "smtp_password",
-            encrypt_if_sensitive(
-                section_name, "smtp_password", email_data.smtp_password
-            ),
-        )
-        config.set(section_name, "smtp_use_tls", str(email_data.smtp_use_tls))
-        config.set(section_name, "email_from", email_data.email_from)
-        config.set(section_name, "email_to", email_data.email_to)
-        config.set(section_name, "email_subject", email_data.email_subject)
-        config.set(section_name, "template", email_data.template)
-        config.set(section_name, "types", email_data.types)
-
-        # 保存配置
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"创建邮件配置成功: ID={new_id}")
-
-        return {
-            "status": "success",
-            "message": "邮件配置创建成功",
-            "data": {
-                "id": new_id,
-                "enabled": email_data.enabled,
-                "smtp_server": email_data.smtp_server,
-                "smtp_port": email_data.smtp_port,
-                "smtp_username": email_data.smtp_username,
-                "smtp_password": "******" if email_data.smtp_password else "",
-                "smtp_use_tls": email_data.smtp_use_tls,
-                "email_from": email_data.email_from,
-                "email_to": email_data.email_to,
-                "email_subject": email_data.email_subject,
-                "template": email_data.template,
-                "types": email_data.types,
-            },
-        }
-    except Exception as e:
-        logger.error(f"创建邮件配置失败: {e}")
-        return {"status": "error", "message": f"创建邮件配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["email"].create(email_data)
 
 
 @router.put("/notification/emails/{email_id}")
@@ -627,80 +713,7 @@ async def update_email(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """更新邮件配置"""
-    try:
-        section_name = f"notify-email-{email_id}"
-        config = config_manager.get_config_parser()
-
-        # 检查配置段是否存在
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"邮件配置不存在: ID={email_id}"}
-
-        # 更新配置
-        if email_data.enabled is not None:
-            config.set(section_name, "enabled", str(email_data.enabled))
-        if email_data.smtp_server is not None:
-            config.set(section_name, "smtp_server", email_data.smtp_server)
-        if email_data.smtp_port is not None:
-            config.set(section_name, "smtp_port", str(email_data.smtp_port))
-        if email_data.smtp_username is not None:
-            config.set(section_name, "smtp_username", email_data.smtp_username)
-        # 只有当密码不为空且不是掩码时才更新密码
-        if (
-            email_data.smtp_password is not None
-            and email_data.smtp_password.strip()
-            and email_data.smtp_password != "******"
-        ):
-            config.set(
-                section_name,
-                "smtp_password",
-                encrypt_if_sensitive(
-                    section_name, "smtp_password", email_data.smtp_password
-                ),
-            )
-        if email_data.smtp_use_tls is not None:
-            config.set(section_name, "smtp_use_tls", str(email_data.smtp_use_tls))
-        if email_data.email_from is not None:
-            config.set(section_name, "email_from", email_data.email_from)
-        if email_data.email_to is not None:
-            config.set(section_name, "email_to", email_data.email_to)
-        if email_data.email_subject is not None:
-            config.set(section_name, "email_subject", email_data.email_subject)
-        if email_data.template is not None:
-            config.set(section_name, "template", email_data.template)
-        if email_data.types is not None:
-            config.set(section_name, "types", email_data.types)
-
-        # 保存配置
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"更新邮件配置成功: ID={email_id}")
-
-        # 返回更新后的配置
-        section_config = config_manager.get_section(section_name)
-        return {
-            "status": "success",
-            "message": "邮件配置更新成功",
-            "data": {
-                "id": email_id,
-                "enabled": section_config.get("enabled", False),
-                "smtp_server": section_config.get("smtp_server", ""),
-                "smtp_port": section_config.get("smtp_port", 587),
-                "smtp_username": section_config.get("smtp_username", ""),
-                "smtp_password": "******"
-                if section_config.get("smtp_password")
-                else "",
-                "smtp_use_tls": section_config.get("smtp_use_tls", True),
-                "email_from": section_config.get("email_from", ""),
-                "email_to": section_config.get("email_to", ""),
-                "email_subject": section_config.get("email_subject", ""),
-                "template": section_config.get("template", ""),
-                "types": section_config.get("types", "mark_failed"),
-            },
-        }
-    except Exception as e:
-        logger.error(f"更新邮件配置失败: {e}")
-        return {"status": "error", "message": f"更新邮件配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["email"].update(email_id, email_data)
 
 
 @router.delete("/notification/emails/{email_id}")
@@ -708,27 +721,7 @@ async def delete_email(
     email_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """删除邮件配置"""
-    try:
-        section_name = f"notify-email-{email_id}"
-        config = config_manager.get_config_parser()
-
-        # 检查配置段是否存在
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"邮件配置不存在: ID={email_id}"}
-
-        # 删除配置段（保留其他段的原始 ID，避免破坏通知规则的渠道引用）
-        config.remove_section(section_name)
-
-        # 保存配置
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"删除邮件配置成功: ID={email_id}")
-
-        return {"status": "success", "message": "邮件配置删除成功"}
-    except Exception as e:
-        logger.error(f"删除邮件配置失败: {e}")
-        return {"status": "error", "message": f"删除邮件配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["email"].delete(email_id)
 
 
 @router.post("/notification/emails/{email_id}/test")
@@ -736,18 +729,7 @@ async def test_email(
     email_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """测试指定的邮件配置"""
-    try:
-        notifier = get_notifier()
-        results = await asyncio.to_thread(
-            notifier.test_notification,
-            notification_type="email",
-            email_id=email_id,
-        )
-
-        return {"status": "success", "data": results}
-    except Exception as e:
-        logger.error(f"测试邮件失败: {e}")
-        return {"status": "error", "message": f"测试邮件失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["email"].test(email_id)
 
 
 # ========== 企业微信配置CRUD接口 ==========
@@ -756,30 +738,7 @@ async def test_email(
 @router.get("/notification/wecoms")
 async def get_wecoms(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有企业微信配置"""
-    try:
-        wecom_configs = []
-        config = config_manager.get_config_parser()
-
-        for section_name in config.sections():
-            if section_name.startswith("notify-wecom-"):
-                section_config = config_manager.get_section(section_name)
-                wecom_configs.append(
-                    {
-                        "id": section_config.get("id"),
-                        "enabled": section_config.get("enabled", False),
-                        "key": "******" if section_config.get("key") else "",
-                        "msg_type": section_config.get("msg_type", "text"),
-                        "template": section_config.get("template", ""),
-                        "types": section_config.get("types", "all"),
-                    }
-                )
-
-        wecom_configs.sort(key=lambda x: int(x["id"]))
-
-        return {"status": "success", "data": wecom_configs}
-    except Exception as e:
-        logger.error(f"获取企业微信配置失败: {e}")
-        return {"status": "error", "message": f"获取企业微信配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["wecom"].list_all()
 
 
 @router.post("/notification/wecoms")
@@ -788,52 +747,7 @@ async def create_wecom(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """创建新的企业微信配置"""
-    try:
-        config = config_manager.get_config_parser()
-
-        # 新 ID 取现有最大 ID + 1（避免复用已删除的 ID 导致规则引用错位）
-        max_id = 0
-        for section_name in config.sections():
-            if section_name.startswith("notify-wecom-"):
-                section_config = config_manager.get_section(section_name)
-                try:
-                    max_id = max(max_id, int(section_config.get("id", 0)))
-                except (TypeError, ValueError):
-                    continue
-
-        new_id = max_id + 1
-        section_name = f"notify-wecom-{new_id}"
-
-        if not config.has_section(section_name):
-            config.add_section(section_name)
-
-        config.set(section_name, "id", str(new_id))
-        config.set(section_name, "enabled", str(wecom_data.enabled))
-        config.set(section_name, "key", wecom_data.key)
-        config.set(section_name, "msg_type", wecom_data.msg_type)
-        config.set(section_name, "template", wecom_data.template)
-        config.set(section_name, "types", wecom_data.types)
-
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"创建企业微信配置成功: ID={new_id}")
-
-        return {
-            "status": "success",
-            "message": "企业微信配置创建成功",
-            "data": {
-                "id": new_id,
-                "enabled": wecom_data.enabled,
-                "key": "******" if wecom_data.key else "",
-                "msg_type": wecom_data.msg_type,
-                "template": wecom_data.template,
-                "types": wecom_data.types,
-            },
-        }
-    except Exception as e:
-        logger.error(f"创建企业微信配置失败: {e}")
-        return {"status": "error", "message": f"创建企业微信配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["wecom"].create(wecom_data)
 
 
 @router.put("/notification/wecoms/{wecom_id}")
@@ -843,53 +757,7 @@ async def update_wecom(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """更新企业微信配置"""
-    try:
-        section_name = f"notify-wecom-{wecom_id}"
-        config = config_manager.get_config_parser()
-
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"企业微信配置不存在: ID={wecom_id}"}
-
-        if wecom_data.enabled is not None:
-            config.set(section_name, "enabled", str(wecom_data.enabled))
-        if (
-            wecom_data.key is not None
-            and wecom_data.key.strip()
-            and wecom_data.key != "******"
-        ):
-            config.set(
-                section_name,
-                "key",
-                encrypt_if_sensitive(section_name, "key", wecom_data.key),
-            )
-        if wecom_data.msg_type is not None:
-            config.set(section_name, "msg_type", wecom_data.msg_type)
-        if wecom_data.template is not None:
-            config.set(section_name, "template", wecom_data.template)
-        if wecom_data.types is not None:
-            config.set(section_name, "types", wecom_data.types)
-
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"更新企业微信配置成功: ID={wecom_id}")
-
-        section_config = config_manager.get_section(section_name)
-        return {
-            "status": "success",
-            "message": "企业微信配置更新成功",
-            "data": {
-                "id": wecom_id,
-                "enabled": section_config.get("enabled", False),
-                "key": "******" if section_config.get("key") else "",
-                "msg_type": section_config.get("msg_type", "text"),
-                "template": section_config.get("template", ""),
-                "types": section_config.get("types", "all"),
-            },
-        }
-    except Exception as e:
-        logger.error(f"更新企业微信配置失败: {e}")
-        return {"status": "error", "message": f"更新企业微信配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["wecom"].update(wecom_id, wecom_data)
 
 
 @router.delete("/notification/wecoms/{wecom_id}")
@@ -897,25 +765,7 @@ async def delete_wecom(
     wecom_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """删除企业微信配置"""
-    try:
-        section_name = f"notify-wecom-{wecom_id}"
-        config = config_manager.get_config_parser()
-
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"企业微信配置不存在: ID={wecom_id}"}
-
-        config.remove_section(section_name)
-
-        # 保留其他段的原始 ID，避免破坏通知规则的渠道引用
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"删除企业微信配置成功: ID={wecom_id}")
-
-        return {"status": "success", "message": "企业微信配置删除成功"}
-    except Exception as e:
-        logger.error(f"删除企业微信配置失败: {e}")
-        return {"status": "error", "message": f"删除企业微信配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["wecom"].delete(wecom_id)
 
 
 @router.post("/notification/wecoms/{wecom_id}/test")
@@ -923,37 +773,7 @@ async def test_wecom(
     wecom_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """测试指定的企业微信配置"""
-    try:
-        import time
-
-        from ..utils.notifier.channels_impl import WeChatWorkChannel
-
-        section_name = f"notify-wecom-{wecom_id}"
-        config = config_manager.get_config_parser()
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"企业微信配置不存在: ID={wecom_id}"}
-
-        cfg = config_manager.get_section(section_name)
-        channel = WeChatWorkChannel(channel_id=section_name, config=cfg)
-
-        payload = {
-            "title": "🔧 测试通知",
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "anime": "测试番剧",
-            "episode": "S1E1",
-            "user": "test",
-            "source": "test",
-            "error": "",
-        }
-        result = await asyncio.to_thread(channel.send, "mark_success", payload, None)
-
-        return {
-            "status": "success" if result.success else "error",
-            "message": result.message or "测试成功",
-        }
-    except Exception as e:
-        logger.error(f"测试企业微信失败: {e}")
-        return {"status": "error", "message": f"测试企业微信失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["wecom"].test(wecom_id)
 
 
 # ========== 钉钉配置CRUD接口 ==========
@@ -962,33 +782,7 @@ async def test_wecom(
 @router.get("/notification/dingtalks")
 async def get_dingtalks(current_user: dict = Depends(get_current_user_flexible)):
     """获取所有钉钉配置"""
-    try:
-        dingtalk_configs = []
-        config = config_manager.get_config_parser()
-
-        for section_name in config.sections():
-            if section_name.startswith("notify-dingtalk-"):
-                section_config = config_manager.get_section(section_name)
-                dingtalk_configs.append(
-                    {
-                        "id": section_config.get("id"),
-                        "enabled": section_config.get("enabled", False),
-                        "access_token": "******"
-                        if section_config.get("access_token")
-                        else "",
-                        "secret": "******" if section_config.get("secret") else "",
-                        "msg_type": section_config.get("msg_type", "text"),
-                        "template": section_config.get("template", ""),
-                        "types": section_config.get("types", "all"),
-                    }
-                )
-
-        dingtalk_configs.sort(key=lambda x: int(x["id"]))
-
-        return {"status": "success", "data": dingtalk_configs}
-    except Exception as e:
-        logger.error(f"获取钉钉配置失败: {e}")
-        return {"status": "error", "message": f"获取钉钉配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["dingtalk"].list_all()
 
 
 @router.post("/notification/dingtalks")
@@ -997,58 +791,7 @@ async def create_dingtalk(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """创建新的钉钉配置"""
-    try:
-        config = config_manager.get_config_parser()
-
-        # 新 ID 取现有最大 ID + 1（避免复用已删除的 ID 导致规则引用错位）
-        max_id = 0
-        for section_name in config.sections():
-            if section_name.startswith("notify-dingtalk-"):
-                section_config = config_manager.get_section(section_name)
-                try:
-                    max_id = max(max_id, int(section_config.get("id", 0)))
-                except (TypeError, ValueError):
-                    continue
-
-        new_id = max_id + 1
-        section_name = f"notify-dingtalk-{new_id}"
-
-        if not config.has_section(section_name):
-            config.add_section(section_name)
-
-        config.set(section_name, "id", str(new_id))
-        config.set(section_name, "enabled", str(dingtalk_data.enabled))
-        config.set(section_name, "access_token", dingtalk_data.access_token)
-        config.set(
-            section_name,
-            "secret",
-            encrypt_if_sensitive(section_name, "secret", dingtalk_data.secret),
-        )
-        config.set(section_name, "msg_type", dingtalk_data.msg_type)
-        config.set(section_name, "template", dingtalk_data.template)
-        config.set(section_name, "types", dingtalk_data.types)
-
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"创建钉钉配置成功: ID={new_id}")
-
-        return {
-            "status": "success",
-            "message": "钉钉配置创建成功",
-            "data": {
-                "id": new_id,
-                "enabled": dingtalk_data.enabled,
-                "access_token": "******" if dingtalk_data.access_token else "",
-                "secret": "******" if dingtalk_data.secret else "",
-                "msg_type": dingtalk_data.msg_type,
-                "template": dingtalk_data.template,
-                "types": dingtalk_data.types,
-            },
-        }
-    except Exception as e:
-        logger.error(f"创建钉钉配置失败: {e}")
-        return {"status": "error", "message": f"创建钉钉配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["dingtalk"].create(dingtalk_data)
 
 
 @router.put("/notification/dingtalks/{dingtalk_id}")
@@ -1058,66 +801,7 @@ async def update_dingtalk(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """更新钉钉配置"""
-    try:
-        section_name = f"notify-dingtalk-{dingtalk_id}"
-        config = config_manager.get_config_parser()
-
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"钉钉配置不存在: ID={dingtalk_id}"}
-
-        if dingtalk_data.enabled is not None:
-            config.set(section_name, "enabled", str(dingtalk_data.enabled))
-        if (
-            dingtalk_data.access_token is not None
-            and dingtalk_data.access_token.strip()
-            and dingtalk_data.access_token != "******"
-        ):
-            config.set(
-                section_name,
-                "access_token",
-                encrypt_if_sensitive(
-                    section_name, "access_token", dingtalk_data.access_token
-                ),
-            )
-        if (
-            dingtalk_data.secret is not None
-            and dingtalk_data.secret.strip()
-            and dingtalk_data.secret != "******"
-        ):
-            config.set(
-                section_name,
-                "secret",
-                encrypt_if_sensitive(section_name, "secret", dingtalk_data.secret),
-            )
-        if dingtalk_data.msg_type is not None:
-            config.set(section_name, "msg_type", dingtalk_data.msg_type)
-        if dingtalk_data.template is not None:
-            config.set(section_name, "template", dingtalk_data.template)
-        if dingtalk_data.types is not None:
-            config.set(section_name, "types", dingtalk_data.types)
-
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"更新钉钉配置成功: ID={dingtalk_id}")
-
-        section_config = config_manager.get_section(section_name)
-        return {
-            "status": "success",
-            "message": "钉钉配置更新成功",
-            "data": {
-                "id": dingtalk_id,
-                "enabled": section_config.get("enabled", False),
-                "access_token": "******" if section_config.get("access_token") else "",
-                "secret": "******" if section_config.get("secret") else "",
-                "msg_type": section_config.get("msg_type", "text"),
-                "template": section_config.get("template", ""),
-                "types": section_config.get("types", "all"),
-            },
-        }
-    except Exception as e:
-        logger.error(f"更新钉钉配置失败: {e}")
-        return {"status": "error", "message": f"更新钉钉配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["dingtalk"].update(dingtalk_id, dingtalk_data)
 
 
 @router.delete("/notification/dingtalks/{dingtalk_id}")
@@ -1125,25 +809,7 @@ async def delete_dingtalk(
     dingtalk_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """删除钉钉配置"""
-    try:
-        section_name = f"notify-dingtalk-{dingtalk_id}"
-        config = config_manager.get_config_parser()
-
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"钉钉配置不存在: ID={dingtalk_id}"}
-
-        config.remove_section(section_name)
-
-        # 保留其他段的原始 ID，避免破坏通知规则的渠道引用
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"删除钉钉配置成功: ID={dingtalk_id}")
-
-        return {"status": "success", "message": "钉钉配置删除成功"}
-    except Exception as e:
-        logger.error(f"删除钉钉配置失败: {e}")
-        return {"status": "error", "message": f"删除钉钉配置失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["dingtalk"].delete(dingtalk_id)
 
 
 @router.post("/notification/dingtalks/{dingtalk_id}/test")
@@ -1151,37 +817,7 @@ async def test_dingtalk(
     dingtalk_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """测试指定的钉钉配置"""
-    try:
-        import time
-
-        from ..utils.notifier.channels_impl import DingTalkChannel
-
-        section_name = f"notify-dingtalk-{dingtalk_id}"
-        config = config_manager.get_config_parser()
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"钉钉配置不存在: ID={dingtalk_id}"}
-
-        cfg = config_manager.get_section(section_name)
-        channel = DingTalkChannel(channel_id=section_name, config=cfg)
-
-        payload = {
-            "title": "🔧 测试通知",
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "anime": "测试番剧",
-            "episode": "S1E1",
-            "user": "test",
-            "source": "test",
-            "error": "",
-        }
-        result = await asyncio.to_thread(channel.send, "mark_success", payload, None)
-
-        return {
-            "status": "success" if result.success else "error",
-            "message": result.message or "测试成功",
-        }
-    except Exception as e:
-        logger.error(f"测试钉钉失败: {e}")
-        return {"status": "error", "message": f"测试钉钉失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["dingtalk"].test(dingtalk_id)
 
 
 # ========== 通知规则CRUD接口 ==========
@@ -1192,30 +828,7 @@ async def get_notification_rules(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """获取所有通知规则"""
-    try:
-        rules = []
-        config = config_manager.get_config_parser()
-
-        for section_name in config.sections():
-            if section_name.startswith("notify-rule-"):
-                section_config = config_manager.get_section(section_name)
-                rules.append(
-                    {
-                        "id": section_config.get("id"),
-                        "name": section_config.get("name", ""),
-                        "enabled": section_config.get("enabled", False),
-                        "types": section_config.get("types", "all"),
-                        "channels": section_config.get("channels", ""),
-                        "template": section_config.get("template", ""),
-                    }
-                )
-
-        rules.sort(key=lambda x: int(x["id"]))
-
-        return {"status": "success", "data": rules}
-    except Exception as e:
-        logger.error(f"获取通知规则失败: {e}")
-        return {"status": "error", "message": f"获取通知规则失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["rule"].list_all()
 
 
 @router.post("/notification/rules")
@@ -1224,52 +837,7 @@ async def create_notification_rule(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """创建新的通知规则"""
-    try:
-        config = config_manager.get_config_parser()
-
-        # 新 ID 取现有最大 ID + 1（避免复用已删除的 ID）
-        max_id = 0
-        for section_name in config.sections():
-            if section_name.startswith("notify-rule-"):
-                section_config = config_manager.get_section(section_name)
-                try:
-                    max_id = max(max_id, int(section_config.get("id", 0)))
-                except (TypeError, ValueError):
-                    continue
-
-        new_id = max_id + 1
-        section_name = f"notify-rule-{new_id}"
-
-        if not config.has_section(section_name):
-            config.add_section(section_name)
-
-        config.set(section_name, "id", str(new_id))
-        config.set(section_name, "name", rule_data.name)
-        config.set(section_name, "enabled", str(rule_data.enabled))
-        config.set(section_name, "types", rule_data.types)
-        config.set(section_name, "channels", rule_data.channels)
-        config.set(section_name, "template", rule_data.template)
-
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"创建通知规则成功: ID={new_id} name={rule_data.name}")
-
-        return {
-            "status": "success",
-            "message": "通知规则创建成功",
-            "data": {
-                "id": new_id,
-                "name": rule_data.name,
-                "enabled": rule_data.enabled,
-                "types": rule_data.types,
-                "channels": rule_data.channels,
-                "template": rule_data.template,
-            },
-        }
-    except Exception as e:
-        logger.error(f"创建通知规则失败: {e}")
-        return {"status": "error", "message": f"创建通知规则失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["rule"].create(rule_data)
 
 
 @router.put("/notification/rules/{rule_id}")
@@ -1279,45 +847,7 @@ async def update_notification_rule(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """更新通知规则"""
-    try:
-        section_name = f"notify-rule-{rule_id}"
-        config = config_manager.get_config_parser()
-
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"通知规则不存在: ID={rule_id}"}
-
-        if rule_data.name is not None:
-            config.set(section_name, "name", rule_data.name)
-        if rule_data.enabled is not None:
-            config.set(section_name, "enabled", str(rule_data.enabled))
-        if rule_data.types is not None:
-            config.set(section_name, "types", rule_data.types)
-        if rule_data.channels is not None:
-            config.set(section_name, "channels", rule_data.channels)
-        if rule_data.template is not None:
-            config.set(section_name, "template", rule_data.template)
-
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"更新通知规则成功: ID={rule_id}")
-
-        section_config = config_manager.get_section(section_name)
-        return {
-            "status": "success",
-            "message": "通知规则更新成功",
-            "data": {
-                "id": rule_id,
-                "name": section_config.get("name", ""),
-                "enabled": section_config.get("enabled", False),
-                "types": section_config.get("types", "all"),
-                "channels": section_config.get("channels", ""),
-                "template": section_config.get("template", ""),
-            },
-        }
-    except Exception as e:
-        logger.error(f"更新通知规则失败: {e}")
-        return {"status": "error", "message": f"更新通知规则失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["rule"].update(rule_id, rule_data)
 
 
 @router.delete("/notification/rules/{rule_id}")
@@ -1325,81 +855,36 @@ async def delete_notification_rule(
     rule_id: int, current_user: dict = Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """删除通知规则"""
-    try:
-        section_name = f"notify-rule-{rule_id}"
-        config = config_manager.get_config_parser()
-
-        if not config.has_section(section_name):
-            return {"status": "error", "message": f"通知规则不存在: ID={rule_id}"}
-
-        config.remove_section(section_name)
-
-        # 保留其他段的原始 ID，避免引用错位
-        await asyncio.to_thread(config_manager._save_config, config)
-        _reload_notification_channels()
-
-        logger.info(f"删除通知规则成功: ID={rule_id}")
-
-        return {"status": "success", "message": "通知规则删除成功"}
-    except Exception as e:
-        logger.error(f"删除通知规则失败: {e}")
-        return {"status": "error", "message": f"删除通知规则失败: {str(e)}"}
+    return await _CHANNEL_HANDLERS["rule"].delete(rule_id)
 
 
 @router.get("/notification/channels")
 async def get_notification_channels(
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
-    """获取所有通知渠道（用于规则编辑时选择）"""
+    """获取所有通知渠道（用于规则编辑时选择）
+
+    “rule” handler 不参与渠道选择，仅枚举 4 个真实通知渠道。
+    """
     try:
         channels = []
         config = config_manager.get_config_parser()
 
-        for section_name in config.sections():
-            if section_name.startswith("notify-webhook-"):
-                cfg = config_manager.get_section(section_name)
-                channels.append(
-                    {
-                        "id": cfg.get("id"),
-                        "type": "webhook",
-                        "label": f"Webhook #{cfg.get('id', '')}",
-                        "enabled": cfg.get("enabled", False),
-                        "identifier": section_name,
-                    }
-                )
-            elif section_name.startswith("notify-email-"):
-                cfg = config_manager.get_section(section_name)
-                channels.append(
-                    {
-                        "id": cfg.get("id"),
-                        "type": "email",
-                        "label": f"邮件 #{cfg.get('id', '')}",
-                        "enabled": cfg.get("enabled", False),
-                        "identifier": section_name,
-                    }
-                )
-            elif section_name.startswith("notify-wecom-"):
-                cfg = config_manager.get_section(section_name)
-                channels.append(
-                    {
-                        "id": cfg.get("id"),
-                        "type": "wecom",
-                        "label": f"企业微信 #{cfg.get('id', '')}",
-                        "enabled": cfg.get("enabled", False),
-                        "identifier": section_name,
-                    }
-                )
-            elif section_name.startswith("notify-dingtalk-"):
-                cfg = config_manager.get_section(section_name)
-                channels.append(
-                    {
-                        "id": cfg.get("id"),
-                        "type": "dingtalk",
-                        "label": f"钉钉 #{cfg.get('id', '')}",
-                        "enabled": cfg.get("enabled", False),
-                        "identifier": section_name,
-                    }
-                )
+        for key, handler in _CHANNEL_HANDLERS.items():
+            if key == "rule":
+                continue
+            for section_name in config.sections():
+                if section_name.startswith(handler.section_prefix):
+                    cfg = config_manager.get_section(section_name)
+                    channels.append(
+                        {
+                            "id": cfg.get("id"),
+                            "type": key,
+                            "label": f"{handler.label} #{cfg.get('id', '')}",
+                            "enabled": cfg.get("enabled", False),
+                            "identifier": section_name,
+                        }
+                    )
 
         return {"status": "success", "data": channels}
     except Exception as e:
@@ -1416,7 +901,12 @@ async def get_notification_types(
 
     替代原先硬编码在 config.html 中的 13 种类型复选框。
     """
-    from ..core.notification_registry import CATEGORIES, ui_visible_types
+    from ..core.notification_registry import (
+        CATEGORIES,
+        WATCHING_SUMMARY_PREFIX,
+        get_type_meta,
+        ui_visible_types,
+    )
 
     types = [
         {
@@ -1430,6 +920,23 @@ async def get_notification_types(
         }
         for t in ui_visible_types()
     ]
+    # 动态附加追番总结任务的 watching_summary_{name} 类型（每个任务一个可勾选项）
+    summary_meta = get_type_meta(WATCHING_SUMMARY_PREFIX)
+    for job in config_manager.get_summary_configs():
+        name = job.get("name")
+        if not name:
+            continue
+        types.append(
+            {
+                "id": f"{WATCHING_SUMMARY_PREFIX}_{name}",
+                "display_name": f"{summary_meta.display_name} · {name}",
+                "icon": summary_meta.icon,
+                "color": summary_meta.color,
+                "description": summary_meta.description,
+                "is_item_level": summary_meta.is_item_level,
+                "category": summary_meta.category,
+            }
+        )
     # 附加分类定义，前端动态读取，避免前后端重复维护
     categories = [{"id": k, "name": v} for k, v in CATEGORIES.items()]
     return {"status": "success", "data": types, "categories": categories}

@@ -8,7 +8,7 @@ import threading
 from configparser import ConfigParser
 from datetime import date as _date
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .config_schema import (
     all_env_overrides,
@@ -55,6 +55,14 @@ class ConfigManager:
         # 配置缓存
         self._config_cache: Optional[ConfigParser] = None
         self._last_modified = 0
+
+        # 配置变更追踪：版本号自增 + 变更监听回调。
+        # 供各模块的进程级缓存（watching/poster/bangumi-data 等）在配置
+        # 变更后统一失效，与 ``get_dev_http_snapshot`` + BangumiApi 实例
+        # 缓存的思路对齐：读配置的模块负责订阅失效，而不是每次现取。
+        self._config_version = 0
+        self._change_listeners: list[Callable[[], None]] = []
+        self._change_dirty = False
 
         # 初始化配置
         self._load_config()
@@ -148,6 +156,11 @@ class ConfigManager:
             else 0
         )
 
+        # 版本自增并标记待触发变更回调（由锁外的 _fire_pending_changes 统一触发）
+        # getattr 兜底：部分测试绕过 __init__ 构造实例（patch __init__）
+        self._config_version = getattr(self, "_config_version", 0) + 1
+        self._change_dirty = True
+
     def _apply_env_overrides(self, config: ConfigParser) -> None:
         """应用环境变量覆盖（映射来源：SectionMeta.env_overrides）"""
         env_overrides = all_env_overrides()
@@ -177,18 +190,69 @@ class ConfigManager:
         return self._config_cache
 
     def get_config_parser(self) -> ConfigParser:
-        """获取配置对象（线程安全）"""
+        """获取配置对象（线程安全）。
+
+        若检测到配置文件被外部修改，会重载配置并在锁外触发变更回调。
+        """
         with self._lock:
-            return self._get_config_parser_nolock()
+            config = self._get_config_parser_nolock()
+        self._fire_pending_changes()
+        return config
 
     def reload_config(self) -> None:
-        """重新加载配置（线程安全）"""
+        """重新加载配置（线程安全，重载完成后触发变更回调）"""
         with self._lock:
             self._load_config()
+        self._fire_pending_changes()
 
     def reload(self) -> None:
         """重新加载配置（别名）"""
         self.reload_config()
+
+    # ------------------------------------------------------------------
+    # 配置变更回调（供模块级缓存订阅失效）
+    # ------------------------------------------------------------------
+
+    def get_config_version(self) -> int:
+        """当前配置版本号（每次配置重载/保存自增）。
+
+        可用于进程级缓存 key 或只读比较，取到不变量后无需再轮询 mtime。
+        """
+        with self._lock:
+            return getattr(self, "_config_version", 0)
+
+    def register_config_change_listener(self, callback: Callable[[], None]) -> None:
+        """注册配置变更回调：配置重载或保存后触发，用于各模块缓存失效。
+
+        回调在锁外执行且捕获异常（单个回调失败不影响其他回调），
+        但回调内不要做耗时操作。
+        """
+        with self._lock:
+            if callback not in self._change_listeners:
+                self._change_listeners.append(callback)
+
+    def unregister_config_change_listener(self, callback: Callable[[], None]) -> None:
+        """注销配置变更回调。"""
+        with self._lock:
+            if callback in self._change_listeners:
+                self._change_listeners.remove(callback)
+
+    def _fire_pending_changes(self) -> None:
+        """在锁外触发待执行的变更回调（幂等：无未消费变更时直接返回）。
+
+        必须持有锁外的上下文调用，避免回调内部再次获取配置时死锁
+        （threading.Lock 不可重入）。
+        """
+        if not getattr(self, "_change_dirty", False):
+            return
+        with self._lock:
+            listeners = list(getattr(self, "_change_listeners", ()))
+            self._change_dirty = False
+        for cb in listeners:
+            try:
+                cb()
+            except Exception as e:
+                logger.warning(f"配置变更回调执行失败（不影响主流程）: {e}")
 
     def _get_master_secret(self, config: ConfigParser) -> str:
         """从配置中提取 master secret（不加锁，需已持有锁或外部调用）"""
@@ -255,6 +319,7 @@ class ConfigManager:
             stored = encrypt_if_sensitive(section, key, str(value), master=master)
             config.set(section, key, stored)
             self._save_config(config)
+        self._fire_pending_changes()
 
     def set(self, section: str, key: str, value: Any) -> None:
         """设置配置值（别名）"""
@@ -279,8 +344,17 @@ class ConfigManager:
         self._config_cache = config
         self._last_modified = self.active_config_path.stat().st_mtime
 
+        # 保存即配置变更：版本自增并标记待触发变更回调
+        self._config_version = getattr(self, "_config_version", 0) + 1
+        self._change_dirty = True
+
     def get_bangumi_configs(self) -> dict[str, dict[str, Any]]:
-        """获取所有Bangumi配置"""
+        """获取所有 Bangumi 账号配置段（仅迁移用，DB 为唯一真相源）。
+
+        遍历 INI 中 ``bangumi-*`` 段（排除系统功能段），返回有 username+access_token 的段。
+        仅供 ``app.core.accounts._collect_ini_accounts`` 启动迁移使用，运行时请用
+        ``app.core.accounts.list_bangumi_configs``。
+        """
         config = self.get_config_parser()
         bangumi_configs = {}
 
@@ -297,81 +371,27 @@ class ConfigManager:
 
         return bangumi_configs
 
-    def get_user_mappings(self) -> dict[str, str]:
-        """获取用户映射配置（media_server_username 支持逗号分隔多个媒体用户名）"""
-        bangumi_configs = self.get_bangumi_configs()
-        user_mappings: dict[str, str] = {}
-
-        for section_name, cfg in bangumi_configs.items():
-            raw = cfg.get("media_server_username", "")
-            if not raw:
-                continue
-            for name in parse_media_server_username_value(str(raw)):
-                prev = user_mappings.get(name)
-                if prev is not None and prev != section_name:
-                    logger.warning(
-                        "多用户映射中媒体服务器用户名 %r 重复：原指向配置段 %s，现被 %s 覆盖",
-                        name,
-                        prev,
-                        section_name,
-                    )
-                user_mappings[name] = section_name
-
-        return user_mappings
-
-    def get_single_mode_media_usernames(self) -> list[str]:
-        """单用户模式下允许的媒体服务器用户名列表（来自 [bangumi] media_server_username）。"""
-        raw = self.get("bangumi", "media_server_username", fallback="")
-        return parse_media_server_username_value(str(raw) if raw is not None else "")
-
-    def get_active_bangumi_config(
-        self, user_name: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
-        """按 sync.mode 读取指定用户的 Bangumi 账号配置
-
-        single 模式：忽略 user_name，读 [bangumi] 段，返回 username/access_token/private
-        multi 模式：按 user_name 查 [bangumi-*] 段；user_name 为 None 时取首个用户映射
-        无可用配置返回 None
-        """
-        mode = self.get("sync", "mode", fallback="single")
-
-        if mode == "single":
-            return {
-                "username": self.get("bangumi", "username", fallback=""),
-                "access_token": self.get("bangumi", "access_token", fallback=""),
-                "private": self.get("bangumi", "private", fallback=False),
-            }
-
-        if mode == "multi":
-            user_mappings = self.get_user_mappings()
-            bangumi_configs = self.get_bangumi_configs()
-            if user_name is None:
-                # 无指定用户时取首个用户映射对应账号段（用于 API 探测等无用户上下文场景）
-                if not user_mappings:
-                    return None
-                target_section = next(iter(user_mappings.values()))
-            else:
-                target_section = user_mappings.get(user_name)
-                if not target_section or target_section not in bangumi_configs:
-                    logger.error(
-                        f"多用户模式下未找到用户 {user_name} 的bangumi配置映射"
-                    )
-                    return None
-            return bangumi_configs.get(target_section)
-
-        return None
-
     def get_dev_http_snapshot(self) -> dict[str, Any]:
-        """读取 [dev] 段影响 HTTP 请求的 4 字段快照
+        """读取 [dev] 段影响 HTTP 请求的字段快照
 
-        返回 dict 含 script_proxy/ssl_verify/bgm_api_proxy/bgm_next_proxy，
-        默认值与原各处拼装保持一致（""/True/""/""）。
+        返回 dict 含 script_proxy/ssl_verify/bgm_api_proxy/bgm_next_proxy 与
+        ECH 相关字段（ech_mode/ech_doh_url/ech_doh_use_proxy/ech_hosts/ech_ech_config），
+        ECH 默认值与其他层（config_schema / ech.py 常量）保持一致。
         """
         return {
             "script_proxy": self.get("dev", "script_proxy", fallback=""),
             "ssl_verify": self.get("dev", "ssl_verify", fallback=True),
             "bgm_api_proxy": self.get("dev", "bgm_api_proxy", fallback=""),
             "bgm_next_proxy": self.get("dev", "bgm_next_proxy", fallback=""),
+            "ech_mode": self.get("dev", "ech_mode", fallback="off"),
+            "ech_doh_url": self.get(
+                "dev", "ech_doh_url", fallback="https://dns.alidns.com/resolve"
+            ),
+            "ech_doh_use_proxy": self.get("dev", "ech_doh_use_proxy", fallback=False),
+            "ech_hosts": self.get(
+                "dev", "ech_hosts", fallback="bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv"
+            ),
+            "ech_ech_config": self.get("dev", "ech_ech_config", fallback=""),
         }
 
     def _migrate_sync_single_username_to_bangumi(self, config: ConfigParser) -> None:
@@ -725,6 +745,7 @@ class ConfigManager:
                     config.set(section_name, field, str(config_data[field]))
 
             self._save_config(config)
+        self._fire_pending_changes()
 
     def delete_summary_config(self, name: str) -> None:
         """删除 [summary-{name}] 配置节。"""
@@ -734,6 +755,7 @@ class ConfigManager:
             if config.has_section(section_name):
                 config.remove_section(section_name)
                 self._save_config(config)
+        self._fire_pending_changes()
 
     def rename_notification_type(self, old_type: str, new_type: str) -> int:
         """将 webhook/邮件配置中的通知类型从 old_type 替换为 new_type。
@@ -761,33 +783,29 @@ class ConfigManager:
                 updated += 1
             if updated:
                 self._save_config(config)
+        self._fire_pending_changes()
         return updated
 
     # ────────────────────────────────────────────────────────────────────
 
     def get_all_config(self) -> dict[str, dict[str, Any]]:
-        """获取所有配置"""
+        """获取所有配置（Bangumi 账号由 DB 管理，不在此返回）"""
         config = self.get_config_parser()
         result = {}
 
-        # 收集多账号配置
-        multi_accounts = {}
-
         for section_name in config.sections():
+            # 跳过 bangumi-* 账号段（已迁移到 DB，由 /api/bangumi/accounts 管理）
             if section_name.startswith("bangumi-") and section_name not in (
                 _BANGUMI_NON_ACCOUNT_SECTIONS
             ):
-                # 这是多账号配置段，收集到 multi_accounts 中
-                section_config = self.get_section(section_name)
-                multi_accounts[section_name] = section_config
-            else:
-                # 统一键名格式：将连字符转换为下划线
-                normalized_key = section_name.replace("-", "_")
-                result[normalized_key] = self.get_section(section_name)
-
-        # 添加多账号配置到结果中
-        if multi_accounts:
-            result["multi_accounts"] = multi_accounts
+                continue
+            # 跳过遗留单用户段 [bangumi]（账号字段已迁移到 DB，
+            # 避免 decrypt_api_config_payload 解密后明文返回 access_token）
+            if section_name == "bangumi":
+                continue
+            # 统一键名格式：将连字符转换为下划线
+            normalized_key = section_name.replace("-", "_")
+            result[normalized_key] = self.get_section(section_name)
 
         return result
 
@@ -795,23 +813,7 @@ class ConfigManager:
         """保存配置"""
         config = self.get_config_parser()
         self._save_config(config)
-
-    def reload_multi_account_configs(self) -> None:
-        """强制重新加载多账号配置"""
-        # 清除缓存
-        self._config_cache = None
-        self._last_modified = 0
-
-        # 重新加载配置
-        self._load_config()
-
-        # 获取配置以触发日志输出
-        bangumi_configs = self.get_bangumi_configs()
-        user_mappings = self.get_user_mappings()
-
-        logger.info("强制重新加载多账号配置")
-        logger.info(f"加载了 {len(bangumi_configs)} 个bangumi账号配置")
-        logger.info(f"加载了 {len(user_mappings)} 个用户映射配置")
+        self._fire_pending_changes()
 
     def _needs_migration(self) -> bool:
         """检查是否需要执行配置迁移"""
@@ -968,3 +970,30 @@ class ConfigManager:
 
 # 全局配置实例
 config_manager = ConfigManager()
+
+# 可注入钩子：默认返回模块级单例；测试/DI 可通过 set_config_manager 替换。
+# 注意：仅显式调用 get_config_manager() 的消费方会感知替换，
+# 直接 ``from ..core.config import config_manager`` 的代码仍用默认单例。
+_config_manager_override: Optional[ConfigManager] = None
+
+
+def get_config_manager() -> ConfigManager:
+    """获取全局配置管理器（优先返回被注入的实例）。"""
+    global _config_manager_override
+    return (
+        _config_manager_override
+        if _config_manager_override is not None
+        else config_manager
+    )
+
+
+def set_config_manager(instance: ConfigManager) -> None:
+    """替换配置管理器实例（测试/DI 注入）。"""
+    global _config_manager_override
+    _config_manager_override = instance
+
+
+def reset_config_manager() -> None:
+    """复位配置管理器，恢复默认模块级单例。"""
+    global _config_manager_override
+    _config_manager_override = None

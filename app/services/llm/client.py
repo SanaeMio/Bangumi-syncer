@@ -104,7 +104,7 @@ class LLMClient:
                 latency_ms = int((time.time() - t_start) * 1000)
                 response.latency = latency_ms
                 self._log_success(response, job_id=job_id, job_name=job_name)
-                logger.info(
+                logger.debug(
                     f"LLM call: model={response.model} "
                     f"tokens={response.usage.total_tokens if response.usage else 0} "
                     f"latency={response.latency}ms"

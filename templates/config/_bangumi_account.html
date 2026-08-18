@@ -1,81 +1,34 @@
-        <!-- Bangumi账号配置（单用户模式） -->
-        <div class="row" id="single-user-bangumi-section">
+        <!-- Bangumi 账号配置（统一列表，DB 为唯一真相源） -->
+        <div class="row">
             <div class="col-12">
-                <div id="config-section-bgm" class="card mb-4 config-card" data-toc-mode="single">
-                    <div class="card-header py-3">
+                <div id="config-section-bgm" class="card mb-4 config-card">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-person-circle me-2 card-header-icon"></i>
-                            <h6 class="m-0 fw-semibold card-header-title">Bangumi账号配置</h6>
+                            <h6 class="m-0 fw-semibold card-header-title">Bangumi 账号配置</h6>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button"
+                                    class="btn btn-sm btn-primary"
+                                    id="bangumi-oauth-connect">
+                                <i class="bi bi-shield-lock me-1"></i>OAuth 授权
+                            </button>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    onclick="addBangumiAccountRow()">
+                                <i class="bi bi-plus-circle me-1"></i>手动添加
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="bangumi-username" class="form-label fw-semibold">
-                                    <i class="bi bi-person me-1 text-primary"></i>用户名
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="Bangumi 的用户名或 UID。如果设置了用户名，只能填用户名。UID 就是个人资料页里 @123456 或者网址 bgm.tv/user/123456 的数字部分"></i>
-                                </label>
-                                <input type="text"
-                                       class="form-control"
-                                       id="bangumi-username"
-                                       name="bangumi.username"
-                                       placeholder="输入Bangumi用户名或UID">
-                            </div>
-                            <div class="col-md-6">
-                                <label for="bangumi-access-token" class="form-label fw-semibold">
-                                    <i class="bi bi-key me-1 text-primary"></i>访问令牌
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="令牌，注意有效期。生成网址：https://next.bgm.tv/demo/access-token"></i>
-                                    <a href="https://next.bgm.tv/demo/access-token"
-                                       target="_blank"
-                                       class="btn btn-link btn-sm p-0 ms-2 text-decoration-none">
-                                        <i class="bi bi-box-arrow-up-right"></i>
-                                    </a>
-                                </label>
-                                <div class="position-relative">
-                                    <input type="password"
-                                           class="form-control pe-5"
-                                           id="bangumi-access-token"
-                                           name="bangumi.access_token"
-                                           placeholder="输入Bangumi访问令牌">
-                                    <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn"
-                                            type="button"
-                                            id="toggle-token-visibility">
-                                        <i class="bi bi-eye text-muted" id="token-visibility-icon"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">
-                                    <i class="bi bi-eye-slash me-1 text-warning"></i>观看记录仅自己可见
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="观看记录是否仅自己可见。启用后观看记录只有自己能看到，不启用则为公开"></i>
-                                </label>
-                                <div class="form-check form-switch d-flex align-items-center mb-0">
-                                    <input class="form-check-input me-2"
-                                           type="checkbox"
-                                           id="bangumi-private"
-                                           name="bangumi.private">
-                                    <label class="form-check-label" for="bangumi-private">启用</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="bangumi-media-server-username" class="form-label fw-semibold">
-                                    <i class="bi bi-person-check me-1 text-success"></i>媒体服务器用户名
-                                    <i class="bi bi-question-circle ms-1 text-muted"
-                                       data-bs-toggle="tooltip"
-                                       title="Plex/Emby/Jellyfin 中的登录用户名。只同步这些用户产生的观看记录。多个服务器或不同用户名对应同一 Bangumi 账号时，可用英文逗号分隔，例如：plex_user,emby_user"></i>
-                                </label>
-                                <input type="text"
-                                       class="form-control"
-                                       id="bangumi-media-server-username"
-                                       name="bangumi.media_server_username"
-                                       placeholder="多个用户名用英文逗号分隔">
-                            </div>
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            账号通过 OAuth 授权或手动填写添加，保存后即时生效。
+                            仅一个账号时为单用户模式；多个账号时按媒体服务器用户名自动路由。
+                            点击「设为激活」可切换默认账号。
+                        </div>
+                        <div id="bangumi-accounts-container">
+                            <!-- 由 JS 从 /api/bangumi/accounts 加载并渲染 -->
                         </div>
                     </div>
                 </div>

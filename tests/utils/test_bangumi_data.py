@@ -2,6 +2,7 @@
 Bangumi 数据工具测试
 """
 
+import json
 import time
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -1929,6 +1930,222 @@ class TestTmdbMappingMultiSeason:
             assert len(sao) > 3
 
 
+class TestReloadConfigRebuildTmdbMapping:
+    """reload_config 清空映射后首次查询懒重建"""
+
+    def test_reload_config_clears_tmdb_mapping(self):
+        """配置刷新后 TMDB 标题/日期映射被清空"""
+        data = _make_data()
+        data._cache_tmdb_mapping = {"tv/old": "旧标题"}
+        data._cache_tmdb_begin = {"tv/old": "旧日期"}
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            mock_cm.get.return_value = ""
+            data.reload_config()
+            assert data._cache_tmdb_mapping == {}
+            assert data._cache_tmdb_begin == {}
+
+    def test_get_title_by_tmdb_id_lazy_rebuilds_mapping(self):
+        """映射清空后首次查询懒重建标题/日期映射"""
+        data = _make_data()
+        data._cache_tmdb_mapping = {}
+        data._cache_tmdb_begin = {}
+        items = [
+            {
+                "title": "番剧A",
+                "begin": "2026-07-17T00:00:00.000Z",
+                "sites": [{"site": "tmdb", "id": "tv/12345"}],
+            }
+        ]
+        with patch.object(data, "_parse_data", return_value=items):
+            assert data.get_title_by_tmdb_id("tv/12345") == "番剧A"
+            assert data.get_begin_by_tmdb_id("tv/12345") == "2026-07-17T00:00:00.000Z"
+
+
+class TestReloadConfigGranularInvalidation:
+    """reload_config 细粒度触发：仅 bangumi-data 专属配置变化才清空缓存"""
+
+    @staticmethod
+    def _reload_with(data, mock_cm, **overrides):
+        """构造 reload 场景：config_manager.get 返回当前值 + 指定覆盖。"""
+        defaults = {
+            "bangumi-data.data_url": data.data_url,
+            "bangumi-data.local_cache_path": data.local_cache_path,
+            "bangumi-data.use_cache": data.use_cache,
+            "bangumi-data.cache_ttl_days": data.cache_ttl_days,
+            "bangumi-data.http_proxy": data.http_proxy,
+            "dev.script_proxy": "",
+            "dev.ssl_verify": data.ssl_verify,
+            "dev.debug": data.verbose_logging,
+        }
+        for key, value in overrides.items():
+            defaults[key] = value
+
+        def get_side_effect(section, key, fallback=None):
+            return defaults.get(f"{section}.{key}", fallback)
+
+        mock_cm.get.side_effect = get_side_effect
+        return data
+
+    def test_unrelated_config_change_keeps_cache(self):
+        """无关配置（通知/同步等）变化不清空内存缓存与 TMDB 映射"""
+        data = _make_data()
+        data._data_cache = [{"title": "x"}]
+        data._cache_tmdb_mapping = {"tv/1": "旧标题"}
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            self._reload_with(data, mock_cm)  # 全部与旧值一致
+            data.reload_config()
+        assert data._data_cache == [{"title": "x"}]
+        assert data._cache_tmdb_mapping == {"tv/1": "旧标题"}
+        assert data._force_redownload is False
+
+    def test_cache_ttl_change_clears_cache(self):
+        """cache_ttl_days 变化应清空内存缓存与 TMDB 映射"""
+        data = _make_data()
+        data._data_cache = [{"title": "x"}]
+        data._cache_tmdb_mapping = {"tv/1": "旧标题"}
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            self._reload_with(data, mock_cm, **{"bangumi-data.cache_ttl_days": 30})
+            data.reload_config()
+        assert data._data_cache is None
+        assert data._cache_tmdb_mapping == {}
+        assert data._force_redownload is False
+
+    def test_data_url_change_sets_force_redownload(self):
+        """data_url 变化应清空缓存并置位强制重下标记"""
+        data = _make_data()
+        data._data_cache = [{"title": "x"}]
+        with patch("app.utils.bangumi_data.config_manager") as mock_cm:
+            self._reload_with(
+                data,
+                mock_cm,
+                **{"bangumi-data.data_url": "https://mirror.example.com/data.json"},
+            )
+            data.reload_config()
+        assert data._data_cache is None
+        assert data._force_redownload is True
+
+
+class TestForceRedownloadOnUrlChange:
+    """数据源 URL 变更后 _ensure_fresh_data 应强制重下（mtime+TTL 无法感知）"""
+
+    def test_ensure_fresh_data_downloads_when_forced(self):
+        data = _make_data()
+        data._force_redownload = True
+        with (
+            patch.object(data, "_download_data", return_value=True) as mock_dl,
+            patch.object(data, "_is_cache_valid", return_value=True),
+        ):
+            assert data._ensure_fresh_data() is True
+        mock_dl.assert_called_once()
+
+    def test_ensure_fresh_data_clears_flag_after_download(self):
+        data = _make_data()
+        data._force_redownload = True
+        with patch.object(data, "_download_data", return_value=True):
+            data._ensure_fresh_data()
+        assert data._force_redownload is False
+
+    def test_ensure_fresh_data_skips_download_without_flag(self):
+        data = _make_data()
+        data._force_redownload = False
+        with (
+            patch.object(data, "_download_data") as mock_dl,
+            patch.object(data, "_is_cache_valid", return_value=True),
+        ):
+            data._ensure_fresh_data()
+        mock_dl.assert_not_called()
+
+
+class TestParseDataSymmetricRebuild:
+    """_parse_data 缓存 miss 时对称重建标题索引与 TMDB 映射"""
+
+    def test_parse_data_miss_rebuilds_tmdb_mapping(self, tmp_path):
+        data = _make_data()
+        data._data_cache = None
+        cache_file = tmp_path / "data.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "title": "番剧A",
+                            "begin": "2026-07-17T00:00:00.000Z",
+                            "sites": [{"site": "tmdb", "id": "tv/12345"}],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        data.local_cache_path = str(cache_file)
+        data.use_cache = True
+        with patch.object(data, "_ensure_fresh_data"):
+            results = list(data._parse_data())
+        assert len(results) == 1
+        # 对称重建：解析完成后 TMDB 映射已恢复（无需等首次查询）
+        assert data._cache_tmdb_mapping.get("tv/12345") == "番剧A"
+        assert data._cache_tmdb_begin.get("tv/12345") == "2026-07-17T00:00:00.000Z"
+
+
+class TestEnsureTmdbMappingConcurrency:
+    """_ensure_tmdb_mapping 双重检查锁防止并发重复构建"""
+
+    def test_concurrent_ensure_builds_once(self):
+        data = _make_data()
+        data._cache_tmdb_mapping = {}
+        data._data_cache = [{"title": "x"}]
+
+        import threading
+
+        barrier = threading.Barrier(4)
+        results = []
+
+        def worker():
+            barrier.wait()
+            results.append(data._ensure_tmdb_mapping())
+
+        def fake_build():
+            # 模拟构建完成：填充映射，使其余线程在锁外直接短路
+            data._cache_tmdb_mapping["tv/x"] = "x"
+
+        with patch.object(data, "_build_tmdb_mapping", side_effect=fake_build) as mb:
+            threads = [threading.Thread(target=worker) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        assert mb.call_count == 1
+        assert len(results) == 4
+
+    def test_ensure_parses_when_data_cache_empty(self, tmp_path):
+        """数据缓存缺失时 _ensure_tmdb_mapping 触发 _parse_data（对称重建）"""
+        data = _make_data()
+        data._cache_tmdb_mapping = {}
+        data._data_cache = None
+        cache_file = tmp_path / "data.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "title": "番剧A",
+                            "begin": "2026-07-17T00:00:00.000Z",
+                            "sites": [{"site": "tmdb", "id": "tv/12345"}],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        data.local_cache_path = str(cache_file)
+        data.use_cache = True
+        with patch.object(data, "_ensure_fresh_data"):
+            data._ensure_tmdb_mapping()
+        # _parse_data 被消费后对称重建已填充映射
+        assert data._cache_tmdb_mapping.get("tv/12345") == "番剧A"
+        assert data._data_cache is not None
+
+
 class TestFindBangumiCandidates:
     """find_bangumi_candidates 候选回传测试"""
 
@@ -2008,3 +2225,211 @@ class TestFindBangumiCandidates:
         assert result[0]["id"] == "111"  # exact 优先
         assert result[0]["score"] == 1.0
         assert result[1]["id"] == "222"  # partial 次之
+
+
+# ===== 以下自 test_bangumi_data_comprehensive.py / _internals.py 并入的独有用例 =====
+
+
+class TestBangumiDataComprehensiveMerged:
+    """自 test_bangumi_data_comprehensive.py 并入的强断言用例。"""
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_optimized_date_override(
+        self, mock_parse_data, mock_preload
+    ):
+        """日期择优机制：完全匹配的日期差距过大时，采用日期接近的部分匹配。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        mock_parse_data.return_value = [
+            {
+                "title": "玉响",
+                "titleTranslate": {"zh-Hans": ["玉响"]},
+                "begin": "2010-11-26",
+                "sites": [{"site": "bangumi", "id": "8452"}],
+            },
+            {
+                "title": "たまゆら～hitotose～",
+                "titleTranslate": {"zh-Hans": ["玉响～hitotose～", "玉响～1年～"]},
+                "begin": "2011-10-03",
+                "sites": [{"site": "bangumi", "id": "18605"}],
+            },
+        ]
+        result = data._find_bangumi_id_optimized(
+            title="玉响", ori_title="", release_date="2011-10-02", season=1
+        )
+        assert result is not None
+        assert result[0] == "18605"
+        assert result[1] == "玉响～hitotose～"
+        assert result[2] is True
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_date_override_rejected_by_safety_lock(
+        self, mock_parse_data, mock_preload
+    ):
+        """日期择优的安全校验：日期接近但名称完全不包含时，拒绝采用该匹配条目。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        mock_parse_data.return_value = [
+            {
+                "title": "魔法少女まどか☆マギカ",
+                "titleTranslate": {"zh-Hans": ["魔法少女小圆"]},
+                "begin": "2011-01-07",
+                "sites": [{"site": "bangumi", "id": "10001"}],
+            },
+            {
+                "title": "Fate/kaleid liner プリズマ☆イリヤ",
+                "titleTranslate": {"zh-Hans": ["魔法少女伊莉雅"]},
+                "begin": "2013-07-13",
+                "sites": [{"site": "bangumi", "id": "90009"}],
+            },
+        ]
+        result = data._find_bangumi_id_optimized(
+            title="魔法少女小圆", ori_title="", release_date="2013-07-12", season=1
+        )
+        assert result is not None
+        assert result[0] == "10001"
+        assert result[1] == "魔法少女小圆"
+        assert result[2] is False
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_ori_title_without_zh_hans(
+        self, mock_parse_data, mock_preload
+    ):
+        """条目无简中翻译时，仍可用 ori_title 与日文 title 精确匹配。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        mock_parse_data.return_value = [
+            {
+                "title": "劇場版サンプル映画",
+                "begin": "2020-03-15",
+                "sites": [{"site": "bangumi", "id": "123456"}],
+            },
+        ]
+        result = data.find_bangumi_id(
+            title="某中文片名",
+            ori_title="劇場版サンプル映画",
+            release_date="2020-03-15",
+            season=1,
+        )
+        assert result is not None
+        assert result[0] == "123456"
+        assert result[1] == "劇場版サンプル映画"
+
+    def test_calculate_match_score(self):
+        """计算匹配分数返回数值。"""
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        item = {"name": "Test", "name_cn": "测试"}
+        result = data._calculate_match_score(item, "测试", "Test")
+        assert isinstance(result, (int, float))
+
+
+class TestBangumiDataCacheHelpersMerged:
+    """自 test_bangumi_data_internals.py 并入的缓存/下载边界用例。"""
+
+    def test_is_cache_valid_false_when_missing(self):
+        from unittest.mock import patch
+
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        with patch("os.path.exists", return_value=False):
+            assert data._is_cache_valid() is False
+
+    def test_is_cache_valid_false_on_mtime_error(self):
+        from unittest.mock import patch
+
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        with patch("os.path.exists", return_value=True):
+            with patch("os.path.getmtime", side_effect=OSError("no mtime")):
+                assert data._is_cache_valid() is False
+
+    def test_download_data_returns_false_on_request_failure(self):
+        from unittest.mock import patch
+
+        import httpx
+
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        with patch(
+            "app.utils.bangumi_data._request_with_retry",
+            side_effect=httpx.HTTPError("fail"),
+        ):
+            assert data._download_data() is False
+
+
+@patch("app.utils.bangumi_data.time.sleep")
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_raises_after_exhausted(mock_client_cls, _sleep):
+
+    import httpx
+    import pytest
+
+    from app.utils import bangumi_data
+
+    mock_client = mock_client_cls.return_value
+    mock_client.request.side_effect = httpx.ConnectError("down")
+    with pytest.raises(httpx.ConnectError):
+        bangumi_data._request_with_retry(
+            "https://example.test/data.json", max_retries=1, ssl_verify=True
+        )
+    assert mock_client.request.call_count == 2
+
+
+@patch("app.utils.bangumi_data.time.sleep")
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_connection_error_then_success(
+    mock_client_cls, _sleep
+):
+    from unittest.mock import MagicMock
+
+    import httpx
+
+    from app.utils import bangumi_data
+
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.raise_for_status = MagicMock()
+    ok.elapsed.total_seconds.return_value = 0.01
+    ok.headers = {}
+    ok.text = ""
+    mock_client = mock_client_cls.return_value
+    mock_client.request.side_effect = [httpx.ConnectError("down"), ok]
+    out = bangumi_data._request_with_retry(
+        "https://example.test/retry.json", max_retries=2, ssl_verify=True
+    )
+    assert out.status_code == 200
+    assert mock_client.request.call_count == 2
+
+
+@patch("app.utils.bangumi_data.time.sleep")
+@patch("app.utils.bangumi_data.httpx.Client")
+def test_module_request_with_retry_ssl_verify_false_sets_warnings(
+    mock_client_cls, _sleep
+):
+    from unittest.mock import MagicMock
+
+    from app.utils import bangumi_data
+
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.raise_for_status = MagicMock()
+    ok.elapsed.total_seconds.return_value = 0.01
+    ok.headers = {}
+    ok.text = ""
+    mock_client = mock_client_cls.return_value
+    mock_client.request.return_value = ok
+    bangumi_data._request_with_retry(
+        "https://example.test/x", max_retries=0, ssl_verify=False
+    )
+    mock_client_cls.assert_called_once()

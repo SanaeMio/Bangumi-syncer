@@ -19,6 +19,7 @@ class TestNonAccountBangumiSections:
             "bangumi-mapping",
             "bangumi-archive",
             "bangumi-replay",
+            "bangumi-oauth",
         }
 
     def test_excludes_account_sections(self):
@@ -57,12 +58,13 @@ class TestEnvOverrides:
         overrides = config_schema.all_env_overrides()
         assert overrides[("dev", "script_proxy")] == "HTTP_PROXY"
         assert overrides[("dev", "debug")] == "DEBUG_MODE"
+        assert overrides[("dev", "log_level")] == "LOG_LEVEL"
         assert overrides[("web", "base_path")] == "APPLICATION_ROOT"
 
     def test_count_matches_original(self):
-        """原硬编码共 14 条映射"""
+        """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条、log_level 共 1 条"""
         overrides = config_schema.all_env_overrides()
-        assert len(overrides) == 14
+        assert len(overrides) == 17
 
 
 class TestIsSensitiveField:
@@ -259,6 +261,23 @@ class TestFieldMeta:
     def test_auth_default_username(self):
         assert config_schema.field_default("auth", "username") == "admin"
 
+    def test_dev_ech_fields_registered(self):
+        """[dev] 段 5 个 ECH 字段全部登记（前端表单依赖 schema 驱动回填）。"""
+        meta = config_schema.SECTIONS["dev"]
+        names = {f.name for f in meta.fields}
+        assert {
+            "ech_mode",
+            "ech_doh_url",
+            "ech_doh_use_proxy",
+            "ech_hosts",
+            "ech_ech_config",
+        } <= names
+        assert config_schema.field_default("dev", "ech_ech_config") == ""
+        assert (
+            config_schema.field_default("dev", "ech_doh_url")
+            == "https://dns.alidns.com/resolve"
+        )
+
     def test_auth_default_session_timeout(self):
         assert config_schema.field_default("auth", "session_timeout") == 3600
 
@@ -295,8 +314,9 @@ class TestFieldMeta:
         assert config_schema.field_default("bangumi-replay", "replay_batch_size") == 20
         assert config_schema.field_default("bangumi-replay", "max_attempts") == 50
 
-    def test_sync_mode_default(self):
-        assert config_schema.field_default("sync", "mode") == "single"
+    def test_sync_match_confidence_threshold_default(self):
+        """功能三：置信度阈值默认 0.6（0~1 小数）。"""
+        assert config_schema.field_default("sync", "match_confidence_threshold") == 0.6
 
     def test_dev_retention_default(self):
         assert config_schema.field_default("dev", "sync_records_retention_days") == 0
@@ -354,20 +374,21 @@ class TestLooseTrueFields:
     def test_includes_archive_enabled(self):
         assert "bangumi_archive.enabled" in config_schema.loose_true_fields()
 
+    def test_includes_archive_use_bktree(self):
+        assert "bangumi_archive.use_bktree" in config_schema.loose_true_fields()
+
     def test_uses_underscore_section_name(self):
         for path in config_schema.loose_true_fields():
             assert "-" not in path.split(".")[0], f"路径含连字符: {path}"
 
     def test_count_matches_legacy(self):
-        """原硬编码共 4 个 loose_true 字段"""
-        assert len(config_schema.loose_true_fields()) == 4
+        """原硬编码 4 个 loose_true 字段；ECH 改造新增 dev.ech_doh_use_proxy 第 5 个；
+        archive BK-tree 开关新增 bangumi_archive.use_bktree 第 6 个"""
+        assert len(config_schema.loose_true_fields()) == 6
 
 
 class TestConfigDefaults:
     """config_defaults() 派生（替代 CONFIG_DEFAULTS）"""
-
-    def test_includes_sync_mode(self):
-        assert config_schema.config_defaults()["sync"]["mode"] == "single"
 
     def test_includes_bangumi_data_defaults(self):
         cd = config_schema.config_defaults()
@@ -402,6 +423,8 @@ class TestConfigDefaults:
         assert "enabled" not in cd.get("feiniu", {})
         # bangumi_archive.enabled 是 loose_true，不应在 config_defaults
         assert "enabled" not in cd.get("bangumi_archive", {})
+        # bangumi_archive.use_bktree 是 loose_true，不应在 config_defaults
+        assert "use_bktree" not in cd.get("bangumi_archive", {})
 
     def test_uses_underscore_section_keys(self):
         """所有 section 键用下划线形式（匹配前端 form name）"""

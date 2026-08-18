@@ -4,8 +4,61 @@
 {% block page_title %}Trakt.tv 配置{% endblock %}
 {% block content %}
     <p class="app-page-intro">配置 Trakt.tv 数据同步到 Bangumi</p>
-    <!-- API 配置卡片 -->
+    <!-- 凭证模式卡片 -->
     <div class="card mb-4">
+        <div class="card-header py-3">
+            <h6 class="mb-0 card-header-title">
+                <i class="bi bi-shield-lock me-2 card-header-icon"></i>凭证模式
+            </h6>
+        </div>
+        <div class="card-body">
+            <form id="auth-mode-form">
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <label class="form-label">选择凭证模式</label>
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="radio"
+                                   name="auth_type"
+                                   id="auth-type-oauth"
+                                   value="oauth">
+                            <label class="form-check-label" for="auth-type-oauth">
+                                API 应用
+                                <span class="text-muted small">（推荐，令牌自动续期）</span>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="radio"
+                                   name="auth_type"
+                                   id="auth-type-bearer"
+                                   value="bearer">
+                            <label class="form-check-label" for="auth-type-bearer">
+                                Bearer Token
+                                <span class="text-muted small">（从浏览器粘贴，自动续期）</span>
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            两种凭证互斥且数据域不同（API 应用走 api.trakt.tv，Bearer 走
+                            apiz.trakt.tv），切换需提供对应模式的新凭证，不能复用另一模式的 token：
+                            API 应用模式需先在「API 配置」卡片填写应用凭证后点击「授权 Trakt」重新授权；
+                            Bearer 模式需在下方「Bearer 凭证」卡片填写凭证（或「通过邮箱登录」）后保存。
+                            未保存就切换 radio 不会改变已保存的模式。
+                        </div>
+                        <div id="auth-mode-hint"
+                             class="alert alert-warning alert-sm small mt-2 mb-0 d-none"></div>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <button type="submit" class="btn btn-primary" disabled>
+                        <i class="bi bi-save me-1"></i>保存凭证模式
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- API 配置卡片（仅 API 应用模式下显示） -->
+    <div class="card mb-4 d-none" id="api-config-card">
         <div class="card-header py-3">
             <h6 class="mb-0 card-header-title">
                 <i class="bi bi-key me-2 card-header-icon"></i>API 配置
@@ -30,9 +83,8 @@
                                class="form-control"
                                id="client-secret"
                                name="client_secret"
-                               placeholder="从 trakt.tv/oauth/applications 获取"
-                               required>
-                        <div class="form-text">在 Trakt.tv 创建应用获取的 Client Secret</div>
+                               placeholder="从 trakt.tv/oauth/applications 获取">
+                        <div class="form-text">在 Trakt.tv 创建应用获取的 Client Secret（已配置时留空表示不修改）</div>
                     </div>
                 </div>
                 <div class="row mb-3">
@@ -50,6 +102,83 @@
                 <div class="text-end">
                     <button type="submit" class="btn btn-primary" disabled>
                         <i class="bi bi-save me-1"></i>保存 API 配置
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Bearer 凭证卡片（仅 Bearer 模式下显示） -->
+    <div class="card mb-4 d-none" id="bearer-cred-card">
+        <div class="card-header py-3">
+            <h6 class="mb-0 card-header-title">
+                <i class="bi bi-key me-2 card-header-icon"></i>Bearer 凭证
+            </h6>
+        </div>
+        <div class="card-body">
+            <form id="bearer-cred-form">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="bearer-refresh-token" class="form-label">Refresh Token</label>
+                        <input type="password"
+                               class="form-control"
+                               id="bearer-refresh-token"
+                               name="refresh_token"
+                               placeholder="粘贴 refresh_token（32 字符）"
+                               autocomplete="off"
+                               required>
+                        <div class="form-text">
+                            只需 <strong>Refresh Token</strong>：保存时后端会用它验证并旋转刷新，
+                            自动换取新的 access/refresh。不会回显；已配置时留空表示不修改。
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div id="bearer-status-info" class="small"></div>
+                        <div class="mt-2">
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm"
+                                    id="email-login-btn"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#email-login-modal">
+                                <i class="bi bi-box-arrow-in-right me-1"></i>通过邮箱登录
+                            </button>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-outline-secondary btn-sm"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#bearer-help">
+                                <i class="bi bi-question-circle me-1"></i>如何获取 token？
+                            </button>
+                        </div>
+                        <div class="collapse mt-2" id="bearer-help">
+                            <div class="small text-muted border rounded p-2">
+                                <ol class="mb-2 ps-3">
+                                    <li>
+                                        用浏览器登录 <a href="https://app.trakt.tv" target="_blank" rel="noopener">app.trakt.tv</a>
+                                    </li>
+                                    <li>按 F12 打开开发者工具 → Application → Local Storage</li>
+                                    <li>
+                                        展开 <code>https://auth.trakt.tv</code>，找到
+                                        <code>oidc.user:https://auth.trakt.tv:201dc70c...</code> 键
+                                    </li>
+                                    <li>
+                                        复制其中的 <code>refresh_token</code> 粘贴到上方输入框并保存
+                                    </li>
+                                </ol>
+                                <div class="mb-0">保存时后端会立即验证并旋转刷新凭证（refresh 为旋转式，旧值作废）。</div>
+                            </div>
+                        </div>
+                        <div class="alert alert-warning alert-sm small mt-2 mb-2">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            <strong>保存会立即旋转 refresh_token：</strong>你刚从浏览器复制的那份
+                            refresh_token 会在保存瞬间作废（Trakt 官网会话也可能被踢下线），
+                            保存成功后请使用系统自动保存的新凭证。
+                        </div>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <button type="submit" class="btn btn-primary" disabled>
+                        <i class="bi bi-save me-1"></i>保存 Bearer 凭证
                     </button>
                 </div>
             </form>
@@ -295,6 +424,76 @@
                             <button class="btn btn-outline-secondary ms-2" data-bs-dismiss="modal">取消</button>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 邮箱登录弹窗 -->
+    <div class="modal fade"
+         id="email-login-modal"
+         tabindex="-1"
+         aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title">
+                        <i class="bi bi-envelope me-2"></i>Trakt 邮箱登录
+                    </h6>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 步骤 1：输入邮箱 -->
+                    <div id="email-login-step-1">
+                        <p class="text-muted small mb-3">
+                            输入 Trakt 账号邮箱，我们将发送一封含 6 位验证码的登录邮件（5 分钟内有效）。
+                            若该邮箱尚未注册 Trakt 账号，将自动创建。
+                        </p>
+                        <div class="mb-3">
+                            <label for="email-login-email" class="form-label">邮箱地址</label>
+                            <input type="email"
+                                   class="form-control"
+                                   id="email-login-email"
+                                   placeholder="you@example.com"
+                                   autocomplete="off">
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-primary" id="email-login-send-btn">
+                                <i class="bi bi-send me-1"></i>发送验证码
+                            </button>
+                        </div>
+                    </div>
+                    <!-- 步骤 2：输入验证码 -->
+                    <div id="email-login-step-2" class="d-none">
+                        <p class="text-muted small mb-3">
+                            验证码已发送至 <strong id="email-login-sent-to"></strong>，请查收邮件并输入。
+                        </p>
+                        <div class="mb-3">
+                            <label for="email-login-otp" class="form-label">6 位验证码</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="email-login-otp"
+                                   placeholder="123456"
+                                   maxlength="6"
+                                   inputmode="numeric"
+                                   autocomplete="one-time-code">
+                        </div>
+                        <div class="text-end">
+                            <button type="button"
+                                    class="btn btn-outline-secondary me-2"
+                                    id="email-login-resend-btn"
+                                    disabled>
+                                <i class="bi bi-arrow-clockwise me-1"></i>重新发送
+                            </button>
+                            <button type="button" class="btn btn-primary" id="email-login-submit-btn">
+                                <i class="bi bi-box-arrow-in-right me-1"></i>登录并保存
+                            </button>
+                        </div>
+                    </div>
+                    <!-- 错误提示 -->
+                    <div id="email-login-error" class="alert alert-danger d-none mt-3 mb-0"></div>
                 </div>
             </div>
         </div>

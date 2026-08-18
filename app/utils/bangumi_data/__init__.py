@@ -14,6 +14,7 @@ _request_with_retry}。
 
 from __future__ import annotations
 
+import threading
 import time  # noqa: F401
 
 # ===== 重新导出以兼容测试 patch 路径 =====
@@ -21,6 +22,7 @@ import httpx  # noqa: F401
 import ijson  # noqa: F401
 
 from ...core.config import config_manager
+from ...core.logging import logger
 from ._http import _BufferedResponse, _request_with_retry  # noqa: F401
 from .cache import CacheMixin
 from .index import IndexMixin
@@ -64,6 +66,10 @@ class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
         self._cache_tmdb_begin: dict[str, str] = {}
         # 精确匹配索引：title → [item]，加速常用查询
         self._title_index: dict[str, list[dict]] = {}
+        # TMDB 映射/索引构建互斥锁（防并发重建重复解析与交错写入）
+        self._build_lock = threading.Lock()
+        # 数据源 URL 变更标记：缓存文件有效性只看 mtime+TTL，改源后强制重下
+        self._force_redownload = False
 
         # 启动时检查缓存，如果缺少则下载
         self._check_and_download_cache_on_startup()
@@ -77,6 +83,65 @@ class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
         # 启动时构建标题精确匹配索引
         self._build_title_index()
 
+    def reload_config(self) -> None:
+        """配置变更后重读 bangumi-data 相关配置。
+
+        由 config_manager 的变更监听触发（改配置无需重启生效），
+        与 BangumiArchive.reload_config 的语义一致；重读失败时保留旧值。
+
+        细粒度触发：仅当 bangumi-data 专属配置（数据源 URL/缓存路径/缓存开关/
+        TTL）实际变化时才清空内存缓存与索引；无关配置（通知、同步等）变更
+        只重读字段，避免每次保存配置都触发全量重建风暴。
+        """
+        old_data_url = self.data_url
+        old_local_cache_path = self.local_cache_path
+        old_use_cache = self.use_cache
+        old_cache_ttl_days = self.cache_ttl_days
+        try:
+            self.data_url = config_manager.get(
+                "bangumi-data",
+                "data_url",
+                fallback="https://unpkg.com/bangumi-data@0.3/dist/data.json",
+            )
+            self.local_cache_path = config_manager.get(
+                "bangumi-data",
+                "local_cache_path",
+                fallback="./bangumi_data_cache.json",
+            )
+            self.http_proxy = config_manager.get(
+                "bangumi-data",
+                "http_proxy",
+                fallback=config_manager.get("dev", "script_proxy", fallback=""),
+            )
+            self.ssl_verify = config_manager.get("dev", "ssl_verify", fallback=True)
+            self.use_cache = config_manager.get(
+                "bangumi-data", "use_cache", fallback=True
+            )
+            self.cache_ttl_days = config_manager.get(
+                "bangumi-data", "cache_ttl_days", fallback=7
+            )
+            self.verbose_logging = config_manager.get("dev", "debug", fallback=False)
+        except Exception as e:
+            logger.warning(f"bangumi-data 配置重读失败（保留旧值）: {e}")
+        data_cfg_changed = (
+            self.data_url != old_data_url
+            or self.local_cache_path != old_local_cache_path
+            or self.use_cache != old_use_cache
+            or self.cache_ttl_days != old_cache_ttl_days
+        )
+        if data_cfg_changed:
+            # 清空内存缓存，下次访问按新配置重新加载
+            self.clear_cache()
+            self._cache_tmdb_mapping.clear()
+            self._cache_tmdb_begin.clear()
+            if self.data_url != old_data_url:
+                # 缓存文件有效性检查只看 mtime+TTL，改数据源 URL 需强制重下
+                self._force_redownload = True
+        logger.info("bangumi-data 已按最新配置刷新")
+
 
 # 全局 bangumi_data 实例
 bangumi_data = BangumiData()
+
+# 配置变更（[bangumi-data] / [dev] 等）时刷新配置与缓存，无需重启生效
+config_manager.register_config_change_listener(bangumi_data.reload_config)

@@ -77,7 +77,6 @@ def _main_lifespan_mocks(**replace: object):
         "app.main.startup_info.print_error": {},
         "app.main.startup_info.print_startup_complete": {},
         "app.main.config_manager.get_bangumi_configs": {"return_value": {}},
-        "app.main.config_manager.get_user_mappings": {"return_value": {}},
         "app.main.mapping_service.get_all_mappings": {"return_value": {}},
         "app.main.ensure_feiniu_startup_watermark": {},
         "app.main.database_manager.cleanup_pending_sync_queue": {},
@@ -193,3 +192,71 @@ def test_main_startup_retention_defaults_to_no_cleanup():
 
     mock_get_config.assert_any_call("dev", "sync_records_retention_days", 0)
     mock_cleanup.assert_called_once_with(0)
+
+
+class TestCspHeader:
+    """CSP 头构建：默认放行 + 图片反代白名单 / 注入防护"""
+
+    @pytest.fixture(autouse=True)
+    def _no_proxy(self):
+        with patch(
+            "app.main.config_manager.get",
+            return_value="",
+        ):
+            yield
+
+    def test_default_img_src(self):
+        from app.main import _build_csp_header
+
+        header = _build_csp_header()
+        assert "img-src 'self' data: https://*.lain.bgm.tv; " in header
+        assert "default-src 'self'; " in header
+        assert header.endswith("base-uri 'self'")
+
+    def test_proxy_domain_allowed(self):
+        from app.main import _build_csp_header
+
+        with patch(
+            "app.main.config_manager.get",
+            return_value="https://img.example.com",
+        ):
+            header = _build_csp_header()
+        assert "https://img.example.com" in header
+
+    def test_proxy_with_port_allowed(self):
+        from app.main import _build_csp_header
+
+        with patch(
+            "app.main.config_manager.get",
+            return_value="http://192.168.1.10:8123",
+        ):
+            header = _build_csp_header()
+        assert "http://192.168.1.10:8123" in header
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "https://a.com; default-src *",
+            "https://a.com'",
+            "https://user:pass@a.com",
+            "https://a.com/evil",
+            "javascript:alert(1)",
+            "https://a.com b.com",
+            "not a url",
+        ],
+    )
+    def test_invalid_proxy_rejected(self, bad):
+        from app.main import _build_csp_header
+
+        with patch("app.main.config_manager.get", return_value=bad):
+            header = _build_csp_header()
+        assert "img-src 'self' data: https://*.lain.bgm.tv; " in header
+        for token in ("default-src *", "user:pass", "alert(1)", "b.com"):
+            assert token not in header
+
+    def test_schema_mismatch_value_silently_skipped(self):
+        from app.main import _build_csp_header
+
+        with patch("app.main.config_manager.get", side_effect=ValueError):
+            header = _build_csp_header()
+        assert "img-src 'self' data: https://*.lain.bgm.tv; " in header

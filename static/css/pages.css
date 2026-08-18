@@ -1094,6 +1094,21 @@ pre {
     --group-accent-soft: var(--app-orange-soft);
 }
 
+/* 从同步记录详情跳转过来时定位高亮 */
+.log-group-card.log-group-card--focus {
+    border-color: color-mix(in srgb, var(--group-accent) 60%, transparent);
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--group-accent) 45%, transparent),
+        var(--app-shadow-card-hover);
+    animation: log-group-focus-pulse 1.2s var(--app-ease-smooth);
+}
+
+@keyframes log-group-focus-pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--group-accent) 55%, transparent); }
+    50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--group-accent) 18%, transparent); }
+    100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--group-accent) 45%, transparent); }
+}
+
 .log-group-header {
     display: flex;
     flex-wrap: nowrap;
@@ -1157,6 +1172,22 @@ pre {
 .log-group-badges .badge {
     font-size: 0.6875rem;
     font-weight: 600;
+}
+
+.log-group-badges .log-group-id-badge {
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    font-weight: 500;
+    max-width: 15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    color: var(--app-text-secondary, #8a8f98);
+    background: var(--app-bg-soft, rgba(128, 128, 128, 0.15));
+}
+
+.log-group-badges .log-group-id-badge .bi {
+    margin-right: 0.2rem;
 }
 
 .log-group-header-actions {

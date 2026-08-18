@@ -4,7 +4,10 @@
 
 import asyncio
 import os
+import re
+import urllib.parse
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -13,7 +16,9 @@ from fastapi.staticfiles import StaticFiles
 from .api.airing_calendar import router as airing_calendar_router
 from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
+from .api.bangumi_accounts import router as bangumi_accounts_router
 from .api.bangumi_archive import router as bangumi_archive_router
+from .api.bangumi_oauth import router as bangumi_oauth_router
 from .api.bangumi_replay import router as bangumi_replay_router
 from .api.bgm_poster import router as bgm_poster_router
 from .api.config import router as config_router
@@ -39,7 +44,7 @@ from .core.background_tasks import (
 )
 from .core.config import config_manager
 from .core.database import database_manager
-from .core.logging import logger
+from .core.logging import log_request_id, logger
 from .core.public_url import get_public_base_path
 from .core.scheduler_registry import scheduler_registry
 from .core.startup_info import startup_info
@@ -66,12 +71,22 @@ async def lifespan(app: FastAPI):
     startup_info.print_info("🚀 应用启动中...")
     startup_info.print_separator()
 
+    # 将旧 INI 账号段一次性迁移到数据库（幂等），账号以 DB 为唯一真相源
     try:
-        bangumi_configs = config_manager.get_bangumi_configs()
-        user_mappings = config_manager.get_user_mappings()
+        from app.core.accounts import migrate_ini_accounts_to_db
+
+        migrated = migrate_ini_accounts_to_db()
+        if migrated:
+            startup_info.print_success(f"迁移了 {migrated} 个 bangumi 账号到数据库")
+    except Exception as e:
+        startup_info.print_error(f"迁移 bangumi 账号到数据库失败: {e}")
+
+    try:
+        from app.core.accounts import list_bangumi_accounts
+
+        accounts = list_bangumi_accounts()
         mappings = mapping_service.get_all_mappings()
-        startup_info.print_success(f"加载了 {len(bangumi_configs)} 个bangumi账号配置")
-        startup_info.print_success(f"加载了 {len(user_mappings)} 个用户映射配置")
+        startup_info.print_success(f"加载了 {len(accounts)} 个 bangumi 账号（数据库）")
         startup_info.print_success(f"加载了 {len(mappings)} 个自定义映射")
     except Exception as e:
         startup_info.print_error(f"启动时加载配置信息失败: {e}")
@@ -141,6 +156,38 @@ async def lifespan(app: FastAPI):
 app = FastAPI(**_app_kw, lifespan=lifespan)
 
 
+# X-Request-ID 透传/生成规则：仅接受可见 ASCII 标点类安全字符，
+# 拒绝 ]/[ 等会破坏日志行头结构的字符；缺失或不合法时自动生成。
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._~:+-]{1,64}$")
+
+
+async def request_context_middleware(request: Request, call_next):
+    """为请求注入 request_id（X-Request-ID 头或生成的短 ID），日志行关联 [req:...]。
+
+    注册顺序说明：本中间件先于 csp_middleware 注册，但 Starlette 的
+    add_middleware 用 insert(0, ...) 将后注册者置于更外层，故实际执行
+    顺序（外→内）为 csp_middleware → request_context_middleware → 路由。
+    request_id 在 call_next 之前经 contextvar 设置，请求期间（含线程池
+    任务，经 copy_context 传播）内所有日志行都携带同一个 request_id；
+    csp_middleware 仅在响应阶段追加安全头、不记日志，故最外层位置无影响。
+    """
+    raw = request.headers.get("X-Request-ID", "").strip()
+    if _REQUEST_ID_RE.fullmatch(raw):
+        rid = raw
+    else:
+        rid = uuid4().hex[:12]
+    token = log_request_id.set(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        log_request_id.reset(token)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
+app.middleware("http")(request_context_middleware)
+
+
 # 创建静态文件和模板目录
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
@@ -168,7 +215,9 @@ app.include_router(trakt_router)
 app.include_router(feiniu_router)
 app.include_router(fongmi_router)
 app.include_router(upgrade_router)
+app.include_router(bangumi_accounts_router)
 app.include_router(bangumi_archive_router)
+app.include_router(bangumi_oauth_router)
 app.include_router(bangumi_replay_router)
 app.include_router(airing_calendar_router)
 
@@ -177,18 +226,63 @@ app.include_router(airing_calendar_router)
 # CSP 响应头（纵深防御，限制外域资源加载 + 禁用内联事件外的脚本注入）
 # ─────────────────────────────────────────────────────────────────────────
 # 现状：base.html 含内联防闪烁脚本，需保留 'unsafe-inline'
-# 外域资源：仅 <a href> 跳转（bgm.tv / github.com），无外域 script/img 加载
-# 图片：通过 /api/bgm/subjects/posters 后端代理 + data: 占位符
-_CSP_HEADER = (
-    "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
-    "style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data:; "
-    "font-src 'self' data:; "
-    "connect-src 'self'; "
-    "frame-ancestors 'none'; "
-    "base-uri 'self'"
+# 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与时间线封面图（lain.bgm.tv
+#           或用户配置的图片反代），img-src 动态放行这些图片域名
+_CSP_DEFAULT_IMG_HOSTS = ["https://*.lain.bgm.tv"]
+
+# CSS 源码级数据里 netloc 允许的字符：字母数字 + 点 + 连字符（+ 可选用 ":" 端口与 IPv6 方括号）
+_CSP_NETLOC_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:[]"
 )
+
+
+def _is_csp_safe_netloc(netloc: str) -> bool:
+    """校验 netloc 是否可作为 CSP host-source：仅允许域名/IPv6/端口字面量。
+
+    拒绝分号、引号、空格、@（userinfo）、控制字符等，防止配置值破坏整条
+    CSP 策略（CSP 注入 / 指令吞并）。
+    """
+    if not netloc or not all(c in _CSP_NETLOC_CHARS for c in netloc):
+        return False
+    if netloc.startswith(":") or netloc.endswith(":") or netloc.startswith("["):
+        # 端口不能悬空；IPv6 需成对括号包裹且包含 ":"（简化校验，防格式畸形）
+        if netloc.startswith("["):
+            return ":" in netloc and netloc.endswith("]")
+        return False
+    return True
+
+
+def _build_csp_header() -> str:
+    """构建 CSP 头：img-src 额外放行 Bangumi 图片 CDN 及已配置的图片反代域名。"""
+    img_hosts = list(_CSP_DEFAULT_IMG_HOSTS)
+    try:
+        proxy = str(
+            config_manager.get("dev", "bgm_image_proxy", fallback="") or ""
+        ).strip()
+        if proxy:
+            parsed = urllib.parse.urlsplit(proxy)
+            # 仅接受"scheme://主机[:端口]"：拒绝带路径/userinfo/畸形字符的值，
+            # 防止配置值破坏整条 CSP 策略
+            if (
+                parsed.scheme in ("http", "https")
+                and parsed.netloc
+                and parsed.path in ("", "/")
+                and _is_csp_safe_netloc(parsed.netloc)
+            ):
+                img_hosts.append(f"{parsed.scheme}://{parsed.netloc}")
+    except ValueError:
+        pass
+    img_src = "'self' data: " + " ".join(img_hosts)
+    return (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        f"img-src {img_src}; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'"
+    )
 
 
 @app.middleware("http")
@@ -198,7 +292,7 @@ async def csp_middleware(request: Request, call_next):
     # 仅对 HTML 页面附加，避免静态资源 / API JSON 误伤
     ctype = response.headers.get("content-type", "")
     if "text/html" in ctype:
-        response.headers["Content-Security-Policy"] = _CSP_HEADER
+        response.headers["Content-Security-Policy"] = _build_csp_header()
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
     return response

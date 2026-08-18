@@ -45,7 +45,6 @@ class TestBangumiApi:
     def test_init_sets_cache(self):
         api = BangumiApi()
         assert "search" in api._cache
-        assert "search_old" in api._cache
         assert "get_subject" in api._cache
         assert "get_related_subjects" in api._cache
         assert "get_episodes" in api._cache
@@ -82,7 +81,6 @@ class TestBangumiApi:
         cache_keys = list(api._cache.keys())
         expected_keys = [
             "search",
-            "search_old",
             "get_subject",
             "get_related_subjects",
             "get_episodes",
@@ -500,7 +498,7 @@ class TestHttpMethods:
 
 
 class TestSearchMethods:
-    """测试 search / search_old"""
+    """测试 search"""
 
     def test_search_cache_hit(self):
         api = BangumiApi()
@@ -534,35 +532,8 @@ class TestSearchMethods:
             result = api.search("title", "2024-01-01", "2024-12-31", list_only=False)
             assert "data" in result
 
-    def test_search_old_cache_hit(self):
-        api = BangumiApi()
-        api._cache["search_old"][("title", True, 2)] = [{"id": 1}]
-        result = api.search_old("title")
-        assert result == [{"id": 1}]
-
-    def test_search_old_non_dict(self):
-        api = BangumiApi()
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = "not a dict"
-        with patch.object(api, "_request_with_retry", return_value=mock_resp):
-            result = api.search_old("title")
-            assert result == []
-
-    def test_search_old_json_error(self):
-        api = BangumiApi()
-        mock_resp = MagicMock()
-        mock_resp.json.side_effect = ValueError("bad")
-        with patch.object(api, "_request_with_retry", return_value=mock_resp):
-            result = api.search_old("title")
-            assert result == []
-
-    def test_search_old_list_only_false(self):
-        api = BangumiApi()
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"results": 1, "list": [{"id": 1}]}
-        with patch.object(api, "_request_with_retry", return_value=mock_resp):
-            result = api.search_old("title", list_only=False)
-            assert "results" in result
+    # search_old 方法已删除（统一走 search），原 search_old 单测随之移除。
+    # 缓存命中/非字典响应/JSON 解析错误等行为由上方 search 对应用例覆盖。
 
 
 class TestGetSubject:
@@ -570,7 +541,7 @@ class TestGetSubject:
 
     def test_cache_hit(self):
         api = BangumiApi()
-        api._cache["get_subject"]["123"] = {"id": 123}
+        api._cache["get_subject"][("123", True)] = {"id": 123}
         assert api.get_subject("123") == {"id": 123}
 
     def test_non_dict_response(self):
@@ -992,7 +963,8 @@ class TestGetTargetSeasonEpisodeId:
             result = api.get_target_season_episode_id(
                 "123", 1, 0, is_season_subject_id=True
             )
-        assert result == "123"
+        # P0-3 修复: 返回 tuple (subject_id, None) 保持解包契约
+        assert result == ("123", None)
 
     def test_is_season_subject_id_match_sort(self):
         api = BangumiApi()
@@ -1043,7 +1015,8 @@ class TestGetTargetSeasonEpisodeId:
         api = BangumiApi()
         with patch.object(api, "get_subject", return_value=self._MOCK_SUBJECT):
             result = api.get_target_season_episode_id("123", 1, 0)
-        assert result == "123"
+        # P0-3 修复: 返回 tuple (subject_id, None) 保持解包契约
+        assert result == ("123", None)
 
 
 class TestTitleDiffRatio:
@@ -1191,6 +1164,21 @@ class TestTitleDiffRatio:
         ratio = BangumiApi.title_diff_ratio("遮天 第四季", None, data)
         assert ratio == 1.0
 
+    def test_decorator_and_whitespace_equivalence(self):
+        """仅差空格/修饰词（年番）的标题应识别为等价，不被低估误沉淀。
+
+        复现「斗破苍穹年番」类误沉淀：媒体库标题带"年番"修饰词且可能与
+        Bangumi 条目的空格写法不同，归一化后应判为完全匹配（>=0.9），
+        不再因空格/修饰词差异打出 0.56 这类低于阈值 0.6 的低分。
+        """
+        data = {"name": "斗破苍穹 年番", "name_cn": "斗破苍穹 年番"}
+        # 媒体库写法：修饰词紧贴、无空格
+        ratio_a = BangumiApi.title_diff_ratio("斗破苍穹年番", None, data)
+        # 媒体库写法：修饰词带空格
+        ratio_b = BangumiApi.title_diff_ratio("斗破苍穹 年番", None, data)
+        assert ratio_a >= 0.9
+        assert ratio_b >= 0.9
+
     def test_real_kamen_rider(self):
         """假面骑士加布 匹配 name_cn"""
         data = {"name": "仮面ライダーガヴ", "name_cn": "假面骑士加布"}
@@ -1256,23 +1244,33 @@ class TestBgmSearch:
             result = api.bgm_search("Movie", "ori", "2024-01-15", is_movie=True)
             assert result is not None
 
-    def test_fallback_to_search_old(self):
+    def test_fallback_to_search(self):
+        """精确搜索无结果时降级到兜底 search"""
         api = BangumiApi()
+
+        def mock_search(title, start_date="", end_date="", **kwargs):
+            if start_date or end_date:
+                return []  # 精确搜索返回空
+            return [{"id": 10}]  # 兜底搜索命中
+
         with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[{"id": 10}]),
-            patch.object(api, "get_subject", return_value={"id": 10, "name": "番"}),
+            patch.object(api, "search", side_effect=mock_search),
             patch.object(api, "title_diff_ratio", return_value=0.9),
         ):
             result = api.bgm_search("番", "", "2024-01-15")
             assert result is not None
 
-    def test_search_old_low_ratio_skips(self):
+    def test_fallback_low_ratio_skips(self):
+        """兜底搜索候选相似度低于阈值时跳过"""
         api = BangumiApi()
+
+        def mock_search(title, start_date="", end_date="", **kwargs):
+            if start_date or end_date:
+                return []
+            return [{"id": 10}]
+
         with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[{"id": 10}]),
-            patch.object(api, "get_subject", return_value={"id": 10, "name": "x"}),
+            patch.object(api, "search", side_effect=mock_search),
             patch.object(api, "title_diff_ratio", return_value=0.1),
         ):
             result = api.bgm_search("完全不同", "", "2024-01-15")
@@ -1280,33 +1278,36 @@ class TestBgmSearch:
 
     def test_no_date_search(self):
         api = BangumiApi()
-        with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[]),
-        ):
+        with patch.object(api, "search", return_value=[]):
             result = api.bgm_search("title", "", "")
             assert result is None
 
     def test_invalid_date_fallback(self):
         """无效日期降级到无日期搜索"""
         api = BangumiApi()
-        with (
-            patch.object(api, "search", return_value=[]),
-            patch.object(api, "search_old", return_value=[]),
-        ):
+        with patch.object(api, "search", return_value=[]):
             result = api.bgm_search("title", "", "bad-date-format")
             assert result is None
 
-    def test_low_similarity_triggers_old_search(self):
-        """精确搜索相似度低于0.5时触发旧版搜索"""
+    def test_low_similarity_triggers_fallback(self):
+        """精确搜索相似度低于0.5时触发兜底搜索（P1-3 修复后保留低相似度候选）
+
+        修复前：精确搜索命中低相似度候选(0.2) → 触发兜底 → 兜底全 miss →
+        清空 bgm_data → 返回 None，候选被丢弃无法沉淀。
+        修复后：兜底全 miss 时保留低相似度候选 → 返回非空列表，
+        供下游 APISearchStep 执行置信度检查并沉淀为 pending_candidate。
+        """
         api = BangumiApi()
         with (
             patch.object(api, "search", return_value=[{"id": 1}]),
             patch.object(api, "title_diff_ratio", return_value=0.2),
-            patch.object(api, "search_old", return_value=[]),
         ):
             result = api.bgm_search("title", "", "2024-01-15")
-            assert result is None
+            # 兜底被触发（search 被多次调用：日期精确 + 多个变体）
+            assert api.search.call_count > 1
+            # 修复后保留低相似度候选供沉淀
+            assert result is not None
+            assert len(result) > 0
 
     def test_v0_api_tries_stripped_title(self):
         """v0 API 路径：原始 title miss 时应尝试剥离后缀的变体
@@ -1347,7 +1348,6 @@ class TestBgmSearch:
 
         with (
             patch.object(api, "search", side_effect=mock_search),
-            patch.object(api, "search_old", return_value=[]),
             patch.object(api, "title_diff_ratio", return_value=0.9),
         ):
             # ori_title 含 S02E10 后缀，剥离后为 "Original"
@@ -1356,32 +1356,28 @@ class TestBgmSearch:
             assert "Original S02E10" in search_calls
             assert "Original" in search_calls
 
-    def test_search_old_tries_stripped_title(self):
-        """旧版 API 路径：应尝试剥离后缀的变体"""
+    def test_fallback_tries_stripped_title(self):
+        """兜底搜索路径：应尝试剥离后缀的变体"""
         api = BangumiApi()
-        search_old_calls = []
+        fallback_calls = []
 
-        def mock_search(title, **kwargs):
-            return []  # v0 API 全部 miss
-
-        def mock_search_old(title, **kwargs):
-            search_old_calls.append(title)
+        def mock_search(title, start_date="", end_date="", **kwargs):
+            if start_date or end_date:
+                return []  # 精确搜索全部 miss
+            # 兜底搜索记录调用
+            fallback_calls.append(title)
             if title == "完美世界":
-                return [{"id": 1}]
+                return [{"id": 1, "name": "完美世界"}]
             return []
 
         with (
             patch.object(api, "search", side_effect=mock_search),
-            patch.object(api, "search_old", side_effect=mock_search_old),
-            patch.object(
-                api, "get_subject", return_value={"id": 1, "name": "完美世界"}
-            ),
             patch.object(api, "title_diff_ratio", return_value=0.9),
         ):
             result = api.bgm_search("完美世界 S06E279", "", "2026-01-15")
             assert result is not None
-            # 旧版 API 应尝试剥离后缀的「完美世界」
-            assert "完美世界" in search_old_calls
+            # 兜底搜索应尝试剥离后缀的「完美世界」
+            assert "完美世界" in fallback_calls
 
     def test_no_suffix_skips_stripped_variant(self):
         """标题不含季数后缀时不应尝试 stripped 变体（避免重复查询）"""
@@ -1628,3 +1624,125 @@ class TestLongSeriesEpisodeSync:
             )
         mock_air.assert_called_once_with("899", "2008-05-20")
         assert result == ("899", 350)
+
+
+# ===== 以下自 test_bangumi_api_internals.py 并入的独有断言 =====
+
+
+def _session_resp_internals(status=200, json_body=None, json_exc=None):
+    from unittest.mock import MagicMock
+
+    r = MagicMock()
+    r.status_code = status
+    r.elapsed.total_seconds.return_value = 0.01
+    r.headers = {}
+    r.text = ""
+    if json_exc:
+        r.json.side_effect = json_exc
+    else:
+        r.json.return_value = json_body if json_body is not None else {}
+    return r
+
+
+class TestTryDirectConnectionInternals:
+    """直连时 timeout/proxies/close 等参数细节断言。"""
+
+    def test_get_success_adds_timeout_and_no_proxy(self):
+        from unittest.mock import MagicMock, patch
+
+        from app.utils.bangumi_api import BangumiApi
+
+        mock_sess = MagicMock()
+        out = _session_resp_internals(200, {})
+        mock_sess.request.return_value = out
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
+            api = BangumiApi(access_token="tok")
+            res = api._try_direct_connection("GET", "https://example.test/api")
+        assert res is out
+        call_kw = mock_sess.request.call_args.kwargs
+        assert call_kw["timeout"] == 15
+        assert call_kw.get("proxies") is None
+        mock_sess.close.assert_called_once()
+
+    def test_exception_reraises_after_close(self):
+        from unittest.mock import MagicMock, patch
+
+        import httpx
+        import pytest
+
+        from app.utils.bangumi_api import BangumiApi
+
+        mock_sess = MagicMock()
+        mock_sess.request.side_effect = httpx.TimeoutException("t")
+        with patch("app.utils.bangumi_api.httpx.Client", return_value=mock_sess):
+            api = BangumiApi()
+            with pytest.raises(httpx.TimeoutException):
+                api._try_direct_connection("GET", "https://example.test/x")
+        mock_sess.close.assert_called_once()
+
+
+class TestRequestWithRetryInternals:
+    """重试耗尽通知与 get_me 认证细节。"""
+
+    def test_http_500_exhausts_retries_and_notifies(self):
+        from unittest.mock import MagicMock, patch
+
+        import httpx
+        import pytest
+
+        from app.utils.bangumi_api import BangumiApi
+
+        api = BangumiApi()
+        bad = _session_resp_internals(500)
+        api.req.request = MagicMock(return_value=bad)
+        with (
+            pytest.raises(httpx.HTTPStatusError),
+            patch("app.services.notification_service.notification_service") as _notify,
+        ):
+            api._request_with_retry("GET", api.req, "https://bgm.test/r")
+        _notify.notify.assert_called_once()
+
+    def test_get_me_client_403_raises(self):
+        from unittest.mock import MagicMock, patch
+
+        import pytest
+
+        from app.utils.bangumi_api import BangumiApi
+
+        r = MagicMock()
+        r.status_code = 403
+        r.json.side_effect = AssertionError("should not json")
+        with (
+            patch.object(BangumiApi, "get", return_value=r),
+            patch("app.services.notification_service.notification_service"),
+            patch("os.name", "posix"),
+        ):
+            api = BangumiApi(username="u")
+            with pytest.raises(ValueError, match="未授权"):
+                api.get_me()
+
+
+class TestSearchJsonBranchesInternals:
+    """缓存命中时不应发起请求的断言。"""
+
+    def test_search_cache_hit_skips_request(self):
+        from unittest.mock import patch
+
+        from app.utils.bangumi_api import BangumiApi
+
+        api = BangumiApi()
+        key = ("kw", "2020-01-01", "2020-02-01", 5, True, (2,))
+        api._cache["search"][key] = [{"id": 9}]
+        with patch.object(api, "_request_with_retry") as m:
+            out = api.search("kw", "2020-01-01", "2020-02-01", limit=5, list_only=True)
+        m.assert_not_called()
+        assert out == [{"id": 9}]
+
+    def test_parse_iso_date_edges(self):
+        from app.utils.bangumi_api import BangumiApi
+
+        assert BangumiApi._parse_iso_date_ymd("") is None
+        assert BangumiApi._parse_iso_date_ymd("2020-01") is None
+        assert BangumiApi._parse_iso_date_ymd("2020-13-40") is None
+        d = BangumiApi._parse_iso_date_ymd("2024-06-15T12:00:00")
+        assert d.year == 2024 and d.month == 6 and d.day == 15

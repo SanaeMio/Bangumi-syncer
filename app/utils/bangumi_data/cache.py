@@ -91,6 +91,13 @@ class CacheMixin:
         if not self.use_cache:
             return True
 
+        # 数据源 URL 变更后缓存文件仍可能"有效"（mtime+TTL 只看旧文件），
+        # 必须强制按新 URL 重下（reload_config 置位）
+        if getattr(self, "_force_redownload", False):
+            self._force_redownload = False
+            logger.debug("数据源 URL 已变更，强制重新下载数据...")
+            return self._download_data()
+
         if not self._is_cache_valid():
             logger.debug("缓存不存在或已过期，正在重新下载数据...")
             return self._download_data()
@@ -166,6 +173,12 @@ class CacheMixin:
         # 数据已刷新，重建标题索引
         self._build_title_index()
 
+        # 对称重建 TMDB 映射：reload_config / force_update 清空映射后，
+        # 随数据解析一并恢复（与标题索引生命周期一致，避免首查询重建风暴）
+        self._cache_tmdb_mapping.clear()
+        self._cache_tmdb_begin.clear()
+        self._build_tmdb_mapping()
+
         # 从内存缓存中yield数据
         for item in items:
             yield item
@@ -211,6 +224,9 @@ class CacheMixin:
         success = self._download_data()
         if success:
             self.clear_cache()
+            # 数据已换新，TMDB 映射一并失效，随下次解析对称重建
+            self._cache_tmdb_mapping.clear()
+            self._cache_tmdb_begin.clear()
         return success
 
     # ----- 启动时检查与预加载 -----

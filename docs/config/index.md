@@ -33,6 +33,7 @@ Web 界面背后对应一个 `config.ini` 文件（INI 格式），首次运行�
 | [🔀 自定义映射](/mapping) | 标题对不上时手工指定「标题 → 条目 ID」的兜底机制 |
 | [🗄️ Bangumi Archive](./bangumi-archive) | 本地归档，把全站数据快照下载到本地，优先查本地降低 API 依赖 |
 | [🔄 Bangumi Replay](./bangumi-replay) | 写降级与自动补发，API 不可达时入队暂存、恢复后自动补发 |
+| [🛠️ 自建 ECH DoH（进阶）](./self-hosted-doh) | 需要一定门槛：自行部署 DoH 服务（Total-ECH），自定义 ECH 配置来源与优选 IP |
 
 ## 配置段速查
 
@@ -40,13 +41,17 @@ Web 界面背后对应一个 `config.ini` 文件（INI 格式），首次运行�
 
 | 段名 | 用途 |
 | --- | --- |
-| `[bangumi]` / `[bangumi-{user}]` | Bangumi 账号、Access Token（多账号用多段） |
-| `[sync]` | 同步模式、屏蔽关键词、评分下限 |
+| `[bangumi-oauth]` | Bangumi OAuth 应用凭证（Client ID / Secret，已内置可覆盖） |
+| `[sync]` | 同步行为、屏蔽关键词、评分下限 |
 | `[emby]` / `[jellyfin]` / `[plex]` | 各媒体服务器驱动配置 |
 | `[feiniu]` / `[fongmi]` / `[trakt]` | 拉取型驱动配置 |
 | `[notify-webhook-{n}]` / `[notify-email-{n}]` 等 | 通知渠道实例（可多实例） |
 | `[archive]` / `[replay]` | Archive 与 Replay 配置 |
 | `[scheduler]` | 调度器时区、任务超时 |
 | `[summary-{name}]` | AI 追番总结任务 |
+
+::: tip 账号存储位置
+Bangumi 账号（用户名、访问令牌、OAuth 令牌等）存储在 SQLite 数据库 `data/sync_records.db` 的 `bangumi_accounts` 表中，不再写入 `config.ini`。令牌加密存储，数据库文件泄露也不会暴露明文 token。
+:::
 
 具体字段含义请查看对应文档。

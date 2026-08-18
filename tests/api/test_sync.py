@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import deps, sync
-from app.models.sync import CustomItem
+from app.models.sync import CustomItem, SyncResponse
 
 
 @pytest.fixture
@@ -315,7 +315,7 @@ async def test_get_sync_records_include_poster(
         == "https://img-proxy.example.com/pic/cover/s/a/b/c.jpg"
     )
     assert records[1]["poster_url"] is None
-    mock_posters.assert_awaited_once_with([123])
+    mock_posters.assert_awaited_once_with([123], user_name=None)
 
 
 @pytest.mark.asyncio
@@ -935,6 +935,10 @@ async def test_retry_sync_record_success(
     ) as client:
         response = await client.post("/api/records/1/retry")
         assert response.status_code == 200
+        mock_database_manager.update_sync_record_status.assert_called()
+        call_args = mock_database_manager.update_sync_record_status.call_args[0]
+        assert call_args[0] == 1
+        assert call_args[1] == "retried"
 
 
 @pytest.mark.asyncio
@@ -1582,3 +1586,367 @@ async def test_get_match_trace_no_trace(
     assert data["status"] == "success"
     assert data["data"]["trace"] is None
     assert data["data"]["record"]["title"] == "Old Record"
+
+
+# ===== 以下来源自 test_sync_main_flow.py（并入） =====
+
+
+@pytest.fixture
+def verify_ok():
+    with patch("app.api.sync._verify_webhook_auth", new_callable=AsyncMock) as m:
+        m.return_value = True
+        yield m
+
+
+def _plex_scrobble_dict():
+    return {
+        "event": "media.scrobble",
+        "Account": {"title": "plex_user"},
+        "Metadata": {
+            "type": "episode",
+            "grandparentTitle": "主站作品",
+            "originalTitle": "Main",
+            "parentIndex": 1,
+            "index": 3,
+            "originallyAvailableAt": "2024-01-01",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_custom_sync_sync_mode_returns_result(app_with_auth, verify_ok):
+    item = CustomItem(
+        media_type="episode",
+        title="T",
+        ori_title="",
+        season=1,
+        episode=1,
+        release_date="2024-01-01",
+        user_name="u",
+    )
+    result = SyncResponse(status="success", message="ok", data={})
+    with patch("app.api.sync.custom_sync_service.sync_item", return_value=result) as sc:
+        transport = ASGITransport(app=app_with_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/Custom",
+                json=item.model_dump(),
+                params={"async_mode": "false"},
+            )
+    # 路由默认 status_code=202；同步成功分支不改为 200
+    assert r.status_code == 202
+    assert r.json()["status"] == "success"
+    sc.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_custom_webhook_auth_failed(app_with_auth):
+    with patch("app.api.sync._verify_webhook_auth", new_callable=AsyncMock) as m:
+        m.return_value = False
+        item = CustomItem(
+            media_type="episode",
+            title="T",
+            ori_title="",
+            season=1,
+            episode=1,
+            release_date="2024-01-01",
+            user_name="u",
+        )
+        transport = ASGITransport(app=app_with_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post("/Custom", json=item.model_dump())
+    assert r.status_code == 401
+    assert r.json()["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_plex_webhook_fallback_to_sync_when_async_fails(app_with_auth, verify_ok):
+    plex = _plex_scrobble_dict()
+    raw = json.dumps(plex).encode("utf-8")
+    with patch("app.api.sync.extract_plex_json", return_value=json.dumps(plex)):
+        with patch(
+            "app.api.sync.sync_service.sync_plex_item_async",
+            side_effect=RuntimeError("queue full"),
+        ):
+            with patch(
+                "app.api.sync.sync_service.sync_plex_item",
+                return_value=SyncResponse(status="ignored", message="skip"),
+            ) as sync_fn:
+                transport = ASGITransport(app=app_with_auth)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
+                    r = await ac.post("/Plex", content=raw)
+    assert r.status_code == 200
+    body = r.json()
+    assert "同步模式" in body.get("message", "") or body.get("status") == "accepted"
+    sync_fn.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_emby_body_parsed_with_ast_literal_eval(app_with_auth, verify_ok):
+    # json.loads 失败（单引号），走 ast.literal_eval
+    body = (
+        "{'Event': 'item.markplayed', 'User': {'Name': 'emby_u'}, "
+        "'Item': {'Type': 'Episode', 'SeriesName': 'Series', "
+        "'ParentIndexNumber': 1, 'IndexNumber': 2}}"
+    )
+    with patch(
+        "app.api.sync.sync_service.sync_emby_item_async",
+        return_value="tid",
+    ):
+        transport = ASGITransport(app=app_with_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post("/Emby", content=body.encode("utf-8"))
+    assert r.status_code == 200
+    assert r.json().get("status") == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_jellyfin_webhook_fallback_sync(app_with_auth, verify_ok):
+    jf = {
+        "NotificationType": "PlaybackStop",
+        "PlayedToCompletion": "True",
+        "media_type": "Episode",
+        "title": "Show",
+        "ori_title": "O",
+        "season": 1,
+        "episode": 1,
+        "user_name": "jf_u",
+        "release_date": "2024-01-01",
+    }
+    raw = json.dumps(jf).encode("utf-8")
+    with patch(
+        "app.api.sync.sync_service.sync_jellyfin_item_async",
+        side_effect=OSError("async"),
+    ):
+        with patch(
+            "app.api.sync.sync_service.sync_jellyfin_item",
+            return_value=SyncResponse(status="ignored", message="x"),
+        ) as sync_fn:
+            transport = ASGITransport(app=app_with_auth)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                r = await ac.post("/Jellyfin", content=raw)
+    assert r.status_code == 200
+    sync_fn.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_test_sync_browser_uses_sync_mode(app_with_auth):
+    """浏览器 UA 时 async_mode 默认为同步，直接调 sync_custom_item。"""
+    with patch(
+        "app.api.sync.sync_service.sync_custom_item",
+        return_value=SyncResponse(status="success", message="done"),
+    ) as sc:
+        transport = ASGITransport(app=app_with_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/test-sync",
+                json={
+                    "title": "Browser Show",
+                    "season": 1,
+                    "episode": 2,
+                    "user_name": "u1",
+                },
+                headers={"User-Agent": "Mozilla/5.0 Chrome/120"},
+            )
+    assert r.status_code == 200
+    assert r.json()["status"] == "success"
+    sc.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_test_sync_invalid_json_500(app_with_auth):
+    transport = ASGITransport(app=app_with_auth)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        r = await ac.post(
+            "/api/test-sync",
+            content=b"not-json",
+            headers={"Content-Type": "application/json"},
+        )
+    assert r.status_code == 500
+
+
+def test_build_retry_item_preserves_all_media_types():
+    """_build_retry_item 保留所有合法 media_type，无效类型回退为 episode"""
+    from app.api.sync import _build_retry_item
+
+    for media_type in ("episode", "movie", "ova", "oad", "real_action"):
+        record = {
+            "title": "测试",
+            "season": 1,
+            "episode": 1,
+            "user_name": "u",
+            "media_type": media_type,
+        }
+        item = _build_retry_item(record, "retry-custom")
+        assert item.media_type == media_type
+
+    # 无效类型仍回退为 episode
+    item = _build_retry_item({"media_type": "invalid", "title": "t"}, "retry-x")
+    assert item.media_type == "episode"
+
+
+def test_build_retry_item_restores_fields_from_match_trace():
+    """_build_retry_item 优先从 match_trace 还原原始请求（含日期与 sync_action）"""
+    import json
+
+    from app.api.sync import _build_retry_item
+
+    trace = {
+        "request_title": "Trace Title",
+        "request_ori_title": "Ori",
+        "request_season": 2,
+        "request_episode": 5,
+        "request_media_type": "episode",
+        "request_release_date": "2024-03-01",
+        "request_sync_action": "mark_watching",
+        "request_user_name": "trace_user",
+        "steps": [
+            {
+                "stage": "receive",
+                "processed_payload": {
+                    "title": "Trace Title",
+                    "release_date": "2024-03-01",
+                    "sync_action": "mark_watching",
+                },
+                "raw_payload": {"event": "play"},
+            }
+        ],
+    }
+    record = {
+        "title": "Column Title",
+        "ori_title": "Col Ori",
+        "season": 1,
+        "episode": 1,
+        "user_name": "col_user",
+        "media_type": "movie",
+        "match_trace": json.dumps(trace),
+    }
+    item = _build_retry_item(record, "retry-plex")
+    assert item.title == "Trace Title"
+    assert item.ori_title == "Ori"
+    assert item.season == 2
+    assert item.episode == 5
+    assert item.media_type == "episode"
+    assert item.release_date == "2024-03-01"
+    assert item.sync_action == "mark_watching"
+    assert item.user_name == "trace_user"
+    assert item.source == "retry-plex"
+    assert item.raw_payload == {"event": "play"}
+
+
+def test_build_retry_item_falls_back_to_record_columns_without_trace():
+    """无 match_trace 时回退 sync_records 列"""
+    from app.api.sync import _build_retry_item
+
+    record = {
+        "title": "Column Title",
+        "ori_title": "Col Ori",
+        "season": 3,
+        "episode": 7,
+        "user_name": "col_user",
+        "media_type": "ova",
+    }
+    item = _build_retry_item(record, "retry-emby")
+    assert item.title == "Column Title"
+    assert item.ori_title == "Col Ori"
+    assert item.season == 3
+    assert item.episode == 7
+    assert item.release_date == ""
+    assert item.sync_action is None
+    assert item.raw_payload is None
+
+
+@pytest.mark.asyncio
+async def test_get_sync_records_db_error(app_with_auth):
+    with patch(
+        "app.services.sync_service.database_manager.get_sync_records",
+        side_effect=RuntimeError("db"),
+    ):
+        transport = ASGITransport(app=app_with_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.get("/api/records")
+    assert r.status_code == 500
+
+
+def _retry_result(data):
+    result = MagicMock()
+    result.status = "success"
+    result.data = data
+    return result
+
+
+def test_backfill_match_fields_writes_when_present():
+    """重试结果含匹配字段时应回写原记录"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields"
+    ) as mock_update:
+        _backfill_match_fields_from_result(
+            1,
+            _retry_result(
+                {
+                    "match_method": "api_search",
+                    "match_trace": {"steps": []},
+                    "match_score": 0.9,
+                    "match_platform": "plex",
+                }
+            ),
+        )
+
+    mock_update.assert_called_once_with(
+        record_id=1,
+        match_method="api_search",
+        match_trace={"steps": []},
+        match_score=0.9,
+        match_platform="plex",
+    )
+
+
+def test_backfill_match_fields_skips_when_all_none():
+    """无匹配字段时不应触发 DB 写"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields"
+    ) as mock_update:
+        _backfill_match_fields_from_result(
+            1,
+            _retry_result(
+                {"match_method": None, "match_trace": None, "match_score": None}
+            ),
+        )
+
+    mock_update.assert_not_called()
+
+
+def test_backfill_match_fields_skips_without_data():
+    """重试结果无 data 时直接返回"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    result = MagicMock()
+    result.status = "success"
+    result.data = None
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields"
+    ) as mock_update:
+        _backfill_match_fields_from_result(1, result)
+
+    mock_update.assert_not_called()
+
+
+def test_backfill_match_fields_swallows_db_error():
+    """回写异常应被吞掉（日志告警），不影响重试主流程"""
+    from app.api.sync import _backfill_match_fields_from_result
+
+    with patch(
+        "app.api.sync.sync_service.update_sync_record_match_fields",
+        side_effect=RuntimeError("db locked"),
+    ):
+        _backfill_match_fields_from_result(
+            1,
+            _retry_result({"match_method": "api_search"}),
+        )

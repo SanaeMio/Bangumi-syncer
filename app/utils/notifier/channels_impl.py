@@ -183,7 +183,7 @@ class EmailChannel(NotificationChannel):
                 if smtp_username and smtp_password:
                     server.login(smtp_username, smtp_password)
                 server.send_message(msg)
-                logger.info(f"✅ 邮件发送成功: {to_email} (channel={self.channel_id})")
+                logger.debug(f"✅ 邮件发送成功: {to_email} (channel={self.channel_id})")
                 return ChannelSendResult(
                     success=True,
                     channel_id=self.channel_id,

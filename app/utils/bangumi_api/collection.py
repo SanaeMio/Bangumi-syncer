@@ -28,6 +28,7 @@ class CollectionMixin:
         collection_type: Optional[int] = None,
         limit: int = 30,
         max_total: int = 500,
+        max_pages: int | None = None,
     ) -> list[dict[str, Any]]:
         """批量获取用户收藏列表（分页拉满）
 
@@ -39,6 +40,8 @@ class CollectionMixin:
                              None=全部
             limit: 单页大小（Bangumi API 上限 50）
             max_total: 最多拉取总数，防止异常用户收藏过多拖慢请求
+            max_pages: 最多拉取页数（None=不限），供封面预取等对时效与
+                       耗时敏感的调用方限流，避免 API 故障时长时间串行分页
 
         Returns:
             list[dict]，每个 dict 含 subject_id, type, name, name_cn 等字段
@@ -46,10 +49,14 @@ class CollectionMixin:
         """
         results: list[dict[str, Any]] = []
         offset = 0
+        pages = 0
         # 防御性上限：单次调用最多拉 max_total 条，避免异常场景无限拉取
         limit = min(max(1, limit), 50)
         max_total = max(limit, max_total)
         while offset < max_total:
+            pages += 1
+            if max_pages is not None and pages > max_pages:
+                break
             params: dict[str, Any] = {"limit": limit, "offset": offset}
             if subject_type is not None:
                 params["subject_type"] = subject_type
@@ -376,7 +383,7 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         # 写缓存
         with _watching_cache_lock:
             _watching_cache[username] = (now, ids)
-        logger.info(
+        logger.debug(
             f"获取在看列表成功: username={username}, 动画 {len(anime_watching)} + 三次元 {len(real_watching)} = {len(ids)} 部"
         )
         return ids
@@ -385,7 +392,7 @@ def get_watching_subject_ids(api: Any) -> set[int]:
         with _watching_cache_lock:
             cached = _watching_cache.get(username)
         if cached:
-            logger.info(f"使用缓存降级: username={username}, {len(cached[1])} 部")
+            logger.debug(f"使用缓存降级: username={username}, {len(cached[1])} 部")
             return cached[1]
         # 无缓存时抛出，让调用方降级（如改为全部放送）
         raise
@@ -402,3 +409,8 @@ def invalidate_watching_cache(username: Optional[str] = None) -> None:
             _watching_cache.clear()
         else:
             _watching_cache.pop(username, None)
+
+
+# 配置变更（账号/令牌等）时清空在看缓存，避免旧账号数据残留：
+# 与 BangumiApi 实例缓存按 dev 快照自动失效的思路统一，无需重启生效
+config_manager.register_config_change_listener(lambda: invalidate_watching_cache())

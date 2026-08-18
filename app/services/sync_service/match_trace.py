@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.services.matching.steps.base import StepOutcome
 
 
 @dataclass
@@ -65,6 +68,11 @@ class MatchStep:
     request_params: dict[str, Any] | None = None
     # P1: API 返回质量摘要（候选总数/是否 archive 短路/首条摘要）
     api_response_summary: dict[str, Any] | None = None
+    # 结构化进出产物：本 step 执行时读入的输入 / 产出的输出
+    # （由 StepOutcome.inputs/outputs 经两条管线的 _record_trace 回填），
+    # 前端按 inputs/outputs 分组以表格展示；旧记录无此字段，前端回退特化表格。
+    inputs: dict[str, Any] | None = None
+    outputs: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,6 +88,8 @@ class MatchStep:
             "error_detail": self.error_detail,
             "request_params": self.request_params,
             "api_response_summary": self.api_response_summary,
+            "inputs": self.inputs,
+            "outputs": self.outputs,
         }
 
 
@@ -107,18 +117,31 @@ class MatchTrace:
     final_match_method: str = (
         ""  # custom_mapping / bangumi_data / archive / api_search / failed
     )
+    # 细粒度匹配方式（替代死状态 bgm.last_match_method，经 ctx.match_method_detail
+    # / bgm_search out_meta 回传）：
+    # exact / prefix_variant / season_stripped / media_suffix_stripped /
+    # unwrapped / main_segment / fuzzy / cross_season_chain /
+    # cross_season_franchise_archive / cross_season_franchise_online
+    final_match_method_detail: str = ""
     final_score: float | None = None
     # 新增：同步最终状态/消息/动作（用于流水线最后一步 result）
     final_status: str = ""
     final_message: str = ""
     final_action: str = ""
-    # P2: 匹配阶段总耗时（不含 receive/result 阶段），用于性能排错
+    # 匹配歧义标记：APISearchStep 检测 top1/top2 分数差 < 0.05 时置 True，
+    # 编排器据此发送 match_ambiguous 通知（原 _maybe_notify_match_ambiguous 检测逻辑前移到 step）
+    is_ambiguous: bool = False
+    # P2: 全流程总耗时（receive 开始到 result 结束，由编排器统一 finish 结算），
+    # 用于性能排错。执行阶段（SyncPipeline）的耗时会计入 total_elapsed_ms。
     total_elapsed_ms: int = 0
 
     # 内部计时
     _current_step: MatchStep | None = field(default=None, repr=False)
     _step_start: float = field(default=0.0, repr=False)
     _trace_start: float = field(default=0.0, repr=False)
+    # 幂等标记：finish() 已结算过（MatchPipeline.run 的 finally 与
+    # test_match 等外层调用方都会调 finish，重复调用不得覆盖已结算字段）
+    _finished: bool = field(default=False, repr=False)
 
     def start_step(self, stage: str) -> MatchStep:
         """开始一个新匹配阶段"""
@@ -143,14 +166,75 @@ class MatchTrace:
         self._step_start = 0.0
 
     def finish(self) -> None:
-        """完成整个匹配过程"""
+        """完成整个匹配过程（幂等：重复调用不覆盖已结算的字段）
+
+        MatchPipeline.run() 的 finally 总会调用 finish()；外层调用方
+        （如 test_match）在管道返回后可能再次调用。_finished 保证
+        total_elapsed_ms / failed 标记只结算一次，避免第二次调用
+        把管道结束到外层收尾之间的耗时也算进 total_elapsed_ms。
+        """
+        if self._finished:
+            return
+        self._finished = True
         self._finish_current_step()
         if self._trace_start > 0:
             self.total_elapsed_ms = int(
                 (time.perf_counter() - self._trace_start) * 1000
             )
-        if self.final_subject_id is None:
+        # final_subject_id 为空时标记 failed，但 low_confidence 除外：
+        # low_confidence 已由 _record_trace 设置 final_match_method（如 api_search），
+        # 且 final_score 有值，不应覆盖为 failed。
+        if self.final_subject_id is None and not self.final_match_method:
             self.final_match_method = "failed"
+
+    def record_step(
+        self, stage: str, outcome: StepOutcome, *, with_candidates: bool = True
+    ) -> None:
+        """按 StepOutcome 记录一步到 trace（不更新 final_* 汇总字段）
+
+        两条管线 + bgm_search 子管线的统一填充入口：
+        - MatchPipeline._record_trace 调用后在匹配命中时自行覆写 final_*
+        - SyncPipeline 直接调用（final_* 由 ResultStep 统一结算）
+        - bgm_search 子管线用它记录 4 个子 step（reset/date_exact/variant_fallback/
+          finalize）过程，追加到主 trace.steps，供同步记录详情展示子 step 过程
+
+        final_subject_id / final_match_method 等汇总字段不由本方法更新，
+        避免子 step 的中间命中/miss 状态污染最终汇总。
+        """
+        step = self.start_step(stage)
+        step.status = outcome.status
+        if outcome.subject_id:
+            step.subject_id = outcome.subject_id
+        if outcome.reason:
+            step.reason = outcome.reason
+        if outcome.score is not None:
+            step.score = outcome.score
+        if with_candidates and outcome.candidates:
+            step.candidates = outcome.candidates
+        if outcome.processed_payload:
+            step.processed_payload = outcome.processed_payload
+        if outcome.request_params:
+            step.request_params = outcome.request_params
+        if outcome.api_response_summary:
+            step.api_response_summary = outcome.api_response_summary
+        if outcome.error_detail:
+            step.error_detail = outcome.error_detail
+        if outcome.inputs:
+            step.inputs = outcome.inputs
+        if outcome.outputs:
+            step.outputs = outcome.outputs
+        self._finish_current_step()
+
+    def record_error_step(self, stage: str, e: Exception) -> None:
+        """记录 status=error 的 step（step 抛异常时由 SyncPipeline 调用）"""
+        step = self.start_step(stage)
+        step.status = "error"
+        step.reason = str(e)
+        step.error_detail = {
+            "type": type(e).__name__,
+            "message": str(e),
+        }
+        self._finish_current_step()
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典（用于 JSON 存储/传输）"""
@@ -175,11 +259,13 @@ class MatchTrace:
             "final_subject_id": self.final_subject_id,
             "final_episode_id": self.final_episode_id,
             "final_match_method": self.final_match_method,
+            "final_match_method_detail": self.final_match_method_detail,
             "final_score": round(self.final_score, 4)
             if self.final_score is not None
             else None,
             "final_status": self.final_status,
             "final_message": self.final_message,
             "final_action": self.final_action,
+            "is_ambiguous": self.is_ambiguous,
             "total_elapsed_ms": self.total_elapsed_ms,
         }

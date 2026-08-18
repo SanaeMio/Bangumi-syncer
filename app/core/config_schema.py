@@ -82,7 +82,7 @@ SECTIONS: dict[str, SectionMeta] = {
         name="bangumi",
         display_name="Bangumi 账号",
         order=10,
-        sensitive_fields=frozenset({"access_token"}),
+        sensitive_fields=frozenset({"access_token", "refresh_token"}),
         env_overrides={
             "username": "BANGUMI_USERNAME",
             "access_token": "BANGUMI_ACCESS_TOKEN",
@@ -90,14 +90,34 @@ SECTIONS: dict[str, SectionMeta] = {
             "private": "BANGUMI_PRIVATE",
         },
     ),
+    "bangumi-oauth": SectionMeta(
+        name="bangumi-oauth",
+        display_name="Bangumi OAuth 应用",
+        order=11,
+        # 应用凭证（client_id/client_secret）用于完成 Bangumi 官方 OAuth 授权流。
+        # 该段非多账号段，需从账号段探测中排除。
+        sensitive_fields=frozenset({"client_secret"}),
+        visible_in_ui=False,
+        env_overrides={
+            "client_id": "BANGUMI_OAUTH_CLIENT_ID",
+            "client_secret": "BANGUMI_OAUTH_CLIENT_SECRET",
+        },
+        fields=(
+            FieldMeta(name="client_id", default=""),
+            FieldMeta(name="client_secret", default=""),
+            FieldMeta(name="redirect_uri", default=""),
+        ),
+    ),
     "sync": SectionMeta(
         name="sync",
         display_name="同步设置",
         order=20,
         fields=(
-            FieldMeta(name="mode", default="single"),
             FieldMeta(name="movie_playback_start_mark_watching", default_true=True),
             FieldMeta(name="movie_mark_subject_completed", default_true=True),
+            # 模糊匹配置信度阈值（0~1）：低于该相似度的 Bangumi API 匹配
+            # 不会自动采用，而是沉淀到待审队列由用户在 Web 界面人工确认。
+            FieldMeta(name="match_confidence_threshold", default=0.6),
         ),
     ),
     "auth": SectionMeta(
@@ -126,10 +146,20 @@ SECTIONS: dict[str, SectionMeta] = {
         env_overrides={
             "script_proxy": "HTTP_PROXY",
             "debug": "DEBUG_MODE",
+            "log_level": "LOG_LEVEL",
         },
         fields=(
             FieldMeta(name="sync_records_retention_days", default=0),
             FieldMeta(name="ssl_verify", default_true=True),
+            FieldMeta(name="log_level", default="INFO"),
+            FieldMeta(name="ech_mode", default="off"),
+            FieldMeta(name="ech_doh_url", default="https://dns.alidns.com/resolve"),
+            FieldMeta(name="ech_doh_use_proxy", loose_true=True),
+            FieldMeta(
+                name="ech_hosts",
+                default="bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv",
+            ),
+            FieldMeta(name="ech_ech_config", default=""),
         ),
     ),
     # ── 媒体源驱动（order 100-199）──
@@ -208,6 +238,9 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="update_cron", default="0 8 * * 3"),
             FieldMeta(name="data_dir", default="./data/archive"),
             FieldMeta(name="min_disk_space_mb", default=3000),
+            # BK-tree 模糊匹配开关：默认关闭，开启后对归档标题构建 BK-tree
+            # 索引以支持编辑距离模糊查询，提升形近/缺字标题的召回率。
+            FieldMeta(name="use_bktree", loose_true=True),
         ),
     ),
     "bangumi-replay": SectionMeta(

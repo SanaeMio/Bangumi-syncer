@@ -5,6 +5,7 @@
 import socket
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -397,3 +398,259 @@ def test_get_system_dns_servers_linux():
 
                 result = proxy.get_system_dns_servers()
                 assert "8.8.8.8" in result
+
+
+# ===== 以下自 smoke 并入 =====
+
+
+@pytest.mark.asyncio
+async def test_proxy_test_host(app_with_auth):
+    with patch(
+        "app.utils.docker_helper.docker_helper.test_host_connectivity",
+        return_value={"reachable": True, "latency_ms": 1},
+    ):
+        transport = ASGITransport(app=app_with_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/proxy/test-host",
+                json={"host": "127.0.0.1", "port": 65534, "timeout": 1},
+            )
+    assert r.status_code == 200
+    assert r.json()["data"]["reachable"] is True
+
+
+@pytest.mark.asyncio
+async def test_network_diagnose_dns_failure(app_with_auth):
+    with patch(
+        "app.api.proxy.socket.getaddrinfo",
+        side_effect=socket.gaierror("Name or service not known"),
+    ):
+        transport = ASGITransport(app=app_with_auth)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/network/diagnose",
+                json={"url": "https://this-host-should-not-exist-12345.invalid/"},
+            )
+    assert r.status_code == 200
+    diagnosis = r.json()["data"]["diagnosis"]
+    dns_step = next(x for x in diagnosis if x.get("test") == "DNS解析")
+    assert dns_step["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_network_diagnose_dns_non_gaierror(app_with_auth):
+    with patch(
+        "app.api.proxy.socket.getaddrinfo",
+        side_effect=RuntimeError("resolver boom"),
+    ):
+        with patch(
+            "app.utils.docker_helper.docker_helper.get_environment_info",
+            return_value={"is_docker": False},
+        ):
+            with patch("app.core.config.config_manager.get", return_value=""):
+                transport = ASGITransport(app=app_with_auth)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
+                    r = await ac.post(
+                        "/api/network/diagnose",
+                        json={"url": "https://example.com/"},
+                    )
+    assert r.status_code == 200
+    dns_step = next(x for x in r.json()["data"]["diagnosis"] if x["test"] == "DNS解析")
+    assert dns_step["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_network_diagnose_tcp_and_http_success(app_with_auth):
+    mock_sock = MagicMock()
+    mock_sock.connect_ex.return_value = 0
+    mock_resp = MagicMock()
+    mock_resp.status_code = 204
+    mock_resp.elapsed.total_seconds.return_value = 0.01
+    mock_resp.headers = {}
+    mock_resp.text = ""
+
+    def fake_get(section, key, fallback=None):
+        if key == "ssl_verify":
+            return True
+        if key == "script_proxy":
+            return ""
+        return fallback
+
+    with patch(
+        "app.api.proxy.socket.getaddrinfo",
+        return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 443)),
+        ],
+    ):
+        with patch("app.api.proxy.socket.socket", return_value=mock_sock):
+            with patch("httpx.Client") as mock_client_cls:
+                mock_client_cls.return_value.request.return_value = mock_resp
+                with patch(
+                    "app.utils.docker_helper.docker_helper.get_environment_info",
+                    return_value={"is_docker": False},
+                ):
+                    with patch(
+                        "app.core.config.config_manager.get", side_effect=fake_get
+                    ):
+                        transport = ASGITransport(app=app_with_auth)
+                        async with AsyncClient(
+                            transport=transport, base_url="http://test"
+                        ) as ac:
+                            r = await ac.post(
+                                "/api/network/diagnose",
+                                json={"url": "https://127.0.0.1:443/"},
+                            )
+
+    assert r.status_code == 200
+    diagnosis = r.json()["data"]["diagnosis"]
+    tests = {d["test"]: d["status"] for d in diagnosis}
+    assert tests.get("DNS解析") == "success"
+    assert tests.get("TCP直连") == "success"
+    assert tests.get("HTTP连接") == "success"
+    mock_sock.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_network_diagnose_tcp_connect_ex_failed(app_with_auth):
+    mock_sock = MagicMock()
+    mock_sock.connect_ex.return_value = 61
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.elapsed.total_seconds.return_value = 0.01
+    mock_resp.headers = {}
+    mock_resp.text = ""
+
+    p_gai, p_docker, p_cfg = _patch_network_diagnose_dns_ok_no_proxy()
+    with p_gai, p_docker, p_cfg:
+        with patch("app.api.proxy.socket.socket", return_value=mock_sock):
+            with patch("httpx.Client") as mock_client_cls:
+                mock_client_cls.return_value.request.return_value = mock_resp
+                transport = ASGITransport(app=app_with_auth)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
+                    r = await ac.post(
+                        "/api/network/diagnose",
+                        json={"url": "https://127.0.0.1:443/"},
+                    )
+
+    steps = {d["test"]: d for d in r.json()["data"]["diagnosis"]}
+    assert steps["TCP直连"]["status"] == "failed"
+    assert steps["HTTP连接"]["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_network_diagnose_tcp_socket_raises(app_with_auth):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.elapsed.total_seconds.return_value = 0.01
+    mock_resp.headers = {}
+    mock_resp.text = ""
+
+    p_gai, p_docker, p_cfg = _patch_network_diagnose_dns_ok_no_proxy()
+    with p_gai, p_docker, p_cfg:
+        with patch(
+            "app.api.proxy.socket.socket",
+            side_effect=OSError("socket factory"),
+        ):
+            with patch("httpx.Client") as mock_client_cls:
+                mock_client_cls.return_value.request.return_value = mock_resp
+                transport = ASGITransport(app=app_with_auth)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as ac:
+                    r = await ac.post(
+                        "/api/network/diagnose",
+                        json={"url": "https://127.0.0.1:443/"},
+                    )
+
+    steps = {d["test"]: d for d in r.json()["data"]["diagnosis"]}
+    assert steps["TCP直连"]["status"] == "error"
+    assert "socket factory" in steps["TCP直连"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_network_diagnose_http_request_exception(app_with_auth):
+    mock_sock = MagicMock()
+    mock_sock.connect_ex.return_value = 0
+
+    def fake_get(section, key, fallback=None):
+        if key == "ssl_verify":
+            return True
+        if key == "script_proxy":
+            return ""
+        return fallback
+
+    p_gai, p_docker, _ = _patch_network_diagnose_dns_ok_no_proxy()
+    with p_gai, p_docker:
+        with patch("app.core.config.config_manager.get", side_effect=fake_get):
+            with patch("app.api.proxy.socket.socket", return_value=mock_sock):
+                with patch("httpx.Client") as mock_client_cls:
+                    mock_client_cls.return_value.request.side_effect = (
+                        httpx.ConnectError("refused")
+                    )
+                    transport = ASGITransport(app=app_with_auth)
+                    async with AsyncClient(
+                        transport=transport, base_url="http://test"
+                    ) as ac:
+                        r = await ac.post(
+                            "/api/network/diagnose",
+                            json={"url": "https://127.0.0.1:443/"},
+                        )
+
+    steps = {d["test"]: d for d in r.json()["data"]["diagnosis"]}
+    assert steps["HTTP连接"]["status"] == "failed"
+    assert "refused" in steps["HTTP连接"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_network_diagnose_http_non_request_exception(app_with_auth):
+    mock_sock = MagicMock()
+    mock_sock.connect_ex.return_value = 0
+
+    def fake_get(section, key, fallback=None):
+        if key == "ssl_verify":
+            return True
+        if key == "script_proxy":
+            return ""
+        return fallback
+
+    p_gai, p_docker, _ = _patch_network_diagnose_dns_ok_no_proxy()
+    with p_gai, p_docker:
+        with patch("app.core.config.config_manager.get", side_effect=fake_get):
+            with patch("app.api.proxy.socket.socket", return_value=mock_sock):
+                with patch("httpx.Client") as mock_client_cls:
+                    mock_client_cls.return_value.request.side_effect = ValueError(
+                        "unexpected"
+                    )
+                    transport = ASGITransport(app=app_with_auth)
+                    async with AsyncClient(
+                        transport=transport, base_url="http://test"
+                    ) as ac:
+                        r = await ac.post(
+                            "/api/network/diagnose",
+                            json={"url": "https://127.0.0.1:443/"},
+                        )
+
+    steps = {d["test"]: d for d in r.json()["data"]["diagnosis"]}
+    assert steps["HTTP连接"]["status"] == "error"
+    assert "unexpected" in steps["HTTP连接"]["message"]
+
+
+def _patch_network_diagnose_dns_ok_no_proxy():
+    """单次调用返回一组 patch：DNS 成功、docker 环境、无 script_proxy。"""
+    return (
+        patch(
+            "app.api.proxy.socket.getaddrinfo",
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 443)),
+            ],
+        ),
+        patch(
+            "app.utils.docker_helper.docker_helper.get_environment_info",
+            return_value={"is_docker": False},
+        ),
+        patch("app.core.config.config_manager.get", return_value=""),
+    )

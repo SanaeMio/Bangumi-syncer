@@ -71,6 +71,14 @@ class TestSyncCustomItem:
             patch("app.services.sync_service.notification_service") as mock_notify,
             patch("app.services.sync_service.mapping_service") as mock_mapping,
             patch("app.services.sync_service.BangumiApi") as MockBgmApi,
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             # Mock config
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -142,6 +150,14 @@ class TestSyncCustomItem:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
@@ -325,6 +341,14 @@ class TestSyncCustomItem:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["admin"],
+            ),
         ):
             # 配置为单用户模式，但请求用户名不匹配
             mock_config.get.side_effect = lambda section, key, fallback=None: {
@@ -571,6 +595,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["other_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["other_user"]
@@ -587,6 +619,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get(blocked_keywords="广告,跳过")
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
@@ -606,6 +646,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
@@ -632,6 +680,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
@@ -650,6 +706,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
@@ -673,6 +737,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager"),
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
@@ -694,6 +766,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
@@ -715,6 +795,14 @@ class TestSyncMovieWatching:
             patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
         ):
             mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]

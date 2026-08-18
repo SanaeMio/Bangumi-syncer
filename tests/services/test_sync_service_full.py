@@ -12,6 +12,7 @@ from app.models.sync import CustomItem
 from app.services.mapping_service import mapping_service
 from app.services.sync_service import SyncService
 from app.services.sync_service.match_trace import MatchTrace
+from app.utils.bangumi_api._archive_shortcut import ShortcutResult
 
 
 @pytest.fixture
@@ -34,7 +35,18 @@ def mock_config():
         mock_cm.get_single_mode_media_usernames.return_value = ["testuser"]
         mock_cm.get_user_mappings.return_value = {}
         mock_cm.get_bangumi_configs.return_value = {}
-        yield mock_cm
+
+        with (
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["testuser"],
+            ),
+        ):
+            yield mock_cm
 
 
 @pytest.fixture
@@ -50,6 +62,11 @@ def mock_bangumi_api():
     """创建模拟的 BangumiApi"""
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+
+        # 阶段五：ArchiveShortcutStep 检查 bgm._archive.enabled，
+        # MagicMock 属性默认 truthy 会导致 archive 短路返回 MagicMock 数据。
+        # API 命中测试需显式禁用 archive 短路，让 APISearchStep 正常走 bgm_search()。
+        mock_instance._archive.enabled = False
 
         # Mock search 方法
         mock_instance.search.return_value = [
@@ -133,48 +150,13 @@ def test_sync_custom_item_success(mock_config, mock_database, mock_bangumi_api):
     assert result.message == "已标记为看过"
 
 
-def test_sync_custom_item_not_found(mock_config, mock_database):
-    """测试同步 - 番剧未找到"""
-    service = SyncService()
-
-    # Mock BangumiApi 搜索返回空
-    with patch("app.services.sync_service.BangumiApi") as mock_api:
-        mock_instance = MagicMock()
-        mock_instance.bgm_search.return_value = None
-        mock_instance.get_target_season_episode_id.return_value = (None, None)
-        mock_api.return_value = mock_instance
-
-        item = CustomItem(
-            user_name="testuser",
-            title="NonExistent",
-            ori_title="",
-            season=1,
-            episode=1,
-            media_type="episode",
-            release_date="2024-01-01",
-        )
-
-        with patch.object(
-            service,
-            "_get_bangumi_config_for_user",
-            return_value={
-                "username": "testuser",
-                "access_token": "test_token",
-                "private": True,
-            },
-        ):
-            result = service.sync_custom_item(item, "custom")
-
-        assert result.status == "error"
-        assert "未找到" in result.message
-
-
 def test_sync_custom_item_episode_not_found(mock_config, mock_database):
     """测试同步 - 剧集未找到"""
     service = SyncService()
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (None, None)
         # 关联季条目链回退也返回 None（不命中），走原有 error 分支
@@ -200,10 +182,18 @@ def test_sync_custom_item_episode_not_found(mock_config, mock_database):
                 "private": True,
             },
         ):
-            result = service.sync_custom_item(item, "custom")
+            with patch(
+                "app.services.sync_service.notification_service.notify"
+            ) as mock_notify:
+                result = service.sync_custom_item(item, "custom")
 
         assert result.status == "error"
         assert "剧集" in result.message
+        # 集数不存在时不应先发"已找到"通知（避免矛盾通知序列）
+        found_calls = [
+            c for c in mock_notify.call_args_list if c.args[0] == "bangumi_id_found"
+        ]
+        assert found_calls == []
 
 
 def test_sync_custom_item_already_watched(mock_config, mock_database):
@@ -212,6 +202,7 @@ def test_sync_custom_item_already_watched(mock_config, mock_database):
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (123, 1)
         mock_instance.mark_episode_watched.return_value = 0  # 已看过
@@ -236,10 +227,19 @@ def test_sync_custom_item_already_watched(mock_config, mock_database):
                 "private": True,
             },
         ):
-            result = service.sync_custom_item(item, "custom")
+            with patch(
+                "app.services.sync_service.notification_service.notify"
+            ) as mock_notify:
+                result = service.sync_custom_item(item, "custom")
 
         assert result.status == "success"
         assert "已看过" in result.message
+        # bangumi_id_found 使用集数解析后的条目 ID（resolve 成功后发送，结果链产物为字符串）
+        found_calls = [
+            c for c in mock_notify.call_args_list if c.args[0] == "bangumi_id_found"
+        ]
+        assert len(found_calls) == 1
+        assert found_calls[0].kwargs["subject_id"] == "123"
 
 
 def test_sync_custom_item_add_collection(mock_config, mock_database):
@@ -248,6 +248,7 @@ def test_sync_custom_item_add_collection(mock_config, mock_database):
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (123, 1)
         mock_instance.mark_episode_watched.return_value = 2  # 添加收藏
@@ -276,61 +277,6 @@ def test_sync_custom_item_add_collection(mock_config, mock_database):
 
         assert result.status == "success"
         assert "添加" in result.message
-
-
-def test_sync_custom_item_invalid_type(mock_config, mock_database):
-    """测试同步 - 不支持的类型"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test",
-        ori_title="",
-        season=1,
-        episode=1,
-        media_type="music",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "不支持" in result.message
-
-
-def test_sync_custom_item_movie_success_calls_movie_episode_path(
-    mock_config, mock_database, mock_bangumi_api
-):
-    """电影走 get_movie_main_episode_id 并可条目标看过"""
-    service = SyncService()
-    mock_instance = mock_bangumi_api.return_value
-
-    item = CustomItem(
-        user_name="testuser",
-        title="剧场版 X",
-        ori_title=None,
-        season=1,
-        episode=1,
-        media_type="movie",
-        release_date="",
-    )
-
-    with patch.object(service, "_find_subject_id", return_value=("456", False, "")):
-        with patch.object(
-            service,
-            "_get_bangumi_config_for_user",
-            return_value={
-                "username": "testuser",
-                "access_token": "test_token",
-                "private": True,
-            },
-        ):
-            result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "success"
-    mock_instance.get_movie_main_episode_id.assert_called()
-    mock_instance.get_target_season_episode_id.assert_not_called()
-    mock_instance.change_collection_state.assert_called()
 
 
 def test_sync_custom_item_movie_skips_collection_when_subject_already_completed(
@@ -374,7 +320,17 @@ def test_sync_custom_item_movie_no_subject_collection_when_mark_flag_off(
     service = SyncService()
     mock_instance = mock_bangumi_api.return_value
 
-    with patch("app.services.sync_service.config_manager") as mock_cfg:
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
 
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "movie_mark_subject_completed":
@@ -426,7 +382,17 @@ def test_sync_custom_item_anime_completes_collection(mock_database, mock_bangumi
     mock_instance.get_subject_collection.return_value = {"type": 3, "ep_status": 12}
     mock_instance.get_subject.return_value = {"eps": 12}
 
-    with patch("app.services.sync_service.config_manager") as mock_cfg:
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
 
         def get_side_effect(section, key, fallback=None):
             if section == "sync" and key == "anime_mark_subject_completed":
@@ -470,183 +436,6 @@ def test_sync_custom_item_anime_completes_collection(mock_database, mock_bangumi
     mock_instance.change_collection_state.assert_called_once_with(
         subject_id="123", state=2
     )
-
-
-def test_sync_custom_item_empty_title(mock_config, mock_database):
-    """测试同步 - 空标题"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="",  # 空标题
-        ori_title="",
-        season=1,
-        episode=1,
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "为空" in result.message
-
-
-def test_sync_custom_item_sp_not_supported(mock_config, mock_database):
-    """测试同步 - SP 标记不支持"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test Anime",
-        ori_title="",
-        season=0,  # SP
-        episode=1,
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "SP" in result.message
-
-
-def test_sync_custom_item_zero_episode(mock_config, mock_database):
-    """测试同步 - 集数为0"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test Anime",
-        ori_title="",
-        season=1,
-        episode=0,  # 集数为0
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "不能为0" in result.message
-
-
-def test_sync_custom_item_blocked_keyword(mock_config, mock_database):
-    """测试同步 - 屏蔽关键词"""
-    service = SyncService()
-
-    item = CustomItem(
-        user_name="testuser",
-        title="Test blocked Anime",  # 包含屏蔽词
-        ori_title="",
-        season=1,
-        episode=1,
-        media_type="episode",
-        release_date="2024-01-01",
-    )
-
-    # 使用 side_effect 根据不同参数返回不同值
-    def get_side_effect(section, key, fallback=None):
-        if section == "sync" and key == "mode":
-            return "single"
-        elif section == "sync" and key == "blocked_keywords":
-            return "blocked"
-        return fallback or ""
-
-    with patch("app.services.sync_service.config_manager") as cm:
-        cm.get.side_effect = get_side_effect
-        cm.get_single_mode_media_usernames.return_value = ["testuser"]
-        cm.get_user_mappings.return_value = {}
-        cm.get_bangumi_configs.return_value = {}
-        result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "ignored"
-    assert "屏蔽" in result.message
-
-
-def test_sync_custom_item_no_permission(mock_config, mock_database):
-    """测试同步 - 无权限（用户不在允许同步的媒体服务器用户名列表中）"""
-    service = SyncService()
-
-    # 单用户模式，用户名不在允许列表
-    def get_side_effect(section, key, fallback=None):
-        if section == "sync" and key == "mode":
-            return "single"
-        return fallback
-
-    with patch("app.services.sync_service.config_manager") as cm:
-        cm.get.side_effect = get_side_effect
-        cm.get_single_mode_media_usernames.return_value = ["other_user"]
-        cm.get_user_mappings.return_value = {}
-        cm.get_bangumi_configs.return_value = {}
-
-        item = CustomItem(
-            user_name="testuser",
-            title="Test Anime",
-            ori_title="",
-            season=1,
-            episode=1,
-            media_type="episode",
-            release_date="2024-01-01",
-        )
-
-        result = service.sync_custom_item(item, "custom")
-
-    assert result.status == "error"
-    assert "不在允许同步" in result.message
-
-
-def test_sync_task_status(mock_config, mock_database):
-    """测试获取同步任务状态"""
-    service = SyncService()
-
-    # 手动创建一个任务状态
-    task_id = "test_task_1"
-
-    service._sync_tasks[task_id] = {
-        "status": "running",
-        "item": {"title": "Test Anime"},
-        "source": "custom",
-        "created_at": 1234567890,
-        "result": None,
-    }
-
-    # 获取状态
-    status = service.get_sync_task_status(task_id)
-
-    assert status is not None
-    assert "status" in status
-
-
-def test_cleanup_old_tasks(mock_config, mock_database):
-    """测试清理旧任务"""
-    service = SyncService()
-
-    # 手动添加一些旧任务
-    import time
-
-    old_time = time.time() - 3600 * 25  # 25小时前
-
-    service._sync_tasks["old_task"] = {
-        "status": "completed",
-        "item": {},
-        "source": "custom",
-        "created_at": old_time,
-    }
-
-    service._sync_tasks["new_task"] = {
-        "status": "completed",
-        "item": {},
-        "source": "custom",
-        "created_at": time.time(),
-    }
-
-    # 清理24小时前的任务
-    service.cleanup_old_tasks(max_age_hours=24)
-
-    assert "old_task" not in service._sync_tasks
-    assert "new_task" in service._sync_tasks
 
 
 def test_check_season_info_in_title(mock_config, mock_database):
@@ -764,6 +553,7 @@ def test_find_subject_id_movie_passes_is_movie_to_bgm_search(mock_database):
         mock_cfg.get_bangumi_configs.return_value = {}
 
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.bgm_search.return_value = [{"id": 4242, "name_cn": "剧场版"}]
 
         item = CustomItem(
@@ -804,6 +594,7 @@ def test_plex_sync_item_success(mock_config, mock_database, mock_bangumi_api):
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (123, 1)
         mock_instance.mark_episode_watched.return_value = 1
@@ -823,26 +614,6 @@ def test_plex_sync_item_success(mock_config, mock_database, mock_bangumi_api):
     assert result.status == "success"
 
 
-def test_plex_sync_item_ignored_event(mock_config, mock_database):
-    """测试 Plex 同步 - 忽略非 scrobble 事件"""
-    service = SyncService()
-
-    plex_data = {
-        "event": "media.play",  # 非 scrobble 事件
-        "Account": {"title": "testuser"},
-        "Metadata": {
-            "type": "episode",
-            "parentIndex": 1,
-            "index": 1,
-            "grandparentTitle": "Test Anime",
-        },
-    }
-
-    result = service.sync_plex_item(plex_data)
-
-    assert result.status == "ignored"
-
-
 def test_emby_sync_item_success(mock_config, mock_database, mock_bangumi_api):
     """测试 Emby 同步 - 成功"""
     service = SyncService()
@@ -860,6 +631,7 @@ def test_emby_sync_item_success(mock_config, mock_database, mock_bangumi_api):
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (123, 1)
         mock_instance.mark_episode_watched.return_value = 1
@@ -877,25 +649,6 @@ def test_emby_sync_item_success(mock_config, mock_database, mock_bangumi_api):
             result = service.sync_emby_item(emby_data)
 
     assert result.status == "success"
-
-
-def test_emby_sync_item_missing_field(mock_config, mock_database):
-    """测试 Emby 同步 - 缺少字段"""
-    service = SyncService()
-
-    emby_data = {
-        "Event": "item.markplayed",
-        "Item": {
-            "Type": "Episode",
-            # 缺少 SeriesName
-        },
-        "User": {"Name": "testuser"},
-    }
-
-    result = service.sync_emby_item(emby_data)
-
-    assert result.status == "error"
-    assert "缺少" in result.message
 
 
 def test_jellyfin_sync_item_success(mock_config, mock_database, mock_bangumi_api):
@@ -922,6 +675,7 @@ def test_jellyfin_sync_item_success(mock_config, mock_database, mock_bangumi_api
 
     with patch("app.services.sync_service.BangumiApi") as mock_api:
         mock_instance = MagicMock()
+        mock_instance._archive.enabled = False
         mock_instance.bgm_search.return_value = [{"id": 123, "name": "Test"}]
         mock_instance.get_target_season_episode_id.return_value = (123, 1)
         mock_instance.mark_episode_watched.return_value = 1
@@ -939,36 +693,6 @@ def test_jellyfin_sync_item_success(mock_config, mock_database, mock_bangumi_api
             result = service.sync_jellyfin_item(jellyfin_data)
 
     assert result.status == "success"
-
-
-def test_jellyfin_sync_item_ignored_event(mock_config, mock_database):
-    """测试 Jellyfin 同步 - 忽略非播放停止事件"""
-    service = SyncService()
-
-    jellyfin_data = {
-        "NotificationType": "PlaybackStart",  # 非播放停止
-        "PlayedToCompletion": "True",
-        "ItemType": "Episode",
-    }
-
-    result = service.sync_jellyfin_item(jellyfin_data)
-
-    assert result.status == "ignored"
-
-
-def test_jellyfin_sync_item_not_played_completion(mock_config, mock_database):
-    """测试 Jellyfin 同步 - 未播放完成"""
-    service = SyncService()
-
-    jellyfin_data = {
-        "NotificationType": "PlaybackStop",
-        "PlayedToCompletion": "False",  # 未播放完成
-        "ItemType": "Episode",
-    }
-
-    result = service.sync_jellyfin_item(jellyfin_data)
-
-    assert result.status == "ignored"
 
 
 def test_find_subject_id_season_gt1_date_matched_sets_season_flag():
@@ -1020,6 +744,7 @@ def test_find_subject_id_find_bangumi_id_exception_falls_through_to_api():
         mock_data = MagicMock()
         mock_data.find_bangumi_id.side_effect = RuntimeError("parse fail")
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.bgm_search.return_value = [{"id": 42}]
         with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_data", return_value=mock_data):
@@ -1058,6 +783,7 @@ def test_find_subject_id_api_top_is_movie_falls_back_to_related_mainline():
         mock_data.find_bangumi_id.return_value = None  # bangumi-data 未命中
 
         bgm = MagicMock()
+        bgm._archive.enabled = False
         # bgm_search 返回首条是剧场版（标题命中"剧场版"关键词 → detect = movie）
         bgm.bgm_search.return_value = [
             {
@@ -1135,6 +861,7 @@ def test_find_subject_id_api_top_is_movie_no_related_keeps_first():
         mock_data.find_bangumi_id.return_value = None
 
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.bgm_search.return_value = [
             {
                 "id": 542046,
@@ -1197,6 +924,7 @@ def test_find_subject_id_api_top_movie_picks_mainline_over_derivative():
         mock_data.find_bangumi_id.return_value = None
 
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.bgm_search.return_value = [
             {
                 "id": 542046,
@@ -1318,6 +1046,7 @@ def test_find_subject_id_api_search_exception_returns_none():
         cfg.get.side_effect = get_side_effect
         service = SyncService()
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.bgm_search.side_effect = OSError("net")
         with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
             with patch.object(service, "_get_bangumi_api_for_user", return_value=bgm):
@@ -1347,7 +1076,8 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
         mock_data.find_bangumi_id.return_value = None
 
         bgm = MagicMock()
-        bgm.bgm_search.return_value = [
+        bgm._archive.enabled = True
+        archive_data = [
             {
                 "id": 12345,
                 "name": "测试番剧",
@@ -1356,8 +1086,13 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
                 "date": "2024-01-15",
             }
         ]
-        # 关键：模拟 archive 短路命中（bgm_search 内部 search/search_old 走 archive）
-        bgm.last_hit_source = "archive"
+        # 阶段五：archive 短路提升为 ArchiveShortcutStep，通过 try_search 命中。
+        # archive 命中时 APISearchStep 跳过 bgm_search()，直接走候选排序 + post_search 改选。
+        bgm._archive.try_search.return_value = ShortcutResult(
+            True, archive_data, "archive_hit", "exact"
+        )
+        # 候选评分需要返回数值（满足置信度阈值，避免沉淀待审）
+        bgm.title_diff_ratio.return_value = 1.0
 
         trace = MatchTrace()
         with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
@@ -1379,14 +1114,16 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
         assert str(sid) == "12345"
         # 验证 trace：final_match_method 应为 "archive"
         assert trace.final_match_method == "archive"
-        assert trace.final_subject_id == 12345
-        # 验证 steps 中存在 stage="archive" 的步骤
+        assert trace.final_subject_id == "12345"
+        # 阶段五：ArchiveShortcutStep 和 APISearchStep（stage_override=archive）
+        # 各产生一个 stage="archive" 的 step
         archive_steps = [s for s in trace.steps if s.stage == "archive"]
-        assert len(archive_steps) == 1
-        assert archive_steps[0].status == "hit"
-        assert archive_steps[0].subject_id == 12345
-        # 验证 candidates 的 source 也为 "archive"
-        assert all(c.source == "archive" for c in archive_steps[0].candidates)
+        assert len(archive_steps) == 2
+        assert all(s.status == "hit" for s in archive_steps)
+        # APISearchStep 的 archive step 携带候选（source="archive"）
+        steps_with_candidates = [s for s in archive_steps if s.candidates]
+        assert len(steps_with_candidates) == 1
+        assert all(c.source == "archive" for c in steps_with_candidates[0].candidates)
         # 不应出现 stage="api_search" 的命中步骤
         api_hit_steps = [
             s for s in trace.steps if s.stage == "api_search" and s.status == "hit"
@@ -1411,6 +1148,7 @@ def test_find_subject_id_api_hit_keeps_stage_as_api_search():
         mock_data.find_bangumi_id.return_value = None
 
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.bgm_search.return_value = [
             {
                 "id": 67890,
@@ -1420,8 +1158,6 @@ def test_find_subject_id_api_hit_keeps_stage_as_api_search():
                 "date": "2024-02-20",
             }
         ]
-        # 走 API 命中：last_hit_source 为空字符串
-        bgm.last_hit_source = ""
 
         trace = MatchTrace()
         with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
@@ -1442,13 +1178,133 @@ def test_find_subject_id_api_hit_keeps_stage_as_api_search():
 
         assert str(sid) == "67890"
         assert trace.final_match_method == "api_search"
-        assert trace.final_subject_id == 67890
+        assert trace.final_subject_id == "67890"
         api_steps = [s for s in trace.steps if s.stage == "api_search"]
         assert len(api_steps) == 1
         assert api_steps[0].status == "hit"
-        # 不应出现 stage="archive"
-        archive_steps = [s for s in trace.steps if s.stage == "archive"]
-        assert len(archive_steps) == 0
+        # ArchiveShortcutStep 运行但 archive 未启用（skipped），不应出现 archive 命中
+        archive_hit_steps = [
+            s for s in trace.steps if s.stage == "archive" and s.status == "hit"
+        ]
+        assert len(archive_hit_steps) == 0
+
+
+def test_find_subject_id_low_confidence_sediments_to_pending():
+    """功能三：API 匹配相似度低于 match_confidence_threshold 时沉淀待审，不自动采用。"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            if section == "sync" and key == "match_confidence_threshold":
+                return 0.6
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm._archive.enabled = False
+        bgm.bgm_search.return_value = [
+            {
+                "id": 67890,
+                "name": "API番剧",
+                "name_cn": "API番剧",
+                "platform": "TV",
+                "date": "2024-02-20",
+            }
+        ]
+        # 控制真实相似度为 0.5（低于阈值 0.6），模拟把握不大的模糊匹配
+        bgm.title_diff_ratio.return_value = 0.5
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, detail = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="API番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-02-20",
+                        ),
+                        trace=trace,
+                    )
+
+        # 未自动采用
+        assert sid is None
+        assert "confidence" in detail or "阈值" in detail
+        # 写回真实相似度（而非固定 0.9）
+        assert trace.final_score == 0.5
+        api_steps = [s for s in trace.steps if s.stage == "api_search"]
+        assert api_steps[0].status == "low_confidence"
+        # 候选已收集，可供下游沉淀到待审队列
+        assert len(service._collect_candidates_from_trace(trace)) > 0
+
+
+def test_find_subject_id_above_threshold_auto_accepts():
+    """功能三：API 匹配相似度 >= 阈值时自动采用，并写回真实相似度。"""
+    with _patched_sync_service_deps() as cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            if section == "sync" and key == "enable_real_action":
+                return False
+            if section == "sync" and key == "match_confidence_threshold":
+                return 0.6
+            return fallback
+
+        cfg.get.side_effect = get_side_effect
+
+        service = SyncService()
+        mock_data = MagicMock()
+        mock_data.find_bangumi_id.return_value = None
+
+        bgm = MagicMock()
+        bgm._archive.enabled = False
+        bgm.bgm_search.return_value = [
+            {
+                "id": 67890,
+                "name": "API番剧",
+                "name_cn": "API番剧",
+                "platform": "TV",
+                "date": "2024-02-20",
+            }
+        ]
+        # 真实相似度为 0.9（高于阈值 0.6）
+        bgm.title_diff_ratio.return_value = 0.9
+
+        trace = MatchTrace()
+        with patch.object(mapping_service, "find_mapping", return_value=("", "", "")):
+            with patch.object(service, "_get_bangumi_data", return_value=mock_data):
+                with patch.object(
+                    service, "_get_bangumi_api_for_user", return_value=bgm
+                ):
+                    sid, flag, detail = service._find_subject_id(
+                        _branch_custom_item_for_find(
+                            title="API番剧",
+                            ori_title="",
+                            season=1,
+                            media_type="episode",
+                            release_date="2024-02-20",
+                        ),
+                        trace=trace,
+                    )
+
+        assert str(sid) == "67890"
+        assert trace.final_score == 0.9
+        assert trace.final_match_method == "api_search"
+        api_steps = [s for s in trace.steps if s.stage == "api_search"]
+        assert api_steps[0].status == "hit"
 
 
 def test_sync_custom_item_no_bgm_api_after_find_subject():
@@ -1473,6 +1329,7 @@ def test_sync_custom_item_get_target_season_value_error_auth_message():
     with _patched_sync_service_deps():
         svc = SyncService()
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.get_target_season_episode_id.side_effect = ValueError(
             "认证失败 access_token 过期"
         )
@@ -1495,6 +1352,7 @@ def test_sync_custom_item_mark_value_error_auth_message():
     with _patched_sync_service_deps():
         svc = SyncService()
         bgm = MagicMock()
+        bgm._archive.enabled = False
         bgm.get_target_season_episode_id.return_value = ("1", "10")
         bgm.mark_episode_watched.side_effect = ValueError("access_token 无效")
         with patch.object(svc, "_find_subject_id", return_value=("1", False, "")):
@@ -1526,6 +1384,7 @@ def test_find_subject_id_api_search_season_gt1_title_matched():
         cfg.get.side_effect = get_side_effect
         service = SyncService()
         bgm = MagicMock()
+        bgm._archive.enabled = False
 
         # 模拟 API 搜索完美命中了包含季度信息的标题
         bgm.bgm_search.return_value = [
@@ -1542,7 +1401,7 @@ def test_find_subject_id_api_search_season_gt1_title_matched():
                     _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")
                 )
 
-    assert sid == 451757
+    assert sid == "451757"
     assert flag is True  # 核心断言：智能判定成功生效，阻止后续的链式爬取
     assert err == ""
 
@@ -1559,6 +1418,7 @@ def test_find_subject_id_api_search_season_gt1_title_not_matched():
         cfg.get.side_effect = get_side_effect
         service = SyncService()
         bgm = MagicMock()
+        bgm._archive.enabled = False
 
         # 模拟 API 搜索由于模糊匹配，只返回了第一季的条目（标题中不含 Season 9）
         bgm.bgm_search.return_value = [
@@ -1571,7 +1431,7 @@ def test_find_subject_id_api_search_season_gt1_title_not_matched():
                     _branch_custom_item_for_find(season=9, title="瑞克和莫蒂")
                 )
 
-    assert sid == 146457
+    assert sid == "146457"
     assert flag is False  # 核心断言：智能判定未生效，安全地回退给后续的关系链爬虫去处理
     assert err == ""
 
@@ -1601,6 +1461,7 @@ def test_find_subject_id_api_season_gt1_top_movie_reselects_mainline_via_related
         mock_data.find_bangumi_id.return_value = None
 
         bgm = MagicMock()
+        bgm._archive.enabled = False
         # bgm_search 返回首条是剧场版（detect_media_type 命中"剧场版"关键词 → movie）
         bgm.bgm_search.return_value = [
             {

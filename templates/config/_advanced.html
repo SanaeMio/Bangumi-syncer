@@ -249,6 +249,77 @@
                                        placeholder="0 表示永不清理">
                             </div>
                         </div>
+                        <div class="row g-3 mt-2">
+                            <div class="col-md-3">
+                                <label for="ech-mode" class="form-label fw-semibold">
+                                    <i class="bi bi-shield-lock me-1 text-primary"></i>ECH 模式
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="ECH（加密 Client Hello）可加密向 Bangumi 各域名的 TLS 握手，应对 SNI 探测/封锁。off 关闭；doh 自动从 DoH 获取 ECH 配置；manual 手动粘贴 ECH 配置。开启后不影响同步行为，获取失败自动降级为普通 TLS"></i>
+                                </label>
+                                <select class="form-select"
+                                        id="ech-mode"
+                                        name="dev.ech_mode">
+                                    <option value="off">关闭</option>
+                                    <option value="doh">自动（DoH）</option>
+                                    <option value="manual">手动配置</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="ech-doh-url" class="form-label fw-semibold">
+                                    <i class="bi bi-globe2 me-1 text-info"></i>DoH 端点
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="获取 ECH 配置使用的 DoH 服务地址，默认 https://dns.alidns.com/resolve（阿里公共 DNS）；备选方案：海外网络可改 https://dns.google/resolve，也可填自建 DoH。仅 ech_mode 为 doh 时使用"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="ech-doh-url"
+                                       name="dev.ech_doh_url"
+                                       placeholder="默认 https://dns.alidns.com/resolve">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-arrow-left-right me-1 text-warning"></i>DoH 走代理
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="DoH 查询是否走上方 HTTP 代理。默认关闭（直连隐私性更好）；若直连 DoH 不可达可开启"></i>
+                                </label>
+                                <div class="form-check form-switch d-flex align-items-center">
+                                    <input class="form-check-input me-2"
+                                           type="checkbox"
+                                           id="ech-doh-use-proxy"
+                                           name="dev.ech_doh_use_proxy">
+                                    <label class="form-check-label" for="ech-doh-use-proxy">DoH 查询走代理</label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label for="ech-hosts" class="form-label fw-semibold">
+                                    <i class="bi bi-hdd-network me-1 text-secondary"></i>ECH 目标域名
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="启用 ECH 的域名，逗号分隔、后缀匹配（bgm.tv 同时覆盖 api.bgm.tv 等子域）。默认覆盖 Bangumi 全系域名，一般无需修改"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="ech-hosts"
+                                       name="dev.ech_hosts"
+                                       placeholder="默认 bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv">
+                            </div>
+                            <div class="col-12">
+                                <label for="ech-ech-config" class="form-label fw-semibold">
+                                    <i class="bi bi-key me-1 text-danger"></i>手动 ECH 配置
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="manual 模式下粘贴 base64 编码的 ECHConfigList（可从 https://tls-ech.dev/ 获取）。仅 ech_mode 为 manual 时使用"></i>
+                                </label>
+                                <textarea class="form-control font-monospace"
+                                          id="ech-ech-config"
+                                          name="dev.ech_ech_config"
+                                          rows="3"
+                                          placeholder="粘贴 base64 编码的 ECHConfigList"></textarea>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

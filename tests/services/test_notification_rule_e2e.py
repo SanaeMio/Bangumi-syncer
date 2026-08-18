@@ -70,6 +70,27 @@ def _make_config_manager(rules: list[dict], in_app_enabled: bool = True):
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def test_no_rules_skips_channel_dispatch():
+    """无规则时停发外部渠道通知（渠道只是配置，规则是发布闸门）"""
+    channel = _FakeChannel("notify-webhook-1")
+    service = NotificationService(channel_registry=ChannelRegistry())
+    service.channel_registry.register(channel)
+    service.cooldown.cooldown_seconds = 0
+
+    cfg_mgr = _make_config_manager(rules=[])
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        result = service.notify("mark_failed", source="test")
+
+    assert result is True
+    assert len(channel.send_calls) == 0
+
+
 def test_rule_routes_to_specified_channel():
     """规则匹配时，notify() 应调用规则中指定的渠道"""
     channel = _FakeChannel("notify-webhook-1")
@@ -123,6 +144,35 @@ def test_rule_skips_non_matching_type():
         service.notify("mark_failed", source="test")
 
     assert len(channel.send_calls) == 0
+
+
+def test_rule_watching_summary_exact_match():
+    """watching_summary_{name} 规则按具体任务名精确匹配，不归一化到通配。"""
+    channel = _FakeChannel("notify-webhook-1")
+    service = NotificationService(channel_registry=ChannelRegistry())
+    service.channel_registry.register(channel)
+    service.cooldown.cooldown_seconds = 0
+
+    rules = [
+        {
+            "enabled": True,
+            "types": "watching_summary_dad",
+            "channels": "notify-webhook-1",
+        }
+    ]
+    cfg_mgr = _make_config_manager(rules)
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        service.notify("watching_summary_dad", source="summary")
+        service.notify("watching_summary_other", source="summary")
+
+    assert len(channel.send_calls) == 1
+    assert channel.send_calls[0][0] == "watching_summary_dad"
 
 
 def test_rule_all_types_matches_everything():
@@ -290,3 +340,59 @@ def test_api_reload_hook_swallows_exceptions():
         mock_svc.load_channels_from_config.side_effect = RuntimeError("boom")
         # 不应抛出
         _reload_notification_channels()
+
+
+def test_rule_watching_summary_exact_type_match():
+    """watching_summary_{name} 按类型 id 精确匹配，不再前缀归一化
+
+    规则订阅 watching_summary_每日总结 时：
+    - 发送 watching_summary_每日总结 → 触发
+    - 发送 watching_summary_周报 → 不触发（修复前会被前缀归一化误触发）
+    """
+    channel = _FakeChannel("notify-webhook-1")
+    service = NotificationService(channel_registry=ChannelRegistry())
+    service.channel_registry.register(channel)
+    service.cooldown.cooldown_seconds = 0
+
+    rules = [
+        {
+            "enabled": True,
+            "types": "watching_summary_每日总结",
+            "channels": "notify-webhook-1",
+        }
+    ]
+    cfg_mgr = _make_config_manager(rules)
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        service.notify("watching_summary_每日总结", source="test")
+
+    assert len(channel.send_calls) == 1
+
+    with (
+        patch("app.core.config.config_manager", cfg_mgr),
+        patch(
+            "app.services.notification_service.NotificationService._lazy_load_channels"
+        ),
+    ):
+        service.notify("watching_summary_周报", source="test")
+        service.notify("watching_summary", source="test")
+
+    assert len(channel.send_calls) == 1
+
+
+def test_channel_supports_watching_summary_exact():
+    """渠道 supports() 对 watching_summary_{name} 精确匹配"""
+    channel = _FakeChannel("notify-webhook-1")
+    channel.config["types"] = "watching_summary_每日总结"
+
+    assert channel.supports("watching_summary_每日总结") is True
+    assert channel.supports("watching_summary_周报") is False
+    assert channel.supports("watching_summary") is False
+
+    channel.config["types"] = "all"
+    assert channel.supports("watching_summary_每日总结") is True

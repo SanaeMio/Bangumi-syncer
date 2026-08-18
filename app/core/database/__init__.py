@@ -18,6 +18,7 @@ import sqlite3
 from typing import Any, Optional
 
 from ..logging import logger as logger
+from .accounts import BangumiAccountRepository, OAuthStateRepository
 from .connection import (
     FEINIU_MIN_UPDATE_WATERMARK_META_KEY as FEINIU_MIN_UPDATE_WATERMARK_META_KEY,
     INBOX_ERROR_BACKFILL_META_KEY as INBOX_ERROR_BACKFILL_META_KEY,
@@ -53,6 +54,8 @@ class DatabaseManager:
         self._inbox = InboxRepository(self._connection, self._feiniu)
         self._sync = SyncRecordsRepository(self._connection, self._inbox)
         self._trakt = TraktRepository(self._connection)
+        self._bangumi_accounts = BangumiAccountRepository(self._connection)
+        self._oauth_state = OAuthStateRepository(self._connection)
         self.llm_usage = LLMUsageRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         self._pending_sync = PendingSyncQueueRepository(self._connection)
@@ -208,6 +211,27 @@ class DatabaseManager:
     ) -> bool:
         """更新同步记录的状态"""
         return self._sync.update_sync_record_status(record_id, status, message)
+
+    def update_sync_record_run_id(self, record_id: int, run_id: str) -> bool:
+        """回填同步记录的 run_id，用于重试回写原记录关联。"""
+        return self._sync.update_sync_record_run_id(record_id, run_id)
+
+    def update_sync_record_match_fields(
+        self,
+        record_id: int,
+        match_method: Optional[str] = None,
+        match_trace: Optional[dict] = None,
+        match_score: Optional[float] = None,
+        match_platform: Optional[str] = None,
+    ) -> bool:
+        """回写同步记录的匹配字段，用于重试成功后覆盖原始失败记录的 match_method 等。"""
+        return self._sync.update_sync_record_match_fields(
+            record_id,
+            match_method=match_method,
+            match_trace=match_trace,
+            match_score=match_score,
+            match_platform=match_platform,
+        )
 
     # ------------------------------------------------------------------
     # PendingCandidatesRepository 转发
@@ -481,6 +505,10 @@ class DatabaseManager:
         """删除用户的 Trakt 配置"""
         return self._trakt.delete_trakt_config(user_id)
 
+    def update_trakt_config_fields(self, user_id: str, fields: dict) -> bool:
+        """只更新 Trakt 配置的指定字段（不触碰凭证列，避免覆盖并发旋转的 token）。"""
+        return self._trakt.update_trakt_config_fields(user_id, fields)
+
     def save_trakt_sync_history(self, history: dict) -> bool:
         """保存 Trakt 同步历史记录"""
         return self._trakt.save_trakt_sync_history(history)
@@ -502,6 +530,75 @@ class DatabaseManager:
     def get_trakt_synced_set(self, user_id: str) -> set[tuple[str, int]]:
         """批量获取已同步的 Trakt 条目集合，用于 O(1) 去重查找"""
         return self._trakt.get_trakt_synced_set(user_id)
+
+    # ------------------------------------------------------------------
+    # BangumiAccountRepository 转发（账号列表化：取代 INI [bangumi-*] 段）
+    # ------------------------------------------------------------------
+
+    def save_bangumi_account(self, account: dict) -> bool:
+        """保存或更新一个 Bangumi 账号（按 section_name upsert）。"""
+        return self._bangumi_accounts.save_account(account)
+
+    def get_bangumi_account(self, section_name: str) -> Optional[dict]:
+        """按 section_name 获取账号。"""
+        return self._bangumi_accounts.get_account(section_name)
+
+    def list_bangumi_accounts(self) -> list[dict]:
+        """列出全部账号（列表长度=1 即单用户，无需单/多判断）。"""
+        return self._bangumi_accounts.list_accounts()
+
+    def get_active_bangumi_account(self) -> Optional[dict]:
+        """获取当前激活账号；无激活时返回首个。"""
+        return self._bangumi_accounts.get_active_account()
+
+    def delete_bangumi_account(self, section_name: str) -> bool:
+        """删除账号。"""
+        return self._bangumi_accounts.delete_account(section_name)
+
+    def set_active_bangumi_account(self, section_name: str) -> bool:
+        """将指定账号设为激活。"""
+        return self._bangumi_accounts.set_active(section_name)
+
+    def update_bangumi_account_token(self, section_name: str, token: dict) -> bool:
+        """仅更新令牌相关字段（OAuth 授权/刷新后回写）。"""
+        return self._bangumi_accounts.update_token(section_name, token)
+
+    def count_bangumi_accounts(self) -> int:
+        """账号数量。"""
+        return self._bangumi_accounts.count_accounts()
+
+    # ------------------------------------------------------------------
+    # OAuthStateRepository 转发（OAuth 授权 CSRF state）
+    # ------------------------------------------------------------------
+
+    def save_oauth_state(
+        self,
+        state: str,
+        section_name: str,
+        expires_at: int,
+        provider: str = "",
+        redirect_uri: str = "",
+    ) -> bool:
+        """保存一个 OAuth 授权 state（provider 用于区分不同来源）。"""
+        return self._oauth_state.save_state(
+            state,
+            section_name,
+            expires_at,
+            provider=provider,
+            redirect_uri=redirect_uri,
+        )
+
+    def get_oauth_state(self, state: str) -> Optional[dict]:
+        """获取并校验 state（过期/不存在返回 None）。"""
+        return self._oauth_state.get_state(state)
+
+    def delete_oauth_state(self, state: str) -> bool:
+        """删除 state（授权完成后调用）。"""
+        return self._oauth_state.delete_state(state)
+
+    def cleanup_oauth_states_expired(self) -> int:
+        """清理过期 state，返回删除行数。"""
+        return self._oauth_state.cleanup_expired()
 
     # ------------------------------------------------------------------
     # FeiniuRepository 转发
@@ -605,11 +702,28 @@ class DatabaseManager:
 _database_manager: Optional[DatabaseManager] = None
 
 
+def get_database_manager() -> DatabaseManager:
+    """获取全局数据库管理器单例（惰性创建）。"""
+    global _database_manager
+    if _database_manager is None:
+        _database_manager = DatabaseManager()
+    return _database_manager
+
+
+def set_database_manager(instance: Optional[DatabaseManager]) -> None:
+    """替换数据库管理器实例（测试/DI 注入）。"""
+    global _database_manager
+    _database_manager = instance
+
+
+def reset_database_manager() -> None:
+    """复位数据库管理器单例，下次访问时重建。"""
+    global _database_manager
+    _database_manager = None
+
+
 def __getattr__(name: str):
     """模块级懒加载，避免 import 时即打开 SQLite 连接。"""
-    global _database_manager
     if name == "database_manager":
-        if _database_manager is None:
-            _database_manager = DatabaseManager()
-        return _database_manager
+        return get_database_manager()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,6 +1,6 @@
 """BangumiApi 工厂函数
 
-从配置构造 BangumiApi 实例，供需要"按当前活跃账号临时构造客户端"的场景复用：
+从数据库账号目录构造 BangumiApi 实例，供需要"按当前活跃账号临时构造客户端"的场景复用：
 - airing_calendar API（用户在看列表查询）
 - airing_today 调度器（今日放送提醒）
 - bangumi_replay 调度器（API 可达性探测）
@@ -10,29 +10,56 @@
 
 from __future__ import annotations
 
-from ...core.config import config_manager
+from app.core.accounts import (
+    get_active_bangumi_config,
+    get_bangumi_config_by_section,
+)
+from app.core.config import config_manager
+
 from . import BangumiApi
 
 
 def build_bangumi_api_from_active_config(
     section_name: str | None = None,
 ) -> BangumiApi | None:
-    """从配置构造 BangumiApi 实例（兼容单/多用户模式）
+    """从数据库账号目录构造 BangumiApi 实例
 
     Args:
-        section_name: 多用户模式下指定 ``[bangumi-{username}]`` 段名。
-            传入时直接从该段取配置（用于"我的追番"卡片切换账号）。
-            None 时按原逻辑：单用户读 ``[bangumi]``，多用户取首个有效账号。
+        section_name: 指定账号段名（用于"我的追番"卡片切换账号）。
+            传入时直接从 DB 取该 section 对应账号；None 时取当前激活账号。
 
     Returns:
         BangumiApi 实例；若无有效配置返回 None。调用方负责 close()。
     """
-    # 指定段名且非单用户默认段：直接从多账号段表精确查找
-    if section_name and section_name != "bangumi":
-        configs = config_manager.get_bangumi_configs()
-        cfg = configs.get(section_name)
+    # DB 为唯一真相源：section_name 用于精确指定账号，None 走激活账号
+    if section_name:
+        cfg = get_bangumi_config_by_section(section_name)
     else:
-        cfg = config_manager.get_active_bangumi_config()
+        cfg = get_active_bangumi_config()
+
+    # OAuth 令牌临近过期时静默续期（仅 oauth 授权且配置 refresh_token 时生效），
+    # 续期后重新读取，确保拿到最新 access_token。
+    if cfg and cfg.get("access_token"):
+        try:
+            from app.services.bangumi.auth import bangumi_auth_service
+
+            # 指定 section 时按 section 续期；否则由 auth 服务自行取激活账号
+            bangumi_auth_service.refresh_active_token_if_needed(section_name)
+        except Exception as e:
+            # 续期失败不应阻断 api 构造（上层会用旧 token 尝试，失败时再提示重授权），
+            # 但必须记录日志，避免异常被静默吞没导致排障困难
+            from app.core.logging import logger
+
+            logger.warning(
+                f"build_bangumi_api: 刷新账号 '{section_name or '激活'}' 的 token 失败: {e}，"
+                f"将使用现有 token 继续（若已过期，上层调用可能返回 401）"
+            )
+        # 续期可能更新了 DB，重新读取一次
+        if section_name:
+            cfg = get_bangumi_config_by_section(section_name) or cfg
+        else:
+            cfg = get_active_bangumi_config() or cfg
+
     if not cfg or not cfg.get("username") or not cfg.get("access_token"):
         return None
     dev_snapshot = config_manager.get_dev_http_snapshot()
@@ -44,4 +71,5 @@ def build_bangumi_api_from_active_config(
         ssl_verify=dev_snapshot["ssl_verify"],
         bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
         bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
+        ech_mode=dev_snapshot["ech_mode"],
     )
