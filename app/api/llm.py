@@ -16,7 +16,6 @@ from ..models.summary import (
     LLMUsageStatsResponse,
 )
 from ..services.llm import Message, get_llm_client, reset_llm_client
-from ..services.llm.constants import PROVIDER_OPENAI_COMPAT
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
@@ -36,7 +35,7 @@ async def get_llm_config(_=Depends(get_current_user_flexible)):
         max_tokens=cfg.get("max_tokens", 2000),
         temperature=cfg.get("temperature", 0.7),
         timeout=cfg.get("timeout", 60),
-        provider=cfg.get("provider", PROVIDER_OPENAI_COMPAT),
+        provider=cfg.get("provider", "openai_compat"),
         thinking_level=cfg.get("thinking_level", "off"),
     )
 

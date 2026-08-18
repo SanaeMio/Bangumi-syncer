@@ -7,8 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.services.llm.constants import PROVIDER_OPENAI_COMPAT
-
 from .base_repository import BaseRepository
 
 
@@ -120,7 +118,7 @@ class LLMUsageRepository(BaseRepository):
         job_id: int | None = None,
         job_name: str | None = None,
         model: str = "",
-        provider: str = PROVIDER_OPENAI_COMPAT,
+        provider: str = "openai_compat",
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         total_tokens: int = 0,

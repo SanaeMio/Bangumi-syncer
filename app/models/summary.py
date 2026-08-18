@@ -6,8 +6,6 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.services.llm.constants import PROVIDER_OPENAI_COMPAT
-
 
 class LLMConfigResponse(BaseModel):
     """GET /llm 响应"""
@@ -18,7 +16,7 @@ class LLMConfigResponse(BaseModel):
     max_tokens: int = 2000
     temperature: float = 0.7
     timeout: int = 60
-    provider: str = PROVIDER_OPENAI_COMPAT
+    provider: str = "openai_compat"
     thinking_level: str = "off"
 
 
