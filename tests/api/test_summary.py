@@ -32,6 +32,8 @@ class TestLLMConfigResponse:
         assert model.max_tokens == 2000
         assert model.temperature == 0.7
         assert model.timeout == 60
+        assert model.provider == "openai_compat"
+        assert model.thinking_level == "off"
 
     def test_override_values(self):
         """验证显式字段值可被接受。"""
@@ -479,6 +481,54 @@ class TestGetLLMConfig:
                 response = await client.get("/api/llm/conf")
                 assert response.json()["api_key"] == ""
 
+    @pytest.mark.asyncio
+    async def test_returns_provider_and_thinking_level(self):
+        """Scenario 6.2: GET /llm 返回 provider 与 thinking_level。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = self._create_test_app()
+        with patch("app.api.llm.config_manager") as mock_cm:
+            mock_cm.get_llm_config.return_value = {
+                "api_base": "",
+                "api_key": "",
+                "model": "",
+                "max_tokens": 2000,
+                "temperature": 0.7,
+                "timeout": 60,
+                "provider": "anthropic_compat",
+                "thinking_level": "high",
+            }
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get("/api/llm/conf")
+                data = response.json()
+                assert data["provider"] == "anthropic_compat"
+                assert data["thinking_level"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_returns_thinking_level_default(self):
+        """Scenario 6.3: 未配置 provider/thinking_level 时返回缺省值。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = self._create_test_app()
+        with patch("app.api.llm.config_manager") as mock_cm:
+            mock_cm.get_llm_config.return_value = {
+                "api_base": "",
+                "api_key": "",
+                "model": "",
+                "max_tokens": 2000,
+                "temperature": 0.7,
+                "timeout": 60,
+            }
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get("/api/llm/conf")
+                data = response.json()
+                assert data["provider"] == "openai_compat"
+                assert data["thinking_level"] == "off"
+
     def _create_test_app(self):
         """创建一个带有认证覆盖的 FastAPI 测试应用。"""
         from fastapi import FastAPI
@@ -530,6 +580,41 @@ class TestUpdateLLMConfig:
                 data = response.json()
                 assert data["status"] == "success"
                 assert mock_cm.set_config.call_count == 3
+                mock_cm.reload_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_updates_provider_and_thinking_level(self):
+        """Scenario 6.1: PUT 保存 provider 与 thinking_level。"""
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.llm import router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        with patch("app.api.llm.config_manager") as mock_cm:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                payload = {"provider": "anthropic_compat", "thinking_level": "medium"}
+                response = await client.put("/api/llm/conf", json=payload)
+                assert response.status_code == 200
+                assert response.json()["status"] == "success"
+
+                assert mock_cm.set_config.call_count == 2
+                options = [c.args[1] for c in mock_cm.set_config.call_args_list]
+                assert set(options) == {"provider", "thinking_level"}
+                # 均写入 [llm] 段
+                assert all(
+                    c.args[0] == "llm" for c in mock_cm.set_config.call_args_list
+                )
                 mock_cm.reload_config.assert_called_once()
 
     @pytest.mark.asyncio

@@ -195,12 +195,13 @@ Replay 与 Archive 已解耦，可独立启停。但**完全实现「无网缓�
 
 LLM 连接是独立模块，追番总结和调试工具共用。在「配置管理」页面顶部的 LLM 卡片中修改，配置存放在 `[llm]` section：
 
-- **提供商（provider）**：LLM 服务提供商。可选值：`openai_compat`（默认，兼容 OpenAI / DeepSeek / Ollama 等 OpenAI 接口格式的服务）。后续将支持 `anthropic`。
-- **API 地址（api_base）**：LLM 服务商的 API 端点，需兼容所选 provider 的接口格式。默认 `https://api.openai.com/v1`。OpenAI 兼容接口请以 `/v1` 结尾填写完整地址。
+- **提供商（provider）**：LLM 服务提供商。可选值：`openai_compat`（默认，兼容 OpenAI / DeepSeek / Ollama 等 OpenAI 接口格式的服务）、`anthropic_compat`（兼容 Anthropic Messages API，官方 API 或遵循 `/v1/messages` 规范的代理/网关均可）。
+- **API 地址（api_base）**：LLM 服务商的 API 端点，需兼容所选 provider 的接口格式。`openai_compat` 默认 `https://api.openai.com/v1`，OpenAI 兼容接口请以 `/v1` 结尾填写完整地址；`anthropic_compat` 默认 `https://api.anthropic.com/v1`，使用第三方兼容网关时按其文档填写。
 - **API 密钥（api_key）**：服务商提供的 API Key。**加密存储**，页面回显为掩码。
-- **模型（model）**：要调用的模型名称，默认 `gpt-4o-mini`。请确认所选模型支持 Chat Completions 接口。
-- **最大 Token（max_tokens）**：单次请求最大输出 token 数，默认 2000。根据模型上下文窗口和总结长度调整。
-- **温度（temperature）**：生成随机性，0~2 之间，默认 0.7。越低越确定/保守，越高越有创意。
+- **模型（model）**：要调用的模型名称，默认 `gpt-4o-mini`。`openai_compat` 请确认模型支持 Chat Completions 接口；`anthropic_compat` 请填写 Claude 模型（如 `claude-sonnet-4-6`、`claude-opus-4-6` 等）。
+- **最大 Token（max_tokens）**：单次请求最大输出 token 数，默认 2000。根据模型上下文窗口和总结长度调整。Anthropic Messages API 的 max_tokens 为必填字段，请保持不小于所需输出长度。
+- **温度（temperature）**：生成随机性，0~2 之间，默认 0.7。越低越确定/保守，越高越有创意。注意 `anthropic_compat` 开启思考后该值会被强制为 1（Anthropic API 要求）。
+- **思考强度（thinking_level）**：仅 `anthropic_compat` 生效，可选 `off` / `low` / `medium` / `high`，默认 `off` 不启用思考。开启后映射为 Anthropic extended thinking 的 `budget_tokens`（依次为 2048 / 4096 / 8192），`low` 适合日常总结，高质量总结可试 `high`。`claude-haiku` 系列等不支持 extended thinking 的模型会自动降级为 `off`（日志有提示）。
 - **超时时间（timeout）**：请求超时秒数，默认 60。遇到超时错误可适当调大。
 - **调用记录保留（retention_days）**：LLM 调用记录（Token 用量、延迟等）在数据库中保留天数，默认 365 天。
 

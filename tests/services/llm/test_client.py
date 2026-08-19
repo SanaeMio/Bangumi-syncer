@@ -121,6 +121,7 @@ class TestLLMClientChat:
         assert isinstance(response, ChatResponse)
         assert response.content == "Hello!"
         assert response.model == "gpt-4o-mini"
+        assert response.usage is not None
         assert response.usage.prompt_tokens == 10
         assert response.usage.completion_tokens == 5
         assert response.usage.total_tokens == 15
@@ -166,6 +167,7 @@ class TestLLMClientChat:
                 response = await client.chat(messages)
 
         assert response.content == "Retry OK"
+        assert response.usage is not None
         assert response.usage.total_tokens == 8
         assert mock_chat.await_count == 2
         mock_sleep.assert_awaited_once_with(1)
@@ -390,6 +392,119 @@ class TestLLMClientChat:
         _args, call_kwargs = mock_chat.call_args
         assert call_kwargs.get("temperature") == 0.1
         assert call_kwargs.get("max_tokens") == 100
+
+
+# ===================================================================
+# anthropic_compat 工厂分支（Feature 4）
+# ===================================================================
+
+
+def _make_config(provider: str, **overrides) -> dict:
+    """构造 LLM 配置字典。"""
+    cfg = dict(TEST_LLM_CONFIG, provider=provider)
+    cfg.update(overrides)
+    return cfg
+
+
+class TestAnthropicProviderFactory:
+    """anthropic_compat 工厂分支（Scenario 4.1/4.2/4.4）。"""
+
+    def test_anthropic_provider_created(self, reset_llm_singleton):
+        """Scenario 4.1: provider=anthropic_compat 时实例化 AnthropicProvider。"""
+        from app.services.llm.client import LLMClient
+        from app.services.llm.providers.anthropic import AnthropicProvider
+
+        cfg = _make_config("anthropic_compat")
+        with patch(
+            "app.services.llm.client.config_manager.get_llm_config",
+            return_value=cfg,
+        ):
+            client = LLMClient()
+
+        provider = client._provider
+        assert isinstance(provider, AnthropicProvider)
+        # 参数正确传入
+        assert provider.api_base == "https://test.api.com/v1"
+        assert provider.api_key == "sk-test-key"
+        assert provider.model == "gpt-4o-mini"
+        assert provider.max_tokens == 2000
+        assert provider.temperature == 0.7
+        assert provider.timeout == 60
+        # thinking_level 缺省 off
+        assert provider.thinking_level == "off"
+
+    def test_anthropic_thinking_level_passed(self, reset_llm_singleton):
+        """Scenario 4.1: thinking_level 从配置传入 provider。"""
+        from app.services.llm.client import LLMClient
+        from app.services.llm.providers.anthropic import AnthropicProvider
+
+        cfg = _make_config("anthropic_compat", thinking_level="high")
+        with patch(
+            "app.services.llm.client.config_manager.get_llm_config",
+            return_value=cfg,
+        ):
+            client = LLMClient()
+
+        provider = client._provider
+        assert isinstance(provider, AnthropicProvider)
+        assert provider.thinking_level == "high"
+
+    def test_openai_provider_no_thinking_level(self, reset_llm_singleton):
+        """openai_compat 分支不受 thinking_level 影响（Phase 1 不改动）。"""
+        from app.services.llm.client import LLMClient
+        from app.services.llm.providers.openai_compat import OpenAICompatProvider
+
+        cfg = _make_config("openai_compat", thinking_level="high")
+        with patch(
+            "app.services.llm.client.config_manager.get_llm_config",
+            return_value=cfg,
+        ):
+            client = LLMClient()
+
+        assert isinstance(client._provider, OpenAICompatProvider)
+        assert not hasattr(client._provider, "thinking_level")
+
+    def test_unknown_provider_raises(self, reset_llm_singleton):
+        """Scenario 4.2: 非法 provider 抛 ValueError 并提示支持列表。"""
+        from app.services.llm.client import LLMClient
+
+        cfg = _make_config("unknown_provider")
+        with patch(
+            "app.services.llm.client.config_manager.get_llm_config",
+            return_value=cfg,
+        ):
+            with pytest.raises(ValueError, match="Unsupported LLM provider"):
+                LLMClient()
+
+    @pytest.mark.asyncio
+    async def test_thinking_level_kwargs_passed_to_anthropic(
+        self, reset_llm_singleton, mock_log_usage, mock_logger
+    ):
+        """Scenario 4.4: chat() 的 thinking_level kwargs 透传到 AnthropicProvider。"""
+        from app.services.llm.client import LLMClient
+        from app.services.llm.providers.anthropic import AnthropicProvider
+
+        mock_chat = AsyncMock()
+        mock_chat.return_value = ChatResponse(
+            content="OK",
+            model="claude-sonnet-4-6",
+            usage=Usage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
+        cfg = _make_config("anthropic_compat")
+        with patch(
+            "app.services.llm.client.config_manager.get_llm_config",
+            return_value=cfg,
+        ):
+            with patch.object(AnthropicProvider, "chat", mock_chat):
+                client = LLMClient()
+                await client.chat(
+                    [Message(role="user", content="Q")],
+                    thinking_level="high",
+                )
+
+        _args, call_kwargs = mock_chat.call_args
+        assert call_kwargs.get("thinking_level") == "high"
 
 
 # ===================================================================

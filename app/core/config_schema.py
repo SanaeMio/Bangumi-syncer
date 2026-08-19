@@ -323,9 +323,11 @@ SECTIONS: dict[str, SectionMeta] = {
         order=610,
         sensitive_fields=frozenset({"api_key"}),
         fields=(
+            FieldMeta(name="provider", default="openai_compat"),
             FieldMeta(name="max_tokens", default=2000),
             FieldMeta(name="temperature", default=0.7),
             FieldMeta(name="timeout", default=60),
+            FieldMeta(name="thinking_level", default="off"),
         ),
     ),
     # ── 调度器全局（order 900）──

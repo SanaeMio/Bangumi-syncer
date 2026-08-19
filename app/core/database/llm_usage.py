@@ -79,6 +79,7 @@ class LLMUsageRepository(BaseRepository):
 
         def _write(conn):
             cursor = conn.cursor()
+            # provider 默认值与 PROVIDER_OPENAI_COMPAT 保持一致
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self._TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

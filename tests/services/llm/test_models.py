@@ -1,8 +1,61 @@
-"""app.services.llm.models 测试（任务 1.1）。"""
+"""app.services.llm.models 测试。"""
 
 import pytest
+from pydantic import ValidationError
 
-from app.services.llm.models import ChatResponse, Message, Usage
+from app.services.llm.models import (
+    ChatResponse,
+    Message,
+    RedactedThinkingBlock,
+    TextBlock,
+    ThinkingBlock,
+    Usage,
+)
+
+
+class TestContentBlock:
+    """ContentBlock 构造与校验（Scenario 3.1）。"""
+
+    def test_text_block(self):
+        b = TextBlock(text="hi")
+        assert b.type == "text"
+        assert b.text == "hi"
+
+    def test_thinking_block(self):
+        b = ThinkingBlock(thinking="思考", signature="sig1")
+        assert b.type == "thinking"
+        assert b.thinking == "思考"
+        assert b.signature == "sig1"
+
+    def test_thinking_block_signature_optional(self):
+        b = ThinkingBlock(thinking="思考")
+        assert b.signature is None
+
+    def test_redacted_thinking_block(self):
+        b = RedactedThinkingBlock(data="xxx")
+        assert b.type == "redacted_thinking"
+        assert b.data == "xxx"
+
+    def test_invalid_type_raises(self):
+        """type 字段被 Literal 强约束。"""
+        with pytest.raises(ValidationError):
+            TextBlock(type="thinking", text="hi")  # type: ignore[arg-type]
+        with pytest.raises(ValidationError):
+            ThinkingBlock(type="text", thinking="x")  # type: ignore[arg-type]
+
+    def test_unknown_block_type_not_in_union(self):
+        """Phase 1 union 不含 tool_use——Message 解析 tool_use block 抛 ValidationError。"""
+        with pytest.raises(ValidationError):
+            Message.model_validate(
+                {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "u1", "name": "search"}],
+                }
+            )
+
+    def test_content_block_dump(self):
+        b = TextBlock(text="hi")
+        assert b.model_dump(exclude_none=True) == {"type": "text", "text": "hi"}
 
 
 class TestMessage:
@@ -20,7 +73,7 @@ class TestMessage:
 
     def test_message_invalid_role_raises(self):
         with pytest.raises(ValueError):
-            Message(role="invalid", content="test")
+            Message(role="invalid", content="test")  # type: ignore[invalid-argument-type]
 
     def test_message_serialization(self):
         msg = Message(role="user", content="What is AI?")
@@ -36,6 +89,28 @@ class TestMessage:
     def test_message_empty_content(self):
         msg = Message(role="system", content="")
         assert msg.content == ""
+
+    def test_message_content_blocks(self):
+        """Scenario 3.2: 新用法——content 为 list[ContentBlock]。"""
+        msg = Message(role="assistant", content=[TextBlock(text="hi")])
+        assert isinstance(msg.content, list)
+        block = msg.content[0]
+        assert isinstance(block, TextBlock)
+        assert block.text == "hi"
+
+    def test_message_str_backward_compat(self):
+        """Scenario 3.2: 旧用法——content 为 str。"""
+        msg = Message(role="user", content="纯文本")
+        assert isinstance(msg.content, str)
+        assert msg.content == "纯文本"
+
+    def test_message_serialization_with_blocks(self):
+        msg = Message(role="assistant", content=[TextBlock(text="hi")])
+        d = msg.model_dump()
+        assert d == {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "hi"}],
+        }
 
 
 class TestUsage:

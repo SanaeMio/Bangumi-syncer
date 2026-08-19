@@ -13,11 +13,13 @@ from app.core.config import config_manager
 from app.core.logging import logger
 
 from .models import ChatResponse, Message
+from .providers.anthropic import AnthropicProvider
 from .providers.base import BaseProvider
 from .providers.openai_compat import OpenAICompatProvider
 
 _PROVIDER_MAP: dict[str, type] = {
     "openai_compat": OpenAICompatProvider,
+    "anthropic_compat": AnthropicProvider,
 }
 
 
@@ -42,15 +44,19 @@ def _build_provider(
         raise ValueError(
             f"Unsupported LLM provider '{provider}'. Supported: {supported}"
         )
-    return cls(
-        api_base=cfg["api_base"],
-        api_key=cfg["api_key"],
-        model=cfg["model"],
-        max_tokens=cfg["max_tokens"],
-        temperature=cfg["temperature"],
-        timeout=cfg["timeout"],
-        proxy=proxy,
-    )
+    kwargs: dict[str, object] = {
+        "api_base": cfg["api_base"],
+        "api_key": cfg["api_key"],
+        "model": cfg["model"],
+        "max_tokens": cfg["max_tokens"],
+        "temperature": cfg["temperature"],
+        "timeout": cfg["timeout"],
+        "proxy": proxy,
+    }
+    # thinking_level 只传给 anthropic 分支（openai 分支构造函数无此参数）
+    if provider == "anthropic_compat":
+        kwargs["thinking_level"] = cfg.get("thinking_level", "off")
+    return cls(**kwargs)
 
 
 class LLMClient:
