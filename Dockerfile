@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Builder (依赖构建层)
 # ==========================================
-FROM python:3.9-slim-bookworm AS builder
+FROM python:3.10-slim-bookworm AS builder
 
 # 1. 获取 uv, 使用 uv.lock 确保依赖稳定
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ==========================================
 # Stage 2: Runtime (运行层)
 # ==========================================
-FROM python:3.9-slim-bookworm
+FROM python:3.10-slim-bookworm
 
 # 1. 环境变量
 # 注意：这里不需要再改 PATH 了，因为 /usr/local/bin 默认就在 PATH 里
@@ -56,7 +56,7 @@ RUN mkdir -p /app/config /app/logs /app/data /app/config_backups && \
 
 # 4. 【关键步骤】从 Builder 拷贝系统 Python 的包
 # 拷贝依赖库 (site-packages)
-COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 # 拷贝可执行文件 (如 uvicorn, gunicorn 等脚本)
 # 注意：这会覆盖 Runtime 层的 /usr/local/bin，但在同版本 slim 镜像间通常是安全的
 COPY --from=builder /usr/local/bin /usr/local/bin
