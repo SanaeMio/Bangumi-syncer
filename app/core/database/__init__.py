@@ -15,7 +15,7 @@
 # 重新导出 sqlite3 / logger，便于测试 ``patch("app.core.database.sqlite3.connect")``
 # 与 ``patch("app.core.database.logger")`` 继续生效
 import sqlite3
-from typing import Any, Optional
+from typing import Any
 
 from ..logging import logger as logger
 from .accounts import BangumiAccountRepository, OAuthStateRepository
@@ -40,7 +40,7 @@ class DatabaseManager:
     转发调用以保持与原 ``database.py`` 完全向后兼容。
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self._connection = DatabaseConnection(db_path)
         # 保持 db_path 作为实例属性（原 DatabaseManager 行为），
         # 便于测试 ``patch("app.core.database.database_manager.db_path", ...)``
@@ -121,21 +121,21 @@ class DatabaseManager:
         self,
         user_name: str,
         title: str,
-        ori_title: Optional[str],
+        ori_title: str | None,
         season: int,
         episode: int,
-        subject_id: Optional[str] = None,
-        episode_id: Optional[str] = None,
+        subject_id: str | None = None,
+        episode_id: str | None = None,
         status: str = "success",
         message: str = "",
         source: str = "custom",
         media_type: str = "episode",
         bgm_title: str = "",
         match_method: str = "",
-        match_score: Optional[float] = None,
+        match_score: float | None = None,
         match_platform: str = "",
-        match_trace: Optional[dict] = None,
-    ) -> Optional[int]:
+        match_trace: dict | None = None,
+    ) -> int | None:
         """记录同步日志到数据库，返回新记录 id（失败时 None）
 
         匹配追踪相关字段会一并写入 sync_records 表的 match_* 列，
@@ -164,12 +164,12 @@ class DatabaseManager:
         self,
         limit: int = 100,
         offset: int = 0,
-        status: Optional[str] = None,
-        user_name: Optional[str] = None,
-        source: Optional[str] = None,
-        source_prefix: Optional[str] = None,
-        match_method: Optional[str] = None,
-        match_platform: Optional[str] = None,
+        status: str | None = None,
+        user_name: str | None = None,
+        source: str | None = None,
+        source_prefix: str | None = None,
+        match_method: str | None = None,
+        match_platform: str | None = None,
         skip_count: bool = False,
     ) -> dict[str, Any]:
         """获取同步记录"""
@@ -185,7 +185,7 @@ class DatabaseManager:
             skip_count=skip_count,
         )
 
-    def get_sync_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
+    def get_sync_record_by_id(self, record_id: int) -> dict[str, Any] | None:
         """根据ID获取单个同步记录"""
         return self._sync.get_sync_record_by_id(record_id)
 
@@ -193,9 +193,9 @@ class DatabaseManager:
         self,
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None,
-        match_method: Optional[str] = None,
-        match_platform: Optional[str] = None,
+        status: str | None = None,
+        match_method: str | None = None,
+        match_platform: str | None = None,
     ) -> dict[str, Any]:
         """获取匹配记录列表（含匹配追踪字段）"""
         return self._sync.get_match_records(
@@ -219,10 +219,10 @@ class DatabaseManager:
     def update_sync_record_match_fields(
         self,
         record_id: int,
-        match_method: Optional[str] = None,
-        match_trace: Optional[dict] = None,
-        match_score: Optional[float] = None,
-        match_platform: Optional[str] = None,
+        match_method: str | None = None,
+        match_trace: dict | None = None,
+        match_score: float | None = None,
+        match_platform: str | None = None,
     ) -> bool:
         """回写同步记录的匹配字段，用于重试成功后覆盖原始失败记录的 match_method 等。"""
         return self._sync.update_sync_record_match_fields(
@@ -245,10 +245,10 @@ class DatabaseManager:
         request_episode: int = 0,
         user_name: str = "",
         source: str = "",
-        candidates: Optional[list] = None,
-        trace: Optional[dict] = None,
-        sync_record_id: Optional[int] = None,
-    ) -> Optional[int]:
+        candidates: list | None = None,
+        trace: dict | None = None,
+        sync_record_id: int | None = None,
+    ) -> int | None:
         """沉淀一条待确认候选"""
         return self._pending.log_pending_candidate(
             request_title=request_title,
@@ -266,16 +266,14 @@ class DatabaseManager:
         self,
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None,
+        status: str | None = None,
     ) -> dict[str, Any]:
         """获取待确认候选列表"""
         return self._pending.get_pending_candidates(
             limit=limit, offset=offset, status=status
         )
 
-    def get_pending_candidate_by_id(
-        self, candidate_id: int
-    ) -> Optional[dict[str, Any]]:
+    def get_pending_candidate_by_id(self, candidate_id: int) -> dict[str, Any] | None:
         """获取单条待确认候选详情"""
         return self._pending.get_pending_candidate_by_id(candidate_id)
 
@@ -302,7 +300,7 @@ class DatabaseManager:
         source: str,
         status: str,
         confirmed_subject_id: str = "",
-        exclude_id: Optional[int] = None,
+        exclude_id: int | None = None,
     ) -> int:
         """批量更新同 key 的 pending 候选状态，返回受影响行数"""
         return self._pending.resolve_similar_pending_candidates(
@@ -326,14 +324,14 @@ class DatabaseManager:
         season: int,
         episode: int,
         subject_id: str,
-        episode_id: Optional[str],
+        episode_id: str | None,
         source: str,
         media_type: str,
         payload: dict[str, Any],
         reason: str = "api_unreachable",
         last_error: str = "",
-        sync_record_id: Optional[int] = None,
-    ) -> Optional[int]:
+        sync_record_id: int | None = None,
+    ) -> int | None:
         """入队一条待同步任务，返回记录 id（失败时 None）"""
         return self._pending_sync.enqueue(
             user_name=user_name,
@@ -354,7 +352,7 @@ class DatabaseManager:
         self,
         user_name: str,
         subject_id: str,
-        episode_id: Optional[str],
+        episode_id: str | None,
         source: str,
         sync_record_id: int,
     ) -> bool:
@@ -373,8 +371,8 @@ class DatabaseManager:
     def fetch_pending_sync(
         self,
         limit: int = 20,
-        max_attempts: Optional[int] = None,
-        user_name: Optional[str] = None,
+        max_attempts: int | None = None,
+        user_name: str | None = None,
     ) -> list[dict[str, Any]]:
         """拉取一批 pending 待同步任务（先入先补发）"""
         return self._pending_sync.fetch_pending(
@@ -382,7 +380,7 @@ class DatabaseManager:
         )
 
     def mark_pending_sync_synced(
-        self, record_id: int, user_name: Optional[str] = None
+        self, record_id: int, user_name: str | None = None
     ) -> bool:
         """标记待同步任务为已同步"""
         return self._pending_sync.mark_synced(record_id, user_name=user_name)
@@ -396,7 +394,7 @@ class DatabaseManager:
         return self._pending_sync.mark_synced_by_sync_record_id(sync_record_id)
 
     def increment_pending_sync_attempts(
-        self, record_id: int, error: str, user_name: Optional[str] = None
+        self, record_id: int, error: str, user_name: str | None = None
     ) -> bool:
         """累加待同步任务重试次数并记录错误"""
         return self._pending_sync.increment_attempts(
@@ -404,7 +402,7 @@ class DatabaseManager:
         )
 
     def update_pending_sync_error_message(
-        self, record_id: int, message: str, user_name: Optional[str] = None
+        self, record_id: int, message: str, user_name: str | None = None
     ) -> bool:
         """仅更新待同步任务的错误消息，不累加 attempts（用于手动补发失败场景）"""
         return self._pending_sync.update_error_message(
@@ -412,13 +410,13 @@ class DatabaseManager:
         )
 
     def mark_pending_sync_abandoned(
-        self, record_id: int, reason: str = "", user_name: Optional[str] = None
+        self, record_id: int, reason: str = "", user_name: str | None = None
     ) -> bool:
         """标记待同步任务为放弃"""
         return self._pending_sync.mark_abandoned(record_id, reason, user_name=user_name)
 
     def delete_pending_sync_record(
-        self, record_id: int, user_name: Optional[str] = None
+        self, record_id: int, user_name: str | None = None
     ) -> bool:
         """删除一条待同步任务"""
         return self._pending_sync.delete_record(record_id, user_name=user_name)
@@ -427,8 +425,8 @@ class DatabaseManager:
         self,
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None,
-        user_name: Optional[str] = None,
+        status: str | None = None,
+        user_name: str | None = None,
     ) -> dict[str, Any]:
         """获取待同步队列列表"""
         return self._pending_sync.get_queue(
@@ -436,8 +434,8 @@ class DatabaseManager:
         )
 
     def get_pending_sync_record_by_id(
-        self, record_id: int, user_name: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
+        self, record_id: int, user_name: str | None = None
+    ) -> dict[str, Any] | None:
         """获取单条待同步任务详情"""
         return self._pending_sync.get_record_by_id(record_id, user_name=user_name)
 
@@ -452,7 +450,7 @@ class DatabaseManager:
     def cleanup_pending_sync_queue(
         self,
         retention_days: int = 30,
-        statuses: Optional[list[str]] = None,
+        statuses: list[str] | None = None,
     ) -> int:
         """清理超过保留天数的 synced/abandoned 待同步队列历史记录，返回删除行数。
 
@@ -473,8 +471,8 @@ class DatabaseManager:
         date_from: str,
         date_to: str,
         limit: int = 200,
-        user_name: Optional[str] = None,
-        source: Optional[str] = None,
+        user_name: str | None = None,
+        source: str | None = None,
     ) -> list[dict[str, Any]]:
         """获取指定日期范围内的同步记录"""
         return self._sync.get_records_in_date_range(
@@ -497,7 +495,7 @@ class DatabaseManager:
         """保存或更新 Trakt 配置"""
         return self._trakt.save_trakt_config(config)
 
-    def get_trakt_config(self, user_id: str) -> Optional[dict]:
+    def get_trakt_config(self, user_id: str) -> dict | None:
         """获取用户的 Trakt 配置"""
         return self._trakt.get_trakt_config(user_id)
 
@@ -519,7 +517,7 @@ class DatabaseManager:
         """获取用户的 Trakt 同步历史"""
         return self._trakt.get_trakt_sync_history(user_id, limit, offset)
 
-    def get_last_sync_time(self, user_id: str) -> Optional[int]:
+    def get_last_sync_time(self, user_id: str) -> int | None:
         """获取用户最后同步时间"""
         return self._trakt.get_last_sync_time(user_id)
 
@@ -539,7 +537,7 @@ class DatabaseManager:
         """保存或更新一个 Bangumi 账号（按 section_name upsert）。"""
         return self._bangumi_accounts.save_account(account)
 
-    def get_bangumi_account(self, section_name: str) -> Optional[dict]:
+    def get_bangumi_account(self, section_name: str) -> dict | None:
         """按 section_name 获取账号。"""
         return self._bangumi_accounts.get_account(section_name)
 
@@ -547,7 +545,7 @@ class DatabaseManager:
         """列出全部账号（列表长度=1 即单用户，无需单/多判断）。"""
         return self._bangumi_accounts.list_accounts()
 
-    def get_active_bangumi_account(self) -> Optional[dict]:
+    def get_active_bangumi_account(self) -> dict | None:
         """获取当前激活账号；无激活时返回首个。"""
         return self._bangumi_accounts.get_active_account()
 
@@ -588,7 +586,7 @@ class DatabaseManager:
             redirect_uri=redirect_uri,
         )
 
-    def get_oauth_state(self, state: str) -> Optional[dict]:
+    def get_oauth_state(self, state: str) -> dict | None:
         """获取并校验 state（过期/不存在返回 None）。"""
         return self._oauth_state.get_state(state)
 
@@ -608,7 +606,7 @@ class DatabaseManager:
         self,
         fn_user_guid: str,
         item_guid: str,
-        update_time_snapshot: Optional[int] = None,
+        update_time_snapshot: int | None = None,
     ) -> bool:
         """记录已提交的飞牛条目同步（去重用）"""
         return self._feiniu.save_feiniu_sync_history(
@@ -619,7 +617,7 @@ class DatabaseManager:
         """批量获取已同步的飞牛条目集合，用于 O(1) 去重查找"""
         return self._feiniu.get_feiniu_synced_set(user_guids)
 
-    def get_feiniu_meta(self, key: str) -> Optional[str]:
+    def get_feiniu_meta(self, key: str) -> str | None:
         return self._feiniu.get_feiniu_meta(key)
 
     def set_feiniu_meta(self, key: str, value: str) -> bool:
@@ -654,7 +652,7 @@ class DatabaseManager:
 
     def get_in_app_notification_by_id(
         self, notification_id: int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         return self._inbox.get_in_app_notification_by_id(notification_id)
 
     def mark_notification_read(self, notification_id: int) -> bool:
@@ -699,7 +697,7 @@ class DatabaseManager:
 
 
 # 全局数据库实例（懒加载：首次访问 database_manager 时才创建实例并打开数据库）
-_database_manager: Optional[DatabaseManager] = None
+_database_manager: DatabaseManager | None = None
 
 
 def get_database_manager() -> DatabaseManager:
@@ -710,7 +708,7 @@ def get_database_manager() -> DatabaseManager:
     return _database_manager
 
 
-def set_database_manager(instance: Optional[DatabaseManager]) -> None:
+def set_database_manager(instance: DatabaseManager | None) -> None:
     """替换数据库管理器实例（测试/DI 注入）。"""
     global _database_manager
     _database_manager = instance

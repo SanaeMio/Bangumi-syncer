@@ -4,7 +4,7 @@ Docker环境检测和代理配置助手
 
 import os
 import subprocess
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -178,7 +178,7 @@ class DockerProxyHelper:
 
         return sorted(suggestions, key=lambda x: x["priority"])
 
-    def _get_host_ip(self) -> Optional[str]:
+    def _get_host_ip(self) -> str | None:
         """尝试获取宿主机IP地址"""
         try:
             # 方法1: 通过默认路由获取网关IP
@@ -207,7 +207,7 @@ class DockerProxyHelper:
 
         return None
 
-    def _get_synology_host_ip(self) -> Optional[str]:
+    def _get_synology_host_ip(self) -> str | None:
         """尝试获取群晖等NAS的真实宿主机IP"""
         try:
             # 方法1: 通过环境变量获取
@@ -345,7 +345,7 @@ class DockerProxyHelper:
             finally:
                 sock.close()
 
-        except socket.timeout:
+        except TimeoutError:
             result["error"] = "TCP连接超时"
         except socket.gaierror as e:
             result["error"] = f"DNS解析失败: {str(e)}"
@@ -521,7 +521,7 @@ class DockerProxyHelper:
             finally:
                 sock.close()
 
-        except socket.timeout:
+        except TimeoutError:
             result["error"] = "TCP连接超时"
         except socket.gaierror as e:
             result["error"] = f"DNS解析失败: {str(e)}"

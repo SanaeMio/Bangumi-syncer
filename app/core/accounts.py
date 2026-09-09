@@ -9,7 +9,7 @@ Bangumi 账号统一访问层（全列表化重构的核心）。
   / ``get_user_mappings`` 同语义的 DB 版本，便于上层逐点切换。
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from .config import config_manager, parse_media_server_username_value
 from .database import database_manager
@@ -212,11 +212,11 @@ def list_bangumi_accounts() -> list[dict]:
     return database_manager.list_bangumi_accounts()
 
 
-def get_bangumi_account(section_name: str) -> Optional[dict]:
+def get_bangumi_account(section_name: str) -> dict | None:
     return database_manager.get_bangumi_account(section_name)
 
 
-def get_active_bangumi_account() -> Optional[dict]:
+def get_active_bangumi_account() -> dict | None:
     return database_manager.get_active_bangumi_account()
 
 
@@ -241,7 +241,7 @@ def count_bangumi_accounts() -> int:
 
 
 # ── 与原 INI 方法同语义的 DB 版本（供上层切换）──────────────────
-def _account_to_cfg(account: Optional[dict]) -> Optional[dict[str, Any]]:
+def _account_to_cfg(account: dict | None) -> dict[str, Any] | None:
     """把 DB 账号行转换为与 ``config_manager.get_bangumi_configs`` 同结构的 dict。
 
     返回 None 表示账号不存在；空账号（无 username 或 access_token）也返回 None，
@@ -283,7 +283,7 @@ def list_bangumi_configs() -> dict[str, dict[str, Any]]:
 
 def get_bangumi_config_by_section(
     section_name: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """按 section_name 获取账号配置（与 ``list_bangumi_configs`` 同结构）。
 
     供需要精确指定账号的场景（如"我的追番"卡片切换账号）使用；
@@ -319,8 +319,8 @@ def get_user_mappings() -> dict[str, str]:
 
 
 def get_active_bangumi_config(
-    user_name: Optional[str] = None,
-) -> Optional[dict[str, Any]]:
+    user_name: str | None = None,
+) -> dict[str, Any] | None:
     """按媒体服务器用户名返回对应 Bangumi 账号配置（与原 INI 版本同结构）。
 
     - ``user_name`` 为 None 或空字符串：返回当前激活账号配置；
@@ -342,7 +342,7 @@ def get_active_bangumi_config(
     return _account_to_cfg(database_manager.get_bangumi_account(target_section))
 
 
-def get_bangumi_config_for_user(user_name: str) -> Optional[dict[str, Any]]:
+def get_bangumi_config_for_user(user_name: str) -> dict[str, Any] | None:
     """按媒体服务器用户名获取对应 Bangumi 账号配置。
 
     供 ``sync_service._get_bangumi_config_for_user`` 切换到 DB 时直接替换。

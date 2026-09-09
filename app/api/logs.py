@@ -5,7 +5,7 @@
 import asyncio
 import os
 from collections import deque
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -33,8 +33,8 @@ def _read_lines_tail(log_file_path: str, limit: str) -> list[str]:
 
 def _filter_lines(
     lines: list[str],
-    level: Optional[str],
-    search: Optional[str],
+    level: str | None,
+    search: str | None,
 ) -> list[str]:
     """按级别与关键词筛选日志行。"""
     if level:
@@ -53,8 +53,8 @@ def _filter_lines(
 
 def _read_log_file(
     log_file_path: str,
-    level: Optional[str],
-    search: Optional[str],
+    level: str | None,
+    search: str | None,
     limit: str,
     grouped: bool = False,
 ) -> dict:
@@ -113,8 +113,8 @@ def _clear_log_file(log_file_path: str) -> None:
 @router.get("/logs")
 async def get_logs(
     request: Request,
-    level: Optional[str] = None,
-    search: Optional[str] = None,
+    level: str | None = None,
+    search: str | None = None,
     limit: str = Query("100"),
     grouped: bool = Query(False),
     current_user: dict = Depends(get_current_user_flexible),

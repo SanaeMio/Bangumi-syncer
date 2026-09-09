@@ -7,7 +7,6 @@ import shutil
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Optional
 
 from ..logging import logger
 
@@ -24,7 +23,7 @@ def _env_flag(name: str) -> bool:
 class DatabaseConnection:
     """数据库连接管理器：负责连接管理、锁、schema 迁移"""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         auto = db_path is None
         if auto:
             # 所有环境（Docker/直装）默认统一放到 data/ 目录，便于与其他数据隔离
@@ -41,7 +40,7 @@ class DatabaseConnection:
                 logger.info(f"已从旧路径迁移数据库 {legacy} -> {self.db_path}")
 
         self._lock = threading.Lock()
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         # 已确认存在（或已补上）的列集合，避免每次读写前的 ensure_schema
         # 回调重复执行 PRAGMA table_info
         self._migrated_columns: set[tuple[str, str]] = set()
@@ -100,7 +99,7 @@ class DatabaseConnection:
         cursor,
         table: str,
         columns: list[tuple[str, str]],
-        message: Optional[str] = None,
+        message: str | None = None,
     ) -> bool:
         """简单版 schema 迁移：幂等地为表补齐缺失列。
 

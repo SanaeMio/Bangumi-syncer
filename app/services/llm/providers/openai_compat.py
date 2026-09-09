@@ -4,7 +4,7 @@
 API 规范的端点通信。
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from app.core.logging import logger
 from app.services.llm.models import ChatResponse, Message, Usage
@@ -34,7 +34,7 @@ class OpenAICompatProvider(BaseProvider):
         max_tokens: int = 2000,
         temperature: float = 0.7,
         timeout: int = 60,
-        proxy: Optional[str] = None,
+        proxy: str | None = None,
     ) -> None:
         """初始化 OpenAI 兼容 provider。
 
@@ -115,7 +115,7 @@ class OpenAICompatProvider(BaseProvider):
             content = ""
         model = data.get("model", "")
 
-        usage: Optional[Usage] = None
+        usage: Usage | None = None
         if "usage" in data:
             u = data["usage"]
             usage = Usage(

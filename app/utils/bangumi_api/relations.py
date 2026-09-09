@@ -9,7 +9,6 @@
 """
 
 from collections import deque
-from typing import Optional
 
 from ..bangumi_archive._store import FRANCHISE_RELATION_CN_SET
 from ..bangumi_constants import (
@@ -26,7 +25,7 @@ _SERIES_MAX_HOPS = 64
 
 class RelationMixin:
     # ===== 续集 / 前传单跳 =====
-    def search_next_subject(self, subject_id: int) -> Optional[int]:
+    def search_next_subject(self, subject_id: int) -> int | None:
         """沿 Sequel 关系查找续集（对应对手 SearchNextSubject）
 
         优先走 Archive 短路，返回第一个有效（动画/三次元）续集 subject_id。
@@ -218,7 +217,7 @@ class RelationMixin:
             return False
         return subj.get("type") in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL)
 
-    def _prequel_one_hop(self, subject_id: int) -> Optional[int]:
+    def _prequel_one_hop(self, subject_id: int) -> int | None:
         res = self._archive.try_find_related_id_by_relation(
             subject_id, RELATIONS[RELATION_ID_PREQUEL]
         )

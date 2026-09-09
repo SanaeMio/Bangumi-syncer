@@ -16,8 +16,9 @@ import asyncio
 import hashlib
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import httpx
 

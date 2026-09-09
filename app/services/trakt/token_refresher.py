@@ -23,7 +23,6 @@ refresh 后先后落库把对方新换的 token 盖掉。
 
 import asyncio
 import time
-from typing import Optional
 
 from ...core.database import database_manager
 from ...core.logging import logger
@@ -65,7 +64,7 @@ async def _get_refresh_lock(user_id: str) -> asyncio.Lock:
 
 async def _call_oauth_token(
     refresh_token: str,
-) -> tuple[str, Optional[dict], Optional[str]]:
+) -> tuple[str, dict | None, str | None]:
     """调用 /oauth/token 刷新。
 
     Returns:
@@ -110,7 +109,7 @@ def _resolve_expires_at(data: dict) -> int:
     return int(time.time()) + int(data.get("expires_in", DEFAULT_EXPIRES_IN))
 
 
-def _extract_new_tokens(data: dict) -> Optional[tuple[str, str]]:
+def _extract_new_tokens(data: dict) -> tuple[str, str] | None:
     """从 /oauth/token 响应提取 (access_token, refresh_token)。
 
     缺字段时返回 None（响应异常，避免 KeyError 500）。

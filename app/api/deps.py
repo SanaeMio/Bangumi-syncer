@@ -2,7 +2,7 @@
 依赖注入模块
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -14,7 +14,7 @@ security = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict[str, Any]:
     """获取当前用户（用于依赖注入）"""
     auth_config = security_manager.get_auth_config()
@@ -65,7 +65,7 @@ def get_current_user_from_cookie(request: Request) -> dict[str, Any]:
 
 async def get_current_user_flexible(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict[str, Any]:
     """灵活的用户认证（支持Cookie和Bearer token）"""
     auth_config = security_manager.get_auth_config()
@@ -100,8 +100,8 @@ async def get_current_user_flexible(
 
 async def get_current_user_optional(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> Optional[dict]:
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict | None:
     """已登录返回会话；未登录返回 None。认证关闭时视为已登录（与 flexible 一致）。"""
     auth_config = security_manager.get_auth_config()
 

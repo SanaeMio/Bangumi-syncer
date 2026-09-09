@@ -3,7 +3,6 @@ Trakt 配置与同步历史仓库
 """
 
 from datetime import datetime
-from typing import Optional
 
 from ..config_secret_crypto import decrypt as _decrypt_token, encrypt as _encrypt_token
 from .base_repository import BaseRepository
@@ -86,7 +85,7 @@ class TraktRepository(BaseRepository):
             ensure_schema=self._conn._ensure_trakt_config_auth_type,
         )
 
-    def get_trakt_config(self, user_id: str) -> Optional[dict]:
+    def get_trakt_config(self, user_id: str) -> dict | None:
         """获取用户的 Trakt 配置"""
 
         def _read(conn):
@@ -124,7 +123,7 @@ class TraktRepository(BaseRepository):
             "created_at",
             "updated_at",
         ]
-        config = dict(zip(columns, row))
+        config = dict(zip(columns, row, strict=True))
         config["enabled"] = bool(config["enabled"])
         config["sync_filter_enabled"] = bool(config["sync_filter_enabled"])
         # 仓储层透明解密（与 bangumi_accounts 一致）
@@ -262,7 +261,7 @@ class TraktRepository(BaseRepository):
 
         return self._run_read(_read, error_msg="获取 Trakt 同步历史失败", reraise=True)
 
-    def get_last_sync_time(self, user_id: str) -> Optional[int]:
+    def get_last_sync_time(self, user_id: str) -> int | None:
         """获取用户最后同步时间"""
 
         def _read(conn):
@@ -316,7 +315,7 @@ class TraktRepository(BaseRepository):
         ]
         configs = []
         for row in rows:
-            config = dict(zip(columns, row))
+            config = dict(zip(columns, row, strict=True))
             config["enabled"] = bool(config["enabled"])
             config["sync_filter_enabled"] = bool(config["sync_filter_enabled"])
             # 仓储层透明解密（与 bangumi_accounts 一致）

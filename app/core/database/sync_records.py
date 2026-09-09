@@ -5,7 +5,7 @@
 import json
 import time
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from ..logging import (
     get_batch_id,
@@ -21,28 +21,28 @@ class SyncRecordsRepository(BaseRepository):
     def __init__(self, conn, inbox_repository=None):
         super().__init__(conn)
         self._inbox = inbox_repository
-        self._heatmap_cache: Optional[list] = None
+        self._heatmap_cache: list | None = None
         self._heatmap_cache_time: float = 0
 
     def log_sync_record(
         self,
         user_name: str,
         title: str,
-        ori_title: Optional[str],
+        ori_title: str | None,
         season: int,
         episode: int,
-        subject_id: Optional[str] = None,
-        episode_id: Optional[str] = None,
+        subject_id: str | None = None,
+        episode_id: str | None = None,
         status: str = "success",
         message: str = "",
         source: str = "custom",
         media_type: str = "episode",
         bgm_title: str = "",
         match_method: str = "",
-        match_score: Optional[float] = None,
+        match_score: float | None = None,
         match_platform: str = "",
-        match_trace: Optional[dict] = None,
-    ) -> Optional[int]:
+        match_trace: dict | None = None,
+    ) -> int | None:
         """记录同步日志到数据库，返回新记录 id（失败时 None）
 
         匹配追踪相关字段：
@@ -105,12 +105,12 @@ class SyncRecordsRepository(BaseRepository):
         self,
         limit: int = 100,
         offset: int = 0,
-        status: Optional[str] = None,
-        user_name: Optional[str] = None,
-        source: Optional[str] = None,
-        source_prefix: Optional[str] = None,
-        match_method: Optional[str] = None,
-        match_platform: Optional[str] = None,
+        status: str | None = None,
+        user_name: str | None = None,
+        source: str | None = None,
+        source_prefix: str | None = None,
+        match_method: str | None = None,
+        match_platform: str | None = None,
         skip_count: bool = False,
     ) -> dict[str, Any]:
         """获取同步记录"""
@@ -214,7 +214,7 @@ class SyncRecordsRepository(BaseRepository):
             ensure_schema=_ensure_schema,
         )
 
-    def get_sync_record_by_id(self, record_id: int) -> Optional[dict[str, Any]]:
+    def get_sync_record_by_id(self, record_id: int) -> dict[str, Any] | None:
         """根据ID获取单个同步记录"""
 
         def _ensure_schema(cursor):
@@ -321,10 +321,10 @@ class SyncRecordsRepository(BaseRepository):
     def update_sync_record_match_fields(
         self,
         record_id: int,
-        match_method: Optional[str] = None,
-        match_trace: Optional[dict] = None,
-        match_score: Optional[float] = None,
-        match_platform: Optional[str] = None,
+        match_method: str | None = None,
+        match_trace: dict | None = None,
+        match_score: float | None = None,
+        match_platform: str | None = None,
     ) -> bool:
         """回写同步记录的匹配字段，用于重试成功后覆盖原始失败记录的 match_method 等。
 
@@ -366,9 +366,9 @@ class SyncRecordsRepository(BaseRepository):
         self,
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None,
-        match_method: Optional[str] = None,
-        match_platform: Optional[str] = None,
+        status: str | None = None,
+        match_method: str | None = None,
+        match_platform: str | None = None,
     ) -> dict[str, Any]:
         """获取匹配记录（含匹配追踪字段）
 
@@ -516,8 +516,8 @@ class SyncRecordsRepository(BaseRepository):
         date_from: str,
         date_to: str,
         limit: int = 200,
-        user_name: Optional[str] = None,
-        source: Optional[str] = None,
+        user_name: str | None = None,
+        source: str | None = None,
     ) -> list[dict[str, Any]]:
         """获取指定日期范围内的同步记录。
 
