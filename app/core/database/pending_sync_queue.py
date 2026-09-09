@@ -144,7 +144,7 @@ class PendingSyncQueueRepository(BaseRepository):
             params.append(int(limit))
             cursor = conn.execute(sql, params)
             cols = [d[0] for d in cursor.description]
-            return [dict(zip(cols, row)) for row in cursor.fetchall()]
+            return [dict(zip(cols, row, strict=True)) for row in cursor.fetchall()]
 
         return self._run_read(_read, error_msg="拉取待同步任务失败", default=[])
 
@@ -369,7 +369,7 @@ class PendingSyncQueueRepository(BaseRepository):
                 params + [limit, offset],
             )
             cols = [d[0] for d in cursor.description]
-            records = [dict(zip(cols, row)) for row in cursor.fetchall()]
+            records = [dict(zip(cols, row, strict=True)) for row in cursor.fetchall()]
             return {
                 "records": records,
                 "total": total,
@@ -407,7 +407,7 @@ class PendingSyncQueueRepository(BaseRepository):
             if not row:
                 return None
             cols = [d[0] for d in cursor.description]
-            return dict(zip(cols, row))
+            return dict(zip(cols, row, strict=True))
 
         return self._run_read(_read, error_msg="获取待同步任务详情失败", default=None)
 

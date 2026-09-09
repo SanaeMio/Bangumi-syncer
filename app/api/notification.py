@@ -3,8 +3,9 @@
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -36,9 +37,9 @@ def _reload_notification_channels() -> None:
 class NotificationTestRequest(BaseModel):
     """通知测试请求"""
 
-    notification_type: Optional[str] = "webhook"  # webhook, email, all
-    webhook_id: Optional[int] = None  # 指定测试的webhook ID
-    email_id: Optional[int] = None  # 指定测试的email ID
+    notification_type: str | None = "webhook"  # webhook, email, all
+    webhook_id: int | None = None  # 指定测试的webhook ID
+    email_id: int | None = None  # 指定测试的email ID
 
 
 class WebhookConfigCreate(BaseModel):
@@ -55,12 +56,12 @@ class WebhookConfigCreate(BaseModel):
 class WebhookConfigUpdate(BaseModel):
     """更新webhook配置请求"""
 
-    enabled: Optional[bool] = None
-    url: Optional[str] = None
-    method: Optional[str] = None
-    headers: Optional[str] = None
-    template: Optional[str] = None
-    types: Optional[str] = None
+    enabled: bool | None = None
+    url: str | None = None
+    method: str | None = None
+    headers: str | None = None
+    template: str | None = None
+    types: str | None = None
 
 
 class EmailConfigCreate(BaseModel):
@@ -82,17 +83,17 @@ class EmailConfigCreate(BaseModel):
 class EmailConfigUpdate(BaseModel):
     """更新邮件配置请求"""
 
-    enabled: Optional[bool] = None
-    smtp_server: Optional[str] = None
-    smtp_port: Optional[int] = None
-    smtp_username: Optional[str] = None
-    smtp_password: Optional[str] = None
-    smtp_use_tls: Optional[bool] = None
-    email_from: Optional[str] = None
-    email_to: Optional[str] = None
-    email_subject: Optional[str] = None
-    template: Optional[str] = None
-    types: Optional[str] = None
+    enabled: bool | None = None
+    smtp_server: str | None = None
+    smtp_port: int | None = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool | None = None
+    email_from: str | None = None
+    email_to: str | None = None
+    email_subject: str | None = None
+    template: str | None = None
+    types: str | None = None
 
 
 class WeComConfigCreate(BaseModel):
@@ -108,11 +109,11 @@ class WeComConfigCreate(BaseModel):
 class WeComConfigUpdate(BaseModel):
     """更新企业微信配置请求"""
 
-    enabled: Optional[bool] = None
-    key: Optional[str] = None
-    msg_type: Optional[str] = None
-    template: Optional[str] = None
-    types: Optional[str] = None
+    enabled: bool | None = None
+    key: str | None = None
+    msg_type: str | None = None
+    template: str | None = None
+    types: str | None = None
 
 
 class DingTalkConfigCreate(BaseModel):
@@ -129,12 +130,12 @@ class DingTalkConfigCreate(BaseModel):
 class DingTalkConfigUpdate(BaseModel):
     """更新钉钉配置请求"""
 
-    enabled: Optional[bool] = None
-    access_token: Optional[str] = None
-    secret: Optional[str] = None
-    msg_type: Optional[str] = None
-    template: Optional[str] = None
-    types: Optional[str] = None
+    enabled: bool | None = None
+    access_token: str | None = None
+    secret: str | None = None
+    msg_type: str | None = None
+    template: str | None = None
+    types: str | None = None
 
 
 class NotificationRuleCreate(BaseModel):
@@ -150,11 +151,11 @@ class NotificationRuleCreate(BaseModel):
 class NotificationRuleUpdate(BaseModel):
     """更新通知规则请求"""
 
-    name: Optional[str] = None
-    enabled: Optional[bool] = None
-    types: Optional[str] = None
-    channels: Optional[str] = None
-    template: Optional[str] = None
+    name: str | None = None
+    enabled: bool | None = None
+    types: str | None = None
+    channels: str | None = None
+    template: str | None = None
 
 
 # ========== 通用渠道 CRUD 处理器 ==========
@@ -192,8 +193,8 @@ class ChannelHandler:
         fields: list[ChannelField],
         create_model: type,
         update_model: type,
-        test_fn: Optional[Callable[[int], Any]] = None,
-        label: Optional[str] = None,
+        test_fn: Callable[[int], Any] | None = None,
+        label: str | None = None,
     ):
         self.section_prefix = section_prefix
         self.display_name = display_name

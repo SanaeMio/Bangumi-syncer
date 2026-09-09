@@ -4,7 +4,6 @@
 
 import time
 from datetime import datetime
-from typing import Optional
 
 from ..logging import logger
 from .base_repository import BaseRepository
@@ -21,7 +20,7 @@ class FeiniuRepository(BaseRepository):
         self,
         fn_user_guid: str,
         item_guid: str,
-        update_time_snapshot: Optional[int] = None,
+        update_time_snapshot: int | None = None,
     ) -> bool:
         """记录已提交的飞牛条目同步（去重用）"""
 
@@ -61,7 +60,7 @@ class FeiniuRepository(BaseRepository):
             _read, error_msg="批量查询飞牛同步历史失败", default=set()
         )
 
-    def get_feiniu_meta(self, key: str) -> Optional[str]:
+    def get_feiniu_meta(self, key: str) -> str | None:
         def _read(conn):
             cursor = conn.execute(
                 "SELECT value FROM feiniu_meta WHERE key = ? LIMIT 1", (key,)

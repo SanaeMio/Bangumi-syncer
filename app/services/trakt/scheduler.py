@@ -5,7 +5,6 @@ Trakt 数据同步调度器
 import asyncio
 import time
 from datetime import datetime
-from typing import Optional
 
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -33,7 +32,7 @@ class TraktScheduler:
     """Trakt 数据同步调度器"""
 
     def __init__(self) -> None:
-        self.scheduler: Optional[AsyncIOScheduler] = None
+        self.scheduler: AsyncIOScheduler | None = None
         self.scheduler_config = config_manager.get_scheduler_config()
         self._user_jobs: dict[str, str] = {}  # user_id -> job_id
 
@@ -333,7 +332,7 @@ class TraktScheduler:
             elapsed_time = time.time() - start_time
             logger.info(f"用户 {user_id} 的同步任务结束，耗时: {elapsed_time:.2f}秒")
 
-    def get_user_job_status(self, user_id: str) -> Optional[dict]:
+    def get_user_job_status(self, user_id: str) -> dict | None:
         """获取用户的定时任务状态"""
         try:
             if not self.scheduler:

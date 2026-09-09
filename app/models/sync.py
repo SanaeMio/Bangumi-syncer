@@ -2,7 +2,7 @@
 同步相关数据模型
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -15,17 +15,17 @@ class CustomItem(BaseModel):
         description="媒体类型 episode 或 movie；省略时按剧集处理（兼容旧版自定义 Webhook）",
     )
     title: str = Field(..., description="番剧标题")
-    ori_title: Optional[str] = Field(None, description="原始标题")
+    ori_title: str | None = Field(None, description="原始标题")
     season: int = Field(..., description="季度")
     episode: int = Field(..., description="集数")
     release_date: str = Field(..., description="发行日期")
     user_name: str = Field(..., description="用户名")
-    source: Optional[str] = Field(None, description="来源")
-    sync_action: Optional[str] = Field(
+    source: str | None = Field(None, description="来源")
+    sync_action: str | None = Field(
         None,
         description='可选：如 "mark_watching" 时仅将剧场版条目标为在看（用于 Tautulli 等 /Custom）',
     )
-    raw_payload: Optional[dict[str, Any]] = Field(
+    raw_payload: dict[str, Any] | None = Field(
         None,
         description="驱动获取到的原始数据（webhook payload / /media response 等），"
         "用于在同步记录详情的「接收请求」步骤展示驱动原始输入",
@@ -37,7 +37,7 @@ class SyncResponse(BaseModel):
 
     status: str = Field(..., description="状态")
     message: str = Field(..., description="消息")
-    data: Optional[dict] = Field(None, description="数据")
+    data: dict | None = Field(None, description="数据")
 
 
 # ===== Webhook 数据模型已迁移至各驱动子包，此处重新导出以向后兼容 =====
@@ -53,11 +53,11 @@ class SyncRecord(BaseModel):
     timestamp: str
     user_name: str
     title: str
-    ori_title: Optional[str]
+    ori_title: str | None
     season: int
     episode: int
-    subject_id: Optional[str]
-    episode_id: Optional[str]
+    subject_id: str | None
+    episode_id: str | None
     status: str
     message: str
     source: str
@@ -87,10 +87,10 @@ class TestSyncRequest(BaseModel):
     """测试同步请求模型"""
 
     title: str = Field(..., description="番剧标题")
-    ori_title: Optional[str] = Field(None, description="原始标题")
+    ori_title: str | None = Field(None, description="原始标题")
     season: int = Field(1, description="季度")
     episode: int = Field(1, description="集数")
-    release_date: Optional[str] = Field(None, description="发行日期")
+    release_date: str | None = Field(None, description="发行日期")
     user_name: str = Field("test_user", description="用户名")
     source: str = Field("test", description="来源")
     media_type: str = Field("episode", description="媒体类型 episode 或 movie")

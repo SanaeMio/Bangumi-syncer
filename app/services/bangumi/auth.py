@@ -8,7 +8,6 @@ Bangumi 特有的令牌落地（写入数据库 ``bangumi_accounts`` 表）与�
 import os
 import threading
 import time
-from typing import Optional
 
 from app.core.accounts import (
     get_active_bangumi_account,
@@ -132,7 +131,7 @@ class BangumiAuthService:
     def get_redirect_uri(self) -> str:
         return get_redirect_uri()
 
-    def get_auth_url(self, redirect_uri: Optional[str] = None) -> tuple[str, str]:
+    def get_auth_url(self, redirect_uri: str | None = None) -> tuple[str, str]:
         """生成授权 URL 与一次性 state。
 
         返回 ``(auth_url, state)``；未配置 client_id 时抛出异常。
@@ -181,7 +180,7 @@ class BangumiAuthService:
         self._persist_token(token)
         return token
 
-    def refresh_active_token(self, section: Optional[str] = None) -> bool:
+    def refresh_active_token(self, section: str | None = None) -> bool:
         """刷新当前激活账号的访问令牌；成功返回 True。
 
         使用 per-section 锁确保同一账号同一时刻只有一个刷新操作，
@@ -198,7 +197,7 @@ class BangumiAuthService:
                 return False
             return self._do_refresh(section, acc)
 
-    def refresh_active_token_if_needed(self, section: Optional[str] = None) -> bool:
+    def refresh_active_token_if_needed(self, section: str | None = None) -> bool:
         """按需刷新：仅当采用 OAuth 且临近/已经过期时才刷新。
 
         持锁后 double-check 过期时间，避免并发场景下多个线程同时触发刷新
@@ -226,7 +225,7 @@ class BangumiAuthService:
             return self._do_refresh(section, acc)
 
     # ── 令牌落地与状态查询（Bangumi 特有，DB 为唯一真相源）────
-    def _persist_token(self, token: dict, section: Optional[str] = None) -> None:
+    def _persist_token(self, token: dict, section: str | None = None) -> None:
         """将令牌写入数据库（upsert 账号）。
 
         定位策略（对齐 Trakt 的"授权后添加账号"语义）：
@@ -338,7 +337,7 @@ class BangumiAuthService:
             set_active_bangumi_account(section)
 
     @staticmethod
-    def _fetch_me_info(access_token: str) -> Optional[dict]:
+    def _fetch_me_info(access_token: str) -> dict | None:
         """用 access_token 调用 /v0/me 获取当前用户信息。
 
         失败时返回 None，不阻断令牌落地（username 会回退为 user_id，
@@ -371,12 +370,12 @@ class BangumiAuthService:
             )
             return None
 
-    def _active_section_name(self) -> Optional[str]:
+    def _active_section_name(self) -> str | None:
         """返回当前激活 Bangumi 账号配置段名（DB 为唯一真相源）。"""
         acc = get_active_bangumi_account()
         return acc.get("section_name") if acc else None
 
-    def disconnect(self, section: Optional[str] = None) -> bool:
+    def disconnect(self, section: str | None = None) -> bool:
         """断开指定账号的 OAuth 关联：回退到手动模式，清除刷新令牌与过期时间。
 
         保留已存在的访问令牌（``access_token``）以便手动模式继续同步；
