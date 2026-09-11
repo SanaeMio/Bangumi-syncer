@@ -292,30 +292,72 @@ def get_bangumi_config_by_section(
     return _account_to_cfg(database_manager.get_bangumi_account(section_name))
 
 
-def get_user_mappings() -> dict[str, str]:
-    """返回 ``media_server_username -> section_name`` 映射（与原 INI 版本同语义）。
+def get_user_account_mappings() -> dict[str, list[str]]:
+    """返回 ``media_server_username -> [section_name, ...]`` 映射。
 
-    多个媒体服务器用户名映射到同一 Bangumi 段时，后者覆盖前者并记录警告。
+    与原 INI 版本的一对一映射不同，此处保留全部声明：同一媒体服务器用户名
+    可被多个 Bangumi 账号声明，声明它的账号按登记顺序全部列出；该用户的
+    同步任务会写入列表中每一个账号，适用于一人多号或与亲友共享观看记录的
+    场景。列表首元素为该用户的首选账号。
     """
-    mappings: dict[str, str] = {}
+    mappings: dict[str, list[str]] = {}
     for acc in database_manager.list_bangumi_accounts():
         section = acc.get("section_name")
         if not section:
             continue
         for name in acc.get("media_server_usernames") or []:
-            prev = mappings.get(name)
-            if prev is not None and prev != section:
-                # 与原 INI 版本一致：重复时后者覆盖，记录警告
+            sections = mappings.setdefault(name, [])
+            if section not in sections:
+                sections.append(section)
+    return mappings
+
+
+def get_user_mappings() -> dict[str, str]:
+    """返回 ``media_server_username -> section_name`` 首选账号映射。
+
+    同一用户名被多个账号声明时取首个声明的账号（与 ``get_user_account_mappings``
+    列表首元素一致），供只需要单一账号的调用方（追番日历、补发鉴权等）使用。
+    """
+    return {name: sections[0] for name, sections in get_user_account_mappings().items()}
+
+
+def get_bangumi_sections_for_user(user_name: str) -> list[str]:
+    """按媒体服务器用户名返回全部 Bangumi 账号配置段名（按登记顺序）。
+
+    空用户名保护集中在本函数：多账号模式下空 user_name 不回退激活账号，
+    避免数据串号（某条记录的 user_name 异常为空时，回退激活账号会把该记录
+    同步到他人账号）；单账号模式（账号数<=1）空 user_name 仍回退激活账号
+    （只有一个账号，无串号风险）。``get_bangumi_config_for_user`` 通过委托
+    复用同一保护。
+    """
+    if not user_name:
+        try:
+            if database_manager.count_bangumi_accounts() > 1:
                 from .logging import logger
 
                 logger.warning(
-                    "多用户映射中媒体服务器用户名 %r 重复：原指向配置段 %s，现被 %s 覆盖",
-                    name,
-                    prev,
-                    section,
+                    "多用户模式下 user_name 为空，不回退激活账号以避免数据串号；"
+                    "请检查上游是否正确传递媒体服务器用户名"
                 )
-            mappings[name] = section
-    return mappings
+                return []
+        except Exception:
+            pass
+        active = database_manager.get_active_bangumi_account()
+        return [active["section_name"]] if active and active.get("section_name") else []
+    return list(get_user_account_mappings().get(user_name) or [])
+
+
+def get_bangumi_configs_for_user(user_name: str) -> list[dict[str, Any]]:
+    """按媒体服务器用户名返回全部 Bangumi 账号配置（按登记顺序）。
+
+    过滤掉无 username/access_token 的账号；无匹配时返回空列表。
+    """
+    configs: list[dict[str, Any]] = []
+    for section in get_bangumi_sections_for_user(user_name):
+        cfg = _account_to_cfg(database_manager.get_bangumi_account(section))
+        if cfg is not None:
+            configs.append(cfg)
+    return configs
 
 
 def get_active_bangumi_config(
@@ -343,28 +385,19 @@ def get_active_bangumi_config(
 
 
 def get_bangumi_config_for_user(user_name: str) -> Optional[dict[str, Any]]:
-    """按媒体服务器用户名获取对应 Bangumi 账号配置。
+    """按媒体服务器用户名获取首选 Bangumi 账号配置。
 
     供 ``sync_service._get_bangumi_config_for_user`` 切换到 DB 时直接替换。
+    同一用户名绑定多个账号时返回首选（首个声明的）账号；需要全部账号时使用
+    ``get_bangumi_configs_for_user``。
 
     多用户模式下空 user_name 不回退激活账号，避免数据串号（某条记录的
     user_name 异常为空时，回退激活账号会把该记录同步到他人账号）。
     单用户模式（账号数<=1）空 user_name 仍回退激活账号（只有一个账号，
     无串号风险）。
     """
-    if not user_name:
-        try:
-            if database_manager.count_bangumi_accounts() > 1:
-                from .logging import logger
-
-                logger.warning(
-                    "多用户模式下 user_name 为空，不回退激活账号以避免数据串号；"
-                    "请检查上游是否正确传递媒体服务器用户名"
-                )
-                return None
-        except Exception:
-            pass
-    return get_active_bangumi_config(user_name)
+    configs = get_bangumi_configs_for_user(user_name)
+    return configs[0] if configs else None
 
 
 def get_single_mode_media_usernames() -> list[str]:

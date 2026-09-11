@@ -789,6 +789,47 @@ class TestSyncMovieWatching:
         assert "已在看" in r.message or "已看过" in r.message
         mock_db.log_sync_record.assert_called()
 
+    def test_sync_movie_watching_fans_out_to_other_accounts(self):
+        """剧场版：首选账号置「在看」成功后把结果分发到其余 Bangumi 账号。"""
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.database_manager") as mock_db,
+            patch("app.services.sync_service.notification_service"),
+            patch("app.services.sync_service.mapping_service"),
+            patch(
+                "app.core.accounts.list_bangumi_accounts",
+                return_value=[{"section_name": "bangumi"}],
+            ),
+            patch(
+                "app.core.accounts.get_single_mode_media_usernames",
+                return_value=["test_user"],
+            ),
+        ):
+            mock_config.get.side_effect = self._cfg_get()
+            mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
+            from app.services.sync_service import SyncService
+
+            svc = SyncService()
+            bgm = MagicMock()
+            bgm.ensure_subject_watching.return_value = 1
+            fan_out = []
+            with (
+                patch.object(svc, "_find_subject_id", return_value=("888", False, "")),
+                patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
+                patch.object(
+                    svc,
+                    "_mark_movie_watching_for_other_accounts",
+                    side_effect=lambda item, primary, subject_id: fan_out.append(
+                        (primary, subject_id)
+                    ),
+                ),
+            ):
+                r = svc.sync_movie_watching(self._movie_item(), source="custom")
+        assert r.status == "success"
+        # 分发发生在落库之前，首选实例沿用主流程对象
+        assert fan_out == [(bgm, "888")]
+        mock_db.log_sync_record.assert_called()
+
     def test_sync_movie_watching_ensure_unexpected_error(self):
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
