@@ -1450,6 +1450,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         同时让 BangumiApi 内部的 OrderedDict 实例缓存跨调用点生效，
         显著降低单次同步耗时（特别是跨季遍历场景）。
 
+        缓存键由调用方加命名空间前缀：按用户名取用 ``u:`` 前缀、按配置段取用
+        ``s:`` 前缀，避免两个命名空间共用同一扁平 dict 键时互相覆盖。
+
         线程安全说明：dict get/set 在 GIL 下原子，最坏情况是两个线程
         同时 miss 各创建一个实例，最终 dict 被覆盖，可接受（比加锁性能好）。
         """
@@ -1501,7 +1504,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.error(f"配置段 {section_name} 的bangumi配置不完整")
             return None
 
-        return self._get_or_create_bangumi_api(section_name, bangumi_config)
+        return self._get_or_create_bangumi_api("s:" + section_name, bangumi_config)
 
     def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
         """根据用户名获取对应的BangumiApi实例（首选账号）
@@ -1520,7 +1523,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             logger.error(f"用户 {user_name} 的bangumi配置不完整")
             return None
 
-        return self._get_or_create_bangumi_api(user_name, bangumi_config)
+        return self._get_or_create_bangumi_api("u:" + user_name, bangumi_config)
 
     def _get_bangumi_apis_for_user(self, user_name: str) -> list[BangumiApi]:
         """根据用户名获取全部 Bangumi 账号的BangumiApi实例

@@ -1113,6 +1113,39 @@ class TestMultiAccountSyncFanOut:
         # 缺 token 的账号不可标记，首选仍是可用的首个完整账号
         assert apis == [complete]
 
+    def test_bangumi_api_cache_keys_namespace_isolated(self):
+        """用户名与配置段同名时，按用户名与按配置段缓存互不覆盖。"""
+        from unittest.mock import patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        svc._bangumi_api_cache.clear()
+        user_cfg = {"username": "shared", "access_token": "tu", "private": False}
+        section_cfg = {"username": "shared", "access_token": "ts", "private": False}
+        with (
+            patch(
+                "app.core.accounts.get_bangumi_config_for_user",
+                side_effect=lambda name: user_cfg if name == "shared" else None,
+            ),
+            patch(
+                "app.core.accounts.get_bangumi_config_by_section",
+                side_effect=lambda section: (
+                    section_cfg if section == "shared" else None
+                ),
+            ),
+        ):
+            user_api = svc._get_bangumi_api_for_user("shared")
+            section_api = svc._get_bangumi_api_by_section("shared")
+            # 同一命名空间再次取用返回已缓存的同一实例
+            assert svc._get_bangumi_api_for_user("shared") is user_api
+            assert svc._get_bangumi_api_by_section("shared") is section_api
+
+        # 两个命名空间各自独立缓存，不共用扁平键
+        assert len(svc._bangumi_api_cache) == 2
+        assert "u:shared" in svc._bangumi_api_cache
+        assert "s:shared" in svc._bangumi_api_cache
+
     def test_replay_pending_item_fans_out_to_other_accounts(self, monkeypatch):
         """补发成功时其余账号共享补发结果（入队只记首选账号）。"""
         import json
