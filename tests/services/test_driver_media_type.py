@@ -179,8 +179,8 @@ class TestEmbyMediaTypeDetection:
         item = extract_emby_data(emby_data)
         assert item.ori_title == "Demon Slayer: Kimetsu no Yaiba"
 
-    def test_emby_episode_no_original_title_falls_back_to_space(self):
-        """Emby episode 无 OriginalTitle 时回退为空格（保持兼容，issue#182 场景）"""
+    def test_emby_episode_no_original_title_is_none(self):
+        """Emby episode 无 OriginalTitle 时 ori_title 为 None，与 CustomItem 默认值一致"""
         emby_data = {
             "User": {"Name": "user1"},
             "Item": {
@@ -192,7 +192,7 @@ class TestEmbyMediaTypeDetection:
             },
         }
         item = extract_emby_data(emby_data)
-        assert item.ori_title == " "
+        assert item.ori_title is None
 
     def test_emby_real_action_via_drama_keyword(self):
         """半沢直樹（id=73955, platform=日剧, type=6）通过 originalTitle 含 Drama → real_action"""

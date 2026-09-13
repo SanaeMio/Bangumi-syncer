@@ -170,15 +170,15 @@ class TestExtractEmbyData:
 
         assert result.media_type == "episode"
         assert result.title == "测试番剧"
-        assert result.ori_title == " "
+        assert result.ori_title is None
         assert result.season == 2
         assert result.episode == 10
         assert result.release_date == "2024-01-15"
         assert result.user_name == "test_user"
         assert result.source == "emby"
 
-    def test_extract_emby_data_episode_does_not_use_original_title(self):
-        """剧集仍用单空格占位；即使有 OriginalTitle 也不写入（其为分集名）"""
+    def test_extract_emby_data_episode_uses_original_title_when_present(self):
+        """缺失 OriginalTitle 时原始标题为 None；有 OriginalTitle 时按原值提取"""
         from app.services.emby.extractor import extract_emby_data
 
         emby_data = {
@@ -196,7 +196,7 @@ class TestExtractEmbyData:
         }
         result = extract_emby_data(emby_data)
         assert result.title == "某动画"
-        # 修复：episode 分支现在正确提取 OriginalTitle（不再硬编码空格）
+        # 有 OriginalTitle 时提取其值作为原始标题
         assert result.ori_title == "第3話 サブタイトル"
 
     def test_extract_emby_data_no_premiere_date(self):
@@ -218,7 +218,7 @@ class TestExtractEmbyData:
         result = extract_emby_data(emby_data)
 
         assert result.release_date == ""
-        assert result.ori_title == " "
+        assert result.ori_title is None
 
     def test_extract_emby_data_movie(self):
         from app.services.emby.extractor import extract_emby_data
