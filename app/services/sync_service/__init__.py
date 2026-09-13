@@ -828,6 +828,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     return SyncResponse(status="error", message=str(ve))
                 raise ve
 
+            # 其余 Bangumi 账号共享本次匹配结果，不再重复解析条目
+            self._mark_movie_watching_for_other_accounts(item, bgm, str(subject_id))
+
             if mark_st == 0:
                 result_message = "条目已在看或已看过，无需变更"
             else:
@@ -1179,6 +1182,60 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     f"TV番剧自动归档为「看过」失败（单集已处理）: subject_id={bgm_se_id} {e}"
                 )
 
+    def _mark_episode_for_other_accounts(
+        self,
+        item: CustomItem,
+        primary_bgm: BangumiApi,
+        bgm_se_id: str,
+        bgm_ep_id: str,
+        bgm_title: str,
+    ) -> None:
+        """把已解析的单集标记到首选账号之外的其余 Bangumi 账号
+
+        同一媒体服务器用户名可被多个 Bangumi 账号声明（一人多号、与亲友共享
+        观看记录）。首选账号由执行阶段管线完成标记，其余账号共享同一次集数
+        解析结果，在此逐个补标记，不重复解析集数。
+
+        其余账号不传入队 payload：待同步队列按媒体服务器用户名补发，入队会
+        与首选账号产生重复条目，故其余账号遇 API 不可达只记录日志。
+
+        单个其余账号标记失败只记录日志，不改变本次同步结果（结果由首选账号
+        的标记状态决定）。
+        """
+        for bgm in self._get_bangumi_apis_for_user(item.user_name):
+            if bgm is primary_bgm:
+                continue
+            try:
+                self._retry_mark_episode(bgm, str(bgm_se_id), str(bgm_ep_id))
+                self._mark_subject_completed_if_needed(item, bgm, bgm_se_id, bgm_title)
+            except Exception as e:
+                logger.warning(
+                    f"其余 Bangumi 账号标记或归档失败（首选账号已标记）: "
+                    f"subject_id={bgm_se_id} ep={bgm_ep_id} {e}"
+                )
+
+    def _mark_movie_watching_for_other_accounts(
+        self,
+        item: CustomItem,
+        primary_bgm: BangumiApi,
+        subject_id: str,
+    ) -> None:
+        """把已匹配的剧场版条目置为「在看」到首选账号之外的其余 Bangumi 账号
+
+        与 ``_mark_episode_for_other_accounts`` 对称，沿用剧场版链路只置条目
+        收藏状态、不点单集。失败只记录日志，不改变本次同步结果。
+        """
+        for bgm in self._get_bangumi_apis_for_user(item.user_name):
+            if bgm is primary_bgm:
+                continue
+            try:
+                bgm.ensure_subject_watching(str(subject_id))
+            except Exception as e:
+                logger.warning(
+                    f"其余 Bangumi 账号标记剧场版在看失败（首选账号已标记）: "
+                    f"subject_id={subject_id} {e}"
+                )
+
     def _allocate_inline_run_id(self) -> str:
         """直调 sync_custom_item 时分配 run_id。"""
         with self._tasks_lock:
@@ -1384,25 +1441,21 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         return _accounts.get_bangumi_config_for_user(user_name)
 
-    def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
-        """根据用户名获取对应的BangumiApi实例
+    def _get_or_create_bangumi_api(
+        self, cache_key: str, bangumi_config: dict[str, Any]
+    ) -> BangumiApi:
+        """按缓存键复用已有的 BangumiApi 实例，配置变更时失效重建
 
-        按用户缓存实例，配置变更时自动失效重建。
         复用实例可避免每次同步都重新构造 httpx.Client（含连接池建立），
         同时让 BangumiApi 内部的 OrderedDict 实例缓存跨调用点生效，
         显著降低单次同步耗时（特别是跨季遍历场景）。
 
+        缓存键由调用方加命名空间前缀：按用户名取用 ``u:`` 前缀、按配置段取用
+        ``s:`` 前缀，避免两个命名空间共用同一扁平 dict 键时互相覆盖。
+
         线程安全说明：dict get/set 在 GIL 下原子，最坏情况是两个线程
         同时 miss 各创建一个实例，最终 dict 被覆盖，可接受（比加锁性能好）。
         """
-        bangumi_config = self._get_bangumi_config_for_user(user_name)
-        if not bangumi_config:
-            return None
-
-        if not bangumi_config["username"] or not bangumi_config["access_token"]:
-            logger.error(f"用户 {user_name} 的bangumi配置不完整")
-            return None
-
         # 组装配置快照：bangumi section + dev section 中影响 API 行为的字段
         dev_snapshot = config_manager.get_dev_http_snapshot()
         config_snapshot = {
@@ -1417,7 +1470,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         }
 
         # 缓存命中：实例存在且配置快照未变化
-        cached = self._bangumi_api_cache.get(user_name)
+        cached = self._bangumi_api_cache.get(cache_key)
         if cached is not None and cached[1] == config_snapshot:
             return cached[0]
 
@@ -1432,8 +1485,79 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             bgm_next_proxy=config_snapshot["bgm_next_proxy"],
             ech_mode=config_snapshot["ech_mode"],
         )
-        self._bangumi_api_cache[user_name] = (api, config_snapshot)
+        self._bangumi_api_cache[cache_key] = (api, config_snapshot)
         return api
+
+    def _get_bangumi_api_by_section(self, section_name: str) -> BangumiApi | None:
+        """根据配置段名获取对应的BangumiApi实例
+
+        按配置段缓存实例，让同一媒体服务器用户名下的多个 Bangumi 账号各自
+        持有实例，互不覆盖。
+        """
+        from app.core import accounts as _accounts
+
+        bangumi_config = _accounts.get_bangumi_config_by_section(section_name)
+        if not bangumi_config:
+            return None
+
+        if not bangumi_config["username"] or not bangumi_config["access_token"]:
+            logger.error(f"配置段 {section_name} 的bangumi配置不完整")
+            return None
+
+        return self._get_or_create_bangumi_api("s:" + section_name, bangumi_config)
+
+    def _get_bangumi_api_for_user(self, user_name: str) -> BangumiApi | None:
+        """根据用户名获取对应的BangumiApi实例（首选账号）
+
+        同一媒体服务器用户名绑定多个 Bangumi 账号时返回首选（首个配置完整的）
+        账号实例；需要对全部账号各执行一次标记时使用
+        ``_get_bangumi_apis_for_user``。
+
+        按用户缓存实例，配置变更时自动失效重建。
+        """
+        bangumi_config = self._get_bangumi_config_for_user(user_name)
+        if not bangumi_config:
+            return None
+
+        if not bangumi_config["username"] or not bangumi_config["access_token"]:
+            logger.error(f"用户 {user_name} 的bangumi配置不完整")
+            return None
+
+        return self._get_or_create_bangumi_api("u:" + user_name, bangumi_config)
+
+    def _get_bangumi_apis_for_user(self, user_name: str) -> list[BangumiApi]:
+        """根据用户名获取全部 Bangumi 账号的BangumiApi实例
+
+        同一媒体服务器用户名可被多个 Bangumi 账号声明时返回全部实例（按账号
+        登记顺序），供一人多号或与亲友共享观看记录的场景对每个账号各执行一次
+        标记。未绑定任何账号时返回空列表。
+
+        首选（首个配置完整的）账号沿用 ``_get_bangumi_api_for_user`` 的实例，
+        与主流程持有同一对象；其余账号按配置段缓存，互不覆盖。
+        """
+        from app.core import accounts as _accounts
+
+        sections = _accounts.get_bangumi_sections_for_user(user_name)
+        primary_index = next(
+            (
+                index
+                for index, section in enumerate(sections)
+                if _accounts.get_bangumi_config_by_section(section) is not None
+            ),
+            None,
+        )
+        if primary_index is None:
+            return []
+
+        apis: list[BangumiApi] = []
+        for index, section in enumerate(sections):
+            if index == primary_index:
+                api = self._get_bangumi_api_for_user(user_name)
+            else:
+                api = self._get_bangumi_api_by_section(section)
+            if api is not None:
+                apis.append(api)
+        return apis
 
     def _get_bangumi_data(self) -> BangumiData:
         """获取BangumiData实例（使用实例缓存避免内存泄漏）"""
@@ -1445,15 +1569,16 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """批量复位所有缓存 BangumiApi 实例的不可达标记，返回复位数量。
 
         补发调度器批量探测成功（_probe_api）后调用：一次探测通过即统一恢复
-        全部用户实例，避免每个实例各自等 TTL 到期、每条同步任务各探一次的
-        「无用重试」堆积。探测失败时不调用，维持不可达状态。
+        全部账号实例（含其余 Bangumi 账号），避免每个实例各自等 TTL 到期、
+        每条同步任务各探一次的「无用重试」堆积。探测失败时不调用，
+        维持不可达状态。
         """
         count = 0
-        # 快照遍历：_get_bangumi_api_for_user（sync worker 线程）会并发写入
-        # _bangumi_api_cache，直接遍历 dict 在写入时触发
-        # "dictionary changed size during iteration"。GIL 下 list() 原子拷贝
-        # 引用，与既有"不加锁、接受偶发覆盖"的设计一致。
-        for _user_name, (api, _snapshot) in list(self._bangumi_api_cache.items()):
+        # 快照遍历：_get_bangumi_api_for_user / _get_bangumi_api_by_section
+        # （sync worker 线程）会并发写入 _bangumi_api_cache，直接遍历 dict
+        # 在写入时触发 "dictionary changed size during iteration"。GIL 下
+        # list() 原子拷贝引用，与既有"不加锁、接受偶发覆盖"的设计一致。
+        for _cache_key, (api, _snapshot) in list(self._bangumi_api_cache.items()):
             if api.is_api_unreachable():
                 api.mark_api_reachable()
                 count += 1
@@ -1584,6 +1709,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 "should_mark_synced": False,
                 "sync_record_id": sync_record_id,
             }
+
+        # 补发成功：其余 Bangumi 账号共享本次补发结果（入队只记首选账号）
+        if is_movie:
+            self._mark_movie_watching_for_other_accounts(item, bgm, bgm_se_id)
+        else:
+            self._mark_episode_for_other_accounts(item, bgm, bgm_se_id, bgm_ep_id, "")
 
         # 补发成功，发通知（可选）
         try:

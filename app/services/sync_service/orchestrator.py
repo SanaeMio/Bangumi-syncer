@@ -186,7 +186,12 @@ class SyncOrchestrator:
                     status_holder,
                 )
 
-            # 13. 标记成功收尾：通知 + 收藏归档 + 持久化
+            # 13. 其余 Bangumi 账号补标记（同一媒体服务器用户名绑定多个账号）
+            self._sync._mark_episode_for_other_accounts(
+                item, bgm, bgm_se_id, bgm_ep_id, bgm_title
+            )
+
+            # 14. 标记成功收尾：通知 + 收藏归档 + 持久化
             return self._finalize_success(
                 item,
                 actual_source,
