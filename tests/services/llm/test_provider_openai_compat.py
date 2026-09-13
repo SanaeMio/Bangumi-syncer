@@ -282,3 +282,151 @@ class TestOpenAICompatProviderChat:
 
         # 在 `async with` 内部，__aexit__ 应调用 aclose
         mock_client.aclose.assert_awaited_once()
+
+
+class TestOpenAICompatBuildRequest:
+    """Phase 2.2：_build_request / _to_wire_message / reasoning_effort 映射。"""
+
+    def _provider(self, thinking_level="off", model="gpt-4o-mini"):
+        return OpenAICompatProvider(
+            api_base="https://api.openai.com/v1",
+            api_key="sk-test",
+            model=model,
+            thinking_level=thinking_level,
+        )
+
+    def test_basic_request_shape(self):
+        body = self._provider()._build_request([Message(role="user", content="Q")])
+        assert body["model"] == "gpt-4o-mini"
+        assert body["messages"] == [{"role": "user", "content": "Q"}]
+        assert "reasoning_effort" not in body  # off 不传 = 现状行为
+
+    def test_content_block_list_flattens_text_blocks(self):
+        from app.services.llm.models import TextBlock
+
+        msg = Message(
+            role="system",
+            content=[TextBlock(text="第一段"), TextBlock(text="第二段")],
+        )
+        wire = self._provider()._to_wire_message(msg)
+        assert wire["content"] == "第一段\n\n第二段"
+
+    @pytest.mark.parametrize(
+        "level,expected", [("low", "low"), ("medium", "medium"), ("high", "high")]
+    )
+    def test_reasoning_effort_o_series(self, level, expected):
+        provider = self._provider(thinking_level=level, model="o4-mini")
+        assert provider._reasoning_effort(level, "o4-mini") == expected
+        body = provider._build_request([Message(role="user", content="Q")])
+        assert body["reasoning_effort"] == expected
+
+    def test_reasoning_effort_non_o_series_ignored(self):
+        provider = self._provider(thinking_level="high", model="gpt-4o-mini")
+        assert provider._reasoning_effort("high", "gpt-4o-mini") is None
+        body = provider._build_request([Message(role="user", content="Q")])
+        assert "reasoning_effort" not in body
+
+    def test_reasoning_effort_kwargs_override(self):
+        provider = self._provider(thinking_level="off", model="o3")
+        body = provider._build_request(
+            [Message(role="user", content="Q")], thinking_level="medium"
+        )
+        assert body["reasoning_effort"] == "medium"
+
+
+class TestOpenAICompatParseResponse:
+    """Phase 2.2：_parse_response（含 refusal / 缺省字段）。"""
+
+    def test_refusal_raises(self):
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1", api_key="sk-test"
+        )
+        with pytest.raises(ValueError, match="模型拒绝响应"):
+            provider._parse_response(
+                {"choices": [{"message": {"content": None, "refusal": "不行"}}]}
+            )
+
+    def test_missing_usage_and_model_defaults(self):
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1", api_key="sk-test"
+        )
+        resp = provider._parse_response({"choices": [{"message": {}}]})
+        assert resp.content == ""
+        assert resp.usage is None
+
+
+class TestReasoningTemperatureAlignment:
+    """H3：o 系列发 reasoning_effort 时 temperature 强制 1（与 Anthropic 侧对齐），
+    避免推理模型对非 1 temperature 的硬 400。"""
+
+    def test_o_series_forces_temperature_one(self):
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1",
+            api_key="sk-test",
+            model="o4-mini",
+            thinking_level="high",
+        )
+        body = provider._build_request([Message(role="user", content="Q")])
+        assert body["reasoning_effort"] == "high"
+        assert body["temperature"] == 1  # 硬 400 修复点
+
+    def test_non_o_series_keeps_configured_temperature(self):
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1",
+            api_key="sk-test",
+            model="gpt-4o-mini",
+            temperature=0.7,
+            thinking_level="off",
+        )
+        body = provider._build_request([Message(role="user", content="Q")])
+        assert body["temperature"] == 0.7
+
+    def test_o_series_user_temperature_overridden(self):
+        """用户显式传 temperature=0.2 也被强制为 1（推理模型不接受非 1）。"""
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1",
+            api_key="sk-test",
+            model="o3",
+            thinking_level="low",
+        )
+        body = provider._build_request(
+            [Message(role="user", content="Q")], temperature=0.2
+        )
+        assert body["temperature"] == 1
+
+
+class TestFinishReasonMapping:
+    """M10：OpenAI finish_reason → stop_reason（与 Anthropic 对齐，供 P4 截断判断）。"""
+
+    def test_finish_reason_stop_mapped(self):
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1", api_key="sk-test"
+        )
+        resp = provider._parse_response(
+            {
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "model": "gpt-4o-mini",
+            }
+        )
+        assert resp.stop_reason == "stop"
+
+    def test_finish_reason_length_mapped(self):
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1", api_key="sk-test"
+        )
+        resp = provider._parse_response(
+            {
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "length"}],
+                "model": "gpt-4o-mini",
+            }
+        )
+        assert resp.stop_reason == "length"
+
+    def test_missing_finish_reason_defaults_empty(self):
+        provider = OpenAICompatProvider(
+            api_base="https://api.openai.com/v1", api_key="sk-test"
+        )
+        resp = provider._parse_response(
+            {"choices": [{"message": {"content": "ok"}}], "model": "gpt-4o-mini"}
+        )
+        assert resp.stop_reason == ""

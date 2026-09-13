@@ -3,17 +3,23 @@
         <div class="d-flex align-items-center">
             <i class="bi bi-robot me-2 card-header-icon"></i>
             <h6 class="m-0 fw-semibold card-header-title">LLM 配置</h6>
+            <i class="bi bi-question-circle ms-1 text-muted"
+               data-bs-toggle="tooltip"
+               title="请使用您信任的 LLM 服务提供商。API 密钥将加密存储，测试连接会产生少量 Token 消耗。"></i>
         </div>
     </div>
     <div class="card-body">
         <div class="row g-3">
             <div class="col-md-6">
-                <label class="form-label">API 地址</label>
+                <label class="form-label">API 地址
+                    <i class="bi bi-question-circle ms-1 text-muted"
+                       data-bs-toggle="tooltip"
+                       title="OpenAI 兼容接口请以 /v1 结尾填写完整地址, 具体以 Provider 文档为准"></i>
+                </label>
                 <input class="form-control"
                        id="llm-api-base"
                        name="llm.api_base"
                        placeholder="https://api.openai.com/v1">
-                <small class="text-muted">OpenAI 兼容接口请以 /v1 结尾填写完整地址, 具体以 Provider 文档为准</small>
             </div>
             <div class="col-md-6">
                 <label class="form-label">API 密钥</label>
@@ -31,14 +37,17 @@
                 </select>
             </div>
             <div class="col-md-6">
-                <label class="form-label">思考强度</label>
+                <label class="form-label">思考强度
+                    <i class="bi bi-question-circle ms-1 text-muted"
+                       data-bs-toggle="tooltip"
+                       title="off/low/medium/high；anthropic_compat 映射 extended thinking 的 budget_tokens（2048/4096/8192），openai_compat 映射 reasoning_effort（仅 o 系列模型生效，其余模型自动忽略）"></i>
+                </label>
                 <select class="form-select" id="llm-thinking-level" name="llm.thinking_level">
                     <option value="off">off</option>
                     <option value="low">low</option>
                     <option value="medium">medium</option>
                     <option value="high">high</option>
                 </select>
-                <small class="text-muted">仅 anthropic_compat 生效，映射为 Anthropic extended thinking 的 budget_tokens（2048/4096/8192），OpenAI 侧暂不支持</small>
             </div>
             <div class="col-md-4">
                 <label class="form-label">模型</label>
@@ -81,9 +90,6 @@
                 </button>
             </div>
         </div>
-        <p class="text-muted small mt-3 mb-0">
-            <i class="bi bi-info-circle me-1"></i>请使用您信任的 LLM 服务提供商。API 密钥将加密存储，测试连接会产生少量 Token 消耗。
-        </p>
     </div>
 </div>
 </div>

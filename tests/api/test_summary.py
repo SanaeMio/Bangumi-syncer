@@ -735,9 +735,18 @@ class TestTestLLMConnection:
                 assert response.status_code == 200
                 data = response.json()
                 assert data["success"] is True
-                assert "Hello! How can I help you?" in data["message"]
+                # 响应不含回复正文（S12：message 为固定文案，短回复截停无展示价值）
+                assert data["message"] == "连接成功"
+                assert "Hello! How can I help you?" not in data["message"]
                 assert data["model"] == "gpt-4o-mini"
                 assert data["latency_ms"] is not None
+                # 连通性 ping 应限制生成长度（max_tokens=8）且 prompt 极简
+                call_kwargs = mock_client.chat.await_args.kwargs
+                assert call_kwargs["max_tokens"] == 8
+                assert call_kwargs["job_name"] == "llm_test"
+                msgs = mock_client.chat.await_args.args[0]
+                assert len(msgs) == 1
+                assert msgs[0].content == "ping"
 
     @pytest.mark.asyncio
     async def test_llm_connection_failure(self):
@@ -768,6 +777,46 @@ class TestTestLLMConnection:
                 data = response.json()
                 assert data["success"] is False
                 assert "Connection refused" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_llm_connection_empty_content_with_model_fails(self):
+        """F2（H1 同步）：content 为空但 model 存在 → 仍视为失败（仅判 not content）。
+
+        旧逻辑 `not response.model and not response.content` 在 model 存在时会误判为
+        成功；修复后与 summary 侧一致，仅 `not content` 即失败。
+        """
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.llm import router
+        from app.services.llm.models import ChatResponse, Usage
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        mock_client = MagicMock()
+        mock_client.chat = AsyncMock(
+            return_value=ChatResponse(
+                content="",
+                model="gpt-4o-mini",
+                usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            )
+        )
+
+        with patch("app.api.llm.get_llm_client", return_value=mock_client):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/llm/test")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["success"] is False
 
 
 class TestGetLLMStats:

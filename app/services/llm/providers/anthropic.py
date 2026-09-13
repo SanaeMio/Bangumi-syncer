@@ -145,9 +145,14 @@ class AnthropicProvider(BaseProvider):
         if system_parts:
             body["system"] = "\n\n".join(system_parts)
 
-        # thinking_level：每任务 kwargs 覆盖 > 全局默认；模型不支持时降级
+        # thinking_level：每任务 kwargs 覆盖 > 全局默认；模型不支持时降级；
+        # 端点拒绝过扩展参数时（_extras_disabled）不再发送
         level = kwargs.get("thinking_level", self.thinking_level)
-        budget = self._thinking_enabled(level, kwargs.get("model", self.model))
+        budget = (
+            0
+            if self._extras_disabled
+            else self._thinking_enabled(level, kwargs.get("model", self.model))
+        )
         if budget > 0:
             body["thinking"] = {"type": "enabled", "budget_tokens": budget}
             # Anthropic 约束：budget_tokens 必须小于 max_tokens，且 max_tokens
@@ -164,7 +169,8 @@ class AnthropicProvider(BaseProvider):
 
     def _thinking_enabled(self, level: str, model: str) -> int:
         """返回 budget_tokens；模型不支持或 level=off 时返回 0。"""
-        if model.startswith("claude-haiku"):
+        # 包含匹配而非前缀：兼容网关透传的带前缀模型名（如 "anthropic/claude-haiku-..."）
+        if "claude-haiku" in model:
             logger.warning(f"model {model} 不支持 extended thinking，已降级为 off")
             return 0
         return self._THINKING_BUDGETS.get(level, 0)
