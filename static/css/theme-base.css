@@ -2,6 +2,8 @@
 /* 清新简洁的自定义样式 */
 
 :root {
+    color-scheme: light;
+
     --app-ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
     --app-radius-card: 24px;
     --app-radius-card-sm: 16px;
@@ -232,6 +234,8 @@
 /* ========== 暗色模式 ========== */
 
 [data-theme="dark"] {
+    color-scheme: dark;
+
     --app-bg: #1a1b24;
     --app-bg-card: #24262f;
     --app-bg-shell: color-mix(in srgb, var(--app-bg-card) 94%, var(--app-primary-soft));
@@ -467,6 +471,13 @@
 [data-theme="dark"] .dropdown-item:hover,
 [data-theme="dark"] .dropdown-item:focus {
     background-color: var(--app-bg-hover);
+    color: var(--app-text);
+}
+
+/* 暗色模式下原生 select 下拉弹出菜单跟随主题配色 */
+[data-theme="dark"] select option,
+[data-theme="dark"] select optgroup {
+    background-color: var(--app-bg-card);
     color: var(--app-text);
 }
 
