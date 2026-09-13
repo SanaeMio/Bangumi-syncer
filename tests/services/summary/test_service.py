@@ -157,6 +157,56 @@ class TestGenerateSummary:
         assert call_kwargs["user_name"] is None
 
     @pytest.mark.asyncio
+    async def test_include_consumed_true_when_memory_on(self):
+        """P1：memory_limit>0 时传 include_consumed=True（消费排除所需）。"""
+        from app.services.summary.service import SummaryService
+
+        svc = SummaryService()
+        config = _make_config(user_name="dad", memory_limit=5)
+
+        mock_llm_client = MagicMock()
+        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+
+        with (
+            patch("app.services.summary.service.database_manager") as mock_db,
+            patch(
+                "app.services.summary.service.get_llm_client",
+                return_value=mock_llm_client,
+            ),
+        ):
+            mock_db.get_records_in_date_range.return_value = []
+
+            await svc.generate_summary(config)
+
+        call_kwargs = mock_db.get_records_in_date_range.call_args.kwargs
+        assert call_kwargs["include_consumed"] is True
+
+    @pytest.mark.asyncio
+    async def test_include_consumed_false_when_memory_off(self):
+        """P1：memory_limit=0（默认）时传 include_consumed=False（轻量查询）。"""
+        from app.services.summary.service import SummaryService
+
+        svc = SummaryService()
+        config = _make_config(user_name="dad")  # memory_limit 默认 0
+
+        mock_llm_client = MagicMock()
+        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+
+        with (
+            patch("app.services.summary.service.database_manager") as mock_db,
+            patch(
+                "app.services.summary.service.get_llm_client",
+                return_value=mock_llm_client,
+            ),
+        ):
+            mock_db.get_records_in_date_range.return_value = []
+
+            await svc.generate_summary(config)
+
+        call_kwargs = mock_db.get_records_in_date_range.call_args.kwargs
+        assert call_kwargs["include_consumed"] is False
+
+    @pytest.mark.asyncio
     async def test_system_prompt_in_messages(self):
         """LLM 被调用时 messages[0].content 为 system_prompt（role='system'）。"""
         from app.services.summary.service import SummaryService

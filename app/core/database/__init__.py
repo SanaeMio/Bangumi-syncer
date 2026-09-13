@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 from ..logging import logger as logger
 from .accounts import BangumiAccountRepository, OAuthStateRepository
+from .agent_memory import AgentMemoryRepository
 from .connection import (
     FEINIU_MIN_UPDATE_WATERMARK_META_KEY as FEINIU_MIN_UPDATE_WATERMARK_META_KEY,
     INBOX_ERROR_BACKFILL_META_KEY as INBOX_ERROR_BACKFILL_META_KEY,
@@ -57,8 +58,11 @@ class DatabaseManager:
         self._bangumi_accounts = BangumiAccountRepository(self._connection)
         self._oauth_state = OAuthStateRepository(self._connection)
         self.llm_usage = LLMUsageRepository(self._connection)
+        self.memory = AgentMemoryRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         self._pending_sync = PendingSyncQueueRepository(self._connection)
+        # 公开别名（消费标记写/清归 memory 域，业务层经此只读访问同步记录）
+        self.sync_records = self._sync
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
         # 需要先创建 inbox_repository（及其 feiniu 依赖）才能执行回填
         self._inbox.backfill_historical_error_notifications()
@@ -475,6 +479,7 @@ class DatabaseManager:
         limit: int = 200,
         user_name: Optional[str] = None,
         source: Optional[str] = None,
+        include_consumed: bool = False,
     ) -> list[dict[str, Any]]:
         """获取指定日期范围内的同步记录"""
         return self._sync.get_records_in_date_range(
@@ -483,6 +488,7 @@ class DatabaseManager:
             limit=limit,
             user_name=user_name,
             source=source,
+            include_consumed=include_consumed,
         )
 
     def cleanup_old_records(self, retention_days: int) -> int:

@@ -42,6 +42,7 @@ class DatabaseConnection:
 
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
+        self._agent_memory_migrated = False
         # 已确认存在（或已补上）的列集合，避免每次读写前的 ensure_schema
         # 回调重复执行 PRAGMA table_info
         self._migrated_columns: set[tuple[str, str]] = set()
@@ -318,6 +319,118 @@ class DatabaseConnection:
         except Exception as e:
             logger.warning(f"token 加密迁移失败（将在下次启动重试）: {e}")
 
+    def _ensure_sync_records_consumed(self, cursor) -> None:
+        """消费标记关联表 schema：多对多（sync_record_id, run_id）。
+
+        一条记录可被多个任务的多个 run 消费，互不覆盖（INSERT OR IGNORE）。
+        开发阶段直接建新表，无旧库迁移；SQL 幂等（IF NOT EXISTS），
+        重复执行安全。
+        """
+        # ① 关联表（多对多消费标记）
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sync_records_consumed (
+                sync_record_id INTEGER NOT NULL,
+                run_id         TEXT NOT NULL,
+                PRIMARY KEY (sync_record_id, run_id)
+            )
+            """
+        )
+        # ② run_id 反查索引（clear_task 按 run_id 删、get_related_titles JOIN）
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_records_consumed_run_id "
+            "ON sync_records_consumed(run_id)"
+        )
+
+    def _ensure_agent_memory(self, cursor) -> None:
+        """Agent 工作记忆 schema：主表 + 归档表 + 索引 + FTS5 + 同步触发器。
+
+        FTS5 是 external content 表，触发器必须存在（否则 INSERT 后 FTS 不更新）。
+        tokenizer 优先 trigram（中文子串匹配）；老 SQLite（< 3.34）不支持时降级
+        默认 unicode61（整段 CJK 为一个 token，仅精确标题可命中）。
+        """
+        if self._agent_memory_migrated:
+            return
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_working_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                run_id TEXT NOT NULL UNIQUE,
+                summary TEXT NOT NULL,
+                full_text TEXT,
+                outcome TEXT NOT NULL,
+                tokens_used INTEGER,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_working_memory_archive (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                run_id TEXT NOT NULL UNIQUE,
+                summary TEXT NOT NULL,
+                full_text TEXT,
+                outcome TEXT NOT NULL,
+                tokens_used INTEGER,
+                created_at TEXT,
+                archived_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_task "
+            "ON agent_working_memory(task_type, task_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_created "
+            "ON agent_working_memory(created_at)"
+        )
+        try:
+            cursor.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS agent_memory_fts USING fts5("
+                "task_type, summary, outcome, "
+                "content='agent_working_memory', content_rowid='id', "
+                "tokenize='trigram')"
+            )
+        except sqlite3.OperationalError:
+            # SQLite < 3.34：trigram 不可用，降级默认分词器（中文子串匹配失效，
+            # search_fts 关键词检索能力受限）——显式告警便于排查检索质量问题
+            logger.warning(
+                "当前 SQLite %s 不支持 trigram 分词器，agent_memory_fts 已降级为"
+                "默认分词器：中文关键词检索能力受限（建议 SQLite >= 3.34）",
+                sqlite3.sqlite_version,
+            )
+            cursor.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS agent_memory_fts USING fts5("
+                "task_type, summary, outcome, "
+                "content='agent_working_memory', content_rowid='id')"
+            )
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS agent_memory_ai
+            AFTER INSERT ON agent_working_memory BEGIN
+                INSERT INTO agent_memory_fts(rowid, task_type, summary, outcome)
+                VALUES (new.id, new.task_type, new.summary, new.outcome);
+            END
+        """)
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS agent_memory_ad
+            AFTER DELETE ON agent_working_memory BEGIN
+                INSERT INTO agent_memory_fts(agent_memory_fts, rowid, task_type, summary, outcome)
+                VALUES ('delete', old.id, old.task_type, old.summary, old.outcome);
+            END
+        """)
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS agent_memory_au
+            AFTER UPDATE ON agent_working_memory BEGIN
+                INSERT INTO agent_memory_fts(agent_memory_fts, rowid, task_type, summary, outcome)
+                VALUES ('delete', old.id, old.task_type, old.summary, old.outcome);
+                INSERT INTO agent_memory_fts(rowid, task_type, summary, outcome)
+                VALUES (new.id, new.task_type, new.summary, new.outcome);
+            END
+        """)
+        self._agent_memory_migrated = True
+
     def _init_database(self) -> None:
         """初始化数据库"""
         conn = self._get_connection()
@@ -352,6 +465,7 @@ class DatabaseConnection:
         self._ensure_sync_records_media_type(cursor)
         self._ensure_sync_records_bgm_title(cursor)
         self._ensure_sync_records_match_fields(cursor)
+        self._ensure_sync_records_consumed(cursor)
         self._ensure_sync_records_link_fields(cursor)
 
         # 创建 Trakt 配置表
@@ -538,6 +652,8 @@ class DatabaseConnection:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_status ON sync_records(status)"
         )
+        # 消费标记关联表索引已在 _ensure_sync_records_consumed 创建
+        # （idx_sync_records_consumed_run_id → sync_records_consumed(run_id)）
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_trakt_sync_history_user_id ON trakt_sync_history(user_id)"
         )
@@ -573,6 +689,9 @@ class DatabaseConnection:
             "CREATE INDEX IF NOT EXISTS idx_pending_candidates_sync_record_id "
             "ON pending_candidates(sync_record_id)"
         )
+
+        # Agent 工作记忆（热表 + 归档冷表 + FTS5 + 同步触发器）
+        self._ensure_agent_memory(cursor)
 
         # 一次性数据迁移：加密历史明文 token（仓储层已改为写入即加密）
         self._ensure_tokens_encrypted(cursor)

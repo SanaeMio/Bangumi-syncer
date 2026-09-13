@@ -33,12 +33,13 @@ class SummaryService:
         )
         date_to = now.strftime("%Y-%m-%d")
 
-        # 2. 查询记录
+        # 2. 查询记录（仅记忆开启时携带消费标记做排除，避免无条件加重查询）
         records = database_manager.get_records_in_date_range(
             date_from=date_from,
             date_to=date_to,
             limit=job_config.max_records,
             user_name=job_config.user_name.strip() or None,
+            include_consumed=(job_config.memory_limit > 0),
         )
         record_count = len(records)
 
