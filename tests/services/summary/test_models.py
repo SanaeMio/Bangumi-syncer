@@ -36,6 +36,8 @@ def test_from_config_dict_defaults_empty():
     assert cfg.user_name == ""
     assert cfg.system_prompt == SummaryJobConfig.system_prompt
     assert cfg.max_records == -1
+    assert cfg.memory_limit == 0  # 默认关闭（0=关）
+    assert cfg.related_limit == 0
 
 
 def test_from_config_dict_defaults_minimal():
@@ -71,6 +73,74 @@ def test_enabled_already_bool():
     assert cfg_true.enabled is True
     cfg_false = SummaryJobConfig.from_config_dict({"name": "t", "enabled": False})
     assert cfg_false.enabled is False
+
+
+# ── memory_limit / related_limit（R6 配置透传，0=关）────────────────────
+
+
+def test_memory_config_parsed():
+    """R6：[summary-xxx] memory_limit=3、related_limit=2 → 透传。"""
+    cfg = SummaryJobConfig.from_config_dict(
+        {"name": "daily", "memory_limit": "3", "related_limit": "2"}
+    )
+    assert cfg.memory_limit == 3
+    assert cfg.related_limit == 2
+
+
+def test_memory_defaults_closed():
+    """缺省 = 0（记忆特性关闭），不隐式开启。"""
+    cfg = SummaryJobConfig.from_config_dict({"name": "t"})
+    assert cfg.memory_limit == 0
+    assert cfg.related_limit == 0
+
+
+def test_memory_limit_scale_0_to_1000():
+    """0=关、1–1000 生效；负值/超 1000/非法回落 0。"""
+    assert (
+        SummaryJobConfig.from_config_dict(
+            {"name": "t", "memory_limit": "0"}
+        ).memory_limit
+        == 0
+    )
+    assert (
+        SummaryJobConfig.from_config_dict(
+            {"name": "t", "memory_limit": "1000"}
+        ).memory_limit
+        == 1000
+    )
+    assert (
+        SummaryJobConfig.from_config_dict(
+            {"name": "t", "memory_limit": "1001"}
+        ).memory_limit
+        == 1000
+    )
+    assert (
+        SummaryJobConfig.from_config_dict(
+            {"name": "t", "memory_limit": "-5"}
+        ).memory_limit
+        == 0
+    )
+    assert (
+        SummaryJobConfig.from_config_dict(
+            {"name": "t", "memory_limit": "abc"}
+        ).memory_limit
+        == 0
+    )
+
+
+def test_related_limit_scale_0_to_1000():
+    assert (
+        SummaryJobConfig.from_config_dict(
+            {"name": "t", "related_limit": "1001"}
+        ).related_limit
+        == 1000
+    )
+    assert (
+        SummaryJobConfig.from_config_dict(
+            {"name": "t", "related_limit": "-1"}
+        ).related_limit
+        == 0
+    )
 
 
 # ── int coercion ──────────────────────────────────────────────────────
@@ -112,3 +182,20 @@ def test_no_user_prompt_template_attribute():
     """user_prompt_template 不应该是 dataclass 的属性。"""
     cfg = SummaryJobConfig.from_config_dict({"name": "t"})
     assert not hasattr(cfg, "user_prompt_template")
+
+
+def test_bad_lookback_days_does_not_crash():
+    """H2：非法 lookback_days/max_records 不抛异常（坏配置不拖垮调度注册）。"""
+    cfg = SummaryJobConfig.from_config_dict(
+        {"name": "t", "lookback_days": "abc", "max_records": "1.5"}
+    )
+    assert cfg.lookback_days == 1  # 回落默认
+    assert cfg.max_records == -1  # 回落默认
+
+
+def test_bad_max_records_negative_ok():
+    """max_records=-1 合法；'abc' 回落 -1。"""
+    cfg = SummaryJobConfig.from_config_dict({"name": "t", "max_records": "-1"})
+    assert cfg.max_records == -1
+    cfg = SummaryJobConfig.from_config_dict({"name": "t", "max_records": "abc"})
+    assert cfg.max_records == -1

@@ -74,7 +74,7 @@ class BangumiSearchPort(Protocol):
     ) -> tuple[str, int]: ...
 
     def find_episode_across_seasons(
-        self, subject_id: str, target_sort: int
+        self, subject_id: str, target_sort: int, target_season: int = 1
     ) -> tuple[str, int] | None: ...
 
     # 相似度计算

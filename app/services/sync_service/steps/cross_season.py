@@ -37,9 +37,12 @@ class CrossSeasonStep(ExecutionStepBase):
         if prev and prev.get("episode_id"):
             return StepOutcome(status="skipped", reason="集数解析已命中，无需跨季回退")
 
+        target_season = ctx.item.season or 1
         try:
             chain_pick = ctx.bgm.find_episode_across_seasons(
-                ctx.subject_id, ctx.item.episode
+                ctx.subject_id,
+                ctx.item.episode,
+                target_season=target_season,
             )
         except Exception:
             logger.debug(f"关联季条目链查找异常: {ctx.subject_id}", exc_info=True)
@@ -50,15 +53,21 @@ class CrossSeasonStep(ExecutionStepBase):
                 f"bgm: {ctx.subject_id=} {ctx.item.season=} {ctx.item.episode=}, "
                 "不存在或集数过多，跳过"
             )
+            # 集数语义随 target_season 变化：大于 1 时是季内集编号，否则是全局 sort
+            ep_desc = (
+                f"第 {target_season} 季第 {ctx.item.episode} 集"
+                if target_season > 1
+                else f"sort={ctx.item.episode}"
+            )
             return StepOutcome(
                 status="miss",
-                reason=f"跨季链查找未命中含 sort={ctx.item.episode} 的季条目",
+                reason=f"跨季链查找未命中含 {ep_desc} 的季条目",
                 inputs=inputs,
                 outputs={
                     "subject_id": "",
                     "episode_id": "",
                     "changed": False,
-                    "error": f"未找到含 sort={ctx.item.episode} 的关联季条目",
+                    "error": f"未找到含 {ep_desc} 的关联季条目",
                 },
                 is_terminal=True,
             )

@@ -59,23 +59,31 @@ async def update_llm_config(
 
 @router.post("/test", response_model=LLMTestResponse)
 async def test_llm_connection(_=Depends(get_current_user_flexible)):
-    """发送简单 ping 验证 LLM 连通性。"""
+    """发送简单 ping 验证 LLM 连通性（短回复，避免完整生成等待）。
+
+    连通性验证语义：不展示回复正文（短回复会被 max_tokens 截停，展示半截句
+    反而迷惑）；只返回 成功/模型/延迟。max_tokens=8 让模型在第 8 个 token
+    处被 API 截停——服务端不会"生成后丢弃"，只是限制生成长度，延迟显著低于
+    完整回复。
+    """
     try:
         client = get_llm_client()
         t0 = time.time()
         response = await client.chat(
-            [Message(role="user", content="Hello")],
+            [Message(role="user", content="ping")],
             job_name="llm_test",
+            max_tokens=8,
         )
         latency = int((time.time() - t0) * 1000)
         # chat() 永不抛异常，重试耗尽时返回空响应
-        if not response.model and not response.content:
+        # H1：仅以 content 是否为空判定失败（model 存在但 content 为空仍算失败）
+        if not response.content:
             return LLMTestResponse(
                 success=False, message="LLM 调用失败（所有重试已耗尽）"
             )
         return LLMTestResponse(
             success=True,
-            message=response.content[:200],
+            message="连接成功",  # 不含回复正文（短回复截停无展示价值）
             model=response.model,
             latency_ms=latency,
         )

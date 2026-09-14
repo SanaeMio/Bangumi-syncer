@@ -200,8 +200,8 @@ LLM 连接是独立模块，追番总结和调试工具共用。在「配置管�
 - **API 密钥（api_key）**：服务商提供的 API Key。**加密存储**，页面回显为掩码。
 - **模型（model）**：要调用的模型名称，默认 `gpt-4o-mini`。`openai_compat` 请确认模型支持 Chat Completions 接口；`anthropic_compat` 请填写 Claude 模型（如 `claude-sonnet-4-6`、`claude-opus-4-6` 等）。
 - **最大 Token（max_tokens）**：单次请求最大输出 token 数，默认 2000。根据模型上下文窗口和总结长度调整。Anthropic Messages API 的 max_tokens 为必填字段，请保持不小于所需输出长度。开启思考强度时该值会被自动抬升到不低于 `budget_tokens + 1024`（Anthropic 约束：思考 token 计入 max_tokens 上限，`budget_tokens` 必须小于 `max_tokens`），无需手动调大。
-- **温度（temperature）**：生成随机性，0~2 之间，默认 0.7。越低越确定/保守，越高越有创意。注意 `anthropic_compat` 开启思考后该值会被强制为 1（Anthropic API 要求）。
-- **思考强度（thinking_level）**：仅 `anthropic_compat` 生效，可选 `off` / `low` / `medium` / `high`，默认 `off` 不启用思考。开启后映射为 Anthropic extended thinking 的 `budget_tokens`（依次为 2048 / 4096 / 8192），`low` 适合日常总结，高质量总结可试 `high`。`claude-haiku` 系列等不支持 extended thinking 的模型会自动降级为 `off`（日志有提示）。
+- **温度（temperature）**：生成随机性，0~2 之间，默认 0.7。越低越确定/保守，越高越有创意。注意开启思考后该值会被强制为 1（Anthropic 与 OpenAI o 系列均要求）。
+- **思考强度（thinking_level）**：可选 `off` / `low` / `medium` / `high`，默认 `off` 不启用思考。`anthropic_compat` 开启后映射为 Anthropic extended thinking 的 `budget_tokens`（依次为 2048 / 4096 / 8192），`low` 适合日常总结，高质量总结可试 `high`；`claude-haiku` 系列等不支持 extended thinking 的模型会自动降级为 `off`（日志有提示）。`openai_compat` 开启后映射为 OpenAI `reasoning_effort`（`low` / `medium` / `high`），仅 o 系列推理模型（o1/o3/o4-mini 等）生效，其余模型自动忽略（debug 日志有提示）。
 - **超时时间（timeout）**：请求超时秒数，默认 60。遇到超时错误可适当调大。
 - **调用记录保留（retention_days）**：LLM 调用记录（Token 用量、延迟等）在数据库中保留天数，默认 365 天。
 

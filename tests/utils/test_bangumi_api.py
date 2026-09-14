@@ -2,6 +2,7 @@
 Bangumi API 工具测试
 """
 
+import sqlite3
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -1017,6 +1018,171 @@ class TestGetTargetSeasonEpisodeId:
             result = api.get_target_season_episode_id("123", 1, 0)
         # P0-3 修复: 返回 tuple (subject_id, None) 保持解包契约
         assert result == ("123", None)
+
+    @pytest.fixture
+    def archive_517106_db(self, tmp_path):
+        """构建 subject 517106（第二期）原始 Archive 库：全局连续 sort 13..24，无 ep 字段"""
+        db_path = tmp_path / "archive_517106.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "CREATE TABLE episode ("
+            "id INTEGER, name TEXT, name_cn TEXT, description TEXT, "
+            "airdate TEXT, disc INTEGER, duration INTEGER, "
+            "subject_id INTEGER, sort INTEGER, type INTEGER)"
+        )
+        rows = [
+            (13, "EP1", "", "", "2025-01-01", 0, 0, 517106, 13, 0),
+            (14, "EP2", "", "", "2025-01-08", 0, 0, 517106, 14, 0),
+            (15, "EP3", "", "", "2025-01-15", 0, 0, 517106, 15, 0),
+            (16, "EP4", "", "", "2025-01-22", 0, 0, 517106, 16, 0),
+            (17, "EP5", "", "", "2025-01-29", 0, 0, 517106, 17, 0),
+            (18, "EP6", "", "", "2025-02-05", 0, 0, 517106, 18, 0),
+            (19, "EP7", "", "", "2025-02-12", 0, 0, 517106, 19, 0),
+            (20, "EP8", "", "", "2025-02-19", 0, 0, 517106, 20, 0),
+            (21, "EP9", "", "", "2025-02-26", 0, 0, 517106, 21, 0),
+            (22, "EP10", "", "", "2025-03-05", 0, 0, 517106, 22, 0),
+            (23, "EP11", "", "", "2025-03-12", 0, 0, 517106, 23, 0),
+            (24, "EP12", "", "", "2025-03-19", 0, 0, 517106, 24, 0),
+            (25, "SP", "", "", "2025-03-26", 0, 0, 517106, 25, 3),
+        ]
+        conn.executemany(
+            "INSERT INTO episode (id,name,name_cn,description,airdate,disc,"
+            "duration,subject_id,sort,type) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    @pytest.fixture
+    def archive_sort_reset_db(self, tmp_path):
+        """构建 subject 900002 的 Archive 库：多季合并条目，sort 每季重置为 1"""
+        db_path = tmp_path / "archive_sort_reset.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "CREATE TABLE episode ("
+            "id INTEGER, name TEXT, name_cn TEXT, description TEXT, "
+            "airdate TEXT, disc INTEGER, duration INTEGER, "
+            "subject_id INTEGER, sort INTEGER, type INTEGER)"
+        )
+        rows = [
+            (301, "EP1", "", "", "2025-01-01", 0, 0, 900002, 1, 0),
+            (302, "EP2", "", "", "2025-01-08", 0, 0, 900002, 2, 0),
+            (303, "EP3", "", "", "2025-01-15", 0, 0, 900002, 3, 0),
+            (304, "EP4", "", "", "2025-01-22", 0, 0, 900002, 4, 0),
+            (305, "EP5", "", "", "2025-01-29", 0, 0, 900002, 5, 0),
+            (306, "EP1", "", "", "2025-02-05", 0, 0, 900002, 1, 0),
+            (307, "EP2", "", "", "2025-02-12", 0, 0, 900002, 2, 0),
+            (308, "EP3", "", "", "2025-02-19", 0, 0, 900002, 3, 0),
+            (309, "EP4", "", "", "2025-02-26", 0, 0, 900002, 4, 0),
+            (310, "EP5", "", "", "2025-03-05", 0, 0, 900002, 5, 0),
+        ]
+        conn.executemany(
+            "INSERT INTO episode (id,name,name_cn,description,airdate,disc,"
+            "duration,subject_id,sort,type) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    def _enable_archive_with_db(self, api, db_path):
+        from app.utils.bangumi_archive import _archive as _arch_mod
+
+        orig = (
+            _arch_mod.bangumi_archive.db_a_path,
+            _arch_mod.bangumi_archive._meta.active,
+            api._archive._enabled,
+        )
+        _arch_mod.bangumi_archive.db_a_path = db_path
+        _arch_mod.bangumi_archive._meta.active = "a"
+        api._archive._enabled = True
+        return orig
+
+    def _restore_archive(self, api, orig):
+        from app.utils.bangumi_archive import _archive as _arch_mod
+
+        _arch_mod.bangumi_archive.db_a_path = orig[0]
+        _arch_mod.bangumi_archive._meta.active = orig[1]
+        api._archive._enabled = orig[2]
+
+    def test_archive_synthesized_ep_resolves_season_local(self, archive_517106_db):
+        """Archive 补全 ep 后，is_season_subject_id 按季内话数定位章节
+
+        subject 517106 是第二期（全局连续 sort 13..24，无 sort=6），Archive 原始 dump
+        不含 ep，依赖 get_episodes 边界补全 ep=1..12，下游 _match_target_ep_rows 才能
+        按 ep 回退匹配到 sort=18（id=18）。本测试走真实 try_get_episodes → get_episodes
+        路径，是补全逻辑端到端回归测试。
+        """
+        api = BangumiApi()
+        orig = self._enable_archive_with_db(api, archive_517106_db)
+        try:
+            with (
+                patch.object(
+                    api,
+                    "get_subject",
+                    return_value={
+                        "id": 517106,
+                        "type": 2,
+                        "name": "逃げ上手の若君 第二期",
+                    },
+                ),
+                patch.object(api, "get_related_subjects", return_value=[]),
+            ):
+                subject_id, episode_id = api.get_target_season_episode_id(
+                    "517106", 2, 6, is_season_subject_id=True
+                )
+            assert subject_id == "517106"
+            assert episode_id == 18
+        finally:
+            self._restore_archive(api, orig)
+
+    def test_archive_synthesized_ep_first_maps_to_sort13(self, archive_517106_db):
+        """季内第 1 话应映射到全局 sort=13（id=13）"""
+        api = BangumiApi()
+        orig = self._enable_archive_with_db(api, archive_517106_db)
+        try:
+            with (
+                patch.object(
+                    api,
+                    "get_subject",
+                    return_value={
+                        "id": 517106,
+                        "type": 2,
+                        "name": "逃げ上手の若君 第二期",
+                    },
+                ),
+                patch.object(api, "get_related_subjects", return_value=[]),
+            ):
+                subject_id, episode_id = api.get_target_season_episode_id(
+                    "517106", 2, 1, is_season_subject_id=True
+                )
+            assert subject_id == "517106"
+            assert episode_id == 13
+        finally:
+            self._restore_archive(api, orig)
+
+    def test_sort_reset_subject_uses_sort_jump_detection(self, archive_sort_reset_db):
+        """多季合并条目（sort 每季重置为 1）不补全 ep，季边界仍由 sort 重置检测定位
+
+        Archive 缺 ep 时上游依赖 sort 由高值跳回 1 判定新季。补全 ep 不得使该检测
+        失效，否则同一条目内的第 2 季将无法定位。
+        """
+        api = BangumiApi()
+        orig = self._enable_archive_with_db(api, archive_sort_reset_db)
+        try:
+            with (
+                patch.object(
+                    api,
+                    "get_subject",
+                    return_value={"id": 900002, "type": 2, "name": "多季合并条目"},
+                ),
+                patch.object(api, "get_related_subjects", return_value=[]),
+            ):
+                result = api._try_resolve_continuous_season_episode(900002, 2, 3)
+            assert result == (900002, 308)
+        finally:
+            self._restore_archive(api, orig)
 
 
 class TestTitleDiffRatio:

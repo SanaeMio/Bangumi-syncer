@@ -817,3 +817,395 @@ class TestAsyncMethods:
             assert "异步处理失败" in out.message
             assert svc._sync_tasks[tid]["status"] == "failed"
             assert "inner boom" in svc._sync_tasks[tid]["error"]
+
+
+# ── 多账号同步：同一媒体服务器用户名 → 多个 Bangumi 账号 ───────────────
+
+
+class TestMultiAccountSyncFanOut:
+    """同一媒体服务器用户名绑定多个 Bangumi 账号时的标记分发。"""
+
+    @staticmethod
+    def _item(user_name="Elegy233", media_type="episode"):
+        from app.models.sync import CustomItem
+
+        return CustomItem(
+            user_name=user_name,
+            title="Test Anime",
+            season=1,
+            episode=1,
+            media_type=media_type,
+            release_date="2024-01-01",
+        )
+
+    def test_mark_episode_for_other_accounts_marks_each_remaining(self, monkeypatch):
+        """首选账号之外的其余账号各标记一次（一人多号 / 亲友共享场景）。"""
+        from unittest.mock import MagicMock
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        primary, other = MagicMock(), MagicMock()
+        monkeypatch.setattr(
+            svc, "_get_bangumi_apis_for_user", lambda user_name: [primary, other]
+        )
+        marked = []
+        archived = []
+        monkeypatch.setattr(
+            svc,
+            "_retry_mark_episode",
+            lambda bgm, subject_id, ep_id, **kwargs: marked.append(bgm),
+        )
+        monkeypatch.setattr(
+            svc,
+            "_mark_subject_completed_if_needed",
+            lambda item, bgm, subject_id, title: archived.append(bgm),
+        )
+
+        svc._mark_episode_for_other_accounts(self._item(), primary, "123", "456", "T")
+
+        # 首选账号已由执行阶段管线标记，此处只补标记其余账号
+        assert marked == [other]
+        assert archived == [other]
+
+    def test_mark_episode_for_other_accounts_single_account_is_noop(self, monkeypatch):
+        """仅一个账号时不产生额外标记，避免重复写入同一账号。"""
+        from unittest.mock import MagicMock
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        primary = MagicMock()
+        monkeypatch.setattr(
+            svc, "_get_bangumi_apis_for_user", lambda user_name: [primary]
+        )
+        marked = []
+        archived = []
+        monkeypatch.setattr(
+            svc,
+            "_retry_mark_episode",
+            lambda bgm, subject_id, ep_id, **kwargs: marked.append(bgm),
+        )
+        monkeypatch.setattr(
+            svc,
+            "_mark_subject_completed_if_needed",
+            lambda item, bgm, subject_id, title: archived.append(bgm),
+        )
+
+        svc._mark_episode_for_other_accounts(self._item(), primary, "123", "456", "T")
+
+        assert marked == []
+        assert archived == []
+
+    def test_mark_episode_for_other_accounts_failure_isolated(self, monkeypatch):
+        """其余账号标记失败只记录日志，不改变本次同步结果。"""
+        from unittest.mock import MagicMock
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        primary, other = MagicMock(), MagicMock()
+        monkeypatch.setattr(
+            svc, "_get_bangumi_apis_for_user", lambda user_name: [primary, other]
+        )
+
+        def boom(bgm, subject_id, ep_id, **kwargs):
+            raise RuntimeError("API 不可达")
+
+        monkeypatch.setattr(svc, "_retry_mark_episode", boom)
+
+        # 不向上抛出，主流程结果仍由首选账号决定
+        svc._mark_episode_for_other_accounts(self._item(), primary, "123", "456", "T")
+
+    def test_get_bangumi_apis_for_user_returns_all_accounts(self):
+        """同一用户名绑定多个账号时返回全部实例，首选实例与主流程同一对象。"""
+        from unittest.mock import MagicMock, patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        svc._bangumi_api_cache.clear()
+
+        primary = MagicMock()
+        secondary = MagicMock()
+        with (
+            patch(
+                "app.core.accounts.get_bangumi_sections_for_user",
+                return_value=["bangumi", "bangumi-944646"],
+            ),
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=primary),
+            patch.object(
+                svc,
+                "_get_bangumi_api_by_section",
+                side_effect=lambda section: (
+                    secondary if section == "bangumi-944646" else None
+                ),
+            ),
+            patch("app.core.accounts.get_bangumi_config_by_section", return_value={}),
+        ):
+            apis = svc._get_bangumi_apis_for_user("Elegy233")
+
+        assert apis == [primary, secondary]
+
+    def test_get_bangumi_apis_for_user_distinct_media_user_returns_single(self):
+        """不同任务场景：每个媒体服务器用户名只绑定一个账号，不取其余账号实例。"""
+        from unittest.mock import MagicMock, patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        primary = MagicMock()
+
+        def should_not_run(section):
+            raise AssertionError("不同任务场景不应取其余账号实例")
+
+        with (
+            patch(
+                "app.core.accounts.get_bangumi_sections_for_user",
+                return_value=["bangumi"],
+            ),
+            patch("app.core.accounts.get_bangumi_config_by_section", return_value={}),
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=primary),
+            patch.object(
+                svc, "_get_bangumi_api_by_section", side_effect=should_not_run
+            ),
+        ):
+            apis = svc._get_bangumi_apis_for_user("alice")
+
+        assert apis == [primary]
+
+    def test_orchestrator_fans_out_after_primary_mark(self):
+        """主流程在首选账号标记成功后、收尾前把结果分发到其余账号。"""
+        from unittest.mock import MagicMock, patch
+
+        from app.models.sync import SyncResponse
+        from app.services.sync_service import SyncService
+        from app.services.sync_service.match_trace import MatchTrace
+        from app.services.sync_service.orchestrator import SyncOrchestrator
+
+        svc = SyncService()
+        orch = SyncOrchestrator(svc)
+        bgm = MagicMock()
+        exec_ctx = MagicMock()
+        exec_ctx.terminal = None
+        exec_ctx.current_outputs = {
+            "subject_id": "100",
+            "episode_id": "200",
+            "bgm_title": "T",
+            "mark_status": 1,
+            "message": "",
+        }
+
+        fan_out = []
+        with (
+            patch("app.services.sync_service.notification_service"),
+            patch.object(svc, "_normalize_custom_item_params", return_value=None),
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
+            patch.object(svc, "_maybe_notify_match_ambiguous", return_value=None),
+            patch.object(
+                svc,
+                "_mark_episode_for_other_accounts",
+                side_effect=lambda *args: fan_out.append(args),
+            ),
+            patch.object(
+                orch,
+                "_match_subject",
+                return_value=("100", False, None, MatchTrace()),
+            ),
+            patch.object(orch, "_run_execution_pipeline", return_value=exec_ctx),
+            patch.object(
+                orch,
+                "_finalize_success",
+                return_value=SyncResponse(status="success", message="ok"),
+            ),
+        ):
+            result = orch.sync_custom_item(self._item(), source="custom")
+
+        assert result.status == "success"
+        assert len(fan_out) == 1
+        item, primary, se_id, ep_id, title = fan_out[0]
+        assert item.user_name == "Elegy233"
+        assert primary is bgm  # 首选沿用主流程实例，分发只补其余账号
+        assert (se_id, ep_id, title) == ("100", "200", "T")
+
+    def test_mark_movie_watching_for_other_accounts_marks_each_remaining(
+        self, monkeypatch
+    ):
+        """剧场版：其余账号各置一次「在看」，首选账号不重复写入。"""
+        from unittest.mock import MagicMock
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        primary, other = MagicMock(), MagicMock()
+        monkeypatch.setattr(
+            svc, "_get_bangumi_apis_for_user", lambda user_name: [primary, other]
+        )
+
+        svc._mark_movie_watching_for_other_accounts(
+            self._item(media_type="movie"), primary, "123"
+        )
+
+        primary.ensure_subject_watching.assert_not_called()
+        other.ensure_subject_watching.assert_called_once_with("123")
+
+    def test_mark_movie_watching_for_other_accounts_failure_isolated(self, monkeypatch):
+        """其余账号置「在看」失败只记录日志，不改变本次同步结果。"""
+        from unittest.mock import MagicMock
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        primary, other = MagicMock(), MagicMock()
+        other.ensure_subject_watching.side_effect = RuntimeError("API 不可达")
+        monkeypatch.setattr(
+            svc, "_get_bangumi_apis_for_user", lambda user_name: [primary, other]
+        )
+
+        # 不向上抛出，主流程结果仍由首选账号决定
+        svc._mark_movie_watching_for_other_accounts(
+            self._item(media_type="movie"), primary, "123"
+        )
+
+    def test_get_bangumi_apis_for_user_unbound_user_returns_empty(self):
+        """媒体服务器用户名未绑定任何 Bangumi 账号时返回空列表。"""
+        from unittest.mock import patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+
+        with patch("app.core.accounts.get_bangumi_sections_for_user", return_value=[]):
+            assert svc._get_bangumi_apis_for_user("ghost") == []
+
+    def test_get_bangumi_apis_for_user_skips_incomplete_section(self):
+        """同一用户名声明了多个账号但其中一个缺 token 时只返回可用账号实例。"""
+        from unittest.mock import MagicMock, patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        svc._bangumi_api_cache.clear()
+        complete = MagicMock()
+        with (
+            patch(
+                "app.core.accounts.get_bangumi_sections_for_user",
+                return_value=["bangumi-incomplete", "bangumi"],
+            ),
+            patch(
+                "app.core.accounts.get_bangumi_config_by_section",
+                side_effect=lambda section: (
+                    {"username": "u", "access_token": "t"}
+                    if section == "bangumi"
+                    else None
+                ),
+            ),
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=complete),
+            patch.object(
+                svc,
+                "_get_bangumi_api_by_section",
+                side_effect=lambda section: (
+                    None if section == "bangumi-incomplete" else MagicMock()
+                ),
+            ),
+        ):
+            apis = svc._get_bangumi_apis_for_user("Elegy233")
+        # 缺 token 的账号不可标记，首选仍是可用的首个完整账号
+        assert apis == [complete]
+
+    def test_bangumi_api_cache_keys_namespace_isolated(self):
+        """用户名与配置段同名时，按用户名与按配置段缓存互不覆盖。"""
+        from unittest.mock import patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        svc._bangumi_api_cache.clear()
+        user_cfg = {"username": "shared", "access_token": "tu", "private": False}
+        section_cfg = {"username": "shared", "access_token": "ts", "private": False}
+        with (
+            patch(
+                "app.core.accounts.get_bangumi_config_for_user",
+                side_effect=lambda name: user_cfg if name == "shared" else None,
+            ),
+            patch(
+                "app.core.accounts.get_bangumi_config_by_section",
+                side_effect=lambda section: (
+                    section_cfg if section == "shared" else None
+                ),
+            ),
+        ):
+            user_api = svc._get_bangumi_api_for_user("shared")
+            section_api = svc._get_bangumi_api_by_section("shared")
+            # 同一命名空间再次取用返回已缓存的同一实例
+            assert svc._get_bangumi_api_for_user("shared") is user_api
+            assert svc._get_bangumi_api_by_section("shared") is section_api
+
+        # 两个命名空间各自独立缓存，不共用扁平键
+        assert len(svc._bangumi_api_cache) == 2
+        assert "u:shared" in svc._bangumi_api_cache
+        assert "s:shared" in svc._bangumi_api_cache
+
+    def test_replay_pending_item_fans_out_to_other_accounts(self, monkeypatch):
+        """补发成功时其余账号共享补发结果（入队只记首选账号）。"""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        bgm = MagicMock()
+        monkeypatch.setattr(svc, "_get_bangumi_api_for_user", lambda user_name: bgm)
+        monkeypatch.setattr(svc, "_retry_mark_episode", lambda *args, **kwargs: 1)
+        fan_out = []
+        monkeypatch.setattr(
+            svc,
+            "_mark_episode_for_other_accounts",
+            lambda it, primary, se_id, ep_id, title: fan_out.append(
+                (se_id, ep_id, title)
+            ),
+        )
+        record = {
+            "id": 1,
+            "user_name": "Elegy233",
+            "subject_id": "123",
+            "episode_id": "456",
+            "payload_json": json.dumps(self._item().model_dump()),
+        }
+
+        with patch("app.services.sync_service.notification_service"):
+            result = svc.replay_pending_item(record)
+
+        assert result["success"] is True
+        assert fan_out == [("123", "456", "")]
+
+    def test_replay_pending_item_movie_fans_out_to_other_accounts(self, monkeypatch):
+        """剧场版补发成功时其余账号共享补发结果。"""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        bgm = MagicMock()
+        bgm.ensure_subject_watching.return_value = 1
+        monkeypatch.setattr(svc, "_get_bangumi_api_for_user", lambda user_name: bgm)
+        fan_out = []
+        monkeypatch.setattr(
+            svc,
+            "_mark_movie_watching_for_other_accounts",
+            lambda it, primary, subject_id: fan_out.append(subject_id),
+        )
+        record = {
+            "id": 2,
+            "user_name": "Elegy233",
+            "subject_id": "789",
+            "episode_id": "",
+            "payload_json": json.dumps(self._item(media_type="movie").model_dump()),
+        }
+
+        with patch("app.services.sync_service.notification_service"):
+            result = svc.replay_pending_item(record)
+
+        assert result["success"] is True
+        assert fan_out == ["789"]

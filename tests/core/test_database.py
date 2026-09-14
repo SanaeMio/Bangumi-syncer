@@ -1205,6 +1205,54 @@ class TestCleanupOldRecords:
         result = db.get_sync_records(limit=10)
         assert result["total"] == 1
 
+    def test_cleanup_removes_orphan_assoc_rows(self, temp_dir, reset_singletons):
+        """清理旧记录时，关联表 sync_records_consumed 孤儿行一并清除。
+
+        P2-1：DELETE sync_records 后关联表残留指向已删记录的消费标记，
+        表体积膨胀。级联清理避免孤儿行积累。
+        """
+        db_path = temp_dir / "cleanup_orphan.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        r1 = db.log_sync_record(
+            user_name="u",
+            title="旧记录",
+            ori_title=None,
+            season=1,
+            episode=1,
+            status="success",
+            source="test",
+        )
+        from app.models.memory import MemoryEntry
+
+        db.memory.store_and_mark(
+            MemoryEntry(
+                task_type="summary",
+                task_id="summary-daily",
+                run_id="run-1",
+                summary="s",
+            ),
+            [r1],
+        )
+        # 将记录改为 40 天前 → 触发清理
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "UPDATE sync_records SET timestamp = datetime('now', '-40 days')"
+            )
+            conn.commit()
+
+        db.cleanup_old_records(30)
+
+        # 关联表无孤儿行（记录已删，消费标记应一并清掉）
+        with sqlite3.connect(str(db_path)) as conn:
+            orphan = conn.execute(
+                "SELECT COUNT(*) FROM sync_records_consumed"
+            ).fetchone()[0]
+        assert orphan == 0
+
     def test_cleanup_facade_forwards(self, temp_dir, reset_singletons):
         """DatabaseManager facade 正确转发 cleanup_old_records"""
         db_path = temp_dir / "cleanup_facade.db"

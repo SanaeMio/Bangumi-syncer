@@ -14,7 +14,14 @@ class BaseProvider(ABC):
 
     子类必须实现 async chat() 方法，接收消息列表和额外关键字参数，
     返回 ChatResponse。
+
+    Attributes:
+        _extras_disabled: 端点拒绝扩展参数（thinking/reasoning 等）后由
+            LLMClient 置位的降级标记——置位后 _build_request 不再构造
+            扩展字段（双重保险第二道，见 client._is_param_rejection）。
     """
+
+    _extras_disabled: bool = False
 
     @abstractmethod
     async def chat(self, messages: list[Message], **kwargs: Any) -> ChatResponse:

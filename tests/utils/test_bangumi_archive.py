@@ -929,3 +929,162 @@ class TestBackgroundIndexBuildOnStartup:
         # reload_config 后再次触发（build_in_background 内部有就绪检查，不会重复构建）
         archive.reload_config()
         assert mock_build.call_count == 2
+
+
+# subject 517106 = 逃げ上手の若君 第二期：全局连续 sort 13..24（type=0），外传 SP sort=25（type=3）
+_SEASON2_ROWS = [
+    (13, "EP1", "", "", "2025-01-01", 0, 0, 517106, 13, 0),
+    (14, "EP2", "", "", "2025-01-08", 0, 0, 517106, 14, 0),
+    (15, "EP3", "", "", "2025-01-15", 0, 0, 517106, 15, 0),
+    (16, "EP4", "", "", "2025-01-22", 0, 0, 517106, 16, 0),
+    (17, "EP5", "", "", "2025-01-29", 0, 0, 517106, 17, 0),
+    (18, "EP6", "", "", "2025-02-05", 0, 0, 517106, 18, 0),
+    (19, "EP7", "", "", "2025-02-12", 0, 0, 517106, 19, 0),
+    (20, "EP8", "", "", "2025-02-19", 0, 0, 517106, 20, 0),
+    (21, "EP9", "", "", "2025-02-26", 0, 0, 517106, 21, 0),
+    (22, "EP10", "", "", "2025-03-05", 0, 0, 517106, 22, 0),
+    (23, "EP11", "", "", "2025-03-12", 0, 0, 517106, 23, 0),
+    (24, "EP12", "", "", "2025-03-19", 0, 0, 517106, 24, 0),
+    (25, "SP", "", "", "2025-03-26", 0, 0, 517106, 25, 3),
+]
+
+# subject 900001：首话 sort 为 NULL，用于覆盖排序键取到 None 的场景
+_NULL_SORT_ROWS = [
+    (701, "EP1", "", "", "2025-01-01", 0, 0, 900001, None, 0),
+    (702, "EP2", "", "", "2025-01-08", 0, 0, 900001, 5, 0),
+    (703, "EP3", "", "", "2025-01-15", 0, 0, 900001, 6, 0),
+]
+
+# subject 900002：多季合并到同一条目，sort 每季重置为 1（S1 ids 301-305，S2 ids 306-310）
+_SORT_RESET_ROWS = [
+    (301, "EP1", "", "", "2025-01-01", 0, 0, 900002, 1, 0),
+    (302, "EP2", "", "", "2025-01-08", 0, 0, 900002, 2, 0),
+    (303, "EP3", "", "", "2025-01-15", 0, 0, 900002, 3, 0),
+    (304, "EP4", "", "", "2025-01-22", 0, 0, 900002, 4, 0),
+    (305, "EP5", "", "", "2025-01-29", 0, 0, 900002, 5, 0),
+    (306, "EP1", "", "", "2025-02-05", 0, 0, 900002, 1, 0),
+    (307, "EP2", "", "", "2025-02-12", 0, 0, 900002, 2, 0),
+    (308, "EP3", "", "", "2025-02-19", 0, 0, 900002, 3, 0),
+    (309, "EP4", "", "", "2025-02-26", 0, 0, 900002, 4, 0),
+    (310, "EP5", "", "", "2025-03-05", 0, 0, 900002, 5, 0),
+]
+
+
+def _archive_store(tmp_path: Path, rows: list[tuple], db_name: str):
+    """用给定 episode 行建立临时 Archive 库，挂到全局单例并提供就绪的 ArchiveStore
+
+    表结构与 Archive dump 一致（不含 ep 列）。teardown 时关闭连接并恢复全局单例状态。
+    """
+    db_path = tmp_path / db_name
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "CREATE TABLE episode ("
+        "id INTEGER, name TEXT, name_cn TEXT, description TEXT, "
+        "airdate TEXT, disc INTEGER, duration INTEGER, "
+        "subject_id INTEGER, sort INTEGER, type INTEGER)"
+    )
+    conn.executemany(
+        "INSERT INTO episode (id,name,name_cn,description,airdate,disc,"
+        "duration,subject_id,sort,type) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+    from app.utils.bangumi_archive import _archive
+
+    orig_db_a = _archive.bangumi_archive.db_a_path
+    orig_active = _archive.bangumi_archive._meta.active
+    _archive.bangumi_archive.db_a_path = db_path
+    _archive.bangumi_archive._meta.active = "a"
+
+    store = ArchiveStore()
+    yield store
+
+    store.close()
+    _archive.bangumi_archive.db_a_path = orig_db_a
+    _archive.bangumi_archive._meta.active = orig_active
+
+
+class TestArchiveEpisodeEpField:
+    """ArchiveStore.get_episodes 应在数据边界补全季内话数 ep 字段
+
+    Archive 按全局连续 sort 存储（如第二期 sort 13..24），不提供 API 中的季内集编号 ep。
+    下游匹配层（episodes.py 的 _match_target_ep_rows / 连续编号季边界检测）依赖 ep 作为
+    季内话数，因此必须在 get_episodes 返回前补全。
+    """
+
+    @pytest.fixture
+    def store_with_episodes(self, tmp_path: Path) -> ArchiveStore:
+        yield from _archive_store(tmp_path, _SEASON2_ROWS, "ep_synth.db")
+
+    @pytest.fixture
+    def store_with_null_sort(self, tmp_path: Path) -> ArchiveStore:
+        yield from _archive_store(tmp_path, _NULL_SORT_ROWS, "null_sort.db")
+
+    @pytest.fixture
+    def store_with_sort_reset(self, tmp_path: Path) -> ArchiveStore:
+        yield from _archive_store(tmp_path, _SORT_RESET_ROWS, "sort_reset.db")
+
+    @pytest.fixture
+    def store_empty(self, tmp_path: Path) -> ArchiveStore:
+        yield from _archive_store(tmp_path, [], "empty.db")
+
+    @pytest.fixture
+    def store_only_sp(self, tmp_path: Path) -> ArchiveStore:
+        rows = [(501, "SP", "", "", "2025-01-01", 0, 0, 900003, 1, 3)]
+        yield from _archive_store(tmp_path, rows, "only_sp.db")
+
+    @pytest.fixture
+    def store_single_episode(self, tmp_path: Path) -> ArchiveStore:
+        rows = [(601, "EP1", "", "", "2025-01-01", 0, 0, 900004, 7, 0)]
+        yield from _archive_store(tmp_path, rows, "single.db")
+
+    def test_ep_field_synthesized_in_sort_order(self, store_with_episodes):
+        """type=0 常规话按 sort 升序补全 1-based 季内 ep（13..24 → 1..12）"""
+        eps = store_with_episodes.get_episodes(517106)
+        type0 = [e for e in eps if e["type"] == 0]
+        assert [e["sort"] for e in type0] == list(range(13, 25))
+        assert [e["ep"] for e in type0] == list(range(1, 13))
+
+    def test_ep_field_absent_for_non_type0(self, store_with_episodes):
+        """非 type=0（如外传 SP）不补全 ep 字段"""
+        eps = store_with_episodes.get_episodes(517106)
+        sp = [e for e in eps if e["type"] == 3]
+        assert len(sp) == 1
+        assert "ep" not in sp[0]
+
+    def test_ep_field_with_type_filter(self, store_with_episodes):
+        """episode_type=0 过滤时同样补全 ep"""
+        eps = store_with_episodes.get_episodes(517106, episode_type=0)
+        assert len(eps) == 12
+        assert all(e.get("ep") for e in eps)
+        assert [e["ep"] for e in eps] == list(range(1, 13))
+
+    def test_ep_field_synthesized_when_sort_is_null(self, store_with_null_sort):
+        """sort 为 NULL 的章节不得使补全抛异常，常规话照常补全 ep"""
+        eps = store_with_null_sort.get_episodes(900001)
+        assert len(eps) == 3
+        assert [e["ep"] for e in eps] == [1, 2, 3]
+
+    def test_ep_field_absent_when_sort_resets(self, store_with_sort_reset):
+        """多季合并条目（sort 每季重置为 1）不补全 ep，季边界交由下游 sort 重置检测"""
+        eps = store_with_sort_reset.get_episodes(900002)
+        assert len(eps) == 10
+        assert all("ep" not in e for e in eps)
+
+    def test_ep_field_empty_subject_no_error(self, store_empty):
+        """无章节的条目返回空列表，不补全也不报错"""
+        assert store_empty.get_episodes(900003) == []
+
+    def test_ep_field_only_non_type0_no_ep(self, store_only_sp):
+        """条目内只有非本篇章节时不补全 ep"""
+        eps = store_only_sp.get_episodes(900003)
+        assert len(eps) == 1
+        assert "ep" not in eps[0]
+
+    def test_ep_field_single_episode_is_one(self, store_single_episode):
+        """单集条目的季内话数为 1"""
+        eps = store_single_episode.get_episodes(900004)
+        assert len(eps) == 1
+        assert eps[0]["ep"] == 1

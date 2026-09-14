@@ -273,6 +273,7 @@ class TestGetRecordsInDateRange:
             "source",
             "media_type",
             "bgm_title",
+            "consumed_run_ids",
             "run_id",
             "batch_id",
         }
@@ -282,3 +283,78 @@ class TestGetRecordsInDateRange:
         assert r["source"] == "api"
         assert r["media_type"] == "episode"
         assert r["bgm_title"] == ""
+        assert r["consumed_run_ids"] == set()
+
+    def test_run_id_and_batch_id_columns_not_misindexed(
+        self, temp_dir, reset_singletons
+    ):
+        """F1：run_id/batch_id/consumed_run_ids 三列各自映射，不得错位。
+
+        历史 bug：dict 把 run_id 写成 row[14]（实为 consumed_run_id）、batch_id
+        写成 row[15]（实为 run_id），导致列错位。插入互不相同的值逐列断言；
+        消费标记走关联表（consumed_run_ids 集合聚合）。
+        """
+        db_path = temp_dir / "run_id_cols.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        with sqlite3.connect(str(db_path)) as raw:
+            cur = raw.execute(
+                """INSERT INTO sync_records
+                (timestamp, user_name, title, ori_title, season, episode,
+                 subject_id, episode_id, status, message, source, media_type,
+                 bgm_title, run_id, batch_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    "2025-02-01 10:00:00",
+                    "u",
+                    "T",
+                    None,
+                    1,
+                    1,
+                    None,
+                    None,
+                    "success",
+                    "",
+                    "api",
+                    "episode",
+                    "",
+                    "run-ABC",
+                    "batch-DEF",
+                ),
+            )
+            rec_id = cur.lastrowid
+            raw.execute(
+                "INSERT INTO sync_records_consumed (sync_record_id, run_id)"
+                " VALUES (?, ?)",
+                (rec_id, "consumed-XYZ"),
+            )
+            raw.commit()
+
+        records = db.get_records_in_date_range(
+            "2025-02-01", "2025-02-01", include_consumed=True
+        )
+        assert len(records) == 1
+        r = records[0]
+        assert r["consumed_run_ids"] == {"consumed-XYZ"}
+        assert r["run_id"] == "run-ABC"
+        assert r["batch_id"] == "batch-DEF"
+
+    def test_default_query_without_consumed_returns_empty_set(
+        self, temp_dir, reset_singletons
+    ):
+        """P1：默认查询（无 include_consumed）返回空 consumed_run_ids 集合。"""
+        db_path = temp_dir / "light.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        with sqlite3.connect(str(db_path)) as raw:
+            _insert_record(raw, "2025-03-01 10:00:00", title="T")
+            raw.commit()
+
+        records = db.get_records_in_date_range("2025-03-01", "2025-03-01")
+        assert records[0]["consumed_run_ids"] == set()

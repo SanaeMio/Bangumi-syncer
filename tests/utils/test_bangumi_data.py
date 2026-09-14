@@ -2444,6 +2444,265 @@ class TestPartialMatchScanTruncation:
         assert result[2] is True
 
 
+class TestBangumiDataDateOptimalTamayura:
+    """日期择优的候选筛选：同名前传抢占正片（玉响 S01E03）。
+
+    玉响 2010-11-26 开播的前传（8452）与 2011-10-03 开播的正片
+    ～hitotose～（18605）共享「玉响」译名；同期播出的 ましろ色シンフォニー
+    （12557）仅晚一天开播，是最容易被误当作正片的干扰项。
+    """
+
+    PREQUEL_ID = "8452"
+    HITOTOSE_ID = "18605"
+    DISTRACTOR_ID = "12557"
+    RELEASE = "2011-10-16"
+
+    @classmethod
+    def _dataset(cls):
+        return [
+            {
+                "title": "たまゆら",
+                "titleTranslate": {"zh-Hans": ["玉响"]},
+                "begin": "2010-11-26",
+                "sites": [{"site": "bangumi", "id": cls.PREQUEL_ID}],
+            },
+            {
+                "title": "たまゆら～hitotose～",
+                "titleTranslate": {
+                    "zh-Hans": ["玉响～hitotose～", "幸福光斑", "玉响～1年～"]
+                },
+                "begin": "2011-10-03",
+                "sites": [{"site": "bangumi", "id": cls.HITOTOSE_ID}],
+            },
+            {
+                "title": "ましろ色シンフォニー -The color of lovers-",
+                "titleTranslate": {"zh-Hans": ["纯白交响曲"]},
+                "begin": "2011-10-04",
+                "sites": [{"site": "bangumi", "id": cls.DISTRACTOR_ID}],
+            },
+        ]
+
+    @classmethod
+    def _candidate(cls, begin, title, zh_titles, score, bangumi_id):
+        """构造一个部分匹配候选（与 _scan_candidates 的输出结构一致）"""
+        return (
+            {
+                "title": title,
+                "titleTranslate": {"zh-Hans": list(zh_titles)},
+                "begin": begin,
+            },
+            score,
+            bangumi_id,
+        )
+
+    @classmethod
+    def _distractor_candidate(cls, begin="2011-10-04", score=0.55):
+        return cls._candidate(
+            begin,
+            "ましろ色シンフォニー -The color of lovers-",
+            ["纯白交响曲"],
+            score,
+            cls.DISTRACTOR_ID,
+        )
+
+    @classmethod
+    def _hitotose_candidate(cls, begin="2011-10-03", score=0.9):
+        return cls._candidate(
+            begin,
+            "たまゆら～hitotose～",
+            ["玉响～hitotose～", "玉响～1年～"],
+            score,
+            cls.HITOTOSE_ID,
+        )
+
+    def _select(self, data, partial):
+        """以玉响前传为唯一完全匹配，驱动日期择优选择"""
+        exact = [
+            (
+                {
+                    "title": "たまゆら",
+                    "titleTranslate": {"zh-Hans": ["玉响"]},
+                    "begin": "2010-11-26",
+                },
+                self.PREQUEL_ID,
+                "zh-hans",
+            )
+        ]
+        return data._select_from_exact_matches("玉响", exact, partial, self.RELEASE, 1)
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_blank_ori_title_earns_no_containment_bonus(self, mock_parse, mock_preload):
+        """空白原标题按缺失处理：名称含空格的无关条目不得因此获得包含判定加分。"""
+        data = BangumiData()
+        mock_parse.return_value = self._dataset()
+        distractor = mock_parse.return_value[2]
+
+        # ましろ色シンフォニー 的日文名含空格，空白原标题会命中「原标题被包含于条目名」
+        assert " " in distractor["title"]
+        blank = data._calculate_match_score(distractor, "玉响", " ", self.RELEASE)
+        absent = data._calculate_match_score(distractor, "玉响", None, self.RELEASE)
+
+        assert blank == absent
+        assert blank < 0.4
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_emby_blank_ori_title_hits_hitotose(self, mock_parse, mock_preload):
+        """Emby 传入空白原标题时，仍应命中正片 ～hitotose～（18605）。"""
+        data = BangumiData()
+        mock_parse.return_value = self._dataset()
+        with patch.object(data, "_title_index", {}):
+            result = data._find_bangumi_id_optimized(
+                title="玉响", ori_title=" ", release_date=self.RELEASE, season=1
+            )
+
+        assert result is not None
+        assert result[0] == self.HITOTOSE_ID
+        assert result[2] is True
+
+    def test_date_override_skips_closest_rejected_candidate(self):
+        """日期最近的候选未通过安全校验时，继续校验其余候选而非整体放弃。"""
+        data = _make_data()
+        partial = [
+            self._distractor_candidate(),  # 2011-10-04，日期更近但名称无关
+            self._hitotose_candidate(),  # 2011-10-03，名称相关
+        ]
+
+        result = self._select(data, partial)
+
+        assert result is not None
+        assert result[0] == self.HITOTOSE_ID
+        assert result[2] is True
+
+    def test_date_override_falls_back_when_all_rejected(self):
+        """所有候选均未通过安全校验时，回落到日期最远的完全匹配。"""
+        data = _make_data()
+        partial = [self._distractor_candidate()]
+
+        result = self._select(data, partial)
+
+        assert result is not None
+        assert result[0] == self.PREQUEL_ID
+        assert result[2] is False
+
+    def test_date_override_ignores_candidates_beyond_90_days(self):
+        """日期误差超过 90 天的候选不参与日期择优。"""
+        data = _make_data()
+        partial = [self._hitotose_candidate(begin="2011-04-03")]
+
+        result = self._select(data, partial)
+
+        assert result is not None
+        assert result[0] == self.PREQUEL_ID
+        assert result[2] is False
+
+    def test_date_override_picks_nearest_qualified_candidate(self):
+        """多个候选均通过安全校验时，采纳日期最近的那一个。"""
+        data = _make_data()
+        partial = [
+            self._candidate("2011-10-10", "たまゆら OVA", ["玉响 OVA"], 0.9, "99001"),
+            self._hitotose_candidate(),  # 2011-10-03
+        ]
+
+        result = self._select(data, partial)
+
+        assert result is not None
+        assert result[0] == "99001"
+        assert result[2] is True
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_date_override_unchanged_when_archive_enabled(
+        self, mock_parse, mock_preload
+    ):
+        """Archive 启用不改变 bangumi-data 的日期择优结果。
+
+        Archive 仅在 BangumiDataStep 未命中时作为 API 搜索短路，本例
+        BangumiDataStep 已命中，故开/关 Archive 走相同的日期择优逻辑。
+        """
+        data = BangumiData()
+        mock_parse.return_value = self._dataset()
+        data._archive = MagicMock()
+        data._archive._enabled = True
+        with patch.object(data, "_title_index", {}):
+            result = data._find_bangumi_id_optimized(
+                title="玉响", ori_title=" ", release_date=self.RELEASE, season=1
+            )
+
+        assert result is not None
+        assert result[0] == self.HITOTOSE_ID
+        assert result[2] is True
+
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_title_index_exact_match_picks_nearest_by_date(
+        self, mock_parse, mock_preload
+    ):
+        """索引命中路径按日期差选取最近条目，独立于日期择优逻辑（trakt 路径）。
+
+        trakt 经 tmdb 回查得到 bangumi 标题后由 _try_exact_match 经标题索引
+        O(1) 命中并直接返回，不经过 _select_from_exact_matches，故本次改动
+        对其无影响。
+        """
+        data = BangumiData()
+        prequel = {
+            "title": "たまゆら",
+            "titleTranslate": {"zh-Hans": ["玉响"]},
+            "begin": "2010-11-26",
+            "sites": [{"site": "bangumi", "id": self.PREQUEL_ID}],
+        }
+        hitotose = {
+            "title": "たまゆら～hitotose～",
+            "titleTranslate": {"zh-Hans": ["玉响～hitotose～"]},
+            "begin": "2011-10-03",
+            "sites": [{"site": "bangumi", "id": self.HITOTOSE_ID}],
+        }
+        data._title_index = {"玉响": [prequel, hitotose]}
+        result = data._try_exact_match("玉响", None, self.RELEASE, "")
+
+        assert result is not None
+        assert result[0] == self.HITOTOSE_ID
+        assert result[2] is True
+
+    def test_upstream_single_candidate_logic_selects_prequel_here(self):
+        """对照（实现前）：PR #117/#120 前的「仅考察日期最近单个候选」策略在此场景回落前传（错误）。
+
+        复刻旧逻辑用于对照：取日期最近的单个部分匹配做安全校验，未通过则放弃
+        整个日期择优并回落到日期最远的完全匹配。玉响场景中最近的候选是同期播出
+        的无关番剧 ましろ色シンフォニー，安全校验必然失败，旧逻辑因此放弃正片。
+        """
+        data = _make_data()
+        exact = [
+            (
+                {
+                    "title": "たまゆら",
+                    "titleTranslate": {"zh-Hans": ["玉响"]},
+                    "begin": "2010-11-26",
+                },
+                self.PREQUEL_ID,
+                "zh-hans",
+            )
+        ]
+        partial = [self._distractor_candidate(), self._hitotose_candidate()]
+
+        # 复刻旧逻辑：仅取日期最近的单个部分匹配
+        nearest = min(
+            partial,
+            key=lambda c: data._date_diff(c[0].get("begin", ""), self.RELEASE),
+        )
+        names = [nearest[0].get("title", "")] + data._get_zh_hans_titles(nearest[0])
+        safe = (
+            nearest[1] >= 0.8
+            or any("玉响" in n for n in names)
+            or any(data._check_key_characters("玉响", n) for n in names)
+        )
+        # 旧逻辑：安全校验未通过则放弃日期择优，回落日期最远的完全匹配
+        result = exact[0][1] if not safe else nearest[1]
+
+        assert result == self.PREQUEL_ID
+
+
 class TestBangumiDataCacheHelpersMerged:
     """自 test_bangumi_data_internals.py 并入的缓存/下载边界用例。"""
 

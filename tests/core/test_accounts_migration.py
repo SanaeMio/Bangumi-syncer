@@ -180,3 +180,208 @@ def test_migrate_numeric_username_from_ini(temp_dir, reset_singletons, monkeypat
     assert isinstance(acc["username"], str)
     assert acc["access_token"] == "AT_NUM"
     assert acc["media_server_usernames"] == ["999"]
+
+
+# ── 多账号映射：同一媒体服务器用户名 → 多个 Bangumi 账号 ──────────────
+
+
+def _make_account(section, username, media_usernames, token="AT"):
+    return {
+        "section_name": section,
+        "username": username,
+        "media_server_usernames": list(media_usernames),
+        "auth_method": "manual",
+        "access_token": token,
+        "is_active": False,
+    }
+
+
+def _accounts_db(temp_dir, accounts):
+    """构造含指定账号的临时 DB，供映射类函数直接读取。"""
+    from app.core.database import DatabaseManager
+
+    db = DatabaseManager(str(temp_dir / "mapping.db"))
+    for acc in accounts:
+        db.save_bangumi_account(acc)
+    return db
+
+
+def _two_accounts_one_media_user():
+    """一人两号场景：两个 Bangumi 账号声明同一个媒体服务器用户名。"""
+    return [
+        _make_account("bangumi", "u1", ["Elegy233"]),
+        _make_account("bangumi-944646", "u2", ["Elegy233"]),
+    ]
+
+
+def test_user_account_mappings_keeps_all_accounts_for_same_media_user(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """同一媒体服务器用户名被多个账号声明时，全部账号都参与同步。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(temp_dir, _two_accounts_one_media_user())
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert accounts_mod.get_user_account_mappings() == {
+        "Elegy233": ["bangumi", "bangumi-944646"]
+    }
+
+
+def test_user_mappings_returns_first_declared_account(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """只需单一账号的调用方（追番日历、补发鉴权）取首选账号。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(temp_dir, _two_accounts_one_media_user())
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert accounts_mod.get_user_mappings() == {"Elegy233": "bangumi"}
+
+
+def test_bangumi_configs_for_user_returns_all_accounts(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """按媒体服务器用户名取回全部账号配置（按登记顺序）。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(temp_dir, _two_accounts_one_media_user())
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    cfgs = accounts_mod.get_bangumi_configs_for_user("Elegy233")
+    assert [c["username"] for c in cfgs] == ["u1", "u2"]
+
+
+def test_bangumi_configs_for_user_unknown_returns_empty(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """未绑定任何账号的媒体服务器用户名返回空列表。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(temp_dir, _two_accounts_one_media_user())
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert accounts_mod.get_bangumi_configs_for_user("stranger") == []
+    assert accounts_mod.get_bangumi_sections_for_user("stranger") == []
+
+
+def test_bangumi_sections_for_user_skips_incomplete_account(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """配置不完整（无 access_token）的账号不参与同步。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(
+        temp_dir,
+        [
+            _make_account("bangumi", "u1", ["Elegy233"]),
+            _make_account("bangumi-broken", "u2", ["Elegy233"], token=""),
+        ],
+    )
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert [
+        c["username"] for c in accounts_mod.get_bangumi_configs_for_user("Elegy233")
+    ] == ["u1"]
+
+
+def test_bangumi_sections_for_user_empty_username_multi_returns_empty(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """多账号下空 user_name 不回退激活账号，避免数据串号。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(temp_dir, _two_accounts_one_media_user())
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert accounts_mod.get_bangumi_sections_for_user("") == []
+
+
+def test_bangumi_sections_for_user_empty_username_single_falls_back_to_active(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """单账号下空 user_name 仍回退激活账号（只有一个账号，无串号风险）。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(temp_dir, [_make_account("bangumi", "u1", ["Elegy233"])])
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert accounts_mod.get_bangumi_sections_for_user("") == ["bangumi"]
+
+
+def test_upstream_one_to_one_mapping_drops_second_account(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """对照（实现前）：一对一映射把重复用户名折叠成单个账号，第二个账号被丢弃。
+
+    复刻旧逻辑：后者覆盖前者。这正是玉响/一人多号场景下第二个 Bangumi 账号
+    收不到同步的原因；``get_user_account_mappings`` 保留全部账号。
+    """
+    db = _accounts_db(temp_dir, _two_accounts_one_media_user())
+
+    collapsed: dict[str, str] = {}
+    for acc in db.list_bangumi_accounts():
+        for name in acc.get("media_server_usernames") or []:
+            collapsed[name] = acc["section_name"]  # 后者覆盖前者
+
+    assert collapsed == {"Elegy233": "bangumi-944646"}
+    # 旧逻辑只保留一个账号，第二个 Bangumi 账号（bangumi）被静默丢弃
+    assert len([s for s in collapsed.values()]) == 1
+
+
+def test_distinct_media_users_keep_one_to_one_routing(
+    temp_dir, reset_singletons, monkeypatch
+):
+    """多账号但媒体服务器用户名互不重叠（不同任务）时，路由与变更前一致。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(
+        temp_dir,
+        [
+            _make_account("bangumi", "u1", ["alice"]),
+            _make_account("bangumi-944646", "u2", ["bob"]),
+            _make_account("bangumi-friend", "u3", ["carol"]),
+        ],
+    )
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert accounts_mod.get_user_mappings() == {
+        "alice": "bangumi",
+        "bob": "bangumi-944646",
+        "carol": "bangumi-friend",
+    }
+    # 一对多映射退化为单元素列表，分发阶段不会命中其余账号
+    assert accounts_mod.get_user_account_mappings() == {
+        "alice": ["bangumi"],
+        "bob": ["bangumi-944646"],
+        "carol": ["bangumi-friend"],
+    }
+    for name, expected in (("alice", "u1"), ("bob", "u2"), ("carol", "u3")):
+        assert accounts_mod.get_bangumi_config_for_user(name)["username"] == expected
+
+
+def test_one_account_with_multiple_media_users(temp_dir, reset_singletons, monkeypatch):
+    """一个账号声明多个媒体服务器用户名时，每个用户名都路由到该账号。"""
+    import app.core.accounts as accounts_mod
+
+    db = _accounts_db(
+        temp_dir,
+        [
+            _make_account("bangumi", "u1", ["alice"]),
+            _make_account("bangumi-944646", "u2", ["bob", "dave"]),
+        ],
+    )
+    monkeypatch.setattr(accounts_mod, "database_manager", db)
+
+    assert accounts_mod.get_user_mappings() == {
+        "alice": "bangumi",
+        "bob": "bangumi-944646",
+        "dave": "bangumi-944646",
+    }
+    assert accounts_mod.get_user_account_mappings() == {
+        "alice": ["bangumi"],
+        "bob": ["bangumi-944646"],
+        "dave": ["bangumi-944646"],
+    }
+    assert accounts_mod.get_bangumi_config_for_user("dave")["username"] == "u2"
