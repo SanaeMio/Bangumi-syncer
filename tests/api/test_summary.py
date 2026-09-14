@@ -5,6 +5,7 @@ Summary API 模型验证测试与端点集成测试。
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from app.models.summary import (
     LLMConfigResponse,
@@ -183,6 +184,32 @@ class TestSummaryJobCreate:
         assert model.max_records == 500
         assert model.enabled is False
 
+    def test_memory_limit_negative_rejected(self):
+        """memory_limit=-1 在模型层抛 ValidationError（ge=0）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobCreate(memory_limit=-1)
+
+    def test_related_limit_negative_rejected(self):
+        """related_limit=-1 在模型层抛 ValidationError（ge=0）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobCreate(related_limit=-1)
+
+    def test_memory_limit_too_large_rejected(self):
+        """memory_limit=1001 在模型层抛 ValidationError（le=1000）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobCreate(memory_limit=1001)
+
+    def test_related_limit_too_large_rejected(self):
+        """related_limit=1001 在模型层抛 ValidationError（le=1000）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobCreate(related_limit=1001)
+
+    def test_boundary_values_accepted(self):
+        """边界值 memory_limit=0 与 related_limit=1000 构造成功。"""
+        model = SummaryJobCreate(memory_limit=0, related_limit=1000)
+        assert model.memory_limit == 0
+        assert model.related_limit == 1000
+
 
 # ========== SummaryJobUpdate ==========
 
@@ -224,6 +251,32 @@ class TestSummaryJobUpdate:
         data = model.model_dump(exclude_none=True)
         assert "enabled" in data
         assert "name" not in data
+
+    def test_memory_limit_negative_rejected(self):
+        """memory_limit=-1 在模型层抛 ValidationError（ge=0）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobUpdate(memory_limit=-1)
+
+    def test_related_limit_negative_rejected(self):
+        """related_limit=-1 在模型层抛 ValidationError（ge=0）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobUpdate(related_limit=-1)
+
+    def test_memory_limit_too_large_rejected(self):
+        """memory_limit=1001 在模型层抛 ValidationError（le=1000）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobUpdate(memory_limit=1001)
+
+    def test_related_limit_too_large_rejected(self):
+        """related_limit=1001 在模型层抛 ValidationError（le=1000）。"""
+        with pytest.raises(ValidationError):
+            SummaryJobUpdate(related_limit=1001)
+
+    def test_boundary_values_accepted(self):
+        """边界值 memory_limit=0 与 related_limit=1000 构造成功。"""
+        model = SummaryJobUpdate(memory_limit=0, related_limit=1000)
+        assert model.memory_limit == 0
+        assert model.related_limit == 1000
 
 
 # ========== SummaryJobResponse ==========
@@ -364,6 +417,21 @@ class TestSummaryJobResponse:
         }
         model = SummaryJobResponse.from_config_dict(data)
         assert model.name == "Extra Keys"
+
+    def test_from_config_dict_invalid_int_falls_back_to_default(self):
+        """F3（H2 同源）：lookback_days/max_records 为非法字符串时回落默认而非抛 500。
+
+        config.ini 写 `lookback_days=abc`/`max_records=abc` 不得让整个端点 500。
+        """
+        data = {
+            "id": 9,
+            "name": "Bad Int Job",
+            "lookback_days": "abc",
+            "max_records": "abc",
+        }
+        model = SummaryJobResponse.from_config_dict(data)
+        assert model.lookback_days == 1  # 默认 1
+        assert model.max_records == -1  # 默认 -1（不限制）
 
 
 # ========== SummaryJobTestResponse ==========
@@ -948,6 +1016,51 @@ class TestListSummaryJobs:
                 )
 
     @pytest.mark.asyncio
+    async def test_returns_200_with_invalid_int_config(self):
+        """F3（API 级）：config.ini 含非法整型字段时整体返回 200 而非 500。
+
+        旧实现裸 `int()` 会让 `lookback_days=abc`/`max_records=abc` 直接 500。
+        """
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.summary_jobs import router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        with patch("app.api.summary_jobs.config_manager") as mock_cm:
+            mock_cm.get_summary_configs.return_value = [
+                {
+                    "id": 1,
+                    "name": "Bad Int Job",
+                    "cron": "0 21 * * *",
+                    "lookback_days": "abc",
+                    "user_name": "",
+                    "system_prompt": "",
+                    "max_records": "abc",
+                    "enabled": True,
+                },
+            ]
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get("/api/summary/jobs")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "success"
+                assert len(data["data"]) == 1
+                # 回落默认：lookback_days=1, max_records=-1
+                assert data["data"][0]["lookback_days"] == 1
+                assert data["data"][0]["max_records"] == -1
+
+    @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_configs(self):
         """GET /api/summary/jobs 在没有配置时应返回空列表。"""
         from fastapi import FastAPI
@@ -1083,6 +1196,7 @@ class TestDeleteSummaryJob:
         with (
             patch("app.api.summary_jobs.config_manager") as mock_cm,
             patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            patch("app.api.summary_jobs.memory_service") as mock_memory,
         ):
             mock_scheduler.apply_config_after_save = AsyncMock()
 
@@ -1094,6 +1208,10 @@ class TestDeleteSummaryJob:
                 data = response.json()
                 assert data["status"] == "success"
                 mock_cm.delete_summary_config.assert_called_once_with("Dad Summary")
+                # 记忆清理联动：避免孤儿记忆 + 悬挂 consumed_run_id
+                mock_memory.clear_task.assert_called_once_with(
+                    "summary", "summary-Dad Summary"
+                )
                 mock_cm.reload_config.assert_called_once()
                 mock_scheduler.apply_config_after_save.assert_awaited_once()
 
@@ -1198,6 +1316,66 @@ class TestTestSummaryJob:
             ) as client:
                 response = await client.post("/api/summary/jobs/Nonexistent/test")
                 assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_empty_summary_text_with_usage_fails(self):
+        """F6（H1-API 回归）：summary_text 为空但 usage 存在 → success=False + error_message。
+
+        H1 修复后判定条件为仅 `not summary_text`；此前缺此缺陷场景测试。
+        """
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.summary_jobs import router
+        from app.services.llm.models import Usage
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        with (
+            patch("app.api.summary_jobs.config_manager") as mock_cm,
+            patch("app.api.summary_jobs.summary_service") as mock_service,
+        ):
+            mock_cm.get_summary_configs.return_value = [
+                {
+                    "id": 1,
+                    "name": "Empty Job",
+                    "cron": "0 21 * * *",
+                    "lookback_days": 1,
+                    "user_name": "",
+                    "system_prompt": "",
+                    "max_records": 200,
+                    "enabled": True,
+                },
+            ]
+            mock_service.generate_summary = AsyncMock(
+                return_value={
+                    "summary_text": "",  # 空正文（如重试耗尽）
+                    "model": "gpt-4o-mini",
+                    "usage": Usage(
+                        prompt_tokens=100, completion_tokens=0, total_tokens=100
+                    ),
+                    "record_count": 3,
+                    "date_from": "2024-01-01",
+                    "date_to": "2024-01-02",
+                }
+            )
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/summary/jobs/Empty%20Job/test")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["success"] is False
+                assert data["error_message"]
+                assert data["record_count"] == 3
 
 
 class TestTriggerSummaryJob:
@@ -1308,3 +1486,393 @@ class TestLLMUsageStatsResponse:
         assert model.by_model[0]["model"] == "gpt-4o-mini"
         assert len(model.by_job) == 1
         assert len(model.daily) == 1
+
+
+# ========== 记忆清理与改名联动（Phase 2.0.3，S1/S3/S5） ==========
+
+
+def _make_summary_app():
+    """构建只挂 summary_jobs router 的测试 app（mock 认证）。"""
+    from fastapi import FastAPI
+
+    from app.api.deps import get_current_user_flexible
+    from app.api.summary_jobs import router
+
+    app = FastAPI()
+    app.include_router(router)
+
+    async def mock_auth(request=None, credentials=None):
+        return {"username": "testuser"}
+
+    app.dependency_overrides[get_current_user_flexible] = mock_auth
+    return app
+
+
+def _assert_422_detail_contract(response, loc_field):
+    """断言 422 响应体 detail 结构契约（供前端 apiFetch 解析）。
+
+    - detail 必须是列表（不是对象），否则前端 `[object Object]` 解析失败
+    - 列表项含 "msg" 字符串键
+    - 至少一项定位到 ["body", loc_field]
+    """
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert all(
+        isinstance(item, dict) and isinstance(item.get("msg"), str) for item in detail
+    )
+    assert any(item.get("loc") == ["body", loc_field] for item in detail)
+
+
+class TestSummaryLimitValidation:
+    """记忆/关联条数越界契约测试（T1）。
+
+    锁定后端对 memory_limit / related_limit 的校验契约：
+    非法值 → 422 且 detail 为对象数组（含 msg 与 loc），且不得入库；
+    边界合法值 → 200 且正常保存。
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_memory_limit_negative_rejected_and_not_saved(self):
+        """POST memory_limit=-1 → 422，save_summary_config 不被调用。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                response = await client.post(
+                    "/api/summary/jobs", json={"memory_limit": -1}
+                )
+                assert response.status_code == 422
+                mock_cm.save_summary_config.assert_not_called()
+                _assert_422_detail_contract(response, "memory_limit")
+
+    @pytest.mark.asyncio
+    async def test_create_related_limit_too_large_rejected(self):
+        """POST related_limit=1001 → 422（le=1000）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                response = await client.post(
+                    "/api/summary/jobs", json={"related_limit": 1001}
+                )
+                assert response.status_code == 422
+                mock_cm.save_summary_config.assert_not_called()
+                _assert_422_detail_contract(response, "related_limit")
+
+    @pytest.mark.asyncio
+    async def test_create_boundary_values_accepted_and_saved(self):
+        """POST memory_limit=0, related_limit=1000（边界）→ 200 且保存调用。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                response = await client.post(
+                    "/api/summary/jobs",
+                    json={"memory_limit": 0, "related_limit": 1000},
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "success"
+                mock_cm.save_summary_config.assert_called_once()
+                mock_cm.reload_config.assert_called_once()
+                mock_scheduler.apply_config_after_save.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_update_memory_limit_negative_rejected(self):
+        """PUT /api/summary/jobs/foo memory_limit=-1 → 422（update 路径同样收口）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                response = await client.put(
+                    "/api/summary/jobs/foo", json={"memory_limit": -1}
+                )
+                assert response.status_code == 422
+                mock_cm.save_summary_config.assert_not_called()
+                _assert_422_detail_contract(response, "memory_limit")
+
+    @pytest.mark.asyncio
+    async def test_update_related_limit_too_large_rejected(self):
+        """PUT /api/summary/jobs/foo related_limit=1001 → 422（update 路径同样收口）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                response = await client.put(
+                    "/api/summary/jobs/foo", json={"related_limit": 1001}
+                )
+                assert response.status_code == 422
+                mock_cm.save_summary_config.assert_not_called()
+                _assert_422_detail_contract(response, "related_limit")
+
+
+class TestClearMemoryApi:
+    @pytest.mark.asyncio
+    async def test_requires_confirm(self):
+        """C4/S3：无 confirm → 422，不删除。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                response = await client.post(
+                    "/api/summary/jobs/daily/clear-memory", json={}
+                )
+                assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_clear_memory_success(self):
+        """S3：confirm=true → success + deleted_records，委托 MemoryService。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_memory.clear_task.return_value = 42
+                response = await client.post(
+                    "/api/summary/jobs/daily/clear-memory", json={"confirm": True}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "success"
+                assert data["deleted_records"] == 42
+                mock_memory.clear_task.assert_called_once_with(
+                    "summary", "summary-daily"
+                )
+
+    @pytest.mark.asyncio
+    async def test_job_not_found_404(self):
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                mock_cm.get_summary_configs.return_value = []
+                response = await client.post(
+                    "/api/summary/jobs/nonexist/clear-memory", json={"confirm": True}
+                )
+                assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_clear_failure_returns_error(self):
+        """S5：清空失败返回错误响应（不影响任务配置）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_memory.clear_task.side_effect = RuntimeError("db down")
+                response = await client.post(
+                    "/api/summary/jobs/daily/clear-memory", json={"confirm": True}
+                )
+                assert response.status_code == 500
+
+
+class TestRenameMemoryLinkage:
+    @pytest.mark.asyncio
+    async def test_rename_migrates_memory(self):
+        """S1：改名 PUT → MemoryService.rename_task 联动（记忆跟随）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_sched,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_sched.apply_config_after_save = AsyncMock()
+                response = await client.put(
+                    "/api/summary/jobs/daily",
+                    json={"name": "daily2"},
+                )
+                assert response.status_code == 200
+                mock_memory.rename_task.assert_called_once_with(
+                    "summary", "summary-daily", "summary-daily2"
+                )
+
+    @pytest.mark.asyncio
+    async def test_rename_same_name_no_migration(self):
+        """改名与原名相同 → 不触发记忆迁移。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_sched,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_sched.apply_config_after_save = AsyncMock()
+                await client.put(
+                    "/api/summary/jobs/daily",
+                    json={"cron": "0 8 * * *"},
+                )
+                mock_memory.rename_task.assert_not_called()
+
+
+class TestMemoryStatsApi:
+    """S10'/S11'：memory-stats 返回记忆总量与注入估算（绝对量，无百分比）。"""
+
+    @pytest.mark.asyncio
+    async def test_stats_with_no_memory(self):
+        """空记忆：count=0、avg=0、注入估算=0（related_limit 只算配置上限）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch(
+                    "app.api.summary_jobs.database_manager.memory.get_recent",
+                    return_value=[],
+                ) as mock_recent,
+            ):
+                mock_cm.get_summary_configs.return_value = [
+                    {"name": "daily", "memory_limit": "5", "related_limit": "3"}
+                ]
+                response = await client.get("/api/summary/jobs/daily/memory-stats")
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["total_count"] == 0
+        assert data["total_chars"] == 0
+        assert data["avg_chars"] == 0
+        assert data["memory_limit"] == 5
+        assert data["related_limit"] == 3
+        assert data["injected_estimate_tokens"] == 0
+        mock_recent.assert_called_once_with("summary", "summary-daily", limit=1000)
+
+    @pytest.mark.asyncio
+    async def test_stats_with_accumulated_memory(self):
+        """有记忆：count/chars 正确；估算 = (min(count,limit)+related)×avg×0.7。"""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.models.memory import MemoryEntry
+
+        app = _make_summary_app()
+        entries = [
+            MemoryEntry(run_id="r-1", summary="芙莉莲S1E10" * 10),  # 100 字
+            MemoryEntry(run_id="r-2", summary="鬼灭S3E5" * 10),  # 100 字
+            MemoryEntry(run_id="r-3", summary="葬送S2E1" * 10),  # 100 字
+        ]
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch(
+                    "app.api.summary_jobs.database_manager.memory.get_recent",
+                    return_value=entries,
+                ),
+            ):
+                mock_cm.get_summary_configs.return_value = [
+                    {"name": "daily", "memory_limit": "2", "related_limit": "1"}
+                ]
+                response = await client.get("/api/summary/jobs/daily/memory-stats")
+
+        data = response.json()["data"]
+        assert data["total_count"] == 3
+        assert data["total_chars"] == 200  # 80 + 60 + 60
+        assert data["avg_chars"] == 67  # round(200/3)
+        # (min(3,2)+1) × 67 × 0.7 = 3 × 46.9 = 140.7 → round
+        assert data["injected_estimate_tokens"] == 141
+
+    @pytest.mark.asyncio
+    async def test_stats_missing_job_404(self):
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                mock_cm.get_summary_configs.return_value = []
+                response = await client.get("/api/summary/jobs/nope/memory-stats")
+                assert response.status_code == 404
+
+
+class TestMemoryStatsEstimateM11:
+    """M11：注入估算需体现 related 独立生效（不因 memory_limit=0 而遗漏 related）。"""
+
+    @pytest.mark.asyncio
+    async def test_stats_includes_related_when_memory_zero(self):
+        from httpx import ASGITransport, AsyncClient
+
+        from app.models.memory import MemoryEntry
+
+        app = _make_summary_app()
+        entries = [MemoryEntry(run_id="r-1", summary="芙莉莲S1E10" * 10)]  # 80 字
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch(
+                    "app.api.summary_jobs.database_manager.memory.get_recent",
+                    return_value=entries,
+                ),
+            ):
+                mock_cm.get_summary_configs.return_value = [
+                    {"name": "daily", "memory_limit": "0", "related_limit": "2"}
+                ]
+                response = await client.get("/api/summary/jobs/daily/memory-stats")
+
+        data = response.json()["data"]
+        # related 独立生效：估算 = (min(1,0)=0 + 2) × 80 × 0.7 = 112
+        assert data["injected_estimate_tokens"] == 112

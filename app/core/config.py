@@ -702,6 +702,8 @@ class ConfigManager:
         "user_name",
         "system_prompt",
         "max_records",
+        "memory_limit",
+        "related_limit",
     )
 
     def get_summary_configs(self) -> list[dict[str, Any]]:

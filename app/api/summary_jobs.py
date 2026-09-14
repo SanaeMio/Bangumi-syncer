@@ -7,16 +7,22 @@ from urllib.parse import unquote
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..core.config import config_manager
+from ..core.database import database_manager
 from ..models.summary import (
+    ClearMemoryRequest,
     SummaryJobCreate,
     SummaryJobResponse,
     SummaryJobTestResponse,
     SummaryJobUpdate,
 )
+from ..services.memory.service import MemoryService
 from ..services.summary import SummaryJobConfig, summary_scheduler, summary_service
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/summary/jobs", tags=["summary_jobs"])
+
+# 记忆清理入口（改名联动 / clear-memory 端点）
+memory_service = MemoryService(database_manager.memory)
 
 
 def _validate_job_name(name: str, old_name: str = "") -> None:
@@ -64,6 +70,10 @@ async def update_summary_job(
             old_type = f"watching_summary_{decoded}"
             new_type = f"watching_summary_{updates['name']}"
             config_manager.rename_notification_type(old_type, new_type)
+            # 记忆跟随任务（与 rename_notification_type 同流程）
+            memory_service.rename_task(
+                "summary", f"summary-{decoded}", f"summary-{updates['name']}"
+            )
     config_manager.save_summary_config(updates, old_name=decoded)
     config_manager.reload_config()
     await summary_scheduler.apply_config_after_save()
@@ -74,6 +84,9 @@ async def update_summary_job(
 async def delete_summary_job(name: str, _=Depends(get_current_user_flexible)):
     decoded = unquote(name)
     config_manager.delete_summary_config(decoded)
+    # 清理该任务记忆（主表 + 归档 + 消费标记，同一事务）：
+    # 避免孤儿记忆行与悬挂 consumed_run_id（重名重建 job 时产生虚假 overlap）。
+    memory_service.clear_task("summary", f"summary-{decoded}")
     config_manager.reload_config()
     await summary_scheduler.apply_config_after_save()
     return {"status": "success", "message": "摘要任务已删除"}
@@ -103,7 +116,8 @@ async def test_summary_job(name: str, _=Depends(get_current_user_flexible)):
     summary_text = result["summary_text"]
     usage = result.get("usage")
 
-    if not summary_text and usage is None:
+    if not summary_text:
+        # H1-API 修正：空内容即失败（usage 存在但空 choices 仍可能是失败调用）
         return SummaryJobTestResponse(
             success=False,
             job_name=job_config.name,
@@ -132,3 +146,66 @@ async def trigger_summary_job(name: str, _=Depends(get_current_user_flexible)):
     job_config = SummaryJobConfig.from_config_dict(target)
     await summary_service.execute_job(job_config)
     return {"status": "success", "message": f"任务 '{job_config.name}' 已触发"}
+
+
+@router.post("/{name:path}/clear-memory")
+async def clear_summary_job_memory(
+    name: str,
+    body: ClearMemoryRequest,
+    _=Depends(get_current_user_flexible),
+):
+    """清空任务记忆（不可恢复，二次确认）。
+
+    同一事务删除主表 + 归档表 + 清相关消费标记（不筛 outcome 全部删除）。
+    想保留偏好重新开始 → 复制为新 job（旧 job 记忆完整保留）。
+    """
+    decoded = unquote(name)
+    _find_config(decoded)  # 任务不存在 404
+    if not body.confirm:
+        raise HTTPException(422, "必须携带 confirm=true 确认清空")
+    deleted = memory_service.clear_task("summary", f"summary-{decoded}")
+    return {
+        "status": "success",
+        "message": "任务记忆已清空",
+        "deleted_records": deleted,
+    }
+
+
+@router.get("/{name:path}/memory-stats")
+async def summary_job_memory_stats(name: str, _=Depends(get_current_user_flexible)):
+    """记忆规模统计：该任务已积累多少记忆、按当前配置将注入多大上下文。
+
+    返回绝对量（不做百分比）：
+    - total_count / total_chars / avg_chars：任务已积累的摘要规模（热层）
+    - memory_limit / related_limit：当前配置
+    - injected_estimate_tokens：按配置估算的注入量（估算口径：
+      字符数 × 0.7 粗略中文 token 系数，见 closeout §评测；仅展示参考）
+    """
+    decoded = unquote(name)
+    _find_config(decoded)  # 任务不存在 404
+    task_id = f"summary-{decoded}"
+
+    rows = database_manager.memory.get_recent("summary", task_id, limit=1000)
+    total_count = len(rows)
+    total_chars = sum(len(e.summary) for e in rows)
+    avg_chars = round(total_chars / total_count) if total_count else 0
+
+    cfg = SummaryJobConfig.from_config_dict(_find_config(decoded))
+    memory_limit = cfg.memory_limit
+    related_limit = cfg.related_limit
+    # 估算：recent 注入 = min(存量, memory_limit) 条；related 按配置深度估算
+    injected_count = min(total_count, memory_limit) + related_limit
+    injected_estimate_tokens = round(injected_count * avg_chars * 0.7)
+
+    return {
+        "status": "success",
+        "data": {
+            "task_id": task_id,
+            "total_count": total_count,
+            "total_chars": total_chars,
+            "avg_chars": avg_chars,
+            "memory_limit": memory_limit,
+            "related_limit": related_limit,
+            "injected_estimate_tokens": injected_estimate_tokens,
+        },
+    }
