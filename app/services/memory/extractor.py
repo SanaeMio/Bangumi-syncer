@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from app.core.database.agent_memory import AgentMemoryRepository
 from app.core.logging import logger
+from app.models.memory import MemoryEntry
 from app.services.llm import Message, get_llm_client
 from app.services.llm.models import ChatResponse
-
-from .models import MemoryEntry
 
 _SUMMARY_PROMPT = (
     "请用一句话总结以下追番总结的内容（50–100 字为宜，根据内容量自然把握），"

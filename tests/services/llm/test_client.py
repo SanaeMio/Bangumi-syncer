@@ -624,34 +624,36 @@ class TestParamRejectionDegradation:
         assert resp.latency == 500
 
     @pytest.mark.asyncio
-    async def test_non_param_400_no_degration(
+    async def test_non_param_400_terminal_no_retry(
         self, reset_llm_singleton, mock_config, mock_log_usage
     ):
-        """非参数类 400（如 invalid_api_key）不触发降级，走普通退避重试。"""
+        """非参数类 400（如 invalid_api_key 文案）为终态——不降级、不重试、快速失败。"""
         from app.services.llm.client import LLMClient
         from app.services.llm.providers.openai_compat import OpenAICompatProvider
 
         calls = []
         mock_sleep = AsyncMock()
 
-        async def _always_bad(self, messages, **kwargs):
+        async def _always_bad(messages, **kwargs):
             calls.append(1)
-            raise self._httpx_400('{"error": "Invalid API key provided"}')
+            raise TestParamRejectionDegradation._httpx_400(
+                '{"error": "Invalid API key provided"}'
+            )
 
         provider = OpenAICompatProvider(
             api_base="https://test.api.com/v1", api_key="sk-test"
         )
-        provider.chat = _always_bad.__get__(provider, OpenAICompatProvider)
+        provider.chat = AsyncMock(side_effect=_always_bad)
 
         with patch("app.services.llm.client.asyncio.sleep", mock_sleep):
             client = LLMClient()
             client._provider = provider
             resp = await client.chat([Message(role="user", content="Q")])
 
-        assert resp.content == ""  # 重试耗尽返回空响应
-        assert len(calls) == 3  # MAX_RETRIES=2 → 3 次尝试
-        assert provider._extras_disabled is False  # 未降级
-        assert mock_sleep.await_count == 2
+        assert resp.content == ""  # 空响应契约（不抛异常）
+        assert len(calls) == 1  # 终态：仅 1 次尝试
+        assert provider._extras_disabled is False  # 未误降级
+        assert mock_sleep.await_count == 0  # 零退避
 
 
 class TestTerminalErrorsNoRetry:
@@ -800,6 +802,47 @@ class TestTerminalErrorsNoRetry:
         assert len(calls) == 2
         assert mock_sleep.await_args.args[0] == 60  # 钳制到 60s 上限
 
+    @pytest.mark.asyncio
+    async def test_anthropic_unrelated_invalid_request_error_fast_fails(
+        self, reset_llm_singleton, mock_config, mock_log_usage
+    ):
+        """Anthropic 无关 invalid_request_error 400 终态快速失败——不降级、不重试、零退避。"""
+        import httpx as _h
+
+        from app.services.llm.client import LLMClient
+        from app.services.llm.providers.openai_compat import OpenAICompatProvider
+
+        calls = []
+        mock_sleep = AsyncMock()
+
+        def _raise_anthropic_400():
+            request = _h.Request("POST", "https://test.api.com/v1/messages")
+            response = _h.Response(
+                400,
+                text='{"type": "error", "error": {"type": "invalid_request_error", "message": "messages: field required"}}',
+                request=request,
+            )
+            raise _h.HTTPStatusError("Bad Request", request=request, response=response)
+
+        async def _bad(messages, **kwargs):
+            calls.append(1)
+            _raise_anthropic_400()
+
+        provider = OpenAICompatProvider(
+            api_base="https://test.api.com/v1", api_key="sk"
+        )
+        provider.chat = AsyncMock(side_effect=_bad)
+
+        with patch("app.services.llm.client.asyncio.sleep", mock_sleep):
+            client = LLMClient()
+            client._provider = provider
+            resp = await client.chat([Message(role="user", content="Q")])
+
+        assert resp.content == ""  # 空响应契约（不抛异常）
+        assert len(calls) == 1  # 终态：仅 1 次尝试
+        assert provider._extras_disabled is False  # 未误降级
+        assert mock_sleep.await_count == 0  # 零退避
+
 
 class TestParamRejectionExtended:
     """M8：Anthropic invalid_request_error / 422 网关也触发降级。"""
@@ -841,6 +884,53 @@ class TestParamRejectionExtended:
         request = _h.Request("POST", "https://test.api.com/v1")
         response = _h.Response(
             400, text='{"error": "Invalid API key"}', request=request
+        )
+        e = _h.HTTPStatusError("err", request=request, response=response)
+        assert _is_param_rejection(e) is False
+        assert _is_terminal_error(e) is True
+
+    def test_anthropic_invalid_request_error_unrelated_is_not_param_rejection(self):
+        """Anthropic 无关 400（如字段缺失）不应被误判为参数拒绝。"""
+        import httpx as _h
+
+        from app.services.llm.client import _is_param_rejection, _is_terminal_error
+
+        request = _h.Request("POST", "https://test.api.com/v1/messages")
+        response = _h.Response(
+            400,
+            text='{"type": "error", "error": {"type": "invalid_request_error", "message": "messages: field required"}}',
+            request=request,
+        )
+        e = _h.HTTPStatusError("err", request=request, response=response)
+        assert _is_param_rejection(e) is False
+        assert _is_terminal_error(e) is True
+
+    def test_anthropic_budget_tokens_compound_matches(self):
+        """Anthropic invalid_request_error + budget_tokens 关键字 → 复合判定命中参数拒绝。"""
+        import httpx as _h
+
+        from app.services.llm.client import _is_param_rejection
+
+        request = _h.Request("POST", "https://test.api.com/v1/messages")
+        response = _h.Response(
+            400,
+            text='{"type": "error", "error": {"type": "invalid_request_error", "message": "budget_tokens is only available when thinking is enabled"}}',
+            request=request,
+        )
+        e = _h.HTTPStatusError("err", request=request, response=response)
+        assert _is_param_rejection(e) is True
+
+    def test_broad_does_not_support_unrelated_is_not_param_rejection(self):
+        """网关返回与 thinking/reasoning 无关的 'does not support' 文案不应判为参数拒绝。"""
+        import httpx as _h
+
+        from app.services.llm.client import _is_param_rejection, _is_terminal_error
+
+        request = _h.Request("POST", "https://gateway/v1/chat/completions")
+        response = _h.Response(
+            400,
+            text='{"error": "model does not support streaming"}',
+            request=request,
         )
         e = _h.HTTPStatusError("err", request=request, response=response)
         assert _is_param_rejection(e) is False

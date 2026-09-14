@@ -60,7 +60,7 @@ def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
     else:
         logger.debug("未找到PremiereDate字段，将尝试从bangumi-data获取日期信息")
 
-    # 修复：从 OriginalTitle 提取原始标题（不再硬编码空格）
+    # 从 OriginalTitle 提取原始标题，缺失时按无原始标题处理
     ori = item.get("OriginalTitle")
     ori_str = str(ori).strip() if ori else ""
     title = item.get("SeriesName") or ""
@@ -71,7 +71,7 @@ def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
     return CustomItem(
         media_type=detected,
         title=title,
-        ori_title=ori_str if ori_str else " ",
+        ori_title=ori_str if ori_str else None,
         season=item["ParentIndexNumber"],
         episode=item["IndexNumber"],
         release_date=release_date,

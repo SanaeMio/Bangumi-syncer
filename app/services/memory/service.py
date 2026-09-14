@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.core.database.agent_memory import AgentMemoryRepository
+from app.models.memory import MemoryEntry
 from app.services.llm.models import ChatResponse
 
 from .extractor import MemoryExtractor
-from .models import MemoryEntry
 from .retriever import MemoryRetriever
 
 if TYPE_CHECKING:

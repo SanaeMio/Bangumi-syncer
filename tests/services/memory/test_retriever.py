@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from app.services.memory.models import MemoryEntry
+from app.models.memory import MemoryEntry
 from app.services.memory.retriever import MemoryRetriever
 from app.services.summary.models import SummaryRecord
 

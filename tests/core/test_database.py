@@ -1226,7 +1226,7 @@ class TestCleanupOldRecords:
             status="success",
             source="test",
         )
-        from app.services.memory.models import MemoryEntry
+        from app.models.memory import MemoryEntry
 
         db.memory.store_and_mark(
             MemoryEntry(

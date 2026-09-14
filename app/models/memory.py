@@ -1,4 +1,8 @@
-"""记忆数据模型。"""
+"""记忆数据模型（共享层）。
+
+从 ``app/services/memory/models`` 迁出，供 core/database 与 services 共同引用，
+消除 core → services 的倒置依赖。
+"""
 
 from __future__ import annotations
 

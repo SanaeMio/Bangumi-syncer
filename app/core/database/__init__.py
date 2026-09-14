@@ -479,6 +479,7 @@ class DatabaseManager:
         limit: int = 200,
         user_name: Optional[str] = None,
         source: Optional[str] = None,
+        include_consumed: bool = False,
     ) -> list[dict[str, Any]]:
         """获取指定日期范围内的同步记录"""
         return self._sync.get_records_in_date_range(
@@ -487,6 +488,7 @@ class DatabaseManager:
             limit=limit,
             user_name=user_name,
             source=source,
+            include_consumed=include_consumed,
         )
 
     def cleanup_old_records(self, retention_days: int) -> int:

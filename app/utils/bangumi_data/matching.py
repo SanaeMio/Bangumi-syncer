@@ -370,20 +370,26 @@ class MatchingMixin:
                 logger.debug(
                     f"完全匹配的最佳日期误差高达 {min_exact_diff} 天，启动全局日期择优机制"
                 )
-                min_partial_diff = float("inf")
-                best_partial_match = None
-
+                # 按日期由近到远排列部分匹配，逐个做安全校验并采纳首个通过者；
+                # 日期更近但名称不相关的条目（如同期播出的其他番剧）不阻断后续候选
+                dated_candidates = []
                 for match_item, score, match_id in partial_matches:
                     if "begin" in match_item:
-                        diff = self._date_diff(match_item["begin"], release_date)
-                        if diff < min_partial_diff:
-                            min_partial_diff = diff
-                            best_partial_match = (match_item, match_id, score)
+                        dated_candidates.append(
+                            (
+                                self._date_diff(match_item["begin"], release_date),
+                                match_item,
+                                match_id,
+                                score,
+                            )
+                        )
+                dated_candidates.sort(key=lambda x: x[0])
 
-                # 若部分匹配中有日期误差小于等于 90 天的条目，启动安全校验决定是否采用该部分匹配条目
-                if best_partial_match and min_partial_diff <= 90:
-                    pm_item = best_partial_match[0]
-                    pm_score = best_partial_match[2]
+                # 仅日期误差小于等于 90 天的条目参与日期择优（升序排列，超出即可终止）
+                for diff, pm_item, pm_id, pm_score in dated_candidates:
+                    if diff > 90:
+                        break
+
                     # 收集该条目的原名和所有中文翻译
                     pm_all_names = [
                         pm_item.get("title", "")
@@ -402,13 +408,13 @@ class MatchingMixin:
                     if is_safe_to_override:
                         matched_title = self._get_best_matched_title(pm_item)
                         logger.debug(
-                            f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title} (日期差距 {min_partial_diff} 天)"
+                            f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title} (日期差距 {diff} 天)"
                         )
-                        return (best_partial_match[1], matched_title, True)
-                    else:
-                        logger.debug(
-                            f"拒绝日期择优: {pm_item.get('title', '')} 虽然日期接近，但名称差异过大"
-                        )
+                        return (pm_id, matched_title, True)
+
+                    logger.debug(
+                        f"拒绝日期择优: {pm_item.get('title', '')} 虽然日期接近，但名称差异过大"
+                    )
 
             # 处理存在多个完全匹配的情况，返回日期最接近的条目
             if len(exact_matches) > 1 and best_exact_match:
@@ -654,6 +660,9 @@ class MatchingMixin:
         self, item: dict, title: str, ori_title: str = None, release_date: str = None
     ) -> dict:
         """一次性计算所有匹配信息，避免重复计算"""
+        # 空白原标题按缺失处理，避免其作为有效字符串参与包含判定
+        if ori_title is not None and not str(ori_title).strip():
+            ori_title = None
         result = {
             "exact_match": False,
             "match_type": None,

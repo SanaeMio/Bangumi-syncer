@@ -6,7 +6,7 @@ prune 降级到归档表（冷记忆，search_archive 用 LIKE 检索）。
 
 from __future__ import annotations
 
-from app.services.memory.models import MemoryEntry
+from app.models.memory import MemoryEntry
 
 from .base_repository import BaseRepository
 

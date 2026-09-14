@@ -1800,7 +1800,7 @@ class TestMemoryStatsApi:
         """有记忆：count/chars 正确；估算 = (min(count,limit)+related)×avg×0.7。"""
         from httpx import ASGITransport, AsyncClient
 
-        from app.services.memory.models import MemoryEntry
+        from app.models.memory import MemoryEntry
 
         app = _make_summary_app()
         entries = [
@@ -1853,7 +1853,7 @@ class TestMemoryStatsEstimateM11:
     async def test_stats_includes_related_when_memory_zero(self):
         from httpx import ASGITransport, AsyncClient
 
-        from app.services.memory.models import MemoryEntry
+        from app.models.memory import MemoryEntry
 
         app = _make_summary_app()
         entries = [MemoryEntry(run_id="r-1", summary="芙莉莲S1E10" * 10)]  # 80 字

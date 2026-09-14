@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.core.database.agent_memory import AgentMemoryRepository
-
-from .models import MemoryEntry
+from app.models.memory import MemoryEntry
 
 if TYPE_CHECKING:
     # 仅类型注解用；运行时导入会经 summary 包 __init__ 回到 memory.retriever 形成环

@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models.memory import MemoryEntry
 from app.services.llm.models import ChatResponse
-from app.services.memory.models import MemoryEntry
 from app.services.memory.service import MemoryService
 from app.services.summary.models import SummaryRecord
 
@@ -78,7 +78,9 @@ class TestClearTask:
         n = svc.clear_task("summary", "summary-daily")
 
         assert n == 2  # 1 记忆 + 1 消费标记
-        recs = db.get_records_in_date_range("2000-01-01", "2100-01-01")
+        recs = db.get_records_in_date_range(
+            "2000-01-01", "2100-01-01", include_consumed=True
+        )
         assert recs[0]["consumed_run_ids"] == set()
 
     def test_clear_idempotent(self, temp_dir, reset_singletons):

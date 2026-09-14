@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models.memory import MemoryEntry
 from app.services.llm.models import ChatResponse, Message, Usage
 from app.services.memory.extractor import MemoryExtractor
-from app.services.memory.models import MemoryEntry
 
 
 def _response(content: str = "本次总结全文内容") -> ChatResponse:

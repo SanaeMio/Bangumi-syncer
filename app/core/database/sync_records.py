@@ -518,6 +518,7 @@ class SyncRecordsRepository(BaseRepository):
         limit: int = 200,
         user_name: Optional[str] = None,
         source: Optional[str] = None,
+        include_consumed: bool = False,
     ) -> list[dict[str, Any]]:
         """获取指定日期范围内的同步记录。
 
@@ -528,6 +529,9 @@ class SyncRecordsRepository(BaseRepository):
             limit:     最大返回条数，默认 200。
             user_name: 可选，按用户名过滤。
             source:    可选，按来源过滤。
+            include_consumed: 默认 ``False``（轻量查询——无 LEFT JOIN / GROUP BY，
+                ``consumed_run_ids`` 直接返回空集合）；``True`` 时 JOIN 关联表并
+                GROUP_CONCAT 聚合消费标记（记忆开启时消费排除所需）。
 
         Returns:
             按 ``timestamp DESC`` 排序的记录列表，每条为包含全部列的 dict。
@@ -547,19 +551,32 @@ class SyncRecordsRepository(BaseRepository):
 
             where = " WHERE " + " AND ".join(conditions)
             limit_clause = "LIMIT ?" if limit > 0 else ""
-            query = f"""
-                SELECT s.id, s.timestamp, s.user_name, s.title, s.ori_title,
-                       s.season, s.episode, s.subject_id, s.episode_id, s.status,
-                       s.message, s.source, s.media_type, s.bgm_title,
-                       s.run_id, s.batch_id,
-                       GROUP_CONCAT(c.run_id) AS consumed_run_ids
-                FROM sync_records s
-                LEFT JOIN sync_records_consumed c ON c.sync_record_id = s.id
-                {where}
-                GROUP BY s.id
-                ORDER BY s.timestamp DESC
-                {limit_clause}
-            """
+
+            if include_consumed:
+                query = f"""
+                    SELECT s.id, s.timestamp, s.user_name, s.title, s.ori_title,
+                           s.season, s.episode, s.subject_id, s.episode_id, s.status,
+                           s.message, s.source, s.media_type, s.bgm_title,
+                           s.run_id, s.batch_id,
+                           GROUP_CONCAT(c.run_id) AS consumed_run_ids
+                    FROM sync_records s
+                    LEFT JOIN sync_records_consumed c ON c.sync_record_id = s.id
+                    {where}
+                    GROUP BY s.id
+                    ORDER BY s.timestamp DESC
+                    {limit_clause}
+                """
+            else:
+                query = f"""
+                    SELECT id, timestamp, user_name, title, ori_title,
+                           season, episode, subject_id, episode_id, status,
+                           message, source, media_type, bgm_title,
+                           run_id, batch_id
+                    FROM sync_records
+                    {where}
+                    ORDER BY timestamp DESC
+                    {limit_clause}
+                """
             if limit > 0:
                 params.append(limit)
             cursor.execute(query, params)
@@ -581,9 +598,12 @@ class SyncRecordsRepository(BaseRepository):
                     "bgm_title": row[13] or "",
                     "run_id": row[14] or "",
                     "batch_id": row[15] or "",
-                    # 消费标记多对多（关联表）：逗号分隔 → 去空集合
+                    # 消费标记多对多（关联表）：include_consumed 时逗号分隔 → 去空集合；
+                    # 轻量路径该列不存在，直接给空集合（保持返回 dict 结构不变）。
                     "consumed_run_ids": (
-                        {x for x in row[16].split(",") if x} if row[16] else set()
+                        {x for x in row[16].split(",") if x}
+                        if include_consumed and row[16]
+                        else set()
                     ),
                 }
                 for row in cursor.fetchall()

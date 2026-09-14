@@ -333,9 +333,28 @@ class TestGetRecordsInDateRange:
             )
             raw.commit()
 
-        records = db.get_records_in_date_range("2025-02-01", "2025-02-01")
+        records = db.get_records_in_date_range(
+            "2025-02-01", "2025-02-01", include_consumed=True
+        )
         assert len(records) == 1
         r = records[0]
         assert r["consumed_run_ids"] == {"consumed-XYZ"}
         assert r["run_id"] == "run-ABC"
         assert r["batch_id"] == "batch-DEF"
+
+    def test_default_query_without_consumed_returns_empty_set(
+        self, temp_dir, reset_singletons
+    ):
+        """P1：默认查询（无 include_consumed）返回空 consumed_run_ids 集合。"""
+        db_path = temp_dir / "light.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+
+        with sqlite3.connect(str(db_path)) as raw:
+            _insert_record(raw, "2025-03-01 10:00:00", title="T")
+            raw.commit()
+
+        records = db.get_records_in_date_range("2025-03-01", "2025-03-01")
+        assert records[0]["consumed_run_ids"] == set()
