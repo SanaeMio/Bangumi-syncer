@@ -4,7 +4,7 @@
 
 import asyncio
 import time
-from typing import Any, Optional
+from typing import Any
 
 from ...core.logging import logger
 from ...utils.bangumi_api import BangumiApi
@@ -31,8 +31,8 @@ class RetryMixin:
         ep_id: str,
         max_retries: int = 3,
         *,
-        queue_payload: Optional[dict] = None,
-        sync_record_id: Optional[int] = None,
+        queue_payload: dict | None = None,
+        sync_record_id: int | None = None,
     ) -> int:
         """带重试机制的标记剧集方法（优化版，减少阻塞时间）
 
@@ -98,8 +98,8 @@ class RetryMixin:
         ep_id: str,
         max_retries: int = 3,
         *,
-        queue_payload: Optional[dict] = None,
-        sync_record_id: Optional[int] = None,
+        queue_payload: dict | None = None,
+        sync_record_id: int | None = None,
     ) -> int:
         """异步版本的重试标记剧集方法"""
         for attempt in range(max_retries + 1):
@@ -159,7 +159,7 @@ class RetryMixin:
         reason: str,
         last_error: str,
         payload: dict,
-        sync_record_id: Optional[int] = None,
+        sync_record_id: int | None = None,
     ) -> None:
         """把一条标记任务写入 pending_sync_queue 表"""
         from ...core.database import database_manager

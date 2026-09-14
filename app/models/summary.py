@@ -2,7 +2,7 @@
 Summary AI 观影报告数据模型。
 """
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -28,14 +28,14 @@ class LLMConfigUpdate(BaseModel):
     延迟到客户端构建才抛错、未知 thinking_level 被静默降级为 off）。
     """
 
-    api_base: Optional[str] = None
-    api_key: Optional[str] = None
-    model: Optional[str] = None
-    max_tokens: Optional[int] = None
-    temperature: Optional[float] = None
-    timeout: Optional[int] = None
-    provider: Optional[Literal["openai_compat", "anthropic_compat"]] = None
-    thinking_level: Optional[Literal["off", "low", "medium", "high"]] = None
+    api_base: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    max_tokens: int | None = None
+    temperature: float | None = None
+    timeout: int | None = None
+    provider: Literal["openai_compat", "anthropic_compat"] | None = None
+    thinking_level: Literal["off", "low", "medium", "high"] | None = None
 
 
 class LLMTestResponse(BaseModel):
@@ -43,8 +43,8 @@ class LLMTestResponse(BaseModel):
 
     success: bool
     message: str
-    model: Optional[str] = None
-    latency_ms: Optional[int] = None
+    model: str | None = None
+    latency_ms: int | None = None
 
 
 class SummaryJobCreate(BaseModel):
@@ -62,13 +62,13 @@ class SummaryJobCreate(BaseModel):
 class SummaryJobUpdate(BaseModel):
     """PUT /api/summary/jobs/{id} 请求"""
 
-    name: Optional[str] = None
-    cron: Optional[str] = None
-    lookback_days: Optional[int] = None
-    user_name: Optional[str] = None
-    system_prompt: Optional[str] = None
-    max_records: Optional[int] = None
-    enabled: Optional[bool] = None
+    name: str | None = None
+    cron: str | None = None
+    lookback_days: int | None = None
+    user_name: str | None = None
+    system_prompt: str | None = None
+    max_records: int | None = None
+    enabled: bool | None = None
 
 
 class SummaryJobResponse(BaseModel):

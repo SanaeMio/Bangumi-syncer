@@ -1,7 +1,6 @@
 """飞牛观看记录行模型"""
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -18,12 +17,12 @@ class FeiniuWatchRecord:
     user_guid: str
     username: str
     display_title: str
-    original_title: Optional[str]
+    original_title: str | None
     season: int
     episode: int
     release_date: str
     update_time_ms: int
     # 以下用于区分电影/剧场版与剧集
-    item_type: Optional[str] = None
+    item_type: str | None = None
     episode_from_db: bool = True
     season_from_db: bool = True

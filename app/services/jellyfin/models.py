@@ -1,7 +1,5 @@
 """Jellyfin Webhook 数据模型"""
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -31,6 +29,6 @@ class JellyfinWebhookData(BaseModel):
     user_name: str = Field(
         ..., description="用户名", json_schema_extra={"example": "用户名"}
     )
-    release_date: Optional[str] = Field(
+    release_date: str | None = Field(
         None, description="发行日期", json_schema_extra={"example": "2024-01-01"}
     )

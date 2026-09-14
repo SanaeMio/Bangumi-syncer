@@ -1,7 +1,7 @@
 """通知测试辅助方法（mixin）"""
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 
 class TestHelpersMixin:
@@ -9,9 +9,9 @@ class TestHelpersMixin:
 
     def test_notification(
         self,
-        notification_type: Optional[str] = None,
-        webhook_id: Optional[int] = None,
-        email_id: Optional[int] = None,
+        notification_type: str | None = None,
+        webhook_id: int | None = None,
+        email_id: int | None = None,
     ) -> dict[str, Any]:
         """
         测试通知功能
@@ -61,7 +61,7 @@ class TestHelpersMixin:
         self,
         results: dict[str, Any],
         test_data: dict[str, Any],
-        webhook_id: Optional[int],
+        webhook_id: int | None,
     ) -> None:
         """测试所有 webhook 通道"""
         webhook_configs = self._get_webhook_configs()
@@ -107,7 +107,7 @@ class TestHelpersMixin:
         self,
         results: dict[str, Any],
         test_data: dict[str, Any],
-        email_id: Optional[int],
+        email_id: int | None,
     ) -> None:
         """测试所有邮件通道"""
         email_configs = self._get_email_configs()

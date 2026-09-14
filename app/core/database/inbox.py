@@ -4,7 +4,7 @@
 
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from ..logging import logger
 from .base_repository import BaseRepository
@@ -53,13 +53,13 @@ class InboxRepository(BaseRepository):
                 (limit,),
             )
             cols = [d[0] for d in cursor.description]
-            return [dict(zip(cols, row)) for row in cursor.fetchall()]
+            return [dict(zip(cols, row, strict=True)) for row in cursor.fetchall()]
 
         return self._run_read(_read, error_msg="获取收件箱通知失败", default=[])
 
     def get_in_app_notification_by_id(
         self, notification_id: int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
 
         def _read(conn):
             cursor = conn.execute(
@@ -73,7 +73,7 @@ class InboxRepository(BaseRepository):
             if not row:
                 return None
             cols = [d[0] for d in cursor.description]
-            return dict(zip(cols, row))
+            return dict(zip(cols, row, strict=True))
 
         return self._run_read(_read, error_msg="获取通知详情失败", default=None)
 

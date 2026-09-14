@@ -420,7 +420,7 @@ class TestDockerProxyHelperTcpConnection:
 
         with patch("socket.socket") as mock_socket_cls:
             mock_sock = MagicMock()
-            mock_sock.connect_ex.side_effect = socket.timeout("Timeout")
+            mock_sock.connect_ex.side_effect = TimeoutError("Timeout")
             mock_socket_cls.return_value = mock_sock
 
             result = helper._test_tcp_connection("example.com", 80)

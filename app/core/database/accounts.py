@@ -15,7 +15,6 @@ Bangumi 账号仓库（含 OAuth 令牌）。
 
 import json
 import time
-from typing import Optional
 
 from ..config_secret_crypto import decrypt as _decrypt_token, encrypt as _encrypt_token
 from .base_repository import BaseRepository
@@ -135,7 +134,7 @@ class BangumiAccountRepository(BaseRepository):
 
         return self._run_write(_write, error_msg="保存 Bangumi 账号失败", default=False)
 
-    def get_account(self, section_name: str) -> Optional[dict]:
+    def get_account(self, section_name: str) -> dict | None:
         """按 section_name 获取账号，不存在返回 None。"""
 
         def _read(conn):
@@ -167,7 +166,7 @@ class BangumiAccountRepository(BaseRepository):
 
         return self._run_read(_read, error_msg="列出 Bangumi 账号失败", default=[])
 
-    def get_active_account(self) -> Optional[dict]:
+    def get_active_account(self) -> dict | None:
         """获取当前激活账号（is_active=1）；无激活时返回首个。"""
 
         def _read(conn):
@@ -270,7 +269,7 @@ class BangumiAccountRepository(BaseRepository):
 
 
 def _row_to_account(row) -> dict:
-    account = dict(zip(_BANGUMI_ACCOUNT_COLUMNS, row))
+    account = dict(zip(_BANGUMI_ACCOUNT_COLUMNS, row, strict=True))
     account["media_server_usernames"] = _from_json_list(
         account.get("media_server_usernames")
     )
@@ -313,7 +312,7 @@ class OAuthStateRepository(BaseRepository):
 
         return self._run_write(_write, error_msg="保存 OAuth state 失败", default=False)
 
-    def get_state(self, state: str) -> Optional[dict]:
+    def get_state(self, state: str) -> dict | None:
         """获取并校验 state；过期或不存在返回 None（同时清理过期项）。"""
 
         def _read(conn):

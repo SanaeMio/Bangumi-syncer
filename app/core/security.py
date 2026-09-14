@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import secrets
 import time
-from typing import Any, Optional
+from typing import Any
 
 from .config import config_manager
 from .config_secret_crypto import (
@@ -150,7 +150,7 @@ class SecurityManager:
         logger.info(f"用户 {username} 登录成功")
         return token
 
-    def validate_session(self, token: str) -> Optional[dict[str, Any]]:
+    def validate_session(self, token: str) -> dict[str, Any] | None:
         """验证会话"""
         if not token or token not in self.active_sessions:
             return None
