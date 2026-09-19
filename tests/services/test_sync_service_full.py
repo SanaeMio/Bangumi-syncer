@@ -438,6 +438,117 @@ def test_sync_custom_item_anime_completes_collection(mock_database, mock_bangumi
     )
 
 
+def test_sync_custom_item_anime_completes_collection_with_archive(
+    mock_database, mock_bangumi_api
+):
+    """开启 Archive 离线层时总集数取自 Archive 补全的 eps，自动归档照常生效。"""
+    service = SyncService()
+    mock_instance = mock_bangumi_api.return_value
+    mock_instance.get_subject_collection.return_value = {"type": 3, "ep_status": 12}
+
+    def get_subject_side_effect(subject_id, use_archive=True):
+        # Archive 在 get_subject 数据边界补全 eps，离线命中同样带总集数
+        return {"id": 123, "name": "Test Anime", "eps": 12}
+
+    mock_instance.get_subject.side_effect = get_subject_side_effect
+
+    with (
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+        patch(
+            "app.core.accounts.list_bangumi_accounts",
+            return_value=[{"section_name": "bangumi"}],
+        ),
+        patch(
+            "app.core.accounts.get_single_mode_media_usernames",
+            return_value=["testuser"],
+        ),
+    ):
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "sync" and key == "anime_mark_subject_completed":
+                return True
+            if section == "sync" and key == "mode":
+                return "single"
+            if section == "sync" and key == "blocked_keywords":
+                return ""
+            if section == "bangumi_data" and key == "enabled":
+                return False
+            return fallback
+
+        mock_cfg.get.side_effect = get_side_effect
+        mock_cfg.get_single_mode_media_usernames.return_value = ["testuser"]
+        mock_cfg.get_user_mappings.return_value = {}
+        mock_cfg.get_bangumi_configs.return_value = {}
+
+        item = CustomItem(
+            user_name="testuser",
+            title="TV Anime X",
+            ori_title=None,
+            season=1,
+            episode=12,
+            media_type="episode",
+            release_date="",
+        )
+
+        with patch.object(service, "_find_subject_id", return_value=("456", False, "")):
+            with patch.object(
+                service,
+                "_get_bangumi_config_for_user",
+                return_value={
+                    "username": "testuser",
+                    "access_token": "***",
+                    "private": True,
+                },
+            ):
+                result = service.sync_custom_item(item, "custom")
+
+    assert result.status == "success"
+    mock_instance.change_collection_state.assert_called_once_with(
+        subject_id="123", state=2
+    )
+    # 总集数不绕过 Archive：use_archive 保持默认，eps 由 Archive 数据边界补全
+    assert "use_archive" not in mock_instance.get_subject.call_args.kwargs
+
+
+def test_other_accounts_archive_uses_archive_total_eps():
+    """其余账号的归档判定同样以 Archive 补全的 eps 为总集数，不绕过 Archive。"""
+    from unittest.mock import MagicMock
+
+    service = SyncService()
+    other = MagicMock()
+    other.get_subject_collection.return_value = {"type": 3, "ep_status": 12}
+
+    def get_subject_side_effect(subject_id, use_archive=True):
+        # Archive 在 get_subject 数据边界补全 eps，离线命中同样带总集数
+        return {"id": 123, "name": "Test Anime", "eps": 12}
+
+    other.get_subject.side_effect = get_subject_side_effect
+
+    item = CustomItem(
+        user_name="testuser",
+        title="TV Anime X",
+        ori_title=None,
+        season=1,
+        episode=12,
+        media_type="episode",
+        release_date="",
+    )
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+
+        def get_side_effect(section, key, fallback=None):
+            if section == "sync" and key == "anime_mark_subject_completed":
+                return True
+            return fallback
+
+        mock_cfg.get.side_effect = get_side_effect
+        service._mark_subject_completed_if_needed(item, other, "123", "TV Anime X")
+
+    other.change_collection_state.assert_called_once_with(subject_id="123", state=2)
+    # 其余账号同样不绕过 Archive
+    assert "use_archive" not in other.get_subject.call_args.kwargs
+
+
 def test_check_season_info_in_title(mock_config, mock_database):
     """测试检查标题中的季度信息"""
     service = SyncService()

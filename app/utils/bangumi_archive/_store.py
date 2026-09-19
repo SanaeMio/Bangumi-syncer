@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 from collections import deque
@@ -24,6 +25,7 @@ from ..bangumi_constants import (
     RELATION_ID_PREQUEL,
     RELATION_ID_SEQUEL,
     RELATIONS,
+    SUBJECT_TYPE_ANIME,
 )
 from ._archive import bangumi_archive
 from ._wiki_parser import parse_infobox
@@ -164,6 +166,8 @@ class ArchiveStore:
         - Archive 的 infobox 是原始 wiki 串，与 API 一致
         - tags/score/score_details/meta_tags 在 Archive 中是 JSON 字符串，这里反序列化为 list/dict
         - date 字段对应 API 的 date
+        - eps 不取自 subject 表（该表不承载），由 infobox 补全，
+          动画条目取「话数」、三次元条目取「集数」
         """
         conn = self._get_connection()
         if conn is None:
@@ -181,7 +185,9 @@ class ArchiveStore:
             row = conn.execute(sql, params).fetchone()
             if row is None:
                 return None
-            return self._adapt_subject_row(dict(row))
+            subject = self._adapt_subject_row(dict(row))
+            self._synthesize_eps_field(subject)
+            return subject
         except sqlite3.Error as e:
             logger.warning(f"bangumi_archive get_subject 失败: {e}")
             return None
@@ -621,6 +627,44 @@ class ArchiveStore:
         # 已是 list/dict 的异常情况保持原样
 
         return row
+
+    @staticmethod
+    def _infobox_int_field(infobox: list[dict[str, Any]], key: str) -> int:
+        """取 infobox 指定键的开头整数
+
+        真实 wiki 中存在带说明的写法（如 ``13話+特別編``、``4(正篇,暂定)+1(2.5话)``），
+        API 取开头整数；值以 bullet list 书写时 ``infobox`` 的值为列表
+        （如 ``|话数= *195``），先合并各项再取整数；键缺失或无法解析时记 0。
+        """
+        for item in infobox:
+            if item.get("key") != key:
+                continue
+            value = item.get("value")
+            if isinstance(value, list):
+                value = " ".join(
+                    str(entry.get("v", ""))
+                    for entry in value
+                    if isinstance(entry, dict)
+                )
+            token = str(value).strip() if isinstance(value, str) else ""
+            match = re.match(r"\d+", token)
+            return int(match.group()) if match else 0
+        return 0
+
+    @classmethod
+    def _synthesize_eps_field(cls, subject: dict[str, Any]) -> None:
+        """为 Archive subject 补全总集数 eps 字段
+
+        Archive 的 subject 表不承载 eps，该值在 API 侧取自条目 infobox，而
+        Archive 同样导出原始 infobox，故在此按同一来源补全。两类条目记载集数的
+        infobox 键不同，与 wiki 模板一致：动画模板以「话数」记载，三次元模板以
+        「集数」记载。故按条目类型取键——动画取「话数」、三次元取「集数」——
+        键缺失或无法解析时记 0，与 API 对未定集数记 0 一致。依赖总集数的
+        调用方因此无需绕过 Archive 访问 API。
+        """
+        infobox = subject.get("infobox") or []
+        key = "话数" if subject.get("type") == SUBJECT_TYPE_ANIME else "集数"
+        subject["eps"] = cls._infobox_int_field(infobox, key)
 
     @staticmethod
     def _adapt_episode_row(row: dict[str, Any]) -> dict[str, Any]:
