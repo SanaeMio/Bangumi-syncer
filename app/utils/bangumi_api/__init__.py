@@ -217,7 +217,7 @@ class BangumiApi(
         )
         # 请求成功即清除不可达标记
         self.mark_api_reachable()
-        return self._check_auth_error(res)
+        return self._validate_response(res)
 
     def post(
         self,
@@ -232,7 +232,7 @@ class BangumiApi(
             "POST", self.req, f"{self.host}/{path}", json=_json, params=params
         )
         self.mark_api_reachable()
-        return self._check_auth_error(res)
+        return self._validate_response(res)
 
     def put(
         self,
@@ -244,7 +244,7 @@ class BangumiApi(
             "PUT", self.req, f"{self.host}/{path}", json=_json, params=params
         )
         self.mark_api_reachable()
-        return self._check_auth_error(res)
+        return self._validate_response(res)
 
     def patch(
         self,
@@ -256,7 +256,7 @@ class BangumiApi(
             "PATCH", self.req, f"{self.host}/{path}", json=_json, params=params
         )
         self.mark_api_reachable()
-        return self._check_auth_error(res)
+        return self._validate_response(res)
 
     def close(self) -> None:
         """关闭底层 httpx.Client，释放连接池资源
