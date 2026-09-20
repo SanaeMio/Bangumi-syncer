@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from app.utils.bangumi_api import BangumiApi
+from app.utils.bangumi_api.collection import _PendingSyncQueued
 
 
 class TestBangumiApi:
@@ -496,6 +497,86 @@ class TestHttpMethods:
         with patch.object(api, "_request_with_retry", return_value=mock_resp):
             result = api.patch("test/path", _json={"key": "val"})
             assert result == mock_resp
+
+
+class TestUpstreamErrorPage:
+    """上游网关以 2xx 返回错误页（响应体非 JSON）的识别"""
+
+    @staticmethod
+    def _resp(status=200, content_type=None, content=b"", method="GET"):
+        headers = {}
+        if content_type is not None:
+            headers["content-type"] = content_type
+        return httpx.Response(
+            status,
+            headers=headers,
+            content=content,
+            request=httpx.Request(method, "https://api.bgm.tv/v0/test"),
+        )
+
+    def test_html_error_page_with_200_raises(self):
+        """网关以 200 返回 HTML 错误页时按网关故障抛出，避免被当作成功"""
+        api = BangumiApi()
+        res = self._resp(
+            200,
+            "text/html; charset=utf-8",
+            b"<html><head><title>502 Bad Gateway</title></head></html>",
+        )
+        with pytest.raises(httpx.HTTPStatusError) as exc:
+            api._validate_response(res)
+        # 以等价的 502 抛出，让既有服务端不可用降级链路（入队待补发）接管
+        assert exc.value.response.status_code == 502
+
+    def test_json_response_passes(self):
+        api = BangumiApi()
+        res = self._resp(200, "application/json; charset=utf-8", b'{"type": 3}')
+        assert api._validate_response(res) is res
+
+    def test_no_content_status_passes(self):
+        api = BangumiApi()
+        res = self._resp(204)
+        assert api._validate_response(res) is res
+
+    def test_text_type_with_empty_body_passes(self):
+        api = BangumiApi()
+        res = self._resp(200, "text/html; charset=utf-8", b"")
+        assert api._validate_response(res) is res
+
+    def test_missing_content_type_passes(self):
+        """未声明内容类型时无法判定，跳过校验避免误判合法响应"""
+        api = BangumiApi()
+        res = self._resp(200, None, b"{}")
+        assert api._validate_response(res) is res
+
+    def test_auth_error_not_affected(self):
+        """错误状态码仍由认证检查处理，不重复判定"""
+        api = BangumiApi()
+        res = self._resp(401, "application/json", b'{"error": "unauthorized"}')
+        with pytest.raises(ValueError):
+            api._validate_response(res)
+
+    def test_write_verb_detects_error_page(self):
+        """写操作（PUT 标记）返回错误页时同样抛出，覆盖实际故障路径"""
+        api = BangumiApi()
+        res = self._resp(
+            200, "text/html; charset=utf-8", b"<html>502 Bad Gateway</html>", "PUT"
+        )
+        with patch.object(api, "_request_with_retry", return_value=res):
+            with pytest.raises(httpx.HTTPStatusError):
+                api.put("collections/-/episodes/1", _json={"type": 2})
+
+    def test_mark_episode_watched_queues_on_error_page(self):
+        """网关错误页场景下标记入队待补发，避免以成功状态掩盖失败"""
+        api = BangumiApi(username="621538", access_token="t")
+        res = self._resp(
+            200,
+            "text/html; charset=utf-8",
+            b"<html><title>502 Bad Gateway</title></html>",
+        )
+        with patch.object(type(api), "_request_with_retry", return_value=res):
+            with pytest.raises(_PendingSyncQueued) as exc:
+                api.mark_episode_watched(552533, 1696996)
+        assert exc.value.reason == "http_502"
 
 
 class TestSearchMethods:
