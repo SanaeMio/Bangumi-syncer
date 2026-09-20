@@ -203,6 +203,8 @@ async def summary_job_memory_stats(name: str, _=Depends(get_current_user_flexibl
     task_id = f"summary-{decoded}"
 
     rows = database_manager.memory.get_recent("summary", task_id, limit=1000)
+    # 摘要失败占位行（summary=""）只承载消费标记，不计入统计与注入估算（B1 读取侧适配）
+    rows = [e for e in rows if e.summary]
     total_count = len(rows)
     total_chars = sum(len(e.summary) for e in rows)
     avg_chars = round(total_chars / total_count) if total_count else 0

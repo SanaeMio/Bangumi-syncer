@@ -1015,6 +1015,89 @@ class TestExecuteJob:
         assert "（无记录）" in user_content
 
     @pytest.mark.asyncio
+    async def test_placeholder_row_prevents_rerun_of_consumed_records(
+        self, temp_dir, reset_singletons
+    ):
+        """T2 端到端防重跑：第一次执行摘要提取失败 → 写占位行 + 消费标记；
+        第二次执行同窗口 → 这批记录被消费排除（不再进 LLM prompt）。"""
+        db = _temp_db(temp_dir)
+        svc = SummaryService()
+        svc.memory = MemoryService(
+            db.memory
+        )  # 真实 extractor（不 mock extract_and_store）
+        config = _make_config(memory_limit=5, lookback_days=7)
+
+        # 真实记录入库（第二次执行走真实 _query_records → 回填消费标记）
+        db.log_sync_record(
+            user_name="dad",
+            title="葬送的芙莉莲",
+            ori_title=None,
+            season=1,
+            episode=10,
+            bgm_title="葬送的芙莉莲",
+        )
+        db.log_sync_record(
+            user_name="dad",
+            title="鬼灭之刃",
+            ori_title=None,
+            season=3,
+            episode=5,
+            bgm_title="",
+        )
+
+        # 主总结成功；摘要提取 LLM 失败 → 触发占位行
+        failing_summary_client = MagicMock()
+        failing_summary_client.chat = AsyncMock(
+            side_effect=RuntimeError("summary llm down")
+        )
+        _llm_patch, _mock_client = self._patch_llm(_mock_chat_response("主总结正文"))
+
+        with (
+            patch("app.services.summary.service.database_manager", db),
+            _llm_patch,
+            patch(
+                "app.services.memory.extractor.get_llm_client",
+                return_value=failing_summary_client,
+            ),
+            patch("app.services.summary.service.notification_service"),
+        ):
+            await svc.execute_job(config)
+
+        # 占位行已写入（summary 空、outcome 标记失败来源）
+        entries = db.memory.get_recent("summary", "summary-test_job", limit=10)
+        assert len(entries) == 1
+        assert entries[0].summary == ""
+        assert entries[0].outcome == "summary_failed"
+        run_id = entries[0].run_id
+
+        # 消费标记已写入（真实查询回填 consumed_run_ids）
+        rows = db.get_records_in_date_range(
+            date_from=(datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d"),
+            date_to=datetime.now().strftime("%Y-%m-%d"),
+            include_consumed=True,
+        )
+        assert rows
+        assert all(r["consumed_run_ids"] == {run_id} for r in rows)
+
+        # 第二次执行：真实 _query_records（含消费回填）→ 这批记录被排除
+        _llm_patch2, mock_client2 = self._patch_llm(_mock_chat_response("第二次总结"))
+        with (
+            patch("app.services.summary.service.database_manager", db),
+            _llm_patch2,
+            patch(
+                "app.services.memory.extractor.get_llm_client",
+                return_value=failing_summary_client,
+            ),
+            patch("app.services.summary.service.notification_service"),
+        ):
+            await svc.execute_job(config)
+
+        user_content = mock_client2.chat.call_args.args[0][1].content
+        assert "葬送的芙莉莲" not in user_content
+        assert "鬼灭之刃" not in user_content
+        assert "（无记录）" in user_content
+
+    @pytest.mark.asyncio
     async def test_related_titles_from_today_records(self, temp_dir, reset_singletons):
         """related_limit>0：titles = 今日明细 bgm_title 去重（空值过滤，全量不截前 5）。"""
         svc, _ = self._svc_with_real_memory(temp_dir)
@@ -1136,6 +1219,71 @@ class TestRelatedInjection:
         assert "- [同剧历史] 上一季芙莉莲" in ctx  # related 冠前缀
         assert ctx.count("芙莉莲近况") == 1  # 双路径命中按 run_id 去重
         mock_memory.recent.assert_called_once()
+        mock_memory.related.assert_called_once()
+
+
+class TestMemoryContextSkipsPlaceholder:
+    """T2：摘要失败占位行（summary=""）不得进入提示词注入（recent 与 related 两路径）。"""
+
+    def test_placeholder_skipped_in_recent(self):
+        """recent 返回 [正常行, 占位行] → 注入文本只含正常摘要，无空条目。"""
+        svc = SummaryService()
+        mock_memory = MagicMock()
+        mock_memory.recent.return_value = [
+            MemoryEntry(
+                run_id="r-ok",
+                summary="昨日看了芙莉莲",
+                task_type="summary",
+                task_id="summary-test_job",
+            ),
+            MemoryEntry(
+                run_id="r-placeholder",
+                summary="",
+                outcome="summary_failed",
+                task_type="summary",
+                task_id="summary-test_job",
+            ),
+        ]
+        svc.memory = mock_memory
+
+        ctx = svc._build_memory_context(
+            _make_config(memory_limit=5), "summary-test_job", [_summary_record()]
+        )
+
+        assert ctx == "- 昨日看了芙莉莲"  # 占位行被完全跳过（无裸 "- " 条目）
+        mock_memory.recent.assert_called_once_with(
+            "summary", "summary-test_job", limit=5
+        )
+
+    def test_placeholder_skipped_in_related(self):
+        """related 返回占位行 → 跳过；正常同剧历史冠 [同剧历史] 前缀保留。"""
+        svc = SummaryService()
+        mock_memory = MagicMock()
+        mock_memory.recent.return_value = []
+        mock_memory.related.return_value = [
+            MemoryEntry(
+                run_id="r-old",
+                summary="上一季芙莉莲",
+                task_type="summary",
+                task_id="summary-test_job",
+            ),
+            MemoryEntry(
+                run_id="r-placeholder",
+                summary="",
+                outcome="summary_failed",
+                task_type="summary",
+                task_id="summary-test_job",
+            ),
+        ]
+        svc.memory = mock_memory
+
+        ctx = svc._build_memory_context(
+            _make_config(memory_limit=5, related_limit=3),
+            "summary-test_job",
+            [_summary_record(bgm_title="葬送的芙莉莲")],
+        )
+
+        assert ctx == "- [同剧历史] 上一季芙莉莲"
         mock_memory.related.assert_called_once()
 
 
@@ -1262,6 +1410,42 @@ class TestIncrementalWindow:
             mock_db.get_records_in_date_range.call_args.kwargs["date_from"]
             == "2026-07-11"
         )
+
+    def test_placeholder_row_serves_as_incremental_start(
+        self, temp_dir, reset_singletons
+    ):
+        """T2：最近一条是摘要失败占位行（summary=""）时，增量窗口起点仍取它的
+        created_at 日期——占位行是有效的"上次总结点"，不得因空摘要被跳过导致窗口回退。"""
+        svc, db = self._svc(temp_dir)
+        with (
+            patch.object(
+                svc.memory,
+                "recent",
+                return_value=[
+                    MemoryEntry(
+                        task_type="summary",
+                        task_id="summary-test_job",
+                        run_id="run-placeholder",
+                        summary="",
+                        outcome="summary_failed",
+                        created_at="2026-07-10 21:00:00",
+                    )
+                ],
+            ) as mock_recent,
+            patch(
+                "app.services.summary.service._utc_to_local_date",
+                partial(_utc_to_local_date, tz=timezone.utc),
+            ),
+        ):
+            config = _make_config(memory_limit=5, lookback_days=7)
+            with patch("app.services.summary.service.database_manager") as mock_db:
+                mock_db.get_records_in_date_range.return_value = []
+                records, date_from, date_to = svc._query_records(
+                    config, incremental=True
+                )
+
+        assert date_from == "2026-07-10"  # 占位行起点生效，非 lookback
+        mock_recent.assert_called_once_with("summary", "summary-test_job", limit=1)
 
     def test_invalid_created_at_falls_back_to_lookback(
         self, temp_dir, reset_singletons

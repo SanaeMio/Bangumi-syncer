@@ -198,6 +198,10 @@ class SummaryService:
 
         lines = []
         for e, is_related in merged:
+            # 摘要失败占位行（summary=""）不注入：它只用于承载消费标记，
+            # 注入会产生裸 "- " 空条目（B1 读取侧适配）
+            if not e.summary:
+                continue
             prefix = "[同剧历史] " if is_related else ""
             lines.append(f"- {prefix}{e.summary}")
         return "\n".join(lines)

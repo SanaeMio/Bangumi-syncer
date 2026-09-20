@@ -1887,6 +1887,43 @@ class TestMemoryStatsApi:
         assert data["injected_estimate_tokens"] == 141
 
     @pytest.mark.asyncio
+    async def test_stats_excludes_placeholder_rows(self):
+        """T2：摘要失败占位行（summary=""）不计入 total_count/chars/avg 与注入估算。"""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.models.memory import MemoryEntry
+
+        app = _make_summary_app()
+        entries = [
+            MemoryEntry(run_id="r-ok", summary="有效摘要" * 10),  # 40 字
+            MemoryEntry(
+                run_id="r-placeholder", summary="", outcome="summary_failed"
+            ),  # 占位行
+        ]
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch(
+                    "app.api.summary_jobs.database_manager.memory.get_recent",
+                    return_value=entries,
+                ),
+            ):
+                mock_cm.get_summary_configs.return_value = [
+                    {"name": "daily", "memory_limit": "5", "related_limit": "0"}
+                ]
+                response = await client.get("/api/summary/jobs/daily/memory-stats")
+
+        data = response.json()["data"]
+        assert data["total_count"] == 1  # 只统计有效行
+        assert data["total_chars"] == 40
+        assert data["avg_chars"] == 40
+        # (min(1,5)+0) × 40 × 0.7 = 28
+        assert data["injected_estimate_tokens"] == 28
+
+    @pytest.mark.asyncio
     async def test_stats_missing_job_404(self):
         from httpx import ASGITransport, AsyncClient
 
