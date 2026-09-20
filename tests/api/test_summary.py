@@ -1227,7 +1227,7 @@ class TestDeleteSummaryJob:
             base_url="http://test",
         ) as client:
             with (
-                patch("app.api.summary_jobs.config_manager"),
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
                 patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
                 patch("app.api.summary_jobs.memory_service") as mock_memory,
             ):
@@ -1238,6 +1238,69 @@ class TestDeleteSummaryJob:
                 assert (
                     response.json()["detail"]
                     == "删除任务失败：记忆清理异常，请稍后重试"
+                )
+                # 顺序前置证据：clear 失败时配置尚未删除，任务仍可寻址重试
+                mock_cm.delete_summary_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_retry_self_heals_after_clear_failure(self):
+        """首次 clear 失败 → 500；重试 clear 成功 → 配置删除、200（幂等自愈）。
+
+        顺序前置（clear → delete_config）保证失败时旧配置仍在，用户重试即可收敛。
+        """
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                # 第一次 clear 抛异常，第二次成功
+                mock_memory.clear_task.side_effect = [RuntimeError("db down"), None]
+
+                first = await client.delete("/api/summary/jobs/Dad%20Summary")
+                assert first.status_code == 500
+                mock_cm.delete_summary_config.assert_not_called()
+
+                second = await client.delete("/api/summary/jobs/Dad%20Summary")
+                assert second.status_code == 200
+                assert second.json()["status"] == "success"
+                mock_cm.delete_summary_config.assert_called_once_with("Dad Summary")
+
+    @pytest.mark.asyncio
+    async def test_delete_clears_memory_before_deleting_config(self):
+        """成功路径顺序：clear_task 先于 delete_summary_config（旧名保持可寻址）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                # 把 memory_service.clear_task 挂到 config_manager 上以统一记录调用顺序
+                mock_cm.attach_mock(mock_memory.clear_task, "clear_task")
+
+                response = await client.delete("/api/summary/jobs/Dad%20Summary")
+                assert response.status_code == 200
+
+                call_names = [c[0] for c in mock_cm.mock_calls]
+                assert "clear_task" in call_names
+                assert "delete_summary_config" in call_names
+                assert call_names.index("clear_task") < call_names.index(
+                    "delete_summary_config"
                 )
 
 
@@ -1836,6 +1899,45 @@ class TestRenameMemoryLinkage:
                     response.json()["detail"]
                     == "任务改名失败：记忆迁移异常，请稍后重试"
                 )
+                # 顺序前置证据：rename 失败时旧名配置仍在，任务仍可寻址重试
+                mock_cm.rename_notification_type.assert_not_called()
+                mock_cm.save_summary_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rename_migrates_memory_before_config_rename(self):
+        """成功路径顺序：rename_task 先于 rename_notification_type（旧名保持可寻址）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_sched,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_sched.apply_config_after_save = AsyncMock()
+                mock_cm.attach_mock(mock_memory.rename_task, "rename_task")
+
+                response = await client.put(
+                    "/api/summary/jobs/daily",
+                    json={"name": "daily2"},
+                )
+                assert response.status_code == 200
+
+                call_names = [c[0] for c in mock_cm.mock_calls]
+                assert "rename_task" in call_names
+                assert "rename_notification_type" in call_names
+                assert call_names.index("rename_task") < call_names.index(
+                    "rename_notification_type"
+                )
+                # 配置改名仍在 save_summary_config 之前
+                assert call_names.index("rename_notification_type") < call_names.index(
+                    "save_summary_config"
+                )
 
     @pytest.mark.asyncio
     async def test_rename_same_name_no_migration(self):
@@ -1859,6 +1961,161 @@ class TestRenameMemoryLinkage:
                     json={"cron": "0 8 * * *"},
                 )
                 mock_memory.rename_task.assert_not_called()
+
+
+class TestSummaryJobRuntimeSyncDegradation:
+    """持久层成功后，运行时同步（reload/apply）失败只降级为日志，接口仍 200。
+
+    持久层（ini/SQLite）已经成功，内存重载/调度器同步失败不应误报 500——
+    否则用户会误以为操作失败而重试，而重试寻址已失效（配置已删/已改名）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_returns_200_when_reload_fails(self):
+        """DELETE：reload_config 抛异常 → 仍 200，配置已删除。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+                patch("app.api.summary_jobs.memory_service"),
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                mock_cm.reload_config.side_effect = RuntimeError("reload boom")
+                response = await client.delete("/api/summary/jobs/Dad%20Summary")
+                assert response.status_code == 200
+                assert response.json()["status"] == "success"
+                mock_cm.delete_summary_config.assert_called_once_with("Dad Summary")
+
+    @pytest.mark.asyncio
+    async def test_delete_returns_200_when_apply_fails(self):
+        """DELETE：apply_config_after_save 抛异常 → 仍 200。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+                patch("app.api.summary_jobs.memory_service"),
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock(
+                    side_effect=RuntimeError("apply boom")
+                )
+                response = await client.delete("/api/summary/jobs/Dad%20Summary")
+                assert response.status_code == 200
+                assert response.json()["status"] == "success"
+                mock_cm.delete_summary_config.assert_called_once_with("Dad Summary")
+
+    @pytest.mark.asyncio
+    async def test_update_returns_200_when_reload_fails(self):
+        """PUT：reload_config 抛异常 → 仍 200，配置已保存。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                mock_cm.reload_config.side_effect = RuntimeError("reload boom")
+                response = await client.put(
+                    "/api/summary/jobs/daily", json={"cron": "0 8 * * *"}
+                )
+                assert response.status_code == 200
+                assert response.json()["status"] == "success"
+                mock_cm.save_summary_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_returns_200_when_apply_fails(self):
+        """PUT：apply_config_after_save 抛异常 → 仍 200。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_scheduler.apply_config_after_save = AsyncMock(
+                    side_effect=RuntimeError("apply boom")
+                )
+                response = await client.put(
+                    "/api/summary/jobs/daily", json={"cron": "0 8 * * *"}
+                )
+                assert response.status_code == 200
+                assert response.json()["status"] == "success"
+                mock_cm.save_summary_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_returns_200_when_reload_fails(self):
+        """POST：reload_config 抛异常 → 仍 200，配置已保存。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                mock_cm.reload_config.side_effect = RuntimeError("reload boom")
+                response = await client.post(
+                    "/api/summary/jobs", json={"name": "New Job"}
+                )
+                assert response.status_code == 200
+                assert response.json()["status"] == "success"
+                mock_cm.save_summary_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_returns_200_when_apply_fails(self):
+        """POST：apply_config_after_save 抛异常 → 仍 200。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock(
+                    side_effect=RuntimeError("apply boom")
+                )
+                response = await client.post(
+                    "/api/summary/jobs", json={"name": "New Job"}
+                )
+                assert response.status_code == 200
+                assert response.json()["status"] == "success"
+                mock_cm.save_summary_config.assert_called_once()
 
 
 class TestMemoryStatsApi:
