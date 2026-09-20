@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
 from uuid import uuid4
 
 from app.core.database import database_manager
@@ -26,6 +26,29 @@ _STAGE_QUERY = "query"  # 查询明细 + 注入记忆 + 构建消息
 _STAGE_CHAT = "chat"  # LLM 调用
 _STAGE_STORE = "store"  # 记忆写入（含消费标记）
 _STAGE_NOTIFY = "notify"  # 通知投递
+
+
+def _utc_to_local_date(created_at: str, tz: tzinfo | None = None) -> str | None:
+    """把 agent_working_memory.created_at（SQLite datetime('now')，UTC）转成本地日期。
+
+    ``created_at`` 形如 "YYYY-MM-DD HH:MM:SS"（按 UTC 解释）；``tz`` 为目标时区，
+    None 表示系统本地时区。返回 "YYYY-MM-DD"；空值或格式非法时返回 None，
+    由调用方回退 lookback_days，避免 date_from 变成非法/倒置的窗口。
+    """
+    if not created_at:
+        return None
+    try:
+        dt_utc = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        # 防御分支：脏数据格式异常，记录后可观测，由调用方回退 lookback
+        logger.warning(
+            f"Unparsable agent memory created_at, fallback to lookback: {created_at!r}"
+        )
+        return None
+    return dt_utc.astimezone(tz).strftime("%Y-%m-%d")
+
 
 _STAGE_FAILURE_META = {
     _STAGE_QUERY: {
@@ -72,8 +95,9 @@ class SummaryService:
 
         增量窗口（incremental=True，execute_job 使用）：记忆开启
         （memory_limit>0）且本任务存在历史记忆时，date_from = 本任务最后一条
-        记忆的 created_at 日期（只总结上次总结点之后的增量记录）；无历史记忆
-        或 preview（generate_summary，incremental=False）时回退 lookback_days。
+        记忆的 created_at（UTC）转本地时区的日期（只总结上次总结点之后的增量
+        记录）；无历史记忆、created_at 无法解析或 preview（generate_summary，
+        incremental=False）时回退 lookback_days。
         """
         now = datetime.now()
         date_to = now.strftime("%Y-%m-%d")
@@ -86,10 +110,10 @@ class SummaryService:
             task_id = f"summary-{job_config.name}"
             last = self.memory.recent("summary", task_id, limit=1)
             if last and last[0].created_at:
-                # "YYYY-MM-DD HH:MM:SS" → 日期；长度不足（异常格式）时跳过
-                # 保持 lookback 默认，避免 date_from 变非法字符串
-                last_date = last[0].created_at[:10]
-                if len(last_date) == 10:
+                # created_at 是 SQLite 的 UTC 时间，须转本地日期后再与本地
+                # timestamp/date_to 对齐；转换失败（None）保持 lookback 默认
+                last_date = _utc_to_local_date(last[0].created_at)
+                if last_date:
                     date_from = last_date
 
         # 查询记录（仅记忆开启时携带消费标记做排除，避免无条件加重查询）

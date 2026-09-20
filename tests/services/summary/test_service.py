@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from functools import partial
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,7 +12,7 @@ from app.models.memory import MemoryEntry
 from app.services.llm.models import ChatResponse, Usage
 from app.services.memory.service import MemoryService
 from app.services.summary.models import SummaryJobConfig, SummaryRecord
-from app.services.summary.service import SummaryService
+from app.services.summary.service import SummaryService, _utc_to_local_date
 
 # ── helpers ────────────────────────────────────────────────────────────
 
@@ -1138,6 +1139,43 @@ class TestRelatedInjection:
         mock_memory.related.assert_called_once()
 
 
+class TestUTCToLocalDate:
+    """`_utc_to_local_date`：SQLite datetime('now') 的 UTC 时间串 → 指定时区日期。
+
+    显式注入 tz，避免断言随运行环境系统时区（CI=UTC、开发机可能 UTC+8）漂移。
+    """
+
+    def test_utc_to_local_date_utc_plus8_crosses_day(self):
+        """UTC 16:30 + UTC+8 → 次日（跨日）。"""
+        result = _utc_to_local_date(
+            "2026-07-10 16:30:00", tz=timezone(timedelta(hours=8))
+        )
+        assert result == "2026-07-11"
+
+    def test_utc_to_local_date_utc_plus8_same_day(self):
+        """UTC 02:00 + UTC+8 → 同日。"""
+        result = _utc_to_local_date(
+            "2026-07-10 02:00:00", tz=timezone(timedelta(hours=8))
+        )
+        assert result == "2026-07-10"
+
+    def test_utc_to_local_date_utc_minus8_no_inversion(self):
+        """UTC 2026-07-11 04:00 + UTC-8 → 2026-07-10（西半球不产生未来日期）。"""
+        result = _utc_to_local_date(
+            "2026-07-11 04:00:00", tz=timezone(timedelta(hours=-8))
+        )
+        assert result == "2026-07-10"
+
+    def test_utc_to_local_date_empty_returns_none(self):
+        """空字符串 → None（调用方据此回退 lookback）。"""
+        assert _utc_to_local_date("", tz=timezone.utc) is None
+
+    def test_utc_to_local_date_invalid_format_returns_none(self):
+        """非法格式 → None 且不抛异常。"""
+        assert _utc_to_local_date("not-a-date", tz=timezone.utc) is None
+        assert _utc_to_local_date("2026-07-10", tz=timezone.utc) is None
+
+
 class TestIncrementalWindow:
     """T3 增量窗口：记忆开启时 date_from = 上次总结点（本任务最后一条记忆的
     created_at 日期）；无历史记忆时回退 lookback_days。"""
@@ -1149,10 +1187,87 @@ class TestIncrementalWindow:
         return svc, db
 
     def test_memory_enabled_uses_last_summary_date(self, temp_dir, reset_singletons):
-        """记忆开启 + 有历史记忆 → date_from = 最后一条记忆的日期（非 lookback）。"""
+        """记忆开启 + 有历史记忆 → date_from = 最后一条记忆的日期（非 lookback）。
+
+        显式注入 UTC 时区，使 created_at（UTC）→ 日期断言与运行环境系统时区无关。
+        """
         svc, db = self._svc(temp_dir)
-        # store_and_mark 的 INSERT 不含 created_at（DB 默认当前时间），
+        # store_and_mark 的 INSERT 不含 created_at（DB 默认 UTC 当前时间），
         # 故用 patch memory.recent 模拟"上次总结点在 2026-07-10"
+        with (
+            patch.object(
+                svc.memory,
+                "recent",
+                return_value=[
+                    MemoryEntry(
+                        task_type="summary",
+                        task_id="summary-test_job",
+                        run_id="run-1",
+                        summary="昨日总结",
+                        created_at="2026-07-10 21:00:00",
+                    )
+                ],
+            ),
+            patch(
+                "app.services.summary.service._utc_to_local_date",
+                partial(_utc_to_local_date, tz=timezone.utc),
+            ),
+        ):
+            config = _make_config(memory_limit=5, lookback_days=7)
+            with patch("app.services.summary.service.database_manager") as mock_db:
+                mock_db.get_records_in_date_range.return_value = []
+                records, date_from, date_to = svc._query_records(
+                    config, incremental=True
+                )
+
+        # 窗口起点 = 上次总结日期（UTC 下即 created_at 日期），而非 now-7
+        assert date_from == "2026-07-10"
+        mock_db.get_records_in_date_range.assert_called_once()
+        assert (
+            mock_db.get_records_in_date_range.call_args.kwargs["date_from"]
+            == "2026-07-10"
+        )
+
+    def test_memory_enabled_utc_plus8_crosses_day(self, temp_dir, reset_singletons):
+        """集成：注入 UTC+8 → created_at 16:30 转出次日，date_from 用转换结果。"""
+        svc, db = self._svc(temp_dir)
+        with (
+            patch.object(
+                svc.memory,
+                "recent",
+                return_value=[
+                    MemoryEntry(
+                        task_type="summary",
+                        task_id="summary-test_job",
+                        run_id="run-1",
+                        summary="昨日总结",
+                        created_at="2026-07-10 16:30:00",
+                    )
+                ],
+            ),
+            patch(
+                "app.services.summary.service._utc_to_local_date",
+                partial(_utc_to_local_date, tz=timezone(timedelta(hours=8))),
+            ),
+        ):
+            config = _make_config(memory_limit=5, lookback_days=7)
+            with patch("app.services.summary.service.database_manager") as mock_db:
+                mock_db.get_records_in_date_range.return_value = []
+                records, date_from, date_to = svc._query_records(
+                    config, incremental=True
+                )
+
+        assert date_from == "2026-07-11"
+        assert (
+            mock_db.get_records_in_date_range.call_args.kwargs["date_from"]
+            == "2026-07-11"
+        )
+
+    def test_invalid_created_at_falls_back_to_lookback(
+        self, temp_dir, reset_singletons
+    ):
+        """created_at 非法 → 转换返回 None，回退 lookback_days 且不抛异常。"""
+        svc, db = self._svc(temp_dir)
         with patch.object(
             svc.memory,
             "recent",
@@ -1161,8 +1276,8 @@ class TestIncrementalWindow:
                     task_type="summary",
                     task_id="summary-test_job",
                     run_id="run-1",
-                    summary="昨日总结",
-                    created_at="2026-07-10 21:00:00",
+                    summary="脏数据",
+                    created_at="not-a-date",
                 )
             ],
         ):
@@ -1173,13 +1288,34 @@ class TestIncrementalWindow:
                     config, incremental=True
                 )
 
-        # 窗口起点 = 上次总结日期，而非 now-7
-        assert date_from == "2026-07-10"
-        mock_db.get_records_in_date_range.assert_called_once()
-        assert (
-            mock_db.get_records_in_date_range.call_args.kwargs["date_from"]
-            == "2026-07-10"
-        )
+        expected = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        assert date_from == expected
+
+    def test_empty_created_at_falls_back_to_lookback(self, temp_dir, reset_singletons):
+        """created_at 为空 → 回退 lookback_days，不抛异常。"""
+        svc, db = self._svc(temp_dir)
+        with patch.object(
+            svc.memory,
+            "recent",
+            return_value=[
+                MemoryEntry(
+                    task_type="summary",
+                    task_id="summary-test_job",
+                    run_id="run-1",
+                    summary="空时间",
+                    created_at="",
+                )
+            ],
+        ):
+            config = _make_config(memory_limit=5, lookback_days=7)
+            with patch("app.services.summary.service.database_manager") as mock_db:
+                mock_db.get_records_in_date_range.return_value = []
+                records, date_from, date_to = svc._query_records(
+                    config, incremental=True
+                )
+
+        expected = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        assert date_from == expected
 
     def test_no_memory_falls_back_to_lookback(self, temp_dir, reset_singletons):
         """记忆开启但无历史 → date_from 回退 lookback_days（incremental 分支）。"""
