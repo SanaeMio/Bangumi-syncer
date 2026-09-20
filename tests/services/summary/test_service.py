@@ -1412,6 +1412,51 @@ class TestIncrementalWindow:
             == "2026-07-11"
         )
 
+    def test_future_created_at_clamps_window_to_single_day(
+        self, temp_dir, reset_singletons, capsys
+    ):
+        """防御：时钟回拨等异常使记忆 created_at 落在未来 → 增量起点晚于终点。
+
+        夹紧为单日窗口（date_from = date_to），查询仍正常调用且不抛异常，
+        并留下 warning 日志可观测（正常时钟下该分支不触发）。
+
+        注：项目 logger 为自定义实现（print 输出，非 stdlib logging），
+        故用 capsys 捕获，而非 caplog。
+        """
+        svc, db = self._svc(temp_dir)
+        with (
+            patch.object(
+                svc.memory,
+                "recent",
+                return_value=[
+                    MemoryEntry(
+                        task_type="summary",
+                        task_id="summary-test_job",
+                        run_id="run-future",
+                        summary="未来记忆",
+                        created_at="2099-12-31 12:00:00",
+                    )
+                ],
+            ),
+            patch(
+                "app.services.summary.service._utc_to_local_date",
+                partial(_utc_to_local_date, tz=timezone.utc),
+            ),
+        ):
+            config = _make_config(memory_limit=5, lookback_days=7)
+            with patch("app.services.summary.service.database_manager") as mock_db:
+                mock_db.get_records_in_date_range.return_value = []
+                records, date_from, date_to = svc._query_records(
+                    config, incremental=True
+                )
+
+        # 倒置区间被夹紧为单日：查询正常调用（非倒置）且不抛异常
+        assert date_from == date_to
+        mock_db.get_records_in_date_range.assert_called_once()
+        call_kwargs = mock_db.get_records_in_date_range.call_args.kwargs
+        assert call_kwargs["date_from"] == call_kwargs["date_to"]
+        assert "window inverted" in capsys.readouterr().out
+
     def test_placeholder_row_serves_as_incremental_start(
         self, temp_dir, reset_singletons
     ):

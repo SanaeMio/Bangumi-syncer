@@ -119,6 +119,15 @@ class SummaryService:
                 if last_date:
                     date_from = last_date
 
+        # 防御：时钟回拨等异常导致记忆 created_at 落在未来时，增量起点会晚于终点；
+        # 夹紧为单日窗口，避免倒置区间静默返回空结果
+        if date_from > date_to:
+            logger.warning(
+                "Incremental summary window inverted (clock skew?): "
+                f"date_from={date_from} > date_to={date_to}; clamped to {date_to}"
+            )
+            date_from = date_to
+
         # 查询记录（仅记忆开启时携带消费标记做排除，避免无条件加重查询）
         records = database_manager.get_records_in_date_range(
             date_from=date_from,
