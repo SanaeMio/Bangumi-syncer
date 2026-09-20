@@ -1215,6 +1215,31 @@ class TestDeleteSummaryJob:
                 mock_cm.reload_config.assert_called_once()
                 mock_scheduler.apply_config_after_save.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_delete_memory_clear_failure_returns_500(self):
+        """记忆清理异常 → 500（不得假成功：配置已删但记忆残留需用户重试）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager"),
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                mock_memory.clear_task.side_effect = RuntimeError("db down")
+                response = await client.delete("/api/summary/jobs/Dad%20Summary")
+                assert response.status_code == 500
+                assert (
+                    response.json()["detail"]
+                    == "删除任务失败：记忆清理异常，请稍后重试"
+                )
+
 
 class TestTestSummaryJob:
     """POST /api/summary/jobs/{id}/test 端点测试。"""
@@ -1707,6 +1732,7 @@ class TestClearMemoryApi:
                     "/api/summary/jobs/daily/clear-memory", json={"confirm": True}
                 )
                 assert response.status_code == 500
+                assert response.json()["detail"] == "清空任务记忆失败，请稍后重试"
 
 
 class TestRenameMemoryLinkage:
@@ -1734,6 +1760,35 @@ class TestRenameMemoryLinkage:
                 assert response.status_code == 200
                 mock_memory.rename_task.assert_called_once_with(
                     "summary", "summary-daily", "summary-daily2"
+                )
+
+    @pytest.mark.asyncio
+    async def test_rename_memory_failure_returns_500(self):
+        """记忆迁移异常 → 500（不得假成功：记忆未跟随改名需用户重试）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.memory_service") as mock_memory,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_sched,
+            ):
+                mock_cm.get_summary_configs.return_value = [{"name": "daily"}]
+                mock_sched.apply_config_after_save = AsyncMock()
+                mock_memory.rename_task.side_effect = RuntimeError("db down")
+                response = await client.put(
+                    "/api/summary/jobs/daily",
+                    json={"name": "daily2"},
+                )
+                assert response.status_code == 500
+                assert (
+                    response.json()["detail"]
+                    == "任务改名失败：记忆迁移异常，请稍后重试"
                 )
 
     @pytest.mark.asyncio

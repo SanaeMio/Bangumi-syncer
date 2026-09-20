@@ -656,6 +656,39 @@ class TestClearTask:
         assert recs[0]["consumed_run_ids"] == {"run-yearly"}
 
 
+# ── 清理/改名写库异常必须传播（不得静默返回 0）────────────────────────
+# 真实验证路径：底层 SQL 执行（execute）抛异常，经 _run_write 上传导给调用方。
+# 不 mock _run_write 本身，避免掩盖"是否传入 reraise=True"。
+
+
+class TestCleanupWriteFailurePropagation:
+    """clear_task / rename_task 的写库异常必须向上抛出，而非吞掉返回 0。
+
+    对照 store_and_mark（reraise=True）：清理/改名是对用户可见的破坏性操作，
+    失败必须让 API 返回 500，不能假成功。
+    """
+
+    def _drop_main_table(self, db) -> None:
+        """删掉主表，令后续 SQL execute 抛 sqlite3.OperationalError。"""
+        db._get_connection().execute("DROP TABLE agent_working_memory")
+
+    def test_clear_task_write_failure_propagates(self, temp_dir, reset_singletons):
+        """clear_task：底层 execute 抛异常 → 异常向上传播（不返回 0）。"""
+        db = _make_db(temp_dir)
+        self._drop_main_table(db)
+
+        with pytest.raises(sqlite3.OperationalError):
+            db.memory.clear_task("summary", "summary-daily")
+
+    def test_rename_task_write_failure_propagates(self, temp_dir, reset_singletons):
+        """rename_task：底层 execute 抛异常 → 异常向上传播（不返回 0）。"""
+        db = _make_db(temp_dir)
+        self._drop_main_table(db)
+
+        with pytest.raises(sqlite3.OperationalError):
+            db.memory.rename_task("summary", "summary-daily", "summary-daily2")
+
+
 # ── 同剧关联联表（S5/S6/S7：get_related_titles）─────────────────────
 
 

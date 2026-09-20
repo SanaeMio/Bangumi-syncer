@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..core.config import config_manager
 from ..core.database import database_manager
+from ..core.logging import logger
 from ..models.summary import (
     ClearMemoryRequest,
     SummaryJobCreate,
@@ -71,9 +72,17 @@ async def update_summary_job(
             new_type = f"watching_summary_{updates['name']}"
             config_manager.rename_notification_type(old_type, new_type)
             # 记忆跟随任务（与 rename_notification_type 同流程）
-            memory_service.rename_task(
-                "summary", f"summary-{decoded}", f"summary-{updates['name']}"
-            )
+            try:
+                memory_service.rename_task(
+                    "summary", f"summary-{decoded}", f"summary-{updates['name']}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"任务改名记忆迁移失败（{decoded}→{updates['name']}）: {e}"
+                )
+                raise HTTPException(
+                    500, "任务改名失败：记忆迁移异常，请稍后重试"
+                ) from e
     config_manager.save_summary_config(updates, old_name=decoded)
     config_manager.reload_config()
     await summary_scheduler.apply_config_after_save()
@@ -86,7 +95,11 @@ async def delete_summary_job(name: str, _=Depends(get_current_user_flexible)):
     config_manager.delete_summary_config(decoded)
     # 清理该任务记忆（主表 + 归档 + 消费标记，同一事务）：
     # 避免孤儿记忆行与悬挂 consumed_run_id（重名重建 job 时产生虚假 overlap）。
-    memory_service.clear_task("summary", f"summary-{decoded}")
+    try:
+        memory_service.clear_task("summary", f"summary-{decoded}")
+    except Exception as e:
+        logger.error(f"删除任务时清理记忆失败（{decoded}）: {e}")
+        raise HTTPException(500, "删除任务失败：记忆清理异常，请稍后重试") from e
     config_manager.reload_config()
     await summary_scheduler.apply_config_after_save()
     return {"status": "success", "message": "摘要任务已删除"}
@@ -163,7 +176,11 @@ async def clear_summary_job_memory(
     _find_config(decoded)  # 任务不存在 404
     if not body.confirm:
         raise HTTPException(422, "必须携带 confirm=true 确认清空")
-    deleted = memory_service.clear_task("summary", f"summary-{decoded}")
+    try:
+        deleted = memory_service.clear_task("summary", f"summary-{decoded}")
+    except Exception as e:
+        logger.error(f"清空任务记忆失败（{decoded}）: {e}")
+        raise HTTPException(500, "清空任务记忆失败，请稍后重试") from e
     return {
         "status": "success",
         "message": "任务记忆已清空",
