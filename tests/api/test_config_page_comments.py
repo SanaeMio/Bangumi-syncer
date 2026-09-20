@@ -1,9 +1,10 @@
 """
-配置页注释悬浮化改造测试（LLM 卡片部分）
+配置页注释悬浮化改造测试
 
-目标：验证 config 页面 LLM 卡片中原本以 ``<small class="text-muted">`` 平铺的
-注释，全部改为 label/按钮旁的问号图标
-（``<i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" title="...">``）。
+目标：验证 config 页面中原本以 ``<small class="text-muted">`` 平铺的 8 处注释，
+全部改为 label/按钮旁的问号图标
+（``<i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" title="...">``），
+弹窗内图标需带 ``data-bs-container="body"``。
 
 参照：``templates/config/_bangumi_data.html`` 中"使用本地缓存"的写法。
 
@@ -68,6 +69,25 @@ def _find_tooltip_title(segment, key):
     return None
 
 
+# 问号图标 + tooltip + data-bs-container="body" + title（弹窗专用）
+MODAL_TOOLTIP_RE = re.compile(
+    r"<i\b"
+    r"(?=[^>]*\bbi-question-circle\b)"
+    r'(?=[^>]*data-bs-toggle="tooltip")'
+    r'(?=[^>]*data-bs-container="body")'
+    r'[^>]*?title="([^"]*)"',
+    re.DOTALL,
+)
+
+
+def _find_modal_tooltip_title(segment, key):
+    """在弹窗 segment 中查找同时带 data-bs-container 的问号 tooltip 图标。"""
+    for m in MODAL_TOOLTIP_RE.finditer(segment):
+        if key in m.group(1):
+            return m.group(1)
+    return None
+
+
 def _slice_between(text, start_marker, end_marker):
     """截取 text 中 start_marker 到 end_marker 之间的片段（不含 end_marker 本身）。"""
     s = text.index(start_marker)
@@ -111,6 +131,56 @@ def test_llm_card_title_comment_becomes_tooltip_icon():
 
 
 # ---------------------------------------------------------------------------
+# 追番总结弹窗：5 处图标（均须带 data-bs-container="body"）
+# ---------------------------------------------------------------------------
+
+
+def test_summary_max_records_comment_becomes_tooltip_icon():
+    """最大记录数 label 旁应出现问号图标，title 含原文注释。"""
+    _, _, modal = _fetch_config_html()
+    title = _find_modal_tooltip_title(modal, "-1 表示不限制条数")
+    assert title is not None, (
+        "最大记录数 label 旁应出现带 data-bs-container 的问号图标，title 含『-1 表示不限制条数』"
+    )
+
+
+def test_summary_memory_limit_comment_becomes_tooltip_icon():
+    """记忆条数 label 旁应出现问号图标，title 含原文注释。"""
+    _, _, modal = _fetch_config_html()
+    title = _find_modal_tooltip_title(modal, "0 = 关闭记忆")
+    assert title is not None, (
+        "记忆条数 label 旁应出现带 data-bs-container 的问号图标，title 含『0 = 关闭记忆』"
+    )
+
+
+def test_summary_related_limit_comment_becomes_tooltip_icon():
+    """同剧关联条数 label 旁应出现问号图标，title 含原文注释。"""
+    _, _, modal = _fetch_config_html()
+    title = _find_modal_tooltip_title(modal, "0 = 关闭；>0 = 按日期倒序")
+    assert title is not None, (
+        "同剧关联条数 label 旁应出现带 data-bs-container 的问号图标，title 含『0 = 关闭；>0 = 按日期倒序』"
+    )
+
+
+def test_summary_clear_memory_comment_becomes_tooltip_icon():
+    """清空记忆按钮旁应出现问号图标，title 含原文注释。"""
+    _, _, modal = _fetch_config_html()
+    title = _find_modal_tooltip_title(modal, "不可恢复，清空后从零开始")
+    assert title is not None, (
+        "清空记忆按钮旁应出现带 data-bs-container 的问号图标，title 含『不可恢复，清空后从零开始』"
+    )
+
+
+def test_summary_prompt_comment_becomes_tooltip_icon():
+    """系统提示词 label 旁应出现问号图标，title 含原文注释。"""
+    _, _, modal = _fetch_config_html()
+    title = _find_modal_tooltip_title(modal, "告诉LLM如何总结")
+    assert title is not None, (
+        "系统提示词 label 旁应出现带 data-bs-container 的问号图标，title 含『告诉LLM如何总结』"
+    )
+
+
+# ---------------------------------------------------------------------------
 # 原有 <small class="text-muted"> 平铺注释应被移除
 # ---------------------------------------------------------------------------
 
@@ -120,6 +190,49 @@ def test_llm_card_has_no_small_text_muted():
     _, llm, _ = _fetch_config_html()
     assert '<small class="text-muted">' not in llm, (
         'LLM 卡片内不应再出现 <small class="text-muted"> 平铺注释'
+    )
+
+
+def test_summary_modal_has_no_small_text_muted():
+    """追番总结弹窗片段内不应再出现 <small class="text-muted"> 平铺注释。"""
+    _, _, modal = _fetch_config_html()
+    assert '<small class="text-muted">' not in modal, (
+        '追番总结弹窗内不应再出现 <small class="text-muted"> 平铺注释'
+    )
+
+
+# ---------------------------------------------------------------------------
+# 弹窗内每个问号图标均须带 data-bs-container="body"
+# ---------------------------------------------------------------------------
+
+
+def test_summary_modal_all_tooltips_have_bs_container():
+    """弹窗内 tooltip 数量 == data-bs-container 数量，且应为 5 个。"""
+    _, _, modal = _fetch_config_html()
+    tooltip_count = modal.count('data-bs-toggle="tooltip"')
+    container_count = modal.count('data-bs-container="body"')
+    assert tooltip_count == container_count, (
+        '每个问号图标都应带 data-bs-container="body"，'
+        f"tooltip={tooltip_count} container={container_count}"
+    )
+    assert tooltip_count == 5, (
+        f"追番总结弹窗应有 5 个悬浮注释图标，实际 {tooltip_count}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 测试结果弹窗：预览与实跑差异提示
+# ---------------------------------------------------------------------------
+
+
+def test_summary_test_result_modal_has_preview_hint():
+    """测试结果弹窗应提示预览与定时执行结果可能不同（预览不启用增量窗口与记忆注入）。"""
+    text, _, _ = _fetch_config_html()
+    seg = _slice_between(
+        text, 'id="summaryTestResultModal"', 'id="notificationRuleModal"'
+    )
+    assert "预览不启用增量窗口与记忆注入" in seg, (
+        "测试结果弹窗应包含『预览不启用增量窗口与记忆注入』差异提示"
     )
 
 
@@ -133,3 +246,46 @@ def test_llm_api_key_field_has_no_tooltip():
     text, _, _ = _fetch_config_html()
     seg = _slice_between(text, 'id="llm-api-key"', 'id="llm-provider"')
     assert 'data-bs-toggle="tooltip"' not in seg, "API 密钥字段不应新增悬浮注释图标"
+
+
+def test_summary_cron_field_has_no_tooltip():
+    """Cron 表达式（summary-job-cron）label 段不应新增悬浮注释图标。"""
+    text, _, _ = _fetch_config_html()
+    seg = _slice_between(text, 'id="summary-job-cron"', 'id="summary-job-lookback"')
+    assert 'data-bs-toggle="tooltip"' not in seg, "Cron 表达式字段不应新增悬浮注释图标"
+
+
+def test_summary_lookback_field_has_no_tooltip():
+    """回溯天数（summary-job-lookback）label 段不应新增悬浮注释图标。"""
+    text, _, _ = _fetch_config_html()
+    seg = _slice_between(text, 'id="summary-job-lookback"', 'id="summary-job-user"')
+    assert 'data-bs-toggle="tooltip"' not in seg, "回溯天数字段不应新增悬浮注释图标"
+
+
+def test_summary_user_field_has_no_tooltip():
+    """用户名（summary-job-user）label 段不应新增悬浮注释图标。"""
+    text, _, _ = _fetch_config_html()
+    # 切片为"用户名 label 起始"到"用户名 input id"之间的段落（用户名字段无图标）。
+    seg = _slice_between(
+        text, '<label class="form-label">用户名', 'id="summary-job-user"'
+    )
+    assert 'data-bs-toggle="tooltip"' not in seg, "用户名字段不应新增悬浮注释图标"
+
+
+# ---------------------------------------------------------------------------
+# 触发任务：任务执行中被跳过（skipped）时的前端提示
+# ---------------------------------------------------------------------------
+
+
+def test_trigger_summary_job_handles_skipped_status():
+    """triggerSummaryJob 应处理 skipped 状态，展示"任务正在执行中"提示且不用 danger。"""
+    text, _, _ = _fetch_config_html()
+    signature = "async function triggerSummaryJob(name)"
+    start = text.index(signature)
+    # 到下一个顶层函数定义之前（跳过函数自身的定义行）。
+    end = text.index("function ", start + len(signature))
+    seg = text[start:end]
+    assert "'skipped'" in seg, "triggerSummaryJob 应判断 d.status === 'skipped'"
+    assert "正在执行中" in seg, (
+        "triggerSummaryJob 的 skipped 分支应包含『正在执行中』提示文案"
+    )

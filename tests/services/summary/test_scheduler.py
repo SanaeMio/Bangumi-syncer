@@ -470,6 +470,37 @@ async def test_run_job_default_timeout_is_300():
         await s._run_job(job_config)
 
 
+@pytest.mark.asyncio
+async def test_run_job_skips_when_execute_returns_false():
+    """execute_job 返回 False（同任务已在执行）→ 记警告日志且不发失败通知。"""
+    from app.services.summary.scheduler import SummaryScheduler
+
+    job_config = SummaryJobConfig.from_config_dict(
+        _make_summary_config(id=1, name="busy-job")
+    )
+    s = SummaryScheduler()
+    s._scheduler_config = {"job_timeout": 300}
+
+    with (
+        patch(
+            "app.services.summary.scheduler.summary_service.execute_job",
+            new_callable=AsyncMock,
+            return_value=False,
+        ) as mock_execute,
+        patch("app.services.summary.scheduler.notify_scheduler_failure") as mock_notify,
+        patch("app.services.summary.scheduler.logger") as mock_logger,
+    ):
+        await s._run_job(job_config)
+
+    mock_execute.assert_awaited_once_with(job_config)
+    mock_notify.assert_not_called()
+    warn_msgs = [str(c.args[0]) for c in mock_logger.warning.call_args_list if c.args]
+    assert any(
+        "busy-job" in m and "正在执行中" in m and "已跳过" in m for m in warn_msgs
+    )
+    mock_logger.error.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # reload_job_if_running
 # ---------------------------------------------------------------------------
