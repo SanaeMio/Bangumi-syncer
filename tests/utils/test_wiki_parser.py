@@ -11,7 +11,10 @@
 from __future__ import annotations
 
 from app.utils.bangumi_archive._store import ArchiveStore
-from app.utils.bangumi_archive._wiki_parser import parse_infobox
+from app.utils.bangumi_archive._wiki_parser import (
+    _split_top_level_params,
+    parse_infobox,
+)
 
 # ===== 基本解析 =====
 
@@ -263,6 +266,66 @@ class TestParseInfoboxEdgeCases:
             {"key": "罗马音", "value": "Romaji"},
         ]
 
+    def test_unpaired_closing_brackets_do_not_swallow_params(self) -> None:
+        """值中出现未配对的 ]] 时，其后的顶层 | 仍能切分参数
+
+        真实条目（竞技体育类）的别名常写成 ``[アタックNo.1[ナンバーワン]]``，
+        单个 ``[`` 使括号不配对，深度不得转负而吞掉后续参数。
+        """
+        text = (
+            "{{Infobox|别名=[アタックNo.1[ナンバーワン]]|话数=104|放送开始=1969-12-07}}"
+        )
+        result = parse_infobox(text)
+        assert {"key": "话数", "value": "104"} in result
+        assert {"key": "放送开始", "value": "1969-12-07"} in result
+
+    def test_split_params_depth_not_negative(self) -> None:
+        """未配对的 }} / ]] 不使深度转负，后续参数仍按顶层 | 切分"""
+        assert _split_top_level_params("a=[x]]|b=1") == ["a=[x]]", "b=1"]
+        assert _split_top_level_params("a=x}}|b=1") == ["a=x}}", "b=1"]
+
+    def test_unclosed_opening_brackets_do_not_swallow_params(self) -> None:
+        """值中出现未闭合的 [[ 时，其后的顶层 | 仍能切分参数
+
+        真实条目（我推的孩子 第三季）的别名写作 ``[[Oshi no Ko] 3rd Season]``，
+        只有 ``[[`` 没有 ``]]``，深度不得滞留而吞掉后续参数。
+        """
+        text = (
+            "{{Infobox animanga/TVAnime\r\n"
+            "|中文名= 【我推的孩子】 第三季\r\n"
+            "|别名={\r\n"
+            "[[Oshi no Ko] 3rd Season]\r\n"
+            "[Oshi no Ko Season 3]\r\n"
+            "}\r\n"
+            "|话数= 11\r\n"
+            "|放送开始= 2026年1月14日\r\n"
+            "}}"
+        )
+        result = parse_infobox(text)
+        assert {"key": "话数", "value": "11"} in result
+        assert {"key": "放送开始", "value": "2026年1月14日"} in result
+
+    def test_split_params_resets_bracket_depth_at_newline(self) -> None:
+        """换行处重置方括号深度：``[[...]]`` 链接不跨行，未闭合的 [[ 不跨越换行生效"""
+        assert _split_top_level_params(
+            "别名=[[Oshi no Ko] 3rd Season]\r\n|话数= 11"
+        ) == [
+            "别名=[[Oshi no Ko] 3rd Season]\r\n",
+            "话数= 11",
+        ]
+        assert _split_top_level_params("a=[[x]y]\r\n|b=1\r\n|c=2") == [
+            "a=[[x]y]\r\n",
+            "b=1\r\n",
+            "c=2",
+        ]
+
+    def test_split_params_keeps_pipe_inside_balanced_link(self) -> None:
+        """同一行内成对 ``[[target|display]]`` 的 | 仍不切分（链接的保护语义不变）"""
+        assert _split_top_level_params("别名=[[A|B]]|话数=1") == [
+            "别名=[[A|B]]",
+            "话数=1",
+        ]
+
 
 # ===== _store._adapt_subject_row 集成测试 =====
 
@@ -364,3 +427,47 @@ class TestRealWorldSamples:
                 "value": [{"v": "别名A"}, {"v": "别名B"}, {"v": "别名C"}],
             },
         ]
+
+    def test_real_subject_sample_with_brace_alias_block(self) -> None:
+        """别名使用 {...} 块并含 ``[x[y]]`` 的条目：后续参数不得被并进别名
+
+        结构取自真实条目（排球甜心 / subject 53773）的原始 infobox。
+        """
+        text = (
+            "{{Infobox animanga/TVAnime\r\n"
+            "|中文名= 排球甜心\r\n"
+            "|别名={\r\n"
+            "[女排No.1]\r\n"
+            "[アタックNo.1[ナンバーワン]]\r\n"
+            "}\r\n"
+            "|话数= 104\r\n"
+            "|放送开始= 1969年12月7日\r\n"
+            "}}"
+        )
+        result = parse_infobox(text)
+        assert {"key": "话数", "value": "104"} in result
+        assert {"key": "放送开始", "value": "1969年12月7日"} in result
+        assert [x["key"] for x in result][:3] == ["中文名", "别名", "话数"]
+
+    def test_real_subject_sample_with_unclosed_link_alias(self) -> None:
+        """别名含未闭合 ``[[`` 的条目：后续参数不得被并进别名
+
+        结构取自真实条目（我推的孩子 第三季 / subject 517057）的原始 infobox。
+        """
+        text = (
+            "{{Infobox animanga/TVAnime\r\n"
+            "|中文名= 【我推的孩子】 第三季\r\n"
+            "|别名={\r\n"
+            "[[Oshi no Ko] 3rd Season]\r\n"
+            "[Oshi no Ko Season 3]\r\n"
+            '["Oshi no Ko" 3]\r\n'
+            "}\r\n"
+            "|话数= 11\r\n"
+            "|放送开始= 2026年1月14日\r\n"
+            "|放送星期= 星期三\r\n"
+            "}}"
+        )
+        result = parse_infobox(text)
+        assert {"key": "话数", "value": "11"} in result
+        assert {"key": "放送星期", "value": "星期三"} in result
+        assert [x["key"] for x in result][:3] == ["中文名", "别名", "话数"]

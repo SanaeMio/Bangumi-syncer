@@ -127,6 +127,14 @@ def _split_top_level_params(s: str) -> list[str]:
 
     输入: `"key1=v1|key2={{list|a|b}}|key3=[[link|display]]"`
     输出: `["key1=v1", "key2={{list|a|b}}", "key3=[[link|display]]"]`
+
+    括号深度不滞留：值中出现未配对的括号时，深度不能永久停在非 0，否则此后的顶层
+    `|` 判断会失效、把剩余参数并进同一个值。两种失衡各有对策：
+
+    - 未配对的 `]]`（如 `TOKKO 特公` 的 `别名` 含 `[TOKKÔ[特公]]`）：深度不小于 0，
+      避免计数转负。
+    - 未闭合的 `[[`（如 `我推的孩子 第三季` 的 `别名` 写作 `[[Oshi no Ko] 3rd Season]`）：
+      换行处重置方括号深度。`[[...]]` 链接不跨行书写，换行即其语法边界。
     """
     parts: list[str] = []
     brace_depth = 0  # {{...}}
@@ -141,7 +149,8 @@ def _split_top_level_params(s: str) -> list[str]:
             current.append(two)
             i += 2
         elif two == "}}":
-            brace_depth -= 1
+            if brace_depth > 0:
+                brace_depth -= 1
             current.append(two)
             i += 2
         elif two == "[[":
@@ -149,9 +158,14 @@ def _split_top_level_params(s: str) -> list[str]:
             current.append(two)
             i += 2
         elif two == "]]":
-            bracket_depth -= 1
+            if bracket_depth > 0:
+                bracket_depth -= 1
             current.append(two)
             i += 2
+        elif s[i] == "\n":
+            bracket_depth = 0
+            current.append(s[i])
+            i += 1
         elif s[i] == "|" and brace_depth == 0 and bracket_depth == 0:
             parts.append("".join(current))
             current = []
