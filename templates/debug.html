@@ -477,6 +477,25 @@ function renderMatchTraceResult(data, title, season, episode) {
 }
 
 // 番剧同步测试
+// 各 Bangumi 账号的标记结果（与同步记录详情同一数据结构）
+function renderDebugAccountResults(results, fallbackMessage) {
+    const list = Array.isArray(results) ? results : [];
+    if (list.length === 0) {
+        return fallbackMessage
+            ? `<div class="small text-muted">${escapeHtml(fallbackMessage)}</div>`
+            : '';
+    }
+    const items = list.map((r) => {
+        const name = r.username || r.section || '未命名账号';
+        const ok = r.status === 'success';
+        const detail = r.message || (ok ? '已同步' : '同步失败');
+        return `<li class="small ${ok ? 'text-muted' : 'text-danger'} mb-1">`
+            + `<i class="bi bi-${ok ? 'check-circle' : 'x-circle'} me-1"></i>`
+            + `${escapeHtml(name)} 账号${escapeHtml(detail)}</li>`;
+    }).join('');
+    return `<ul class="list-unstyled mb-0 mt-1">${items}</ul>`;
+}
+
 async function testSync() {
     const btn = document.getElementById('test-sync-btn');
     const { title, oriTitle, mediaType, season, episode, releaseDate, user } = getBangumiTestFormData();
@@ -556,10 +575,8 @@ async function testSync() {
                                     </a>
                                 ` : ''}
                             </div>
-                            ${result.message ? `
-                                <div class="small text-muted">${escapeHtml(result.message)}</div>
-                                ${!isActualSync ? '<div class="small text-info mt-1"><i class="bi bi-info-circle me-1"></i>连接和认证正常，同步系统工作正常。</div>' : ''}
-                            ` : ''}
+                            ${renderDebugAccountResults(result.data?.account_results, result.message)}
+                            ${(!isActualSync && result.message) ? '<div class="small text-info mt-1"><i class="bi bi-info-circle me-1"></i>连接和认证正常，同步系统工作正常。</div>' : ''}
                         </div>
                     </div>
                 </div>`;

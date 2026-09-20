@@ -120,8 +120,9 @@ sync_custom_item(item)
   │   ├─ find_episode_across_seasons()       跨季链回退（未命中才执行）
   │   └─ _retry_mark_episode()               标记看过（含 Replay 入队）
   ├─ _mark_subject_completed_if_needed() 全集看完时归档
-  ├─ database_manager.log_sync_record()  写库
-  └─ notification_service.notify()       发通知
+  ├─ _build_account_outcomes()           汇总各 Bangumi 账号的标记结果
+  ├─ database_manager.log_sync_record()  写库（account_results 记录各账号结果）
+  └─ notification_service.notify()       发通知（多账号时逐账号）
 ```
 
 ---

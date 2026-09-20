@@ -23,7 +23,7 @@ from ..core.config import config_manager
 from ..core.logging import logger
 from ..utils.bangumi_api.collection import get_watching_subject_ids
 from ..utils.bangumi_api.factory import (
-    build_bangumi_api_from_active_config as _build_bangumi_api,
+    build_bangumi_api_from_primary_config as _build_bangumi_api,
 )
 from ..utils.bangumi_archive import bangumi_archive
 from ..utils.bangumi_archive._store import archive_store

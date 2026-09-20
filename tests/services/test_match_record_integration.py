@@ -367,6 +367,7 @@ class TestLogSyncRecordFacadeForwardsMatchFields:
             match_score=0.9,
             match_platform="TV",
             match_trace=trace_dict,
+            account_results=None,
         )
 
         assert result == 42
@@ -387,6 +388,7 @@ class TestLogSyncRecordFacadeForwardsMatchFields:
             match_score=0.9,
             match_platform="TV",
             match_trace=trace_dict,
+            account_results=None,
         )
 
 
