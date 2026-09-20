@@ -78,6 +78,9 @@ class SummaryService:
     def __init__(self):
         # 记忆统一入口（extractor/retriever 是其内部组件，业务层不直接碰 repository）
         self.memory = MemoryService(database_manager.memory)
+        # 正在执行的任务名集合：进程内任务级互斥。手动 trigger 不经调度器
+        # max_instances=1 限制，可能与 cron 执行或自身连点并发重叠，这里兜底。
+        self._running: set[str] = set()
 
     @property
     def llm_client(self):
@@ -237,7 +240,30 @@ class SummaryService:
             "date_to": date_to,
         }
 
-    async def execute_job(self, job_config: SummaryJobConfig) -> None:
+    async def execute_job(self, job_config: SummaryJobConfig) -> bool:
+        """完整执行入口：任务级互斥守卫 + 实际执行。
+
+        返回值语义：``True``=本次实际执行；``False``=该任务已在执行（手动 trigger
+        不经调度器 ``max_instances=1`` 限制，可能与 cron 执行或连点并发重叠）被跳过。
+
+        守卫在检查→登记之间不含 await（单事件循环内保持原子），因此并发同任务
+        只有一次能进入；被跳过的一次不查库、不调 LLM、不写记忆、不通知。
+        ``CancelledError``（超时取消）不被 inner 的 ``except Exception`` 捕获，
+        会直接传播到 ``finally`` 正确释放登记。
+        """
+        name = job_config.name
+        if name in self._running:
+            logger.warning(f"Summary job '{name}' 正在执行中，本次触发已跳过")
+            return False
+
+        self._running.add(name)
+        try:
+            await self._execute_job_inner(job_config)
+        finally:
+            self._running.discard(name)
+        return True
+
+    async def _execute_job_inner(self, job_config: SummaryJobConfig) -> None:
         """完整执行：查询 → 注入记忆 → 调 LLM → 提取记忆 → 发送通知。
 
         错误处理策略：**总结过程任何阶段出错都向用户发送失败通知**，

@@ -153,11 +153,17 @@ async def test_summary_job(name: str, _=Depends(get_current_user_flexible)):
 
 @router.post("/{name:path}/trigger")
 async def trigger_summary_job(name: str, _=Depends(get_current_user_flexible)):
-    """手动立即触发一次摘要任务（生成摘要 + 发送通知）。"""
+    """手动立即触发一次摘要任务（生成摘要 + 发送通知）。
+
+    任务已在执行（手动连点或与 cron 重叠）时返回 skipped，避免重复 LLM 调用、
+    重复记忆写入与重复通知。
+    """
     decoded = unquote(name)
     target = _find_config(decoded)
     job_config = SummaryJobConfig.from_config_dict(target)
-    await summary_service.execute_job(job_config)
+    executed = await summary_service.execute_job(job_config)
+    if not executed:
+        return {"status": "skipped", "message": "任务正在执行中，本次触发已跳过"}
     return {"status": "success", "message": f"任务 '{job_config.name}' 已触发"}
 
 

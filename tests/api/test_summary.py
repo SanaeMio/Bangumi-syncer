@@ -1452,6 +1452,52 @@ class TestTriggerSummaryJob:
                 mock_service.execute_job.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_trigger_returns_skipped_when_already_running(self):
+        """execute_job 返回 False（任务已执行中）→ 200 + status=skipped + 中文提示。"""
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.summary_jobs import router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        with (
+            patch("app.api.summary_jobs.config_manager") as mock_cm,
+            patch("app.api.summary_jobs.summary_service") as mock_service,
+        ):
+            mock_cm.get_summary_configs.return_value = [
+                {
+                    "id": 1,
+                    "name": "Busy Job",
+                    "cron": "0 21 * * *",
+                    "lookback_days": 1,
+                    "user_name": "",
+                    "system_prompt": "",
+                    "max_records": 200,
+                    "enabled": True,
+                },
+            ]
+            mock_service.execute_job = AsyncMock(return_value=False)
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/summary/jobs/Busy%20Job/trigger")
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "skipped"
+                assert "任务正在执行中" in data["message"]
+                assert "已跳过" in data["message"]
+                mock_service.execute_job.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_returns_404_for_nonexistent_job(self):
         """POST /api/summary/jobs/{id}/trigger 对不存在的任务应返回 404。"""
         from fastapi import FastAPI

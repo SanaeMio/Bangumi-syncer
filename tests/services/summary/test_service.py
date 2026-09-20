@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1633,3 +1634,212 @@ class TestRelatedIndependentOfMemoryLimit:
         )
         # 不写入记忆（memory_limit=0）
         assert not mock_memory.extract_and_store.called
+
+
+# ── 并发执行保护（同一任务运行中登记）────────────────────────────
+
+
+class TestConcurrentExecutionGuard:
+    """execute_job 的任务级进程内互斥：同任务并发只执行一次，其余跳过返回 False。"""
+
+    @staticmethod
+    def _gated_llm(release: asyncio.Event, started=None, block_name=None):
+        """构造 chat 受 release 控制的 mock client。
+
+        block_name=None 时阻塞所有调用；否则仅阻塞 job_name==block_name 的调用。
+        ``started`` 在进入被阻塞调用时 set，供测试等待"已持锁"。
+        返回 (client, 已调用的 job_name 列表)。
+        """
+        client = MagicMock()
+        called_jobs: list[str | None] = []
+
+        async def _chat(messages, **kwargs):
+            job_name = kwargs.get("job_name")
+            called_jobs.append(job_name)
+            if block_name is None or job_name == block_name:
+                if started is not None:
+                    started.set()
+                await release.wait()
+            return _mock_chat_response()
+
+        client.chat = AsyncMock(side_effect=_chat)
+        return client, called_jobs
+
+    @pytest.mark.asyncio
+    async def test_same_job_concurrent_only_one_executes(self):
+        """同一任务并发触发：恰好一个 True、一个 False；LLM 与通知各一次。"""
+        svc = SummaryService()
+        config = _make_config(name="concurrent_job")
+        started, release = asyncio.Event(), asyncio.Event()
+        client, called_jobs = self._gated_llm(release, started)
+
+        with (
+            patch.object(
+                svc,
+                "_query_records",
+                return_value=(_records(), "2026-07-14", "2026-07-15"),
+            ),
+            patch(
+                "app.services.summary.service.get_llm_client",
+                return_value=client,
+            ),
+            patch("app.services.summary.service.notification_service") as mock_ns,
+        ):
+            first = asyncio.create_task(svc.execute_job(config))
+            await started.wait()  # 第一个已进入 chat（登记已持有）
+            try:
+                # 第二个若未被守卫拦截会阻塞在 chat（timeout 保证红阶段不挂起）
+                second = await asyncio.wait_for(svc.execute_job(config), timeout=2)
+            finally:
+                release.set()
+            first_result = await first
+
+        assert first_result is True
+        assert second is False
+        assert called_jobs == ["concurrent_job"]
+        assert client.chat.await_count == 1
+        mock_ns.notify.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skipped_call_has_no_side_effects(self):
+        """被跳过的调用不查库、不调 LLM、不写记忆、不发通知。"""
+        svc = SummaryService()
+        config = _make_config(name="side_effect_job", memory_limit=5)
+        started, release = asyncio.Event(), asyncio.Event()
+        client, _ = self._gated_llm(release, started)
+
+        with (
+            patch.object(
+                svc,
+                "_query_records",
+                return_value=(_records(), "2026-07-14", "2026-07-15"),
+            ) as mock_query,
+            patch(
+                "app.services.summary.service.get_llm_client",
+                return_value=client,
+            ),
+            patch("app.services.summary.service.notification_service") as mock_ns,
+            patch.object(svc, "memory") as mock_memory,
+        ):
+            mock_memory.recent.return_value = []
+            mock_memory.related.return_value = []
+            mock_memory.get_task_run_ids.return_value = set()
+            mock_memory.extract_and_store = AsyncMock()
+
+            first = asyncio.create_task(svc.execute_job(config))
+            await started.wait()
+            try:
+                second = await asyncio.wait_for(svc.execute_job(config), timeout=2)
+            finally:
+                release.set()
+            first_result = await first
+
+        assert first_result is True
+        assert second is False
+        # 跳过的调用零副作用：查询/LLM/记忆/通知都只发生第一次
+        assert mock_query.call_count == 1
+        assert client.chat.await_count == 1
+        assert mock_memory.extract_and_store.await_count == 1
+        mock_ns.notify.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_guard_released_after_error(self):
+        """一次执行内部出错（消化为失败通知）后登记释放，同任务可再次执行。"""
+        svc = SummaryService()
+        config = _make_config(name="release_job")
+
+        with (
+            patch.object(svc, "_query_records", side_effect=RuntimeError("boom")),
+            patch("app.services.summary.service.notification_service"),
+        ):
+            first = await svc.execute_job(config)
+
+        assert first is True  # 异常被消化为失败通知，本次视为已执行
+        assert config.name not in svc._running
+
+        with (
+            patch.object(
+                svc,
+                "_query_records",
+                return_value=(_records(), "2026-07-14", "2026-07-15"),
+            ),
+            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            patch("app.services.summary.service.notification_service"),
+        ):
+            second = await svc.execute_job(config)
+
+        assert second is True
+
+    @pytest.mark.asyncio
+    async def test_guard_released_after_cancellation(self):
+        """执行被取消（超时）后登记释放，后续同任务可正常执行。"""
+        svc = SummaryService()
+        config = _make_config(name="cancel_job")
+        started, release = asyncio.Event(), asyncio.Event()
+        client, _ = self._gated_llm(release, started)
+
+        with (
+            patch.object(
+                svc,
+                "_query_records",
+                return_value=(_records(), "2026-07-14", "2026-07-15"),
+            ),
+            patch(
+                "app.services.summary.service.get_llm_client",
+                return_value=client,
+            ),
+            patch("app.services.summary.service.notification_service"),
+        ):
+            task = asyncio.create_task(svc.execute_job(config))
+            await started.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert config.name not in svc._running
+
+        # 释放后可再次正常执行
+        with (
+            patch.object(
+                svc,
+                "_query_records",
+                return_value=(_records(), "2026-07-14", "2026-07-15"),
+            ),
+            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            patch("app.services.summary.service.notification_service"),
+        ):
+            assert await svc.execute_job(config) is True
+
+    @pytest.mark.asyncio
+    async def test_different_jobs_run_concurrently(self):
+        """不同 name 的任务互不影响，可并发执行且都返回 True。"""
+        svc = SummaryService()
+        config_a = _make_config(name="job_a")
+        config_b = _make_config(name="job_b")
+        started_a, release_a = asyncio.Event(), asyncio.Event()
+        client, called_jobs = self._gated_llm(release_a, started_a, block_name="job_a")
+
+        with (
+            patch.object(
+                svc,
+                "_query_records",
+                return_value=(_records(), "2026-07-14", "2026-07-15"),
+            ),
+            patch(
+                "app.services.summary.service.get_llm_client",
+                return_value=client,
+            ),
+            patch("app.services.summary.service.notification_service"),
+        ):
+            task_a = asyncio.create_task(svc.execute_job(config_a))
+            await started_a.wait()  # job_a 持登记并阻塞
+            try:
+                # 不同任务不应被 job_a 阻塞；timeout 保证实现错误时不挂起
+                result_b = await asyncio.wait_for(svc.execute_job(config_b), timeout=2)
+            finally:
+                release_a.set()
+            result_a = await task_a
+
+        assert result_a is True
+        assert result_b is True
+        assert set(called_jobs) == {"job_a", "job_b"}
