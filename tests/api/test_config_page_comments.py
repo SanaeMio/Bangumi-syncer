@@ -270,3 +270,22 @@ def test_summary_user_field_has_no_tooltip():
         text, '<label class="form-label">用户名', 'id="summary-job-user"'
     )
     assert 'data-bs-toggle="tooltip"' not in seg, "用户名字段不应新增悬浮注释图标"
+
+
+# ---------------------------------------------------------------------------
+# 触发任务：任务执行中被跳过（skipped）时的前端提示
+# ---------------------------------------------------------------------------
+
+
+def test_trigger_summary_job_handles_skipped_status():
+    """triggerSummaryJob 应处理 skipped 状态，展示"任务正在执行中"提示且不用 danger。"""
+    text, _, _ = _fetch_config_html()
+    signature = "async function triggerSummaryJob(name)"
+    start = text.index(signature)
+    # 到下一个顶层函数定义之前（跳过函数自身的定义行）。
+    end = text.index("function ", start + len(signature))
+    seg = text[start:end]
+    assert "'skipped'" in seg, "triggerSummaryJob 应判断 d.status === 'skipped'"
+    assert "正在执行中" in seg, (
+        "triggerSummaryJob 的 skipped 分支应包含『正在执行中』提示文案"
+    )

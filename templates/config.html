@@ -2445,6 +2445,8 @@
         )
         if (d.status === 'success') {
           showAlert('任务 "' + name + '" 已触发执行', 'success')
+        } else if (d.status === 'skipped') {
+          showAlert(d.message || '任务正在执行中，本次触发已跳过', 'warning')
         } else {
           showAlert('触发失败: ' + (d.message || '未知错误'), 'danger')
         }
