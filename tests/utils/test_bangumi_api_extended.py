@@ -1916,3 +1916,98 @@ class TestFindSeasonOneEpisodeNoHang:
         )
         assert sid == 300
         assert eid == 30005
+
+
+class TestEpisodeNumberFormula:
+    """「条目内集数」公式 ``ep = sort − first_sort + 1``（对齐官方服务端）。
+
+    为什么需要它：Bangumi 的 `sort` 是「同类条目的排序和集数」，跨季**连续**
+    编号（斗破苍穹年番2 是 53..105、年番4 是 158..219）；而媒体库推送的
+    「第 N 集」是**条目内相对编号**。官方 API 的 `ep` 字段就是这个相对编号，
+    且由服务端按上式算出（底层 chii_episodes 表只有 ep_sort、没有 ep 列），
+    因此本地 archive 必须复现同一公式。
+
+    真实数据（56,539 条目 archive）验证：斗破苍穹年番 4（sort 158..219）
+    推「第 5 集」在改前找不到（sort 直比找 5），改后正确命中 sort=162。
+    """
+
+    @staticmethod
+    def _api_with_eps(eps: list[dict]):
+        api = BangumiApi()
+        api.get_episodes = MagicMock(return_value={"data": eps, "total": len(eps)})
+        api._fetch_episodes_page = MagicMock(return_value={"data": [], "total": 0})
+        # archive 全 miss，强制走本地匹配
+        for name in (
+            "try_get_subject",
+            "try_get_episodes",
+            "try_find_sequel_chain",
+            "try_find_prequel_chain",
+            "try_find_related_id_by_relation",
+            "try_find_series_closed",
+            "try_find_series_closure",
+            "try_find_franchise_closure",
+        ):
+            if hasattr(api._archive, name):
+                setattr(
+                    api._archive,
+                    name,
+                    MagicMock(return_value=ShortcutResult(False, None, "archive_miss")),
+                )
+        return api
+
+    @staticmethod
+    def _eps_from(start_sort: int, count: int, start_id: int = 50000):
+        """sort 从 start_sort 开始的连续本篇章节"""
+        return [
+            {
+                "sort": start_sort + i,
+                "ep": i + 1,
+                "id": start_id + i,
+                "type": 0,
+                "airdate": "",
+            }
+            for i in range(count)
+        ]
+
+    def test_ep_formula_matches_official_definition(self):
+        """ep = sort − first_sort + 1，且非本篇类型无意义"""
+        eps = self._eps_from(start_sort=158, count=5)
+        first = BangumiApi._first_normal_sort(eps)
+        assert first == 158
+        assert BangumiApi._compute_ep(eps[0], first) == 1
+        assert BangumiApi._compute_ep(eps[4], first) == 5
+        # 非本篇（SP=1）官方恒为无意义
+        assert BangumiApi._compute_ep({"sort": 158, "type": 1}, first) is None
+
+    def test_first_normal_sort_ignores_non_normal(self):
+        """firstEpisode 只取本篇，忽略 SP/OP/ED 的更小 sort"""
+        eps = [
+            {"sort": 1, "type": 1, "id": 1},  # SP，更小但不算
+            {"sort": 158, "type": 0, "id": 2},  # 本篇起点
+            {"sort": 159, "type": 0, "id": 3},
+        ]
+        assert BangumiApi._first_normal_sort(eps) == 158
+
+    def test_lookup_uses_ep_not_sort_for_offset_entry(self):
+        """sort 不从 1 开始的条目：推「第 N 集」应命中 first_sort + N − 1"""
+        api = self._api_with_eps(self._eps_from(start_sort=158, count=62))
+        for n, want_sort in ((1, 158), (5, 162), (62, 219)):
+            found = api._find_episode_by_sort(1, n)
+            assert found is not None, f"第 {n} 集未命中"
+            assert found["sort"] == want_sort
+
+    def test_lookup_unchanged_for_normal_season(self):
+        """sort 从 1 开始的普通季番行为不变"""
+        api = self._api_with_eps(self._eps_from(start_sort=1, count=11))
+        for n in (1, 5, 11):
+            found = api._find_episode_by_sort(1, n)
+            assert found is not None
+            assert found["sort"] == n
+
+    def test_lookup_still_accepts_raw_sort(self):
+        """跨季连续编号调用方仍可按原始 sort 命中（向后兼容）"""
+        api = self._api_with_eps(self._eps_from(start_sort=158, count=62))
+        for raw_sort in (158, 201, 219):
+            found = api._find_episode_by_sort(1, raw_sort)
+            assert found is not None, f"sort={raw_sort} 未命中"
+            assert found["sort"] == raw_sort

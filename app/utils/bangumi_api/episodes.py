@@ -404,18 +404,80 @@ class EpisodesMixin:
         """从名称中提取季度编号，用于续集链季度去重计数"""
         return extract_explicit_season(f"{name} {name_cn}")
 
+    @staticmethod
+    def _first_normal_sort(ep_info: list) -> float | None:
+        """该条目本篇章节的最小 sort（官方 firstEpisode 语义）。
+
+        对齐 bangumi/server `internal/episode/mysql_repository.go::firstEpisode`：
+        只取 `type=0`（本篇）章节，按 `disc, sort` 排序后的第一条 sort。
+        取不到时返回 None（此时无法算 ep，退化为 sort 直比）。
+        """
+        normals = [
+            e
+            for e in ep_info
+            if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+        ]
+        if not normals:
+            return None
+        return min(
+            (e.get("sort") for e in normals if isinstance(e.get("sort"), (int, float))),
+            default=None,
+        )
+
+    @classmethod
+    def _compute_ep(cls, episode: dict, first_sort: float | None) -> float | None:
+        """按官方公式算「条目内集数」：``ep = sort − first_sort + 1``。
+
+        对齐 bangumi/server `convertDaoEpisode`：
+        **仅本篇（type=0）有意义**，其余类型官方恒为 0（此处返回 None 表示无意义）。
+
+        为什么需要它：`sort` 是「同类条目的排序和集数」，跨季**连续**编号
+        （如斗破苍穹年番4 的 sort 是 158..219）；而媒体库推送的「第 N 集」
+        是**条目内相对编号**。官方 API 的 `ep` 字段就是这个相对编号，且它是
+        **服务端按上式算出来的**（底层 chii_episodes 表只有 ep_sort，没有 ep 列），
+        因此本地 archive 必须自己复现同一公式，才能与官方语义一致。
+        """
+        if first_sort is None:
+            return None
+        if episode.get("type", EPISODE_TYPE_NORMAL) != EPISODE_TYPE_NORMAL:
+            return None
+        s = episode.get("sort")
+        if not isinstance(s, (int, float)):
+            return None
+        return s - first_sort + 1
+
     def _match_target_ep_rows(
         self, ep_info: list, target_ep: int
     ) -> list[dict[str, Any]]:
-        """与 target_season>1 分支一致的章节匹配规则。"""
+        """在章节列表里定位目标「条目内集数」。
+
+        匹配优先级（对齐官方 `ep` 语义）：
+        1. **ep（条目内相对编号）**：``sort − first_sort + 1 == target_ep``
+           仅对本篇章节成立 —— 这是媒体库推送「第 N 集」的正确解释，
+           也是 `sort` 不从 1 开始的条目（国漫年番）唯一能命中的方式。
+        2. 回退 `sort == target_ep`：保留历史行为，兼容
+           - 章节缺 `type` 字段的旧 archive（此时 ep 无法判定）
+           - 调用方传的确实是全局 sort（如 target_ep > 99 的跨季连续编号）
+        3. 回退官方 API 直接给出的 `ep` 字段（若响应里带）
+        """
+        # 1. ep（条目内相对编号）—— 官方语义
+        first_sort = self._first_normal_sort(ep_info)
+        if first_sort is not None:
+            rows = [i for i in ep_info if self._compute_ep(i, first_sort) == target_ep]
+            if rows:
+                return rows
+
+        # 2. sort 直比（历史行为 / 旧 archive 无 type）
         rows = [i for i in ep_info if i.get("sort") == target_ep]
-        if not rows:
-            rows = [
-                i
-                for i in ep_info
-                if i.get("ep") == target_ep and i.get("ep", 0) <= i.get("sort", 0)
-            ]
-        return rows
+        if rows:
+            return rows
+
+        # 3. 官方响应里已带 ep 字段时直接用
+        return [
+            i
+            for i in ep_info
+            if i.get("ep") == target_ep and i.get("ep", 0) <= i.get("sort", 0)
+        ]
 
     def get_movie_main_episode_id(
         self,
