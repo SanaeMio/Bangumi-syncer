@@ -45,6 +45,21 @@ def _coerce_ymd(value: object) -> datetime | None:
     return _parse_ymd(value[:10])
 
 
+def date_diff_days(date1: str, date2: str) -> int | None:
+    """两个日期相差天数；任一无法解析时返回 **None**。
+
+    与 ``MatchingMixin._date_diff`` 的区别：后者在解析失败时返回 999999 哨兵，
+    把「日期缺失」与「日期差极大」压成同一个值 —— 用于择优时可以接受（都算最差），
+    但用于**硬校验**会把「条目没有放送日期」误判成「日期差 55 年」而误杀。
+    step 层做日期硬校验必须能区分二者，故提供本函数。
+    """
+    d1 = _coerce_ymd(date1)
+    d2 = _coerce_ymd(date2)
+    if d1 is None or d2 is None:
+        return None
+    return abs((d2 - d1).days)
+
+
 class MatchingMixin:
     """标题匹配与番剧 ID 查找相关方法"""
 
@@ -229,6 +244,7 @@ class MatchingMixin:
                     "name": item.get("title", ""),
                     "name_cn": self._get_best_matched_title(item),
                     "score": 1.0,
+                    "date": item.get("begin", ""),
                     "source": "bangumi_data_exact",
                 }
             )
@@ -247,6 +263,7 @@ class MatchingMixin:
                     "name": item.get("title", ""),
                     "name_cn": self._get_best_matched_title(item),
                     "score": round(score, 3),
+                    "date": item.get("begin", ""),
                     "source": "bangumi_data_partial",
                 }
             )

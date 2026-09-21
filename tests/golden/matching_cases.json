@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generated_at": "2026-09-08 20:58:33",
+ "generated_at": "2026-09-09 11:33:29",
  "seed": 20260908,
  "n": 30,
  "source": {
@@ -3220,10 +3220,10 @@
     "title": "巨型金丝雀"
    },
    "baseline": {
-    "subject_id": "78038",
-    "match_method": "bangumi_data",
-    "match_detail": "",
-    "score": 0.8,
+    "subject_id": "136880",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
     "ambiguous": false,
     "failure": ""
    }
@@ -5198,10 +5198,10 @@
     "title": "人生单车"
    },
    "baseline": {
-    "subject_id": "92430",
-    "match_method": "bangumi_data",
-    "match_detail": "",
-    "score": 0.8,
+    "subject_id": "493743",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
     "ambiguous": false,
     "failure": ""
    }
