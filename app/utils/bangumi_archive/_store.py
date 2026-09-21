@@ -57,6 +57,16 @@ FRANCHISE_RELATION_TYPES = (1, 2, 3, 4, 7, 8, 9, 10, 12)
 #   库10 劇場版·总集编 → 官方「总集篇」（官方 4）+「不同演绎」（官方 10，含剧场版改编）
 #   库12 同系列 → 官方「主线故事」（官方 12）
 # 排除：官方 7「角色出演」/ 9「不同世界观」/ 14「联动」/ 99「其他」/ 5「全集」
+#       / 11「衍生」（见下）
+#
+# ⚠ 官方 11「衍生」已从本集合移除（2026-09-09 实测修复）：
+#   离线侧 FRANCHISE_RELATION_TYPES 本就不含衍生，在线侧曾误含「衍生」，
+#   导致两侧语义不一致。衍生边连接的是广播/游戏/衍生节目，其章节体系与本篇
+#   完全不同，却会被 franchise 兜底当作本篇参与 sort 定位：
+#     「鬼灭之刃」ep=28（245665 第一季 26 集）→ 经「衍生」边命中
+#     404879「鬼灭广播」（type=6 广播节目，89 集），sort=28 落在其 1..89 内。
+#   跨媒体场景（如「凡人修仙传」动画 ↔ 真人网剧）走的是官方 10「不同演绎」，
+#   仍在集合内，移除「衍生」不影响该场景。
 FRANCHISE_RELATION_CN_SET = frozenset(
     {
         "前传",
@@ -67,7 +77,6 @@ FRANCHISE_RELATION_CN_SET = frozenset(
         "总集篇",
         "不同演绎",
         "主线故事",
-        "衍生",
     }
 )
 
@@ -597,11 +606,13 @@ class ArchiveStore:
 
         关键差异：
         - tags/score/score_details/meta_tags 在 Archive 中是 JSON 字符串，反序列化为 list/dict
+        - favorite 同样是 JSON 字符串（如 {"wish":9,"done":42,...}），必须反序列化，
+          否则下游只能拿到 str 而无法用于同名消歧（#7 favorite tie-breaker 的前置）
         - infobox 在 Archive 中是原始 wiki 串（如 {{Infobox|key=value}}），
           这里通过 wiki_parser 解析为 API 兼容的 list[dict] 格式；
           解析失败时回退为空列表（与 API 返回空 infobox 行为一致）
         """
-        for json_field in ("tags", "score", "score_details", "meta_tags"):
+        for json_field in ("tags", "score", "score_details", "meta_tags", "favorite"):
             val = row.get(json_field)
             if isinstance(val, str) and val:
                 try:
