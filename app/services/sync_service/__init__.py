@@ -561,6 +561,16 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return True, "已删除"
 
     @staticmethod
+    def _safe_request_title(item: Any) -> str:
+        """安全读取条目标题（取不到时按空标题处理）
+
+        黑名单查询是旁路能力，不应因条目对象缺少 title 而中断主流程
+        （例如测试替身对象）；非字符串一律视为空标题。
+        """
+        title = getattr(item, "title", "")
+        return title if isinstance(title, str) else ""
+
+    @staticmethod
     def _get_blocked_for_title(title: str) -> set[str]:
         """读取某标题的负样本黑名单（容错，失败返回空集）。"""
         return database_manager.get_title_blacklist(title) or set()
@@ -602,7 +612,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
         """
         candidates = self._collect_candidates_from_trace(
-            trace, exclude_subject_ids=self._get_blocked_for_title(item.title)
+            trace,
+            exclude_subject_ids=self._get_blocked_for_title(
+                self._safe_request_title(item)
+            ),
         )
         if not candidates:
             return
@@ -657,7 +670,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             if not trace or not trace.is_ambiguous:
                 return
             candidates = self._collect_candidates_from_trace(
-                trace, exclude_subject_ids=self._get_blocked_for_title(item.title)
+                trace,
+                exclude_subject_ids=self._get_blocked_for_title(
+                    self._safe_request_title(item)
+                ),
             )
             if len(candidates) < 2:
                 return
@@ -1480,7 +1496,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         # 负样本黑名单：若自动匹配命中的 subject 曾被用户拒绝，则降级为漏标
         # （custom_mapping 为显式用户映射，代表明确意图，不受黑名单约束）
-        blocked = self._get_blocked_for_title(item.title)
+        blocked = self._get_blocked_for_title(self._safe_request_title(item))
         if (
             blocked
             and result.subject_id
