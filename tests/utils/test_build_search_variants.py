@@ -17,6 +17,7 @@ from app.utils.bangumi_archive._title_normalize import (
     MATCH_METHOD_SEASON_STRIPPED,
     MATCH_METHOD_UNWRAPPED,
     SearchVariant,
+    _nfkc,
     _normalize_title_for_match,
     _split_title_segments,
     _strip_media_suffix,
@@ -27,12 +28,18 @@ from app.utils.bangumi_archive._title_normalize import (
 
 
 def _oracle(title: str, ori_title: str = "") -> list[SearchVariant]:
-    """重构前 bgm_search 内联变体生成逻辑的精确复刻（oracle），携带派生方式。
+    """当前 build_search_variants 行为的精确复刻（oracle），携带派生方式。
 
-    用于断言 build_search_variants 与重构前行为完全一致（含 method 标注）。
+    与重构前（2026-09-08 P0~P3 期间）的内联实现差异：入口做 NFKC
+    归一化（与 _normalize_title_for_match / _normalize_key 索引侧对齐）。
+    实测（240 条 L2 黄金集 S9_全角半角 场景）一次拿回 15 条漏标。
+    用于断言 build_search_variants 与预期行为一致（含 method 标注）。
     """
     if not title:
         return []
+    # 入口 NFKC：与 build_search_variants 同源语义
+    title = _nfkc(title)
+    ori_title = _nfkc(ori_title) if ori_title else ""
 
     stripped_title = _strip_season_episode_suffix(title)
     stripped_ori = _strip_season_episode_suffix(ori_title) if ori_title else ""
@@ -148,9 +155,10 @@ class TestBuildSearchVariantsProperties:
             v.query
             for v in build_search_variants("『魔法少女小圆：叛逆的物语』 S02E10")
         ]
-        idx_original = qs.index("『魔法少女小圆：叛逆的物语』 S02E10")
-        idx_stripped = qs.index("『魔法少女小圆：叛逆的物语』")
-        idx_unwrapped = qs.index("魔法少女小圆：叛逆的物语")
+        # 入口 NFKC 折半角：全角冒号 `：` → 半角 `:`
+        idx_original = qs.index("『魔法少女小圆:叛逆的物语』 S02E10")
+        idx_stripped = qs.index("『魔法少女小圆:叛逆的物语』")
+        idx_unwrapped = qs.index("魔法少女小圆:叛逆的物语")
         idx_main_seg = qs.index("魔法少女小圆")
         idx_prefix = qs.index("劇場版 魔法少女小圆")
         assert idx_original < idx_stripped < idx_unwrapped < idx_main_seg < idx_prefix

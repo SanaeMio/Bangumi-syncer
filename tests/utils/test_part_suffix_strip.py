@@ -40,7 +40,8 @@ def test_strip_part_suffix_cn_special():
     assert _strip_season_episode_suffix("一人之下 the outcast 2 番外篇") == (
         "一人之下 the outcast 2"
     )
-    assert _strip_season_episode_suffix("航海王：强者天下 前传") == "航海王：强者天下"
+    # 入口 NFKC 折半角：全角冒号 `：` → 半角 `:`
+    assert _strip_season_episode_suffix("航海王：强者天下 前传") == "航海王:强者天下"
     assert _strip_season_episode_suffix("西游记续集") == "西游记"
     assert _strip_season_episode_suffix("我的青春恋爱物语果然有问题 续") == (
         "我的青春恋爱物语果然有问题"

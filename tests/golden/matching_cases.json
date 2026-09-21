@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generated_at": "2026-09-08 10:05:57",
+ "generated_at": "2026-09-08 20:58:33",
  "seed": 20260908,
  "n": 30,
  "source": {
@@ -1407,7 +1407,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9285714285714286,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1476,7 +1476,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9714285714285714,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1522,7 +1522,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.8888888888888888,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1545,7 +1545,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9166666666666665,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1568,7 +1568,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9375,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1587,10 +1587,10 @@
     "title": "小熊维尼与大风吹"
    },
    "baseline": {
-    "subject_id": "316285",
+    "subject_id": "132403",
     "match_method": "archive",
     "match_detail": "fuzzy",
-    "score": 0.7241379310344827,
+    "score": 0.9666666666666667,
     "ambiguous": false,
     "failure": ""
    }
@@ -1614,7 +1614,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9444444444444444,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1637,7 +1637,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9333333333333332,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1683,7 +1683,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9523809523809522,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1706,7 +1706,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9375,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1729,7 +1729,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9166666666666665,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1748,12 +1748,12 @@
     "title": "超级无敌掌门狗：引鹅入室"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "132422",
     "match_method": "archive",
     "match_detail": "fuzzy",
-    "score": 0.5862068965517242,
+    "score": 0.967741935483871,
     "ambiguous": false,
-    "failure": "match confidence 0.59 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -1771,12 +1771,12 @@
     "title": "超级无敌掌门狗：剃刀边缘"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "132427",
     "match_method": "archive",
     "match_detail": "fuzzy",
-    "score": 0.5964912280701755,
+    "score": 0.9615384615384616,
     "ambiguous": false,
-    "failure": "match confidence 0.60 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -1798,7 +1798,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9743589743589743,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1821,7 +1821,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.8,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1844,7 +1844,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.8888888888888888,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1867,7 +1867,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9090909090909091,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1890,7 +1890,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9285714285714286,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1913,7 +1913,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.923076923076923,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1936,7 +1936,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9333333333333332,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1959,7 +1959,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.8571428571428572,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -1978,12 +1978,12 @@
     "title": "Code Geass 亡国的阿基德 最终章「致我所爱」"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "132580",
     "match_method": "archive",
     "match_detail": "fuzzy",
-    "score": 0.52,
+    "score": 0.88,
     "ambiguous": false,
-    "failure": "match confidence 0.52 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2005,7 +2005,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -2028,7 +2028,7 @@
     "match_method": "archive",
     "match_detail": "fuzzy",
     "score": 0.9090909090909091,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -2047,11 +2047,11 @@
     "title": "路人女主的养成方法 ♭"
    },
    "baseline": {
-    "subject_id": "100403",
+    "subject_id": "132734",
     "match_method": "archive",
     "match_detail": "fuzzy",
-    "score": 0.8695652173913043,
-    "ambiguous": true,
+    "score": 0.9166666666666665,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -2070,10 +2070,10 @@
     "title": "探索者的羽翼"
    },
    "baseline": {
-    "subject_id": "36264",
+    "subject_id": "132736",
     "match_method": "archive",
     "match_detail": "fuzzy",
-    "score": 0.6666666666666667,
+    "score": 0.8888888888888888,
     "ambiguous": false,
     "failure": ""
    }
@@ -2096,8 +2096,8 @@
     "subject_id": "132754",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.7058823529411764,
-    "ambiguous": true,
+    "score": 0.9411764705882352,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -2139,10 +2139,10 @@
     "title": "气球狗迪尼 第二期"
    },
    "baseline": {
-    "subject_id": "99092",
+    "subject_id": "132770",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.7692307692307692,
+    "score": 1.0,
     "ambiguous": false,
     "failure": ""
    }
@@ -2211,8 +2211,8 @@
     "subject_id": "132836",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.8,
-    "ambiguous": true,
+    "score": 1.0,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -2231,12 +2231,12 @@
     "title": "巴哈姆特之怒 VIRGIN SOUL"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "132981",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.4869565217391304,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.49 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2326,8 +2326,8 @@
     "subject_id": "133217",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.75,
-    "ambiguous": true,
+    "score": 1.0,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -2346,12 +2346,12 @@
     "title": "格斗金肉人二世 ULTIMATE MUSCLE"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133219",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.5384615384615383,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.54 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2369,12 +2369,12 @@
     "title": "格斗金肉人二世 ULTIMATE MUSCLE 2"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133220",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.27999999999999997,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.28 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2438,12 +2438,12 @@
     "title": "肥猫大战三小强 第二季"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133396",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.0,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.00 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2461,12 +2461,12 @@
     "title": "肥猫大战三小强 第三季"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133398",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.0,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.00 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2484,12 +2484,12 @@
     "title": "肥猫大战三小强 第四季"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133402",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.0,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.00 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2530,12 +2530,12 @@
     "title": "肥猫大战三小强 電影版"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133409",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.046666666666666655,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.05 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2576,12 +2576,12 @@
     "title": "暴风雪旅人"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133512",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.0,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.00 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2645,12 +2645,12 @@
     "title": "守护之心"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133675",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.4615384615384615,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.46 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2668,12 +2668,12 @@
     "title": "守护之心Power UP！"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133676",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.42,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.42 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2691,12 +2691,12 @@
     "title": "死神 雨中的回忆"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133679",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.0,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.00 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2714,12 +2714,12 @@
     "title": "死神 被封印的狂乱之剑"
    },
    "baseline": {
-    "subject_id": "",
+    "subject_id": "133680",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.0,
+    "score": 1.0,
     "ambiguous": false,
-    "failure": "match confidence 0.00 below threshold 0.60"
+    "failure": ""
    }
   },
   {
@@ -2763,8 +2763,8 @@
     "subject_id": "133691",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.6153846153846154,
-    "ambiguous": true,
+    "score": 1.0,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -3657,10 +3657,10 @@
     "title": "对魔忍阿莎姬2"
    },
    "baseline": {
-    "subject_id": "70295",
+    "subject_id": "148229",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.923076923076923,
+    "score": 1.0,
     "ambiguous": false,
     "failure": ""
    }
@@ -3684,7 +3684,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -3730,7 +3730,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -3799,7 +3799,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -3891,7 +3891,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -3960,7 +3960,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -4002,10 +4002,10 @@
     "title": "东京喰种:re"
    },
    "baseline": {
-    "subject_id": "115292",
+    "subject_id": "148481",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.8275862068965517,
+    "score": 1.0,
     "ambiguous": false,
     "failure": ""
    }
@@ -4029,7 +4029,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -4075,7 +4075,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -4098,7 +4098,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -4121,7 +4121,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": true,
+    "ambiguous": false,
     "failure": ""
    }
   },
@@ -4140,10 +4140,10 @@
     "title": "火力少年王之传奇再现续集"
    },
    "baseline": {
-    "subject_id": "148703",
+    "subject_id": "148704",
     "match_method": "archive",
     "match_detail": "exact",
-    "score": 0.9090909090909091,
+    "score": 1.0,
     "ambiguous": false,
     "failure": ""
    }

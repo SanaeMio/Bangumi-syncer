@@ -986,8 +986,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         优先级（从高到低）：
         1. 标题与请求标题精确相等（最直接的主线条目）
         2. 标题含"第N季"声明（明确是季番条目）
-        3. eps/total_episodes 最大的候选（主线剧集集数多）
-        4. 兜底取第一个候选
+        3. 兜底取第一个候选
+
+        历史变更：删除了原 step 3「eps/total_episodes 最大的候选」（2026-09-08）。
+        根因：跨季场景下该规则不安全。`凡人修仙传`（81 集）会盖过
+        `凡人修仙传 新年番`（48 集）——实际查询带「新年番」字样时本意是后者。
+        实测 240 条 L2 黄金集 NFKC 修复后此类误判占新增错配 7 条。
+        决策：宁可取第一个（季番候选中按 API 返回顺序），不再按集数取最大。
 
         Args:
             candidates: detect_media_type 为 episode 的候选列表（已排除剧场版/电影）
@@ -1011,7 +1016,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 if name == request_title or name_cn == request_title:
                     return cand
 
-        # 2) 标题含"第N季"声明（明确是季番条目，优先于衍生短番）
+        # 2) 标题含"第N季"声明（明确是季番条目，优先于衍生短番）。
+        #    季番候选内部按 API 返回顺序取首条（不再按 eps 排序，见上方说明）。
         season_candidates = []
         for cand in candidates:
             name = cand.get("name") or ""
@@ -1020,20 +1026,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             if "季" in combined or "期" in combined or "Season" in combined:
                 season_candidates.append(cand)
         if season_candidates:
-            # 在季番候选中再按 eps 排序
-            season_candidates.sort(
-                key=lambda c: int(c.get("eps") or c.get("total_episodes") or 0),
-                reverse=True,
-            )
             return season_candidates[0]
 
-        # 3) eps/total_episodes 最大的候选
-        sorted_by_eps = sorted(
-            candidates,
-            key=lambda c: int(c.get("eps") or c.get("total_episodes") or 0),
-            reverse=True,
-        )
-        return sorted_by_eps[0]
+        # 3) 兜底：取第一个候选
+        return candidates[0]
 
     def _resolve_season_episode(
         self,

@@ -616,8 +616,13 @@ class APISearchStep(MatchStepBase):
         top_name = (bgm_data[0].get("name") or "").strip()
         top_name_cn = (bgm_data[0].get("name_cn") or "").strip()
         request_title = (item.title or "").strip()
-        top_exact_match = request_title and request_title in {top_name, top_name_cn}
-        need_reselect = top_detected != request_media_type or not top_exact_match
+        # 改选触发条件收紧为「仅媒体类型冲突」（2026-09-08 匹配调研决策）：
+        # 旧逻辑 `top_detected != request_media_type or not top_exact_match`
+        # 第二个条件 `not top_exact_match` 在「查询带'第二季'后缀 / NFKC 半角差异」时
+        # 几乎恒真 → need_reselect 恒真 → 下游 `_pick_mainline_episode_candidate`
+        # 按「eps 最大」跨季择优，**跨季时反而选到集数更多的前作**。
+        # 实测 240 条 L2 黄金集中占错配 4/9（44%）。决策：宁可信任 top，宁可漏标。
+        need_reselect = top_detected != request_media_type
 
         if not need_reselect:
             return None
@@ -628,8 +633,9 @@ class APISearchStep(MatchStepBase):
             cand_detected = _detect_candidate_media_type(cand)
             if cand_detected == request_media_type:
                 episode_candidates.append(cand)
-        if top_detected == request_media_type and not top_exact_match:
-            episode_candidates.insert(0, bgm_data[0])
+        # 注：旧逻辑中「top 类型一致但标题不完全相等时把 top 插回候选」分支
+        # 已被新触发条件排除（need_reselect 现在仅在类型冲突时为真），
+        # 删除以避免死代码 + 隐藏意图。
 
         if episode_candidates:
             best_cand = service._pick_mainline_episode_candidate(
