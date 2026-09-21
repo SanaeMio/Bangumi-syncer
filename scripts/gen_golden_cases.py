@@ -385,7 +385,9 @@ def gen_l1(cache_path: Path, n: int, k: int, seed: int, out: Path | None = None)
 # =====================================================================
 
 
-def _prepare_l2_config() -> Path:
+def _prepare_l2_config(
+    overrides: dict[str, dict[str, str]] | None = None,
+) -> Path:
     """为 L2 准备临时配置，返回临时目录
 
     必须在 import 任何 app 模块**之前**调用：``app.utils.bangumi_data`` 等
@@ -410,6 +412,12 @@ def _prepare_l2_config() -> Path:
     cp.set("dev", "log_file", str(tmpdir / "golden.log"))
     cp.set("dev", "log_level", "WARNING")
     cp.set("dev", "debug", "false")
+    # A/B 用：注入额外配置项（如 [matching] arbiter_enabled）
+    for section, pairs in (overrides or {}).items():
+        if not cp.has_section(section):
+            cp.add_section(section)
+        for key, value in pairs.items():
+            cp.set(section, key, value)
     with open(cfg, "w", encoding="utf-8") as f:
         cp.write(f)
     os.environ["CONFIG_FILE"] = str(cfg)
@@ -635,13 +643,26 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED)
     ap.add_argument("--cache", default="./bangumi_data_cache.json")
     ap.add_argument("--out", default=None, help="输出路径（默认写回 tests/golden）")
+    ap.add_argument(
+        "--arbiter",
+        choices=["on", "off"],
+        default=None,
+        help="强制开关匹配裁决层（默认跟随配置文件，一般用于 A/B 对比）",
+    )
     args = ap.parse_args()
 
     out = Path(args.out) if args.out else None
     rc = 0
     # L2 的临时配置必须在任何 app 模块 import 之前就绪（见 _prepare_l2_config 说明）
     if args.mode in ("l2", "all"):
-        _prepare_l2_config()
+        overrides = None
+        if args.arbiter:
+            overrides = {
+                "matching": {
+                    "arbiter_enabled": "true" if args.arbiter == "on" else "false"
+                }
+            }
+        _prepare_l2_config(overrides)
     if args.mode in ("l1", "all"):
         rc |= gen_l1(Path(args.cache), args.n, args.distractors, args.seed, out)
     if args.mode in ("l2", "all"):

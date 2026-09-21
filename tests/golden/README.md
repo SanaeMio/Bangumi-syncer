@@ -65,3 +65,25 @@ uv run python scripts/gen_golden_cases.py --mode l2     # 全量管线（需 arc
   archive 数据的机器上跑一次 L2。
 - L1 的 fixture 是全量的约 42%（3676/8829）。若某次改动命中了子集外的
   条目，L1 看不出来。
+
+## 用黄金集量化裁决层改动
+
+裁决层（P3）改变的是「够不够格自动采用」，只有 L2 能量化它的收益。仓库提供了
+A/B 脚本，让同一批用例分别跑「裁决关闭 / 开启」，直接对比覆盖率与精确率：
+
+```bash
+uv run python .workbuddy/research/matching-pipeline/eval_arbiter.py 30
+```
+
+两次运行都走子进程 + 临时配置，与 L2 黄金集的环境完全一致，因此差异只来自
+`[matching] arbiter_enabled` 这一个开关。
+
+比对时**只看「采用了哪个条目」**，不比对整个 baseline：关闭时 `final_score`
+是完整浮点、开启时裁决层 round 到 4 位，直接整体比对会把几十条纯精度差异
+算成行为变化（实测 240 条里有 34 条属于此类）。
+
+最近一次实测（240 条真实归档用例）：错命中 9 → 2，精确率 95.9% → 99.0%，
+覆盖率 92.5% → 85.8%。完整数据见 `docs/config/matching.md`。
+
+改裁决层的阈值或聚合方式后，都应该重跑一次这个脚本 —— 单看 CI 是看不出
+收益的（L2 在 CI 里默认 skip）。
