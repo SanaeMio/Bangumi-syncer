@@ -1731,3 +1731,188 @@ class TestFindEpisodeFranchiseFallback:
 
         result = api.find_episode_across_seasons(100, 120)
         assert result is None
+
+
+class TestFindSeasonOneEpisodeNoHang:
+    """`_find_season_one_episode` 续集链遍历不得原地空转。
+
+    历史 bug：循环内三处「跳过当前续集」用了裸 `continue`，而 `current_id`
+    的推进在循环体末尾 —— `continue` 跳过推进，`while True` 原地打转。
+    表现为**纯烧 CPU、不报错、无超时**（真实库中 id=321 / id=1352 触发，
+    单次同步线程 get_subject 调用超过 400 次仍不返回）。
+
+    触发条件：根条目找不到 target_ep（逼出续集跳转）+ 续集类型或 platform
+    与根不符（命中跳过分支）。
+    """
+
+    @staticmethod
+    def _api_with_sequel(sequel_type: int, sequel_platform: str):
+        """根 type=2/platform=1 且无 target_ep；续集按参数构造"""
+        api = BangumiApi()
+
+        def get_related(sid):
+            if int(sid) == 100:
+                return [{"relation": "续集", "id": 200}]
+            return []
+
+        def get_subject(sid):
+            if int(sid) == 100:
+                return {"type": 2, "platform": "1", "name": "根", "name_cn": ""}
+            if int(sid) == 200:
+                return {
+                    "type": sequel_type,
+                    "platform": sequel_platform,
+                    "name": "续集",
+                    "name_cn": "",
+                }
+            return None
+
+        # 根只有 3 集且不含 target_ep=99；续集同样不含
+        def get_ep(sid, *args, **kwargs):
+            if int(sid) in (100, 200):
+                return {
+                    "data": [
+                        {"sort": i, "ep": i, "id": int(sid) * 100 + i, "type": 0}
+                        for i in range(1, 4)
+                    ],
+                    "total": 3,
+                }
+            return {"data": [], "total": 0}
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+        # archive 全 miss，强制走在线逐跳
+        for name in (
+            "try_get_subject",
+            "try_get_episodes",
+            "try_find_sequel_chain",
+            "try_find_prequel_chain",
+            "try_find_related_id_by_relation",
+            "try_find_series_closure",
+            "try_find_franchise_closure",
+        ):
+            if hasattr(api._archive, name):
+                setattr(
+                    api._archive,
+                    name,
+                    MagicMock(return_value=ShortcutResult(False, None, "archive_miss")),
+                )
+        return api
+
+    def test_sequel_type_mismatch_does_not_hang(self):
+        """续集 type 与根不符（如动画→三次元）时必须终止而非空转"""
+        api = self._api_with_sequel(sequel_type=6, sequel_platform="1")
+        # 不设超时：若回归为空转，本用例会一直挂着（CI 超时即失败）
+        result = api._find_season_one_episode(
+            subject_id=100,
+            target_ep=99,
+            root_type=2,
+            root_platform="1",
+            release_date=None,
+        )
+        assert result == (None, None)
+        # 关键断言：不得反复查询同一条目
+        assert api.get_subject.call_count <= 4, (
+            f"get_subject 被调用 {api.get_subject.call_count} 次，疑似原地空转"
+        )
+
+    def test_sequel_platform_mismatch_does_not_hang(self):
+        """续集 platform 与根不符时必须终止而非空转"""
+        api = self._api_with_sequel(sequel_type=2, sequel_platform="3")
+        result = api._find_season_one_episode(
+            subject_id=100,
+            target_ep=99,
+            root_type=2,
+            root_platform="1",
+            release_date=None,
+        )
+        assert result == (None, None)
+        assert api.get_subject.call_count <= 4, (
+            f"get_subject 被调用 {api.get_subject.call_count} 次，疑似原地空转"
+        )
+
+    def test_subject_missing_does_not_hang(self):
+        """续集取不到条目信息时必须终止而非空转"""
+        api = self._api_with_sequel(sequel_type=2, sequel_platform="1")
+        api.get_subject = MagicMock(return_value=None)
+        result = api._find_season_one_episode(
+            subject_id=100,
+            target_ep=99,
+            root_type=2,
+            root_platform="1",
+            release_date=None,
+        )
+        assert result == (None, None)
+        assert api.get_subject.call_count <= 4, (
+            f"get_subject 被调用 {api.get_subject.call_count} 次，疑似原地空转"
+        )
+
+    def test_skip_then_find_episode_in_later_sequel(self):
+        """跳过一个不符的续集后，仍能在更后面的续集里命中目标集数
+
+        保证修复没有把「跳过」变成「直接放弃」。
+        """
+        api = BangumiApi()
+        # 100(根) → 200(三次元，应跳过) → 300(动画，含 target_ep=5)
+        related = {
+            100: [{"relation": "续集", "id": 200}],
+            200: [{"relation": "续集", "id": 300}],
+            300: [],
+        }
+
+        def get_related(sid):
+            return related.get(int(sid), [])
+
+        def get_subject(sid):
+            return {
+                100: {"type": 2, "platform": "1", "name": "根", "name_cn": ""},
+                200: {"type": 6, "platform": "1", "name": "三次元", "name_cn": ""},
+                300: {"type": 2, "platform": "1", "name": "续集", "name_cn": ""},
+            }.get(int(sid))
+
+        def get_ep(sid, *args, **kwargs):
+            if int(sid) == 300:
+                return {
+                    "data": [
+                        {"sort": i, "ep": i, "id": 30000 + i, "type": 0}
+                        for i in range(1, 13)
+                    ],
+                    "total": 12,
+                }
+            return {
+                "data": [
+                    {"sort": i, "ep": i, "id": int(sid) * 100 + i, "type": 0}
+                    for i in range(1, 4)
+                ],
+                "total": 3,
+            }
+
+        api.get_related_subjects = MagicMock(side_effect=get_related)
+        api.get_subject = MagicMock(side_effect=get_subject)
+        api.get_episodes = MagicMock(side_effect=get_ep)
+        for name in (
+            "try_get_subject",
+            "try_get_episodes",
+            "try_find_sequel_chain",
+            "try_find_prequel_chain",
+            "try_find_related_id_by_relation",
+            "try_find_series_closure",
+            "try_find_franchise_closure",
+        ):
+            if hasattr(api._archive, name):
+                setattr(
+                    api._archive,
+                    name,
+                    MagicMock(return_value=ShortcutResult(False, None, "archive_miss")),
+                )
+
+        sid, eid = api._find_season_one_episode(
+            subject_id=100,
+            target_ep=5,
+            root_type=2,
+            root_platform="1",
+            release_date=None,
+        )
+        assert sid == 300
+        assert eid == 30005

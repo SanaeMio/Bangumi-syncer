@@ -1176,31 +1176,44 @@ class EpisodesMixin:
         first_part = True
         visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
+            # 是否跳过当前条目（类型/platform 不符）。
+            #
+            # ⚠️ 这里必须用「标记 + 统一推进」而不是直接 `continue`：
+            # `current_id` 的推进在循环体末尾，`continue` 会跳过它导致
+            # while True 原地空转（纯烧 CPU、不报错、不超时）。历史 bug 见
+            # tests/utils/test_bangumi_api_extended.py
+            # ::TestFindSeasonOneEpisodeNoHang。
+            skip_current = False
             if not first_part:
                 current_info = self.get_subject(current_id)
                 if not current_info:
-                    continue
-                if root_type is not None and current_info.get("type") != root_type:
-                    continue
-                # 续集链 platform 隔离：根条目与当前条目都带 platform 且不同时跳过
-                cur_platform = (current_info.get("platform") or "").strip()
-                if root_platform and cur_platform and cur_platform != root_platform:
-                    continue
-            found = self._find_episode_by_sort(current_id, target_ep)
-            if found:
-                return current_id, found["id"]
-            episodes = self.get_episodes(current_id)
-            ep_info = episodes.get("data", [])
-            if not ep_info:
-                logger.debug(f"未获取到剧集信息: {current_id}")
-                break
-            normal_season = (
-                True
-                if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
-                else False
-            )
-            if not first_part and normal_season:
-                break
+                    skip_current = True
+                elif root_type is not None and current_info.get("type") != root_type:
+                    skip_current = True
+                else:
+                    # 续集链 platform 隔离：根条目与当前条目都带 platform 且不同时跳过
+                    cur_platform = (current_info.get("platform") or "").strip()
+                    if root_platform and cur_platform and cur_platform != root_platform:
+                        skip_current = True
+
+            if not skip_current:
+                found = self._find_episode_by_sort(current_id, target_ep)
+                if found:
+                    return current_id, found["id"]
+                episodes = self.get_episodes(current_id)
+                ep_info = episodes.get("data", [])
+                if not ep_info:
+                    logger.debug(f"未获取到剧集信息: {current_id}")
+                    break
+                normal_season = (
+                    True
+                    if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
+                    else False
+                )
+                if not first_part and normal_season:
+                    break
+
+            # 统一推进：无论当前条目是否被跳过，都要前进到下一个续集
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
