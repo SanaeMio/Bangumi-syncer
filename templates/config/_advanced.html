@@ -220,6 +220,22 @@
                                     <label class="form-check-label" for="debug-mode">启用调试模式</label>
                                 </div>
                             </div>
+                            <div class="col-6 col-md-3">
+                                <label for="log-level" class="form-label fw-semibold">
+                                    <i class="bi bi-list-ul me-1 text-secondary"></i>日志级别
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="低于该级别的日志不写入控制台与日志文件。INFO 记录同步的开始/结束/失败原因；排查问题时用 DEBUG。开启「调试模式」时始终按 DEBUG 输出。"></i>
+                                </label>
+                                <select class="form-select"
+                                        id="log-level"
+                                        name="dev.log_level">
+                                    <option value="DEBUG">DEBUG（最详细）</option>
+                                    <option value="INFO">INFO（默认）</option>
+                                    <option value="WARNING">WARNING（仅警告与错误）</option>
+                                    <option value="ERROR">ERROR（仅错误）</option>
+                                </select>
+                            </div>
                             <div class="col-12 col-md-3">
                                 <label for="log-file" class="form-label fw-semibold">
                                     <i class="bi bi-file-earmark-text me-1 text-secondary"></i>日志文件路径

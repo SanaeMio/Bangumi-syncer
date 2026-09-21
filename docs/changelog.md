@@ -9,6 +9,8 @@ order: 45
 
 ## ✨ 新功能
 
+- 匹配裁决层（Arbiter）：`[matching]` 段新增 `arbiter_enabled` 与各来源权重，由「单阈值」改为「分数够不够 + 领先第二名多少」双阈值门控，240 条归档用例实测精确率 95.9% → 99.0%（错命中 9 → 2，覆盖率 92.5% → 85.8%）。**默认关闭**，开启后不推翻季度/媒体类型/关联条目改选；配置页「匹配裁决层」卡片可调开关、双阈值与各来源权重 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 拒绝待确认候选时记入标题级负样本黑名单，下次自动匹配命中同一 subject 时降级为漏标（宁可漏标不能错标）；自定义映射为显式意图，不受黑名单约束 [#15](https://github.com/SanaeMio/Bangumi-syncer/issues/15) [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
 - 封面批量解析优化：已配置 Bangumi 账号时优先从「在看」收藏列表一次性提取封面（覆盖时间线绝大多数条目），未命中的条目再逐个调用 API 兜底（不再走 Archive 短路，确保返回图片字段），结果缓存 24 小时 `2026-08-12`
 - 新增 ECH（加密 Client Hello）支持：`[dev]` 段新增 `ech_mode` / `ech_doh_url` / `ech_doh_use_proxy` / `ech_hosts` / `ech_ech_config` 五项配置，可加密 Bangumi 各域名的 TLS Client Hello 以应对 SNI 探测/封锁；DoH 获取失败或配置无效时自动降级为普通 TLS，不影响同步 `2026-08-12`
 - 日志分级：新增 `[dev] log_level` 配置（默认 `INFO`，可用 `LOG_LEVEL` 环境变量覆盖），低于阈值的日志不再写入控制台/日志文件 `2026-08-09`
@@ -31,6 +33,13 @@ order: 45
 
 ## 🐛 Bug 修复
 
+- 修复全角标题匹配失败：归一化入口补齐 Unicode NFKC（索引侧本就做了 NFKC，查询侧没做），240 条归档用例命中率 88.8% → 97.9% [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 修复跨季匹配选到集数更多的前作：收紧媒体类型改选触发条件，并删除「按 eps 最大择优」（`凡人修仙传` 81 集盖过 `凡人修仙传 新年番` 48 集） [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 修复 bangumi-data 命中不校验放送日期导致的错标：与请求日期相差超过 365 天时改为未命中，交由 Archive / API 继续解析（宁可漏标不能错标） [#4](https://github.com/SanaeMio/Bangumi-syncer/issues/4) [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 修复集数定位误用「衍生」关系边：`鬼灭之刃` 第 28 集曾错标到 `鬼灭广播`（广播节目，89 集），现排除该边；同时补上 `favorite` 字段的反序列化 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 修复类型冲突时同名动画漏标：archive 精确匹配只命中真人剧时（`凡人修仙传` 动画条目均带后缀），补召回同名动画候选 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 修复 infobox 花括号别名列表未解析：98.9% 的 `别名` 字段使用花括号 block 格式却只识别 bullet，导致别名被当作一整个脏字符串，含空格的别名永远匹配不上（需重建 FTS5 索引生效） [#16](https://github.com/SanaeMio/Bangumi-syncer/issues/16) [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 修复空白原始标题（Emby 缺 `OriginalTitle` 时传入 `" "`）顶掉正确匹配分支的问题，emby/plex 源头统一为 `None` [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
 - 修复通知在删除规则后仍广播到所有渠道：无 `notify-rule` 时改为**停发外部渠道**（仅写站内信），渠道不再兜底按自身 `types` 订阅，规则成为发布的唯一闸门 `2026-08-09`
 
 - 修复 Replay 匹配阶段在 API 不可达时反复产出「未找到匹配的番剧」error 记录，改为直接跳过；探测成功后统一复位所有用户实例的不可达标记 `2026-08-09`
@@ -74,6 +83,7 @@ order: 45
 
 ## 🚀 优化
 
+- bangumi-data 全表扫描消除重复 `strptime` 与未命中路径的二次扫描（后者此前把同一次扫描跑了两遍） [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
 - 日志文件超过 20MB 自动轮转，保留最近 2 份备份（`log.txt.1`、`log.txt.2`） `2026-08-09`
 - 同步路径日志收敛：单集标记、匹配细节、网络诊断等大量细节下移为 `DEBUG`，默认 `INFO` 下日志噪音显著降低 `2026-08-09`
 - `BangumiApi` 实例按用户缓存，避免重复构造 `httpx.Client` [#210](https://github.com/SanaeMio/Bangumi-syncer/pull/210) `2026-07-29`
@@ -87,6 +97,9 @@ order: 45
 
 ## ♻️ 重构
 
+- 匹配管线引入契约层：统一 `SubjectRef` / `EpisodeRef` 形状与 Archive / API / bangumi-data 三方 adapter，各策略命中一律产出候选；不改判定顺序、阈值与终止条件 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 共享标题正则收敛至 `utils/title_patterns.py`（`YEAR_RE` / `SEASON_SUFFIX_PATTERNS` / `extract_year`），消除同目的正则的多处副本 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 去重同目的常量（GitHub 反代镜像原有 3 份副本、UA/超时/TTL 在公告模块重复定义、`EP_TYPE_*` 与 `EPISODE_TYPE_*` 并存），并补齐 `RELATION_ID_*` / `PLATFORM_*` 具名常量 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
 - 通知系统重构 + 调度器状态卡修复 + 死代码清理 [#219](https://github.com/SanaeMio/Bangumi-syncer/pull/219) `2026-07-31`
 - 拆分 `config.html` 巨石模板为 12 个子模板 [#219](https://github.com/SanaeMio/Bangumi-syncer/pull/219) `2026-07-31`
 - 引入 `ConfigForm` 库实现前端自动序列化与配置注入 [#219](https://github.com/SanaeMio/Bangumi-syncer/pull/219) `2026-07-31`
@@ -109,6 +122,7 @@ order: 45
 
 ## 🧪 测试
 
+- 新增匹配管线基线检查工具（手动执行，非 CI）：`scripts/golden_check.py` 逐条比对 `scripts/golden_data/` 中的行为快照，报出差异与 oracle 命中率；`scripts/gen_golden_cases.py` 负责生成基线。改匹配逻辑前后各跑一次，避免静默改变既有行为 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
 - 引入 Playwright E2E 测试基础设施 [#219](https://github.com/SanaeMio/Bangumi-syncer/pull/219) `2026-07-31`
 - 修复 `conftest` 优先用 `config.example.ini` 而非 `config.ini` [#210](https://github.com/SanaeMio/Bangumi-syncer/pull/210) `2026-07-29`
 - 修复 `bangumi-archive.enabled=True` 卡死测试 + `asyncio.run` 污染事件循环 [#210](https://github.com/SanaeMio/Bangumi-syncer/pull/210) `2026-07-29`

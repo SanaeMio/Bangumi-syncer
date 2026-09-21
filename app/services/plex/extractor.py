@@ -65,7 +65,7 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
             "未找到originallyAvailableAt字段，将尝试从bangumi-data获取日期信息"
         )
 
-    original_title = md.get("originalTitle", " ")
+    original_title = md.get("originalTitle")
     title = md.get("grandparentTitle") or ""
 
     # 检测 OVA/OAD/三次元类型

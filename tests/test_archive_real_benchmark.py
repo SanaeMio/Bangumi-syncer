@@ -165,13 +165,13 @@ RELATION_ID_SEQUEL = 3
 # 前传关联类型（bangumi_constants.py: RELATION_ID_PREQUEL = 2）
 RELATION_ID_PREQUEL = 2
 
-# 同 IP / 同系列关系图闭包采用的关系类型集合（与 _store.FRANCHISE_RELATION_TYPES 一致）。
-# 依据真实库 a.db subject_relation.relation_type 分布选定：
-#   1 相同系列 / 2 前传 / 3 续集 / 4 外传 / 7 改编(同作者宇宙) /
-#   8 同世界观 / 9 续集(系列) / 10 劇場版·总集编 / 12 同系列
-# 剔除噪声边：5 角色出演 / 6 其他 / 11 其他(恶搞·活动) / 14 其他 / 99 其他·现实活动
-FRANCHISE_RELATION_TYPES = (1, 2, 3, 4, 7, 8, 9, 10, 12)
-
+# 同 IP / 同系列关系图闭包采用的关系类型集合（单源于 bangumi_constants）。
+# 官方 bangumi/common 编号（库 dump 与 web API 同一体系，2026-09-09 考证）：
+#   1 改编 / 2 前传 / 3 续集 / 4 总集篇 / 8 相同世界观 / 10 不同演绎 / 12 主线故事
+# 剔除噪声边：7 角色出演 / 9 不同世界观 / 5 全集 / 6 番外篇 / 11 衍生 / 14 联动 / 99 其他
+from app.utils.bangumi_constants import (  # noqa: E402
+    FRANCHISE_RELATION_TYPES,
+)
 
 # ===== 数据结构 =====
 

@@ -1009,8 +1009,7 @@ def test_find_subject_id_api_top_is_movie_no_related_keeps_first():
 
 
 def test_find_subject_id_api_top_movie_picks_mainline_over_derivative():
-    """完美世界场景：首条是剧场版（movie），候选中有衍生短番（双食记 6 集）
-    和多季主线剧集，应优先选主线剧集（按 eps 择优），而非衍生短番。
+    """完美世界场景回归测试（行为变更，2026-09-08 匹配调研决策）。
 
     模拟真实搜索结果：
     - 542046 完美世界剧场版 九劫焚天（movie，detect 排除）
@@ -1018,7 +1017,20 @@ def test_find_subject_id_api_top_movie_picks_mainline_over_derivative():
     - 403251 完美世界 第三季（episode，eps=52 主线剧集）
     - 345811 完美世界 第二季（episode，eps=52 主线剧集）
 
-    应选 403251 或 345811（eps 最大），而非 175141。
+    **新行为**（收紧 `_media_type_reselect` 触发条件后）：API 排序将
+    剧场版排到末尾，175141（双食记，WEB）成为 top。top 与 request 同为
+    episode → 不触发改选 → 直接接受 175141。
+
+    **旧行为**（已删除）：`need_reselect = top_detected != request_media_type or
+    not top_exact_match` —— 后者 `not top_exact_match` 在 "完美世界" 不等于
+    "完美世界双食记" 时为真 → 触发改选 → `_pick_mainline_episode_candidate`
+    按"eps 最大"跨季择优选到 403251/345811（但跨季时反而选到集数更多的前作，
+    副作用见 S3_季后缀 4 条错配）。
+
+    **决策**（grill-me 2026-09-08）：宁可信任 top / API 排序，宁可漏标。
+    本测试在权衡下接受 175141 作为新基线，理由：用户对"错标污染 Bangumi 收藏"
+    的容忍度更低，宁可错配衍生短番（用户能立刻发现并补映射），也不要让
+    `not top_exact_match` 这种宽触发条件继续在跨季场景制造隐式错配。
     """
     with _patched_sync_service_deps() as cfg:
 
@@ -1081,10 +1093,13 @@ def test_find_subject_id_api_top_movie_picks_mainline_over_derivative():
                             release_date="",
                         )
                     )
-        # 应改选到主线剧集（403251 或 345811），而非衍生短番 175141
+        # 新行为：top 175141（双食记，WEB，episode 类型一致 → 不触发改选）
+        # 旧行为：会改选到 403251/345811（主线剧集），但跨季副作用是 S3 错配 4 条
         sid_str = str(sid)
-        assert sid_str in {"403251", "345811"}, f"应改选到主线剧集，实际命中 {sid_str}"
-        assert sid_str != "175141", "不应命中衍生短番双食记"
+        assert sid_str == "175141", (
+            f"新行为：信任 API 排序，应直接接受 top 175141（双食记），"
+            f"实际命中 {sid_str}。如确需重新启用跨季改选，请评估 S3 4 条错配的回归。"
+        )
 
 
 def test_pick_mainline_episode_candidate_prefers_exact_title_match():
@@ -1114,8 +1129,14 @@ def test_pick_mainline_episode_candidate_prefers_season_keyword():
     assert result["id"] == 403251
 
 
-def test_pick_mainline_episode_candidate_falls_back_to_max_eps():
-    """_pick_mainline_episode_candidate：无精确匹配且无季番声明时按 eps 择优。"""
+def test_pick_mainline_episode_candidate_falls_back_to_first_when_no_season_keyword():
+    """_pick_mainline_episode_candidate：无精确匹配且无季番声明时取第一个候选。
+
+    行为变更（2026-09-08 匹配调研决策）：原「按 eps 最大择优」被删除，
+    跨季场景下该规则不安全（凡人修仙传 81 集会盖过凡人修仙传 新年番 48 集）。
+    新语义：宁可取第一个候选（API 返回顺序），不再按集数取最大。
+    "宁可漏标"原则 —— 错选比漏选代价更高。
+    """
     service = SyncService()
     candidates = [
         {"id": 1, "name": "完美世界A", "name_cn": "完美世界A", "eps": 10},
@@ -1123,7 +1144,7 @@ def test_pick_mainline_episode_candidate_falls_back_to_max_eps():
         {"id": 3, "name": "完美世界C", "name_cn": "完美世界C", "eps": 50},
     ]
     result = service._pick_mainline_episode_candidate(candidates, "完美世界")
-    assert result["id"] == 2
+    assert result["id"] == 1  # 取第一个（不再按 eps 排序）
 
 
 def test_find_subject_id_api_disabled_no_bgm_instance():
@@ -1231,10 +1252,13 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
         archive_steps = [s for s in trace.steps if s.stage == "archive"]
         assert len(archive_steps) == 2
         assert all(s.status == "hit" for s in archive_steps)
-        # APISearchStep 的 archive step 携带候选（source="archive"）
+        # C4：archive 短路 step 与 APISearchStep（stage_override=archive）都携带候选。
+        # 此前只有 APISearchStep 落地时才产出候选，archive 短路是「无候选盲信」。
         steps_with_candidates = [s for s in archive_steps if s.candidates]
-        assert len(steps_with_candidates) == 1
-        assert all(c.source == "archive" for c in steps_with_candidates[0].candidates)
+        assert len(steps_with_candidates) == 2
+        assert all(
+            c.source == "archive" for s in steps_with_candidates for c in s.candidates
+        )
         # 不应出现 stage="api_search" 的命中步骤
         api_hit_steps = [
             s for s in trace.steps if s.stage == "api_search" and s.status == "hit"

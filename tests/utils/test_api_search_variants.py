@@ -110,7 +110,10 @@ class TestBgmSearchVariantOrder:
         assert seen.index("君の名は。") > seen.index("「君の名は。」")
 
     def test_title_segment_split_variant(self) -> None:
-        """主副标题分隔的标题生成主段变体（主段长度 >= 4）。"""
+        """主副标题分隔的标题生成主段变体（主段长度 >= 4）。
+
+        入口 NFKC 折半角：全角冒号 `：` → 半角 `:`。
+        """
         api = _make_api()
         seen = _capture_fallback_search_titles(api)
 
@@ -120,8 +123,8 @@ class TestBgmSearchVariantOrder:
 
         # 主段变体存在
         assert "魔法少女小圆" in seen
-        # 主段变体在原始之后
-        assert seen.index("魔法少女小圆") > seen.index("魔法少女小圆：叛逆的物语")
+        # 主段变体在原始之后（原始经 NFKC 折半角）
+        assert seen.index("魔法少女小圆") > seen.index("魔法少女小圆:叛逆的物语")
 
     def test_short_main_segment_not_split(self) -> None:
         """主段长度 < 4 时不生成主段变体（避免过短误匹配）。"""
@@ -179,15 +182,18 @@ class TestBgmSearchVariantOrder:
         assert seen.index("日本語原名") < seen.index("中文译名")
 
     def test_full_variant_sequence(self) -> None:
-        """完整变体序列：原始 → 剥离后 → 书名号剥离 → 主段 → 媒体前缀。"""
+        """完整变体序列：原始 → 剥离后 → 书名号剥离 → 主段 → 媒体前缀。
+
+        入口 NFKC 折半角：全角冒号 `：` → 半角 `:`。
+        """
         api = _make_api()
         seen = _capture_fallback_search_titles(api)
 
         # 构造一个能触发所有变体类型的标题
-        # 「『魔法少女小圆：叛逆的物语』 S02E10」
-        # - 原始:  「『魔法少女小圆：叛逆的物语』 S02E10」
-        # - 剥离后:「『魔法少女小圆：叛逆的物语』」（剥离 S02E10）
-        # - 书名号剥离外层: 魔法少女小圆：叛逆的物语（剥离外层 『』）
+        # 「『魔法少女小圆：叛逆的物语』 S02E10」（NFKC 折半角后冒号变 `:`）
+        # - 原始:  「『魔法少女小圆:叛逆的物语』 S02E10」
+        # - 剥离后:「『魔法少女小圆:叛逆的物语』」（剥离 S02E10）
+        # - 书名号剥离外层: 魔法少女小圆:叛逆的物语（剥离外层 『』）
         # - 主段: 魔法少女小圆（分割：）
         # - 媒体前缀: 劇場版 魔法少女小圆 等
         api.bgm_search(
@@ -196,21 +202,21 @@ class TestBgmSearchVariantOrder:
             premiere_date="",
         )
 
-        # 验证关键变体都存在
-        assert "『魔法少女小圆：叛逆的物语』 S02E10" in seen
+        # 验证关键变体都存在（NFKC 折半角后）
+        assert "『魔法少女小圆:叛逆的物语』 S02E10" in seen
         # 剥离 S02E10 后的标题
-        assert "『魔法少女小圆：叛逆的物语』" in seen
+        assert "『魔法少女小圆:叛逆的物语』" in seen
         # 剥离外层书名号
-        assert "魔法少女小圆：叛逆的物语" in seen
+        assert "魔法少女小圆:叛逆的物语" in seen
         # 主段
         assert "魔法少女小圆" in seen
         # 媒体前缀变体
         assert "劇場版 魔法少女小圆" in seen
 
         # 验证优先级顺序
-        idx_original = seen.index("『魔法少女小圆：叛逆的物语』 S02E10")
-        idx_stripped = seen.index("『魔法少女小圆：叛逆的物语』")
-        idx_unwrapped = seen.index("魔法少女小圆：叛逆的物语")
+        idx_original = seen.index("『魔法少女小圆:叛逆的物语』 S02E10")
+        idx_stripped = seen.index("『魔法少女小圆:叛逆的物语』")
+        idx_unwrapped = seen.index("魔法少女小圆:叛逆的物语")
         idx_main_seg = seen.index("魔法少女小圆")
         idx_prefix = seen.index("劇場版 魔法少女小圆")
 

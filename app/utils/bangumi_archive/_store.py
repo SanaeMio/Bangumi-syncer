@@ -22,54 +22,24 @@ from typing import Any, Optional
 
 from ...core.logging import logger
 from ..bangumi_constants import (
+    EPISODE_TYPE_NORMAL,
+    FRANCHISE_RELATION_CN_SET as FRANCHISE_RELATION_CN_SET,  # 再导出（兼容旧导入路径）
+    FRANCHISE_RELATION_TYPES,
     RELATION_ID_PREQUEL,
     RELATION_ID_SEQUEL,
     RELATIONS,
     SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
 )
 from ._archive import bangumi_archive
 from ._wiki_parser import parse_infobox
 
-# 同 IP / 同系列关系图闭包所采用的关系类型集合（库 dump 编号）。
-# 数据依据（真实库 a.db 的 subject_relation.relation_type 分布）：
-#   1 相同系列 2132 / 2 前传 13249 / 3 续集 13281 / 4 外传 1189 /
-#   7 改编(同作者宇宙) 3903 / 8 同世界观 3084 / 9 续集(系列) 1352 /
-#   10 劇場版·总集编 6531 / 12 同系列 3864 —— 均属「同一作品/IP 宇宙」边
-# 排除噪声边（会把无关条目连进闭包，如 CLANNAD→京都动画粉丝感谢活动）：
-#   5 角色出演 1190 / 6 其他 2815 / 11 其他(恶搞/活动) 2794 /
-#   14 其他 465 / 99 其他·现实活动 3745
-#
-# 注意：此处的 relation_type 是 bangumi-data dump 的编号体系，与
-# bangumi_constants.RELATIONS（官方 web API 编号体系）不同——两套仅 2(前传)/3(续集) 重合。
-# 故离线（find_franchise_closure）直接用本元组按 relation_type IN 查库；
-# 在线降级（_bfs_franchise_closure_online）必须用 FRANCHISE_RELATION_CN_SET
-# 匹配 Bangumi 官方 API 返回的 relation 中文字段，二者不可混用。
-FRANCHISE_RELATION_TYPES = (1, 2, 3, 4, 7, 8, 9, 10, 12)
-
-# 在线降级（Bangumi 官方 web API）对应的「同 IP 宇宙」relation 中文名集合。
-# 来源：FRANCHISE_RELATION_TYPES 的库 dump 语义映射到官方 API 的中文名
-#   库1 相同系列 → 官方无直接对应，以「主线故事」近似（同一主线作品系列）
-#   库2/3 前传/续集 → 官方「前传」「续集」（编号一致）
-#   库4 外传 → 官方「番外篇」（官方 6）
-#   库7 改编(同作者宇宙) → 官方「改编」（官方 1）
-#   库8 同世界观 → 官方「相同世界观」（官方 8）
-#   库9 续集(系列) → 官方「续集」（已在集合内）
-#   库10 劇場版·总集编 → 官方「总集篇」（官方 4）+「不同演绎」（官方 10，含剧场版改编）
-#   库12 同系列 → 官方「主线故事」（官方 12）
-# 排除：官方 7「角色出演」/ 9「不同世界观」/ 14「联动」/ 99「其他」/ 5「全集」
-FRANCHISE_RELATION_CN_SET = frozenset(
-    {
-        "前传",
-        "续集",
-        "改编",
-        "番外篇",
-        "相同世界观",
-        "总集篇",
-        "不同演绎",
-        "主线故事",
-        "衍生",
-    }
-)
+# 同 IP / 同系列关系图闭包所采用的关系类型集合（官方 bangumi/common 编号）。
+# canonical 定义（含编号考证与噪声边排除依据）已收拢至 bangumi_constants：
+#   库 dump 编号 = 官方 web API 编号 = bangumi_constants.RELATIONS
+#   （2026-09-09 实证；探针见 tests/utils/test_platform_constants.py，
+#   对官方快照与真实库分布做断言）。
+# 此处转口再导出，保持既有导入路径（bangumi_archive._store）不变。
 
 
 class ArchiveStore:
@@ -232,7 +202,7 @@ class ArchiveStore:
         self,
         start_date: str,
         end_date: str,
-        subject_types: tuple[int, ...] = (2, 6),
+        subject_types: tuple[int, ...] = (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL),
         subject_ids: Optional[set[int]] = None,
     ) -> list[dict[str, Any]]:
         """按 airdate 范围查询放送日程，JOIN subject 取条目名
@@ -597,11 +567,13 @@ class ArchiveStore:
 
         关键差异：
         - tags/score/score_details/meta_tags 在 Archive 中是 JSON 字符串，反序列化为 list/dict
+        - favorite 同样是 JSON 字符串（如 {"wish":9,"done":42,...}），必须反序列化，
+          否则下游只能拿到 str 而无法用于同名消歧（#7 favorite tie-breaker 的前置）
         - infobox 在 Archive 中是原始 wiki 串（如 {{Infobox|key=value}}），
           这里通过 wiki_parser 解析为 API 兼容的 list[dict] 格式；
           解析失败时回退为空列表（与 API 返回空 infobox 行为一致）
         """
-        for json_field in ("tags", "score", "score_details", "meta_tags"):
+        for json_field in ("tags", "score", "score_details", "meta_tags", "favorite"):
             val = row.get(json_field)
             if isinstance(val, str) and val:
                 try:
@@ -670,9 +642,19 @@ class ArchiveStore:
     def _adapt_episode_row(row: dict[str, Any]) -> dict[str, Any]:
         """将 Archive episode 行适配为 BangumiApi 返回结构
 
-        Archive 的字段名与 API 一致，仅 airdate 对应 API 的 airdate。
+        此前这里是 ``return row``——docstring 声称适配却什么都不做，
+        是 242（跨季 ep 定位错误）的根因之一：字段契约从未被强制执行，
+        下游只能靠 ``.get("ep")`` 裸访问并自行理解语义。
+
+        现在经 EpisodeRef 契约归一：保证 sort/ep/type/airdate 字段存在且
+        类型正确。ep 缺失时保持缺失（不合成，合成属 _synthesize_ep_field 的
+        职责），仅修正 None 值，避免下游比较出错。不改写已有数据。
+
+        使用函数内 import 避免与上层 sync_service 形成循环依赖。
         """
-        return row
+        from app.services.matching.contracts import EpisodeRef
+
+        return EpisodeRef.from_archive(row).to_api_dict()
 
     @staticmethod
     def _synthesize_ep_field(episodes: list[dict[str, Any]]) -> None:
@@ -686,7 +668,11 @@ class ArchiveStore:
         sort 推得，此时不补全，交由下游 episodes.py 依据 sort 重置（大于 1 跳回 1
         判定新季起点）定位季边界。
         """
-        type0 = [e for e in episodes if e.get("type", 0) == 0]
+        type0 = [
+            e
+            for e in episodes
+            if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+        ]
 
         # 按 id 升序遍历（反映章节录入顺序），sort 由大于 1 跳回 1 即为新季起点
         prev_sort = None

@@ -14,11 +14,50 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from functools import lru_cache
 
 from rapidfuzz import fuzz
 
 from ...core.logging import logger
 from ...utils.media_type_detector import detect_media_type
+from ..title_patterns import SEASON_SUFFIX_PATTERNS
+
+# 日期解析记忆化：bangumi-data 的 begin 是条目常量，但 _calculate_match_info
+# 会对每条候选重复调用 strptime（8.8k 条目 × 2 次 30/120 天判定 ≈ 每次查询 3.5 万次），
+# 实测占全表扫描耗时的 ~78%。strptime 是纯函数，记忆化不改变任何匹配语义，
+# 仅避免在常量上反复解析（Windows 上还会连带触发 setlocale/getlocale）。
+_DATE_PARSE_CACHE_SIZE = 8192
+
+
+@lru_cache(maxsize=_DATE_PARSE_CACHE_SIZE)
+def _parse_ymd(date_str: str) -> datetime | None:
+    """解析 YYYY-MM-DD，失败返回 None（结果记忆化）"""
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _coerce_ymd(value: object) -> datetime | None:
+    """把任意输入安全转为 datetime；非法输入返回 None（不进缓存）"""
+    if not isinstance(value, str) or not value:
+        return None
+    return _parse_ymd(value[:10])
+
+
+def date_diff_days(date1: str, date2: str) -> int | None:
+    """两个日期相差天数；任一无法解析时返回 **None**。
+
+    与 ``MatchingMixin._date_diff`` 的区别：后者在解析失败时返回 999999 哨兵，
+    把「日期缺失」与「日期差极大」压成同一个值 —— 用于择优时可以接受（都算最差），
+    但用于**硬校验**会把「条目没有放送日期」误判成「日期差 55 年」而误杀。
+    step 层做日期硬校验必须能区分二者，故提供本函数。
+    """
+    d1 = _coerce_ymd(date1)
+    d2 = _coerce_ymd(date2)
+    if d1 is None or d2 is None:
+        return None
+    return abs((d2 - d1).days)
 
 
 class MatchingMixin:
@@ -33,6 +72,7 @@ class MatchingMixin:
         release_date: str = None,
         season: int = 1,
         media_type: str = "",
+        candidates_out: list[dict] | None = None,
     ) -> tuple[str, str, bool] | None:
         """
         根据标题和其他信息查找 bangumi id
@@ -44,6 +84,9 @@ class MatchingMixin:
             season: 季度，默认为 1（第一季）
             media_type: 请求侧媒体类型（episode/movie/ova/oad/real_action），
                 用于在无 release_date 且有多个同标题候选时按类型择优
+            candidates_out: 可选出参。传入列表时，会把本次扫描得到的候选
+                （与 find_bangumi_candidates 同构）写入其中，使调用方无需
+                为取候选再全表扫描一次。仅在真正发生扫描时写入。
 
         Returns:
             找到匹配的 (bangumi_id, matched_title, date_matched) 或 None
@@ -56,19 +99,10 @@ class MatchingMixin:
         # 如果是非第一季，尝试从标题中识别第一季的标题
         original_title = title
         if season > 1:
-            # 尝试移除标题中可能包含的季度信息
-            title_without_season = re.sub(r"\s*[第]?\s*\d+\s*期?[話话集]?$", "", title)
-            title_without_season = re.sub(
-                r"\s*Season\s*\d+$", "", title_without_season, flags=re.IGNORECASE
-            )
-            title_without_season = re.sub(
-                r"\s*S\d+$", "", title_without_season, flags=re.IGNORECASE
-            )
-            title_without_season = re.sub(r"\s*\d+$", "", title_without_season)
-            title_without_season = re.sub(r"\s*II+$", "", title_without_season)
-            title_without_season = re.sub(
-                r"\s*[第]?\s*\d+\s*[期季]$", "", title_without_season
-            )
+            # 尝试移除标题中可能包含的季度信息（模式单源 title_patterns）
+            title_without_season = title
+            for _pat in SEASON_SUFFIX_PATTERNS:
+                title_without_season = _pat.sub("", title_without_season)
 
             if title_without_season != title:
                 logger.debug(f"移除季度信息后的标题: {title_without_season}")
@@ -76,7 +110,13 @@ class MatchingMixin:
 
         # 使用优化的匹配算法，避免重复计算
         result = self._find_bangumi_id_optimized(
-            title, ori_title, release_date, original_title, season, media_type
+            title,
+            ori_title,
+            release_date,
+            original_title,
+            season,
+            media_type,
+            candidates_out,
         )
         if result:
             return result
@@ -117,15 +157,14 @@ class MatchingMixin:
                 for item, bangumi_id, matched_key in exact_candidates:
                     item_date = item.get("begin", "")
                     if item_date:
-                        try:
-                            d1 = datetime.strptime(release_date[:10], "%Y-%m-%d")
-                            d2 = datetime.strptime(item_date[:10], "%Y-%m-%d")
-                            diff = abs((d1 - d2).days)
-                            if diff < min_diff:
-                                min_diff = diff
-                                best = (bangumi_id, matched_key, True)
-                        except ValueError:
+                        d1 = _coerce_ymd(release_date)
+                        d2 = _coerce_ymd(item_date)
+                        if d1 is None or d2 is None:
                             continue
+                        diff = abs((d1 - d2).days)
+                        if diff < min_diff:
+                            min_diff = diff
+                            best = (bangumi_id, matched_key, True)
                 if best:
                     if min_diff <= 180:
                         return best
@@ -182,6 +221,19 @@ class MatchingMixin:
             logger.warning(f"find_bangumi_candidates 扫描失败: {e}")
             return []
 
+        return self._collect_candidates(exact_matches, partial_matches, limit)
+
+    def _collect_candidates(
+        self, exact_matches: list, partial_matches: list, limit: int = 5
+    ) -> list[dict]:
+        """把 _scan_candidates 的结果转成候选字典列表
+
+        精确匹配优先（score=1.0，按出现顺序），其余按 score 降序填充至 limit。
+
+        抽成独立方法供 find_bangumi_candidates 与
+        find_bangumi_id(candidates_out=...) 共用：后者在扫描出结果后顺手产出候选，
+        避免「先 find_bangumi_id 判无果、再 find_bangumi_candidates 重扫一遍」。
+        """
         candidates: list[dict] = []
 
         # 精确匹配优先（score=1.0），按出现顺序
@@ -192,21 +244,26 @@ class MatchingMixin:
                     "name": item.get("title", ""),
                     "name_cn": self._get_best_matched_title(item),
                     "score": 1.0,
+                    "date": item.get("begin", ""),
                     "source": "bangumi_data_exact",
                 }
             )
             if len(candidates) >= limit:
                 return candidates
 
-        # 部分匹配按 score 降序填充
-        partial_matches.sort(key=lambda x: x[1], reverse=True)
-        for item, score, bangumi_id in partial_matches:
+        # 部分匹配按 score 降序填充。用 sorted 而非 list.sort：本方法的输入可能
+        # 仍被调用方（_find_bangumi_id_optimized）继续使用，就地排序会改变其
+        # 并列时的遍历次序，进而影响 _select_from_exact_matches 的日期择优。
+        for item, score, bangumi_id in sorted(
+            partial_matches, key=lambda x: x[1], reverse=True
+        ):
             candidates.append(
                 {
                     "id": str(bangumi_id),
                     "name": item.get("title", ""),
                     "name_cn": self._get_best_matched_title(item),
                     "score": round(score, 3),
+                    "date": item.get("begin", ""),
                     "source": "bangumi_data_partial",
                 }
             )
@@ -486,8 +543,13 @@ class MatchingMixin:
         original_title: str = None,
         season: int = 1,
         media_type: str = "",
+        candidates_out: list[dict] | None = None,
     ) -> tuple[str, str, bool] | None:
         """优化的番剧ID查找算法，避免重复计算相似度
+
+        candidates_out 见 find_bangumi_id 同名参数：以**最后一次**扫描的结果
+        覆盖写入，保证与未命中时单独调用 find_bangumi_candidates(original_title)
+        等价（递归用原始标题重试时，写入的即原始标题的候选）。
 
         Returns:
             Optional[tuple[str, str, bool]]: (bangumi_id, matched_title, date_matched) 或 None
@@ -503,6 +565,16 @@ class MatchingMixin:
         exact_matches, partial_matches, processed_count = self._scan_candidates(
             title, ori_title, release_date
         )
+
+        # 顺手产出候选：BangumiDataStep 在未命中时用它回传 trace，
+        # 省掉一次完全相同的全表扫描（未命中路径原本要扫两遍）。
+        if candidates_out is not None:
+            try:
+                candidates_out[:] = self._collect_candidates(
+                    exact_matches, partial_matches
+                )
+            except Exception as e:
+                logger.debug(f"bangumi-data 候选回传失败（不影响主流程）: {e}")
 
         if self.verbose_logging:
             logger.debug(
@@ -525,7 +597,13 @@ class MatchingMixin:
         if original_title and original_title != title:
             logger.debug(f"使用原始标题 {original_title} 再次尝试匹配")
             return self._find_bangumi_id_optimized(
-                original_title, ori_title, release_date, None, season, media_type
+                original_title,
+                ori_title,
+                release_date,
+                None,
+                season,
+                media_type,
+                candidates_out,
             )
 
         logger.debug("未找到匹配的番剧 ID")
@@ -647,14 +725,17 @@ class MatchingMixin:
         return False
 
     def _date_diff(self, date1: str, date2: str) -> int:
-        """计算两个日期之间的天数差"""
-        try:
-            d1 = datetime.strptime(date1[:10], "%Y-%m-%d")
-            d2 = datetime.strptime(date2[:10], "%Y-%m-%d")
-            return abs((d2 - d1).days)
-        except Exception as e:
-            logger.error(f"计算日期差异时出错: {e}")
+        """计算两个日期之间的天数差（解析结果记忆化）
+
+        原实现对每条候选都重新 strptime 两次；日期解析是纯函数，
+        记忆化后语义完全一致，仅消除常量上的重复解析。
+        """
+        d1 = _coerce_ymd(date1)
+        d2 = _coerce_ymd(date2)
+        if d1 is None or d2 is None:
+            logger.debug(f"日期解析失败，按不匹配处理: {date1!r} / {date2!r}")
             return 999999  # 返回一个非常大的数字表示不匹配
+        return abs((d2 - d1).days)
 
     def _calculate_match_info(
         self, item: dict, title: str, ori_title: str = None, release_date: str = None

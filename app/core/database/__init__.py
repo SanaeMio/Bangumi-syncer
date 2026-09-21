@@ -31,6 +31,7 @@ from .llm_usage import LLMUsageRepository
 from .pending_candidates import PendingCandidatesRepository
 from .pending_sync_queue import PendingSyncQueueRepository
 from .sync_records import SyncRecordsRepository
+from .title_blacklist import TitleBlacklistRepository
 from .trakt import TraktRepository
 
 
@@ -61,6 +62,7 @@ class DatabaseManager:
         self.memory = AgentMemoryRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         self._pending_sync = PendingSyncQueueRepository(self._connection)
+        self._title_blacklist = TitleBlacklistRepository(self._connection)
         # 公开别名（消费标记写/清归 memory 域，业务层经此只读访问同步记录）
         self.sync_records = self._sync
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
@@ -319,6 +321,54 @@ class DatabaseManager:
             confirmed_subject_id=confirmed_subject_id,
             exclude_id=exclude_id,
         )
+
+    # ------------------------------------------------------------------
+    # TitleBlacklistRepository 转发（reject 负样本学习）
+    # ------------------------------------------------------------------
+
+    def add_title_blacklist(
+        self,
+        request_title: str,
+        subject_id: str,
+        user_name: str = "",
+        source: str = "",
+    ) -> bool:
+        """记录一条标题级负样本黑名单（幂等）。"""
+        return self._title_blacklist.add(
+            request_title=request_title,
+            subject_id=subject_id,
+            user_name=user_name,
+            source=source,
+        )
+
+    def bulk_add_title_blacklist(
+        self,
+        request_title: str,
+        subject_ids: list[str],
+        user_name: str = "",
+        source: str = "",
+    ) -> int:
+        """批量记录黑名单，返回新增条数。"""
+        return self._title_blacklist.bulk_add(
+            request_title=request_title,
+            subject_ids=subject_ids,
+            user_name=user_name,
+            source=source,
+        )
+
+    def get_title_blacklist(self, request_title: str) -> set[str]:
+        """返回该标题被拉黑的 subject_id 集合。"""
+        return self._title_blacklist.get_blocked_subject_ids(request_title)
+
+    def remove_title_blacklist(self, request_title: str, subject_id: str) -> bool:
+        """移除某标题下的单个黑名单条目。"""
+        return self._title_blacklist.remove(
+            request_title=request_title, subject_id=subject_id
+        )
+
+    def clear_title_blacklist(self, request_title: str) -> int:
+        """清空某标题的全部黑名单。"""
+        return self._title_blacklist.clear_for_title(request_title)
 
     # ------------------------------------------------------------------
     # PendingSyncQueueRepository 转发

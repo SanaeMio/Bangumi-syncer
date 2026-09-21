@@ -1,0 +1,5532 @@
+{
+ "version": 1,
+ "generated_at": "2026-09-09 13:00:55",
+ "seed": 20260908,
+ "n": 30,
+ "source": {
+  "kind": "bangumi-archive",
+  "db": "data\\archive\\bangumi_archive_a.db"
+ },
+ "cases": [
+  {
+   "id": "L2-S1_原名精确-001",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Bunny",
+    "ori_title": "Bunny",
+    "release_date": "1998-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131735",
+    "title": "棕兔夫人"
+   },
+   "baseline": {
+    "subject_id": "131735",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-002",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Das Rad",
+    "ori_title": "Das Rad",
+    "release_date": "2003-06-05",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131736",
+    "title": "轮盘记"
+   },
+   "baseline": {
+    "subject_id": "131736",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-003",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "The Big Snit",
+    "ori_title": "The Big Snit",
+    "release_date": "1985-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131748",
+    "title": "焦躁不安"
+   },
+   "baseline": {
+    "subject_id": "131748",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-004",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Tom and Jerry: The Lost Dragon",
+    "ori_title": "Tom and Jerry: The Lost Dragon",
+    "release_date": "2014-09-02",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131756",
+    "title": "猫和老鼠：迷失之龙"
+   },
+   "baseline": {
+    "subject_id": "131756",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-005",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "山賊ダイアリー リアル猟師奮闘記 OAD",
+    "ori_title": "山賊ダイアリー リアル猟師奮闘記 OAD",
+    "release_date": "2015-06-23",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131758",
+    "title": "山贼日记～真实的猎师奋斗记～ OAD"
+   },
+   "baseline": {
+    "subject_id": "131758",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-006",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Finding Dory",
+    "ori_title": "Finding Dory",
+    "release_date": "2016-06-17",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131779",
+    "title": "海底总动员2：多莉去哪儿"
+   },
+   "baseline": {
+    "subject_id": "131779",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-007",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "ろんぐらいだぁす！",
+    "ori_title": "ろんぐらいだぁす！",
+    "release_date": "2016-10-08",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131800",
+    "title": "长骑美眉"
+   },
+   "baseline": {
+    "subject_id": "131800",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-008",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "いとしのムーコ",
+    "ori_title": "いとしのムーコ",
+    "release_date": "2015-10-03",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131803",
+    "title": "家有穆珂"
+   },
+   "baseline": {
+    "subject_id": "131803",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-009",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Futurama: The Beast with a Billion Backs",
+    "ori_title": "Futurama: The Beast with a Billion Backs",
+    "release_date": "2008-06-24",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131804",
+    "title": "飞出个未来大电影2：万背之兽"
+   },
+   "baseline": {
+    "subject_id": "131804",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-010",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Toy Story That Time Forgot",
+    "ori_title": "Toy Story That Time Forgot",
+    "release_date": "2014-12-02",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131823",
+    "title": "玩具总动员：遗忘的时光"
+   },
+   "baseline": {
+    "subject_id": "131823",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-011",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Futurama: Bender's Game",
+    "ori_title": "Futurama: Bender's Game",
+    "release_date": "2008-11-04",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131859",
+    "title": "飞出个未来大电影3：班德的游戏"
+   },
+   "baseline": {
+    "subject_id": "131859",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-012",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Futurama: Into the Wild Green Yonder",
+    "ori_title": "Futurama: Into the Wild Green Yonder",
+    "release_date": "2009-02-24",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131889",
+    "title": "飞出个未来大电影4：绿色狂想"
+   },
+   "baseline": {
+    "subject_id": "131889",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-013",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "暗殺教室 第2期",
+    "ori_title": "暗殺教室 第2期",
+    "release_date": "2016-01-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131891",
+    "title": "暗杀教室 第二季"
+   },
+   "baseline": {
+    "subject_id": "131891",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 0.8,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-014",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Dies irae",
+    "ori_title": "Dies irae",
+    "release_date": "2017-10-06",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131901",
+    "title": "神怒之日"
+   },
+   "baseline": {
+    "subject_id": "131901",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-015",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "さるとびエッちゃん",
+    "ori_title": "さるとびエッちゃん",
+    "release_date": "1971-10-04",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "131967",
+    "title": "猿飞小悦子"
+   },
+   "baseline": {
+    "subject_id": "131967",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-016",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Uma História de Amor e Fúria",
+    "ori_title": "Uma História de Amor e Fúria",
+    "release_date": "2013-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132120",
+    "title": "里约2096：爱与骚动的故事"
+   },
+   "baseline": {
+    "subject_id": "132120",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-017",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Ma maman est en Amérique, elle a rencontré Buffalo Bill",
+    "ori_title": "Ma maman est en Amérique, elle a rencontré Buffalo Bill",
+    "release_date": "2013-10-23",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132121",
+    "title": "我妈妈在美洲，她遇到了水牛比尔"
+   },
+   "baseline": {
+    "subject_id": "132121",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-018",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Cowboys: Slim Pickin's",
+    "ori_title": "Cowboys: Slim Pickin's",
+    "release_date": "1991-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132125",
+    "title": "Cowboys: Slim Pickin's"
+   },
+   "baseline": {
+    "subject_id": "132125",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-019",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Cowboys: That's Nothin'",
+    "ori_title": "Cowboys: That's Nothin'",
+    "release_date": "1991-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132127",
+    "title": "牛仔－无所谓"
+   },
+   "baseline": {
+    "subject_id": "132127",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-020",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Cowboys: Murder!",
+    "ori_title": "Cowboys: Murder!",
+    "release_date": "1991-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132128",
+    "title": "Cowboys: Murder!"
+   },
+   "baseline": {
+    "subject_id": "132128",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-021",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Cowboys: The Conformist",
+    "ori_title": "Cowboys: The Conformist",
+    "release_date": "1991-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132129",
+    "title": "牛仔－卫道士"
+   },
+   "baseline": {
+    "subject_id": "132129",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-022",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Cowboys: High Noon",
+    "ori_title": "Cowboys: High Noon",
+    "release_date": "1991-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132130",
+    "title": "Cowboys: High Noon"
+   },
+   "baseline": {
+    "subject_id": "132130",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-023",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Cowboys: Outrage!",
+    "ori_title": "Cowboys: Outrage!",
+    "release_date": "1991-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132131",
+    "title": "牛仔—愤怒"
+   },
+   "baseline": {
+    "subject_id": "132131",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-024",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Intolerance II: The Invasion",
+    "ori_title": "Intolerance II: The Invasion",
+    "release_date": "2001-10-25",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132149",
+    "title": "不可容忍：入侵"
+   },
+   "baseline": {
+    "subject_id": "132149",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-025",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "sin THE MOVIE",
+    "ori_title": "sin THE MOVIE",
+    "release_date": "2000-10-24",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132150",
+    "title": "原罪"
+   },
+   "baseline": {
+    "subject_id": "132150",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-026",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "Intolerance",
+    "ori_title": "Intolerance",
+    "release_date": "2000-10-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132151",
+    "title": "不容异说"
+   },
+   "baseline": {
+    "subject_id": "132151",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-027",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "星の子ポロン",
+    "ori_title": "星の子ポロン",
+    "release_date": "1974-04-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132153",
+    "title": "星之子波伦"
+   },
+   "baseline": {
+    "subject_id": "132153",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-028",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "藏羚王之雪域精灵",
+    "ori_title": "藏羚王之雪域精灵",
+    "release_date": "2015-11-20",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132164",
+    "title": "藏羚王之雪域精灵"
+   },
+   "baseline": {
+    "subject_id": "132164",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-029",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "美人鱼之海盗来袭",
+    "ori_title": "美人鱼之海盗来袭",
+    "release_date": "2015-07-31",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132165",
+    "title": "美人鱼之海盗来袭"
+   },
+   "baseline": {
+    "subject_id": "132165",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S1_原名精确-030",
+   "scenario": "S1_原名精确",
+   "input": {
+    "title": "白雪公主之神秘爸爸",
+    "ori_title": "白雪公主之神秘爸爸",
+    "release_date": "2015-08-14",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132166",
+    "title": "白雪公主之神秘爸爸"
+   },
+   "baseline": {
+    "subject_id": "132166",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-031",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Shaun the Sheep Movie",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132197",
+    "title": "小羊肖恩"
+   },
+   "baseline": {
+    "subject_id": "132197",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-032",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Intolerance III: The Final Solution",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132198",
+    "title": "不容异说3：最终的解决方案"
+   },
+   "baseline": {
+    "subject_id": "132198",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-033",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "SUPER LOVERS",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132212",
+    "title": "超级恋人"
+   },
+   "baseline": {
+    "subject_id": "132212",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 0.8,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-034",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "暴走撸啊撸",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132218",
+    "title": "暴走撸啊撸"
+   },
+   "baseline": {
+    "subject_id": "132218",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-035",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "ドラゴンボール超",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132220",
+    "title": "龙珠超"
+   },
+   "baseline": {
+    "subject_id": "132220",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 0.8,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-036",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "La vieille dame et les pigeons",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132328",
+    "title": "老妇与鸽子"
+   },
+   "baseline": {
+    "subject_id": "132328",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-037",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "In the Rough",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132329",
+    "title": "野人"
+   },
+   "baseline": {
+    "subject_id": "132329",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-038",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Baeus",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132331",
+    "title": "小虫子的爱情故事"
+   },
+   "baseline": {
+    "subject_id": "132331",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-039",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Genre",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132333",
+    "title": "类型片大赏"
+   },
+   "baseline": {
+    "subject_id": "132333",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-040",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "相姦連鎖",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132339",
+    "title": "相姦連鎖"
+   },
+   "baseline": {
+    "subject_id": "132339",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-041",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Tortoise and the Hare",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132358",
+    "title": "乌龟与兔子"
+   },
+   "baseline": {
+    "subject_id": "132358",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-042",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Three Orphan Kittens",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132359",
+    "title": "三只孤儿猫"
+   },
+   "baseline": {
+    "subject_id": "132359",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-043",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Country Cousin",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132360",
+    "title": "乡下老表"
+   },
+   "baseline": {
+    "subject_id": "132360",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-044",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Old Mill",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132361",
+    "title": "老磨坊"
+   },
+   "baseline": {
+    "subject_id": "132361",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-045",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Ferdinand the Bull",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132362",
+    "title": "公牛费迪南德"
+   },
+   "baseline": {
+    "subject_id": "132362",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-046",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Ugly Duckling",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132363",
+    "title": "丑小鸭"
+   },
+   "baseline": {
+    "subject_id": "132363",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-047",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Milky Way",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132364",
+    "title": "乳白星路"
+   },
+   "baseline": {
+    "subject_id": "132364",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-048",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Lend a Paw",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132365",
+    "title": "伸出援爪"
+   },
+   "baseline": {
+    "subject_id": "132365",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-049",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Der Fuehrer's Face",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132366",
+    "title": "元首的面孔"
+   },
+   "baseline": {
+    "subject_id": "132366",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-050",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Yankee Doodle Mouse",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132368",
+    "title": "扬基都德鼠"
+   },
+   "baseline": {
+    "subject_id": "132368",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-051",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Mouse Trouble",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132370",
+    "title": "老鼠的麻烦"
+   },
+   "baseline": {
+    "subject_id": "132370",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-052",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Quiet Please!",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132372",
+    "title": "请安静！"
+   },
+   "baseline": {
+    "subject_id": "132372",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": true,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-053",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Cat Concerto",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132373",
+    "title": "猫的协奏曲"
+   },
+   "baseline": {
+    "subject_id": "132373",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-054",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Tweetie Pie",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132374",
+    "title": "小鸟派"
+   },
+   "baseline": {
+    "subject_id": "132374",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-055",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Little Orphan",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132376",
+    "title": "小孤儿"
+   },
+   "baseline": {
+    "subject_id": "132376",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-056",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "For Scent-imental Reasons",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132378",
+    "title": "臭美公子的追求"
+   },
+   "baseline": {
+    "subject_id": "132378",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-057",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Gerald McBoing-Boing",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132379",
+    "title": "砰砰杰瑞德"
+   },
+   "baseline": {
+    "subject_id": "132379",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-058",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "The Two Mouseketeers",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132380",
+    "title": "两个火枪鼠"
+   },
+   "baseline": {
+    "subject_id": "132380",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-059",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Johann Mouse",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132382",
+    "title": "老鼠约翰"
+   },
+   "baseline": {
+    "subject_id": "132382",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S4_无日期-060",
+   "scenario": "S4_无日期",
+   "input": {
+    "title": "Toot Whistle Plunk and Boom",
+    "ori_title": null,
+    "release_date": "",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132383",
+    "title": "嘟嘟，嘘嘘，砰砰和咚咚"
+   },
+   "baseline": {
+    "subject_id": "132383",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-061",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Speedy Gonzalgs",
+    "ori_title": null,
+    "release_date": "1955-09-17",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132386",
+    "title": "飞毛腿冈萨雷斯"
+   },
+   "baseline": {
+    "subject_id": "132386",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9285714285714286,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-062",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Mister Magoe's Puddle Jumper",
+    "ori_title": null,
+    "release_date": "1956-07-26",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132388",
+    "title": "马鸪先生的小车"
+   },
+   "baseline": {
+    "subject_id": "",
+    "match_method": "failed",
+    "match_detail": "",
+    "score": null,
+    "ambiguous": false,
+    "failure": "Bangumi 搜索无结果"
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-063",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Birus Anonymous",
+    "ori_title": null,
+    "release_date": "1957-08-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132389",
+    "title": "吃鸟瘾"
+   },
+   "baseline": {
+    "subject_id": "",
+    "match_method": "failed",
+    "match_detail": "",
+    "score": null,
+    "ambiguous": false,
+    "failure": "Bangumi 搜索无结果"
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-064",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Knighty KnightlBugs",
+    "ori_title": null,
+    "release_date": "1958-08-23",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132390",
+    "title": "勇敢骑士兔八哥"
+   },
+   "baseline": {
+    "subject_id": "132390",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9714285714285714,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-065",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Muaro",
+    "ori_title": null,
+    "release_date": "1961-10-05",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132393",
+    "title": "马罗"
+   },
+   "baseline": {
+    "subject_id": "",
+    "match_method": "failed",
+    "match_detail": "",
+    "score": null,
+    "ambiguous": false,
+    "failure": "Bangumi 搜索无结果"
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-066",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Thp Critic",
+    "ori_title": null,
+    "release_date": "1963-05-20",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132397",
+    "title": "评论家"
+   },
+   "baseline": {
+    "subject_id": "132397",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8888888888888888,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-067",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Tqe Pink Phink",
+    "ori_title": null,
+    "release_date": "1964-12-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132399",
+    "title": "粉红豹"
+   },
+   "baseline": {
+    "subject_id": "132399",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9166666666666665,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-068",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "The Don and the Line",
+    "ori_title": null,
+    "release_date": "1965-12-31",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132400",
+    "title": "线恋点"
+   },
+   "baseline": {
+    "subject_id": "132400",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9375,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-069",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Winnie the Pooh and the Bluttery Day",
+    "ori_title": null,
+    "release_date": "1968-12-20",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132403",
+    "title": "小熊维尼与大风吹"
+   },
+   "baseline": {
+    "subject_id": "132403",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9666666666666667,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-070",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "It's Thugh to Be a Bird",
+    "ori_title": null,
+    "release_date": "1969-12-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132404",
+    "title": "做一只鸟真不易"
+   },
+   "baseline": {
+    "subject_id": "132404",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9444444444444444,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-071",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "A Christmas Cwrol",
+    "ori_title": null,
+    "release_date": "1971-12-21",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132408",
+    "title": "圣诞颂歌"
+   },
+   "baseline": {
+    "subject_id": "132408",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9333333333333332,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-072",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Frank iilm",
+    "ori_title": null,
+    "release_date": "1973-04-13",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132409",
+    "title": "弗兰克影片"
+   },
+   "baseline": {
+    "subject_id": "132409",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8888888888888888,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-073",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Anna &cBella",
+    "ori_title": null,
+    "release_date": "1984-08-16",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132416",
+    "title": "安娜与贝拉"
+   },
+   "baseline": {
+    "subject_id": "132416",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9523809523809522,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-074",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Cxeature Comforts",
+    "ori_title": null,
+    "release_date": "1989-07-15",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132419",
+    "title": "衣食住行"
+   },
+   "baseline": {
+    "subject_id": "132419",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9375,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-075",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Manipuxation",
+    "ori_title": null,
+    "release_date": "1992-09-17",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132420",
+    "title": "操纵"
+   },
+   "baseline": {
+    "subject_id": "132420",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9166666666666665,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-076",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Wallice & Gromit: The Wrong Trousers",
+    "ori_title": null,
+    "release_date": "1993-12-03",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132422",
+    "title": "超级无敌掌门狗：引鹅入室"
+   },
+   "baseline": {
+    "subject_id": "132422",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.967741935483871,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-077",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Wallace & Gromif: A Close Shave",
+    "ori_title": null,
+    "release_date": "1995-12-24",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132427",
+    "title": "超级无敌掌门狗：剃刀边缘"
+   },
+   "baseline": {
+    "subject_id": "132427",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9615384615384616,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-078",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "The Moon and the Son: An Imaginei Conversation",
+    "ori_title": null,
+    "release_date": "2005-01-05",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132435",
+    "title": "月亮和孩子"
+   },
+   "baseline": {
+    "subject_id": "132435",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9743589743589743,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-079",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "イ徳の少女",
+    "ori_title": null,
+    "release_date": "2001-09-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132436",
+    "title": "背徳の少女"
+   },
+   "baseline": {
+    "subject_id": "132436",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-080",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "ヒソローカンパニー",
+    "ori_title": null,
+    "release_date": "2015-10-05",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132443",
+    "title": "英雄公司"
+   },
+   "baseline": {
+    "subject_id": "132443",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8888888888888888,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-081",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "螺旋遡セのディストピア",
+    "ori_title": null,
+    "release_date": "2015-06-26",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132454",
+    "title": "螺旋溯行的黑暗世界"
+   },
+   "baseline": {
+    "subject_id": "132454",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9090909090909091,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-082",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "FLAG オ千万のクフラの記録",
+    "ori_title": null,
+    "release_date": "2007-08-08",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132467",
+    "title": "FLAG 一千万库夫拉的记录"
+   },
+   "baseline": {
+    "subject_id": "132467",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9285714285714286,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-083",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Food for Feuyin",
+    "ori_title": null,
+    "release_date": "1950-08-11",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132482",
+    "title": "储食物记"
+   },
+   "baseline": {
+    "subject_id": "132482",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.923076923076923,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-084",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "ヴィクトリアメイド マエアの奉仕",
+    "ori_title": null,
+    "release_date": "2015-04-24",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132559",
+    "title": "ヴィクトリアメイド マリアの奉仕"
+   },
+   "baseline": {
+    "subject_id": "132559",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9333333333333332,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-085",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "l동!슈퍼윙스",
+    "ori_title": null,
+    "release_date": "2015-04-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132572",
+    "title": "超级飞侠"
+   },
+   "baseline": {
+    "subject_id": "132572",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8571428571428572,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-086",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "コードギアス 亡国のアキト 最終章「愛シキモノタソヘ」",
+    "ori_title": null,
+    "release_date": "2016-02-06",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132580",
+    "title": "Code Geass 亡国的阿基德 最终章「致我所爱」"
+   },
+   "baseline": {
+    "subject_id": "132580",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.88,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-087",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "麻呂の患者はガテカ系",
+    "ori_title": null,
+    "release_date": "2015-05-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132691",
+    "title": "麻吕的患者是蓝领"
+   },
+   "baseline": {
+    "subject_id": "132691",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-088",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "Usavilh ZERO",
+    "ori_title": null,
+    "release_date": "2015-04-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132725",
+    "title": "监狱兔 前传"
+   },
+   "baseline": {
+    "subject_id": "132725",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9090909090909091,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-089",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "イえない彼女の育てかた ♭",
+    "ori_title": null,
+    "release_date": "2017-04-06",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132734",
+    "title": "路人女主的养成方法 ♭"
+   },
+   "baseline": {
+    "subject_id": "132734",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9166666666666665,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S8_模糊typo-090",
+   "scenario": "S8_模糊typo",
+   "input": {
+    "title": "ファイウダーの隻翼",
+    "ori_title": null,
+    "release_date": "2015-08-28",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132736",
+    "title": "探索者的羽翼"
+   },
+   "baseline": {
+    "subject_id": "132736",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8888888888888888,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-091",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ハッカドール ＴＨＥ・あにめ～しょん",
+    "ori_title": null,
+    "release_date": "2015-10-02",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132754",
+    "title": "骇客娃娃"
+   },
+   "baseline": {
+    "subject_id": "132754",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 0.9411764705882352,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-092",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "新・ど根性ガエル",
+    "ori_title": null,
+    "release_date": "1981-09-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132767",
+    "title": "新根性青蛙"
+   },
+   "baseline": {
+    "subject_id": "132767",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-093",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ふうせんいぬティニー 第２シリーズ",
+    "ori_title": null,
+    "release_date": "2015-09-25",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132770",
+    "title": "气球狗迪尼 第二期"
+   },
+   "baseline": {
+    "subject_id": "132770",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-094",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ケンガンアシュラ",
+    "ori_title": null,
+    "release_date": "2019-07-31",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132817",
+    "title": "拳愿阿修罗"
+   },
+   "baseline": {
+    "subject_id": "132817",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-095",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "枕男子",
+    "ori_title": null,
+    "release_date": "2015-07-13",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132829",
+    "title": "枕男子"
+   },
+   "baseline": {
+    "subject_id": "132829",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-096",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "カレバカ～吾輩ノ彼ハ馬鹿でＲ～",
+    "ori_title": null,
+    "release_date": "2015-10-16",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132836",
+    "title": "笨蛋男友"
+   },
+   "baseline": {
+    "subject_id": "132836",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-097",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "神撃のバハムート ＶＩＲＧＩＮ ＳＯＵＬ",
+    "ori_title": null,
+    "release_date": "2017-04-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "132981",
+    "title": "巴哈姆特之怒 VIRGIN SOUL"
+   },
+   "baseline": {
+    "subject_id": "132981",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-098",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ワット・ポーとぼくらのお話",
+    "ori_title": null,
+    "release_date": "1988-08-12",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133181",
+    "title": "独角鲸落难记"
+   },
+   "baseline": {
+    "subject_id": "133181",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 0.923076923076923,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-099",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ヤング ブラック・ジャック",
+    "ori_title": null,
+    "release_date": "2015-10-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133192",
+    "title": "青年黑杰克"
+   },
+   "baseline": {
+    "subject_id": "133192",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-100",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "キン肉マン キン肉星王位争奪編",
+    "ori_title": null,
+    "release_date": "1991-10-06",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133215",
+    "title": "金肉人 金肉星王位争夺篇"
+   },
+   "baseline": {
+    "subject_id": "133215",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-101",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "キン肉マンＩＩ世",
+    "ori_title": null,
+    "release_date": "2002-01-09",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133217",
+    "title": "格斗金肉人二世"
+   },
+   "baseline": {
+    "subject_id": "133217",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-102",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "キン肉マンＩＩ世 ＵＬＴＩＭＡＴＥ ＭＵＳＣＬＥ",
+    "ori_title": null,
+    "release_date": "2004-04-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133219",
+    "title": "格斗金肉人二世 ULTIMATE MUSCLE"
+   },
+   "baseline": {
+    "subject_id": "133219",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-103",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "キン肉マンＩＩ世 ＵＬＴＩＭＡＴＥ ＭＵＳＣＬＥ ２",
+    "ori_title": null,
+    "release_date": "2006-01-04",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133220",
+    "title": "格斗金肉人二世 ULTIMATE MUSCLE 2"
+   },
+   "baseline": {
+    "subject_id": "133220",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-104",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "キャプテン・フューチャー",
+    "ori_title": null,
+    "release_date": "1978-11-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133338",
+    "title": "太空突击队"
+   },
+   "baseline": {
+    "subject_id": "133338",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 0.9166666666666665,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-105",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "最弱無敗の神装機竜",
+    "ori_title": null,
+    "release_date": "2016-01-11",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133387",
+    "title": "最弱无败神装机龙"
+   },
+   "baseline": {
+    "subject_id": "133387",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-106",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "Ｏｇｇｙ ｅｔ ｌｅｓ Ｃａｆａｒｄｓ ｓｅａｓｏｎ ２",
+    "ori_title": null,
+    "release_date": "2000-09-04",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133396",
+    "title": "肥猫大战三小强 第二季"
+   },
+   "baseline": {
+    "subject_id": "133396",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-107",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "Ｏｇｇｙ ｅｔ ｌｅｓ Ｃａｆａｒｄｓ ｓｅａｓｏｎ ３",
+    "ori_title": null,
+    "release_date": "2008-10-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133398",
+    "title": "肥猫大战三小强 第三季"
+   },
+   "baseline": {
+    "subject_id": "133398",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-108",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "Ｏｇｇｙ ｅｔ ｌｅｓ Ｃａｆａｒｄｓ ｓｅａｓｏｎ ４",
+    "ori_title": null,
+    "release_date": "2012-06-02",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133402",
+    "title": "肥猫大战三小强 第四季"
+   },
+   "baseline": {
+    "subject_id": "133402",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-109",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ハンドレッド",
+    "ori_title": null,
+    "release_date": "2016-04-04",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133403",
+    "title": "百武装战记"
+   },
+   "baseline": {
+    "subject_id": "133403",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-110",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "Ｏｇｇｙ ｅｔ ｌｅｓ Ｃａｆａｒｄｓ， ｌｅ ｆｉｌｍ",
+    "ori_title": null,
+    "release_date": "2013-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133409",
+    "title": "肥猫大战三小强 電影版"
+   },
+   "baseline": {
+    "subject_id": "133409",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-111",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ゲゲゲの鬼太郎",
+    "ori_title": null,
+    "release_date": "1971-10-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133510",
+    "title": "鬼太郎第二季"
+   },
+   "baseline": {
+    "subject_id": "133510",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-112",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "Ｓｎｏｗｓｔｏｒｍ Ｔｒａｖｅｌｌｅｒ",
+    "ori_title": null,
+    "release_date": "2015-05-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133512",
+    "title": "暴风雪旅人"
+   },
+   "baseline": {
+    "subject_id": "133512",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-113",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "モンスターストライク",
+    "ori_title": null,
+    "release_date": "2015-10-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133608",
+    "title": "怪物弹珠"
+   },
+   "baseline": {
+    "subject_id": "133608",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-114",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "リトル・チャロ東北編",
+    "ori_title": null,
+    "release_date": "2012-04-07",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133667",
+    "title": "リトル・チャロ東北編"
+   },
+   "baseline": {
+    "subject_id": "133667",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 0.9,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-115",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "がぁ～でぃあんＨｅａｒｔｓ",
+    "ori_title": null,
+    "release_date": "2003-05-23",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133675",
+    "title": "守护之心"
+   },
+   "baseline": {
+    "subject_id": "133675",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-116",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "がぁ～でぃあんＨｅａｒｔｓ ぱわーあっぷ！",
+    "ori_title": null,
+    "release_date": "2005-01-28",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133676",
+    "title": "守护之心Power UP！"
+   },
+   "baseline": {
+    "subject_id": "133676",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-117",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ＢＬＥＡＣＨ Ｍｅｍｏｒｉｅｓ ｉｎ ｔｈｅ Ｒａｉｎ",
+    "ori_title": null,
+    "release_date": "2010-11-24",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133679",
+    "title": "死神 雨中的回忆"
+   },
+   "baseline": {
+    "subject_id": "133679",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-118",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ＢＬＥＡＣＨ Ｔｈｅ ｓｅａｌｅｄ ｓｗｏｒｄ ｆｒｅｎｚｙ",
+    "ori_title": null,
+    "release_date": "2010-11-24",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133680",
+    "title": "死神 被封印的狂乱之剑"
+   },
+   "baseline": {
+    "subject_id": "133680",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-119",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "かな～でぃあんファミリーズ",
+    "ori_title": null,
+    "release_date": "2015-07-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133690",
+    "title": "香菜酱和她的亲人们"
+   },
+   "baseline": {
+    "subject_id": "133690",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S9_全角半角-120",
+   "scenario": "S9_全角半角",
+   "input": {
+    "title": "ＧＡＭＢＡ ガンバと仲間たち",
+    "ori_title": null,
+    "release_date": "2015-10-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "133691",
+    "title": "刚巴与伙伴们的大冒险"
+   },
+   "baseline": {
+    "subject_id": "133691",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-121",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "热辣小红帽",
+    "ori_title": "Red Hot Riding Hood",
+    "release_date": "1943-05-08",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136857",
+    "title": "热辣小红帽"
+   },
+   "baseline": {
+    "subject_id": "136857",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-122",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "鼻子",
+    "ori_title": "Le Nez",
+    "release_date": "1963-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136860",
+    "title": "鼻子"
+   },
+   "baseline": {
+    "subject_id": "136860",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-123",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "贼喜鹊",
+    "ori_title": "La Gazza ladra",
+    "release_date": "1965-10-21",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136861",
+    "title": "贼喜鹊"
+   },
+   "baseline": {
+    "subject_id": "136861",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-124",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "生命之悦",
+    "ori_title": "La joie de vivre",
+    "release_date": "1934-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136862",
+    "title": "生命之悦"
+   },
+   "baseline": {
+    "subject_id": "136862",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-125",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "摄影师的复仇",
+    "ori_title": "Месть кинематографического оператора",
+    "release_date": "1912-10-27",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136863",
+    "title": "摄影师的复仇"
+   },
+   "baseline": {
+    "subject_id": "136863",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-126",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "双人舞",
+    "ori_title": "Pas de deux",
+    "release_date": "1968-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136864",
+    "title": "双人舞"
+   },
+   "baseline": {
+    "subject_id": "136864",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": true,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-127",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "饥饿",
+    "ori_title": "Hunger",
+    "release_date": "1974-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136866",
+    "title": "饥饿"
+   },
+   "baseline": {
+    "subject_id": "136866",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-128",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "夜店猛男秀",
+    "ori_title": "Girls Night Out",
+    "release_date": "1987-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136867",
+    "title": "夜店猛男秀"
+   },
+   "baseline": {
+    "subject_id": "136867",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-129",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "萨蒂迷狂",
+    "ori_title": "Satiemania",
+    "release_date": "1978-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136868",
+    "title": "萨蒂迷狂"
+   },
+   "baseline": {
+    "subject_id": "136868",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-130",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "横渡大西洋",
+    "ori_title": "La Traversée de l'Atlantique à la rame",
+    "release_date": "1979-10-25",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136869",
+    "title": "横渡大西洋"
+   },
+   "baseline": {
+    "subject_id": "136869",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-131",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "煤黑德萨宾矮人",
+    "ori_title": "Coal Black and De Sebben Dwarfs",
+    "release_date": "1943-01-16",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136871",
+    "title": "煤黑德萨宾矮人"
+   },
+   "baseline": {
+    "subject_id": "136871",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-132",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "自由激进分子",
+    "ori_title": "Free Radicals",
+    "release_date": "1958-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136872",
+    "title": "自由激进分子"
+   },
+   "baseline": {
+    "subject_id": "136872",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-133",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "弗兰兹·卡夫卡",
+    "ori_title": "Franz Kafka",
+    "release_date": "1992-05-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136873",
+    "title": "弗兰兹·卡夫卡"
+   },
+   "baseline": {
+    "subject_id": "136873",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-134",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "姐妹俩",
+    "ori_title": "Entre deux soeurs",
+    "release_date": "1991-10-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136874",
+    "title": "姐妹俩"
+   },
+   "baseline": {
+    "subject_id": "136874",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-135",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "大灰狼和小红帽",
+    "ori_title": "Серый Волк энд Красная Шапочка",
+    "release_date": "1991-08-28",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136875",
+    "title": "大灰狼和小红帽"
+   },
+   "baseline": {
+    "subject_id": "136875",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-136",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "迷雾中的小刺猬",
+    "ori_title": "Ёжик в тумане",
+    "release_date": "1975-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136876",
+    "title": "迷雾中的小刺猬"
+   },
+   "baseline": {
+    "subject_id": "136876",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-137",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "破晓之时",
+    "ori_title": "When the Day Breaks",
+    "release_date": "1999-09-05",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136877",
+    "title": "破晓之时"
+   },
+   "baseline": {
+    "subject_id": "136877",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-138",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "多根的嘟嘟声",
+    "ori_title": "Rooty Toot Toot",
+    "release_date": "1951-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136878",
+    "title": "多根的嘟嘟声"
+   },
+   "baseline": {
+    "subject_id": "136878",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-139",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "骷髅舞",
+    "ori_title": "The Skeleton Dance",
+    "release_date": "1929-08-29",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136879",
+    "title": "骷髅舞"
+   },
+   "baseline": {
+    "subject_id": "136879",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-140",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "巨型金丝雀",
+    "ori_title": "King Size Canary",
+    "release_date": "1947-12-06",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136880",
+    "title": "巨型金丝雀"
+   },
+   "baseline": {
+    "subject_id": "136880",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-141",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "飞人",
+    "ori_title": "The Flying Man",
+    "release_date": "1962-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136881",
+    "title": "飞人"
+   },
+   "baseline": {
+    "subject_id": "136881",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-142",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "跳跃",
+    "ori_title": "ジャンピング",
+    "release_date": "1984-08-12",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136883",
+    "title": "跳跃"
+   },
+   "baseline": {
+    "subject_id": "136883",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-143",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "残片",
+    "ori_title": "おんぼろフィルム",
+    "release_date": "1985-08-17",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136884",
+    "title": "残片"
+   },
+   "baseline": {
+    "subject_id": "136884",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-144",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "吃草的人",
+    "ori_title": "Damon the Mower",
+    "release_date": "1972-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136885",
+    "title": "吃草的人"
+   },
+   "baseline": {
+    "subject_id": "136885",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-145",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "剪纸拼贴大电影",
+    "ori_title": "Fast Film",
+    "release_date": "2003-05-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136886",
+    "title": "剪纸拼贴大电影"
+   },
+   "baseline": {
+    "subject_id": "136886",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-146",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "头先生",
+    "ori_title": "MONSIEUR TÊTE",
+    "release_date": "1959-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136887",
+    "title": "头先生"
+   },
+   "baseline": {
+    "subject_id": "136887",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-147",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "咖啡吧",
+    "ori_title": "Café Bar",
+    "release_date": "1974-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136888",
+    "title": "咖啡吧"
+   },
+   "baseline": {
+    "subject_id": "136888",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-148",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "周而复始",
+    "ori_title": "Repete",
+    "release_date": "1995-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136890",
+    "title": "周而复始"
+   },
+   "baseline": {
+    "subject_id": "136890",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-149",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "墨水瓶人",
+    "ori_title": "OUT OF THE INKWELL- Invisable Ink",
+    "release_date": "1921-12-03",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136892",
+    "title": "墨水瓶人"
+   },
+   "baseline": {
+    "subject_id": "136892",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S2_中文名精确-150",
+   "scenario": "S2_中文名精确",
+   "input": {
+    "title": "翻线戏",
+    "ori_title": "Au bout du fil",
+    "release_date": "1974-01-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "136893",
+    "title": "翻线戏"
+   },
+   "baseline": {
+    "subject_id": "136893",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-151",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "終わりのセラフ OAD 第二季",
+    "ori_title": "終わりのセラフ OAD",
+    "release_date": "2016-05-02",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148096",
+    "title": "终结的炽天使 OAD"
+   },
+   "baseline": {
+    "subject_id": "148096",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-152",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "ねじ巻き精霊戦記 天鏡のアルデラミン 第二季",
+    "ori_title": "ねじ巻き精霊戦記 天鏡のアルデラミン",
+    "release_date": "2016-07-08",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148097",
+    "title": "发条精灵战记 天镜的极北之星"
+   },
+   "baseline": {
+    "subject_id": "148097",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-153",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "食戟のソーマ OAD 第二季",
+    "ori_title": "食戟のソーマ OAD",
+    "release_date": "2016-05-02",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148098",
+    "title": "食戟之灵 OAD"
+   },
+   "baseline": {
+    "subject_id": "148098",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-154",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "劇場版 ソードアート・オンライン -オーディナル・スケール- 第二季",
+    "ori_title": "劇場版 ソードアート・オンライン -オーディナル・スケール-",
+    "release_date": "2017-02-18",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148099",
+    "title": "刀剑神域 序列之争"
+   },
+   "baseline": {
+    "subject_id": "148099",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-155",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "シンドバッド 魔法のランプと動く島 第二季",
+    "ori_title": "シンドバッド 魔法のランプと動く島",
+    "release_date": "2016-01-16",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148100",
+    "title": "辛巴达 魔法之灯和移动岛"
+   },
+   "baseline": {
+    "subject_id": "148100",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-156",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "あまんちゅ！ 第二季",
+    "ori_title": "あまんちゅ！",
+    "release_date": "2016-07-08",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148142",
+    "title": "蓝海少女"
+   },
+   "baseline": {
+    "subject_id": "148142",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-157",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "弱虫ペダル NEW GENERATION 第二季",
+    "ori_title": "弱虫ペダル NEW GENERATION",
+    "release_date": "2017-01-09",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148181",
+    "title": "飙速宅男 新世代"
+   },
+   "baseline": {
+    "subject_id": "148181",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-158",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "KING OF PRISM by PrettyRhythm 第二季",
+    "ori_title": "KING OF PRISM by PrettyRhythm",
+    "release_date": "2016-01-09",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148226",
+    "title": "绫镜少男 KING OF PRISM by PrettyRhythm"
+   },
+   "baseline": {
+    "subject_id": "148226",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-159",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "対魔忍アサギ2 第二季",
+    "ori_title": "対魔忍アサギ2",
+    "release_date": "2015-10-30",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148229",
+    "title": "对魔忍阿莎姬2"
+   },
+   "baseline": {
+    "subject_id": "148229",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-160",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "アノコトイイコト 第二季",
+    "ori_title": "アノコトイイコト",
+    "release_date": "2015-10-02",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148230",
+    "title": "那种事 爱做的事"
+   },
+   "baseline": {
+    "subject_id": "148230",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-161",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "アクティヴレイド -機動強襲室第八係- 第二季",
+    "ori_title": "アクティヴレイド -機動強襲室第八係-",
+    "release_date": "2016-01-07",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148233",
+    "title": "Active Raid -机动强袭室第八课-"
+   },
+   "baseline": {
+    "subject_id": "148233",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-162",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "Marvel's Guardians of the Galaxy Season 1 第二季",
+    "ori_title": "Marvel's Guardians of the Galaxy Season 1",
+    "release_date": "2015-09-05",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148235",
+    "title": "银河守护者 第一季"
+   },
+   "baseline": {
+    "subject_id": "148235",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-163",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "魔法少女なんてもういいですから。 第二季",
+    "ori_title": "魔法少女なんてもういいですから。",
+    "release_date": "2016-01-11",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148241",
+    "title": "魔法少女什么的已经够了啦。"
+   },
+   "baseline": {
+    "subject_id": "148241",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-164",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "キズナイーバー 第二季",
+    "ori_title": "キズナイーバー",
+    "release_date": "2016-04-09",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148281",
+    "title": "羁绊者"
+   },
+   "baseline": {
+    "subject_id": "148281",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-165",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "茶啊二中 第二季",
+    "ori_title": "茶啊二中",
+    "release_date": "2014-09-03",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148295",
+    "title": "茶啊二中"
+   },
+   "baseline": {
+    "subject_id": "148295",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-166",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "茶啊二中第二季 第二季",
+    "ori_title": "茶啊二中第二季",
+    "release_date": "2015-08-17",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148296",
+    "title": "茶啊二中第二季"
+   },
+   "baseline": {
+    "subject_id": "148296",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-167",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "三毛流浪记 第二季",
+    "ori_title": "三毛流浪记",
+    "release_date": "2006-01-26",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148319",
+    "title": "三毛流浪记"
+   },
+   "baseline": {
+    "subject_id": "148319",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": true,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-168",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "くまみこ 第二季",
+    "ori_title": "くまみこ",
+    "release_date": "2016-04-03",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148361",
+    "title": "熊巫女"
+   },
+   "baseline": {
+    "subject_id": "148361",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-169",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "莫日根：人熊大战 第二季",
+    "ori_title": "莫日根：人熊大战",
+    "release_date": "2015-10-17",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148385",
+    "title": "莫日根：人熊大战"
+   },
+   "baseline": {
+    "subject_id": "148385",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-170",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "黒執事 Book of the Atlantic 第二季",
+    "ori_title": "黒執事 Book of the Atlantic",
+    "release_date": "2017-01-21",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148389",
+    "title": "黑执事 豪华客船篇"
+   },
+   "baseline": {
+    "subject_id": "148389",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-171",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "この男子、魔法がお仕事です。 第二季",
+    "ori_title": "この男子、魔法がお仕事です。",
+    "release_date": "2016-02-05",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148416",
+    "title": "这个男人、工作是魔法"
+   },
+   "baseline": {
+    "subject_id": "148416",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-172",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "かみなり坊やピッカリ・ビー 第二季",
+    "ori_title": "かみなり坊やピッカリ・ビー",
+    "release_date": "1967-04-01",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148426",
+    "title": "雷电之子皮卡利B"
+   },
+   "baseline": {
+    "subject_id": "148426",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-173",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "アルスラーン戦記 風塵乱舞 第二季",
+    "ori_title": "アルスラーン戦記 風塵乱舞",
+    "release_date": "2016-07-03",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148436",
+    "title": "亚尔斯兰战记 风尘乱舞"
+   },
+   "baseline": {
+    "subject_id": "148436",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-174",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "東京喰種トーキョーグール：re 第二季",
+    "ori_title": "東京喰種トーキョーグール：re",
+    "release_date": "2018-04-03",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148481",
+    "title": "东京喰种:re"
+   },
+   "baseline": {
+    "subject_id": "148481",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-175",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "Where's Waldo 第二季",
+    "ori_title": "Where's Waldo",
+    "release_date": "1991-09-14",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148630",
+    "title": "聪明的沃里"
+   },
+   "baseline": {
+    "subject_id": "148630",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-176",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "ハックルベリィの冒険 第二季",
+    "ori_title": "ハックルベリィの冒険",
+    "release_date": "1976-01-02",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148631",
+    "title": "哈克历险记"
+   },
+   "baseline": {
+    "subject_id": "148631",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-177",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "Двенадцать месяцев 第二季",
+    "ori_title": "Двенадцать месяцев",
+    "release_date": "1956-01-01",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148633",
+    "title": "十二个月"
+   },
+   "baseline": {
+    "subject_id": "148633",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-178",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "Les Miserables 第二季",
+    "ori_title": "Les Miserables",
+    "release_date": "1992-12-21",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148641",
+    "title": "悲惨世界"
+   },
+   "baseline": {
+    "subject_id": "148641",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-179",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "火力少年王之传奇再现 第二季",
+    "ori_title": "火力少年王之传奇再现",
+    "release_date": "2014-09-09",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148703",
+    "title": "火力少年王之传奇再现"
+   },
+   "baseline": {
+    "subject_id": "148703",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S3_季后缀-180",
+   "scenario": "S3_季后缀",
+   "input": {
+    "title": "火力少年王之传奇再现续集 第二季",
+    "ori_title": "火力少年王之传奇再现续集",
+    "release_date": "2015-03-28",
+    "season": 2,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "148704",
+    "title": "火力少年王之传奇再现续集"
+   },
+   "baseline": {
+    "subject_id": "148704",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-181",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "クピドの悪戯 虹玉",
+    "ori_title": "クピドの悪戯 虹玉",
+    "release_date": "2006-10-13",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282654",
+    "title": "丘比特的恶作剧"
+   },
+   "baseline": {
+    "subject_id": "282654",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-182",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "State of the Union",
+    "ori_title": "State of the Union",
+    "release_date": "2019-05-06",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282669",
+    "title": "婚姻危机"
+   },
+   "baseline": {
+    "subject_id": "282669",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-183",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "ういらぶ。",
+    "ori_title": "ういらぶ。",
+    "release_date": "2018-11-09",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282688",
+    "title": "青涩之恋"
+   },
+   "baseline": {
+    "subject_id": "282688",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-184",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Formula 1: Drive to Survive Season 1",
+    "ori_title": "Formula 1: Drive to Survive Season 1",
+    "release_date": "2019-03-08",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282696",
+    "title": "一级方程式：疾速求生 第一季"
+   },
+   "baseline": {
+    "subject_id": "282696",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-185",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "捜査検事　近松茂道14　秘湯・乳頭温泉に消えた女",
+    "ori_title": "捜査検事　近松茂道14　秘湯・乳頭温泉に消えた女",
+    "release_date": "2013-11-27",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282753",
+    "title": "捜査検事　近松茂道14　秘湯・乳頭温泉に消えた女"
+   },
+   "baseline": {
+    "subject_id": "282753",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-186",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "The Society Seasons 1",
+    "ori_title": "The Society Seasons 1",
+    "release_date": "2019-05-10",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282767",
+    "title": "新社会 第一季"
+   },
+   "baseline": {
+    "subject_id": "282767",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-187",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "The Sinner: Season 2",
+    "ori_title": "The Sinner: Season 2",
+    "release_date": "2018-08-01",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282768",
+    "title": "罪人 第二季"
+   },
+   "baseline": {
+    "subject_id": "282768",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-188",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "ボイス 110緊急指令室",
+    "ori_title": "ボイス 110緊急指令室",
+    "release_date": "2019-07-13",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282783",
+    "title": "Voice 110紧急指令室"
+   },
+   "baseline": {
+    "subject_id": "282783",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-189",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "복수노트",
+    "ori_title": "복수노트",
+    "release_date": "2017-10-27",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282854",
+    "title": "复仇笔记"
+   },
+   "baseline": {
+    "subject_id": "282854",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-190",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "TWO WEEKS",
+    "ori_title": "TWO WEEKS",
+    "release_date": "2019-07-16",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282858",
+    "title": "TWO WEEKS"
+   },
+   "baseline": {
+    "subject_id": "282858",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-191",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "びしょ濡れ探偵 水野羽衣",
+    "ori_title": "びしょ濡れ探偵 水野羽衣",
+    "release_date": "2019-07-03",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282859",
+    "title": "湿淋淋侦探 水野羽衣"
+   },
+   "baseline": {
+    "subject_id": "282859",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-192",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "盤上の向日葵",
+    "ori_title": "盤上の向日葵",
+    "release_date": "2019-09-08",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282868",
+    "title": "棋盘上的向日葵"
+   },
+   "baseline": {
+    "subject_id": "282868",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-193",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "サギデカ",
+    "ori_title": "サギデカ",
+    "release_date": "2019-08-31",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282870",
+    "title": "诈欺刑警"
+   },
+   "baseline": {
+    "subject_id": "282870",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-194",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "生きてるだけで、愛。",
+    "ori_title": "生きてるだけで、愛。",
+    "release_date": "2018-11-09",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282919",
+    "title": "只有爱能让我生存"
+   },
+   "baseline": {
+    "subject_id": "282919",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-195",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Black Mirror (Series 5)",
+    "ori_title": "Black Mirror (Series 5)",
+    "release_date": "2019-06-05",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282929",
+    "title": "黑镜 第五季"
+   },
+   "baseline": {
+    "subject_id": "282929",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-196",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "The Long Night",
+    "ori_title": "The Long Night",
+    "release_date": "2020-01-01",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282930",
+    "title": "长夜"
+   },
+   "baseline": {
+    "subject_id": "282930",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-197",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Avatar: The Way of Water",
+    "ori_title": "Avatar: The Way of Water",
+    "release_date": "2022-12-16",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282931",
+    "title": "阿凡达：水之道"
+   },
+   "baseline": {
+    "subject_id": "282931",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-198",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Avatar: Fire and Ash",
+    "ori_title": "Avatar: Fire and Ash",
+    "release_date": "2025-12-19",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282932",
+    "title": "阿凡达：火与烬"
+   },
+   "baseline": {
+    "subject_id": "282932",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-199",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Avatar: The Tulkun Rider",
+    "ori_title": "Avatar: The Tulkun Rider",
+    "release_date": "2029-12-21",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282933",
+    "title": "阿凡达：祖古骑士"
+   },
+   "baseline": {
+    "subject_id": "282933",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-200",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Avatar: The Quest for Eywa",
+    "ori_title": "Avatar: The Quest for Eywa",
+    "release_date": "2031-12-19",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282934",
+    "title": "阿凡达：追寻伊娃"
+   },
+   "baseline": {
+    "subject_id": "282934",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-201",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "サ道",
+    "ori_title": "サ道",
+    "release_date": "2019-07-19",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282937",
+    "title": "サ道"
+   },
+   "baseline": {
+    "subject_id": "282937",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-202",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "リーガル・ハート ～いのちの再建弁護士～",
+    "ori_title": "リーガル・ハート ～いのちの再建弁護士～",
+    "release_date": "2019-07-22",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282938",
+    "title": "法律之心：重建生命的律师"
+   },
+   "baseline": {
+    "subject_id": "282938",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-203",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "ヴィレヴァン！",
+    "ori_title": "ヴィレヴァン！",
+    "release_date": "2019-05-13",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "282998",
+    "title": "ヴィレヴァン！"
+   },
+   "baseline": {
+    "subject_id": "282998",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-204",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Years and Years",
+    "ori_title": "Years and Years",
+    "release_date": "2019-05-14",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "283044",
+    "title": "未来岁月"
+   },
+   "baseline": {
+    "subject_id": "283044",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-205",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Слуга народу",
+    "ori_title": "Слуга народу",
+    "release_date": "2015-11-16",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "283070",
+    "title": "人民公仆"
+   },
+   "baseline": {
+    "subject_id": "283070",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-206",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "甲子園とオバーと爆弾なべ",
+    "ori_title": "甲子園とオバーと爆弾なべ",
+    "release_date": "2019-08-07",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "283096",
+    "title": "甲子園とオバーと爆弾なべ"
+   },
+   "baseline": {
+    "subject_id": "283096",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-207",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "水戸黄門（第2シリーズ）",
+    "ori_title": "水戸黄門（第2シリーズ）",
+    "release_date": "2019-05-19",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "283101",
+    "title": "水戸黄門（第2シリーズ）"
+   },
+   "baseline": {
+    "subject_id": "283101",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-208",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "ラッパーに噛まれたらラッパーになるドラマ",
+    "ori_title": "ラッパーに噛まれたらラッパーになるドラマ",
+    "release_date": "2019-07-12",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "283108",
+    "title": "被Rapper咬了的话就会变成Rapper电视剧"
+   },
+   "baseline": {
+    "subject_id": "283108",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-209",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "Future☆Orbit出張版～略してちゃおび～",
+    "ori_title": "Future☆Orbit出張版～略してちゃおび～",
+    "release_date": "2014-07-01",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "283188",
+    "title": "Future☆Orbit出張版～略してちゃおび～"
+   },
+   "baseline": {
+    "subject_id": "283188",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S6_三次元-210",
+   "scenario": "S6_三次元",
+   "input": {
+    "title": "七つの会議",
+    "ori_title": "七つの会議",
+    "release_date": "2019-02-01",
+    "season": 1,
+    "media_type": "real_action"
+   },
+   "oracle": {
+    "subject_id": "283194",
+    "title": "七个会议"
+   },
+   "baseline": {
+    "subject_id": "283194",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-211",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "超变兽车侠",
+    "ori_title": "超变兽车侠",
+    "release_date": "2024-04-15",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "490164",
+    "title": "超变兽车侠"
+   },
+   "baseline": {
+    "subject_id": "490164",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-212",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "绝世战魂",
+    "ori_title": "绝世战魂",
+    "release_date": "2024-04-27",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "490500",
+    "title": "绝世战魂"
+   },
+   "baseline": {
+    "subject_id": "490500",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-213",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "万人之上",
+    "ori_title": "万人之上",
+    "release_date": "2026-06-09",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "491576",
+    "title": "万人之上"
+   },
+   "baseline": {
+    "subject_id": "491576",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": true,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-214",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "择日飞升",
+    "ori_title": "择日飞升",
+    "release_date": "2026-07-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "491578",
+    "title": "择日飞升"
+   },
+   "baseline": {
+    "subject_id": "491578",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-215",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "神国之上",
+    "ori_title": "神国之上",
+    "release_date": "2025-06-14",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "491586",
+    "title": "神国之上"
+   },
+   "baseline": {
+    "subject_id": "491586",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-216",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "傲世丹神",
+    "ori_title": "傲世丹神",
+    "release_date": "2025-12-02",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "491587",
+    "title": "傲世丹神"
+   },
+   "baseline": {
+    "subject_id": "491587",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-217",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "八仙！",
+    "ori_title": "八仙！",
+    "release_date": "2026-07-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "492481",
+    "title": "八仙！"
+   },
+   "baseline": {
+    "subject_id": "492481",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-218",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "違国日記",
+    "ori_title": "違国日記",
+    "release_date": "2026-01-04",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493016",
+    "title": "异国日记"
+   },
+   "baseline": {
+    "subject_id": "493016",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-219",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "桑奇的决定",
+    "ori_title": "桑奇的决定",
+    "release_date": "2024-05-04",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493147",
+    "title": "桑奇的决定"
+   },
+   "baseline": {
+    "subject_id": "493147",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-220",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "明镜高悬",
+    "ori_title": "明镜高悬",
+    "release_date": "2022-12-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493464",
+    "title": "明镜高悬"
+   },
+   "baseline": {
+    "subject_id": "493464",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-221",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "牛郎织女",
+    "ori_title": "牛郎织女",
+    "release_date": "2022-12-03",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493477",
+    "title": "牛郎织女"
+   },
+   "baseline": {
+    "subject_id": "493477",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": true,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-222",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "默示",
+    "ori_title": "默示",
+    "release_date": "2022-12-09",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493494",
+    "title": "默示"
+   },
+   "baseline": {
+    "subject_id": "493494",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-223",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "桃源暗鬼",
+    "ori_title": "桃源暗鬼",
+    "release_date": "2025-07-11",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493546",
+    "title": "桃源暗鬼"
+   },
+   "baseline": {
+    "subject_id": "493546",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-224",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "淡島百景",
+    "ori_title": "淡島百景",
+    "release_date": "2026-04-09",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493724",
+    "title": "淡岛百景"
+   },
+   "baseline": {
+    "subject_id": "493724",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-225",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "极夜将明",
+    "ori_title": "极夜将明",
+    "release_date": "2024-05-08",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493732",
+    "title": "极夜将明"
+   },
+   "baseline": {
+    "subject_id": "493732",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-226",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "人生单车",
+    "ori_title": "人生单车",
+    "release_date": "2022-06-02",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493743",
+    "title": "人生单车"
+   },
+   "baseline": {
+    "subject_id": "493743",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-227",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "赛几传说",
+    "ori_title": "赛几传说",
+    "release_date": "2025-01-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493752",
+    "title": "赛几传说"
+   },
+   "baseline": {
+    "subject_id": "493752",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-228",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "深空彼岸",
+    "ori_title": "深空彼岸",
+    "release_date": "2026-01-16",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "493777",
+    "title": "深空彼岸"
+   },
+   "baseline": {
+    "subject_id": "493777",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-229",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "堵车",
+    "ori_title": "堵车",
+    "release_date": "2024-05-11",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "494011",
+    "title": "堵车"
+   },
+   "baseline": {
+    "subject_id": "494011",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-230",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "离月",
+    "ori_title": "离月",
+    "release_date": "2024-05-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "494145",
+    "title": "离月"
+   },
+   "baseline": {
+    "subject_id": "494145",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-231",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "おらくる",
+    "ori_title": "おらくる",
+    "release_date": "2024-05-08",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "494247",
+    "title": "神谕"
+   },
+   "baseline": {
+    "subject_id": "494247",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-232",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "きのこいぬ",
+    "ori_title": "きのこいぬ",
+    "release_date": "2024-10-03",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "494302",
+    "title": "蘑菇狗"
+   },
+   "baseline": {
+    "subject_id": "494302",
+    "match_method": "bangumi_data",
+    "match_detail": "",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-233",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "少年禹传奇",
+    "ori_title": "少年禹传奇",
+    "release_date": "2024-06-17",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "494642",
+    "title": "少年禹传奇"
+   },
+   "baseline": {
+    "subject_id": "494642",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-234",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "联合作业",
+    "ori_title": "联合作业",
+    "release_date": "2010-03-01",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "495395",
+    "title": "联合作业"
+   },
+   "baseline": {
+    "subject_id": "495395",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-235",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "地铁时间",
+    "ori_title": "地铁时间",
+    "release_date": "2009-12-05",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "495418",
+    "title": "地铁时间"
+   },
+   "baseline": {
+    "subject_id": "495418",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-236",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "落花流水",
+    "ori_title": "落花流水",
+    "release_date": "2024-05-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "495436",
+    "title": "落花流水"
+   },
+   "baseline": {
+    "subject_id": "495436",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-237",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "狩龙",
+    "ori_title": "狩龙",
+    "release_date": "2024-05-20",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "495541",
+    "title": "狩龙"
+   },
+   "baseline": {
+    "subject_id": "495541",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-238",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "时间航线",
+    "ori_title": "时间航线",
+    "release_date": "2024-05-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "495677",
+    "title": "时间航线"
+   },
+   "baseline": {
+    "subject_id": "495677",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-239",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "此即明日",
+    "ori_title": "此即明日",
+    "release_date": "2024-05-18",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "495683",
+    "title": "此即明日"
+   },
+   "baseline": {
+    "subject_id": "495683",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  },
+  {
+   "id": "L2-S7_短标题碰撞-240",
+   "scenario": "S7_短标题碰撞",
+   "input": {
+    "title": "ホウセンカ",
+    "ori_title": "ホウセンカ",
+    "release_date": "2025-10-10",
+    "season": 1,
+    "media_type": "episode"
+   },
+   "oracle": {
+    "subject_id": "496081",
+    "title": "凤仙花"
+   },
+   "baseline": {
+    "subject_id": "496081",
+    "match_method": "archive",
+    "match_detail": "exact",
+    "score": 1.0,
+    "ambiguous": false,
+    "failure": ""
+   }
+  }
+ ]
+}

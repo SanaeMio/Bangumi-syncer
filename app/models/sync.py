@@ -4,7 +4,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CustomItem(BaseModel):
@@ -30,6 +30,29 @@ class CustomItem(BaseModel):
         description="驱动获取到的原始数据（webhook payload / /media response 等），"
         "用于在同步记录详情的「接收请求」步骤展示驱动原始输入",
     )
+
+    @field_validator("ori_title", "source", "sync_action", mode="before")
+    @classmethod
+    def _blank_optional_to_none(cls, v: Any) -> Any:
+        """把空白串哨兵值统一为 None（248-A 根因）
+
+        各驱动对「无原题」的表示不一致：emby extractor 一处写 ``None``、
+        一处写 ``" "``；plex 写 ``" "``。空白串既不是有效标题又不等于 None，
+        会顶掉 ``if title and … and not ori_title:`` 这条正确分支，
+        最多损失 0.3 分。在入口归一一次，胜过在 N 个消费点各修一次。
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _strip_title(cls, v: Any) -> Any:
+        """标题去除两端空白；空串/None 保持原样（必填字段由 pydantic 校验兜底）"""
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped or v
+        return v
 
 
 class SyncResponse(BaseModel):

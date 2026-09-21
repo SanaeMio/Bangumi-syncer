@@ -283,7 +283,13 @@ class EpisodesMixin:
         # 仅取本篇章节（type=0），按 sort 排序
         has_type = any("type" in e for e in ep_info)
         pool = (
-            [e for e in ep_info if e.get("type", 0) == 0] if has_type else list(ep_info)
+            [
+                e
+                for e in ep_info
+                if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+            ]
+            if has_type
+            else list(ep_info)
         )
         if len(pool) < 2:
             pool = list(ep_info)
@@ -695,7 +701,11 @@ class EpisodesMixin:
         # 获取当前 subject 的 sort 范围判断方向
         episodes = self.get_episodes(subject_id, fetch_all=True)
         ep_info = episodes.get("data") or []
-        type0_rows = [e for e in ep_info if e.get("type", 0) == 0]
+        type0_rows = [
+            e
+            for e in ep_info
+            if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+        ]
         sorts = [e.get("sort", 0) for e in type0_rows if e.get("sort")]
         if not sorts:
             # P1-6: 无 type=0 章节（空列表或全 SP），无法通过 sort 范围判断方向。
@@ -782,7 +792,11 @@ class EpisodesMixin:
                 info.get("name") or "", info.get("name_cn") or ""
             )
             episodes = self.get_episodes(sid, fetch_all=True).get("data") or []
-            type0 = [e for e in episodes if e.get("type", 0) == 0]
+            type0 = [
+                e
+                for e in episodes
+                if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+            ]
             season_buckets.append((season, sid, type0))
 
         # 仅保留目标季的连续段，按链序累计集数定位目标集
@@ -869,7 +883,8 @@ class EpisodesMixin:
         本方法在链式全部 miss 后兜底：
 
         - Archive 命中：try_find_franchise_closure 一次本地 SQL 拿完整连通分量
-          （含改编/相同系列/外传等边，FRANCHISE_RELATION_TYPES），零 API 成本，
+          （含改编/前传/续集/总集篇/相同世界观/不同演绎/主线故事等边，
+          FRANCHISE_RELATION_TYPES），零 API 成本，
           全量遍历找目标 sort。
         - Archive miss / 未命中：不做在线完整 BFS（最坏 64 节点 × 2 次 API/节点
           且 sort 等值匹配命中率低，成本与收益不成正比），仅一跳直接邻居检查

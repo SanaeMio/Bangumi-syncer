@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from app.utils.bangumi_constants import EPISODE_TYPE_NORMAL
+
 if TYPE_CHECKING:
     from app.services.sync_service.match_trace import MatchTrace
 
@@ -56,7 +58,11 @@ class BangumiSearchPort(Protocol):
     ) -> list[dict[str, Any]] | dict[str, Any]: ...
 
     def get_episodes(
-        self, subject_id: int, episode_type: int = 0, limit: int = 100, offset: int = 0
+        self,
+        subject_id: int,
+        episode_type: int = EPISODE_TYPE_NORMAL,
+        limit: int = 100,
+        offset: int = 0,
     ) -> dict[str, Any]: ...
 
     # 集数解析（只读：返回目标季与集 ID，不写收藏状态）

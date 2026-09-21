@@ -18,6 +18,7 @@ import httpx
 
 from ...core.logging import logger
 from ...utils.http_base import AsyncHttpClient
+from ...utils.media_type_detector import MOVIE_KEYWORD_RE as _MOVIE_KEYWORD_RE
 from ...utils.text_constants import CN_NUM
 from .models import FongmiDevice, FongmiWatchRecord
 
@@ -58,12 +59,6 @@ _RESOLUTION_RE = re.compile(
 )
 _RANGE_RE = re.compile(r"\b\d{1,4}\s*-\s*\d{1,4}\b")
 _FIRST_NUM_RE = re.compile(r"\d{1,3}")
-
-# 剧场版/电影关键词（URL 或 artist 命中即视为单条影片）
-_MOVIE_KEYWORD_RE = re.compile(
-    r"剧场版|劇場版|电影|電影|\bMovie\b|\bFilm\b",
-    re.IGNORECASE,
-)
 
 
 def _extract_episode_from_filename(text: str) -> int:

@@ -7,6 +7,11 @@
 from __future__ import annotations
 
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import (
+    SOURCE_CUSTOM_MAPPING,
+    SubjectRef,
+    make_candidate,
+)
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 
 
@@ -39,11 +44,21 @@ class CustomMappingStep(MatchStepBase):
             ctx.subject_id = mapping_subject_id
             ctx.match_stage = "custom_mapping"
             ctx.is_season_matched_id = False  # 自定义映射不视为特定季度ID
+            # C4：任何策略命中都必须产出候选，不许只回一个裸 id。
+            # 自定义映射是用户显式指定的确定性映射，置信度等价于 1.0。
+            candidate = make_candidate(
+                SubjectRef(
+                    subject_id=str(mapping_subject_id),
+                    source=SOURCE_CUSTOM_MAPPING,
+                ),
+                score=1.0,
+            )
             return StepOutcome(
                 status="hit",
                 subject_id=mapping_subject_id,
                 reason=match_reason,
                 score=1.0,
+                candidates=[candidate],
                 inputs=mapping_inputs,
                 outputs={
                     "subject_id": mapping_subject_id,

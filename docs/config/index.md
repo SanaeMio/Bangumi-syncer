@@ -37,18 +37,29 @@ Web 界面背后对应一个 `config.ini` 文件（INI 格式），首次运行�
 
 ## 配置段速查
 
-`config.ini` 按功能分若干段，常见段落：
+`config.ini` 按功能分段。**普通用户不需要手改**，下表用于对照排查：
 
 | 段名 | 用途 |
 | --- | --- |
-| `[bangumi-oauth]` | Bangumi OAuth 应用凭证（Client ID / Secret，已内置可覆盖） |
-| `[sync]` | 同步行为、屏蔽关键词、评分下限 |
-| `[emby]` / `[jellyfin]` / `[plex]` | 各媒体服务器驱动配置 |
-| `[feiniu]` / `[fongmi]` / `[trakt]` | 拉取型驱动配置 |
-| `[notify-webhook-{n}]` / `[notify-email-{n}]` 等 | 通知渠道实例（可多实例） |
-| `[archive]` / `[replay]` | Archive 与 Replay 配置 |
-| `[scheduler]` | 调度器时区、任务超时 |
-| `[summary-{name}]` | AI 追番总结任务 |
+| `[sync]` | 同步行为、屏蔽关键词、模糊匹配置信度 |
+| `[auth]` | 管理页登录、Webhook 认证 |
+| `[web]` | 子路径反向代理（`base_path`） |
+| `[dev]` | 网络代理、ECH、日志、同步记录保留 |
+| `[bangumi-data]` | 公共番剧资料库（用于片名匹配） |
+| `[matching]` | 匹配裁决层（双阈值门控，默认关闭） |
+| `[bangumi-archive]` | 本地归档（离线查询层） |
+| `[bangumi-replay]` | 写降级与自动补发 |
+| `[notify-airing-today]` | 今日放送提醒 |
+| `[notify-webhook-{n}]` / `[notify-email-{n}]` 等 | 通知渠道实例（由配置页弹窗管理） |
+| `[feiniu]` / `[fongmi]` / `[trakt]` | 拉取型数据源 |
+| `[llm]` | AI 追番总结所用的模型参数 |
+| `[summary-{name}]` | AI 追番总结任务（由配置页管理） |
+| `[scheduler]` | 调度器并发、超时、重试（一般无需修改） |
+| `[bangumi]` / `[bangumi-oauth]` | 旧版账号字段与 OAuth 应用凭证（一般无需修改） |
+
+::: tip 每一项的含义
+各配置项的用途、默认值与填写建议，见 [⚙️ 配置说明](./configuration)。该页覆盖了 `config.example.ini` 中的**全部配置项**。
+:::
 
 ::: tip 账号存储位置
 Bangumi 账号（用户名、访问令牌、OAuth 令牌等）存储在 SQLite 数据库 `data/sync_records.db` 的 `bangumi_accounts` 表中，不再写入 `config.ini`。令牌加密存储，数据库文件泄露也不会暴露明文 token。

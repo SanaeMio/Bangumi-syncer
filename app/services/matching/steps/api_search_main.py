@@ -8,15 +8,34 @@ post_search 改选逻辑（季度改选 + 媒体类型改选 + 关联条目改�
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 from app.services.sync_service.match_trace import MatchCandidate
+from app.utils.bangumi_constants import (
+    SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
+)
 
 # 延迟导入避免循环依赖：这些符号在 sync_service.__init__ 顶层定义
 # 运行时 sync_service 已加载完成，step.execute 调用时 import 必然成功
+
+
+@dataclass(frozen=True)
+class ConfidenceVerdict:
+    """置信度评估结果（传统阈值 / 裁决层两条路径的统一出口）
+
+    ``decision`` 为 None 表示裁决层未启用、走的是传统单阈值路径。
+    """
+
+    accepted: bool  # 是否采用（False → 沉淀待审）
+    score: float | None  # 用于 trace 的分数
+    reason: str  # 中文说明（trace.reason）
+    failure_detail: str  # 英文摘要（ctx.failure_detail，供排障与测试断言）
+    decision: Any | None = None  # arbiter.Decision，未启用时为 None
 
 
 def _import_sync_helpers():
@@ -69,11 +88,11 @@ class APISearchStep(MatchStepBase):
             "sync", "enable_real_action", fallback=False
         )
         if item.media_type == "real_action":
-            subject_types = [6]  # SUBJECT_TYPE_REAL，避免循环导入用字面量
+            subject_types = [SUBJECT_TYPE_REAL]
         elif enable_real_action:
-            subject_types = [2, 6]  # [ANIME, REAL]
+            subject_types = [SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL]
         else:
-            subject_types = [2]  # [ANIME]
+            subject_types = [SUBJECT_TYPE_ANIME]
         ctx.subject_types = subject_types
 
         _ctx_str = (
@@ -247,26 +266,33 @@ class APISearchStep(MatchStepBase):
                     bgm_data[0], bgm, search_title, item, match_stage
                 )
 
-            # 置信度阈值检查：复用 candidates[0].score（已通过 title_diff_ratio 计算），
-            # 避免对同一 top 候选重复调用 title_diff_ratio
-            threshold = service._get_match_confidence_threshold()
-            real_conf = candidates[0].score if candidates else None
-            if isinstance(real_conf, (int, float)) and real_conf < threshold:
-                ctx.failure_detail = (
-                    f"match confidence {real_conf:.2f} below threshold {threshold:.2f}"
-                )
+            # 置信度 / 裁决评估（P3）：
+            # - 裁决层未启用（默认）→ 沿用 match_confidence_threshold 单阈值，
+            #   判定逐点位等价于改造前
+            # - 裁决层启用 → 由 Arbiter 按 min_score + min_margin 门控，
+            #   裁决详情写入 outputs.arbiter 便于排查
+            # 两者走同一出口 ConfidenceVerdict，避免判定逻辑分叉成两套。
+            anchor_id = str(bgm_data[0].get("id", ""))
+            verdict = self._evaluate_confidence(
+                service, candidates, anchor_id, is_api_season_matched
+            )
+            if not verdict.accepted:
+                ctx.failure_detail = verdict.failure_detail
                 return StepOutcome(
                     status="low_confidence",
-                    subject_id=str(bgm_data[0].get("id")),
-                    reason=(
-                        f"匹配相似度 {real_conf:.2f} 低于阈值 {threshold:.2f}，已沉淀待审"
-                    ),
-                    score=real_conf,
+                    subject_id=anchor_id,
+                    reason=verdict.reason,
+                    score=verdict.score,
                     inputs=inputs,
                     outputs={
-                        "subject_id": str(bgm_data[0].get("id")),
-                        "score": real_conf,
+                        "subject_id": anchor_id,
+                        "score": verdict.score,
                         "total_candidates": len(bgm_data),
+                        **(
+                            {"arbiter": verdict.decision.to_dict()}
+                            if verdict.decision is not None
+                            else {}
+                        ),
                     },
                     candidates=candidates,
                     request_params=request_params,
@@ -307,16 +333,15 @@ class APISearchStep(MatchStepBase):
             final_reason = reason
             if post_reason:
                 final_reason = f"{reason}；{post_reason}"
+            # 裁决层与改选结果分歧时的提示（仅提示，不改变判定）
+            if verdict.reason:
+                final_reason = f"{final_reason}；{verdict.reason}"
 
             return StepOutcome(
                 status="hit",
                 subject_id=str(bgm_data[0]["id"]),
                 reason=final_reason,
-                score=(
-                    real_conf
-                    if isinstance(real_conf, (int, float))
-                    else (1.0 if is_api_season_matched else 0.9)
-                ),
+                score=verdict.score,
                 inputs=inputs,
                 outputs={
                     "subject_id": str(bgm_data[0]["id"]),
@@ -325,10 +350,11 @@ class APISearchStep(MatchStepBase):
                     "match_method_detail": ctx.match_method_detail or "",
                     "total_candidates": len(bgm_data),
                     "is_archive_hit": is_archive_hit,
-                    "score": (
-                        real_conf
-                        if isinstance(real_conf, (int, float))
-                        else (1.0 if is_api_season_matched else 0.9)
+                    "score": verdict.score,
+                    **(
+                        {"arbiter": verdict.decision.to_dict()}
+                        if verdict.decision is not None
+                        else {}
                     ),
                 },
                 candidates=candidates,
@@ -360,6 +386,113 @@ class APISearchStep(MatchStepBase):
                 request_params=request_params,
                 is_terminal=True,
             )
+
+    # ------------------------------------------------------------------
+    # 置信度 / 裁决（P3）
+    # ------------------------------------------------------------------
+
+    def _evaluate_confidence(
+        self,
+        service: Any,
+        candidates: list[MatchCandidate],
+        anchor_subject_id: str,
+        season_matched: bool = False,
+    ) -> ConfidenceVerdict:
+        """置信度评估：传统单阈值 或 裁决层门控
+
+        裁决层由 ``[matching] arbiter_enabled`` 控制，**默认关闭**以保持改造前的
+        行为；开启后按 ``min_score`` + ``min_margin`` 门控。
+
+        **裁决只做门控，不改选**：最终 subject_id 始终取 post_search 改选后的
+        队首（``anchor_subject_id``）。季度 / 媒体类型 / 关联条目改选是领域逻辑
+        而非分数比较 —— 用加权分推翻它会误伤（例如第二季改选到第一季时，
+        改选后的条目分数往往不是候选池里最高的）。裁决 top1 与改选队首不一致时
+        只记录分歧供排查，不改变判定结果。
+        """
+        # 延迟导入：与 sync_service 内部使用同一 config_manager 引用，
+        # 使测试 patch("app.services.sync_service.config_manager") 生效
+        from app.services.matching.arbiter import (
+            VERDICT_AUTO,
+            VERDICT_REJECT,
+            Arbiter,
+            MatchPolicy,
+            policy_from_config,
+        )
+        from app.services.sync_service import config_manager
+
+        # 复用 candidates[0].score（已通过 title_diff_ratio 计算），
+        # 避免对同一 top 候选重复调用
+        real_conf = candidates[0].score if candidates else None
+        if not isinstance(real_conf, (int, float)):
+            real_conf = None
+
+        policy = policy_from_config(config_manager)
+        if not policy.enabled:
+            threshold = service._get_match_confidence_threshold()
+            # real_conf 为 None（非数值）时沿用改造前行为：不判低置信，走命中兜底分
+            if real_conf is not None and real_conf < threshold:
+                return ConfidenceVerdict(
+                    accepted=False,
+                    score=real_conf,
+                    reason=(
+                        f"匹配相似度 {real_conf:.2f} 低于阈值 "
+                        f"{threshold:.2f}，已沉淀待审"
+                    ),
+                    failure_detail=(
+                        f"match confidence {real_conf:.2f} below "
+                        f"threshold {threshold:.2f}"
+                    ),
+                )
+            return ConfidenceVerdict(
+                accepted=True,
+                score=real_conf
+                if real_conf is not None
+                else (1.0 if season_matched else 0.9),
+                reason="",
+                failure_detail="",
+            )
+
+        # 传 anchor：按「改选优先」语义门控 —— 用被采用条目自己的分数判定，
+        # margin 衡量它相对其他候选的领先度（详见 Arbiter.decide 文档）
+        decision = Arbiter().decide(
+            candidates, policy or MatchPolicy(), anchor_subject_id
+        )
+        if decision.verdict == VERDICT_AUTO:
+            note = ""
+            if (
+                decision.subject_id
+                and anchor_subject_id
+                and decision.subject_id != anchor_subject_id
+            ):
+                note = (
+                    f"裁决 top1 为 {decision.subject_id}，与改选队首 "
+                    f"{anchor_subject_id} 不一致（保留改选结果）"
+                )
+            return ConfidenceVerdict(
+                accepted=True,
+                score=decision.score,
+                reason=note,
+                failure_detail="",
+                decision=decision,
+            )
+
+        score = decision.score if decision.score is not None else 0.0
+        if decision.verdict == VERDICT_REJECT:
+            failure_detail = (
+                f"match confidence {score:.2f} below threshold {policy.min_score:.2f}"
+            )
+        else:
+            margin = decision.margin if decision.margin is not None else 0.0
+            failure_detail = (
+                f"match margin {margin:.2f} below threshold {policy.min_margin:.2f}"
+            )
+        return ConfidenceVerdict(
+            accepted=False,
+            score=decision.score,
+            reason=f"{decision.reason}，已沉淀待审",
+            failure_detail=failure_detail,
+            decision=decision,
+        )
 
     # ------------------------------------------------------------------
     # post_search 改选逻辑（阶段四拆为独立 PostSearchStep）
@@ -484,11 +617,13 @@ class APISearchStep(MatchStepBase):
         # 真人剧 type=6 即使标题无"日剧/真人版"关键词也能正确识别为 real_action，
         # 避免"凡人修仙传"查询返回真人剧（type=6, 标题完全相同）时误判为 episode
         top_detected = _detect_candidate_media_type(bgm_data[0])
-        top_name = (bgm_data[0].get("name") or "").strip()
-        top_name_cn = (bgm_data[0].get("name_cn") or "").strip()
-        request_title = (item.title or "").strip()
-        top_exact_match = request_title and request_title in {top_name, top_name_cn}
-        need_reselect = top_detected != request_media_type or not top_exact_match
+        # 改选触发条件收紧为「仅媒体类型冲突」（2026-09-08 匹配调研决策）：
+        # 旧逻辑 `top_detected != request_media_type or not top_exact_match`
+        # 第二个条件 `not top_exact_match` 在「查询带'第二季'后缀 / NFKC 半角差异」时
+        # 几乎恒真 → need_reselect 恒真 → 下游 `_pick_mainline_episode_candidate`
+        # 按「eps 最大」跨季择优，**跨季时反而选到集数更多的前作**。
+        # 实测 240 条 L2 黄金集中占错配 4/9（44%）。决策：宁可信任 top，宁可漏标。
+        need_reselect = top_detected != request_media_type
 
         if not need_reselect:
             return None
@@ -499,8 +634,9 @@ class APISearchStep(MatchStepBase):
             cand_detected = _detect_candidate_media_type(cand)
             if cand_detected == request_media_type:
                 episode_candidates.append(cand)
-        if top_detected == request_media_type and not top_exact_match:
-            episode_candidates.insert(0, bgm_data[0])
+        # 注：旧逻辑中「top 类型一致但标题不完全相等时把 top 插回候选」分支
+        # 已被新触发条件排除（need_reselect 现在仅在类型冲突时为真），
+        # 删除以避免死代码 + 隐藏意图。
 
         if episode_candidates:
             best_cand = service._pick_mainline_episode_candidate(

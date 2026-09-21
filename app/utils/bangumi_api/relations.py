@@ -120,8 +120,8 @@ class RelationMixin:
         self, seed_id: int, max_hops: int = _SERIES_MAX_HOPS
     ) -> list[int]:
         """同 IP 关系图 BFS 闭包：从 seed 沿全部「同作品」关系类型（默认
-        FRANCHISE_RELATION_TYPES：相同系列/前传/续集/外传/改编/同世界观/劇場版/
-        同系列）收集连通分量（含分支）。
+        FRANCHISE_RELATION_TYPES：改编/前传/续集/总集篇/相同世界观/不同演绎/
+        主线故事）收集连通分量（含分支）。
 
         相对 get_series_subject_ids_bfs（仅 sequel+prequel）多收回一个数量级的兄弟
         作品（高达全系列、CLAMP 宇宙、Cartoon Network 动画宇宙等分支型 IP），是媒体
@@ -186,11 +186,12 @@ class RelationMixin:
         """在线降级：基于 get_related_subjects 做同 IP 双向 BFS 闭包（无 Archive 时）
 
         采用 FRANCHISE_RELATION_CN_SET（与 Bangumi 官方 web API 返回的 relation
-        中文名对齐），剔除 角色出演/不同世界观/联动/其他 等噪声边。
+        中文名对齐），剔除 角色出演/不同世界观/番外篇/联动/其他 等噪声边。
 
-        注意：FRANCHISE_RELATION_CN_SET 是官方 API 编号体系的中文名，不可与
-        FRANCHISE_RELATION_TYPES（库 dump 编号）混用——二者仅 2(前传)/3(续集) 重合，
-        直接用 RELATIONS[库编号] 转换会纳入官方 7「角色出演」噪声边且漏掉同 IP 边。
+        注：库 dump 编号与官方 web API 编号已实证为同一体系（均对应
+        bangumi/common，2026-09-09 考证，详见 _store.py 注释），
+        FRANCHISE_RELATION_CN_SET 由 FRANCHISE_RELATION_TYPES 经 RELATIONS
+        推导，离线/在线两侧天然一致。
 
         Returns:
             原始闭包 subject_id 列表（不含 seed，按 BFS 层序，未做类型过滤）

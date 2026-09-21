@@ -22,9 +22,28 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import NamedTuple
 
 from rapidfuzz import fuzz
+
+
+def _nfkc(text: str) -> str:
+    """Unicode NFKC 归一化（全角→半角、半角片假名→全角等）。
+
+    与 `_fts_query._normalize_key` 的 NFKC 步骤保持同源语义：索引侧已做 NFKC，
+    召回侧（变体生成 / 季后缀剥离）与评分侧（相似度归一化）若不做 NFKC，
+    全角标题会一路带着全角字符进入 rapidfuzz 打分，分数直接崩到 0。
+
+    实测（240 条 L2 黄金集，S9_全角半角 场景）：
+    「Ｏｇｇｙ ｅｔ ｌｅｓ Ｃａｆａｒｄｓ ｓｅａｓｏｎ ２」未做 NFKC 时
+    `season ２` 的全角 `ｓｅａｓｏｎ` 匹配不上 ASCII 正则 → 季后缀剥不掉，
+    且评分侧拿到 `Ｏｇｇｙｅｔｌｅｓ...` 全角串 → score 0.0，15 条全部漏标。
+    """
+    if not text:
+        return ""
+    return unicodedata.normalize("NFKC", text)
+
 
 # 季数/集数后缀剥离模式（按优先级排序，长模式在前）
 # 处理 fongmi/Plex/Jellyfin 等传入的「标题 S06E279」「标题 第N季」「标题 第二季」等格式，
@@ -191,6 +210,8 @@ def _normalize_title_for_match(text: str) -> str:
     """
     if not text:
         return ""
+    # 0. NFKC：与索引侧 _normalize_key 对齐，全角标题先折半角再参与打分
+    text = _nfkc(text)
     # 1. 折叠所有空白字符为无
     norm = _RE_WHITESPACE.sub("", text)
     # 2. 去除修饰词（处理"斗破苍穹年番"与"斗破苍穹 年番"两种写法）
@@ -240,7 +261,8 @@ def _strip_season_episode_suffix(title: str) -> str:
     """
     if not title:
         return title
-    cleaned = title.strip()
+    # NFKC 优先：全角 `シーズン ２` / `Season ２` 折半角后才能命中 ASCII 正则
+    cleaned = _nfkc(title).strip()
     for pattern in (*_SEASON_EPISODE_PATTERNS, *_PART_SUFFIX_PATTERNS):
         m = pattern.search(cleaned)
         if m:
@@ -405,6 +427,12 @@ def build_search_variants(title: str, ori_title: str = "") -> list[SearchVariant
     """
     if not title:
         return []
+
+    # 入口 NFKC：与评分侧 `_normalize_title_for_match` / 索引侧 `_normalize_key` 对齐。
+    # 实测（240 条 L2 黄金集 S9_全角半角 场景）整路径 NFKC 可一次拿回 15 条漏标：
+    # 全角 `season ２` 剥不掉季后缀、评分侧拿到全角串 rapidfuzz 分数崩 0。
+    title = _nfkc(title)
+    ori_title = _nfkc(ori_title) if ori_title else ""
 
     stripped_title = _strip_season_episode_suffix(title)
     stripped_ori = _strip_season_episode_suffix(ori_title) if ori_title else ""

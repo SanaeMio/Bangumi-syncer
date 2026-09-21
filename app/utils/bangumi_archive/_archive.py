@@ -44,10 +44,9 @@ _DB_NAMES = ("a", "b")
 # 阈值设为 3000MB，预留约 400MB 余量避免导入中途写满
 _DEFAULT_MIN_DISK_SPACE_MB = 3000
 
-# 镜像源 fallback（与 upgrade_service 一致）
-_GH_PROXY_MIRRORS = (
-    "https://ghfast.top/",
-    "https://gh-proxy.com/",
+# 镜像源 fallback：单源定义于 github_release.GH_PROXY_MIRRORS（转口保持旧名）
+from ..github_release import (  # noqa: E402
+    GH_PROXY_MIRRORS as _GH_PROXY_MIRRORS,
 )
 
 # latest.json 拉取地址

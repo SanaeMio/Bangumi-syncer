@@ -37,6 +37,10 @@ from ..utils.bangumi_api.factory import (
 )
 from ..utils.bangumi_archive import bangumi_archive
 from ..utils.bangumi_archive._store import archive_store
+from ..utils.bangumi_constants import (
+    SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
+)
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/airing-calendar", tags=["airing-calendar"])
@@ -284,13 +288,13 @@ async def get_airing_calendar(
     start_str = today_str
     end_str = end_date.isoformat()
 
-    # 类型筛选：0=全部(2,6), 2=动画, 6=三次元
-    if subject_type == 2:
-        subject_types: tuple[int, ...] = (2,)
-    elif subject_type == 6:
-        subject_types = (6,)
+    # 类型筛选：0=全部，2=动画(SUBJECT_TYPE_ANIME)，6=三次元(SUBJECT_TYPE_REAL)
+    if subject_type == SUBJECT_TYPE_ANIME:
+        subject_types: tuple[int, ...] = (SUBJECT_TYPE_ANIME,)
+    elif subject_type == SUBJECT_TYPE_REAL:
+        subject_types = (SUBJECT_TYPE_REAL,)
     else:
-        subject_types = (2, 6)
+        subject_types = (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL)
 
     # "我的追番"必须配置 Bangumi 账号：按 account 段名构造（多用户切换）
     # 多用户隔离：校验当前用户是否有权访问指定 account，防止越权查看他人账号
