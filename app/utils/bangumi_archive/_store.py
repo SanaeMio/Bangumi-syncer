@@ -26,6 +26,7 @@ from ..bangumi_constants import (
     RELATION_ID_SEQUEL,
     RELATIONS,
     SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
 )
 from ._archive import bangumi_archive
 from ._wiki_parser import parse_infobox
@@ -222,7 +223,7 @@ class ArchiveStore:
         self,
         start_date: str,
         end_date: str,
-        subject_types: tuple[int, ...] = (2, 6),
+        subject_types: tuple[int, ...] = (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL),
         subject_ids: Optional[set[int]] = None,
     ) -> list[dict[str, Any]]:
         """按 airdate 范围查询放送日程，JOIN subject 取条目名

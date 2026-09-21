@@ -16,11 +16,7 @@ from app.core.logging import logger
 from app.services.matching.context import MatchContext
 from app.services.matching.contracts import SOURCE_ARCHIVE, candidates_from_rows
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
-
-# 官方 subject.type：2=动画，6=三次元（真人剧/电视剧）
-# 与 api_search_main.py 中 subject_types 的取值保持一致
-_SUBJECT_TYPE_ANIME = 2
-_SUBJECT_TYPE_REAL = 6
+from app.utils.bangumi_constants import SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL
 
 
 class ArchiveShortcutStep(MatchStepBase):
@@ -75,11 +71,11 @@ class ArchiveShortcutStep(MatchStepBase):
             "sync", "enable_real_action", fallback=False
         )
         if item.media_type == "real_action":
-            subject_types = [6]
+            subject_types = [SUBJECT_TYPE_REAL]
         elif enable_real_action:
-            subject_types = [2, 6]
+            subject_types = [SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL]
         else:
-            subject_types = [2]
+            subject_types = [SUBJECT_TYPE_ANIME]
         ctx.subject_types = subject_types
 
         request_params = {
@@ -143,9 +139,9 @@ class ArchiveShortcutStep(MatchStepBase):
         data = shortcut.data
         if (
             item.media_type == "episode"
-            and _SUBJECT_TYPE_ANIME in subject_types
-            and _SUBJECT_TYPE_REAL in subject_types
-            and not any(c.get("type") == _SUBJECT_TYPE_ANIME for c in data)
+            and SUBJECT_TYPE_ANIME in subject_types
+            and SUBJECT_TYPE_REAL in subject_types
+            and not any(c.get("type") == SUBJECT_TYPE_ANIME for c in data)
         ):
             try:
                 anime_only = bgm._archive.try_search(
@@ -153,7 +149,7 @@ class ArchiveShortcutStep(MatchStepBase):
                     start_date=start_date,
                     end_date=end_date,
                     limit=15,
-                    subject_types=[_SUBJECT_TYPE_ANIME],
+                    subject_types=[SUBJECT_TYPE_ANIME],
                 )
             except Exception as e:  # noqa: BLE001 — 补召回失败不阻断主流程
                 logger.debug(f"archive 动画类型补召回失败（沿用原候选）: {e}")

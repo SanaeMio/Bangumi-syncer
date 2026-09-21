@@ -15,6 +15,10 @@ from app.core.logging import logger
 from app.services.matching.context import MatchContext
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 from app.services.sync_service.match_trace import MatchCandidate
+from app.utils.bangumi_constants import (
+    SUBJECT_TYPE_ANIME,
+    SUBJECT_TYPE_REAL,
+)
 
 # 延迟导入避免循环依赖：这些符号在 sync_service.__init__ 顶层定义
 # 运行时 sync_service 已加载完成，step.execute 调用时 import 必然成功
@@ -84,11 +88,11 @@ class APISearchStep(MatchStepBase):
             "sync", "enable_real_action", fallback=False
         )
         if item.media_type == "real_action":
-            subject_types = [6]  # SUBJECT_TYPE_REAL，避免循环导入用字面量
+            subject_types = [SUBJECT_TYPE_REAL]
         elif enable_real_action:
-            subject_types = [2, 6]  # [ANIME, REAL]
+            subject_types = [SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL]
         else:
-            subject_types = [2]  # [ANIME]
+            subject_types = [SUBJECT_TYPE_ANIME]
         ctx.subject_types = subject_types
 
         _ctx_str = (
@@ -613,9 +617,6 @@ class APISearchStep(MatchStepBase):
         # 真人剧 type=6 即使标题无"日剧/真人版"关键词也能正确识别为 real_action，
         # 避免"凡人修仙传"查询返回真人剧（type=6, 标题完全相同）时误判为 episode
         top_detected = _detect_candidate_media_type(bgm_data[0])
-        top_name = (bgm_data[0].get("name") or "").strip()
-        top_name_cn = (bgm_data[0].get("name_cn") or "").strip()
-        request_title = (item.title or "").strip()
         # 改选触发条件收紧为「仅媒体类型冲突」（2026-09-08 匹配调研决策）：
         # 旧逻辑 `top_detected != request_media_type or not top_exact_match`
         # 第二个条件 `not top_exact_match` 在「查询带'第二季'后缀 / NFKC 半角差异」时
