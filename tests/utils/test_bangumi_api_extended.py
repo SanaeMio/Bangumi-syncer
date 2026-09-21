@@ -2011,3 +2011,91 @@ class TestEpisodeNumberFormula:
             found = api._find_episode_by_sort(1, raw_sort)
             assert found is not None, f"sort={raw_sort} 未命中"
             assert found["sort"] == raw_sort
+
+
+class TestEpisodeConsistencyCheck:
+    """集数一致性校验：拦住脏值，但不误伤跨季连续编号与季数错位。
+
+    背景：媒体库推来的 season/episode 来自文件名解析，可能是垃圾值。真实库
+    出现 S50E1000 / S5E100 等；而**不能按数值大小拦截** —— E201/E233/E81
+    都是国漫正常集号（斗破苍穹 / 吞噬星空 / 凡人修仙传）。可用判据只有
+    「与该条目实际数据是否一致」。
+    """
+
+    @staticmethod
+    def _api(eps_by_sid, sequel_of=None):
+        """eps_by_sid: {sid: [eps]}；sequel_of: {sid: next_sid}"""
+        api = BangumiApi()
+        sequel_of = sequel_of or {}
+
+        def get_eps(sid, *a, **k):
+            return {"data": eps_by_sid.get(int(sid), []), "total": 0}
+
+        api.get_episodes = MagicMock(side_effect=get_eps)
+        api._find_next_sequel_id = MagicMock(
+            side_effect=lambda sid: sequel_of.get(int(sid))
+        )
+        return api
+
+    @staticmethod
+    def _eps(n, start_sort=1):
+        return [
+            {"sort": start_sort + i, "ep": i + 1, "id": 1000 + i, "type": 0}
+            for i in range(n)
+        ]
+
+    def test_blocks_episode_beyond_single_season_limit(self):
+        """无续集的单季条目：集号超上限 → 拦截（真实脏值场景）"""
+        api = self._api({434076: self._eps(30)})
+        ok, why = api._check_episode_consistency(434076, 1, 81)
+        assert not ok
+        assert "超出" in why
+
+    def test_allows_episode_within_limit(self):
+        """无续集的单季条目：集号在范围内 → 放行"""
+        api = self._api({434076: self._eps(30)})
+        ok, _ = api._check_episode_consistency(434076, 1, 30)
+        assert ok
+
+    def test_allows_when_entry_has_sequel(self):
+        """有续集 → 放行（跨季连续编号，如年番2 推 E201 需沿链找年番4）"""
+        api = self._api(
+            {443867: self._eps(53, start_sort=53)}, sequel_of={443867: 562145}
+        )
+        ok, why = api._check_episode_consistency(443867, 1, 201)
+        assert ok, f"有续集时不应拦截，实际: {why}"
+
+    def test_allows_multi_season_regardless_of_limit(self):
+        """target_season>1 → 放行（集号语义随季变化，交由链解析）"""
+        api = self._api({245665: self._eps(26)})
+        ok, _ = api._check_episode_consistency(245665, 5, 100)
+        assert ok
+
+    def test_allows_when_no_episode_data(self):
+        """条目无章节数据 → 放行（无从判断）"""
+        api = self._api({})
+        ok, _ = api._check_episode_consistency(999999, 1, 100)
+        assert ok
+
+    def test_allows_when_no_target_ep(self):
+        """无集号 → 放行"""
+        api = self._api({434076: self._eps(30)})
+        ok, _ = api._check_episode_consistency(434076, 1, 0)
+        assert ok
+
+    def test_limit_is_permissive_across_ep_and_sort_domains(self):
+        """上限取 ep 域与 sort 域的**较大者**（刻意宽松，避免误拦）
+
+        调用方可能传「条目内 ep」也可能传「全局 sort」，二者域不同。
+        只要任一解释下不超范围就放行 —— 例如 sort 158..168 共 11 集：
+        ep 域上限 11、sort 域上限 168，故 target_ep=12 仍放行
+        （12 超出 ep 域，但远小于 sort 上限，无法断定是脏值）。
+        """
+        api = self._api({562145: self._eps(11, start_sort=158)})
+        # ep 域内
+        assert api._check_episode_consistency(562145, 1, 11)[0] is True
+        # 超 ep 域但在 sort 域内 → 仍放行（宽松取向）
+        assert api._check_episode_consistency(562145, 1, 12)[0] is True
+        # 超出两者较大者 → 拦截
+        ok, why = api._check_episode_consistency(562145, 1, 200)
+        assert not ok, f"应拦截，实际放行: {why}"
