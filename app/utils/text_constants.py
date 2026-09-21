@@ -105,3 +105,59 @@ PLATFORM_WEIGHT_TV_MODE: dict[str, int] = {
 PLATFORM_WEIGHT_MOVIE_MODE: dict[str, int] = {
     p: _MOVIE_MODE_BASE_WEIGHTS.get(p, DEFAULT_PLATFORM_WEIGHT) for p in _ALL_PLATFORMS
 }
+
+
+def resolve_platform_name(platform: object, subject_type: object = None) -> str:
+    """把 ``platform`` 归一化为**中文名**，供上面的权重表查表。
+
+    两条数据来源的取值形态不同，必须在这里统一：
+
+    - **API 路径**：platform 已是中文名（``"TV"`` / ``"WEB"`` / ``"华语剧"`` …），原样返回。
+    - **Archive 路径**：platform 存的是**字符串形式的数字编码**
+      （``"1"`` / ``"5"`` / ``"6002"`` …），且**按 subject.type 分域**：
+        | subject.type | 编码含义                                                  |
+        |---|---|
+        | 2（动画）     | 0=其他 1=TV 2=OVA 3=剧场版 4=短片 5=WEB 2006=动态漫画          |
+        | 6（三次元）   | 0=其他 1=日剧 2=欧美剧 3=华语剧 6001=电视剧 6002=电影 6003=演出 6004=综艺 |
+
+      即**同一个数字在不同 type 下含义不同**（``3`` 在动画是「剧场版」，在三次元是
+      「华语剧」），必须按 type 选表解码。
+
+    若不做这层解码，数字编码在中文名权重表里必然查不到而回落到
+    ``DEFAULT_PLATFORM_WEIGHT`` —— 排序**静默失效**（所有候选同权 → 稳定排序
+    保持原序），平台权重的设计意图在 archive 路径上从未生效，且与 API 路径
+    行为不一致。
+
+    Args:
+        platform: 原始 platform 取值（中文名 / 数字 / 数字字符串 / None）。
+        subject_type: 条目的 subject.type（2=动画 / 6=三次元），用于选解码表。
+            无法判定时按动画表解码（本仓库主体场景为动画）。
+
+    Returns:
+        中文平台名；无法识别时返回空串（由调用方回落到默认权重）。
+    """
+    if platform is None:
+        return ""
+
+    # --- 已是中文名（API 路径）→ 原样返回 ---
+    if isinstance(platform, str):
+        text = platform.strip()
+        if not text:
+            return ""
+        if not text.isdigit():
+            return text
+        code = int(text)
+    elif isinstance(platform, bool):
+        return ""
+    elif isinstance(platform, int):
+        code = platform
+    else:
+        return ""
+
+    # --- 数字编码（Archive 路径）→ 按 subject.type 选表解码 ---
+    try:
+        stype = int(subject_type)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        stype = None
+    table = REAL_PLATFORMS if stype == 6 else ANIME_PLATFORMS
+    return table.get(code, "")
