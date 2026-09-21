@@ -24,8 +24,9 @@ import json
 import sqlite3
 import time
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from ...core.logging import logger
 from ..bangumi_constants import ARCHIVE_ALLOWED_SUBJECT_TYPES

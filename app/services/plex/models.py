@@ -1,6 +1,6 @@
 """Plex Webhook 数据模型"""
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -36,7 +36,7 @@ class PlexWebhookData(BaseModel):
     )
 
     # 可选字段
-    user: Optional[bool] = Field(None, description="是否为用户事件")
-    owner: Optional[bool] = Field(None, description="是否为所有者事件")
-    Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
-    Player: Optional[dict[str, Any]] = Field(None, description="播放器信息")
+    user: bool | None = Field(None, description="是否为用户事件")
+    owner: bool | None = Field(None, description="是否为所有者事件")
+    Server: dict[str, Any] | None = Field(None, description="服务器信息")
+    Player: dict[str, Any] | None = Field(None, description="播放器信息")

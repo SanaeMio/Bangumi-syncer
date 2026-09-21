@@ -2,8 +2,6 @@
 配置相关数据模型
 """
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -77,11 +75,11 @@ class ConfigResponse(BaseModel):
 class ConfigUpdateRequest(BaseModel):
     """配置更新请求模型"""
 
-    bangumi: Optional[BangumiConfig] = None
-    sync: Optional[SyncConfig] = None
-    dev: Optional[DevConfig] = None
-    bangumi_data: Optional[BangumiDataConfig] = None
-    auth: Optional[AuthConfig] = None
+    bangumi: BangumiConfig | None = None
+    sync: SyncConfig | None = None
+    dev: DevConfig | None = None
+    bangumi_data: BangumiDataConfig | None = None
+    auth: AuthConfig | None = None
 
 
 class ConfigUpdateResponse(BaseModel):

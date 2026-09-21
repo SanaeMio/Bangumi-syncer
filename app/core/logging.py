@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .config import ConfigManager
@@ -39,14 +39,14 @@ def normalize_log_level(raw) -> str:
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # 同步日志关联 ID（线程内通过 ContextVar 传播）
-sync_run_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+sync_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "sync_run_id", default=None
 )
 
 RUN_ID_FIELD_WIDTH = 28  # 供 UI 等宽展示参考；写入文件时不填充空格
 
 
-def get_sync_run_id() -> Optional[str]:
+def get_sync_run_id() -> str | None:
     """当前同步 run_id；无上下文时为 None。"""
     return sync_run_id.get()
 
@@ -120,7 +120,7 @@ def resolve_dev_log_file_path(raw: str) -> Path:
     return Path(raw)
 
 
-def effective_dev_log_file_raw(config_manager: "ConfigManager") -> Optional[str]:
+def effective_dev_log_file_raw(config_manager: "ConfigManager") -> str | None:
     """
     返回将用于打开日志文件的原始配置字符串；None 表示显式留空、禁用文件日志。
     缺键时使用 DEFAULT_DEV_LOG_FILE。
@@ -138,7 +138,7 @@ def effective_dev_log_file_raw(config_manager: "ConfigManager") -> Optional[str]
 
 def resolved_dev_log_file_path(
     config_manager: "ConfigManager",
-) -> Optional[Path]:
+) -> Path | None:
     """当前配置下解析后的日志文件绝对路径；禁用时为 None。"""
     raw = effective_dev_log_file_raw(config_manager)
     if raw is None:
@@ -164,8 +164,8 @@ class Logger:
 
         # 延迟获取debug_mode，避免循环依赖
         self._debug_mode = None
-        self._log_level: Optional[str] = None
-        self._log_file_path: Optional[Path] = None
+        self._log_level: str | None = None
+        self._log_file_path: Path | None = None
         # 不在 __init__ 中打开日志文件：模块执行 logger = Logger() 时，若此处导入
         # config，而 config 初始化链又 import logger，会触发 partially initialized 循环依赖。
         self._log_file_lazy_initialized = False
@@ -190,7 +190,7 @@ class Logger:
         except ValueError:
             pass
 
-    def _notify_listeners(self, log_line: str, level: Optional[str]) -> None:
+    def _notify_listeners(self, log_line: str, level: str | None) -> None:
         """通知所有监听器（监听器异常不影响日志输出）"""
         if not self._listeners:
             return
@@ -350,7 +350,7 @@ class Logger:
             self._ensure_config_change_listener()
         return self._log_level
 
-    def log_level_enabled(self, level: Optional[str]) -> bool:
+    def log_level_enabled(self, level: str | None) -> bool:
         """判断某级别在当前阈值下是否输出到控制台/文件（监听器不受阈值限制）。"""
         if self.debug_mode:
             return True
@@ -391,7 +391,7 @@ class Logger:
                 pass
         return " ".join(str(i) for i in args)
 
-    def _format_level_field(self, level: Optional[str]) -> str:
+    def _format_level_field(self, level: str | None) -> str:
         """级别标签，如 [INFO]、[DEBUG]。"""
         if not level:
             return ""
@@ -411,7 +411,7 @@ class Logger:
                 pass
         return " ".join(str(i) for i in args)
 
-    def _format_log_line(self, *args, level: Optional[str]) -> str:
+    def _format_log_line(self, *args, level: str | None) -> str:
         """格式化日志行（不输出）"""
         timestamp = f"[{datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S.%f')[:-3]}]"
         message = self._format_message(*args)
@@ -432,9 +432,9 @@ class Logger:
     def log(
         self,
         *args,
-        end: Optional[str] = None,
+        end: str | None = None,
         silence: bool = False,
-        level: Optional[str] = None,
+        level: str | None = None,
     ) -> None:
         """统一的日志输出方法"""
         if silence:
@@ -466,25 +466,25 @@ class Logger:
         # 通知监听器
         self._notify_listeners(log_line, level)
 
-    def info(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
+    def info(self, *args, end: str | None = None, silence: bool = False) -> None:
         """INFO级别日志"""
         if not silence and self.need_mix:
             args = self.mix_args_str(*args)
         self.log(*args, end=end, silence=silence, level=self.INFO)
 
-    def debug(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
+    def debug(self, *args, end: str | None = None, silence: bool = False) -> None:
         """DEBUG级别日志"""
         if not silence and self.need_mix:
             args = self.mix_args_str(*args)
         self.log(*args, end=end, silence=silence, level=self.DEBUG)
 
-    def error(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
+    def error(self, *args, end: str | None = None, silence: bool = False) -> None:
         """ERROR级别日志"""
         if not silence and self.need_mix:
             args = self.mix_args_str(*args)
         self.log(*args, end=end, silence=silence, level=self.ERROR)
 
-    def warning(self, *args, end: Optional[str] = None, silence: bool = False) -> None:
+    def warning(self, *args, end: str | None = None, silence: bool = False) -> None:
         """WARNING级别日志"""
         if not silence and self.need_mix:
             args = self.mix_args_str(*args)

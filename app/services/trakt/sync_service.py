@@ -5,7 +5,7 @@ Trakt 数据同步服务
 import asyncio
 import time
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from app.utils.bangumi_data import bangumi_data
 
@@ -35,7 +35,7 @@ class TraktSyncService:
         self,
         user_id: str,
         full_sync: bool = False,
-        sync_types: Optional[list[str]] = None,
+        sync_types: list[str] | None = None,
     ) -> TraktSyncResult:
         """同步用户的 Trakt 数据
 
@@ -104,7 +104,7 @@ class TraktSyncService:
 
         # 同步主体；遇到 401（TraktAuthError）自动刷新凭证并重建客户端重试一次。
         # 首次创建客户端也在循环内：创建时 401 同样触发刷新重试。
-        client: Optional[TraktClient] = None
+        client: TraktClient | None = None
         auth_retried = False
         try:
             while True:
@@ -321,7 +321,7 @@ class TraktSyncService:
 
         async def _fetch_one(
             tid: str, item_type: str, trakt_id_int: int
-        ) -> tuple[str, Optional[dict]]:
+        ) -> tuple[str, dict | None]:
             async with sem:
                 if item_type == "episode":
                     resp = await client.get_show_info(tid)
@@ -706,8 +706,8 @@ class TraktSyncService:
         self,
         user_id: str,
         item: TraktHistoryItem,
-        show_original_titles: Optional[dict[str, str]] = None,
-    ) -> Optional[CustomItem]:
+        show_original_titles: dict[str, str] | None = None,
+    ) -> CustomItem | None:
         """将 Trakt 观看历史转换为 CustomItem"""
         try:
             if item.type == "movie":
@@ -723,7 +723,7 @@ class TraktSyncService:
 
             # 获取剧集标题
             # 优先从 bangumi_data 获取中文标题；未收录时降级使用 Trakt 自带标题
-            title: Optional[str] = None
+            title: str | None = None
 
             show_tmdb = show.get("ids", {}).get("tmdb")
             if show_tmdb is not None:
@@ -813,7 +813,7 @@ class TraktSyncService:
 
     def _trakt_movie_history_to_custom_item(
         self, user_id: str, item: TraktHistoryItem
-    ) -> Optional[CustomItem]:
+    ) -> CustomItem | None:
         """将 Trakt 电影观看历史转为 CustomItem（剧场版 / 独立电影打格子）"""
         if not item.movie:
             logger.warning(f"电影数据缺失: {item.trakt_item_id}")
@@ -822,7 +822,7 @@ class TraktSyncService:
         ids = movie.get("ids") or {}
         tmdb_num = ids.get("tmdb")
 
-        title: Optional[str] = None
+        title: str | None = None
         if tmdb_num is not None:
             title = bangumi_data.get_title_by_tmdb_id(f"movie/{tmdb_num}")
             if not title:
@@ -909,7 +909,7 @@ class TraktSyncService:
         logger.info(f"Trakt 同步任务 {task_id} 已启动")
         return task_id
 
-    def get_sync_result(self, task_id: str) -> Optional[TraktSyncResult]:
+    def get_sync_result(self, task_id: str) -> TraktSyncResult | None:
         """获取同步任务结果"""
         return self._sync_results.get(task_id)
 

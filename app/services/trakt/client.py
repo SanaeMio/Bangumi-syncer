@@ -5,7 +5,7 @@ Trakt.tv API 异步客户端
 import asyncio
 import time
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -66,7 +66,7 @@ class TraktClient:
         self.retry_delay = 1.0
 
         # HTTP 客户端
-        self._http: Optional[AsyncHttpClient] = None
+        self._http: AsyncHttpClient | None = None
 
     async def __aenter__(self) -> "TraktClient":
         """异步上下文管理器入口"""
@@ -103,9 +103,9 @@ class TraktClient:
         self,
         method: str,
         endpoint: str,
-        params: Optional[dict] = None,
-        data: Optional[dict] = None,
-    ) -> Optional[dict]:
+        params: dict | None = None,
+        data: dict | None = None,
+    ) -> dict | None:
         """发送 HTTP 请求，处理速率限制和重试"""
         await self._ensure_client()
         assert self._http is not None
@@ -205,7 +205,7 @@ class TraktClient:
     # ===== API 方法 =====
 
     async def get_watched_history(
-        self, start_date: Optional[datetime] = None, limit: int = 1000, page: int = 1
+        self, start_date: datetime | None = None, limit: int = 1000, page: int = 1
     ) -> list[TraktHistoryItem]:
         """获取用户观看历史
 
@@ -216,7 +216,7 @@ class TraktClient:
         """
         try:
             endpoint = "/sync/history"
-            params: dict[str, Union[str, int]] = {"limit": limit, "page": page}
+            params: dict[str, str | int] = {"limit": limit, "page": page}
 
             if start_date:
                 # Trakt 使用 YYYY-MM-DD 格式
@@ -244,7 +244,7 @@ class TraktClient:
             return []
 
     async def get_all_watched_history(
-        self, start_date: Optional[datetime] = None, max_pages: int = 10
+        self, start_date: datetime | None = None, max_pages: int = 10
     ) -> list[TraktHistoryItem]:
         """获取所有分页的观看历史（自动分页）
 
@@ -375,7 +375,7 @@ class TraktClient:
             logger.error(f"获取收藏失败: {e}")
             return []
 
-    async def get_user_profile(self) -> Optional[dict]:
+    async def get_user_profile(self) -> dict | None:
         """获取用户个人信息"""
         try:
             endpoint = "/users/me"
@@ -390,7 +390,7 @@ class TraktClient:
             logger.error(f"获取用户信息失败: {e}")
             return None
 
-    async def get_movie_info(self, trakt_id: int) -> Optional[dict]:
+    async def get_movie_info(self, trakt_id: int) -> dict | None:
         """获取电影详细信息"""
         try:
             endpoint = f"/movies/{trakt_id}"
@@ -405,7 +405,7 @@ class TraktClient:
             logger.error(f"获取电影 {trakt_id} 信息失败: {e}")
             return None
 
-    async def get_show_info(self, trakt_id: str) -> Optional[dict]:
+    async def get_show_info(self, trakt_id: str) -> dict | None:
         """获取剧集完整元数据（包含 original_title、genres 等精简接口不返回的字段）
 
         Args:
@@ -428,7 +428,7 @@ class TraktClient:
 
     async def get_episode_info(
         self, show_id: int, season: int, episode: int
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """获取剧集详细信息"""
         try:
             endpoint = f"/shows/{show_id}/seasons/{season}/episodes/{episode}"
@@ -464,7 +464,7 @@ class TraktClientFactory:
     @staticmethod
     async def create_client(
         access_token: str, auth_type: str = "oauth"
-    ) -> Optional[TraktClient]:
+    ) -> TraktClient | None:
         """创建 Trakt 客户端"""
         try:
             client = TraktClient(access_token, auth_type=auth_type)

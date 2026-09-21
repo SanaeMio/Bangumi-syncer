@@ -6,7 +6,7 @@ import platform
 import socket
 import subprocess
 import time
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -29,7 +29,7 @@ class ProxyTestRequest(BaseModel):
 @router.get("/proxy/suggestions")
 async def get_proxy_suggestions(
     request: Request,
-    port: Optional[int] = 7890,
+    port: int | None = 7890,
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """获取代理配置建议"""
