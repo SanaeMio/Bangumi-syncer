@@ -20,8 +20,11 @@ COLLECTION_TYPE_DOING = 3  # 在看
 COLLECTION_TYPE_ON_HOLD = 4  # 搁置
 COLLECTION_TYPE_DROPPED = 5  # 抛弃
 
-# ===== 章节类型（Episode Type）=====
+# ===== 章节类型（Episode Type，官方 bangumi/common 编号）=====
 EPISODE_TYPE_NORMAL = 0  # 本篇
+EPISODE_TYPE_SP = 1  # 特别篇
+EPISODE_TYPE_OP = 2  # 片头
+EPISODE_TYPE_ED = 3  # 片尾
 
 # ===== 关联类型（anime/real 共用同一套编号）=====
 # 来源：bangumi/common subject_relations.yml（官方 web API 与库 dump 同一编号
@@ -113,3 +116,33 @@ PLATFORMS_BY_TYPE: dict[int, dict[int, str]] = {
     SUBJECT_TYPE_ANIME: ANIME_PLATFORMS,
     SUBJECT_TYPE_REAL: REAL_PLATFORMS,
 }
+
+# ===== 同 IP / 同系列关系图闭包（franchise）采用的关系类型集合 =====
+# 成员（编号后为真实库 a.db 边数）——均属「同一作品 / IP 宇宙」边：
+#   1 改编 2132 / 2 前传 13249 / 3 续集 13281 / 4 总集篇 1189 /
+#   8 相同世界观 3084 / 10 不同演绎 6531 / 12 主线故事 3864
+# 排除噪声边（会把无关条目连进闭包 → franchise 兜底错标）：
+#   7 角色出演 3903：「相同角色、没有关联的故事」——角色宇宙型 IP（假面骑士等）
+#     兄弟系列会互拉进闭包，实测仮面ライダーW 2 跳闭包 93 → 去 7/9 后 17。
+#   9 不同世界观 1352：相同主演角色、不同时间线，非同一故事宇宙。
+#   5 全集 1190 / 6 番外篇 2815 / 11 衍生 2794：章节体系与本篇不同
+#     （11 衍生即 #17「鬼灭广播」错标根因，离线侧本就排除）。
+#   14 联动 465 / 99 其他 3745：联动活动/现实活动等无关边。
+FRANCHISE_RELATION_TYPES: tuple[int, ...] = (
+    RELATION_ID_ADAPTATION,
+    RELATION_ID_PREQUEL,
+    RELATION_ID_SEQUEL,
+    RELATION_ID_SUMMARY,
+    RELATION_ID_SAME_SETTING,
+    RELATION_ID_ALTERNATIVE_VERSION,
+    RELATION_ID_PARENT_STORY,
+)
+
+# 在线降级（Bangumi 官方 web API）对应的「同 IP 宇宙」relation 中文名集合。
+# 直接由 FRANCHISE_RELATION_TYPES 经 RELATIONS 推导，结构上杜绝离线/在线
+# 两侧语义漂移（等价于 {改编, 前传, 续集, 总集篇, 相同世界观, 不同演绎, 主线故事}）。
+# ⚠ 历史注记：本集合曾人工维护——「衍生」曾误入（2026-09-09 #17 修复移除）；
+#   「番外篇」曾与离线集合不一致。改推导生成后两侧永久对齐。
+FRANCHISE_RELATION_CN_SET: frozenset[str] = frozenset(
+    RELATIONS[code] for code in FRANCHISE_RELATION_TYPES
+)

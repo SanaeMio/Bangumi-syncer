@@ -19,6 +19,14 @@ from .semver_util import (
     version_sort_key,
 )
 
+# 公共 GitHub 反代，用于国内网络环境下载失败时的备选源。
+# 单源定义：announcements_fetcher / bangumi_archive._archive / upgrade_service 共用
+# （此前三处各自维护，_archive 注释还写着「与 upgrade_service 一致」——典型漂移隐患）
+GH_PROXY_MIRRORS: tuple[str, ...] = (
+    "https://ghfast.top/",
+    "https://gh-proxy.com/",
+)
+
 GITHUB_LATEST_URL = (
     "https://api.github.com/repos/SanaeMio/Bangumi-syncer/releases/latest"
 )

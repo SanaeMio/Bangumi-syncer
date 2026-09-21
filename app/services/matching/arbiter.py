@@ -49,18 +49,18 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.matching.contracts import (
+    SOURCE_API_SEARCH,
+    SOURCE_ARCHIVE,
+    SOURCE_BANGUMI_DATA,
+    SOURCE_CUSTOM_MAPPING,
+)
 from app.services.sync_service.match_trace import MatchCandidate
 
 # 裁决结论
 VERDICT_AUTO = "auto_confirm"  # 自动采用
 VERDICT_REVIEW = "needs_review"  # 沉淀待审（分数够但领先不足 / 有歧义）
 VERDICT_REJECT = "reject"  # 判定无匹配（分数不达标）
-
-# 候选来源（与 MatchCandidate.source 一致）
-SOURCE_CUSTOM_MAPPING = "custom_mapping"
-SOURCE_BANGUMI_DATA = "bangumi_data"
-SOURCE_ARCHIVE = "archive"
-SOURCE_API_SEARCH = "api_search"
 
 # 配置段与默认值
 CONFIG_SECTION = "matching"

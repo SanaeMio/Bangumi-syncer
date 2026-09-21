@@ -37,11 +37,10 @@ DOWNLOAD_TIMEOUT = 300.0
 DOWNLOAD_MAX_RETRIES = 3
 KEEP_BACKUPS = 3
 
-# 公共 GitHub 反代，用于国内网络环境下载失败时的备选源
-_GH_PROXY_MIRRORS = [
-    "https://ghfast.top/",
-    "https://gh-proxy.com/",
-]
+# 公共 GitHub 反代（下载失败备选源）：单源定义于 github_release.GH_PROXY_MIRRORS
+from ..utils.github_release import (  # noqa: E402
+    GH_PROXY_MIRRORS as _GH_PROXY_MIRRORS,
+)
 
 
 class UpgradeStage(str, Enum):

@@ -39,11 +39,15 @@ SOURCE_API_SEARCH = "api_search"
 SOURCE_BANGUMI_DATA = "bangumi_data"
 SOURCE_CUSTOM_MAPPING = "custom_mapping"
 
-# 集数类型（对齐 Bangumi API 的 episode type 定义）
-EP_TYPE_NORMAL = 0  # 正片
-EP_TYPE_SP = 1  # 特别篇
-EP_TYPE_OP = 2  # 片头
-EP_TYPE_ED = 3  # 片尾
+# 集数类型（对齐 Bangumi API 的 episode type 定义）——
+# canonical 定义已收拢至 bangumi_constants.EPISODE_TYPE_*，此处保留
+# 项目内既有短名作为别名（避免调用点批量改名）
+from app.utils.bangumi_constants import (  # noqa: E402
+    EPISODE_TYPE_ED as EP_TYPE_ED,  # noqa: F401 — 对外别名再导出
+    EPISODE_TYPE_NORMAL as EP_TYPE_NORMAL,
+    EPISODE_TYPE_OP as EP_TYPE_OP,  # noqa: F401 — 对外别名再导出
+    EPISODE_TYPE_SP as EP_TYPE_SP,  # noqa: F401 — 对外别名再导出
+)
 
 
 def _text(value: Any) -> str:

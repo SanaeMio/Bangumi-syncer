@@ -17,13 +17,15 @@ from ..core.logging import logger
 from .http_base import AsyncHttpClient
 
 ANNOUNCEMENTS_RAW_URL = "https://raw.githubusercontent.com/SanaeMio/Bangumi-syncer/main/docs/announcements.json"
-_GH_PROXY_MIRRORS = (
-    "https://ghfast.top/",
-    "https://gh-proxy.com/",
+
+# GitHub 访问基础常量（反代镜像 / UA / 超时 / 缓存 TTL）单源于 github_release，
+# 此处以公告模块既有名字转口（值此前与 github_release 逐字相同，纯重复）
+from .github_release import (  # noqa: E402
+    CACHE_TTL_SEC,
+    GH_PROXY_MIRRORS as _GH_PROXY_MIRRORS,
+    GITHUB_USER_AGENT as USER_AGENT,
+    REQUEST_TIMEOUT,
 )
-USER_AGENT = "SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)"
-REQUEST_TIMEOUT = 15.0
-CACHE_TTL_SEC = 300.0
 
 _cache_body: list[dict[str, Any]] | None = None
 _cache_remote_loaded: bool = False

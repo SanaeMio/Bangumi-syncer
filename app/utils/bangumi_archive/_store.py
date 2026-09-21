@@ -23,6 +23,8 @@ from typing import Any, Optional
 from ...core.logging import logger
 from ..bangumi_constants import (
     EPISODE_TYPE_NORMAL,
+    FRANCHISE_RELATION_CN_SET as FRANCHISE_RELATION_CN_SET,  # 再导出（兼容旧导入路径）
+    FRANCHISE_RELATION_TYPES,
     RELATION_ID_PREQUEL,
     RELATION_ID_SEQUEL,
     RELATIONS,
@@ -33,35 +35,11 @@ from ._archive import bangumi_archive
 from ._wiki_parser import parse_infobox
 
 # 同 IP / 同系列关系图闭包所采用的关系类型集合（官方 bangumi/common 编号）。
-# ⚠ 编号体系考证（2026-09-09，推翻本处旧注释的「两套编号体系」说法）：
-#   bangumi/Archive README 明言「relation, platform 等常量对应 bangumi/common」，
-#   真实库抽样亦确认 4=总集篇 / 6=番外篇 / 7=角色出演 / 10=不同演绎 ——
-#   库 dump 编号 = 官方 web API 编号 = bangumi_constants.RELATIONS，
-#   可直接用 RELATIONS 解码（详见 .workbuddy/research/matching-pipeline/
+# canonical 定义（含编号考证与噪声边排除依据）已收拢至 bangumi_constants：
+#   库 dump 编号 = 官方 web API 编号 = bangumi_constants.RELATIONS
+#   （2026-09-09 实证，详见 .workbuddy/research/matching-pipeline/
 #   CONSTANTS-HARDENING.md §2；探针 relation_probe.txt / closure_noise2.txt）。
-# 成员（编号后为真实库 a.db 边数）——均属「同一作品 / IP 宇宙」边：
-#   1 改编 2132 / 2 前传 13249 / 3 续集 13281 / 4 总集篇 1189 /
-#   8 相同世界观 3084 / 10 不同演绎 6531 / 12 主线故事 3864
-# 排除噪声边（会把无关条目连进闭包 → franchise 兜底错标）：
-#   7 角色出演 3903：「相同角色、没有关联的故事」——角色宇宙型 IP（假面骑士等）
-#     兄弟系列会互拉进闭包，实测仮面ライダーW 2 跳闭包 93 → 去 7/9 后 17。
-#   9 不同世界观 1352：相同主演角色、不同时间线，非同一故事宇宙。
-#   5 全集 1190 / 6 番外篇 2815 / 11 衍生 2794：章节体系与本篇不同
-#     （11 衍生即 #17「鬼灭广播」错标根因，离线侧本就排除）。
-#   14 联动 465 / 99 其他 3745：联动活动/现实活动等无关边。
-FRANCHISE_RELATION_TYPES = (1, 2, 3, 4, 8, 10, 12)
-
-# 在线降级（Bangumi 官方 web API）对应的「同 IP 宇宙」relation 中文名集合。
-# 编号体系已实证统一（见上），直接由 FRANCHISE_RELATION_TYPES 经 RELATIONS
-# 推导，结构上杜绝离线/在线两侧语义漂移。等价于显式集合：
-#   {改编, 前传, 续集, 总集篇, 相同世界观, 不同演绎, 主线故事}
-# ⚠ 历史注记：本集合曾人工维护——「衍生」曾误入（2026-09-09 #17 修复移除，
-#   衍生边连接广播/游戏等章节体系不同的节目，曾致「鬼灭之刃」ep=28 错标到
-#   404879「鬼灭广播」）；「番外篇」曾与离线集合不一致（离线无 6）。现改为
-#   推导生成，两侧永久对齐。
-FRANCHISE_RELATION_CN_SET = frozenset(
-    RELATIONS[code] for code in FRANCHISE_RELATION_TYPES
-)
+# 此处转口再导出，保持既有导入路径（bangumi_archive._store）不变。
 
 
 class ArchiveStore:
