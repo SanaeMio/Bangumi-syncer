@@ -232,6 +232,7 @@ templates/
 | --------------------- | ---------------------------------------- | --------------------- |
 | `{timestamp}`         | 事件触发时间，格式 `YYYY-MM-DD HH:MM:SS` | `2026-07-30 14:23:11` |
 | `{user_name}`         | 媒体服务器上的用户名                     | `alice`               |
+| `{bgm_username}`      | 执行标记的 Bangumi 账号用户名            | `alice_bgm`           |
 | `{source}`            | 触发来源（媒体服务器或事件源）           | `plex`、`emby`        |
 | `{notification_type}` | 事件类型标识                             | `mark_failed`         |
 | `{type_display_name}` | 事件类型中文展示名                       | `同步失败`            |

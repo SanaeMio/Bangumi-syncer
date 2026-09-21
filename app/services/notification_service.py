@@ -65,7 +65,7 @@ class _SafeFormatDict(dict):
 class CooldownPolicy:
     """冷却策略：防止通知轰炸
 
-    - 「条目级」类型（mark_failed / mark_success / ...）按 ``channel_id + type + title + season + episode`` 冷却
+    - 「条目级」类型（mark_failed / mark_success / ...）按 ``channel_id + type + title + season + episode`` 冷却；携带 ``bgm_username`` 时再按账号区分，使多账号场景下各账号的通知互不拦截
     - 「系统级」类型按 ``channel_id + type`` 冷却
     """
 
@@ -81,7 +81,10 @@ class CooldownPolicy:
         meta = get_type_meta(notification_type)
         if meta and meta.is_item_level:
             item_key = f"{data.get('title', '')}::S{data.get('season', 0)}E{data.get('episode', 0)}"
-            key = f"{key}::{item_key}"
+            # bgm_username 区分多账号：同一条目被多个 Bangumi 账号标记时，
+            # 各账号的通知使用各自的 key，避免非首选账号被首选账号的冷却拦截。
+            account_key = data.get("bgm_username", "") or ""
+            key = f"{key}::{item_key}::{account_key}"
         return key
 
     def allow(

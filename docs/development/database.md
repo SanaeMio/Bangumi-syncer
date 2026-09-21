@@ -22,7 +22,7 @@ order: 5
 
 | 表 | Repository | 说明 |
 | --- | --- | --- |
-| `sync_records` | `sync_records.py` | 同步记录，含 `match_trace` JSON、`match_score`、`source` |
+| `sync_records` | `sync_records.py` | 同步记录，含 `match_trace` JSON、`match_score`、`source`、按账号同步结果 `account_results` |
 | `pending_candidates` | `pending_candidates.py` | 待确认候选（匹配失败时沉淀），部分唯一索引去重 |
 | `pending_sync_queue` | `pending_sync_queue.py` | Replay 待同步队列，部分唯一索引去重 |
 | `in_app_notifications` | `inbox.py` | 站内信 |

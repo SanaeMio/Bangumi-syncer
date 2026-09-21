@@ -46,7 +46,7 @@ async def get_subjects_posters(
     """批量返回条目封面图 URL（缺失条目不出现在 posters 中）。
 
     user_name：多用户模式下按媒体服务器用户名对应账号预取「在看」列表
-    以提升命中率；缺省用激活账号。
+    以提升命中率；缺省用首选账号。
     """
     ids: list[int] = []
     seen: set[int] = set()

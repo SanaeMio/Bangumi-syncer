@@ -20,9 +20,9 @@ def reset_poster_service():
 
 
 @pytest.fixture(autouse=True)
-def no_active_account():
-    """默认无激活账号：在看列表预取自动跳过，走逐 ID 兜底路径。"""
-    with patch("app.core.accounts.get_active_bangumi_config", return_value=None):
+def no_primary_account():
+    """默认无首选账号：在看列表预取自动跳过，走逐 ID 兜底路径。"""
+    with patch("app.core.accounts.get_primary_bangumi_config", return_value=None):
         yield
 
 
@@ -202,7 +202,7 @@ def test_get_poster_urls_sync_parallel_partial_failure():
 # ── 在看列表批量预取 ────────────────────────────────────────────────────────
 
 
-def _active_account_cfg():
+def _primary_account_cfg():
     return {
         "username": "musnow",
         "access_token": "tok",
@@ -225,8 +225,8 @@ def test_watching_prefetch_hits_skips_individual_fetch():
 
     with (
         patch(
-            "app.core.accounts.get_active_bangumi_config",
-            return_value=_active_account_cfg(),
+            "app.core.accounts.get_primary_bangumi_config",
+            return_value=_primary_account_cfg(),
         ),
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
@@ -257,8 +257,8 @@ def test_watching_prefetch_skipped_when_api_unreachable():
 
     with (
         patch(
-            "app.core.accounts.get_active_bangumi_config",
-            return_value=_active_account_cfg(),
+            "app.core.accounts.get_primary_bangumi_config",
+            return_value=_primary_account_cfg(),
         ),
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
@@ -286,8 +286,8 @@ def test_watching_prefetch_short_cache_singleflight():
 
     with (
         patch(
-            "app.core.accounts.get_active_bangumi_config",
-            return_value=_active_account_cfg(),
+            "app.core.accounts.get_primary_bangumi_config",
+            return_value=_primary_account_cfg(),
         ),
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
@@ -319,8 +319,8 @@ def test_watching_prefetch_miss_falls_back_to_individual():
 
     with (
         patch(
-            "app.core.accounts.get_active_bangumi_config",
-            return_value=_active_account_cfg(),
+            "app.core.accounts.get_primary_bangumi_config",
+            return_value=_primary_account_cfg(),
         ),
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
@@ -339,7 +339,7 @@ def test_watching_prefetch_miss_falls_back_to_individual():
 
 
 def test_watching_prefetch_uses_user_specific_account():
-    """多用户模式传 user_name 时，预取用对应账号的在看列表而非激活账号。"""
+    """多用户模式传 user_name 时，预取用对应账号的在看列表而非首选账号。"""
     mock_api = MagicMock()
     mock_api.list_user_collections.return_value = [
         _watching_item(21, "https://lain.bgm.tv/pic/cover/s/a/b/21.jpg"),
@@ -349,8 +349,8 @@ def test_watching_prefetch_uses_user_specific_account():
 
     with (
         patch(
-            "app.core.accounts.get_active_bangumi_config",
-            return_value=_active_account_cfg(),
+            "app.core.accounts.get_primary_bangumi_config",
+            return_value=_primary_account_cfg(),
         ) as mock_get_cfg,
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),
@@ -382,8 +382,8 @@ def test_watching_prefetch_applies_image_proxy():
 
     with (
         patch(
-            "app.core.accounts.get_active_bangumi_config",
-            return_value=_active_account_cfg(),
+            "app.core.accounts.get_primary_bangumi_config",
+            return_value=_primary_account_cfg(),
         ),
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch(
@@ -413,8 +413,8 @@ def test_watching_prefetch_failure_falls_back_silently():
 
     with (
         patch(
-            "app.core.accounts.get_active_bangumi_config",
-            return_value=_active_account_cfg(),
+            "app.core.accounts.get_primary_bangumi_config",
+            return_value=_primary_account_cfg(),
         ),
         patch("app.utils.bgm_poster_service.BangumiApi", return_value=mock_api),
         patch("app.utils.bgm_poster_service.config_manager.get", return_value=""),

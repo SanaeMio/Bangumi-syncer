@@ -43,7 +43,7 @@ def _sample_account(section="bangumi-alpha", username="user_a"):
         "bangumi_user_id": "123",
         "nickname": "小A",
         "avatar": "http://x/y.png",
-        "is_active": False,
+        "is_primary": False,
     }
 
 
@@ -56,7 +56,7 @@ class TestBangumiAccountRepository:
         assert got["username"] == "user_a"
         assert got["media_server_usernames"] == ["plex-a", "emby-a"]
         assert got["access_token"] == "AT"
-        assert got["is_active"] is False
+        assert got["is_primary"] is False
 
     def test_upsert_by_section(self, db):
         db.save_bangumi_account(_sample_account())
@@ -77,23 +77,23 @@ class TestBangumiAccountRepository:
         accounts = db.list_bangumi_accounts()
         assert [a["section_name"] for a in accounts] == ["bangumi-a", "bangumi-b"]
 
-    def test_active_defaults_to_first(self, db):
+    def test_primary_defaults_to_first(self, db):
         db.save_bangumi_account(_sample_account("bangumi-a", "ua"))
         db.save_bangumi_account(_sample_account("bangumi-b", "ub"))
-        active = db.get_active_bangumi_account()
-        assert active["section_name"] == "bangumi-a"
+        primary = db.get_primary_bangumi_account()
+        assert primary["section_name"] == "bangumi-a"
 
-    def test_set_active(self, db):
+    def test_set_primary(self, db):
         db.save_bangumi_account(_sample_account("bangumi-a", "ua"))
         db.save_bangumi_account(_sample_account("bangumi-b", "ub"))
-        db.set_active_bangumi_account("bangumi-b")
-        active = db.get_active_bangumi_account()
-        assert active["section_name"] == "bangumi-b"
-        # 其余应非激活
+        db.set_primary_bangumi_account("bangumi-b")
+        primary = db.get_primary_bangumi_account()
+        assert primary["section_name"] == "bangumi-b"
+        # 其余应非首选
         others = [
             a for a in db.list_bangumi_accounts() if a["section_name"] != "bangumi-b"
         ]
-        assert all(not a["is_active"] for a in others)
+        assert all(not a["is_primary"] for a in others)
 
     def test_update_token(self, db):
         db.save_bangumi_account(_sample_account())

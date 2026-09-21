@@ -42,6 +42,7 @@ class SyncRecordsRepository(BaseRepository):
         match_score: float | None = None,
         match_platform: str = "",
         match_trace: dict | None = None,
+        account_results: list | None = None,
     ) -> int | None:
         """记录同步日志到数据库，返回新记录 id（失败时 None）
 
@@ -57,6 +58,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
             self._conn._ensure_sync_records_link_fields(cursor)
+            self._conn._ensure_sync_records_account_results(cursor)
 
         def _write(conn):
             local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -66,8 +68,8 @@ class SyncRecordsRepository(BaseRepository):
             cursor = conn.execute(
                 """
                 INSERT INTO sync_records
-                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type, bgm_title, match_method, match_score, match_platform, match_trace, run_id, batch_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source, media_type, bgm_title, match_method, match_score, match_platform, match_trace, run_id, batch_id, account_results)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     local_time,
@@ -89,6 +91,11 @@ class SyncRecordsRepository(BaseRepository):
                     trace_json,
                     get_sync_run_id() or "",
                     get_batch_id() or "",
+                    (
+                        json.dumps(account_results, ensure_ascii=False)
+                        if account_results
+                        else ""
+                    ),
                 ),
             )
             record_id = cursor.lastrowid
@@ -120,6 +127,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
             self._conn._ensure_sync_records_link_fields(cursor)
+            self._conn._ensure_sync_records_account_results(cursor)
 
         def _read(conn):
             cursor = conn.cursor()
@@ -222,6 +230,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
             self._conn._ensure_sync_records_link_fields(cursor)
+            self._conn._ensure_sync_records_account_results(cursor)
 
         def _read(conn):
             cursor = conn.cursor()
@@ -229,7 +238,7 @@ class SyncRecordsRepository(BaseRepository):
                 """
                 SELECT id, timestamp, user_name, title, ori_title, season, episode,
                        subject_id, episode_id, status, message, source, media_type, bgm_title,
-                       match_method, match_score, match_platform, match_trace, run_id, batch_id
+                       match_method, match_score, match_platform, match_trace, run_id, batch_id, account_results
                 FROM sync_records
                 WHERE id = ?
             """,
@@ -265,6 +274,7 @@ class SyncRecordsRepository(BaseRepository):
                 "match_trace": row[17] or "",
                 "run_id": row[18] or "",
                 "batch_id": row[19] or "",
+                "account_results": row[20] or "",
             }
         return None
 
@@ -380,6 +390,7 @@ class SyncRecordsRepository(BaseRepository):
             self._conn._ensure_sync_records_bgm_title(cursor)
             self._conn._ensure_sync_records_match_fields(cursor)
             self._conn._ensure_sync_records_link_fields(cursor)
+            self._conn._ensure_sync_records_account_results(cursor)
 
         def _read(conn):
             cursor = conn.cursor()

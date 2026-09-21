@@ -40,11 +40,11 @@ class _FakeAccountStore:
     def __init__(self) -> None:
         self.accounts: dict[str, dict] = {}
 
-    def get_active(self):
+    def get_primary(self):
         for acc in self.accounts.values():
-            if acc.get("is_active"):
+            if acc.get("is_primary"):
                 return dict(acc)
-        # 无激活时取首个
+        # 无首选时取首个
         return dict(next(iter(self.accounts.values()))) if self.accounts else None
 
     def get(self, section_name):
@@ -61,11 +61,11 @@ class _FakeAccountStore:
         self.accounts[section] = dict(account)
         return True
 
-    def set_active(self, section_name):
+    def set_primary(self, section_name):
         if section_name not in self.accounts:
             return False
         for s in self.accounts:
-            self.accounts[s]["is_active"] = s == section_name
+            self.accounts[s]["is_primary"] = s == section_name
         return True
 
 
@@ -89,7 +89,7 @@ def svc(monkeypatch):
     monkeypatch.setattr("app.services.bangumi.auth.config_manager.get", _fake_get)
     # mock app.core.accounts 的 DB 访问函数
     monkeypatch.setattr(
-        "app.services.bangumi.auth.get_active_bangumi_account", store.get_active
+        "app.services.bangumi.auth.get_primary_bangumi_account", store.get_primary
     )
     monkeypatch.setattr("app.services.bangumi.auth.get_bangumi_account", store.get)
     monkeypatch.setattr(
@@ -97,7 +97,7 @@ def svc(monkeypatch):
     )
     monkeypatch.setattr("app.services.bangumi.auth.save_bangumi_account", store.save)
     monkeypatch.setattr(
-        "app.services.bangumi.auth.set_active_bangumi_account", store.set_active
+        "app.services.bangumi.auth.set_primary_bangumi_account", store.set_primary
     )
 
     # OAuth state 统一落库；测试中以内存替身隔离真实数据库
@@ -176,8 +176,10 @@ def test_exchange_code_persists_token_to_db(svc):
     assert acc["auth_method"] == "oauth"
     assert acc["bangumi_user_id"] == "myname"
     assert int(acc["expires_at"]) > 0
-    # 新建账号授权成功后自动激活
-    assert acc["is_active"] is True
+    # 新建账号授权成功后自动首选
+    assert acc["is_primary"] is True
+    # 新建账号默认启用（参与任务同步）
+    assert acc["enabled"] is True
     m.assert_called_once()
     # state 已被消费
     assert svc.verify_state(state) is False
@@ -197,7 +199,8 @@ def test_exchange_code_re_authorize_updates_existing_account(svc):
             "bangumi_user_id": "myname",
             "media_server_usernames": ["plex_user_a", "plex_user_b"],
             "private": False,
-            "is_active": False,
+            "is_primary": False,
+            "enabled": False,
         }
     )
     _, state = svc.get_auth_url()
@@ -223,8 +226,51 @@ def test_exchange_code_re_authorize_updates_existing_account(svc):
     assert acc["media_server_usernames"] == ["plex_user_a", "plex_user_b"]
     # 账号总数应为 1（未新建）
     assert len(store.accounts) == 1
-    # 更新已存在账号保留原激活状态（预置为 False，未变）
-    assert acc["is_active"] is False
+    # 更新已存在账号保留原首选状态（预置为 False，未变）
+    assert acc["is_primary"] is False
+    # 重新授权不改变启用状态（预置为已停用，仍保持停用；
+    # 缺键即按 DB 层默认值 True 处理，与仓库写入语义一致）
+    assert acc.get("enabled", True) is False
+
+
+def test_exchange_code_re_authorize_keeps_primary_account(svc):
+    """重新授权首选账号时保留其首选身份。
+
+    仓库 upsert 的 is_primary 缺省为 0，若回写时未带上原首选状态，每次重新
+    授权都会静默清除首选身份；本例以「原本就是首选」为输入，锁定该保留语义
+    （既有用例预设为 False，无法检出保留逻辑被移除的情形）。
+    """
+    svc, store = svc
+    store.save(
+        {
+            "section_name": "bangumi-myname",
+            "username": "old_name",
+            "auth_method": "manual",
+            "access_token": "OLD_AT",
+            "refresh_token": "",
+            "bangumi_user_id": "myname",
+            "media_server_usernames": ["plex_user_a"],
+            "private": False,
+            "is_primary": True,
+            "enabled": True,
+        }
+    )
+    _, state = svc.get_auth_url()
+    token = {
+        "access_token": "NEW_AT",
+        "refresh_token": "NEW_RT",
+        "expires_in": 3600,
+        "token_type": "Bearer",
+        "user_id": "myname",
+        "username": "new_name",
+    }
+    with _mock_token_endpoint(return_value=_mock_token_response(token)):
+        svc.exchange_code_for_token("the-code", state)
+
+    acc = store.get("bangumi-myname")
+    assert acc["access_token"] == "NEW_AT"
+    assert acc["is_primary"] is True
+    assert store.get_primary()["section_name"] == "bangumi-myname"
 
 
 def test_exchange_code_rejects_bad_state(svc):
@@ -235,9 +281,9 @@ def test_exchange_code_rejects_bad_state(svc):
     m.assert_not_called()
 
 
-def test_refresh_active_token(svc):
+def test_refresh_primary_token(svc):
     svc, store = svc
-    # 预置一个 oauth 账号并激活
+    # 预置一个 oauth 账号并首选
     store.save(
         {
             "section_name": "bangumi",
@@ -247,12 +293,12 @@ def test_refresh_active_token(svc):
             "access_token": "OLD_AT",
             "media_server_usernames": [],
             "private": False,
-            "is_active": True,
+            "is_primary": True,
         }
     )
     new_token = {"access_token": "NEW_AT", "expires_in": 7200, "token_type": "Bearer"}
     with _mock_token_endpoint(return_value=_mock_token_response(new_token)) as m:
-        ok = svc.refresh_active_token()
+        ok = svc.refresh_primary_token()
     assert ok is True
     assert store.get("bangumi")["access_token"] == "NEW_AT"
     m.assert_called_once()
@@ -261,7 +307,7 @@ def test_refresh_active_token(svc):
     assert sent["refresh_token"] == "OLD_RT"
 
 
-def test_refresh_active_token_missing_refresh(svc):
+def test_refresh_primary_token_missing_refresh(svc):
     svc, store = svc
     store.save(
         {
@@ -272,15 +318,15 @@ def test_refresh_active_token_missing_refresh(svc):
             "access_token": "AT",
             "media_server_usernames": [],
             "private": False,
-            "is_active": True,
+            "is_primary": True,
         }
     )
     with _mock_token_endpoint() as m:
-        assert svc.refresh_active_token() is False
+        assert svc.refresh_primary_token() is False
     m.assert_not_called()
 
 
-def test_refresh_active_token_if_needed_only_for_oauth(svc):
+def test_refresh_primary_token_if_needed_only_for_oauth(svc):
     svc, store = svc
     # 默认 manual：不应触发网络请求
     store.save(
@@ -292,22 +338,22 @@ def test_refresh_active_token_if_needed_only_for_oauth(svc):
             "refresh_token": "RT",
             "media_server_usernames": [],
             "private": False,
-            "is_active": True,
+            "is_primary": True,
         }
     )
     with _mock_token_endpoint() as m:
-        assert svc.refresh_active_token_if_needed() is False
+        assert svc.refresh_primary_token_if_needed() is False
     m.assert_not_called()
 
     # 设为 oauth 且已过期：应触发刷新
     store.accounts["bangumi"]["auth_method"] = "oauth"
     store.accounts["bangumi"]["expires_at"] = 1  # 过去的时间戳，视为已过期
     with _mock_token_endpoint(return_value=_mock_token_response({"access_token": "X"})):
-        assert svc.refresh_active_token_if_needed() is True
+        assert svc.refresh_primary_token_if_needed() is True
 
 
 def test_refresh_if_needed_concurrent_no_duplicate_refresh(svc):
-    """并发场景下 refresh_active_token_if_needed 只应刷新一次。
+    """并发场景下 refresh_primary_token_if_needed 只应刷新一次。
 
     模拟多线程并发：第一个线程持锁刷新后更新 expires_at，第二个线程
     持锁后 double-check 发现不再临近过期，跳过刷新。
@@ -325,7 +371,7 @@ def test_refresh_if_needed_concurrent_no_duplicate_refresh(svc):
             "expires_at": 1,  # 已过期
             "media_server_usernames": [],
             "private": False,
-            "is_active": True,
+            "is_primary": True,
         }
     )
 
@@ -343,7 +389,7 @@ def test_refresh_if_needed_concurrent_no_duplicate_refresh(svc):
 
     def _worker():
         barrier.wait()
-        svc.refresh_active_token_if_needed()
+        svc.refresh_primary_token_if_needed()
 
     with _mock_token_endpoint(side_effect=_counting_post):
         t1 = threading.Thread(target=_worker)
@@ -371,7 +417,7 @@ def test_disconnect_keeps_access_token_for_manual_fallback(svc):
             "token_type": "Bearer",
             "media_server_usernames": [],
             "private": False,
-            "is_active": True,
+            "is_primary": True,
         }
     )
 

@@ -75,8 +75,8 @@
         state.multiUser = true
         dropdown.classList.remove('d-none')
 
-        // 默认选中后端返回的 active 账号
-        state.account = data.active || data.accounts[0].section_name
+        // 默认选中后端返回的首选账号
+        state.account = data.primary || data.accounts[0].section_name
 
         // 填充下拉菜单
         menu.innerHTML = ''

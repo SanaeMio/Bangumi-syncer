@@ -262,6 +262,61 @@ function renderRecordHero(record, trace) {
     `;
 }
 
+// ========== 各 Bangumi 账号同步结果 ==========
+
+function parseAccountResults(record) {
+    const raw = record && record.account_results;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+// 多账号时按账号拆分输入/输出块，沿用既有的 io-title + kv 框架，不另起独立分区。
+// 无 account_results（旧记录）回退到通用渲染；ioKind 为 'input'（同步动作）或 'output'（同步结果）。
+function renderAccountIoBlocks(results, step, ioKind) {
+    if (!Array.isArray(results) || results.length === 0) {
+        return renderStepInputsOutputs(step);
+    }
+    const inputs = (step.inputs && typeof step.inputs === 'object') ? step.inputs : {};
+    const isOutput = ioKind === 'output';
+    const iconCls = isOutput ? 'bi-box-arrow-right' : 'bi-box-arrow-in-right';
+    const ioText = isOutput ? '输出' : '输入';
+    const hasId = (v) => v !== undefined && v !== null && v !== '';
+    const subjectId = inputs.subject_id;
+    const episodeId = inputs.episode_id;
+
+    return results.map((r) => {
+        const isSuccess = r.status === 'success';
+        const accountName = r.username || r.section;
+        const accountLabel = accountName ? `${accountName} 账号` : '其他账号';
+        const primaryChip = r.primary
+            ? '<span class="record-detail-modal__chip record-detail-modal__chip--type">首选</span>'
+            : '';
+        const statusCls = isSuccess
+            ? 'record-detail-modal__chip--status-success'
+            : 'record-detail-modal__chip--status-error';
+        const statusText = isSuccess ? '已同步' : '同步失败';
+        const chips = `${primaryChip}<span class="record-detail-modal__chip record-detail-modal__chip--status ${statusCls}">${statusText}</span>`;
+
+        const kv = {};
+        if (hasId(subjectId)) kv.subject_id = subjectId;
+        if (hasId(episodeId)) kv.episode_id = episodeId;
+        if (typeof r.mark_status === 'number') kv.mark_status = r.mark_status;
+        // 消息仅在同步结果（输出）中展示，对应上游「同步结果」步骤的输出；
+        // 同步动作（输入）不展示消息，保持两个步骤内容有区分。
+        if (isOutput && r.message) kv.message = r.message;
+
+        let html = `<div class="record-detail-step__io-title"><i class="bi ${iconCls}"></i>${escapeHtml(accountLabel)}${escapeHtml(ioText)}${chips}</div>`;
+        html += renderPayloadKv(kv, COMMON_PAYLOAD_LABELS);
+        return html;
+    }).join('');
+}
+
 // ========== 耗时瀑布（仅在有步骤耗时可见时展示） ==========
 
 function renderTimingWaterfall(trace) {
@@ -511,7 +566,7 @@ function renderStepInputsOutputs(step) {
         if (out.match_path) {
             out.match_path = CROSS_SEASON_PATH_TEXT[out.match_path] || out.match_path;
         }
-        html += `<div class="record-detail-step__io-title"><i class="bi bi-box-arrow-out-right"></i>输出</div>`;
+        html += `<div class="record-detail-step__io-title"><i class="bi bi-box-arrow-right"></i>输出</div>`;
         html += renderPayloadKv(out, COMMON_PAYLOAD_LABELS);
     }
     return html;
@@ -665,7 +720,7 @@ function renderStepSlowNote(elapsedMs, totalMs) {
 }
 
 // 步骤详细内容（折叠区内）：异常 / 搜索参数 / API 摘要 / 候选 / 输入输出
-function renderStepDetailContent(step, status, elapsed, totalMs) {
+function renderStepDetailContent(step, status, elapsed, totalMs, opts) {
     const hasStructuredIO = !!(step.inputs && Object.keys(step.inputs).length > 0)
         || !!(step.outputs && Object.keys(step.outputs).length > 0);
 
@@ -697,9 +752,18 @@ function renderStepDetailContent(step, status, elapsed, totalMs) {
         body += renderMatchCandidatesTable(step.candidates);
     }
 
-    // 结构化输入/输出；旧记录回退到特化字段
+    // 结构化输入/输出；按账号拆分为多条 io 块沿用既有的 io-title + kv 框架，不另起独立分区；
+    // 无 account_results（旧记录）回退到通用渲染。
+    const accountResults = (opts && Array.isArray(opts.accountResults)) ? opts.accountResults : [];
+    const useAccountIo = (step.stage === 'sync_action' || step.stage === 'result')
+        && accountResults.length > 0;
     if (hasStructuredIO) {
-        body += renderStepInputsOutputs(step);
+        if (useAccountIo) {
+            const ioKind = step.stage === 'result' ? 'output' : 'input';
+            body += renderAccountIoBlocks(accountResults, step, ioKind);
+        } else {
+            body += renderStepInputsOutputs(step);
+        }
     } else {
         if (step.stage === 'episode_resolve') {
             body += renderEpisodeResolveKv(step);
@@ -708,7 +772,11 @@ function renderStepDetailContent(step, status, elapsed, totalMs) {
             body += renderCrossSeasonKv(step);
         }
         if (step.stage === 'result') {
-            body += renderResultKv(step);
+            if (useAccountIo) {
+                body += renderAccountIoBlocks(accountResults, step, 'output');
+            } else {
+                body += renderResultKv(step);
+            }
         }
     }
 
@@ -726,7 +794,7 @@ function renderStepCard(step, idx, totalMs, opts) {
     const elapsed = Math.max(0, Number(step.elapsed_ms) || 0);
     const heat = classifyStepHeat(elapsed, totalMs);
 
-    const detailHtml = renderStepDetailContent(step, status, elapsed, totalMs);
+    const detailHtml = renderStepDetailContent(step, status, elapsed, totalMs, options);
     const expandable = !!detailHtml.trim();
     const autoOpen = expandable
         && (status === 'error' || status === 'low_confidence' || ['hot', 'critical'].includes(heat));
@@ -862,6 +930,8 @@ function renderPipelineHtml(record, trace) {
     const totalMs = getTraceTotalMs(trace);
 
     let html = renderRecordHero(record, trace);
+    // 各账号结果按账号拆分输入/输出块，随同步动作/同步结果步骤在既有框架内展示，不单独成块
+    const accountResults = parseAccountResults(record);
     html += renderTimingWaterfall(trace);
 
     // 顶层条目列表（含分组占位），用于计算连接线是否收尾
@@ -893,7 +963,7 @@ function renderPipelineHtml(record, trace) {
                 html += `<div class="record-detail-steps__group-slot">${groupHtml}</div>`;
             }
         } else {
-            html += renderStepCard(steps[item.index], item.index + 1, totalMs, { isLast });
+            html += renderStepCard(steps[item.index], item.index + 1, totalMs, { isLast, accountResults });
         }
     });
     html += '</div>';

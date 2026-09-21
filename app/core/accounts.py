@@ -5,7 +5,7 @@ Bangumi 账号统一访问层（全列表化重构的核心）。
 - 列表长度 = 1 即单用户，无需 ``sync.mode`` 单/多判断。
 - 启动时 ``migrate_ini_accounts_to_db`` 把旧 INI 账号段一次性迁移入库（幂等）。
 - 本模块是对 ``DatabaseManager`` 账号仓库的薄封装，供 config/api/service 各层调用。
-- 同时提供与原 ``config_manager.get_active_bangumi_config`` / ``get_bangumi_configs``
+- 同时提供与原 ``config_manager.get_primary_bangumi_config`` / ``get_bangumi_configs``
   / ``get_user_mappings`` 同语义的 DB 版本，便于上层逐点切换。
 """
 
@@ -123,7 +123,10 @@ def _cfg_to_account(section_name: str, cfg: dict) -> dict:
         "nickname": _to_str(cfg.get("nickname")),
         "avatar": _to_str(cfg.get("avatar")),
         "private": _to_bool(cfg.get("private")),
-        "is_active": False,
+        "is_primary": False,
+        # enabled 与 is_primary 职责分离：enabled 控制是否参与任务同步，
+        # 有效账户默认为启用，可手动停用（停用后不被同步枚举命中）
+        "enabled": True,
     }
 
 
@@ -141,14 +144,14 @@ def migrate_ini_accounts_to_db() -> int:
         database_manager.save_bangumi_account(acc)
         migrated += 1
 
-    # 若已有账号但无激活项，默认激活首个（旧单用户段或首个映射段）。
-    # 注意：get_active_bangumi_account 在无 is_active=1 时会回退返回首个账号，
-    # 因此不能用 `active is None` 判断，必须直接检查 is_active 标记，
-    # 否则 set_active 永不执行，DB 中所有账号 is_active=0。
+    # 若已有账号但无首选项，默认首选首个（旧单用户段或首个映射段）。
+    # 注意：get_primary_bangumi_account 在无 is_primary=1 时会回退返回首个账号，
+    # 因此不能用 `primary is None` 判断，必须直接检查 is_primary 标记，
+    # 否则 set_primary 永不执行，DB 中所有账号 is_primary=0。
     if database_manager.count_bangumi_accounts() > 0:
         accounts = database_manager.list_bangumi_accounts()
-        if not any(a.get("is_active") for a in accounts):
-            database_manager.set_active_bangumi_account(accounts[0]["section_name"])
+        if not any(a.get("is_primary") for a in accounts):
+            database_manager.set_primary_bangumi_account(accounts[0]["section_name"])
 
     # 清理已迁移到 DB 的 INI 账号段（仅清理 DB 中已存在的段，确认迁移成功）
     _cleanup_migrated_ini_sections(ini_accounts)
@@ -216,8 +219,8 @@ def get_bangumi_account(section_name: str) -> dict | None:
     return database_manager.get_bangumi_account(section_name)
 
 
-def get_active_bangumi_account() -> dict | None:
-    return database_manager.get_active_bangumi_account()
+def get_primary_bangumi_account() -> dict | None:
+    return database_manager.get_primary_bangumi_account()
 
 
 def save_bangumi_account(account: dict) -> bool:
@@ -228,8 +231,13 @@ def delete_bangumi_account(section_name: str) -> bool:
     return database_manager.delete_bangumi_account(section_name)
 
 
-def set_active_bangumi_account(section_name: str) -> bool:
-    return database_manager.set_active_bangumi_account(section_name)
+def set_primary_bangumi_account(section_name: str) -> bool:
+    return database_manager.set_primary_bangumi_account(section_name)
+
+
+def set_enabled_bangumi_account(section_name: str, enabled: bool) -> bool:
+    """启用/停用指定账号；停用后该账号不参与任务同步。"""
+    return database_manager.set_enabled_bangumi_account(section_name, enabled)
 
 
 def update_bangumi_account_token(section_name: str, token: dict) -> bool:
@@ -321,12 +329,29 @@ def get_user_mappings() -> dict[str, str]:
     return {name: sections[0] for name, sections in get_user_account_mappings().items()}
 
 
-def get_bangumi_sections_for_user(user_name: str) -> list[str]:
-    """按媒体服务器用户名返回全部 Bangumi 账号配置段名（按登记顺序）。
+def _filter_disabled_sections(sections: list[str]) -> list[str]:
+    """剔除已停用的账号段名（enabled=0 的账号不参与任务同步）。
 
-    空用户名保护集中在本函数：多账号模式下空 user_name 不回退激活账号，
-    避免数据串号（某条记录的 user_name 异常为空时，回退激活账号会把该记录
-    同步到他人账号）；单账号模式（账号数<=1）空 user_name 仍回退激活账号
+    账号不存在时无法判定启用状态，按启用处理以保留既有行为。
+    """
+    enabled_sections: list[str] = []
+    for section in sections:
+        account = database_manager.get_bangumi_account(section)
+        if account is not None and not account.get("enabled", True):
+            continue
+        enabled_sections.append(section)
+    return enabled_sections
+
+
+def get_bangumi_sections_for_user(user_name: str) -> list[str]:
+    """按媒体服务器用户名返回参与同步的 Bangumi 账号配置段名（按登记顺序）。
+
+    已停用的账号（enabled=0）被排除，用于多账号场景下的临时停用：停用的
+    账号不被同步枚举命中，但仍在账号列表中可见以便重新启用。
+
+    空用户名保护集中在本函数：多账号模式下空 user_name 不回退首选账号，
+    避免数据串号（某条记录的 user_name 异常为空时，回退首选账号会把该记录
+    同步到他人账号）；单账号模式（账号数<=1）空 user_name 仍回退首选账号
     （只有一个账号，无串号风险）。``get_bangumi_config_for_user`` 通过委托
     复用同一保护。
     """
@@ -336,15 +361,19 @@ def get_bangumi_sections_for_user(user_name: str) -> list[str]:
                 from .logging import logger
 
                 logger.warning(
-                    "多用户模式下 user_name 为空，不回退激活账号以避免数据串号；"
+                    "多用户模式下 user_name 为空，不回退首选账号以避免数据串号；"
                     "请检查上游是否正确传递媒体服务器用户名"
                 )
                 return []
         except Exception:
             pass
-        active = database_manager.get_active_bangumi_account()
-        return [active["section_name"]] if active and active.get("section_name") else []
-    return list(get_user_account_mappings().get(user_name) or [])
+        primary = database_manager.get_primary_bangumi_account()
+        sections = (
+            [primary["section_name"]] if primary and primary.get("section_name") else []
+        )
+    else:
+        sections = list(get_user_account_mappings().get(user_name) or [])
+    return _filter_disabled_sections(sections)
 
 
 def get_bangumi_configs_for_user(user_name: str) -> list[dict[str, Any]]:
@@ -360,22 +389,22 @@ def get_bangumi_configs_for_user(user_name: str) -> list[dict[str, Any]]:
     return configs
 
 
-def get_active_bangumi_config(
+def get_primary_bangumi_config(
     user_name: str | None = None,
 ) -> dict[str, Any] | None:
     """按媒体服务器用户名返回对应 Bangumi 账号配置（与原 INI 版本同结构）。
 
-    - ``user_name`` 为 None 或空字符串：返回当前激活账号配置；
-      若无激活账号则取首个可用账号。
+    - ``user_name`` 为 None 或空字符串：返回当前首选账号配置；
+      若无首选账号则取首个可用账号。
     - ``user_name`` 为具体值：按 ``media_server_usernames`` 反查对应账号；
       找不到或账号无效返回 None。
 
-    返回的 dict 结构与 ``config_manager.get_active_bangumi_config`` 一致，
+    返回的 dict 结构与 ``config_manager.get_primary_bangumi_config`` 一致，
     包含 ``username/access_token/private`` 等字段，便于上层无缝替换。
     """
-    # 无指定用户：取激活账号（兼容原 multi 模式下 user_name=None 取首个映射的语义）
+    # 无指定用户：取首选账号（兼容原 multi 模式下 user_name=None 取首个映射的语义）
     if not user_name:
-        return _account_to_cfg(database_manager.get_active_bangumi_account())
+        return _account_to_cfg(database_manager.get_primary_bangumi_account())
 
     # 按媒体服务器用户名反查
     target_section = get_user_mappings().get(user_name)
@@ -391,9 +420,9 @@ def get_bangumi_config_for_user(user_name: str) -> dict[str, Any] | None:
     同一用户名绑定多个账号时返回首选（首个声明的）账号；需要全部账号时使用
     ``get_bangumi_configs_for_user``。
 
-    多用户模式下空 user_name 不回退激活账号，避免数据串号（某条记录的
-    user_name 异常为空时，回退激活账号会把该记录同步到他人账号）。
-    单用户模式（账号数<=1）空 user_name 仍回退激活账号（只有一个账号，
+    多用户模式下空 user_name 不回退首选账号，避免数据串号（某条记录的
+    user_name 异常为空时，回退首选账号会把该记录同步到他人账号）。
+    单用户模式（账号数<=1）空 user_name 仍回退首选账号（只有一个账号，
     无串号风险）。
     """
     configs = get_bangumi_configs_for_user(user_name)

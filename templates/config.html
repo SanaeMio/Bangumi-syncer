@@ -833,9 +833,9 @@
         res.data.forEach((acc) => {
           addBangumiAccountRow(acc)
         })
-        // 标记激活账号
-        if (res.active) {
-          updateActiveBadge(res.active)
+        // 标记首选账号
+        if (res.primary) {
+          updatePrimaryBadge(res.primary)
         }
       }
     } catch (e) {
@@ -849,8 +849,9 @@
     const isNew = accountData === null
     const acc = accountData || {}
     const sectionName = acc.section_name || ''
-    const isActive = acc.is_active || false
+    const isPrimary = acc.is_primary || false
     const authMethod = acc.auth_method || 'manual'
+    const isEnabled = acc.enabled !== false
 
     const accountDiv = document.createElement('div')
     accountDiv.className = 'border rounded p-3 mb-3'
@@ -858,9 +859,13 @@
     accountDiv.dataset.isNew = isNew ? '1' : '0'
     accountDiv.dataset.authMethod = authMethod
 
-    const activeBadge = isActive
-      ? '<span class="badge bg-success ms-2">激活中</span>'
+    const primaryBadge = isPrimary
+      ? '<span class="badge bg-success ms-2 js-primary-badge">首选中</span>'
       : ''
+    const disabledBadge =
+      !isNew && !isEnabled
+        ? '<span class="badge bg-secondary ms-1 js-enabled-badge">已停用</span>'
+        : ''
     const oauthBadge =
       authMethod === 'oauth'
         ? '<span class="badge bg-info ms-1">OAuth</span>'
@@ -901,21 +906,34 @@
            </button>`
         : ''
 
+    // 停用账号仅退出任务同步，条目保留在列表中，可随时「启用」恢复
+    const enabledToggleBtn = isNew
+      ? ''
+      : isEnabled
+        ? `<button type="button" class="btn btn-outline-secondary" onclick="setBangumiAccountEnabled(this, false)">
+             <i class="bi bi-pause-circle"></i> 停用
+           </button>`
+        : `<button type="button" class="btn btn-outline-success" onclick="setBangumiAccountEnabled(this, true)">
+             <i class="bi bi-play-circle"></i> 启用
+           </button>`
+
     accountDiv.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">
                 Bangumi 账号 ${id + 1}
-                ${activeBadge}
+                ${primaryBadge}
+                ${disabledBadge}
                 ${oauthBadge}
             </h6>
             <div class="btn-group btn-group-sm">
                 ${
-                  !isActive
-                    ? `<button type="button" class="btn btn-outline-success" onclick="activateBangumiAccount(this)">
-                         <i class="bi bi-check-circle"></i> 设为激活
+                  !isPrimary
+                    ? `<button type="button" class="btn btn-outline-success" onclick="setPrimaryBangumiAccount(this)">
+                         <i class="bi bi-check-circle"></i> 设为首选
                        </button>`
                     : ''
                 }
+                ${enabledToggleBtn}
                 <button type="button" class="btn btn-outline-primary" onclick="saveBangumiAccountRow(this)">
                     <i class="bi bi-save"></i> 保存
                 </button>
@@ -1062,40 +1080,65 @@
     }
   }
 
-  async function activateBangumiAccount(btn) {
+  async function setPrimaryBangumiAccount(btn) {
     const card = btn.closest('[id^="bangumi-account-"]')
     if (!card) return
     const sectionName = card.dataset.sectionName || ''
     if (!sectionName) return
     try {
       const res = await apiFetch(
-        `/api/bangumi/accounts/${encodeURIComponent(sectionName)}/activate`,
+        `/api/bangumi/accounts/${encodeURIComponent(sectionName)}/primary`,
         { method: 'POST' },
       )
       if (res.status === 'success') {
-        showAlert('已切换激活账号', 'success')
+        showAlert('已切换首选账号', 'success')
         await loadBangumiAccounts()
       } else {
         showAlert(res.detail || '切换失败', 'danger')
       }
     } catch (e) {
-      showAlert('切换激活账号失败: ' + e.message, 'danger')
+      showAlert('切换首选账号失败: ' + e.message, 'danger')
     }
   }
 
-  function updateActiveBadge(activeSection) {
+  async function setBangumiAccountEnabled(btn, enabled) {
+    const card = btn.closest('[id^="bangumi-account-"]')
+    if (!card) return
+    const sectionName = card.dataset.sectionName || ''
+    if (!sectionName) return
+    try {
+      const res = await apiFetch(
+        `/api/bangumi/accounts/${encodeURIComponent(sectionName)}/enabled`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: enabled }),
+        },
+      )
+      if (res.status === 'success') {
+        showAlert(res.message || '账号状态已更新', 'success')
+        await loadBangumiAccounts()
+      } else {
+        showAlert(res.detail || '设置账号状态失败', 'danger')
+      }
+    } catch (e) {
+      showAlert('设置账号状态失败: ' + e.message, 'danger')
+    }
+  }
+
+  function updatePrimaryBadge(primarySection) {
     document
       .querySelectorAll('#bangumi-accounts-container [id^="bangumi-account-"]')
       .forEach((card) => {
         const section = card.dataset.sectionName
         const titleEl = card.querySelector('h6')
         if (!titleEl) return
-        // 移除旧 badge
-        titleEl.querySelectorAll('.badge').forEach((b) => b.remove())
-        if (section === activeSection) {
+        // 仅更新首选徽章，保留 OAuth / 已停用等其余徽章
+        titleEl.querySelectorAll('.js-primary-badge').forEach((b) => b.remove())
+        if (section === primarySection) {
           const badge = document.createElement('span')
-          badge.className = 'badge bg-success ms-2'
-          badge.textContent = '激活中'
+          badge.className = 'badge bg-success ms-2 js-primary-badge'
+          badge.textContent = '首选中'
           titleEl.appendChild(badge)
         }
       })
@@ -2899,7 +2942,7 @@
                                                   rows="5"
                                                   placeholder='{"content": "📢 {title} S{season}E{episode} - {notification_type}"}'></textarea>
                                         <div class="form-text">
-                                            支持 JSON 格式，通用变量：{timestamp}, {user_name}, {title},
+                                            支持 JSON 格式，通用变量：{timestamp}, {user_name}, {bgm_username}, {title},
                                             {ori_title}, {bgm_title}, {season}, {episode}, {source}, {error_type},
                                             {error_message}, {notification_type}, {subject_id}, {episode_id}
                                             <br>
@@ -3042,7 +3085,7 @@
                                                value="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}"
                                                placeholder="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}" />
                                         <div class="form-text">
-                                            通用变量：{timestamp}, {user_name}, {title}, {ori_title},
+                                            通用变量：{timestamp}, {user_name}, {bgm_username}, {title}, {ori_title},
                                             {bgm_title}, {season}, {episode}, {source}, {error_type},
                                             {error_message}, {notification_type}, {subject_id}, {episode_id}
                                             <br>

@@ -811,16 +811,28 @@ class TestSyncMovieWatching:
 
             svc = SyncService()
             bgm = MagicMock()
+            bgm.username = "main-account"
             bgm.ensure_subject_watching.return_value = 1
             fan_out = []
+            other_result = {
+                "section": "bangumi-2",
+                "username": "alt-account",
+                "status": "success",
+                "message": "",
+            }
             with (
                 patch.object(svc, "_find_subject_id", return_value=("888", False, "")),
                 patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
                 patch.object(
                     svc,
+                    "_get_bangumi_account_targets_for_user",
+                    return_value=[("bangumi", bgm)],
+                ),
+                patch.object(
+                    svc,
                     "_mark_movie_watching_for_other_accounts",
-                    side_effect=lambda item, primary, subject_id: fan_out.append(
-                        (primary, subject_id)
+                    side_effect=lambda item, primary, subject_id: (
+                        fan_out.append((primary, subject_id)) or [other_result]
                     ),
                 ),
             ):
@@ -829,6 +841,12 @@ class TestSyncMovieWatching:
         # 分发发生在落库之前，首选实例沿用主流程对象
         assert fan_out == [(bgm, "888")]
         mock_db.log_sync_record.assert_called()
+        # 各账号结果随记录落库：首选在前并标记 primary
+        outcomes = mock_db.log_sync_record.call_args.kwargs["account_results"]
+        assert [o["section"] for o in outcomes] == ["bangumi", "bangumi-2"]
+        assert outcomes[0]["username"] == "main-account"
+        assert outcomes[0]["primary"] is True
+        assert outcomes[1] == {**other_result, "primary": False}
 
     def test_sync_movie_watching_ensure_unexpected_error(self):
         with (
