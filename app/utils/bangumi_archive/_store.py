@@ -37,8 +37,8 @@ from ._wiki_parser import parse_infobox
 # 同 IP / 同系列关系图闭包所采用的关系类型集合（官方 bangumi/common 编号）。
 # canonical 定义（含编号考证与噪声边排除依据）已收拢至 bangumi_constants：
 #   库 dump 编号 = 官方 web API 编号 = bangumi_constants.RELATIONS
-#   （2026-09-09 实证，详见 .workbuddy/research/matching-pipeline/
-#   CONSTANTS-HARDENING.md §2；探针 relation_probe.txt / closure_noise2.txt）。
+#   （2026-09-09 实证；探针见 tests/utils/test_platform_constants.py，
+#   对官方快照与真实库分布做断言）。
 # 此处转口再导出，保持既有导入路径（bangumi_archive._store）不变。
 
 

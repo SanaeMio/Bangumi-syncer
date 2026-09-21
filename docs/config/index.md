@@ -33,7 +33,6 @@ Web 界面背后对应一个 `config.ini` 文件（INI 格式），首次运行�
 | [🔀 自定义映射](/mapping) | 标题对不上时手工指定「标题 → 条目 ID」的兜底机制 |
 | [🗄️ Bangumi Archive](./bangumi-archive) | 本地归档，把全站数据快照下载到本地，优先查本地降低 API 依赖 |
 | [🔄 Bangumi Replay](./bangumi-replay) | 写降级与自动补发，API 不可达时入队暂存、恢复后自动补发 |
-| [⚖️ 匹配裁决层](./matching) | 双阈值判定（分数够不够 + 领先第二名多少），默认关闭 |
 | [🛠️ 自建 ECH DoH（进阶）](./self-hosted-doh) | 需要一定门槛：自行部署 DoH 服务（Total-ECH），自定义 ECH 配置来源与优选 IP |
 
 ## 配置段速查
@@ -48,7 +47,6 @@ Web 界面背后对应一个 `config.ini` 文件（INI 格式），首次运行�
 | `[feiniu]` / `[fongmi]` / `[trakt]` | 拉取型驱动配置 |
 | `[notify-webhook-{n}]` / `[notify-email-{n}]` 等 | 通知渠道实例（可多实例） |
 | `[archive]` / `[replay]` | Archive 与 Replay 配置 |
-| `[matching]` | 匹配裁决层（双阈值门控，默认关闭） |
 | `[scheduler]` | 调度器时区、任务超时 |
 | `[summary-{name}]` | AI 追番总结任务 |
 

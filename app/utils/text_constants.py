@@ -106,8 +106,8 @@ _MOVIE_MODE_BASE_WEIGHTS: dict[str, int] = {
 # 在下方权重表中必然查不到 → 恒回落 DEFAULT_PLATFORM_WEIGHT=50 → 稳定排序保持
 # archive 自身相关性序（"歪打正着"）。任何依赖"排序结果"的行为都隐式依赖这一
 # 不变量：修改基线权重表、weight() 内部或贸然接入解码都会破坏它（实测接入会让
-# 240 L2 命中率 97.9% → 97.5%）。接入前必读
-# .workbuddy/research/matching-pipeline/CONSTANTS-HARDENING.md 与 probe_platform_decode.py。
+# 240 L2 命中率 97.9% → 97.5%）。接入前先用
+# tests/utils/test_platform_weight.py 与 scripts/golden_check.py 量化影响。
 
 # 由基线权重 × 全量平台表自动推导：Bangumi 新增平台时自动回落到 DEFAULT_PLATFORM_WEIGHT
 PLATFORM_WEIGHT_TV_MODE: dict[str, int] = {

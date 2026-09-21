@@ -2,8 +2,7 @@
 
 把散落在各处的「约定」变成可执行、可校验的类型。
 
-背景见 .workbuddy/research/matching-pipeline/CONTRACT-AND-PERF.md：
-PR 240/241/242/248 的 5 个缺陷没有一个是打分公式问题，全是语义契约问题——
+背景：PR 240/241/242/248 的 5 个缺陷没有一个是打分公式问题，全是语义契约问题——
 约定只存在于注释和 docstring 里，没有任何类型强制它。最直接的证据是
 ``bangumi_archive/_store.py::_adapt_episode_row``：docstring 写「将 Archive
 行适配为 BangumiApi 返回结构」，实现是 ``return row``。

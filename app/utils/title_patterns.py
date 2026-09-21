@@ -1,6 +1,6 @@
 """跨模块共享的标题类正则（单一 compiled 单源）。
 
-职责边界（详见 .workbuddy/research/matching-pipeline/REGEX-CONSOLIDATION.md）：
+职责边界：
 - 只收「两个以上模块同目的使用」的 compiled 正则与纯函数
 - 各输入域私有的正则不收：日志解析（log_grouping）、FTS 键归一化（_fts_query
   的 NFKC 链）、括号种类变体（_DECOR_BRACKET_RE 等）
