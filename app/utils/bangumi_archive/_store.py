@@ -670,9 +670,19 @@ class ArchiveStore:
     def _adapt_episode_row(row: dict[str, Any]) -> dict[str, Any]:
         """将 Archive episode 行适配为 BangumiApi 返回结构
 
-        Archive 的字段名与 API 一致，仅 airdate 对应 API 的 airdate。
+        此前这里是 ``return row``——docstring 声称适配却什么都不做，
+        是 242（跨季 ep 定位错误）的根因之一：字段契约从未被强制执行，
+        下游只能靠 ``.get("ep")`` 裸访问并自行理解语义。
+
+        现在经 EpisodeRef 契约归一：保证 sort/ep/type/airdate 字段存在且
+        类型正确。ep 缺失时保持缺失（不合成，合成属 _synthesize_ep_field 的
+        职责），仅修正 None 值，避免下游比较出错。不改写已有数据。
+
+        使用函数内 import 避免与上层 sync_service 形成循环依赖。
         """
-        return row
+        from app.services.matching.contracts import EpisodeRef
+
+        return EpisodeRef.from_archive(row).to_api_dict()
 
     @staticmethod
     def _synthesize_ep_field(episodes: list[dict[str, Any]]) -> None:

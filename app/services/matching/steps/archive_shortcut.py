@@ -14,6 +14,7 @@ import datetime
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import SOURCE_ARCHIVE, candidates_from_rows
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 
 
@@ -136,10 +137,30 @@ class ArchiveShortcutStep(MatchStepBase):
             "match_method": shortcut.match_method,
         }
 
+        # C4：archive 命中也要产出候选。此前只设 ctx.bgm_data，不产出候选、
+        # 不标注分数——「短路径盲信」的根源（量化：76 条命中里 10 条标错，
+        # 13.2% 无值守静默错误率下限）。这里用 title_diff_ratio 给每条候选打
+        # 相似度分，让后续裁决层能算 margin。控制流不变（仍 is_terminal=False）。
+        try:
+            candidates = candidates_from_rows(
+                shortcut.data,
+                source=SOURCE_ARCHIVE,
+                limit=15,
+                scorer=lambda row: bgm.title_diff_ratio(
+                    title=search_title, ori_title=item.ori_title, bgm_data=row
+                ),
+            )
+        except Exception as e:  # noqa: BLE001 — 打分失败不阻断短路命中
+            logger.debug(f"archive 候选打分失败（不影响主流程）: {e}")
+            candidates = candidates_from_rows(
+                shortcut.data, source=SOURCE_ARCHIVE, limit=15
+            )
+
         return StepOutcome(
             status="hit",
             subject_id=str(first.get("id", "")),
             reason=f"archive 短路命中: {shortcut.match_method}",
+            candidates=candidates,
             inputs=inputs,
             outputs={
                 "subject_id": str(first.get("id", "")),

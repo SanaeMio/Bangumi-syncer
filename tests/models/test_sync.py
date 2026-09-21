@@ -41,6 +41,51 @@ class TestSyncModels:
         assert item.source is None
         assert item.sync_action is None
 
+    def test_custom_item_blank_optional_normalized_to_none(self):
+        """空白串哨兵值统一归一为 None（248-A 根因）
+
+        各驱动对「无原题」表示不一致：emby extractor 一处写 None、一处写
+        " "，plex 写 " "。空白串会顶掉 ``if title and not ori_title`` 的
+        正确分支。入口归一后所有消费点看到的是同一标准。
+        """
+        from app.models.sync import CustomItem
+
+        item = CustomItem(
+            title="测试动画",
+            ori_title=" ",
+            season=1,
+            episode=12,
+            release_date="2024-01-01",
+            user_name="test_user",
+            source="   ",
+        )
+        assert item.ori_title is None
+        assert item.source is None
+
+        # 全角空格、tab、换行同样归一
+        item2 = CustomItem(
+            title="测试动画",
+            ori_title="　\t",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        assert item2.ori_title is None
+
+    def test_custom_item_title_stripped(self):
+        """标题去除两端空白，但空标题不静默变 None（必填校验兜底）"""
+        from app.models.sync import CustomItem
+
+        item = CustomItem(
+            title="  测试动画  ",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        assert item.title == "测试动画"
+
     def test_custom_item_default_media_type_episode(self):
         """未传 media_type 时默认为 episode，兼容旧版自定义 Webhook"""
         from app.models.sync import CustomItem
