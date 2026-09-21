@@ -256,6 +256,24 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="max_attempts", default=50),
         ),
     ),
+    "matching": SectionMeta(
+        name="matching",
+        display_name="匹配裁决层",
+        order=240,
+        # 默认值必须与 arbiter.DEFAULT_* 保持一致：前端回填与后端
+        # policy_from_config 的兜底是两条独立路径，值不同会让「界面上看到的」
+        # 与「实际生效的」不一致。
+        fields=(
+            FieldMeta(name="arbiter_enabled", loose_true=True),
+            FieldMeta(name="weight_custom_mapping", default=1.0),
+            FieldMeta(name="weight_bangumi_data", default=1.0),
+            FieldMeta(name="weight_archive", default=1.0),
+            FieldMeta(name="weight_api_search", default=1.0),
+            FieldMeta(name="min_score", default=0.85),
+            FieldMeta(name="min_margin", default=0.10),
+            FieldMeta(name="ambiguous_margin", default=0.05),
+        ),
+    ),
     # ── 通知配置（order 500-599，多实例）──
     "notify-webhook": SectionMeta(
         name="notify-webhook",

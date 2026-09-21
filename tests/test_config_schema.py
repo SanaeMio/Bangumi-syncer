@@ -383,8 +383,12 @@ class TestLooseTrueFields:
 
     def test_count_matches_legacy(self):
         """原硬编码 4 个 loose_true 字段；ECH 改造新增 dev.ech_doh_use_proxy 第 5 个；
-        archive BK-tree 开关新增 bangumi_archive.use_bktree 第 6 个"""
-        assert len(config_schema.loose_true_fields()) == 6
+        archive BK-tree 开关新增 bangumi_archive.use_bktree 第 6 个；
+        裁决层开关新增 matching.arbiter_enabled 第 7 个"""
+        assert len(config_schema.loose_true_fields()) == 7
+
+    def test_includes_matching_arbiter_enabled(self):
+        assert "matching.arbiter_enabled" in config_schema.loose_true_fields()
 
 
 class TestConfigDefaults:
@@ -483,3 +487,45 @@ class TestSerializeSchema:
     def test_loose_true_fields_consistent_with_helper(self):
         schema = config_schema.serialize_schema()
         assert schema["loose_true_fields"] == config_schema.loose_true_fields()
+
+
+class TestExampleIniCoverage:
+    """config.example.ini 中面向用户的配置段必须已在 SectionMeta 注册
+
+    未注册的段不会出现在配置页（模板卡片与 TOC 都依赖注册表），用户只能手改
+    INI；新增配置段时容易漏登记，此处按「示例配置即用户可见契约」把关。
+    """
+
+    @staticmethod
+    def _example_ini_sections() -> set[str]:
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent
+        text = (root / "config.example.ini").read_text(encoding="utf-8")
+        # 只取未被注释的段头；示例中的注释段（如 [bangumi-user1]）不算
+        return set(re.findall(r"^\[([^\]]+)\]", text, re.M))
+
+    def test_all_example_sections_registered(self):
+        missing = self._example_ini_sections() - set(config_schema.SECTIONS)
+        assert not missing, (
+            f"config.example.ini 中的段未在 config_schema.SECTIONS 注册: "
+            f"{sorted(missing)}；未注册的段不会出现在配置页，请补 SectionMeta"
+        )
+
+    def test_matching_section_registered(self):
+        """裁决层段已注册，且字段覆盖 example.ini 中的全部键"""
+        meta = config_schema.get_section_meta("matching")
+        assert meta is not None, "[matching] 未注册，配置页不会显示裁决层卡片"
+        assert meta.visible_in_ui
+        names = {f.name for f in meta.fields}
+        assert {
+            "arbiter_enabled",
+            "weight_custom_mapping",
+            "weight_bangumi_data",
+            "weight_archive",
+            "weight_api_search",
+            "min_score",
+            "min_margin",
+            "ambiguous_margin",
+        } <= names

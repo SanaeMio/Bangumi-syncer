@@ -1,0 +1,150 @@
+<!-- 匹配裁决层（Arbiter）：默认关闭，关闭时沿用 sync.match_confidence_threshold 单阈值 -->
+<div class="row">
+    <div class="col-12">
+        <div id="config-section-matching" class="card mb-4 config-card">
+            <div class="card-header py-3">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-sliders me-2 card-header-icon"></i>
+                    <h6 class="m-0 fw-semibold card-header-title">匹配裁决层</h6>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="alert alert-info mb-3 d-flex align-items-start">
+                            <i class="bi bi-info-circle me-2 mt-1"></i>
+                            <div>
+                                <strong>默认关闭。</strong>关闭时沿用「同步设置」里的
+                                <code>模糊匹配置信度阈值</code>（单阈值）判定，行为与改造前一致。
+                                开启后改为<strong>双阈值</strong>：既看分数够不够（最低加权分），
+                                也看领先第二名多少（最低领先幅度），不够格或领先不足的条目会沉淀到待审队列。
+                                <br>
+                                <span class="text-muted small">
+                                    实测取舍：开启后错命中由 9 条降到 2 条、精确率 95.9% → 99.0%，
+                                    代价是自动采用数减少（覆盖率 92.5% → 85.8%）。若「静默标错」比「少标」更难受，建议开启。
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-toggle-on me-1 text-primary"></i>启用裁决层
+                            <i class="bi bi-question-circle ms-1 text-muted"
+                               data-bs-toggle="tooltip"
+                               title="关闭时沿用单阈值判定。裁决层只做「是否采用」的门控，不会推翻季度 / 媒体类型 / 关联条目的改选结果。"></i>
+                        </label>
+                        <div class="form-check form-switch d-flex align-items-center mb-0">
+                            <input class="form-check-input me-2"
+                                   type="checkbox"
+                                   id="matching-arbiter-enabled"
+                                   name="matching.arbiter_enabled">
+                            <label class="form-check-label" for="matching-arbiter-enabled">启用</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="matching-min-score" class="form-label fw-semibold">
+                            <i class="bi bi-speedometer2 me-1 text-success"></i>最低加权分
+                            <i class="bi bi-question-circle ms-1 text-muted"
+                               data-bs-toggle="tooltip"
+                               title="0~1 之间的小数。低于此值判定为无匹配，沉淀待审。默认 0.85；调低可提高覆盖率，但会放更多错误匹配通过。"></i>
+                        </label>
+                        <input type="number"
+                               class="form-control"
+                               data-type="float"
+                               id="matching-min-score"
+                               name="matching.min_score"
+                               min="0"
+                               max="1"
+                               step="0.01"
+                               placeholder="0.85">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="matching-min-margin" class="form-label fw-semibold">
+                            <i class="bi bi-graph-up-arrow me-1 text-warning"></i>最低领先幅度
+                            <i class="bi bi-question-circle ms-1 text-muted"
+                               data-bs-toggle="tooltip"
+                               title="0~1 之间的小数。第一名与第二名加权分差小于此值时视为「险胜」，沉淀待审。默认 0.10。"></i>
+                        </label>
+                        <input type="number"
+                               class="form-control"
+                               data-type="float"
+                               id="matching-min-margin"
+                               name="matching.min_margin"
+                               min="0"
+                               max="1"
+                               step="0.01"
+                               placeholder="0.10">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="matching-ambiguous-margin" class="form-label fw-semibold">
+                            <i class="bi bi-shuffle me-1 text-danger"></i>歧义阈值
+                            <i class="bi bi-question-circle ms-1 text-muted"
+                               data-bs-toggle="tooltip"
+                               title="0~1 之间的小数。分差小于此值视为条目本身有歧义，除沉淀待审外额外发送「匹配歧义」通知。默认 0.05。"></i>
+                        </label>
+                        <input type="number"
+                               class="form-control"
+                               data-type="float"
+                               id="matching-ambiguous-margin"
+                               name="matching.ambiguous_margin"
+                               min="0"
+                               max="1"
+                               step="0.01"
+                               placeholder="0.05">
+                    </div>
+                    <div class="col-12">
+                        <hr class="my-2">
+                        <div class="form-text mb-2">
+                            <i class="bi bi-diagram-3 me-1"></i>各来源权重：同一条目被多个来源命中时取
+                            <code>max(权重 × 分数)</code>，让最可信的来源主导判定。调低某个来源等于降低它的发言权。
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="matching-weight-custom-mapping" class="form-label">自定义映射</label>
+                        <input type="number"
+                               class="form-control"
+                               data-type="float"
+                               id="matching-weight-custom-mapping"
+                               name="matching.weight_custom_mapping"
+                               min="0"
+                               step="0.1"
+                               placeholder="1.0">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="matching-weight-bangumi-data" class="form-label">bangumi-data</label>
+                        <input type="number"
+                               class="form-control"
+                               data-type="float"
+                               id="matching-weight-bangumi-data"
+                               name="matching.weight_bangumi_data"
+                               min="0"
+                               step="0.1"
+                               placeholder="1.0">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="matching-weight-archive" class="form-label">本地归档</label>
+                        <input type="number"
+                               class="form-control"
+                               data-type="float"
+                               id="matching-weight-archive"
+                               name="matching.weight_archive"
+                               min="0"
+                               step="0.1"
+                               placeholder="1.0">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="matching-weight-api-search" class="form-label">API 搜索</label>
+                        <input type="number"
+                               class="form-control"
+                               data-type="float"
+                               id="matching-weight-api-search"
+                               name="matching.weight_api_search"
+                               min="0"
+                               step="0.1"
+                               placeholder="1.0">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

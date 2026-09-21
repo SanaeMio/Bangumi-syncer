@@ -9,7 +9,7 @@ order: 45
 
 ## ✨ 新功能
 
-- 匹配裁决层（Arbiter）：`[matching]` 段新增 `arbiter_enabled` 与各来源权重，由「单阈值」改为「分数够不够 + 领先第二名多少」双阈值门控，240 条归档用例实测精确率 95.9% → 99.0%（错命中 9 → 2，覆盖率 92.5% → 85.8%）。**默认关闭**，开启后不推翻季度/媒体类型/关联条目改选 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
+- 匹配裁决层（Arbiter）：`[matching]` 段新增 `arbiter_enabled` 与各来源权重，由「单阈值」改为「分数够不够 + 领先第二名多少」双阈值门控，240 条归档用例实测精确率 95.9% → 99.0%（错命中 9 → 2，覆盖率 92.5% → 85.8%）。**默认关闭**，开启后不推翻季度/媒体类型/关联条目改选；配置页「匹配裁决层」卡片可调开关、双阈值与各来源权重 [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
 - 拒绝待确认候选时记入标题级负样本黑名单，下次自动匹配命中同一 subject 时降级为漏标（宁可漏标不能错标）；自定义映射为显式意图，不受黑名单约束 [#15](https://github.com/SanaeMio/Bangumi-syncer/issues/15) [#255](https://github.com/SanaeMio/Bangumi-syncer/pull/255) `2026-09-21`
 - 封面批量解析优化：已配置 Bangumi 账号时优先从「在看」收藏列表一次性提取封面（覆盖时间线绝大多数条目），未命中的条目再逐个调用 API 兜底（不再走 Archive 短路，确保返回图片字段），结果缓存 24 小时 `2026-08-12`
 - 新增 ECH（加密 Client Hello）支持：`[dev]` 段新增 `ech_mode` / `ech_doh_url` / `ech_doh_use_proxy` / `ech_hosts` / `ech_ech_config` 五项配置，可加密 Bangumi 各域名的 TLS Client Hello 以应对 SNI 探测/封锁；DoH 获取失败或配置无效时自动降级为普通 TLS，不影响同步 `2026-08-12`
