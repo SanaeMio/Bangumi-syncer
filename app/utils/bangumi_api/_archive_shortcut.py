@@ -22,7 +22,6 @@ bangumi_archive 模块（_title_normalize / _title_index / _store），
 
 from __future__ import annotations
 
-import re
 from typing import Any, NamedTuple, Optional
 
 from ...core.config import config_manager
@@ -39,6 +38,7 @@ from ..bangumi_archive._title_normalize import (
     build_search_variants,
 )
 from ..bangumi_constants import RELATION_ID_SEQUEL, SUBJECT_TYPE_ANIME
+from ..title_patterns import YEAR_RE
 
 
 class ShortcutResult(NamedTuple):
@@ -423,7 +423,7 @@ class ArchiveShortcut:
             # start_date 形如 "2006-01-01"，无日期/格式不符时 year=None（退化原行为）。
             year: Optional[int] = None
             if start_date:
-                m = re.search(r"(?:19|20)\d{2}", start_date)
+                m = YEAR_RE.search(start_date)
                 if m:
                     year = int(m.group(0))
 

@@ -25,7 +25,6 @@ trigram tokenizer 说明：
 
 from __future__ import annotations
 
-import re
 import sqlite3
 import threading
 import unicodedata
@@ -35,6 +34,7 @@ from typing import Any, Optional
 from rapidfuzz.distance import DamerauLevenshtein, JaroWinkler
 
 from ...core.logging import logger
+from ..title_patterns import YEAR_RE, extract_year
 from ._title_normalize import (
     ARCHIVE_FUZZY_THRESHOLD,
     fuse_title_similarity,
@@ -179,8 +179,7 @@ def _year_of(date_str: Any) -> Optional[int]:
     """从 date 字符串抽取 4 位年份（19xx/20xx），无则返回 None。"""
     if not isinstance(date_str, str) or not date_str:
         return None
-    m = re.search(r"(?:19|20)\d{2}", date_str)
-    return int(m.group(0)) if m else None
+    return extract_year(date_str)
 
 
 class ArchiveFTSQuery:
@@ -632,13 +631,11 @@ class ArchiveFTSQuery:
                 return []
         # 年份消歧：自动从查询抽取 4 位年份（仅当未显式传入）
         if year is None:
-            m = re.search(r"(?:19|20)\d{2}", title)
-            if m:
-                year = int(m.group(0))
+            year = extract_year(title)
         # 去年份裸标题用于匹配（year 命中时仅用裸标题，避免 "2006" 干扰归一化）
         match_title = title
         if year is not None:
-            base = re.sub(r"(?:19|20)\d{2}", "", title)
+            base = YEAR_RE.sub("", title)
             if base and base != title:
                 match_title = base
         key = _normalize_key(match_title)

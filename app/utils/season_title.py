@@ -9,6 +9,12 @@ import re
 
 from .text_constants import CN_NUM
 
+# 季号模式（模块级预编译，避免每次调用重编译）
+_SEASON_NUM_RE = re.compile(r"第\s*(\d+)\s*[期季]")
+_SEASON_CN_RE = re.compile(r"第\s*([一二三四五六七八九十]+)\s*[期季]")
+_SEASON_ORDINAL_RE = re.compile(r"(\d+)(?:st|nd|rd|th)\s+season", re.IGNORECASE)
+_SEASON_WORD_RE = re.compile(r"season\s*(\d+)", re.IGNORECASE)
+
 
 def extract_explicit_season(title: str) -> int | None:
     """从标题中提取明确声明的季度编号。
@@ -24,11 +30,11 @@ def extract_explicit_season(title: str) -> int | None:
     text = title.strip()
 
     # "第X期" / "第X季"（阿拉伯数字）
-    m = re.search(r"第\s*(\d+)\s*[期季]", text)
+    m = _SEASON_NUM_RE.search(text)
     if m:
         return int(m.group(1))
     # "第X期" / "第X季"（中文数字，含"十一"~"十九"）
-    m = re.search(r"第\s*([一二三四五六七八九十]+)\s*[期季]", text)
+    m = _SEASON_CN_RE.search(text)
     if m:
         cn = m.group(1)
         if len(cn) == 1:
@@ -37,11 +43,11 @@ def extract_explicit_season(title: str) -> int | None:
             return 10 + CN_NUM.get(cn[1], 0)
         return CN_NUM.get(cn)
     # "Xnd/Xrd/Xth season"
-    m = re.search(r"(\d+)(?:st|nd|rd|th)\s+season", text, re.IGNORECASE)
+    m = _SEASON_ORDINAL_RE.search(text)
     if m:
         return int(m.group(1))
     # "Season X"（需带数字，避免误匹配"Season"单词本身）
-    m = re.search(r"season\s*(\d+)", text, re.IGNORECASE)
+    m = _SEASON_WORD_RE.search(text)
     if m:
         return int(m.group(1))
     return None
