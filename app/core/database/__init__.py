@@ -62,9 +62,9 @@ class DatabaseManager:
         self.memory = AgentMemoryRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         self._pending_sync = PendingSyncQueueRepository(self._connection)
+        self._title_blacklist = TitleBlacklistRepository(self._connection)
         # 公开别名（消费标记写/清归 memory 域，业务层经此只读访问同步记录）
         self.sync_records = self._sync
-        self._title_blacklist = TitleBlacklistRepository(self._connection)
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
         # 需要先创建 inbox_repository（及其 feiniu 依赖）才能执行回填
         self._inbox.backfill_historical_error_notifications()

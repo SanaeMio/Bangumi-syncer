@@ -167,7 +167,5 @@ class TitleBlacklistRepository(BaseRepository):
             )
             return {row[0] for row in cursor.fetchall()}
 
-        result = self._run_read(
-            _read, error_msg="读取负样本黑名单失败", default=set()
-        )
+        result = self._run_read(_read, error_msg="读取负样本黑名单失败", default=set())
         return result if isinstance(result, set) else set()

@@ -44,6 +44,7 @@ def _nfkc(text: str) -> str:
         return ""
     return unicodedata.normalize("NFKC", text)
 
+
 # 季数/集数后缀剥离模式（按优先级排序，长模式在前）
 # 处理 fongmi/Plex/Jellyfin 等传入的「标题 S06E279」「标题 第N季」「标题 第二季」等格式，
 # 剥离后用核心标题去 archive 匹配（archive 中存的是第一季本体名，不含季后缀）

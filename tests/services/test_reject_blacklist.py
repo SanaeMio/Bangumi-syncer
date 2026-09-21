@@ -10,7 +10,6 @@
 from types import SimpleNamespace
 
 from app.core.database import database_manager
-from app.services.matching.pipeline import MatchPipeline
 from app.services.matching.result import MatchResult
 from app.services.sync_service import sync_service
 from app.services.sync_service.match_trace import MatchTrace
@@ -93,15 +92,9 @@ class TestFindSubjectExcludesBlacklist:
 
 class TestCollectExcludesBlacklist:
     def test_excludes_blocked_and_dedups(self):
-        cand_a = SimpleNamespace(
-            subject_id="1", to_dict=lambda: {"subject_id": "1"}
-        )
-        cand_b = SimpleNamespace(
-            subject_id="2", to_dict=lambda: {"subject_id": "2"}
-        )
-        cand_c = SimpleNamespace(
-            subject_id="3", to_dict=lambda: {"subject_id": "3"}
-        )
+        cand_a = SimpleNamespace(subject_id="1", to_dict=lambda: {"subject_id": "1"})
+        cand_b = SimpleNamespace(subject_id="2", to_dict=lambda: {"subject_id": "2"})
+        cand_c = SimpleNamespace(subject_id="3", to_dict=lambda: {"subject_id": "3"})
         trace = SimpleNamespace(
             steps=[
                 SimpleNamespace(candidates=[cand_a, cand_b]),

@@ -1257,9 +1257,7 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
         steps_with_candidates = [s for s in archive_steps if s.candidates]
         assert len(steps_with_candidates) == 2
         assert all(
-            c.source == "archive"
-            for s in steps_with_candidates
-            for c in s.candidates
+            c.source == "archive" for s in steps_with_candidates for c in s.candidates
         )
         # 不应出现 stage="api_search" 的命中步骤
         api_hit_steps = [
