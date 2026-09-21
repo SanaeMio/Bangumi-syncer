@@ -106,7 +106,6 @@ markers = [
     "asyncio: mark test as async",
     "performance: mark test as a performance test",
     "e2e: mark test as an end-to-end test (requires playwright + server, slow)",
-    "golden: mark test as a golden-case regression test (needs generated fixtures)",
 ]
 
 # E2E 失败捕获参数（pytest-playwright CLI 选项）

@@ -1,23 +1,24 @@
 """黄金用例集（golden cases）公共辅助
 
-目标：给匹配管线的后续改造（契约层 P2 / 裁决层 P3）提供**可回归的闸门**。
+目标：给匹配管线的改造提供**可回归的基线**。这是**手动执行的开发工具**，
+不是 CI 测试：改匹配逻辑前后各跑一次 ``scripts/golden_check.py`` 比对差异。
 
 分两层：
 
-- **L1 离线黄金集** `tests/golden/bangumi_data_cases.json`
+- **L1 离线黄金集** `scripts/golden_data/bangumi_data_cases.json`
   自带精简过的 bangumi-data 子集（目标条目 + 易混淆干扰项），不依赖
-  网络、不依赖 707MB 的 archive 归档库，**CI 必然可跑**。
+  网络、不依赖 archive 归档库，任何时候都能跑。
   断言粒度：bangumi-data 层的 ``find_bangumi_id`` 结果必须与基线一致。
 
-- **L2 全量管线回归集** `tests/golden/matching_cases.json`
-  真实 Archive 数据上的 300 条用例，记录完整管线（custom_mapping →
+- **L2 全量管线回归集** `scripts/golden_data/matching_cases.json`
+  真实 Archive 数据上的 240 条用例，记录完整管线（custom_mapping →
   archive → bangumi-data → api_search）的逐条基线。archive 数据不在
-  仓库中，缺数据时对应测试 skip。
+  仓库中，缺数据时 L2 自动跳过。
 
 设计取舍：
 - 基线的期望值 = **生成时的实际行为快照**（characterization），不是
-  「应当正确」的断言。这样任何行为变化（变好或变坏）都会让测试失败，
-  强制人工 review —— 这正是闸门该有的语义。
+  「应当正确」的断言。这样任何行为变化（变好或变坏）都会报出差异，
+  强制人工 review —— 这正是基线该有的语义。
 - 每条用例同时保留 ``oracle``（构造用例时的真实答案），用于输出命中率
   报告，方便 A/B 对比时判断改动是变好还是变坏。
 """
@@ -32,7 +33,7 @@ from typing import Any
 
 from app.utils.bangumi_data import BangumiData
 
-GOLDEN_DIR = Path(__file__).resolve().parent
+GOLDEN_DIR = Path(__file__).resolve().parent / "golden_data"
 L1_CASES_PATH = GOLDEN_DIR / "bangumi_data_cases.json"
 L2_CASES_PATH = GOLDEN_DIR / "matching_cases.json"
 

@@ -7,11 +7,11 @@
 
 产出
 ----
-- ``tests/golden/bangumi_data_cases.json``  L1 离线黄金集
-  自带精简后的 bangumi-data 子集，不依赖网络与 archive 归档库，CI 必跑。
-- ``tests/golden/matching_cases.json``      L2 全量管线回归集
+- ``scripts/golden_data/bangumi_data_cases.json``  L1 离线黄金集
+  自带精简后的 bangumi-data 子集，不依赖网络与 archive 归档库。
+- ``scripts/golden_data/matching_cases.json``      L2 全量管线回归集
   真实 Archive 数据上的用例 + 完整管线逐条基线；archive 数据不在仓库中，
-  缺数据时测试 skip。
+  缺数据时跳过。
 
 运行
 ----
@@ -41,9 +41,16 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+# golden_helpers 与本脚本同目录（scripts/ 不是包，需显式加入搜索路径）
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# 注意：helpers 会间接 import app.utils.bangumi_data（模块级单例，构造时读
-# 配置、检查缓存）。L2 模式需要在 import 之前先把 CONFIG_FILE 指向临时配置，
+# Windows 控制台默认 GBK，app 启动横幅含 emoji 会抛 UnicodeEncodeError
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# 注意：golden_helpers 会间接 import app.utils.bangumi_data（模块级单例，构造时
+# 读配置、检查缓存）。L2 模式需要在 import 之前先把 CONFIG_FILE 指向临时配置，
 # 因此这里**故意**不在顶层 import helpers，改由各模式函数内部按需导入。
 
 DEFAULT_SEED = 20260908
@@ -278,9 +285,8 @@ def build_fixture_items(
     为什么要带干扰项：黄金集的价值一半在于「不该被误吸走」。若子集中只有
     目标条目，任何算法退化都表现为命中正确，闸门形同虚设。
     """
+    from golden_helpers import slim_item  # noqa: PLC0415
     from rapidfuzz import fuzz, process
-
-    from tests.golden.helpers import slim_item  # noqa: PLC0415
 
     titles = [it.get("title", "") for it in items]
 
@@ -318,7 +324,7 @@ def build_fixture_items(
 
 
 def gen_l1(cache_path: Path, n: int, k: int, seed: int, out: Path | None = None) -> int:
-    from tests.golden.helpers import (  # noqa: PLC0415
+    from golden_helpers import (  # noqa: PLC0415
         L1_CASES_PATH,
         build_offline_bangumi_data,
         run_case,
@@ -434,6 +440,8 @@ def gen_l2(n: int, seed: int, out: Path | None = None) -> int:
     临时目录（由 ``_prepare_l2_config`` 在 import 前完成）。L2 测试通过
     **子进程复用本函数**来比对，保证生成与校验跑在完全相同的环境下。
     """
+    from golden_helpers import L2_CASES_PATH  # noqa: PLC0415
+
     from app.models.sync import CustomItem
     from app.services.sync_service import SyncService
     from app.services.sync_service.match_trace import MatchTrace
@@ -444,7 +452,6 @@ def gen_l2(n: int, seed: int, out: Path | None = None) -> int:
     )
     from app.utils.bangumi_archive._archive import bangumi_archive
     from app.utils.bangumi_archive._title_index import archive_title_index
-    from tests.golden.helpers import L2_CASES_PATH  # noqa: PLC0415
 
     def _blocked(*_a, **_k):
         raise RuntimeError("NETWORK_BLOCKED")
@@ -642,7 +649,9 @@ def main() -> int:
     ap.add_argument("--distractors", type=int, default=DEFAULT_DISTRACTORS)
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED)
     ap.add_argument("--cache", default="./bangumi_data_cache.json")
-    ap.add_argument("--out", default=None, help="输出路径（默认写回 tests/golden）")
+    ap.add_argument(
+        "--out", default=None, help="输出路径（默认写回 scripts/golden_data）"
+    )
     ap.add_argument(
         "--arbiter",
         choices=["on", "off"],
