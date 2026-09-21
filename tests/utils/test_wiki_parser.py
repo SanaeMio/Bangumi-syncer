@@ -163,6 +163,71 @@ class TestParseInfoboxList:
         assert result == [{"key": "别名", "value": [{"v": "a1"}, {"v": "a2"}]}]
 
 
+def _alias_of(parsed: list[dict]) -> object:
+    """取 infobox 解析结果中「别名」项的 value（便于断言多参数场景）"""
+    for item in parsed:
+        if item.get("key") == "别名":
+            return item.get("value")
+    return None
+
+
+# ===== 方块列表 `{[a][b]}`（Archive dump 别名主流格式） =====
+
+
+class TestBraceBracketList:
+    """`{\\n[a]\\n[b]\\n}` 方块列表
+
+    Archive dump 中 98.9% 的「别名」字段使用此格式（见
+    alias_format_census.txt）。未识别时会退化成整块脏字符串，
+    导致 FTS aliases 列含噪声、带空格的别名无法精确命中。
+    """
+
+    def test_brace_bracket_list_crlf(self) -> None:
+        """CRLF 换行的方块列表被拆成独立别名"""
+        text = "{{Infobox|别名={\r\n[叛逆的鲁路修R2]\r\n[Code Geass]\r\n}\r\n|其他=x}}"
+        result = parse_infobox(text)
+        assert _alias_of(result) == [
+            {"v": "叛逆的鲁路修R2"},
+            {"v": "Code Geass"},
+        ]
+
+    def test_brace_bracket_list_lf(self) -> None:
+        """LF 换行同样识别"""
+        text = "{{Infobox|别名={\n[a1]\n[a2]\n}\n|其他=x}}"
+        result = parse_infobox(text)
+        assert _alias_of(result) == [{"v": "a1"}, {"v": "a2"}]
+
+    def test_brace_bracket_single_item(self) -> None:
+        """单个方括号项也返回列表结构（与 bullet 单行为一致）"""
+        text = "{{Infobox|别名={\n[only]\n}\n|其他=x}}"
+        result = parse_infobox(text)
+        assert _alias_of(result) == [{"v": "only"}]
+
+    def test_brace_bracket_skips_blank_lines(self) -> None:
+        """空行被跳过，不产生空别名"""
+        text = "{{Infobox|别名={\n\n[a1]\n   \n[a2]\n}\n|其他=x}}"
+        result = parse_infobox(text)
+        assert _alias_of(result) == [{"v": "a1"}, {"v": "a2"}]
+
+    def test_brace_without_bracket_items_falls_through(self) -> None:
+        """大括号内无整行方括号项（如 `{链接}`）不视为列表"""
+        text = "{{Infobox|其他={链接}}}"
+        result = parse_infobox(text)
+        assert result == [{"key": "其他", "value": "{链接"}]
+
+    def test_brace_bracket_wiki_link_cleaned(self) -> None:
+        """方块列表项内的 wiki 链接被清理"""
+        text = "{{Infobox|别名={\n[[target|显示名]]\n}\n|其他=x}}"
+        result = parse_infobox(text)
+        assert _alias_of(result) == [{"v": "显示名"}]
+
+    def test_bullet_takes_priority_over_brace(self) -> None:
+        """同时存在 bullet 与方括号时 bullet 优先（保持既有行为）"""
+        text = "{{Infobox|别名=* b1\n* b2}}"
+        result = parse_infobox(text)
+        assert _alias_of(result) == [{"v": "b1"}, {"v": "b2"}]
+
+
 # ===== wiki 标记清理 =====
 
 

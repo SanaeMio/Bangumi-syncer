@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generated_at": "2026-09-09 11:33:29",
+ "generated_at": "2026-09-09 13:00:55",
  "seed": 20260908,
  "n": 30,
  "source": {
@@ -1200,7 +1200,7 @@
     "match_method": "archive",
     "match_detail": "exact",
     "score": 1.0,
-    "ambiguous": false,
+    "ambiguous": true,
     "failure": ""
    }
   },
