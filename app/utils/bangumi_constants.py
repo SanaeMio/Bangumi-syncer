@@ -24,66 +24,92 @@ COLLECTION_TYPE_DROPPED = 5  # 抛弃
 EPISODE_TYPE_NORMAL = 0  # 本篇
 
 # ===== 关联类型（anime/real 共用同一套编号）=====
-# 关联 ID 常量（项目用到的）
+# 来源：bangumi/common subject_relations.yml（官方 web API 与库 dump 同一编号
+# 体系，2026-09-09 实证考证见 app/utils/bangumi_archive/_store.py 注释）。
+RELATION_ID_ADAPTATION = 1  # 改编
 RELATION_ID_PREQUEL = 2  # 前传
 RELATION_ID_SEQUEL = 3  # 续集
-RELATION_ID_PARENT_STORY = 12  # 主线故事
-RELATION_ID_SPIN_OFF = 11  # 衍生
+RELATION_ID_SUMMARY = 4  # 总集篇
+RELATION_ID_FULL_STORY = 5  # 全集
 RELATION_ID_SIDE_STORY = 6  # 番外篇
+RELATION_ID_CHARACTER = 7  # 角色出演
+RELATION_ID_SAME_SETTING = 8  # 相同世界观
+RELATION_ID_ALTERNATIVE_SETTING = 9  # 不同世界观
+RELATION_ID_ALTERNATIVE_VERSION = 10  # 不同演绎
+RELATION_ID_SPIN_OFF = 11  # 衍生
+RELATION_ID_PARENT_STORY = 12  # 主线故事
+RELATION_ID_COLLABORATION = 14  # 联动
+RELATION_ID_OTHER = 99  # 其他
 
 # 关联类型完整表：id → 中文名
 # 使用上面的 ID 常量作为 key，避免重复定义
 RELATIONS: dict[int, str] = {
-    1: "改编",
+    RELATION_ID_ADAPTATION: "改编",
     RELATION_ID_PREQUEL: "前传",
     RELATION_ID_SEQUEL: "续集",
-    4: "总集篇",
-    5: "全集",
+    RELATION_ID_SUMMARY: "总集篇",
+    RELATION_ID_FULL_STORY: "全集",
     RELATION_ID_SIDE_STORY: "番外篇",
-    7: "角色出演",
-    8: "相同世界观",
-    9: "不同世界观",
-    10: "不同演绎",
+    RELATION_ID_CHARACTER: "角色出演",
+    RELATION_ID_SAME_SETTING: "相同世界观",
+    RELATION_ID_ALTERNATIVE_SETTING: "不同世界观",
+    RELATION_ID_ALTERNATIVE_VERSION: "不同演绎",
     RELATION_ID_SPIN_OFF: "衍生",
     RELATION_ID_PARENT_STORY: "主线故事",
-    14: "联动",
-    99: "其他",
+    RELATION_ID_COLLABORATION: "联动",
+    RELATION_ID_OTHER: "其他",
 }
 
 # 反向查找：中文 → id（由 RELATIONS 自动推导，避免重复维护）
 RELATION_CN_TO_ID: dict[str, int] = {cn: rid for rid, cn in RELATIONS.items()}
 
 # ===== 平台类型 =====
+# 平台 ID 常量（来源：bangumi/common subject_platforms.yml）
 # Anime 平台 ID
+PLATFORM_ANIME_NONE = 0  # 其他
 PLATFORM_ANIME_TV = 1
 PLATFORM_ANIME_OVA = 2
-PLATFORM_ANIME_MOVIE = 3
+PLATFORM_ANIME_MOVIE = 3  # 剧场版
+PLATFORM_ANIME_SHORT_FILM = 4  # 短片
 PLATFORM_ANIME_WEB = 5
+PLATFORM_ANIME_COMIC = 2006  # 动态漫画
 
 # Real 平台 ID
-PLATFORM_REAL_JP = 1
-PLATFORM_REAL_TV = 6001
-PLATFORM_REAL_MOVIE = 6002
+PLATFORM_REAL_NONE = 0  # 其他
+PLATFORM_REAL_JP = 1  # 日剧
+PLATFORM_REAL_EN = 2  # 欧美剧
+PLATFORM_REAL_CN = 3  # 华语剧
+PLATFORM_REAL_TV = 6001  # 电视剧
+PLATFORM_REAL_MOVIE = 6002  # 电影
+PLATFORM_REAL_LIVE = 6003  # 演出
+PLATFORM_REAL_SHOW = 6004  # 综艺
 
-# Anime 平台表：id → 中文名
+# Anime 平台表：id → 中文名（与官方 subject_platforms.yml 逐项对齐；
+# 上游新增/改动平台时 tests/utils/test_platform_constants.py 的快照守卫会失败）
 ANIME_PLATFORMS: dict[int, str] = {
-    0: "其他",
+    PLATFORM_ANIME_NONE: "其他",
     PLATFORM_ANIME_TV: "TV",
     PLATFORM_ANIME_OVA: "OVA",
     PLATFORM_ANIME_MOVIE: "剧场版",
-    4: "短片",
+    PLATFORM_ANIME_SHORT_FILM: "短片",
     PLATFORM_ANIME_WEB: "WEB",
-    2006: "动态漫画",
+    PLATFORM_ANIME_COMIC: "动态漫画",
 }
 
 # Real 平台表：id → 中文名
 REAL_PLATFORMS: dict[int, str] = {
-    0: "其他",
+    PLATFORM_REAL_NONE: "其他",
     PLATFORM_REAL_JP: "日剧",
-    2: "欧美剧",
-    3: "华语剧",
+    PLATFORM_REAL_EN: "欧美剧",
+    PLATFORM_REAL_CN: "华语剧",
     PLATFORM_REAL_TV: "电视剧",
     PLATFORM_REAL_MOVIE: "电影",
-    6003: "演出",
-    6004: "综艺",
+    PLATFORM_REAL_LIVE: "演出",
+    PLATFORM_REAL_SHOW: "综艺",
+}
+
+# 按 subject.type 选平台解码表：resolve_platform_name 与守卫测试共用
+PLATFORMS_BY_TYPE: dict[int, dict[int, str]] = {
+    SUBJECT_TYPE_ANIME: ANIME_PLATFORMS,
+    SUBJECT_TYPE_REAL: REAL_PLATFORMS,
 }

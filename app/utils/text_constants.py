@@ -4,7 +4,11 @@
 消除原 episodes.py / season_info.py / fongmi/client.py 中 _CN_NUM 的三处重复定义。
 """
 
-from .bangumi_constants import ANIME_PLATFORMS, REAL_PLATFORMS
+from .bangumi_constants import (
+    ANIME_PLATFORMS,
+    PLATFORMS_BY_TYPE,
+    REAL_PLATFORMS,
+)
 
 # ===== 中文数字映射（1-10，支持"十一"~"十九"组合）=====
 CN_NUM: dict[str, int] = {
@@ -97,6 +101,14 @@ _MOVIE_MODE_BASE_WEIGHTS: dict[str, int] = {
     "其他": 0,
 }
 
+# ⚠ 脆弱耦合警示（2026-09-09）：archive 路径的 _sort_candidates_by_platform
+# 当前【未接入】resolve_platform_name 解码——platform 原始值（数字编码字符串）
+# 在下方权重表中必然查不到 → 恒回落 DEFAULT_PLATFORM_WEIGHT=50 → 稳定排序保持
+# archive 自身相关性序（"歪打正着"）。任何依赖"排序结果"的行为都隐式依赖这一
+# 不变量：修改基线权重表、weight() 内部或贸然接入解码都会破坏它（实测接入会让
+# 240 L2 命中率 97.9% → 97.5%）。接入前必读
+# .workbuddy/research/matching-pipeline/CONSTANTS-HARDENING.md 与 probe_platform_decode.py。
+
 # 由基线权重 × 全量平台表自动推导：Bangumi 新增平台时自动回落到 DEFAULT_PLATFORM_WEIGHT
 PLATFORM_WEIGHT_TV_MODE: dict[str, int] = {
     p: _TV_MODE_BASE_WEIGHTS.get(p, DEFAULT_PLATFORM_WEIGHT) for p in _ALL_PLATFORMS
@@ -133,6 +145,10 @@ def resolve_platform_name(platform: object, subject_type: object = None) -> str:
         subject_type: 条目的 subject.type（2=动画 / 6=三次元），用于选解码表。
             无法判定时按动画表解码（本仓库主体场景为动画）。
 
+    ⚠ Archive 路径调用【必须】传入 subject_type：type 未知时默认按动画表
+      解码，三次元编码（6001~6004）会解码为空串、2/3 会被误解码为
+      OVA/剧场版（跨域错码比死码更危险）。
+
     Returns:
         中文平台名；无法识别时返回空串（由调用方回落到默认权重）。
     """
@@ -144,7 +160,11 @@ def resolve_platform_name(platform: object, subject_type: object = None) -> str:
         text = platform.strip()
         if not text:
             return ""
-        if not text.isdigit():
+        if not text.isdecimal():
+            # isdecimal 而非 isdigit：'²'/'①' 等 isdigit 为 True 但 int() 会抛
+            # ValueError；isdecimal 仅放行 int() 一定可解析的十进制数字
+            # （含全角 '１２３'）。其余（含 '-1'）按中文名原样透传 → 权重表
+            # 查不到 → 回落默认权重，与未知编码行为一致。
             return text
         code = int(text)
     elif isinstance(platform, bool):
@@ -159,5 +179,5 @@ def resolve_platform_name(platform: object, subject_type: object = None) -> str:
         stype = int(subject_type)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         stype = None
-    table = REAL_PLATFORMS if stype == 6 else ANIME_PLATFORMS
+    table = PLATFORMS_BY_TYPE.get(stype, ANIME_PLATFORMS)
     return table.get(code, "")

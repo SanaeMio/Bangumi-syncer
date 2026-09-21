@@ -869,7 +869,8 @@ class EpisodesMixin:
         本方法在链式全部 miss 后兜底：
 
         - Archive 命中：try_find_franchise_closure 一次本地 SQL 拿完整连通分量
-          （含改编/相同系列/外传等边，FRANCHISE_RELATION_TYPES），零 API 成本，
+          （含改编/前传/续集/总集篇/相同世界观/不同演绎/主线故事等边，
+          FRANCHISE_RELATION_TYPES），零 API 成本，
           全量遍历找目标 sort。
         - Archive miss / 未命中：不做在线完整 BFS（最坏 64 节点 × 2 次 API/节点
           且 sort 等值匹配命中率低，成本与收益不成正比），仅一跳直接邻居检查
