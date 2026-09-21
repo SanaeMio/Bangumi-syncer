@@ -6,6 +6,7 @@ from __future__ import annotations
 
 # time/asyncio 重新导出以兼容测试 patch（app.services.sync_service.time.sleep 等）
 import asyncio  # noqa: F401
+import dataclasses
 import json
 import threading
 import time  # noqa: F401
@@ -511,11 +512,46 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return True, ""
 
     def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
-        """拒绝待确认候选"""
+        """拒绝待确认候选，并将其候选 subject_id 记入该标题的负样本黑名单。
+
+        黑名单用于「学习」用户的拒绝：下次自动匹配命中相同 subject_id 时直接排除，
+        避免重复推送已被否决的条目。用户显式自定义映射（custom_mapping）不受黑名单约束。
+        """
         if not database_manager.update_pending_candidate_status(
             candidate_id, "rejected"
         ):
             return False, "候选记录不存在或已处理"
+
+        # 将被拒候选项的 subject_id 写入标题黑名单（容错：失败不影响 reject 主流程）
+        try:
+            record = database_manager.get_pending_candidate_by_id(candidate_id)
+            if record:
+                title = record.get("request_title", "")
+                candidates_json = record.get("candidates_json") or "[]"
+                try:
+                    candidates = json.loads(candidates_json)
+                except (ValueError, TypeError):
+                    candidates = []
+                subject_ids = [
+                    str(c.get("subject_id"))
+                    for c in candidates
+                    if isinstance(c, dict) and c.get("subject_id")
+                ]
+                if title and subject_ids:
+                    added = database_manager.bulk_add_title_blacklist(
+                        request_title=title,
+                        subject_ids=subject_ids,
+                        user_name=record.get("user_name", ""),
+                        source=record.get("source", ""),
+                    )
+                    if added:
+                        logger.info(
+                            f"候选拒绝已记入黑名单: title={title!r}, "
+                            f"subjects={subject_ids}"
+                        )
+        except Exception as e:
+            logger.warning(f"写入负样本黑名单失败（不影响 reject）: {e}")
+
         return True, "已忽略"
 
     def delete_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
@@ -525,13 +561,26 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return True, "已删除"
 
     @staticmethod
-    def _collect_candidates_from_trace(trace: MatchTrace) -> list[dict[str, Any]]:
-        """从 MatchTrace 各步骤中收集候选，去重并按 score 降序"""
+    def _get_blocked_for_title(title: str) -> set[str]:
+        """读取某标题的负样本黑名单（容错，失败返回空集）。"""
+        return database_manager.get_title_blacklist(title) or set()
+
+    @staticmethod
+    def _collect_candidates_from_trace(
+        trace: MatchTrace, exclude_subject_ids: set[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """从 MatchTrace 各步骤中收集候选，去重并按 score 降序。
+
+        exclude_subject_ids：若提供，命中其中的 subject_id 会被剔除
+        （用于负样本黑名单，避免已被否决的候选项重复出现）。
+        """
         seen: set[str] = set()
         merged: list[dict[str, Any]] = []
         for step in trace.steps:
             for cand in step.candidates:
                 if not cand.subject_id or cand.subject_id in seen:
+                    continue
+                if exclude_subject_ids and cand.subject_id in exclude_subject_ids:
                     continue
                 seen.add(cand.subject_id)
                 merged.append(cand.to_dict())
@@ -552,7 +601,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
         """
-        candidates = self._collect_candidates_from_trace(trace)
+        candidates = self._collect_candidates_from_trace(
+            trace, exclude_subject_ids=self._get_blocked_for_title(item.title)
+        )
         if not candidates:
             return
         try:
@@ -605,7 +656,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         try:
             if not trace or not trace.is_ambiguous:
                 return
-            candidates = self._collect_candidates_from_trace(trace)
+            candidates = self._collect_candidates_from_trace(
+                trace, exclude_subject_ids=self._get_blocked_for_title(item.title)
+            )
             if len(candidates) < 2:
                 return
             top1_score = float(candidates[0].get("score", 0.0))
@@ -1424,6 +1477,29 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         # 传播 ctx.is_ambiguous 到 trace，编排器据此发 match_ambiguous 通知
         actual_trace.is_ambiguous = ctx.is_ambiguous
+
+        # 负样本黑名单：若自动匹配命中的 subject 曾被用户拒绝，则降级为漏标
+        # （custom_mapping 为显式用户映射，代表明确意图，不受黑名单约束）
+        blocked = self._get_blocked_for_title(item.title)
+        if (
+            blocked
+            and result.subject_id
+            and result.subject_id in blocked
+            and actual_trace.final_match_method != "custom_mapping"
+        ):
+            logger.info(
+                f"命中 {result.subject_id} 已被用户拒绝（标题 {item.title!r}），"
+                f"按黑名单排除，转为漏标"
+            )
+            result = dataclasses.replace(
+                result,
+                subject_id=None,
+                bgm_se_id=None,
+                bgm_ep_id=None,
+                bgm_title="",
+                is_season_matched_id=False,
+                failure_detail="已排除：该条目曾被手动拒绝（可在待确认中重新确认）",
+            )
 
         # 匹配歧义检测已前移到 APISearchStep（设置 ctx.is_ambiguous），
         # 通知职责由编排器统一发送，_find_subject_id 不再直接发通知。
