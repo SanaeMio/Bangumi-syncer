@@ -235,13 +235,14 @@ class TestUIVisibility:
     def test_bangumi_mapping_hidden(self):
         assert not config_schema.SECTIONS["bangumi-mapping"].visible_in_ui
 
-    def test_bangumi_visible(self):
-        assert config_schema.SECTIONS["bangumi"].visible_in_ui
+    def test_bangumi_section_hidden_accounts_live_in_db(self):
+        """[bangumi] 段的账号字段已迁移到 DB，配置页只作迁移来源，不再内联展示"""
+        assert not config_schema.SECTIONS["bangumi"].visible_in_ui
 
     def test_ui_visible_excludes_hidden(self):
         names = {s.name for s in config_schema.ui_visible_sections()}
         assert "bangumi-mapping" not in names
-        assert "bangumi" in names
+        assert "bangumi-archive" in names
 
 
 class TestFieldMeta:
@@ -489,28 +490,182 @@ class TestSerializeSchema:
         assert schema["loose_true_fields"] == config_schema.loose_true_fields()
 
 
-class TestExampleIniCoverage:
-    """config.example.ini 中面向用户的配置段必须已在 SectionMeta 注册
+class TestConfigCoverage:
+    """新增配置项的三件套约束（见 AGENTS.md「新增配置项」）
 
-    未注册的段不会出现在配置页（模板卡片与 TOC 都依赖注册表），用户只能手改
-    INI；新增配置段时容易漏登记，此处按「示例配置即用户可见契约」把关。
+    每个配置段都必须满足：
+
+    1. **config.example.ini 里有段与键** —— 用户能照着示例改
+    2. **docs/ 里有说明** —— 用户能查到含义
+    3. **配置页里有表单字段** —— 用户能点着改
+
+    达不到第 3 点时，必须显式 `visible_in_ui=False` 且给出 `hidden_reason`
+    说明「在哪里配置」，不允许出现「文档不提、界面没有」的隐藏配置项。
+
+    这些断言把约定变成 CI 门禁：漏了任何一环都会在这里失败。
     """
 
+    # 配置段 -> 该段在配置页实际使用的 form field 前缀（下划线形式）
+    # 多数段与段名同名；以下段由弹窗/独立页面管理，不算内联表单。
+    MODAL_MANAGED = {
+        "notify-webhook",
+        "notify-email",
+        "notify-wecom",
+        "notify-dingtalk",
+        "notify-in-app",
+        "notify-rule",
+        "summary",
+    }
+
     @staticmethod
-    def _example_ini_sections() -> set[str]:
-        import re
+    def _repo_root():
         from pathlib import Path
 
-        root = Path(__file__).resolve().parent.parent
-        text = (root / "config.example.ini").read_text(encoding="utf-8")
-        # 只取未被注释的段头；示例中的注释段（如 [bangumi-user1]）不算
-        return set(re.findall(r"^\[([^\]]+)\]", text, re.M))
+        return Path(__file__).resolve().parent.parent
 
+    @classmethod
+    def _example_ini_keys(cls) -> dict[str, set[str]]:
+        """config.example.ini 中每个段的键（忽略注释与示例段）"""
+        import re
+
+        text = (cls._repo_root() / "config.example.ini").read_text(encoding="utf-8")
+        result: dict[str, set[str]] = {}
+        current = None
+        for line in text.splitlines():
+            m = re.match(r"^\[([^\]]+)\]", line.strip())
+            if m:
+                current = m.group(1)
+                result.setdefault(current, set())
+                continue
+            s = line.strip()
+            if s and not s.startswith("#") and "=" in s and current:
+                result[current].add(s.split("=", 1)[0].strip())
+        return result
+
+    @classmethod
+    def _template_text(cls) -> str:
+        root = cls._repo_root()
+        return "\n".join(
+            p.read_text(encoding="utf-8", errors="replace")
+            for p in (root / "templates").rglob("*.html")
+        )
+
+    @classmethod
+    def _ui_fields(cls) -> set[tuple[str, str]]:
+        """配置页表单字段，(段名, 键)，段名统一为连字符形式"""
+        import re
+
+        return {
+            (m.group(1).replace("_", "-"), m.group(2))
+            for m in re.finditer(
+                r'name="([a-z0-9_-]+)\.([a-z0-9_-]+)"', cls._template_text()
+            )
+        }
+
+    @classmethod
+    def _docs_text(cls) -> str:
+        root = cls._repo_root()
+        return "\n".join(
+            p.read_text(encoding="utf-8", errors="replace")
+            for p in (root / "docs").rglob("*.md")
+        )
+
+    # ── 1. 注册 ────────────────────────────────────────────────────────
     def test_all_example_sections_registered(self):
-        missing = self._example_ini_sections() - set(config_schema.SECTIONS)
+        missing = set(self._example_ini_keys()) - set(config_schema.SECTIONS)
         assert not missing, (
             f"config.example.ini 中的段未在 config_schema.SECTIONS 注册: "
             f"{sorted(missing)}；未注册的段不会出现在配置页，请补 SectionMeta"
+        )
+
+    # ── 2. 配置页可达 ──────────────────────────────────────────────────
+    def test_visible_sections_have_ui_fields(self):
+        """visible_in_ui=True 的段必须在配置页有表单字段"""
+        ui = self._ui_fields()
+        bad = []
+        for name, meta in config_schema.SECTIONS.items():
+            if not meta.visible_in_ui or name in self.MODAL_MANAGED:
+                continue
+            if not any(section == name for section, _key in ui):
+                bad.append(name)
+        assert not bad, (
+            f"以下段标记 visible_in_ui=True，但配置页没有对应表单字段: {sorted(bad)}；"
+            f"请补模板字段，或改为 visible_in_ui=False 并写明 hidden_reason"
+        )
+
+    def test_hidden_sections_explain_where_to_configure(self):
+        """visible_in_ui=False 的段必须说明在哪里配置"""
+        bad = [
+            name
+            for name, meta in config_schema.SECTIONS.items()
+            if not meta.visible_in_ui and not meta.hidden_reason.strip()
+        ]
+        assert not bad, (
+            f"以下段 visible_in_ui=False 但未填 hidden_reason: {sorted(bad)}；"
+            f"隐藏配置项必须说明「在哪里配置」，否则用户无从得知"
+        )
+
+    # ── 3. 键级覆盖 ────────────────────────────────────────────────────
+    def test_every_visible_ini_key_is_editable_or_declared_manual(self):
+        """可见段里，example.ini 的每个键都要有表单字段或登记为 manual_keys
+
+        既没有编辑入口、又没声明「为什么不做入口」的键，会变成用户看不见也改不了
+        的隐藏配置 —— 这正是本约束要拦的情况。
+        """
+        ui = self._ui_fields()
+        missing = []
+        for section, keys in self._example_ini_keys().items():
+            meta = config_schema.SECTIONS.get(section)
+            if meta is None or not meta.visible_in_ui:
+                continue
+            for key in sorted(keys):
+                if (section, key) in ui:
+                    continue
+                if key in meta.manual_keys:
+                    continue
+                missing.append(f"[{section}] {key}")
+        assert not missing, (
+            f"以下配置项在配置页没有编辑入口，也未登记 manual_keys 说明原因: "
+            f"{missing}；请补模板字段，或加 SectionMeta(manual_keys={{...}})"
+        )
+
+    def test_manual_keys_explain_themselves(self):
+        """manual_keys 必须给出非空原因"""
+        bad = [
+            f"[{name}] {key}"
+            for name, meta in config_schema.SECTIONS.items()
+            for key, why in meta.manual_keys.items()
+            if not why.strip()
+        ]
+        assert not bad, f"manual_keys 缺少说明: {bad}"
+
+    def test_schema_fields_exist_in_example_ini(self):
+        """schema 登记的字段必须真实存在于 example.ini（否则默认值是空转）"""
+        ini_keys = self._example_ini_keys()
+        bad = []
+        for name, meta in config_schema.SECTIONS.items():
+            if not meta.visible_in_ui:
+                continue
+            for f in meta.fields:
+                if f.name not in ini_keys.get(name, set()):
+                    bad.append(f"[{name}] {f.name}")
+        assert not bad, (
+            f"以下字段登记在 SectionMeta 但 config.example.ini 里没有: {bad}；"
+            f"请补上示例键（用户需要照着改）"
+        )
+
+    # ── 4. 文档 ────────────────────────────────────────────────────────
+    def test_example_ini_keys_are_documented(self):
+        """example.ini 的每个键都必须在 docs/ 里出现（用户能查到含义）"""
+        docs = self._docs_text()
+        undoc = []
+        for section, keys in self._example_ini_keys().items():
+            for key in sorted(keys):
+                if key not in docs:
+                    undoc.append(f"[{section}] {key}")
+        assert not undoc, (
+            f"以下配置项在任何文档中都没有出现: {undoc}；"
+            f"请在 docs/config/configuration.md（或该段的专属页面）补充说明"
         )
 
     def test_matching_section_registered(self):

@@ -65,8 +65,23 @@ class SectionMeta:
     # env 覆盖映射：{option: env_var_name}
     env_overrides: dict[str, str] = field(default_factory=dict)
 
-    # 是否在配置页展示（某些系统段如 bangumi-mapping 不直接展示）
+    # 是否在「配置管理」页以表单字段形式展示。
+    # 约定（见 AGENTS.md「新增配置项」）：新增配置段必须三件套齐全 ——
+    #   1) config.example.ini 里有段与键
+    #   2) docs/ 里有对应说明
+    #   3) 配置页里有表单字段
+    # 达不到第 3 点时，必须置 False 并在 hidden_reason 写明「在哪里配置」。
+    # 由 tests/test_config_schema.py::TestConfigCoverage 强制校验。
     visible_in_ui: bool = True
+
+    # visible_in_ui=False 时必填：说明该段实际在哪里配置，
+    # 避免出现「文档不提、界面没有、无人知晓」的隐藏配置项
+    hidden_reason: str = ""
+
+    # 段整体在配置页可见、但个别键有意不做成表单字段时，在此逐键说明原因。
+    # {option: 为什么不在配置页提供编辑入口}
+    # 例如自动生成的密钥、只读展示项、仅供排障的内网参数。
+    manual_keys: dict[str, str] = field(default_factory=dict)
 
     # 字段级元数据：仅登记需要默认值或特殊布尔语义的字段
     fields: tuple[FieldMeta, ...] = ()
@@ -83,6 +98,11 @@ SECTIONS: dict[str, SectionMeta] = {
         display_name="Bangumi 账号",
         order=10,
         sensitive_fields=frozenset({"access_token", "refresh_token"}),
+        # 账号字段已迁移到 DB，由「Bangumi 账号」卡片经 /api/bangumi/accounts 管理；
+        # 本段仅作为旧配置迁移来源保留，不在配置页展示
+        visible_in_ui=False,
+        hidden_reason="账号在配置页「Bangumi 账号」卡片管理（存于数据库）；"
+        "本段仅为旧版 config.ini 的迁移来源",
         env_overrides={
             "username": "BANGUMI_USERNAME",
             "access_token": "BANGUMI_ACCESS_TOKEN",
@@ -97,7 +117,12 @@ SECTIONS: dict[str, SectionMeta] = {
         # 应用凭证（client_id/client_secret）用于完成 Bangumi 官方 OAuth 授权流。
         # 该段非多账号段，需从账号段探测中排除。
         sensitive_fields=frozenset({"client_secret"}),
+        # 内置默认应用开箱即用；高级用户可在「Bangumi 账号」卡片的
+        # 「OAuth 应用」弹窗中覆盖，故不在配置页做内联表单
         visible_in_ui=False,
+        hidden_reason="已内置默认应用、开箱即用；如需覆盖，在「Bangumi 账号」"
+        "卡片的 OAuth 应用弹窗中填写，或用环境变量 BANGUMI_OAUTH_CLIENT_ID / "
+        "BANGUMI_OAUTH_CLIENT_SECRET 注入",
         env_overrides={
             "client_id": "BANGUMI_OAUTH_CLIENT_ID",
             "client_secret": "BANGUMI_OAUTH_CLIENT_SECRET",
@@ -115,6 +140,8 @@ SECTIONS: dict[str, SectionMeta] = {
         fields=(
             FieldMeta(name="movie_playback_start_mark_watching", default_true=True),
             FieldMeta(name="movie_mark_subject_completed", default_true=True),
+            # TV 系列：正片格子看完后是否自动把条目标为「看过」（默认关闭）
+            FieldMeta(name="anime_mark_subject_completed"),
             # 模糊匹配置信度阈值（0~1）：低于该相似度的 Bangumi API 匹配
             # 不会自动采用，而是沉淀到待审队列由用户在 Web 界面人工确认。
             FieldMeta(name="match_confidence_threshold", default=0.6),
@@ -125,6 +152,12 @@ SECTIONS: dict[str, SectionMeta] = {
         display_name="Web 认证",
         order=30,
         sensitive_fields=frozenset({"webhook_key"}),
+        # secret_key 自动生成、webhook_key 由配置页只读展示+刷新按钮管理，
+        # 二者都不提供直接输入框
+        manual_keys={
+            "secret_key": "程序自动生成，用于加密会话，无需手工填写",
+            "webhook_key": "配置页「同步配置」卡片内只读展示，用「刷新」按钮重新生成",
+        },
         fields=(
             FieldMeta(name="username", default="admin"),
             FieldMeta(name="session_timeout", default=3600),
@@ -203,6 +236,9 @@ SECTIONS: dict[str, SectionMeta] = {
         display_name="Trakt 同步",
         order=120,
         sensitive_fields=frozenset({"client_secret"}),
+        # 有独立的配置页面 /trakt/config（不在「配置管理」页内）
+        visible_in_ui=False,
+        hidden_reason="在左侧菜单「Trakt 同步」独立页面配置（/trakt/config）",
         # trakt 调度器为 instance 类型，配置变更需重启或通过专用 API 生效
     ),
     # ── Bangumi 容灾（order 200-299）──
@@ -210,6 +246,9 @@ SECTIONS: dict[str, SectionMeta] = {
         name="bangumi-data",
         display_name="Bangumi Data 离线匹配",
         order=200,
+        manual_keys={
+            "http_proxy": "留空即自动沿用「高级配置」里的 HTTP 代理，一般无需单独设置",
+        },
         fields=(
             FieldMeta(name="enabled", default_true=True),
             FieldMeta(name="use_cache", default_true=True),
@@ -225,13 +264,18 @@ SECTIONS: dict[str, SectionMeta] = {
         name="bangumi-mapping",
         display_name="自定义映射",
         order=210,
-        visible_in_ui=False,  # 通过 /mappings 页面单独管理
+        # 通过 /mappings 页面单独管理
+        visible_in_ui=False,
+        hidden_reason="在左侧菜单「映射管理」独立页面配置（/mappings）",
     ),
     "bangumi-archive": SectionMeta(
         name="bangumi-archive",
         display_name="Bangumi Archive",
         order=220,
         scheduler_id="bangumi_archive",
+        manual_keys={
+            "retry_interval": "导入失败后的重试间隔，默认 3600 秒，一般无需调整",
+        },
         fields=(
             FieldMeta(name="enabled", loose_true=True),
             FieldMeta(name="ssl_verify", default_true=True),
@@ -275,11 +319,16 @@ SECTIONS: dict[str, SectionMeta] = {
         ),
     ),
     # ── 通知配置（order 500-599，多实例）──
+    # 说明：notify-* 各段不在配置页做内联表单，而是由「通知配置」卡片的
+    # 「渠道配置」弹窗经 /api/notification/* 读写，故 visible_in_ui=False。
+    # 用户文档见 docs/config/notification-configuration.md。
     "notify-webhook": SectionMeta(
         name="notify-webhook",
         display_name="Webhook 通知",
         order=500,
         is_multi_instance=True,
+        visible_in_ui=False,
+        hidden_reason="在配置页「通知配置」卡片 →「渠道配置」弹窗中管理",
     ),
     "notify-email": SectionMeta(
         name="notify-email",
@@ -287,6 +336,8 @@ SECTIONS: dict[str, SectionMeta] = {
         order=510,
         is_multi_instance=True,
         sensitive_fields=frozenset({"smtp_password"}),
+        visible_in_ui=False,
+        hidden_reason="在配置页「通知配置」卡片 →「渠道配置」弹窗中管理",
     ),
     "notify-wecom": SectionMeta(
         name="notify-wecom",
@@ -294,6 +345,8 @@ SECTIONS: dict[str, SectionMeta] = {
         order=520,
         is_multi_instance=True,
         sensitive_fields=frozenset({"key"}),
+        visible_in_ui=False,
+        hidden_reason="在配置页「通知配置」卡片 →「渠道配置」弹窗中管理",
     ),
     "notify-dingtalk": SectionMeta(
         name="notify-dingtalk",
@@ -301,18 +354,24 @@ SECTIONS: dict[str, SectionMeta] = {
         order=530,
         is_multi_instance=True,
         sensitive_fields=frozenset({"access_token", "secret"}),
+        visible_in_ui=False,
+        hidden_reason="在配置页「通知配置」卡片 →「渠道配置」弹窗中管理",
     ),
     "notify-in-app": SectionMeta(
         name="notify-in-app",
         display_name="站内信",
         order=535,
         fields=(FieldMeta(name="in_app_notification", default_true=True),),
+        visible_in_ui=False,
+        hidden_reason="在配置页「通知配置」卡片 →「渠道配置」弹窗中管理",
     ),
     "notify-rule": SectionMeta(
         name="notify-rule",
         display_name="通知规则",
         order=540,
         is_multi_instance=True,
+        visible_in_ui=False,
+        hidden_reason="在配置页「通知配置」卡片中管理（新建/编辑规则）",
     ),
     "notify-airing-today": SectionMeta(
         name="notify-airing-today",
@@ -333,6 +392,9 @@ SECTIONS: dict[str, SectionMeta] = {
         display_name="AI 追番总结",
         order=600,
         is_multi_instance=True,
+        # 任务由「AI 追番总结」卡片经 /api/summary/jobs 增删改，不走内联表单
+        visible_in_ui=False,
+        hidden_reason="在配置页「AI 追番总结」卡片中管理（经 /api/summary/jobs）",
         # summary 调度器为 instance 类型，配置联动由 summary_jobs API 直调
     ),
     "llm": SectionMeta(
@@ -353,6 +415,22 @@ SECTIONS: dict[str, SectionMeta] = {
         name="scheduler",
         display_name="调度器全局",
         order=900,
+        # 这几个参数面向排障，默认值适用于绝大多数场景；配置页只展示调度器
+        # 运行状态（仪表板/Replay 页），不提供内联表单
+        visible_in_ui=False,
+        hidden_reason="需手动编辑 config.ini 的 [scheduler] 段后重启；"
+        "配置页只展示调度器运行状态",
+        # 注意：timezone 不登记 env_overrides —— TZ 只是 config.ini 缺失时的
+        # 兜底（优先级 config.ini > TZ > 默认值），而 env_overrides 的语义是
+        # 「环境变量覆盖配置文件」，登记会把优先级颠倒
+        fields=(
+            FieldMeta(name="timezone", default="Asia/Shanghai"),
+            FieldMeta(name="startup_delay", default=30),
+            FieldMeta(name="max_concurrent_syncs", default=3),
+            FieldMeta(name="job_timeout", default=300),
+            FieldMeta(name="max_retries", default=3),
+            FieldMeta(name="retry_delay", default=60),
+        ),
     ),
 }
 

@@ -64,6 +64,24 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - CI：`ci-tests` 工作流运行 `pytest tests/` 并上传覆盖率；`lint` 工作流负责 Ruff；模板由 djLint 单独检查。
 - 若改动 **Dockerfile、entrypoint、镜像内权限或启动方式**，请关注 CONTRIBUTING 中提到的集成脚本 `tests/integration/test_docker_perms.sh` 及 Docker 相关 workflow。
 
+## 新增配置项（强制三件套）
+
+新增任何配置段或配置键时，**必须**同时完成以下三件事；漏掉任一项，`tests/test_config_schema.py::TestConfigCoverage` 会在 CI 失败。
+
+1. **`config.example.ini`** —— 写入段与键，并用注释说明取值含义与默认值（这是用户对照修改的契约）。
+2. **`docs/`** —— 在用户文档里出现该键名。绝大多数配置写在 [`docs/config/configuration.md`](https://github.com/SanaeMio/Bangumi-syncer/blob/main/docs/config/configuration.md)；有独立页面的功能写进对应页面（如 `bangumi-archive.md` / `bangumi-replay.md` / `notification-configuration.md`）。**面向普通用户，避免技术术语**。
+3. **配置页** —— 在 `app/core/config_schema.py` 注册 `SectionMeta`，并在 `templates/config/` 提供表单字段（`name="段名.键名"`，段名用下划线）。
+
+做不到第 3 项时，**必须显式隐藏并说明原因**（不允许出现「文档不提、界面没有」的隐藏配置项）：
+
+- 整段不做配置页 → `visible_in_ui=False` + `hidden_reason="在哪里配置"`（例如另有独立页面 / 弹窗 / 仅手改）。
+- 段可见但个别键不做入口（自动生成的密钥、只读展示项、仅供排障的参数）→ 在 `SectionMeta.manual_keys` 里逐键写明原因。
+
+其他约定：
+
+- `SectionMeta.fields` 里登记的默认值必须与后端实际读取的兜底值一致（如 `arbiter.DEFAULT_*`），否则「界面显示的」和「实际生效的」会出现两条口径。
+- 布尔字段按需选 `default_true`（未设置视为开）或 `loose_true`（兼容字符串 `'true'`），不要只靠注释说明。
+
 ## 代码风格与架构约定
 
 - **风格**：以 [pyproject.toml](https://github.com/SanaeMio/Bangumi-syncer/blob/main/pyproject.toml) 中 **Ruff**、**djlint** 配置为准，勿在本文重复粘贴规则全文。
