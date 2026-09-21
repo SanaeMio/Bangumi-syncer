@@ -17,6 +17,11 @@ from app.services.matching.context import MatchContext
 from app.services.matching.contracts import SOURCE_ARCHIVE, candidates_from_rows
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 
+# 官方 subject.type：2=动画，6=三次元（真人剧/电视剧）
+# 与 api_search_main.py 中 subject_types 的取值保持一致
+_SUBJECT_TYPE_ANIME = 2
+_SUBJECT_TYPE_REAL = 6
+
 
 class ArchiveShortcutStep(MatchStepBase):
     """Archive 短路匹配
@@ -121,15 +126,58 @@ class ArchiveShortcutStep(MatchStepBase):
                 request_params=request_params,
             )
 
+        # ------------------------------------------------------------------
+        # 类型冲突补召回：请求「动画剧集」但 archive 命中全是三次元条目时，
+        # 用纯动画类型再查一次，把同名动画候选并入。
+        #
+        # 场景（线上真实失败）：媒体库推送「凡人修仙传」，archive 精确匹配
+        # 只命中真人剧 434076（type=6），而动画条目一律带后缀
+        # （「凡人修仙传 年番」「凡人修仙传之凡人风起天南」…）故精确匹配
+        # 召回不到。此前 APISearchStep 检测到类型冲突后清空 bgm_data 降级
+        # 到 API 搜索，而 search() 只做纯 API 调用（archive 已提升为独立
+        # step），离线/无网环境直接「Bangumi 搜索无结果」→ 完全漏标。
+        #
+        # 补召回后动画候选排在前面：下游「top 为 real_action 且列表无 episode
+        # 候选才降级」的判据随之不成立，改由 _media_type_reselect 正常取舍。
+        # ------------------------------------------------------------------
+        data = shortcut.data
+        if (
+            item.media_type == "episode"
+            and _SUBJECT_TYPE_ANIME in subject_types
+            and _SUBJECT_TYPE_REAL in subject_types
+            and not any(c.get("type") == _SUBJECT_TYPE_ANIME for c in data)
+        ):
+            try:
+                anime_only = bgm._archive.try_search(
+                    title=search_title,
+                    start_date=start_date,
+                    end_date=end_date,
+                    limit=15,
+                    subject_types=[_SUBJECT_TYPE_ANIME],
+                )
+            except Exception as e:  # noqa: BLE001 — 补召回失败不阻断主流程
+                logger.debug(f"archive 动画类型补召回失败（沿用原候选）: {e}")
+                anime_only = None
+            if anime_only is not None and anime_only.hit and anime_only.data:
+                seen = {c.get("id") for c in data}
+                extra = [c for c in anime_only.data if c.get("id") not in seen]
+                if extra:
+                    logger.debug(
+                        f"archive 命中全为三次元，补召回同名动画候选 "
+                        f"{len(extra)} 条: "
+                        f"{[c.get('name_cn') or c.get('name') for c in extra][:3]}"
+                    )
+                    data = extra + data
+
         # archive 命中：设置 ctx，不终止（让 APISearchStep 做候选排序 + post_search 改选）
         ctx.archive_hit = True
-        ctx.bgm_data = shortcut.data
+        ctx.bgm_data = data
         ctx.match_stage = "archive"
         ctx.match_method_detail = shortcut.match_method or "exact"
 
-        first = shortcut.data[0] if shortcut.data else {}
+        first = data[0] if data else {}
         api_response_summary = {
-            "total_candidates": len(shortcut.data),
+            "total_candidates": len(data),
             "is_archive_hit": True,
             "first_subject_id": first.get("id"),
             "first_name": first.get("name") or "",
@@ -143,7 +191,7 @@ class ArchiveShortcutStep(MatchStepBase):
         # 相似度分，让后续裁决层能算 margin。控制流不变（仍 is_terminal=False）。
         try:
             candidates = candidates_from_rows(
-                shortcut.data,
+                data,
                 source=SOURCE_ARCHIVE,
                 limit=15,
                 scorer=lambda row: bgm.title_diff_ratio(
@@ -152,9 +200,7 @@ class ArchiveShortcutStep(MatchStepBase):
             )
         except Exception as e:  # noqa: BLE001 — 打分失败不阻断短路命中
             logger.debug(f"archive 候选打分失败（不影响主流程）: {e}")
-            candidates = candidates_from_rows(
-                shortcut.data, source=SOURCE_ARCHIVE, limit=15
-            )
+            candidates = candidates_from_rows(data, source=SOURCE_ARCHIVE, limit=15)
 
         return StepOutcome(
             status="hit",
@@ -165,7 +211,7 @@ class ArchiveShortcutStep(MatchStepBase):
             outputs={
                 "subject_id": str(first.get("id", "")),
                 "match_method": shortcut.match_method or "",
-                "total_candidates": len(shortcut.data),
+                "total_candidates": len(data),
                 "is_archive_hit": True,
             },
             request_params=request_params,
