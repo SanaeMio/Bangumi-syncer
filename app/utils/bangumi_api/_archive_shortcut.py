@@ -38,7 +38,7 @@ from ..bangumi_archive._title_normalize import (
     _strip_season_episode_suffix,
     build_search_variants,
 )
-from ..bangumi_constants import RELATION_ID_SEQUEL
+from ..bangumi_constants import RELATION_ID_SEQUEL, SUBJECT_TYPE_ANIME
 
 
 class ShortcutResult(NamedTuple):
@@ -412,7 +412,9 @@ class ArchiveShortcut:
                 return ShortcutResult(False, None, "archive_miss")
 
             # API 默认 type=[2]（与 search() 一致），None/空列表时也用 [2]
-            types_set: set[int] = set(subject_types) if subject_types else {2}
+            types_set: set[int] = (
+                set(subject_types) if subject_types else {SUBJECT_TYPE_ANIME}
+            )
             skip_ids: set[int] = set()
 
             # G1：从 start_date 抽取首播年份，显式透传给标题精确匹配做年份消歧。

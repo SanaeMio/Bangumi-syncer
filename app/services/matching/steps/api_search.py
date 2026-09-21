@@ -24,6 +24,7 @@ from app.utils.bangumi_archive._title_normalize import (
     API_SIMILARITY_FALLBACK,
     API_SIMILARITY_PRIMARY,
 )
+from app.utils.bangumi_constants import SUBJECT_TYPE_ANIME
 
 # 兜底搜索（无日期模式）拉取候选条目的上限
 FALLBACK_SEARCH_LIMIT = 15
@@ -216,7 +217,7 @@ class VariantFallbackSearchStep(MatchStepBase):
 
         search_titles = build_search_variants(ctx.item.title, ctx.item.ori_title or "")
         subject_types = ctx.subject_types
-        types_to_try = subject_types if subject_types else [2]
+        types_to_try = subject_types if subject_types else [SUBJECT_TYPE_ANIME]
         inputs = {
             "title": ctx.item.title,
             "ori_title": ctx.item.ori_title or "",

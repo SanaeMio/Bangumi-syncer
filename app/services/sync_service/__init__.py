@@ -1141,7 +1141,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         f"subject_id={bgm_se_id}"
                     )
                 else:
-                    bgm.change_collection_state(subject_id=str(bgm_se_id), state=2)
+                    bgm.change_collection_state(
+                        subject_id=str(bgm_se_id), state=COLLECTION_TYPE_DONE
+                    )
             except Exception as e:
                 logger.warning(
                     f"剧场版条目标记为看过失败（单集已处理）: subject_id={bgm_se_id} {e}"
@@ -1168,7 +1170,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     if total_eps > 0:
                         if watched_eps >= total_eps:
                             bgm.change_collection_state(
-                                subject_id=str(bgm_se_id), state=2
+                                subject_id=str(bgm_se_id),
+                                state=COLLECTION_TYPE_DONE,
                             )
                             logger.debug(
                                 f"bgm: {bgm_title or item.title} 所有剧集已看完（已看 {watched_eps}/{total_eps} 集），已自动归档为「看过」"

@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 from ...core.logging import logger
 from ..bangumi_constants import (
+    EPISODE_TYPE_NORMAL,
     RELATION_ID_PREQUEL,
     RELATION_ID_SEQUEL,
     RELATIONS,
@@ -689,7 +690,11 @@ class ArchiveStore:
         sort 推得，此时不补全，交由下游 episodes.py 依据 sort 重置（大于 1 跳回 1
         判定新季起点）定位季边界。
         """
-        type0 = [e for e in episodes if e.get("type", 0) == 0]
+        type0 = [
+            e
+            for e in episodes
+            if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+        ]
 
         # 按 id 升序遍历（反映章节录入顺序），sort 由大于 1 跳回 1 即为新季起点
         prev_sort = None

@@ -12,6 +12,7 @@ from ..bangumi_archive._title_normalize import (
     _normalize_title_for_match,
     fuse_title_similarity,
 )
+from ..bangumi_constants import SUBJECT_TYPE_ANIME
 
 if TYPE_CHECKING:
     from app.services.sync_service.match_trace import MatchTrace
@@ -60,7 +61,7 @@ class SearchMixin:
             end_date,
             limit,
             list_only,
-            tuple(subject_types or [2]),
+            tuple(subject_types or [SUBJECT_TYPE_ANIME]),
         )
         if cache_key in self._cache["search"]:
             return self._cache["search"][cache_key]
@@ -84,7 +85,7 @@ class SearchMixin:
             if end_date:
                 air_date_filter.append(f"<{end_date}")
             subject_filter: dict[str, Any] = {
-                "type": subject_types if subject_types else [2],
+                "type": subject_types if subject_types else [SUBJECT_TYPE_ANIME],
                 "nsfw": True,
             }
             if air_date_filter:
