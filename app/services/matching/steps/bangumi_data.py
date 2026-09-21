@@ -18,8 +18,13 @@ class BangumiDataStep(MatchStepBase):
 
     - 调用 bgm_data.find_bangumi_id
     - 命中时设置 ctx.subject_id + ctx.match_stage=bangumi_data，终止管道
-    - 未命中时回传候选列表（find_bangumi_candidates）到 outcome.candidates
+    - 未命中时回传候选列表到 outcome.candidates
     - bangumi-data 禁用时 skipped
+
+    候选来源：find_bangumi_id 未命中时必然已发生过一次全表扫描，
+    这里通过 candidates_out 出参直接取回这次扫描的候选，
+    不再调用 find_bangumi_candidates 触发第二次全表扫描
+    （未命中路径原本要扫两遍，见 CONTRACT-AND-PERF.md 1.4）。
     """
 
     stage = "bangumi_data"
@@ -46,34 +51,30 @@ class BangumiDataStep(MatchStepBase):
         try:
             bgm_data = ctx.service._get_bangumi_data()
 
+            # 候选出参：复用 find_bangumi_id 内部那一次扫描的结果
+            candidates_out: list[dict] = []
             result = bgm_data.find_bangumi_id(
                 title=ctx.item.title,
                 ori_title=ctx.item.ori_title,
                 release_date=release_date,
                 season=ctx.item.season,
                 media_type=ctx.item.media_type,
+                candidates_out=candidates_out,
             )
 
             if not result:
                 # 未命中时回传候选列表到 trace，供候选队列展示
                 candidates: list[MatchCandidate] = []
                 try:
-                    raw_candidates = bgm_data.find_bangumi_candidates(
-                        title=ctx.item.title,
-                        ori_title=ctx.item.ori_title,
-                        release_date=release_date,
-                        limit=5,
-                    )
-                    if raw_candidates:
-                        candidates = [
-                            MatchCandidate(
-                                subject_id=str(c.get("id", "")),
-                                name=c.get("name", ""),
-                                name_cn=c.get("name_cn", ""),
-                                score=float(c.get("score", 0.0)),
-                            )
-                            for c in raw_candidates
-                        ]
+                    candidates = [
+                        MatchCandidate(
+                            subject_id=str(c.get("id", "")),
+                            name=c.get("name", ""),
+                            name_cn=c.get("name_cn", ""),
+                            score=float(c.get("score", 0.0)),
+                        )
+                        for c in candidates_out
+                    ]
                 except Exception as cand_err:
                     logger.debug(
                         f"bangumi_data 候选回传失败（不影响主流程）: {cand_err}"

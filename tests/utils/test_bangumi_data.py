@@ -2805,3 +2805,121 @@ def test_module_request_with_retry_ssl_verify_false_sets_warnings(
         "https://example.test/x", max_retries=0, ssl_verify=False
     )
     mock_client_cls.assert_called_once()
+
+
+# ----- P1：日期解析记忆化 / 候选出参（见 CONTRACT-AND-PERF.md 1.4）-----
+
+
+class TestDateParseMemoization:
+    """日期解析记忆化后语义必须与原实现一致
+
+    原实现对每条候选都重新 strptime 两次（占全表扫描 ~78% 耗时）；
+    记忆化只消除常量上的重复解析，不应改变任何返回值。
+    """
+
+    def test_repeated_calls_consistent(self):
+        bd = _make_data()
+        first = bd._date_diff("2024-01-01", "2024-03-01")
+        assert first == 60
+        for _ in range(3):
+            assert bd._date_diff("2024-01-01", "2024-03-01") == first
+
+    def test_invalid_then_valid(self):
+        """缓存命中与未命中混合时结果不变"""
+        bd = _make_data()
+        assert bd._date_diff("2024-01-01", "2024-01-10") == 9
+        assert bd._date_diff("invalid", "2024-01-01") == 999999
+        assert bd._date_diff("2024-01-01", "2024-01-10") == 9
+
+    def test_non_string_inputs(self):
+        """None / 空串：与原实现一致返回 999999，不抛异常"""
+        bd = _make_data()
+        assert bd._date_diff(None, "2024-01-01") == 999999
+        assert bd._date_diff("", "2024-01-01") == 999999
+        assert bd._date_diff("2024-01-01", None) == 999999
+
+    def test_is_date_close_after_memoization(self):
+        bd = _make_data()
+        assert bd._is_date_close("2024-01-01", "2024-01-30", max_days=60) is True
+        assert bd._is_date_close("2024-01-01", "2024-06-01", max_days=60) is False
+
+
+class TestFindBangumiIdCandidatesOut:
+    """candidates_out 出参与 find_bangumi_candidates 等价
+
+    未命中时 BangumiDataStep 直接复用该出参回传 trace，
+    因此其内容必须与单独调用 find_bangumi_candidates 完全一致。
+    """
+
+    @staticmethod
+    def _fixture():
+        bd = _make_data()
+        bd._title_index = {}
+        exact = [
+            (
+                {"title": "test", "titleTranslate": {"zh-Hans": ["测试"]}},
+                "111",
+                "title",
+            ),
+        ]
+        partial = [({"title": "b"}, 0.9, "333"), ({"title": "a"}, 0.6, "222")]
+        return bd, exact, partial
+
+    def test_equivalent_to_find_bangumi_candidates(self):
+        bd, exact, partial = self._fixture()
+        with (
+            patch.object(bd, "_scan_candidates", return_value=(exact, partial, 3)),
+            patch.object(bd, "_get_best_matched_title", return_value="测试"),
+        ):
+            out = []
+            bd.find_bangumi_id("test", candidates_out=out)
+            expected = bd.find_bangumi_candidates("test", limit=5)
+        assert out == expected
+
+    def test_does_not_change_match_result(self):
+        """带与不带 candidates_out 应返回相同的匹配结果"""
+        bd, exact, partial = self._fixture()
+        with (
+            patch.object(bd, "_scan_candidates", return_value=(exact, partial, 3)),
+            patch.object(bd, "_get_best_matched_title", return_value="测试"),
+        ):
+            r1 = bd.find_bangumi_id("test")
+        with (
+            patch.object(bd, "_scan_candidates", return_value=(exact, partial, 3)),
+            patch.object(bd, "_get_best_matched_title", return_value="测试"),
+        ):
+            out = []
+            r2 = bd.find_bangumi_id("test", candidates_out=out)
+        assert r1 == r2
+
+    def test_written_on_miss(self):
+        """未命中时也必须写入（可能为空列表），供 step 直接复用"""
+        bd = _make_data()
+        bd._title_index = {}
+        with (
+            patch.object(bd, "_scan_candidates", return_value=([], [], 0)),
+            patch.object(bd, "_get_best_matched_title", return_value=""),
+        ):
+            out = []
+            result = bd.find_bangumi_id("不存在的番剧", candidates_out=out)
+        assert result is None
+        assert out == []
+
+    def test_not_written_on_exact_index_hit(self):
+        """精确索引命中不触发扫描，出参保持为空（命中时无需候选）"""
+        bd = _make_data()
+        bd._title_index = {
+            "标题": [
+                {
+                    "title": "标题",
+                    "begin": "2024-01-15",
+                    "sites": [{"site": "bangumi", "id": "100"}],
+                }
+            ]
+        }
+        out = []
+        result = bd.find_bangumi_id(
+            "标题", release_date="2024-01-16", candidates_out=out
+        )
+        assert result is not None
+        assert out == []

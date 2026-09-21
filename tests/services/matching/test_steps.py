@@ -139,10 +139,17 @@ class TestBangumiDataStep:
     def test_miss_returns_candidates(self):
         ctx = _build_ctx()
         mock_bgm_data = MagicMock()
-        mock_bgm_data.find_bangumi_id.return_value = None
-        mock_bgm_data.find_bangumi_candidates.return_value = [
-            {"id": "111", "name": "候选A", "name_cn": "候选A", "score": 0.8},
-        ]
+
+        def _fake_find_bangumi_id(*args, **kwargs):
+            # 模拟真实实现：未命中时通过 candidates_out 回传本次扫描的候选
+            out = kwargs.get("candidates_out")
+            if out is not None:
+                out[:] = [
+                    {"id": "111", "name": "候选A", "name_cn": "候选A", "score": 0.8},
+                ]
+            return None
+
+        mock_bgm_data.find_bangumi_id.side_effect = _fake_find_bangumi_id
         ctx.service._get_bangumi_data.return_value = mock_bgm_data
 
         with patch("app.services.sync_service.config_manager") as mock_cfg:
@@ -155,6 +162,27 @@ class TestBangumiDataStep:
         assert outcome.is_terminal is False
         assert len(outcome.candidates) == 1
         assert outcome.candidates[0].subject_id == "111"
+
+    def test_miss_does_not_rescan_for_candidates(self):
+        """未命中时不得再调 find_bangumi_candidates（避免第二次全表扫描）
+
+        候选已由 find_bangumi_id 的 candidates_out 出参带回，
+        再调一次 find_bangumi_candidates 等于把全表扫描跑两遍。
+        """
+        ctx = _build_ctx()
+        mock_bgm_data = MagicMock()
+        mock_bgm_data.find_bangumi_id.return_value = None
+        ctx.service._get_bangumi_data.return_value = mock_bgm_data
+
+        with patch("app.services.sync_service.config_manager") as mock_cfg:
+            mock_cfg.get.side_effect = lambda s, k, fallback=None: (
+                True if (s, k) == ("bangumi_data", "enabled") else fallback
+            )
+            outcome = BangumiDataStep().execute(ctx)
+
+        assert outcome.status == "miss"
+        assert outcome.candidates == []
+        mock_bgm_data.find_bangumi_candidates.assert_not_called()
 
     def test_exception_returns_error(self):
         ctx = _build_ctx()
