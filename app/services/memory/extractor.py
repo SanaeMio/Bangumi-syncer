@@ -1,4 +1,8 @@
-"""记忆提取器：总结执行成功后提炼一行摘要并写入记忆（含消费标记）。"""
+"""记忆提取器：总结执行后提炼一行摘要并写入记忆（含消费标记）。
+
+摘要成功 → 正常记忆行；摘要失败（LLM 异常/空响应）→ 写 summary 留空的
+「消费占位行」，使本次 run 在记忆表中有归属、消费标记生效（见 B1 修订）。
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,8 @@ _SUMMARY_PROMPT = (
 
 
 class MemoryExtractor:
+    """提炼一行摘要写入记忆：成功写正常行，失败写「消费占位行」（B1）。"""
+
     def __init__(self, repo: AgentMemoryRepository, llm_client=None):
         self._repo = repo
         # 测试可注入；None 时 _summarize 内现取全局单例（LLM 配置保存会
@@ -34,11 +40,8 @@ class MemoryExtractor:
         job_name: str | None = None,  # 摘要调用用量归属 llm_usage 用
     ) -> None:
         summary = await self._summarize(messages, response, job_name=job_name)
-        if not summary:
-            return  # 空响应（LLM 重试耗尽）不写记忆，避免无效条目
-        # 原子单元：INSERT 记忆 + 标记消费（同一事务，见 store_and_mark）
-        self._repo.store_and_mark(
-            MemoryEntry(
+        if summary:
+            entry = MemoryEntry(
                 task_type=task_type,
                 task_id=task_id,
                 run_id=run_id,
@@ -46,11 +49,29 @@ class MemoryExtractor:
                 full_text=response.content,  # 全文存 full_text（回溯用，不注入）
                 outcome=outcome,
                 tokens_used=tokens_used,
-            ),
-            record_ids=record_ids,
-        )
+            )
+        else:
+            # B1 消费占位行：摘要失败（LLM 异常/空响应）不再直接 return，而是写一条
+            # summary 留空的占位记忆——让本次 run 在记忆表中有归属，store_and_mark
+            # 同事务打上消费标记，消费排除因此生效，下次调度不再重复总结同一批记录
+            # （避免重复通知 + token 白烧）。空 summary 由读取侧过滤，不注入、不统计；
+            # full_text 照存主总结全文供回溯，outcome 标记失败来源。
+            entry = MemoryEntry(
+                task_type=task_type,
+                task_id=task_id,
+                run_id=run_id,
+                summary="",  # NOT NULL 用空串，读取侧据此过滤
+                full_text=response.content or "",  # 主总结全文照存（回溯用）
+                outcome="summary_failed",
+                tokens_used=tokens_used,  # 与成功行同口径（主调用 token）
+            )
+        # 原子单元：INSERT 记忆 + 标记消费（同一事务，见 store_and_mark）。
+        # 占位行与成功行同待遇：写库失败仍抛异常，交给 execute_job 的
+        # _STAGE_STORE 失败通知机制（不在此吞异常）。
+        self._repo.store_and_mark(entry, record_ids=record_ids)
         # 清理旧记忆（独立 best-effort 事务，失败不回滚上面的 run）
         # L4：魔数收编——保留上限与 prune 上限同源（closeout §4 E3）
+        # 占位行也参与 1000 条上限，与成功行一致
         self._repo.prune(task_type, task_id, keep=1000)
 
     async def _summarize(
@@ -77,7 +98,8 @@ class MemoryExtractor:
             if resp.content:
                 return resp.content.strip()
         except Exception as e:
-            # LLM 摘要失败：跳过不写记忆（与空响应同路径）——不保留截断兜底，
-            # 保证所有入库摘要均为 LLM 完整输出、零截断（见 closeout §4 修订）
-            logger.warning(f"摘要 LLM 调用失败，跳过记忆写入: {e}")
+            # LLM 摘要失败：返回空串，由 extract_and_store 写消费占位行——不保留
+            # 截断兜底，保证所有非空入库摘要均为 LLM 完整输出、零截断
+            # （见 closeout §4 修订）
+            logger.warning(f"摘要 LLM 调用失败，将写消费占位行: {e}")
         return ""

@@ -29,7 +29,6 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import parse_qs, quote, urlparse
 
 from ...core.database import database_manager
@@ -235,7 +234,7 @@ async def _oidc_authorize(
         await http.aclose()
 
 
-async def _exchange_code(code: str, verifier: str) -> tuple[Optional[dict], str]:
+async def _exchange_code(code: str, verifier: str) -> tuple[dict | None, str]:
     """④ 授权码换 token。返回 (tokens, error)。"""
     http = (
         AsyncHttpClient(label="TraktLogin", timeout=30.0)
@@ -295,7 +294,7 @@ def _ensure_media_server_username(user_id: str) -> None:
     )
 
 
-async def _persist_tokens(user_id: str, tokens: dict) -> Optional[int]:
+async def _persist_tokens(user_id: str, tokens: dict) -> int | None:
     """Bearer 凭证落库（auth_type=bearer + access/refresh/expires_at）。
 
     与刷新共用 per-user 刷新锁：持锁后重读配置再写，避免与心跳/同步的

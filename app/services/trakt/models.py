@@ -4,7 +4,7 @@ Trakt.tv 数据模型定义
 
 import time
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -16,9 +16,9 @@ class TraktHistoryItem(BaseModel):
     watched_at: str = Field(..., description="观看时间")
     action: str = Field(..., description="动作类型")
     type: str = Field(..., description="媒体类型")
-    movie: Optional[dict[str, Any]] = Field(None, description="电影信息")
-    show: Optional[dict[str, Any]] = Field(None, description="剧集信息")
-    episode: Optional[dict[str, Any]] = Field(None, description="剧集详情")
+    movie: dict[str, Any] | None = Field(None, description="电影信息")
+    show: dict[str, Any] | None = Field(None, description="剧集信息")
+    episode: dict[str, Any] | None = Field(None, description="剧集详情")
 
     @property
     def media_type(self) -> str:
@@ -52,9 +52,9 @@ class TraktRatingItem(BaseModel):
     rating: int = Field(..., description="评分 (1-10)")
     rated_at: str = Field(..., description="评分时间")
     type: str = Field(..., description="媒体类型")
-    movie: Optional[dict[str, Any]] = Field(None, description="电影信息")
-    show: Optional[dict[str, Any]] = Field(None, description="剧集信息")
-    episode: Optional[dict[str, Any]] = Field(None, description="剧集详情")
+    movie: dict[str, Any] | None = Field(None, description="电影信息")
+    show: dict[str, Any] | None = Field(None, description="剧集信息")
+    episode: dict[str, Any] | None = Field(None, description="剧集详情")
 
     @property
     def media_type(self) -> str:
@@ -67,9 +67,9 @@ class TraktCollectionItem(BaseModel):
 
     collected_at: str = Field(..., description="收藏时间")
     type: str = Field(..., description="媒体类型")
-    movie: Optional[dict[str, Any]] = Field(None, description="电影信息")
-    show: Optional[dict[str, Any]] = Field(None, description="剧集信息")
-    episode: Optional[dict[str, Any]] = Field(None, description="剧集详情")
+    movie: dict[str, Any] | None = Field(None, description="电影信息")
+    show: dict[str, Any] | None = Field(None, description="剧集信息")
+    episode: dict[str, Any] | None = Field(None, description="剧集详情")
 
     @property
     def media_type(self) -> str:
@@ -88,4 +88,4 @@ class TraktSyncResult(BaseModel):
     synced_count: int = Field(0, description="同步数量")
     skipped_count: int = Field(0, description="跳过数量")
     error_count: int = Field(0, description="错误数量")
-    details: Optional[dict] = Field(None, description="详细结果")
+    details: dict | None = Field(None, description="详细结果")

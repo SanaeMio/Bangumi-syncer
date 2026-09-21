@@ -15,6 +15,11 @@ from ...core.logging import logger
 from ..http_base import SyncHttpClient
 from ..retry import RETRY_EXCEPTIONS, RETRY_STATUS_CODES
 
+# 上游网关以 2xx 返回错误页（HTML 等非 JSON）时，其语义等价于 502 Bad Gateway。
+# 据此构造等价状态码，让既有的服务端不可用降级链路（5xx 标记不可达并入队待补发）
+# 正常接管，避免错误页被当作成功。
+_UPSTREAM_GATEWAY_ERROR_STATUS = 502
+
 
 class HttpLayerMixin:
     """HTTP 请求层相关方法（供 BangumiApi 组合）"""
@@ -226,3 +231,52 @@ class HttpLayerMixin:
 
             raise ValueError(error_msg)
         return res
+
+    def _check_upstream_error_page(self, res: httpx.Response) -> httpx.Response:
+        """识别上游网关以 2xx 返回错误页（响应体非 JSON）的情形
+
+        Bangumi API 各端点均返回 JSON。上游网关故障时会以 HTTP 200 返回错误页
+        （如 ``502 Bad Gateway`` 的 HTML），此时状态码不属于重试状态码，
+        若只按状态码判定会被当作成功——收藏查询拿不到数据、标记请求「成功」，
+        最终同步记录却是成功，实际并未标记。故对带响应体的 2xx 响应校验内容
+        类型，非 JSON 即视为网关故障：标记 API 不可达，并以等价的 502 状态码
+        抛出，交由既有的服务端不可用降级链路处理。
+        """
+        if res.status_code >= 400:
+            return res
+        # 无响应体的成功状态（204/205）无需校验
+        if res.status_code in (204, 205):
+            return res
+
+        content_type = res.headers.get("content-type")
+        # 内容类型缺失或无法判定时跳过校验，避免误判合法响应
+        if not isinstance(content_type, str) or not content_type:
+            return res
+        value = content_type.lower()
+        if "json" in value:
+            return res
+        # 仅对明确声明为文本类型（错误页以 text/html 居多）判定为网关故障
+        if not value.startswith("text/"):
+            return res
+        if not res.content:
+            return res
+
+        logger.error(
+            f"上游网关返回错误页: HTTP {res.status_code} 但响应体非 JSON "
+            f"(content-type={content_type or '未知'})，按网关故障处理"
+        )
+        self.mark_api_unreachable()
+        raise httpx.HTTPStatusError(
+            f"上游网关返回错误页（HTTP {res.status_code}，响应体非 JSON）",
+            request=res.request,
+            response=httpx.Response(
+                _UPSTREAM_GATEWAY_ERROR_STATUS,
+                request=res.request,
+                headers=res.headers,
+                content=res.content,
+            ),
+        )
+
+    def _validate_response(self, res: httpx.Response) -> httpx.Response:
+        """统一响应校验：先认证错误，再识别上游网关错误页"""
+        return self._check_upstream_error_page(self._check_auth_error(res))

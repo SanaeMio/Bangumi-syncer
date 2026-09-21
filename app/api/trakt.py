@@ -2,7 +2,6 @@
 Trakt.tv API 路由
 """
 
-from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -73,7 +72,7 @@ async def init_trakt_auth(
 @router.get("/auth/callback")
 async def trakt_auth_callback(
     code: str,
-    state: Optional[str] = None,
+    state: str | None = None,
 ) -> RedirectResponse:
     """Trakt OAuth 回调处理"""
     try:

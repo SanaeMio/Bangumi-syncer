@@ -9,11 +9,11 @@
 
 ## 开发环境
 
-- **Python**：3.9 及以上。
+- **Python**：3.10 及以上。
 - **包管理**：推荐使用 [uv](https://docs.astral.sh/uv/)。
 
 ```bash
-# 安装 Python 3.9+ 后，在项目根目录执行
+# 安装 Python 3.10+ 后，在项目根目录执行
 uv sync --group dev
 ```
 

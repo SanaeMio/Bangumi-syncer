@@ -80,7 +80,7 @@ class FongmiSyncService:
                 *[parse_device_entry(e) for e in entries],
                 return_exceptions=True,
             )
-            for entry, res in zip(entries, results):
+            for entry, res in zip(entries, results, strict=True):
                 if isinstance(res, Exception):
                     device_logs.append(f"  ✗ {entry} 连接异常: {res}")
                 elif res:

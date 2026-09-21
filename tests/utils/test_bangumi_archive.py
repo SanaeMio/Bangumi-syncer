@@ -1088,3 +1088,192 @@ class TestArchiveEpisodeEpField:
         eps = store_single_episode.get_episodes(900004)
         assert len(eps) == 1
         assert eps[0]["ep"] == 1
+
+
+def _subject_store(tmp_path: Path, subject_rows: list[tuple], db_name: str):
+    """建立含 subject 表的临时 Archive 库，提供就绪的 ArchiveStore
+
+    subject 表结构与 Archive dump 一致：不含 eps 列，总集数只存在于 infobox 的
+    「话数」。teardown 时关闭连接并恢复全局单例状态。
+    """
+    db_path = tmp_path / db_name
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "CREATE TABLE subject ("
+        "id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, "
+        "infobox TEXT, platform TEXT, summary TEXT, nsfw INTEGER, date TEXT, "
+        "favorite INTEGER, series INTEGER, tags TEXT, score REAL, "
+        "score_details TEXT, rank INTEGER, meta_tags TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO subject VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", subject_rows
+    )
+    conn.commit()
+    conn.close()
+
+    from app.utils.bangumi_archive import _archive
+
+    orig_db_a = _archive.bangumi_archive.db_a_path
+    orig_active = _archive.bangumi_archive._meta.active
+    _archive.bangumi_archive.db_a_path = db_path
+    _archive.bangumi_archive._meta.active = "a"
+
+    store = ArchiveStore()
+    yield store
+
+    store.close()
+    _archive.bangumi_archive.db_a_path = orig_db_a
+    _archive.bangumi_archive._meta.active = orig_active
+
+
+def _subject_row(sid: int, name: str, infobox: str = "", type_: int = 2) -> tuple:
+    row = [sid, type_, name, "", infobox, "", "", 0, "2025-01-01", 0, 0]
+    return (*row, "", "", "", 0, "")
+
+
+def _infobox(params: str) -> str:
+    """构造 Archive 中真实存在的原始 wiki infobox 形态（多行 + CRLF）"""
+    lines = "".join(f"|{item}\r\n" for item in params.split("|"))
+    return "{{Infobox animanga/TVAnime\r\n" + lines + "}}"
+
+
+# 900020：话数=12；900021：话数=1155；900022：话数未定（*）；900023：无话数字段；
+# 900024：无 infobox；900025：空 infobox；900026：非十进制数字字符；900027：等号后有空格；
+# 900028/900029：真实 wiki 中带说明的话数写法（取值与 API 一致，均为开头整数）；
+# 900030：话数以 bullet 书写（infobox 值为列表）；
+# 900031：三次元条目仅有「集数」；900032：三次元条目「话数」与「集数」并存时取「集数」；
+# 900033：三次元条目「话数」为未定（*）时取「集数」；
+# 900034：动画条目仅有「集数」（「集数」不参与动画取值，记 0）；
+# 900035：三次元条目仅有「话数」（模板外写法，「话数」不参与三次元取值，记 0）；
+# 900036：动画条目「话数」与「集数」并存时取「话数」；
+# 900037：话数以多项 bullet 书写（infobox 值为多项列表，合并后取开头整数）
+_EPS_SUBJECT_ROWS = [
+    _subject_row(900020, "十二话", _infobox("中文名=测试|话数=12|放送开始=2025-01-01")),
+    _subject_row(900021, "千话级", _infobox("话数=1155")),
+    _subject_row(900022, "话数未定", _infobox("中文名=测试|话数=*")),
+    _subject_row(900023, "无话数字段", _infobox("中文名=测试|放送开始=2025-01-01")),
+    _subject_row(900024, "无 infobox", ""),
+    _subject_row(900025, "空 infobox", " "),
+    _subject_row(900026, "非十进制数字字符", _infobox("话数=²")),
+    _subject_row(900027, "等号后有空格", _infobox("中文名=测试|话数= 13")),
+    _subject_row(900028, "话数带特别篇说明", _infobox("话数= 13話+特別編")),
+    _subject_row(900029, "话数带括号说明", _infobox("话数= 4(正篇,暂定)+1(2.5话)")),
+    _subject_row(900030, "话数以 bullet 书写", _infobox("中文名=测试|话数= *195")),
+    _subject_row(900031, "三次元仅集数", _infobox("中文名=测试|集数= 11"), type_=6),
+    _subject_row(
+        900032,
+        "三次元话数与集数并存",
+        _infobox("中文名=测试|话数= 30|集数= 68"),
+        type_=6,
+    ),
+    _subject_row(
+        900033, "三次元话数未定", _infobox("中文名=测试|话数= *|集数= 68"), type_=6
+    ),
+    _subject_row(900034, "动画仅集数", _infobox("中文名=测试|集数= 23")),
+    _subject_row(900035, "三次元仅话数", _infobox("中文名=测试|话数= 1"), type_=6),
+    _subject_row(900036, "动画两者并存", _infobox("中文名=测试|话数= 24|集数= 12")),
+    _subject_row(
+        900037,
+        "话数以多项 bullet 书写",
+        "{{Infobox animanga/TVAnime\r\n"
+        "|中文名= 测试\r\n"
+        "|话数={\r\n"
+        "*13\r\n"
+        "*5\r\n"
+        "}\r\n"
+        "|放送开始= 2025-01-01\r\n"
+        "}}",
+    ),
+]
+
+
+class TestArchiveSubjectEpsField:
+    """ArchiveStore.get_subject 应在数据边界补全总集数 eps 字段
+
+    Archive 的 subject 表不承载 eps，该值在 API 侧取自 infobox：动画条目取自
+    「话数」，三次元条目取自「集数」，两者与 wiki 模板一致、互不通用。下游
+    「整部番自动标为看过」以 eps 作为总集数，缺该字段会使功能静默失效，故在此
+    按同一来源补全，与 API 返回结构对齐。
+    """
+
+    @pytest.fixture
+    def store(self, tmp_path: Path) -> ArchiveStore:
+        yield from _subject_store(tmp_path, _EPS_SUBJECT_ROWS, "eps_subject.db")
+
+    def test_eps_from_infobox_episode_count(self, store):
+        """动画条目 eps 取 infobox「话数」的值"""
+        assert store.get_subject(900020)["eps"] == 12
+
+    def test_eps_large_episode_count(self, store):
+        """动画条目话数为千级时按原值返回"""
+        assert store.get_subject(900021)["eps"] == 1155
+
+    def test_eps_isolated_between_subjects(self, store):
+        """各条目取自身 infobox，互不串味"""
+        assert store.get_subject(900020)["eps"] == 12
+        assert store.get_subject(900021)["eps"] == 1155
+
+    def test_eps_zero_when_episode_count_undetermined(self, store):
+        """动画条目话数为占位符（未定）时 eps 记 0，与 API 一致"""
+        assert store.get_subject(900022)["eps"] == 0
+
+    def test_eps_zero_when_episode_count_absent(self, store):
+        """动画条目 infobox 无「话数」时 eps 记 0"""
+        assert store.get_subject(900023)["eps"] == 0
+
+    def test_eps_zero_without_infobox(self, store):
+        """infobox 缺失或为空时 eps 记 0，条目本身仍正常返回"""
+        assert store.get_subject(900024)["eps"] == 0
+        assert store.get_subject(900025)["eps"] == 0
+
+    def test_eps_absent_for_unknown_subject(self, store):
+        """条目不存在时返回 None（与既有行为一致）"""
+        assert store.get_subject(1) is None
+
+    def test_eps_zero_for_non_decimal_digits(self, store):
+        """上标等 isdigit 为真但 int() 不可解析的字符记 0，不得抛异常"""
+        assert store.get_subject(900026)["eps"] == 0
+
+    def test_eps_with_space_after_equals(self, store):
+        """原始 wiki 中等号后带空格（|话数= 13）同样取到话数"""
+        assert store.get_subject(900027)["eps"] == 13
+
+    def test_eps_with_trailing_note(self, store):
+        """动画条目话数带说明（13話+特別編）时取开头整数，与 API 一致"""
+        assert store.get_subject(900028)["eps"] == 13
+
+    def test_eps_with_parenthesized_note(self, store):
+        """动画条目话数带括号说明（4(正篇,暂定)+1(2.5话)）时取开头整数，与 API 一致"""
+        assert store.get_subject(900029)["eps"] == 4
+
+    def test_eps_from_bullet_list_episode_count(self, store):
+        """动画条目话数以 bullet 书写（|话数= *195，infobox 值为列表）时仍取到话数"""
+        assert store.get_subject(900030)["eps"] == 195
+
+    def test_eps_from_multi_item_bullet_list(self, store):
+        """话数以多项 bullet 书写（值为多项列表）时合并各项后取开头整数"""
+        assert store.get_subject(900037)["eps"] == 13
+
+    def test_eps_from_episode_count_for_live_action(self, store):
+        """三次元条目以「集数」承载集数时取该值"""
+        assert store.get_subject(900031)["eps"] == 11
+
+    def test_eps_takes_total_count_for_live_action(self, store):
+        """三次元条目两者并存时取「集数」，「话数」不参与取值"""
+        assert store.get_subject(900032)["eps"] == 68
+
+    def test_eps_takes_total_count_when_episode_count_undetermined(self, store):
+        """三次元条目「话数」未定（*）时取「集数」"""
+        assert store.get_subject(900033)["eps"] == 68
+
+    def test_eps_ignores_total_count_for_anime(self, store):
+        """动画条目的「集数」不参与取值，缺失「话数」时记 0"""
+        assert store.get_subject(900034)["eps"] == 0
+
+    def test_eps_ignores_episode_count_for_live_action(self, store):
+        """三次元条目的「话数」不参与取值，缺失「集数」时记 0"""
+        assert store.get_subject(900035)["eps"] == 0
+
+    def test_eps_prefers_episode_count_for_anime(self, store):
+        """动画条目两者并存时取「话数」，「集数」不参与取值"""
+        assert store.get_subject(900036)["eps"] == 24

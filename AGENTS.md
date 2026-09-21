@@ -8,7 +8,7 @@ Bangumi-syncer 将常见媒体库（Plex、Emby、Jellyfin、Trakt、飞牛等�
 
 ## 技术栈与环境
 
-- **Python**：`>=3.9`（见 [pyproject.toml](https://github.com/SanaeMio/Bangumi-syncer/blob/main/pyproject.toml) 中 `requires-python`）。
+- **Python**：`>=3.10`（见 [pyproject.toml](https://github.com/SanaeMio/Bangumi-syncer/blob/main/pyproject.toml) 中 `requires-python`）。
 - **运行时**：FastAPI、Uvicorn、Jinja2、Pydantic、APScheduler 等（依赖见 `pyproject.toml`）。
 - **包管理**：推荐 [uv](https://docs.astral.sh/uv/)。
 

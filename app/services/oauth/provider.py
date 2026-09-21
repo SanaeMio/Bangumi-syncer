@@ -5,8 +5,8 @@
 仅需在此登记各自的端点与凭证解析方式即可接入新来源。
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 OAuthCredentials = tuple[str, str]
 

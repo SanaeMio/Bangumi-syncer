@@ -138,7 +138,7 @@ class SummaryScheduler:
         """执行单个摘要任务，带超时保护。"""
         timeout = self._scheduler_config.get("job_timeout", 300)
         try:
-            await asyncio.wait_for(
+            executed = await asyncio.wait_for(
                 summary_service.execute_job(job_config),
                 timeout=timeout,
             )
@@ -153,6 +153,13 @@ class SummaryScheduler:
         except Exception as e:
             logger.error(f"Summary job '{job_config.name}' failed: {e}")
             notify_scheduler_failure("summary", str(e), job_name=job_config.name)
+        else:
+            # execute_job 返回 False = 同任务已在执行（手动 trigger 与本次 cron
+            # 重叠），非失败——跳过即可，不得发失败通知。
+            if not executed:
+                logger.warning(
+                    f"Summary job '{job_config.name}' 正在执行中，本次定时触发已跳过"
+                )
 
     def reload_job_if_running(self) -> None:
         """配置变更后刷新任务（由 Web UI 保存流程调用）。"""

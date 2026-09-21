@@ -493,7 +493,7 @@ async def fetch_completed_records(
     async with AsyncHttpClient(label="Fongmi", max_retries=0).prefix("📡") as client:
         tasks = [fetch_media(d, client) for d in devices]
         media_list = await asyncio.gather(*tasks, return_exceptions=True)
-        for device, media in zip(devices, media_list):
+        for device, media in zip(devices, media_list, strict=True):
             if isinstance(media, Exception) or not media:
                 continue
             if not media_is_complete(media, min_percent):
@@ -513,5 +513,5 @@ async def fetch_all_media_status(devices: list[FongmiDevice]) -> list[dict]:
         media_list = await asyncio.gather(*tasks, return_exceptions=True)
     return [
         media_to_debug_dict(d, m if isinstance(m, dict) else None)
-        for d, m in zip(devices, media_list)
+        for d, m in zip(devices, media_list, strict=True)
     ]

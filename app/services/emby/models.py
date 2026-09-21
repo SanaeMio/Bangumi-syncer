@@ -1,6 +1,6 @@
 """Emby Webhook 数据模型"""
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -36,11 +36,11 @@ class EmbyWebhookData(BaseModel):
     )
 
     # 可选字段
-    Title: Optional[str] = Field(None, description="通知标题")
-    Description: Optional[str] = Field(None, description="通知描述")
-    Date: Optional[str] = Field(None, description="通知日期")
-    Server: Optional[dict[str, Any]] = Field(None, description="服务器信息")
-    PlaybackInfo: Optional[dict[str, Any]] = Field(
+    Title: str | None = Field(None, description="通知标题")
+    Description: str | None = Field(None, description="通知描述")
+    Date: str | None = Field(None, description="通知日期")
+    Server: dict[str, Any] | None = Field(None, description="服务器信息")
+    PlaybackInfo: dict[str, Any] | None = Field(
         None,
         description="播放信息",
         json_schema_extra={"example": {"PlayedToCompletion": True}},

@@ -9,7 +9,6 @@ Trakt.tv OAuth2 认证服务
 import asyncio
 import time
 from datetime import datetime
-from typing import Optional
 
 from app.services.oauth import get_oauth_service, get_provider
 
@@ -90,7 +89,7 @@ class TraktAuthService:
 
         return True
 
-    async def init_oauth(self, user_id: str) -> Optional[TraktAuthResponse]:
+    async def init_oauth(self, user_id: str) -> TraktAuthResponse | None:
         """初始化 OAuth 授权流程，生成授权 URL"""
         if not user_id or not user_id.strip():
             logger.error("用户ID不能为空")
@@ -215,7 +214,7 @@ class TraktAuthService:
             logger.error(f"刷新 Trakt 令牌时发生错误: {e}")
             return False
 
-    async def _exchange_code_for_token(self, code: str) -> Optional[dict]:
+    async def _exchange_code_for_token(self, code: str) -> dict | None:
         """使用授权码交换访问令牌（委托通用 OAuth 服务）。"""
         try:
             if not self._validate_config():
@@ -225,7 +224,7 @@ class TraktAuthService:
             logger.error(f"交换 Trakt 令牌时发生错误: {e}")
             return None
 
-    async def _refresh_access_token(self, refresh_token: str) -> Optional[dict]:
+    async def _refresh_access_token(self, refresh_token: str) -> dict | None:
         """使用刷新令牌获取新的访问令牌（委托通用 OAuth 服务）。"""
         try:
             if not self._validate_config():
@@ -235,7 +234,7 @@ class TraktAuthService:
             logger.error(f"刷新 Trakt 令牌时发生错误: {e}")
             return None
 
-    def _calculate_expires_at(self, expires_in: Optional[int]) -> Optional[int]:
+    def _calculate_expires_at(self, expires_in: int | None) -> int | None:
         """计算令牌过期时间戳"""
         if not expires_in:
             return None
@@ -245,7 +244,7 @@ class TraktAuthService:
         return int(datetime.now().timestamp()) + expires_in - buffer_seconds
 
     # ── CSRF state（统一落库，由通用 OAuth 服务管理）────────────
-    def extract_user_id_from_state(self, state: str) -> Optional[str]:
+    def extract_user_id_from_state(self, state: str) -> str | None:
         """从 state 中提取用户ID（校验并消费）。"""
         result = self.oauth.consume_state("trakt", state)
         return result["account_key"] if result else None
@@ -254,7 +253,7 @@ class TraktAuthService:
         """清理过期的 state，返回删除行数。"""
         return database_manager.cleanup_oauth_states_expired()
 
-    def get_user_trakt_config(self, user_id: str) -> Optional[TraktConfig]:
+    def get_user_trakt_config(self, user_id: str) -> TraktConfig | None:
         """获取用户的 Trakt 配置"""
         config_dict = database_manager.get_trakt_config(user_id)
         if not config_dict:
