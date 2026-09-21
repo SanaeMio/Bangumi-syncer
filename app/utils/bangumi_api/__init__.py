@@ -98,8 +98,15 @@ class BangumiApi(
             300  # 默认 5 分钟，可被 [bangumi-replay] api_probe_interval 覆盖
         )
 
-        # 实例级别的带大小限制缓存，避免无限增长
-        _MAX_CACHE_SIZE = 200
+        # 实例级别的带大小限制缓存，避免无限增长。
+        #
+        # 容量取 1000（原 200）的依据：单条目 episode 数据实测约 16.4KB
+        # （56,539 条目真实 archive，平均 12.3 集/条目），1000 条约 16MB，
+        # 可接受；而缓存命中把单次集数解析从 300~1600ms（冷启动，需回源
+        # archive/API）降到 ~0.3ms。原上限 200 在连续同步多部剧时会把先
+        # 前条目淘汰，导致回到冷启动（一部 24 集番剧看完整季只用到 1 条，
+        # 但批量补历史时很快超过 200）。
+        _MAX_CACHE_SIZE = 1000
         self._cache = {
             "search": OrderedDict(),
             "get_subject": OrderedDict(),
