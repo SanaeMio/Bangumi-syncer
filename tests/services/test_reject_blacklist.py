@@ -9,7 +9,7 @@
 2. 拒绝不存在的记录安全返回 False
 3. 标题命中屏蔽词 → `_is_title_blocked` 为 True（匹配前拦截）
 4. **自定义映射优先**：命中映射时即使标题含屏蔽词也放行
-5. `_collect_candidates_from_trace` 仍按 subject_id 支持显式排除（通用能力保留）
+5. `_find_subject_id` 不再做事后 veto（原实现对 trace 有一处不一致）
 """
 
 from types import SimpleNamespace
@@ -233,24 +233,41 @@ class TestMigrationFromConfig:
         assert database_manager.migrate_blocked_keywords_from_config("   ") == 0
 
 
-class TestCollectExcludesCandidates:
-    """`_collect_candidates_from_trace` 的通用排除能力（与黑名单统一无关，能力保留）"""
+class TestCollectCandidates:
+    """`_collect_candidates_from_trace`：去重 + 按分数降序
 
-    def test_excludes_blocked_and_dedups(self):
-        cand_a = SimpleNamespace(subject_id="1", to_dict=lambda: {"subject_id": "1"})
-        cand_b = SimpleNamespace(subject_id="2", to_dict=lambda: {"subject_id": "2"})
-        cand_c = SimpleNamespace(subject_id="3", to_dict=lambda: {"subject_id": "3"})
+    注：`exclude_subject_ids` 参数已随黑名单统一而移除（排除改为比较候选标题，
+    见 `_sediment_pending_candidate` / `_maybe_notify_match_ambiguous`）。
+    """
+
+    def test_dedups_and_sorts_by_score(self):
+        cand_a = SimpleNamespace(
+            subject_id="1", to_dict=lambda: {"subject_id": "1", "score": 0.5}
+        )
+        cand_b = SimpleNamespace(
+            subject_id="2", to_dict=lambda: {"subject_id": "2", "score": 0.9}
+        )
+        cand_c = SimpleNamespace(
+            subject_id="3", to_dict=lambda: {"subject_id": "3", "score": 0.7}
+        )
         trace = SimpleNamespace(
             steps=[
                 SimpleNamespace(candidates=[cand_a, cand_b]),
                 SimpleNamespace(candidates=[cand_c, cand_a]),  # a 重复
             ]
         )
-        result = sync_service._collect_candidates_from_trace(
-            trace, exclude_subject_ids={"2"}
-        )
+        result = sync_service._collect_candidates_from_trace(trace)
         ids = [c["subject_id"] for c in result]
-        assert ids == ["1", "3"]  # 2 被剔除，1 去重
+        assert ids == ["2", "3", "1"]  # 按 score 降序，1 只出现一次
+
+    def test_skips_empty_subject_id(self):
+        empty = SimpleNamespace(subject_id="", to_dict=lambda: {"subject_id": ""})
+        ok = SimpleNamespace(
+            subject_id="9", to_dict=lambda: {"subject_id": "9", "score": 1.0}
+        )
+        trace = SimpleNamespace(steps=[SimpleNamespace(candidates=[empty, ok])])
+        result = sync_service._collect_candidates_from_trace(trace)
+        assert [c["subject_id"] for c in result] == ["9"]
 
 
 class TestVetoRemoved:

@@ -83,13 +83,26 @@ def _extract_infobox_aliases(cand: dict) -> list[str]:
 
 
 def _detect_candidate_media_type(cand: dict) -> str:
-    """检测候选条目的媒体类型（用于 P0 media_type 字段）
+    """检测**候选条目**的媒体类型（用于「候选与请求类型是否一致」的改选决策）。
 
-    优先用 Bangumi 条目 ``type`` 字段判定三次元：
-    - type=6 (SUBJECT_TYPE_REAL) → "real_action"
-      避免标题无三次元关键词但实际为真人剧的条目被误判为 episode
-      （场景：查询"凡人修仙传"返回真人剧 type=6，标题无"日剧/真人版"关键词）
-    - 其他 type（含动画 type=2）→ 继续按标题关键词细分 movie/ova/oad/episode
+    判定顺序：
+    1. ``type=6``（Bangumi 三次元）→ ``real_action``
+       结构化字段，不依赖标题 —— 覆盖「标题无日剧/真人关键词的真人剧」
+    2. 标题关键词（``detect_media_type``）→ movie / ova / oad / episode
+
+    **不读 ``platform``**（尽管它在数据上可得）。实测依据：
+    把 ``platform=3`` 兜底为 ``movie`` 会让「请求 episode 但命中剧场版条目」
+    被判为类型冲突 → 触发 ``_media_type_reselect`` → 走
+    ``_pick_mainline_episode_candidate`` 跨季择优 → **反而选到集数更多的前作**。
+    L2 黄金集实测命中率 98.8% → 91.7%（32 处错配），
+    正是 ``api_search_main.py`` 中已记录的"宁可信任 top，宁可漏标"决策所规避的路径。
+
+    换句话说：媒体库把短片/剧场版放进剧集库并推 episode 是**合法**的，
+    此时"类型不一致"并不成立，不该改选。
+
+    **不再从标题关键词推断 real_action**：实测「真人快打」（动画）等误判，
+    且 real_action 会把搜索范围收窄到 type=6 导致漏标。
+    三次元改由 ``sync.enable_real_action`` 配置控制搜索范围。
     """
     try:
         if cand.get("type") == SUBJECT_TYPE_REAL:
@@ -584,16 +597,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return True, "已删除"
 
     @staticmethod
-    def _safe_request_title(item: Any) -> str:
-        """安全读取条目标题（取不到时按空标题处理）
-
-        黑名单查询是旁路能力，不应因条目对象缺少 title 而中断主流程
-        （例如测试替身对象）；非字符串一律视为空标题。
-        """
-        title = getattr(item, "title", "")
-        return title if isinstance(title, str) else ""
-
-    @staticmethod
     def _get_blocked_keyword(*titles: str) -> str:
         """返回命中的屏蔽关键词（无命中返回空串，容错）。
 
@@ -615,21 +618,19 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return matched.strip()
 
     @staticmethod
-    def _collect_candidates_from_trace(
-        trace: MatchTrace, exclude_subject_ids: set[str] | None = None
-    ) -> list[dict[str, Any]]:
+    def _collect_candidates_from_trace(trace: MatchTrace) -> list[dict[str, Any]]:
         """从 MatchTrace 各步骤中收集候选，去重并按 score 降序。
 
-        exclude_subject_ids：若提供，命中其中的 subject_id 会被剔除
-        （用于负样本黑名单，避免已被否决的候选项重复出现）。
+        注：此前有一个 ``exclude_subject_ids`` 参数用于按 subject_id 排除
+        负样本黑名单。黑名单统一为**标题关键词**后（见
+        ``app/core/database/blocked_rules.py``），排除改为比较**候选标题**，
+        故该参数已无调用方并移除。
         """
         seen: set[str] = set()
         merged: list[dict[str, Any]] = []
         for step in trace.steps:
             for cand in step.candidates:
                 if not cand.subject_id or cand.subject_id in seen:
-                    continue
-                if exclude_subject_ids and cand.subject_id in exclude_subject_ids:
                     continue
                 seen.add(cand.subject_id)
                 merged.append(cand.to_dict())

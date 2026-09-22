@@ -17,7 +17,7 @@ from ...services.base.notifier_helpers import notify_source_event
 from ...services.mapping_service import mapping_service
 from ...services.notification_service import notification_service
 from ...services.sync_service import sync_service
-from ...utils.media_type_detector import detect_media_type
+from ...utils.media_type_detector import normalize_source_media_type
 from .auth import trakt_auth_service
 from .client import TraktAuthError, TraktClient, TraktClientFactory
 from .models import TraktHistoryItem, TraktSyncResult
@@ -774,10 +774,8 @@ class TraktSyncService:
                 except Exception:
                     release_date = ""
 
-            # 检测 OVA/OAD/三次元类型
-            detected = detect_media_type(
-                title=title, ori_title=ori_title or "", item_type="episode"
-            )
+            # Trakt history kind=episode —— 直接采信（不再用标题关键词细化）
+            detected = normalize_source_media_type("episode") or "episode"
 
             # 构建 CustomItem
             return CustomItem(
@@ -846,10 +844,8 @@ class TraktSyncService:
             except Exception:
                 release_date = ""
 
-        # 电影也检测是否为真人电影（三次元）
-        detected = detect_media_type(
-            title=title, ori_title=ori_title or "", item_type="movie"
-        )
+        # Trakt history kind=movie —— 直接采信
+        detected = normalize_source_media_type("movie") or "movie"
 
         return CustomItem(
             media_type=detected,

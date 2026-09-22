@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from app.services.matching.context import MatchContext
 from app.services.sync_service.match_trace import MatchCandidate

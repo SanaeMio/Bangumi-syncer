@@ -151,15 +151,71 @@ def parse_episode_info(url: str, artist: str) -> tuple[int, int]:
     return season, episode
 
 
-def _is_movie(url: str, artist: str | None) -> bool:
-    """判断是否为剧场版/电影。
+# ===== fongmi 媒体类型判定（文件名结构优先） =====
 
-    命中关键词（剧场版/劇場版/电影/電影/Movie/Film）即视为单条影片。
+# 电影常见容器/命名特征：无季集结构且带年份、或含 4K/BluRay 等单片标记
+_MOVIE_YEAR_RE = re.compile(r"(?:^|[\s._\-\[(])(19|20)\d{2}(?:[\s._\-\])]|$)")
+# 多集/合集标记：出现"第N集""EP..-EP.."或明显的范围，说明是剧集
+_MULTI_EP_RE = re.compile(
+    r"[Ee][Pp]?\s*\d{1,3}\s*[-~]\s*[Ee]?[Pp]?\s*\d{1,3}"  # EP01-12
+    r"|第\s*\d{1,3}\s*[-~]\s*\d{1,3}\s*[集话話]"  # 第1-12集
+    r"|(?:全集|合集|全\s*\d{1,3}\s*[集话話])"
+)
+
+
+def detect_media_type_from_media(url: str, artist: str | None) -> str:
+    """从 fongmi 的 url / artist 判定媒体类型（文件名结构优先）。
+
+    fongmi 是**唯一没有类型字段**的源（播放器只推 title/url/artist），
+    因此必须从文件名推断。历史实现只做关键词扫描，准确率低：
+    「特别篇」被当作 OVA、「真人」被当作三次元等。
+
+    改为**结构化信号优先**：
+
+    1. **有季集结构**（``S01E05`` / ``EP05`` / ``第5集`` / ``#5`` / ``[05]``）
+       → ``episode`` —— 这是最强的信号：单集文件必然属于剧集。
+    2. **有范围/合集标记**（``EP01-12`` / ``全集``）→ ``episode``
+       （合集仍属剧集，交由后续跨季/集数解析处理）
+    3. **命中电影关键词**（剧场版/劇場版/电影/Movie/Film）→ ``movie``
+    4. **无季集结构 + 带年份** → ``movie``（单片命名习惯）
+    5. 其余 → ``episode``（保守默认，与历史行为一致）
+
+    这样 ``[1.11GB] 201- 201 4K V2.mkv`` 会因 ``[201]`` 之外无季集结构、
+    且带 ``4K`` 而落到默认 episode（国漫大集数），
+    而 ``S01E081`` 明确判 episode，``劇場版/mugen_train.mp4`` 判 movie。
+
+    Returns:
+        ``movie`` / ``episode``。fongmi **不细分 OVA/OAD** —— 文件名里没有
+        可靠信号（``OVA``/``特别篇`` 既可能是 OVA 也可能是电视特别篇），
+        而 OVA 与 episode 在下游**无控制流差异**，故不做无依据的细分。
     """
-    for text in (url or "", artist or ""):
-        if text and _MOVIE_KEYWORD_RE.search(text):
-            return True
-    return False
+    sources = [s for s in (url or "", artist or "") if s]
+
+    # 1. 季集结构 → 剧集（最强信号）
+    for text in sources:
+        if _SEASON_EP_RE.search(text):
+            return "episode"
+        for pattern in (_EP_RE, _CN_EP_RE, _HASH_EP_RE, _BRACKET_EP_RE):
+            if pattern.search(text):
+                return "episode"
+
+    # 2. 范围/合集标记 → 剧集
+    for text in sources:
+        if _MULTI_EP_RE.search(text):
+            return "episode"
+
+    # 3. 电影关键词 → movie
+    for text in sources:
+        if _MOVIE_KEYWORD_RE.search(text):
+            return "movie"
+
+    # 4. 无季集结构 + 带年份 → movie（单片命名习惯）
+    for text in sources:
+        if _MOVIE_YEAR_RE.search(text):
+            return "movie"
+
+    # 5. 保守默认
+    return "episode"
 
 
 # ===== 设备发现与探测 =====
@@ -394,8 +450,10 @@ def media_is_complete(media: dict, min_percent: int) -> bool:
 def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | None:
     """将 /media 转为 FongmiWatchRecord（仅提取字段，不判断是否完成）
 
-    剧场版/电影：season=1, episode=1，is_movie=True。
-    OVA/OAD/三次元：通过关键词检测，media_type 字段携带细粒度类型。
+    fongmi 无类型字段，媒体类型由**文件名结构**判定（见
+    :func:`detect_media_type_from_media`）：
+    - 电影：season=1, episode=1, is_movie=True
+    - 剧集：season/episode 由 :func:`parse_episode_info` 解析
     """
     title = (media.get("title") or "").strip()
     if not title:
@@ -404,13 +462,10 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
     artist = media.get("artist")
     artist_s = str(artist) if artist else None
 
-    # 检测细粒度媒体类型（含 OVA/OAD/三次元）
-    from ...utils.media_type_detector import detect_media_type
-
-    detected_type = detect_media_type(title=title, url=url, artist=artist_s or "")
+    # 文件名结构优先的类型判定（替代旧的关键词扫描）
+    detected_type = detect_media_type_from_media(url, artist_s)
     is_movie = detected_type == "movie"
-    if is_movie or detected_type in ("ova", "oad", "real_action"):
-        # 非剧集类型（movie/ova/oad/real_action）统一按单集处理
+    if is_movie:
         season, episode = 1, 1
     else:
         season, episode = parse_episode_info(url, artist_s or "")
@@ -451,7 +506,7 @@ def media_to_debug_dict(device: FongmiDevice, media: dict | None) -> dict:
     url = str(media.get("url") or "")
     artist = media.get("artist")
     artist_s = str(artist) if artist else ""
-    is_movie = _is_movie(url, artist_s or None)
+    is_movie = detect_media_type_from_media(url, artist_s or None) == "movie"
     if is_movie:
         season, episode = 1, 1
     else:

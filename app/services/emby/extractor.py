@@ -6,7 +6,7 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import CustomItem
-from ...utils.media_type_detector import detect_media_type
+from ...utils.media_type_detector import normalize_source_media_type
 
 
 def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
@@ -40,8 +40,8 @@ def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
         title = (item.get("Name") or "").strip()
         ori = item.get("OriginalTitle")
         ori_str = ori if ori and str(ori).strip() else ""
-        # 电影也检测是否为真人电影（三次元）
-        detected = detect_media_type(title=title, ori_title=ori_str, item_type=itype)
+        # Emby 明确声明 Movie —— 直接采信（不再用标题关键词覆盖源的声明）
+        detected = normalize_source_media_type(itype) or "movie"
         return CustomItem(
             media_type=detected,
             title=title,
@@ -65,8 +65,8 @@ def extract_emby_data(emby_data: dict[str, Any]) -> CustomItem:
     ori_str = str(ori).strip() if ori else ""
     title = item.get("SeriesName") or ""
 
-    # 检测 OVA/OAD/三次元类型
-    detected = detect_media_type(title=title, ori_title=ori_str, item_type=itype)
+    # Emby 明确声明 Episode —— 直接采信
+    detected = normalize_source_media_type(itype) or "episode"
 
     return CustomItem(
         media_type=detected,

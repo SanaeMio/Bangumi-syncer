@@ -6,7 +6,7 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import CustomItem
-from ...utils.media_type_detector import detect_media_type
+from ...utils.media_type_detector import normalize_source_media_type
 
 
 def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
@@ -35,8 +35,8 @@ def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
     mtype = (jellyfin_data.get("media_type") or "episode").lower()
 
     if mtype == "movie":
-        # 电影也检测是否为真人电影（三次元）
-        detected = detect_media_type(title=title, ori_title=ori_str, item_type=mtype)
+        # Jellyfin 明确声明 movie —— 直接采信
+        detected = normalize_source_media_type(mtype) or "movie"
         return CustomItem(
             media_type=detected,
             title=title,
@@ -49,8 +49,8 @@ def extract_jellyfin_data(jellyfin_data: dict[str, Any]) -> CustomItem:
             raw_payload=raw_payload,
         )
 
-    # 检测 OVA/OAD/三次元类型
-    detected = detect_media_type(title=title, ori_title=ori_str, item_type=mtype)
+    # Jellyfin 明确声明 episode —— 直接采信
+    detected = normalize_source_media_type(mtype) or "episode"
 
     return CustomItem(
         media_type=detected,

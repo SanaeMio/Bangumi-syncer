@@ -10,7 +10,7 @@ from ...core.config import config_manager
 from ...core.database import FEINIU_MIN_UPDATE_WATERMARK_META_KEY, database_manager
 from ...core.logging import logger
 from ...models.sync import CustomItem
-from ...utils.media_type_detector import detect_media_type
+from ...utils.media_type_detector import normalize_source_media_type
 from ..base.models import BaseSyncResult
 from ..base.notifier_helpers import notify_source_event
 from .models import FeiniuWatchRecord
@@ -23,40 +23,20 @@ FEINIU_SYNC_SOURCE = "feiniu"
 def _feiniu_detect_media_type(rec: FeiniuWatchRecord) -> str:
     """检测飞牛记录的媒体类型。
 
-    返回值：movie / ova / oad / real_action / episode
+    返回值：movie / episode / real_action（飞牛的 item_type 只能表达这几种；
+    OVA/OAD 不在请求侧细分 —— 它们与 episode 在下游无控制流差异）。
 
-    优先使用统一的 detect_media_type 检测标题和 item_type 中的关键词，
-    再回退到原有的 movie/episode 二分启发式。
+    飞牛**自带 item_type 字段**（权威声明），故直接采信；仅当 item_type
+    缺失或无法识别时，才回退「有无季集信息」的结构化启发式。
+
+    历史实现会先用标题关键词判 OVA/三次元，导致源的声明被覆盖 ——
+    现已移除该路径（理由见 utils/media_type_detector.py 的模块说明）。
     """
-    # 先用统一检测器扫描标题与 item_type
-    detected = detect_media_type(
-        title=rec.display_title,
-        ori_title=rec.original_title or "",
-        item_type=rec.item_type or "",
-    )
-    if detected != "episode":
+    detected = normalize_source_media_type(rec.item_type or "")
+    if detected:
         return detected
 
-    # 回退到原有的 movie/episode 启发式
-    t = (rec.item_type or "").strip().lower()
-    if t:
-        if any(k in t for k in ("movie", "film", "电影")):
-            return "movie"
-        if any(
-            k in t
-            for k in (
-                "episode",
-                "series",
-                "tv",
-                "show",
-                "剧集",
-                "电视剧",
-                "动漫",
-                "番剧",
-                "综艺",
-            )
-        ):
-            return "episode"
+    # 回退：无可用 item_type 时，按「是否解析出季集」判定
     if rec.episode_from_db and rec.season_from_db:
         return "episode"
     if not rec.episode_from_db and not rec.season_from_db:

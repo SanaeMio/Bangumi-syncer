@@ -6,7 +6,8 @@
 - 日漫剧场版 + TV 系列（鬼灭之刃、咒术回战、名侦探柯南、火影忍者）
 - OVA / OAD / 特别篇（进击的巨人、斗破苍穹）
 - 真人版 / 日剧（孤独的美食家）
-- 已知限制：platform=剧场版 但标题无「剧场版」关键词 → detect=episode（xfail）
+- 已知限制（**有意保留**）：platform=剧场版 但标题无「剧场版」关键词
+  → 候选侧判 episode（xfail，见 TestPlatformMovieWithoutKeyword 的说明）
 """
 
 from __future__ import annotations
@@ -269,11 +270,10 @@ _KODOKU: list[dict] = [
 
 
 def _detect(info: dict) -> str:
-    """对单条候选运行 detect_media_type（仅传 name/name_cn，模拟搜索结果场景）"""
-    return detect_media_type(
-        title=info.get("name_cn", ""),
-        ori_title=info.get("name", ""),
-    )
+    """对单条候选运行**候选侧**判定（等价于 _detect_candidate_media_type）"""
+    from app.services.sync_service import _detect_candidate_media_type
+
+    return _detect_candidate_media_type(info)
 
 
 def _find_by_id(candidates: list[dict], sid: int) -> dict:
@@ -384,67 +384,74 @@ class TestRealActionDetection:
 
 
 class TestPlatformMovieWithoutKeyword:
-    """已知限制：platform=剧场版 但标题不含「剧场版/劇場版/电影」关键词
+    """已知限制（**有意保留**）：platform=剧场版 但标题无电影关键词 → episode
 
-    detect_media_type 仅扫描标题/原标题等文本字段，不读取 platform。
-    当剧场版条目标题不含「剧场版」字样时（如名侦探柯南系列剧场版），
-    当前实现会判为 episode，这是已知限制。
+    候选侧 ``_detect_candidate_media_type`` **不读 platform**，这是刻意的：
 
-    改进方向：让 detect_media_type 接受 platform 参数，
-    当 platform 为「剧场版/电影」且 eps<=2 时判为 movie。
-    本测试组用 xfail 标记期望行为，待改进后转为正向断言。
+    曾尝试把 ``platform=3`` 兜底为 ``movie``，结果 L2 黄金集命中率
+    98.8% → **91.7%**（32 处错配）。根因是它让「请求 episode 但命中
+    platform=3 条目」被判为类型冲突 → 触发 ``_media_type_reselect`` →
+    走 ``_pick_mainline_episode_candidate`` 跨季择优 → **选到集数更多的前作**。
+    这正是 ``api_search_main.py`` 中已记录的"宁可信任 top，宁可漏标"决策
+    所规避的路径。
+
+    语义上也成立：媒体库把短片/剧场版放进剧集库并推 episode 是**合法**的，
+    此时"类型不一致"并不成立，不该改选。
+
+    本测试组以 xfail 固定该行为，防止将来有人"顺手"加回 platform 兜底
+    而不跑 L2 基线。
     """
 
     @pytest.mark.xfail(
-        reason="detect_media_type 不读 platform，标题无「剧场版」关键词时漏判",
+        reason=("有意保留：读 platform 会触发跨季改选，L2 命中率 98.8%→91.7%"),
         strict=True,
     )
     def test_conan_movie_without_keyword(self):
-        """名侦探柯南 世纪末的魔术师（platform=剧场版，标题无关键词）应判为 movie"""
+        """名侦探柯南 世纪末的魔术师（platform=剧场版，标题无关键词）"""
         info = _find_by_id(_CONAN, 2970)
         assert info, "未找到 2970 名侦探柯南 世纪末的魔术师"
         assert info.get("platform") == "剧场版"
         assert _detect(info) == "movie"
 
     @pytest.mark.xfail(
-        reason="detect_media_type 不读 platform，标题无「剧场版」关键词时漏判",
+        reason="有意保留：读 platform 会触发跨季改选，L2 命中率回退",
         strict=True,
     )
     def test_demon_slayer_movie_brother_sister_bond(self):
-        """鬼灭之刃 兄妹的羁绊（platform=剧场版，标题无关键词）应判为 movie"""
+        """鬼灭之刃 兄妹的羁绊（platform=剧场版，标题无关键词）"""
         info = _find_by_id(_KIMETSU, 294137)
         assert info, "未找到 294137 鬼灭之刃 兄妹的羁绊"
         assert info.get("platform") == "剧场版"
         assert _detect(info) == "movie"
 
     @pytest.mark.xfail(
-        reason="detect_media_type 不读 platform，标题无「剧场版」关键词时漏判",
+        reason="有意保留：读 platform 会触发跨季改选，L2 命中率回退",
         strict=True,
     )
     def test_jujutsu_kaisen_movie_compilation(self):
-        """咒术回战 怀玉·玉折 总集篇（platform=剧场版，标题无关键词）应判为 movie"""
+        """咒术回战 怀玉·玉折 总集篇（platform=剧场版，标题无关键词）"""
         info = _find_by_id(_JUJUTSU, 509599)
         assert info, "未找到 509599 咒术回战 怀玉·玉折 总集篇"
         assert info.get("platform") == "剧场版"
         assert _detect(info) == "movie"
 
     @pytest.mark.xfail(
-        reason="detect_media_type 不读 platform，标题无「剧场版」关键词时漏判",
+        reason="有意保留：读 platform 会触发跨季改选，L2 命中率回退",
         strict=True,
     )
     def test_one_piece_movie_baseball(self):
-        """航海王：目标！海贼棒球王（platform=剧场版，标题无关键词）应判为 movie"""
+        """航海王：目标！海贼棒球王（platform=剧场版，标题无关键词）"""
         info = _find_by_id(_ONEPIECE, 162049)
         assert info, "未找到 162049 航海王：目标！海贼棒球王"
         assert info.get("platform") == "剧场版"
         assert _detect(info) == "movie"
 
     @pytest.mark.xfail(
-        reason="detect_media_type 不读 platform，标题无「剧场版」关键词时漏判",
+        reason="有意保留：读 platform 会触发跨季改选，L2 命中率回退",
         strict=True,
     )
     def test_fanren_movie_hanhai_mizong(self):
-        """凡人修仙传 瀚海迷踪（platform=剧场版，标题无关键词）应判为 movie"""
+        """凡人修仙传 瀚海迷踪（platform=剧场版，标题无关键词）"""
         info = _find_by_id(_FANREN, 553577)
         assert info, "未找到 553577 凡人修仙传 瀚海迷踪"
         assert info.get("platform") == "剧场版"

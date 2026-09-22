@@ -1,14 +1,58 @@
 """媒体类型检测器测试
 
-覆盖各驱动场景下的 OVA/OAD/三次元检测，
-测试数据基于实际驱动的字段来源调研。
+覆盖两件事（2026-09 重构后的职责划分）：
+1. ``detect_media_type`` —— **候选侧**：从标题/URL 判断**条目**是电影/OVA/剧集。
+   **不再返回 real_action**（实测「真人快打」等动画被误判，且会收窄搜索范围）。
+2. ``normalize_source_media_type`` —— **请求侧**：把**媒体源声明的类型**
+   映射为 movie/episode/real_action，源的声明是权威信息，不被标题覆盖。
+
+三次元改由配置 ``sync.enable_real_action`` 控制搜索范围。
 """
 
-from app.utils.media_type_detector import detect_media_type
+from app.utils.media_type_detector import (
+    detect_media_type,
+    normalize_source_media_type,
+)
+
+
+class TestNormalizeSourceMediaType:
+    """请求侧：采信媒体源的权威声明"""
+
+    def test_movie_declarations(self):
+        for t in ("Movie", "movie", "film", "Film", "电影"):
+            assert normalize_source_media_type(t) == "movie", t
+
+    def test_episode_declarations(self):
+        for t in ("Episode", "episode", "Series", "TV", "show", "剧集", "动漫", "番剧"):
+            assert normalize_source_media_type(t) == "episode", t
+
+    def test_real_action_declarations(self):
+        """源显式声明三次元时保留（如上游已判定 real_action / 日剧）"""
+        for t in ("real_action", "drama", "jdrama", "日剧", "真人"):
+            assert normalize_source_media_type(t) == "real_action", t
+
+    def test_ova_oad_declarations(self):
+        assert normalize_source_media_type("OVA") == "ova"
+        assert normalize_source_media_type("OAD") == "oad"
+
+    def test_unknown_returns_none(self):
+        """无法识别时返回 None，由调用方兜底（不猜测）"""
+        assert normalize_source_media_type("") is None
+        assert normalize_source_media_type("   ") is None
+        assert normalize_source_media_type("unknown-kind") is None
+
+    def test_source_movie_not_overridden_by_title_keyword(self):
+        """核心修复：源的 movie 声明**不再**被标题关键词覆盖
+
+        历史缺陷：``item_type='movie'`` + 标题含「特别篇」会被改判为 ova。
+        请求侧现在直接采信源，标题不参与判定。
+        """
+        # 请求侧不再接受 title —— 该函数只做源声明的规范化
+        assert normalize_source_media_type("movie") == "movie"
 
 
 class TestDetectMediaTypeBasic:
-    """基础检测逻辑测试"""
+    """候选侧基础检测逻辑"""
 
     def test_empty_inputs_returns_episode(self):
         """空输入返回 episode"""
@@ -30,9 +74,20 @@ class TestDetectMediaTypeBasic:
         assert detect_media_type(title="某电影") == "movie"
         assert detect_media_type(title="電影標題") == "movie"
         assert detect_media_type(title="My Movie") == "movie"
+        assert detect_media_type(title="A Film") == "movie"
+
+    def test_no_real_action_from_title_keywords(self):
+        """候选侧**不再**从标题关键词推断 real_action
+
+        实测误判：``真人快打``（Mortal Kombat Legends）是动画，
+        ``机动战士高达 第08MS小队 三次元的战斗`` 同理。
+        这些现在落到默认 episode，交由 platform/type 字段判定。
+        """
+        assert detect_media_type(title="真人快打传奇：蝎子的复仇") == "episode"
         assert (
-            detect_media_type(title="A Film") == "movie"
-        )  # Film 关键词命中，统一返回 movie
+            detect_media_type(title="机动战士高达 第08MS小队 三次元的战斗") == "episode"
+        )
+        assert detect_media_type(title="某日剧 第一季") == "episode"
 
 
 class TestDetectMediaTypeOVA:
@@ -71,30 +126,33 @@ class TestDetectMediaTypeOAD:
 
 
 class TestDetectMediaTypeRealAction:
-    """三次元（日剧/真人版）检测测试"""
+    """三次元检测：候选侧**不再**从标题推断，只认 item_type 显式声明"""
 
-    def test_jdrama_keyword_in_title(self):
-        """标题含日剧关键词 → real_action"""
-        assert detect_media_type(title="某日剧 第一季") == "real_action"
-        assert detect_media_type(title="某日劇") == "real_action"
+    def test_title_keywords_no_longer_produce_real_action(self):
+        """标题含日剧/真人/Drama **不再**判 real_action
 
-    def test_live_action_keyword_in_title(self):
-        """标题含真人版 → real_action"""
-        assert detect_media_type(title="某番剧 真人版") == "real_action"
-        assert detect_media_type(title="真人版 ある物語") == "real_action"
+        这是本次重构的核心变更：实测误判（真人快打 = 动画）且
+        real_action 会收窄搜索范围到 type=6，导致漏标。
+        这些标题现在落到 episode 或 movie（若含剧场版/电影关键词），
+        三次元由候选侧 type 字段判定。
+        """
+        # 纯三次元关键词 → 落回默认 episode
+        for title in (
+            "某日剧 第一季",
+            "某日劇",
+            "某番剧 真人版",
+            "真人版 ある物語",
+            "My Drama Series",
+            "Jdrama 2024",
+        ):
+            assert detect_media_type(title=title) == "episode", title
 
-    def test_drama_keyword_in_title(self):
-        """标题含 Drama → real_action"""
-        assert detect_media_type(title="My Drama Series") == "real_action"
-        assert detect_media_type(title="Jdrama 2024") == "real_action"
-
-    def test_real_action_takes_priority_over_movie(self):
-        """三次元优先于电影（真人电影也应走三次元搜索）"""
-        assert detect_media_type(title="真人版 电影") == "real_action"
-        assert detect_media_type(title="日剧 剧场版") == "real_action"
+        # 同时含电影关键词时判 movie（不再是 real_action）—— 这是行为变更点
+        assert detect_media_type(title="真人版 电影") == "movie"
+        assert detect_media_type(title="日剧 剧场版") == "movie"
 
     def test_real_action_in_item_type(self):
-        """item_type 含 drama → real_action"""
+        """item_type 显式声明三次元 → real_action（源权威，保留）"""
         assert detect_media_type(item_type="drama") == "real_action"
         assert detect_media_type(item_type="Jdrama") == "real_action"
         assert detect_media_type(item_type="日剧") == "real_action"
@@ -125,11 +183,11 @@ class TestDetectMediaTypeItemType:
         """item_type=OAD → oad"""
         assert detect_media_type(item_type="OAD") == "oad"
 
-    def test_title_keyword_overrides_item_type(self):
-        """标题关键词优先于 item_type 的 movie/episode 分类
+    def test_title_keyword_refines_item_type(self):
+        """候选侧：标题关键词可**细化** item_type
 
-        设计原则：媒体服务器（Plex/Emby）只知道 episode/movie，
-        不知道 OVA/OAD/三次元，因此标题中的类型关键词优先。
+        与请求侧不同 —— 候选侧没有可靠的类型字段（bangumi-data 无 platform），
+        故保留「标题更具体时优先」的语义。
         """
         assert detect_media_type(title="剧场版", item_type="Episode") == "movie"
         assert detect_media_type(title="普通标题", item_type="Movie") == "movie"
@@ -137,10 +195,6 @@ class TestDetectMediaTypeItemType:
 
 class TestDetectMediaTypePriority:
     """检测优先级测试"""
-
-    def test_real_action_over_movie(self):
-        """三次元优先于电影"""
-        assert detect_media_type(title="日剧 电影版") == "real_action"
 
     def test_ova_over_movie(self):
         """OVA 优先于电影（OVA 是更具体的动画子类型）
@@ -215,15 +269,16 @@ class TestDriverSpecificScenarios:
             == "movie"
         )
 
-    def test_feiniu_real_action_from_title(self):
-        """飞牛三次元场景：标题含日剧"""
-        assert (
-            detect_media_type(
-                title="某日剧 第一季",
-                item_type="Series",
-            )
-            == "real_action"
-        )
+    def test_feiniu_real_action_requires_item_type(self):
+        """飞牛三次元：**仅当 item_type 显式声明**才判 real_action
+
+        标题含「日剧」不再触发（实测误判面）。飞牛的 item_type 由源提供，
+        故正常路径下该判定仍然生效（见 TestNormalizeSourceMediaType）。
+        """
+        # 标题含日剧但 item_type 只是 Series → 不再判 real_action
+        assert detect_media_type(title="某日剧 第一季", item_type="Series") == "episode"
+        # item_type 显式声明三次元 → 保留
+        assert detect_media_type(item_type="日剧") == "real_action"
 
     def test_jellyfin_real_action_from_media_type(self):
         """Jellyfin 三次元场景：media_type=real_action（上游预格式化）"""
