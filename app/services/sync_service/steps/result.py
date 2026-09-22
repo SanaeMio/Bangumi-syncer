@@ -37,12 +37,15 @@ class ResultStep(ExecutionStepBase):
         if cross and "match_path" in cross:
             trace.final_subject_id = str(cross.get("subject_id") or bgm_se_id)
             trace.final_episode_id = str(cross.get("episode_id") or bgm_ep_id)
-            # 跨季链命中：粗粒度记 archive，细粒度记具体路径
+            # 跨季链命中：粗粒度记 archive（改选后的条目来自归档/在线检索）
             trace.final_match_method = "archive"
             detail, _ = _PATH_DETAIL.get(
                 cross.get("match_path", ""), ("cross_season_chain", "跨季链")
             )
-            trace.final_match_method_detail = detail
+            # 写入独立的「跨季路径」字段，**不再覆写** final_match_method_detail
+            # —— 后者专表「条目召回方式」（exact/prefix_variant/…），
+            # 覆写会让「本季怎么召回的」这一信息丢失（历史 bug）。
+            trace.final_episode_path_detail = detail
 
         # 回填最终剧集 ID 到 trace
         trace.final_episode_id = str(bgm_ep_id)

@@ -260,7 +260,9 @@ class SearchMixin:
         for sub_step in sub_steps:
             outcome = sub_step.execute(ctx)
             if trace is not None:
-                trace.record_step(sub_step.stage, outcome)
+                # parent="api_search"：把 4 个子 step 归入「API 搜索内部流程」，
+                # 使同步详情可折叠分组（不再靠前端硬编码 stage 名集合）
+                trace.record_step(sub_step.stage, outcome, parent="api_search")
             if outcome.is_terminal:
                 break
         if outcome is None or outcome.status == "miss":

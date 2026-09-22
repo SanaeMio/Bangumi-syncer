@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from app.services.matching.context import MatchContext
 from app.services.matching.result import MatchResult
-from app.services.matching.steps.base import MatchStepBase, StepOutcome
+from app.services.matching.steps.base import (
+    MatchStepBase,
+    StepOutcome,
+    evaluate_gates,
+    skipped_outcome,
+)
 
 
 class MatchPipeline:
@@ -21,7 +26,14 @@ class MatchPipeline:
         """按顺序执行 steps，命中即终止，最终构建 MatchResult"""
         try:
             for step in self._steps:
-                outcome = step.execute(ctx)
+                # 声明式执行门：命中则产出标准 skipped outcome，不调 execute。
+                # 不改变控制流 —— skipped 不终止、也未被任何逻辑分支消费，
+                # 仅用于 trace 展示「本步因何未执行」。
+                gate = evaluate_gates(getattr(step, "gates", ()), ctx)
+                if gate is not None:
+                    outcome = skipped_outcome(gate)
+                else:
+                    outcome = step.execute(ctx)
                 self._record_trace(ctx, step.stage, outcome)
                 if outcome.is_terminal:
                     break

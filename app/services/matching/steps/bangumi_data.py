@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
-from app.services.matching.steps.base import MatchStepBase, StepOutcome
+from app.services.matching.gates import BANGUMI_DATA_DISABLED
+from app.services.matching.steps.base import (
+    MatchStepBase,
+    StepOutcome,
+    skipped_outcome,
+)
 from app.services.sync_service.match_trace import MatchCandidate
 from app.utils.bangumi_data.matching import date_diff_days
 
@@ -46,7 +51,7 @@ class BangumiDataStep(MatchStepBase):
         from app.services.sync_service import config_manager
 
         if not config_manager.get("bangumi_data", "enabled", fallback=True):
-            return StepOutcome(status="skipped", reason="bangumi-data 已禁用")
+            return skipped_outcome(BANGUMI_DATA_DISABLED)
 
         release_date = None
         if ctx.item.release_date and len(ctx.item.release_date) >= 8:
@@ -170,6 +175,11 @@ class BangumiDataStep(MatchStepBase):
                 reason=f"bangumi-data 匹配异常：{e}",
                 inputs=inputs,
                 error_detail=_build_error_detail(e),
+                # 显式声明「出错但可降级」：bangumi-data 是可选本地数据源，
+                # 异常不应中断匹配，后续 ArchiveShortcut/APISearch 会托底。
+                # 必须显式写 False —— StepOutcome 默认值在两条管线里语义不同
+                # （SyncPipeline 见 status="error" 会无条件终止），见 StepOutcome 文档。
+                is_terminal=False,
             )
 
     @staticmethod

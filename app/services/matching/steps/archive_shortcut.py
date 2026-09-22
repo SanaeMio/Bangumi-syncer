@@ -15,7 +15,12 @@ import datetime
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
 from app.services.matching.contracts import SOURCE_ARCHIVE, candidates_from_rows
-from app.services.matching.steps.base import MatchStepBase, StepOutcome
+from app.services.matching.gates import ARCHIVE_DISABLED, BGM_UNAVAILABLE
+from app.services.matching.steps.base import (
+    MatchStepBase,
+    StepOutcome,
+    skipped_outcome,
+)
 from app.utils.bangumi_constants import SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL
 
 
@@ -41,11 +46,11 @@ class ArchiveShortcutStep(MatchStepBase):
         ctx.bgm = bgm
         if not bgm:
             # bgm 不可用，跳过 archive 短路，让 APISearchStep 处理错误
-            return StepOutcome(status="skipped", reason="bgm 不可用，跳过 archive 短路")
+            return skipped_outcome(BGM_UNAVAILABLE)
 
         # Archive 未启用，跳过（API 托底）
         if not bgm._archive.enabled:
-            return StepOutcome(status="skipped", reason="archive 未启用，走 API 托底")
+            return skipped_outcome(ARCHIVE_DISABLED)
 
         # 计算搜索标题（与 APISearchStep 一致：优先归一化标题）
         search_title = ctx.normalized_title or item.title
@@ -109,6 +114,11 @@ class ArchiveShortcutStep(MatchStepBase):
                 inputs=inputs,
                 outputs={"subject_id": "", "error": str(e)},
                 request_params=request_params,
+                # 显式声明「出错但可降级」：本步是可选优化，异常不应中断匹配，
+                # 后续 APISearchStep 会走在线搜索托底。
+                # 必须显式写 False —— StepOutcome 默认值在两条管线里语义不同
+                # （SyncPipeline 见 status="error" 会无条件终止），见 StepOutcome 文档。
+                is_terminal=False,
             )
 
         if not shortcut.hit or not shortcut.data:
