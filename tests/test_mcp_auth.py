@@ -9,6 +9,7 @@ FastMCP OAuthProvider（app.mcp.provider）的测试。
 - token 端点（authorization_code、refresh_token）
 - JWT claims 校验（RS256、sub/scope/iss/aud/exp）
 - CIMD：URL client_id 识别、scope 注入、元数据注入
+- 完整端到端 OAuth 流程
 """
 
 from __future__ import annotations
@@ -17,12 +18,16 @@ import hashlib
 import logging
 import secrets
 import time
+from urllib.parse import parse_qs, urlparse
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import AnyHttpUrl
+from starlette.testclient import TestClient
+
+from app.core.public_url import get_public_base_path
 
 # ---------------------------------------------------------------------------
 # 辅助函数
@@ -1397,6 +1402,957 @@ class TestMetadataInjection:
 
 
 # ---------------------------------------------------------------------------
+# 全流程集成测试（使用 TestClient）
+# ---------------------------------------------------------------------------
+
+
+class TestOAuthFullFlow:
+    """使用 TestClient 的端到端 OAuth 流程测试。"""
+
+    @pytest.fixture
+    def tmp_keys(self, tmp_path):
+        """创建临时密钥文件。"""
+        return {
+            "private": str(tmp_path / "private.pem"),
+            "public": str(tmp_path / "public.pem"),
+        }
+
+    @pytest.fixture
+    def server_app_auth_disabled(self, tmp_keys):
+        """创建 auth.enabled=False 的测试 server。"""
+        from tests.mcp_helpers import build_test_mcp_app
+
+        app = build_test_mcp_app(
+            private_key_path=tmp_keys["private"],
+            public_key_path=tmp_keys["public"],
+            issuer="http://localhost:8000",
+            audience="bs",
+            auth_enabled=False,
+            auth_username="admin",
+        )
+        return app
+
+    @pytest.fixture
+    def server_app_auth_enabled(self, tmp_keys):
+        """创建 auth.enabled=True 的测试 server。"""
+        from tests.mcp_helpers import build_test_mcp_app
+
+        app = build_test_mcp_app(
+            private_key_path=tmp_keys["private"],
+            public_key_path=tmp_keys["public"],
+            issuer="http://localhost:8000",
+            audience="bs",
+            auth_enabled=True,
+            auth_username="admin",
+        )
+        return app
+
+    def _make_test_client(self, app):
+        return TestClient(app, raise_server_exceptions=False)
+
+    def _complete_authorization_code_flow(self, client):
+        """走完 DCR → authorize → consent → token，返回 (client_id, token_json)。"""
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "token_endpoint_auth_method": "none",
+                "scope": "read",
+            },
+        )
+        assert reg_response.status_code == 201
+        client_id = reg_response.json()["client_id"]
+
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "scope": "read",
+            },
+            follow_redirects=False,
+        )
+        consent_url = auth_response.headers["location"]
+        parsed = urlparse(consent_url)
+        request_token = parse_qs(parsed.query)["request_token"][0]
+
+        consent_get = client.get(consent_url)
+        assert consent_get.status_code == 200
+        csrf_token = _extract_csrf_token(consent_get.text)
+
+        consent_post = client.post(
+            "/consent",
+            data={
+                "action": "allow",
+                "request_token": request_token,
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=False,
+        )
+        assert consent_post.status_code == 302
+        code = parse_qs(urlparse(consent_post.headers["location"]).query)["code"][0]
+
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://localhost/callback",
+                "client_id": client_id,
+                "code_verifier": code_verifier,
+            },
+        )
+        assert token_response.status_code == 200
+        return client_id, token_response.json()
+
+    def _start_consent_flow(self, client):
+        """走 DCR + authorize，返回 (client_id, consent_url, request_token)。"""
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+                "scope": "read write",
+            },
+        )
+        assert reg_response.status_code == 201
+        client_id = reg_response.json()["client_id"]
+
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "scope": "read write",
+            },
+            follow_redirects=False,
+        )
+        assert auth_response.status_code == 302
+        consent_url = auth_response.headers["location"]
+        request_token = parse_qs(urlparse(consent_url).query)["request_token"][0]
+        return client_id, consent_url, request_token
+
+    def _assert_login_redirect_points_to_consent(self, response, request_token):
+        """断言 302 登录页重定向，且 next 精确指向本站 consent 路径。"""
+        assert response.status_code == 302, (
+            f"无有效 session 时应 302 到登录页，实际: {response.status_code}, "
+            f"body: {response.text[:200]}"
+        )
+        parsed = urlparse(response.headers["location"])
+        assert parsed.path == "/login", f"应跳转 /login，实际: {parsed.path}"
+        next_value = parse_qs(parsed.query)["next"][0]
+        # next 为不含 base_path 的站内路径（JS 端 appUrl() 负责补 base）
+        assert next_value == f"/consent?request_token={request_token}", (
+            f"next 应精确回跳 consent，实际: {next_value!r}"
+        )
+        base = get_public_base_path()
+        if base:
+            assert not next_value.startswith(base), (
+                f"next 不应包含 base_path 前缀 {base!r}，实际: {next_value!r}"
+            )
+        # 开放重定向护栏：站内相对路径，既非绝对 URL 也非协议相对 URL
+        assert next_value.startswith("/")
+        assert not next_value.startswith("//")
+
+    def test_metadata_endpoint_returns_authorization_server_metadata(
+        self, server_app_auth_disabled
+    ):
+        """GET /.well-known/oauth-authorization-server 应返回元数据。"""
+        client = self._make_test_client(server_app_auth_disabled)
+        response = client.get("/.well-known/oauth-authorization-server")
+        assert response.status_code == 200
+        data = response.json()
+        # AnyHttpUrl 会规范化为带尾部斜杠
+        assert data["issuer"] in ("http://localhost:8000", "http://localhost:8000/")
+        assert "authorization_endpoint" in data
+        assert "token_endpoint" in data
+        assert "registration_endpoint" in data
+
+    def test_metadata_includes_cimd_support_flag(self, server_app_auth_disabled):
+        """元数据应声明 client_id_metadata_document_supported。"""
+        client = self._make_test_client(server_app_auth_disabled)
+        response = client.get("/.well-known/oauth-authorization-server")
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("client_id_metadata_document_supported") is True
+
+    def test_dcr_register_client(self, server_app_auth_disabled):
+        """POST /register 应注册一个新 client。"""
+        client = self._make_test_client(server_app_auth_disabled)
+        response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_post",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert "client_id" in data
+        assert "client_secret" in data
+        assert data["client_id_issued_at"] is not None
+
+    def test_full_flow_auth_disabled(self, server_app_auth_disabled):
+        """auth.enabled=False 的完整 OAuth 流程：authorize → consent → token。"""
+        client = self._make_test_client(server_app_auth_disabled)
+
+        # 步骤 1：DCR（显式注册 read write scope，因默认 scope 已改为 read）
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+                "scope": "read write",
+            },
+        )
+        assert reg_response.status_code == 201
+        client_id = reg_response.json()["client_id"]
+
+        # 步骤 2：authorize
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "scope": "read write",
+                "state": "test-state",
+            },
+            follow_redirects=False,
+        )
+        assert auth_response.status_code == 302
+        consent_url = auth_response.headers["location"]
+        assert "/consent" in consent_url
+
+        # 步骤 3：consent 页面（GET）
+        consent_get = client.get(consent_url)
+        assert consent_get.status_code == 200
+
+        # 步骤 4：consent allow（POST）
+        # 从 consent URL 解析 request_token
+        parsed = urlparse(consent_url)
+        request_token = parse_qs(parsed.query)["request_token"][0]
+        # 从 consent 表单中提取 CSRF token
+        csrf_token = _extract_csrf_token(consent_get.text)
+
+        consent_post = client.post(
+            "/consent",
+            data={
+                "action": "allow",
+                "request_token": request_token,
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=False,
+        )
+        assert consent_post.status_code == 302
+        redirect_url = consent_post.headers["location"]
+        assert "code=" in redirect_url
+
+        # 提取 code
+        parsed_redirect = urlparse(redirect_url)
+        code = parse_qs(parsed_redirect.query)["code"][0]
+
+        # 步骤 5：token 交换
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://localhost/callback",
+                "client_id": client_id,
+                "code_verifier": code_verifier,
+            },
+        )
+        assert token_response.status_code == 200
+        token_data = token_response.json()
+        assert token_data["token_type"] == "Bearer"
+        assert token_data["access_token"]
+        assert token_data["refresh_token"]
+
+        # 校验 JWT claims
+        access_token = token_data["access_token"]
+        # 加载公钥用于验签
+        public_pem = server_app_auth_disabled.state.public_key_pem
+        decoded = jwt.decode(
+            access_token, public_pem, algorithms=["RS256"], audience="bs"
+        )
+        assert decoded["sub"] == "admin"  # auth.enabled=False 时使用 auth.username
+        assert decoded["scope"] == "read write"
+        assert decoded["iss"] == "http://localhost:8000"
+        assert decoded["aud"] == "bs"
+        assert decoded["exp"] > time.time()
+
+    def test_consent_deny_returns_error(self, server_app_auth_disabled):
+        """用户点击 deny 应带 error 重定向。"""
+        client = self._make_test_client(server_app_auth_disabled)
+
+        # DCR
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        client_id = reg_response.json()["client_id"]
+
+        # authorize
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        consent_url = auth_response.headers["location"]
+        parsed = urlparse(consent_url)
+        request_token = parse_qs(parsed.query)["request_token"][0]
+
+        # 获取 consent 表单以提取 CSRF token
+        consent_get = client.get(consent_url)
+        assert consent_get.status_code == 200
+        csrf_token = _extract_csrf_token(consent_get.text)
+
+        # 拒绝
+        consent_post = client.post(
+            "/consent",
+            data={
+                "action": "deny",
+                "request_token": request_token,
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=False,
+        )
+        assert consent_post.status_code == 302
+        redirect_url = consent_post.headers["location"]
+        assert "error=" in redirect_url
+        assert "access_denied" in redirect_url
+
+    def test_consent_post_without_csrf_rejected(self, server_app_auth_disabled):
+        """不带 CSRF token 的 POST /consent 应返回 403。"""
+        client = self._make_test_client(server_app_auth_disabled)
+
+        # DCR
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        client_id = reg_response.json()["client_id"]
+
+        # authorize
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        consent_url = auth_response.headers["location"]
+        parsed = urlparse(consent_url)
+        request_token = parse_qs(parsed.query)["request_token"][0]
+
+        # 不带 CSRF token 的 POST
+        consent_post = client.post(
+            "/consent",
+            data={
+                "action": "allow",
+                "request_token": request_token,
+                # 不带 csrf_token
+            },
+            follow_redirects=False,
+        )
+        assert consent_post.status_code == 403
+
+    def test_consent_post_with_wrong_csrf_rejected(self, server_app_auth_disabled):
+        """带错误 CSRF token 的 POST /consent 应返回 403。"""
+        client = self._make_test_client(server_app_auth_disabled)
+
+        # DCR
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        client_id = reg_response.json()["client_id"]
+
+        # authorize
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        consent_url = auth_response.headers["location"]
+        parsed = urlparse(consent_url)
+        request_token = parse_qs(parsed.query)["request_token"][0]
+
+        # 带错误 CSRF token 的 POST
+        consent_post = client.post(
+            "/consent",
+            data={
+                "action": "allow",
+                "request_token": request_token,
+                "csrf_token": "wrong-csrf-token",
+            },
+            follow_redirects=False,
+        )
+        assert consent_post.status_code == 403
+
+    def test_token_with_invalid_code_returns_error(self, server_app_auth_disabled):
+        """token 端点使用无效 code 时应返回 error。
+
+        注意：按 MCP 规范，FastMCP 的 TokenHandler 会把 invalid_grant 的 400 转为 401
+        （原文："Invalid or expired tokens MUST receive a HTTP 401 response"，即"无效或过期的 token 必须收到 HTTP 401 响应"）。
+        """
+        client = self._make_test_client(server_app_auth_disabled)
+
+        # DCR
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        client_id = reg_response.json()["client_id"]
+
+        # 用无效 code 尝试换取 token
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": "invalid-code",
+                "redirect_uri": "http://localhost/callback",
+                "client_id": client_id,
+                "code_verifier": "verifier",
+            },
+        )
+        # 按 MCP 规范，FastMCP 将 invalid_grant 的 400 转为 401
+        assert token_response.status_code == 401
+        assert token_response.json()["error"] == "invalid_grant"
+
+    def test_refresh_token_flow(self, server_app_auth_disabled):
+        """refresh token 应换取新的 access token。"""
+        client = self._make_test_client(server_app_auth_disabled)
+
+        # DCR
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        client_id = reg_response.json()["client_id"]
+
+        # authorize
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        consent_url = auth_response.headers["location"]
+        parsed = urlparse(consent_url)
+        request_token = parse_qs(parsed.query)["request_token"][0]
+
+        # 获取 consent 表单以提取 CSRF token
+        consent_get = client.get(consent_url)
+        assert consent_get.status_code == 200
+        csrf_token = _extract_csrf_token(consent_get.text)
+
+        # consent 允许
+        consent_post = client.post(
+            "/consent",
+            data={
+                "action": "allow",
+                "request_token": request_token,
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=False,
+        )
+        assert consent_post.status_code == 302
+        redirect_url = consent_post.headers["location"]
+        code = parse_qs(urlparse(redirect_url).query)["code"][0]
+
+        # token 交换
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://localhost/callback",
+                "client_id": client_id,
+                "code_verifier": code_verifier,
+            },
+        )
+        assert token_response.status_code == 200
+        refresh_token = token_response.json()["refresh_token"]
+
+        # 刷新
+        refresh_response = client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+            },
+        )
+        assert refresh_response.status_code == 200
+        new_token_data = refresh_response.json()
+        assert new_token_data["access_token"]
+        assert new_token_data["access_token"] != token_response.json()["access_token"]
+
+    def test_过期refresh_token_刷新被拒(self, server_app_auth_disabled):
+        """过期 refresh token 换新 token 应被拒绝。
+
+        provider 的 load_refresh_token 只负责加载；过期判定由 MCP SDK token
+        handler 承担（mcp/server/auth/handlers/token.py:215），返回 invalid_grant。
+        """
+        client = self._make_test_client(server_app_auth_disabled)
+        client_id, token_data = self._complete_authorization_code_flow(client)
+
+        provider = server_app_auth_disabled.state.provider
+        stored = provider._refresh_tokens[token_data["refresh_token"]]
+        # 签发的 refresh token 必须自带有效期
+        assert stored.expires_at is not None
+        assert stored.expires_at == pytest.approx(
+            time.time() + provider.refresh_token_ttl, abs=5
+        )
+        # 再将其手动置为过期，模拟自然到期
+        stored.expires_at = int(time.time()) - 10
+
+        refresh_response = client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": token_data["refresh_token"],
+                "client_id": client_id,
+            },
+        )
+        assert refresh_response.status_code == 401
+        assert refresh_response.json()["error"] == "invalid_grant"
+
+    def test_revoke_token_endpoint(self, server_app_auth_disabled):
+        """POST /revoke 应吊销 token。"""
+        client = self._make_test_client(server_app_auth_disabled)
+
+        # DCR
+        reg_response = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
+        client_id = reg_response.json()["client_id"]
+
+        # authorize
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = _make_code_challenge_b64(code_verifier)
+        auth_response = client.get(
+            "/authorize",
+            params={
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "response_type": "code",
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+            },
+            follow_redirects=False,
+        )
+        consent_url = auth_response.headers["location"]
+        parsed = urlparse(consent_url)
+        request_token = parse_qs(parsed.query)["request_token"][0]
+
+        consent_get = client.get(consent_url)
+        csrf_token = _extract_csrf_token(consent_get.text)
+
+        consent_post = client.post(
+            "/consent",
+            data={
+                "action": "allow",
+                "request_token": request_token,
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=False,
+        )
+        redirect_url = consent_post.headers["location"]
+        code = parse_qs(urlparse(redirect_url).query)["code"][0]
+
+        # token 交换
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://localhost/callback",
+                "client_id": client_id,
+                "code_verifier": code_verifier,
+            },
+        )
+        assert token_response.status_code == 200
+        refresh_token = token_response.json()["refresh_token"]
+
+        # 吊销（SDK 的 RevocationRequest 模型要求 client_secret）
+        revoke_response = client.post(
+            "/revoke",
+            data={
+                "token": refresh_token,
+                "client_id": client_id,
+                "client_secret": "",
+            },
+        )
+        assert revoke_response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_full_flow_auth_enabled_with_mock_security(
+        self, server_app_auth_enabled, monkeypatch
+    ):
+        """auth.enabled=True 且 mock security_manager 的完整 OAuth 流程。"""
+        from app.mcp import provider as provider_module
+
+        # mock security_manager.validate_session 使其返回一个 session
+        mock_session = {"username": "testuser", "created_at": time.time()}
+        monkeypatch.setattr(
+            provider_module.security_manager,
+            "validate_session",
+            lambda token: mock_session,
+        )
+
+        with TestClient(
+            server_app_auth_enabled, raise_server_exceptions=False
+        ) as client:
+            # DCR（显式注册 read write scope，因默认 scope 已改为 read）
+            reg_response = client.post(
+                "/register",
+                json={
+                    "redirect_uris": ["http://localhost/callback"],
+                    "grant_types": ["authorization_code"],
+                    "token_endpoint_auth_method": "none",
+                    "scope": "read write",
+                },
+            )
+            assert reg_response.status_code == 201
+            client_id = reg_response.json()["client_id"]
+
+            # authorize
+            code_verifier = secrets.token_urlsafe(32)
+            code_challenge = _make_code_challenge_b64(code_verifier)
+            auth_response = client.get(
+                "/authorize",
+                params={
+                    "client_id": client_id,
+                    "redirect_uri": "http://localhost/callback",
+                    "response_type": "code",
+                    "code_challenge": code_challenge,
+                    "code_challenge_method": "S256",
+                    "scope": "read write",
+                },
+                follow_redirects=False,
+            )
+            assert auth_response.status_code == 302
+            consent_url = auth_response.headers["location"]
+
+            # consent GET（通过 security_manager 校验 BS session）
+            # 发送 session_token cookie 以便处理器校验
+            consent_get = client.get(
+                consent_url,
+                cookies={"session_token": "valid-session-token"},
+            )
+            assert consent_get.status_code == 200
+
+            # consent 允许
+            parsed = urlparse(consent_url)
+            request_token = parse_qs(parsed.query)["request_token"][0]
+            csrf_token = _extract_csrf_token(consent_get.text)
+            consent_post = client.post(
+                "/consent",
+                data={
+                    "action": "allow",
+                    "request_token": request_token,
+                    "csrf_token": csrf_token,
+                },
+                cookies={"session_token": "valid-session-token"},
+                follow_redirects=False,
+            )
+            assert consent_post.status_code == 302
+            redirect_url = consent_post.headers["location"]
+            code = parse_qs(urlparse(redirect_url).query)["code"][0]
+
+            # token 交换
+            token_response = client.post(
+                "/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": "http://localhost/callback",
+                    "client_id": client_id,
+                    "code_verifier": code_verifier,
+                },
+            )
+            assert token_response.status_code == 200
+            token_data = token_response.json()
+
+            # 校验 JWT sub = testuser（来自 security_manager session）
+            public_pem = server_app_auth_enabled.state.public_key_pem
+            decoded = jwt.decode(
+                token_data["access_token"],
+                public_pem,
+                algorithms=["RS256"],
+                audience="bs",
+            )
+            assert decoded["sub"] == "testuser"
+            assert decoded["scope"] == "read write"
+
+    @pytest.mark.asyncio
+    async def test_consent_get_no_session_redirects_to_login(
+        self, server_app_auth_enabled, monkeypatch
+    ):
+        """auth.enabled=True 且无 session cookie 时，consent GET 应 302 登录页。"""
+        from app.mcp import provider as provider_module
+
+        # mock security_manager.validate_session 使其返回 None（无 session）
+        monkeypatch.setattr(
+            provider_module.security_manager,
+            "validate_session",
+            lambda token: None,
+        )
+
+        with TestClient(
+            server_app_auth_enabled, raise_server_exceptions=False
+        ) as client:
+            _, consent_url, request_token = self._start_consent_flow(client)
+
+            # 无 cookie → 应 302 到登录页并回跳 consent，而不是 401 纯文本
+            consent_get = client.get(consent_url, follow_redirects=False)
+            self._assert_login_redirect_points_to_consent(consent_get, request_token)
+
+    @pytest.mark.asyncio
+    async def test_consent_get_expired_session_redirects_to_login(
+        self, server_app_auth_enabled, monkeypatch
+    ):
+        """auth.enabled=True 且 session 失效/过期时，consent GET 应 302 登录页。"""
+        from app.mcp import provider as provider_module
+
+        monkeypatch.setattr(
+            provider_module.security_manager,
+            "validate_session",
+            lambda token: None,
+        )
+
+        with TestClient(
+            server_app_auth_enabled, raise_server_exceptions=False
+        ) as client:
+            _, consent_url, request_token = self._start_consent_flow(client)
+
+            consent_get = client.get(
+                consent_url,
+                cookies={"session_token": "expired-token"},
+                follow_redirects=False,
+            )
+            self._assert_login_redirect_points_to_consent(consent_get, request_token)
+
+    @pytest.mark.asyncio
+    async def test_consent_post_allow_no_session_redirects_without_issuing_code(
+        self, server_app_auth_enabled, monkeypatch
+    ):
+        """无 session 的 POST allow 应 302 登录页，且不签发 code、不删除 pending。"""
+        from app.mcp import provider as provider_module
+
+        mock_session = {"username": "testuser", "created_at": time.time()}
+        monkeypatch.setattr(
+            provider_module.security_manager,
+            "validate_session",
+            lambda token: mock_session,
+        )
+
+        with TestClient(
+            server_app_auth_enabled, raise_server_exceptions=False
+        ) as client:
+            _, consent_url, request_token = self._start_consent_flow(client)
+
+            # 先用有效 session 取到合法的 CSRF token（CSRF 校验先于 session 校验）
+            consent_get = client.get(
+                consent_url, cookies={"session_token": "valid-session-token"}
+            )
+            assert consent_get.status_code == 200
+            csrf_token = _extract_csrf_token(consent_get.text)
+
+            provider = server_app_auth_enabled.state.provider
+            assert request_token in provider._pending_auths
+
+            # 不带 session cookie 提交 allow
+            consent_post = client.post(
+                "/consent",
+                data={
+                    "action": "allow",
+                    "request_token": request_token,
+                    "csrf_token": csrf_token,
+                },
+                follow_redirects=False,
+            )
+            self._assert_login_redirect_points_to_consent(consent_post, request_token)
+
+            # 不得签发 authorization code，也不得删除 pending auth
+            assert provider._auth_codes == {}
+            assert request_token in provider._pending_auths
+
+    @pytest.mark.asyncio
+    async def test_consent_login_redirect_back_with_session_renders_form(
+        self, server_app_auth_enabled, monkeypatch
+    ):
+        """302 登录后携带有效 session 回跳 consent，应 200 并渲染 allow/deny。"""
+        from app.mcp import provider as provider_module
+
+        mock_session = {"username": "testuser", "created_at": time.time()}
+        monkeypatch.setattr(
+            provider_module.security_manager,
+            "validate_session",
+            lambda token: mock_session,
+        )
+
+        with TestClient(
+            server_app_auth_enabled, raise_server_exceptions=False
+        ) as client:
+            _, consent_url, request_token = self._start_consent_flow(client)
+
+            consent_get = client.get(consent_url, follow_redirects=False)
+            self._assert_login_redirect_points_to_consent(consent_get, request_token)
+
+            next_value = parse_qs(urlparse(consent_get.headers["location"]).query)[
+                "next"
+            ][0]
+
+            # 模拟登录成功后 JS 回跳到 next（此时已带 session cookie）
+            back_get = client.get(
+                next_value, cookies={"session_token": "valid-session-token"}
+            )
+            assert back_get.status_code == 200, (
+                f"回跳后应 200 渲染表单，实际: {back_get.status_code}, "
+                f"body: {back_get.text[:200]}"
+            )
+            assert 'value="allow"' in back_get.text
+            assert 'value="deny"' in back_get.text
+
+    @pytest.mark.asyncio
+    async def test_consent_post_invalid_csrf_still_403_before_session_check(
+        self, server_app_auth_enabled, monkeypatch
+    ):
+        """CSRF 校验必须先于 session 校验：无 session 且 CSRF 错误应 403（非 302）。"""
+        from app.mcp import provider as provider_module
+
+        monkeypatch.setattr(
+            provider_module.security_manager,
+            "validate_session",
+            lambda token: None,
+        )
+
+        with TestClient(
+            server_app_auth_enabled, raise_server_exceptions=False
+        ) as client:
+            _, _, request_token = self._start_consent_flow(client)
+
+            provider = server_app_auth_enabled.state.provider
+            assert request_token in provider._pending_auths
+
+            consent_post = client.post(
+                "/consent",
+                data={
+                    "action": "allow",
+                    "request_token": request_token,
+                    "csrf_token": "wrong-token",
+                },
+                follow_redirects=False,
+            )
+            assert consent_post.status_code == 403, (
+                f"CSRF 错误应先于 session 校验返回 403，实际: "
+                f"{consent_post.status_code}"
+            )
+            assert provider._auth_codes == {}
+            assert request_token in provider._pending_auths
+
+    def test_consent_login_redirect_next_is_safe_relative_path(self):
+        """登录重定向 helper 构造的 next 始终是站内相对路径（开放重定向护栏）。"""
+        from app.mcp.consent import _consent_login_redirect
+
+        for raw_token in (
+            "plain-token",
+            "token-with-&-and-=-and-?",
+            "/evil/../token",
+            "//evil.com",
+        ):
+            response = _consent_login_redirect(raw_token)
+            assert response.status_code == 302
+            parsed = urlparse(response.headers["location"])
+            assert parsed.path == "/login"
+            next_value = parse_qs(parsed.query)["next"][0]
+            assert next_value.startswith("/"), (
+                f"next 必须以 / 开头，实际: {next_value!r}"
+            )
+            assert not next_value.startswith("//"), (
+                f"next 不得为协议相对 URL，实际: {next_value!r}"
+            )
+            # 原始 token 被整体 urlencode，不会被解释为额外 query 参数
+            assert parse_qs(urlparse(next_value).query)["request_token"] == [raw_token]
+
+
+# ---------------------------------------------------------------------------
 # DCR 回退测试（T5）
 # ---------------------------------------------------------------------------
 
@@ -1675,6 +2631,31 @@ class TestSecurityFixes:
             await provider.authorize(client_info, params)
         assert exc_info.value.error == "invalid_request"
         assert "redirect_uri" in (exc_info.value.error_description or "")
+
+    # --- P1-1: issuer_url ---
+
+    def test_metadata_issuer_matches_jwt_iss(self, provider):
+        """元数据 issuer 应匹配 JWT 的 iss claim（P1-1）。"""
+        from starlette.testclient import TestClient
+
+        # 创建完整 server 以测试元数据
+        from tests.mcp_helpers import build_test_mcp_app
+
+        app = build_test_mcp_app(
+            private_key_path=provider.rsa_manager.private_key_path,
+            public_key_path=provider.rsa_manager.public_key_path,
+            issuer="http://localhost:8000",
+            audience="bs",
+            auth_enabled=False,
+            auth_username="admin",
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/.well-known/oauth-authorization-server")
+        assert response.status_code == 200
+        metadata = response.json()
+        # 元数据中的 issuer 应匹配配置的 issuer
+        assert metadata["issuer"] in ("http://localhost:8000", "http://localhost:8000/")
 
     # --- P1-2: 吊销 access token ---
 
