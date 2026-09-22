@@ -41,7 +41,7 @@ BANGUMI_PROVIDER = OAuthProvider(
     redirect_path="/api/oauth/bangumi/callback",
     scopes=[],
     extra_auth_params={"response_type": "code"},
-    get_credentials=_bangumi_credentials,   # 延迟导入 app.services.bangumi.auth
+    get_credentials=_bangumi_credentials,  # 延迟导入 app.services.bangumi.auth
     get_redirect_uri=_bangumi_redirect,
 )
 ```
@@ -82,8 +82,8 @@ MAL_PROVIDER = OAuthProvider(
     redirect_path="/api/oauth/mal/callback",
     scopes=["read"],
     extra_auth_params={"response_type": "code"},
-    get_credentials=_mal_credentials,   # 延迟导入，返回 (client_id, client_secret)
-    get_redirect_uri=_mal_redirect,     # 延迟导入，返回默认回调地址
+    get_credentials=_mal_credentials,  # 延迟导入，返回 (client_id, client_secret)
+    get_redirect_uri=_mal_redirect,  # 延迟导入，返回默认回调地址
 )
 ```
 

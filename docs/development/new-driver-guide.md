@@ -54,6 +54,7 @@ app/services/mydriver/
 ```python
 from pydantic import BaseModel, Field
 
+
 class MyDriverWebhookData(BaseModel):
     event: str = Field(..., description="事件类型")
     title: str = Field(..., description="番剧标题")
@@ -69,6 +70,7 @@ class MyDriverWebhookData(BaseModel):
 ```python
 from ...models.sync import CustomItem
 
+
 def extract_mydriver_data(raw: dict) -> CustomItem:
     return CustomItem(
         media_type="episode",
@@ -76,7 +78,7 @@ def extract_mydriver_data(raw: dict) -> CustomItem:
         season=raw["season"],
         episode=raw["episode"],
         user_name=raw["user_name"],
-        source="mydriver",          # 必须全局唯一
+        source="mydriver",  # 必须全局唯一
     )
 ```
 
@@ -91,6 +93,7 @@ from .extractor import extract_mydriver_data
 
 MYDRIVER_SYNC_SOURCE = "mydriver"
 
+
 class MyDriverSyncService:
     def sync_item(self, raw_data: dict, sync_svc=None) -> SyncResponse:
         if sync_svc is None:
@@ -99,7 +102,9 @@ class MyDriverSyncService:
             # 校验必要字段
             for field in ("title", "season", "episode", "user_name"):
                 if field not in raw_data:
-                    return SyncResponse(status="error", message=f"缺少必要字段: {field}")
+                    return SyncResponse(
+                        status="error", message=f"缺少必要字段: {field}"
+                    )
 
             # 事件过滤（按需）
             if raw_data.get("event") != "playback.completed":
@@ -111,6 +116,7 @@ class MyDriverSyncService:
         except Exception as e:
             logger.error(f"MyDriver 同步出错: {e}")
             return SyncResponse(status="error", message=str(e))
+
 
 mydriver_sync_service = MyDriverSyncService()
 ```
@@ -127,8 +133,11 @@ mydriver_sync_service = MyDriverSyncService()
 @root_router.post("/MyDriver/{webhook_key}", status_code=202)
 async def mydriver_sync(request: Request, webhook_key: str):
     if not await _verify_webhook_auth(webhook_key):
-        return Response(content='{"status":"error","message":"认证失败"}',
-                        status_code=401, media_type="application/json")
+        return Response(
+            content='{"status":"error","message":"认证失败"}',
+            status_code=401,
+            media_type="application/json",
+        )
     raw_data = json.loads(await request.body())
     task_id = await sync_service.sync_mydriver_item_async(raw_data)
     return {"status": "accepted", "task_id": task_id}
@@ -138,7 +147,9 @@ async def mydriver_sync(request: Request, webhook_key: str):
 
 ```python
 async def sync_mydriver_item_async(self, raw_data: dict) -> str:
-    return await self._submit_async("mydriver", mydriver_sync_service.sync_item, raw_data)
+    return await self._submit_async(
+        "mydriver", mydriver_sync_service.sync_item, raw_data
+    )
 ```
 
 ### 6. 实现调度器（仅拉取型）
@@ -149,6 +160,7 @@ async def sync_mydriver_item_async(self, raw_data: dict) -> str:
 from ..base.scheduler import BaseScheduler
 from ..base.notifier_helpers import notify_batch_sync_summary, notify_scheduler_failure
 
+
 class MyDriverScheduler(BaseScheduler):
     JOB_ID = "mydriver_sync"
     DEFAULT_CRON = "*/10 * * * *"
@@ -158,7 +170,7 @@ class MyDriverScheduler(BaseScheduler):
         cfg = config_manager.get_mydriver_config()
         if not cfg.get("enabled"):
             return False
-        return bool(cfg.get("api_url"))   # 校验外部依赖
+        return bool(cfg.get("api_url"))  # 校验外部依赖
 
     def _get_driver_config(self) -> dict:
         return config_manager.get_mydriver_config()
@@ -166,6 +178,7 @@ class MyDriverScheduler(BaseScheduler):
     async def _run_sync_job(self) -> None:
         # 基类已处理超时；子类只管业务，异常不要向上抛
         ...
+
 
 mydriver_scheduler = MyDriverScheduler()
 ```
