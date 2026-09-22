@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -564,6 +565,47 @@ def _restore_injectable_singletons():
         _ns_inj._instance,
         _ns_inj._loaded,
     ) = _saved
+
+
+# ===== MCP 嵌入测试共享打桩 =====
+# test_mcp_embed.py / test_main_mcp.py 共用：进入 TestClient 时打桩 lifespan
+# 中的外部依赖（打印、映射、调度器、后台任务等），避免测试触发真实 IO。
+@contextmanager
+def _embed_mocks():
+    """为 MCP 嵌入测试打桩 lifespan 中的外部依赖（共享实现）。
+
+    注意：``app.main.config_manager.get_bangumi_configs`` 并非死桩——启动流程中
+    ``app.core.accounts.migrate_ini_accounts_to_db()`` 会间接调用它（实测确认），
+    故保留该 patch。
+    """
+    defaults = {
+        "app.main.startup_info.print_info": {},
+        "app.main.startup_info.print_separator": {},
+        "app.main.startup_info.print_success": {},
+        "app.main.startup_info.print_error": {},
+        "app.main.startup_info.print_startup_complete": {},
+        "app.main.config_manager.get_bangumi_configs": {"return_value": {}},
+        "app.main.mapping_service.get_all_mappings": {"return_value": {}},
+        "app.main.ensure_feiniu_startup_watermark": {},
+        "app.main.database_manager.cleanup_pending_sync_queue": {},
+        "app.main.config_manager.get_scheduler_config": {
+            "return_value": {"startup_delay": 0}
+        },
+        "app.main.register_schedulers": {},
+        "app.main.scheduler_registry.start_all": {"new": AsyncMock()},
+        "app.main.scheduler_registry.stop_all": {"new": AsyncMock()},
+        "asyncio.sleep": {"new": AsyncMock()},
+    }
+    with ExitStack() as stack:
+        for path, kw in defaults.items():
+            stack.enter_context(patch(path, **kw))
+        yield
+
+
+@pytest.fixture
+def embed_mocks():
+    """返回可 ``with`` 的上下文管理器，打桩 MCP 嵌入测试的 lifespan 外部依赖。"""
+    return _embed_mocks
 
 
 # Playwright 测试配置
