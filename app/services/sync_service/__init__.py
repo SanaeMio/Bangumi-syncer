@@ -846,7 +846,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )[0]:
                 return SyncResponse(status="error", message=perm_ok[1])
 
-            if self._is_title_blocked(item.title, item.ori_title):
+            if self._is_title_blocked(item.title, item.ori_title, item.season):
                 return SyncResponse(
                     status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
                 )
@@ -1060,7 +1060,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             return SyncResponse(status="error", message=perm_ok[1])
 
         # 检查是否包含屏蔽关键词
-        if self._is_title_blocked(item.title, item.ori_title):
+        if self._is_title_blocked(item.title, item.ori_title, item.season):
             return SyncResponse(
                 status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
             )
@@ -1597,7 +1597,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         return True, ""
 
-    def _is_title_blocked(self, title: str, ori_title: str = None) -> bool:
+    def _is_title_blocked(
+        self, title: str, ori_title: str = None, season: int = 1
+    ) -> bool:
         """检查番剧标题是否命中屏蔽关键词（DB 统一入口）
 
         **自定义映射优先**：命中自定义映射时直接放行，即使标题含屏蔽词。
@@ -1606,13 +1608,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         作品建立映射。
 
         生效时机：**匹配前**（与历史 ``[sync] blocked_keywords`` 一致）。
+
+        ``season`` 参与「自定义映射优先」的判定：高级格式映射
+        （``{"subject_id": "...", "season": N}``）只在 season 相符时才算命中，
+        因此必须由调用方传入真实季度；否则第 2 季请求会被第 1 季的映射放行，
+        绕过屏蔽词。默认 1 仅为兼容历史调用与测试。
         """
         # 自定义映射优先：显式意图压过屏蔽规则
         try:
             mapping_sid, _, _ = mapping_service.find_mapping(
                 title=title or "",
                 ori_title=ori_title or "",
-                season=1,
+                season=season,
             )
             if mapping_sid:
                 logger.debug(

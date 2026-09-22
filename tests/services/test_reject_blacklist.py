@@ -13,9 +13,11 @@
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.core.database import database_manager
-from app.services.sync_service import sync_service
+from app.models.sync import CustomItem
+from app.services.sync_service import SyncService, sync_service
 from app.services.sync_service.match_trace import MatchTrace
 
 # 测试用关键词（避免与真实数据冲突，统一前缀）
@@ -148,6 +150,100 @@ class TestIsTitleBlocked:
             assert sync_service._is_title_blocked(f"标题 {DISTINCT_KW}") is True
         finally:
             database_manager.remove_blocked_keyword(DISTINCT_KW)
+
+
+class TestSeasonAwareMappingPriority:
+    """回归：`_is_title_blocked` 的「映射优先」必须带 season
+
+    原实现把 season 写死为 1 调 `find_mapping`，而高级格式映射
+    （``{"subject_id": "...", "season": N}``）只在 season 相符时命中。
+    于是「第 1 季有映射 + 第 2 季请求」会被误判为命中映射而放行，
+    绕过屏蔽词；反之映射匹配管线（CustomMappingStep）用的是真实 season，
+    两处口径不一致。
+    """
+
+    def teardown_method(self):
+        _clear()
+
+    def test_other_season_mapping_does_not_whitelist(self):
+        """第 2 季请求不应被第 1 季的映射放行"""
+        database_manager.add_blocked_keyword(DISTINCT_KW)
+        svc = SyncService()
+        try:
+            with (
+                patch.object(svc, "_get_blocked_keyword", return_value=DISTINCT_KW),
+                patch(
+                    "app.services.sync_service.mapping_service.find_mapping",
+                    side_effect=lambda title, ori_title="", season=1: (
+                        ("12345", "season", "映射命中") if season == 1 else ("", "", "")
+                    ),
+                ),
+            ):
+                assert svc._is_title_blocked("某番剧", f"原文 {DISTINCT_KW}", 2) is True
+        finally:
+            database_manager.remove_blocked_keyword(DISTINCT_KW)
+
+    def test_same_season_mapping_whitelists(self):
+        """season 相符时映射仍然优先放行"""
+        database_manager.add_blocked_keyword(DISTINCT_KW)
+        svc = SyncService()
+        try:
+            with (
+                patch.object(svc, "_get_blocked_keyword", return_value=DISTINCT_KW),
+                patch(
+                    "app.services.sync_service.mapping_service.find_mapping",
+                    side_effect=lambda title, ori_title="", season=1: (
+                        ("12345", "season", "映射命中") if season == 1 else ("", "", "")
+                    ),
+                ),
+            ):
+                assert (
+                    svc._is_title_blocked("某番剧", f"原文 {DISTINCT_KW}", 1) is False
+                )
+        finally:
+            database_manager.remove_blocked_keyword(DISTINCT_KW)
+
+    def test_call_sites_pass_item_season(self):
+        """两个调用处都必须把 item.season 传下去（防止再次写死）"""
+        svc = SyncService()
+        calls: list[int] = []
+
+        def _spy(title, ori_title=None, season=None):
+            calls.append(season)
+            return False
+
+        item = CustomItem(
+            title="测试番剧",
+            season=3,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        with patch.object(svc, "_check_user_permission", return_value=(True, "")):
+            with patch.object(svc, "_is_title_blocked", side_effect=_spy):
+                assert svc._normalize_custom_item_params(item) is None
+        assert calls == [3], "_normalize_custom_item_params 应传 item.season"
+
+        calls.clear()
+        movie = CustomItem(
+            media_type="movie",
+            title="测试剧场版",
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+        )
+        with (
+            patch("app.services.sync_service.config_manager") as mock_config,
+            patch("app.services.sync_service.notification_service"),
+            patch.object(svc, "_check_user_permission", return_value=(True, "")),
+            patch.object(svc, "_is_title_blocked", side_effect=_spy),
+            # 断言点在 _is_title_blocked 的调用参数上，后续匹配短路即可
+            patch.object(svc, "_find_matching_subject", return_value=(None,) * 4),
+        ):
+            mock_config.get.return_value = True
+            svc.sync_movie_watching(movie, source="custom")
+        assert calls == [1], "sync_movie_watching 应传 item.season"
 
 
 class TestKeywordRepository:
