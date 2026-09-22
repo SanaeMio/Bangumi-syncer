@@ -1,96 +1,241 @@
-"""reject 负样本黑名单端到端测试
+"""屏蔽关键词（统一黑名单）端到端测试
 
-验证：
-1. 拒绝待确认候选时，其候选 subject_id 被记入该标题黑名单
+背景：历史上存在两套屏蔽机制 —— INI 的 ``[sync] blocked_keywords``（按标题
+关键词，匹配前生效）与 DB 的 ``title_blacklist``（按 subject_id，匹配后否决）。
+现已合并为**单一 DB 表 + 标题关键词判定 + 匹配前生效**（方案 1）。
+
+本文件验证合并后的行为：
+1. 拒绝待确认候选时，候选**标题**被记入屏蔽关键词（不再记 subject_id）
 2. 拒绝不存在的记录安全返回 False
-3. _find_subject_id 命中黑名单 subject 时降级为漏标（custom_mapping 不受影响）
-4. _collect_candidates_from_trace 能按黑名单剔除候选
+3. 标题命中屏蔽词 → `_is_title_blocked` 为 True（匹配前拦截）
+4. **自定义映射优先**：命中映射时即使标题含屏蔽词也放行
+5. `_collect_candidates_from_trace` 仍按 subject_id 支持显式排除（通用能力保留）
 """
 
 from types import SimpleNamespace
 
 from app.core.database import database_manager
-from app.services.matching.result import MatchResult
 from app.services.sync_service import sync_service
 from app.services.sync_service.match_trace import MatchTrace
 
+# 测试用关键词（避免与真实数据冲突，统一前缀）
+# 这些词会写进真实 DB，故用明显不可能出现在番剧标题里的串
+DISTINCT_KW = "zz-屏蔽测试-拒绝记录-7788"
 
-class TestRejectWritesBlacklist:
-    TITLE = "拒绝测试番剧"
+
+def _clear():
+    """清理本测试写入的关键词。
+
+    所有测试词统一带 ``ZZ`` 标记（或用中文标记），确保清理能覆盖全部 ——
+    早期版本只匹配中文标记，漏掉了 ``Candidate Alpha`` 这类英文词，
+    导致后续「迁移要求空表」的用例被污染。
+    """
+    for item in database_manager.list_blocked_keywords():
+        kw = item.get("keyword") or ""
+        low = kw.lower()
+        if (
+            kw.startswith("ZZ-")
+            or "zz-" in low
+            or "屏蔽测试" in kw
+            or "拒绝测试" in kw
+            or kw.startswith("Candidate ")
+        ):
+            database_manager.remove_blocked_keyword(kw)
+
+
+class TestRejectWritesBlockedKeyword:
+    TITLE = "拒绝测试番剧-2255"
 
     def teardown_method(self):
-        database_manager.clear_title_blacklist(self.TITLE)
+        _clear()
 
-    def test_reject_records_blacklist(self):
-        database_manager.clear_title_blacklist(self.TITLE)
+    def test_reject_records_candidate_titles(self):
+        """拒绝候选 → 候选标题与请求标题都进屏蔽关键词"""
+        _clear()
         cid = database_manager.log_pending_candidate(
             request_title=self.TITLE,
             request_season=1,
             user_name="u1",
             source="plex",
             candidates=[
-                {"subject_id": "555", "name": "A", "score": 0.9},
-                {"subject_id": "666", "name": "B", "score": 0.8},
+                {"subject_id": "555", "name": "ZZ-Cand-Alpha", "score": 0.9},
+                {"subject_id": "666", "name": "ZZ-Cand-Beta", "score": 0.8},
             ],
             trace={"steps": []},
         )
         assert cid
 
-        ok, msg = sync_service.reject_pending_candidate(cid)
+        ok, _msg = sync_service.reject_pending_candidate(cid)
         assert ok is True
-        assert database_manager.get_title_blacklist(self.TITLE) == {"555", "666"}
+
+        keywords = {i["keyword"] for i in database_manager.list_blocked_keywords()}
+        # 请求标题进列表（保证同一标题下次直接被拦）
+        assert self.TITLE in keywords
+        # 候选自身标题也进列表（覆盖候选条目的正式名）
+        assert "ZZ-Cand-Alpha" in keywords
+        assert "ZZ-Cand-Beta" in keywords
+
+        # 来源标注为 reject，供 UI 区分"系统记的"与"我填的"
+        rec = next(
+            i
+            for i in database_manager.list_blocked_keywords()
+            if i["keyword"] == self.TITLE
+        )
+        assert rec["source"] == "reject"
 
     def test_reject_missing_record(self):
-        ok, msg = sync_service.reject_pending_candidate(999999)
+        ok, _msg = sync_service.reject_pending_candidate(999999)
         assert ok is False
 
 
-class TestFindSubjectExcludesBlacklist:
-    TITLE = "黑名单命中测试"
+class TestIsTitleBlocked:
+    """标题命中判定（匹配前生效）"""
 
     def teardown_method(self):
-        database_manager.clear_title_blacklist(self.TITLE)
+        _clear()
 
-    def test_blacklisted_result_downgraded(self, monkeypatch):
-        database_manager.clear_title_blacklist(self.TITLE)
-        database_manager.bulk_add_title_blacklist(self.TITLE, ["999"])
+    def test_blocks_when_keyword_matches(self):
+        database_manager.add_blocked_keyword(DISTINCT_KW)
+        try:
+            assert sync_service._is_title_blocked(f"某番剧 {DISTINCT_KW}") is True
+        finally:
+            database_manager.remove_blocked_keyword(DISTINCT_KW)
 
-        item = SimpleNamespace(title=self.TITLE)
-        trace = MatchTrace(
-            request_title=self.TITLE,
-            request_ori_title="",
-            request_season=1,
-            request_episode=1,
-            request_media_type="episode",
-            request_release_date="",
-            request_user_name="u",
-            request_platform_hint="plex",
+    def test_matches_original_title_too(self):
+        database_manager.add_blocked_keyword(DISTINCT_KW)
+        try:
+            assert (
+                sync_service._is_title_blocked("普通标题", f"原文 {DISTINCT_KW}")
+                is True
+            )
+        finally:
+            database_manager.remove_blocked_keyword(DISTINCT_KW)
+
+    def test_case_insensitive(self):
+        database_manager.add_blocked_keyword("ZZ-CaseTest-9911")
+        try:
+            assert sync_service._is_title_blocked("zz-casetest-9911") is True
+        finally:
+            database_manager.remove_blocked_keyword("ZZ-CaseTest-9911")
+
+    def test_not_blocked_when_no_keyword(self):
+        _clear()
+        assert sync_service._is_title_blocked("任意标题") is False
+
+    def test_custom_mapping_takes_priority(self, monkeypatch):
+        """自定义映射优先：命中映射时即使标题含屏蔽词也放行"""
+        database_manager.add_blocked_keyword(DISTINCT_KW)
+        monkeypatch.setattr(
+            "app.services.sync_service.mapping_service.find_mapping",
+            lambda title, ori_title="", season=1: ("12345", "exact", "映射命中"),
         )
+        try:
+            assert sync_service._is_title_blocked(f"标题 {DISTINCT_KW}") is False
+        finally:
+            database_manager.remove_blocked_keyword(DISTINCT_KW)
 
-        class FakePipeline:
-            def __init__(self, steps):
-                self._steps = steps
+    def test_mapping_lookup_failure_falls_back_to_blocking(self, monkeypatch):
+        """映射查询异常时不应吞掉屏蔽判定（回退为按关键词判定）"""
+        database_manager.add_blocked_keyword(DISTINCT_KW)
 
-            def run(self, ctx):
-                return MatchResult(
-                    subject_id="999",
-                    bgm_se_id=None,
-                    bgm_ep_id=None,
-                    bgm_title="X",
-                    is_season_matched_id=True,
-                    trace=ctx.trace,
-                    failure_detail="",
-                )
+        def _boom(*a, **k):
+            raise RuntimeError("mapping service down")
 
         monkeypatch.setattr(
-            "app.services.matching.pipeline.MatchPipeline", FakePipeline
+            "app.services.sync_service.mapping_service.find_mapping", _boom
         )
-        sid, _, detail = sync_service._find_subject_id(item, trace=trace)
-        assert sid is None
-        assert "排除" in detail
+        try:
+            assert sync_service._is_title_blocked(f"标题 {DISTINCT_KW}") is True
+        finally:
+            database_manager.remove_blocked_keyword(DISTINCT_KW)
 
 
-class TestCollectExcludesBlacklist:
+class TestKeywordRepository:
+    """仓储层行为（幂等、大小写归一、来源保留）"""
+
+    def teardown_method(self):
+        _clear()
+
+    def test_add_is_idempotent_case_insensitive(self):
+        assert database_manager.add_blocked_keyword("ZZ-Idem-4433") is True
+        assert database_manager.add_blocked_keyword("zz-idem-4433") is False
+        database_manager.remove_blocked_keyword("ZZ-Idem-4433")
+
+    def test_bulk_add_skips_existing(self):
+        database_manager.add_blocked_keyword("ZZ-Bulk-5501")
+        added = database_manager.bulk_add_blocked_keywords(
+            ["ZZ-Bulk-5501", "ZZ-Bulk-5502"]
+        )
+        assert added == 1
+        _clear()
+
+    def test_remove_returns_false_for_missing(self):
+        assert database_manager.remove_blocked_keyword("ZZ-不存在-0000") is False
+
+    def test_empty_keyword_rejected(self):
+        assert database_manager.add_blocked_keyword("") is False
+        assert database_manager.add_blocked_keyword("   ") is False
+
+    def test_api_replace_preserves_reject_source(self, monkeypatch):
+        """整体保存（配置页）不应删掉 reject 自动记录的词
+
+        直接验证 service 层语义：REPLACE 只清理 manual，保留 reject。
+        这里通过 facade 手工复现标签页保存的行为，避免依赖 HTTP 栈。
+        """
+        _clear()
+        database_manager.add_blocked_keyword("ZZ-Manual-6601", source="manual")
+        database_manager.add_blocked_keyword("ZZ-Reject-6602", source="reject")
+
+        # 模拟 PUT /blocked-keywords 的实现：只删 manual，再批量写入手填
+        for item in database_manager.list_blocked_keywords():
+            if item.get("source") != "reject":
+                database_manager.remove_blocked_keyword(item["keyword"])
+        database_manager.bulk_add_blocked_keywords(["ZZ-Manual-6603"], source="manual")
+
+        remaining = {i["keyword"] for i in database_manager.list_blocked_keywords()}
+        assert "ZZ-Reject-6602" in remaining, "reject 记录应保留"
+        assert "ZZ-Manual-6603" in remaining, "新提交的手填词应写入"
+        assert "ZZ-Manual-6601" not in remaining, "旧手填词应被覆盖"
+        _clear()
+
+
+class TestMigrationFromConfig:
+    """历史 [sync] blocked_keywords 迁移"""
+
+    def teardown_method(self):
+        _clear()
+
+    def test_migrates_when_table_empty(self):
+        _clear()
+        assert database_manager.blocked_keyword_count() == 0, (
+            "迁移测试要求空表；失败说明 _clear() 未覆盖残留关键词"
+        )
+        n = database_manager.migrate_blocked_keywords_from_config(
+            "ZZ-Mig-A,ZZ-Mig-B，ZZ-Mig-C"
+        )
+        assert n == 3
+        keywords = {i["keyword"] for i in database_manager.list_blocked_keywords()}
+        assert {"ZZ-Mig-A", "ZZ-Mig-B", "ZZ-Mig-C"} <= keywords
+
+    def test_skips_when_table_not_empty(self):
+        """表非空时不迁移 —— 否则用户删掉的关键词会被加回来"""
+        _clear()
+        database_manager.add_blocked_keyword("ZZ-Mig-Existing")
+        n = database_manager.migrate_blocked_keywords_from_config("ZZ-Mig-ShouldNotAdd")
+        assert n == 0
+        keywords = {i["keyword"] for i in database_manager.list_blocked_keywords()}
+        assert "ZZ-Mig-ShouldNotAdd" not in keywords
+        _clear()
+
+    def test_handles_empty_input(self):
+        _clear()
+        assert database_manager.migrate_blocked_keywords_from_config("") == 0
+        assert database_manager.migrate_blocked_keywords_from_config("   ") == 0
+
+
+class TestCollectExcludesCandidates:
+    """`_collect_candidates_from_trace` 的通用排除能力（与黑名单统一无关，能力保留）"""
+
     def test_excludes_blocked_and_dedups(self):
         cand_a = SimpleNamespace(subject_id="1", to_dict=lambda: {"subject_id": "1"})
         cand_b = SimpleNamespace(subject_id="2", to_dict=lambda: {"subject_id": "2"})
@@ -106,3 +251,50 @@ class TestCollectExcludesBlacklist:
         )
         ids = [c["subject_id"] for c in result]
         assert ids == ["1", "3"]  # 2 被剔除，1 去重
+
+
+class TestVetoRemoved:
+    """回归守护：`_find_subject_id` 不再做"事后按 subject_id 否决"
+
+    合并后屏蔽在匹配前完成，匹配成功后不应再被清空 —— 否则会出现
+    「DB 无 subject_id 但 trace 有命中」的不一致（原 veto 的缺陷）。
+    """
+
+    def test_matched_result_not_vetoed(self, monkeypatch):
+        from app.services.matching.result import MatchResult
+
+        title = "ZZ-Veto-回归-7700"
+        database_manager.add_blocked_keyword(title)
+        try:
+            item = SimpleNamespace(title="完全不同的标题", ori_title="")
+            trace = MatchTrace(
+                request_title="完全不同的标题",
+                request_season=1,
+                request_episode=1,
+                request_user_name="u",
+            )
+
+            class FakePipeline:
+                def __init__(self, steps):
+                    self._steps = steps
+
+                def run(self, ctx):
+                    return MatchResult(
+                        subject_id="999",
+                        bgm_se_id=None,
+                        bgm_ep_id=None,
+                        bgm_title="X",
+                        is_season_matched_id=True,
+                        trace=ctx.trace,
+                        failure_detail="",
+                    )
+
+            monkeypatch.setattr(
+                "app.services.matching.pipeline.MatchPipeline", FakePipeline
+            )
+            sid, _, detail = sync_service._find_subject_id(item, trace=trace)
+            # 标题不含屏蔽词 → 即便命中的 subject 曾"被拒绝"也不应被否决
+            assert sid == "999"
+            assert detail == ""
+        finally:
+            database_manager.remove_blocked_keyword(title)

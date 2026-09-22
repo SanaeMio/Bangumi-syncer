@@ -1,4 +1,4 @@
-        <!-- 屏蔽关键词配置卡片 -->
+        <!-- 屏蔽关键词配置卡片（数据存 DB，经 /api/blocked-keywords 管理） -->
         <div class="row">
             <div class="col-12">
                 <div id="config-section-blocked-keywords"
@@ -19,12 +19,11 @@
                         <div class="alert alert-info mb-3">
                             <i class="bi bi-info-circle me-2"></i>
                             标题包含以下关键词的番剧将跳过同步（不区分大小写）。点击关键词右侧删除按钮可移除。
+                            <div class="mt-1 small">
+                                已设置自定义映射的番剧不受屏蔽影响（自定义映射优先）。
+                                在「待确认」页拒绝候选时，相关标题也会自动加入此列表。
+                            </div>
                         </div>
-                        <!-- 隐藏 input 保留以兼容 ConfigForm.serialize（name="sync.blocked_keywords"） -->
-                        <input type="hidden"
-                               class="form-control"
-                               id="blocked-keywords"
-                               name="sync.blocked_keywords">
                         <!-- 关键词列表 -->
                         <div id="blocked-keywords-chips" class="blocked-keywords-list"></div>
                         <!-- 添加输入区（默认隐藏，点击右上角按钮显示） -->

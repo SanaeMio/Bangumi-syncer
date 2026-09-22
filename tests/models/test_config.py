@@ -28,19 +28,22 @@ class TestConfigModels:
         assert config.access_token == "token123"
         assert config.private is True
 
-    def test_sync_config_defaults(self):
-        """Test SyncConfig default values"""
+    def test_sync_config_has_no_blocked_keywords(self):
+        """屏蔽关键词已迁出 INI/模型，改由数据库 blocked_rules 表管理
+
+        历史 ``SyncConfig.blocked_keywords`` 与 ``title_blacklist`` 已合并为
+        DB 关键词表（见 app/core/database/blocked_rules.py）。此处守护"不回流"。
+        """
         from app.models.config import SyncConfig
 
         config = SyncConfig()
-        assert config.blocked_keywords == ""
+        assert not hasattr(config, "blocked_keywords")
 
-    def test_sync_config_with_values(self):
-        """Test SyncConfig with values"""
+    def test_sync_config_accepts_no_fields(self):
+        """SyncConfig 目前无字段（保留类以便未来扩展同步相关配置）"""
         from app.models.config import SyncConfig
 
-        config = SyncConfig(blocked_keywords="adult")
-        assert config.blocked_keywords == "adult"
+        assert SyncConfig().model_dump() == {}
 
     def test_dev_config_defaults(self):
         """Test DevConfig default values"""

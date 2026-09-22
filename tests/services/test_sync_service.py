@@ -147,7 +147,7 @@ class TestSyncCustomItem:
         """测试屏蔽词跳过场景"""
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
-            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch(
@@ -161,12 +161,15 @@ class TestSyncCustomItem:
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
                 ("sync", "mode"): "single",
-                ("sync", "blocked_keywords"): "测试,广告",  # 包含屏蔽词
                 ("bangumi_data", "enabled"): False,
             }.get((section, key), fallback)
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
             mock_config.get_user_mappings.return_value = {}
             mock_config.get_bangumi_configs.return_value = {}
+            # 屏蔽关键词已迁到 DB：标题含"测试"即命中
+            mock_db.match_blocked_keyword.side_effect = lambda *titles: (
+                "测试" if any("测试" in (t or "") for t in titles) else ""
+            )
 
             from app.models.sync import CustomItem
             from app.services.sync_service import SyncService
@@ -506,11 +509,10 @@ class TestSyncMovieWatching:
     """sync_movie_watching 全分支（配置 / 权限 / 匹配 / Bangumi）"""
 
     @staticmethod
-    def _cfg_get(*, mark_watching_enabled: bool = True, blocked_keywords: str = ""):
+    def _cfg_get(*, mark_watching_enabled: bool = True):
         def _get(section, key, fallback=None):
             d = {
                 ("sync", "movie_playback_start_mark_watching"): mark_watching_enabled,
-                ("sync", "blocked_keywords"): blocked_keywords,
                 ("sync", "mode"): "single",
             }
             return d.get((section, key), fallback)
@@ -616,7 +618,7 @@ class TestSyncMovieWatching:
     def test_sync_movie_watching_blocked(self):
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
-            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
             patch(
@@ -628,8 +630,12 @@ class TestSyncMovieWatching:
                 return_value=["test_user"],
             ),
         ):
-            mock_config.get.side_effect = self._cfg_get(blocked_keywords="广告,跳过")
+            mock_config.get.side_effect = self._cfg_get()
             mock_config.get_single_mode_media_usernames.return_value = ["test_user"]
+            # 屏蔽关键词已迁到 DB：标题含"广告"即命中
+            mock_db.match_blocked_keyword.side_effect = lambda *titles: (
+                "广告" if any("广告" in (t or "") for t in titles) else ""
+            )
             from app.services.sync_service import SyncService
 
             svc = SyncService()
