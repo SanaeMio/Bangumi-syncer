@@ -379,7 +379,7 @@ class TestBangumiAccountsEndpoint:
                 return_value=[{"section_name": "bangumi", "username": "alice"}],
             ),
             patch(
-                "app.core.accounts.get_active_bangumi_account",
+                "app.core.accounts.get_primary_bangumi_account",
                 return_value={"section_name": "bangumi", "username": "alice"},
             ),
         ):
@@ -395,14 +395,14 @@ class TestBangumiAccountsEndpoint:
         assert len(data["accounts"]) == 1
         assert data["accounts"][0]["section_name"] == "bangumi"
         assert data["accounts"][0]["username"] == "alice"
-        assert data["active"] == "bangumi"
+        assert data["primary"] == "bangumi"
 
     @pytest.mark.asyncio
     async def test_single_mode_no_config(self, app_with_auth):
         """无账号配置：返回空列表，mode 由账号数量推导为 single"""
         with (
             patch("app.core.accounts.list_bangumi_accounts", return_value=[]),
-            patch("app.core.accounts.get_active_bangumi_account", return_value=None),
+            patch("app.core.accounts.get_primary_bangumi_account", return_value=None),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -414,7 +414,7 @@ class TestBangumiAccountsEndpoint:
         data = resp.json()
         assert data["mode"] == "single"
         assert data["accounts"] == []
-        assert data["active"] is None
+        assert data["primary"] is None
 
     @pytest.mark.asyncio
     async def test_multi_mode_returns_all_accounts(self, app_with_auth):
@@ -428,7 +428,7 @@ class TestBangumiAccountsEndpoint:
                 ],
             ),
             patch(
-                "app.core.accounts.get_active_bangumi_account",
+                "app.core.accounts.get_primary_bangumi_account",
                 return_value={"section_name": "bangumi-alice", "username": "alice"},
             ),
         ):
@@ -445,14 +445,14 @@ class TestBangumiAccountsEndpoint:
         usernames = {a["username"] for a in data["accounts"]}
         assert usernames == {"alice", "bob"}
         # active 应为 alice 对应段
-        assert data["active"] == "bangumi-alice"
+        assert data["primary"] == "bangumi-alice"
 
     @pytest.mark.asyncio
     async def test_multi_mode_no_accounts(self, app_with_auth):
         """无账号配置：返回空列表，mode 由账号数量推导为 single"""
         with (
             patch("app.core.accounts.list_bangumi_accounts", return_value=[]),
-            patch("app.core.accounts.get_active_bangumi_account", return_value=None),
+            patch("app.core.accounts.get_primary_bangumi_account", return_value=None),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app_with_auth),
@@ -465,7 +465,7 @@ class TestBangumiAccountsEndpoint:
         # 0 个账号 → mode="single"（端点按账号数量推导）
         assert data["mode"] == "single"
         assert data["accounts"] == []
-        assert data["active"] is None
+        assert data["primary"] is None
 
 
 class TestAiringCalendarAccessControl:
@@ -593,7 +593,7 @@ class TestAiringCalendarAccessControl:
                 resp = await client.get("/api/airing-calendar")
 
         assert resp.status_code == 200
-        # 未传 account 时强制使用绑定段名（而非激活账号）
+        # 未传 account 时强制使用绑定段名（而非首选账号）
         mock_build.assert_called_once_with("bangumi-alice")
 
     @pytest.mark.asyncio
@@ -676,7 +676,7 @@ class TestAccountsEndpointAccessControl:
                 ],
             ),
             patch(
-                "app.core.accounts.get_active_bangumi_account",
+                "app.core.accounts.get_primary_bangumi_account",
                 return_value={
                     "section_name": "bangumi-alice",
                     "username": "alice",
@@ -728,7 +728,7 @@ class TestAccountsEndpointAccessControl:
                 ],
             ),
             patch(
-                "app.core.accounts.get_active_bangumi_account",
+                "app.core.accounts.get_primary_bangumi_account",
                 return_value={
                     "section_name": "bangumi-alice",
                     "username": "alice",

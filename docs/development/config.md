@@ -23,7 +23,7 @@ order: 4
 | --- | --- |
 | `get(section, option, fallback=...)` | 读单个配置项 |
 | `get_<driver>_config()` | 按驱动聚合配置（如 `get_feiniu_config()`） |
-| `get_active_bangumi_config(user_name)` | 按媒体服务器用户名路由到 Bangumi 账号 |
+| `get_primary_bangumi_config(user_name)` | 按媒体服务器用户名路由到首选 Bangumi 账号 |
 | `get_section(section)` | 读整段为 dict |
 | `save_config()` / `reload_config()` | 保存 / 热重载 |
 

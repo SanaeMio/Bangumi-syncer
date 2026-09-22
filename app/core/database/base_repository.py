@@ -10,7 +10,8 @@ _execute_with_lock 闭包模板。
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..logging import logger
 

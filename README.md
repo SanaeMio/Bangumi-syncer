@@ -9,7 +9,7 @@
 [用户文档](https://sanaemio.github.io/Bangumi-syncer) | [快速上手](https://sanaemio.github.io/Bangumi-syncer/getting-started) | [Docker部署](https://sanaemio.github.io/Bangumi-syncer/quick-start/docker) | [参与开发](https://sanaemio.github.io/Bangumi-syncer/development/contributing)
 
 [![release](https://img.shields.io/github/v/release/SanaeMio/Bangumi-syncer)](https://github.com/SanaeMio/Bangumi-syncer/releases)
-[![python](https://img.shields.io/badge/python-3.9+-3776AB)](https://www.python.org/downloads/)
+[![python](https://img.shields.io/badge/python-3.10+-3776AB)](https://www.python.org/downloads/)
 [![docker pulls](https://img.shields.io/docker/pulls/sanaemio/bangumi-syncer)](https://hub.docker.com/r/sanaemio/bangumi-syncer)
 [![codecov](https://img.shields.io/codecov/c/github/SanaeMio/Bangumi-syncer)](https://codecov.io/gh/SanaeMio/Bangumi-syncer)
 [![license](https://img.shields.io/github/license/SanaeMio/Bangumi-syncer)](https://github.com/SanaeMio/Bangumi-syncer/blob/main/LICENSE)

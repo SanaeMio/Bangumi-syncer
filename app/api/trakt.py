@@ -2,7 +2,6 @@
 Trakt.tv API 路由
 """
 
-from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -73,7 +72,7 @@ async def init_trakt_auth(
 @router.get("/auth/callback")
 async def trakt_auth_callback(
     code: str,
-    state: Optional[str] = None,
+    state: str | None = None,
 ) -> RedirectResponse:
     """Trakt OAuth 回调处理"""
     try:
@@ -97,14 +96,14 @@ async def trakt_auth_callback(
 
         if callback_response.success:
             # 授权成功后自动将 user_id（应用登录用户名，作为 Trakt 同步隔离标识）
-            # 追加到激活账号的 media_server_usernames，避免因漏填导致 Trakt 同步
+            # 追加到首选账号的 media_server_usernames，避免因漏填导致 Trakt 同步
             # 被用户名过滤拦截（DB 为唯一真相源）。这是媒体驱动正常行为，需明显提示。
             from ..core.accounts import (
-                get_active_bangumi_account,
+                get_primary_bangumi_account,
                 save_bangumi_account,
             )
 
-            acc = get_active_bangumi_account()
+            acc = get_primary_bangumi_account()
             auto_added_user = ""
             target_account = ""
             if acc:
@@ -117,7 +116,7 @@ async def trakt_auth_callback(
                     target_account = acc.get("section_name", "")
                     logger.info(
                         f"Trakt 授权成功：已自动将用户名 '{user_id}' 追加到 "
-                        f"激活 Bangumi 账号 '{target_account}' 的 media_server_usernames，"
+                        f"首选 Bangumi 账号 '{target_account}' 的 media_server_usernames，"
                         f"确保该用户的 Trakt 同步不被过滤拦截。"
                     )
             # 成功页通过 query 参数展示自动追加提示（仅新增时带参）

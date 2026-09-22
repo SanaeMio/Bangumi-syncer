@@ -9,13 +9,14 @@ Bangumi 账号仓库（含 OAuth 令牌）。
   ``[auth] secret_key`` 经 HKDF 派生（复用 ``config_secret_crypto``）；
   仓储层在写入时加密、读取时解密，上层无感知。
 - ``section_name`` 为账号唯一键：旧单用户段为 ``bangumi``，多用户段为 ``bangumi-{username}``。
-- ``is_active`` 取代「首个映射段即激活」的隐式逻辑，前端可切换激活账号。
+- ``is_primary`` 取代「首个映射段即首选」的隐式逻辑，前端可切换首选账号。
+- ``enabled`` 控制账号是否参与任务同步（与 is_primary 的首选职责分离），
+  停用后该账号不被同步枚举命中，用于多账号场景下的临时停用。
 - OAuth 授权过程中的 CSRF state 存于独立的 ``oauth_states`` 表（带 TTL）。
 """
 
 import json
 import time
-from typing import Optional
 
 from ..config_secret_crypto import decrypt as _decrypt_token, encrypt as _encrypt_token
 from .base_repository import BaseRepository
@@ -34,7 +35,8 @@ _BANGUMI_ACCOUNT_COLUMNS = [
     "nickname",
     "avatar",
     "private",
-    "is_active",
+    "is_primary",
+    "enabled",
     "created_at",
     "updated_at",
 ]
@@ -96,8 +98,9 @@ class BangumiAccountRepository(BaseRepository):
                 INSERT INTO bangumi_accounts
                 (section_name, username, media_server_usernames, auth_method,
                  access_token, refresh_token, token_type, expires_at,
-                 bangumi_user_id, nickname, avatar, private, is_active, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 bangumi_user_id, nickname, avatar, private, is_primary, enabled,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(section_name) DO UPDATE SET
                     username = excluded.username,
                     media_server_usernames = excluded.media_server_usernames,
@@ -110,7 +113,8 @@ class BangumiAccountRepository(BaseRepository):
                     nickname = excluded.nickname,
                     avatar = excluded.avatar,
                     private = excluded.private,
-                    is_active = excluded.is_active,
+                    is_primary = excluded.is_primary,
+                    enabled = excluded.enabled,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -126,7 +130,9 @@ class BangumiAccountRepository(BaseRepository):
                     account.get("nickname", ""),
                     account.get("avatar", ""),
                     1 if account.get("private") else 0,
-                    1 if account.get("is_active") else 0,
+                    1 if account.get("is_primary") else 0,
+                    # 缺省为启用：调用方未显式指定时不改变「已配置账号均参与同步」的行为
+                    1 if account.get("enabled", True) else 0,
                     now,
                     now,
                 ),
@@ -135,7 +141,7 @@ class BangumiAccountRepository(BaseRepository):
 
         return self._run_write(_write, error_msg="保存 Bangumi 账号失败", default=False)
 
-    def get_account(self, section_name: str) -> Optional[dict]:
+    def get_account(self, section_name: str) -> dict | None:
         """按 section_name 获取账号，不存在返回 None。"""
 
         def _read(conn):
@@ -167,13 +173,13 @@ class BangumiAccountRepository(BaseRepository):
 
         return self._run_read(_read, error_msg="列出 Bangumi 账号失败", default=[])
 
-    def get_active_account(self) -> Optional[dict]:
-        """获取当前激活账号（is_active=1）；无激活时返回首个。"""
+    def get_primary_account(self) -> dict | None:
+        """获取当前首选账号（is_primary=1）；无首选时返回首个。"""
 
         def _read(conn):
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT {} FROM bangumi_accounts WHERE is_active = 1 "
+                "SELECT {} FROM bangumi_accounts WHERE is_primary = 1 "
                 "ORDER BY id ASC LIMIT 1".format(", ".join(_BANGUMI_ACCOUNT_COLUMNS))
             )
             row = cursor.fetchone()
@@ -188,7 +194,7 @@ class BangumiAccountRepository(BaseRepository):
             return _row_to_account(row) if row else None
 
         return self._run_read(
-            _read, error_msg="获取激活 Bangumi 账号失败", default=None
+            _read, error_msg="获取首选 Bangumi 账号失败", default=None
         )
 
     def delete_account(self, section_name: str) -> bool:
@@ -203,19 +209,32 @@ class BangumiAccountRepository(BaseRepository):
         affected = self._run_write(_write, error_msg="删除 Bangumi 账号失败", default=0)
         return affected > 0
 
-    def set_active(self, section_name: str) -> bool:
-        """将指定账号设为激活，其余置非激活。"""
+    def set_primary(self, section_name: str) -> bool:
+        """将指定账号设为首选，其余置非首选。"""
 
         def _write(conn):
             cursor = conn.cursor()
-            cursor.execute("UPDATE bangumi_accounts SET is_active = 0")
+            cursor.execute("UPDATE bangumi_accounts SET is_primary = 0")
             cursor.execute(
-                "UPDATE bangumi_accounts SET is_active = 1 WHERE section_name = ?",
+                "UPDATE bangumi_accounts SET is_primary = 1 WHERE section_name = ?",
                 (section_name,),
             )
             return True
 
-        return self._run_write(_write, error_msg="设置激活账号失败", default=False)
+        return self._run_write(_write, error_msg="设置首选账号失败", default=False)
+
+    def set_enabled(self, section_name: str, enabled: bool) -> bool:
+        """启用/停用指定账号；停用后该账号不参与任务同步。"""
+
+        def _write(conn):
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE bangumi_accounts SET enabled = ? WHERE section_name = ?",
+                (1 if enabled else 0, section_name),
+            )
+            return cursor.rowcount > 0
+
+        return self._run_write(_write, error_msg="设置账号启用状态失败", default=False)
 
     def update_token(self, section_name: str, token: dict) -> bool:
         """仅更新令牌相关字段（OAuth 授权/刷新后回写）。"""
@@ -270,7 +289,7 @@ class BangumiAccountRepository(BaseRepository):
 
 
 def _row_to_account(row) -> dict:
-    account = dict(zip(_BANGUMI_ACCOUNT_COLUMNS, row))
+    account = dict(zip(_BANGUMI_ACCOUNT_COLUMNS, row, strict=True))
     account["media_server_usernames"] = _from_json_list(
         account.get("media_server_usernames")
     )
@@ -279,7 +298,8 @@ def _row_to_account(row) -> dict:
     account["access_token"] = _decrypt_token(account.get("access_token"))
     account["refresh_token"] = _decrypt_token(account.get("refresh_token"))
     account["private"] = bool(account.get("private"))
-    account["is_active"] = bool(account.get("is_active"))
+    account["is_primary"] = bool(account.get("is_primary"))
+    account["enabled"] = bool(account.get("enabled", True))
     return account
 
 
@@ -313,7 +333,7 @@ class OAuthStateRepository(BaseRepository):
 
         return self._run_write(_write, error_msg="保存 OAuth state 失败", default=False)
 
-    def get_state(self, state: str) -> Optional[dict]:
+    def get_state(self, state: str) -> dict | None:
         """获取并校验 state；过期或不存在返回 None（同时清理过期项）。"""
 
         def _read(conn):

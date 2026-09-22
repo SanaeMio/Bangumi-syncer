@@ -2501,7 +2501,7 @@ def print_report(
     print("-" * 88)
 
     stat_names = ("ALL", "TITLE", "SEASON", "EPISODE", *SCENARIOS)
-    for stat_name, stat in zip(stat_names, stat_list):
+    for stat_name, stat in zip(stat_names, stat_list, strict=True):
         if stat.total == 0:
             continue
         scenario_label = {

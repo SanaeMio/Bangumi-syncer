@@ -74,6 +74,65 @@ class TestDatabaseManager:
             r = db.get_sync_record_by_id(1)
             assert r["media_type"] == "movie"
 
+    def test_log_sync_record_stores_account_results(self, temp_dir, reset_singletons):
+        """account_results 随同步记录落库并可被详情接口读回。"""
+        import json
+
+        db_path = temp_dir / "accounts.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+            outcomes = [
+                {
+                    "section": "bangumi",
+                    "username": "main",
+                    "status": "success",
+                    "message": "",
+                    "primary": True,
+                },
+                {
+                    "section": "bangumi-2",
+                    "username": "alt",
+                    "status": "failed",
+                    "message": "API 不可达",
+                    "primary": False,
+                },
+            ]
+            db.log_sync_record(
+                user_name="u",
+                title="多账号动画",
+                ori_title=None,
+                season=1,
+                episode=1,
+                status="success",
+                source="custom",
+                account_results=outcomes,
+            )
+            record = db.get_sync_record_by_id(1)
+            assert json.loads(record["account_results"]) == outcomes
+
+    def test_log_sync_record_account_results_default_empty(
+        self, temp_dir, reset_singletons
+    ):
+        """未传 account_results 时落库为空字符串，旧记录详情不应报错。"""
+        db_path = temp_dir / "accounts_default.db"
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+            db.log_sync_record(
+                user_name="u",
+                title="单账号动画",
+                ori_title=None,
+                season=1,
+                episode=1,
+                status="success",
+                source="custom",
+            )
+            record = db.get_sync_record_by_id(1)
+            assert record["account_results"] == ""
+
     def test_migrate_adds_media_type_column(self, temp_dir, reset_singletons):
         """旧表无 media_type 时自动 ALTER 并回填"""
         db_path = temp_dir / "legacy.db"
@@ -191,6 +250,52 @@ class TestDatabaseManager:
         ]
         for col in ("run_id", "batch_id"):
             assert col in cols
+
+    def test_migrate_adds_account_results_column(self, temp_dir, reset_singletons):
+        """旧表缺 account_results 时自动补齐，既有记录仍可读（值为空串）"""
+        db_path = temp_dir / "account_results_migration.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            """
+            CREATE TABLE sync_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                ori_title TEXT,
+                season INTEGER NOT NULL,
+                episode INTEGER NOT NULL,
+                subject_id TEXT,
+                episode_id TEXT,
+                status TEXT NOT NULL,
+                message TEXT,
+                source TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """INSERT INTO sync_records
+            (timestamp, user_name, title, ori_title, season, episode, subject_id, episode_id, status, message, source)
+            VALUES ('2020-01-01', 'u', 't', NULL, 1, 1, NULL, NULL, 'success', '', 'custom')
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        with patch("app.core.database.logger"):
+            from app.core.database import DatabaseManager
+
+            db = DatabaseManager(str(db_path))
+        cols = [
+            row[1]
+            for row in db._connection._get_connection().execute(
+                "PRAGMA table_info(sync_records)"
+            )
+        ]
+        assert "account_results" in cols
+        record = db.get_sync_record_by_id(1)
+        assert record["title"] == "t"
+        assert record["account_results"] == ""
 
     def test_log_sync_record_stores_run_and_batch_context(
         self, temp_dir, reset_singletons

@@ -17,8 +17,7 @@ jobs:
     - name: 设置 Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
-        cache: 'pip'
+        python-version: '3.10'
     
     - name: 安装 uv
       uses: astral-sh/setup-uv@v5

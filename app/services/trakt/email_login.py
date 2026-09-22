@@ -12,7 +12,7 @@ Trakt 邮箱登录服务（邮箱 + 验证码 → 自动获取 Bearer 凭证）
    → 200 ``{access_token, refresh_token, expires_in, expires_at, id_token}``
 
 登录成功后自动落库（auth_type=bearer），并像 OAuth 授权一样把当前应用用户名
-追加到激活 Bangumi 账号的 media_server_usernames，避免同步被用户名过滤拦截。
+追加到首选 Bangumi 账号的 media_server_usernames，避免同步被用户名过滤拦截。
 
 设计要点：
 - OTP / session cookie / code / token 全程在服务端流转，前端只传 email 与 otp
@@ -29,7 +29,6 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import parse_qs, quote, urlparse
 
 from ...core.database import database_manager
@@ -235,7 +234,7 @@ async def _oidc_authorize(
         await http.aclose()
 
 
-async def _exchange_code(code: str, verifier: str) -> tuple[Optional[dict], str]:
+async def _exchange_code(code: str, verifier: str) -> tuple[dict | None, str]:
     """④ 授权码换 token。返回 (tokens, error)。"""
     http = (
         AsyncHttpClient(label="TraktLogin", timeout=30.0)
@@ -272,14 +271,14 @@ async def _exchange_code(code: str, verifier: str) -> tuple[Optional[dict], str]
 
 
 def _ensure_media_server_username(user_id: str) -> None:
-    """登录成功后自动将当前用户名追加到激活账号的 media_server_usernames。
+    """登录成功后自动将当前用户名追加到首选账号的 media_server_usernames。
 
     与 OAuth 授权成功逻辑一致（DB 为唯一真相源）：避免 Trakt 同步
     被 _check_user_permission 的媒体服务器用户名过滤拦截。
     """
-    from ...core.accounts import get_active_bangumi_account, save_bangumi_account
+    from ...core.accounts import get_primary_bangumi_account, save_bangumi_account
 
-    acc = get_active_bangumi_account()
+    acc = get_primary_bangumi_account()
     if not acc:
         return
     existing = list(acc.get("media_server_usernames") or [])
@@ -290,12 +289,12 @@ def _ensure_media_server_username(user_id: str) -> None:
     save_bangumi_account(acc)
     logger.info(
         f"Trakt 邮箱登录成功：已自动将用户名 '{user_id}' 追加到 "
-        f"激活 Bangumi 账号 '{acc.get('section_name', '')}' 的 "
+        f"首选 Bangumi 账号 '{acc.get('section_name', '')}' 的 "
         f"media_server_usernames，确保该用户的 Trakt 同步不被过滤拦截。"
     )
 
 
-async def _persist_tokens(user_id: str, tokens: dict) -> Optional[int]:
+async def _persist_tokens(user_id: str, tokens: dict) -> int | None:
     """Bearer 凭证落库（auth_type=bearer + access/refresh/expires_at）。
 
     与刷新共用 per-user 刷新锁：持锁后重读配置再写，避免与心跳/同步的

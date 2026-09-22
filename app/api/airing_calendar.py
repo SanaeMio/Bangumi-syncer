@@ -33,7 +33,7 @@ from ..utils.bangumi_api.collection import (
     invalidate_watching_cache,
 )
 from ..utils.bangumi_api.factory import (
-    build_bangumi_api_from_active_config as _build_bangumi_api,
+    build_bangumi_api_from_primary_config as _build_bangumi_api,
 )
 from ..utils.bangumi_archive import bangumi_archive
 from ..utils.bangumi_archive._store import archive_store
@@ -117,8 +117,8 @@ class BangumiAccountInfo(BaseModel):
 class BangumiAccountsResponse(BaseModel):
     mode: str = Field(description="同步模式：single=单用户，multi=多用户")
     accounts: list[BangumiAccountInfo] = Field(description="已配置的 Bangumi 账号列表")
-    active: Optional[str] = Field(
-        None, description="当前活跃账号段名（单用户为 'bangumi'，多用户取首个映射）"
+    primary: Optional[str] = Field(
+        None, description="当前首选账号段名（单用户为 'bangumi'，多用户取首个映射）"
     )
 
 
@@ -139,7 +139,7 @@ async def list_bangumi_accounts(
     """
     from app.core.accounts import (
         count_bangumi_accounts,
-        get_active_bangumi_account,
+        get_primary_bangumi_account,
         get_user_mappings,
         list_bangumi_accounts as _list_accounts,
     )
@@ -166,12 +166,12 @@ async def list_bangumi_accounts(
             # DB 异常时回退到全量返回，避免阻断卡片加载
             pass
 
-    active_acc = get_active_bangumi_account()
-    active = active_acc.get("section_name") if active_acc else None
+    primary_acc = get_primary_bangumi_account()
+    primary = primary_acc.get("section_name") if primary_acc else None
 
     # 列表长度=1 即单用户，无需 sync.mode 判断；mode 字段仅供前端 dropdown 显示判断
     mode = "multi" if len(accounts) > 1 else "single"
-    return BangumiAccountsResponse(mode=mode, accounts=accounts, active=active)
+    return BangumiAccountsResponse(mode=mode, accounts=accounts, primary=primary)
 
 
 def _resolve_accessible_account(user: dict, requested: Optional[str]) -> Optional[str]:

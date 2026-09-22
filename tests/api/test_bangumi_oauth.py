@@ -179,8 +179,8 @@ class TestDisconnectBySection:
         assert "未找到" in resp.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_disconnect_empty_section_falls_back_to_active(self, app_with_auth):
-        """section 为空时回退到激活账号"""
+    async def test_disconnect_empty_section_falls_back_to_primary(self, app_with_auth):
+        """section 为空时回退到首选账号"""
         with patch(
             "app.api.bangumi_oauth.bangumi_auth_service.disconnect",
             return_value=True,

@@ -1,6 +1,5 @@
 """app.services.llm.providers.anthropic 测试。"""
 
-from typing import Optional
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -20,10 +19,10 @@ from app.services.llm.providers.anthropic import AnthropicProvider
 def _make_mock_client(  # noqa: PLR0913
     *,
     status_code: int = 200,
-    json_body: Optional[dict] = None,
-    json_side_effect: Optional[Exception] = None,
-    post_side_effect: Optional[Exception] = None,
-    raise_for_status_side_effect: Optional[Exception] = None,
+    json_body: dict | None = None,
+    json_side_effect: Exception | None = None,
+    post_side_effect: Exception | None = None,
+    raise_for_status_side_effect: Exception | None = None,
 ):
     """创建一个 mock httpx.AsyncClient，准备用于 `async with`。"""
 

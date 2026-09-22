@@ -93,7 +93,7 @@ async def oauth_close(result: str = "success"):
 async def oauth_disconnect(request: Request, section: str = ""):
     """断开指定账号的 OAuth 关联。
 
-    ``section`` 为空时回退到当前激活账号（兼容旧行为）。断开后账号回退为
+    ``section`` 为空时回退到当前首选账号（兼容旧行为）。断开后账号回退为
     手动模式，保留已填写的访问令牌；账号记录本身不删除。
     """
     if not await _require_user(request):

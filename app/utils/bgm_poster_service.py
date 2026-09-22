@@ -120,7 +120,7 @@ def _build_watching_poster_map(
 ) -> dict[int, str]:
     """从「在看」列表批量预取封面地址（至多 3 页，60s 内单飞）。
 
-    user_name 缺省用当前激活账号；多用户模式下按媒体服务器用户名反查
+    user_name 缺省用当前首选账号；多用户模式下按媒体服务器用户名反查
     对应 Bangumi 账号，避免用他人账号的收藏预取导致命中率下降。
 
     封面 URL 无法从条目 ID 推导（hash 随机），逐个拉取 subject 成本高；
@@ -133,7 +133,7 @@ def _build_watching_poster_map(
     """
     from app.core import accounts as _accounts
 
-    cfg = _accounts.get_active_bangumi_config(user_name)
+    cfg = _accounts.get_primary_bangumi_config(user_name)
     if not cfg or not cfg.get("username") or not cfg.get("access_token"):
         return {}
 
@@ -194,7 +194,7 @@ def _build_watching_poster_map(
 def _watching_cache_key(
     cfg: dict[str, Any], prefer_sizes: tuple[str, ...] | None
 ) -> tuple:
-    """在看预取缓存键：代理/改写配置 + 激活账号 + 尺寸偏好。"""
+    """在看预取缓存键：代理/改写配置 + 首选账号 + 尺寸偏好。"""
     snapshot = config_manager.get_dev_http_snapshot()
     return (
         snapshot["script_proxy"],
@@ -246,7 +246,7 @@ def get_poster_urls_sync(
 
     优化：未缓存条目先尝试从「在看」列表批量提取
     （1 个请求覆盖时间线大多数条目），未命中的少量条目再逐个拉取兜底。
-    user_name 缺省用激活账号，多用户模式下按媒体用户名反查账号预取。
+    user_name 缺省用首选账号，多用户模式下按媒体用户名反查账号预取。
     """
     sizes = prefer_sizes if prefer_sizes is not None else timeline_poster_size_order()
     result: dict[int, str] = {}

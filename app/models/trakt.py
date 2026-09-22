@@ -16,7 +16,7 @@ TOKEN_STATUS_EXPIRED = "expired"
 TOKEN_STATUS_NOT_CONFIGURED = "not_configured"
 
 
-def normalize_auth_type(value: Optional[str]) -> str:
+def normalize_auth_type(value: str | None) -> str:
     """规范化凭证模式，非法值回退为 oauth。"""
     return value if value in TRAKT_AUTH_TYPES else "oauth"
 
@@ -26,14 +26,12 @@ class TraktConfig(BaseModel):
 
     user_id: str = Field(..., description="用户ID", min_length=1)
     access_token: str = Field("", description="访问令牌（加密存储，不回显）")
-    refresh_token: Optional[str] = Field(
-        None, description="刷新令牌（旋转式，加密存储）"
-    )
-    expires_at: Optional[int] = Field(None, description="令牌过期时间戳")
+    refresh_token: str | None = Field(None, description="刷新令牌（旋转式，加密存储）")
+    expires_at: int | None = Field(None, description="令牌过期时间戳")
     enabled: bool = Field(True, description="是否启用 Trakt 同步")
     sync_interval: str = Field("0 */6 * * *", description="同步间隔 (Cron 表达式)")
     sync_filter_enabled: bool = Field(True, description="仅同步动画类型，除非命中映射")
-    last_sync_time: Optional[int] = Field(None, description="最后同步时间戳")
+    last_sync_time: int | None = Field(None, description="最后同步时间戳")
     created_at: int = Field(
         default_factory=lambda: int(datetime.now().timestamp()),
         description="创建时间戳",
@@ -181,9 +179,9 @@ class TraktConfigResponse(BaseModel):
     enabled: bool = Field(..., description="是否启用")
     sync_interval: str = Field(..., description="同步间隔")
     sync_filter_enabled: bool = Field(True, description="是否启用类型过滤")
-    last_sync_time: Optional[int] = Field(None, description="最后同步时间")
+    last_sync_time: int | None = Field(None, description="最后同步时间")
     is_connected: bool = Field(..., description="是否已连接 Trakt")
-    token_expires_at: Optional[int] = Field(None, description="令牌过期时间")
+    token_expires_at: int | None = Field(None, description="令牌过期时间")
     client_id: str = Field("", description="Trakt Client ID")
     client_secret_configured: bool = Field(
         False, description="Trakt Client Secret 是否已配置（不回传明文）"
@@ -203,11 +201,11 @@ class TraktConfigResponse(BaseModel):
 class TraktConfigUpdateRequest(BaseModel):
     """Trakt 配置更新请求模型"""
 
-    enabled: Optional[bool] = Field(None, description="是否启用")
-    sync_interval: Optional[str] = Field(None, description="同步间隔")
-    sync_filter_enabled: Optional[bool] = Field(None, description="是否启用类型过滤")
-    auth_type: Optional[str] = Field(None, description="凭证模式: oauth / bearer")
-    refresh_token: Optional[str] = Field(
+    enabled: bool | None = Field(None, description="是否启用")
+    sync_interval: str | None = Field(None, description="同步间隔")
+    sync_filter_enabled: bool | None = Field(None, description="是否启用类型过滤")
+    auth_type: str | None = Field(None, description="凭证模式: oauth / bearer")
+    refresh_token: str | None = Field(
         None, description="Bearer refresh_token（验证/续期唯一依据；不回显）"
     )
 
@@ -215,17 +213,17 @@ class TraktConfigUpdateRequest(BaseModel):
 class TraktApiConfigUpdateRequest(BaseModel):
     """Trakt API 配置更新请求模型"""
 
-    client_id: Optional[str] = Field(None, description="Trakt Client ID")
-    client_secret: Optional[str] = Field(None, description="Trakt Client Secret")
-    redirect_uri: Optional[str] = Field(None, description="OAuth 回调 URL")
+    client_id: str | None = Field(None, description="Trakt Client ID")
+    client_secret: str | None = Field(None, description="Trakt Client Secret")
+    redirect_uri: str | None = Field(None, description="OAuth 回调 URL")
 
 
 class TraktSyncStatusResponse(BaseModel):
     """Trakt 同步状态响应模型"""
 
     is_running: bool = Field(..., description="是否正在运行")
-    last_sync_time: Optional[int] = Field(None, description="最后同步时间")
-    next_sync_time: Optional[int] = Field(None, description="下次同步时间")
+    last_sync_time: int | None = Field(None, description="最后同步时间")
+    next_sync_time: int | None = Field(None, description="下次同步时间")
     success_count: int = Field(0, description="成功同步数量")
     error_count: int = Field(0, description="失败同步数量")
     total_count: int = Field(0, description="总同步数量")
@@ -243,7 +241,7 @@ class TraktManualSyncResponse(BaseModel):
 
     success: bool = Field(..., description="是否成功")
     message: str = Field(..., description="消息")
-    job_id: Optional[str] = Field(None, description="任务ID")
+    job_id: str | None = Field(None, description="任务ID")
 
 
 class TraktEmailLoginStartRequest(BaseModel):
@@ -257,7 +255,7 @@ class TraktEmailLoginStartResponse(BaseModel):
 
     success: bool = Field(..., description="是否成功")
     message: str = Field(..., description="消息")
-    retry_after: Optional[int] = Field(None, description="冷却剩余秒数（限流时）")
+    retry_after: int | None = Field(None, description="冷却剩余秒数（限流时）")
 
 
 class TraktEmailLoginCompleteRequest(BaseModel):
@@ -271,4 +269,4 @@ class TraktEmailLoginCompleteResponse(BaseModel):
 
     success: bool = Field(..., description="是否成功")
     message: str = Field(..., description="消息")
-    expires_at: Optional[int] = Field(None, description="凭证过期时间戳")
+    expires_at: int | None = Field(None, description="凭证过期时间戳")

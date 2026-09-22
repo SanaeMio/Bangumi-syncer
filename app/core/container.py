@@ -25,7 +25,8 @@
   为后续引入 FastAPI DI 提供统一的可替换入口（消费方迁移到 ``get_my_service()``）。
 """
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 
 class Injectable:
@@ -33,7 +34,7 @@ class Injectable:
 
     def __init__(self, factory: Callable[[], Any]) -> None:
         self._factory = factory
-        self._instance: Optional[Any] = None
+        self._instance: Any | None = None
         self._loaded = False
 
     def get(self) -> Any:

@@ -7,7 +7,7 @@ ContentBlock 是内部归一化模型，形状对齐 Anthropic
 Messages API 的 content blocks，各 provider 负责与自己的 wire 格式互转。
 """
 
-from typing import Literal, Optional, Union
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ class ThinkingBlock(BaseModel):
 
     type: Literal["thinking"] = "thinking"
     thinking: str
-    signature: Optional[str] = None  # Anthropic 的 thinking signature
+    signature: str | None = None  # Anthropic 的 thinking signature
 
 
 class RedactedThinkingBlock(BaseModel):
@@ -36,7 +36,7 @@ class RedactedThinkingBlock(BaseModel):
     data: str
 
 
-ContentBlock = Union[TextBlock, ThinkingBlock, RedactedThinkingBlock]
+ContentBlock = TextBlock | ThinkingBlock | RedactedThinkingBlock
 
 
 class Message(BaseModel):
@@ -46,7 +46,7 @@ class Message(BaseModel):
     """
 
     role: Literal["system", "user", "assistant"]
-    content: Union[str, list[ContentBlock]]
+    content: str | list[ContentBlock]
 
 
 class Usage(BaseModel):
@@ -69,5 +69,5 @@ class ChatResponse(BaseModel):
     blocks: list[ContentBlock] = Field(default_factory=list)
     stop_reason: str = ""
     model: str = ""
-    usage: Optional[Usage] = None
+    usage: Usage | None = None
     latency: int = 0

@@ -1,7 +1,7 @@
 """飞牛影视 trimmedia 同步 API"""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -58,7 +58,7 @@ async def feiniu_users(
 
 @router.post("/sync/manual")
 async def feiniu_manual_sync(
-    user: Optional[str] = Query(
+    user: str | None = Query(
         default=None,
         description="飞牛用户 guid；不传则使用配置中的 user_filter",
     ),

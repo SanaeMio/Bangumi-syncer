@@ -7,7 +7,6 @@ import shutil
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Optional
 
 from ..logging import logger
 
@@ -24,7 +23,7 @@ def _env_flag(name: str) -> bool:
 class DatabaseConnection:
     """数据库连接管理器：负责连接管理、锁、schema 迁移"""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         auto = db_path is None
         if auto:
             # 所有环境（Docker/直装）默认统一放到 data/ 目录，便于与其他数据隔离
@@ -41,7 +40,7 @@ class DatabaseConnection:
                 logger.info(f"已从旧路径迁移数据库 {legacy} -> {self.db_path}")
 
         self._lock = threading.Lock()
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._agent_memory_migrated = False
         # 已确认存在（或已补上）的列集合，避免每次读写前的 ensure_schema
         # 回调重复执行 PRAGMA table_info
@@ -101,7 +100,7 @@ class DatabaseConnection:
         cursor,
         table: str,
         columns: list[tuple[str, str]],
-        message: Optional[str] = None,
+        message: str | None = None,
     ) -> bool:
         """简单版 schema 迁移：幂等地为表补齐缺失列。
 
@@ -267,6 +266,55 @@ class DatabaseConnection:
             message="bangumi_accounts 已迁移：增加 private 列",
         )
 
+    def _ensure_bangumi_accounts_enabled(self, cursor) -> None:
+        """旧库迁移：为 bangumi_accounts 增加 enabled（是否参与任务同步）。
+
+        与 is_primary（首选账号，user_name 为空时回退到它）职责分离：enabled
+        控制账号是否参与同步，停用后该账号不被同步枚举命中，用于多账号场景
+        下的临时停用。既有账号默认启用，与「已配置账号均参与同步」的既有行为
+        一致。
+        """
+        self._ensure_columns(
+            cursor,
+            "bangumi_accounts",
+            [("enabled", "BOOLEAN NOT NULL DEFAULT 1")],
+            message="bangumi_accounts 已迁移：增加 enabled 列",
+        )
+
+    def _ensure_bangumi_accounts_primary(self, cursor) -> None:
+        """将首选账号标志从 is_active 列迁移至 is_primary 列。
+
+        首选账号（user_name 缺失时回退的默认账号）由 is_active 列承载，与
+        enabled（停用）职责分离后改用 is_primary 列。迁移为既有库补齐
+        is_primary 列、拷贝 is_active 数据后删除旧列，保证既有数据库无缝升级。
+
+        idx_bangumi_accounts_active 索引建在 is_active 上，DROP COLUMN 前必须先
+        删除该索引，否则会因索引引用被删列而失败。
+        """
+        added = self._ensure_columns(
+            cursor,
+            "bangumi_accounts",
+            [("is_primary", "BOOLEAN NOT NULL DEFAULT 0")],
+            message="bangumi_accounts 已迁移：is_active 列转换为 is_primary 列",
+        )
+        if not added:
+            return
+        cursor.execute("PRAGMA table_info(bangumi_accounts)")
+        cols = {row[1] for row in cursor.fetchall()}
+        if "is_active" not in cols:
+            return
+        # 旧索引建在 is_active 上，DROP COLUMN 前先删，否则会因引用被删列失败
+        cursor.execute("DROP INDEX IF EXISTS idx_bangumi_accounts_active")
+        cursor.execute(
+            "UPDATE bangumi_accounts SET is_primary = is_active "
+            "WHERE is_active IS NOT NULL"
+        )
+        try:
+            cursor.execute("ALTER TABLE bangumi_accounts DROP COLUMN is_active")
+            logger.info("bangumi_accounts 已迁移：删除旧列 is_active")
+        except Exception as e:  # 旧版 SQLite 不支持 DROP COLUMN 时保留旧列
+            logger.warning(f"bangumi_accounts 删除旧列 is_active 失败（可忽略）: {e}")
+
     def _ensure_tokens_encrypted(self, cursor) -> None:
         """一次性数据迁移：加密 DB 中的明文 token（access_token / refresh_token）。
 
@@ -340,6 +388,19 @@ class DatabaseConnection:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_records_consumed_run_id "
             "ON sync_records_consumed(run_id)"
+        )
+
+    def _ensure_sync_records_account_results(self, cursor) -> None:
+        """旧库迁移：为 sync_records 增加 account_results（各 Bangumi 账号的同步结果）。
+
+        一次同步可对应多个 Bangumi 账号，结果按账号以 JSON 文本记录，供同步
+        记录详情按账号展示各账号的标记状态与失败原因。
+        """
+        self._ensure_columns(
+            cursor,
+            "sync_records",
+            [("account_results", "TEXT DEFAULT ''")],
+            message="sync_records 已迁移：增加 account_results 列",
         )
 
     def _ensure_agent_memory(self, cursor) -> None:
@@ -467,6 +528,7 @@ class DatabaseConnection:
         self._ensure_sync_records_match_fields(cursor)
         self._ensure_sync_records_consumed(cursor)
         self._ensure_sync_records_link_fields(cursor)
+        self._ensure_sync_records_account_results(cursor)
 
         # 创建 Trakt 配置表
         cursor.execute("""
@@ -597,19 +659,22 @@ class DatabaseConnection:
                 nickname TEXT DEFAULT '',
                 avatar TEXT DEFAULT '',
                 private BOOLEAN NOT NULL DEFAULT 0,
-                is_active BOOLEAN NOT NULL DEFAULT 0,
+                is_primary BOOLEAN NOT NULL DEFAULT 0,
+                enabled BOOLEAN NOT NULL DEFAULT 1,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
         """)
         self._ensure_bangumi_accounts_private(cursor)
+        self._ensure_bangumi_accounts_enabled(cursor)
+        self._ensure_bangumi_accounts_primary(cursor)
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_section "
             "ON bangumi_accounts(section_name)"
         )
         cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_active "
-            "ON bangumi_accounts(is_active)"
+            "CREATE INDEX IF NOT EXISTS idx_bangumi_accounts_primary "
+            "ON bangumi_accounts(is_primary)"
         )
 
         # OAuth 授权过程中的 CSRF state（临时会话，带 TTL），替代临时 JSON 文件。

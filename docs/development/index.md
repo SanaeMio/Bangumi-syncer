@@ -26,7 +26,7 @@ order: 100
 
 ## 技术栈
 
-- **语言**：Python ≥ 3.9
+- **语言**：Python ≥ 3.10
 - **Web 框架**：[FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/)
 - **模板**：[Jinja2](https://jinja.palletsprojects.com/)
 - **数据校验**：[Pydantic](https://docs.pydantic.dev/) v2

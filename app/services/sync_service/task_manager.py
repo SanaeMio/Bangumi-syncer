@@ -6,7 +6,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from typing import Any, Optional
+from typing import Any
 
 from ...core.logging import logger, sync_log_context
 from ...models.sync import CustomItem, SyncResponse
@@ -82,7 +82,7 @@ class TaskManagerMixin:
             logger.error(f"异步同步任务 {task_id} 失败: {e}")
             return SyncResponse(status="error", message=f"异步处理失败: {str(e)}")
 
-    def get_sync_task_status(self, task_id: str) -> Optional[dict]:
+    def get_sync_task_status(self, task_id: str) -> dict | None:
         """获取任务状态（线程安全）"""
         with self._tasks_lock:
             return self._sync_tasks.get(task_id)
