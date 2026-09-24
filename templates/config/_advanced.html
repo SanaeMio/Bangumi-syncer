@@ -25,6 +25,32 @@
                                        autocomplete="off">
                             </div>
                             <div class="col-md-6">
+                                <label for="mcp-base-url" class="form-label fw-semibold">
+                                    <i class="bi bi-link-45deg me-1 text-primary"></i>MCP 服务公共 URL
+                                    <i class="bi bi-question-circle ms-1 text-muted"
+                                       data-bs-toggle="tooltip"
+                                       title="反向代理 / 局域网 / 域名访问时填写服务对外可达地址，例如 https://bs.example.com；用于生成 OAuth issuer 及授权 / token 端点，填错会导致 MCP 客户端无法完成授权发现。留空则回退环境变量 MCP_BASE_URL，仍为空时使用默认值 http://localhost:8000。修改后需要重启服务才生效。"></i>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="mcp-base-url"
+                                       name="dev.mcp_base_url"
+                                       placeholder="留空则用默认 http://localhost:8000"
+                                       autocomplete="off">
+                                <div class="form-text mt-1">
+                                    <i class="bi bi-lightbulb text-warning me-1"></i>
+                                    <small class="text-muted">检测到当前访问地址：<code id="mcp-detected-origin">—</code></small>
+                                    <button type="button"
+                                            class="btn btn-outline-secondary btn-sm ms-2"
+                                            onclick="fillMcpBaseUrl()">
+                                        <i class="bi bi-box-arrow-in-down me-1"></i>一键填入
+                                    </button>
+                                </div>
+                                <div class="form-text">
+                                    <small class="text-muted">MCP 客户端将通过该地址访问；反代 / 局域网 / 域名部署请填此处（含端口，如 http://192.168.1.10:8000；不含子路径）。仅本机使用可留空。</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
                                 <label for="bgm-api-proxy" class="form-label fw-semibold">
                                     <i class="bi bi-link-45deg me-1 text-primary"></i>Bangumi API 反向代理
                                     <i class="bi bi-question-circle ms-1 text-muted"
