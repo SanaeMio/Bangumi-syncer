@@ -41,7 +41,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 以 [pyproject.toml](https://github.com/SanaeMio/Bangumi-syncer/blob/main/pyproject.toml) 中的配置为准：
 
-- **Ruff**：`target-version = "py39"`，`line-length = 88`，规则集 `E/W/F/I/UP/B`
+- **Ruff**：`target-version = "py310"`，`line-length = 88`，规则集 `E/W/F/I/UP/B`
 - **djLint**：`profile = "jinja"`，`indent = 4`，排除 `templates/config/_.*\.html` 子模板
 - **import 顺序**：Ruff isort 自动整理
 

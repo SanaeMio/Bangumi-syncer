@@ -168,6 +168,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 /log.txt
+/log.txt.*
 /bangumi_data_cache.json
 /config.dev.ini
 # config.ini 为本地配置（含敏感信息），首次运行时从 config.example.ini 自动复制
@@ -187,4 +188,15 @@ sync_records.db-shm
 .claude/
 
 # 本地嵌套的第三方仓库（如 jellyfin-plugin-bangumi），仅本地开发用，不纳入分发
-rrr/
+rrr/mcp_server
+
+# 旧 MCP Sidecar 目录（嵌入后保留为历史参考，不纳入分发）
+/mcp_server/
+/specs/
+/spike_demo/
+
+# 内部暂缓事项记录（已识别但暂缓处理的问题），保留本地、不纳入分发
+/remain/
+
+# MCP 端到端实测过程记录（一次性报告/指南，保留本地、不纳入分发）
+/e2e-test/

@@ -35,9 +35,9 @@ order: 5
 ## 常见参数（PRAGMA）
 
 ```python
-cursor.execute("PRAGMA journal_mode=WAL")       # WAL 模式，并发读写稳定
-cursor.execute("PRAGMA synchronous=NORMAL")     # 平衡性能与安全
-cursor.execute("PRAGMA busy_timeout=5000")      # 写锁等待 5 秒
+cursor.execute("PRAGMA journal_mode=WAL")  # WAL 模式，并发读写稳定
+cursor.execute("PRAGMA synchronous=NORMAL")  # 平衡性能与安全
+cursor.execute("PRAGMA busy_timeout=5000")  # 写锁等待 5 秒
 ```
 
 ---
@@ -72,7 +72,8 @@ from app.core.database import database_manager
 database_manager.log_sync_record(
     user_name="alice",
     title="测试番剧",
-    season=1, episode=1,
+    season=1,
+    episode=1,
     status="success",
     source="emby",
     match_trace=trace.to_json(),

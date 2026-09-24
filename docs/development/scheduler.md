@@ -22,10 +22,11 @@ order: 3
 ```python
 from ..base.scheduler import BaseScheduler
 
+
 class MyDriverScheduler(BaseScheduler):
-    JOB_ID = "mydriver_sync"            # 任务唯一标识
-    DEFAULT_CRON = "*/10 * * * *"       # 默认 cron
-    DRIVER_NAME = "MyDriver"            # 日志名
+    JOB_ID = "mydriver_sync"  # 任务唯一标识
+    DEFAULT_CRON = "*/10 * * * *"  # 默认 cron
+    DRIVER_NAME = "MyDriver"  # 日志名
 
     def _is_enabled(self) -> bool:
         """是否启用（不能只看 enabled，还要校验外部依赖）"""
@@ -83,7 +84,9 @@ async def _run_sync_job(self) -> None:
         )
     except asyncio.TimeoutError:
         logger.error(f"MyDriver 定时同步超时 ({timeout} 秒)")
-        notify_scheduler_failure("mydriver", f"定时同步超时 ({timeout} 秒)", timeout=True)
+        notify_scheduler_failure(
+            "mydriver", f"定时同步超时 ({timeout} 秒)", timeout=True
+        )
     except Exception as e:
         logger.error(f"MyDriver 定时同步失败: {e}")
         notify_scheduler_failure("mydriver", str(e))
@@ -119,8 +122,8 @@ scheduler_registry.register_spec(
 注册后，`main.py` 只需：
 
 ```python
-await scheduler_registry.start_all()      # 启动
-await scheduler_registry.stop_all()       # 停止
+await scheduler_registry.start_all()  # 启动
+await scheduler_registry.stop_all()  # 停止
 await scheduler_registry.apply_config_by_section("feiniu")  # 配置保存后联动
 ```
 

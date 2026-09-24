@@ -76,8 +76,9 @@ class TelegramChannel(NotificationChannel):
                 )
             if resp.status_code < 300:
                 return ChannelSendResult(True, self.channel_id, self.channel_label)
-            return ChannelSendResult(False, self.channel_id, self.channel_label,
-                                     f"HTTP {resp.status_code}")
+            return ChannelSendResult(
+                False, self.channel_id, self.channel_label, f"HTTP {resp.status_code}"
+            )
         except Exception as e:
             return ChannelSendResult(False, self.channel_id, self.channel_label, str(e))
 ```
