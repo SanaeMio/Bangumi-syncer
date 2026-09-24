@@ -19,7 +19,12 @@ import httpx
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
-from app.services.matching.steps.base import MatchStepBase, StepOutcome
+from app.services.matching.gates import EXACT_SEARCH_HIT, NO_VALID_DATE
+from app.services.matching.steps.base import (
+    MatchStepBase,
+    StepOutcome,
+    skipped_outcome,
+)
 from app.utils.bangumi_archive._title_normalize import (
     API_SIMILARITY_FALLBACK,
     API_SIMILARITY_PRIMARY,
@@ -53,6 +58,12 @@ class SearchResetStep(MatchStepBase):
         )
         ctx.bgm_data = None
         ctx.matched_variant_method = ""
+        # 注意：本步**无条件执行且做了实际工作**（重置 ctx 状态、剥离季后缀），
+        # 并非「被跳过」。但 status 取值集合（hit/miss/skipped/error/
+        # low_confidence）里没有「已执行」这一项，且 status="skipped" 在两条
+        # 管线里都不终止、也未被任何逻辑分支消费（纯展示）。
+        # 这里保留 skipped 以避免引入另一种误导（hit 的 UI 文案是「命中」，
+        # 对一个纯预处理步骤同样不准确）；改动它只影响详情页文案，不影响行为。
         return StepOutcome(
             status="skipped",
             reason="状态重置完成",
@@ -77,11 +88,7 @@ class DateExactSearchStep(MatchStepBase):
     def execute(self, ctx: MatchContext) -> StepOutcome:
         premiere_date = ctx.item.release_date
         if not premiere_date or len(premiere_date) < 10:
-            return StepOutcome(
-                status="skipped",
-                reason="无有效日期，跳过精确搜索",
-                inputs={"premiere_date": premiere_date or ""},
-            )
+            return skipped_outcome(NO_VALID_DATE)
 
         inputs = {
             "title": ctx.item.title,
@@ -207,9 +214,8 @@ class VariantFallbackSearchStep(MatchStepBase):
                 bgm_data=ctx.bgm_data[0],
             )
             if ratio >= API_SIMILARITY_PRIMARY:
-                return StepOutcome(
-                    status="skipped",
-                    reason="精确搜索已命中，跳过兜底",
+                return skipped_outcome(
+                    EXACT_SEARCH_HIT,
                     inputs={"title": ctx.item.title, "top_ratio": ratio},
                 )
 

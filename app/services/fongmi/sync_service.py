@@ -46,8 +46,10 @@ class FongmiSyncService:
     _synced_keys: set[tuple[str, str]] = set()
 
     def _record_to_custom_item(self, rec: FongmiWatchRecord) -> CustomItem:
-        # 优先使用 media_type 字段（含 OVA/OAD/三次元检测），
-        # 为空时回退到 is_movie 二分
+        # media_type 由 media_to_record 按**文件名结构**判定（movie/episode）；
+        # 为空时（老记录/构造的替身对象）回退到 is_movie 二分。
+        # 注：fongmi 不再细分 OVA/OAD —— 文件名无可靠信号，且 ova 与 episode
+        # 在下游无控制流差异（见 client.detect_media_type_from_media）。
         if rec.media_type:
             media_type = rec.media_type
         else:

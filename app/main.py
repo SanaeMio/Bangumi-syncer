@@ -81,6 +81,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         startup_info.print_error(f"迁移 bangumi 账号到数据库失败: {e}")
 
+    # 把历史 [sync] blocked_keywords 导入屏蔽关键词表（幂等：表非空则跳过）。
+    # 黑名单已统一到 DB（WebUI 管理），此迁移保证老用户配置不丢失。
+    try:
+        from app.core.database import database_manager as _db
+
+        raw_keywords = config_manager.get("sync", "blocked_keywords", fallback="")
+        imported = _db.migrate_blocked_keywords_from_config(raw_keywords or "")
+        if imported:
+            startup_info.print_success(f"迁移了 {imported} 条屏蔽关键词到数据库")
+    except Exception as e:
+        startup_info.print_error(f"迁移屏蔽关键词失败: {e}")
+
     try:
         from app.core.accounts import list_bangumi_accounts
 

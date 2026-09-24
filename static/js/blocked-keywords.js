@@ -1,32 +1,34 @@
 /**
  * 屏蔽关键词卡片组件 + 一键加入黑名单
  *
+ * 数据源：数据库 ``blocked_rules`` 表，经 ``/api/blocked-keywords`` 管理。
+ * 历史实现读写 INI 的 ``[sync] blocked_keywords``；该配置项已废弃并迁入 DB
+ * （原因：与 title_blacklist 合并 —— 见 app/core/database/blocked_rules.py）。
+ *
  * 用法：
  *   // 配置页：初始化关键词列表（绑定到 _blocked_keywords.html 中的元素）
- *   BlockedKeywords.initChips('blocked-keywords', 'blocked-keywords-chips')
+ *   BlockedKeywords.initChips()
  *   // 同步记录页：一键加入
  *   BlockedKeywords.addFromRecord(title)
  */
 const BlockedKeywords = {
-  _input: null,
   _chipsEl: null,
   _addInput: null,
+  /** 当前关键词列表（含来源信息，供渲染区分手填 / 拒绝自动记录） */
+  _items: [],
 
   /**
    * 初始化屏蔽关键词列表
-   * @param {string} inputId  隐藏 input 的 id（用于 ConfigForm.serialize）
-   * @param {string} chipsId  列表容器的 id
+   * @param {string} [chipsId] 列表容器 id（默认 blocked-keywords-chips）
    */
-  initChips(inputId, chipsId) {
-    const input = document.getElementById(inputId);
-    const chipsEl = document.getElementById(chipsId);
-    if (!input || !chipsEl) return;
+  async initChips(chipsId) {
+    const chipsEl = document.getElementById(chipsId || 'blocked-keywords-chips');
+    if (!chipsEl) return;
 
-    this._input = input;
     this._chipsEl = chipsEl;
     this._addInput = document.getElementById('blocked-keywords-input');
 
-    this._render();
+    await this._reload();
 
     // 绑定回车添加
     if (this._addInput) {
@@ -37,6 +39,21 @@ const BlockedKeywords = {
         }
       });
     }
+  },
+
+  /** 从后端拉取并渲染 */
+  async _reload() {
+    try {
+      const resp = await apiFetch('/api/blocked-keywords', { method: 'GET' });
+      if (resp.status === 'success') {
+        this._items = (resp.data && resp.data.keywords) || [];
+      } else {
+        this._items = [];
+      }
+    } catch (e) {
+      this._items = [];
+    }
+    this._render();
   },
 
   /** 显示添加输入区并聚焦 */
@@ -57,32 +74,47 @@ const BlockedKeywords = {
 
   /** 确认添加关键词 */
   async confirmAdd() {
-    if (!this._addInput || !this._input) return;
+    if (!this._addInput) return;
     const val = this._addInput.value.trim();
     if (!val) return;
-    const list = this._parse(this._input.value);
-    const existed = list.some((k) => k.toLowerCase() === val.toLowerCase());
-    if (!existed) {
-      list.push(val);
-      this._input.value = list.join(',');
+
+    // 本地去重（大小写不敏感），避免多余的请求
+    if (this._items.some((it) => (it.keyword || '').toLowerCase() === val.toLowerCase())) {
+      showAlert(`「${val}」已在屏蔽关键词中`, 'info');
+      this._addInput.value = '';
+      return;
     }
-    this._addInput.value = '';
-    this._render();
-    // 仅当确实新增时才提交
-    if (!existed) {
-      const ok = await this._save();
-      if (ok) showAlert(`已添加屏蔽关键词：${val}`, 'success');
+
+    try {
+      const resp = await apiFetch('/api/blocked-keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword: val }),
+      });
+      if (resp.status === 'success') {
+        showAlert(
+          resp.data && resp.data.added
+            ? `已添加屏蔽关键词：${val}`
+            : `「${val}」已在屏蔽关键词中`,
+          resp.data && resp.data.added ? 'success' : 'info',
+        );
+        this._addInput.value = '';
+        await this._reload();
+      } else {
+        showAlert('添加失败: ' + (resp.message || ''), 'danger');
+      }
+    } catch (e) {
+      showAlert('添加失败: ' + e.message, 'danger');
     }
     this._addInput?.focus();
   },
 
   /** 渲染关键词列表 */
   _render() {
-    if (!this._chipsEl || !this._input) return;
-    const keywords = this._parse(this._input.value);
+    if (!this._chipsEl) return;
     this._chipsEl.innerHTML = '';
 
-    if (keywords.length === 0) {
+    if (!this._items.length) {
       this._chipsEl.innerHTML =
         '<div class="text-muted small py-2">暂无屏蔽关键词</div>';
       return;
@@ -90,23 +122,37 @@ const BlockedKeywords = {
 
     const list = document.createElement('div');
     list.className = 'd-flex flex-wrap gap-2';
-    keywords.forEach((kw, idx) => {
+    this._items.forEach((item) => {
+      const kw = item.keyword || '';
+      const isReject = item.source === 'reject';
       const chip = document.createElement('span');
       chip.className =
         'badge rounded-pill bg-danger bg-opacity-75 d-inline-flex align-items-center py-2 px-3';
       chip.style.fontSize = '0.85rem';
+      // 拒绝候选时自动记录的来源标注，便于用户区分"我填的"与"系统记的"
+      const srcHint = isReject
+        ? '<span class="ms-2 opacity-75" style="font-size:.7rem;">拒绝时记录</span>'
+        : '';
       chip.innerHTML =
-        `<span>${escapeHtml(kw)}</span>` +
+        `<span>${escapeHtml(kw)}</span>${srcHint}` +
         `<button type="button" class="btn btn-sm btn-light ms-2 px-1 py-0 lh-1" ` +
         `style="font-size:.75rem;border-radius:50%;" aria-label="删除" title="删除">` +
         `<i class="bi bi-trash-fill text-danger"></i></button>`;
       chip.querySelector('button').addEventListener('click', async () => {
-        const arr = this._parse(this._input.value);
-        const removed = arr.splice(idx, 1)[0];
-        this._input.value = arr.join(',');
-        this._render();
-        const ok = await this._save();
-        if (ok) showAlert(`已删除屏蔽关键词：${removed}`, 'success');
+        try {
+          const resp = await apiFetch(
+            `/api/blocked-keywords/${encodeURIComponent(kw)}`,
+            { method: 'DELETE' },
+          );
+          if (resp.status === 'success') {
+            showAlert(`已删除屏蔽关键词：${kw}`, 'success');
+            await this._reload();
+          } else {
+            showAlert('删除失败: ' + (resp.message || ''), 'danger');
+          }
+        } catch (e) {
+          showAlert('删除失败: ' + e.message, 'danger');
+        }
       });
       list.appendChild(chip);
     });
@@ -114,32 +160,7 @@ const BlockedKeywords = {
   },
 
   /**
-   * 提交当前屏蔽关键词到后端（部分更新 sync.blocked_keywords）
-   * @returns {Promise<boolean>} 是否保存成功
-   */
-  async _save() {
-    if (!this._input) return false;
-    try {
-      const resp = await apiFetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sync: { blocked_keywords: this._input.value },
-        }),
-      });
-      if (resp.status !== 'success') {
-        showAlert('保存屏蔽关键词失败: ' + (resp.message || ''), 'danger');
-        return false;
-      }
-      return true;
-    } catch (e) {
-      showAlert('保存屏蔽关键词失败: ' + e.message, 'danger');
-      return false;
-    }
-  },
-
-  /**
-   * 一键把标题加入屏蔽关键词（调用配置 API）
+   * 一键把标题加入屏蔽关键词
    * @param {string} title
    */
   async addFromRecord(title) {
@@ -149,35 +170,22 @@ const BlockedKeywords = {
     }
     const kw = title.trim();
     try {
-      // 1. 读取当前配置（同步记录页可能未初始化 _input）
-      const cfgResp = await apiFetch('/api/config', { method: 'GET' });
-      if (cfgResp.status !== 'success') {
-        showAlert('读取配置失败', 'danger');
-        return;
-      }
-      const current =
-        (cfgResp.data.sync && cfgResp.data.sync.blocked_keywords) || '';
-      const list = this._parse(current);
-      if (list.some((k) => k.toLowerCase() === kw.toLowerCase())) {
-        showAlert(`「${kw}」已在屏蔽关键词中`, 'info');
-        return;
-      }
-      list.push(kw);
-      // 2. 保存
-      const saveResp = await apiFetch('/api/config', {
+      const resp = await apiFetch('/api/blocked-keywords', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sync: { blocked_keywords: list.join(',') } }),
+        body: JSON.stringify({ keyword: kw }),
       });
-      if (saveResp.status === 'success') {
-        showAlert(`已加入屏蔽关键词：${kw}`, 'success');
+      if (resp.status === 'success') {
+        showAlert(
+          resp.data && resp.data.added
+            ? `已加入屏蔽关键词：${kw}`
+            : `「${kw}」已在屏蔽关键词中`,
+          resp.data && resp.data.added ? 'success' : 'info',
+        );
         // 若配置页已打开，同步刷新列表
-        if (this._input) {
-          this._input.value = list.join(',');
-          this._render();
-        }
+        if (this._chipsEl) await this._reload();
       } else {
-        showAlert('加入黑名单失败: ' + (saveResp.message || ''), 'danger');
+        showAlert('加入黑名单失败: ' + (resp.message || ''), 'danger');
       }
     } catch (e) {
       showAlert('加入黑名单失败: ' + e.message, 'danger');

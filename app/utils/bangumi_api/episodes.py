@@ -404,18 +404,158 @@ class EpisodesMixin:
         """从名称中提取季度编号，用于续集链季度去重计数"""
         return extract_explicit_season(f"{name} {name_cn}")
 
+    @staticmethod
+    def _first_normal_sort(ep_info: list) -> float | None:
+        """该条目本篇章节的最小 sort（官方 firstEpisode 语义）。
+
+        对齐 bangumi/server `internal/episode/mysql_repository.go::firstEpisode`：
+        只取 `type=0`（本篇）章节，按 `disc, sort` 排序后的第一条 sort。
+        取不到时返回 None（此时无法算 ep，退化为 sort 直比）。
+        """
+        normals = [
+            e
+            for e in ep_info
+            if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+        ]
+        if not normals:
+            return None
+        return min(
+            (e.get("sort") for e in normals if isinstance(e.get("sort"), (int, float))),
+            default=None,
+        )
+
+    @classmethod
+    def _compute_ep(cls, episode: dict, first_sort: float | None) -> float | None:
+        """按官方公式算「条目内集数」：``ep = sort − first_sort + 1``。
+
+        对齐 bangumi/server `convertDaoEpisode`：
+        **仅本篇（type=0）有意义**，其余类型官方恒为 0（此处返回 None 表示无意义）。
+
+        为什么需要它：`sort` 是「同类条目的排序和集数」，跨季**连续**编号
+        （如斗破苍穹年番4 的 sort 是 158..219）；而媒体库推送的「第 N 集」
+        是**条目内相对编号**。官方 API 的 `ep` 字段就是这个相对编号，且它是
+        **服务端按上式算出来的**（底层 chii_episodes 表只有 ep_sort，没有 ep 列），
+        因此本地 archive 必须自己复现同一公式，才能与官方语义一致。
+        """
+        if first_sort is None:
+            return None
+        if episode.get("type", EPISODE_TYPE_NORMAL) != EPISODE_TYPE_NORMAL:
+            return None
+        s = episode.get("sort")
+        if not isinstance(s, (int, float)):
+            return None
+        return s - first_sort + 1
+
+    def _check_episode_consistency(
+        self, subject_id: int, target_season: int, target_ep: int
+    ) -> tuple[bool, str]:
+        """集数一致性校验：目标编号是否与该条目实际拥有的章节匹配。
+
+        为什么需要它：媒体库推来的 season/episode 来自文件名解析，可能是垃圾值
+        （真实库出现 S50E1000、S5E100 等）。而**不能按数值大小拦截** ——
+        实测 E201/E233/E81 都是国漫正常集号（斗破苍穹 / 吞噬星空 / 凡人修仙传），
+        数值阈值无法与垃圾值区分。可用的判据只有「与该条目实际数据是否一致」。
+
+        判据（均基于本地数据，无需网络）：
+        - 条目无章节数据 → **放行**（无从判断，交由后续链路）
+        - ``target_ep`` 在本篇（type=0）的 ep 或 sort 域内 → **放行**
+        - ``target_season > 1`` → **放行**（季数错位时集号语义会变，
+          不能按本条目的集数上限判定；交由续集链解析）
+        - **条目有续集 → 放行**（国漫跨季连续编号：已命中「年番2」而推送
+          E201 时，正确行为是沿续集链找到含 sort=201 的「年番4」；
+          按本条目上限判定会误拦 —— 实测 443867 上限 105 而 201 合法）
+        - 其余（**无续集的单季条目** + 集号超出该条目实际上限）→ **拦截**
+
+        保守取向：只在「单季 + 无续集 + 明确超范围」这种最有把握的情形拦截。
+        这既能拦住真实脏值（凡人修仙传三次元条目只有 30 集却推 E81），
+        又不会误伤跨季连续编号与季数错位。
+        """
+        if not target_ep or target_season > 1:
+            # 无集号，或季数 >1（集号语义随季变化，交由链解析）
+            return True, ""
+
+        # 有续集：可能是跨季连续编号，交由链遍历解析
+        try:
+            if self._find_next_sequel_id(subject_id):
+                return True, "条目有续集，可能是跨季连续编号，放行"
+        except Exception as e:  # noqa: BLE001
+            return True, f"续集探测失败，放行: {e!r}"[:80]
+
+        try:
+            episodes = self.get_episodes(subject_id)
+        except Exception as e:  # noqa: BLE001
+            return True, f"取章节失败，放行: {e!r}"[:80]
+
+        ep_info = episodes.get("data") or []
+        if not ep_info:
+            return True, "条目无章节数据，放行"
+
+        # 该条目本篇章节的 ep 与 sort 最大值（两者都可能被调用方当作编号）
+        normals = [
+            e
+            for e in ep_info
+            if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+        ]
+        if not normals:
+            return True, "条目无本篇章节，放行"
+
+        max_ep = max(
+            (e.get("ep") for e in normals if isinstance(e.get("ep"), (int, float))),
+            default=None,
+        )
+        max_sort = max(
+            (e.get("sort") for e in normals if isinstance(e.get("sort"), (int, float))),
+            default=None,
+        )
+        # 本地 archive 无 ep 列，用官方公式补算
+        first_sort = self._first_normal_sort(ep_info)
+        if max_ep is None and first_sort is not None and max_sort is not None:
+            max_ep = max_sort - first_sort + 1
+
+        limit = (
+            max(x for x in (max_ep, max_sort) if x is not None)
+            if (max_ep is not None or max_sort is not None)
+            else None
+        )
+        if limit is None:
+            return True, "无法判定上限，放行"
+
+        if target_ep > limit:
+            return False, f"集号 {target_ep} 超出该条目实际上限 {int(limit)}"
+        return True, ""
+
     def _match_target_ep_rows(
         self, ep_info: list, target_ep: int
     ) -> list[dict[str, Any]]:
-        """与 target_season>1 分支一致的章节匹配规则。"""
+        """在章节列表里定位目标「条目内集数」。
+
+        匹配优先级（对齐官方 `ep` 语义）：
+        1. **ep（条目内相对编号）**：``sort − first_sort + 1 == target_ep``
+           仅对本篇章节成立 —— 这是媒体库推送「第 N 集」的正确解释，
+           也是 `sort` 不从 1 开始的条目（国漫年番）唯一能命中的方式。
+        2. 回退 `sort == target_ep`：保留历史行为，兼容
+           - 章节缺 `type` 字段的旧 archive（此时 ep 无法判定）
+           - 调用方传的确实是全局 sort（如 target_ep > 99 的跨季连续编号）
+        3. 回退官方 API 直接给出的 `ep` 字段（若响应里带）
+        """
+        # 1. ep（条目内相对编号）—— 官方语义
+        first_sort = self._first_normal_sort(ep_info)
+        if first_sort is not None:
+            rows = [i for i in ep_info if self._compute_ep(i, first_sort) == target_ep]
+            if rows:
+                return rows
+
+        # 2. sort 直比（历史行为 / 旧 archive 无 type）
         rows = [i for i in ep_info if i.get("sort") == target_ep]
-        if not rows:
-            rows = [
-                i
-                for i in ep_info
-                if i.get("ep") == target_ep and i.get("ep", 0) <= i.get("sort", 0)
-            ]
-        return rows
+        if rows:
+            return rows
+
+        # 3. 官方响应里已带 ep 字段时直接用
+        return [
+            i
+            for i in ep_info
+            if i.get("ep") == target_ep and i.get("ep", 0) <= i.get("sort", 0)
+        ]
 
     def get_movie_main_episode_id(
         self,
@@ -529,7 +669,26 @@ class EpisodesMixin:
     ) -> tuple[int | None, int | None]:
         max_season, max_episode = self._get_episode_sync_limits()
 
+        # 数值上限只作为**兜底护栏**（防脏值打爆链路），不再作为主要判据：
+        # 实测真实库中 E201/E233/E81 都是国漫正常集号（斗破苍穹/吞噬星空/
+        # 凡人修仙传），按数值拦截会误伤；而 S50E1000 这类文件名解析垃圾值
+        # 也无法靠数值阈值与正常值区分。真正的判据是「与该条目实际数据是否
+        # 一致」，见下方 _check_episode_consistency。
         if target_season > max_season or (target_ep and target_ep > max_episode):
+            return None, None
+
+        # 一致性校验：目标集数超出该条目（及其续集链）实际拥有的章节数时，
+        # 说明调用方给的编号与该条目不匹配（如媒体库季数错位 / 文件名解析
+        # 失败），提前返回而不是沿链空跑。仅在有把握时判定（见函数文档）。
+        consistent, detail = self._check_episode_consistency(
+            subject_id, target_season, target_ep
+        )
+        if not consistent:
+            logger.info(
+                f"集数一致性校验未通过，跳过解析: subject_id={subject_id}, "
+                f"target_season={target_season}, target_ep={target_ep}, "
+                f"原因={detail}"
+            )
             return None, None
 
         # 获取根条目的 subject type 与 platform，续集链遍历时仅放行相同媒体类型/平台的条目
@@ -1176,31 +1335,44 @@ class EpisodesMixin:
         first_part = True
         visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
+            # 是否跳过当前条目（类型/platform 不符）。
+            #
+            # ⚠️ 这里必须用「标记 + 统一推进」而不是直接 `continue`：
+            # `current_id` 的推进在循环体末尾，`continue` 会跳过它导致
+            # while True 原地空转（纯烧 CPU、不报错、不超时）。历史 bug 见
+            # tests/utils/test_bangumi_api_extended.py
+            # ::TestFindSeasonOneEpisodeNoHang。
+            skip_current = False
             if not first_part:
                 current_info = self.get_subject(current_id)
                 if not current_info:
-                    continue
-                if root_type is not None and current_info.get("type") != root_type:
-                    continue
-                # 续集链 platform 隔离：根条目与当前条目都带 platform 且不同时跳过
-                cur_platform = (current_info.get("platform") or "").strip()
-                if root_platform and cur_platform and cur_platform != root_platform:
-                    continue
-            found = self._find_episode_by_sort(current_id, target_ep)
-            if found:
-                return current_id, found["id"]
-            episodes = self.get_episodes(current_id)
-            ep_info = episodes.get("data", [])
-            if not ep_info:
-                logger.debug(f"未获取到剧集信息: {current_id}")
-                break
-            normal_season = (
-                True
-                if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
-                else False
-            )
-            if not first_part and normal_season:
-                break
+                    skip_current = True
+                elif root_type is not None and current_info.get("type") != root_type:
+                    skip_current = True
+                else:
+                    # 续集链 platform 隔离：根条目与当前条目都带 platform 且不同时跳过
+                    cur_platform = (current_info.get("platform") or "").strip()
+                    if root_platform and cur_platform and cur_platform != root_platform:
+                        skip_current = True
+
+            if not skip_current:
+                found = self._find_episode_by_sort(current_id, target_ep)
+                if found:
+                    return current_id, found["id"]
+                episodes = self.get_episodes(current_id)
+                ep_info = episodes.get("data", [])
+                if not ep_info:
+                    logger.debug(f"未获取到剧集信息: {current_id}")
+                    break
+                normal_season = (
+                    True
+                    if episodes.get("total", 0) > 3 and ep_info[0].get("sort", 0) <= 1
+                    else False
+                )
+                if not first_part and normal_season:
+                    break
+
+            # 统一推进：无论当前条目是否被跳过，都要前进到下一个续集
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break

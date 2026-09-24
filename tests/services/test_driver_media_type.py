@@ -72,9 +72,15 @@ class TestPlexMediaTypeDetection:
         item = extract_plex_data(plex_data)
         assert item.media_type == "movie"
 
-    def test_plex_real_action_via_drama_keyword(self):
-        """逃げるは恥だが役に立つ（id=188108, platform=日剧, type=6 三次元）
-        标题本身不含「日剧」关键字，通过 originalTitle 含 Drama 触发 real_action。"""
+    def test_plex_real_action_requires_source_declaration(self):
+        """Plex 只声明 movie/episode，**不再**用标题关键词推断三次元
+
+        历史行为：Plex 标 type=movie、originalTitle 含 "(Japanese Drama)"
+        会被 detect_media_type 改判为 real_action。
+        现在改为直接采信 Plex 的 movie 声明 —— 三次元改由配置
+        ``sync.enable_real_action`` 决定是否把 type=6 纳入搜索范围
+        （避免「真人快打」这类动画被误判后收窄搜索范围导致漏标）。
+        """
         plex_data = {
             "Account": {"title": "user1"},
             "Metadata": {
@@ -85,10 +91,14 @@ class TestPlexMediaTypeDetection:
             },
         }
         item = extract_plex_data(plex_data)
-        assert item.media_type == "real_action"
+        assert item.media_type == "movie"
 
-    def test_plex_oad_from_title(self):
-        """進撃の巨人 OAD（id=80993, platform=OVA）标题含 OAD → oad"""
+    def test_plex_oad_keyword_no_longer_refined(self):
+        """Plex 声明 episode → 就是 episode，不再被标题的 OAD 改判
+
+        源的声明是权威信息。OVA/OAD 的细分改由**候选侧**的 platform 字段
+        判定（``_detect_candidate_media_type``），请求侧不再猜测。
+        """
         plex_data = {
             "Account": {"title": "user1"},
             "Metadata": {
@@ -101,7 +111,7 @@ class TestPlexMediaTypeDetection:
             },
         }
         item = extract_plex_data(plex_data)
-        assert item.media_type == "oad"
+        assert item.media_type == "episode"
 
     def test_plex_ori_title_extracted_correctly(self):
         """Plex 原始标题（originalTitle）正确提取（issue#182 真实字段）"""
@@ -194,8 +204,8 @@ class TestEmbyMediaTypeDetection:
         item = extract_emby_data(emby_data)
         assert item.ori_title is None
 
-    def test_emby_real_action_via_drama_keyword(self):
-        """半沢直樹（id=73955, platform=日剧, type=6）通过 originalTitle 含 Drama → real_action"""
+    def test_emby_real_action_requires_source_declaration(self):
+        """Emby 只声明 Movie/Episode → 直接采信，不再用标题关键词推断三次元"""
         emby_data = {
             "User": {"Name": "user1"},
             "Item": {
@@ -206,10 +216,10 @@ class TestEmbyMediaTypeDetection:
             },
         }
         item = extract_emby_data(emby_data)
-        assert item.media_type == "real_action"
+        assert item.media_type == "movie"
 
-    def test_emby_oad_from_series_name(self):
-        """進撃の巨人 OAD（id=80993, platform=OVA）SeriesName 含 OAD → oad"""
+    def test_emby_oad_keyword_no_longer_refined(self):
+        """Emby 声明 Episode → 就是 episode，不再被标题的 OAD 改判"""
         emby_data = {
             "User": {"Name": "user1"},
             "Item": {
@@ -221,7 +231,7 @@ class TestEmbyMediaTypeDetection:
             },
         }
         item = extract_emby_data(emby_data)
-        assert item.media_type == "oad"
+        assert item.media_type == "episode"
 
 
 # ===== Fongmi =====
@@ -266,8 +276,13 @@ class TestFongmiMediaTypeDetection:
         assert rec.media_type == "movie"
         assert rec.is_movie is True
 
-    def test_fongmi_ova_from_url(self):
-        """URL 含 OVA → ova"""
+    def test_fongmi_ova_url_treated_as_episode(self):
+        """fongmi 不再细分 OVA —— 无可靠信号，细分交由候选侧 platform 判定
+
+        fongmi 只有文件名。历史实现把 URL 里的 ``OVA`` 当类型标记，
+        但 OVA 与 episode 在下游**无控制流差异**，且 ``特别篇`` 之类
+        关键词误判率高。现在只区分 movie/episode。
+        """
         device = self._make_device()
         media = {
             "title": "鬼滅の刃",
@@ -275,10 +290,11 @@ class TestFongmiMediaTypeDetection:
             "artist": None,
         }
         rec = media_to_record(device, media)
-        assert rec.media_type == "ova"
+        assert rec.media_type == "episode"
+        assert rec.is_movie is False
 
-    def test_fongmi_oad_from_url(self):
-        """URL 含 OAD → oad（進撃の巨人 OAD 场景）"""
+    def test_fongmi_oad_url_treated_as_episode(self):
+        """fongmi 不再细分 OAD（理由同上）"""
         device = self._make_device()
         media = {
             "title": "進撃の巨人",
@@ -286,10 +302,13 @@ class TestFongmiMediaTypeDetection:
             "artist": None,
         }
         rec = media_to_record(device, media)
-        assert rec.media_type == "oad"
+        assert rec.media_type == "episode"
 
-    def test_fongmi_real_action_from_title(self):
-        """标题含「日剧」→ real_action（逃げるは恥だが役に立つ场景）"""
+    def test_fongmi_real_action_not_inferred(self):
+        """fongmi 不再从标题推断三次元（实测「真人快打」等动画误判）
+
+        三次元改由 ``sync.enable_real_action`` 配置控制搜索范围。
+        """
         device = self._make_device()
         media = {
             "title": "逃げるは恥だが役に立つ 日剧",
@@ -297,7 +316,34 @@ class TestFongmiMediaTypeDetection:
             "artist": None,
         }
         rec = media_to_record(device, media)
-        assert rec.media_type == "real_action"
+        # 有 EP01 季集结构 → episode（不再被「日剧」改判 real_action）
+        assert rec.media_type == "episode"
+
+    def test_fongmi_movie_by_year_when_no_episode_structure(self):
+        """无季集结构 + 带年份 → movie（单片命名习惯）"""
+        device = self._make_device()
+        media = {
+            "title": "千与千寻",
+            "url": "/storage/movies/Spirited.Away.2001.1080p.mkv",
+            "artist": None,
+        }
+        rec = media_to_record(device, media)
+        assert rec.media_type == "movie"
+        assert rec.is_movie is True
+        assert (rec.season, rec.episode) == (1, 1)
+
+    def test_fongmi_episode_structure_wins_over_year(self):
+        """有季集结构时优先判 episode（即便文件名带年份）"""
+        device = self._make_device()
+        media = {
+            "title": "某番剧",
+            "url": "/storage/anime/Show.2021.S02E05.1080p.mkv",
+            "artist": None,
+        }
+        rec = media_to_record(device, media)
+        assert rec.media_type == "episode"
+        assert rec.season == 2
+        assert rec.episode == 5
 
     def test_fongmi_ova_sets_season_episode_to_1(self):
         """OVA 时 season=1, episode=1"""
@@ -312,7 +358,10 @@ class TestFongmiMediaTypeDetection:
         assert rec.episode == 1
 
     def test_fongmi_record_to_custom_item_uses_media_type(self):
-        """Fongmi _record_to_custom_item 使用 media_type 字段"""
+        """Fongmi _record_to_custom_item 使用 media_type 字段
+
+        fongmi 现只产 movie/episode（不细分 OAD），故此处断言 episode。
+        """
         from app.services.fongmi.sync_service import FongmiSyncService
 
         svc = FongmiSyncService()
@@ -324,7 +373,7 @@ class TestFongmiMediaTypeDetection:
         }
         rec = media_to_record(device, media)
         item = svc._record_to_custom_item(rec)
-        assert item.media_type == "oad"
+        assert item.media_type == "episode"
 
     def test_fongmi_record_to_custom_item_fallback_is_movie(self):
         """Fongmi media_type 为空时回退到 is_movie 二分"""
@@ -397,33 +446,35 @@ class TestFeiniuMediaTypeDetection:
         )
         assert _feiniu_detect_media_type(rec) == "episode"
 
-    def test_feiniu_ova_from_title(self):
-        """飞牛标题含 OVA → ova"""
+    def test_feiniu_item_type_is_authoritative(self):
+        """飞牛自带 item_type → **直接采信**，不再被标题关键词细化
+
+        飞牛是本项目里少数**提供类型字段**的源（其余是 Plex/Emby/Jellyfin）。
+        历史实现会先用标题关键词判 OVA/三次元，导致源声明被覆盖；
+        现在改为采信 item_type，OVA/OAD/三次元的细分交由**候选侧**的
+        platform/type 字段判定。
+        """
         from app.services.feiniu.sync_service import _feiniu_detect_media_type
 
+        # 标题含 OVA 但 item_type=Series → episode（源权威）
         rec = self._make_record(display_title="鬼滅の刃 OVA", item_type="Series")
-        assert _feiniu_detect_media_type(rec) == "ova"
+        assert _feiniu_detect_media_type(rec) == "episode"
 
-    def test_feiniu_oad_from_title(self):
-        """飞牛标题含 OAD → oad（進撃の巨人 OAD 场景）"""
-        from app.services.feiniu.sync_service import _feiniu_detect_media_type
-
+        # 标题含 OAD 但 item_type=Series → episode
         rec = self._make_record(display_title="進撃の巨人 OAD", item_type="Series")
-        assert _feiniu_detect_media_type(rec) == "oad"
+        assert _feiniu_detect_media_type(rec) == "episode"
 
-    def test_feiniu_real_action_from_title(self):
-        """飞牛标题含「日剧」→ real_action"""
+    def test_feiniu_real_action_requires_item_type(self):
+        """飞牛三次元：仅当 item_type 显式声明（drama/日剧/真人）才判 real_action"""
         from app.services.feiniu.sync_service import _feiniu_detect_media_type
 
+        # 标题含「日剧」但 item_type=Series → 不再判 real_action
         rec = self._make_record(
             display_title="逃げるは恥だが役に立つ 日剧", item_type="Series"
         )
-        assert _feiniu_detect_media_type(rec) == "real_action"
+        assert _feiniu_detect_media_type(rec) == "episode"
 
-    def test_feiniu_real_action_from_item_type(self):
-        """飞牛 item_type=drama → real_action（半沢直樹场景）"""
-        from app.services.feiniu.sync_service import _feiniu_detect_media_type
-
+        # item_type=drama → 保留 real_action（源权威）
         rec = self._make_record(
             display_title="半沢直樹",
             item_type="drama",
@@ -444,8 +495,8 @@ class TestFeiniuMediaTypeDetection:
         )
         assert _feiniu_detect_media_type(rec) == "movie"
 
-    def test_feiniu_record_to_custom_item_ova(self):
-        """飞牛 _record_to_custom_item OVA 场景"""
+    def test_feiniu_record_to_custom_item_uses_item_type(self):
+        """飞牛 _record_to_custom_item 采信 item_type（OVA 细分交候选侧）"""
         from app.services.feiniu.sync_service import feiniu_sync_service
 
         rec = self._make_record(
@@ -456,9 +507,7 @@ class TestFeiniuMediaTypeDetection:
         )
         item = feiniu_sync_service._record_to_custom_item(rec)
         assert item is not None
-        assert item.media_type == "ova"
-        assert item.season == 1
-        assert item.episode == 1
+        assert item.media_type == "episode"
 
 
 # ===== Jellyfin =====
@@ -489,27 +538,18 @@ def _jellyfin_movie_data(title="劇場版 鬼滅の刃 無限列車編", ori_tit
 
 
 class TestJellyfinExtractorMediaTypeDetection:
-    """Jellyfin extractor 接入 detect_media_type"""
+    """Jellyfin extractor 采信源声明的类型（不再用标题关键词细化）"""
 
-    def test_episode_with_ova_keyword_detected_as_ova(self):
-        """剧集标题含 OVA 关键词检测为 ova"""
-        data = _jellyfin_episode_data(title="鬼滅の刃 OVA", media_type="episode")
-        item = extract_jellyfin_data(data)
-        assert item.media_type == "ova"
+    def test_episode_declaration_is_authoritative(self):
+        """media_type=episode → episode，标题关键词不再改判
 
-    def test_episode_with_oad_keyword_detected_as_oad(self):
-        """剧集标题含 OAD 关键词检测为 oad"""
-        data = _jellyfin_episode_data(title="進撃の巨人 OAD", media_type="episode")
-        item = extract_jellyfin_data(data)
-        assert item.media_type == "oad"
-
-    def test_episode_with_real_action_keyword_detected(self):
-        """剧集标题含三次元关键词检测为 real_action"""
-        data = _jellyfin_episode_data(
-            title="逃げるは恥だが役に立つ 日剧", media_type="episode"
-        )
-        item = extract_jellyfin_data(data)
-        assert item.media_type == "real_action"
+        Jellyfin 明确声明类型，这是权威信息。OVA/OAD/三次元的细分改由
+        **候选侧**的 platform/type 字段判定。
+        """
+        for title in ("鬼滅の刃 OVA", "進撃の巨人 OAD", "逃げるは恥だが役に立つ 日剧"):
+            data = _jellyfin_episode_data(title=title, media_type="episode")
+            item = extract_jellyfin_data(data)
+            assert item.media_type == "episode", title
 
     def test_episode_normal_title_keeps_episode(self):
         """普通剧集标题保持 episode（呪術廻戦场景）"""
@@ -517,11 +557,11 @@ class TestJellyfinExtractorMediaTypeDetection:
         item = extract_jellyfin_data(data)
         assert item.media_type == "episode"
 
-    def test_movie_with_real_action_keyword_detected(self):
-        """电影标题含真人版关键词检测为 real_action"""
+    def test_movie_declaration_is_authoritative(self):
+        """media_type=movie → movie，不被标题的「真人版」改判 real_action"""
         data = _jellyfin_movie_data(title="真人版 鬼滅の刃")
         item = extract_jellyfin_data(data)
-        assert item.media_type == "real_action"
+        assert item.media_type == "movie"
 
     def test_movie_normal_title_keeps_movie(self):
         """普通电影标题保持 movie（劇場版 鬼滅の刃 無限列車編场景）"""
@@ -529,11 +569,11 @@ class TestJellyfinExtractorMediaTypeDetection:
         item = extract_jellyfin_data(data)
         assert item.media_type == "movie"
 
-    def test_movie_ori_title_used_for_detection(self):
-        """原始标题参与检测（半沢直樹通过 ori_title 含 Drama）"""
+    def test_movie_keeps_movie_regardless_of_ori_title(self):
+        """ori_title 含 Drama 也不再改判（源声明优先）"""
         data = _jellyfin_movie_data(title="半沢直樹", ori_title="Hanzawa Naoki Drama")
         item = extract_jellyfin_data(data)
-        assert item.media_type == "real_action"
+        assert item.media_type == "movie"
 
 
 # ===== Trakt =====
@@ -579,35 +619,19 @@ class TestTraktMediaTypeDetection:
     def _make_service(self):
         return TraktSyncService()
 
-    def test_episode_with_ova_keyword_detected_as_ova(self):
-        """剧集标题含 OVA 关键词检测为 ova"""
-        svc = self._make_service()
-        item = _make_trakt_episode_item(title="鬼滅の刃 OVA")
-        with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
-            mock_bd.get_title_by_tmdb_id.return_value = "鬼滅の刃 OVA"
-            result = svc._convert_trakt_history_to_custom_item("user1", item)
-        assert result is not None
-        assert result.media_type == "ova"
+    def test_episode_declaration_is_authoritative(self):
+        """Trakt type=episode → episode，标题关键词不再改判
 
-    def test_episode_with_oad_keyword_detected_as_oad(self):
-        """剧集标题含 OAD 关键词检测为 oad"""
+        Trakt 的 history ``type`` 明确声明 episode/movie，是权威信息。
+        """
         svc = self._make_service()
-        item = _make_trakt_episode_item(title="進撃の巨人 OAD")
-        with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
-            mock_bd.get_title_by_tmdb_id.return_value = "進撃の巨人 OAD"
-            result = svc._convert_trakt_history_to_custom_item("user1", item)
-        assert result is not None
-        assert result.media_type == "oad"
-
-    def test_episode_with_real_action_keyword_detected(self):
-        """剧集标题含日剧关键词检测为 real_action"""
-        svc = self._make_service()
-        item = _make_trakt_episode_item(title="逃げるは恥だが役に立つ 日剧")
-        with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
-            mock_bd.get_title_by_tmdb_id.return_value = "逃げるは恥だが役に立つ 日剧"
-            result = svc._convert_trakt_history_to_custom_item("user1", item)
-        assert result is not None
-        assert result.media_type == "real_action"
+        for title in ("鬼滅の刃 OVA", "進撃の巨人 OAD", "逃げるは恥だが役に立つ 日剧"):
+            item = _make_trakt_episode_item(title=title)
+            with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
+                mock_bd.get_title_by_tmdb_id.return_value = title
+                result = svc._convert_trakt_history_to_custom_item("user1", item)
+            assert result is not None
+            assert result.media_type == "episode", title
 
     def test_episode_normal_title_keeps_episode(self):
         """普通剧集标题保持 episode（呪術廻戦场景）"""
@@ -619,15 +643,15 @@ class TestTraktMediaTypeDetection:
         assert result is not None
         assert result.media_type == "episode"
 
-    def test_movie_with_real_action_keyword_detected(self):
-        """电影标题含真人版关键词检测为 real_action"""
+    def test_movie_declaration_is_authoritative(self):
+        """Trakt type=movie → movie，不被标题的「真人版」改判 real_action"""
         svc = self._make_service()
         item = _make_trakt_movie_item(title="真人版 鬼滅の刃")
         with patch("app.services.trakt.sync_service.bangumi_data") as mock_bd:
             mock_bd.get_title_by_tmdb_id.return_value = None
             result = svc._convert_trakt_history_to_custom_item("user1", item)
         assert result is not None
-        assert result.media_type == "real_action"
+        assert result.media_type == "movie"
 
     def test_movie_normal_title_keeps_movie(self):
         """普通电影标题保持 movie（劇場版 鬼滅の刃 無限列車編场景）"""

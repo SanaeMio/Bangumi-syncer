@@ -18,9 +18,14 @@ class BangumiConfig(BaseModel):
 
 
 class SyncConfig(BaseModel):
-    """同步配置模型"""
+    """同步配置模型
 
-    blocked_keywords: str = Field("", description="屏蔽关键词")
+    注：屏蔽关键词已迁出 INI（原 ``blocked_keywords``），统一由 WebUI
+    管理并存于数据库 ``blocked_rules`` 表 —— 详见
+    ``app/core/database/blocked_rules.py``。
+    """
+
+    pass
 
 
 class DevConfig(BaseModel):

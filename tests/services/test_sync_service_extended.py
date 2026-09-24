@@ -321,16 +321,18 @@ class TestSyncServiceHelperMethods:
             assert allowed is False
 
     def test_is_title_blocked_empty_keywords(self):
-        """测试空屏蔽关键词"""
+        """测试无屏蔽关键词（DB 为空）"""
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
-            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
-                ("sync", "blocked_keywords"): "",
+                ("sync", "mode"): "single",
             }.get((section, key), fallback)
+            # 屏蔽关键词已迁至 DB：空表 → 永不命中
+            mock_db.match_blocked_keyword.return_value = ""
 
             from app.services.sync_service import SyncService
 
@@ -340,16 +342,28 @@ class TestSyncServiceHelperMethods:
             assert result is False
 
     def test_is_title_blocked_with_keywords(self):
-        """测试有屏蔽关键词"""
+        """测试有屏蔽关键词（DB 命中）"""
         with (
             patch("app.services.sync_service.config_manager") as mock_config,
-            patch("app.services.sync_service.database_manager"),
+            patch("app.services.sync_service.database_manager") as mock_db,
             patch("app.services.sync_service.notification_service"),
             patch("app.services.sync_service.mapping_service"),
         ):
             mock_config.get.side_effect = lambda section, key, fallback=None: {
-                ("sync", "blocked_keywords"): "hentai,18+,adult",
+                ("sync", "mode"): "single",
             }.get((section, key), fallback)
+            # 模拟 DB 中的关键词集合：大小写不敏感子串匹配
+            _kws = ("hentai", "18+", "adult")
+
+            def _match(*titles):
+                for t in titles:
+                    low = (t or "").lower()
+                    for k in _kws:
+                        if k in low:
+                            return k
+                return ""
+
+            mock_db.match_blocked_keyword.side_effect = _match
 
             from app.services.sync_service import SyncService
 

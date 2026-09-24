@@ -73,6 +73,24 @@ class MatchStep:
     # 前端按 inputs/outputs 分组以表格展示；旧记录无此字段，前端回退特化表格。
     inputs: dict[str, Any] | None = None
     outputs: dict[str, Any] | None = None
+    # 所属父 step 的 stage（None = 顶层步骤）。
+    #
+    # 用于表达「子步骤」：一份 trace 里的 steps 来自四个层级
+    # （编排器周边 / MatchPipeline / bgm_search 子管线 / SyncPipeline），
+    # 此前它们被拍平成同一个 list，只能靠前端硬编码 stage 名集合
+    # （static/js/records-detail.js 的 SUB_PIPELINE_STAGES）来折叠分组。
+    #
+    # 现约定：
+    # - ``bgm_search`` 的 4 个子 step（api_search_reset / _date_exact /
+    #   _variant_fallback / _finalize）→ parent="api_search"
+    # - 改选步骤（reselect）→ parent="api_search"
+    # - 其余顶层步骤 → None
+    #
+    # 旧记录无此字段（反序列化后为 None），前端需按「无 parent 即顶层」兼容。
+    parent: str | None = None
+    # 触发跳过的门标识（见 matching.steps.base.Gate）；None = 非门跳过或未跳过。
+    # 旧记录无此字段。
+    gate: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -90,6 +108,8 @@ class MatchStep:
             "api_response_summary": self.api_response_summary,
             "inputs": self.inputs,
             "outputs": self.outputs,
+            "parent": self.parent,
+            "gate": self.gate,
         }
 
 
@@ -118,11 +138,21 @@ class MatchTrace:
         ""  # custom_mapping / bangumi_data / archive / api_search / failed
     )
     # 细粒度匹配方式（替代死状态 bgm.last_match_method，经 ctx.match_method_detail
-    # / bgm_search out_meta 回传）：
+    # / bgm_search out_meta 回传）——**仅表示条目是怎么被召回/推导出来的**：
     # exact / prefix_variant / season_stripped / media_suffix_stripped /
-    # unwrapped / main_segment / fuzzy / cross_season_chain /
-    # cross_season_franchise_archive / cross_season_franchise_online
+    # unwrapped / main_segment / fuzzy
+    #
+    # ⚠️ 历史上该字段混装了「跨季命中路径」（cross_season_chain /
+    # cross_season_franchise_archive / cross_season_franchise_online），
+    # 导致消费方无法区分两种语义。现拆分：跨季路径移到
+    # final_episode_path_detail（见下），本字段只保留「条目召回方式」。
+    # 旧记录可能仍带 cross_season_* 值，读取方需兼容。
     final_match_method_detail: str = ""
+    # 跨季命中路径——**仅表示集数是在哪个条目上被找到的**：
+    # cross_season_chain（前传/续集链）/ cross_season_franchise_archive
+    # （同 IP 闭包，本地归档）/ cross_season_franchise_online（同 IP 改编一跳，在线）。
+    # 空串表示未走跨季回退（本季直接命中）。
+    final_episode_path_detail: str = ""
     final_score: float | None = None
     # 新增：同步最终状态/消息/动作（用于流水线最后一步 result）
     final_status: str = ""
@@ -188,7 +218,12 @@ class MatchTrace:
             self.final_match_method = "failed"
 
     def record_step(
-        self, stage: str, outcome: StepOutcome, *, with_candidates: bool = True
+        self,
+        stage: str,
+        outcome: StepOutcome,
+        *,
+        with_candidates: bool = True,
+        parent: str | None = None,
     ) -> None:
         """按 StepOutcome 记录一步到 trace（不更新 final_* 汇总字段）
 
@@ -198,11 +233,27 @@ class MatchTrace:
         - bgm_search 子管线用它记录 4 个子 step（reset/date_exact/variant_fallback/
           finalize）过程，追加到主 trace.steps，供同步记录详情展示子 step 过程
 
+        Args:
+            stage: 步骤名，写入 trace.step.stage
+            outcome: 步骤产物
+            with_candidates: 是否记录候选列表（执行阶段 step 关闭，避免空列表
+                覆盖上游候选）
+            parent: 所属父 step 的 stage（None = 顶层）。bgm_search 的子 step
+                传 "api_search"，使其在同步详情里归入「API 搜索内部流程」分组。
+                未显式传时回退取 ``outcome.parent``。
+
         final_subject_id / final_match_method 等汇总字段不由本方法更新，
         避免子 step 的中间命中/miss 状态污染最终汇总。
         """
         step = self.start_step(stage)
         step.status = outcome.status
+        # 子步骤归属：显式参数优先，其次 outcome.parent，最后为 None（顶层）
+        effective_parent = parent or getattr(outcome, "parent", None)
+        if effective_parent:
+            step.parent = effective_parent
+        # 触发跳过的门标识（声明式门评估命中时由管线填充）
+        if getattr(outcome, "gate", None):
+            step.gate = outcome.gate
         if outcome.subject_id:
             step.subject_id = outcome.subject_id
         if outcome.reason:
@@ -260,6 +311,7 @@ class MatchTrace:
             "final_episode_id": self.final_episode_id,
             "final_match_method": self.final_match_method,
             "final_match_method_detail": self.final_match_method_detail,
+            "final_episode_path_detail": self.final_episode_path_detail,
             "final_score": round(self.final_score, 4)
             if self.final_score is not None
             else None,

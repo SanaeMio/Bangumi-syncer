@@ -6,7 +6,6 @@ from __future__ import annotations
 
 # time/asyncio 重新导出以兼容测试 patch（app.services.sync_service.time.sleep 等）
 import asyncio  # noqa: F401
-import dataclasses
 import json
 import threading
 import time  # noqa: F401
@@ -84,13 +83,26 @@ def _extract_infobox_aliases(cand: dict) -> list[str]:
 
 
 def _detect_candidate_media_type(cand: dict) -> str:
-    """检测候选条目的媒体类型（用于 P0 media_type 字段）
+    """检测**候选条目**的媒体类型（用于「候选与请求类型是否一致」的改选决策）。
 
-    优先用 Bangumi 条目 ``type`` 字段判定三次元：
-    - type=6 (SUBJECT_TYPE_REAL) → "real_action"
-      避免标题无三次元关键词但实际为真人剧的条目被误判为 episode
-      （场景：查询"凡人修仙传"返回真人剧 type=6，标题无"日剧/真人版"关键词）
-    - 其他 type（含动画 type=2）→ 继续按标题关键词细分 movie/ova/oad/episode
+    判定顺序：
+    1. ``type=6``（Bangumi 三次元）→ ``real_action``
+       结构化字段，不依赖标题 —— 覆盖「标题无日剧/真人关键词的真人剧」
+    2. 标题关键词（``detect_media_type``）→ movie / ova / oad / episode
+
+    **不读 ``platform``**（尽管它在数据上可得）。实测依据：
+    把 ``platform=3`` 兜底为 ``movie`` 会让「请求 episode 但命中剧场版条目」
+    被判为类型冲突 → 触发 ``_media_type_reselect`` → 走
+    ``_pick_mainline_episode_candidate`` 跨季择优 → **反而选到集数更多的前作**。
+    L2 黄金集实测命中率 98.8% → 91.7%（32 处错配），
+    正是 ``api_search_main.py`` 中已记录的"宁可信任 top，宁可漏标"决策所规避的路径。
+
+    换句话说：媒体库把短片/剧场版放进剧集库并推 episode 是**合法**的，
+    此时"类型不一致"并不成立，不该改选。
+
+    **不再从标题关键词推断 real_action**：实测「真人快打」（动画）等误判，
+    且 real_action 会把搜索范围收窄到 type=6 导致漏标。
+    三次元改由 ``sync.enable_real_action`` 配置控制搜索范围。
     """
     try:
         if cand.get("type") == SUBJECT_TYPE_REAL:
@@ -512,45 +524,69 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return True, ""
 
     def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
-        """拒绝待确认候选，并将其候选 subject_id 记入该标题的负样本黑名单。
+        """拒绝待确认候选，并把候选的**标题**记入屏蔽关键词。
 
-        黑名单用于「学习」用户的拒绝：下次自动匹配命中相同 subject_id 时直接排除，
-        避免重复推送已被否决的条目。用户显式自定义映射（custom_mapping）不受黑名单约束。
+        历史行为是把被拒候选的 ``subject_id`` 记入 ``title_blacklist``，
+        但该判定要求"先匹配才知道命中谁"，**永远无法在匹配前生效**。
+        现改为记录**标题关键词**（方案 1 合并），与手填关键词同一张表、
+        同一判定方式，因此能提前到匹配前拦截。
+
+        取舍：不再精确到"同名作品中的某一部"，同名作品会被一起屏蔽。
+        该表此前记录数为 0，无历史数据受影响。
         """
         if not database_manager.update_pending_candidate_status(
             candidate_id, "rejected"
         ):
             return False, "候选记录不存在或已处理"
 
-        # 将被拒候选项的 subject_id 写入标题黑名单（容错：失败不影响 reject 主流程）
+        # 把被拒候选涉及的标题写入屏蔽关键词（容错：失败不影响 reject 主流程）
         try:
             record = database_manager.get_pending_candidate_by_id(candidate_id)
             if record:
-                title = record.get("request_title", "")
+                # 请求标题（媒体库推来的）与候选自身的标题都要记：
+                # 前者保证"同一标题下次直接被拦"，后者覆盖候选条目的正式名。
+                titles: list[str] = []
+                req_title = (record.get("request_title") or "").strip()
+                if req_title:
+                    titles.append(req_title)
+                ori_title = (record.get("request_ori_title") or "").strip()
+                if ori_title:
+                    titles.append(ori_title)
+
                 candidates_json = record.get("candidates_json") or "[]"
                 try:
                     candidates = json.loads(candidates_json)
                 except (ValueError, TypeError):
                     candidates = []
-                subject_ids = [
-                    str(c.get("subject_id"))
-                    for c in candidates
-                    if isinstance(c, dict) and c.get("subject_id")
-                ]
-                if title and subject_ids:
-                    added = database_manager.bulk_add_title_blacklist(
-                        request_title=title,
-                        subject_ids=subject_ids,
+                for c in candidates:
+                    if not isinstance(c, dict):
+                        continue
+                    for key in ("name_cn", "name"):
+                        v = (c.get(key) or "").strip()
+                        if v:
+                            titles.append(v)
+
+                # 去重（大小写不敏感）后写入
+                seen: set[str] = set()
+                uniq: list[str] = []
+                for t in titles:
+                    k = t.lower()
+                    if k and k not in seen:
+                        seen.add(k)
+                        uniq.append(t)
+
+                if uniq:
+                    added = database_manager.bulk_add_blocked_keywords(
+                        keywords=uniq,
+                        source="reject",
                         user_name=record.get("user_name", ""),
-                        source=record.get("source", ""),
                     )
                     if added:
                         logger.info(
-                            f"候选拒绝已记入黑名单: title={title!r}, "
-                            f"subjects={subject_ids}"
+                            f"候选拒绝已记入屏蔽关键词: {uniq}（新增 {added} 条）"
                         )
         except Exception as e:
-            logger.warning(f"写入负样本黑名单失败（不影响 reject）: {e}")
+            logger.warning(f"写入屏蔽关键词失败（不影响 reject）: {e}")
 
         return True, "已忽略"
 
@@ -561,36 +597,40 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return True, "已删除"
 
     @staticmethod
-    def _safe_request_title(item: Any) -> str:
-        """安全读取条目标题（取不到时按空标题处理）
+    def _get_blocked_keyword(*titles: str) -> str:
+        """返回命中的屏蔽关键词（无命中返回空串，容错）。
 
-        黑名单查询是旁路能力，不应因条目对象缺少 title 而中断主流程
-        （例如测试替身对象）；非字符串一律视为空标题。
+        统一入口：合并了历史 ``[sync] blocked_keywords``（INI）与
+        ``title_blacklist``（DB subject_id）两套机制，现全部走 DB 关键词判定，
+        在**匹配前**生效（见 ``_is_title_blocked``）。
+
+        防御性处理：契约上返回 str，但若底层返回非字符串（如测试中
+        patch 成 MagicMock），一律按「未命中」处理 —— 屏蔽是"跳过同步"的
+        破坏性动作，宁可漏拦也不可因类型异常误拦。
         """
-        title = getattr(item, "title", "")
-        return title if isinstance(title, str) else ""
+        try:
+            matched = database_manager.match_blocked_keyword(*titles)
+        except Exception as e:  # noqa: BLE001 — 黑名单查询失败不应阻断同步
+            logger.warning(f"查询屏蔽关键词失败（按未命中处理）: {e}")
+            return ""
+        if not isinstance(matched, str):
+            return ""
+        return matched.strip()
 
     @staticmethod
-    def _get_blocked_for_title(title: str) -> set[str]:
-        """读取某标题的负样本黑名单（容错，失败返回空集）。"""
-        return database_manager.get_title_blacklist(title) or set()
-
-    @staticmethod
-    def _collect_candidates_from_trace(
-        trace: MatchTrace, exclude_subject_ids: set[str] | None = None
-    ) -> list[dict[str, Any]]:
+    def _collect_candidates_from_trace(trace: MatchTrace) -> list[dict[str, Any]]:
         """从 MatchTrace 各步骤中收集候选，去重并按 score 降序。
 
-        exclude_subject_ids：若提供，命中其中的 subject_id 会被剔除
-        （用于负样本黑名单，避免已被否决的候选项重复出现）。
+        注：此前有一个 ``exclude_subject_ids`` 参数用于按 subject_id 排除
+        负样本黑名单。黑名单统一为**标题关键词**后（见
+        ``app/core/database/blocked_rules.py``），排除改为比较**候选标题**，
+        故该参数已无调用方并移除。
         """
         seen: set[str] = set()
         merged: list[dict[str, Any]] = []
         for step in trace.steps:
             for cand in step.candidates:
                 if not cand.subject_id or cand.subject_id in seen:
-                    continue
-                if exclude_subject_ids and cand.subject_id in exclude_subject_ids:
                     continue
                 seen.add(cand.subject_id)
                 merged.append(cand.to_dict())
@@ -611,12 +651,18 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
         """
-        candidates = self._collect_candidates_from_trace(
-            trace,
-            exclude_subject_ids=self._get_blocked_for_title(
-                self._safe_request_title(item)
-            ),
-        )
+        candidates = self._collect_candidates_from_trace(trace)
+        # 过滤掉「候选自身标题命中屏蔽关键词」的条目，避免用户已屏蔽的作品
+        # 反复出现在待确认列表里（原实现按 subject_id 黑名单过滤，
+        # 黑名单统一为标题关键词后改为按候选标题判定）。
+        if candidates:
+            candidates = [
+                c
+                for c in candidates
+                if not self._get_blocked_keyword(
+                    c.get("name_cn") or "", c.get("name") or ""
+                )
+            ]
         if not candidates:
             return
         try:
@@ -669,12 +715,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         try:
             if not trace or not trace.is_ambiguous:
                 return
-            candidates = self._collect_candidates_from_trace(
-                trace,
-                exclude_subject_ids=self._get_blocked_for_title(
-                    self._safe_request_title(item)
-                ),
-            )
+            candidates = self._collect_candidates_from_trace(trace)
+            # 过滤候选标题命中屏蔽关键词的条目（与 _sediment_pending_candidate 一致）
+            candidates = [
+                c
+                for c in candidates
+                if not self._get_blocked_keyword(
+                    c.get("name_cn") or "", c.get("name") or ""
+                )
+            ]
             if len(candidates) < 2:
                 return
             top1_score = float(candidates[0].get("score", 0.0))
@@ -797,7 +846,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )[0]:
                 return SyncResponse(status="error", message=perm_ok[1])
 
-            if self._is_title_blocked(item.title, item.ori_title):
+            if self._is_title_blocked(item.title, item.ori_title, item.season):
                 return SyncResponse(
                     status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
                 )
@@ -1011,7 +1060,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             return SyncResponse(status="error", message=perm_ok[1])
 
         # 检查是否包含屏蔽关键词
-        if self._is_title_blocked(item.title, item.ori_title):
+        if self._is_title_blocked(item.title, item.ori_title, item.season):
             return SyncResponse(
                 status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
             )
@@ -1548,46 +1597,42 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         return True, ""
 
-    def _is_title_blocked(self, title: str, ori_title: str = None) -> bool:
-        """检查番剧标题是否包含屏蔽关键词"""
-        # 获取屏蔽关键词配置
-        blocked_keywords_str = config_manager.get(
-            "sync", "blocked_keywords", fallback=""
-        ).strip()
+    def _is_title_blocked(
+        self, title: str, ori_title: str = None, season: int = 1
+    ) -> bool:
+        """检查番剧标题是否命中屏蔽关键词（DB 统一入口）
 
-        # 如果没有配置屏蔽关键词，直接返回False
-        if not blocked_keywords_str:
-            return False
+        **自定义映射优先**：命中自定义映射时直接放行，即使标题含屏蔽词。
+        理由是自定义映射代表用户**显式指定**的意图（"我就要同步这一部"），
+        优先级高于"屏蔽某类标题"的粗粒度规则 —— 否则用户将无法为含屏蔽词的
+        作品建立映射。
 
-        # 解析屏蔽关键词列表
-        blocked_keywords = [
-            keyword.strip()
-            for keyword in blocked_keywords_str.split(",")
-            if keyword.strip()
-        ]
+        生效时机：**匹配前**（与历史 ``[sync] blocked_keywords`` 一致）。
 
-        # 如果解析后的关键词列表为空，直接返回False
-        if not blocked_keywords:
-            return False
+        ``season`` 参与「自定义映射优先」的判定：高级格式映射
+        （``{"subject_id": "...", "season": N}``）只在 season 相符时才算命中，
+        因此必须由调用方传入真实季度；否则第 2 季请求会被第 1 季的映射放行，
+        绕过屏蔽词。默认 1 仅为兼容历史调用与测试。
+        """
+        # 自定义映射优先：显式意图压过屏蔽规则
+        try:
+            mapping_sid, _, _ = mapping_service.find_mapping(
+                title=title or "",
+                ori_title=ori_title or "",
+                season=season,
+            )
+            if mapping_sid:
+                logger.debug(
+                    f"标题 {title!r} 命中自定义映射 {mapping_sid}，跳过屏蔽关键词判定"
+                )
+                return False
+        except Exception as e:  # noqa: BLE001 — 映射查询失败不阻断判定
+            logger.debug(f"查询自定义映射失败（继续按屏蔽词判定）: {e}")
 
-        # 检查主标题
-        if title:
-            for keyword in blocked_keywords:
-                if keyword.lower() in title.lower():
-                    logger.info(
-                        f'番剧标题 "{title}" 包含屏蔽关键词 "{keyword}"，跳过同步'
-                    )
-                    return True
-
-        # 检查原始标题
-        if ori_title:
-            for keyword in blocked_keywords:
-                if keyword.lower() in ori_title.lower():
-                    logger.info(
-                        f'番剧原始标题 "{ori_title}" 包含屏蔽关键词 "{keyword}"，跳过同步'
-                    )
-                    return True
-
+        matched = self._get_blocked_keyword(title or "", ori_title or "")
+        if matched:
+            logger.info(f'番剧标题 "{title}" 命中屏蔽关键词 "{matched}"，跳过同步')
+            return True
         return False
 
     def _format_subject_not_found_message(self, item: CustomItem, detail: str) -> str:
@@ -1662,28 +1707,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         # 传播 ctx.is_ambiguous 到 trace，编排器据此发 match_ambiguous 通知
         actual_trace.is_ambiguous = ctx.is_ambiguous
 
-        # 负样本黑名单：若自动匹配命中的 subject 曾被用户拒绝，则降级为漏标
-        # （custom_mapping 为显式用户映射，代表明确意图，不受黑名单约束）
-        blocked = self._get_blocked_for_title(self._safe_request_title(item))
-        if (
-            blocked
-            and result.subject_id
-            and result.subject_id in blocked
-            and actual_trace.final_match_method != "custom_mapping"
-        ):
-            logger.info(
-                f"命中 {result.subject_id} 已被用户拒绝（标题 {item.title!r}），"
-                f"按黑名单排除，转为漏标"
-            )
-            result = dataclasses.replace(
-                result,
-                subject_id=None,
-                bgm_se_id=None,
-                bgm_ep_id=None,
-                bgm_title="",
-                is_season_matched_id=False,
-                failure_detail="已排除：该条目曾被手动拒绝（可在待确认中重新确认）",
-            )
+        # 注：此处原有一个「负样本黑名单 veto」——匹配命中后按 subject_id 比对
+        # title_blacklist，命中则清空 result.subject_id 转为漏标。
+        # 该逻辑已随黑名单统一（方案 1）**移除**：屏蔽规则现在全部是标题关键词，
+        # 已在匹配前的参数校验阶段拦截（见 _is_title_blocked），无需事后否决。
+        # 移除同时消除了原实现的一处不一致：veto 只清 result 字段、
+        # 不清 trace.final_subject_id，会让「已拦截」的记录看起来像匹配成功过。
 
         # 匹配歧义检测已前移到 APISearchStep（设置 ctx.is_ambiguous），
         # 通知职责由编排器统一发送，_find_subject_id 不再直接发通知。

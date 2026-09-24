@@ -13,6 +13,7 @@ from ..bangumi_archive._title_normalize import (
     fuse_title_similarity,
 )
 from ..bangumi_constants import SUBJECT_TYPE_ANIME
+from ..season_title import extract_explicit_season, extract_season_candidates
 
 if TYPE_CHECKING:
     from app.services.sync_service.match_trace import MatchTrace
@@ -259,7 +260,9 @@ class SearchMixin:
         for sub_step in sub_steps:
             outcome = sub_step.execute(ctx)
             if trace is not None:
-                trace.record_step(sub_step.stage, outcome)
+                # parent="api_search"：把 4 个子 step 归入「API 搜索内部流程」，
+                # 使同步详情可折叠分组（不再靠前端硬编码 stage 名集合）
+                trace.record_step(sub_step.stage, outcome, parent="api_search")
             if outcome.is_terminal:
                 break
         if outcome is None or outcome.status == "miss":
@@ -328,7 +331,7 @@ class SearchMixin:
             _normalize_title_for_match(cand_name_cn) if cand_name_cn else None
         )
         norm_aliases = [_normalize_title_for_match(a) for a in cand_aliases] or None
-        return fuse_title_similarity(
+        RawScore = fuse_title_similarity(
             norm_title,
             norm_ori,
             norm_name,
@@ -340,3 +343,56 @@ class SearchMixin:
             media_suffix_guard=True,
             substring_boost=False,
         )
+        return SearchMixin._apply_season_penalty(RawScore, title, bgm_data)
+
+    #: 季号不符时的扣分幅度。
+    #
+    # 取值依据（真实 archive 56,539 条目，191 对「同基础名不同季号」样本）：
+    #   正确季分更低的 18 例，差值范围 [-0.111, -0.046]；
+    #   要让这 18 例全部反超，扣分需 > 0.111。取 0.15 留出余量。
+    #   同时该值远小于「不同作品」的典型差距，不会把无关候选抬上来。
+    SEASON_MISMATCH_PENALTY = 0.15
+
+    @classmethod
+    def _apply_season_penalty(
+        cls, score: float, title: str, bgm_data: dict[str, Any]
+    ) -> float:
+        """请求标题与候选条目的**季号不一致**时扣分。
+
+        为什么需要：Bangumi 把每一季做成**独立条目**，且「第 N 季」这种显式
+        季号经常**只有部分季填写**（实测 30,556 部动画中 2,635 部有季号，
+        8.6%）。于是「水星领航员 第二季」这类查询会因字面相似度接近而命中的
+        是**另一季**。真实数据（191 对同基础名样本）：**18 例被兄弟季抢走**，
+        差值最大 -0.111；真实 sync_records 中 **38.4% 的标题带显式季号**。
+
+        设计原则（避免误伤，均有实测依据）：
+        - **仅当双方都有季号且不等时**才扣分。候选季号为 None 时无法判定
+          （如「鬼滅の刃 遊郭編」本身不含季号，但它是 TV 第二季）→ 不扣分。
+          真实记录中「请求有季号 & 条目无季号」有 10 例，全部属此类。
+        - **请求标题含多个矛盾季号 → 不扣分**。真实媒体库会拼出
+          ``"Marvel's Guardians of the Galaxy Season 1 第二季"`` 这种脏标题
+          （英文原名 + 中文季名），首个匹配给出 2 而实际是第一季；此时季号
+          不可信，扣分会误伤（golden L2-S3_季后缀-162 即此形态）。
+        - 季号相等 → 不扣分（反而是强证据）。
+        - 扣分对**所有分数一视同仁**（减固定值），保证「正确季」在任何分数
+          段都能反超同基础名的错误季。
+
+        Args:
+            score: 融合后的相似度（0~1）
+            title: 请求标题（媒体库推送，可能含「第二季」/「Season 2」）
+            bgm_data: 候选条目（含 name / name_cn）
+
+        Returns:
+            扣分后的分数（0~1）
+        """
+        # 请求标题含多个矛盾季号 → 季号不可信，不判定
+        req_seasons = extract_season_candidates(title or "")
+        if len(req_seasons) != 1:
+            return score
+        req_season = next(iter(req_seasons))
+        cand_season = extract_explicit_season(
+            f"{bgm_data.get('name') or ''} {bgm_data.get('name_cn') or ''}"
+        )
+        if cand_season is None or cand_season == req_season:
+            return score
+        return max(0.0, score - cls.SEASON_MISMATCH_PENALTY)

@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-from app.services.matching.steps.base import StepOutcome
+from app.services.matching.gates import EPISODE_ALREADY_RESOLVED
+from app.services.matching.steps.base import StepOutcome, skipped_outcome
 from app.services.sync_service.context import ExecutionContext
 from app.services.sync_service.steps.base import ExecutionStepBase
 
@@ -35,7 +36,7 @@ class CrossSeasonStep(ExecutionStepBase):
 
         # gate：上游已有 ep_id（本季直接命中）则跳过
         if prev and prev.get("episode_id"):
-            return StepOutcome(status="skipped", reason="集数解析已命中，无需跨季回退")
+            return skipped_outcome(EPISODE_ALREADY_RESOLVED)
 
         target_season = ctx.item.season or 1
         try:

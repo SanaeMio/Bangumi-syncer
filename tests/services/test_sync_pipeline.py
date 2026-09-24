@@ -473,8 +473,12 @@ def test_cross_season_step_writes_match_path_to_trace(
 ):
     """CrossSeasonStep 应经结果链产出改选信息，ResultStep 结算 trace
 
-    前端根据 final_match_method_detail 渲染徽章、按 outputs.match_path
+    前端根据 final_episode_path_detail 渲染跨季路径徽章、按 outputs.match_path
     渲染跨季链表格的命中路径列。
+
+    注：跨季路径自 2026-09 起写入**独立的** final_episode_path_detail 字段，
+    不再覆写 final_match_method_detail —— 后者专表「条目召回方式」
+    （exact/prefix_variant/…），覆写会丢失「本季怎么召回的」这一信息。
     """
     from app.services.sync_service.context import ExecutionContext
     from app.services.sync_service.match_trace import MatchTrace
@@ -535,7 +539,8 @@ def test_cross_season_step_writes_match_path_to_trace(
     assert trace.final_subject_id == "999"
     assert trace.final_episode_id == "9981"
     assert trace.final_match_method == "archive"
-    assert trace.final_match_method_detail == expected_detail
+    # 跨季路径写独立字段（不再覆写 match_method_detail）
+    assert trace.final_episode_path_detail == expected_detail
     assert trace.final_action == "1"
     assert trace.final_status == "success"
     assert ctx.current_outputs["bgm_title"] == "凡人修仙传"
@@ -574,3 +579,123 @@ def test_cross_season_step_skipped_when_episode_resolved():
     assert "cross_season" not in ctx.step_outputs
     assert ctx.current_outputs == {}
     bgm.find_episode_across_seasons.assert_not_called()
+
+
+class TestTerminalResultStepHelper:
+    """补终态 result step 的公共实现（D2 提取，消除两处手工构造重复）
+
+    result step 由成功路径的 ResultStep 产出；匹配失败（管线未启动）与
+    集数失败（管线在 result 前终止）时都不存在，而前端详情页依赖它的
+    processed_payload 展示失败原因，故由编排器补。
+
+    注意 MatchTrace 的两段式收尾语义：
+    - ``start_step`` 新建的 step 先挂在 ``_current_step``，要到**下一次
+      start_step 或 ``to_dict()``** 才进入 ``steps``；
+    - ``finish()`` 是**幂等**的（``_finished`` 标记），第二次调用直接返回，
+      **不会**再 flush 挂起的 step。
+    生产路径里 ``_find_subject_id`` 内的 MatchPipeline 已经调过 finish()，
+    因此后续补的 result step 是靠**持久化前的 ``to_dict()``** 落进 steps 的。
+    测试据此用 ``to_dict()`` 收尾，与生产一致。
+    """
+
+    @staticmethod
+    def _item():
+        return CustomItem(
+            user_name="u",
+            title="T",
+            season=2,
+            episode=7,
+            source="fongmi",
+            media_type="tv",
+            release_date="",
+        )
+
+    @staticmethod
+    def _run(trace, **kwargs):
+        """补 result step 并收尾（模拟生产在持久化前调 to_dict），返回 result step"""
+        from app.services.sync_service.orchestrator import SyncOrchestrator
+
+        SyncOrchestrator._record_terminal_result_step(
+            trace, TestTerminalResultStepHelper._item(), **kwargs
+        )
+        trace.to_dict()  # 生产路径的 flush 点
+        return next(s for s in trace.steps if s.stage == "result")
+
+    def test_builds_result_step_with_payload(self):
+        from app.services.sync_service.match_trace import MatchTrace
+
+        trace = MatchTrace()
+        step = self._run(
+            trace,
+            reason="同步失败：未找到匹配的番剧 · 无候选",
+            message="完整消息",
+            final_message="未找到匹配的番剧",
+        )
+
+        assert step.stage == "result"
+        assert step.status == "miss"
+        assert step.reason == "同步失败：未找到匹配的番剧 · 无候选"
+        # final_message 与 payload.message 可不同（历史行为：前者短、后者全）
+        assert trace.final_message == "未找到匹配的番剧"
+        assert step.processed_payload["message"] == "完整消息"
+        assert step.processed_payload["status"] == "error"
+        assert step.processed_payload["episode"] == "S02E07"
+        assert trace.final_status == "error"
+
+    def test_subject_id_propagates_to_payload_and_url(self):
+        from app.services.sync_service.match_trace import MatchTrace
+
+        trace = MatchTrace()
+        step = self._run(trace, reason="r", message="m", subject_id="328195")
+        assert step.subject_id == "328195"
+        assert step.processed_payload["subject_id"] == "328195"
+        assert step.processed_payload["subject_url"] == "https://bgm.tv/subject/328195"
+
+    def test_no_subject_id_leaves_empty_url(self):
+        from app.services.sync_service.match_trace import MatchTrace
+
+        trace = MatchTrace()
+        step = self._run(trace, reason="r", message="m")
+        assert step.processed_payload["subject_id"] == ""
+        assert step.processed_payload["subject_url"] == ""
+
+    def test_only_if_missing_skips_when_result_already_present(self):
+        """匹配失败路径可能已被其他分支补过 result，避免重复追加"""
+        from app.services.sync_service.match_trace import MatchTrace
+
+        trace = MatchTrace()
+        existing = trace.start_step("result")
+        existing.status = "miss"
+        trace.to_dict()
+        before = len(trace.steps)
+
+        from app.services.sync_service.orchestrator import SyncOrchestrator
+
+        SyncOrchestrator._record_terminal_result_step(
+            trace, self._item(), reason="r", message="m", only_if_missing=True
+        )
+        trace.to_dict()
+        assert len(trace.steps) == before, "不应重复补 result step"
+
+    def test_without_only_if_missing_appends_even_if_present(self):
+        from app.services.sync_service.match_trace import MatchTrace
+
+        trace = MatchTrace()
+        trace.start_step("result")
+        trace.to_dict()
+        before = len(trace.steps)
+
+        from app.services.sync_service.orchestrator import SyncOrchestrator
+
+        SyncOrchestrator._record_terminal_result_step(
+            trace, self._item(), reason="r", message="m"
+        )
+        trace.to_dict()
+        assert len(trace.steps) == before + 1
+
+    def test_final_message_defaults_to_message(self):
+        from app.services.sync_service.match_trace import MatchTrace
+
+        trace = MatchTrace()
+        self._run(trace, reason="r", message="同一条消息")
+        assert trace.final_message == "同一条消息"

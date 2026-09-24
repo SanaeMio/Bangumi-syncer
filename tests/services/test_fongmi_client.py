@@ -182,30 +182,44 @@ def test_media_to_record_empty_title_returns_none():
 
 
 @pytest.mark.parametrize(
-    "url,artist,expect_movie",
+    "url,artist,expect_movie,why",
     [
-        # 命中关键词 → 剧场版
-        ("http://x/剧场版/君の名は.mp4", "", True),
-        ("http://x/劇場版/鬼滅の刃.mp4", "", True),
-        ("http://x/电影/流浪地球.mkv", "", True),
-        ("http://x/電影/悲情城市.mkv", "", True),
-        ("http://x/My Movie (2024).mp4", "", True),
-        ("http://x/Film.Title.2023.mkv", "", True),
-        # artist 命中也算
-        ("http://x/video.mp4", "[2GB] 剧场版 4K.mp4", True),
-        ("", "[1.5GB] Movie 1080p.mkv", True),
-        # 普通剧集 → 非剧场版
-        ("http://x/S01E05.mp4", "", False),
-        ("http://x/番剧/第3集.mp4", "", False),
-        ("http://x/12.mp4", "", False),
-        ("http://x/普通番剧/EP05.mkv", "", False),
-        ("", "", False),
+        # 有季集结构 → 剧集（最强信号，优先于关键词）
+        ("http://x/S01E05.mp4", "", False, "SxxExx 季集结构"),
+        ("http://x/番剧/第3集.mp4", "", False, "第N集结构"),
+        ("http://x/普通番剧/EP05.mkv", "", False, "EPxx 结构"),
+        ("http://x/[05].mp4", "", False, "方括号集号"),
+        # 合集/范围 → 剧集
+        ("http://x/Show.EP01-12.1080p.mkv", "", False, "EP01-12 范围"),
+        ("http://x/某番剧 全集.mkv", "", False, "全集标记"),
+        # 电影关键词（无季集结构时生效）→ movie
+        ("http://x/剧场版/君の名は.mp4", "", True, "剧场版关键词"),
+        ("http://x/劇場版/鬼滅の刃.mp4", "", True, "劇場版关键词"),
+        ("http://x/电影/流浪地球.mkv", "", True, "电影关键词"),
+        ("http://x/My Movie.mp4", "", True, "Movie 关键词"),
+        # artist 也参与判定
+        ("http://x/video.mp4", "[2GB] 剧场版 4K.mp4", True, "artist 含关键词"),
+        # 无季集结构 + 带年份 → movie（单片命名习惯）
+        ("http://x/Spirited.Away.2001.1080p.mkv", "", True, "年份单片"),
+        ("http://x/君の名は.2016.BluRay.mkv", "", True, "年份单片"),
+        # 有季集结构时，年份不足以判 movie
+        ("http://x/Show.2021.S02E05.mkv", "", False, "季集结构优先于年份"),
+        # 普通剧集（无结构无关键词）→ 保守判 episode
+        ("http://x/12.mp4", "", False, "无信号 → 保守 episode"),
+        ("", "", False, "空输入 → 保守 episode"),
     ],
 )
-def test_is_movie(url, artist, expect_movie):
-    from app.services.fongmi.client import _is_movie
+def test_detect_media_type_from_media(url, artist, expect_movie, why):
+    """fongmi 媒体类型：**文件名结构**优先于关键词（2026-09 重写）
 
-    assert _is_movie(url, artist or None) is expect_movie
+    fongmi 是唯一没有类型字段的源（播放器只推 title/url/artist），
+    故必须从文件名推断。旧实现只做关键词扫描（``_is_movie``），
+    准确率低；现改为结构化信号优先。
+    """
+    from app.services.fongmi.client import detect_media_type_from_media
+
+    got = detect_media_type_from_media(url, artist or None)
+    assert got == ("movie" if expect_movie else "episode"), why
 
 
 def test_media_to_record_movie_sets_is_movie():

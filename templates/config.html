@@ -776,9 +776,9 @@
       window.refreshAllCronPreviews()
     }
 
-    // 9. 初始化屏蔽关键词 chip 列表（隐藏 input 已被 ConfigForm.populate 填充）
+    // 9. 初始化屏蔽关键词 chip 列表（数据来自 /api/blocked-keywords，非 INI）
     if (window.BlockedKeywords) {
-      BlockedKeywords.initChips('blocked-keywords', 'blocked-keywords-chips')
+      BlockedKeywords.initChips('blocked-keywords-chips')
     }
   }
 

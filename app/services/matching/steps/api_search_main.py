@@ -256,6 +256,25 @@ class APISearchStep(MatchStepBase):
             )
             candidates.extend(post_candidates)
 
+            # 改选结构化记录：把「原首条 → 改选后」以独立子 step 落进 trace。
+            #
+            # 此前改选只把一句散文拼进 APISearchStep 的 reason（"…；媒体类型改选：X"），
+            # 同步详情里看不出 before/after 是两条不同条目、也无法按改选类型筛选。
+            # 现在改选成为一个 parent="api_search" 的子 step，结构化记录
+            # before_subject_id / after_subject_id / reselect_type。
+            #
+            # 不改控制流：仅新增记录，bgm_data[0] 与 candidates[0] 的既有语义不变。
+            if bgm_data and bgm_data[0].get("id") != original_top_id:
+                after = bgm_data[0]
+                self._record_reselect_step(
+                    ctx,
+                    original_top_id=original_top_id,
+                    original_top_name=original_top_name,
+                    after=after,
+                    post_reason=post_reason,
+                    reselect_type=self._classify_reselect(post_reason),
+                )
+
             # 改选后同步 candidates[0]：_post_search_reselect 可能原地修改 bgm_data[0]
             # （季度改选/媒体类型改选/关联条目改选），需重建 candidates[0] 以反映
             # 改选后的 top 候选。否则 candidates[0].score 仍为改选前原 top 的低分，
@@ -497,6 +516,70 @@ class APISearchStep(MatchStepBase):
     # ------------------------------------------------------------------
     # post_search 改选逻辑（阶段四拆为独立 PostSearchStep）
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _classify_reselect(post_reason: str) -> str:
+        """从改选文案判定改选类型（用于 trace 结构化字段 reselect_type）。
+
+        取值：season / media_type / related / unknown。
+        ``_post_search_reselect`` 的三条分支各自拼接固定前缀，故按前缀判定；
+        未识别时回退 "unknown"（不抛错，避免记录失败影响主流程）。
+        """
+        r = post_reason or ""
+        if "季度改选" in r:
+            return "season"
+        if "媒体类型改选" in r:
+            return "media_type"
+        if "关联条目改选" in r:
+            return "related"
+        return "unknown"
+
+    @staticmethod
+    def _record_reselect_step(
+        ctx: MatchContext,
+        *,
+        original_top_id: Any,
+        original_top_name: str,
+        after: dict,
+        post_reason: str,
+        reselect_type: str,
+    ) -> None:
+        """把改选记录为独立子 step（parent="api_search"）。
+
+        为什么需要：改选会**改变最终命中的条目**，此前只把一句文案拼进
+        APISearchStep 的 reason，同步详情里既分不清 before/after 是两条不同条目，
+        也无法按改选类型统计。这里以结构化字段记录，前端可单独渲染。
+
+        记录失败**不得**影响主流程，故整体 try/except 吞掉异常。
+        """
+        try:
+            after_id = after.get("id")
+            after_name = after.get("name_cn") or after.get("name") or ""
+            outcome = StepOutcome(
+                status="hit",
+                subject_id=str(after_id) if after_id is not None else None,
+                reason=post_reason or "搜索后处理改选",
+                inputs={
+                    "before_subject_id": str(original_top_id)
+                    if original_top_id is not None
+                    else "",
+                    "before_name": original_top_name or "",
+                },
+                outputs={
+                    "reselect_type": reselect_type,
+                    "before_subject_id": str(original_top_id)
+                    if original_top_id is not None
+                    else "",
+                    "before_name": original_top_name or "",
+                    "after_subject_id": str(after_id) if after_id is not None else "",
+                    "after_name": after_name,
+                    "changed": str(after_id) != str(original_top_id),
+                },
+                parent="api_search",
+            )
+            ctx.trace.record_step("reselect", outcome, parent="api_search")
+        except Exception as e:  # noqa: BLE001 — 记录失败不影响主流程
+            logger.debug(f"改选结构化记录失败（不影响匹配）: {e}")
 
     def _post_search_reselect(
         self,

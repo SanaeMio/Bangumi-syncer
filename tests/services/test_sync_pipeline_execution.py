@@ -149,7 +149,8 @@ class TestSyncPipelineExecution:
         assert ctx.trace.final_subject_id == "999"
         assert ctx.trace.final_episode_id == "9981"
         assert ctx.trace.final_match_method == "archive"
-        assert ctx.trace.final_match_method_detail == "cross_season_chain"
+        # 跨季路径写独立字段 final_episode_path_detail（不再覆写 match_method_detail）
+        assert ctx.trace.final_episode_path_detail == "cross_season_chain"
         cross_step = ctx.trace.steps[1]
         assert cross_step.status == "hit"
         assert cross_step.outputs["match_path"] == "chain"

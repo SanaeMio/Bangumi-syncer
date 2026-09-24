@@ -100,9 +100,12 @@ function renderMatchMethodBadge(method) {
 }
 
 // 细粒度匹配方式徽章：对应 MatchTrace.final_match_method_detail
+// 仅表示「条目是怎么被召回/推导出来的」：
 // exact / prefix_variant / season_stripped / media_suffix_stripped /
-// unwrapped / main_segment / fuzzy / cross_season_chain /
-// cross_season_franchise_archive / cross_season_franchise_online
+// unwrapped / main_segment / fuzzy
+//
+// 兼容旧记录：历史上该字段还混装过跨季路径（cross_season_*），
+// 仍保留对应映射，避免旧记录显示成裸字符串。
 function renderMatchMethodDetailBadge(detail) {
     if (!detail) {
         return '';
@@ -115,12 +118,29 @@ function renderMatchMethodDetailBadge(detail) {
         unwrapped: ['info', '去包裹'],
         main_segment: ['secondary', '主段'],
         fuzzy: ['warning', '模糊匹配'],
+        // 旧记录兼容（新记录这些值出现在 final_episode_path_detail）
         cross_season_chain: ['primary', '跨季链'],
         cross_season_franchise_archive: ['purple', '同IP改编·归档'],
         cross_season_franchise_online: ['info', '同IP改编·在线'],
     };
     const [color, text] = badges[detail] || ['secondary', detail];
     return `<span class="badge rounded-pill bg-${color} bg-opacity-75" style="font-size:0.75em">${text}</span>`;
+}
+
+// 跨季路径徽章：对应 MatchTrace.final_episode_path_detail
+// 仅表示「集数是在哪个条目上被找到的」：
+// cross_season_chain / cross_season_franchise_archive / cross_season_franchise_online
+function renderEpisodePathDetailBadge(detail) {
+    if (!detail) {
+        return '';
+    }
+    const badges = {
+        cross_season_chain: ['primary', '跨季链'],
+        cross_season_franchise_archive: ['purple', '同IP改编·归档'],
+        cross_season_franchise_online: ['info', '同IP改编·在线'],
+    };
+    const [color, text] = badges[detail] || ['secondary', detail];
+    return `<span class="badge rounded-pill bg-${color} bg-opacity-75" style="font-size:0.75em"><i class="bi bi-signpost-split me-1"></i>${text}</span>`;
 }
 
 function renderCandidateStatusBadge(status) {

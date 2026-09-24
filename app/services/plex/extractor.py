@@ -6,7 +6,7 @@ from typing import Any
 
 from ...core.logging import logger
 from ...models.sync import CustomItem
-from ...utils.media_type_detector import detect_media_type
+from ...utils.media_type_detector import normalize_source_media_type
 
 
 def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
@@ -42,8 +42,9 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
         title = (md.get("title") or "").strip()
         ori = md.get("originalTitle")
         ori_str = ori if ori and str(ori).strip() else ""
-        # 电影也检测是否为真人电影（三次元）
-        detected = detect_media_type(title=title, ori_title=ori_str, item_type=mtype)
+        # Plex 明确声明 movie —— 直接采信，不再用标题关键词覆盖
+        # （旧实现会因标题含「特别篇」把 movie 改判为 ova）
+        detected = normalize_source_media_type(mtype) or "movie"
         return CustomItem(
             media_type=detected,
             title=title,
@@ -68,12 +69,8 @@ def extract_plex_data(plex_data: dict[str, Any]) -> CustomItem:
     original_title = md.get("originalTitle")
     title = md.get("grandparentTitle") or ""
 
-    # 检测 OVA/OAD/三次元类型
-    detected = detect_media_type(
-        title=title,
-        ori_title=str(original_title) if original_title else "",
-        item_type=mtype,
-    )
+    # Plex 明确声明 episode —— 直接采信
+    detected = normalize_source_media_type(mtype) or "episode"
 
     return CustomItem(
         media_type=detected,

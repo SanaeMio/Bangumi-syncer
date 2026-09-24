@@ -31,9 +31,13 @@ const PIPELINE_STAGE_NAMES = {
     api_search_date_exact: '日期精确搜索',
     api_search_variant_fallback: '变体兜底搜索',
     api_search_finalize: '搜索结果确认',
+    // 搜索后处理改选（季度/媒体类型/关联条目）——改变最终命中的条目，
+    // 以 parent="api_search" 的子步骤形式记录
+    reselect: '搜索后处理改选',
 };
 
-// bgm_search 子管线阶段：在连续出现时折叠为一个分组，避免与主步骤平铺混淆
+// bgm_search 子管线阶段：在连续出现时折叠为一个分组，避免与主步骤平铺混淆。
+// 仅用于**旧记录**（无 step.parent 字段）——新记录改由 parent 字段判定。
 const SUB_PIPELINE_STAGES = new Set([
     'api_search_reset',
     'api_search_date_exact',
@@ -41,8 +45,18 @@ const SUB_PIPELINE_STAGES = new Set([
     'api_search_finalize',
 ]);
 
+// 是否为「子步骤」（应折叠进父步骤分组）。
+// 新记录：step.parent 非空即子步骤（如 bgm_search 的 4 个子 step 与 reselect
+//   都标 parent="api_search"）。
+// 旧记录：无 parent 字段，回退按 stage 名集合判定，保持既有渲染不变。
 function isSubPipelineStep(step) {
-    return SUB_PIPELINE_STAGES.has(step && step.stage);
+    if (!step) {
+        return false;
+    }
+    if (step.parent) {
+        return true;
+    }
+    return SUB_PIPELINE_STAGES.has(step.stage);
 }
 
 function getPipelineStageName(stage) {
@@ -532,6 +546,12 @@ const COMMON_PAYLOAD_LABELS = {
     stripped_ori: '剥离后缀原标题',
     variants: '搜索变体',
     top_ratio: '首条相似度',
+    // reselect 子步骤（改选）的结构化字段
+    reselect_type: '改选类型',
+    before_subject_id: '改选前条目 ID',
+    before_name: '改选前标题',
+    after_subject_id: '改选后条目 ID',
+    after_name: '改选后标题',
     matched_variant_method: '命中变体',
     subject_url: '条目链接',
     episode_url: '剧集链接',
@@ -1088,15 +1108,25 @@ function renderPipelineSummaryChips(record, trace) {
     chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--status record-detail-modal__chip--status-${statusClass}"><i class="bi ${statusIcon}"></i>${escapeHtml(statusText)}</span>`);
 
     // 匹配方式：粗粒度 final_match_method + 细粒度 final_match_method_detail
+    // （召回方式）与 final_episode_path_detail（跨季路径，新字段）
     // 优先取 trace（更准确，重试成功后会回写），回退 record.match_method
     const matchMethod = t.final_match_method || record.match_method || '';
-    const matchMethodDetail = t.final_match_method_detail || '';
+    // 旧记录可能把跨季路径混装在 final_match_method_detail 里，
+    // 此时按前缀识别并归入「跨季路径」展示，避免重复/错位渲染。
+    const rawDetail = t.final_match_method_detail || '';
+    const legacyCross = typeof rawDetail === 'string' && rawDetail.indexOf('cross_season_') === 0;
+    const matchMethodDetail = legacyCross ? '' : rawDetail;
+    const episodePathDetail = t.final_episode_path_detail || (legacyCross ? rawDetail : '');
     if (matchMethod) {
         let methodHtml = renderMatchMethodBadge(matchMethod);
         if (matchMethodDetail) {
             methodHtml += ' ' + renderMatchMethodDetailBadge(matchMethodDetail);
         }
         chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--match-method">${methodHtml}</span>`);
+    }
+    // 跨季路径独立成 chip（仅跨季回退命中时有值）
+    if (episodePathDetail) {
+        chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--match-method">${renderEpisodePathDetailBadge(episodePathDetail)}</span>`);
     }
 
     // subject 链接

@@ -20,6 +20,7 @@ from typing import Any
 from ..logging import logger as logger
 from .accounts import BangumiAccountRepository, OAuthStateRepository
 from .agent_memory import AgentMemoryRepository
+from .blocked_rules import BlockedRuleRepository
 from .connection import (
     FEINIU_MIN_UPDATE_WATERMARK_META_KEY as FEINIU_MIN_UPDATE_WATERMARK_META_KEY,
     INBOX_ERROR_BACKFILL_META_KEY as INBOX_ERROR_BACKFILL_META_KEY,
@@ -31,7 +32,6 @@ from .llm_usage import LLMUsageRepository
 from .pending_candidates import PendingCandidatesRepository
 from .pending_sync_queue import PendingSyncQueueRepository
 from .sync_records import SyncRecordsRepository
-from .title_blacklist import TitleBlacklistRepository
 from .trakt import TraktRepository
 
 
@@ -62,7 +62,9 @@ class DatabaseManager:
         self.memory = AgentMemoryRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         self._pending_sync = PendingSyncQueueRepository(self._connection)
-        self._title_blacklist = TitleBlacklistRepository(self._connection)
+        # 屏蔽关键词（统一黑名单入口）：合并了历史 [sync] blocked_keywords
+        # 与 title_blacklist 的职责，全部按标题关键词判定、匹配前生效
+        self._blocked_rules = BlockedRuleRepository(self._connection)
         # 公开别名（消费标记写/清归 memory 域，业务层经此只读访问同步记录）
         self.sync_records = self._sync
         # 原 ``_init_database`` 末尾的 backfill 调用移到此处：
@@ -323,52 +325,49 @@ class DatabaseManager:
         )
 
     # ------------------------------------------------------------------
-    # TitleBlacklistRepository 转发（reject 负样本学习）
+    # BlockedRuleRepository 转发（屏蔽关键词，合并自 blocked_keywords + title_blacklist）
     # ------------------------------------------------------------------
 
-    def add_title_blacklist(
-        self,
-        request_title: str,
-        subject_id: str,
-        user_name: str = "",
-        source: str = "",
+    def add_blocked_keyword(
+        self, keyword: str, source: str = "manual", user_name: str = ""
     ) -> bool:
-        """记录一条标题级负样本黑名单（幂等）。"""
-        return self._title_blacklist.add(
-            request_title=request_title,
-            subject_id=subject_id,
-            user_name=user_name,
-            source=source,
-        )
+        """新增一条屏蔽关键词（幂等）。``source``: manual（手填）/ reject（拒绝候选）"""
+        return self._blocked_rules.add(keyword, source=source, user_name=user_name)
 
-    def bulk_add_title_blacklist(
-        self,
-        request_title: str,
-        subject_ids: list[str],
-        user_name: str = "",
-        source: str = "",
+    def bulk_add_blocked_keywords(
+        self, keywords: list[str], source: str = "manual", user_name: str = ""
     ) -> int:
-        """批量记录黑名单，返回新增条数。"""
-        return self._title_blacklist.bulk_add(
-            request_title=request_title,
-            subject_ids=subject_ids,
-            user_name=user_name,
-            source=source,
+        """批量新增屏蔽关键词，返回新增条数"""
+        return self._blocked_rules.bulk_add(
+            keywords, source=source, user_name=user_name
         )
 
-    def get_title_blacklist(self, request_title: str) -> set[str]:
-        """返回该标题被拉黑的 subject_id 集合。"""
-        return self._title_blacklist.get_blocked_subject_ids(request_title)
+    def remove_blocked_keyword(self, keyword: str) -> bool:
+        """删除一条屏蔽关键词"""
+        return self._blocked_rules.remove(keyword)
 
-    def remove_title_blacklist(self, request_title: str, subject_id: str) -> bool:
-        """移除某标题下的单个黑名单条目。"""
-        return self._title_blacklist.remove(
-            request_title=request_title, subject_id=subject_id
-        )
+    def clear_blocked_keywords(self) -> int:
+        """清空全部屏蔽关键词，返回删除条数"""
+        return self._blocked_rules.clear()
 
-    def clear_title_blacklist(self, request_title: str) -> int:
-        """清空某标题的全部黑名单。"""
-        return self._title_blacklist.clear_for_title(request_title)
+    def list_blocked_keywords(self) -> list[dict]:
+        """列出全部屏蔽关键词（含来源与时间），供管理页展示"""
+        return self._blocked_rules.list_all()
+
+    def match_blocked_keyword(self, *titles: str) -> str:
+        """返回命中的屏蔽关键词（无命中返回空串）。
+
+        判定为大小写不敏感的子串匹配，语义与历史 ``[sync] blocked_keywords``
+        一致 —— 因此生效时机同样在**匹配前**。
+        """
+        return self._blocked_rules.match_title(*titles)
+
+    def blocked_keyword_count(self) -> int:
+        return self._blocked_rules.count()
+
+    def migrate_blocked_keywords_from_config(self, raw: str) -> int:
+        """把历史 ``[sync] blocked_keywords`` 导入屏蔽关键词表（幂等，表非空则跳过）"""
+        return self._blocked_rules.migrate_from_config_keywords(raw)
 
     # ------------------------------------------------------------------
     # PendingSyncQueueRepository 转发
