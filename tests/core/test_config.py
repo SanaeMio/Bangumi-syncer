@@ -5,6 +5,8 @@ ConfigManager tests - Simplified version
 import os
 from unittest.mock import patch
 
+import pytest
+
 
 class TestConfigManagerSimple:
     """Test ConfigManager class with simplified tests"""
@@ -559,3 +561,61 @@ class TestEnsureDefaultConfig:
         # 不应抛异常
         cm._ensure_default_config()
         assert not default_ini.exists()
+
+
+# ---------------------------------------------------------------------------
+# S1: set_config 注入防护（段名/key 白名单 + fields 空段 fail-closed）
+# ---------------------------------------------------------------------------
+
+
+class TestSetConfigInjectionGuard:
+    """验证 set_config 的段名/key 白名单校验与 fields 空段 fail-closed。"""
+
+    def test_set_config_拒绝含换行符的段名(self, tmp_path):
+        """段名含 \\n 应被拒绝（防止 INI 注入写出新段）。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sync\n[auth]", "key", "value")
+
+    def test_set_config_拒绝含等号的段名(self, tmp_path):
+        """段名含 = 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sect=ion", "key", "value")
+
+    def test_set_config_拒绝含方括号的段名(self, tmp_path):
+        """段名含 [ 或 ] 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sect[ion", "key", "value")
+
+    def test_set_config_拒绝含换行符的key(self, tmp_path):
+        """key 含 \\n 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sync", "ke\ny", "value")
+
+    def test_set_config_拒绝含等号的key(self, tmp_path):
+        """key 含 = 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sync", "ke=y", "value")
+
+    def test_set_config_合法段名key_正常写入(self, tmp_path):
+        """合法段名/key 应正常写入。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        cm.set_config("sync", "match_confidence_threshold", "0.7")
+        # INI 存储为字符串，get 返回字符串 "0.7"
+        assert cm.get("sync", "match_confidence_threshold") == "0.7"
+
+    def test_set_config_合法多实例段名_正常写入(self, tmp_path):
+        """多实例段名（notify-webhook-1）应正常写入。"""
+        cm = _config_manager_from_ini(tmp_path, "[notify-webhook-1]\nurl=x\n")
+        cm.set_config("notify-webhook-1", "enabled", "true")
+        assert cm.get("notify-webhook-1", "enabled") is True
+
+    def test_set_config_fields空段_拒绝写任意key(self, tmp_path):
+        """fields 为空的段（如 bangumi-mapping）应拒绝写任意 key（fail-closed）。"""
+        cm = _config_manager_from_ini(tmp_path, "[bangumi-mapping]\nold=1\n")
+        with pytest.raises(ValueError, match="fields 为空|无法定义"):
+            cm.set_config("bangumi-mapping", "arbitrary_key", "value")
