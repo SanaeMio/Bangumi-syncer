@@ -193,6 +193,10 @@ SECTIONS: dict[str, SectionMeta] = {
                 default="bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv",
             ),
             FieldMeta(name="ech_ech_config", default=""),
+            # MCP 服务公共 URL：反代 / 局域网 / 域名访问时填写对外可达地址。
+            # 留空表示不覆盖，由 app/mcp/server.py 按 参数 > MCP_BASE_URL
+            # 环境变量 > 本配置 > 默认值 http://localhost:8000 解析。
+            FieldMeta(name="mcp_base_url", default=""),
         ),
     ),
     # ── 媒体源驱动（order 100-199）──
@@ -512,6 +516,9 @@ def is_sensitive_field(section: str, option: str) -> bool:
 
     支持多实例段：webhook-1 / email-2 等通过前缀匹配父段 sensitive_fields。
     """
+    # get_all_config 输出为下划线形态（如 bangumi_oauth / notify_email_1），
+    # 而注册表与 INI 段名用连字符，故入口统一归一化；对已传连字符的调用方无操作。
+    section = section.replace("_", "-")
     # 直接命中
     meta = SECTIONS.get(section)
     if meta and option in meta.sensitive_fields:
