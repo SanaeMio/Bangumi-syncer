@@ -159,7 +159,14 @@ class ConfigManager:
 
     def _load_config(self) -> None:
         """加载配置文件"""
-        config = ConfigParser()
+        # interpolation=None：配置值一律按字面量处理，不做 %(key)s 模板展开。
+        # ConfigParser 默认启用 BasicInterpolation，会把配置值当模板：写入时
+        # 只校验插值语法、读取时才解析引用，查不到即抛
+        # InterpolationMissingOptionError。由于 get_section() 用 items() 遍历
+        # 整段，段内任一值形如 %(...)s 便导致整段不可读（22 处调用受影响）。
+        # 本项目的配置值从不使用插值（config.example.ini 中 0 处），故关闭，
+        # 使写入与读取的判定标准一致。
+        config = ConfigParser(interpolation=None)
 
         # 读取配置文件
         config.read(self.active_config_path, encoding="utf-8-sig")

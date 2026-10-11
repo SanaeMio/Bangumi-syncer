@@ -630,3 +630,65 @@ class TestSetConfigInjectionGuard:
         # fields 非空的段：未登记的合法键同样放行
         cm.set_config("sync", "enable_real_action", "true")
         assert cm.get("sync", "enable_real_action") is True
+
+
+# ---------------------------------------------------------------------------
+# S2: 配置值按字面量处理（禁用 ConfigParser 插值）
+# ---------------------------------------------------------------------------
+
+
+class TestConfigValueLiteral:
+    """配置值不得被当作 %(...)s 模板处理。
+
+    ConfigParser 默认启用 BasicInterpolation：写入时只校验插值语法、读取时才
+    解析引用，查不到即抛 InterpolationMissingOptionError。由于 get_section()
+    用 items() 遍历整段，段内任一值含 %(...)s 会导致整段不可读（22 处调用
+    受影响）。本项目的配置值从不使用插值，故关闭该特性。
+    """
+
+    WEIRD_VALUES = [
+        "%(missing)s",
+        "%",
+        "100%",
+        "a%(b)s%c",
+        "50%% off",
+        "${section:key}",
+        "密码%(x)s",
+        "100%完成",
+    ]
+
+    def test_set_get_含百分号的值_逐字符原样存取(self, tmp_path):
+        """各类含 % 的值写入后读回应与写入时完全一致。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        for i, value in enumerate(self.WEIRD_VALUES):
+            cm.set_config("sync", f"k{i}", value)
+        for i, value in enumerate(self.WEIRD_VALUES):
+            assert cm.get("sync", f"k{i}") == value, f"{value!r} 未原样读回"
+
+    def test_get_section_段内含插值样式值_整段仍可读(self, tmp_path):
+        """一颗形如 %(name)s 的值不应导致整段不可读（旧实现会抛异常）。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nthreshold=0.7\n")
+        cm.set_config("sync", "note", "%(missing)s")
+
+        section = cm.get_section("sync")
+
+        assert section["note"] == "%(missing)s"
+        assert section["threshold"] == "0.7"
+
+    def test_set_config_含插值样式值_不抛异常(self, tmp_path):
+        """写入形如 %(name)s 的值本身不应报错（旧实现在磁盘落盘后读取才炸）。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+
+        cm.set_config("sync", "note", "%(missing)s")
+
+        assert cm.get("sync", "note") == "%(missing)s"
+
+    def test_重新加载_含百分号的值仍可读(self, tmp_path):
+        """经磁盘往返（reload）后含 % 的值应保持可读。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        cm.set_config("sync", "note", "%(missing)s")
+
+        cm.reload_config()
+
+        assert cm.get("sync", "note") == "%(missing)s"
+        assert cm.get_section("sync")["note"] == "%(missing)s"

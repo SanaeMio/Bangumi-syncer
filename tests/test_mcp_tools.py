@@ -1694,3 +1694,92 @@ class TestUpdateConfigReadonlySections:
         assert verdict == "拒绝"
         assert isinstance(payload, ToolError)
         mock_cm.set_config.assert_not_called()
+
+
+class TestUpdateConfigKeyFormat:
+    """键名必须用下划线：连字符是段名分隔符，用于键名属于拼写错误。
+
+    背景：①类禁改清单登记的是下划线形式（auth.secret_key）。若接受连字符
+    变体（auth.secret-key），则 (normalized, key) 比对失败，可绕过禁改。
+    虽然 ConfigParser 不会把二者视为同一键（写进去是死键，当前不影响运行），
+    但一旦读取路径将来做键名归一化即成为真实绕过，故在入口直接拒绝。
+    实测全库 config.example.ini 与代码均 0 处使用连字符键名。
+    """
+
+    @staticmethod
+    def _make_write_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read", "write"]
+        return mock_token
+
+    async def _probe(self, section, key, value="v"):
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                try:
+                    result = await tools.update_config(
+                        section=section, key=key, value=value
+                    )
+                    return ("放行", result, mock_cm)
+                except Exception as e:  # noqa: BLE001
+                    return ("拒绝", e, mock_cm)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("section", "key"),
+        [
+            ("auth", "secret-key"),  # 绕过①类禁改的尝试
+            ("auth", "pass-word"),
+            ("sync", "match-confidence-threshold"),  # 普通键的拼写错误
+            ("llm", "api-key"),
+            ("bangumi-data", "cache-ttl-days"),
+        ],
+    )
+    async def test_update_config_连字符键名_拒绝(self, section, key):
+        """含连字符的键名一律拒绝，且不写入。"""
+        from fastmcp.exceptions import ToolError
+
+        verdict, payload, mock_cm = await self._probe(section, key)
+
+        assert verdict == "拒绝", f"{section}.{key} 未被拒绝"
+        assert isinstance(payload, ToolError)
+        mock_cm.set_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_config_连字符键名_提示正确写法(self):
+        """错误信息应说明键名用下划线、段名才用连字符。"""
+        verdict, exc, _ = await self._probe("auth", "secret-key")
+
+        msg = str(exc)
+        assert "下划线" in msg, "未说明键名的正确分隔符"
+        assert "段名" in msg, "未说明连字符的适用范围"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("section", "key"),
+        [
+            ("sync", "enable_real_action"),
+            ("dev", "script_proxy"),
+            ("llm", "api_key"),
+            ("notify-webhook-1", "url"),
+        ],
+    )
+    async def test_update_config_下划线键名_不受影响(self, section, key):
+        """下划线键名（含多实例段）应正常放行。"""
+        verdict, payload, _ = await self._probe(section, key)
+
+        assert verdict == "放行", f"{section}.{key} 被误拒: {payload}"
+        assert payload["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_update_config_连字符段名_不受新校验影响(self):
+        """段名仍允许连字符（如 bangumi-data），不得被键名规则误伤。"""
+        verdict, payload, _ = await self._probe("bangumi-data", "cache_ttl_days")
+
+        assert verdict == "放行"
+        assert payload["status"] == "success"

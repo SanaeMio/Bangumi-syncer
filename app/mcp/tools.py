@@ -430,6 +430,18 @@ async def update_config(
             f"未知配置段: {section}。合法段包括: {', '.join(sorted(valid_names))}"
         )
 
+    # 键名格式：连字符是段名分隔符，用于键名属拼写错误。
+    # 若接受连字符变体（auth.secret-key），禁改清单按 (段,键) 精确比对
+    # （登记形式为下划线 auth.secret_key）会失配，可被绕过。虽然 ConfigParser
+    # 不会把二者视为同一键（连字符键写入后是死键），但一旦读取路径将来做
+    # 键名归一化即成为真实绕过，故在入口拒绝。实测全库（config.example.ini
+    # 与代码调用）均 0 处使用连字符键名。
+    if "-" in key:
+        raise ToolError(
+            f"非法配置键名: {key!r}（键名用下划线分隔，连字符仅用于段名）；"
+            f"请确认拼写，例如 secret_key、match_confidence_threshold"
+        )
+
     # 只读段判定：Web 界面无写入口的段，给出可操作的正确入口提示
     if normalized in _MCP_WRITE_READONLY_SECTIONS:
         raise ToolError(
