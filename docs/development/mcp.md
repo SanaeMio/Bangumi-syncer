@@ -123,7 +123,7 @@ JWT claims：
 ::: tip 默认 scope 为 read
 上面的 `"scope": "read write"` 仅为示例。实际实现中 `_default_scopes = ["read"]`（`provider.py`）：客户端**不请求 scope** 时只发放 `read`（authorize 的 `params.scopes or self._default_scopes`、DCR 注册时未声明 scope 也回填 `read`、CIMD 的 `default_scope` 同为 `read`）。`write` 需客户端在授权请求中**显式请求**，且 SDK（`OAuthClientInformationFull.validate_scope`）会校验请求的 scope 属于客户端已注册/声明的 scope，否则返回 `invalid_scope`。
 
-权限对照：`read` → `get_logs` / `get_current_config`（敏感字段已掩码）；`write` → `update_config`（`auth` 段始终禁写）。
+权限对照：`read` → `get_logs` / `get_current_config`（敏感字段已掩码）；`write` → `update_config`（登录通道本身 `auth.enabled` / `auth.secret_key` / `auth.password` 禁写，`[bangumi]` 段只读，其余键开放）。
 
 `BangumiOAuthProvider` 默认另声明 `required_scopes=["read"]`（`provider.py`），它是 `/mcp` 的**传输层准入底线**：FastMCP `RequireAuthMiddleware` 据此校验 access token 的 scope，**仅含 `write` 的 token 会被 403 `insufficient_scope` 拒绝**。因此 `write` 建立在 `read` 之上，不存在只含 `write` 的可用 token；工具侧 `_require_read_scope` 与 `update_config` 的 write 校验保留为 defense-in-depth。
 :::
@@ -220,7 +220,14 @@ JWT claims：
 | `key` | string | 配置键名 |
 | `value` | any | 配置值 |
 
-段名下划线自动归一化为连字符（`notify_webhook` → `notify-webhook`）。`auth` 段禁止通过 MCP 修改。
+段名下划线自动归一化为连字符（`notify_webhook` → `notify-webhook`）；多实例段须带实例后缀（`notify-webhook-1`，裸父段运行时读不到故拒绝）；键名须用下划线（连字符仅用于段名）。
+
+写入策略（判据：改完之后用户还能不能自己救回来）：
+
+- **禁改**：登录通道本身 `auth.enabled` / `auth.secret_key` / `auth.password`——改完用户无法自行恢复
+- **只读段**：`[bangumi]`——Web 无写入口，写入会在下次启动被迁移为数据库账号
+- **放行 + 提示**：改完仍需用户执行一步操作的键（如 `trakt.client_secret` 需重新授权），写入成功后返回值附 `notice` 说明后续操作
+- **其余开放**：等同用户在 Web 界面的编辑能力（含 `llm.api_key`、`notify-*` 凭据、`auth.webhook_key` 等）
 
 ---
 

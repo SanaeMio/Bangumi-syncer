@@ -40,6 +40,16 @@ Bangumi-syncer（BS）内置 MCP 服务，AI 助手可以通过它直接读取�
 
 BS 内置的 MCP 服务随主进程启动（同一进程，并非独立 sidecar），其地址就是 BS 自身地址。不同客户端走不同的 OAuth 客户端机制，接入前请确认 `MCP_BASE_URL` 与客户端实际访问地址一致（反向代理 / 端口映射场景尤其注意）。
 
+::: warning 客户端地址必须与 MCP_BASE_URL 逐字一致
+OAuth 的 `resource` 参数校验**不把 `localhost` 与 `127.0.0.1` 视为等价**。若 BS 的 `mcp_base_url` 为默认的 `http://localhost:8000`，而客户端配置成 `http://127.0.0.1:8000/mcp`，连接会直接失败并报：
+
+```
+Protected resource http://localhost:8000/mcp does not cover http://127.0.0.1:8000/mcp
+```
+
+处理：两边统一（都用 `localhost` 或都用 `127.0.0.1`），或把 BS 的 `mcp_base_url` 设为客户端实际使用的地址。
+:::
+
 | 客户端 | 客户端机制 | 需要准备 | 典型配置 |
 | --- | --- | --- | --- |
 | Claude Code | CIMD（Client ID Metadata Document） | BS 可达地址；**BS 能出网访问 `https://claude.ai`** | `claude mcp add --transport http bangumi-syncer http://<你的 BS 地址>:8000/mcp` |
@@ -92,6 +102,8 @@ BS 内置的 MCP 服务随主进程启动（同一进程，并非独立 sidecar�
   opencode mcp list                  # 期望 ✓ connected (OAuth)
   ```
 - v2 配置结构不同：为 `"mcp": { "servers": { "<name>": { ... } } }`，OAuth 字段用 snake_case（`client_id` / `client_secret` / `scope` / `callback_port`）
+  - v2 可用命令生成骨架：`opencode mcp add bangumi-syncer --url http://<你的 BS 地址>:8000/mcp`
+  - 但该命令**不会写入 `oauth.scope`**，需手工补 `"oauth": {"scope": "read write"}` 才有写权限
 - 注册表与 Refresh Token 为进程内存态：BS 重启后需重新 `opencode mcp auth`（已签发的 Access Token 在 1 小时有效期内仍可用）
 
 ## 环境变量（部署相关）
@@ -126,5 +138,5 @@ MCP 服务随 BS 主进程启动，下面几个变量通过**启动 BS 的进程
 ## 安全建议
 
 - 不要将 BS 端口直接暴露到公网；公网访问请走 VPN 或反向代理 + TLS
-- AI 助手无法修改 `auth` 段；配置读取时敏感字段自动脱敏
+- AI 助手无法修改登录通道本身（`auth.enabled` / `auth.secret_key` / `auth.password`——这三项改完用户无法自行恢复）；配置读取时敏感字段自动脱敏
 - 更多技术细节（OAuth 流程、Scope 机制、单进程约束、RSA 密钥、环境变量）见 [开发文档：MCP Server](/development/mcp)

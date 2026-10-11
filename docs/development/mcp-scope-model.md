@@ -24,7 +24,8 @@ order: 16
 
 硬性边界（与 scope 无关）：
 
-- `auth` 段永远禁写；
+- 登录通道本身禁写（`auth.enabled` / `auth.secret_key` / `auth.password`）：这三项改完用户无法自行恢复，故无论 scope 如何都拒绝；
+- 段级只读：`[bangumi]`（Web 无写入口，写入会被迁移为数据库账号）；
 - MCP 工具集固定为 3 个，不存在任意 API / 命令执行；
 - 客户端请求的 scope 必须 ⊆ 其注册/声明的 scope（SDK `validate_scope` 校验，越权返回 `invalid_scope`）；
 - 客户端不请求 scope 时默认只发 `read`（DCR 注册、CIMD `default_scope`、authorize 三处一致）；
@@ -36,7 +37,7 @@ order: 16
 | --- | --- | --- |
 | 只读（默认） | `read` | get_logs + get_current_config |
 | 读写 | `read write` | + update_config，但拒绝敏感字段（`is_sensitive_field` 命中即拒） |
-| 全权 | `read write admin` | + 允许写敏感字段（auth 段仍禁） |
+| 全权 | `read write admin` | + 允许写敏感字段（登录通道三键仍禁） |
 
 更细粒度（`logs:read` / `config:read` / `config:write` / `secrets:write`）暂不考虑：OAuth scope 无继承语义、consent 页与客户端适配成本高。
 
