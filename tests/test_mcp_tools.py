@@ -976,9 +976,11 @@ FOLLOWUP_REQUIRED_KEYS = [
     ("auth", "webhook_auth_enabled"),
     ("trakt", "client_secret"),
     ("bangumi-oauth", "client_secret"),
-    ("bangumi", "access_token"),
-    ("bangumi", "refresh_token"),
 ]
+
+# 只读段：Web 界面无写入入口，写入会被系统当作数据（而非配置）搬走。
+# 见 app/mcp/tools.py::_MCP_WRITE_READONLY_SECTIONS
+READONLY_SECTIONS = ["bangumi"]
 
 # ③ 开放清单：含此前被 fields 白名单误拒的键，以及用户判据下可自恢复的凭据
 ALLOWED_WRITE_KEYS = [
@@ -1094,6 +1096,8 @@ class TestUpdateConfigWritePolicy:
         for section in sorted(SECTIONS):
             if not parser.has_section(section):
                 continue
+            if section in READONLY_SECTIONS:
+                continue  # 只读段由 TestUpdateConfigReadonlySections 单独验证
             for key in parser.options(section):
                 if (section, key) in denied:
                     continue
@@ -1578,3 +1582,115 @@ class TestUpdateConfigNewKeyHint:
         notice = result["notice"]
         assert "OAuth" in notice
         assert "此前不存在" in notice
+
+
+class TestUpdateConfigReadonlySections:
+    """只读段：Web 界面无写入入口，写入会被系统当作数据（而非配置）搬走。
+
+    典型是 [bangumi]：schema 标注 visible_in_ui=False，hidden_reason 声明
+    「仅为旧版 config.ini 的迁移来源」。写入后会在下次启动被
+    migrate_ini_accounts_to_db() 搬进数据库成为可用账号，且 INI 痕迹随后
+    被清除，用户无法从配置文件察觉。
+    """
+
+    @staticmethod
+    def _make_write_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read", "write"]
+        return mock_token
+
+    async def _probe(self, section, key, value="v"):
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                try:
+                    result = await tools.update_config(
+                        section=section, key=key, value=value
+                    )
+                    return ("放行", result, mock_cm)
+                except Exception as e:  # noqa: BLE001
+                    return ("拒绝", e, mock_cm)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "access_token",
+            "refresh_token",
+            "username",
+            "private",
+            "media_server_username",
+            "made_up_key",
+        ],
+    )
+    async def test_update_config_bangumi段任意键_拒绝(self, key):
+        """[bangumi] 段的任何键都不可写（含未登记的键）。"""
+        from fastmcp.exceptions import ToolError
+
+        verdict, payload, mock_cm = await self._probe("bangumi", key)
+
+        assert verdict == "拒绝"
+        assert isinstance(payload, ToolError)
+        mock_cm.set_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_config_bangumi段_错误信息给出正确入口(self):
+        """拒绝时必须告知正确修改方式，而不是只说「不允许」。"""
+        verdict, exc, _ = await self._probe("bangumi", "access_token", "ATTACKER_TOKEN")
+
+        msg = str(exc)
+        assert "迁移来源" in msg, "未说明该段为何不可写"
+        assert "Bangumi 账号" in msg, "未指明正确入口"
+        assert "Web" in msg, "未指明入口位置"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("section", ["BANGUMI", "bangumi_", "Bangumi"])
+    async def test_update_config_bangumi段名变形_不能绕过(self, section):
+        """段名变形不能绕过拒绝（由段名白名单先行拦截，只读判定不必兜住）。
+
+        大小写变体不在 _valid_section_names() 中、``bangumi_`` 归一化后为
+        ``bangumi-`` 同样不在，二者在只读判定之前即被拒，故不会误伤也无需
+        依赖只读清单做归一化。
+        """
+        verdict, _, mock_cm = await self._probe(section, "access_token")
+
+        assert verdict == "拒绝"
+        mock_cm.set_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("section", "key"),
+        [
+            ("bangumi-data", "cache_ttl_days"),
+            ("bangumi-replay", "enabled"),
+            ("bangumi-archive", "enabled"),
+            ("bangumi-mapping", "some_key"),
+            ("bangumi-oauth", "client_id"),
+        ],
+    )
+    async def test_update_config_其他bangumi前缀段_不被误伤(self, section, key):
+        """只读判定必须精确匹配 [bangumi]，不得波及 bangumi-* 兄弟段。"""
+        verdict, payload, _ = await self._probe(section, key)
+
+        assert verdict == "放行", f"{section}.{key} 被误拒: {payload}"
+        assert payload["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_update_config_bangumi段的敏感键_与只读判定无关(self):
+        """只读段判定应独立于 sensitive_fields：非敏感键同样被拒。
+
+        [bangumi] 的 sensitive_fields 只有 access_token/refresh_token，
+        但 username/private 等非敏感键写入同样会触发账号迁移。
+        """
+        from fastmcp.exceptions import ToolError
+
+        verdict, payload, mock_cm = await self._probe("bangumi", "username", "attacker")
+
+        assert verdict == "拒绝"
+        assert isinstance(payload, ToolError)
+        mock_cm.set_config.assert_not_called()

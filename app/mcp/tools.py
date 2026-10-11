@@ -77,6 +77,22 @@ _MCP_WRITE_DENIED: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# 只读段：Web 配置页无写入入口、且写入内容会被系统当作「数据」而非「配置」
+# 搬走的段。依据「MCP 能力等同 Web 界面」——界面上改不了的，MCP 也不应能改。
+_MCP_WRITE_READONLY_SECTIONS: frozenset[str] = frozenset(
+    {
+        # schema 标注 visible_in_ui=False，hidden_reason 声明「仅为旧版
+        # config.ini 的迁移来源」。写入会在下次启动被
+        # migrate_ini_accounts_to_db() 搬进数据库成为可用账号：
+        # accounts.py:142 的去重守卫只挡 section_name 恰为 "bangumi" 的账号，
+        # 而 Web 建账号走 _generate_section_name() → "bangumi-{username}"
+        # （api/bangumi_accounts.py:115），故守卫通常不命中；迁移后 INI 段
+        # 还会被 _cleanup_migrated_ini_sections() 清除，痕迹不可见。
+        # 账号请在 Web 界面「Bangumi 账号」卡片管理。
+        "bangumi",
+    }
+)
+
 # ② 允许改、但改完用户需执行后续操作的键 → 写入成功后通过返回值 notice 提示。
 # 这些键本身可逆（用户回 Web 界面即可修正或完成授权），硬性禁止会削弱 MCP
 # 的实用性；提示优于拒绝。提示文案按 (段, 键) 区分，避免共用一句空话。
@@ -99,14 +115,6 @@ _MCP_WRITE_FOLLOWUP: dict[tuple[str, str], str] = {
     ),
     ("bangumi-oauth", "client_secret"): (
         "已更新 Bangumi OAuth 应用密钥，需重新完成 OAuth 授权流程才能生效"
-    ),
-    ("bangumi", "access_token"): (
-        "已更新 Bangumi access_token，该字段仅用于从旧版配置迁移账号，"
-        "不会影响数据库中已入库的账号；如需更换账号请在「Bangumi 账号」卡片操作"
-    ),
-    ("bangumi", "refresh_token"): (
-        "已更新 Bangumi refresh_token，同上仅影响旧版配置迁移来源，"
-        "已入库账号的令牌请在「Bangumi 账号」卡片管理"
     ),
 }
 
@@ -420,6 +428,15 @@ async def update_config(
         valid_names = _valid_section_names()
         raise ToolError(
             f"未知配置段: {section}。合法段包括: {', '.join(sorted(valid_names))}"
+        )
+
+    # 只读段判定：Web 界面无写入口的段，给出可操作的正确入口提示
+    if normalized in _MCP_WRITE_READONLY_SECTIONS:
+        raise ToolError(
+            f"配置段 {normalized} 不允许通过 MCP 修改：该段仅为旧版 config.ini "
+            f"的账号迁移来源，写入会在下次启动被迁移为数据库账号且不留痕迹。"
+            f"请改用 Web 界面「Bangumi 账号」卡片管理账号"
+            f"（支持新增 / 更新 / 删除，即时生效，无需重启）"
         )
 
     # 禁改键判定：见 _MCP_WRITE_DENIED 的判据说明
