@@ -20,6 +20,7 @@ from rapidfuzz import fuzz
 
 from ...core.logging import logger
 from ...utils.media_type_detector import detect_media_type
+from ..season_title import extract_season_candidates
 from ..title_patterns import SEASON_SUFFIX_PATTERNS
 
 # 日期解析记忆化：bangumi-data 的 begin 是条目常量，但 _calculate_match_info
@@ -130,8 +131,13 @@ class MatchingMixin:
         ori_title: str,
         release_date: str,
         media_type: str = "",
+        season: int = 1,
     ) -> tuple[str, str, bool] | None:
         """尝试通过标题索引进行精确匹配（O(1)查找，避免线性扫描）
+
+        :param season: 请求的季度。>1 时同一标题键下可能同时挂着本季与**上一季**
+            的条目（别名重叠），需要按条目自身声明的季号筛掉异季候选。
+            详见 ``_filter_candidates_by_season``。
 
         Returns:
             匹配结果或 None（None 表示需要回退到线性扫描）
@@ -151,6 +157,13 @@ class MatchingMixin:
             logger.debug(
                 f"标题索引命中: key='{matched_key}', 候选数={len(exact_candidates)}"
             )
+            # 季号筛选（issue #269）：同名键下可能混着别的季，先按季收敛，
+            # 避免「S2 的请求 + S1 的日期恰好落在窗口内」把上一季当成目标季。
+            exact_candidates = self._filter_candidates_by_season(
+                exact_candidates, season
+            )
+            if not exact_candidates:
+                return None
             if release_date:
                 min_diff = float("inf")
                 best = None
@@ -187,6 +200,92 @@ class MatchingMixin:
                 return (first[1], first[2], False)
 
         return None
+
+    @staticmethod
+    def _candidate_season_numbers(item: dict) -> set[int]:
+        """候选条目自身声明的季号集合（原文 + 各语言译名）。
+
+        bangumi-data 的 ``title`` 与 ``titleTranslate`` 都会带季号后缀，
+        如 ``正反対な君と僕(第2期)`` / ``相反的你和我 第二季``。
+        用 :func:`extract_season_candidates` 而非 ``extract_explicit_season``：
+        前者能看到**全部**季号，避免脏标题里互相矛盾的季号被单一返回值掩盖。
+
+        返回空集合表示「标题未声明任何季号」—— 对多季番而言这**通常就是第一季**
+        （第一季条目标题不带后缀，续作才带 ``第2期`` / ``第二季``）。调用方
+        ``_filter_candidates_by_season`` 会据此把无季号候选按第 1 季处理。
+        """
+        texts = [item.get("title") or ""]
+        translate = item.get("titleTranslate")
+        if isinstance(translate, dict):
+            for names in translate.values():
+                if isinstance(names, list):
+                    texts.extend(n for n in names if isinstance(n, str))
+                elif isinstance(names, str):
+                    texts.append(names)
+        found: set[int] = set()
+        for text in texts:
+            found |= extract_season_candidates(text)
+        return found
+
+    def _filter_candidates_by_season(self, candidates: list, season: int) -> list:
+        """按请求季号收敛候选（issue #269）。
+
+        背景：标题索引按**别名**建键，而同一部番各季的别名并不共享同一条目。
+        ``正相反的你与我`` 只挂在第一季 525565 上（第二季 638497 的别名是
+        ``正相反的你与我 第二季``）。于是 S2 的请求只拿到 S1 一条候选，
+        日期校验又用 ``|2026-07-04 − 2026-01-11| = 174 ≤ 180`` 放行，
+        S2 的请求被解析成 S1 的条目，最终标记到 S1 的那一集上。
+
+        收敛规则（仅在 season > 1 时生效，绝不改变第一季的既有行为）：
+
+        1. 有候选**明确声明**了请求季号 → 只保留它们（正例，最可信）。
+        2. 否则，剔除**声明了其它季号**的候选。
+        3. 全部候选都指向别的季（含只有 1 条、且它无季号 = 第 1 季的情形）
+           → 返回空列表判定未命中，让调用方回退线性扫描。
+        4. 无季号信息的候选按**第 1 季**视之：请求第 N (>1) 季时它们不匹配。
+
+        season == 1 时直接返回原列表：请求方没有可用的季号信息，任何筛选都
+        可能误伤（第一季条目常常根本不写季号）。
+        """
+        if season <= 1 or not candidates:
+            return candidates
+
+        declared: list[tuple[object, set[int]]] = []
+        for cand in candidates:
+            item = cand[0] if isinstance(cand, tuple) else cand
+            seasons = self._candidate_season_numbers(item)
+            # 无季号 = 未声明续作身份 = 第一季（见 _candidate_season_numbers 文档）
+            declared.append((cand, seasons or {1}))
+
+        # 规则 1：明确声明目标季的优先
+        matched = [c for c, seasons in declared if season in seasons]
+        if matched:
+            if len(matched) < len(candidates):
+                logger.debug(
+                    f"按季号筛选候选: 目标季={season}，"
+                    f"{len(candidates)} → {len(matched)} 条（明确声明本季）"
+                )
+            return matched
+
+        # 规则 2：剔除声明了其它季的候选
+        kept = [c for c, seasons in declared if season in seasons]
+        if kept:
+            logger.debug(
+                f"按季号筛选候选: 目标季={season}，"
+                f"{len(candidates)} → {len(kept)} 条（剔除异季）"
+            )
+            return kept
+
+        # 规则 3：候选全部指向别的季 —— 判未命中，回退线性扫描。
+        #
+        # 扫描会同时找出 S1（精确 score=1.0）与 S2（部分 score≈0.81），
+        # 再由 _select_from_exact_matches(..., season) 按季号选中正确条目。
+        # 若在此返回原候选，S1 会被当作 S2 直接采信 —— 正是 issue #269。
+        logger.debug(
+            f"候选均声明了其它季号，判定为未命中以回退线性扫描: "
+            f"目标季={season}, 候选季号={[sorted(s) for _, s in declared]}"
+        )
+        return []
 
     def find_bangumi_candidates(
         self,
@@ -409,6 +508,24 @@ class MatchingMixin:
         # 按匹配类型排序，优先使用中文翻译匹配
         exact_matches.sort(key=lambda x: x[2])
 
+        # 季号筛选（issue #269）：扫描出的「完全匹配」只保证**标题**相等，
+        # 不代表**季数**相等。别名重叠时（S1 的别名 `正相反的你与我` 同时也是
+        # 请求标题），S2 的请求会在这里拿到 S1 并因日期差 174 ≤ 180 被判为
+        # date_matched=True —— 于是 S2 被解析成 S1。
+        #
+        # 先按候选自身声明的季号筛掉异季候选；若筛到一条不剩，说明本季条目
+        # 只出现在部分匹配里（S2 的标题带 `第二季`，与请求标题不完全相等），
+        # 此时放弃既有的「日期差 ≤180 就直接采信」捷径，改由下方按季号
+        # 在 partial_matches 中择优。
+        season_exact = self._filter_candidates_by_season(exact_matches, season)
+        if not season_exact and season > 1:
+            picked = self._pick_season_from_partial(partial_matches, season)
+            if picked is not None:
+                return picked
+        exact_matches = season_exact
+        if not exact_matches:
+            return None
+
         if release_date:
             min_exact_diff = float("inf")
             best_exact_match = None
@@ -494,6 +611,27 @@ class MatchingMixin:
         # 没有通过日期筛选，标记为非日期匹配
         return (exact_matches[0][1], matched_title, False)
 
+    def _pick_season_from_partial(self, partial_matches: list, season: int):
+        """从部分匹配里挑出**明确声明了目标季号**的条目（issue #269）。
+
+        用于「完全匹配指向的是别的季」这一情形：S2 的标题带 ``第二季`` / ``(第2期)``
+        后缀，与请求标题 ``正相反的你与我`` 并不完全相等，因此只出现在部分匹配里
+        （score ≈ 0.81）。此时按季号把它挑出来，比沿用一个标题相同但季数错误的
+        完全匹配更可信。
+
+        Returns:
+            ``(bangumi_id, matched_title, date_matched)``，无合适候选时 None。
+        """
+        for match_item, _score, match_id in partial_matches:
+            if season in self._candidate_season_numbers(match_item):
+                matched_title = self._get_best_matched_title(match_item)
+                logger.debug(
+                    f"完全匹配指向其它季，改按季号从部分匹配中采纳: "
+                    f"{matched_title} (目标季={season})"
+                )
+                return (match_id, matched_title, True)
+        return None
+
     def _select_from_partial_matches(
         self,
         partial_matches: list,
@@ -556,7 +694,9 @@ class MatchingMixin:
             date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
         """
         # 首先尝试精确匹配索引（O(1)查找，避免线性扫描）
-        result = self._try_exact_match(title, ori_title, release_date, media_type)
+        result = self._try_exact_match(
+            title, ori_title, release_date, media_type, season
+        )
         if result:
             return result
 
