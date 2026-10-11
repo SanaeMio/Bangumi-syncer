@@ -850,13 +850,21 @@ class TestUpdateConfigKeyValueValidation:
         return mock_token
 
     @pytest.mark.asyncio
-    async def test_update_config_非法key_拒绝(self):
-        """不在 schema 中的 key 应被拒绝。"""
+    async def test_update_config_格式非法的key_拒绝(self):
+        """key 含等号等 INI 注入字符时应被拒绝。
+
+        判据已由「key 是否存在」改为「key 格式是否合法」：``SectionMeta.fields``
+        只登记需特殊渲染的项，不是完整键清单，用它做存在性校验会误拒
+        dev.debug / llm.model 等合法配置。
+        """
         from fastmcp.exceptions import ToolError
 
+        from app.core.config import _validate_section_key
         from app.mcp import tools
 
         mock_cm = MagicMock()
+        # 复现 set_config 的真实行为：格式非法时抛 ValueError
+        mock_cm.set_config.side_effect = lambda s, k, v: _validate_section_key(s, k)
 
         with patch("app.mcp.tools.config_manager", mock_cm):
             with patch(
@@ -866,12 +874,33 @@ class TestUpdateConfigKeyValueValidation:
                 with pytest.raises(ToolError) as exc_info:
                     await tools.update_config(
                         section="sync",
-                        key="nonexistent_key_xyz",
+                        key="bad=key",
                         value="anything",
                     )
 
-        assert "非法配置键" in str(exc_info.value)
-        mock_cm.set_config.assert_not_called()
+        assert "非法配置键名" in str(exc_info.value)
+        mock_cm.set_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_config_未登记但格式合法的key_放行(self):
+        """未在 SectionMeta.fields 登记、但格式合法的 key 应放行（③类策略）。"""
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                result = await tools.update_config(
+                    section="sync",
+                    key="nonexistent_key_xyz",
+                    value="anything",
+                )
+
+        assert result["status"] == "success"
+        mock_cm.set_config.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_update_config_超长value_拒绝(self):
@@ -919,3 +948,633 @@ class TestUpdateConfigKeyValueValidation:
         mock_cm.set_config.assert_called_once_with(
             "sync", "match_confidence_threshold", "x" * 10000
         )
+
+
+# ===========================================================================
+# update_config 写入策略测试（评审 #259 修复）
+#
+# 判据（不再是「键敏不敏感」，而是）：
+#   ① 改完之后 MCP 自己不可用         → 禁改
+#   ② 改完之后用户还需回 Web 页面操作 → 禁改
+#   ③ 其余一律开放（等同 Web 界面）
+# ===========================================================================
+
+
+# ① + ② 禁改清单：显式列举，不从实现导入，保持测试为独立规格
+DENIED_WRITE_KEYS = [
+    # ① 登录通道本身：改完用户无法自行恢复，只能留在 Web 界面操作
+    ("auth", "enabled"),  # 置 false 会让全站免鉴权（见 app/api/deps.py）
+    ("auth", "secret_key"),  # verify_password 以其做 HMAC，改动使已存密码哈希全部失效
+    ("auth", "password"),  # 用户不知新密码即永久失去访问权
+]
+
+# ② 类：允许修改，但需在返回值中提示用户执行的后续操作（见 _MCP_WRITE_FOLLOWUP）
+FOLLOWUP_REQUIRED_KEYS = [
+    ("auth", "username"),
+    ("auth", "max_login_attempts"),
+    ("auth", "lockout_duration"),
+    ("auth", "webhook_auth_enabled"),
+    ("trakt", "client_secret"),
+    ("bangumi-oauth", "client_secret"),
+    ("bangumi", "access_token"),
+    ("bangumi", "refresh_token"),
+]
+
+# ③ 开放清单：含此前被 fields 白名单误拒的键，以及用户判据下可自恢复的凭据
+ALLOWED_WRITE_KEYS = [
+    # 此前因 fields 未登记而被误拒的合法配置
+    ("sync", "enable_real_action"),
+    ("sync", "test_skip_permission_check"),
+    ("dev", "debug"),
+    ("dev", "script_proxy"),
+    ("dev", "log_file"),
+    ("dev", "bgm_api_proxy"),
+    ("llm", "model"),
+    ("llm", "api_base"),
+    ("feiniu", "db_path"),
+    ("fongmi", "devices"),
+    ("fongmi", "subnet"),
+    ("bangumi-archive", "http_proxy"),
+    ("bangumi-archive", "retry_interval"),
+    ("bangumi-data", "http_proxy"),
+    # 此前因 auth 整段拉黑而被误伤的无害键（② 类可改，见 FOLLOWUP_REQUIRED_KEYS）
+    ("auth", "username"),
+    ("auth", "max_login_attempts"),
+    ("auth", "lockout_duration"),
+    ("auth", "webhook_auth_enabled"),
+    ("auth", "webhook_key"),
+    ("auth", "session_timeout"),
+    ("auth", "https_only"),
+    # 可自行恢复的凭据类（判据③）
+    ("llm", "api_key"),
+    ("notify-email-1", "smtp_password"),
+    ("notify-wecom-1", "key"),
+    ("notify-dingtalk-1", "access_token"),
+    ("notify-dingtalk-1", "secret"),
+    # 字段表为空的段：全开放
+    ("trakt", "client_id"),
+    ("trakt", "redirect_uri"),
+    ("web", "base_path"),
+    ("bangumi-mapping", "some_key"),
+    # 多实例段任意键（裸父段除外，见 TestUpdateConfigMultiInstanceSegment）
+    ("notify-webhook-1", "url"),
+    ("notify-webhook-abc", "url"),
+]
+
+
+class TestUpdateConfigWritePolicy:
+    """写入策略：①MCP自身不可用 / ②需回页面的键禁改，其余开放。"""
+
+    @staticmethod
+    def _make_write_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read", "write"]
+        return mock_token
+
+    async def _call(self, section, key, value="v"):
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                result = await tools.update_config(
+                    section=section, key=key, value=value
+                )
+        return result, mock_cm
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("section", "key"), DENIED_WRITE_KEYS)
+    async def test_update_config_禁用清单内的键_抛出ToolError(self, section, key):
+        """①MCP不可用 / ②需回页面的键 → 拒绝写入。"""
+        from fastmcp.exceptions import ToolError
+
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                with pytest.raises(ToolError) as exc_info:
+                    await tools.update_config(section=section, key=key, value="v")
+
+        assert "Web 界面" in str(exc_info.value)
+        mock_cm.set_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("section", "key"), ALLOWED_WRITE_KEYS)
+    async def test_update_config_开放清单内的键_写入成功(self, section, key):
+        """③类键 → 正常写入（含此前被误拒的合法配置）。"""
+        result, mock_cm = await self._call(section, key)
+        assert result["status"] == "success"
+        mock_cm.set_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_config_所有登记段的合法示例键_均可写入(self):
+        """不变式：config.example.ini 里除禁改清单外的全部键都应可写。
+
+        回归防护：旧实现以 SectionMeta.fields 作白名单，会误拒未登记的
+        合法键（dev.debug / llm.model 等），本用例锁死该行为不再出现。
+        """
+        import configparser
+        from pathlib import Path
+
+        from app.core.config_schema import SECTIONS
+
+        denied = set(DENIED_WRITE_KEYS)
+        ini_path = Path(__file__).resolve().parents[1] / "config.example.ini"
+        parser = configparser.ConfigParser()
+        parser.read(ini_path, encoding="utf-8")
+
+        checked = 0
+        for section in sorted(SECTIONS):
+            if not parser.has_section(section):
+                continue
+            for key in parser.options(section):
+                if (section, key) in denied:
+                    continue
+                result, mock_cm = await self._call(section, key)
+                assert result["status"] == "success", f"{section}.{key} 被误拒"
+                checked += 1
+        assert checked > 50, "示例配置解析异常，用例失去意义"
+
+    @pytest.mark.asyncio
+    async def test_update_config_下划线段名归一化后仍命中禁改清单(self):
+        """auth 的下划线写法不能绕过①类禁改（归一化后仍按连字符比对）。"""
+        from fastmcp.exceptions import ToolError
+
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                with pytest.raises(ToolError):
+                    await tools.update_config(section="AUTH", key="password", value="x")
+
+        mock_cm.set_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_config_底层ValueError_转为ToolError(self):
+        """set_config 抛 ValueError 时应转成 ToolError（评审 1c）。"""
+        from fastmcp.exceptions import ToolError
+
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        mock_cm.set_config.side_effect = ValueError("非法配置段名")
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                with pytest.raises(ToolError):
+                    await tools.update_config(
+                        section="sync", key="match_confidence_threshold", value="v"
+                    )
+
+
+# ===========================================================================
+# get_logs 时间过滤（评审 #259 第 3/4 条 + 次要项）
+#
+# 场景：
+#   1. 时区：带时区的输入应换算到服务器本地，而不是只剥掉标签
+#   2. 顺序：有时间条件时应先过滤再取 limit，否则窗口靠前的日志被吞
+#   3. 续行：多行 traceback 的续行沿用上一行时间戳，不应整段丢失
+#   4. 自解释：文件日志被禁用时返回明确说明，而非静默空内容
+# ===========================================================================
+
+# 10 行日志，时间递增；末行为多行 traceback（含无时间戳的续行）
+SAMPLE_LOG_SPAN = (
+    "[2026/09/03 10:00:00.000] [INFO]  行1\n"
+    "[2026/09/03 11:00:00.000] [INFO]  行2\n"
+    "[2026/09/03 12:00:00.000] [INFO]  行3\n"
+    "[2026/09/03 13:00:00.000] [INFO]  行4\n"
+    "[2026/09/03 14:00:00.000] [INFO]  行5\n"
+    "[2026/09/03 15:00:00.000] [INFO]  行6\n"
+    "[2026/09/03 16:00:00.000] [INFO]  行7\n"
+    "[2026/09/03 17:00:00.000] [ERROR] 行8 触发了异常\n"
+    '  File "sync.py", line 42, in run\n'
+    "    raise RuntimeError('boom')\n"
+)
+
+
+class TestGetLogsTimezone:
+    """时区：带 tz 的输入应换算到服务器本地时区后再比较。"""
+
+    def test_parse_iso_同一时刻的两种时区表示_结果相同(self):
+        """'Z' 与等价偏移量应解析为同一时刻（而非各自剥标签后相差时差）。"""
+        from app.mcp.tools import _parse_iso_datetime
+
+        utc = _parse_iso_datetime("2026-09-03T10:00:00Z")
+        offset = _parse_iso_datetime("2026-09-03T18:00:00+08:00")
+        assert utc == offset
+        assert utc.tzinfo is None
+
+    def test_parse_iso_naive输入_按服务器本地原样保留(self):
+        """无时区信息的输入视为服务器本地时间，不做换算。"""
+        from datetime import datetime
+
+        from app.mcp.tools import _parse_iso_datetime
+
+        assert _parse_iso_datetime("2026-09-03T10:00:00") == datetime(
+            2026, 9, 3, 10, 0, 0
+        )
+
+    def test_parse_iso_非法格式_抛ValueError(self):
+        from app.mcp.tools import _parse_iso_datetime
+
+        with pytest.raises(ValueError):
+            _parse_iso_datetime("not-a-date")
+
+
+class TestGetLogsFilterOrder:
+    """顺序：应先按时间过滤、再应用 limit。"""
+
+    @staticmethod
+    def _make_read_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read"]
+        return mock_token
+
+    @pytest.mark.asyncio
+    async def test_get_logs_有时间条件时_读取全量而非尾部limit(self):
+        """带 since/until 时应读全量，避免窗口靠前的日志被尾部 limit 吞掉。"""
+        from app.mcp import tools
+
+        mock_dispatch = AsyncMock(
+            return_value={
+                "content": SAMPLE_LOG_SPAN,
+                "stats": {"size": 1, "lines": 10, "modified": None, "errors": 0},
+            }
+        )
+        with patch(
+            "app.mcp.tools.get_access_token", return_value=self._make_read_token()
+        ):
+            with patch(
+                "app.mcp.tools.resolved_dev_log_file_path",
+                return_value=Path("/fake/app.log"),
+            ):
+                with patch("app.mcp.tools.os.path.exists", return_value=True):
+                    with patch("app.mcp.tools._dispatch_read_log", new=mock_dispatch):
+                        await tools.get_logs(limit=3, since="2026-09-03T10:00:00")
+
+        assert mock_dispatch.call_args.args[3] == "all"
+
+    @pytest.mark.asyncio
+    async def test_get_logs_无时间条件时_仍按limit读尾部(self):
+        """无 since/until 时保持原有行为：只读尾部 N 行。"""
+        from app.mcp import tools
+
+        mock_dispatch = AsyncMock(
+            return_value={
+                "content": "",
+                "stats": {"size": 0, "lines": 0, "modified": None, "errors": 0},
+            }
+        )
+        with patch(
+            "app.mcp.tools.get_access_token", return_value=self._make_read_token()
+        ):
+            with patch(
+                "app.mcp.tools.resolved_dev_log_file_path",
+                return_value=Path("/fake/app.log"),
+            ):
+                with patch("app.mcp.tools.os.path.exists", return_value=True):
+                    with patch("app.mcp.tools._dispatch_read_log", new=mock_dispatch):
+                        await tools.get_logs(limit=7)
+
+        assert mock_dispatch.call_args.args[3] == "7"
+
+    @pytest.mark.asyncio
+    async def test_get_logs_窗口靠前且超出limit_仍能命中(self):
+        """since 落在较早区间时，即使 limit 很小也应返回该窗口内的日志。
+
+        旧实现先按 limit 取尾部 N 行再过滤，窗口不在尾部时会返回空，
+        表现为「这段时间没有日志」的假象。
+        """
+        from app.mcp import tools
+
+        mock_dispatch = AsyncMock(
+            return_value={
+                "content": SAMPLE_LOG_SPAN,
+                "stats": {"size": 1, "lines": 10, "modified": None, "errors": 0},
+            }
+        )
+        with patch(
+            "app.mcp.tools.get_access_token", return_value=self._make_read_token()
+        ):
+            with patch(
+                "app.mcp.tools.resolved_dev_log_file_path",
+                return_value=Path("/fake/app.log"),
+            ):
+                with patch("app.mcp.tools.os.path.exists", return_value=True):
+                    with patch("app.mcp.tools._dispatch_read_log", new=mock_dispatch):
+                        result = await tools.get_logs(
+                            limit=3,
+                            since="2026-09-03T12:00:00",
+                            until="2026-09-03T14:00:00",
+                        )
+
+        content = result["data"]["content"]
+        # 窗口内为 行3/行4/行5，共 3 行，不应被 limit 截成空
+        assert "行3" in content
+        assert "行5" in content
+        assert "行1" not in content
+
+    @pytest.mark.asyncio
+    async def test_get_logs_过滤后仍受limit截断(self):
+        """全量读取后应按 limit 截断，避免返回整个文件。"""
+        from app.mcp import tools
+
+        mock_dispatch = AsyncMock(
+            return_value={
+                "content": SAMPLE_LOG_SPAN,
+                "stats": {"size": 1, "lines": 10, "modified": None, "errors": 0},
+            }
+        )
+        with patch(
+            "app.mcp.tools.get_access_token", return_value=self._make_read_token()
+        ):
+            with patch(
+                "app.mcp.tools.resolved_dev_log_file_path",
+                return_value=Path("/fake/app.log"),
+            ):
+                with patch("app.mcp.tools.os.path.exists", return_value=True):
+                    with patch("app.mcp.tools._dispatch_read_log", new=mock_dispatch):
+                        result = await tools.get_logs(
+                            limit=2,
+                            since="2026-09-03T10:00:00",
+                            until="2026-09-03T17:00:00",
+                        )
+
+        assert result["data"]["content"].count("\n") <= 2
+
+
+class TestGetLogsContinuationLines:
+    """续行：多行 traceback 的无时间戳行应沿用上一行时间戳。"""
+
+    def test_filter_续行沿用上一行时间戳_窗口内应保留(self):
+        from datetime import datetime
+
+        from app.mcp.tools import _filter_by_time_range
+
+        out = _filter_by_time_range(
+            SAMPLE_LOG_SPAN, datetime(2026, 9, 3, 17, 0, 0), None
+        )
+        assert 'File "sync.py"' in out
+        assert "raise RuntimeError" in out
+
+    def test_filter_首行无时间戳_应保留而非丢弃(self):
+        """文件开头若有无时间戳行（如 banner），不应被整条丢弃。"""
+        from datetime import datetime
+
+        from app.mcp.tools import _filter_by_time_range
+
+        content = "==== 启动 banner ====\n" + SAMPLE_LOG_SPAN
+        out = _filter_by_time_range(
+            content, datetime(2026, 9, 3, 10, 0, 0), datetime(2026, 9, 3, 23, 0, 0)
+        )
+        assert "启动 banner" in out
+
+
+class TestGetLogsDisabledNotice:
+    """自解释：文件日志被禁用时应给出明确说明。"""
+
+    @staticmethod
+    def _make_read_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read"]
+        return mock_token
+
+    @pytest.mark.asyncio
+    async def test_get_logs_日志被禁用时_返回说明而非静默空(self):
+        """[dev] log_file 置空会禁用文件日志，此时应说明原因。"""
+        from app.mcp import tools
+
+        with patch(
+            "app.mcp.tools.get_access_token", return_value=self._make_read_token()
+        ):
+            with patch("app.mcp.tools.resolved_dev_log_file_path", return_value=None):
+                result = await tools.get_logs()
+
+        data = result["data"]
+        assert data["content"] == ""
+        assert "log_file" in data["notice"]
+
+
+class TestUpdateConfigMultiInstanceSegment:
+    """多实例段名须带后缀：裸父段运行时读不到，是永不生效的死段。
+
+    运行时以 ``startswith("notify-webhook-")`` 枚举实例（notification_service.py），
+    ``[notify-webhook]`` 缺尾部横杠不匹配，写入后永远不会被读取。
+    后缀内容不限（``-abc`` 会被当真实渠道使用，与页面操作等价）。
+    """
+
+    @staticmethod
+    def _make_write_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read", "write"]
+        return mock_token
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "section",
+        [
+            "notify-webhook",
+            "notify-email",
+            "notify-wecom",
+            "notify-dingtalk",
+            "notify-rule",
+            "summary",
+        ],
+    )
+    async def test_update_config_裸父段_拒绝(self, section):
+        """裸父段（无 -N 后缀）应拒绝：写入后运行时读不到。"""
+        from fastmcp.exceptions import ToolError
+
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                with pytest.raises(ToolError) as exc_info:
+                    await tools.update_config(section=section, key="url", value="x")
+
+        assert "实例" in str(exc_info.value)
+        mock_cm.set_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "section",
+        ["notify-webhook-1", "notify-webhook-abc", "notify-email-2", "summary-1"],
+    )
+    async def test_update_config_带后缀的实例段_放行(self, section):
+        """带后缀的实例段应放行（后缀不限数字，因其会被真实读取）。"""
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                result = await tools.update_config(
+                    section=section, key="url", value="x"
+                )
+
+        assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("section", ["notify-airing-today", "notify-in-app"])
+    async def test_update_config_非多实例的notify段_不受后缀限制(self, section):
+        """notify-airing-today / notify-in-app 不是多实例段，不应被误伤。"""
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                result = await tools.update_config(
+                    section=section, key="enabled", value="true"
+                )
+
+        assert result["status"] == "success"
+
+
+class TestUpdateConfigFollowupNotice:
+    """② 类键：允许修改，但返回值须提示用户后续需执行的操作。
+
+    这些键本身可逆（用户回 Web 界面即可修正或完成授权），
+    硬性禁止会削弱 MCP 的实用性；改为写入成功后主动提示。
+    """
+
+    @staticmethod
+    def _make_write_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read", "write"]
+        return mock_token
+
+    async def _call(self, section, key, value="v"):
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                result = await tools.update_config(
+                    section=section, key=key, value=value
+                )
+        return result, mock_cm
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("section", "key"), FOLLOWUP_REQUIRED_KEYS)
+    async def test_update_config_需后续操作类键_写入成功且带后续提示(
+        self, section, key
+    ):
+        """② 类键应写入成功，且 notice 说明用户需做什么。"""
+        result, mock_cm = await self._call(section, key)
+
+        assert result["status"] == "success"
+        mock_cm.set_config.assert_called_once()
+        assert result.get("notice"), f"{section}.{key} 缺少后续操作提示"
+        assert len(result["notice"]) > 5
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("section", "key"), FOLLOWUP_REQUIRED_KEYS)
+    async def test_update_config_需后续操作类键_提示逐键不同(self, section, key):
+        """提示文案应按 (段,键) 区分，避免所有键共用一句空话。"""
+        from app.mcp.tools import _MCP_WRITE_FOLLOWUP
+
+        assert (section, key) in _MCP_WRITE_FOLLOWUP
+        assert _MCP_WRITE_FOLLOWUP[(section, key)].strip()
+
+    @pytest.mark.asyncio
+    async def test_update_config_普通键_不返回提示(self):
+        """③ 类键无需提示，避免噪音。"""
+        result, _ = await self._call("sync", "match_confidence_threshold", "0.7")
+        assert result["status"] == "success"
+        assert not result.get("notice")
+
+    @pytest.mark.asyncio
+    async def test_update_config_禁改键_不返回提示只报错(self):
+        """① 类键应直接拒绝，不给「已写入」语义的提示。"""
+        from fastmcp.exceptions import ToolError
+
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                with pytest.raises(ToolError) as exc_info:
+                    await tools.update_config(section="auth", key="password", value="x")
+
+        assert "Web 界面" in str(exc_info.value)
+        mock_cm.set_config.assert_not_called()
+
+
+class TestUpdateConfigNewKeyHint:
+    """新增键提示：AI 拼错键名时静默写入会留下垃圾配置，需主动提醒复核。"""
+
+    @staticmethod
+    def _make_write_token():
+        mock_token = MagicMock()
+        mock_token.scopes = ["read", "write"]
+        return mock_token
+
+    @staticmethod
+    def _mock_cm(key_exists: bool) -> MagicMock:
+        parser = MagicMock()
+        parser.has_option.return_value = key_exists
+        cm = MagicMock()
+        cm.get_config_parser.return_value = parser
+        return cm
+
+    async def _call(self, section, key, key_exists):
+        from app.mcp import tools
+
+        mock_cm = self._mock_cm(key_exists)
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                return await tools.update_config(section=section, key=key, value="v")
+
+    @pytest.mark.asyncio
+    async def test_update_config_新增键_提示复核(self):
+        """键此前不存在时应提示「疑似拼写错误，请复核」。"""
+        result = await self._call("sync", "made_up_key", key_exists=False)
+        assert result["status"] == "success"
+        assert "此前不存在" in result["notice"]
+        assert "get_current_config" in result["notice"]
+
+    @pytest.mark.asyncio
+    async def test_update_config_已有键_不提示新增(self):
+        """键已存在时不应产生噪音提示。"""
+        result = await self._call("sync", "match_confidence_threshold", key_exists=True)
+        assert result["status"] == "success"
+        assert not result.get("notice")
+
+    @pytest.mark.asyncio
+    async def test_update_config_新增键且属需后续操作类_两段提示合并(self):
+        """②类键同时是新键时，两条提示应合并而非互相覆盖。"""
+        result = await self._call("trakt", "client_secret", key_exists=False)
+        notice = result["notice"]
+        assert "OAuth" in notice
+        assert "此前不存在" in notice
