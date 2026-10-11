@@ -13,9 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_schema import (
-    SECTIONS,
     all_env_overrides,
-    multi_instance_prefixes,
     non_account_bangumi_sections,
 )
 from .config_secret_crypto import (
@@ -36,39 +34,22 @@ _SECTION_KEY_RE = re.compile(r"^[a-z0-9_-]+$")
 
 
 def _validate_section_key(section: str, key: str) -> None:
-    """校验段名/key 合法性，防止 INI 注入与未定义字段写入。
+    """校验段名/key 格式合法性，防止 INI 注入。
 
-    1. 段名/key 必须匹配 ``^[a-z0-9_-]+$``，否则 raise ValueError。
-    2. 对已在 schema 中登记但 fields 为空的段，拒绝写任意 key（fail-closed）。
-       以下段除外：多实例段、账号段、含 sensitive_fields 或 env_overrides 的段
-       （它们有动态字段需求，如 bangumi 账号段、trakt 等）。
+    仅做**格式**校验：段名/key 必须匹配 ``^[a-z0-9_-]+$``，否则 raise ValueError。
+    拒绝换行、等号、方括号等字符，避免写出 ``[auth]`` 之类的注入段落。
+
+    这里刻意**不做**「该段是否允许写此 key」的语义判断：
+    ``ConfigManager`` 是通用数据层，语义策略（如 MCP 禁改清单）属于调用方职责。
+    早期版本曾在此处按 ``SectionMeta.fields`` 做 fail-closed，但 ``fields`` 只是
+    「需特殊渲染的项」而非完整键清单，会误拒合法键；且对 fields 为空的段
+    （bangumi / trakt / web）因各种豁免标志反而完全放行。相关语义策略见
+    ``app.mcp.tools._MCP_WRITE_DENIED``。
     """
     if not _SECTION_KEY_RE.match(section):
         raise ValueError(f"非法配置段名: {section!r}（仅允许 a-z0-9_-）")
     if not _SECTION_KEY_RE.match(key):
         raise ValueError(f"非法配置键名: {key!r}（仅允许 a-z0-9_-）")
-
-    # fields 空段 fail-closed：仅在 schema 中明确登记的段上生效
-    meta = SECTIONS.get(section)
-    if meta is None:
-        # 多实例段前缀匹配（notify-webhook-1 → notify-webhook）
-        for prefix in multi_instance_prefixes():
-            if section.startswith(f"{prefix}-"):
-                meta = SECTIONS.get(prefix)
-                break
-    if meta is not None and not meta.fields:
-        # 有动态字段需求的段除外
-        if (
-            meta.is_multi_instance
-            or meta.is_account_section
-            or meta.sensitive_fields
-            or meta.env_overrides
-        ):
-            return
-        raise ValueError(
-            f"配置段 {section!r} 在 schema 中无法定义字段（fields 为空），"
-            f"拒绝写入任意 key（fail-closed）"
-        )
 
 
 def parse_media_server_username_value(raw: str | None) -> list[str]:

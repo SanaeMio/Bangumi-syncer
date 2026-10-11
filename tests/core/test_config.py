@@ -614,8 +614,19 @@ class TestSetConfigInjectionGuard:
         cm.set_config("notify-webhook-1", "enabled", "true")
         assert cm.get("notify-webhook-1", "enabled") is True
 
-    def test_set_config_fields空段_拒绝写任意key(self, tmp_path):
-        """fields 为空的段（如 bangumi-mapping）应拒绝写任意 key（fail-closed）。"""
-        cm = _config_manager_from_ini(tmp_path, "[bangumi-mapping]\nold=1\n")
-        with pytest.raises(ValueError, match="fields 为空|无法定义"):
-            cm.set_config("bangumi-mapping", "arbitrary_key", "value")
+    def test_set_config_只校验格式_不按fields做存在性判断(self, tmp_path):
+        """set_config 仅校验段名/key 格式，不做「是否在 fields 中」的存在性判断。
+
+        背景：早期实现按 ``SectionMeta.fields`` 做 fail-closed，但该字段表只登记
+        「需特殊默认值/布尔渲染」的项（见 FieldMeta docstring），并非完整键清单。
+        若拿它当白名单会误拒 dev.debug / llm.model 等合法配置。
+        语义层面的写入策略（如 MCP 禁改清单）属调用方职责，见
+        ``app.mcp.tools._MCP_WRITE_DENIED``。
+        """
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        # fields 为空的段：写入不再被拒（语义策略已上移至 MCP 层）
+        cm.set_config("bangumi-mapping", "arbitrary_key", "value")
+        assert cm.get("bangumi-mapping", "arbitrary_key") == "value"
+        # fields 非空的段：未登记的合法键同样放行
+        cm.set_config("sync", "enable_real_action", "true")
+        assert cm.get("sync", "enable_real_action") is True
