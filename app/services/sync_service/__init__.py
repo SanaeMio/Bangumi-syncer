@@ -1345,14 +1345,28 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                         f"subject_id={bgm_se_id}"
                     )
                 else:
-                    # 获取番剧的总集数，如果已看集数等于或多于总集数，则自动归档为「看过」
-                    subject_info = bgm.get_subject(bgm_se_id)
-                    total_eps = subject_info.get("eps", 0)
+                    # 获取番剧的总集数，如果已看集数等于或多于总集数，则自动归档为「看过」。
+                    # 优先取收藏接口响应内嵌的 subject.eps：该请求本就实时发出，无额外
+                    # 开销，且不受 get_subject 实例缓存影响（连载中条目的 eps 常在开播后
+                    # 才由 wiki 补全，长期运行进程缓存的旧值 eps=0 会永久跳过归档）。
+                    # 内嵌字段缺失时回退 get_subject（含 Archive 补全）。
+                    coll_subject = coll.get("subject")
+                    total_eps = 0
+                    if isinstance(coll_subject, dict):
+                        total_eps = coll_subject.get("eps", 0) or 0
+                    if total_eps <= 0:
+                        subject_info = bgm.get_subject(bgm_se_id)
+                        total_eps = subject_info.get("eps", 0) or 0
                     watched_eps = coll.get("ep_status", 0) or 0
                     logger.debug(
                         f"获取到Subject: {bgm_se_id}, 总ep: {total_eps}, 已观看: {watched_eps}, coll: {coll}"
                     )
-                    if total_eps > 0:
+                    if total_eps <= 0:
+                        logger.debug(
+                            f"条目总集数未知（eps={total_eps}），跳过自动归档: "
+                            f"subject_id={bgm_se_id}"
+                        )
+                    else:
                         if watched_eps >= total_eps:
                             bgm.change_collection_state(
                                 subject_id=str(bgm_se_id),
