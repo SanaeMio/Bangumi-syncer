@@ -146,3 +146,70 @@ class TestTitleTemplateMechanism:
     def test_unknown_type_falls_back(self, svc, webhook):
         r = svc._render_for_channel(webhook, "no_such_type", {"title": "T"})
         assert r["payload"]["title"] == "T"
+
+
+class TestDocsExampleMatchesRealOutput:
+    """文档里的「实际发出去的内容」示例必须与真实渲染一致。
+
+    背景（review 反馈）：docs/config/notification-configuration.md 用追番总结
+    演示 webhook 的最终形态。该示例中的 ``"episode": "S00E00"`` 在无集数类型
+    改为空串后**没有同步更新**，读者会以为追番总结仍会带 S00E00。
+
+    这类「文档示例与代码脱节」不会被任何现有测试发现（测试只断言代码行为，
+    不读文档）。此处直接把文档里的 JSON 块解析出来与真实渲染结果比对，
+    让示例一旦漂移就失败。
+    """
+
+    DOC_PATH = "docs/config/notification-configuration.md"
+
+    @staticmethod
+    def _summary_data() -> dict:
+        """追番总结（无集数信息）的渲染数据，字段取自 _WATCHING_SUMMARY_META"""
+        return {
+            "payload_title": "📊 追番总结 - 每日总结",
+            "notification_type": "watching_summary_daily",
+            "timestamp": "2026-08-15 09:00:00",
+            "user_name": "alice",
+            "title": "",
+            "source": "summary",
+            "error_message": "",
+            "job_name": "每日总结",
+            "summary_text": "本周共观看 3 部番剧，合计 12 集……",
+            "date_range": "2026-08-09 ~ 2026-08-15",
+            "record_count": 12,
+        }
+
+    def _doc_example(self) -> dict:
+        """从文档中抽出「追番总结」那段 JSON 示例"""
+        import json
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        text = (root / self.DOC_PATH).read_text(encoding="utf-8")
+        # 定位演示块：含 watching_summary_daily 的那个 json 代码块
+        for block in re.findall(r"```json\n(.*?)```", text, re.DOTALL):
+            if "watching_summary_daily" in block:
+                return json.loads(block)
+        raise AssertionError(f"{self.DOC_PATH} 中找不到追番总结的 JSON 示例")
+
+    def test_doc_example_episode_is_empty(self):
+        """示例里的 episode 必须是空串（无集数信息），不能是 S00E00"""
+        assert self._doc_example()["episode"] == ""
+
+    def test_doc_example_matches_real_render(self):
+        """文档示例的每个字段都要与真实渲染结果一致"""
+        from app.utils.notifier.template_manager import template_manager
+
+        expected = template_manager.render_webhook_payload(self._summary_data())
+        doc = self._doc_example()
+
+        assert doc == expected, (
+            "文档示例与真实渲染不一致（文档可能已过期）:\n"
+            f"  仅文档有: { {k: v for k, v in doc.items() if expected.get(k) != v} }\n"
+            f"  仅代码有: { {k: v for k, v in expected.items() if doc.get(k) != v} }"
+        )
+
+    def test_doc_example_has_no_extra_key(self):
+        """示例必须体现哨兵被摘除（顶层没有 extra 键）"""
+        assert "extra" not in self._doc_example()
