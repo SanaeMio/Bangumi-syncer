@@ -220,7 +220,7 @@ JWT claims：
 | `key` | string | 配置键名 |
 | `value` | any | 配置值 |
 
-段名下划线自动归一化为连字符（`notify_webhook` → `notify-webhook`）；多实例段须带实例后缀（`notify-webhook-1`，裸父段运行时读不到故拒绝）；键名须用下划线（连字符仅用于段名）。
+段名下划线自动归一化为连字符（`notify_webhook` → `notify-webhook`）；多实例段须带实例后缀且后缀须符合该前缀在 Web 端的生成方式（`notify-*` 为自增数字 ID，如 `notify-webhook-1`；`summary-*` 为用户自定义任务名，如 `summary-weekly`），裸父段因运行时读不到故拒绝；键名须用下划线（连字符仅用于段名）。
 
 写入策略（判据：改完之后用户还能不能自己救回来）：
 
