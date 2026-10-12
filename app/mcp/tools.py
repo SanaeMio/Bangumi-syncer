@@ -208,8 +208,60 @@ def _valid_section_names() -> set[str]:
     return names
 
 
+# 多实例段后缀规则：按前缀区分，对应各自在 Web 端的生成方式
+# - notify-*：Web 用自增整数 ID（notification.py:208 `_section_name(item_id: int)`）
+# - summary：Web 用用户自定义任务名（config.py:774 `f"summary-{name}"`，
+#   唯一约束是「不含逗号、不重名」，见 api/summary_jobs.py:_validate_job_name）
+# 故前者只接受数字后缀，后者不限——统一限制为数字会误伤用户在页面上创建的任务。
+_DIGIT_SUFFIX_PREFIXES: frozenset[str] = frozenset(
+    {
+        "notify-webhook",
+        "notify-email",
+        "notify-wecom",
+        "notify-dingtalk",
+        "notify-rule",
+    }
+)
+
+# 仅 ASCII 数字：str.isdigit() 对全角数字（如 "１"）也返回 True，不可用
+_ASCII_DIGITS_RE = re.compile(r"^[0-9]+$")
+
+
+def _multi_instance_section_error(normalized: str) -> str | None:
+    """多实例段名不合规时返回可操作的原因；非多实例段或合规时返回 None。
+
+    单独成函数是为了让错误信息能区分两种情况——裸父段（缺后缀）与
+    后缀不符规则——而不是与「完全未知的段」共用同一句笼统提示。
+    """
+    for prefix in multi_instance_prefixes():
+        if normalized == prefix:
+            return (
+                f"{normalized} 是多实例段前缀，须指定实例后缀"
+                f"（如 {prefix}-1），否则运行时不会读取该段"
+            )
+        if not normalized.startswith(f"{prefix}-"):
+            continue
+        suffix = normalized[len(prefix) + 1 :]
+        if not suffix:
+            return (
+                f"{normalized} 是多实例段前缀，须指定实例后缀"
+                f"（如 {prefix}-1），否则运行时不会读取该段"
+            )
+        if prefix in _DIGIT_SUFFIX_PREFIXES and not _ASCII_DIGITS_RE.match(suffix):
+            return (
+                f"配置段 {normalized} 的后缀不合法：{prefix}-* 的实例须为数字"
+                f"（如 {prefix}-1），与 Web 页面创建时生成的 ID 一致"
+            )
+        return None
+    return None
+
+
 def _is_valid_section(normalized: str) -> bool:
     """判断归一化后的段名是否合法（支持多实例段前缀匹配）。
+
+    多实例段须带后缀，且后缀须符合该前缀在 Web 端的生成方式：
+    ``notify-*`` 只接受数字（自增 ID），``summary`` 接受任意合规名
+    （用户自定义任务名）。
 
     注意：多实例前缀本身（裸父段 ``notify-webhook``）**不**视为合法段。
     运行时以 ``startswith("notify-webhook-")`` 枚举实例
@@ -220,8 +272,14 @@ def _is_valid_section(normalized: str) -> bool:
         # 命中多实例前缀但无后缀 → 死段，拒绝
         return normalized not in multi_instance_prefixes()
     for prefix in multi_instance_prefixes():
-        if normalized.startswith(f"{prefix}-"):
-            return True
+        if not normalized.startswith(f"{prefix}-"):
+            continue
+        suffix = normalized[len(prefix) + 1 :]
+        if not suffix:
+            return False
+        if prefix in _DIGIT_SUFFIX_PREFIXES:
+            return bool(_ASCII_DIGITS_RE.match(suffix))
+        return True
     return False
 
 
@@ -416,12 +474,11 @@ async def update_config(
     # 归一化段名：下划线 → 连字符
     normalized = section.replace("_", "-")
 
-    # 多实例裸父段单独提示：它是 schema 登记的前缀，但缺少实例后缀
-    if normalized in multi_instance_prefixes():
-        raise ToolError(
-            f"{normalized} 是多实例段前缀，须指定实例后缀（如 {normalized}-1），"
-            f"否则运行时不会读取该段"
-        )
+    # 多实例段名问题单独提示：区分「裸父段」与「后缀不符规则」，
+    # 避免与「完全未知的段」共用同一句笼统错误
+    multi_error = _multi_instance_section_error(normalized)
+    if multi_error:
+        raise ToolError(multi_error)
 
     # 校验段名合法性
     if not _is_valid_section(normalized):
