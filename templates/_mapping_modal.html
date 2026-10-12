@@ -55,6 +55,87 @@
                                    placeholder="留空表示所有季度共用">
                             <div class="form-text">填写后仅在该季度匹配时命中，适合同一标题不同季度对应不同条目</div>
                         </div>
+                        <!-- 集数分段（高级）：把媒体库与 Bangumi 两套季/集划分拉平 -->
+                        <div class="mb-3 border rounded p-3 bg-body-tertiary">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0">
+                                    <i class="bi bi-shuffle me-1"></i>集数分段
+                                    <small class="text-muted fw-normal">(高级，可选)</small>
+                                </label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           role="switch"
+                                           id="segments-enabled"
+                                           onchange="MappingModal.toggleSegments(this.checked)">
+                                    <label class="form-check-label small" for="segments-enabled">启用</label>
+                                </div>
+                            </div>
+                            <div class="form-text mb-2">
+                                当媒体库与 Bangumi 的季/集划分不一致时使用。例如媒体库把一部番分成 3 季、
+                                Bangumi 分成 2 季，可用分段把两套编号对齐。
+                            </div>
+                            <div id="segments-body" class="is-hidden">
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1">这一季对应哪个条目？</label>
+                                    <select class="form-select form-select-sm"
+                                            id="segment-mode"
+                                            onchange="MappingModal.onSegmentModeChange()">
+                                        <option value="whole">整季都对应另一个条目</option>
+                                        <option value="from">从某一集开始对应另一个条目</option>
+                                        <option value="range">某几集对应另一个条目</option>
+                                    </select>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-6" id="seg-from-wrap">
+                                        <label class="form-label small mb-1">从第几集开始</label>
+                                        <input type="number"
+                                               class="form-control form-control-sm"
+                                               id="seg-from"
+                                               min="1"
+                                               value="1"
+                                               oninput="MappingModal.updateSegmentPreview()">
+                                    </div>
+                                    <div class="col-6 is-hidden" id="seg-to-wrap">
+                                        <label class="form-label small mb-1">到第几集结束</label>
+                                        <input type="number"
+                                               class="form-control form-control-sm"
+                                               id="seg-to"
+                                               min="1"
+                                               placeholder="留空表示到最后一集"
+                                               oninput="MappingModal.updateSegmentPreview()">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small mb-1">目标 Bangumi 条目 ID</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="text"
+                                                   class="form-control"
+                                                   id="seg-subject-id"
+                                                   placeholder="如：639938"
+                                                   oninput="MappingModal.updateSegmentPreview()">
+                                            <button class="btn btn-outline-secondary"
+                                                    type="button"
+                                                    onclick="MappingModal.prefillOffset()">
+                                                <i class="bi bi-magic me-1"></i>自动推算
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small mb-1">这一段第 1 集，对应该条目的第几集？</label>
+                                        <input type="number"
+                                               class="form-control form-control-sm"
+                                               id="seg-offset"
+                                               value="1"
+                                               oninput="MappingModal.updateSegmentPreview()">
+                                        <div class="form-text small">
+                                            填的是<b>该条目内的第几集</b>（不是章节编号），通常不用改。点「自动推算」会按该条目章节填好。
+                                            允许填 0 或负数（媒体库集号比目标集号大时用）。
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="segment-preview" class="small"></div>
+                            </div>
+                        </div>
                     </div>
                     <!-- 正则规则字段 -->
                     <div id="regex-fields" class="is-hidden">
@@ -76,6 +157,17 @@
                                    class="form-control"
                                    id="rule-desc"
                                    placeholder="规则描述，如：鬼灭之刃系列">
+                        </div>
+                        <div class="mb-3">
+                            <label for="rule-season" class="form-label">
+                                限定季度 <small class="text-muted fw-normal">(可选)</small>
+                            </label>
+                            <input type="number"
+                                   class="form-control"
+                                   id="rule-season"
+                                   min="1"
+                                   placeholder="留空表示对所有季生效">
+                            <div class="form-text">同名番剧有多季、且各季是不同条目时填写，规则只在指定季生效。</div>
                         </div>
                     </div>
                     <!-- 公共字段：Bangumi ID -->

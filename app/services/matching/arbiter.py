@@ -70,6 +70,19 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     SOURCE_ARCHIVE: 1.0,
     SOURCE_API_SEARCH: 1.0,
 }
+
+#: 权重**可能生效**的来源 —— 只有这些会出现在裁决层的候选里。
+#:
+#: 裁决只在 APISearchStep 内运行，其候选由「本地归档」与「在线搜索」两条路径
+#: 构造（api_search_main.py 中 `source=match_stage`，match_stage 只会是
+#: archive / api_search）。CustomMappingStep 与 BangumiDataStep 命中时都是
+#: ``is_terminal=True``，管线在它们之后就 break 了，候选到不了裁决层。
+#:
+#: 因此 DEFAULT_WEIGHTS 仍保留全部四类（MatchPolicy 可被直接构造，测试与
+#: 未来扩展需要），但**配置页只暴露本集合内的权重**，见 config_schema。
+APPLICABLE_WEIGHT_SOURCES: frozenset[str] = frozenset(
+    {SOURCE_ARCHIVE, SOURCE_API_SEARCH}
+)
 DEFAULT_MIN_SCORE = 0.85
 DEFAULT_MIN_MARGIN = 0.10
 DEFAULT_AMBIGUOUS_MARGIN = 0.05

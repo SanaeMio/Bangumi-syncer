@@ -359,9 +359,16 @@ function displayMappings() {
     Object.entries(currentMappings).forEach(([title, value]) => {
         let id = '';
         let season = '';
+        let segBadge = '';
         if (typeof value === 'object' && value !== null) {
             id = value.subject_id || '';
             season = value.season || '';
+            // 集数分段（segments）不由本页编辑，仅作提示，避免用户以为
+            // 这只是条普通映射而误删或不解其行为
+            const segCount = Array.isArray(value.segments) ? value.segments.length : 0;
+            if (segCount > 0) {
+                segBadge = `<span class="badge bg-warning text-dark ms-1" title="该条目配置了集数分段映射，需通过导入/导出或直接编辑配置文件维护">集数×${segCount}</span>`;
+            }
         } else {
             id = value;
         }
@@ -370,7 +377,7 @@ function displayMappings() {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td><span class="badge bg-primary">精确</span></td>
-            <td>${title}</td>
+            <td>${title}${segBadge}</td>
             <td>${id}</td>
             <td>${seasonText}</td>
             <td>

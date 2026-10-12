@@ -666,7 +666,21 @@ class EpisodesMixin:
         target_ep: int,
         is_season_subject_id: bool = False,
         release_date: str | None = None,
+        allow_chain_fallback: bool = True,
     ) -> tuple[int | None, int | None]:
+        """解析条目内目标集对应的 episode_id。
+
+        :param allow_chain_fallback: 为 False 时**禁止**在目标条目内找不到该集
+            后退回续集链改选其它条目，而是直接返回 ``(None, None)``。
+
+            这一开关专供「用户显式绑定条目」的场景（自定义映射的季度感知格式
+            与集数分段）：用户已经指明用哪个条目，程序不应再顺着续集链猜。
+            此前的实现里，``is_season_subject_id=True`` 只是把「条目内定位」
+            当作**快路径**，失败后照样回退到 ``_find_season_one_episode`` /
+            ``_try_resolve_sequel_by_airdate`` / ``_find_multi_season_episode``，
+            三者都会返回**另一个 subject** —— 于是「显式指定了条目，集数却
+            落到别的条目上」，正是 issue #267 的表现。
+        """
         max_season, max_episode = self._get_episode_sync_limits()
 
         # 数值上限只作为**兜底护栏**（防脏值打爆链路），不再作为主要判据：
@@ -711,6 +725,16 @@ class EpisodesMixin:
             logger.debug(
                 f"在指定季度ID中未找到匹配的集数: {subject_id}, 目标集数: {target_ep}"
             )
+
+            if not allow_chain_fallback:
+                # 显式绑定：用户指定了这个条目，就不要再用续集链猜别的条目。
+                # 返回空让上层报错，而不是「悄悄标记到另一部番的同一集号」。
+                logger.info(
+                    f"显式绑定条目中不存在目标集，按配置不改选其它条目: "
+                    f"subject_id={subject_id}, target_ep={target_ep}"
+                )
+                return None, None
+
             logger.debug("回退到传统方式查找集数")
 
         if target_season == 1:

@@ -29,20 +29,56 @@ class CrossSeasonStep(ExecutionStepBase):
     stage = "cross_season"
 
     def execute(self, ctx: ExecutionContext, prev: dict | None = None) -> StepOutcome:
+        target_ep = (
+            ctx.mapping_target_episode
+            if ctx.mapping_target_episode is not None
+            else ctx.item.episode
+        )
         inputs = {
             "subject_id": str(ctx.subject_id),
-            "target_episode": ctx.item.episode,
+            "target_episode": target_ep,
         }
 
         # gate：上游已有 ep_id（本季直接命中）则跳过
         if prev and prev.get("episode_id"):
             return skipped_outcome(EPISODE_ALREADY_RESOLVED)
 
+        # gate：用户显式绑定条目时**禁止跨季改选**。
+        # 自定义映射（季度感知格式 / 带 segments）是用户的明确意图；此时若按
+        # 前传/续集链改选到别的条目，等于用程序猜测否定用户配置，正是
+        # issue #267 的错误来源（显式指定了条目，集数却落在别的条目上）。
+        # 未命中映射的请求不受影响，保持原有兜底行为。
+        if ctx.mapping_is_explicit:
+            logger.info(
+                f"显式映射条目未找到目标集，按配置不回退跨季改选: "
+                f"subject_id={ctx.subject_id}, season={ctx.item.season}, "
+                f"episode={target_ep}"
+            )
+            return StepOutcome(
+                status="miss",
+                reason=(
+                    f"已按自定义映射绑定条目 {ctx.subject_id}，但其中不存在"
+                    f"第 {target_ep} 集；因是显式映射，不再跨季改选其它条目"
+                ),
+                inputs=inputs,
+                outputs={
+                    "subject_id": "",
+                    "episode_id": "",
+                    "changed": False,
+                    "error": (
+                        f"自定义映射指定的条目 {ctx.subject_id} 中未找到第 "
+                        f"{target_ep} 集，请检查映射配置的集数/偏移是否正确"
+                    ),
+                    "mapping_explicit_no_reselect": True,
+                },
+                is_terminal=True,
+            )
+
         target_season = ctx.item.season or 1
         try:
             chain_pick = ctx.bgm.find_episode_across_seasons(
                 ctx.subject_id,
-                ctx.item.episode,
+                target_ep,
                 target_season=target_season,
             )
         except Exception:
@@ -51,14 +87,14 @@ class CrossSeasonStep(ExecutionStepBase):
 
         if not chain_pick:
             logger.error(
-                f"bgm: {ctx.subject_id=} {ctx.item.season=} {ctx.item.episode=}, "
+                f"bgm: {ctx.subject_id=} {ctx.item.season=} {target_ep=}, "
                 "不存在或集数过多，跳过"
             )
             # 集数语义随 target_season 变化：大于 1 时是季内集编号，否则是全局 sort
             ep_desc = (
-                f"第 {target_season} 季第 {ctx.item.episode} 集"
+                f"第 {target_season} 季第 {target_ep} 集"
                 if target_season > 1
-                else f"sort={ctx.item.episode}"
+                else f"sort={target_ep}"
             )
             return StepOutcome(
                 status="miss",
@@ -83,7 +119,7 @@ class CrossSeasonStep(ExecutionStepBase):
             f"通过关联季条目链找到目标集({path_label}): "
             f"原 subject_id={prev_subject_id}, "
             f"改选 subject_id={chain_subject_id}, ep_id={chain_ep_id}, "
-            f"目标 episode={ctx.item.episode}"
+            f"目标 episode={target_ep}"
         )
 
         # 改选结果经结果链 merge 覆盖上游产物（同键覆盖），final_* 覆写由
@@ -94,7 +130,7 @@ class CrossSeasonStep(ExecutionStepBase):
             reason=(
                 f"跨季链查找命中（{path_label}）：原 subject_id={prev_subject_id} → "
                 f"chain_subject_id={chain_subject_id}, "
-                f"ep_id={chain_ep_id} (目标 episode={ctx.item.episode})"
+                f"ep_id={chain_ep_id} (目标 episode={target_ep})"
             ),
             inputs=inputs,
             outputs={

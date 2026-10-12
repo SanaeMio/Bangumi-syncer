@@ -581,6 +581,83 @@ def test_cross_season_step_skipped_when_episode_resolved():
     bgm.find_episode_across_seasons.assert_not_called()
 
 
+def _cross_season_ctx(mapping_is_explicit, mapping_target_episode=None, episode=3):
+    from app.services.sync_service.context import ExecutionContext
+    from app.services.sync_service.match_trace import MatchTrace
+
+    bgm = MagicMock()
+    bgm.find_episode_across_seasons.return_value = (999, "9981")
+    item = CustomItem(
+        user_name="u",
+        title="JOJO",
+        season=6,
+        episode=episode,
+        source="emby",
+        media_type="tv",
+        release_date="",
+    )
+    ctx = ExecutionContext(
+        item=item,
+        bgm=bgm,
+        trace=MatchTrace(),
+        service=MagicMock(),
+        actual_source="emby",
+        subject_id="639938",
+        is_season_matched_id=True,
+        mapping_is_explicit=mapping_is_explicit,
+        mapping_target_episode=mapping_target_episode,
+    )
+    return ctx, bgm
+
+
+def test_cross_season_no_reselect_when_mapping_explicit():
+    """显式绑定的映射不得被跨季改选（issue #267 的核心修正）
+
+    用户已用映射明确指定了条目，若集数未命中就沿续集链改选到别的条目，
+    等于用程序猜测否定用户配置。
+    """
+    from app.services.sync_service.steps.cross_season import CrossSeasonStep
+
+    ctx, bgm = _cross_season_ctx(mapping_is_explicit=True)
+
+    outcome = CrossSeasonStep().execute(ctx, None)
+
+    assert outcome.status == "miss"
+    assert outcome.is_terminal is True
+    assert outcome.outputs["mapping_explicit_no_reselect"] is True
+    assert "显式映射" in outcome.reason
+    # 关键：根本没有去查关联季条目
+    bgm.find_episode_across_seasons.assert_not_called()
+
+
+def test_cross_season_still_reselects_for_implicit_mapping():
+    """未命中映射的普通请求保持原兜底行为（不得因本次修正而回归）"""
+    from app.services.sync_service.steps.cross_season import CrossSeasonStep
+
+    ctx, bgm = _cross_season_ctx(mapping_is_explicit=False)
+
+    outcome = CrossSeasonStep().execute(ctx, None)
+
+    assert outcome.status == "hit"
+    assert outcome.outputs["subject_id"] == "999"
+    assert outcome.outputs["episode_id"] == "9981"
+    bgm.find_episode_across_seasons.assert_called_once()
+
+
+def test_cross_season_uses_mapping_target_episode():
+    """跨季查找应使用分段映射换算后的目标集号，而非媒体集号"""
+    from app.services.sync_service.steps.cross_season import CrossSeasonStep
+
+    ctx, bgm = _cross_season_ctx(
+        mapping_is_explicit=False, mapping_target_episode=2, episode=3
+    )
+
+    CrossSeasonStep().execute(ctx, None)
+
+    # 传给跨季查找的是 target_episode=2，不是 item.episode=3
+    assert bgm.find_episode_across_seasons.call_args[0][1] == 2
+
+
 class TestTerminalResultStepHelper:
     """补终态 result step 的公共实现（D2 提取，消除两处手工构造重复）
 

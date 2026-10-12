@@ -20,6 +20,34 @@ from app.services.sync_service import SyncService
 from app.utils.bangumi_api._archive_shortcut import ShortcutResult
 from app.utils.bangumi_constants import SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL
 
+#: 校验逻辑已抽到共享模块 app.utils.bangumi_api.subject_validation，
+#: 其中的账号/配置/BangumiApi 依赖通过本模块的 _get_* 访问器延迟获取，
+#: 因此打桩要指向该模块（而不是 sync_service 的命名空间）。
+_VALIDATION_MOD = "app.utils.bangumi_api.subject_validation"
+
+
+def _mock_accounts(cfg):
+    """构造 _get_accounts() 的返回值（模拟 accounts 模块）"""
+    return MagicMock(
+        get_primary_bangumi_config=MagicMock(return_value=cfg),
+        list_bangumi_configs=MagicMock(return_value={"bangumi": cfg}),
+    )
+
+
+def _mock_config_manager(dev):
+    """构造 _get_config_manager() 的返回值（模拟 config_manager）"""
+    return MagicMock(get_dev_http_snapshot=MagicMock(return_value=dev))
+
+
+def _mock_api_class():
+    """构造 _get_api_class() 的返回值（模拟 BangumiApi 类本身）
+
+    注意：访问器返回的是**类**，被测代码会再调用它构造实例，
+    因此必须用 ``return_value=cls`` 打桩；直接 ``as MockApi`` 会让
+    被测代码调用 mock 自身，拿不到预设的实例行为。
+    """
+    return MagicMock()
+
 
 class TestValidateSubjectId:
     """_validate_subject_id 校验逻辑"""
@@ -85,14 +113,17 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.core.accounts.get_primary_bangumi_config",
-                return_value=cfg,
+                f"{_VALIDATION_MOD}._get_accounts",
+                return_value=_mock_accounts(cfg),
             ),
             patch(
-                "app.services.sync_service.config_manager.get_dev_http_snapshot",
-                return_value=dev,
+                f"{_VALIDATION_MOD}._get_config_manager",
+                return_value=_mock_config_manager(dev),
             ),
-            patch("app.services.sync_service.BangumiApi") as MockApi,
+            patch(
+                f"{_VALIDATION_MOD}._get_api_class",
+                return_value=(MockApi := _mock_api_class()),
+            ),
         ):
             mock_shortcut.enabled = True
             mock_shortcut.try_get_subject.return_value = ShortcutResult(
@@ -122,14 +153,17 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.core.accounts.get_primary_bangumi_config",
-                return_value=cfg,
+                f"{_VALIDATION_MOD}._get_accounts",
+                return_value=_mock_accounts(cfg),
             ),
             patch(
-                "app.services.sync_service.config_manager.get_dev_http_snapshot",
-                return_value=dev,
+                f"{_VALIDATION_MOD}._get_config_manager",
+                return_value=_mock_config_manager(dev),
             ),
-            patch("app.services.sync_service.BangumiApi") as MockApi,
+            patch(
+                f"{_VALIDATION_MOD}._get_api_class",
+                return_value=(MockApi := _mock_api_class()),
+            ),
         ):
             mock_shortcut.enabled = False
             instance = MockApi.return_value
@@ -153,14 +187,17 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.core.accounts.get_primary_bangumi_config",
-                return_value=cfg,
+                f"{_VALIDATION_MOD}._get_accounts",
+                return_value=_mock_accounts(cfg),
             ),
             patch(
-                "app.services.sync_service.config_manager.get_dev_http_snapshot",
-                return_value=dev,
+                f"{_VALIDATION_MOD}._get_config_manager",
+                return_value=_mock_config_manager(dev),
             ),
-            patch("app.services.sync_service.BangumiApi") as MockApi,
+            patch(
+                f"{_VALIDATION_MOD}._get_api_class",
+                return_value=(MockApi := _mock_api_class()),
+            ),
         ):
             mock_shortcut.enabled = False
             instance = MockApi.return_value
@@ -175,12 +212,11 @@ class TestValidateSubjectId:
                 "app.utils.bangumi_api._archive_shortcut.archive_shortcut"
             ) as mock_shortcut,
             patch(
-                "app.core.accounts.get_primary_bangumi_config",
-                return_value=None,
-            ),
-            patch(
-                "app.core.accounts.list_bangumi_configs",
-                return_value={},
+                f"{_VALIDATION_MOD}._get_accounts",
+                return_value=MagicMock(
+                    get_primary_bangumi_config=MagicMock(return_value=None),
+                    list_bangumi_configs=MagicMock(return_value={}),
+                ),
             ),
         ):
             mock_shortcut.enabled = False

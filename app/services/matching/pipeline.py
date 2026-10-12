@@ -93,4 +93,6 @@ class MatchPipeline:
             trace=ctx.trace,
             failure_detail=ctx.failure_detail,
             is_ambiguous=ctx.is_ambiguous,
+            mapping_is_explicit=ctx.mapping_is_explicit,
+            mapping_target_episode=ctx.mapping_target_episode,
         )

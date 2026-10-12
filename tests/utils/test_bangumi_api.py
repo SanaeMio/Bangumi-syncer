@@ -977,6 +977,40 @@ class TestMatchTargetEpRows:
         rows = api._match_target_ep_rows([{"sort": 1, "id": 1}], 99)
         assert rows == []
 
+    def test_ep_priority_for_non_one_based_sort(self):
+        """sort 不从 1 开始时按 ep（条目内相对集号）匹配，而非 sort
+
+        review 阻断级 2 的核心场景：目标条目 sort 13–36（24 集）。
+        ``target_ep=1`` 的语义是「该条目第 1 集」，必须命中 sort=13，
+        而不是「sort 恰好等于 1」（不存在）。
+        """
+        api = BangumiApi()
+        # sort 13..36，全部是正片（type=0）
+        ep_info = [{"sort": s, "type": 0, "id": s} for s in range(13, 37)]
+
+        rows = api._match_target_ep_rows(ep_info, 1)
+        assert len(rows) == 1
+        assert rows[0]["sort"] == 13, "第 1 集应对应首个正片章节（sort 13）"
+
+        rows = api._match_target_ep_rows(ep_info, 2)
+        assert rows[0]["sort"] == 14
+
+        # 若误把 sort 当 ep（旧「自动推算」填 offset=13 的后果），
+        # target_ep=13 会命中 sort=25 —— 错位 12 集
+        rows = api._match_target_ep_rows(ep_info, 13)
+        assert rows[0]["sort"] == 25
+
+    def test_non_normal_episodes_excluded_from_ep_numbering(self):
+        """ep 编号只数正片：SP/OP 不参与，故首个正片决定基准"""
+        api = BangumiApi()
+        ep_info = [
+            {"sort": 1, "type": 1, "id": 100},  # SP
+            {"sort": 13, "type": 0, "id": 13},  # 首个正片
+            {"sort": 14, "type": 0, "id": 14},
+        ]
+        rows = api._match_target_ep_rows(ep_info, 1)
+        assert rows[0]["id"] == 13
+
 
 class TestGetMovieMainEpisodeId:
     """测试 get_movie_main_episode_id"""

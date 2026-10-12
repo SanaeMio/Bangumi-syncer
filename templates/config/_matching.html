@@ -98,28 +98,11 @@
                             <i class="bi bi-diagram-3 me-1"></i>各来源权重：同一条目被多个来源命中时取
                             <code>max(权重 × 分数)</code>，让最可信的来源主导判定。调低某个来源等于降低它的发言权。
                         </div>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="matching-weight-custom-mapping" class="form-label">自定义映射</label>
-                        <input type="number"
-                               class="form-control"
-                               data-type="float"
-                               id="matching-weight-custom-mapping"
-                               name="matching.weight_custom_mapping"
-                               min="0"
-                               step="0.1"
-                               placeholder="1.0">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="matching-weight-bangumi-data" class="form-label">bangumi-data</label>
-                        <input type="number"
-                               class="form-control"
-                               data-type="float"
-                               id="matching-weight-bangumi-data"
-                               name="matching.weight_bangumi_data"
-                               min="0"
-                               step="0.1"
-                               placeholder="1.0">
+                        <div class="form-text mb-2">
+                            这里只列「本地归档」与「在线搜索」：只有这两个来源会进入上面的分数比较。
+                            自定义映射与本地资料库（bangumi-data）命中时会直接采用并结束匹配流程，
+                            设权重不会有任何效果，故不提供（映射本就该无条件优先）。
+                        </div>
                     </div>
                     <div class="col-md-3">
                         <label for="matching-weight-archive" class="form-label">本地归档</label>

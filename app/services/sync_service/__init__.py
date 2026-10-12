@@ -457,71 +457,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     def _validate_subject_id(self, subject_id: str) -> tuple[bool, str]:
         """校验 subject_id 是否有效：存在且类型为动画/三次元
 
-        优先走 archive 短路（本地查询，<1ms），未命中降级到 Bangumi API。
-        返回 (True, "") 或 (False, reason)。
-
-        校验失败场景：
-        - subject_id 非数字
-        - 条目不存在（API 404 或返回空）
-        - 类型非动画/三次元（如书籍/音乐/游戏）
-        - archive 与 API 均不可用（网络异常时降级放行，避免阻塞用户）
+        委托 ``app.utils.bangumi_api.subject_validation.validate_subject_id``
+        执行，使「确认候选」与「映射页手动写入」两条路径共用同一实现，
+        不再出现一处校验、另一处不校验的分叉。
         """
-        try:
-            sid = int(subject_id)
-        except (TypeError, ValueError):
-            return False, "ID 必须为纯数字"
+        from ...utils.bangumi_api.subject_validation import validate_subject_id
 
-        # 优先走 archive 短路（无网络开销）
-        from ...utils.bangumi_api._archive_shortcut import archive_shortcut
-
-        if archive_shortcut.enabled:
-            result = archive_shortcut.try_get_subject(sid)
-            if result.hit and isinstance(result.data, dict):
-                stype = result.data.get("type")
-                if stype in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
-                    return True, ""
-                return False, f"条目类型为 {stype}，仅支持动画/三次元"
-            # archive 未命中或不完整：降级到 API
-
-        # 降级到 API：DB 为唯一真相源，取首选账号；无首选则取首个可用账号
-        from app.core import accounts as _accounts
-
-        cfg = _accounts.get_primary_bangumi_config() or None
-        if cfg is None:
-            configs = _accounts.list_bangumi_configs()
-            if not configs:
-                # 无可用配置时降级放行（不阻塞用户，映射写入后再由同步流程校验）
-                logger.warning(
-                    f"subject_id={sid} 校验跳过：无可用 Bangumi 配置，降级放行"
-                )
-                return True, ""
-            cfg = next(iter(configs.values()))
-
-        dev_snapshot = config_manager.get_dev_http_snapshot()
-        api = BangumiApi(
-            username=cfg["username"],
-            access_token=cfg["access_token"],
-            private=cfg.get("private", False),
-            http_proxy=dev_snapshot["script_proxy"],
-            ssl_verify=dev_snapshot["ssl_verify"],
-            bgm_api_proxy=dev_snapshot["bgm_api_proxy"],
-            bgm_next_proxy=dev_snapshot["bgm_next_proxy"],
-            ech_mode=dev_snapshot["ech_mode"],
-        )
-        try:
-            data = api.get_subject(sid)
-        except Exception as e:
-            logger.warning(f"subject_id={sid} API 校验异常：{e}，降级放行")
-            return True, ""
-
-        if not isinstance(data, dict) or not data:
-            return False, "条目不存在或 API 返回空"
-
-        stype = data.get("type")
-        if stype not in (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL):
-            return False, f"条目类型为 {stype}，仅支持动画/三次元"
-
-        return True, ""
+        return validate_subject_id(subject_id)
 
     def reject_pending_candidate(self, candidate_id: int) -> tuple[bool, str]:
         """拒绝待确认候选，并把候选的**标题**记入屏蔽关键词。
@@ -846,7 +788,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             )[0]:
                 return SyncResponse(status="error", message=perm_ok[1])
 
-            if self._is_title_blocked(item.title, item.ori_title, item.season):
+            if self._is_title_blocked(
+                item.title, item.ori_title, item.season, item.episode
+            ):
                 return SyncResponse(
                     status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
                 )
@@ -1060,7 +1004,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             return SyncResponse(status="error", message=perm_ok[1])
 
         # 检查是否包含屏蔽关键词
-        if self._is_title_blocked(item.title, item.ori_title, item.season):
+        if self._is_title_blocked(
+            item.title, item.ori_title, item.season, item.episode
+        ):
             return SyncResponse(
                 status="ignored", message="番剧标题包含屏蔽关键词，跳过同步"
             )
@@ -1162,23 +1108,47 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         item: CustomItem,
         subject_id: str,
         is_season_matched_id: bool,
+        target_episode: int | None = None,
+        mapping_is_explicit: bool = False,
     ) -> tuple[str, str]:
         """根据 media_type 解析 Bangumi 季度与集数 ID。
 
         返回 (bgm_se_id, bgm_ep_id)；可能抛出 ValueError（认证错误由调用方处理）。
+
+        :param target_episode: 集数分段映射算出的**目标条目内集号**。非 None 时
+            直接采用它（已由 offset/episodes_of 换算完毕），不再用
+            ``item.episode``（那是媒体库集号，两者在有分段时并不相等）。
+        :param mapping_is_explicit: 该请求是否来自**用户显式绑定条目**的自定义
+            映射（季度感知格式 / 带 segments）。为 True 时禁止在条目内找不到
+            该集后沿续集链改选到别的条目 —— 否则用户的明确指定会被程序猜测
+            覆盖，且「改选」发生在这一步（早于 CrossSeasonStep 的守卫），
+            会把 episode 静默标记到另一部番上（issue #267）。
         """
         release_for_ep = None
         if item.release_date and len(item.release_date) >= 8:
             release_for_ep = item.release_date[:10]
-        # 电影走短路径，剧集走季番解析
+        # 分段映射给出的目标集号优先；否则回落到请求携带的集号
+        ep = target_episode if target_episode is not None else item.episode
+        # 只有 movie 走「条目内首集」短路径。
+        #
+        # real_action（Bangumi type=6 三次元）**不走**这条路径：它在
+        # _normalize_custom_item_params 中被明确归入剧集路径（不允许 season=0、
+        # episode 不能为 0），因此其 episode 是真实集号，必须按季番解析。
+        # 此前这里写的是 `if item.media_type == "movie"`，但在 mark_watching 的
+        # 短路径上 real_action 与 movie 同被当作剧场版处理，两处口径不一致；
+        # 若把 real_action 也塞进电影分支，它会用 episode 去当「章节定位」，
+        # 导致剧集被解析到错误集。以剧集路径为准，与本函数下方的 season 解析
+        # 及 _normalize_custom_item_params 保持一致。
         if item.media_type == "movie":
-            return bgm.get_movie_main_episode_id(subject_id, target_sort=item.episode)
+            return bgm.get_movie_main_episode_id(subject_id, target_sort=ep)
         return bgm.get_target_season_episode_id(
             subject_id=subject_id,
             target_season=item.season,
-            target_ep=item.episode,
+            target_ep=ep,
             is_season_subject_id=is_season_matched_id,
             release_date=release_for_ep,
+            # 显式映射：条目内找不到就报错，绝不改选
+            allow_chain_fallback=not mapping_is_explicit,
         )
 
     def _format_mark_status_message(self, mark_status: int) -> str:
@@ -1612,7 +1582,11 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         return True, ""
 
     def _is_title_blocked(
-        self, title: str, ori_title: str = None, season: int = 1
+        self,
+        title: str,
+        ori_title: str = None,
+        season: int = 1,
+        episode: int = 0,
     ) -> bool:
         """检查番剧标题是否命中屏蔽关键词（DB 统一入口）
 
@@ -1623,22 +1597,27 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         生效时机：**匹配前**（与历史 ``[sync] blocked_keywords`` 一致）。
 
-        ``season`` 参与「自定义映射优先」的判定：高级格式映射
-        （``{"subject_id": "...", "season": N}``）只在 season 相符时才算命中，
-        因此必须由调用方传入真实季度；否则第 2 季请求会被第 1 季的映射放行，
-        绕过屏蔽词。默认 1 仅为兼容历史调用与测试。
+        ``season`` / ``episode`` 参与「自定义映射优先」的判定：高级格式映射
+        只在 season 相符时才算命中，集数分段映射还要求 episode 落在某个区间内，
+        因此必须由调用方传入真实值；否则第 2 季请求会被第 1 季的映射放行，
+        绕过屏蔽词。
+
+        判定统一委托 ``mapping_service.matches_any``，**不再自行解包
+        find_mapping 的返回值** —— 曾经因此在该函数签名变更后静默失效
+        （异常被下面的 except 吞掉，表现为映射不再豁免屏蔽词）。
         """
         # 自定义映射优先：显式意图压过屏蔽规则
         try:
-            mapping_sid, _, _ = mapping_service.find_mapping(
+            hit = mapping_service.matches_any(
                 title=title or "",
                 ori_title=ori_title or "",
                 season=season,
+                episode=episode,
             )
-            if mapping_sid:
-                logger.debug(
-                    f"标题 {title!r} 命中自定义映射 {mapping_sid}，跳过屏蔽关键词判定"
-                )
+            # 严格归一为 bool：mapping_service 在测试中常被整体 mock，
+            # MagicMock 的返回值恒为真值，会让「未命中」被当成命中而误豁免屏蔽。
+            if hit is True:
+                logger.debug(f"标题 {title!r} 命中自定义映射，跳过屏蔽关键词判定")
                 return False
         except Exception as e:  # noqa: BLE001 — 映射查询失败不阻断判定
             logger.debug(f"查询自定义映射失败（继续按屏蔽词判定）: {e}")
@@ -1720,6 +1699,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         # 传播 ctx.is_ambiguous 到 trace，编排器据此发 match_ambiguous 通知
         actual_trace.is_ambiguous = ctx.is_ambiguous
+        # 自定义映射的显式性与分段目标集号同样经 trace 传给执行阶段：
+        # _find_subject_id 的 3 元组返回值被大量调用方依赖，不扩签名。
+        actual_trace.mapping_is_explicit = ctx.mapping_is_explicit
+        actual_trace.mapping_target_episode = ctx.mapping_target_episode
 
         # 注：此处原有一个「负样本黑名单 veto」——匹配命中后按 subject_id 比对
         # title_blacklist，命中则清空 result.subject_id 转为漏标。

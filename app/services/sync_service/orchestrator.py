@@ -140,8 +140,24 @@ class SyncOrchestrator:
                 if stage == "cross_season" and outcome.status == "miss":
                     # 集数不存在：不发 bangumi_id_found（旧实现 resolve 成功后
                     # 才通知，避免"已找到"与失败通知的矛盾序列）
+                    #
+                    # 显式映射下这一步是「按配置不回退改选」导致的失败，病因是
+                    # 映射本身（条目/集数/偏移写错），而不是「集数过多」。把
+                    # step 给出的具体原因透传给用户，否则只会看到笼统的
+                    # 「不存在或集数过多」，无从下手排查自己的映射。
+                    outputs = outcome.outputs or {}
+                    detail = (
+                        str(outputs.get("error", "") or "")
+                        if outputs.get("mapping_explicit_no_reselect")
+                        else ""
+                    )
                     return self._handle_episode_not_found(
-                        item, actual_source, trace, subject_id, status_holder
+                        item,
+                        actual_source,
+                        trace,
+                        subject_id,
+                        status_holder,
+                        detail=detail,
                     )
                 if stage == "sync_action" and outcome.status == "error":
                     status_holder[0] = "error"
@@ -468,6 +484,8 @@ class SyncOrchestrator:
             actual_source=actual_source,
             subject_id=subject_id,
             is_season_matched_id=is_season_matched_id,
+            mapping_is_explicit=trace.mapping_is_explicit,
+            mapping_target_episode=trace.mapping_target_episode,
         )
         pipeline = SyncPipeline(
             [
@@ -502,13 +520,18 @@ class SyncOrchestrator:
         trace: MatchTrace,
         subject_id: str,
         status_holder: list[str],
+        detail: str = "",
     ) -> SyncResponse:
-        """集数解析失败：写 error 记录 + 发 episode_not_found 通知"""
+        """集数解析失败：写 error 记录 + 发 episode_not_found 通知
+
+        ``detail`` 非空时（显式映射的集数对不上）作为更具体的病因替换默认文案。
+        """
+        message = detail or "未找到对应的剧集（不存在或集数过多）"
         self._record_terminal_result_step(
             trace,
             item,
-            reason=f"同步失败：未找到对应的剧集 · https://bgm.tv/subject/{subject_id}",
-            message="未找到对应的剧集（不存在或集数过多）",
+            reason=f"同步失败：{message} · https://bgm.tv/subject/{subject_id}",
+            message=message,
             subject_id=str(subject_id),
         )
         trace.finish()
@@ -520,7 +543,7 @@ class SyncOrchestrator:
             status="error",
             subject_id=str(subject_id),
             episode_id=None,
-            message="未找到对应的剧集（不存在或集数过多）",
+            message=message,
         )
 
         from . import notification_service
@@ -531,10 +554,10 @@ class SyncOrchestrator:
             actual_source,
             in_app_ref_id=record_id,
             subject_id=subject_id,
-            error_message="不存在或集数过多",
+            error_message=detail or "不存在或集数过多",
         )
         status_holder[0] = "error"
-        return SyncResponse(status="error", message="未找到对应的剧集")
+        return SyncResponse(status="error", message=message)
 
     # ------------------------------------------------------------------
     # 标记成功收尾（ResultStep 已结算 final_*，此处只做副作用与持久化）

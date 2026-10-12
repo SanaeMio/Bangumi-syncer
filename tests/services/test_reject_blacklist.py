@@ -129,7 +129,12 @@ class TestIsTitleBlocked:
         database_manager.add_blocked_keyword(DISTINCT_KW)
         monkeypatch.setattr(
             "app.services.sync_service.mapping_service.find_mapping",
-            lambda title, ori_title="", season=1: ("12345", "exact", "映射命中"),
+            lambda title, ori_title="", season=1: (
+                "12345",
+                "exact",
+                "映射命中",
+                False,
+            ),
         )
         try:
             assert sync_service._is_title_blocked(f"标题 {DISTINCT_KW}") is False
@@ -150,6 +155,114 @@ class TestIsTitleBlocked:
             assert sync_service._is_title_blocked(f"标题 {DISTINCT_KW}") is True
         finally:
             database_manager.remove_blocked_keyword(DISTINCT_KW)
+
+    def test_unpack_matches_real_find_mapping_arity(self):
+        """守护：_is_title_blocked 解包的元组长度必须与真实 find_mapping 一致
+
+        该调用点原先解包 3 元组；当 find_mapping 增加返回值后，这里会抛
+        ValueError，却被外层 ``except Exception`` 吞掉，导致「自定义映射
+        优先」静默失效 —— 而且因为测试里的 mock 也返回 3 元组，两边一起
+        错，没有任何用例报警。此用例直接比对真实签名的返回长度。
+        """
+        from app.services.mapping_service import MappingService
+
+        svc = MappingService()
+        svc._cached_mappings = {}
+        svc._cached_rules = []
+        svc._mapping_file_path = "/nonexistent/bangumi_mapping.json"
+        real = svc.find_mapping("不存在的番剧名-zz", "", 1)
+
+        # 真实返回值长度必须能被 _is_title_blocked 的 4 元组解包消费
+        mapping_sid, match_type, reason, explicit = real
+        assert mapping_sid == ""
+        assert match_type == ""
+        assert reason == ""
+        assert explicit is False
+
+    def test_segment_hit_also_exempts_blacklist(self, tmp_path, monkeypatch):
+        """集数分段命中同样应豁免屏蔽词（判定统一委托 matches_any）
+
+        分段映射的条目名与顶层 subject_id 可能不同，若只按顶层标题判定，
+        「用户显式指定的分段条目」会被屏蔽词误拦。
+        """
+        import json as _json
+
+        from app.services.mapping_service import MappingService, set_mapping_service
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "bangumi_mapping.json").write_text(
+            _json.dumps(
+                {
+                    "mappings": {
+                        # 顶层主条目故意配成空（模拟用户只配了分段）
+                        "分段番剧": {
+                            "subject_id": "43558",
+                            "segments": [
+                                {
+                                    "season": 6,
+                                    "from": 3,
+                                    "to": None,
+                                    "subject_id": "639938",
+                                    "offset": 2,
+                                }
+                            ],
+                        }
+                    },
+                    "rules": [],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        set_mapping_service(MappingService())
+
+        database_manager.add_blocked_keyword(f"分段番剧{DISTINCT_KW}")
+        try:
+            # 标题本身不含屏蔽词，但原始标题含 → 分段命中应豁免
+            assert (
+                sync_service._is_title_blocked("分段番剧", f"原文 {DISTINCT_KW}", 6, 3)
+                is False
+            )
+            # 段未覆盖该集时，顶层 subject_id 仍算命中映射 → 同样豁免
+            assert (
+                sync_service._is_title_blocked("分段番剧", f"原文 {DISTINCT_KW}", 6, 99)
+                is False
+            )
+        finally:
+            database_manager.remove_blocked_keyword(f"分段番剧{DISTINCT_KW}")
+
+    def test_matches_any_is_the_single_authority(self, tmp_path, monkeypatch):
+        """matches_any 同时覆盖标题级与分段级命中"""
+        import json as _json
+
+        from app.services.mapping_service import MappingService
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "bangumi_mapping.json").write_text(
+            _json.dumps(
+                {
+                    "mappings": {
+                        "只有分段的番": {
+                            "subject_id": "1",
+                            "segments": [
+                                {"season": 2, "from": 5, "to": 8, "subject_id": "2"}
+                            ],
+                        },
+                        "普通番": "3",
+                    },
+                    "rules": [],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        svc = MappingService()
+
+        assert svc.matches_any("普通番") is True
+        assert svc.matches_any("只有分段的番", season=2, episode=5) is True
+        # 段未覆盖 → 仍因顶层 subject_id 命中
+        assert svc.matches_any("只有分段的番", season=2, episode=99) is True
+        assert svc.matches_any("完全不存在的番") is False
 
 
 class TestSeasonAwareMappingPriority:
@@ -175,7 +288,9 @@ class TestSeasonAwareMappingPriority:
                 patch(
                     "app.services.sync_service.mapping_service.find_mapping",
                     side_effect=lambda title, ori_title="", season=1: (
-                        ("12345", "season", "映射命中") if season == 1 else ("", "", "")
+                        ("12345", "season", "映射命中", True)
+                        if season == 1
+                        else ("", "", "", False)
                     ),
                 ),
             ):
@@ -193,7 +308,9 @@ class TestSeasonAwareMappingPriority:
                 patch(
                     "app.services.sync_service.mapping_service.find_mapping",
                     side_effect=lambda title, ori_title="", season=1: (
-                        ("12345", "season", "映射命中") if season == 1 else ("", "", "")
+                        ("12345", "season", "映射命中", True)
+                        if season == 1
+                        else ("", "", "", False)
                     ),
                 ),
             ):
@@ -204,25 +321,25 @@ class TestSeasonAwareMappingPriority:
             database_manager.remove_blocked_keyword(DISTINCT_KW)
 
     def test_call_sites_pass_item_season(self):
-        """两个调用处都必须把 item.season 传下去（防止再次写死）"""
+        """两个调用处都必须把 item.season / item.episode 传下去（防止再次写死）"""
         svc = SyncService()
-        calls: list[int] = []
+        calls: list[tuple] = []
 
-        def _spy(title, ori_title=None, season=None):
-            calls.append(season)
+        def _spy(title, ori_title=None, season=None, episode=0):
+            calls.append((season, episode))
             return False
 
         item = CustomItem(
             title="测试番剧",
             season=3,
-            episode=1,
+            episode=7,
             release_date="",
             user_name="u",
         )
         with patch.object(svc, "_check_user_permission", return_value=(True, "")):
             with patch.object(svc, "_is_title_blocked", side_effect=_spy):
                 assert svc._normalize_custom_item_params(item) is None
-        assert calls == [3], "_normalize_custom_item_params 应传 item.season"
+        assert calls == [(3, 7)], "_normalize_custom_item_params 应传 season 与 episode"
 
         calls.clear()
         movie = CustomItem(
@@ -243,7 +360,7 @@ class TestSeasonAwareMappingPriority:
         ):
             mock_config.get.return_value = True
             svc.sync_movie_watching(movie, source="custom")
-        assert calls == [1], "sync_movie_watching 应传 item.season"
+        assert calls == [(1, 1)], "sync_movie_watching 应传 season 与 episode"
 
 
 class TestKeywordRepository:

@@ -174,5 +174,5 @@ archive 数据来自 Bangumi 官方 dump，可能存在数据延迟或边缘情�
 ## 接下来
 
 - 想了解写降级与待同步队列补发？看 [🔄 Bangumi Replay 待同步队列补发](/config/bangumi-replay)。
-- 想了解整体匹配流程？看 [🔀 自定义映射](/mapping) 与 [🔧 常见同步失败原因](/troubleshooting)。
+- 想了解整体匹配流程？看 [🔀 自定义映射](/mapping/) 与 [🔧 常见同步失败原因](/troubleshooting)。
 - 想配置参数？看 [⚙️ 配置说明](/config/configuration) 的「Bangumi Archive 离线查询层」段。

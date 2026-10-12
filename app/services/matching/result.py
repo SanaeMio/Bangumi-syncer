@@ -22,3 +22,7 @@ class MatchResult:
     trace: MatchTrace
     failure_detail: str = ""
     is_ambiguous: bool = False
+    # 自定义映射是否显式指定了目标条目（True 时禁止跨季链改选）
+    mapping_is_explicit: bool = False
+    # 集数分段映射算出的目标集号（非 None 时执行阶段直接采用）
+    mapping_target_episode: int | None = None

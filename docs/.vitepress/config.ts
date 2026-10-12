@@ -73,7 +73,7 @@ export default defineConfig(
         'quick-start',
         'usage',
         'config',
-        'mapping.md',
+        'mapping',
         'troubleshooting.md',
         'changelog.md',
         'community.md',

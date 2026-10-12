@@ -704,11 +704,41 @@ class TestConfigCoverage:
         names = {f.name for f in meta.fields}
         assert {
             "arbiter_enabled",
-            "weight_custom_mapping",
-            "weight_bangumi_data",
             "weight_archive",
             "weight_api_search",
             "min_score",
             "min_margin",
             "ambiguous_margin",
         } <= names
+
+    def test_only_applicable_weights_are_exposed(self):
+        """只暴露真正能影响裁决的权重
+
+        裁决层只在 APISearchStep 内运行，候选来自本地归档与在线搜索。
+        自定义映射与 bangumi-data 命中时管线已 is_terminal 终止，候选到不了
+        裁决层 —— 给它们暴露权重旋钮会让用户「调了没反应」，属于误导。
+        """
+        from app.services.matching.arbiter import APPLICABLE_WEIGHT_SOURCES
+
+        meta = config_schema.get_section_meta("matching")
+        exposed = {f.name for f in meta.fields if f.name.startswith("weight_")}
+        assert exposed == {f"weight_{s}" for s in APPLICABLE_WEIGHT_SOURCES}
+
+    def test_applicable_weights_match_reality(self):
+        """APPLICABLE_WEIGHT_SOURCES 必须与「哪些 step 会终止管线」一致
+
+        守护：若将来把 CustomMappingStep / BangumiDataStep 改成非终止
+        （从而其候选真能进入裁决层），本用例会失败，提醒把对应权重加回来。
+        """
+        from app.services.matching.arbiter import APPLICABLE_WEIGHT_SOURCES
+        from app.services.matching.contracts import (
+            SOURCE_API_SEARCH,
+            SOURCE_ARCHIVE,
+            SOURCE_BANGUMI_DATA,
+            SOURCE_CUSTOM_MAPPING,
+        )
+
+        assert APPLICABLE_WEIGHT_SOURCES == {SOURCE_ARCHIVE, SOURCE_API_SEARCH}
+        # 这两类命中即终止，其权重不可用
+        assert SOURCE_CUSTOM_MAPPING not in APPLICABLE_WEIGHT_SOURCES
+        assert SOURCE_BANGUMI_DATA not in APPLICABLE_WEIGHT_SOURCES

@@ -966,6 +966,54 @@ class TestMultiAccountSyncFanOut:
         assert marked == [other]
         assert archived == [other]
 
+    def test_all_accounts_mark_the_same_global_episode_id(self, monkeypatch):
+        """**设计说明（非缺陷）**：所有账号复用同一 subject_id / ep_id
+
+        审计曾把「多账号扇出复用首选账号的 bgm_ep_id」列为缺陷。复核结论：
+        这不是 bug —— Bangumi 的 subject_id 与 episode_id 都是**全局唯一**
+        实体，与账号无关；`mark_episode_watched(subject_id, ep_id)` 的语义是
+        「把这条全局剧集标记到**我的**收藏」，因此每个账号传入同一个 ep_id
+        才是正确行为。
+
+        匹配与集数解析链路同样与账号无关：`_resolve_season_episode` 虽然接收
+        `ctx.bgm`，但只用于查询全局剧集数据，不产生账号相关结果。
+
+        本用例把该不变量固定下来：无论多少个账号，写入的 (subject_id, ep_id)
+        必须完全一致。
+        """
+        from unittest.mock import MagicMock
+
+        from app.services.sync_service import SyncService
+
+        svc = SyncService()
+        primary, other1, other2 = MagicMock(), MagicMock(), MagicMock()
+        monkeypatch.setattr(
+            svc,
+            "_get_bangumi_account_targets_for_user",
+            lambda user_name: [
+                ("bangumi", primary),
+                ("bangumi-2", other1),
+                ("bangumi-3", other2),
+            ],
+        )
+        calls: list[tuple] = []
+        monkeypatch.setattr(
+            svc,
+            "_retry_mark_episode",
+            lambda bgm, subject_id, ep_id, **kwargs: calls.append(
+                (bgm, str(subject_id), str(ep_id))
+            ),
+        )
+        monkeypatch.setattr(
+            svc, "_mark_subject_completed_if_needed", lambda *a, **k: None
+        )
+
+        svc._mark_episode_for_other_accounts(self._item(), primary, "123", "456", "T")
+
+        # 其余两个账号各标记一次，且都指向同一全局剧集
+        assert [c[0] for c in calls] == [other1, other2]
+        assert {(c[1], c[2]) for c in calls} == {("123", "456")}
+
     def test_mark_episode_for_other_accounts_single_account_is_noop(self, monkeypatch):
         """仅一个账号时不产生额外标记，避免重复写入同一账号。"""
         from unittest.mock import MagicMock

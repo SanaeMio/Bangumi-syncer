@@ -2,8 +2,7 @@
 MappingService tests - Simplified version
 """
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 class TestMappingServiceSimple:
@@ -18,26 +17,33 @@ class TestMappingServiceSimple:
         assert service._cached_mappings == {}
 
     def test_update_custom_mappings(self, temp_dir):
-        """Test updating custom mappings"""
+        """更新映射应真实落盘并可回读
+
+        原用例把 builtins.open 与 json.dump 都 mock 掉、只断言 dump 被调用
+        一次，因此对「写入了什么」完全无感；且新实现会在读取到非法内容时
+        **拒绝写入**（防止覆盖用户配置），mock 掉的 open 恰好触发该保护。
+        改为真实文件往返断言。
+        """
+        import json as _json
+
+        from app.services.mapping_service import MappingService
+
         mapping_file = temp_dir / "bangumi_mapping.json"
-        mapping_data = {"mappings": {"动画1": "123456"}}
-        mapping_file.write_text(json.dumps(mapping_data), encoding="utf-8")
+        mapping_file.write_text(
+            _json.dumps({"mappings": {"动画1": "123456"}}), encoding="utf-8"
+        )
 
-        with patch("app.services.mapping_service.os.path.exists", return_value=True):
-            from app.services.mapping_service import MappingService
+        service = MappingService()
+        service._mapping_file_path = str(mapping_file)
 
-            service = MappingService()
-            service._mapping_file_path = str(mapping_file)
+        # 直接指定路径写入（绕开 _find_existing_path 的候选路径查找）
+        ok = service.update_custom_mappings_with_path(
+            str(mapping_file), {"动画1": "123456", "动画2": "789012"}
+        )
+        assert ok is True
 
-            with (
-                patch("builtins.open", MagicMock()) as mock_open,
-                patch("app.services.mapping_service.json.dump") as mock_dump,
-            ):
-                mock_file = MagicMock()
-                mock_open.return_value.__enter__.return_value = mock_file
-
-                service.update_custom_mappings({"动画1": "123456", "动画2": "789012"})
-                mock_dump.assert_called_once()
+        data = _json.loads(mapping_file.read_text(encoding="utf-8"))
+        assert data["mappings"] == {"动画1": "123456", "动画2": "789012"}
 
     def test_delete_custom_mapping_not_found(self):
         """Test deleting non-existent mapping"""

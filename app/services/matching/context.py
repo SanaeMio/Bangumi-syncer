@@ -39,6 +39,13 @@ class MatchContext:
     normalized_title: str = ""
     subject_id: str | None = None
     is_season_matched_id: bool = False
+    # 自定义映射是否「显式指定了目标条目」（季度感知格式 / 带 segments）。
+    # 为 True 时执行阶段禁止跨季链改选 —— 用户已明确指定条目，改选等于
+    # 否定用户意图（issue #267 的错误即由此产生）。
+    mapping_is_explicit: bool = False
+    # 集数分段映射算出的目标集号（媒体集号经 offset 换算后的目标条目内集号）。
+    # 非 None 时执行阶段直接按它定位，不再用 item.episode 重新推导。
+    mapping_target_episode: int | None = None
     match_stage: str = ""  # archive / api_search
     match_method_detail: str = ""  # 细粒度派生方式（替代死状态 last_match_method）
     # archive 短路命中标记（替代死状态 bgm.last_hit_source）：
