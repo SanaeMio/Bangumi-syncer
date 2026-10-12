@@ -549,6 +549,136 @@ def test_other_accounts_archive_uses_archive_total_eps():
     assert "use_archive" not in other.get_subject.call_args.kwargs
 
 
+def _anime_complete_config():
+    def get_side_effect(section, key, fallback=None):
+        if section == "sync" and key == "anime_mark_subject_completed":
+            return True
+        return fallback
+
+    return get_side_effect
+
+
+def _tv_item(episode=12):
+    return CustomItem(
+        user_name="testuser",
+        title="TV Anime X",
+        ori_title=None,
+        season=1,
+        episode=episode,
+        media_type="episode",
+        release_date="",
+    )
+
+
+def test_anime_archive_uses_collection_embedded_eps_without_extra_request():
+    """总集数取自收藏响应内嵌的 subject.eps，不额外调用 get_subject。"""
+    service = SyncService()
+    bgm = MagicMock()
+    bgm.get_subject_collection.return_value = {
+        "type": 3,
+        "ep_status": 12,
+        "subject": {"id": 123, "eps": 12},
+    }
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+        mock_cfg.get.side_effect = _anime_complete_config()
+        service._mark_subject_completed_if_needed(_tv_item(), bgm, "123", "TV Anime X")
+
+    bgm.get_subject.assert_not_called()
+    bgm.change_collection_state.assert_called_once_with(subject_id="123", state=2)
+
+
+def test_anime_archive_ignores_stale_subject_cache():
+    """连载中条目开播后才补全 eps：实例缓存仍为旧的 eps=0 时，以收藏响应的实时 eps 为准。"""
+    from app.utils.bangumi_api import BangumiApi
+
+    service = SyncService()
+    bgm = BangumiApi()
+    # 模拟进程早先（wiki 尚未填写话数时）缓存的条目数据
+    bgm._put_cache("get_subject", ("123", True), {"id": 123, "eps": 0})
+
+    with (
+        patch.object(
+            bgm,
+            "get_subject_collection",
+            return_value={
+                "type": 3,
+                "ep_status": 12,
+                "subject": {"id": 123, "eps": 12},
+            },
+        ),
+        patch.object(bgm, "get") as mock_get,
+        patch.object(bgm, "change_collection_state") as mock_change,
+        patch("app.services.sync_service.config_manager") as mock_cfg,
+    ):
+        mock_cfg.get.side_effect = _anime_complete_config()
+        service._mark_subject_completed_if_needed(_tv_item(), bgm, "123", "TV Anime X")
+
+    mock_get.assert_not_called()
+    mock_change.assert_called_once_with(subject_id="123", state=2)
+
+
+@pytest.mark.parametrize(
+    "coll_subject",
+    [None, {"id": 123}, {"id": 123, "eps": 0}, {"id": 123, "eps": None}],
+)
+def test_anime_archive_falls_back_to_get_subject(coll_subject):
+    """收藏响应缺少有效 subject.eps 时回退 get_subject（保留 Archive 补全）。"""
+    service = SyncService()
+    bgm = MagicMock()
+    coll = {"type": 3, "ep_status": 12}
+    if coll_subject is not None:
+        coll["subject"] = coll_subject
+    bgm.get_subject_collection.return_value = coll
+    bgm.get_subject.return_value = {"eps": 12}
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+        mock_cfg.get.side_effect = _anime_complete_config()
+        service._mark_subject_completed_if_needed(_tv_item(), bgm, "123", "TV Anime X")
+
+    bgm.get_subject.assert_called_once_with("123")
+    bgm.change_collection_state.assert_called_once_with(subject_id="123", state=2)
+
+
+def test_anime_archive_not_completed_when_episodes_remain():
+    """已看集数未达到收藏响应中的总集数时不归档。"""
+    service = SyncService()
+    bgm = MagicMock()
+    bgm.get_subject_collection.return_value = {
+        "type": 3,
+        "ep_status": 11,
+        "subject": {"id": 123, "eps": 12},
+    }
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+        mock_cfg.get.side_effect = _anime_complete_config()
+        service._mark_subject_completed_if_needed(
+            _tv_item(11), bgm, "123", "TV Anime X"
+        )
+
+    bgm.get_subject.assert_not_called()
+    bgm.change_collection_state.assert_not_called()
+
+
+@pytest.mark.parametrize("eps", [0, None])
+def test_anime_archive_skips_when_total_eps_unknown(eps):
+    """收藏响应与 get_subject 均无有效总集数时不归档，也不抛异常。"""
+    service = SyncService()
+    bgm = MagicMock()
+    bgm.get_subject_collection.return_value = {
+        "type": 3,
+        "ep_status": 12,
+        "subject": {"id": 123, "eps": eps},
+    }
+    bgm.get_subject.return_value = {"eps": eps}
+
+    with patch("app.services.sync_service.config_manager") as mock_cfg:
+        mock_cfg.get.side_effect = _anime_complete_config()
+        service._mark_subject_completed_if_needed(_tv_item(), bgm, "123", "TV Anime X")
+
+    bgm.change_collection_state.assert_not_called()
+
+
 def test_check_season_info_in_title(mock_config, mock_database):
     """测试检查标题中的季度信息"""
     service = SyncService()
