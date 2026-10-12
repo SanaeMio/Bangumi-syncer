@@ -17,6 +17,7 @@ import hashlib
 import logging
 import secrets
 import time
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import jwt
 import pytest
@@ -1712,3 +1713,242 @@ class TestSecurityFixes:
         """ClientRegistrationOptions 应声明 valid_scopes（P2）。"""
         assert provider.client_registration_options is not None
         assert provider.client_registration_options.valid_scopes == ["read", "write"]
+
+
+# ---------------------------------------------------------------------------
+# consent 相关 URL 的两处缺陷回归（评审 #260 阻断级 1 / 2）
+# ---------------------------------------------------------------------------
+
+
+def _make_consent_post_request(data: dict[str, str]):
+    """构造一个模拟 consent 表单提交的 POST Request。"""
+    from starlette.requests import Request
+
+    body = urlencode(data).encode()
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/consent",
+        "query_string": b"",
+        "headers": [
+            (b"content-type", b"application/x-www-form-urlencoded"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+    }
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return Request(scope, receive)
+
+
+class TestConsentUrlHandling:
+    """consent 相关 URL 的缺陷回归。
+
+    1. 回跳拼接不能假设 redirect_uri 无 query——RFC 6749 §3.1.2 要求
+       redirect_uri 自带的 query 必须保留，否则 code/state 会被吞进
+       原有参数的值里，客户端拿不到授权码。
+    2. authorize 返回的 consent URL 与表单 action 须经 join_public——
+       子路径反代（base_path 非空）下站内路径必须带前缀，否则 404。
+    """
+
+    @pytest.fixture
+    def rsa_manager(self, tmp_path):
+        from app.mcp.keys import RSAKeyManager
+
+        manager = RSAKeyManager(
+            private_key_path=str(tmp_path / "private.pem"),
+            public_key_path=str(tmp_path / "public.pem"),
+        )
+        manager.generate_keys()
+        return manager
+
+    @pytest.fixture
+    def provider(self, rsa_manager):
+        from app.mcp.provider import BangumiOAuthProvider
+
+        return BangumiOAuthProvider(
+            base_url="http://localhost:8000",
+            rsa_manager=rsa_manager,
+            issuer="http://localhost:8000",
+            audience="bs",
+            token_expiry_seconds=3600,
+            auth_enabled=False,
+            auth_username="admin",
+        )
+
+    async def _setup_pending(self, provider, redirect_uri: str) -> tuple[str, str]:
+        """注册 client 并跑一次 authorize，返回 (request_token, csrf_token)。"""
+        from mcp.server.auth.provider import AuthorizationParams
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyHttpUrl
+
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            redirect_uris=[AnyHttpUrl("http://localhost/callback")],
+            grant_types=["authorization_code"],
+            token_endpoint_auth_method="none",
+        )
+        await provider.register_client(client)
+        params = AuthorizationParams(
+            state="st-1",
+            scopes=["read"],
+            code_challenge="challenge123",
+            redirect_uri=AnyHttpUrl(redirect_uri),
+            redirect_uri_provided_explicitly=True,
+        )
+        await provider.authorize(client, params)
+        request_token = next(iter(provider._pending_auths))
+        csrf_token = provider._pending_auths[request_token]["csrf_token"]
+        return request_token, csrf_token
+
+    # ── 问题 1：redirect_uri 自带 query ────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_consent_allow_回调带query_保留原参数且code可解析(self, provider):
+        """Allow 时回跳 URL 应保留 redirect_uri 原有 query，并追加 code/state。"""
+        from app.mcp.consent import handle_consent
+
+        rt, csrf = await self._setup_pending(
+            provider, "http://localhost/callback?app=foo"
+        )
+        request = _make_consent_post_request(
+            {"request_token": rt, "csrf_token": csrf, "action": "allow"}
+        )
+
+        resp = await handle_consent(request, provider)
+
+        location = resp.headers["location"]
+        query = parse_qs(urlsplit(location).query)
+        assert "code" in query, f"code 被吞掉了：{location}"
+        assert query["state"] == ["st-1"]
+        assert query["app"] == ["foo"], "原有 query 参数应保留"
+
+    @pytest.mark.asyncio
+    async def test_consent_deny_回调带query_保留原参数且error可解析(self, provider):
+        """Deny 时回跳 URL 同样应保留原有 query。"""
+        from app.mcp.consent import handle_consent
+
+        rt, csrf = await self._setup_pending(
+            provider, "http://localhost/callback?app=foo"
+        )
+        request = _make_consent_post_request(
+            {"request_token": rt, "csrf_token": csrf, "action": "deny"}
+        )
+
+        resp = await handle_consent(request, provider)
+
+        location = resp.headers["location"]
+        query = parse_qs(urlsplit(location).query)
+        assert query["error"] == ["access_denied"]
+        assert query["state"] == ["st-1"]
+        assert query["app"] == ["foo"]
+
+    @pytest.mark.asyncio
+    async def test_consent_allow_回调无query_行为不变(self, provider):
+        """redirect_uri 无 query 时，回跳 URL 与现状一致（回归）。"""
+        from app.mcp.consent import handle_consent
+
+        rt, csrf = await self._setup_pending(provider, "http://localhost/callback")
+        request = _make_consent_post_request(
+            {"request_token": rt, "csrf_token": csrf, "action": "allow"}
+        )
+
+        resp = await handle_consent(request, provider)
+
+        location = resp.headers["location"]
+        assert location.startswith("http://localhost/callback?")
+        query = parse_qs(urlsplit(location).query)
+        assert "code" in query
+        assert query["state"] == ["st-1"]
+
+    # ── 问题 2：子路径反代前缀 ────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_authorize_base_path非空_consent路径带前缀(
+        self, provider, monkeypatch
+    ):
+        """base_path 非空时，authorize 返回的 consent 路径须带前缀。"""
+        monkeypatch.setenv("BASE_PATH", "/bs")
+
+        url = await self._authorize_only(provider)
+
+        assert url.startswith("/bs/consent?request_token="), url
+
+    @pytest.mark.asyncio
+    async def test_authorize_base_path为空_consent路径无前缀(
+        self, provider, monkeypatch
+    ):
+        """base_path 为空时路径保持 /consent（回归）。"""
+        monkeypatch.setenv("BASE_PATH", "")
+        monkeypatch.delenv("APPLICATION_ROOT", raising=False)
+        monkeypatch.setattr("app.core.public_url.get_public_base_path", lambda: "")
+
+        url = await self._authorize_only(provider)
+
+        assert url.startswith("/consent?request_token="), url
+
+    def test_render_consent_form_base_path非空_action带前缀(
+        self, provider, monkeypatch
+    ):
+        """base_path 非空时，consent 表单 action 须带前缀。"""
+        monkeypatch.setenv("BASE_PATH", "/bs")
+
+        html = provider._render_consent_form(
+            {
+                "client_id": "test-client",
+                "username": "admin",
+                "scopes": ["read"],
+                "request_token": "rt",
+                "csrf_token": "ct",
+            }
+        )
+
+        assert 'action="/bs/consent"' in html, html
+
+    def test_render_consent_form_base_path为空_action无前缀(
+        self, provider, monkeypatch
+    ):
+        """base_path 为空时表单 action 保持 /consent（回归）。"""
+        monkeypatch.setenv("BASE_PATH", "")
+        monkeypatch.delenv("APPLICATION_ROOT", raising=False)
+        monkeypatch.setattr("app.core.public_url.get_public_base_path", lambda: "")
+
+        html = provider._render_consent_form(
+            {
+                "client_id": "test-client",
+                "username": "admin",
+                "scopes": ["read"],
+                "request_token": "rt",
+                "csrf_token": "ct",
+            }
+        )
+
+        assert 'action="/consent"' in html
+
+    async def _authorize_only(self, provider) -> str:
+        """只跑 authorize 并返回 consent URL。"""
+        from mcp.server.auth.provider import AuthorizationParams
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyHttpUrl
+
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            redirect_uris=[AnyHttpUrl("http://localhost/callback")],
+            grant_types=["authorization_code"],
+            token_endpoint_auth_method="none",
+        )
+        await provider.register_client(client)
+        params = AuthorizationParams(
+            state="st-1",
+            scopes=["read"],
+            code_challenge="challenge123",
+            redirect_uri=AnyHttpUrl("http://localhost/callback"),
+            redirect_uri_provided_explicitly=True,
+        )
+        return await provider.authorize(client, params)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hmac
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
@@ -30,6 +30,19 @@ def _consent_login_redirect(request_token: str) -> RedirectResponse:
     """
     consent_path = f"/consent?{urlencode({'request_token': request_token})}"
     return redirect_public(f"/login?{urlencode({'next': consent_path})}")
+
+
+def _append_query(url: str, params: dict[str, str]) -> str:
+    """向 URL 追加 query 参数，保留其原有 query。
+
+    RFC 6749 §3.1.2 规定 redirect_uri 自带的 query 必须保留，故不能直接拼
+    ``?``——redirect_uri 已含 query 时（如 ``.../callback?app=foo``）会把新增
+    参数并进前一个参数的值里，导致客户端解析不出 code / state。统一用
+    urlsplit/urlunsplit 合并，无 query 时等价于原行为。
+    """
+    parts = urlsplit(url)
+    merged = parse_qsl(parts.query, keep_blank_values=True) + list(params.items())
+    return urlunsplit(parts._replace(query=urlencode(merged)))
 
 
 async def handle_consent(request: Request, provider: BangumiOAuthProvider) -> Response:
@@ -125,7 +138,7 @@ async def handle_consent(request: Request, provider: BangumiOAuthProvider) -> Re
         if state:
             params["state"] = state
         return RedirectResponse(
-            url=f"{redirect_uri}?{urlencode(params)}", status_code=302
+            url=_append_query(redirect_uri, params), status_code=302
         )
     else:
         await provider.handle_consent_deny(rt)
@@ -136,5 +149,5 @@ async def handle_consent(request: Request, provider: BangumiOAuthProvider) -> Re
         if state:
             params["state"] = state
         return RedirectResponse(
-            url=f"{redirect_uri}?{urlencode(params)}", status_code=302
+            url=_append_query(redirect_uri, params), status_code=302
         )

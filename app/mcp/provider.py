@@ -39,6 +39,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl, AnyUrl
 from starlette.routing import Route
 
+from app.core.public_url import join_public
 from app.core.security import security_manager
 
 from .keys import RSAKeyManager
@@ -283,7 +284,9 @@ class BangumiOAuthProvider(OAuthProvider):
             "csrf_token": csrf_token,
             "created_at": time.time(),
         }
-        return f"/consent?request_token={request_token}"
+        # 站内路径须带 base_path 前缀（子路径反代场景），与 consent.py 的
+        # 登录回跳保持一致
+        return join_public(f"/consent?request_token={request_token}")
 
     @staticmethod
     def _matches_redirect_uri(redirect_uri: str, allowed_uris: list[str]) -> bool:
@@ -628,7 +631,7 @@ class BangumiOAuthProvider(OAuthProvider):
             <p>Client <strong>{client_id}</strong> is requesting access.</p>
             <p>User: <strong>{username}</strong></p>
             <p>Scopes: <strong>{html.escape(", ".join(scopes))}</strong></p>
-            <form method="POST" action="/consent">
+            <form method="POST" action="{html.escape(join_public("/consent"))}">
                 <input type="hidden" name="request_token" value="{request_token}">
                 <input type="hidden" name="csrf_token" value="{csrf_token}">
                 <button type="submit" name="action" value="allow">Allow</button>
