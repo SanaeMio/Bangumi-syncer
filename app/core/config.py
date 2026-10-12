@@ -4,6 +4,7 @@
 
 import os
 import platform
+import re
 import threading
 from collections.abc import Callable
 from configparser import ConfigParser
@@ -26,6 +27,29 @@ from .startup_info import startup_info
 # 非多账号的 bangumi-* section：从 SectionMeta 注册表派生
 # （bangumi-data / bangumi-mapping / bangumi-archive / bangumi-replay）
 _BANGUMI_NON_ACCOUNT_SECTIONS: tuple[str, ...] = non_account_bangumi_sections()
+
+# 段名/key 白名单正则：仅允许小写字母、数字、下划线、连字符
+# 拒绝换行、等号、方括号等可用于 INI 注入的字符
+_SECTION_KEY_RE = re.compile(r"^[a-z0-9_-]+$")
+
+
+def _validate_section_key(section: str, key: str) -> None:
+    """校验段名/key 格式合法性，防止 INI 注入。
+
+    仅做**格式**校验：段名/key 必须匹配 ``^[a-z0-9_-]+$``，否则 raise ValueError。
+    拒绝换行、等号、方括号等字符，避免写出 ``[auth]`` 之类的注入段落。
+
+    这里刻意**不做**「该段是否允许写此 key」的语义判断：
+    ``ConfigManager`` 是通用数据层，语义策略（如 MCP 禁改清单）属于调用方职责。
+    早期版本曾在此处按 ``SectionMeta.fields`` 做 fail-closed，但 ``fields`` 只是
+    「需特殊渲染的项」而非完整键清单，会误拒合法键；且对 fields 为空的段
+    （bangumi / trakt / web）因各种豁免标志反而完全放行。相关语义策略见
+    ``app.mcp.tools._MCP_WRITE_DENIED``。
+    """
+    if not _SECTION_KEY_RE.match(section):
+        raise ValueError(f"非法配置段名: {section!r}（仅允许 a-z0-9_-）")
+    if not _SECTION_KEY_RE.match(key):
+        raise ValueError(f"非法配置键名: {key!r}（仅允许 a-z0-9_-）")
 
 
 def parse_media_server_username_value(raw: str | None) -> list[str]:
@@ -135,7 +159,14 @@ class ConfigManager:
 
     def _load_config(self) -> None:
         """加载配置文件"""
-        config = ConfigParser()
+        # interpolation=None：配置值一律按字面量处理，不做 %(key)s 模板展开。
+        # ConfigParser 默认启用 BasicInterpolation，会把配置值当模板：写入时
+        # 只校验插值语法、读取时才解析引用，查不到即抛
+        # InterpolationMissingOptionError。由于 get_section() 用 items() 遍历
+        # 整段，段内任一值形如 %(...)s 便导致整段不可读（22 处调用受影响）。
+        # 本项目的配置值从不使用插值（config.example.ini 中 0 处），故关闭，
+        # 使写入与读取的判定标准一致。
+        config = ConfigParser(interpolation=None)
 
         # 读取配置文件
         config.read(self.active_config_path, encoding="utf-8-sig")
@@ -310,7 +341,16 @@ class ConfigManager:
         return self.get_config(section, key, fallback)
 
     def set_config(self, section: str, key: str, value: Any) -> None:
-        """设置配置值（线程安全）"""
+        """设置配置值（线程安全）
+
+        安全校验：
+        - 段名/key 必须匹配白名单正则 ``^[a-z0-9_-]+$``，防止 INI 注入
+          （换行/等号/方括号可写出任意新段，如 ``[auth]``）。
+        - 对已在 schema 中登记但 fields 为空的段，拒绝写任意 key（fail-closed），
+          避免通过未知 key 写入非预期配置。多实例段、账号段、含 sensitive_fields
+          或 env_overrides 的段除外（它们有动态字段需求）。
+        """
+        _validate_section_key(section, key)
         with self._lock:
             config = self._get_config_parser_nolock()
             if not config.has_section(section):

@@ -5,6 +5,8 @@ ConfigManager tests - Simplified version
 import os
 from unittest.mock import patch
 
+import pytest
+
 
 class TestConfigManagerSimple:
     """Test ConfigManager class with simplified tests"""
@@ -559,3 +561,134 @@ class TestEnsureDefaultConfig:
         # 不应抛异常
         cm._ensure_default_config()
         assert not default_ini.exists()
+
+
+# ---------------------------------------------------------------------------
+# S1: set_config 注入防护（段名/key 白名单 + fields 空段 fail-closed）
+# ---------------------------------------------------------------------------
+
+
+class TestSetConfigInjectionGuard:
+    """验证 set_config 的段名/key 白名单校验与 fields 空段 fail-closed。"""
+
+    def test_set_config_拒绝含换行符的段名(self, tmp_path):
+        """段名含 \\n 应被拒绝（防止 INI 注入写出新段）。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sync\n[auth]", "key", "value")
+
+    def test_set_config_拒绝含等号的段名(self, tmp_path):
+        """段名含 = 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sect=ion", "key", "value")
+
+    def test_set_config_拒绝含方括号的段名(self, tmp_path):
+        """段名含 [ 或 ] 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sect[ion", "key", "value")
+
+    def test_set_config_拒绝含换行符的key(self, tmp_path):
+        """key 含 \\n 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sync", "ke\ny", "value")
+
+    def test_set_config_拒绝含等号的key(self, tmp_path):
+        """key 含 = 应被拒绝。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        with pytest.raises(ValueError, match="非法"):
+            cm.set_config("sync", "ke=y", "value")
+
+    def test_set_config_合法段名key_正常写入(self, tmp_path):
+        """合法段名/key 应正常写入。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        cm.set_config("sync", "match_confidence_threshold", "0.7")
+        # INI 存储为字符串，get 返回字符串 "0.7"
+        assert cm.get("sync", "match_confidence_threshold") == "0.7"
+
+    def test_set_config_合法多实例段名_正常写入(self, tmp_path):
+        """多实例段名（notify-webhook-1）应正常写入。"""
+        cm = _config_manager_from_ini(tmp_path, "[notify-webhook-1]\nurl=x\n")
+        cm.set_config("notify-webhook-1", "enabled", "true")
+        assert cm.get("notify-webhook-1", "enabled") is True
+
+    def test_set_config_只校验格式_不按fields做存在性判断(self, tmp_path):
+        """set_config 仅校验段名/key 格式，不做「是否在 fields 中」的存在性判断。
+
+        背景：早期实现按 ``SectionMeta.fields`` 做 fail-closed，但该字段表只登记
+        「需特殊默认值/布尔渲染」的项（见 FieldMeta docstring），并非完整键清单。
+        若拿它当白名单会误拒 dev.debug / llm.model 等合法配置。
+        语义层面的写入策略（如 MCP 禁改清单）属调用方职责，见
+        ``app.mcp.tools._MCP_WRITE_DENIED``。
+        """
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        # fields 为空的段：写入不再被拒（语义策略已上移至 MCP 层）
+        cm.set_config("bangumi-mapping", "arbitrary_key", "value")
+        assert cm.get("bangumi-mapping", "arbitrary_key") == "value"
+        # fields 非空的段：未登记的合法键同样放行
+        cm.set_config("sync", "enable_real_action", "true")
+        assert cm.get("sync", "enable_real_action") is True
+
+
+# ---------------------------------------------------------------------------
+# S2: 配置值按字面量处理（禁用 ConfigParser 插值）
+# ---------------------------------------------------------------------------
+
+
+class TestConfigValueLiteral:
+    """配置值不得被当作 %(...)s 模板处理。
+
+    ConfigParser 默认启用 BasicInterpolation：写入时只校验插值语法、读取时才
+    解析引用，查不到即抛 InterpolationMissingOptionError。由于 get_section()
+    用 items() 遍历整段，段内任一值含 %(...)s 会导致整段不可读（22 处调用
+    受影响）。本项目的配置值从不使用插值，故关闭该特性。
+    """
+
+    WEIRD_VALUES = [
+        "%(missing)s",
+        "%",
+        "100%",
+        "a%(b)s%c",
+        "50%% off",
+        "${section:key}",
+        "密码%(x)s",
+        "100%完成",
+    ]
+
+    def test_set_get_含百分号的值_逐字符原样存取(self, tmp_path):
+        """各类含 % 的值写入后读回应与写入时完全一致。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        for i, value in enumerate(self.WEIRD_VALUES):
+            cm.set_config("sync", f"k{i}", value)
+        for i, value in enumerate(self.WEIRD_VALUES):
+            assert cm.get("sync", f"k{i}") == value, f"{value!r} 未原样读回"
+
+    def test_get_section_段内含插值样式值_整段仍可读(self, tmp_path):
+        """一颗形如 %(name)s 的值不应导致整段不可读（旧实现会抛异常）。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nthreshold=0.7\n")
+        cm.set_config("sync", "note", "%(missing)s")
+
+        section = cm.get_section("sync")
+
+        assert section["note"] == "%(missing)s"
+        assert section["threshold"] == "0.7"
+
+    def test_set_config_含插值样式值_不抛异常(self, tmp_path):
+        """写入形如 %(name)s 的值本身不应报错（旧实现在磁盘落盘后读取才炸）。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+
+        cm.set_config("sync", "note", "%(missing)s")
+
+        assert cm.get("sync", "note") == "%(missing)s"
+
+    def test_重新加载_含百分号的值仍可读(self, tmp_path):
+        """经磁盘往返（reload）后含 % 的值应保持可读。"""
+        cm = _config_manager_from_ini(tmp_path, "[sync]\nx=1\n")
+        cm.set_config("sync", "note", "%(missing)s")
+
+        cm.reload_config()
+
+        assert cm.get("sync", "note") == "%(missing)s"
+        assert cm.get_section("sync")["note"] == "%(missing)s"
