@@ -444,10 +444,9 @@ class SummaryService:
     ) -> None:
         """发送失败通知（webhook + 邮件 + 收件箱）。
 
-        P4.7：通过 notification_service.notify() 统一入口发送，替代原先的
-        get_notifier().send_notification_by_type() + database_manager.insert_notification()
-        显式双调用。webhook/email 类型为 watching_summary_{name}（按 job 配置段），
-        站内信 type 由 inbox_type 显式指定（按失败原因），两者解耦。
+        通过 notification_service.notify() 统一入口发送。webhook/email 类型为
+        watching_summary_{name}（按 job 配置段），站内信 type 由 inbox_type
+        显式指定（按失败原因），两者解耦。
         """
         notification_service.notify(
             f"watching_summary_{job_config.name}",

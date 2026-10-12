@@ -53,7 +53,7 @@ Services 层 (app/services/)  sync_service / mapping / notification + 驱动子�
     │
 Core 层 (app/core/)         Config / Database / SchedulerRegistry / Security
     │
-Utils 层 (app/utils/)       BangumiApi / Archive / Notifier / HTTP Client
+Utils 层 (app/utils/)       BangumiApi / Archive / Notification Channels / HTTP Client
 ```
 
 ### 驱动分类

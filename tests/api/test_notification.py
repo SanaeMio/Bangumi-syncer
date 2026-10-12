@@ -3,7 +3,7 @@
 """
 
 import configparser
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -388,17 +388,97 @@ def app_notif():
     app.dependency_overrides.clear()
 
 
+class _TestFnSwap:
+    """临时替换 handler 的 test_fn（ChannelHandler 是普通类，非 dataclass）"""
+
+    def __init__(self, key: str, fn):
+        self.key = key
+        self.fn = fn
+
+    def __enter__(self):
+        self.handler = notification._CHANNEL_HANDLERS[self.key]
+        self._original = self.handler.test_fn
+        self.handler.test_fn = self.fn
+        return self.fn
+
+    def __exit__(self, *exc):
+        self.handler.test_fn = self._original
+        return False
+
+
 @pytest.mark.asyncio
 async def test_post_notification_test_all(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.return_value = {"webhook": "ok"}
+    """all 分支遍历所有已配置渠道，逐个调用其 test_fn"""
+    cfg = MagicMock()
+    cfg.sections.return_value = ["notify-webhook-1", "notify-email-2"]
+
+    fake_result = {"status": "success", "message": "ok"}
+    webhook_fn = AsyncMock(return_value=fake_result)
+    email_fn = AsyncMock(return_value=fake_result)
+
+    with (
+        patch("app.api.notification.config_manager") as cm,
+        _TestFnSwap("webhook", webhook_fn),
+        _TestFnSwap("email", email_fn),
+    ):
+        cm.get_config_parser.return_value = cfg
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post(
                 "/api/notification/test", json={"notification_type": "all"}
             )
+
     assert r.status_code == 200
-    assert r.json()["status"] == "success"
+    body = r.json()
+    assert body["status"] == "success"
+    assert body["data"] == {"webhook-1": fake_result, "email-2": fake_result}
+    webhook_fn.assert_awaited_once_with(1)
+    email_fn.assert_awaited_once_with(2)
+
+
+@pytest.mark.asyncio
+async def test_post_notification_test_specific_type(app_notif):
+    """指定 notification_type 时只测该渠道类型"""
+    cfg = MagicMock()
+    cfg.sections.return_value = ["notify-webhook-1", "notify-email-2"]
+
+    webhook_fn = AsyncMock(return_value={"status": "success", "message": "ok"})
+    email_fn = AsyncMock(return_value={"status": "success", "message": "ok"})
+
+    with (
+        patch("app.api.notification.config_manager") as cm,
+        _TestFnSwap("webhook", webhook_fn),
+        _TestFnSwap("email", email_fn),
+    ):
+        cm.get_config_parser.return_value = cfg
+        transport = ASGITransport(app=app_notif)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/notification/test", json={"notification_type": "webhook"}
+            )
+
+    body = r.json()
+    assert body["data"] == {"webhook-1": {"status": "success", "message": "ok"}}
+    webhook_fn.assert_awaited_once_with(1)
+    email_fn.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_notification_test_unsupported_type(app_notif):
+    """未知渠道类型返回错误而不是静默成功"""
+    cfg = MagicMock()
+    cfg.sections.return_value = []
+
+    with patch("app.api.notification.config_manager") as cm:
+        cm.get_config_parser.return_value = cfg
+        transport = ASGITransport(app=app_notif)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/notification/test", json={"notification_type": "no_such"}
+            )
+
+    assert r.json()["status"] == "error"
+    assert "不支持的通知类型" in r.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -494,15 +574,14 @@ async def test_delete_notification_webhook_not_found(app_notif):
 
 @pytest.mark.asyncio
 async def test_test_single_webhook_by_id(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.return_value = {"ok": True}
+    """webhook 单渠道测试走统一的 test_fn"""
+    fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    with _TestFnSwap("webhook", fake):
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post("/api/notification/webhooks/1/test")
     assert r.status_code == 200
-    gn.return_value.test_notification.assert_called_once_with(
-        notification_type="webhook", webhook_id=1
-    )
+    fake.assert_awaited_once_with(1)
 
 
 @pytest.mark.asyncio
@@ -668,15 +747,14 @@ async def test_get_notification_emails_list(app_notif):
 
 @pytest.mark.asyncio
 async def test_post_notification_email_test_by_id(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.return_value = {"sent": True}
+    """邮件单渠道测试走统一的 test_fn"""
+    fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    with _TestFnSwap("email", fake):
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post("/api/notification/emails/2/test")
     assert r.status_code == 200
-    gn.return_value.test_notification.assert_called_once_with(
-        notification_type="email", email_id=2
-    )
+    fake.assert_awaited_once_with(2)
 
 
 @pytest.mark.asyncio
@@ -773,10 +851,22 @@ async def test_update_notification_email_new_password(app_notif):
     assert cfg.get("notify-email-1", "smtp_password") != "old-plain"
 
 
+def _cfg_with(sections: list[str]) -> MagicMock:
+    cfg = MagicMock()
+    cfg.sections.return_value = sections
+    cfg.has_section.side_effect = lambda name: name in sections
+    return cfg
+
+
 @pytest.mark.asyncio
 async def test_post_notification_test_webhook_branch(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.return_value = {"ok": True}
+    """指定 webhook 类型时只跑 webhook 渠道，且只测配置里存在的段"""
+    fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    with (
+        patch("app.api.notification.config_manager") as cm,
+        _TestFnSwap("webhook", fake),
+    ):
+        cm.get_config_parser.return_value = _cfg_with(["notify-webhook-3"])
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post(
@@ -784,15 +874,74 @@ async def test_post_notification_test_webhook_branch(app_notif):
                 json={"notification_type": "webhook", "webhook_id": 3},
             )
     assert r.status_code == 200
-    gn.return_value.test_notification.assert_called_once_with(
-        notification_type="webhook", webhook_id=3, email_id=None
-    )
+    assert r.json()["status"] == "success"
+    fake.assert_awaited_once_with(3)
+
+
+@pytest.mark.asyncio
+async def test_explicit_webhook_id_does_not_fire_other_channels(app_notif):
+    """给定 webhook_id 时只能测这一条，不得连带触发其它渠道。
+
+    回归：该字段原先被解析但从未读取，于是"测第 3 条"会把配置里所有
+    notify-webhook-* 全部真发一遍，产生群发副作用。
+    """
+    wh_fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    email_fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    with (
+        patch("app.api.notification.config_manager") as cm,
+        _TestFnSwap("webhook", wh_fake),
+        _TestFnSwap("email", email_fake),
+    ):
+        cm.get_config_parser.return_value = _cfg_with(
+            ["notify-webhook-1", "notify-webhook-3", "notify-email-2"]
+        )
+        transport = ASGITransport(app=app_notif)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/notification/test",
+                json={"notification_type": "webhook", "webhook_id": 3},
+            )
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert list(data.keys()) == ["webhook-3"]
+    wh_fake.assert_awaited_once_with(3)
+    email_fake.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_explicit_email_id_does_not_fire_other_channels(app_notif):
+    """email_id 同理：只测指定那一封"""
+    wh_fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    email_fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    with (
+        patch("app.api.notification.config_manager") as cm,
+        _TestFnSwap("webhook", wh_fake),
+        _TestFnSwap("email", email_fake),
+    ):
+        cm.get_config_parser.return_value = _cfg_with(
+            ["notify-webhook-1", "notify-email-2", "notify-email-7"]
+        )
+        transport = ASGITransport(app=app_notif)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.post(
+                "/api/notification/test",
+                json={"notification_type": "email", "email_id": 7},
+            )
+    assert r.status_code == 200
+    assert list(r.json()["data"].keys()) == ["email-7"]
+    email_fake.assert_awaited_once_with(7)
+    wh_fake.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_post_notification_test_email_branch(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.return_value = {"mail": True}
+    """指定 email 类型时只跑 email 渠道"""
+    fake = AsyncMock(return_value={"status": "success", "message": "ok"})
+    with (
+        patch("app.api.notification.config_manager") as cm,
+        _TestFnSwap("email", fake),
+    ):
+        cm.get_config_parser.return_value = _cfg_with(["notify-email-5"])
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post(
@@ -800,15 +949,15 @@ async def test_post_notification_test_email_branch(app_notif):
                 json={"notification_type": "email", "email_id": 5},
             )
     assert r.status_code == 200
-    gn.return_value.test_notification.assert_called_once_with(
-        notification_type="email", webhook_id=None, email_id=5
-    )
+    assert r.json()["status"] == "success"
+    fake.assert_awaited_once_with(5)
 
 
 @pytest.mark.asyncio
 async def test_post_notification_test_failure_returns_error(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.side_effect = RuntimeError("boom")
+    """渠道 test_fn 抛异常时整体返回 error"""
+    with patch("app.api.notification.config_manager") as cm:
+        cm.get_config_parser.side_effect = RuntimeError("boom")
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post(
@@ -846,18 +995,21 @@ async def test_get_notification_webhooks_parser_error(app_notif):
 
 @pytest.mark.asyncio
 async def test_post_webhook_test_failure_returns_error(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.side_effect = ValueError("bad hook")
+    """渠道返回失败时端点透传 error"""
+    fake = AsyncMock(return_value={"status": "error", "message": "bad hook"})
+    with _TestFnSwap("webhook", fake):
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post("/api/notification/webhooks/1/test")
     assert r.json()["status"] == "error"
+    assert r.json()["message"] == "bad hook"
 
 
 @pytest.mark.asyncio
 async def test_post_email_test_failure_returns_error(app_notif):
-    with patch("app.api.notification.get_notifier") as gn:
-        gn.return_value.test_notification.side_effect = OSError("smtp down")
+    """渠道抛异常时端点捕获并返回 error"""
+    fake = AsyncMock(side_effect=OSError("smtp down"))
+    with _TestFnSwap("email", fake):
         transport = ASGITransport(app=app_notif)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.post("/api/notification/emails/1/test")

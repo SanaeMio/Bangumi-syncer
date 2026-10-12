@@ -142,3 +142,39 @@ class TestAiringToday:
     def test_visible_in_ui(self):
         visible_ids = {t.id for t in ui_visible_types()}
         assert "airing_today" in visible_ids
+
+
+class TestPayloadFields:
+    """类型专属 payload 字段声明（供 webhook 默认模板展开）"""
+
+    def test_watching_summary_carries_summary_text(self):
+        """追番总结的正文是核心内容，必须随类型声明，否则通用模板发不出内容"""
+        meta = get_type_meta("watching_summary_每日总结")
+        assert meta is not None
+        fields = meta.default_payload_fields()
+        assert fields["summary"] == "summary_text"
+        assert fields["job_name"] == "job_name"
+
+    def test_mark_failed_carries_error_context(self):
+        meta = get_type_meta("mark_failed")
+        assert meta is not None
+        fields = meta.default_payload_fields()
+        assert fields["error_type"] == "error_type"
+        assert fields["additional_info"] == "additional_info"
+
+    def test_default_payload_fields_returns_dict(self):
+        meta = get_type_meta("request_received")
+        assert meta is not None
+        assert meta.default_payload_fields() == {}
+
+    def test_payload_fields_are_name_key_pairs(self):
+        """所有声明必须是 (字段名, data 键名) 二元组，避免渲染时取错来源"""
+        for meta in all_types():
+            for pair in meta.payload_fields:
+                assert len(pair) == 2, f"{meta.id} 的 payload_fields 项格式非法: {pair}"
+                field_name, data_key = pair
+                assert field_name and isinstance(field_name, str)
+                assert data_key and isinstance(data_key, str)
+
+    def test_unknown_type_has_no_fields(self):
+        assert get_type_meta("no_such_type") is None

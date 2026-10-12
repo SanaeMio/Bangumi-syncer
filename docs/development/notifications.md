@@ -30,6 +30,18 @@ notification_service.notify(event_type, item, source, **kwargs)
 
 `NotificationRegistry`（`app/core/notification_registry.py`）是通知类型的注册表，常见分类：`sync_flow`（同步流）、`match_quality`（匹配质量）、`data_source`（数据源）、`scheduler`（调度器）、`bangumi_api`、`system`。
 
+**类型知识只登记在注册表里**，渠道实现不应硬编码某一类型的字段。每条 `NotificationTypeMeta` 可声明：
+
+| 字段 | 作用 |
+| --- | --- |
+| `payload_fields` | 该类型附加到 webhook payload 的字段（`(占位符, data 键名)` 序列）。渲染时由 `default_payload_fields()` 汇总展开，空值会被丢弃 |
+| `title_template` | 标题模板（如 `"追番总结 - {job_name}"`）。留空时回退为 `"{display_name}"`，最终标题是 `"{icon} {title_template}"` |
+| `is_item_level` | 是否按条目（title+season+episode）维度冷却 |
+| `in_app_type` / `in_app_title_template` | 触发站内信时的类型与标题模板 |
+| `visible_in_ui` / `category` | 配置页展示与归类 |
+
+默认模板 `templates/notifications/webhook/default.json` 里的 `"extra": "__type_fields__"` 是**哨兵值**：渲染时该键被整体摘掉，专属字段被 `merge_type_fields` 平铺到 payload **顶层**（发出去的 JSON 里没有 `extra`）；邮件模板则通过 `{summary_text}` 等占位符取用。新增通知类型时，若它有通用占位符表达不了的信息，在注册表里加 `payload_fields` 即可，无需改任何渠道代码。
+
 ---
 
 ## ChannelRegistry：渠道抽象

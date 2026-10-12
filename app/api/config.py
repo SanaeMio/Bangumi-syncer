@@ -286,9 +286,9 @@ async def update_config(
             if sid:
                 await scheduler_registry.apply_config_by_section(section)
 
-            # 通知配置段（notify-webhook / notify-email）无需显式重载：
-            # Notifier 每次 send_notification_by_type 都实时读取配置，
-            # 配置保存后下一次通知自动生效。
+            # 通知配置段（notify-webhook / notify-email 等）由通知配置接口
+            # 在保存后调用 _reload_notification_channels 重新装配渠道，
+            # 此处无需重复处理。
 
             # LLM 客户端重置（llm 段或 summary 段变更时）
             if section in ("llm", "summary"):

@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from ..core.config import config_manager
 from ..core.config_secret_crypto import encrypt_if_sensitive
 from ..core.logging import logger
-from ..utils.notifier import get_notifier
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api")
@@ -390,33 +389,44 @@ class ChannelHandler:
             }
 
 
-# ========== test_fn 工厂：webhook/email 走 notifier，wecom/dingtalk 走 Channel.send ==========
+# ========== test_fn 工厂：统一走 Channel.send，模板由 notification_service 渲染 ==========
 
 
-async def _test_via_notifier(
-    channel_type: str, id_param: str, item_id: int
-) -> dict[str, Any]:
-    """webhook/email 通过 notifier.test_notification 测试"""
-    notifier = get_notifier()
-    results = await asyncio.to_thread(
-        notifier.test_notification,
-        notification_type=channel_type,
-        **{id_param: item_id},
-    )
-    return {"status": "success", "data": results}
+def _build_test_payload(notification_type: str) -> dict[str, Any]:
+    """构造测试通知的数据字段。
+
+    使用 ``mark_success`` 作为示例类型，字段名与真实通知保持一致，
+    确保测试渲染走的是线上同一套模板与类型专属字段逻辑。
+    """
+    import time
+
+    data: dict[str, Any] = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "user_name": "test",
+        "title": "测试番剧",
+        "ori_title": "",
+        "season": 1,
+        "episode": 1,
+        "source": "test",
+        "notification_type": notification_type,
+        "error_message": "",
+    }
+    return data
 
 
-def _make_channel_send_test_fn(
+def _make_channel_test_fn(
     channel_cls_name: str, section_prefix: str, display_name: str
 ):
-    """wecom/dingtalk 通过直接构造 Channel.send 测试"""
+    """构造测试函数：直连 ``Channel.send``，模板经 notification_service 渲染。
+
+    所有渠道共用同一条路径（不再区分 webhook/email 走旧 Notifier），
+    因此「测试」看到的内容与线上实际发送的内容一致。
+    """
 
     async def test_fn(item_id: int) -> dict[str, Any]:
-        import time
-
+        from ..services.notification_service import get_notification_service
         from ..utils.notifier import channels_impl
 
-        channel_cls = getattr(channels_impl, channel_cls_name)
         section_name = f"{section_prefix}{item_id}"
         config = config_manager.get_config_parser()
         if not config.has_section(section_name):
@@ -426,18 +436,21 @@ def _make_channel_send_test_fn(
             }
 
         cfg = config_manager.get_section(section_name)
+        channel_cls = getattr(channels_impl, channel_cls_name)
         channel = channel_cls(channel_id=section_name, config=cfg)
 
-        payload = {
-            "title": "🔧 测试通知",
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "anime": "测试番剧",
-            "episode": "S1E1",
-            "user": "test",
-            "source": "test",
-            "error": "",
-        }
-        result = await asyncio.to_thread(channel.send, "mark_success", payload, None)
+        notification_type = "mark_success"
+        data = _build_test_payload(notification_type)
+
+        def _send():
+            service = get_notification_service()
+            # 复用线上渲染逻辑，保证测试内容与真实通知同构
+            rendered = service._render_for_channel(channel, notification_type, data)
+            rendered = dict(rendered)
+            rendered.setdefault("subject", "🔧 测试通知")
+            return channel.send(notification_type, rendered["payload"], rendered)
+
+        result = await asyncio.to_thread(_send)
 
         return {
             "status": "success" if result.success else "error",
@@ -506,7 +519,7 @@ _CHANNEL_HANDLERS: dict[str, ChannelHandler] = {
         fields=_WEBHOOK_FIELDS,
         create_model=WebhookConfigCreate,
         update_model=WebhookConfigUpdate,
-        test_fn=lambda id: _test_via_notifier("webhook", "webhook_id", id),
+        test_fn=_make_channel_test_fn("WebhookChannel", "notify-webhook-", "webhook"),
         label="Webhook",
     ),
     "email": ChannelHandler(
@@ -515,7 +528,7 @@ _CHANNEL_HANDLERS: dict[str, ChannelHandler] = {
         fields=_EMAIL_FIELDS,
         create_model=EmailConfigCreate,
         update_model=EmailConfigUpdate,
-        test_fn=lambda id: _test_via_notifier("email", "email_id", id),
+        test_fn=_make_channel_test_fn("EmailChannel", "notify-email-", "邮件"),
         label="邮件",
     ),
     "wecom": ChannelHandler(
@@ -524,9 +537,7 @@ _CHANNEL_HANDLERS: dict[str, ChannelHandler] = {
         fields=_WECOM_FIELDS,
         create_model=WeComConfigCreate,
         update_model=WeComConfigUpdate,
-        test_fn=_make_channel_send_test_fn(
-            "WeChatWorkChannel", "notify-wecom-", "企业微信"
-        ),
+        test_fn=_make_channel_test_fn("WeChatWorkChannel", "notify-wecom-", "企业微信"),
         label="企业微信",
     ),
     "dingtalk": ChannelHandler(
@@ -535,9 +546,7 @@ _CHANNEL_HANDLERS: dict[str, ChannelHandler] = {
         fields=_DINGTALK_FIELDS,
         create_model=DingTalkConfigCreate,
         update_model=DingTalkConfigUpdate,
-        test_fn=_make_channel_send_test_fn(
-            "DingTalkChannel", "notify-dingtalk-", "钉钉"
-        ),
+        test_fn=_make_channel_test_fn("DingTalkChannel", "notify-dingtalk-", "钉钉"),
         label="钉钉",
     ),
     "rule": ChannelHandler(
@@ -557,21 +566,60 @@ async def test_notification(
     request: NotificationTestRequest,
     current_user: dict = Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
-    """测试通知功能"""
+    """测试通知功能
+
+    按渠道类型批量测试已配置的渠道。测试走 :func:`_make_channel_test_fn`
+    统一路径（模板经 notification_service 渲染），与线上发送保持一致。
+
+    若同时给了 ``webhook_id`` / ``email_id``，则只测该条渠道 —— 否则会连带
+    触发其它已配置渠道，产生"只想测一条却群发"的副作用。
+    """
     try:
-        notifier = get_notifier()
         notification_type = request.notification_type or "all"
 
-        # 根据类型测试特定的通知方式
+        # 显式指定了单条渠道：只测它，避免误触发其它线上渠道
+        explicit_id = request.webhook_id or request.email_id
+        if explicit_id is not None:
+            key = "webhook" if request.webhook_id else "email"
+            handler = _CHANNEL_HANDLERS[key]
+            result = await handler.test_fn(explicit_id)
+            return {
+                "status": "success",
+                "data": {f"{key}-{explicit_id}": result},
+            }
+
+        # 汇总所有已配置渠道的 id，按渠道类型分组
+        config = config_manager.get_config_parser()
+        sections = config.sections()
+
+        targets: list[tuple[str, int]] = []
         if notification_type == "all":
-            results = await asyncio.to_thread(notifier.test_notification)
+            for key, handler in _CHANNEL_HANDLERS.items():
+                if handler.test_fn is None:
+                    continue
+                for section_name in sections:
+                    if section_name.startswith(handler.section_prefix):
+                        suffix = section_name[len(handler.section_prefix) :]
+                        if suffix.isdigit():
+                            targets.append((key, int(suffix)))
         else:
-            results = await asyncio.to_thread(
-                notifier.test_notification,
-                notification_type=notification_type,
-                webhook_id=request.webhook_id,
-                email_id=request.email_id,
-            )
+            handler = _CHANNEL_HANDLERS.get(notification_type)
+            if handler is None or handler.test_fn is None:
+                return {
+                    "status": "error",
+                    "message": f"不支持的通知类型: {notification_type}",
+                }
+            for section_name in sections:
+                if section_name.startswith(handler.section_prefix):
+                    suffix = section_name[len(handler.section_prefix) :]
+                    if suffix.isdigit():
+                        targets.append((notification_type, int(suffix)))
+
+        results: dict[str, Any] = {}
+        for key, item_id in targets:
+            handler = _CHANNEL_HANDLERS[key]
+            result = await handler.test_fn(item_id)
+            results[f"{key}-{item_id}"] = result
 
         return {"status": "success", "data": results}
     except Exception as e:

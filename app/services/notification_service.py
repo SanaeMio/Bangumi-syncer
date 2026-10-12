@@ -80,7 +80,14 @@ class CooldownPolicy:
         key = f"{channel_id}::{notification_type}"
         meta = get_type_meta(notification_type)
         if meta and meta.is_item_level:
-            item_key = f"{data.get('title', '')}::S{data.get('season', 0)}E{data.get('episode', 0)}"
+            # 季/集号可能为 None（条目级通知理论上总有值，这里只做兜底格式化，
+            # 避免 None 拼进 key 变成 "SNoneENone" 影响冷却分桶）。
+            _s = data.get("season")
+            _e = data.get("episode")
+            item_key = (
+                f"{data.get('title', '')}::S{0 if _s is None else _s}"
+                f"E{0 if _e is None else _e}"
+            )
             # bgm_username 区分多账号：同一条目被多个 Bangumi 账号标记时，
             # 各账号的通知使用各自的 key，避免非首选账号被首选账号的冷却拦截。
             account_key = data.get("bgm_username", "") or ""
@@ -337,8 +344,10 @@ class NotificationService:
             "user_name": "unknown",
             "title": "unknown",
             "ori_title": "",
-            "season": 0,
-            "episode": 0,
+            # 季/集号默认 None（而非 0）：追番总结、API 错误等类型本就没有集数，
+            # 这里是「无此信息」而非「第 0 季第 0 集」，供 {ep_label} 判空省略。
+            "season": None,
+            "episode": None,
             "source": "",
         }
         if item is not None:
@@ -425,23 +434,52 @@ class NotificationService:
         meta = get_type_meta(notification_type)
         type_data = dict(data)
         type_data.setdefault("notification_type", notification_type)
+        # 集数标签（如 "S01E02" / "剧场版"）：标题模板、webhook 与邮件正文共用，
+        # 需在渲染 payload_title 之前就位。无集数信息的类型（追番总结、API 错误、
+        # 磁盘告警等）为空串，配合模板的「无值省略」，避免出现无意义的 S00E00。
+        if not type_data.get("ep_label"):
+            type_data["ep_label"] = self.template_mgr.derive_ep_label(type_data)
         if meta:
             type_data.setdefault("type_display_name", meta.display_name)
             type_data.setdefault("type_icon", meta.icon)
+            # 类型标题模板（如 "追番总结 - {job_name}"）；供模板里的 {title}
+            # 以及邮件主题使用，缺失字段降级为空串。
+            rendered_title = self.template_mgr.render_string(
+                meta.default_title(), _SafeFormatDict(type_data)
+            )
+            # 占位符为空（如无集数时的 {ep_label}）会在标题里留下多余空格，
+            # 归一化空白，避免出现 "同步失败 - 番剧名 " 这种尾随空格。
+            rendered_title = " ".join(rendered_title.split())
+            type_data.setdefault("payload_title", rendered_title)
+        else:
+            type_data.setdefault("payload_title", type_data.get("title", ""))
 
         channel_type = channel.channel_type
         if channel_type == "webhook":
             # 规则级模板优先于渠道级
             inline_tpl = (rule_template or channel.config.get("template", "")).strip()
             if inline_tpl:
-                try:
-                    import json
+                import json
 
+                try:
                     obj = json.loads(inline_tpl)
-                    payload = self.template_mgr.render_value(obj, type_data)
-                except Exception:
+                except (ValueError, TypeError) as e:
+                    # 只降级「JSON 解析失败」这一种情况：模板语法错误时用内置
+                    # 模板兜底，避免整条通知发不出去。
+                    logger.warning(
+                        f"渠道 {channel.channel_id} 的消息模板不是合法 JSON（{e}），"
+                        "已回退内置模板"
+                    )
                     payload = self.template_mgr.render_webhook_payload(
                         type_data, fallback=type_data
+                    )
+                else:
+                    payload = self.template_mgr.render_value(obj, type_data)
+                    # 用户模板是「完全替换」：只有他显式写了 extra 哨兵才注入
+                    # 类型特有字段，否则原样发送（严格 schema 的接收端不该被
+                    # 塞入没写过的键）。
+                    payload = self.template_mgr.merge_type_fields(
+                        payload, type_data, inject_default=False
                     )
             else:
                 payload = self.template_mgr.render_webhook_payload(

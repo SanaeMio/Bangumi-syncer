@@ -189,6 +189,8 @@ sync_records.db-shm
 
 # 本地嵌套的第三方仓库（如 jellyfin-plugin-bangumi），仅本地开发用，不纳入分发
 rrr/mcp_server
+# rrr/ 下整体忽略：内含第三方仓库 clone 与本地调试脚本，避免 git add -A 误提交
+/rrr/
 
 # 旧 MCP Sidecar 目录（嵌入后保留为历史参考，不纳入分发）
 /mcp_server/

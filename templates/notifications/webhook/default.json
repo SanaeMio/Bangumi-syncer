@@ -1,11 +1,11 @@
 {
-  "title": "{type_icon} {type_display_name}",
+  "title": "{payload_title}",
   "type": "{notification_type}",
   "timestamp": "{timestamp}",
   "user": "{user_name}",
   "anime": "{title}",
-  "episode": "S{season}E{episode}",
+  "episode": "{ep_label}",
   "source": "{source}",
   "error": "{error_message}",
-  "extra": {}
+  "extra": "__type_fields__"
 }

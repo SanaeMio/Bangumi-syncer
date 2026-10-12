@@ -23,7 +23,7 @@ tests/
 ├── api/                    # API 层测试（端到端 HTTP，含鉴权）
 ├── core/                   # Config / Database / Security / Scheduler
 ├── services/               # SyncService / 驱动 / 通知规则
-├── utils/                  # BangumiApi / Archive / Notifier
+├── utils/                  # BangumiApi / Archive / 通知渠道与模板
 ├── models/                 # Pydantic 模型测试
 ├── trakt/                  # Trakt 专项测试
 ├── e2e/                    # 端到端测试（Playwright，默认不跑）

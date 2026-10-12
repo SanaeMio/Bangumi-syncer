@@ -1,0 +1,13 @@
+{payload_title}
+
+时间：{timestamp}
+番剧：{title} {ep_label}
+用户：{user_name}
+来源：{source}
+
+{summary_text}
+
+{error_message}
+
+--
+本邮件由 Bangumi-Syncer 自动发送 · {timestamp}
