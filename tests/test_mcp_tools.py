@@ -1020,7 +1020,7 @@ ALLOWED_WRITE_KEYS = [
     ("bangumi-mapping", "some_key"),
     # 多实例段任意键（裸父段除外，见 TestUpdateConfigMultiInstanceSegment）
     ("notify-webhook-1", "url"),
-    ("notify-webhook-abc", "url"),
+    ("summary-weekly", "enabled"),
 ]
 
 
@@ -1373,11 +1373,17 @@ class TestGetLogsDisabledNotice:
 
 
 class TestUpdateConfigMultiInstanceSegment:
-    """多实例段名须带后缀：裸父段运行时读不到，是永不生效的死段。
+    """多实例段名须带后缀，且后缀须符合该前缀在 Web 端的生成方式。
 
-    运行时以 ``startswith("notify-webhook-")`` 枚举实例（notification_service.py），
-    ``[notify-webhook]`` 缺尾部横杠不匹配，写入后永远不会被读取。
-    后缀内容不限（``-abc`` 会被当真实渠道使用，与页面操作等价）。
+    - ``notify-*``：Web 用自增整数 ID（``notification.py:208``
+      ``_section_name(item_id: int)``），故只接受数字后缀
+    - ``summary``：Web 用用户自定义任务名（``config.py:774``
+      ``f"summary-{name}"``，唯一约束是「不含逗号、不重名」，见
+      ``api/summary_jobs.py:_validate_job_name``），故不限数字
+
+    裸父段（如 ``notify-webhook``）一律拒绝：运行时以
+    ``startswith("notify-webhook-")`` 枚举实例（notification_service.py），
+    裸父段缺尾部横杠不匹配，写入后永远不会被读取。
     """
 
     @staticmethod
@@ -1419,10 +1425,10 @@ class TestUpdateConfigMultiInstanceSegment:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "section",
-        ["notify-webhook-1", "notify-webhook-abc", "notify-email-2", "summary-1"],
+        ["notify-webhook-1", "notify-email-2", "notify-rule-10"],
     )
-    async def test_update_config_带后缀的实例段_放行(self, section):
-        """带后缀的实例段应放行（后缀不限数字，因其会被真实读取）。"""
+    async def test_update_config_notify段数字后缀_放行(self, section):
+        """notify-* 的数字后缀应放行（与 Web 生成的自增 ID 一致）。"""
         from app.mcp import tools
 
         mock_cm = MagicMock()
@@ -1436,6 +1442,74 @@ class TestUpdateConfigMultiInstanceSegment:
                 )
 
         assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "section",
+        ["notify-webhook-abc", "notify-email-x", "notify-rule-1a"],
+    )
+    async def test_update_config_notify段非数字后缀_拒绝(self, section):
+        """notify-* 的非数字后缀应拒绝：Web 端一律用自增整数 ID。"""
+        from fastmcp.exceptions import ToolError
+
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                with pytest.raises(ToolError):
+                    await tools.update_config(section=section, key="url", value="x")
+
+        mock_cm.set_config.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "section",
+        ["summary-1", "summary-weekly", "summary-daily_report"],
+    )
+    async def test_update_config_summary段自定义名后缀_放行(self, section):
+        """summary 的后缀是用户自定义任务名，不应限制为数字。
+
+        Web 端 ``save_summary_config`` 用 ``f"summary-{name}"``，
+        名称唯一约束是「不含逗号、不重名」（``api/summary_jobs.py``），
+        并非数字——限制为数字会误伤用户在页面上创建的任务。
+        """
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                result = await tools.update_config(
+                    section=section, key="enabled", value="true"
+                )
+
+        assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_update_config_notify段全角数字后缀_拒绝(self):
+        """全角数字不应被当作合法数字后缀（str.isdigit 会误判）。"""
+        from fastmcp.exceptions import ToolError
+
+        from app.mcp import tools
+
+        mock_cm = MagicMock()
+        with patch("app.mcp.tools.config_manager", mock_cm):
+            with patch(
+                "app.mcp.tools.get_access_token",
+                return_value=self._make_write_token(),
+            ):
+                with pytest.raises(ToolError):
+                    await tools.update_config(
+                        section="notify-webhook-１", key="url", value="x"
+                    )
+
+        mock_cm.set_config.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("section", ["notify-airing-today", "notify-in-app"])
