@@ -34,6 +34,7 @@ def test_search_success():
         api = BangumiApi()
         result = api.search("test", "2024-01-01", "2024-12-31")
 
+        assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["id"] == 1
         assert result[0]["name"] == "Test Anime"
@@ -95,6 +96,7 @@ def test_get_episodes():
         api = BangumiApi()
         result = api.get_episodes(123)
 
+        assert isinstance(result, dict)
         assert result["total"] == 2
         assert len(result["data"]) == 2
         assert result["data"][0]["ep"] == 1
@@ -261,6 +263,7 @@ def test_get_related_subjects():
         api = BangumiApi()
         result = api.get_related_subjects(123)
 
+        assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["relation"] == "续集"
 

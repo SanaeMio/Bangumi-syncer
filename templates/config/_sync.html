@@ -161,12 +161,37 @@
                                                 <i class="bi bi-question-circle ms-1 text-muted"
                                                    data-bs-toggle="tooltip"
                                                    title="开启后 /api/test-sync 与 /api/fongmi/debug/sync 等测试接口不再校验 media_server_username / 用户映射，方便未配置用户名时验证匹配与标记。仅对测试来源生效，生产 webhook 路径不受影响。"></i>
-                                            </label>
-                                        </div>
+                                             </label>
+                                         </div>
+                                     </div>
+                                <!-- 匹配增强（LLM）：开关显隐由 config.html 的 loadLLMMatchAssist() 依据 llm_available 控制 -->
+                                <div class="col-12 mt-2 pt-3 border-top">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="bi bi-robot me-2 text-primary"></i>
+                                        <h6 class="m-0 fw-semibold">匹配增强（LLM）</h6>
+                                    </div>
+                                    <div id="llm-match-assist-switch"
+                                         class="form-check form-switch d-flex align-items-center mb-0 d-none">
+                                        <input class="form-check-input me-2"
+                                               type="checkbox"
+                                               id="llm-match-assist"
+                                               name="sync.llm_match_assist">
+                                        <label class="form-check-label" for="llm-match-assist">
+                                            启用 LLM 匹配增强
+                                            <i class="bi bi-question-circle ms-1 text-muted"
+                                               data-bs-toggle="tooltip"
+                                               title="开启后，匹配失败时由 LLM Agent 提供候选建议，沉淀到待审队列由人工确认，原失败逻辑不受影响。需先在「LLM 配置」中配置 API 地址与密钥。"></i>
+                                        </label>
+                                    </div>
+                                    <div id="llm-match-assist-tip"
+                                         class="alert alert-warning py-2 mb-0 d-none">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        需先配置 LLM（在「LLM 配置」卡片填写 API 地址与密钥）才能启用「匹配增强」。
                                     </div>
                                 </div>
-                            </div>
-                        </div>
+                                 </div>
+                             </div>
+                         </div>
                     </div>
                 </div>
             </div>

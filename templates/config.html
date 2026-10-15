@@ -718,6 +718,8 @@
         loadNotificationRules()
         // 加载 LLM 和追番总结配置
         loadLLMConfig()
+        // 加载「匹配增强（LLM）」开关的条件渲染（复用已加载的 /api/config 数据）
+        loadLLMMatchAssist(currentConfig)
         loadSummaryJobs()
         if (showToast) {
           showAlert('配置重新加载成功', 'success')
@@ -2097,10 +2099,40 @@
       document.getElementById('llm-timeout').value = d.timeout || 60
       document.getElementById('llm-provider').value =
         d.provider || 'openai_compat'
-      document.getElementById('llm-thinking-level').value =
-        d.thinking_level || 'off'
     } catch (e) {
       /* silent */
+    }
+  }
+
+  // ========== 匹配增强（LLM）开关条件渲染 ==========
+  // 数据源：已加载的 GET /api/config 数据（config.llm.api_key 是否非空 = LLM 是否已配置，
+  // config.sync.llm_match_assist = 当前开关值）。未配置 LLM 时隐藏开关并展示提示。
+  function loadLLMMatchAssist(config) {
+    const switchEl = document.getElementById('llm-match-assist-switch')
+    const tipEl = document.getElementById('llm-match-assist-tip')
+    const cb = document.getElementById('llm-match-assist')
+    if (!switchEl || !tipEl || !cb) return
+    try {
+      const data = config || {}
+      // get_section 已把 "true"/"false" 归一为布尔；空 api_key 视为未配置
+      const available = !!(((data.llm || {}).api_key || '') + '').trim()
+      if (available) {
+        // LLM 已配置：显示开关并按当前值勾选
+        cb.checked = !!((data.sync || {}).llm_match_assist)
+        switchEl.classList.remove('d-none')
+        tipEl.classList.add('d-none')
+      } else {
+        // LLM 未配置：隐藏开关，展示「需先配置 LLM」提示
+        cb.checked = false
+        switchEl.classList.add('d-none')
+        tipEl.classList.remove('d-none')
+      }
+    } catch (e) {
+      // 数据异常时按"未配置"降级，避免误展示可点击开关
+      console.error('渲染匹配增强开关状态失败:', e)
+      cb.checked = false
+      switchEl.classList.add('d-none')
+      tipEl.classList.remove('d-none')
     }
   }
 
@@ -2129,7 +2161,6 @@
             parseFloat(document.getElementById('llm-temperature').value) || 0.7,
           timeout: parseInt(document.getElementById('llm-timeout').value) || 60,
           provider: document.getElementById('llm-provider').value,
-          thinking_level: document.getElementById('llm-thinking-level').value,
         }),
       })
       if (saveD.status !== 'success')
@@ -2235,6 +2266,7 @@
     document.getElementById('summary-job-max-records').value = '-1'
     document.getElementById('summary-job-memory-limit').value = '0'
     document.getElementById('summary-job-related-limit').value = '0'
+    document.getElementById('summary-thinking-level').value = 'off'
     document.getElementById('summary-job-clear-memory-btn').disabled = true
     document.getElementById('summary-job-prompt').value =
       '你是一个轻松有趣的追番助手。用户会给你一段指定时间范围内的观影记录，请你用亲切自然的中文生成追番总结。\n\n' +
@@ -2294,6 +2326,8 @@
         job.memory_limit || 0
       document.getElementById('summary-job-related-limit').value =
         job.related_limit || 0
+      document.getElementById('summary-thinking-level').value =
+        job.thinking_level || 'off'
       document.getElementById('summary-job-clear-memory-btn').disabled = false
       document.getElementById('summary-job-prompt').value =
         job.system_prompt || ''
@@ -2328,6 +2362,7 @@
         document.getElementById('summary-job-related-limit').value,
         10,
       ) || 0,
+      thinking_level: document.getElementById('summary-thinking-level').value,
       system_prompt: document.getElementById('summary-job-prompt').value,
     }
     // 前端校验：名称不能含逗号，不能与已有任务重名
@@ -2444,37 +2479,72 @@
   async function testSummaryJob(name) {
     var btn = event && event.target ? event.target.closest('button') : null
     await setButtonLoading(btn, '测试中...', async () => {
-      try {
-        var d = await apiFetch(
-          '/api/summary/jobs/' + encodeURIComponent(name) + '/test',
-          { method: 'POST' },
-        )
-        if (d.success) {
-          document.getElementById('summary-test-modal-job').textContent = name
+      await streamSummaryTest(name)
+    })
+  }
+
+  // 流式试生成：SSE 增量渲染摘要文本，done 后展示用量/延迟（T9）
+  function streamSummaryTest(name) {
+    return new Promise((resolve) => {
+      var url =
+        '/api/summary/jobs/' + encodeURIComponent(name) + '/test/stream'
+      var source = new EventSource(url)
+      var text = ''
+      var finished = false
+      var finalize = () => {
+        if (finished) return
+        finished = true
+        source.close()
+        resolve()
+      }
+
+      document.getElementById('summary-test-modal-job').textContent = name
+      document.getElementById('summary-test-modal-info').innerHTML =
+        '流式生成中...'
+      document.getElementById('summary-test-modal-text').textContent = ''
+      showModal('summaryTestResultModal')
+
+      source.onmessage = (ev) => {
+        var data
+        try {
+          data = JSON.parse(ev.data)
+        } catch (e) {
+          return // 非 JSON 数据（如心跳）忽略
+        }
+        if (data.type === 'delta') {
+          text += data.text || ''
+          document.getElementById('summary-test-modal-text').textContent = text
+        } else if (data.type === 'done') {
           document.getElementById('summary-test-modal-info').innerHTML =
             '模型: ' +
-            escapeHtml(d.model) +
+            escapeHtml(data.model || '') +
             ' | Token: P' +
-            d.prompt_tokens +
+            data.prompt_tokens +
             '/C' +
-            d.completion_tokens +
+            data.completion_tokens +
             '/T' +
-            d.total_tokens +
+            data.total_tokens +
             ' | 延迟: ' +
-            d.latency_ms +
+            data.latency_ms +
             'ms | 记录数: ' +
-            d.record_count
-          document.getElementById('summary-test-modal-text').textContent =
-            d.summary_text || '（无输出）'
-          showModal('summaryTestResultModal')
-        } else {
-          showAlert(
-            '测试失败: ' + (d.error_message || d.message || '未知错误'),
-            'danger',
-          )
+            data.record_count
+          if (!text) {
+            document.getElementById('summary-test-modal-text').textContent =
+              '（无输出）'
+          }
+          finalize()
+        } else if (data.type === 'error') {
+          document.getElementById('summary-test-modal-info').innerHTML = ''
+          showAlert('测试失败: ' + (data.message || '未知错误'), 'danger')
+          finalize()
         }
-      } catch (e) {
-        showAlert('测试请求失败: ' + e.message, 'danger')
+        // type === 'thinking' 暂不展示，忽略即可
+      }
+
+      source.onerror = () => {
+        if (finished) return // done/error 后主动 close 触发的 onerror
+        showAlert('测试连接中断', 'danger')
+        finalize()
       }
     })
   }
@@ -2613,6 +2683,21 @@
                                    value="0"
                                    min="0"
                                    max="1000" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">
+                                思考强度
+                                <i class="bi bi-question-circle ms-1 text-muted"
+                                   data-bs-toggle="tooltip"
+                                   data-bs-container="body"
+                                   title="LLM 推理思考深度，off 为关闭"></i>
+                            </label>
+                            <select class="form-select" id="summary-thinking-level">
+                                <option value="off">off（关闭）</option>
+                                <option value="low">low（低）</option>
+                                <option value="medium">medium（中）</option>
+                                <option value="high">high（高）</option>
+                            </select>
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
                             <button type="button"

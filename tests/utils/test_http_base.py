@@ -1,5 +1,6 @@
 """HttpClientBase / SyncHttpClient / AsyncHttpClient 单元测试"""
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -207,7 +208,10 @@ class TestSyncHttpClient:
         with patch("app.utils.http_base.create_sync_client") as mc:
             mc.return_value = _mock_sync_httpx(response=resp)
             with patch("app.utils.http_base.logger") as ml:
-                client = SyncHttpClient(label="T", max_retries=0).prefix("🔔")
+                # prefix 链式返回基类 HttpClientBase；cast(Any) 以访问 request
+                client = cast(
+                    Any, SyncHttpClient(label="T", max_retries=0).prefix("🔔")
+                )
                 client.request("GET", "http://example.com")
                 assert ml.info.call_count == 0
                 debug_msgs = [str(c[0][0]) for c in ml.debug.call_args_list]
@@ -220,7 +224,10 @@ class TestSyncHttpClient:
         with patch("app.utils.http_base.create_sync_client") as mc:
             mc.return_value = _mock_sync_httpx(side_effect=err)
             with patch("app.utils.http_base.logger") as ml:
-                client = SyncHttpClient(label="T", max_retries=0).prefix("🔔")
+                # prefix 链式返回基类 HttpClientBase；cast(Any) 以访问 request
+                client = cast(
+                    Any, SyncHttpClient(label="T", max_retries=0).prefix("🔔")
+                )
                 with pytest.raises(httpx.ConnectError):
                     client.request("GET", "http://example.com")
                 assert ml.info.call_count == 1

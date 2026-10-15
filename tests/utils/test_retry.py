@@ -1,5 +1,6 @@
 """HTTP 请求重试通用工具测试"""
 
+from typing import Any, cast
 from unittest.mock import MagicMock, call, patch
 
 import httpx
@@ -77,11 +78,12 @@ class TestComputeBackoffDelay:
 
     def test_cap_applied(self):
         """cap=5.0 时 attempt=3 应被截断到 5.0"""
-        assert compute_backoff_delay(3, cap=5.0) == 5.0
+        # cap 形参声明为 int|None，这里刻意传 float；cast(Any) 保留 float cap 语义
+        assert compute_backoff_delay(3, cap=cast(Any, 5.0)) == 5.0
 
     def test_cap_not_applied_when_below(self):
         """cap=10.0 时 attempt=3 (8.0) 未达上限，保持 8.0"""
-        assert compute_backoff_delay(3, cap=10.0) == 8.0
+        assert compute_backoff_delay(3, cap=cast(Any, 10.0)) == 8.0
 
     def test_custom_base(self):
         """自定义 base=3, attempt=2 → 3^2 = 9.0"""
@@ -357,7 +359,8 @@ class TestHttpRetrySyncSleepSequence:
             side_effect=[retry_resp, retry_resp, retry_resp, ok_resp]
         )
 
-        result = http_retry_sync(do_request, max_retries=3, backoff_cap=3.0)
+        # backoff_cap 形参声明为 int|None，这里刻意传 float；cast(Any) 保留语义
+        result = http_retry_sync(do_request, max_retries=3, backoff_cap=cast(Any, 3.0))
 
         assert result is ok_resp
         # attempt 0→1.0, 1→2.0, 2→4.0 但被 cap 限制为 3.0

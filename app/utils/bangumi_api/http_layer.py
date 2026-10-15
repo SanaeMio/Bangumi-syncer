@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import socket
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -14,6 +15,50 @@ import httpx
 from ...core.logging import logger
 from ..http_base import SyncHttpClient
 from ..retry import RETRY_EXCEPTIONS, RETRY_STATUS_CODES
+from .rate_limit import get_bgm_rate_limiter
+
+#: Bangumi 请求的 User-Agent（同步 ``init`` 与异步请求层共用）
+BGM_USER_AGENT = "SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)"
+
+
+def _parse_retry_after(res: httpx.Response) -> float | None:
+    """解析响应头 ``Retry-After`` 为秒数
+
+    支持纯秒数与 HTTP-date；缺失或无法解析时返回 None（由令牌桶走默认冷却）。
+    """
+    headers = getattr(res, "headers", None) or {}
+    raw = headers.get("Retry-After") or headers.get("retry-after")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+
+    # 纯秒数
+    try:
+        return max(0.0, float(text))
+    except (TypeError, ValueError) as e:
+        # 正常降级路径：Retry-After 也可能是 HTTP-date，继续按 date 解析
+        logger.warning(
+            f"⚠️  Retry-After 非纯秒数，尝试按 HTTP-date 解析: {text!r} ({e})"
+        )
+
+    # HTTP-date
+    try:
+        from email.utils import parsedate_to_datetime
+
+        dt = parsedate_to_datetime(text)
+        if dt is None:
+            logger.warning(f"⚠️  Retry-After 无法解析: {text!r}，使用默认冷却")
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta = (dt - datetime.now(timezone.utc)).total_seconds()
+        return max(0.0, delta)
+    except (TypeError, ValueError, OverflowError) as e:
+        logger.warning(f"⚠️  Retry-After 无法解析: {text!r} ({e})，使用默认冷却")
+        return None
+
 
 # 上游网关以 2xx 返回错误页（HTML 等非 JSON）时，其语义等价于 502 Bad Gateway。
 # 据此构造等价状态码，让既有的服务端不可用降级链路（5xx 标记不可达并入队待补发）
@@ -21,8 +66,44 @@ from ..retry import RETRY_EXCEPTIONS, RETRY_STATUS_CODES
 _UPSTREAM_GATEWAY_ERROR_STATUS = 502
 
 
+def notify_limiter_from_response(res: httpx.Response) -> None:
+    """按响应状态通知进程级令牌桶（429 冻结 / 成功重置升级计数）。
+
+    仅 ``< 400``（成功）重置 429 升级计数；5xx 等服务端错误保持计数不变
+    （既不重置也不额外冻结），避免误重置弱化自适应冷却。同步/异步请求层共用。
+    """
+    limiter = get_bgm_rate_limiter()
+    if res.status_code == 429:
+        limiter.notify_rate_limited(_parse_retry_after(res))
+    elif res.status_code < 400:
+        limiter.notify_success()
+    else:
+        logger.debug(
+            f"⏳ HTTP {res.status_code} 非成功响应：保留 429 升级计数（不重置）"
+        )
+
+
 class HttpLayerMixin:
-    """HTTP 请求层相关方法（供 BangumiApi 组合）"""
+    """HTTP 请求层相关方法（供 BangumiApi 组合）
+
+    本 mixin 依赖宿主类（``BangumiApi``）提供的状态与方法；以下类级注解
+    仅用于静态类型解析，不产生运行时属性（真正的赋值发生在 ``BangumiApi.__init__``）。
+    """
+
+    # 宿主类提供的实例状态
+    ssl_verify: bool
+    access_token: str | None
+    http_proxy: str | None
+    _proxy_failed: bool
+    username: str | None
+
+    def mark_api_unreachable(self) -> None:
+        """由宿主类实现：标记 API 不可达（TTL 内走降级）"""
+        ...
+
+    def _apply_rate_limit_notification(self, res: httpx.Response) -> None:
+        """按响应状态通知进程级令牌桶（薄委托，同步/异步同源口径）。"""
+        notify_limiter_from_response(res)
 
     def _try_direct_connection(
         self, method: str, url: str, **kwargs: Any
@@ -31,17 +112,17 @@ class HttpLayerMixin:
         logger.debug(f"🔄 尝试直连: {url}")
 
         # 创建一个临时的 SyncHttpClient，不使用代理
-        temp_session = (
-            SyncHttpClient(
-                label="Bangumi-直连",
-                verify=self.ssl_verify,
-                ech=getattr(self, "ech_mode", "off"),
-                max_retries=0,
-            )
-            .prefix("📚")
-            .success_tpl("直连请求成功")
-            .failure_tpl("直连请求失败")
+        # 链式配置方法返回 HttpClientBase，会丢失 SyncHttpClient 的 client/request/close；
+        # 故逐条调用保留 temp_session 的 SyncHttpClient 静态类型（运行时等价）。
+        temp_session = SyncHttpClient(
+            label="Bangumi-直连",
+            verify=self.ssl_verify,
+            ech=getattr(self, "ech_mode", "off"),
+            max_retries=0,
         )
+        temp_session.prefix("📚")
+        temp_session.success_tpl("直连请求成功")
+        temp_session.failure_tpl("直连请求失败")
         temp_session.client.headers.update(
             {
                 "Accept": "application/json",
@@ -64,9 +145,11 @@ class HttpLayerMixin:
             kwargs_copy["timeout"] = 15
 
         try:
+            get_bgm_rate_limiter().acquire()
             res = temp_session.request(method, url, **kwargs_copy)
 
             # 检查响应状态
+            self._apply_rate_limit_notification(res)
             if res.status_code < 400:
                 return res
             else:
@@ -95,7 +178,10 @@ class HttpLayerMixin:
                 hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM
             )
             ips = [ip[4][0] for ip in ip_list]
-            logger.debug(f"✅ DNS解析成功: {hostname} -> {', '.join(set(ips))}")
+            # 地址可能是 str/bytes/int 混合，统一 str 后再去重拼接
+            logger.debug(
+                f"✅ DNS解析成功: {hostname} -> {', '.join({str(ip) for ip in ips})}"
+            )
         except socket.gaierror as e:
             logger.error(f"❌ DNS解析失败: {e}")
             logger.debug("💡 建议检查:")
@@ -147,11 +233,24 @@ class HttpLayerMixin:
         # 如果之前代理已经失败过，直接使用直连
         if self.http_proxy and self._proxy_failed:
             logger.debug("💡 检测到代理之前已失败，本次请求直接使用直连")
-            return self._try_direct_connection(method, url, **kwargs)
+            direct_result = self._try_direct_connection(method, url, **kwargs)
+            if direct_result is None:
+                # _try_direct_connection 仅在直连返回 >=400 时返回 None；
+                # 与下方"直连回退也失败"路径保持一致：标记不可达并抛出，
+                # 避免向调用方返回 None（会让 _validate_response 抛 AttributeError）。
+                self.mark_api_unreachable()
+                raise httpx.HTTPError(
+                    f"代理不可用且直连返回错误状态码: {method.upper()} {url}"
+                )
+            return direct_result
 
         try:
+            get_bgm_rate_limiter().acquire()
             res = session.request(method, url, **kwargs)
         except RETRY_EXCEPTIONS as e:
+            # 网络异常分支刻意不调用 notify_success、也不冻结令牌桶：
+            # 连接层错误既不能证明请求成功（不应重置 429 升级计数），
+            # 也不代表服务端限流（不应额外冻结）；升级计数保留到下次成功请求重置。
             # SyncHttpClient 重试耗尽后仍抛出异常
             dns_error = "Failed to resolve" in str(
                 e
@@ -181,6 +280,9 @@ class HttpLayerMixin:
             self.mark_api_unreachable()
 
             raise e
+
+        # 429 冻结令牌桶 / 成功重置升级计数（须在重试状态码分支前处理）
+        self._apply_rate_limit_notification(res)
 
         # 重试耗尽后仍返回重试状态码（429/500/502/503/504）
         if res.status_code in RETRY_STATUS_CODES:

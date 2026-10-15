@@ -87,11 +87,9 @@ if ! git diff --quiet; then
     fi
 fi
 
-
 # ===== 6. 单元测试 + 覆盖率 (增强：动态并行) =====
 echo "==> [6/7] 单元测试 + 覆盖率"
 
-# --- 新增的动态并行逻辑 ---
 # 尝试获取 CPU 核心数，如果失败（如在不支持的系统上）则默认设为 4
 CPU_CORES=$(nproc --all 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
@@ -100,7 +98,6 @@ CPU_CORES=$(nproc --all 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 PARALLEL_JOBS=$((CPU_CORES > 4 ? 4 : CPU_CORES))
 
 echo "    检测到 $CPU_CORES 个 CPU 核心，将使用 -n $PARALLEL_JOBS 进行并行测试。"
-# --- 新增逻辑结束 ---
 
 echo "    Running: $PY_RUN pytest tests/ -n $PARALLEL_JOBS --dist=loadscope -m 'not slow and not e2e'"
 if ! $PY_RUN pytest tests/ -n $PARALLEL_JOBS --dist=loadscope -m 'not slow and not e2e'; then

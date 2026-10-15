@@ -16,15 +16,21 @@ from ...core.config import config_manager
 from ...core.logging import logger
 from ..http_base import SyncHttpClient
 from ._archive_shortcut import archive_shortcut
+from .async_http_layer import AsyncHttpLayer
 from .collection import CollectionMixin
 from .episodes import EpisodesMixin
-from .http_layer import HttpLayerMixin
+from .http_layer import BGM_USER_AGENT, HttpLayerMixin
 from .relations import RelationMixin
 from .search import SearchMixin
 
 
 class BangumiApi(
-    HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin, RelationMixin
+    AsyncHttpLayer,
+    HttpLayerMixin,
+    SearchMixin,
+    EpisodesMixin,
+    CollectionMixin,
+    RelationMixin,
 ):
     def __init__(
         self,
@@ -198,7 +204,7 @@ class BangumiApi(
             r.client.headers.update(
                 {
                     "Accept": "application/json",
-                    "User-Agent": "SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)",
+                    "User-Agent": BGM_USER_AGENT,
                 }
             )
             if self.access_token:

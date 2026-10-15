@@ -132,8 +132,8 @@ class UpgradeService:
             except asyncio.QueueFull:
                 pass
 
-    async def start_upgrade(self, target_version: Optional[str] = None) -> str:
-        """启动升级任务，返回 upgrade_id"""
+    async def start_upgrade(self) -> str:
+        """启动升级任务，返回 upgrade_id（仅支持升级到最新版本）"""
         if self._in_progress:
             raise RuntimeError("已有升级任务进行中")
 
@@ -148,14 +148,20 @@ class UpgradeService:
 
         current = get_version()
         logger.info(
-            f"[升级] 启动升级任务 {upgrade_id}，当前版本: {current}，目标版本: {target_version or 'latest'}"
+            f"[升级] 启动升级任务 {upgrade_id}，当前版本: {current}，将升级到最新版本"
         )
 
         self._queues[upgrade_id] = asyncio.Queue(maxsize=100)
-        register_background_task(self._run_upgrade(upgrade_id, target_version))
+        register_background_task(self._run_upgrade(upgrade_id))
         return upgrade_id
 
-    async def _run_upgrade(self, upgrade_id: str, target_version: Optional[str]):
+    async def _run_upgrade(self, upgrade_id: str):
+        """执行升级流程（下载 → 备份 → 替换 → 重启）。
+
+        .. note::
+            升级**仅支持升级到最新版本**：始终从 ``releases/latest``
+            下载对应 asset，不支持指定目标版本。
+        """
         temp_dir = Path("data/upgrade_temp")
         backup_dir = Path("backups")
         app_backup_dir: Optional[Path] = None

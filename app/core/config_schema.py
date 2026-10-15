@@ -137,6 +137,29 @@ SECTIONS: dict[str, SectionMeta] = {
         name="sync",
         display_name="同步设置",
         order=20,
+        # llm_match_cron 是内部调度机制，不在配置页暴露；仅提供环境变量
+        # 高级调优入口（LLM_MATCH_CRON 覆盖 [sync] llm_match_cron）。
+        env_overrides={"llm_match_cron": "LLM_MATCH_CRON"},
+        # 以下 llm_match_* 均为内部运维/专家参数，无配置页入口（原因见 manual_keys）。
+        # 注意登记形态：仅有活跃示例键（如 llm_match_retention_days）才可进 fields；
+        # 以注释示例出现的四个专家键若进 fields，会因
+        # TestConfigCoverage.test_schema_fields_exist_in_example_ini 失败。
+        manual_keys={
+            "llm_match_retention_days": "LLM 匹配结果保留策略参数（默认 30 天），"
+            "属内部运维项、一般无需修改；如需调整，编辑 config.ini 的 [sync] 段",
+            "llm_match_thinking_level": "LLM 匹配的思考强度等级（默认 medium，"
+            "可选 off / low / medium / high），专家项/内部运维参数，一般无需修改；"
+            "如需调整，编辑 config.ini 的 [sync] 段",
+            "llm_match_max_iterations": "单次 LLM 匹配最大迭代次数（默认空，"
+            "空时按思考强度自动映射），专家项/内部运维参数，一般无需修改；"
+            "如需调整，编辑 config.ini 的 [sync] 段",
+            "llm_match_recovery_timeout_s": "LLM 匹配恢复超时秒数（默认 120 秒），"
+            "专家项/内部运维参数，一般无需修改；如需调整，"
+            "编辑 config.ini 的 [sync] 段",
+            "llm_match_concurrency": "单轮 recover + pending 并发消费限额"
+            "（默认 3，最小 1），专家项/内部运维参数，一般无需修改；"
+            "如需调整，编辑 config.ini 的 [sync] 段",
+        },
         fields=(
             FieldMeta(name="movie_playback_start_mark_watching", default_true=True),
             FieldMeta(name="movie_mark_subject_completed", default_true=True),
@@ -145,6 +168,8 @@ SECTIONS: dict[str, SectionMeta] = {
             # 模糊匹配置信度阈值（0~1）：低于该相似度的 Bangumi API 匹配
             # 不会自动采用，而是沉淀到待审队列由用户在 Web 界面人工确认。
             FieldMeta(name="match_confidence_threshold", default=0.6),
+            # LLM 匹配结果滑动窗口轮转天数（终态超窗 + 过期死行一并清理）
+            FieldMeta(name="llm_match_retention_days", default=30),
         ),
     ),
     "auth": SectionMeta(
@@ -404,18 +429,27 @@ SECTIONS: dict[str, SectionMeta] = {
         visible_in_ui=False,
         hidden_reason="在配置页「AI 追番总结」卡片中管理（经 /api/summary/jobs）",
         # summary 调度器为 instance 类型，配置联动由 summary_jobs API 直调
+        fields=(FieldMeta(name="thinking_level", default="off"),),
     ),
     "llm": SectionMeta(
         name="llm",
         display_name="LLM 配置",
         order=610,
         sensitive_fields=frozenset({"api_key"}),
+        # retention_days 是活配置（DB 启动时按它清理 llm_usage 记录），但示例键为
+        # 注释态、不做配置页入口，故仅登记 manual_keys（登记进 fields 会因
+        # TestConfigCoverage.test_schema_fields_exist_in_example_ini 失败）。
+        manual_keys={
+            "retention_days": "LLM 调用记录在数据库中的保留天数（默认 365 天），"
+            "内部运维参数，一般无需修改；如需调整，编辑 config.ini 的 [llm] 段",
+        },
         fields=(
+            # provider 受控取值（与 _PROVIDER_MAP / LLMConfigUpdate.provider 一致）：
+            # openai_compat / anthropic_compat / openai_responses
             FieldMeta(name="provider", default="openai_compat"),
             FieldMeta(name="max_tokens", default=2000),
             FieldMeta(name="temperature", default=0.7),
             FieldMeta(name="timeout", default=60),
-            FieldMeta(name="thinking_level", default="off"),
         ),
     ),
     # ── 调度器全局（order 900）──

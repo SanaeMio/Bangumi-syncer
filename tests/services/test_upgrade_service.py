@@ -344,6 +344,31 @@ class TestStartUpgrade:
         assert upgrade_service.is_upgrade_in_progress is True
         assert upgrade_service.get_progress(upgrade_id) is not None
 
+    def test_start_upgrade_signature_only_supports_latest(self):
+        """start_upgrade/_run_upgrade 不应暴露 target_version 参数（仅支持最新版本）"""
+        import inspect
+
+        start_params = inspect.signature(UpgradeService.start_upgrade).parameters
+        run_params = inspect.signature(UpgradeService._run_upgrade).parameters
+
+        assert "target_version" not in start_params
+        assert "target_version" not in run_params
+
+    @pytest.mark.asyncio
+    async def test_start_upgrade_logs_latest_version(self, upgrade_service):
+        """启动日志应如实说明升级到最新版本"""
+        with (
+            patch.object(upgrade_service, "_run_upgrade", new_callable=AsyncMock),
+            patch("app.services.upgrade_service.logger") as mock_logger,
+            patch("app.services.upgrade_service.get_version", return_value="1.0.0"),
+        ):
+            await upgrade_service.start_upgrade()
+
+        logged = " ".join(str(c.args[0]) for c in mock_logger.info.call_args_list)
+        assert "当前版本: 1.0.0" in logged
+        assert "最新版本" in logged
+        assert "目标版本" not in logged
+
     @pytest.mark.asyncio
     async def test_start_upgrade_already_in_progress(self, upgrade_service):
         """已有升级进行中时应抛出异常"""
@@ -378,7 +403,7 @@ class TestRunUpgrade:
             mock_download.return_value = tmp_path / "test.zip"
             mock_apply.return_value = tmp_path / "app_backup"
 
-            await upgrade_service._run_upgrade(upgrade_id, None)
+            await upgrade_service._run_upgrade(upgrade_id)
 
         assert upgrade_service._in_progress is False
         mock_download.assert_called_once()
@@ -420,7 +445,7 @@ class TestRunUpgrade:
             mock_download.return_value = tmp_path / "test.zip"
             mock_apply.return_value = app_backup_dir
 
-            await upgrade_service._run_upgrade(upgrade_id, None)
+            await upgrade_service._run_upgrade(upgrade_id)
 
         assert upgrade_service._in_progress is False
         mock_restore_db.assert_called_once_with(full_backup_dir)

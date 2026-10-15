@@ -47,7 +47,7 @@ class EpisodesMixin:
 
     def _fetch_episodes_page(
         self,
-        subject_id: int,
+        subject_id: int | str,
         _type: int = 0,
         *,
         limit: int = _EPISODES_PAGE_LIMIT,
@@ -92,7 +92,7 @@ class EpisodesMixin:
 
     def get_episodes(
         self,
-        subject_id: int,
+        subject_id: int | str,
         _type: int = 0,
         fetch_all: bool = False,
     ) -> dict[str, Any] | list[dict[str, Any]]:
@@ -132,7 +132,7 @@ class EpisodesMixin:
         return result
 
     def _find_episode_by_sort(
-        self, subject_id: int, target_sort: int, _type: int = 0
+        self, subject_id: int | str, target_sort: int, _type: int = 0
     ) -> dict | None:
         """在 subject 内按 sort/ep 规则查找章节。
 
@@ -227,11 +227,11 @@ class EpisodesMixin:
 
     def _episode_lookup_failed(
         self,
-        subject_id: int,
+        subject_id: int | str,
         target_ep: int,
         release_date: str | None,
         target_season: int = 1,
-    ) -> tuple[int | None, int | None]:
+    ) -> tuple[int | str | None, int | str | None]:
         """季集匹配失败后的统一回退。
 
         回退顺序：
@@ -257,7 +257,7 @@ class EpisodesMixin:
 
     def _try_resolve_continuous_season_episode(
         self,
-        subject_id: int,
+        subject_id: int | str,
         target_season: int,
         target_ep: int,
     ) -> tuple[str | int, str | int] | None:
@@ -661,13 +661,13 @@ class EpisodesMixin:
 
     def get_target_season_episode_id(
         self,
-        subject_id: int,
+        subject_id: int | str,
         target_season: int,
         target_ep: int,
         is_season_subject_id: bool = False,
         release_date: str | None = None,
         allow_chain_fallback: bool = True,
-    ) -> tuple[int | None, int | None]:
+    ) -> tuple[int | str | None, int | str | None]:
         """解析条目内目标集对应的 episode_id。
 
         :param allow_chain_fallback: 为 False 时**禁止**在目标条目内找不到该集
@@ -765,7 +765,7 @@ class EpisodesMixin:
             release_date,
         )
 
-    def _find_next_sequel_id(self, current_id: int) -> int | None:
+    def _find_next_sequel_id(self, current_id: int | str) -> int | None:
         """从关联条目中查找续集 subject_id，无则返回 None"""
         # Archive 短路：本地命中即返回（int 或 None）
         shortcut = self._archive.try_find_next_sequel_id(current_id)
@@ -785,7 +785,7 @@ class EpisodesMixin:
         return next_id[0]["id"] if next_id else None
 
     def _find_related_id_by_relation(
-        self, subject_id: int, relation: str
+        self, subject_id: int | str, relation: str
     ) -> int | None:
         """从关联条目中按 relation 查找 subject_id。
 
@@ -907,7 +907,7 @@ class EpisodesMixin:
                 # target_ep 在范围内但未找到（如部分章节缺失），两个方向都试
                 directions = ["prequel", "sequel"]
 
-        visited = {subject_id}
+        visited = {str(subject_id)}
         for direction in directions:
             if time.monotonic() > deadline:
                 logger.warning(
@@ -1019,14 +1019,14 @@ class EpisodesMixin:
         search_previous_subjects（由近到远），反转后置于起始条目之前以形成时间序。
         """
         chain: list[int] = [subject_id]
-        visited: set[int] = {subject_id}
+        visited: set[str] = {str(subject_id)}
 
         # 续集方向（由近到远追加在起始之后）
         shortcut = self._archive.try_find_sequel_chain(subject_id, max_hops=max_depth)
         if shortcut.hit and shortcut.data:
             for sid in shortcut.data:
-                if sid and sid not in visited:
-                    visited.add(sid)
+                if sid and str(sid) not in visited:
+                    visited.add(str(sid))
                     chain.append(sid)
         else:
             current_id = subject_id
@@ -1036,9 +1036,9 @@ class EpisodesMixin:
                 next_id = self._find_related_id_by_relation(
                     current_id, _RELATION_CN_SEQUEL
                 )
-                if not next_id or next_id in visited:
+                if not next_id or str(next_id) in visited:
                     break
-                visited.add(next_id)
+                visited.add(str(next_id))
                 chain.append(next_id)
                 current_id = next_id
 
@@ -1046,8 +1046,8 @@ class EpisodesMixin:
         prequels = self.search_previous_subjects(subject_id, max_hops=max_depth) or []
         prefixed: list[int] = []
         for sid in reversed(prequels):
-            if sid and sid not in visited:
-                visited.add(sid)
+            if sid and str(sid) not in visited:
+                visited.add(str(sid))
                 prefixed.append(sid)
         return prefixed + chain
 
@@ -1090,6 +1090,11 @@ class EpisodesMixin:
         if shortcut.hit:
             chain = shortcut.data or []
             if chain:
+                # 类型口径**有意**比链遍历（_walk_chain_for_episode /
+                # _find_episode_in_chain 默认仅 ANIME）更宽：franchise 是链式全部
+                # miss 后的最后兜底，闭包含「改编」等跨媒体边，需覆盖动画↔真人
+                # 改编条目（如凡人修仙传动画 ↔ 真人网剧，type=REAL）。此处放行
+                # (ANIME, REAL) 属于兜底语义，与链遍历的保守口径不冲突。
                 result = self._find_episode_in_chain(
                     chain,
                     target_ep,
@@ -1146,11 +1151,11 @@ class EpisodesMixin:
             if (rel.get("relation") or "").strip() not in FRANCHISE_RELATION_CN_SET:
                 continue
             rid = rel.get("id")
-            if not rid or rid in visited:
+            if not rid or str(rid) in visited:
                 continue
             if deadline is not None and time.monotonic() > deadline:
                 return None
-            visited.add(rid)
+            visited.add(str(rid))
             info = self.get_subject(rid)
             if not info:
                 continue
@@ -1244,16 +1249,22 @@ class EpisodesMixin:
             if next_id == current_id:
                 # 自环：关系数据异常，终止遍历
                 return None
-            if next_id in visited:
+            if str(next_id) in visited:
                 # P1-5: 已通过 archive 链检查过的 subject（如 _find_episode_in_chain
                 # 遍历过），跳过检查但继续沿链前进，发现 archive 链外的后续条目。
                 # max_depth 限制总迭代数，避免环导致无限循环。
                 current_id = next_id
                 continue
-            visited.add(next_id)
+            visited.add(str(next_id))
             current_id = next_id
 
-            # 类型过滤：只看动画（SUBJECT_TYPE_ANIME），跳过书籍/音乐等
+            # 类型过滤：链遍历**保守**限定动画（SUBJECT_TYPE_ANIME），跳过书籍/
+            # 音乐等，也跳过真人（SUBJECT_TYPE_REAL）。链遍历沿 sequel/prequel 找
+            # 「同一作品连续性」的季集归属，限定 ANIME 是为避免真人同名/改编作品
+            # 被误配（虽有 season/ep 校验兜底，真人链误配风险仍高于收益）。更宽的
+            # 真人改编场景交由 franchise 兜底（见 _try_find_episode_in_franchise，
+            # 该处有意放行 REAL）。扩展点：若产品确认需覆盖「真人改编链」，只需把
+            # 此处判断与 _find_episode_in_chain 默认 allowed_types 一并放行 REAL。
             info = self.get_subject(current_id)
             if not info:
                 continue
@@ -1302,14 +1313,18 @@ class EpisodesMixin:
             target_ep: 目标集数
             visited: 已访问的 subject_id 集合（会被本方法更新）
             deadline: 整体 deadline
-            allowed_types: 允许的 subject type 集合。默认仅动画（2）；
-                同 IP 改编链（动画↔网剧）场景放行 (SUBJECT_TYPE_ANIME,
-                SUBJECT_TYPE_REAL)。
+            allowed_types: 允许的 subject type 集合。默认仅动画（2），与
+                _walk_chain_for_episode 逐跳路径口径一致：sequel/prequel 链按
+                「同一作品连续性」定位季集归属，保守限定 ANIME 以避免真人同名/
+                改编作品被误配。仅 franchise 兜底（_try_find_episode_in_franchise）
+                显式放行 (SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL)，覆盖动画↔真人
+                改编场景；两处口径**有意**不同。扩展点：若未来产品确认需覆盖
+                「真人改编链」，把默认值一并放行 REAL 即可切换。
         """
         for current_id in chain:
-            if current_id in visited:
+            if str(current_id) in visited:
                 continue
-            visited.add(current_id)
+            visited.add(str(current_id))
 
             if deadline is not None and time.monotonic() > deadline:
                 logger.warning(
@@ -1348,7 +1363,7 @@ class EpisodesMixin:
 
     def _find_season_one_episode(
         self,
-        subject_id: int,
+        subject_id: int | str,
         target_ep: int,
         root_type: int,
         root_platform: str,
@@ -1357,7 +1372,7 @@ class EpisodesMixin:
         """在第一季中查找目标集数（遍历续集链）"""
         current_id = subject_id
         first_part = True
-        visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
+        visited = {str(subject_id)}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
             # 是否跳过当前条目（类型/platform 不符）。
             #
@@ -1400,20 +1415,20 @@ class EpisodesMixin:
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
-            if next_id in visited:
+            if str(next_id) in visited:
                 logger.warning(
                     f"_find_season_one_episode 检测到续集链环引用，终止遍历: "
                     f"subject_id={subject_id}, next_id={next_id}"
                 )
                 break
-            visited.add(next_id)
+            visited.add(str(next_id))
             current_id = next_id
             first_part = False
         return self._episode_lookup_failed(subject_id, target_ep, release_date)
 
     def _find_multi_season_episode(
         self,
-        subject_id: int,
+        subject_id: int | str,
         target_season: int,
         target_ep: int,
         root_type: int,
@@ -1424,18 +1439,18 @@ class EpisodesMixin:
         current_id = subject_id
         season_num = 1
         last_season_num = None
-        visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
+        visited = {str(subject_id)}  # 防环：Bangumi 关系数据可能存在循环引用
         while True:
             next_id = self._find_next_sequel_id(current_id)
             if not next_id:
                 break
-            if next_id in visited:
+            if str(next_id) in visited:
                 logger.warning(
                     f"_find_multi_season_episode 检测到续集链环引用，终止遍历: "
                     f"subject_id={subject_id}, next_id={next_id}"
                 )
                 break
-            visited.add(next_id)
+            visited.add(str(next_id))
             current_id = next_id
             current_info = self.get_subject(current_id)
             if not current_info:
