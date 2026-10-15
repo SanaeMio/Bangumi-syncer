@@ -1,9 +1,10 @@
-"""AgentMemoryRepository 测试（Phase 2.0.1 写入侧）。
+"""AgentMemoryRepository 测试（写入侧）。
 
-覆盖 BDD 场景 W1/W4/W6/W8/W9/W10/W11。
+覆盖 BDD 场景。
 """
 
 import sqlite3
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -24,7 +25,7 @@ def _make_db(temp_dir, name="memory.db"):
 
 
 def _entry(run_id: str, summary: str = "昨日看了芙莉莲", **overrides) -> MemoryEntry:
-    defaults = {
+    defaults: dict[str, Any] = {
         "task_type": "summary",
         "task_id": "summary-daily",
         "run_id": run_id,
@@ -66,7 +67,7 @@ def _archive_rows(db) -> list[tuple]:
     ).fetchall()
 
 
-# ── 表结构（W4 数据基础）───────────────────────────────────────────────
+# ── 表结构（数据基础）───────────────────────────────────────────────
 
 
 class TestSchema:
@@ -139,14 +140,14 @@ class TestSchema:
             assert "idx_sync_records_consumed_run_id" in indexes
 
 
-# ── W1 成功路径写入 ─────────────────────────────────────────────────────
+# ── 成功路径写入 ─────────────────────────────────────────────────────
 
 
 class TestStoreAndMark:
     def test_inserts_memory_and_marks_consumed_in_same_transaction(
         self, temp_dir, reset_singletons
     ):
-        """W1：store_and_mark 写入记忆 + 标记消费（同一事务原子完成）。"""
+        """store_and_mark 写入记忆 + 标记消费（同一事务原子完成）。"""
         db = _make_db(temp_dir)
         r1 = _log_record(db, episode=10)
         r2 = _log_record(db, title="鬼灭之刃", episode=5, bgm_title="鬼灭之刃")
@@ -186,12 +187,12 @@ class TestStoreAndMark:
             db.memory.store_and_mark(_entry("run-x"), [])
 
 
-# ── W4 FTS5 触发器同步 ──────────────────────────────────────────────────
+# ── FTS5 触发器同步 ──────────────────────────────────────────────────
 
 
 class TestFtsSearch:
     def test_search_fts_finds_newly_inserted_row(self, temp_dir, reset_singletons):
-        """W4：插入后触发器同步 FTS，search_fts 命中。"""
+        """插入后触发器同步 FTS，search_fts 命中。"""
         db = _make_db(temp_dir)
         db.memory.store_and_mark(
             _entry("run-1", summary="昨日看了葬送的芙莉莲 S1E10"), []
@@ -264,12 +265,12 @@ class TestFtsSearch:
         assert db.memory.search_fts(["不存在的关键词"], task_type="summary") == []
 
 
-# ── W6 prune 归档 / W9 feedback 保留 ────────────────────────────────────
+# ── prune 归档 / feedback 保留 ────────────────────────────────────
 
 
 class TestPrune:
     def test_prune_archives_old_records(self, temp_dir, reset_singletons):
-        """W6：超出 keep 的旧记录先入归档再删主表（降级而非删除）。"""
+        """超出 keep 的旧记录先入归档再删主表（降级而非删除）。"""
         db = _make_db(temp_dir)
         for i in range(1005):
             db.memory.store_and_mark(_entry(f"run-{i}", summary=f"第{i}次总结"), [])
@@ -310,12 +311,12 @@ class TestPrune:
         assert [r[3] for r in rows] == ["run-b"]
 
 
-# ── W8 归档可检索 ───────────────────────────────────────────────────────
+# ── 归档可检索 ───────────────────────────────────────────────────────
 
 
 class TestSearchArchive:
     def test_search_archive_finds_keyword(self, temp_dir, reset_singletons):
-        """W8：LIKE 检索冷记忆。"""
+        """LIKE 检索冷记忆。"""
         db = _make_db(temp_dir)
         db.memory.store_and_mark(_entry("run-1", summary="归档前的一次总结"), [])
         db.memory.prune("summary", "summary-daily", keep=0)
@@ -351,14 +352,14 @@ class TestSearchArchive:
         assert [h.run_id for h in hits] == ["run-a"]
 
 
-# ── W10 老库补列幂等 ────────────────────────────────────────────────────
+# ── 老库补列幂等 ────────────────────────────────────────────────────
 
 
 class TestMigration:
     def test_consumed_assoc_table_created_and_idempotent(
         self, temp_dir, reset_singletons
     ):
-        """W10：启动时建消费关联表（多对多）+ run_id 索引，幂等。"""
+        """启动时建消费关联表（多对多）+ run_id 索引，幂等。"""
         db = _make_db(temp_dir)
 
         with sqlite3.connect(str(temp_dir / "memory.db")) as raw:
@@ -372,7 +373,7 @@ class TestMigration:
             # 旧单列不存在（开发阶段直接建关联表，无迁移残留）
             cols = [r[1] for r in raw.execute("PRAGMA table_info(sync_records)")]
             assert "consumed_run_id" not in cols
-            # run_id 反查索引存在（P1-1：clear_task / get_related_titles 依赖）
+            # run_id 反查索引存在（clear_task / get_related_titles 依赖）
             indexes = {
                 r[0]
                 for r in raw.execute(
@@ -394,14 +395,14 @@ class TestMigration:
             assert "sync_records_consumed" in tables
 
 
-# ── W11 查询返回 consumed_run_ids ───────────────────────────────────────
+# ── 查询返回 consumed_run_ids ───────────────────────────────────────
 
 
 class TestQueryConsumed:
     def test_get_records_in_date_range_includes_consumed_run_ids(
         self, temp_dir, reset_singletons
     ):
-        """W11：summary 底层查询返回 consumed_run_ids（关联表多对多聚合）。"""
+        """summary 底层查询返回 consumed_run_ids（关联表多对多聚合）。"""
         db = _make_db(temp_dir)
         r1 = _log_record(db)
         db.memory.store_and_mark(_entry("run-1"), [r1])
@@ -415,7 +416,7 @@ class TestQueryConsumed:
     def test_default_query_omits_consumed_and_returns_empty_set(
         self, temp_dir, reset_singletons
     ):
-        """P1：默认（轻量）查询返回空集合（无 JOIN/GROUP BY，记忆关闭场景）。"""
+        """默认（轻量）查询返回空集合（无 JOIN/GROUP BY，记忆关闭场景）。"""
         db = _make_db(temp_dir)
         r1 = _log_record(db)
         db.memory.store_and_mark(_entry("run-1"), [r1])
@@ -425,7 +426,7 @@ class TestQueryConsumed:
         assert recs[0]["consumed_run_ids"] == set()
 
 
-# ── 2.0.3 清理与重置：rename_task / clear_task（C1-C12）──────────────────
+# ── 2.0.3 清理与重置：rename_task / clear_task ──────────────────────────
 
 
 class TestGetTaskRunIds:
@@ -478,7 +479,7 @@ class TestGetTaskRunIds:
 
 class TestRenameTask:
     def test_rename_migrates_main_and_archive(self, temp_dir, reset_singletons):
-        """C1：改名迁移主表 + 归档表的 task_id。"""
+        """改名迁移主表 + 归档表的 task_id。"""
         db = _make_db(temp_dir)
         db.memory.store_and_mark(_entry("run-1", task_id="summary-daily"), [])
         db.memory.store_and_mark(_entry("run-2", task_id="summary-daily"), [])
@@ -495,13 +496,13 @@ class TestRenameTask:
         assert all(r[2] == "summary-daily2" for r in _archive_rows(db))
 
     def test_rename_nonexistent_task_idempotent(self, temp_dir, reset_singletons):
-        """C6：改不存在的 task_id → 无操作，不报错。"""
+        """改不存在的 task_id → 无操作，不报错。"""
         db = _make_db(temp_dir)
         n = db.memory.rename_task("summary", "summary-nonexist", "summary-new")
         assert n == 0
 
     def test_rename_keeps_consumed_marks(self, temp_dir, reset_singletons):
-        """C7：消费标记只关联 run_id，改名不破坏。"""
+        """消费标记只关联 run_id，改名不破坏。"""
         db = _make_db(temp_dir)
         r1 = _log_record(db)
         db.memory.store_and_mark(_entry("run-1", task_id="summary-daily"), [r1])
@@ -541,7 +542,7 @@ class TestClearTask:
         return [r1, r2, r3]
 
     def test_clear_task_removes_memory_and_marks(self, temp_dir, reset_singletons):
-        """C3：同一事务清主表 + 归档 + 消费标记（含归档 run_id）。"""
+        """同一事务清主表 + 归档 + 消费标记（含归档 run_id）。"""
         db = _make_db(temp_dir)
         r1, r2, r3 = self._seed(db)
 
@@ -557,7 +558,7 @@ class TestClearTask:
         assert all(r["consumed_run_ids"] == set() for r in recs)
 
     def test_clear_task_isolation(self, temp_dir, reset_singletons):
-        """C9：清 A 不影响 B。"""
+        """清 A 不影响 B。"""
         db = _make_db(temp_dir)
         db.memory.store_and_mark(_entry("u1", task_id="summary-daily"), [])
         db.memory.store_and_mark(_entry("v1", task_id="summary-weekly"), [])
@@ -568,7 +569,7 @@ class TestClearTask:
         assert [r[3] for r in rows] == ["v1"]
 
     def test_clear_task_includes_all_outcomes(self, temp_dir, reset_singletons):
-        """C10：彻底清空语义——不筛 outcome 全部删除。"""
+        """彻底清空语义——不筛 outcome 全部删除。"""
         db = _make_db(temp_dir)
         db.memory.store_and_mark(
             _entry("u-partial", task_id="summary-daily", outcome="partial"), []
@@ -580,13 +581,13 @@ class TestClearTask:
         assert _main_rows(db) == []
 
     def test_clear_task_idempotent(self, temp_dir, reset_singletons):
-        """C11：再次清空不报错，影响行数 0。"""
+        """再次清空不报错，影响行数 0。"""
         db = _make_db(temp_dir)
         db.memory.clear_task("summary", "summary-daily")
         assert db.memory.clear_task("summary", "summary-daily") == 0
 
     def test_clear_task_then_retrieve_empty(self, temp_dir, reset_singletons):
-        """C8：清空后 retrieve 返回空（新上下文从零开始）。"""
+        """清空后 retrieve 返回空（新上下文从零开始）。"""
         db = _make_db(temp_dir)
         db.memory.store_and_mark(_entry("u1", task_id="summary-daily"), [])
         db.memory.clear_task("summary", "summary-daily")
@@ -594,10 +595,10 @@ class TestClearTask:
         assert db.memory.get_recent("summary", "summary-daily") == []
 
     def test_run_ids_collected_before_delete(self, temp_dir, reset_singletons):
-        """C12：run_id 收集先于删表——消费标记不因映射丢失而漏清。"""
+        """run_id 收集先于删表——消费标记不因映射丢失而漏清。"""
         db = _make_db(temp_dir)
         r1, r2, r3 = self._seed(db)
-        # 与 C3 相同验证，此处显式断言 u1/u2/u3 三个标记（含归档 run_id）全清
+        # 与相同验证，此处显式断言 u1/u2/u3 三个标记（含归档 run_id）全清
         db.memory.clear_task("summary", "summary-daily")
 
         recs = db.get_records_in_date_range(
@@ -609,7 +610,7 @@ class TestClearTask:
     def test_clear_task_keeps_other_task_consumed_marks(
         self, temp_dir, reset_singletons
     ):
-        """C13（按任务隔离）：清 A 任务只清 A 的消费标记，B 任务的标记保留。
+        """清 A 任务只清 A 的消费标记，B 任务的标记保留。
 
         跨任务消费隔离的清理侧：每日总结清空记忆不应抹掉年度总结的消费标记
         （否则年度总结会重复消费本已总结过的记录）。
@@ -689,7 +690,7 @@ class TestCleanupWriteFailurePropagation:
             db.memory.rename_task("summary", "summary-daily", "summary-daily2")
 
 
-# ── 同剧关联联表（S5/S6/S7：get_related_titles）─────────────────────
+# ── 同剧关联联表（get_related_titles）─────────────────────
 
 
 class TestGetRelatedTitles:
@@ -725,7 +726,7 @@ class TestGetRelatedTitles:
         assert run_ids == {"run-1", "run-2"}  # 主表 + 归档冷层都命中
 
     def test_same_run_multi_episodes_deduped(self, temp_dir, reset_singletons):
-        """S6：同剧 12 集被同一次总结消费 → GROUP BY m.id 只返回一条。"""
+        """同剧 12 集被同一次总结消费 → GROUP BY m.id 只返回一条。"""
         db = _make_db(temp_dir)
         ids = [
             _log_record(db, bgm_title="葬送的芙莉莲", episode=i) for i in range(1, 4)
