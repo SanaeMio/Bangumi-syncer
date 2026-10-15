@@ -226,6 +226,27 @@
             </div>
         </div>
     </div>
+    <!-- LLM 用量趋势（tokens / 质量双图） -->
+    <div id="llm-trend-row" class="row g-4 mb-4" style="display: none">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header py-3">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-activity me-2 card-header-icon"></i>
+                        <h6 class="m-0 fw-semibold card-header-title">LLM 用量趋势（最近7天）</h6>
+                    </div>
+                </div>
+                <div class="card-body p-4">
+                    <div class="chart-area w-100" style="height: 180px">
+                        <canvas id="llmTokensChart"></canvas>
+                    </div>
+                    <div class="chart-area w-100 mt-4" style="height: 180px">
+                        <canvas id="llmQualityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="llm-detail-tooltip"
          class="app-tooltip"
          style="display: none;

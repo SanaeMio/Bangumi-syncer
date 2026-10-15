@@ -34,9 +34,11 @@ class UpgradeStatusResponse(BaseModel):
 
 
 class UpgradeRequest(BaseModel):
-    target_version: Optional[str] = Field(
-        default=None, description="目标版本，None 表示最新"
-    )
+    """升级请求体。
+
+    一键升级仅支持升级到**最新版本**，不接受指定版本；保留空模型以兼容
+    旧客户端仍发送的多余字段（``target_version`` 等），pydantic 默认忽略。
+    """
 
 
 class UpgradeTriggerResponse(BaseModel):
@@ -83,7 +85,7 @@ async def trigger_upgrade(
         raise HTTPException(status_code=409, detail="已有升级任务进行中")
 
     try:
-        upgrade_id = await upgrade_service.start_upgrade(req.target_version)
+        upgrade_id = await upgrade_service.start_upgrade()
         return UpgradeTriggerResponse(status="started", upgrade_id=upgrade_id)
     except RuntimeError as e:
         return UpgradeTriggerResponse(status="error", detail=str(e))

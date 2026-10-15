@@ -138,9 +138,7 @@ def _cleanup_config_backups(strategy: str, data: dict) -> int:
 
 
 @router.get("/config")
-async def get_config(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
-) -> dict[str, Any]:
+async def get_config(_=Depends(get_current_user_flexible)) -> dict[str, Any]:
     """获取配置信息"""
     try:
         config_data = config_manager.get_all_config()
@@ -162,9 +160,7 @@ async def get_config(
 
 
 @router.get("/config/schema")
-async def get_config_schema(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
-) -> dict[str, Any]:
+async def get_config_schema(_=Depends(get_current_user_flexible)) -> dict[str, Any]:
     """获取配置段元数据 schema
 
     暴露 SectionMeta 注册表（段排序、可见性、敏感字段、关联调度器）以及
@@ -178,7 +174,7 @@ async def get_config_schema(
 
 @router.get("/scheduler/status")
 async def get_scheduler_status(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
+    _=Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """获取所有已注册调度器的运行状态
 
@@ -191,9 +187,47 @@ async def get_scheduler_status(
     return {"status": "success", "data": scheduler_registry.get_status_list()}
 
 
+def _truthy(value: Any) -> bool:
+    """宽松布尔解析：实际 bool 或字符串 true/1/yes/on/enabled（任意大小写）。"""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("true", "1", "yes", "on", "enabled")
+
+
+def _llm_match_assist_will_be_enabled(data: dict) -> bool:
+    """计算保存后 llm_match_assist 是否将处于开启态。
+
+    payload 携带 sync.llm_match_assist 时以 payload 为准，否则取当前配置。
+    """
+    sync = data.get("sync") or {}
+    if "llm_match_assist" in sync:
+        return _truthy(sync["llm_match_assist"])
+    return bool(config_manager.get("sync", "llm_match_assist", fallback=False))
+
+
+def _effective_llm_api_key_nonempty(data: dict) -> bool:
+    """计算保存后生效的 LLM api_key 是否非空。
+
+    payload 同时携带 llm.api_key（非空且非掩码值）时视为将生效；
+    否则以当前 get_llm_config()["api_key"] 为准。
+    """
+    current = (config_manager.get_llm_config().get("api_key") or "").strip()
+    llm = data.get("llm") or {}
+    incoming = llm.get("api_key")
+    if (
+        isinstance(incoming, str)
+        and incoming.strip()
+        and not incoming.startswith("***")
+    ):
+        return True
+    return bool(current)
+
+
 @router.post("/config")
 async def update_config(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
+    request: Request, _=Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """更新配置信息"""
     try:
@@ -207,6 +241,14 @@ async def update_config(
         data.pop("multi_accounts", None)
         # 遗留单用户段 [bangumi] 账号字段已迁移到 DB，忽略前端回写避免与 DB 真相源分裂
         data.pop("bangumi", None)
+
+        # ── 开启 llm_match_assist 时校验 LLM api_key 已配置 ──
+        # 拒绝原因须为"需先配置 LLM"。HTTPException 需透传，
+        # 不能被下方 except Exception 吞掉成 500。
+        if _llm_match_assist_will_be_enabled(data) and not (
+            _effective_llm_api_key_nonempty(data)
+        ):
+            raise HTTPException(status_code=400, detail="需先配置 LLM")
 
         # 更新常规配置
         password_updated = False
@@ -300,15 +342,15 @@ async def update_config(
             logger.info("密码更新完成，认证配置已重新加载")
 
         return {"status": "success", "message": "配置更新成功"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"更新配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"更新配置失败: {str(e)}")
 
 
 @router.get("/config/backups")
-async def get_config_backups(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
-) -> dict[str, Any]:
+async def get_config_backups(_=Depends(get_current_user_flexible)) -> dict[str, Any]:
     """获取配置备份列表"""
     try:
         backups = await asyncio.to_thread(_list_config_backups)
@@ -320,9 +362,7 @@ async def get_config_backups(
 
 @router.get("/config/backup/{filename}")
 async def get_config_backup(
-    filename: str,
-    request: Request,
-    current_user: dict = Depends(get_current_user_flexible),
+    filename: str, _=Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """获取特定配置备份内容"""
     try:
@@ -337,9 +377,7 @@ async def get_config_backup(
 
 @router.delete("/config/backup/{filename}")
 async def delete_config_backup(
-    filename: str,
-    request: Request,
-    current_user: dict = Depends(get_current_user_flexible),
+    filename: str, _=Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """删除配置备份文件"""
     try:
@@ -354,7 +392,7 @@ async def delete_config_backup(
 
 @router.post("/config/backup")
 async def create_config_backup(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
+    _=Depends(get_current_user_flexible),
 ) -> dict[str, Any]:
     """创建配置备份"""
     try:
@@ -371,9 +409,7 @@ async def create_config_backup(
 
 @router.post("/config/restore/{filename}")
 async def restore_config_backup(
-    filename: str,
-    request: Request,
-    current_user: dict = Depends(get_current_user_flexible),
+    filename: str, _=Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """恢复配置备份"""
     try:
@@ -388,7 +424,7 @@ async def restore_config_backup(
 
 @router.post("/config/backups/cleanup")
 async def cleanup_config_backups(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
+    request: Request, _=Depends(get_current_user_flexible)
 ) -> dict[str, Any]:
     """清理配置备份"""
     try:
@@ -407,9 +443,7 @@ async def cleanup_config_backups(
 
 
 @router.post("/config/auth/refresh-webhook-key")
-async def refresh_webhook_key(
-    request: Request, current_user: dict = Depends(get_current_user_flexible)
-) -> dict[str, Any]:
+async def refresh_webhook_key(_=Depends(get_current_user_flexible)) -> dict[str, Any]:
     """刷新webhook密钥"""
     try:
         new_webhook_key = await asyncio.to_thread(security_manager.refresh_webhook_key)

@@ -37,6 +37,9 @@
   // 缓存数据用于 resize 重绘
   let cachedHeatmapData = null
   let cachedDailyStats = null
+  let cachedLlmDaily = null
+  let llmTokensChartInstance = null
+  let llmQualityChartInstance = null
 
   document.addEventListener('DOMContentLoaded', function () {
     pruneStalePosterCache()
@@ -48,6 +51,7 @@
     if (window.themeManager) {
       themeManager.onChange(function () {
         if (cachedDailyStats) drawDailyChart(cachedDailyStats)
+        if (cachedLlmDaily) drawLlmTrendCharts(cachedLlmDaily)
         if (cachedHeatmapData) renderHeatmap(cachedHeatmapData)
       })
     }
@@ -93,6 +97,7 @@
       resizeTimer = setTimeout(function () {
         if (cachedHeatmapData) renderHeatmap(cachedHeatmapData)
         if (cachedDailyStats) drawDailyChart(cachedDailyStats)
+        if (cachedLlmDaily) drawLlmTrendCharts(cachedLlmDaily)
       }, 200)
     })
   })
@@ -195,6 +200,11 @@
           ) {
             _llmDetail = d
             document.getElementById('llm-detail-trigger').style.display = ''
+          }
+          if (d.daily && d.daily.length) {
+            cachedLlmDaily = d.daily
+            document.getElementById('llm-trend-row').style.display = 'flex'
+            drawLlmTrendCharts(cachedLlmDaily)
           }
         }
       })
@@ -922,6 +932,149 @@
     const primary = themeManager ? themeManager.getPrimaryColor() : '#f09199'
     const rgb = hexToRgb(primary) || { r: 59, g: 130, b: 246 }
     return { primary, rgb }
+  }
+
+  function buildLast7Days(daily) {
+    var dates = []
+    var rows = []
+    for (var i = 6; i >= 0; i--) {
+      var date = new Date()
+      date.setDate(date.getDate() - i)
+      var dateStr = date.toISOString().split('T')[0]
+      dates.push(new Date(date).toLocaleDateString())
+      var found = daily.find(function (item) {
+        return item.date === dateStr
+      })
+      rows.push(found || null)
+    }
+    return { dates: dates, rows: rows }
+  }
+
+  function drawLlmTrendCharts(daily) {
+    if (!Array.isArray(daily)) return
+    var series = buildLast7Days(daily)
+    var colors = getChartColors()
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+    var gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'
+    var textColor = isDark ? '#909296' : '#6c757d'
+
+    var tokens = series.rows.map(function (r) {
+      return r ? r.total_tokens || 0 : 0
+    })
+    if (llmTokensChartInstance) {
+      llmTokensChartInstance.destroy()
+      llmTokensChartInstance = null
+    }
+    var tokensCanvas = document.getElementById('llmTokensChart')
+    if (tokensCanvas) {
+      llmTokensChartInstance = new Chart(tokensCanvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: series.dates,
+          datasets: [
+            {
+              label: 'Tokens',
+              data: tokens,
+              backgroundColor:
+                'rgba(' +
+                colors.rgb.r +
+                ',' +
+                colors.rgb.g +
+                ',' +
+                colors.rgb.b +
+                ',' +
+                (isDark ? '0.55' : '0.7') +
+                ')',
+              borderRadius: 4,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 200 },
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: gridColor },
+              ticks: { color: textColor },
+            },
+            x: { grid: { color: gridColor }, ticks: { color: textColor } },
+          },
+        },
+      })
+    }
+
+    var errorRate = series.rows.map(function (r) {
+      if (!r || !r.calls) return 0
+      return Math.round(((r.error_count || 0) / r.calls) * 1000) / 10
+    })
+    var latency = series.rows.map(function (r) {
+      return r ? r.avg_latency_ms || 0 : 0
+    })
+    if (llmQualityChartInstance) {
+      llmQualityChartInstance.destroy()
+      llmQualityChartInstance = null
+    }
+    var qualityCanvas = document.getElementById('llmQualityChart')
+    if (qualityCanvas) {
+      llmQualityChartInstance = new Chart(qualityCanvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: series.dates,
+          datasets: [
+            {
+              label: '错误率 %',
+              data: errorRate,
+              borderColor: 'rgb(255, 99, 132)',
+              backgroundColor: 'rgba(255, 99, 132, 0.15)',
+              tension: 0.4,
+              yAxisID: 'y',
+            },
+            {
+              label: '平均延迟 ms',
+              data: latency,
+              borderColor: colors.primary,
+              backgroundColor: 'rgba(0,0,0,0)',
+              tension: 0.4,
+              yAxisID: 'y1',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 200 },
+          plugins: {
+            legend: {
+              display: true,
+              labels: { color: textColor, boxWidth: 12 },
+            },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              position: 'left',
+              grid: { color: gridColor },
+              ticks: {
+                color: textColor,
+                callback: function (value) {
+                  return value + '%'
+                },
+              },
+            },
+            y1: {
+              beginAtZero: true,
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: textColor },
+            },
+            x: { grid: { color: gridColor }, ticks: { color: textColor } },
+          },
+        },
+      })
+    }
   }
 
   function buildChartData(dailyStats) {

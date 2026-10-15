@@ -150,6 +150,24 @@ class TestTriggerUpgrade:
         body = r.json()
         assert body["status"] == "started"
         assert body["upgrade_id"] == "abc123"
+        mock_service.start_upgrade.assert_awaited_once_with()
+
+    @pytest.mark.asyncio
+    async def test_trigger_ignores_legacy_target_version(self, auth_transport):
+        """旧客户端发送多余的 target_version 字段应被忽略，仍升级到最新版本"""
+        with patch("app.api.upgrade.upgrade_service") as mock_service:
+            mock_service.is_upgrade_capable.return_value = True
+            mock_service.is_upgrade_in_progress = False
+            mock_service.start_upgrade = AsyncMock(return_value="abc123")
+
+            async with AsyncClient(
+                transport=auth_transport, base_url="http://test"
+            ) as ac:
+                r = await ac.post("/api/app/upgrade", json={"target_version": "1.2.3"})
+
+        assert r.status_code == 200
+        assert r.json()["status"] == "started"
+        mock_service.start_upgrade.assert_awaited_once_with()
 
 
 class TestUpgradeProgress:
