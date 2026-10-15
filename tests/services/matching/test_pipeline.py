@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import time
+from unittest.mock import MagicMock, patch
 
 from app.models.sync import CustomItem
 from app.services.matching.context import MatchContext
 from app.services.matching.pipeline import MatchPipeline
+from app.services.matching.steps.api_search_main import APISearchStep
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 from app.services.sync_service.match_trace import MatchTrace
+from app.utils.bangumi_api import BangumiApi
 
 
 def _build_ctx() -> MatchContext:
@@ -253,3 +256,105 @@ def test_double_finish_keeps_trace_fields():
     assert trace.total_elapsed_ms == first_elapsed
     # steps 不因重复 finish 而重复追加
     assert len(trace.steps) == 1
+
+
+# ---------------------------------------------------------------------------
+# 真实 step 集成：子步骤 trace 合并 / 低置信度候选沉淀
+# ---------------------------------------------------------------------------
+
+
+def _api_search_ctx(title: str, service: MagicMock) -> MatchContext:
+    """构造带 service mock 的 ctx（APISearchStep 真实执行用）。"""
+    return MatchContext(
+        item=CustomItem(
+            media_type="episode",
+            title=title,
+            ori_title=None,
+            season=1,
+            episode=1,
+            release_date="",
+            user_name="u",
+            source="test",
+        ),
+        bgm=None,
+        trace=MatchTrace(),
+        service=service,
+    )
+
+
+def _configure_api_search_service(
+    service: MagicMock, bgm: MagicMock, threshold: float
+) -> None:
+    service._get_bangumi_api_for_user.return_value = bgm
+    service._sort_candidates_by_platform.side_effect = lambda data, **kw: data
+    service._get_match_confidence_threshold.return_value = threshold
+    service._check_season_info_in_title.return_value = False
+    service._get_explicit_season_from_title.return_value = 0
+
+
+def _enable_real_action_off():
+    """patch 配置：real_action 关闭（其余回退默认）。"""
+    mock_cfg = MagicMock()
+    mock_cfg.get.side_effect = lambda s, k, fallback=None: (
+        False if (s, k) == ("sync", "enable_real_action") else fallback
+    )
+    return patch("app.services.sync_service.config_manager", mock_cfg)
+
+
+def test_pipeline_api_search_substeps_recorded_in_main_trace():
+    """APISearchStep 经 pipeline 执行时，bgm_search 子 step 记录合并进主 trace。"""
+    api = BangumiApi()
+    candidate = {
+        "id": 12345,
+        "name": "测试番剧",
+        "name_cn": "测试番剧",
+        "platform": "TV",
+        "date": "2024-01-15",
+    }
+
+    def fake_search(**kw):
+        return [candidate] if kw.get("start_date") else []
+
+    service = MagicMock()
+    _configure_api_search_service(service, api, threshold=0.6)
+    service._pick_mainline_episode_candidate.return_value = candidate
+    ctx = _api_search_ctx("测试番剧", service)
+
+    with (
+        patch.object(api, "search", side_effect=fake_search),
+        patch.object(api, "title_diff_ratio", return_value=0.95),
+        _enable_real_action_off(),
+    ):
+        MatchPipeline([APISearchStep()]).run(ctx)
+
+    stages = [s.stage for s in ctx.trace.steps]
+    assert any(
+        s in stages for s in ("api_search_date_exact", "api_search_variant_fallback")
+    ), f"主 trace 不包含子 step 记录，stages={stages}"
+
+
+def test_pipeline_low_confidence_candidates_sediment_to_trace():
+    """低置信度 → 候选沉淀到 trace.steps[].candidates（待审流程数据来源）。"""
+    candidate = {
+        "id": 100,
+        "type": 2,
+        "name": "测试",
+        "name_cn": "测试",
+        "platform": "TV",
+        "date": "2024-01-15",
+    }
+    bgm = MagicMock()
+    bgm.bgm_search.return_value = [candidate]
+    bgm.title_diff_ratio.return_value = 0.3
+    service = MagicMock()
+    _configure_api_search_service(service, bgm, threshold=0.6)
+    ctx = _api_search_ctx("测试番剧", service)
+
+    with _enable_real_action_off():
+        MatchPipeline([APISearchStep()]).run(ctx)
+
+    assert ctx.trace.final_subject_id is None
+    last_step = ctx.trace.steps[-1]
+    assert last_step.status == "low_confidence"
+    assert last_step.candidates, "低置信度场景应沉淀候选到 trace.candidates"
+    assert last_step.candidates[0].subject_id == "100"

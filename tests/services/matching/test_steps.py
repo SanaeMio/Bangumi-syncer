@@ -1,4 +1,4 @@
-"""阶段三 4 个 step 单测：NormalizeStep / CustomMappingStep / BangumiDataStep / APISearchStep
+"""4 个 step 单测：NormalizeStep / CustomMappingStep / BangumiDataStep / APISearchStep
 
 重点验证各 step 的 outcome 状态、ctx 字段设置与 stage_override 行为。
 APISearchStep 的 post_search 改选逻辑由 test_sync_service_full.py 的集成测试覆盖，
@@ -404,6 +404,9 @@ class TestAPISearchStep:
         assert outcome.is_terminal is True
         assert ctx.subject_id is None
         assert "below threshold" in ctx.failure_detail
+        # 低置信度候选应沉淀到 Outcome（下游写入 trace 供待审）
+        assert outcome.candidates, "低置信度场景应沉淀候选"
+        assert outcome.candidates[0].subject_id == "67890"
 
     def test_media_type_reselect_prefers_anime_over_real_action_with_same_title(self):
         """回归测试：标题完全相同的真人剧（type=6）应通过 subject type 字段识别为 real_action，
@@ -453,12 +456,15 @@ class TestAPISearchStep:
         outcome = APISearchStep().execute(ctx)
 
         # 命中应改选到动画版 406306，而非真人剧 434076
-        # P2-1 修复后 subject_id 为 str 类型
+        # 修复后 subject_id 为 str 类型
         assert outcome.status == "hit"
         assert outcome.subject_id == "406306"
         assert ctx.subject_id == "406306"
         # _pick_mainline_episode_candidate 被调用（媒体类型改选触发）
         ctx.service._pick_mainline_episode_candidate.assert_called_once()
+        # 改选后 Outcome.candidates 应同步为改选结果（下游沉淀/展示一致）
+        assert outcome.candidates, "改选命中后候选应保留"
+        assert outcome.candidates[0].subject_id == "406306"
 
 
 class TestArchiveShortcutStep:
@@ -504,3 +510,49 @@ class TestArchiveShortcutStep:
 
         assert outcome.status == "skipped"
         bgm._archive.try_search.assert_not_called()
+
+
+class TestPickRelatedSubject:
+    """``APISearchStep._pick_related_subject``：parent_story 优先 + type 过滤语义。"""
+
+    def test_parent_story_takes_priority_over_other_relations(self):
+        """关联条目中命中 parent_story（主线故事）时优先返回它。"""
+        related_list = [
+            {"type": 2, "name": "测试番剧", "name_cn": "测试番剧", "relation": "续集"},
+            {
+                "type": 2,
+                "name": "测试番剧",
+                "name_cn": "测试番剧",
+                "relation": "主线故事",
+            },
+        ]
+
+        result = APISearchStep._pick_related_subject(
+            related_list,
+            request_media_type="episode",
+            search_title="测试番剧",
+        )
+
+        assert result is not None
+        assert result["relation"] == "主线故事"
+
+    def test_relation_type_field_filters_by_subject_type(self):
+        """type 字段为 subject type（2=动画 / 6=三次元）：依请求媒体类型过滤后返回。"""
+        for subject_type, media_type in ((6, "real_action"), (2, "episode")):
+            related_list = [
+                {
+                    "type": subject_type,
+                    "name": "测试",
+                    "name_cn": "测试",
+                    "relation": "续集",
+                }
+            ]
+
+            result = APISearchStep._pick_related_subject(
+                related_list,
+                request_media_type=media_type,
+                search_title="测试",
+            )
+
+            assert result is not None, f"type={subject_type} 应通过过滤"
+            assert result["relation"] == "续集"

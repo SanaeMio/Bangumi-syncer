@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sse_starlette.sse import EventSourceResponse
 
+from ..core.database import database_manager
 from ..core.logging import logger, new_retry_sync_run_id, sync_log_context
 from ..core.security import security_manager
 from ..models.sync import CustomItem
@@ -356,6 +357,42 @@ async def get_match_trace(
 # ===== 待确认候选（候选沉淀 + 确认 UI） =====
 
 
+def _enrich_candidate_with_agent_run(record: dict | None) -> dict | None:
+    """为候选记录附加关联 agent run 信息（前端徽标 / AI 评估过程折叠区用）。
+
+    - 经 sync_record_id 查最新 agent_runs（任意状态），取其 status 与 run_id；
+      无关联 run → agent_run_status / agent_run_id 均为 None（null）。
+    - 同时保证 llm 两列始终存在（老记录缺列时补空串），
+      供「AI 推荐区块」与「徽标」判据使用。
+    """
+    if record is None:
+        return record
+    record.setdefault("llm_subject_id", "")
+    record.setdefault("llm_reason", "")
+    sync_record_id = record.get("sync_record_id")
+    agent_run_status = None
+    agent_run_id = None
+    if sync_record_id:
+        run = database_manager.agent_runs.find_latest_by_sync_record(
+            int(sync_record_id)
+        )
+        if run:
+            agent_run_status = run.get("status")
+            agent_run_id = run.get("run_id")
+    record["agent_run_status"] = agent_run_status
+    record["agent_run_id"] = agent_run_id
+    return record
+
+
+def _enrich_candidate_list(result: dict) -> dict:
+    """批量附加 agent run 信息到候选列表。"""
+    if result and isinstance(result.get("records"), list):
+        result["records"] = [
+            _enrich_candidate_with_agent_run(r) for r in result["records"]
+        ]
+    return result
+
+
 @router.get("/pending-candidates")
 async def get_pending_candidates(
     request: Request,
@@ -370,6 +407,7 @@ async def get_pending_candidates(
         result = sync_service.get_pending_candidates(
             limit=limit, offset=offset, status=status
         )
+        _enrich_candidate_list(result)
         return {"status": "success", "data": result}
     except Exception as e:
         logger.error(f"获取待确认候选失败: {e}")
@@ -401,6 +439,8 @@ async def get_pending_candidate_detail(
             trace = json.loads(trace_str) if trace_str else None
         except (json.JSONDecodeError, TypeError):
             trace = None
+
+        _enrich_candidate_with_agent_run(record)
 
         return {
             "status": "success",
@@ -439,6 +479,8 @@ async def get_pending_candidate_by_sync_record(
         except (json.JSONDecodeError, TypeError):
             trace = None
 
+        _enrich_candidate_with_agent_run(record)
+
         return {
             "status": "success",
             "data": {"record": record, "candidates": candidates, "trace": trace},
@@ -459,7 +501,13 @@ async def confirm_pending_candidate(
     """确认待确认候选：写入自定义映射并标记为已确认"""
     try:
         body = await request.json()
-        subject_id = str(body.get("subject_id", "")).strip()
+        # 兼容：body 含 llm_subject_id（AI 推荐场景，允许不在候选列表内）时优先用之，
+        # 否则沿用候选列表内选择的 subject_id（向后兼容既有前端）
+        llm_subject_id = body.get("llm_subject_id")
+        if llm_subject_id is not None:
+            subject_id = str(llm_subject_id).strip()
+        else:
+            subject_id = str(body.get("subject_id", "")).strip()
         if not subject_id:
             raise HTTPException(status_code=400, detail="subject_id 不能为空")
 
@@ -908,7 +956,13 @@ async def _dispatch_media_server_webhook(
 
 async def _parse_plex_body(request: Request) -> dict:
     json_str = await request.body()
-    return json.loads(extract_plex_json(json_str))
+    extracted = extract_plex_json(json_str)
+    if extracted is None:
+        # Plex 报文未包含可切片的 JSON 块：显式失败（由上层统一包装为 error 响应），
+        # 避免 json.loads(None) 抛出的 TypeError 语义不明。
+        logger.warning("Plex webhook 报文未提取到 JSON 块，拒绝解析")
+        raise ValueError("Plex 报文未包含可解析的 JSON")
+    return json.loads(extracted)
 
 
 async def _handle_plex_sync(

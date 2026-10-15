@@ -57,7 +57,7 @@ def test_notification_rules_list_renders(authed_page, base_url: str):
 def test_notification_types_grouped_by_category(authed_page, base_url: str):
     """通知类型按分类分组渲染
 
-    验证 P0 通知系统重构：前端从 /api/notification/types 动态加载类型，
+    验证通知系统重构：前端从 /api/notification/types 动态加载类型，
     按分类（同步流程/匹配质量/数据源/调度任务/Bangumi API/系统运维）分组展示。
     打开新建规则 modal 触发类型复选框渲染。
     """

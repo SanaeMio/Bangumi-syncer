@@ -8,6 +8,7 @@
 - 集成：queued / 认证失败在编排器层的分支收尾
 """
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -49,7 +50,7 @@ def _make_ctx(**overrides):
         media_type="tv",
         release_date="",
     )
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         item=item,
         bgm=bgm,
         trace=MatchTrace(),

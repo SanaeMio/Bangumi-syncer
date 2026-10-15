@@ -238,6 +238,8 @@ _TYPES: dict[str, NotificationTypeMeta] = {
         description="匹配失败但有候选，需手动确认",
         is_item_level=True,
         category="match_quality",
+        in_app_type="match_pending",
+        in_app_title_template="匹配待确认：{title} {ep_label}",
         payload_fields=(
             ("candidates_count", "candidates_count"),
             ("top_candidate_id", "top_candidate_id"),
@@ -462,6 +464,16 @@ _TYPES: dict[str, NotificationTypeMeta] = {
         color="#dc3545",
         description="站内信专用，对应 webhook/email 的 mark_failed",
         is_item_level=False,
+        visible_in_ui=False,
+    ),
+    "match_pending": NotificationTypeMeta(
+        id="match_pending",
+        display_name="匹配待确认",
+        icon="📝",
+        color="#fd7e14",
+        description="站内信专用，对应 webhook/email 的 pending_candidate",
+        is_item_level=False,
+        category="match_quality",
         visible_in_ui=False,
     ),
     "summary_llm_failed": NotificationTypeMeta(

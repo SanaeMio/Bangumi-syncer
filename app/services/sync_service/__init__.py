@@ -38,6 +38,7 @@ from ...utils.bangumi_constants import (
 from ...utils.bangumi_data import BangumiData, bangumi_data
 from ...utils.media_type_detector import detect_media_type as detect_media_type
 from ..mapping_service import mapping_service
+from ..matching.identity import build_match_business_key
 from ..notification_service import notification_service
 from .match_trace import MatchCandidate as MatchCandidate, MatchTrace
 from .retry import MARK_QUEUED, RetryMixin
@@ -60,7 +61,7 @@ def _build_error_detail(exc: Exception) -> dict[str, Any]:
 def _extract_infobox_aliases(cand: dict) -> list[str]:
     """从候选条目的 infobox 中提取别名列表（兼容多种历史数据格式）
 
-    用于 P2 infobox_aliases 字段，帮助理解 title_diff_ratio 为何给出该分数。
+    用于 infobox_aliases 字段，帮助理解 title_diff_ratio 为何给出该分数。
     """
     aliases: list[str] = []
     infobox = cand.get("infobox")
@@ -139,7 +140,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         self._tasks_lock = threading.Lock()
         self._sync_tasks = {}
         self._task_counter = 0
-        # 阶段四：同步编排器，接管 sync_custom_item 完整流程
+        # 同步编排器，接管 sync_custom_item 完整流程
         # （请求处理 → 匹配 → 集数解析 → 标记 → 持久化）
         from .orchestrator import SyncOrchestrator
 
@@ -260,7 +261,15 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         database_manager.update_pending_candidate_status(
             candidate_id, "confirmed", confirmed_subject_id=str(subject_id)
         )
-        # 批量更新同 key 的其它 pending 行，避免残留（去重后通常无额外行）
+        # 用户处理结果由 pending_candidates（status + resolved_at）承载，
+        # agent_runs 回归通用框架，确认候选不再改写 run 状态。
+        # 批量更新同业务身份的其它 pending 行，避免残留（去重后通常无额外行）。
+        # 使用 business_key 对齐 agent_runs 去重语义（去 source / 归一化标题）。
+        resolve_bk = build_match_business_key(
+            record.get("user_name", ""),
+            record.get("request_title", ""),
+            int(record.get("request_season") or 1),
+        )
         database_manager.resolve_similar_pending_candidates(
             request_title=title,
             request_season=season,
@@ -269,11 +278,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             status="confirmed",
             confirmed_subject_id=str(subject_id),
             exclude_id=candidate_id,
+            business_key=resolve_bk,
         )
 
         # 候选确认即补发：若有关联的 sync_record_id，自动触发重试
         replay_msg = self._auto_replay_after_confirm(
-            record.get("sync_record_id"), record, title
+            record.get("sync_record_id"), title
         )
         final_msg = f"已确认并写入映射：{title} → subject/{subject_id}"
         if replay_msg:
@@ -283,7 +293,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     def _auto_replay_after_confirm(
         self,
         sync_record_id: int | None,
-        candidate_record: dict[str, Any],
         title: str,
     ) -> str:
         """候选确认后自动补发原同步记录。
@@ -480,6 +489,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             candidate_id, "rejected"
         ):
             return False, "候选记录不存在或已处理"
+        # 用户处理结果由 pending_candidates 承载，忽略候选不再改写 run 状态
 
         # 把被拒候选涉及的标题写入屏蔽关键词（容错：失败不影响 reject 主流程）
         try:
@@ -592,6 +602,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         并触发 pending_candidate 通知提醒用户前往 WebUI 确认。
 
         sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
+        business_key：按 (user_name, normalize(title), season) 构造，对齐 agent_runs
+        业务身份去重，跨 source 共享同一 pending 行。
         """
         candidates = self._collect_candidates_from_trace(trace)
         # 过滤掉「候选自身标题命中屏蔽关键词」的条目，避免用户已屏蔽的作品
@@ -607,6 +619,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             ]
         if not candidates:
             return
+        # 计算业务键：对齐 agent_runs 去重语义（去 source / 归一化标题）
+        bk = build_match_business_key(item.user_name, item.title, item.season)
         try:
             database_manager.log_pending_candidate(
                 request_title=item.title,
@@ -618,6 +632,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 candidates=candidates,
                 trace=trace.to_dict(),
                 sync_record_id=sync_record_id,
+                business_key=bk,
             )
         except Exception as e:
             logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
@@ -820,7 +835,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                     # 未启用补发：让异常向上抛，由外层捕获为 error
                     raise
                 self._enqueue_pending_sync(
-                    bgm_api=bgm,
                     subject_id=e.subject_id,
                     ep_id=e.ep_id,
                     reason=e.reason,
@@ -1013,13 +1027,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         return None
 
-    # 阶段四：_find_matching_subject 已迁入 SyncOrchestrator._match_subject
+    # _find_matching_subject 已迁入 SyncOrchestrator._match_subject
     # （请求处理 → 匹配 → 集数解析 → 标记 → 持久化 统一编排）
     # 保留委托方法供 sync_movie_watching 和测试调用
     def _find_matching_subject(
         self, item: CustomItem, actual_source: str
     ) -> tuple[str | None, bool, SyncResponse | None, MatchTrace]:
-        """委托给编排器的匹配阶段（阶段四）"""
+        """委托给编排器的匹配阶段"""
         return self._orchestrator._match_subject(item, actual_source)
 
     @staticmethod
@@ -1059,7 +1073,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         2. 标题含"第N季"声明（明确是季番条目）
         3. 兜底取第一个候选
 
-        历史变更：删除了原 step 3「eps/total_episodes 最大的候选」（2026-09-08）。
+        历史变更：已移除「按 eps/total_episodes 最大选择候选」的旧策略（2026-09-08）。
         根因：跨季场景下该规则不安全。`凡人修仙传`（81 集）会盖过
         `凡人修仙传 新年番`（48 集）——实际查询带「新年番」字样时本意是后者。
         实测 240 条 L2 黄金集 NFKC 修复后此类误判占新增错配 7 条。
@@ -1110,7 +1124,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         is_season_matched_id: bool,
         target_episode: int | None = None,
         mapping_is_explicit: bool = False,
-    ) -> tuple[str, str]:
+    ) -> tuple[int | str | None, int | str | None]:
         """根据 media_type 解析 Bangumi 季度与集数 ID。
 
         返回 (bgm_se_id, bgm_ep_id)；可能抛出 ValueError（认证错误由调用方处理）。
@@ -1123,6 +1137,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             该集后沿续集链改选到别的条目 —— 否则用户的明确指定会被程序猜测
             覆盖，且「改选」发生在这一步（早于 CrossSeasonStep 的守卫），
             会把 episode 静默标记到另一部番上（issue #267）。
+
+        真实返回类型随链路而异（movie 返回 str、剧集返回 int），且未命中时为 None，
+        调用方（EpisodeResolveStep）已按可为 None 处理。
         """
         release_for_ep = None
         if item.release_date and len(item.release_date) >= 8:
@@ -1357,7 +1374,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         bgm_se_id: str,
         bgm_ep_id: str,
         bgm_title: str,
-    ) -> None:
+    ) -> list[dict]:
         """把已解析的单集标记到首选账号之外的其余 Bangumi 账号
 
         同一媒体服务器用户名可被多个 Bangumi 账号声明（一人多号、与亲友共享
@@ -1505,10 +1522,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
     def sync_custom_item(
         self, item: CustomItem, source: str = "custom"
     ) -> SyncResponse:
-        """同步自定义项目（阶段四：委托给 SyncOrchestrator）"""
+        """同步自定义项目（委托给 SyncOrchestrator）"""
         return self._orchestrator.sync_custom_item(item, source)
 
-    # 阶段四：_sync_custom_item_impl / _sync_custom_item_body 已迁入
+    # _sync_custom_item_impl / _sync_custom_item_body 已迁入
     # SyncOrchestrator._sync_impl / _body，统一编排请求→匹配→标记→持久化。
 
     def _check_user_permission(
@@ -1659,7 +1676,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
 
         当传入 trace 时，会记录每个匹配阶段的详细过程。
 
-        阶段三：通过 MatchPipeline 编排 4 个 step（Normalize/CustomMapping/
+        通过 MatchPipeline 编排 4 个 step（Normalize/CustomMapping/
         BangumiData/APISearch），trace 填充收敛到 _record_trace 单一入口。
         """
         # 构建管道上下文

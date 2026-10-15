@@ -4,6 +4,7 @@
 """
 
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -717,7 +718,7 @@ def _patched_sync_service_deps():
 
 
 def _branch_custom_item_for_find(**kwargs):
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         user_name="testuser",
         title="番剧A",
         ori_title="A",
@@ -1250,6 +1251,7 @@ def test_pick_mainline_episode_candidate_prefers_exact_title_match():
         {"id": 244224, "name": "完美世界", "name_cn": "完美世界", "eps": 26},
     ]
     result = service._pick_mainline_episode_candidate(candidates, "完美世界")
+    assert result is not None
     assert result["id"] == 244224
 
 
@@ -1266,6 +1268,7 @@ def test_pick_mainline_episode_candidate_prefers_season_keyword():
         },
     ]
     result = service._pick_mainline_episode_candidate(candidates, "完美世界")
+    assert result is not None
     assert result["id"] == 403251
 
 
@@ -1284,6 +1287,7 @@ def test_pick_mainline_episode_candidate_falls_back_to_first_when_no_season_keyw
         {"id": 3, "name": "完美世界C", "name_cn": "完美世界C", "eps": 50},
     ]
     result = service._pick_mainline_episode_candidate(candidates, "完美世界")
+    assert result is not None
     assert result["id"] == 1  # 取第一个（不再按 eps 排序）
 
 
@@ -1398,7 +1402,7 @@ def test_find_subject_id_archive_hit_marks_stage_as_archive():
         archive_steps = [s for s in trace.steps if s.stage == "archive"]
         assert len(archive_steps) == 2
         assert all(s.status == "hit" for s in archive_steps)
-        # C4：archive 短路 step 与 APISearchStep（stage_override=archive）都携带候选。
+        # archive 短路 step 与 APISearchStep（stage_override=archive）都携带候选。
         # 此前只有 APISearchStep 落地时才产出候选，archive 短路是「无候选盲信」。
         steps_with_candidates = [s for s in archive_steps if s.candidates]
         assert len(steps_with_candidates) == 2

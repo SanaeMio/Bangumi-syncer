@@ -97,6 +97,14 @@ from app.core.config import config_manager  # noqa: E402
 from app.core.database import database_manager  # noqa: E402
 from app.models.trakt import TraktConfig  # noqa: E402
 
+# ===== 场景装配（Composition Root）=====
+# 必须在任何测试运行前、且在 CONFIG_FILE / DB 重定向等环境准备完成后执行：
+# 静态装配 match 场景，使调度器等经 get_scenario("match") 取用运行时可用。
+# import llm_assist 会触发其依赖链加载，故置于环境准备之后。
+from app.services.scenarios import wire_scenarios  # noqa: E402
+
+wire_scenarios()
+
 
 @pytest.fixture
 def test_db():
@@ -544,6 +552,35 @@ def _speed_up_bangumi_rate_limit():
     reset_bgm_rate_limiter(RateLimiter(rate=1_000_000.0, burst=1_000_000))
     yield
     reset_bgm_rate_limiter(RateLimiter(rate=1_000_000.0, burst=1_000_000))
+
+
+@pytest.fixture(autouse=True)
+def _clear_llm_match_active_runs():
+    """测试隔离：清空 LLM 匹配调度器的进程级 active run 集合。
+
+    ``llm_match_scheduler._active_run_ids`` 是模块级进程状态，测试中预置或
+    残留会跨用例、跨测试模块污染（导致恢复扫描被误跳过）。此处统一在每条
+    测试前后清空，与 ``_speed_up_bangumi_rate_limit`` 等全局 fixture 风格一致。
+    """
+    from app.services.llm_match_scheduler import _clear_active_runs
+
+    _clear_active_runs()
+    yield
+    _clear_active_runs()
+
+
+@pytest.fixture(autouse=True)
+def _reset_agent_run_notified_cache():
+    """测试隔离：清空 agent_run_failed 的进程内去重缓存。
+
+    ``notifier_helpers`` 的 run_id 级 LRU 缓存是模块级进程状态；多个用例
+    复用同一 run_id 时会被去重跳过，统一在每条测试前后清空。
+    """
+    from app.services.base.notifier_helpers import _reset_run_notified_cache
+
+    _reset_run_notified_cache()
+    yield
+    _reset_run_notified_cache()
 
 
 @pytest.fixture(autouse=True)

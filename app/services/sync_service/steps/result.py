@@ -63,8 +63,10 @@ class ResultStep(ExecutionStepBase):
                 bgm_title = (
                     subject_info.get("name_cn") or subject_info.get("name") or ""
                 )
-        except Exception:
-            logger.debug(f"获取条目标题失败: {bgm_se_id}", exc_info=True)
+        except Exception as e:
+            # 自定义 Logger.debug 不支持 exc_info（传了会 TypeError），
+            # 故将异常信息并入 message，保持可排查性。
+            logger.debug(f"获取条目标题失败: {bgm_se_id} ({type(e).__name__}: {e})")
 
         return StepOutcome(
             status="hit",

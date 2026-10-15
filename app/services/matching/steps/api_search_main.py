@@ -248,9 +248,7 @@ class APISearchStep(MatchStepBase):
 
             # post_search 改选（季度改选 + 媒体类型改选 + 关联条目改选）
             # 返回 (is_season_matched, post_candidates, post_reason, post_subject_id)
-            post_result = self._post_search_reselect(
-                ctx, bgm, bgm_data, search_title, original_top_id, original_top_name
-            )
+            post_result = self._post_search_reselect(ctx, bgm, bgm_data, search_title)
             is_api_season_matched, post_candidates, post_reason, post_subject_id = (
                 post_result
             )
@@ -587,8 +585,6 @@ class APISearchStep(MatchStepBase):
         bgm: Any,
         bgm_data: list[dict],
         search_title: str,
-        original_top_id: Any,
-        original_top_name: str,
     ) -> tuple[bool, list[MatchCandidate], str, Any]:
         """post_search 改选：季度改选 + 媒体类型改选 + 关联条目改选
 
