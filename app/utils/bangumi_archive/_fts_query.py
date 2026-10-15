@@ -675,7 +675,7 @@ class ArchiveFTSQuery:
                     batch,
                 ).fetchall()
                 for sid, name, name_cn, infobox, sdate in rows:
-                    lvl = self._match_exact(sid, name, name_cn, infobox, key, deep_key)
+                    lvl = self._match_exact(name, name_cn, infobox, key, deep_key)
                     if lvl:
                         result.append((sid, lvl, sdate or ""))
             if year is not None and len(result) > 1:
@@ -696,7 +696,6 @@ class ArchiveFTSQuery:
 
     @staticmethod
     def _match_exact(
-        sid: int,
         name: Optional[str],
         name_cn: Optional[str],
         infobox: Optional[str],

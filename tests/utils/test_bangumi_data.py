@@ -4,6 +4,7 @@ Bangumi 数据工具测试
 
 import json
 import time
+from typing import Any, cast
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -48,13 +49,14 @@ class TestBangumiDataSearch:
     def test_search_empty(self):
         data = BangumiData()
         if hasattr(data, "search"):
-            result = data.search("")
+            # search 为可选/动态属性，静态类型为 object；cast 后调用（运行期由 hasattr 守卫）
+            result = cast(Any, data.search)("")
             assert result is not None
 
     def test_search_with_query(self):
         data = BangumiData()
         if hasattr(data, "search"):
-            result = data.search("test")
+            result = cast(Any, data.search)("test")
             assert result is not None
 
 
@@ -1907,12 +1909,15 @@ class TestTmdbMappingMultiSeason:
         """季度感知查询：有季度时优先返回对应季标题"""
         bd = BangumiData()
         base = bd.get_title_by_tmdb_id("tv/94664")
+        assert base is not None
         assert "クール" not in base
 
         s2 = bd.get_title_by_tmdb_id("tv/94664", season=2)
+        assert s2 is not None
         assert "Ⅱ" in s2
 
         s3 = bd.get_title_by_tmdb_id("tv/94664", season=3)
+        assert s3 is not None
         assert "Ⅲ" in s3
 
     def test_get_title_by_tmdb_id_season_fallback(self):
@@ -2418,7 +2423,10 @@ class TestPartialMatchScanTruncation:
         data = BangumiData()
         mock_parse.return_value = _truncation_all_partial_dataset()
 
-        _, partial, _ = data._scan_candidates("Re:从零开始的异世界生活", "", None)
+        # release_date 传 None 属刻意覆盖：验证无日期时仍截断，cast 绕过静态类型
+        _, partial, _ = data._scan_candidates(
+            "Re:从零开始的异世界生活", "", cast(Any, None)
+        )
 
         assert len(partial) == 10
         # 第 11 个（id 300010）应被截断
@@ -2541,7 +2549,10 @@ class TestBangumiDataDateOptimalTamayura:
         # ましろ色シンフォニー 的日文名含空格，空白原标题会命中「原标题被包含于条目名」
         assert " " in distractor["title"]
         blank = data._calculate_match_score(distractor, "玉响", " ", self.RELEASE)
-        absent = data._calculate_match_score(distractor, "玉响", None, self.RELEASE)
+        # ori_title 传 None 属刻意覆盖（空/缺失原标题），cast 绕过静态类型
+        absent = data._calculate_match_score(
+            distractor, "玉响", cast(Any, None), self.RELEASE
+        )
 
         assert blank == absent
         assert blank < 0.4
@@ -2623,8 +2634,10 @@ class TestBangumiDataDateOptimalTamayura:
         """
         data = BangumiData()
         mock_parse.return_value = self._dataset()
-        data._archive = MagicMock()
-        data._archive._enabled = True
+        # _archive 由运行期注入（非类声明属性），用 cast(Any) 赋值避免静态类型误报
+        archive_mock = MagicMock()
+        cast(Any, data)._archive = archive_mock
+        archive_mock.enabled = True
         with patch.object(data, "_title_index", {}):
             result = data._find_bangumi_id_optimized(
                 title="玉响", ori_title=" ", release_date=self.RELEASE, season=1
@@ -2659,14 +2672,15 @@ class TestBangumiDataDateOptimalTamayura:
             "sites": [{"site": "bangumi", "id": self.HITOTOSE_ID}],
         }
         data._title_index = {"玉响": [prequel, hitotose]}
-        result = data._try_exact_match("玉响", None, self.RELEASE, "")
+        # ori_title 传 None 属刻意覆盖，cast 绕过静态类型
+        result = data._try_exact_match("玉响", cast(Any, None), self.RELEASE, "")
 
         assert result is not None
         assert result[0] == self.HITOTOSE_ID
         assert result[2] is True
 
     def test_upstream_single_candidate_logic_selects_prequel_here(self):
-        """对照（实现前）：PR #117/#120 前的「仅考察日期最近单个候选」策略在此场景回落前传（错误）。
+        """对照（实现前）：「仅考察日期最近单个候选」策略在此场景回落前传（错误）。
 
         复刻旧逻辑用于对照：取日期最近的单个部分匹配做安全校验，未通过则放弃
         整个日期择优并回落到日期最远的完全匹配。玉响场景中最近的候选是同期播出

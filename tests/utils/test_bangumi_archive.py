@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -411,7 +412,7 @@ class TestArchiveStoreAiringQuery:
     """ArchiveStore.get_episodes_by_airdate 按日期范围查询"""
 
     @pytest.fixture
-    def store_with_data(self, tmp_path: Path) -> ArchiveStore:
+    def store_with_data(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         """构造含多条 episode/subject 的测试库"""
         db_path = tmp_path / "test_archive.db"
         conn = sqlite3.connect(str(db_path))
@@ -1015,28 +1016,28 @@ class TestArchiveEpisodeEpField:
     """
 
     @pytest.fixture
-    def store_with_episodes(self, tmp_path: Path) -> ArchiveStore:
+    def store_with_episodes(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         yield from _archive_store(tmp_path, _SEASON2_ROWS, "ep_synth.db")
 
     @pytest.fixture
-    def store_with_null_sort(self, tmp_path: Path) -> ArchiveStore:
+    def store_with_null_sort(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         yield from _archive_store(tmp_path, _NULL_SORT_ROWS, "null_sort.db")
 
     @pytest.fixture
-    def store_with_sort_reset(self, tmp_path: Path) -> ArchiveStore:
+    def store_with_sort_reset(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         yield from _archive_store(tmp_path, _SORT_RESET_ROWS, "sort_reset.db")
 
     @pytest.fixture
-    def store_empty(self, tmp_path: Path) -> ArchiveStore:
+    def store_empty(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         yield from _archive_store(tmp_path, [], "empty.db")
 
     @pytest.fixture
-    def store_only_sp(self, tmp_path: Path) -> ArchiveStore:
+    def store_only_sp(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         rows = [(501, "SP", "", "", "2025-01-01", 0, 0, 900003, 1, 3)]
         yield from _archive_store(tmp_path, rows, "only_sp.db")
 
     @pytest.fixture
-    def store_single_episode(self, tmp_path: Path) -> ArchiveStore:
+    def store_single_episode(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         rows = [(601, "EP1", "", "", "2025-01-01", 0, 0, 900004, 7, 0)]
         yield from _archive_store(tmp_path, rows, "single.db")
 
@@ -1197,7 +1198,7 @@ class TestArchiveSubjectEpsField:
     """
 
     @pytest.fixture
-    def store(self, tmp_path: Path) -> ArchiveStore:
+    def store(self, tmp_path: Path) -> Iterator[ArchiveStore]:
         yield from _subject_store(tmp_path, _EPS_SUBJECT_ROWS, "eps_subject.db")
 
     def test_eps_from_infobox_episode_count(self, store):

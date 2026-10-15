@@ -655,7 +655,6 @@ class BangumiArchive:
                 dump_date=None,  # 本地上传无 dump_date
                 dump_filename=zip_path.name,
                 dump_size_bytes=zip_path.stat().st_size if zip_path.exists() else 0,
-                cleanup_zip=False,  # 上传的临时文件由调用方清理
             )
             self._push_progress(task_id, ArchiveStage.DONE, 100, "导入完成")
             return task_id
@@ -740,7 +739,6 @@ class BangumiArchive:
                 dump_date=latest.get("created_at"),
                 dump_filename=latest.get("name"),
                 dump_size_bytes=latest.get("size"),
-                cleanup_zip=True,  # 下载的 zip 导入后删除
             )
         finally:
             # 兜底清理：整个任务临时子目录（含 zip 残留 + 解压目录）
@@ -759,7 +757,6 @@ class BangumiArchive:
         dump_date: Optional[str],
         dump_filename: str,
         dump_size_bytes: int,
-        cleanup_zip: bool,
     ) -> None:
         """导入流程：解压 → 导入 → 切换 → 清空（不含下载阶段，可被本地导入复用）"""
         from ._import import ArchiveImporter
