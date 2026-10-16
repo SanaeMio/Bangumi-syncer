@@ -7,7 +7,7 @@ FastMCP 嵌入骨架测试
 3. /.well-known/oauth-authorization-server 在根路径可达（200）
 4. /authorize、/token 在根路径存在（不 404）、/consent 缺参返回 400（可达）
 5. 现有路由（/health、/openapi.json、/docs、/redoc）未被 catch-all 破坏
-6. lifespan 合并后可正常启停
+6. 生产 app 的组合 lifespan 真正进入/退出 MCP 子应用 lifespan
 7. 生产组合携带合法 Bearer 可调用 /mcp
 """
 
@@ -15,10 +15,8 @@ import base64
 import hashlib
 import re
 import secrets
-from contextlib import asynccontextmanager
 from urllib.parse import parse_qs, urlparse
 
-import pytest
 from fastapi.testclient import TestClient  # noqa: I001
 
 from tests.mcp_helpers import build_test_mcp_app
@@ -189,24 +187,62 @@ class TestExistingRoutesNotBroken:
 
 
 class TestLifespanCombination:
-    """验证 lifespan 合并后正常启停。"""
+    """验证生产 app 的组合 lifespan 真正进入并退出 MCP 子应用 lifespan。
 
-    @pytest.mark.asyncio
-    async def test_combined_lifespan_starts_and_stops(self, embed_mocks):
-        """合并后的 lifespan 应能正常进入和退出。"""
+    回归背景（PR #261 review）：``app.main.lifespan`` 是**合并前**的主应用
+    lifespan，直接导入并启停它无法发现 ``combine_lifespans`` 的 MCP 参数被
+    误删（ASGI 嵌套子应用的 lifespan 不会被外层自动执行，不合并也不报错，
+    只有 MCP 客户端真正调用时才会失败）。本类改走生产启动路径
+    ``TestClient(app.main.app)``：它执行的才是赋给 FastAPI 构造参数的组合
+    lifespan，并断言 MCP 侧真的进过（启动）与出过（关闭）。
+    """
+
+    def test_生产App启动路径_进入并退出MCP侧lifespan(self, embed_mocks, monkeypatch):
+        """启动生产 app 应进入 MCP 侧 lifespan，退出后应完成关闭。
+
+        探针：FastMCP 的 MCP 侧 lifespan 每次进入都会构造
+        ``FastMCPStreamableHTTPSessionManager`` 并调用其 ``run()``；运行期间
+        ``_task_group`` 非空、退出后置回 None（见 fastmcp/server/http.py 中
+        ``create_streamable_http_app.<locals>.lifespan`` 与 mcp SDK 的
+        ``StreamableHTTPSessionManager.run()`` 语义）。该构造只由 MCP 侧
+        lifespan 触发：合并被误删时不会发生。
+
+        注：不能改用替换 ``mcp_app.router.lifespan_context`` 作探针——生产
+        app 构造时 ``combine_lifespans(lifespan, mcp_app.lifespan)`` 已对该
+        属性求值并捕获原对象（见 app/main.py 的 ``_app_kw["lifespan"]`` 构造），
+        事后替换不会影响已组合的闭包，这正是旧实现一路绿灯的根因。
+        """
+        import fastmcp.server.http as fastmcp_http
+
+        managers = []
+        original_cls = fastmcp_http.FastMCPStreamableHTTPSessionManager
+
+        def _spy(*args, **kwargs):
+            manager = original_cls(*args, **kwargs)
+            managers.append(manager)
+            return manager
+
+        monkeypatch.setattr(fastmcp_http, "FastMCPStreamableHTTPSessionManager", _spy)
+
         with embed_mocks():
-            from app.main import lifespan
+            from app.main import app
 
-            @asynccontextmanager
-            async def test_ls(app):
-                yield
+            assert managers == [], "import 阶段不应进入 MCP 侧 lifespan"
 
-            from fastapi import FastAPI
+            with TestClient(app) as client:
+                assert client.get("/health").status_code == 200
+                assert len(managers) == 1, (
+                    "启动生产 app 应经组合 lifespan 进入 MCP 侧一次（构造会话"
+                    f"管理器），实际: {len(managers)} 次——检查 app/main.py 的 "
+                    "combine_lifespans(lifespan, mcp_app.lifespan) 是否被删改"
+                )
+                assert managers[0]._task_group is not None, (
+                    "MCP 侧 lifespan 运行期间会话管理器任务组应处于活动状态"
+                )
 
-            test_app = FastAPI()
-
-            async with lifespan(test_app):
-                pass
+        assert managers[0]._task_group is None, (
+            "app 退出后 MCP 侧 lifespan 应已完成关闭（任务组置回 None）"
+        )
 
 
 # ---------------------------------------------------------------------------
