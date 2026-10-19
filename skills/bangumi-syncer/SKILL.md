@@ -47,7 +47,7 @@ description: 部署、接入、配置与排障 Bangumi-syncer（把 Jellyfin/Emb
 5. **媒体源配置**（按类型分流）：
    - **Webhook 类**（Jellyfin / Emby / Plex / Tautulli / 通用 webhook）：在文档 `/usage/` 找到对应页面，指导用户在媒体服务器侧填写回调地址；这类配置无法通过 MCP 代改
    - **配置类**（飞牛 / fongmi / Trakt）：先 `get_current_config` 侦察 → 给出「变更计划表」（`section.key`：现值 → 目标值 → 原因）→ 用户确认 → 用 `update_config` 逐项执行 → 复读验证
-6. **验证**：引导用户触发一次测试同步（`POST {base}/test-sync`，需登录态）或播放一集；用 `get_logs` 查看结果；必要时到 Bangumi 个人主页确认
+6. **验证**：引导用户触发一次测试同步（`POST {base}/api/test-sync`，需登录态）或播放一集；用 `get_logs` 查看结果；必要时到 Bangumi 个人主页确认
 
 ## 场景 C：只读验证（接入后自检）
 
@@ -69,7 +69,7 @@ description: 部署、接入、配置与排障 Bangumi-syncer（把 Jellyfin/Emb
 ## 安全约束（硬性，不可妥协）
 
 1. 修改任何配置前，必须先提交变更计划并获得用户确认；一次只改一组相关配置；改完立即复读验证
-2. 绝不修改 `auth` 段（服务端同样会拒绝）
+2. 绝不修改登录通道三键 `auth.enabled` / `auth.secret_key` / `auth.password`（服务端同样会拒绝——这三项改完用户无法自行恢复）；其余 `auth.*` 键（如 `auth.webhook_key`、`auth.username`）服务端允许写入，修改前按第 1 条走「计划 → 确认 → 复读验证」
 3. 绝不回显任何 Token / 密码 / 密钥；配置中的 `***` 保持原样
 4. 默认只读；用户明确要求后才执行写操作
 5. 涉及具体步骤、字段含义、参数取值时，先读文档对应页面再行动

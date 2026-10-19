@@ -12,7 +12,7 @@ order: 16
 | scope | 工具 | 说明 |
 | --- | --- | --- |
 | `read`（默认） | `get_logs`、`get_current_config` | 配置读取时敏感字段已掩码（含 `auth.password` / `auth.secret_key`） |
-| `write` | `update_config` | 可写配置，**当前包含敏感字段**（`bangumi.access_token`、`llm.api_key`、`notify-*.smtp_password` 等） |
+| `write` | `update_config` | 可写配置，**当前包含敏感字段**（`llm.api_key`、`notify-*.smtp_password`、`trakt.client_secret` 等）；`[bangumi]` 段为段级只读，不在此列 |
 
 ## 三层 scope 概念（勿混用）
 

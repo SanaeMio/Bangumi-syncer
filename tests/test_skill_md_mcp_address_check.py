@@ -54,3 +54,34 @@ def test_troubleshooting_has_matching_symptom(skill_text):
     assert "检查「MCP 服务公共 URL」是否与访问地址一致" in skill_text, (
         "排障应给出『检查 MCP 服务公共 URL 是否与访问地址一致』的处置"
     )
+
+
+def test_skill_test_sync_path_includes_api_prefix(skill_text):
+    """测试同步接口路径必须带 /api 前缀。
+
+    路由定义见 app/api/sync.py：``APIRouter(prefix="/api")`` +
+    ``@router.post("/test-sync")``，实际路径为 ``/api/test-sync``。
+    Skill 若写成 ``{base}/test-sync``，按引导做接入自检会直接 404。
+    """
+    assert "/api/test-sync" in skill_text, "Skill 中的测试同步地址应带 /api 前缀"
+    assert "{base}/test-sync" not in skill_text, (
+        "Skill 不应出现不带 /api 前缀的 {base}/test-sync"
+    )
+
+
+def test_skill_auth_constraint_matches_server_denied_keys(skill_text):
+    """Skill 的 auth 禁写表述必须与服务端禁改清单一致（仅三键）。
+
+    服务端禁改清单见 app/mcp/tools.py ``_MCP_WRITE_DENIED``：只禁
+    ``auth.enabled`` / ``auth.secret_key`` / ``auth.password``。
+    Skill 若写「整段 auth 禁写且服务端会拒绝」，会让助手误拒合法写操作。
+    """
+    assert "auth.enabled" in skill_text, "应点名 auth.enabled 为禁写键"
+    assert "auth.secret_key" in skill_text, "应点名 auth.secret_key 为禁写键"
+    assert "auth.password" in skill_text, "应点名 auth.password 为禁写键"
+    assert "绝不修改 `auth` 段" not in skill_text, (
+        "不应再写『整段 auth 禁写』，与实现/文档不同步"
+    )
+    assert "auth.webhook_key" in skill_text, (
+        "应说明其余 auth.* 键（如 auth.webhook_key）服务端允许写入"
+    )
