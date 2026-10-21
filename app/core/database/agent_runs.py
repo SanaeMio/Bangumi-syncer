@@ -1015,6 +1015,41 @@ class AgentRunsRepository(BaseRepository):
             _write, error_msg="标记残留 running span 失败（已忽略）", default=0
         )
 
+    def reopen_interrupted_chat_span(self, run_id: str, iteration: int) -> str | None:
+        """恢复续跑时复用中断轮次的 ``llm_chat`` span（避免同轮重复行）。
+
+        - 仅命中 ``run_id + name='llm_chat' + iteration + status='running'``
+          的最新一行（已闭合/轮次不符/非 chat 行一律不碰）；
+        - 命中后重置为可重新执行的初始态：``status='running'``、``error=''``、
+          ``ended_at=0``、``replay_delta=''``、``tokens=0``、``latency_ms=0``、
+          ``model=''``、``started_at=now``；后续 ``trace.end_span`` 闭合同一行；
+        - 无命中返回 ``None``；幂等（再次调用仍返回同一 span_id）；
+        - best-effort：异常由 ``_run_write`` 记日志并返回 ``None``，
+          残留由 ``mark_residual_running_spans`` 兜底。
+        """
+
+        def _write(conn):
+            row = conn.execute(
+                "SELECT span_id FROM agent_steps "
+                "WHERE run_id=? AND name='llm_chat' AND iteration=? "
+                "AND status='running' ORDER BY id DESC LIMIT 1",
+                (run_id, iteration),
+            ).fetchone()
+            if not row:
+                return None
+            span_id = str(row[0])
+            conn.execute(
+                "UPDATE agent_steps SET status='running', error='', ended_at=0, "
+                "replay_delta='', tokens=0, latency_ms=0, model='', started_at=? "
+                "WHERE span_id=?",
+                (_now(), span_id),
+            )
+            return span_id
+
+        return self._run_write(
+            _write, error_msg="复用中断 chat span 失败（已忽略）", default=None
+        )
+
     def get_steps(self, run_id: str) -> list:
         """按 run_id 查询 span 列表，按 (iteration, sequence, id) 排序。
 

@@ -138,6 +138,11 @@ class _FakeHooks:
     def resolve_max_iterations(self, level: str) -> int:
         return self._max_iterations
 
+    @staticmethod
+    def build_stream_fn(thinking_level: str):
+        """恢复续跑会构建流函数；本组测试用 fake ``_invoke_loop``，无需真实流。"""
+        return lambda *args, **kwargs: None
+
     def veto_terminal(self, suggestion: dict) -> str | None:
         """live 路径的终止提交软护栏；恢复路径不应调用。"""
         self.veto_calls.append(suggestion)
@@ -570,3 +575,120 @@ def test_continue_run_retryable_at_limit_emits_run_failed_event(dbm):
     assert event.attempts == 3, "达上限事件应携带 attempts"
     run = repo.get_run(run_id)
     assert run is not None and run["status"] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# 恢复复用：中断轮次的 llm_chat span（避免同轮出现「未闭合 + 重跑」两行）
+# ---------------------------------------------------------------------------
+
+
+def _fake_loop_completing_one_chat(*, seen: list, iteration: str = "any"):
+    """构造 fake ``_invoke_loop``：走一遍 chat span 后直接返回 end_turn。"""
+    from app.services.agent.loop import RunResult
+    from app.services.llm.models import ChatResponse
+
+    async def _fake(*, span_recorder, **kwargs):
+        start = span_recorder.begin_chat_span()
+        seen.append((start.iteration, start.span_id))
+        trace.end_span(
+            start.span_id,
+            status="ok",
+            replay_delta={
+                "response": {
+                    "stop_reason": "end_turn",
+                    "content": "",
+                    "tool_calls": [],
+                }
+            },
+        )
+        return RunResult(
+            stop_reason="end_turn",
+            last_response=ChatResponse(content="", stop_reason="end_turn"),
+        )
+
+    return _fake
+
+
+def test_continue_run_reuses_interrupted_chat_span(dbm: DatabaseManager):
+    """中断轮次的 running llm_chat 应复用（同 span_id 闭合），不新增重复行。"""
+    run_id = "run-reuse-interrupted"
+    _write_seed(dbm, run_id)
+    stalled = trace.start_span(run_id, "llm_chat", 0, 0)
+
+    seen: list[tuple[int, str]] = []
+    with patch.object(
+        runtime, "_invoke_loop", _fake_loop_completing_one_chat(seen=seen)
+    ):
+        asyncio.run(
+            runtime.continue_run(run_id, hooks=_hooks_of(_FakeHooks()), ctx=None)
+        )
+
+    rows = [
+        s
+        for s in dbm.agent_runs.get_steps(run_id)
+        if s["name"] == "llm_chat" and s["iteration"] == 0
+    ]
+    assert [s["span_id"] for s in rows] == [stalled], "应复用原 span，不得新增重复行"
+    assert rows[0]["status"] == "ok"
+    assert seen == [(0, stalled)]
+
+
+def test_continue_run_reuses_only_interrupted_round(dbm: DatabaseManager):
+    """已完整记录的轮次不被改写；仅中断轮次（iteration=1）被复用。"""
+    run_id = "run-reuse-second-round"
+    _write_seed(dbm, run_id)
+    _write_llm_chat(
+        dbm,
+        run_id,
+        0,
+        [{"id": "t1", "name": "search_bangumi", "input": {"title": "x"}}],
+        stop_reason="tool_use",
+    )
+    _write_tool_exec(dbm, run_id, 0, 1, "t1", '{"ok": true}')
+    stalled = trace.start_span(run_id, "llm_chat", 1, 0)
+
+    first_round = [
+        s
+        for s in dbm.agent_runs.get_steps(run_id)
+        if s["name"] == "llm_chat" and s["iteration"] == 0
+    ][0]
+
+    seen: list[tuple[int, str]] = []
+    with patch.object(
+        runtime, "_invoke_loop", _fake_loop_completing_one_chat(seen=seen)
+    ):
+        asyncio.run(
+            runtime.continue_run(run_id, hooks=_hooks_of(_FakeHooks()), ctx=None)
+        )
+
+    steps = dbm.agent_runs.get_steps(run_id)
+    rows0 = [s for s in steps if s["name"] == "llm_chat" and s["iteration"] == 0]
+    rows1 = [s for s in steps if s["name"] == "llm_chat" and s["iteration"] == 1]
+    assert [s["span_id"] for s in rows0] == [first_round["span_id"]]
+    assert [s["span_id"] for s in rows1] == [stalled]
+    assert seen == [(1, stalled)]
+
+
+def test_continue_run_creates_chat_span_without_interrupted_row(
+    dbm: DatabaseManager,
+):
+    """无残留时不改变现有行为：正常新建 chat span。"""
+    run_id = "run-no-residue"
+    _write_seed(dbm, run_id)
+
+    seen: list[tuple[int, str]] = []
+    with patch.object(
+        runtime, "_invoke_loop", _fake_loop_completing_one_chat(seen=seen)
+    ):
+        asyncio.run(
+            runtime.continue_run(run_id, hooks=_hooks_of(_FakeHooks()), ctx=None)
+        )
+
+    rows = [
+        s
+        for s in dbm.agent_runs.get_steps(run_id)
+        if s["name"] == "llm_chat" and s["iteration"] == 0
+    ]
+    assert len(rows) == 1
+    assert rows[0]["span_id"] == seen[0][1]
+    assert rows[0]["status"] == "ok"

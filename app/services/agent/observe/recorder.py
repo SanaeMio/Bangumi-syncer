@@ -69,6 +69,8 @@ class TraceRecorder(BudgetRecorder):
         *,
         start_iteration: int,
         clock: Callable[[], float] | None = None,
+        reuse_chat_span_id: str | None = None,
+        reuse_chat_iteration: int | None = None,
     ) -> None:
         self.run_id = run_id
         self._clock = clock or _default_clock
@@ -77,6 +79,10 @@ class TraceRecorder(BudgetRecorder):
         self._current_iteration: int = 0
         self._chat_span_id: str | None = None
         self._round_max_sequence: int = 0
+        # 恢复续跑：中断轮次的 llm_chat 行已在仓储侧 reopen，这里首次进入该轮时
+        # 复用同一 span_id（用后即清空，不影响后续轮次）。
+        self._reuse_chat_span_id: str | None = reuse_chat_span_id
+        self._reuse_chat_iteration: int | None = reuse_chat_iteration
         # 全轮累计 token 用量（每轮 chat 响应 usage 累加，供终态落库使用）
         self.total_tokens: int = 0
         # span_id → (tool_use, t0)，供 end_tool 检索后清除（幂等）
@@ -101,12 +107,29 @@ class TraceRecorder(BudgetRecorder):
 
         与 :meth:`finish_chat_span` 同为 :class:`RecorderChatSpan` 的**同伴 API**
         （span 实现位于 :mod:`app.services.agent.chat_span`，不访问本类私有属性）。
+
+        恢复续跑（``reuse_chat_span_id`` 非空）时，若当前轮次正是中断轮次，
+        复用仓储已 reopen 的 span（不新增同轮重复行）；仅消费一次，后续轮次
+        仍正常 ``start_span``。
         """
         self._current_iteration = self._next_iteration
         self._next_iteration += 1
-        span_id = start_span(
-            self.run_id, name="llm_chat", iteration=self._current_iteration, sequence=0
-        )
+        span_id: str | None = None
+        if (
+            self._reuse_chat_span_id
+            and self._reuse_chat_iteration is not None
+            and self._current_iteration == self._reuse_chat_iteration
+        ):
+            span_id = self._reuse_chat_span_id
+            self._reuse_chat_span_id = None
+            self._reuse_chat_iteration = None
+        if span_id is None:
+            span_id = start_span(
+                self.run_id,
+                name="llm_chat",
+                iteration=self._current_iteration,
+                sequence=0,
+            )
         self._chat_span_id = span_id
         self._round_max_sequence = 0  # 新轮重置
         return ChatSpanStart(

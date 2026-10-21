@@ -225,6 +225,22 @@ class ReplayResult:
     total_tokens: int = 0
 
 
+def reopen_interrupted_chat_span(run_id: str, iteration: int) -> str | None:
+    """恢复续跑时复用中断轮次的 ``llm_chat`` span。
+
+    委托仓储同名方法（命中条件 / 重置字段 / 幂等语义见仓储 docstring）。
+    恢复入口在 replay 判定「该轮无 response」后调用；找不到可复用行时返回
+    ``None``，由 ``TraceRecorder`` 正常新建 span（行为与改造前一致）。
+    """
+    try:
+        return get_database_manager().agent_runs.reopen_interrupted_chat_span(
+            run_id, iteration
+        )
+    except Exception as e:  # best-effort：不阻塞恢复
+        logger.warning(f"[trace] 复用中断 chat span 失败（已忽略）: {e}")
+        return None
+
+
 def _parse_json(raw: str | None, default: Any = None) -> Any:
     try:
         return json.loads(raw) if raw else default

@@ -316,6 +316,11 @@ async def continue_run(
                     total_tokens=replay_result.total_tokens,
                 )
                 return
+            # 中断轮次（replay 在该轮 break）的 llm_chat 行可能仍为 running：
+            # 恢复时复用同一 span（不新增同轮重复行），找不到则正常新建。
+            reuse_chat_span_id = trace.reopen_interrupted_chat_span(
+                run_id, iteration=replay_result.executed_iterations
+            )
             await _execute_continuation(
                 dbm,
                 run_id,
@@ -328,6 +333,7 @@ async def continue_run(
                 anchor_replayed_round=bool(replay_result.missing_tool_calls),
                 registry=registry,
                 tools_schemas=tools_schemas,
+                reuse_chat_span_id=reuse_chat_span_id,
             )
             return
 
@@ -551,15 +557,26 @@ async def _execute_continuation(
     anchor_replayed_round: bool,
     registry: ToolRegistry,
     tools_schemas: list[ToolSchema],
+    reuse_chat_span_id: str | None = None,
 ) -> None:
     """建 recorder → 补执行缺失工具 → 续跑 loop → 终局处理（registry/schemas 由入口复用）。
 
     ``anchor_replayed_round=True`` 用于 last_response 非 None 的补执行场景：
     recorder 需锚定到已发生的轮次（补执行 tool span 与既有 chat span 同轮），
     并让续跑 chat 从 ``executed_iterations + 1`` 开始。
+
+    ``reuse_chat_span_id`` 由恢复入口在检测到中断轮次的 running llm_chat 时传入：
+    recorder 首次进入该轮时复用它（仓储已 reopen），避免同轮出现两条记录。
     """
     span_recorder = TraceRecorder(
-        run_id, start_iteration=replay_result.executed_iterations
+        run_id,
+        start_iteration=replay_result.executed_iterations,
+        reuse_chat_span_id=reuse_chat_span_id,
+        reuse_chat_iteration=(
+            replay_result.executed_iterations
+            if reuse_chat_span_id is not None
+            else None
+        ),
     )
     if anchor_replayed_round:
         # begin_replayed_round 内部已设 _next_iteration = iteration + 1，
