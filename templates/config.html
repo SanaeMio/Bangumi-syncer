@@ -535,6 +535,8 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     refreshConfigPageToc()
+    // 展示当前访问地址，供「MCP 服务公共 URL」一键填入
+    initMcpDetectedOrigin()
     // 初始化工具提示
     var tooltipTriggerList = [].slice.call(
       document.querySelectorAll('[data-bs-toggle="tooltip"]'),
@@ -597,6 +599,31 @@
     // 先加载配置 schema（驱动默认值/布尔语义），再加载配置数据
     loadConfigSchema().then(() => loadConfig(false))
   })
+
+  // ── MCP 服务公共 URL ───────────────────────────────────────
+  // 展示当前访问地址，并提供「一键填入」把 origin 写进输入框。
+  // 仅填表不保存、不覆盖已有值；保存仍走页面既有保存按钮。
+  function initMcpDetectedOrigin() {
+    const el = document.getElementById('mcp-detected-origin')
+    if (!el) {
+      console.warn('未找到 MCP 访问地址提示元素 mcp-detected-origin，跳过回填')
+      return
+    }
+    el.textContent = window.location.origin
+  }
+
+  function fillMcpBaseUrl() {
+    const input = document.getElementById('mcp-base-url')
+    if (!input) {
+      console.warn('未找到 MCP 服务公共 URL 输入框 mcp-base-url，跳过一键填入')
+      return
+    }
+    if (input.value.trim() !== '') {
+      showAlert('MCP 服务公共 URL 已有值，如需替换请手动修改', 'warning')
+      return
+    }
+    input.value = window.location.origin
+  }
 
   // ── Bangumi OAuth ──────────────────────────────────────────
   // OAuth 弹窗回调成功后通过 postMessage 通知父窗口（对齐

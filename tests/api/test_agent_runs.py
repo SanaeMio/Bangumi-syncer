@@ -770,3 +770,130 @@ async def test_list_agent_runs_non_admin_without_username_returns_empty(app, moc
     assert resp.json() == {"items": [], "total": 0, "page": 1, "page_size": 20}
     mock_db.agent_runs.list_runs.assert_not_called()
     mock_db.agent_runs.count_runs.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 1：详情可读性（thinking 预览 + 单 span 完整详情）
+# ---------------------------------------------------------------------------
+
+
+def _response_delta(content="", *, blocks=None, stop_reason="end_turn"):
+    response = {"stop_reason": stop_reason, "content": content, "tool_calls": []}
+    if blocks is not None:
+        response["blocks"] = blocks
+    return json.dumps(
+        {"kind": "response", "delta_version": 1, "response": response},
+        ensure_ascii=False,
+    )
+
+
+def _owner_run():
+    return {
+        "run_id": "run-1",
+        "task_type": "match",
+        "sync_record_id": 42,
+        "status": "succeeded",
+    }
+
+
+async def _get_step_detail(app, mock_db, steps, span_id="s1"):
+    mock_db.agent_runs.get_run.return_value = _owner_run()
+    mock_db.sync_records.get_sync_record_by_id.return_value = {"user_name": "alice"}
+    mock_db.agent_runs.get_steps.return_value = steps
+    await _override_user(app, {"username": "alice"})
+    async with _client(app) as client:
+        return await client.get(f"/api/agent/runs/run-1/steps/{span_id}")
+
+
+async def test_steps_expose_thinking_preview_and_truncation_flag(app, mock_db):
+    """/steps 提供 thinking 摘要（截断）与是否截断标记；详情走独立接口。"""
+    long_thinking = "思考" * 400  # 800 字，超过预览上限
+    delta = _response_delta(blocks=[{"type": "thinking", "thinking": long_thinking}])
+    steps = await _get_steps(app, mock_db, [_make_step("s1", "llm_chat", delta)])
+
+    step = steps[0]
+    assert step["thinking"], "应返回 thinking 摘要"
+    assert step["thinking_truncated"] is True
+    assert len(step["thinking"].encode("utf-8")) < len(long_thinking.encode("utf-8"))
+
+
+async def test_get_step_detail_returns_full_content_beyond_preview_limit(app, mock_db):
+    """单 span 详情返回超过 2KB 预览上限的完整 content。"""
+    content = "A" * 5000
+    step = _make_step("s1", "llm_chat", _response_delta(content))
+    # 先确认 /steps 预览被 2KB 截断（对照）
+    steps = await _get_steps(app, mock_db, [step])
+    assert SHRINKED_MARKER in json.dumps(steps[0]["display_json"], ensure_ascii=False)
+
+    resp = await _get_step_detail(app, mock_db, [step])
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["display_json"]["content"] == content
+    assert "replay_delta" not in detail
+
+
+async def test_get_step_detail_returns_thinking_and_redacted_marker(app, mock_db):
+    """thinking 明文全量返回；redacted_thinking 以脱敏占位呈现。"""
+    thinking = "先检索别名，再核对季数。"
+    step = _make_step(
+        "s1",
+        "llm_chat",
+        _response_delta(
+            blocks=[
+                {"type": "thinking", "thinking": thinking},
+                {"type": "redacted_thinking", "data": "cipher"},
+            ]
+        ),
+    )
+
+    resp = await _get_step_detail(app, mock_db, [step])
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["thinking"] == thinking + "\n\n[已脱敏]"
+    assert detail["thinking_truncated"] is False
+
+
+async def test_get_step_detail_truncates_oversized_content(app, mock_db):
+    """单 span 详情超 32KB → 截断并带 shrinked 标记。"""
+    step = _make_step("s1", "llm_chat", _response_delta("A" * 40000))
+
+    resp = await _get_step_detail(app, mock_db, [step])
+    assert resp.status_code == 200
+    detail = resp.json()
+    content = detail["display_json"]["content"]
+    assert content.endswith(SHRINKED_MARKER)
+    assert len(json.dumps(detail["display_json"], ensure_ascii=False).encode()) <= (
+        32 * 1024
+    )
+
+
+async def test_get_step_detail_missing_span_returns_404(app, mock_db):
+    """span 不存在 → 404（与 run 不存在同样不暴露细节）。"""
+    resp = await _get_step_detail(
+        app, mock_db, [_make_step("s1", "llm_chat", _response_delta("x"))], "s404"
+    )
+    assert resp.status_code == 404
+
+
+async def test_get_step_detail_other_user_returns_404(app, mock_db):
+    """非本人/非管理员请求他人 run 的 span 详情 → 404。"""
+    mock_db.agent_runs.get_run.return_value = _other_owner_run()
+    mock_db.sync_records.get_sync_record_by_id.return_value = {"user_name": "bob"}
+    mock_db.agent_runs.get_steps.return_value = [
+        _make_step("s1", "llm_chat", _response_delta("x"))
+    ]
+    await _override_user(app, {"username": "alice"})
+
+    async with _client(app) as client:
+        resp = await client.get("/api/agent/runs/run-1/steps/s1")
+
+    assert resp.status_code == 404
+
+
+async def test_get_step_detail_empty_delta_returns_empty_json(app, mock_db):
+    """无 replay_delta → display_json 空对象、thinking 空串。"""
+    resp = await _get_step_detail(app, mock_db, [_make_step("s1", "tool_execute", "")])
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["display_json"] == {}
+    assert detail["thinking"] == ""

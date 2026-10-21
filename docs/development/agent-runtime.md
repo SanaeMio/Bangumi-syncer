@@ -99,6 +99,12 @@ LLM 匹配增强（以及未来的其它 Agent 场景）基于一层**通用运�
 >
 > 边界：**兜底收尾调用仅存在于 live 路径**（`loop.run_loop`）。恢复路径预算耗尽时不再发起
 > 收尾 LLM 调用，而是直接按终局语义落终态（`handle_terminal` / `mark_succeeded`）。
+>
+> 中断轮次的观测：replay 在该轮 break 时，其 `llm_chat` span 可能仍是 `running`
+> （进程被杀/重启）。续跑前会调用 `trace.reopen_interrupted_chat_span` 复用同一行
+> （重置为初始态，后续 `end_span` 闭合同一行），避免 UI 出现同轮「未闭合 + 重跑」两条
+> 记录；已完整记录的轮次不受影响。若恢复失败或 run 已终态仍有残留，
+> `mark_residual_running_spans` 在启动与调度每轮兜底标记为 error。
 
 ## 观测：chat span 单聚合契约
 
@@ -136,6 +142,15 @@ resp = span.resp                          # __aexit__ 已完成唯一一次 fina
 同源、流异常 error span、收尾轮 iteration 顺延、无 recorder 纯聚合）、
 `tests/services/agent/test_protocols.py`（协议面 + 实现显式继承）、
 `tests/core/test_dead_code_removed.py`（`wrap_stream_fn` 不回归）。
+
+### 展示层：预览与按需展开
+
+- `GET /api/agent/runs/{run_id}/steps` 是 **2KB 预览**：`display_json` 超限截断并带
+  `...[shrinked]`；每步另带 `thinking` 摘要（300B）与 `thinking_truncated` 标记。
+- `GET /api/agent/runs/{run_id}/steps/{span_id}` 是**单 span 详情**（前端「展开」按需加载）：
+  完整 `display_json` 与 `thinking`（各 32KB 上限，超限截断），鉴权复用 `_load_authorized_run`。
+- `thinking` 来源：`replay_delta.response.blocks` 中 `type='thinking'` 的文本按序拼接；
+  `redacted_thinking` 以 `[已脱敏]` 占位；旧数据无 `blocks` 时为空串（兼容）。
 
 ## 新增一个 Agent 场景
 

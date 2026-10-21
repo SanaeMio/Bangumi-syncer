@@ -42,9 +42,33 @@ function _agentRunDurationLabel(startedAt, endedAt) {
     return ((end - start) / 1000).toFixed(1) + 's';
 }
 
+/** 结束原因 → 中文短标签（列表与详情共用；未知值原样展示）。 */
+function _agentRunStopReasonLabel(reason) {
+    var map = {
+        submit_suggestion: '提交建议',
+        end_turn: '正常结束',
+        exhausted: '预算耗尽',
+        give_up: '明确放弃',
+        llm_error: 'LLM 错误',
+        max_tokens: '输出超限',
+        persist_error: '落库失败',
+        user_resolved: '用户已处理',
+        error: '错误',
+    };
+    return map[reason] || reason || '';
+}
+
+/** 长文本截断（展示用；完整值保留在 title/展开后的内容里）。 */
+function _agentRunErrorPreview(text, limit) {
+    var s = text ? String(text) : '';
+    var max = limit || 200;
+    return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
 function _agentRunRowHtml(run) {
     var err = run.last_error ? String(run.last_error) : '';
-    var tail = [run.stop_reason || '', err].filter(Boolean).join(' · ');
+    var reason = _agentRunStopReasonLabel(run.stop_reason);
+    var tail = [reason, err].filter(Boolean).join(' · ');
     return (
         '<tr style="cursor:pointer" data-run-id="' + escapeHtml(String(run.run_id || '')) +
         '" onclick="openAgentRunDetail(this.dataset.runId)">' +
@@ -54,7 +78,7 @@ function _agentRunRowHtml(run) {
         '<td class="small text-nowrap">' + _agentRunDurationLabel(run.started_at, run.ended_at) + '</td>' +
         '<td class="small">' + (Number(run.attempts) || 0) + '</td>' +
         '<td class="small">' + (Number(run.total_tokens) || 0) + '</td>' +
-        '<td class="small text-truncate" style="max-width: 280px" title="' + escapeHtml(tail) + '">' +
+        '<td class="small text-truncate" style="max-width: 280px" title="' + escapeHtml(err) + '">' +
         escapeHtml(tail.slice(0, 120)) + '</td>' +
         '</tr>'
     );
@@ -88,17 +112,107 @@ async function loadAgentRuns(page) {
     }
 }
 
-function openAgentRunDetail(runId) {
+var _agentRunDetailCurrent = null;
+
+/** 运行元数据卡片（状态/原因/尝试/Tokens/业务键/时间 + last_error 展开/复制）。 */
+function renderAgentRunMeta(run) {
+    run = run || {};
+    var err = run.last_error ? String(run.last_error) : '';
+    var reason = _agentRunStopReasonLabel(run.stop_reason) || '—';
+    var cells = [
+        ['状态', _agentRunStatusPill(run.status)],
+        ['任务', escapeHtml(String(run.task_type || '—'))],
+        ['结束原因', escapeHtml(reason)],
+        ['尝试', (Number(run.attempts) || 0) + ' / ' + (Number(run.total_attempts) || 0)],
+        ['Tokens', String(Number(run.total_tokens) || 0)],
+        ['关联记录', run.sync_record_id == null ? '—' : escapeHtml(String(run.sync_record_id))],
+        ['业务键', run.business_key ? '<code>' + escapeHtml(String(run.business_key)) + '</code>' : '—'],
+        ['创建', escapeHtml(String(run.created_at || '—'))],
+        ['开始', escapeHtml(String(run.started_at || '—'))],
+        ['结束', escapeHtml(String(run.ended_at || '—'))],
+    ];
+    var html = '<div class="border rounded p-2 mb-2 small"><div class="row g-2">';
+    cells.forEach(function (kv) {
+        html += '<div class="col-md-4"><span class="text-muted">' + kv[0] + '</span> ' + kv[1] + '</div>';
+    });
+    html += '</div>';
+    if (err) {
+        html += '<div class="mt-2">'
+            + '<div class="d-flex align-items-center gap-2">'
+            + '<span class="text-muted">最近错误</span>'
+            + '<button type="button" class="btn btn-link btn-sm p-0" id="agent-run-error-toggle" onclick="toggleAgentRunError()">展开</button>'
+            + '<button type="button" class="btn btn-link btn-sm p-0" onclick="copyAgentRunError()">复制</button>'
+            + '</div>'
+            + '<div id="agent-run-meta-error" class="text-danger text-break" style="white-space:pre-wrap">'
+            + escapeHtml(_agentRunErrorPreview(err)) + '</div>'
+            + '</div>';
+    }
+    html += '</div>';
+    return html;
+}
+
+/** last_error 展开 / 收起（全文已在 run 元数据中，无需额外请求）。 */
+function toggleAgentRunError() {
+    var run = _agentRunDetailCurrent || {};
+    var el = document.getElementById('agent-run-meta-error');
+    var btn = document.getElementById('agent-run-error-toggle');
+    if (!el) return;
+    var full = String(run.last_error || '');
+    var expanded = el.dataset.expanded === '1';
+    if (expanded) {
+        el.textContent = _agentRunErrorPreview(full);
+        el.dataset.expanded = '0';
+        if (btn) btn.textContent = '展开';
+    } else {
+        el.textContent = full;
+        el.dataset.expanded = '1';
+        if (btn) btn.textContent = '收起';
+    }
+}
+
+function copyAgentRunError() {
+    var run = _agentRunDetailCurrent || {};
+    var text = String(run.last_error || '');
+    if (!text) {
+        showAlert('没有可复制的错误信息', 'warning', 2500);
+        return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+            showAlert('错误信息已复制', 'success', 2000);
+        }).catch(function () {
+            showAlert('复制失败，请手动选择文本', 'warning', 2500);
+        });
+    } else {
+        showAlert('当前浏览器不支持剪贴板', 'warning', 2500);
+    }
+}
+
+async function openAgentRunDetail(runId) {
     if (!runId) return;
     var label = document.getElementById('agent-run-detail-id');
     if (label) label.textContent = runId;
     var content = document.getElementById('agent-run-detail-content');
     if (content) {
         content.dataset.loaded = '';
-        content.innerHTML = '<span class="text-muted">加载中…</span>';
+        content.innerHTML = '<div id="agent-run-detail-meta"><span class="text-muted">加载中…</span></div>'
+            + '<div id="agent-run-detail-steps"></div>';
     }
     showModal('agentRunDetailModal');
-    loadAgentRunSteps(runId, 'agent-run-detail-content', { force: true });
+
+    try {
+        var run = await apiFetch('/api/agent/runs/' + encodeURIComponent(runId));
+        _agentRunDetailCurrent = run;
+        var metaEl = document.getElementById('agent-run-detail-meta');
+        if (metaEl) metaEl.innerHTML = renderAgentRunMeta(run);
+    } catch (error) {
+        var metaEl = document.getElementById('agent-run-detail-meta');
+        if (metaEl) {
+            metaEl.innerHTML = '<div class="text-danger small">加载运行信息失败：'
+                + escapeHtml(error && error.message ? error.message : '') + '</div>';
+        }
+    }
+    loadAgentRunSteps(runId, 'agent-run-detail-steps', { force: true });
 }
 
 function clearAgentRunFilters() {
@@ -114,3 +228,5 @@ function clearAgentRunFilters() {
 window.loadAgentRuns = loadAgentRuns;
 window.openAgentRunDetail = openAgentRunDetail;
 window.clearAgentRunFilters = clearAgentRunFilters;
+window.toggleAgentRunError = toggleAgentRunError;
+window.copyAgentRunError = copyAgentRunError;

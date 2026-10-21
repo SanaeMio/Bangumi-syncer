@@ -28,12 +28,21 @@ function agentRunSpanStatusBadge(status) {
 }
 
 /** 单行渲染（llm_chat / tool_execute / budget / 未知行） */
-function renderAgentRunStepRow(step) {
+function renderAgentRunStepRow(step, runId) {
     var ms = Number(step.latency_ms) || 0;
     var preview = step.display_json && typeof step.display_json === 'object' ? step.display_json : {};
 
     if (step.name === 'llm_chat') {
         var content = preview.content ? String(preview.content) : '';
+        var thinking = step.thinking ? String(step.thinking) : '';
+        var safeRunId = escapeHtml(String(runId || ''));
+        var safeSpanId = escapeHtml(String(step.span_id || ''));
+        var contentId = 'agent-step-content-' + safeSpanId;
+        var hasMore = content.length > 300 || !!thinking;
+        var expandBtn = hasMore
+            ? '<button type="button" class="btn btn-link btn-sm p-0" onclick="toggleAgentRunStep(this, \'' +
+              safeRunId + '\', \'' + safeSpanId + '\', \'' + contentId + '\')">展开</button>'
+            : '';
         var stop = preview.stop_reason ? escapeHtml(String(preview.stop_reason)) : '';
         return (
             '<div class="d-flex align-items-start gap-2 py-1">' +
@@ -45,7 +54,16 @@ function renderAgentRunStepRow(step) {
             (stop ? ' · stop=' + stop : '') +
             ' ' + agentRunSpanStatusBadge(step.status) +
             '</div>' +
-            (content ? '<div class="small text-muted text-break">' + escapeHtml(content.slice(0, 300)) + '</div>' : '') +
+            (content
+                ? '<div class="small text-muted text-break" id="' + contentId + '">' +
+                  escapeHtml(content.slice(0, 300)) + (content.length > 300 ? '…' : '') + '</div>'
+                : '<div id="' + contentId + '"></div>') +
+            (thinking
+                ? '<div class="small text-secondary text-break">思考：' +
+                  escapeHtml(thinking.slice(0, 200)) +
+                  (step.thinking_truncated || thinking.length > 200 ? '…' : '') + '</div>'
+                : '') +
+            expandBtn +
             (step.error ? '<div class="small text-danger text-break">' + escapeHtml(String(step.error)) + '</div>' : '') +
             '</div></div>'
         );
@@ -54,6 +72,14 @@ function renderAgentRunStepRow(step) {
     if (step.name === 'tool_execute') {
         var isError = step.status === 'error' || preview.is_error === true;
         var toolContent = preview.content ? String(preview.content) : '';
+        var toolRunId = escapeHtml(String(runId || ''));
+        var toolSpanId = escapeHtml(String(step.span_id || ''));
+        var toolContentId = 'agent-step-content-' + toolSpanId;
+        var toolHasMore = toolContent.length > 300;
+        var toolExpandBtn = toolHasMore
+            ? '<button type="button" class="btn btn-link btn-sm p-0" onclick="toggleAgentRunStep(this, \'' +
+              toolRunId + '\', \'' + toolSpanId + '\', \'' + toolContentId + '\')">展开</button>'
+            : '';
         return (
             '<div class="d-flex align-items-start gap-2 py-1">' +
             '<span class="badge ' + (isError ? 'bg-danger' : 'bg-secondary') + '">工具</span>' +
@@ -65,7 +91,11 @@ function renderAgentRunStepRow(step) {
             ' ' + agentRunSpanStatusBadge(step.status) +
             '</div>' +
             (step.error ? '<div class="small text-danger text-break">' + escapeHtml(String(step.error)) + '</div>' : '') +
-            (toolContent ? '<div class="small text-muted text-break">' + escapeHtml(toolContent.slice(0, 300)) + '</div>' : '') +
+            (toolContent
+                ? '<div class="small text-muted text-break" id="' + toolContentId + '">' +
+                  escapeHtml(toolContent.slice(0, 300)) + (toolHasMore ? '…' : '') + '</div>'
+                : '') +
+            toolExpandBtn +
             '</div></div>'
         );
     }
@@ -93,7 +123,7 @@ function renderAgentRunStepRow(step) {
  * （LLM 调用 N 轮 / 工具 M 次 / 预算 K 条 / 合计 tokens，与旧简版口径一致）。
  * @param {Array} steps agent_steps 列表（已按 (iteration, sequence) 排序）
  */
-function renderAgentRunSteps(steps) {
+function renderAgentRunSteps(steps, runId) {
     if (!Array.isArray(steps) || steps.length === 0) {
         return '<span class="text-muted">暂无评估过程记录</span>';
     }
@@ -122,11 +152,53 @@ function renderAgentRunSteps(steps) {
         });
         html += '<div class="border rounded p-2 mb-2">' +
             '<div class="small fw-semibold text-muted mb-1">第 ' + (it + 1) + ' 轮</div>';
-        items.forEach(function (s) { html += renderAgentRunStepRow(s); });
+        items.forEach(function (s) { html += renderAgentRunStepRow(s, runId); });
         html += '</div>';
     });
     html += '</div>';
     return html;
+}
+
+/**
+ * 展开/收起单 span 详情：预览不足时按需加载完整 content/thinking。
+ * @param {HTMLElement} btn 触发按钮（文案切换 展开/收起）
+ * @param {string} runId
+ * @param {string} spanId
+ * @param {string} contentId 目标容器 id
+ */
+async function toggleAgentRunStep(btn, runId, spanId, contentId) {
+    var el = document.getElementById(contentId);
+    if (!el) return;
+    if (el.dataset.expanded === '1') {
+        el.innerHTML = el.dataset.previewHtml || '';
+        el.dataset.expanded = '0';
+        if (btn) btn.textContent = '展开';
+        return;
+    }
+    el.dataset.previewHtml = el.innerHTML;
+    el.innerHTML = '<span class="text-muted">加载中…</span>';
+    try {
+        var detail = await apiFetch(
+            '/api/agent/runs/' + encodeURIComponent(runId) +
+            '/steps/' + encodeURIComponent(spanId)
+        );
+        var full = detail && detail.display_json ? detail.display_json : {};
+        var html = '';
+        if (full.content) {
+            html += '<div class="text-break" style="white-space:pre-wrap">' +
+                escapeHtml(String(full.content)) + '</div>';
+        }
+        if (detail && detail.thinking) {
+            html += '<div class="text-secondary text-break mt-2" style="white-space:pre-wrap">思考：' +
+                escapeHtml(String(detail.thinking)) +
+                (detail.thinking_truncated ? '（已截断）' : '') + '</div>';
+        }
+        el.dataset.expanded = '1';
+        el.innerHTML = html || '<span class="text-muted">无更多内容</span>';
+        if (btn) btn.textContent = '收起';
+    } catch (error) {
+        el.innerHTML = '<span class="text-danger">加载详情失败</span>';
+    }
 }
 
 /**
@@ -144,7 +216,7 @@ async function loadAgentRunSteps(runId, targetId, options) {
     try {
         var data = await apiFetch('/api/agent/runs/' + encodeURIComponent(runId) + '/steps');
         if (Array.isArray(data)) {
-            el.innerHTML = renderAgentRunSteps(data);
+            el.innerHTML = renderAgentRunSteps(data, runId);
         } else {
             el.innerHTML = '<span class="text-muted">无评估过程数据</span>';
         }
@@ -172,6 +244,7 @@ function renderAgentRunBadge(status, llmSubjectId) {
 
 window.agentRunSpanStatusBadge = agentRunSpanStatusBadge;
 window.renderAgentRunSteps = renderAgentRunSteps;
+window.toggleAgentRunStep = toggleAgentRunStep;
 window.loadAgentRunSteps = loadAgentRunSteps;
 window.renderAgentRunBadge = renderAgentRunBadge;
 // 历史别名：pending_candidates 内联 onclick 仍使用 _loadAgentRunSteps
