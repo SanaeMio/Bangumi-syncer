@@ -44,6 +44,11 @@ _LIST_DEFAULT_PAGE_SIZE = 20
 _LIST_MAX_PAGE_SIZE = 100
 _LIST_DEFAULT_DAYS = 30
 
+# 单 span 详情接口的展示上限（仅在用户按需展开时传输；预览仍为 2KB）
+MAX_STEP_DETAIL_BYTES = 32 * 1024
+# /steps 的 thinking 摘要上限（独立字段，不挤占 display_json 的 2KB 预算）
+THINKING_PREVIEW_BYTES = 300
+
 # run 端点对外暴露的字段（不含 payload_json / replay_delta 等内部重放字段）
 _RUN_PUBLIC_FIELDS = (
     "run_id",
@@ -51,6 +56,7 @@ _RUN_PUBLIC_FIELDS = (
     "stop_reason",
     "task_type",
     "sync_record_id",
+    "business_key",
     "attempts",
     "total_attempts",
     "total_tokens",
@@ -176,13 +182,15 @@ def _json_byte_size(obj) -> int:
     return len(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
 
 
-def _fit_preview_within_limit(preview: dict) -> dict:
-    """保证展示预览序列化后 ≤ MAX_PAYLOAD_JSON_BYTES。
+def _fit_preview_within_limit(
+    preview: dict, *, max_bytes: int = MAX_PAYLOAD_JSON_BYTES
+) -> dict:
+    """保证展示预览序列化后 ≤ max_bytes（默认 2KB 预览预算）。
 
     超限时逐轮截断当前最长的字符串字段并追加 ``...[shrinked]`` 标记；若已无
     可截断字符串字段、或收敛失败，则返回空对象（记 warning，不静默）。
     """
-    if _json_byte_size(preview) <= MAX_PAYLOAD_JSON_BYTES:
+    if _json_byte_size(preview) <= max_bytes:
         return preview
     result = dict(preview)
     for _ in range(8):
@@ -193,16 +201,44 @@ def _fit_preview_within_limit(preview: dict) -> dict:
         key, value = max(text_fields, key=lambda kv: len(kv[1].encode("utf-8")))
         # 该字段可用预算 = 总上限 - 其余字段（含本字段空串占位）序列化开销
         overhead = _json_byte_size({**result, key: ""})
-        result[key] = truncate_text_with_marker(
-            value, max(0, MAX_PAYLOAD_JSON_BYTES - overhead)
-        )
-        if _json_byte_size(result) <= MAX_PAYLOAD_JSON_BYTES:
+        result[key] = truncate_text_with_marker(value, max(0, max_bytes - overhead))
+        if _json_byte_size(result) <= max_bytes:
             return result
     logger.warning("⚠️ display_json 预览截断多轮后仍超限，返回空对象")
     return {}
 
 
-def _build_display_json(replay_delta: str) -> dict:
+def _extract_thinking(replay_delta: str) -> str:
+    """从 ``response.blocks`` 提取思考文本。
+
+    - ``thinking`` 块按出现顺序拼接（空行分隔）；
+    - ``redacted_thinking`` 以 ``[已脱敏]`` 占位（不可解码但需让用户知道存在）；
+    - 非 response / 无 blocks / 旧数据 → 空串（兼容）。
+    """
+    delta = decode_replay_delta(replay_delta)
+    if not isinstance(delta, ResponseDelta):
+        return ""
+    response = delta.response or {}
+    blocks = response.get("blocks") or []
+    if not isinstance(blocks, list):
+        return ""
+    parts: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get("type")
+        if kind == "thinking":
+            text = block.get("thinking")
+            if isinstance(text, str) and text:
+                parts.append(text)
+        elif kind == "redacted_thinking":
+            parts.append("[已脱敏]")
+    return "\n\n".join(parts)
+
+
+def _build_display_json(
+    replay_delta: str, *, max_bytes: int = MAX_PAYLOAD_JSON_BYTES
+) -> dict:
     """从 replay_delta 现场生成展示摘要（decode 分派；超限截断）。
 
     - response → {"stop_reason", "content"}
@@ -210,6 +246,8 @@ def _build_display_json(replay_delta: str) -> dict:
     - seed → {"seed_messages_count": N}
     - budget_message → {"budget_message": ...}
     - 空 delta / 形态非法（decode 降级）→ {}
+
+    ``max_bytes`` 默认 2KB（列表预览）；单 span 详情传 32KB 以展示完整内容。
     """
     delta = decode_replay_delta(replay_delta)
     if delta is None:
@@ -234,7 +272,23 @@ def _build_display_json(replay_delta: str) -> dict:
     else:
         return {}
 
-    return _fit_preview_within_limit(preview)
+    return _fit_preview_within_limit(preview, max_bytes=max_bytes)
+
+
+def _build_step_detail(replay_delta: str) -> dict:
+    """单 span 详情：完整 display_json + thinking（独立上限，超限截断）。"""
+    thinking = _extract_thinking(replay_delta)
+    thinking_truncated = False
+    if len(thinking.encode("utf-8")) > MAX_STEP_DETAIL_BYTES:
+        thinking = truncate_text_with_marker(thinking, MAX_STEP_DETAIL_BYTES)
+        thinking_truncated = True
+    return {
+        "display_json": _build_display_json(
+            replay_delta, max_bytes=MAX_STEP_DETAIL_BYTES
+        ),
+        "thinking": thinking,
+        "thinking_truncated": thinking_truncated,
+    }
 
 
 def _project_run(run: dict) -> dict:
@@ -250,6 +304,13 @@ def _project_steps(steps: list) -> list:
     for s in steps:
         record = {f: s.get(f) for f in _STEP_PUBLIC_FIELDS}
         record["display_json"] = _build_display_json(s.get("replay_delta", ""))
+        thinking_full = _extract_thinking(s.get("replay_delta", ""))
+        record["thinking"] = truncate_text_with_marker(
+            thinking_full, THINKING_PREVIEW_BYTES
+        )
+        record["thinking_truncated"] = (
+            len(thinking_full.encode("utf-8")) > THINKING_PREVIEW_BYTES
+        )
         _apply_time_fields(record)
         projected.append(record)
     projected.sort(key=lambda r: (r.get("iteration") or 0, r.get("sequence") or 0))
@@ -324,3 +385,31 @@ async def get_agent_run_steps(
     _load_authorized_run(run_id, current_user, endpoint="get_agent_run_steps")
     steps = database_manager.agent_runs.get_steps(run_id)
     return _project_steps(steps)
+
+
+@router.get("/runs/{run_id}/steps/{span_id}")
+async def get_agent_run_step_detail(
+    run_id: str,
+    span_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_flexible),
+) -> dict:
+    """获取单个 span 的完整展示内容（按需展开；鉴权同 /steps）。
+
+    ``/steps`` 为 2KB 预览；本端点返回完整 ``display_json``（32KB 上限）与
+    ``thinking`` 全文（32KB 上限），并携带 ``thinking_truncated`` 标记。
+    """
+    _load_authorized_run(run_id, current_user, endpoint="get_agent_run_step_detail")
+    steps = database_manager.agent_runs.get_steps(run_id)
+    step = next((s for s in steps if s.get("span_id") == span_id), None)
+    if step is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="追踪步骤不存在"
+        )
+    record = {f: step.get(f) for f in _STEP_PUBLIC_FIELDS}
+    detail = _build_step_detail(step.get("replay_delta", ""))
+    record["display_json"] = detail["display_json"]
+    record["thinking"] = detail["thinking"]
+    record["thinking_truncated"] = detail["thinking_truncated"]
+    _apply_time_fields(record)
+    return record
