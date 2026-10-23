@@ -279,7 +279,9 @@ app.mount("/", mcp_app)
 # 现状：base.html 含内联防闪烁脚本，需保留 'unsafe-inline'
 # 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与时间线封面图（lain.bgm.tv
 #           或用户配置的图片反代），img-src 动态放行这些图片域名
-_CSP_DEFAULT_IMG_HOSTS = ["https://*.lain.bgm.tv"]
+# lain.bgm.tv 的封面地址使用 apex 域名；CSP 的 `*.lain.bgm.tv` 只匹配子域名，
+# 不包含 apex 本身，故两个 host-source 都需放行（未配置图片反代时封面依赖此项）。
+_CSP_DEFAULT_IMG_HOSTS = ["https://lain.bgm.tv", "https://*.lain.bgm.tv"]
 
 # CSS 源码级数据里 netloc 允许的字符：字母数字 + 点 + 连字符（+ 可选用 ":" 端口与 IPv6 方括号）
 _CSP_NETLOC_CHARS = frozenset(
