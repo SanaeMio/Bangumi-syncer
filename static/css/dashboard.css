@@ -1229,7 +1229,7 @@ main.app-main>*:nth-child(12) {
 
 .btn-toolbar:has(.header-theme-switcher) .theme-toggle-capsule--dark .theme-toggle-capsule__icon--moon {
     opacity: 1;
-    color: #cbd5e1;
+    color: var(--app-primary);
 }
 
 .btn-toolbar:has(.header-theme-switcher) .theme-toggle-capsule__thumb {

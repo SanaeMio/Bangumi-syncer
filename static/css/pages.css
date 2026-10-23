@@ -415,6 +415,12 @@
     color: var(--app-text);
 }
 
+[data-theme="dark"] .alert-light {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
 [data-theme="dark"] .alert-primary-soft {
     background: var(--app-primary-soft);
     border-color: rgba(var(--app-primary-rgb), 0.28);
@@ -1521,11 +1527,11 @@ pre {
 }
 
 .rule-channel-item:hover {
-    background-color: var(--bs-gray-100, rgba(0, 0, 0, 0.04));
+    background-color: var(--app-bg-hover);
 }
 
 .rule-channel-item:has(input:checked) {
-    background-color: rgba(13, 110, 253, 0.08);
+    background-color: var(--app-primary-soft);
 }
 
 /* 密码显示/隐藏按钮样式 */

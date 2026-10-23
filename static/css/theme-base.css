@@ -299,6 +299,8 @@
     --bs-secondary-color: #ada8c1;
     --bs-card-bg: #24262f;
     --bs-card-border-color: rgba(255, 255, 255, 0.14);
+    --bs-tertiary-bg: #2c2e38;
+    --bs-tertiary-bg-rgb: 44, 46, 56;
     --bs-table-bg: rgba(255, 255, 255, 0.06);
     --bs-table-hover-bg: rgba(255, 255, 255, 0.06);
     --bs-border-color: rgba(255, 255, 255, 0.14);
@@ -409,6 +411,21 @@
 [data-theme="dark"] .form-control:focus,
 [data-theme="dark"] .form-select:focus {
     box-shadow: 0 0 0 3px rgba(var(--app-primary-rgb), 0.12);
+}
+
+/* 原生文件选择控件：暗色下按钮与文字随主题 */
+[data-theme="dark"] input[type="file"].form-control {
+    color: var(--app-text);
+}
+
+[data-theme="dark"] input[type="file"].form-control::file-selector-button {
+    background-color: var(--app-bg-card-header);
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+[data-theme="dark"] input[type="file"].form-control::file-selector-button:hover {
+    background-color: color-mix(in srgb, var(--app-bg-card-header) 85%, #ffffff);
 }
 
 [data-theme="dark"] .pagination .page-item.active .page-link {
