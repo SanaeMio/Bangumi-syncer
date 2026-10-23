@@ -929,7 +929,7 @@
     // OAuth 账号提供「断开 OAuth」按钮（回退为手动模式，保留 access_token）
     const disconnectBtn =
       !isNew && authMethod === 'oauth'
-        ? `<button type="button" class="btn btn-outline-warning" onclick="disconnectBangumiAccountOAuth(this)">
+        ? `<button type="button" class="btn btn-sm btn-outline-warning" onclick="disconnectBangumiAccountOAuth(this)">
              <i class="bi bi-link-45deg"></i> 断开 OAuth
            </button>`
         : ''
@@ -938,35 +938,35 @@
     const enabledToggleBtn = isNew
       ? ''
       : isEnabled
-        ? `<button type="button" class="btn btn-outline-secondary" onclick="setBangumiAccountEnabled(this, false)">
+        ? `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="setBangumiAccountEnabled(this, false)">
              <i class="bi bi-pause-circle"></i> 停用
            </button>`
-        : `<button type="button" class="btn btn-outline-success" onclick="setBangumiAccountEnabled(this, true)">
+        : `<button type="button" class="btn btn-sm btn-outline-success" onclick="setBangumiAccountEnabled(this, true)">
              <i class="bi bi-play-circle"></i> 启用
            </button>`
 
     accountDiv.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-2 mb-2">
             <h6 class="mb-0">
                 Bangumi 账号 ${id + 1}
                 ${primaryBadge}
                 ${disabledBadge}
                 ${oauthBadge}
             </h6>
-            <div class="btn-group btn-group-sm">
+            <div class="d-flex flex-wrap gap-2">
                 ${
                   !isPrimary
-                    ? `<button type="button" class="btn btn-outline-success" onclick="setPrimaryBangumiAccount(this)">
+                    ? `<button type="button" class="btn btn-sm btn-outline-success" onclick="setPrimaryBangumiAccount(this)">
                          <i class="bi bi-check-circle"></i> 设为首选
                        </button>`
                     : ''
                 }
                 ${enabledToggleBtn}
-                <button type="button" class="btn btn-outline-primary" onclick="saveBangumiAccountRow(this)">
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="saveBangumiAccountRow(this)">
                     <i class="bi bi-save"></i> 保存
                 </button>
                 ${disconnectBtn}
-                <button type="button" class="btn btn-outline-danger" onclick="deleteBangumiAccountRow(this)">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteBangumiAccountRow(this)">
                     <i class="bi bi-trash"></i> 删除
                 </button>
             </div>

@@ -384,3 +384,19 @@ async def test_set_primary_account_write_failure_returns_500(app_with_auth):
             resp = await client.post("/api/bangumi/accounts/bangumi-alice/primary")
 
     assert resp.status_code == 500
+
+
+def test_config_page_account_actions_wrap_on_mobile():
+    """账号条目的操作按钮使用可换行工具条，窄屏不被 btn-group 挤压。
+
+    btn-group 不支持换行，多账号操作（设为首选 / 停用 / 保存 / 断开 OAuth /
+    删除）在移动端会横向溢出；条目头部改为「窄屏纵向堆叠 + 可换行按钮组」。
+    """
+    html = _fetch_config_html()
+    start = html.index('<div class="d-flex flex-column flex-sm-row')
+    end = html.index('<div class="row g-2">', start)
+    block = html[start:end]
+    assert "flex-column flex-sm-row" in block, "账号头部应在窄屏纵向堆叠"
+    assert "flex-wrap gap-2" in block, "操作按钮应可换行"
+    assert "btn-group" not in block, "btn-group 不支持换行，不应用于账号操作条"
+    assert "btn btn-sm" in block, "操作按钮应保持小尺寸"
