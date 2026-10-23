@@ -83,6 +83,24 @@
           placeholder="留空继承 script_proxy"
         />
       </div>
+      <div class="col-md-6">
+        <label for="bangumi-archive-download-source" class="form-label fw-semibold">
+          <i class="bi bi-shuffle me-1 text-info"></i>下载源顺序
+          <i
+            class="bi bi-question-circle ms-1 text-muted"
+            data-bs-toggle="tooltip"
+            title="镜像优先（默认，国内网络更快）或 GitHub 直连优先（海外直连更快）。"
+          ></i>
+        </label>
+        <select
+          class="form-select"
+          id="bangumi-archive-download-source"
+          name="bangumi_archive.download_source"
+        >
+          <option value="mirror">镜像优先</option>
+          <option value="github">GitHub 直连优先</option>
+        </select>
+      </div>
       <div class="col-md-3">
         <label
           for="bangumi-archive-min-disk-space"
