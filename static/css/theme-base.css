@@ -297,6 +297,7 @@
     --bs-body-bg: #1a1b24;
     --bs-body-color: #f7f3ff;
     --bs-secondary-color: #ada8c1;
+    --bs-secondary-bg: color-mix(in srgb, var(--app-bg-card-header) 93%, #ffffff);
     --bs-card-bg: #24262f;
     --bs-card-border-color: rgba(255, 255, 255, 0.14);
     --bs-tertiary-bg: #2c2e38;
@@ -422,10 +423,6 @@
     background-color: var(--app-bg-card-header);
     border-color: var(--app-border);
     color: var(--app-text);
-}
-
-[data-theme="dark"] input[type="file"].form-control::file-selector-button:hover {
-    background-color: color-mix(in srgb, var(--app-bg-card-header) 85%, #ffffff);
 }
 
 [data-theme="dark"] .pagination .page-item.active .page-link {

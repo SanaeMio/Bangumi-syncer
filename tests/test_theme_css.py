@@ -47,15 +47,37 @@ def test_dark_file_selector_button_styled():
     )
 
 
-def test_dark_file_selector_button_hover_is_opaque():
-    """文件选择按钮的悬停态须为不透明色。
+def test_dark_overrides_secondary_bg_token():
+    """暗色需覆盖 Bootstrap 的 --bs-secondary-bg。
 
-    半透明背景会透出下层（暗色下呈白底叠加浅色文字），故悬停用不透明色。
+    文件选择按钮的悬停背景由 Bootstrap 的
+    .form-control:hover:not(:disabled):not([readonly])::file-selector-button
+    规则提供（:hover 作用于输入框），该规则读取 --bs-secondary-bg；
+    不覆盖时取浅色值 #e9ecef，暗色下呈白底叠加浅色文字。该 token 同时决定
+    禁用表单、分页禁用项与进度条轨道在暗色下的背景。
     """
     css = _css("theme-base.css")
-    block = css.split("::file-selector-button:hover {", 1)[1].split("}", 1)[0]
-    assert "color-mix" in block
-    assert "--app-bg-hover" not in block
+    dark_block = css.split('[data-theme="dark"] {', 1)[1].split("}", 1)[0]
+    line = next(
+        (
+            raw.strip()
+            for raw in dark_block.splitlines()
+            if raw.strip().startswith("--bs-secondary-bg:")
+        ),
+        "",
+    )
+    assert "#e9ecef" not in line
+    assert "var(--app-bg-card-header)" in line
+
+
+def test_dark_file_selector_button_has_no_hover_rule():
+    """项目不另写文件选择按钮的悬停背景规则。
+
+    悬停由 Bootstrap 规则经 --bs-secondary-bg 提供；Bootstrap 基础规则对
+    ::file-selector-button 设置 pointer-events: none，伪元素不进入 :hover
+    状态，写在伪元素之后的 :hover 不命中，此类规则不生效。
+    """
+    assert "::file-selector-button:hover" not in _css("theme-base.css")
 
 
 def test_dark_moon_icon_uses_theme_color():
