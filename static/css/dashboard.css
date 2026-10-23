@@ -1184,6 +1184,11 @@ main.app-main>*:nth-child(12) {
     --theme-toggle-w: 3.25rem;
     --theme-toggle-pad: 0.1875rem;
     --theme-toggle-thumb: calc(var(--theme-toggle-h) - var(--theme-toggle-pad) * 2);
+    /* 圆点行程按内容盒计算：轨道宽度含左右各 1px 边框 */
+    --theme-toggle-travel: calc(
+        var(--theme-toggle-w) - 2px - var(--theme-toggle-pad) * 2 -
+            var(--theme-toggle-thumb)
+    );
     position: relative;
     display: flex;
     align-items: center;
@@ -1235,8 +1240,9 @@ main.app-main>*:nth-child(12) {
 .btn-toolbar:has(.header-theme-switcher) .theme-toggle-capsule__thumb {
     width: var(--theme-toggle-thumb);
     height: var(--theme-toggle-thumb);
-    top: var(--theme-toggle-pad);
+    top: 50%;
     left: var(--theme-toggle-pad);
+    transform: translateY(-50%);
     background: rgba(255, 255, 255, 0.95);
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
 }
@@ -1246,7 +1252,7 @@ main.app-main>*:nth-child(12) {
 }
 
 .btn-toolbar:has(.header-theme-switcher) .theme-toggle-capsule--dark .theme-toggle-capsule__thumb {
-    transform: translateX(calc(var(--theme-toggle-w) - var(--theme-toggle-pad) * 2 - var(--theme-toggle-thumb)));
+    transform: translate(var(--theme-toggle-travel), -50%);
 }
 
 .btn-toolbar:has(.header-theme-switcher) .header-theme-color-btn {
