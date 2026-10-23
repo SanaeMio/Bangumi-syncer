@@ -1658,3 +1658,35 @@ pre {
     color: var(--app-primary);
 }
 
+/* Archive 离线查询层页操作按钮：始终保持单行，窄屏以更紧凑的尺寸适配 */
+.btn-group.archive-page-actions {
+    flex-wrap: nowrap;
+}
+
+@media (max-width: 767.98px) {
+    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.archive-page-actions,
+    .btn-group.archive-page-actions {
+        width: auto;
+        flex-wrap: nowrap;
+        --archive-actions-padding-x: 0.5rem;
+        --archive-actions-font-size: 0.8125rem;
+    }
+
+    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.archive-page-actions .btn,
+    .btn-group.archive-page-actions .btn {
+        flex: 0 0 auto;
+        --bs-btn-padding-x: var(--archive-actions-padding-x);
+        --bs-btn-padding-y: 0.25rem;
+        --bs-btn-font-size: var(--archive-actions-font-size);
+        white-space: nowrap;
+        margin-bottom: 0;
+    }
+}
+
+@media (max-width: 380px) {
+    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.archive-page-actions,
+    .btn-group.archive-page-actions {
+        --archive-actions-padding-x: 0.375rem;
+        --archive-actions-font-size: 0.75rem;
+    }
+}
