@@ -110,7 +110,8 @@
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 1055;
+    /* 高于 Bootstrap modal（1055），与 --bs-toast-zindex 一致，避免被弹窗遮挡 */
+    z-index: 1090;
 }
 
 .toast {

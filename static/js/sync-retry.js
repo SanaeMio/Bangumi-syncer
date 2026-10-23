@@ -67,11 +67,25 @@ async function retrySync(recordId) {
         statusBadge.innerHTML = '<span class="badge bg-info">重试中...</span>';
     }
 
-    // 显示弹窗
-    _retryLogModal.show();
-
-    // 启动 SSE
-    startRetrySSE(recordId);
+    // 显示弹窗：详情弹窗与重试日志弹窗同为 Bootstrap modal，
+    // 先关闭详情弹窗，避免两层叠加遮挡，并让日志弹窗成为唯一焦点。
+    // 个别页面存在同名详情弹窗，按可见性选取当前打开的那一个。
+    const detailEl = Array.from(
+        document.querySelectorAll('#recordDetailModal')
+    ).find(function (el) {
+        return el.classList.contains('show');
+    });
+    const detailModal = detailEl ? bootstrap.Modal.getInstance(detailEl) : null;
+    const showLogModal = function () {
+        _retryLogModal.show();
+        startRetrySSE(recordId);
+    };
+    if (detailEl && detailModal) {
+        detailEl.addEventListener('hidden.bs.modal', showLogModal, { once: true });
+        detailModal.hide();
+    } else {
+        showLogModal();
+    }
 }
 
 function startRetrySSE(recordId) {

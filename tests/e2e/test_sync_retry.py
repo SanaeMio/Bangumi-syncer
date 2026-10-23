@@ -18,8 +18,9 @@ pytestmark = pytest.mark.e2e
 def test_records_page_retry_modal_dom(authed_page, base_url: str):
     """同步记录页重试日志弹窗 DOM 就绪
 
-    retryLogModal / retry-log-content / retry-log-status 在 records.html 静态渲染，
-    sync-retry.js 的 retrySync() 依赖这些元素。验证它们存在，确保前端入口可用。
+    retryLogModal / retry-log-content / retry-log-status 由 base.html 渲染（记录页
+    与仪表板共用），sync-retry.js 的 retrySync() 依赖这些元素。验证它们存在，
+    确保前端入口可用。
     """
     page = authed_page
     page.goto(f"{base_url}/records")
