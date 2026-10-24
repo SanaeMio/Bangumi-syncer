@@ -539,5 +539,17 @@
         setClassAll('.js-app-github-error', 'd-none', true);
         applyCachedReleaseInfoIfAny();
         scheduleFetchReleaseInfoWhenNeeded();
+
+        // 关闭发行说明弹窗前先把焦点移出弹窗：Bootstrap 在隐藏时会设置
+        // aria-hidden，若焦点仍在弹窗内（如关闭按钮），浏览器会阻止该属性并告警
+        var notesModal = document.getElementById('releaseNotesModal');
+        if (notesModal) {
+            notesModal.addEventListener('hide.bs.modal', function () {
+                var active = document.activeElement;
+                if (active && notesModal.contains(active) && active.blur) {
+                    active.blur();
+                }
+            });
+        }
     });
 })();

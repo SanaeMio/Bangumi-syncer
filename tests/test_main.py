@@ -195,87 +195,40 @@ def test_main_startup_retention_defaults_to_no_cleanup():
 
 
 class TestCspHeader:
-    """CSP 头构建：默认放行 + 图片反代白名单 / 注入防护"""
+    """CSP 头构建：图片放行 https 源，其余指令保持严格。"""
 
-    @pytest.fixture(autouse=True)
-    def _no_proxy(self):
-        with patch(
-            "app.main.config_manager.get",
-            return_value="",
-        ):
-            yield
-
-    def test_default_img_src(self):
+    def test_img_src_allows_https_images(self):
+        """发行说明与公告正文的图片可托管在任意域名，img-src 放行 https 源。"""
         from app.main import _build_csp_header
 
         header = _build_csp_header()
-        assert (
-            "img-src 'self' data: https://lain.bgm.tv https://*.lain.bgm.tv; " in header
-        )
+        assert "img-src 'self' data: https:; " in header
+
+    def test_other_directives_stay_restrictive(self):
+        """脚本、连接与嵌入限制不随图片策略放宽。"""
+        from app.main import _build_csp_header
+
+        header = _build_csp_header()
+        assert "script-src 'self' 'unsafe-inline'; " in header
+        assert "connect-src 'self'; " in header
+        assert "frame-ancestors 'none'; " in header
         assert "default-src 'self'; " in header
         assert header.endswith("base-uri 'self'")
 
-    def test_default_img_src_allows_apex_lain(self):
-        """API 返回的封面使用 apex 域名，须与子域通配符一并放行。
-
-        CSP 的 ``https://*.lain.bgm.tv`` 只匹配子域名，不匹配 ``lain.bgm.tv``
-        本身；仅放行通配符时，未配置图片反代的部署会拦截仪表板封面。
-        """
-        from app.main import _build_csp_header
-
-        img_src = _build_csp_header().split("img-src ", 1)[1].split(";", 1)[0]
-        hosts = img_src.split()
-        assert "https://lain.bgm.tv" in hosts
-        assert "https://*.lain.bgm.tv" in hosts
-
-    def test_proxy_domain_allowed(self):
-        from app.main import _build_csp_header
-
-        with patch(
-            "app.main.config_manager.get",
-            return_value="https://img.example.com",
-        ):
-            header = _build_csp_header()
-        assert "https://img.example.com" in header
-
-    def test_proxy_with_port_allowed(self):
-        from app.main import _build_csp_header
-
-        with patch(
-            "app.main.config_manager.get",
-            return_value="http://192.168.1.10:8123",
-        ):
-            header = _build_csp_header()
-        assert "http://192.168.1.10:8123" in header
-
     @pytest.mark.parametrize(
-        "bad",
+        "value",
         [
             "https://a.com; default-src *",
-            "https://a.com'",
             "https://user:pass@a.com",
-            "https://a.com/evil",
             "javascript:alert(1)",
-            "https://a.com b.com",
-            "not a url",
         ],
     )
-    def test_invalid_proxy_rejected(self, bad):
+    def test_header_is_independent_of_config(self, value):
+        """头内容不拼接配置值，配置内容无法改写策略。"""
         from app.main import _build_csp_header
 
-        with patch("app.main.config_manager.get", return_value=bad):
+        with patch("app.main.config_manager.get", return_value=value):
             header = _build_csp_header()
-        assert (
-            "img-src 'self' data: https://lain.bgm.tv https://*.lain.bgm.tv; " in header
-        )
-        for token in ("default-src *", "user:pass", "alert(1)", "b.com"):
+        assert header == _build_csp_header()
+        for token in ("default-src *", "user:pass", "alert(1)", "a.com"):
             assert token not in header
-
-    def test_schema_mismatch_value_silently_skipped(self):
-        from app.main import _build_csp_header
-
-        with patch("app.main.config_manager.get", side_effect=ValueError):
-            header = _build_csp_header()
-        assert (
-            "img-src 'self' data: https://lain.bgm.tv https://*.lain.bgm.tv; " in header
-        )

@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 
 from app.api import pages
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class TestPages:
     """测试页面路由"""
@@ -332,3 +334,129 @@ class TestSharedModals:
         )[0]
         assert "recordDetailModal" in body
         assert "hidden.bs.modal" in body
+
+
+class TestConfigConsoleErrors:
+    """配置页控制台报错的回归约束。"""
+
+    @staticmethod
+    def _config_html() -> str:
+        app = FastAPI()
+        app.include_router(pages.router)
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            return TestClient(app).get("/config", follow_redirects=False).text
+
+    def test_config_form_divs_balanced(self):
+        """配置表单区域内的 div 必须配平。
+
+        form 内遗留未闭合 div 时，HTML 解析器会忽略其后的 </form>，
+        表单之后的内容（小屏「配置操作」卡片、调试工具导航）被解析进
+        表单内部，控制台报 Multiple forms 警告。
+        """
+        html = self._config_html()
+        start = html.index('<form id="config-form"')
+        end = html.index("</form>", start)
+        body = re.sub(r"<script\b.*?</script>", "", html[start:end], flags=re.S)
+        opens = len(re.findall(r"<div\b", body))
+        closes = body.count("</div>")
+        assert opens == closes, f"配置表单区域 div 未配平：{opens} 开 / {closes} 闭"
+
+    def test_small_screen_actions_outside_form(self):
+        """小屏「配置操作」卡片位于表单之外，与模板结构一致。"""
+        html = self._config_html()
+        form_start = html.index('<form id="config-form"')
+        assert html.index("</form>", form_start) < html.index("card mb-4 d-lg-none")
+
+    def test_legacy_notification_lists_removed(self):
+        """通知渠道的旧列表容器与渲染函数已移除。
+
+        渠道配置迁移到模态框内的 channel-*-list 后，指向旧容器的
+        load*/render*Configs 不再有对应元素，调用时会抛 TypeError。
+        """
+        config = (_REPO_ROOT / "templates/config.html").read_text(encoding="utf-8")
+        for legacy in (
+            "webhook-configs-container",
+            "email-configs-container",
+            "loadWebhookConfigs",
+            "renderWebhookConfigs",
+            "loadEmailConfigs",
+            "renderEmailConfigs",
+        ):
+            assert legacy not in config, legacy
+
+    def test_ui_utils_does_not_load_legacy_webhooks(self):
+        """页面加载钩子不调用旧 Webhook 加载器。"""
+        js = (_REPO_ROOT / "static/js/ui-utils.js").read_text(encoding="utf-8")
+        assert "loadWebhookConfigs" not in js
+
+    def test_channel_toggles_refresh_channel_list(self):
+        """渠道开关切换后刷新模态框内的列表。"""
+        config = (_REPO_ROOT / "templates/config.html").read_text(encoding="utf-8")
+        webhook = config.split("async function toggleWebhookEnabled", 1)[1]
+        webhook_body = webhook.split("\n  async function ", 1)[0]
+        assert "loadWebhookListInChannelModal()" in webhook_body
+        email = config.split("async function toggleEmailEnabled", 1)[1]
+        email_body = email.split("\n  async function ", 1)[0]
+        assert "loadEmailListInChannelModal()" in email_body
+
+    def test_config_page_has_no_debug_console_log(self):
+        """配置页脚本不输出调试日志，控制台只保留错误与警告。"""
+        config = (_REPO_ROOT / "templates/config.html").read_text(encoding="utf-8")
+        assert "console.log(" not in config
+
+    def test_release_notes_modal_blurs_focus_before_hide(self):
+        """关闭发行说明弹窗前把焦点移出，避免 aria-hidden 阻止告警。"""
+        js = (_REPO_ROOT / "static/js/version-release.js").read_text(encoding="utf-8")
+        assert "hide.bs.modal" in js
+        assert "active.blur()" in js
+
+    def test_config_forms_disable_autofill(self):
+        """配置页各表单声明 autocomplete=off，后代输入框不触发自动填充。"""
+        config = (_REPO_ROOT / "templates/config.html").read_text(encoding="utf-8")
+        forms = re.findall(r"<form\b[^>]*>", config)
+        assert len(forms) == 6
+        for tag in forms:
+            assert 'autocomplete="off"' in tag, tag
+
+    def test_config_password_inputs_use_new_password(self):
+        """配置页密码类输入框用 new-password：浏览器对密码框忽略 off。"""
+        html = self._config_html()
+        inputs = re.findall(r"<input\b[^>]*type=\"password\"[^>]*>", html)
+        assert inputs
+        for tag in inputs:
+            assert 'autocomplete="new-password"' in tag, tag
+
+    def test_config_identity_fields_disable_autofill(self):
+        """Chrome 视为账号名的文本框声明 off：同表单存在 new-password 时会被提示补 username。"""
+        config = (_REPO_ROOT / "templates/config.html").read_text(encoding="utf-8")
+        for marker in (
+            'id="inline-email-smtp-username"',
+            'id="inline-dingtalk-access-token"',
+            "bangumi-account-username",
+            "bangumi-account-media-username",
+        ):
+            idx = config.index(marker)
+            tag = config[config.rindex("<input", 0, idx) : config.index(">", idx)]
+            assert 'autocomplete="off"' in tag, marker
+
+    def test_config_page_has_no_credential_autocomplete(self):
+        """配置页不使用登录凭据提示，避免密码管理器填充站点账号。"""
+        config = (_REPO_ROOT / "templates/config.html").read_text(encoding="utf-8")
+        for hint in ('autocomplete="username"', 'autocomplete="current-password"'):
+            assert hint not in config, hint
+
+    def test_login_page_keeps_credential_autocomplete(self):
+        """登录页保持凭据提示，且表单不关闭 autocomplete。"""
+        login = (_REPO_ROOT / "templates/login.html").read_text(encoding="utf-8")
+        assert 'autocomplete="username"' in login
+        assert 'autocomplete="current-password"' in login
+        assert 'autocomplete="off"' not in login
+        assert '<form id="loginForm" autocomplete=' not in login
+
+    def test_base_template_declares_favicon(self):
+        """基础模板声明站点图标，避免浏览器默认请求 /favicon.ico 返回 404。"""
+        base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert 'rel="icon"' in base
+        assert "/static/logo.png" in base
