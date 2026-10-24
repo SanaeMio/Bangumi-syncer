@@ -46,8 +46,7 @@
           name="bangumi_archive.update_cron"
           placeholder="0 8 * * 3"
           value="0 8 * * 3"
-          data-cron-preview
-        />
+          data-cron-preview autocomplete="off" />
       </div>
       <div class="col-md-12">
         <label for="bangumi-archive-data-dir" class="form-label fw-semibold">
@@ -63,8 +62,7 @@
           class="form-control"
           id="bangumi-archive-data-dir"
           name="bangumi_archive.data_dir"
-          placeholder="./data/archive"
-        />
+          placeholder="./data/archive" autocomplete="off" />
       </div>
       <div class="col-md-6">
         <label for="bangumi-archive-http-proxy" class="form-label fw-semibold">
@@ -80,8 +78,7 @@
           class="form-control"
           id="bangumi-archive-http-proxy"
           name="bangumi_archive.http_proxy"
-          placeholder="留空继承 script_proxy"
-        />
+          placeholder="留空继承 script_proxy" autocomplete="off" />
       </div>
       <div class="col-md-6">
         <label for="bangumi-archive-download-source" class="form-label fw-semibold">
@@ -95,8 +92,7 @@
         <select
           class="form-select"
           id="bangumi-archive-download-source"
-          name="bangumi_archive.download_source"
-        >
+          name="bangumi_archive.download_source" autocomplete="off">
           <option value="mirror">镜像优先</option>
           <option value="github">GitHub 直连优先</option>
         </select>
@@ -119,8 +115,7 @@
           id="bangumi-archive-min-disk-space"
           name="bangumi_archive.min_disk_space_mb"
           min="100"
-          value="3000"
-        />
+          value="3000" autocomplete="off" />
       </div>
       <div class="col-md-3">
         <label class="form-label fw-semibold">
@@ -184,3 +179,5 @@
 </div>
 {% include "config/_bangumi_replay.html" %} {% include
 "config/_airing_today.html" %}
+</div>
+</div>
