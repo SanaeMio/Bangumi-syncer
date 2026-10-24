@@ -2,6 +2,8 @@
 页面路由测试
 """
 
+import re
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -283,3 +285,50 @@ class TestPagesGuestAndRedirects:
         r = client.get("/trakt/auth?status=err&message=bad+callback")
         assert r.status_code == 200
         assert len(r.content) > 0
+
+
+class TestSharedModals:
+    """同步详情 / 重试日志弹窗与 Toast 的层级约束。"""
+
+    @staticmethod
+    def _client() -> TestClient:
+        app = FastAPI()
+        app.include_router(pages.router)
+        return TestClient(app)
+
+    def test_retry_log_modal_available_on_dashboard_and_records(self):
+        """重试日志弹窗由 base.html 提供：仪表板与记录页均可用、仅一份。
+
+        详情弹窗同属 base.html，在 DOM 顺序上排在日志弹窗前面，使同时打开时日志弹窗位于上层。
+        """
+        client = self._client()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            for path in ("/dashboard", "/records"):
+                html = client.get(path).text
+                assert html.count('id="retryLogModal"') == 1, path
+                assert html.index('id="recordDetailModal"') < html.index(
+                    'id="retryLogModal"'
+                ), path
+
+    def test_toast_container_above_modal(self):
+        """Toast 容器层级须高于 Bootstrap modal（1055）。"""
+        css = (Path(__file__).resolve().parents[2] / "static/css/pages.css").read_text(
+            encoding="utf-8"
+        )
+        block = css.split(".toast-container {", 1)[1].split("}", 1)[0]
+        match = re.search(r"z-index:\s*(\d+)", block)
+        assert match, "toast-container 未声明 z-index"
+        assert int(match.group(1)) > 1055
+
+    def test_retry_sync_closes_detail_modal_first(self):
+        """重试入口先关闭同步详情弹窗，避免日志弹窗被其遮挡。"""
+        js = (
+            Path(__file__).resolve().parents[2] / "static/js/sync-retry.js"
+        ).read_text(encoding="utf-8")
+        body = js.split("async function retrySync", 1)[1].split(
+            "function startRetrySSE", 1
+        )[0]
+        assert "recordDetailModal" in body
+        assert "hidden.bs.modal" in body
