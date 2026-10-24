@@ -280,11 +280,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 5000);
         }
     });
-
-    // 加载 Webhook 配置列表
-    if (typeof loadWebhookConfigs === 'function') {
-        loadWebhookConfigs();
-    }
 });
 
 // ─────────────────────────────────────────────────────────────────────────

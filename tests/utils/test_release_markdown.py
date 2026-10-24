@@ -26,3 +26,17 @@ def test_task_list_checkbox():
     assert 'type="checkbox"' in html
     assert "checked" in html
     assert "待办" in html
+
+
+def test_image_renders_with_remote_source():
+    """正文图片保留 <img> 渲染（CSP 放行 https 图片源）。"""
+    html = markdown_to_safe_html("![界面](https://github.com/x/abc.png)")
+    assert "<img" in html
+    assert 'src="https://github.com/x/abc.png"' in html
+    assert 'alt="界面"' in html
+
+
+def test_image_script_source_is_stripped():
+    """图片地址不受脚本协议注入。"""
+    html = markdown_to_safe_html("![x](javascript:alert(1))")
+    assert "javascript:" not in html

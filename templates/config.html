@@ -70,7 +70,7 @@
         </aside>
         <!-- 右侧：配置表单 -->
         <div class="col-lg-9">
-            <form id="config-form" class="config-form">
+            <form id="config-form" class="config-form" autocomplete="off">
                 {% include "config/_sync.html" %}
                 {% include "config/_blocked_keywords.html" %}
                 {% include
@@ -582,7 +582,6 @@
     if (modalElement) {
       try {
         restoreConfigModal = getModal('restoreConfigModal')
-        console.log('恢复配置模态框初始化成功')
       } catch (error) {
         console.error('模态框初始化失败:', error)
       }
@@ -974,13 +973,13 @@
         <div class="row g-2">
             <div class="col-md-4">
                 <label class="form-label small">Bangumi 用户名</label>
-                <input type="text" class="form-control bangumi-account-username" value="${escapeHtml(acc.username || '')}" placeholder="Bangumi 用户名或 UID">
+                <input type="text" class="form-control bangumi-account-username" value="${escapeHtml(acc.username || '')}" placeholder="Bangumi 用户名或 UID" autocomplete="off">
             </div>
             <div class="col-md-4">
                 <label class="form-label small" title="Plex/Emby/Jellyfin 登录名，须与媒体服务器一致。多个用户名对应本 Bangumi 账号时可用英文逗号分隔。">
                     媒体服务器用户名
                 </label>
-                <input type="text" class="form-control bangumi-account-media-username" value="${escapeHtml((acc.media_server_usernames || []).join(', '))}" placeholder="多个用英文逗号分隔">
+                <input type="text" class="form-control bangumi-account-media-username" value="${escapeHtml((acc.media_server_usernames || []).join(', '))}" placeholder="多个用英文逗号分隔" autocomplete="off">
             </div>
             <div class="col-md-4">
                 <label class="form-label small">
@@ -988,7 +987,7 @@
                     ${authMethod === 'oauth' ? '<span class="text-muted">（由 OAuth 管理）</span>' : ''}
                 </label>
                 <div class="position-relative">
-                    <input type="password" class="form-control pe-5 bangumi-account-token" value="" placeholder="${authMethod === 'oauth' ? '已由 OAuth 授权' : '输入访问令牌'}">
+                    <input type="password" class="form-control pe-5 bangumi-account-token" value="" placeholder="${authMethod === 'oauth' ? '已由 OAuth 授权' : '输入访问令牌'}" autocomplete="new-password">
                     <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-1 password-toggle-btn" type="button" onclick="toggleTokenVisibility(this)">
                         <i class="bi bi-eye text-muted"></i>
                     </button>
@@ -1288,16 +1287,13 @@
 
   // 显示恢复配置模态框
   async function showRestoreModal() {
-    console.log('尝试显示恢复配置模态框')
 
     // 确保模态框已初始化
     if (!restoreConfigModal) {
-      console.log('模态框未初始化，尝试重新初始化')
       const modalElement = document.getElementById('restoreConfigModal')
       if (modalElement) {
         try {
           restoreConfigModal = getModal('restoreConfigModal')
-          console.log('模态框重新初始化成功')
         } catch (error) {
           console.error('模态框初始化失败:', error)
           showAlert('恢复配置功能初始化失败', 'danger')
@@ -1312,7 +1308,6 @@
 
     try {
       restoreConfigModal.show()
-      console.log('模态框显示成功')
       await loadBackupFiles()
     } catch (error) {
       console.error('显示模态框失败:', error)
@@ -1916,78 +1911,6 @@
 
   // ========== Webhook 配置管理 ==========
 
-  // 加载 Webhook 配置列表
-  async function loadWebhookConfigs() {
-    try {
-      const data = await apiFetch('/api/notification/webhooks')
-
-      if (data.status === 'success') {
-        renderWebhookConfigs(data.data)
-      } else {
-        console.error('加载 Webhook 配置失败:', data.message)
-      }
-    } catch (error) {
-      console.error('加载 Webhook 配置失败:', error)
-    }
-  }
-
-  // 渲染 Webhook 配置列表
-  function renderWebhookConfigs(webhooks) {
-    const container = document.getElementById('webhook-configs-container')
-
-    if (!webhooks || webhooks.length === 0) {
-      container.innerHTML = `
-            <div class="app-empty-state app-empty-state--sm">
-                <i class="bi bi-inbox app-empty-state__icon"></i>
-                <p class="text-muted mt-3 mb-0">暂无 Webhook 配置</p>
-                <button type="button" class="btn btn-outline-primary btn-sm" onclick="showChannelConfigModal()">
-                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                </button>
-            </div>
-        `
-      return
-    }
-
-    let html = '<div class="row g-3">'
-    webhooks.forEach((webhook) => {
-      html += `
-            <div class="col-12">
-                <div class="card border ${webhook.enabled ? 'border-primary' : 'border-secondary'}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-send ${webhook.enabled ? 'text-success' : 'text-muted'} me-2"></i>
-                                <h6 class="card-title mb-0">Webhook #${webhook.id}</h6>
-                            </div>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="webhook-enabled-${webhook.id}"
-                                       ${webhook.enabled ? 'checked' : ''} onchange="toggleWebhookEnabled(${webhook.id}, this.checked)">
-                                <label class="form-check-label" for="webhook-enabled-${webhook.id}"></label>
-                            </div>
-                        </div>
-                        <p class="card-text small text-muted mb-2">
-                            <i class="bi bi-link-45deg me-1"></i>${webhook.url}
-                        </p>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="showChannelConfigModal()">
-                                <i class="bi bi-pencil me-1"></i>编辑
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="testWebhook(${webhook.id})">
-                                <i class="bi bi-play-circle me-1"></i>测试
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteWebhookInline(${webhook.id})">
-                                <i class="bi bi-trash me-1"></i>删除
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `
-    })
-    html += '</div>'
-    container.innerHTML = html
-  }
-
   // 切换 Webhook 启用状态
   async function toggleWebhookEnabled(webhookId, enabled) {
     try {
@@ -2001,7 +1924,7 @@
 
       if (data.status === 'success') {
         showAlert(enabled ? 'Webhook 已启用' : 'Webhook 已禁用', 'success')
-        await loadWebhookConfigs()
+        await loadWebhookListInChannelModal()
       } else {
         showAlert('操作失败: ' + data.message, 'danger')
         // 恢复开关状态
@@ -2738,7 +2661,7 @@
                             aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="notification-rule-form">
+                    <form id="notification-rule-form" autocomplete="off">
                         <input type="hidden" id="notification-rule-id" />
                         <div class="mb-3">
                             <div class="form-check form-switch">
@@ -2915,7 +2838,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-webhook-title">添加 Webhook 配置</span>
                                 </h6>
-                                <form id="inline-webhook-form">
+                                <form id="inline-webhook-form" autocomplete="off">
                                     <input type="hidden" id="inline-webhook-id" />
                                     <div class="row g-3 mb-3">
                                         <div class="col-md-2">
@@ -3021,7 +2944,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-email-title">添加邮件配置</span>
                                 </h6>
-                                <form id="inline-email-form">
+                                <form id="inline-email-form" autocomplete="off">
                                     <input type="hidden" id="inline-email-id" />
                                     <div class="mb-3">
                                         <div class="form-check form-switch">
@@ -3071,7 +2994,8 @@
                                                    class="form-control"
                                                    id="inline-email-smtp-username"
                                                    required
-                                                   placeholder="your-email@qq.com" />
+                                                   placeholder="your-email@qq.com"
+                                                   autocomplete="off" />
                                         </div>
                                         <div class="col-md-6">
                                             <label for="inline-email-smtp-password" class="form-label fw-semibold">
@@ -3081,7 +3005,8 @@
                                             <input type="password"
                                                    class="form-control"
                                                    id="inline-email-smtp-password"
-                                                   placeholder="授权码或密码" />
+                                                   placeholder="授权码或密码"
+                                                   autocomplete="new-password" />
                                         </div>
                                     </div>
                                     <div class="row g-3 mb-3">
@@ -3188,7 +3113,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-wecom-title">添加企业微信配置</span>
                                 </h6>
-                                <form id="inline-wecom-form">
+                                <form id="inline-wecom-form" autocomplete="off">
                                     <input type="hidden" id="inline-wecom-id" />
                                     <div class="mb-3">
                                         <div class="form-check form-switch">
@@ -3256,7 +3181,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-dingtalk-title">添加钉钉配置</span>
                                 </h6>
-                                <form id="inline-dingtalk-form">
+                                <form id="inline-dingtalk-form" autocomplete="off">
                                     <input type="hidden" id="inline-dingtalk-id" />
                                     <div class="mb-3">
                                         <div class="form-check form-switch">
@@ -3275,7 +3200,8 @@
                                                class="form-control"
                                                id="inline-dingtalk-access-token"
                                                required
-                                               placeholder="钉钉机器人 access_token" />
+                                               placeholder="钉钉机器人 access_token"
+                                               autocomplete="off" />
                                         <div class="form-text">支持直接填写token或完整的Webhook URL</div>
                                     </div>
                                     <div class="mb-3">
@@ -3283,7 +3209,8 @@
                                         <input type="password"
                                                class="form-control"
                                                id="inline-dingtalk-secret"
-                                               placeholder="加签密钥，留空不启用签名" />
+                                               placeholder="加签密钥，留空不启用签名"
+                                               autocomplete="new-password" />
                                     </div>
                                     <div class="mb-3">
                                         <label for="inline-dingtalk-msg-type" class="form-label fw-semibold">消息类型</label>
@@ -3324,81 +3251,6 @@
     <script>
   // ========== 邮件配置管理 ==========
 
-  // 加载邮件配置列表
-  async function loadEmailConfigs() {
-    try {
-      const data = await apiFetch('/api/notification/emails')
-
-      if (data.status === 'success') {
-        renderEmailConfigs(data.data)
-      } else {
-        console.error('加载邮件配置失败:', data.message)
-      }
-    } catch (error) {
-      console.error('加载邮件配置失败:', error)
-    }
-  }
-
-  // 渲染邮件配置列表
-  function renderEmailConfigs(emails) {
-    const container = document.getElementById('email-configs-container')
-
-    if (!emails || emails.length === 0) {
-      container.innerHTML = `
-            <div class="app-empty-state app-empty-state--sm">
-                <i class="bi bi-inbox app-empty-state__icon"></i>
-                <p class="text-muted mt-3 mb-0">暂无邮件配置</p>
-                <button type="button" class="btn btn-outline-primary btn-sm" onclick="showChannelConfigModal()">
-                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                </button>
-            </div>
-        `
-      return
-    }
-
-    let html = '<div class="row g-3">'
-    emails.forEach((email) => {
-      html += `
-            <div class="col-12">
-                <div class="card border ${email.enabled ? 'border-success' : 'border-secondary'}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-envelope ${email.enabled ? 'text-success' : 'text-muted'} me-2"></i>
-                                <h6 class="card-title mb-0">邮件配置 #${email.id}</h6>
-                            </div>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="email-enabled-${email.id}"
-                                       ${email.enabled ? 'checked' : ''} onchange="toggleEmailEnabled(${email.id}, this.checked)">
-                                <label class="form-check-label" for="email-enabled-${email.id}"></label>
-                            </div>
-                        </div>
-                        <p class="card-text small text-muted mb-2">
-                            <i class="bi bi-envelope-check me-1"></i>${email.email_to}
-                        </p>
-                        <p class="card-text small text-muted mb-2">
-                            <i class="bi bi-server me-1"></i>${email.smtp_server}:${email.smtp_port}
-                        </p>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="showChannelConfigModal()">
-                                <i class="bi bi-pencil me-1"></i>编辑
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="testEmail(${email.id})">
-                                <i class="bi bi-play-circle me-1"></i>测试
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteEmailInline(${email.id})">
-                                <i class="bi bi-trash me-1"></i>删除
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `
-    })
-    html += '</div>'
-    container.innerHTML = html
-  }
-
   // 切换邮件配置启用状态
   async function toggleEmailEnabled(emailId, enabled) {
     try {
@@ -3410,7 +3262,7 @@
 
       if (data.status === 'success') {
         showAlert(enabled ? '邮件配置已启用' : '邮件配置已禁用', 'success')
-        await loadEmailConfigs()
+        await loadEmailListInChannelModal()
       } else {
         showAlert('操作失败: ' + data.message, 'danger')
       }

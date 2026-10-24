@@ -5,7 +5,6 @@
 import asyncio
 import os
 import re
-import urllib.parse
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -277,60 +276,19 @@ app.mount("/", mcp_app)
 # CSP 响应头（纵深防御，限制外域资源加载 + 禁用内联事件外的脚本注入）
 # ─────────────────────────────────────────────────────────────────────────
 # 现状：base.html 含内联防闪烁脚本，需保留 'unsafe-inline'
-# 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与时间线封面图（lain.bgm.tv
-#           或用户配置的图片反代），img-src 动态放行这些图片域名
-# lain.bgm.tv 的封面地址使用 apex 域名；CSP 的 `*.lain.bgm.tv` 只匹配子域名，
-# 不包含 apex 本身，故两个 host-source 都需放行（未配置图片反代时封面依赖此项）。
-_CSP_DEFAULT_IMG_HOSTS = ["https://lain.bgm.tv", "https://*.lain.bgm.tv"]
-
-# CSS 源码级数据里 netloc 允许的字符：字母数字 + 点 + 连字符（+ 可选用 ":" 端口与 IPv6 方括号）
-_CSP_NETLOC_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:[]"
-)
-
-
-def _is_csp_safe_netloc(netloc: str) -> bool:
-    """校验 netloc 是否可作为 CSP host-source：仅允许域名/IPv6/端口字面量。
-
-    拒绝分号、引号、空格、@（userinfo）、控制字符等，防止配置值破坏整条
-    CSP 策略（CSP 注入 / 指令吞并）。
-    """
-    if not netloc or not all(c in _CSP_NETLOC_CHARS for c in netloc):
-        return False
-    if netloc.startswith(":") or netloc.endswith(":") or netloc.startswith("["):
-        # 端口不能悬空；IPv6 需成对括号包裹且包含 ":"（简化校验，防格式畸形）
-        if netloc.startswith("["):
-            return ":" in netloc and netloc.endswith("]")
-        return False
-    return True
-
-
+# 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与图片（时间线封面、发行说明
+#           与公告正文）；图片放行 https 源，其余指令保持严格
 def _build_csp_header() -> str:
-    """构建 CSP 头：img-src 额外放行 Bangumi 图片 CDN 及已配置的图片反代域名。"""
-    img_hosts = list(_CSP_DEFAULT_IMG_HOSTS)
-    try:
-        proxy = str(
-            config_manager.get("dev", "bgm_image_proxy", fallback="") or ""
-        ).strip()
-        if proxy:
-            parsed = urllib.parse.urlsplit(proxy)
-            # 仅接受"scheme://主机[:端口]"：拒绝带路径/userinfo/畸形字符的值，
-            # 防止配置值破坏整条 CSP 策略
-            if (
-                parsed.scheme in ("http", "https")
-                and parsed.netloc
-                and parsed.path in ("", "/")
-                and _is_csp_safe_netloc(parsed.netloc)
-            ):
-                img_hosts.append(f"{parsed.scheme}://{parsed.netloc}")
-    except ValueError:
-        pass
-    img_src = "'self' data: " + " ".join(img_hosts)
+    """构建 CSP 头。
+
+    img-src 放行 https 源：发行说明与公告正文来自远端（GitHub Release、
+    公告服务），其中图片可托管在任意域名，逐域名枚举无法覆盖。
+    """
     return (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
-        f"img-src {img_src}; "
+        "img-src 'self' data: https:; "
         "font-src 'self' data:; "
         "connect-src 'self'; "
         "frame-ancestors 'none'; "
