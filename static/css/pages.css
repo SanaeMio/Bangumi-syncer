@@ -1672,35 +1672,122 @@ pre {
     color: var(--app-primary);
 }
 
-/* Archive 离线查询层页操作按钮：始终保持单行，窄屏以更紧凑的尺寸适配 */
-.btn-group.archive-page-actions {
+/* 操作按钮胶囊：内部分段不换行，多个胶囊之间可换行 */
+.btn-group.app-action-capsule {
     flex-wrap: nowrap;
 }
 
-@media (max-width: 767.98px) {
-    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.archive-page-actions,
-    .btn-group.archive-page-actions {
+@media (max-width: 768px) {
+    /* 页面标题区与配置表单的窄屏规则会把按钮组撑满、按比例拉伸或改为列向；
+       胶囊按内容收缩并保持整行，分段尺寸由三档变量控制 */
+    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.app-action-capsule,
+    .config-form .btn-group.app-action-capsule,
+    .btn-group.app-action-capsule {
         width: auto;
+        flex-direction: row;
         flex-wrap: nowrap;
-        --archive-actions-padding-x: 0.5rem;
-        --archive-actions-font-size: 0.8125rem;
+        --app-capsule-padding-x: 0.625rem;
+        --app-capsule-font-size: 0.875rem;
     }
 
-    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.archive-page-actions .btn,
-    .btn-group.archive-page-actions .btn {
+    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.app-action-capsule .btn,
+    .config-form .btn-group.app-action-capsule .btn,
+    .btn-group.app-action-capsule .btn {
         flex: 0 0 auto;
-        --bs-btn-padding-x: var(--archive-actions-padding-x);
-        --bs-btn-padding-y: 0.25rem;
-        --bs-btn-font-size: var(--archive-actions-font-size);
+        padding: 0.3125rem var(--app-capsule-padding-x);
+        font-size: var(--app-capsule-font-size);
         white-space: nowrap;
         margin-bottom: 0;
+    }
+
+    /* 卡片内的胶囊（配置操作、批量操作）：宽度跟随容器，分段等比占满 */
+    .config-form .btn-group.app-action-capsule--fill,
+    .btn-group.app-action-capsule--fill {
+        flex: 1 1 100%;
+        width: 100%;
+        max-width: 24rem;
+    }
+
+    .config-form .btn-group.app-action-capsule--fill .btn,
+    .btn-group.app-action-capsule--fill .btn {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    /* 两键胶囊（映射管理、日志管理）：与标题同排、靠右 */
+    .app-main>.d-flex:first-child:has(.app-action-capsule--inline) {
+        flex-direction: row;
+        align-items: center !important;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .app-main>.d-flex:first-child:has(.app-action-capsule--inline) .app-page-title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .app-main>.d-flex:first-child:has(.app-action-capsule--inline) .btn-toolbar {
+        width: auto;
+        flex: 0 0 auto;
+    }
+
+    /* 配置表单的窄屏规则给每个按钮单独加圆角，胶囊保持首尾圆角、中段方角 */
+    .config-form .btn-group.app-action-capsule .btn {
+        border-radius: 0 !important;
+    }
+
+    .config-form .btn-group.app-action-capsule .btn:first-child {
+        border-top-left-radius: var(--app-radius-btn) !important;
+        border-bottom-left-radius: var(--app-radius-btn) !important;
+    }
+
+    .config-form .btn-group.app-action-capsule .btn:last-child {
+        border-top-right-radius: var(--app-radius-btn) !important;
+        border-bottom-right-radius: var(--app-radius-btn) !important;
     }
 }
 
 @media (max-width: 380px) {
-    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.archive-page-actions,
-    .btn-group.archive-page-actions {
-        --archive-actions-padding-x: 0.375rem;
-        --archive-actions-font-size: 0.75rem;
+    /* 按内容收缩的胶囊的收紧档；卡片内胶囊宽度随容器，字号不变 */
+    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.app-action-capsule:not(.app-action-capsule--fill),
+    .config-form .btn-group.app-action-capsule:not(.app-action-capsule--fill),
+    .btn-group.app-action-capsule:not(.app-action-capsule--fill) {
+        --app-capsule-padding-x: 0.5rem;
+        --app-capsule-font-size: 0.8125rem;
     }
 }
+
+@media (max-width: 340px) {
+    /* 更窄视口的收紧值，避免三键胶囊横向溢出 */
+    .app-main>.d-flex:first-child:not(:has(.header-theme-switcher)) .btn-group.app-action-capsule:not(.app-action-capsule--fill),
+    .config-form .btn-group.app-action-capsule:not(.app-action-capsule--fill),
+    .btn-group.app-action-capsule:not(.app-action-capsule--fill) {
+        --app-capsule-padding-x: 0.375rem;
+        --app-capsule-font-size: 0.75rem;
+    }
+}
+
+/* 极窄屏：两键胶囊换至标题下方、标题允许换行 */
+@media (max-width: 300px) {
+    .app-main>.d-flex:first-child:has(.app-action-capsule--inline) {
+        flex-direction: column;
+        align-items: stretch !important;
+    }
+
+    .app-main>.d-flex:first-child:has(.app-action-capsule--inline) .app-page-title {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+    }
+
+    /* 卡片内胶囊在最窄视口收紧，避免分段文本被裁切 */
+    .config-form .btn-group.app-action-capsule--fill,
+    .btn-group.app-action-capsule--fill {
+        --app-capsule-padding-x: 0.375rem;
+        --app-capsule-font-size: 0.75rem;
+    }
+}
+
