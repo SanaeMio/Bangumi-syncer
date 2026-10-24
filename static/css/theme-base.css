@@ -298,6 +298,9 @@
     --bs-body-color: #f7f3ff;
     --bs-secondary-color: #ada8c1;
     --bs-secondary-bg: color-mix(in srgb, var(--app-bg-card-header) 93%, #ffffff);
+    /* 分量取值对应上方 color-mix 的计算结果，.bg-body-secondary 等工具类经 -rgb 取色 */
+    --bs-secondary-bg-rgb: 59, 61, 70;
+    --bs-code-color: #e685b5;
     --bs-card-bg: #24262f;
     --bs-card-border-color: rgba(255, 255, 255, 0.14);
     --bs-tertiary-bg: #2c2e38;
@@ -443,6 +446,12 @@
 /* 暗色模式下覆盖 Bootstrap 的 border-light */
 [data-theme="dark"] .border-light {
     border-color: var(--app-border) !important;
+}
+
+/* 暗色模式下覆盖 Bootstrap 的关闭按钮图标 */
+/* 其 SVG 填充固定为黑色，暗色下不可见；Bootstrap 官方暗色同样以滤镜反色处理 */
+[data-theme="dark"] .btn-close {
+    filter: var(--bs-btn-close-white-filter);
 }
 
 /* 主题切换波纹动画 */

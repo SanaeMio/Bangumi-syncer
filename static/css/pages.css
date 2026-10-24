@@ -469,6 +469,20 @@
     border-color: rgba(255, 255, 255, 0.12);
 }
 
+[data-theme="dark"] .badge.rounded-pill.bg-success-subtle,
+[data-theme="dark"] .badge.bg-success-subtle {
+    background: rgba(var(--app-green-rgb), 0.18) !important;
+    color: #8fd4b0 !important;
+    border-color: rgba(var(--app-green-rgb), 0.35) !important;
+}
+
+[data-theme="dark"] .badge.rounded-pill.bg-secondary-subtle,
+[data-theme="dark"] .badge.bg-secondary-subtle {
+    background: rgba(var(--app-gray-rgb), 0.2) !important;
+    color: #c5cad0 !important;
+    border-color: rgba(var(--app-gray-rgb), 0.35) !important;
+}
+
 /* 滚动条样式 */
 ::-webkit-scrollbar {
     width: 8px;
