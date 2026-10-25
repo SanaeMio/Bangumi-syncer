@@ -116,7 +116,7 @@ def _install_limiter(limiter: Any) -> None:
 
 def _patch_async_client():
     return patch(
-        "app.utils.bangumi_api.async_http_layer.AsyncHttpClient",
+        "app.utils.bangumi_api._http_client.AsyncHttpClient",
         new=_FakeAsyncHttpClient,
     )
 
@@ -366,3 +366,11 @@ async def test_async_5xx_retries_with_acquire_each_attempt():
     assert result == [{"id": 1, "name": "x"}]
     assert len(_FakeAsyncHttpClient.instances) == 4
     assert limiter.acquire_async_calls == 4, "每次尝试前都必须经过限速器"
+
+
+def test_async_client_factory_disables_internal_retries():
+    """异步 client 工厂同样关闭内部重试（重试在 _request_async 逐次 acquire）。"""
+    from app.utils.bangumi_api._http_client import create_bgm_async_client
+
+    client = create_bgm_async_client(proxy=None, verify=True, ech="off", headers={})
+    assert client._max_retries == 0, "内部重试会绕过 limiter，禁止开启"

@@ -501,3 +501,10 @@ def test_request_5xx_retries_and_acquires_each_attempt():
     assert res.status_code == 200
     assert mock_client.request.call_count == 4, "首次 + 3 次重试"
     assert limiter.acquire.call_count == 4, "每次尝试前都必须经过限速器"
+
+
+def test_bangumi_clients_disable_internal_retries():
+    """Bangumi 的重试只能在请求层：client 内部重试必须为 0。"""
+    api = BangumiApi()
+    assert api.req._max_retries == 0, "内部重试会绕过 limiter，禁止开启"
+    assert api._req_not_auth._max_retries == 0, "内部重试会绕过 limiter，禁止开启"

@@ -19,8 +19,8 @@ from typing import Any
 import httpx
 
 from ...core.logging import logger
-from ..http_base import AsyncHttpClient
 from ..retry import RETRY_STATUS_CODES, compute_backoff_delay
+from ._http_client import create_bgm_async_client
 from .http_layer import (
     BGM_REQUEST_BACKOFF_BASE,
     BGM_REQUEST_MAX_ATTEMPTS,
@@ -62,21 +62,13 @@ class AsyncHttpLayer:
             await get_bgm_rate_limiter().acquire_async()
 
             try:
-                # 链式配置方法返回基类类型、会丢失 AsyncHttpClient 的静态类型，
-                # 故先构造再逐条调用（运行时等价，保留 async with 类型）。
-                client = AsyncHttpClient(
-                    label="Bangumi",
+                # 链式配置在工厂内完成；每次请求临时创建（连接池绑定 event loop）
+                client = create_bgm_async_client(
                     proxy=self.http_proxy,
                     verify=self.ssl_verify,
                     ech=self.ech_mode,
-                    follow_redirects=True,
-                    max_retries=0,
-                    timeout=10.0,
                     headers=headers,
                 )
-                client.prefix("📚")
-                client.success_tpl("Bangumi 请求成功")
-                client.failure_tpl("Bangumi 请求失败")
                 async with client:
                     res = await client.request(method, url, **kwargs)
             except httpx.HTTPError:
