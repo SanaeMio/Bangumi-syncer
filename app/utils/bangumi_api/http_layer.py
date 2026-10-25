@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import socket
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,11 +15,20 @@ import httpx
 
 from ...core.logging import logger
 from ..http_base import SyncHttpClient
-from ..retry import RETRY_EXCEPTIONS, RETRY_STATUS_CODES
+from ..retry import (
+    RETRY_EXCEPTIONS,
+    RETRY_STATUS_CODES,
+    compute_backoff_delay,
+)
 from .rate_limit import get_bgm_rate_limiter
 
 #: Bangumi 请求的 User-Agent（同步 ``init`` 与异步请求层共用）
 BGM_USER_AGENT = "SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)"
+
+# 单次逻辑请求的最大尝试次数（首次 + 3 次重试，与原 max_retries=3 对齐）
+BGM_REQUEST_MAX_ATTEMPTS = 4
+# 指数退避基数（1s / 2s / 4s ...）
+BGM_REQUEST_BACKOFF_BASE = 2
 
 
 def _parse_retry_after(res: httpx.Response) -> float | None:
@@ -104,6 +114,15 @@ class HttpLayerMixin:
     def _apply_rate_limit_notification(self, res: httpx.Response) -> None:
         """按响应状态通知进程级令牌桶（薄委托，同步/异步同源口径）。"""
         notify_limiter_from_response(res)
+
+    def _request_once(
+        self, method: str, session: SyncHttpClient, url: str, **kwargs: Any
+    ) -> httpx.Response:
+        """单次请求：令牌门控 → 发送 → 响应通知（每次触网都经过限流器）。"""
+        get_bgm_rate_limiter().acquire()
+        res = session.request(method, url, **kwargs)
+        self._apply_rate_limit_notification(res)
+        return res
 
     def _try_direct_connection(
         self, method: str, url: str, **kwargs: Any
@@ -218,19 +237,20 @@ class HttpLayerMixin:
         url: str,
         **kwargs: Any,
     ) -> httpx.Response:
-        """请求方法（重试由 SyncHttpClient 内置 max_retries 处理）
+        """请求方法：外层重试 + 每次尝试限速/响应通知。
 
-        本方法仅负责：
-        - 代理失败后直连回退
-        - DNS 错误网络诊断
-        - 重试耗尽后的状态码通知 + API 不可达标记
+        - 每次尝试（含重试）前 acquire，响应后 notify_limiter_from_response；
+        - 429：首次即冻结令牌桶并**不再重试**（C1 快速失败），交由上层重试/降级；
+        - 5xx：按指数退避重试，重试前仍 acquire；
+        - 网络异常：按退避重试；代理失败保留直连回退；
+        - 重试耗尽/快速失败：标记 API 不可达并抛错（保留既有通知语义）。
         """
         kwargs.setdefault("timeout", 15)
         # httpx.Client 在构造时已设置 verify 和 proxy，移除 per-request 残留
         kwargs.pop("verify", None)
         kwargs.pop("proxies", None)
 
-        # 如果之前代理已经失败过，直接使用直连
+        # 如果之前代理已经失败过，直接使用直连（直连内部已 acquire + notify）
         if self.http_proxy and self._proxy_failed:
             logger.debug("💡 检测到代理之前已失败，本次请求直接使用直连")
             direct_result = self._try_direct_connection(method, url, **kwargs)
@@ -244,69 +264,101 @@ class HttpLayerMixin:
                 )
             return direct_result
 
-        try:
-            get_bgm_rate_limiter().acquire()
-            res = session.request(method, url, **kwargs)
-        except RETRY_EXCEPTIONS as e:
-            # 网络异常分支刻意不调用 notify_success、也不冻结令牌桶：
-            # 连接层错误既不能证明请求成功（不应重置 429 升级计数），
-            # 也不代表服务端限流（不应额外冻结）；升级计数保留到下次成功请求重置。
-            # SyncHttpClient 重试耗尽后仍抛出异常
-            dns_error = "Failed to resolve" in str(
-                e
-            ) or "Temporary failure in name resolution" in str(e)
+        for attempt in range(BGM_REQUEST_MAX_ATTEMPTS):
+            try:
+                res = self._request_once(method, session, url, **kwargs)
+            except RETRY_EXCEPTIONS as e:
+                # 网络异常：不 notify_success、不冻结令牌桶；升级计数保留到下次成功。
+                dns_error = "Failed to resolve" in str(
+                    e
+                ) or "Temporary failure in name resolution" in str(e)
 
-            # 如果配置了代理且重试失败，尝试直连
-            if self.http_proxy:
-                logger.warning("⚠️  代理请求失败，尝试抛弃代理直连...")
-                try:
-                    direct_result = self._try_direct_connection(method, url, **kwargs)
-                    if direct_result:
-                        self._proxy_failed = True
-                        logger.debug("✅ 直连成功！已成功绕过代理问题")
-                        return direct_result
-                except (httpx.HTTPError, ValueError) as direct_error:
-                    logger.error(f"❌ 直连也失败了: {str(direct_error)}")
+                # 如果配置了代理且重试失败，尝试直连
+                if self.http_proxy:
+                    logger.warning("⚠️  代理请求失败，尝试抛弃代理直连...")
+                    try:
+                        direct_result = self._try_direct_connection(
+                            method, url, **kwargs
+                        )
+                        if direct_result:
+                            self._proxy_failed = True
+                            logger.debug("✅ 直连成功！已成功绕过代理问题")
+                            return direct_result
+                    except (httpx.HTTPError, ValueError) as direct_error:
+                        logger.error(f"❌ 直连也失败了: {str(direct_error)}")
 
-            # 如果是DNS错误，进行网络诊断
-            if dns_error:
-                logger.warning("⚠️  检测到DNS解析问题，开始网络诊断...")
-                self._diagnose_network_issue(url)
+                if attempt < BGM_REQUEST_MAX_ATTEMPTS - 1:
+                    delay = compute_backoff_delay(
+                        attempt, base=BGM_REQUEST_BACKOFF_BASE
+                    )
+                    logger.warning(
+                        f"⚠️  Bangumi 请求异常（{type(e).__name__}），"
+                        f"第 {attempt + 1}/{BGM_REQUEST_MAX_ATTEMPTS} 次尝试，"
+                        f"{delay}秒后重试"
+                    )
+                    time.sleep(delay)
+                    continue
 
-            # 标记 API 不可达，TTL 内后续请求直接走降级：
-            # - 写降级（入 pending_sync_queue 待补发）由 [bangumi-replay] enabled 控制
-            # - 读降级（走 archive 本地数据集短路）由 [bangumi-archive] enabled 控制
-            # 标记本身始终生效，与 archive 是否启用无关
-            self.mark_api_unreachable()
+                # 如果是DNS错误，进行网络诊断（仅在最终失败时诊断一次）
+                if dns_error:
+                    logger.warning("⚠️  检测到DNS解析问题，开始网络诊断...")
+                    self._diagnose_network_issue(url)
 
-            raise e
+                # 标记 API 不可达，TTL 内后续请求直接走降级（写/读降级由配置控制）
+                self.mark_api_unreachable()
+                raise
 
-        # 429 冻结令牌桶 / 成功重置升级计数（须在重试状态码分支前处理）
-        self._apply_rate_limit_notification(res)
+            # 429：_request_once 已冻结令牌桶；快速失败，不重试
+            if res.status_code == 429:
+                from ...services.notification_service import notification_service
 
-        # 重试耗尽后仍返回重试状态码（429/500/502/503/504）
-        if res.status_code in RETRY_STATUS_CODES:
-            from ...services.notification_service import notification_service
+                notification_service.notify(
+                    "api_retry_failed",
+                    status_code=429,
+                    url=url,
+                    method=method,
+                    error_message="HTTP 429 触发限流冷却（快速失败，不重试）",
+                    retry_count=attempt,
+                )
+                self.mark_api_unreachable()
+                raise httpx.HTTPStatusError(
+                    "HTTP 429 错误，令牌桶已进入冷却（快速失败）",
+                    request=res.request,
+                    response=res,
+                )
 
-            # 重试耗尽触发 api_retry_failed，便于用户精确订阅"重试失败"事件
-            notification_service.notify(
-                "api_retry_failed",
-                status_code=res.status_code,
-                url=url,
-                method=method,
-                error_message=f"HTTP {res.status_code} 重试 {session._max_retries} 次后仍失败",
-                retry_count=session._max_retries,
-            )
-            # 服务端 5xx/429 持续不可用，同样标记不可达
-            self.mark_api_unreachable()
+            if (
+                res.status_code in RETRY_STATUS_CODES
+                and attempt < BGM_REQUEST_MAX_ATTEMPTS - 1
+            ):
+                delay = compute_backoff_delay(attempt, base=BGM_REQUEST_BACKOFF_BASE)
+                logger.warning(
+                    f"⚠️  Bangumi API HTTP {res.status_code}，"
+                    f"第 {attempt + 1}/{BGM_REQUEST_MAX_ATTEMPTS} 次尝试，"
+                    f"{delay}秒后重试"
+                )
+                time.sleep(delay)
+                continue
 
-            raise httpx.HTTPStatusError(
-                f"HTTP {res.status_code} 错误，已达到最大重试次数",
-                request=res.request,
-                response=res,
-            )
+            if res.status_code in RETRY_STATUS_CODES:
+                from ...services.notification_service import notification_service
 
-        return res
+                notification_service.notify(
+                    "api_retry_failed",
+                    status_code=res.status_code,
+                    url=url,
+                    method=method,
+                    error_message=(f"HTTP {res.status_code} 重试 {attempt} 次后仍失败"),
+                    retry_count=attempt,
+                )
+                self.mark_api_unreachable()
+                raise httpx.HTTPStatusError(
+                    f"HTTP {res.status_code} 错误，已达到最大重试次数",
+                    request=res.request,
+                    response=res,
+                )
+
+            return res
 
     def _check_auth_error(self, res: httpx.Response) -> httpx.Response:
         """统一检查认证错误"""

@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -183,10 +183,13 @@ async def test_search_async_network_error_returns_empty_and_marks_unreachable():
     """网络错误：降级空结果并标记 API 不可达（与同步语义对齐）。"""
     limiter = _RecordingLimiter()
     _install_limiter(limiter)
-    _FakeAsyncHttpClient.responses = [httpx.ConnectError("boom")]
+    _FakeAsyncHttpClient.responses = [httpx.ConnectError("boom")] * 4
 
     api = BangumiApi()
-    with _patch_async_client():
+    with (
+        _patch_async_client(),
+        patch("app.utils.bangumi_api.async_http_layer.asyncio.sleep", new=AsyncMock()),
+    ):
         result = await api.search_async("t")
 
     assert result == []
@@ -249,6 +252,7 @@ async def test_get_related_subjects_async_accepts_list_payload():
 
     with (
         _patch_async_client(),
+        patch("app.utils.bangumi_api.async_http_layer.asyncio.sleep", new=AsyncMock()),
         patch.object(api._archive, "try_get_related_subjects", return_value=shortcut),
     ):
         result = await api.get_related_subjects_async(1)
@@ -260,7 +264,7 @@ async def test_get_related_subjects_async_network_error_returns_empty():
     """关联条目网络错误：降级空列表。"""
     limiter = _RecordingLimiter()
     _install_limiter(limiter)
-    _FakeAsyncHttpClient.responses = [httpx.ReadTimeout("slow")]
+    _FakeAsyncHttpClient.responses = [httpx.ReadTimeout("slow")] * 4
 
     api = BangumiApi()
     shortcut = MagicMock()
@@ -310,3 +314,55 @@ async def test_search_async_shares_bucket_with_sync_and_fails_fast():
 
     # 快速失败（C1 口径）：请求未发出
     assert _FakeAsyncHttpClient.requests == []
+
+
+# ---------------------------------------------------------------------------
+# 重试与限速：每次尝试都经过 limiter；429 快速失败
+# ---------------------------------------------------------------------------
+
+
+async def test_async_429_does_not_retry_and_notifies_once():
+    """429：通知 limiter 后快速失败，不进行重试（只创建 1 个 client）。"""
+    limiter = _RecordingLimiter()
+    _install_limiter(limiter)
+    _FakeAsyncHttpClient.responses = [
+        _mock_response(429, {"error": "rate"}, headers={"Retry-After": "5"}),
+        _mock_response(200, {"data": [{"id": 1}]}),
+    ]
+
+    api = BangumiApi()
+    with (
+        _patch_async_client(),
+        patch("app.utils.bangumi_api.async_http_layer.asyncio.sleep", new=AsyncMock()),
+    ):
+        result = await api.search_async("t")
+
+    assert result == [], "429 应快速失败并降级为空结果"
+    assert len(_FakeAsyncHttpClient.instances) == 1, "429 不应重试"
+    assert limiter.acquire_async_calls == 1
+    assert limiter.notified == [5.0]
+
+
+async def test_async_5xx_retries_with_acquire_each_attempt():
+    """5xx：外层重试，每次尝试前 acquire_async（共 4 次尝试）。"""
+    from unittest.mock import AsyncMock
+
+    limiter = _RecordingLimiter()
+    _install_limiter(limiter)
+    _FakeAsyncHttpClient.responses = [
+        _mock_response(500),
+        _mock_response(502),
+        _mock_response(503),
+        _mock_response(200, {"data": [{"id": 1, "name": "x"}]}),
+    ]
+
+    api = BangumiApi()
+    with (
+        _patch_async_client(),
+        patch("app.utils.bangumi_api.async_http_layer.asyncio.sleep", new=AsyncMock()),
+    ):
+        result = await api.search_async("t")
+
+    assert result == [{"id": 1, "name": "x"}]
+    assert len(_FakeAsyncHttpClient.instances) == 4
+    assert limiter.acquire_async_calls == 4, "每次尝试前都必须经过限速器"

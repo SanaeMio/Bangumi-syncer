@@ -59,8 +59,9 @@ class BangumiApi(
         # ECH 模式（"off"/"doh"/"manual"）；None 时按全局 [dev] ech_mode 处理，
         # 由 SyncHttpClient → create_sync_client(ech=…) 注入带 ECH 的 utls 上下文
         self.ech_mode = ech_mode or "off"
-        # 使用 SyncHttpClient 封装 httpx.Client（统一日志/重试）
-        # max_retries=3：重试由 SyncHttpClient 内置处理，_request_with_retry 仅负责代理回退
+        # 使用 SyncHttpClient 封装 httpx.Client（统一日志）
+        # max_retries=0：重试统一收敛到 _request_with_retry，保证每次尝试都先经过
+        # 进程级令牌桶（acquire），并在每次响应后通知 429 冻结
         # timeout=10.0：单次请求 10s 超时，避免错误 subject_id 触发链式调用时
         # 每跳都要等 30s 才失败，导致整个同步流程卡死（线程池被占满）
         self.req = (
@@ -70,7 +71,7 @@ class BangumiApi(
                 verify=ssl_verify,
                 ech=self.ech_mode,
                 follow_redirects=True,
-                max_retries=3,
+                max_retries=0,
                 timeout=10.0,
             )
             .prefix("📚")
@@ -84,7 +85,7 @@ class BangumiApi(
                 verify=ssl_verify,
                 ech=self.ech_mode,
                 follow_redirects=True,
-                max_retries=3,
+                max_retries=0,
                 timeout=10.0,
             )
             .prefix("📚")

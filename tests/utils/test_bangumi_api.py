@@ -13,6 +13,13 @@ from app.utils.bangumi_api import BangumiApi
 from app.utils.bangumi_api.collection import _PendingSyncQueued
 
 
+@pytest.fixture(autouse=True)
+def _fast_bangumi_retry():
+    """重试退避不真实等待（仅测试提速；不影响断言）。"""
+    with patch("app.utils.bangumi_api.http_layer.time.sleep"):
+        yield
+
+
 class TestBangumiApi:
     """Bangumi API 测试"""
 
@@ -393,6 +400,7 @@ class TestRequestWithRetry:
         )
         with (
             patch.object(api, "_diagnose_network_issue") as mock_diag,
+            patch("app.utils.bangumi_api.http_layer.time.sleep"),
             pytest.raises(httpx.ConnectError),
         ):
             api._request_with_retry("GET", mock_session, "https://bad.host")
