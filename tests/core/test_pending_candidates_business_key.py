@@ -9,6 +9,7 @@
 5. 唯一索引兜底：同 business_key 重复 pending INSERT 冲突不炸主流程。
 """
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -490,5 +491,51 @@ class TestFindLatestByBusinessKey:
                 dbm._pending.find_latest_by_business_key("match|user1|测试番剧|1")
                 is None
             )
+        finally:
+            _db_conn(dbm).close()
+
+
+class TestPersistLlmSuggestionBusinessKeyLookup:
+    """persist_llm_suggestion 应先按 business_key 定位，再回退 sync_record_id。"""
+
+    def test_finds_pending_row_by_business_key_across_sync_records(self, tmp_path):
+        """同 BK 不同 SRI：按 BK 命中既有行，合并且不新建。"""
+        dbm = _make_db(tmp_path)
+        try:
+            bk = "match|user1|我推的孩子|1"
+            pending_id = dbm.log_pending_candidate(
+                request_title="我推的孩子",
+                request_season=1,
+                user_name="user1",
+                source="plex",
+                candidates=[{"subject_id": "111", "name": "规则候选", "score": 0.8}],
+                sync_record_id=100,
+                business_key=bk,
+            )
+            dbm.agent_runs.create_pending("run-1", "match", 100, business_key=bk)
+
+            result = dbm.persist_llm_suggestion(
+                run_id="run-1",
+                sync_record_id=200,  # 指针已漂移到同业务键的后续记录
+                sync_record={
+                    "title": "我推的孩子",
+                    "ori_title": "",
+                    "season": 1,
+                    "episode": 2,
+                    "user_name": "user1",
+                    "source": "plex",
+                },
+                business_key=bk,
+                subject_id="222",
+                reason="AI 建议",
+                stop_reason="end_turn",
+            )
+
+            assert result == pending_id
+            record = _record(dbm, pending_id)
+            candidates = json.loads(record["candidates_json"])
+            assert {str(c["subject_id"]) for c in candidates} == {"111", "222"}
+            assert any(c.get("source") == "llm_assist" for c in candidates)
+            assert dbm.get_pending_candidates(status="pending")["total"] == 1
         finally:
             _db_conn(dbm).close()

@@ -40,6 +40,7 @@ from ...utils.media_type_detector import detect_media_type as detect_media_type
 from ..mapping_service import mapping_service
 from ..matching.identity import build_match_business_key
 from ..notification_service import notification_service
+from .errors import PendingCandidateContractError, PendingCandidatePersistError
 from .match_trace import MatchCandidate as MatchCandidate, MatchTrace
 from .retry import MARK_QUEUED, RetryMixin
 from .season_info import SeasonInfoMixin
@@ -595,6 +596,8 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         actual_source: str,
         trace: MatchTrace,
         sync_record_id: int | None = None,
+        *,
+        decision: str,
     ) -> None:
         """匹配失败时沉淀候选，供用户手动确认。
 
@@ -604,7 +607,21 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         sync_record_id：关联的 sync_records 行 id，用于候选确认后回写原记录状态。
         business_key：按 (user_name, normalize(title), season) 构造，对齐 agent_runs
         业务身份去重，跨 source 共享同一 pending 行。
+
+        decision：``enqueue_match_run`` 的决策。只有 ``created`` / ``enqueue_failed``
+        允许写候选；``in_flight`` / ``reuse_*`` / ``exhausted`` 表示同一业务键已有
+        run 或候选，继续写会覆盖已有 AI 建议，属于编排契约违反，抛
+        :class:`PendingCandidateContractError`。
         """
+        bk = build_match_business_key(item.user_name, item.title, item.season)
+        if decision not in ("created", "enqueue_failed"):
+            logger.error(
+                "[pending_candidate] 违反写入契约: "
+                f"decision={decision}, sync_record_id={sync_record_id}, "
+                f"business_key={bk}"
+            )
+            raise PendingCandidateContractError(decision, sync_record_id)
+
         candidates = self._collect_candidates_from_trace(trace)
         # 过滤掉「候选自身标题命中屏蔽关键词」的条目，避免用户已屏蔽的作品
         # 反复出现在待确认列表里（原实现按 subject_id 黑名单过滤，
@@ -619,10 +636,9 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             ]
         if not candidates:
             return
-        # 计算业务键：对齐 agent_runs 去重语义（去 source / 归一化标题）
-        bk = build_match_business_key(item.user_name, item.title, item.season)
+
         try:
-            database_manager.log_pending_candidate(
+            row_id = database_manager.log_pending_candidate(
                 request_title=item.title,
                 request_ori_title=item.ori_title or "",
                 request_season=item.season,
@@ -635,8 +651,20 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
                 business_key=bk,
             )
         except Exception as e:
-            logger.warning(f"沉淀待确认候选失败（不影响主流程）: {e}")
-            return
+            logger.error(
+                "[pending_candidate] 候选沉淀异常: "
+                f"sync_record_id={sync_record_id}, business_key={bk}: {e}"
+            )
+            raise PendingCandidatePersistError(sync_record_id, str(e)) from e
+
+        if row_id is None:
+            logger.error(
+                "[pending_candidate] 候选沉淀失败（log_pending_candidate 返回 None）: "
+                f"sync_record_id={sync_record_id}, business_key={bk}"
+            )
+            raise PendingCandidatePersistError(
+                sync_record_id, "log_pending_candidate 返回 None"
+            )
 
         # 沉淀成功后触发通知（不影响主流程）
         try:

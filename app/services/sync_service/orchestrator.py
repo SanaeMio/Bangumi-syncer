@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 from ...core.logging import get_sync_run_id, logger, sync_log_context
 from ...models.sync import CustomItem, SyncResponse
 from .context import ExecutionContext
+from .errors import PendingCandidateContractError, PendingCandidatePersistError
 from .match_trace import MatchTrace
 from .retry import MARK_QUEUED
 
@@ -528,10 +529,22 @@ class SyncOrchestrator:
             in_app_ref_id=sync_record_id,
             error_message=not_found_message,
         )
-        # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认
-        self._sync._sediment_pending_candidate(
-            item, actual_source, trace, sync_record_id=sync_record_id
-        )
+        # 匹配失败且有候选时，沉淀到 pending_candidates 供用户手动确认。
+        # decision 来自 enqueue_match_run：只有 created/enqueue_failed 允许写；
+        # 其他决策说明同一业务键已有 run/候选，写入会覆盖 AI 建议。
+        try:
+            self._sync._sediment_pending_candidate(
+                item,
+                actual_source,
+                trace,
+                sync_record_id=sync_record_id,
+                decision=decision,
+            )
+        except PendingCandidateContractError as e:
+            logger.error(f"[pending_candidate] 跳过候选沉淀（契约校验）: {e}")
+        except PendingCandidatePersistError as e:
+            logger.error(f"[pending_candidate] 候选沉淀失败: {e}")
+            not_found_message = "未找到匹配的番剧，且候选保存失败，请查看日志"
         status_holder[0] = "error"
         return SyncResponse(status="error", message=not_found_message)
 
