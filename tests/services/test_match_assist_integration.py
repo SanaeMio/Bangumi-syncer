@@ -710,3 +710,61 @@ async def test_confirm_endpoint_falls_back_to_subject_id():
 
     assert resp.status_code == 200
     assert captured["subject_id"] == "222"
+
+
+@patch("app.services.sync_service.notification_service")
+@patch("app.services.sync_service.config_manager")
+@patch("app.services.sync_service.database_manager")
+def test_candidate_persist_failure_updates_message(mock_db, mock_cfg, mock_notify):
+    """候选写入失败：返回 message 明确提示，而不是普通未匹配。"""
+    from app.services.sync_service.errors import PendingCandidatePersistError
+
+    orch = _make_orchestrator()
+    mock_cfg.get.return_value = "false"
+    mock_cfg.get_llm_config.return_value = {"api_key": ""}
+    mock_db.agent_runs = _make_orchestrator_agent_runs()
+
+    item = _make_item()
+    trace = _make_trace()
+
+    with (
+        patch.object(orch, "_persist_sync_record", return_value=123),
+        patch.object(
+            orch._sync,
+            "_sediment_pending_candidate",
+            side_effect=PendingCandidatePersistError(123, "db error"),
+        ),
+    ):
+        resp = orch._handle_match_failure(item, "plex", trace, "err", [""])
+
+    assert resp.status == "error"
+    assert "候选保存失败" in resp.message
+
+
+@patch("app.services.sync_service.notification_service")
+@patch("app.services.sync_service.config_manager")
+@patch("app.services.sync_service.database_manager")
+def test_candidate_contract_error_keeps_plain_message(mock_db, mock_cfg, mock_notify):
+    """契约校验失败：候选已存在，message 保持普通未匹配。"""
+    from app.services.sync_service.errors import PendingCandidateContractError
+
+    orch = _make_orchestrator()
+    mock_cfg.get.return_value = "false"
+    mock_cfg.get_llm_config.return_value = {"api_key": ""}
+    mock_db.agent_runs = _make_orchestrator_agent_runs()
+
+    item = _make_item()
+    trace = _make_trace()
+
+    with (
+        patch.object(orch, "_persist_sync_record", return_value=123),
+        patch.object(
+            orch._sync,
+            "_sediment_pending_candidate",
+            side_effect=PendingCandidateContractError("reuse_holding", 123),
+        ),
+    ):
+        resp = orch._handle_match_failure(item, "plex", trace, "err", [""])
+
+    assert resp.status == "error"
+    assert "候选保存失败" not in resp.message

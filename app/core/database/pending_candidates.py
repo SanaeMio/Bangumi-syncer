@@ -5,6 +5,7 @@
 """
 
 import json
+import sqlite3
 from datetime import datetime
 from typing import Any
 
@@ -230,41 +231,32 @@ class PendingCandidatesRepository(BaseRepository):
         """
 
         def _write(conn):
-            # 取既有行：按 id 倒序取最新一条（不区分状态；历史注释曾称「优先 pending」，
-            # 但实现从未按状态过滤）
-            row = conn.execute(
-                "SELECT id, candidates_json, status, business_key FROM pending_candidates "
-                "WHERE sync_record_id=? ORDER BY id DESC LIMIT 1",
-                (sync_record_id,),
-            ).fetchone()
-
-            if row is not None and row[2] != "pending":
-                # 用户已处理（confirmed/rejected）→ 不复活候选，run 标 cancelled 并跳过。
-                # 事务内直调 apply_cancelled（单一 SQL 入口，不二次取锁），
-                # SQL 与源状态守卫与 mark_cancelled 完全一致。
-                apply_cancelled(conn, run_id, stop_reason=_STOP_REASON_USER_RESOLVED)
-                logger.info(
-                    f"[llm_assist] run {run_id} 候选(pending_candidates.id={row[0]}) "
-                    f"状态={row[2]} 已被用户处理，跳过落库并标 run cancelled"
-                )
+            def _find_row():
+                # 业务身份优先：跨 sync_record 稳定，避免指针漂移后新建行撞唯一索引
+                if business_key:
+                    found = conn.execute(
+                        "SELECT id, candidates_json, status, business_key "
+                        "FROM pending_candidates WHERE business_key=? "
+                        "ORDER BY id DESC LIMIT 1",
+                        (business_key,),
+                    ).fetchone()
+                    if found is not None:
+                        return found
+                # 回退 SRI：兼容 business_key 为空的历史行
+                if sync_record_id is not None:
+                    return conn.execute(
+                        "SELECT id, candidates_json, status, business_key "
+                        "FROM pending_candidates WHERE sync_record_id=? "
+                        "ORDER BY id DESC LIMIT 1",
+                        (sync_record_id,),
+                    ).fetchone()
                 return None
 
-            name = bgm_title
-
-            new_cand = {
-                "subject_id": subject_id,
-                "name": name,
-                "name_cn": name,
-                "score": 1.0,
-                "source": "llm_assist",
-                "reason": reason,
-            }
-
-            if row:
-                existing_id = row[0]
-                existing_business_key = row[3] or ""
+            def _merge_into(found) -> int | None:
+                existing_id = found[0]
+                existing_business_key = found[3] or ""
                 try:
-                    existing = json.loads(row[1]) if row[1] else []
+                    existing = json.loads(found[1]) if found[1] else []
                 except (ValueError, TypeError):
                     existing = []
                 if not isinstance(existing, list):
@@ -276,8 +268,8 @@ class PendingCandidatesRepository(BaseRepository):
                 # 到同一旧值、各自 UPDATE 时，只有先提交者内容匹配，后提交者因
                 # candidates_json 已变而 rowcount=0 → 不双写、不双通知。
                 # COALESCE 兼容 NULL（历史行）/空串：SELECT 侧原始值统一由
-                # ``row[1] or ""`` 归一为空串，两侧口径一致。
-                original_json = row[1] or ""
+                # ``found[1] or ""`` 归一为空串，两侧口径一致。
+                original_json = found[1] or ""
                 # 历史行（无业务键）在同一事务内回填：否则后续 enqueue 复用判定
                 # 按 business_key 查询永远 miss，导致重复重跑 LLM。已在展示的候选行
                 # 不覆盖既有非空键（保持原身份，避免改写已被引用的业务身份）。
@@ -317,34 +309,73 @@ class PendingCandidatesRepository(BaseRepository):
                         f"跳过落库并标 run cancelled"
                     )
                     return None
-                candidate_id = existing_id
+                return existing_id
+
+            row = _find_row()
+
+            if row is not None and row[2] != "pending":
+                # 用户已处理（confirmed/rejected）→ 不复活候选，run 标 cancelled 并跳过。
+                # 事务内直调 apply_cancelled（单一 SQL 入口，不二次取锁），
+                # SQL 与源状态守卫与 mark_cancelled 完全一致。
+                apply_cancelled(conn, run_id, stop_reason=_STOP_REASON_USER_RESOLVED)
+                logger.info(
+                    f"[llm_assist] run {run_id} 候选(pending_candidates.id={row[0]}) "
+                    f"状态={row[2]} 已被用户处理，跳过落库并标 run cancelled"
+                )
+                return None
+
+            name = bgm_title
+
+            new_cand = {
+                "subject_id": subject_id,
+                "name": name,
+                "name_cn": name,
+                "score": 1.0,
+                "source": "llm_assist",
+                "reason": reason,
+            }
+
+            if row is not None:
+                candidate_id = _merge_into(row)
+                if candidate_id is None:
+                    return None
             else:
                 # 无候选场景：新建行，candidates_json 仅含 LLM 推荐
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                cur = conn.execute(
-                    """
-                    INSERT INTO pending_candidates
-                    (created_at, request_title, request_ori_title, request_season,
-                     request_episode, user_name, source, candidates_json, trace_json,
-                     status, confirmed_subject_id, resolved_at, sync_record_id,
-                     business_key)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', NULL, ?, ?)
-                    """,
-                    (
-                        now,
-                        sync_record.get("title", ""),
-                        sync_record.get("ori_title") or "",
-                        int(sync_record.get("season", 1) or 1),
-                        int(sync_record.get("episode", 0) or 0),
-                        sync_record.get("user_name", ""),
-                        sync_record.get("source", ""),
-                        json.dumps([new_cand], ensure_ascii=False),
-                        "{}",
-                        sync_record_id,
-                        business_key,
-                    ),
-                )
-                candidate_id = cur.lastrowid
+                try:
+                    cur = conn.execute(
+                        """
+                        INSERT INTO pending_candidates
+                        (created_at, request_title, request_ori_title, request_season,
+                         request_episode, user_name, source, candidates_json, trace_json,
+                         status, confirmed_subject_id, resolved_at, sync_record_id,
+                         business_key)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', NULL, ?, ?)
+                        """,
+                        (
+                            now,
+                            sync_record.get("title", ""),
+                            sync_record.get("ori_title") or "",
+                            int(sync_record.get("season", 1) or 1),
+                            int(sync_record.get("episode", 0) or 0),
+                            sync_record.get("user_name", ""),
+                            sync_record.get("source", ""),
+                            json.dumps([new_cand], ensure_ascii=False),
+                            "{}",
+                            sync_record_id,
+                            business_key,
+                        ),
+                    )
+                    candidate_id = cur.lastrowid
+                except sqlite3.IntegrityError:
+                    # 并发/其他路径插入同业务键 pending 行：回退到业务键合并，
+                    # 而不是让整个 run 因唯一索引冲突失败。
+                    fallback = _find_row()
+                    if fallback is None or fallback[2] != "pending":
+                        raise
+                    candidate_id = _merge_into(fallback)
+                    if candidate_id is None:
+                        return None
 
             # 同一事务内更新 agent_runs 为 succeeded（原子）
             # ended_at 使用 epoch 秒整数，与 mark_succeeded 一致。
