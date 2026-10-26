@@ -92,7 +92,8 @@ class AsyncHttpLayer:
 
             if res.status_code == 429:
                 logger.warning("📚 Bangumi API HTTP 429（快速失败，不重试）")
-                self.mark_api_unreachable()
+                # 只冻结令牌桶，不标记 300s 不可达；否则搜索会被 TTL 短路，
+                # Retry-After / 指数退避无法生效。
                 raise httpx.HTTPStatusError(
                     "HTTP 429 错误，令牌桶已进入冷却（快速失败）",
                     request=res.request,
