@@ -169,6 +169,10 @@
         if (isReleaseNotesModalOpen()) {
             modalRendered = true;
             renderModal(j);
+        } else {
+            // 弹窗关闭时收到新信息：已渲染标记与待渲染内容失步，须让标记失效，
+            // 下次打开按新信息渲染
+            modalRendered = false;
         }
     }
 

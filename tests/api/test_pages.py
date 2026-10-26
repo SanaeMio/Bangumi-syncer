@@ -506,6 +506,19 @@ class TestConfigConsoleErrors:
         assert "setPendingReleaseInfo(" in js
         assert "var pendingReleaseInfo = null;" in js
 
+    def test_release_notes_flag_invalidated_when_info_arrives_while_closed(self):
+        """弹窗关闭时收到新版本信息须让已渲染标记失效。
+
+        标记表示弹窗正文与待渲染内容是否一致；弹窗关闭时到达新信息而不清
+        标记，下次打开会沿用旧正文。
+        """
+        js = (_REPO_ROOT / "static/js/version-release.js").read_text(encoding="utf-8")
+        body = js.split("function setPendingReleaseInfo(j) {", 1)[1].split(
+            "\n    }", 1
+        )[0]
+        else_part = body.split("} else {", 1)[1]
+        assert "modalRendered = false;" in else_part
+
     def test_base_template_declares_favicon(self):
         """基础模板声明站点图标，避免浏览器默认请求 /favicon.ico 返回 404。"""
         base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
