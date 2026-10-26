@@ -33,9 +33,8 @@ from app.services.llm.models import (
     ToolUseBlock,
     Usage,
 )
-from app.services.llm.providers.base import BaseProvider
+from app.services.llm.providers.base import BaseProvider, open_stream_response
 from app.services.llm.sse import SSEEvent, iter_sse_events
-from app.utils.http_client import create_async_client
 
 
 @dataclass
@@ -361,113 +360,103 @@ class OpenAIResponsesProvider(BaseProvider):
                     state.model_sent = True
             return chunk
 
-        async with create_async_client(
-            proxy=self.proxy,
+        async with open_stream_response(
+            url=url,
+            body=body,
+            headers=self._headers(),
             timeout=self.timeout,
-            follow_redirects=True,
-        ) as client:
-            async with client.stream(
-                "POST",
-                url,
-                json=body,
-                headers=self._headers(),
-                timeout=self.timeout,
-            ) as response:
-                response.raise_for_status()
-                async for sse in iter_sse_events(response.aiter_lines()):
-                    if sse.data == "[DONE]":
-                        # OpenAI Responses 正常以 response.completed 结束，
-                        # [DONE] 仅作宽容兜底
-                        return
-                    payload = self._decode_payload(sse)
-                    if payload is None:
-                        continue
-                    # 事件名在 event: 字段或 data JSON 的 type 字段，两者兼容
-                    name = sse.event or payload.get("type")
-                    response_data = payload.get("response") or {}
-                    if name == "response.output_item.added":
-                        item = payload.get("item") or {}
-                        if item.get("type") == "function_call":
-                            state.item_call_ids[item.get("id", "")] = item.get(
-                                "call_id", ""
-                            )
+            proxy=self.proxy,
+        ) as response:
+            async for sse in iter_sse_events(response.aiter_lines()):
+                if sse.data == "[DONE]":
+                    # OpenAI Responses 正常以 response.completed 结束，
+                    # [DONE] 仅作宽容兜底
+                    return
+                payload = self._decode_payload(sse)
+                if payload is None:
+                    continue
+                # 事件名在 event: 字段或 data JSON 的 type 字段，两者兼容
+                name = sse.event or payload.get("type")
+                response_data = payload.get("response") or {}
+                if name == "response.output_item.added":
+                    item = payload.get("item") or {}
+                    if item.get("type") == "function_call":
+                        state.item_call_ids[item.get("id", "")] = item.get(
+                            "call_id", ""
+                        )
+                        yield _attach_model(
+                            StreamChunk(
+                                type="tool_use_start",
+                                tool_use_id=item.get("call_id", ""),
+                                tool_name=item.get("name", ""),
+                            ),
+                            response_data,
+                        )
+                    else:
+                        logger.debug(
+                            f"Responses output_item.added 忽略 item 类型 "
+                            f"{item.get('type')!r}"
+                        )
+                elif name == "response.output_text.delta":
+                    yield _attach_model(
+                        StreamChunk(type="text_delta", text=payload.get("delta", "")),
+                        response_data,
+                    )
+                elif name == "response.function_call_arguments.delta":
+                    item_id = payload.get("item_id", "")
+                    tool_use_id = payload.get("call_id") or state.item_call_ids.get(
+                        item_id, item_id
+                    )
+                    yield _attach_model(
+                        StreamChunk(
+                            type="tool_use_delta",
+                            tool_use_id=tool_use_id,
+                            partial_json=payload.get("delta", ""),
+                        ),
+                        response_data,
+                    )
+                elif name == "response.reasoning_summary_text.delta":
+                    yield _attach_model(
+                        StreamChunk(
+                            type="thinking_delta", thinking=payload.get("delta", "")
+                        ),
+                        response_data,
+                    )
+                elif name == "response.output_item.done":
+                    # function_call 项完成 → 参数已完整、可校验：停点事件
+                    item = payload.get("item") or {}
+                    if item.get("type") == "function_call":
+                        call_id = item.get("call_id", "")
+                        if call_id not in state.stopped:
+                            state.stopped.add(call_id)
                             yield _attach_model(
-                                StreamChunk(
-                                    type="tool_use_start",
-                                    tool_use_id=item.get("call_id", ""),
-                                    tool_name=item.get("name", ""),
-                                ),
+                                StreamChunk(type="tool_use_stop", tool_use_id=call_id),
                                 response_data,
                             )
-                        else:
-                            logger.debug(
-                                f"Responses output_item.added 忽略 item 类型 "
-                                f"{item.get('type')!r}"
-                            )
-                    elif name == "response.output_text.delta":
-                        yield _attach_model(
-                            StreamChunk(
-                                type="text_delta", text=payload.get("delta", "")
-                            ),
-                            response_data,
-                        )
-                    elif name == "response.function_call_arguments.delta":
-                        item_id = payload.get("item_id", "")
-                        tool_use_id = payload.get("call_id") or state.item_call_ids.get(
-                            item_id, item_id
-                        )
-                        yield _attach_model(
-                            StreamChunk(
-                                type="tool_use_delta",
-                                tool_use_id=tool_use_id,
-                                partial_json=payload.get("delta", ""),
-                            ),
-                            response_data,
-                        )
-                    elif name == "response.reasoning_summary_text.delta":
-                        yield _attach_model(
-                            StreamChunk(
-                                type="thinking_delta", thinking=payload.get("delta", "")
-                            ),
-                            response_data,
-                        )
-                    elif name == "response.output_item.done":
-                        # function_call 项完成 → 参数已完整、可校验：停点事件
-                        item = payload.get("item") or {}
-                        if item.get("type") == "function_call":
-                            call_id = item.get("call_id", "")
-                            if call_id not in state.stopped:
-                                state.stopped.add(call_id)
-                                yield _attach_model(
-                                    StreamChunk(
-                                        type="tool_use_stop", tool_use_id=call_id
-                                    ),
-                                    response_data,
-                                )
-                        else:
-                            logger.debug(
-                                f"Responses output_item.done 忽略 item 类型 "
-                                f"{item.get('type')!r}"
-                            )
-                    elif name in ("response.completed", "response.incomplete"):
-                        # incomplete（截断）与 completed 同路径产出 usage + stop，
-                        # stop_reason 由 _stop_reason_of 依 status 判定
-                        usage = self._usage_from(response_data.get("usage"))
-                        if usage is not None:
-                            yield _attach_model(
-                                StreamChunk(type="usage", usage=usage), response_data
-                            )
-                        yield _attach_model(
-                            StreamChunk(
-                                type="stop",
-                                stop_reason=self._stop_reason_of(response_data),
-                            ),
-                            response_data,
-                        )
-                    elif name in ("response.failed", "error"):
-                        raise ValueError(self._error_message(name, payload))
                     else:
-                        logger.debug(f"Responses SSE 忽略事件 {name!r}")
+                        logger.debug(
+                            f"Responses output_item.done 忽略 item 类型 "
+                            f"{item.get('type')!r}"
+                        )
+                elif name in ("response.completed", "response.incomplete"):
+                    # incomplete（截断）与 completed 同路径产出 usage + stop，
+                    # stop_reason 由 _stop_reason_of 依 status 判定
+                    usage = self._usage_from(response_data.get("usage"))
+                    if usage is not None:
+                        yield _attach_model(
+                            StreamChunk(type="usage", usage=usage), response_data
+                        )
+                    yield _attach_model(
+                        StreamChunk(
+                            type="stop",
+                            stop_reason=self._stop_reason_of(response_data),
+                        ),
+                        response_data,
+                    )
+                elif name in ("response.failed", "error"):
+                    raise ValueError(self._error_message(name, payload))
+                else:
+                    logger.debug(f"Responses SSE 忽略事件 {name!r}")
 
     @staticmethod
     def _decode_payload(sse: SSEEvent) -> dict | None:

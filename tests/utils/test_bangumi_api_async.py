@@ -298,7 +298,9 @@ async def test_async_request_notifies_limiter_on_429():
 
     assert result == []  # HTTPStatusError 被降级为空结果
     assert limiter.notified == [5.0]
-    assert api.is_api_unreachable() is True
+    # 429 只冻结令牌桶，不再把实例标记为 300s 不可达；否则搜索会被
+    # TTL 短路，Retry-After 与 60s 冷却都无法生效。
+    assert api.is_api_unreachable() is False
 
 
 async def test_search_async_shares_bucket_with_sync_and_fails_fast():

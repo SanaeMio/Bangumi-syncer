@@ -475,6 +475,8 @@ def test_request_429_freezes_and_does_not_retry():
     assert mock_client.request.call_count == 1, "429 不应内部重试"
     assert limiter.acquire.call_count == 1
     assert limiter.notify_rate_limited.call_count == 1
+    # 429 只冻结令牌桶，不触发 300s 不可达熔断（否则搜索会被 TTL 短路）
+    assert api.is_api_unreachable() is False
 
 
 def test_request_5xx_retries_and_acquires_each_attempt():

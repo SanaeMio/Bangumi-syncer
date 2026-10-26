@@ -168,7 +168,7 @@ class TestOpenAICompatRawSSE:
         client = _build_client(provider)
 
         with patch(
-            "app.services.llm.providers.openai_compat.create_async_client",
+            "app.services.llm.providers.base.create_async_client",
             _mock_transport_client(handler),
         ):
             chunks = await _collect(
@@ -208,7 +208,7 @@ class TestOpenAICompatRawSSE:
         client = _build_client(provider)
 
         with patch(
-            "app.services.llm.providers.openai_compat.create_async_client",
+            "app.services.llm.providers.base.create_async_client",
             _mock_transport_client(lambda request: _sse_response(self._BODY)),
         ):
             resp = _aggregate(
@@ -333,7 +333,7 @@ class TestAnthropicRawSSE:
         client = _build_client(provider)
 
         with patch(
-            "app.services.llm.providers.anthropic.create_async_client",
+            "app.services.llm.providers.base.create_async_client",
             _mock_transport_client(handler),
         ):
             chunks = await _collect(
@@ -450,7 +450,7 @@ class TestOpenAIResponsesRawSSE:
         client = _build_client(provider)
 
         with patch(
-            "app.services.llm.providers.openai_responses.create_async_client",
+            "app.services.llm.providers.base.create_async_client",
             _mock_transport_client(handler),
         ):
             chunks = await _collect(
@@ -518,7 +518,7 @@ class TestRawSSEErrorRetry:
         client = _build_client(provider)
 
         with patch(
-            "app.services.llm.providers.openai_compat.create_async_client",
+            "app.services.llm.providers.base.create_async_client",
             _mock_transport_client(handler),
         ):
             resp = _aggregate(
@@ -549,7 +549,7 @@ class TestRawSSEErrorRetry:
         client = _build_client(provider)
 
         with patch(
-            "app.services.llm.providers.openai_compat.create_async_client",
+            "app.services.llm.providers.base.create_async_client",
             _mock_transport_client(handler),
         ):
             with pytest.raises(LLMCallError) as exc_info:
@@ -576,7 +576,7 @@ class TestRawSSEErrorRetry:
         client = _build_client(provider)
 
         with patch(
-            "app.services.llm.providers.openai_compat.create_async_client",
+            "app.services.llm.providers.base.create_async_client",
             _mock_transport_client(handler),
         ):
             with pytest.raises(LLMCallError) as exc_info:

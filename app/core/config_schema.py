@@ -137,6 +137,10 @@ SECTIONS: dict[str, SectionMeta] = {
         name="sync",
         display_name="同步设置",
         order=20,
+        # llm_match_assist 开关需要保存后联动调度器启停：
+        # 关闭态下 BaseScheduler.start() 直接 return，只有 apply_config_after_save
+        # 能把它拉起。没有 scheduler_id 时保存配置不会触发该联动。
+        scheduler_id="llm_match",
         # llm_match_cron 是内部调度机制，不在配置页暴露；仅提供环境变量
         # 高级调优入口（LLM_MATCH_CRON 覆盖 [sync] llm_match_cron）。
         env_overrides={"llm_match_cron": "LLM_MATCH_CRON"},
