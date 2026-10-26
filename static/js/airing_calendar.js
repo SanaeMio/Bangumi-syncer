@@ -12,6 +12,7 @@
     firstLoad: true, // 首次加载强制刷新在看列表缓存
     account: null, // 多用户模式下当前选中的 Bangumi 账号段名
     multiUser: false,
+    linkedScrolled: false, // 已按深链滚动到本卡片
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -151,6 +152,7 @@
       .then(function (data) {
         state.loading = false
         renderAiringList(data)
+        scrollToAiringRowIfLinked()
       })
       .catch(function (err) {
         state.loading = false
@@ -162,6 +164,19 @@
         container.innerHTML =
           '<div class="text-center py-3 app-text-muted-block"><i class="bi bi-exclamation-triangle d-block mb-1"></i><span class="small">加载失败</span></div>'
       })
+  }
+
+  /**
+   * 从收件箱「今日放送」通知跳转进入时（#airing-calendar-row）滚动到本卡片。
+   * 卡片初始隐藏，行可见后才有滚动目标，故在渲染完成后调用。
+   */
+  function scrollToAiringRowIfLinked() {
+    if (state.linkedScrolled) return
+    if (window.location.hash !== '#airing-calendar-row') return
+    var row = document.getElementById('airing-calendar-row')
+    if (!row || row.style.display === 'none') return
+    state.linkedScrolled = true
+    row.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   /**
