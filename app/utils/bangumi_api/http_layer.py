@@ -308,7 +308,9 @@ class HttpLayerMixin:
                 self.mark_api_unreachable()
                 raise
 
-            # 429：_request_once 已冻结令牌桶；快速失败，不重试
+            # 429：_request_once 已冻结令牌桶；快速失败，不重试。
+            # 不调用 mark_api_unreachable：否则 300s TTL 会把 search 短路，
+            # 60s 冷却与 Retry-After 都无法生效。
             if res.status_code == 429:
                 from ...services.notification_service import notification_service
 
@@ -320,7 +322,6 @@ class HttpLayerMixin:
                     error_message="HTTP 429 触发限流冷却（快速失败，不重试）",
                     retry_count=attempt,
                 )
-                self.mark_api_unreachable()
                 raise httpx.HTTPStatusError(
                     "HTTP 429 错误，令牌桶已进入冷却（快速失败）",
                     request=res.request,

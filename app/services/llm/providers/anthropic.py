@@ -28,9 +28,8 @@ from app.services.llm.models import (
     ToolUseBlock,
     Usage,
 )
-from app.services.llm.providers.base import BaseProvider
+from app.services.llm.providers.base import BaseProvider, open_stream_response
 from app.services.llm.sse import SSEEvent, iter_sse_events
-from app.utils.http_client import create_async_client
 
 
 @dataclass
@@ -142,21 +141,15 @@ class AnthropicProvider(BaseProvider):
         body["stream"] = True
         headers = self._auth_headers()
 
-        async with create_async_client(
-            proxy=self.proxy,
+        async with open_stream_response(
+            url=url,
+            body=body,
+            headers=headers,
             timeout=self.timeout,
-            follow_redirects=True,
-        ) as client:
-            async with client.stream(
-                "POST",
-                url,
-                json=body,
-                headers=headers,
-                timeout=self.timeout,
-            ) as response:
-                response.raise_for_status()
-                async for chunk in self._iter_stream_chunks(response.aiter_lines()):
-                    yield chunk
+            proxy=self.proxy,
+        ) as response:
+            async for chunk in self._iter_stream_chunks(response.aiter_lines()):
+                yield chunk
 
     def _auth_headers(self) -> dict[str, str]:
         """构造认证/内容头。
