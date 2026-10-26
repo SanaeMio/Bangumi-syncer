@@ -204,7 +204,7 @@ main.app-main>*:nth-child(12) {
 
 .theme-toggle-capsule__icon--sun {
     left: 7px;
-    color: #f59e0b;
+    color: var(--app-primary);
     opacity: 1;
     transition: opacity 0.25s ease;
 }
@@ -1216,7 +1216,7 @@ main.app-main>*:nth-child(12) {
 .btn-toolbar:has(.header-theme-switcher) .theme-toggle-capsule__icon--sun {
     left: calc(var(--theme-toggle-pad) + var(--theme-toggle-thumb) / 2);
     transform: translate(-50%, -50%);
-    color: #f59e0b;
+    color: var(--app-primary);
     opacity: 1;
 }
 

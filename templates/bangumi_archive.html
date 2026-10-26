@@ -2,7 +2,7 @@
 {% block title %}Bangumi Archive - Bangumi-Syncer{% endblock %}
 {% block page_title %}Bangumi Archive 离线查询层{% endblock %}
 {% block page_actions %}
-    <div class="btn-group archive-page-actions" role="group">
+    <div class="btn-group app-action-capsule" role="group">
         <button type="button" class="btn btn-primary" onclick="loadArchiveStatus()">
             <i class="bi bi-arrow-clockwise me-1"></i>刷新状态
         </button>
@@ -209,7 +209,7 @@
                 <strong>限制：</strong>仅支持 .zip 文件，最大 1GB。
             </div>
             <form id="archive-upload-form" enctype="multipart/form-data">
-                <div class="input-group mb-3">
+                <div class="input-group archive-upload-row mb-3">
                     <input type="file"
                            class="form-control"
                            id="archive-upload-input"
