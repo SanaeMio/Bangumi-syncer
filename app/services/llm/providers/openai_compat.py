@@ -29,9 +29,8 @@ from app.services.llm.models import (
     ToolUseBlock,
     Usage,
 )
-from app.services.llm.providers.base import BaseProvider
+from app.services.llm.providers.base import BaseProvider, open_stream_response
 from app.services.llm.sse import iter_sse_events
-from app.utils.http_client import create_async_client
 
 
 @dataclass
@@ -150,32 +149,19 @@ class OpenAICompatProvider(BaseProvider):
         # stopped（已补发 tool_use_stop 的 tool_call index，避免重复补发）。
         state = _CompatStreamState()
 
-        async with create_async_client(
-            proxy=self.proxy,
+        async with open_stream_response(
+            url=url,
+            body=body,
+            headers=headers,
             timeout=self.timeout,
-            follow_redirects=True,
-        ) as client:
-            async with client.stream(
-                "POST",
-                url,
-                json=body,
-                headers=headers,
-                timeout=self.timeout,
-            ) as response:
-                if not response.is_success:
-                    # 读取错误体并记录，便于上游日志/重试判断；再抛状态错误
-                    error_body = (await response.aread()).decode("utf-8", "replace")
-                    logger.warning(
-                        f"LLM 流式请求失败: status={response.status_code}, "
-                        f"body={error_body[:500]}"
-                    )
-                    response.raise_for_status()
-                async for event in iter_sse_events(response.aiter_lines()):
-                    if event.data == "[DONE]":
-                        logger.debug("LLM 流式收到 [DONE]，结束迭代")
-                        return
-                    for chunk in self._map_stream_event(event.data, tool_index, state):
-                        yield chunk
+            proxy=self.proxy,
+        ) as response:
+            async for event in iter_sse_events(response.aiter_lines()):
+                if event.data == "[DONE]":
+                    logger.debug("LLM 流式收到 [DONE]，结束迭代")
+                    return
+                for chunk in self._map_stream_event(event.data, tool_index, state):
+                    yield chunk
 
     def _map_stream_event(
         self,

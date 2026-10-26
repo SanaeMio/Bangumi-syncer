@@ -756,14 +756,22 @@ def test_notify_rate_limited_with_retry_after_freezes_bucket():
     assert sleeper.calls == [pytest.approx(60.0)]
 
 
-def test_notify_rate_limited_freezes_at_least_default_even_if_hint_smaller():
-    """Retry-After 小于默认冷却时，冻结仍不低于默认 60 秒"""
+def test_notify_rate_limited_prefers_retry_after_over_default():
+    """有 Retry-After 时优先使用服务端时间，不被默认 60 秒覆盖"""
     limiter, sleeper = _make_limiter()
 
     limiter.notify_rate_limited(5.0)
     limiter.acquire(timeout=_FREEZE_TIMEOUT)
 
-    assert sleeper.calls == [pytest.approx(60.0)]
+    assert sleeper.calls == [pytest.approx(5.0)]
+
+
+def test_consecutive_retry_after_does_not_escalate():
+    """连续 429 且都带 Retry-After 时，每次都以服务端时间为准"""
+    limiter, _ = _make_limiter()
+
+    assert limiter.notify_rate_limited(5.0) == pytest.approx(5.0)
+    assert limiter.notify_rate_limited(5.0) == pytest.approx(5.0)
 
 
 def test_notify_rate_limited_without_retry_after_defaults_to_60():
