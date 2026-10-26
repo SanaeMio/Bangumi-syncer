@@ -223,8 +223,9 @@ class TestSchedulerLinkage:
         """summary 调度器为 instance 类型，配置联动由 summary_jobs API 直调"""
         assert config_schema.scheduler_id_for_section("summary") is None
 
-    def test_sync_no_scheduler(self):
-        assert config_schema.scheduler_id_for_section("sync") is None
+    def test_sync_links_to_llm_match_scheduler(self):
+        """[sync] llm_match_assist 开关保存后需联动 LLM 匹配置信调度器启停"""
+        assert config_schema.scheduler_id_for_section("sync") == "llm_match"
 
     def test_reverse_lookup(self):
         """按调度器 id 反查段名"""
