@@ -367,7 +367,7 @@ class RateLimiter:
         with self._lock:
             now = self._clock()
             self._consecutive_429 += 1
-            # 指数升级：60 → 120 → 240 …（上限 3600）
+            # 无 Retry-After 时指数升级：60 → 120 → 240 …（上限 3600）
             backoff = min(
                 DEFAULT_COOLDOWN * (2 ** (self._consecutive_429 - 1)), MAX_COOLDOWN
             )
@@ -381,8 +381,12 @@ class RateLimiter:
                         f"⏳ 无法解析 Retry-After={retry_after!r}，使用默认冷却"
                     )
 
-            # 冻结不低于默认冷却；服务端给的更长时尊重服务端
-            cooldown = min(max(backoff, hint), MAX_COOLDOWN)
+            # 服务端明确给出 Retry-After 时优先使用；否则按连续次数指数退避。
+            # 官方 Bangumi API 当前不返回 Retry-After，实际走 backoff。
+            if hint > 0:
+                cooldown = min(max(hint, 1.0), MAX_COOLDOWN)
+            else:
+                cooldown = backoff
             self._frozen_until = max(self._frozen_until, now + cooldown)
             logger.warning(
                 f"🚦 Bangumi API 返回 429，令牌桶冷却 {cooldown:.0f}s"
