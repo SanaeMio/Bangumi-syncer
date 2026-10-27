@@ -16,9 +16,11 @@ from app.core.config import config_manager
 from app.core.logging import logger
 
 from .models import (
+    ChatResponse,
     Message,
     StreamChunk,
     Usage,
+    collect,
 )
 from .providers.anthropic import AnthropicProvider
 from .providers.base import BaseProvider, ProviderStreamError
@@ -290,6 +292,31 @@ class LLMClient:
                     f"tokens={usage.total_tokens if usage else 0} "
                     f"latency={latency_ms}ms"
                 )
+
+    async def chat(
+        self,
+        messages: list[Message],
+        *,
+        job_id: int | None = None,
+        job_name: str | None = None,
+        **kwargs,
+    ) -> ChatResponse:
+        """兼容别名：聚合 ``stream_chat`` 为 ``ChatResponse``。
+
+        #37 段保留，供既有 API / 总结调用点过渡；#39 完成迁移后删除。
+        latency 由本方法按墙钟回填（``collect`` 不计算 latency）。
+        """
+        t0 = time.time()
+        response = await collect(
+            self.stream_chat(
+                messages,
+                job_id=job_id,
+                job_name=job_name,
+                **kwargs,
+            )
+        )
+        response.latency = int((time.time() - t0) * 1000)
+        return response
 
     async def _stream_with_retry(
         self,

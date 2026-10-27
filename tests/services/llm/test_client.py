@@ -1506,12 +1506,12 @@ class TestStreamChat:
 class TestStreamChatContract:
     """stream_chat 纯公开契约（无下划线参数）与轻量元数据跟踪。"""
 
-    def test_client_has_no_chat_alias(self):
-        """chat() 过渡别名已删除：LLMClient 仅以 stream_chat 为唯一调用入口。"""
+    def test_client_keeps_chat_compat_alias_for_transition(self):
+        """#37 段保留 chat() 兼容别名；#39 完成迁移后删除。"""
         from app.services.llm.client import LLMClient
 
-        assert not hasattr(LLMClient, "chat"), (
-            "LLMClient.chat() 过渡别名应已删除；消费方一律 collect(stream_chat(...))"
+        assert hasattr(LLMClient, "chat"), (
+            "本段需保留 chat() 兼容别名，供 api/llm.py 与 summary 旧调用点过渡"
         )
 
     def test_stream_chat_signature_has_no_private_params(self):
