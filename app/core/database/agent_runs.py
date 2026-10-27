@@ -1018,8 +1018,10 @@ class AgentRunsRepository(BaseRepository):
     def reopen_interrupted_chat_span(self, run_id: str, iteration: int) -> str | None:
         """恢复续跑时复用中断轮次的 ``llm_chat`` span（避免同轮重复行）。
 
-        - 仅命中 ``run_id + name='llm_chat' + iteration + status='running'``
-          的最新一行（已闭合/轮次不符/非 chat 行一律不碰）；
+        - 仅命中 ``run_id + name='llm_chat' + iteration`` 且
+          ``status IN ('running','error')`` 的最新一行（已闭合/轮次不符/非 chat
+          行一律不碰）；error 行也复用，避免 LLM 重试后同 iteration 出现
+          error + 成功两条 chat 行、replay 取到旧 error 行；
         - 命中后重置为可重新执行的初始态：``status='running'``、``error=''``、
           ``ended_at=0``、``replay_delta=''``、``tokens=0``、``latency_ms=0``、
           ``model=''``、``started_at=now``；后续 ``trace.end_span`` 闭合同一行；
@@ -1032,7 +1034,7 @@ class AgentRunsRepository(BaseRepository):
             row = conn.execute(
                 "SELECT span_id FROM agent_steps "
                 "WHERE run_id=? AND name='llm_chat' AND iteration=? "
-                "AND status='running' ORDER BY id DESC LIMIT 1",
+                "AND status IN ('running','error') ORDER BY id DESC LIMIT 1",
                 (run_id, iteration),
             ).fetchone()
             if not row:

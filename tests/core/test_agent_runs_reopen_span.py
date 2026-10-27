@@ -99,3 +99,18 @@ def test_reopen_interrupted_chat_span_ignores_other_round_or_name(
     assert dbm.agent_runs.reopen_interrupted_chat_span("r1", 0) is None
     assert _row(dbm, other_round)["status"] == "running"
     assert _row(dbm, tool_span)["status"] == "running"
+
+
+def test_reopen_interrupted_chat_span_matches_error_row(dbm: DatabaseManager):
+    """重试后的 error chat 行也可复用，避免同 iteration 再写一条成功行。"""
+    dbm.agent_runs.create_pending("r1", "match")
+    span_id = trace.start_span("r1", "llm_chat", 0, 0)
+    trace.end_span(span_id, status="error", error="boom")
+
+    got = dbm.agent_runs.reopen_interrupted_chat_span("r1", iteration=0)
+
+    assert got == span_id
+    row = _row(dbm, span_id)
+    assert row["status"] == "running"
+    assert row["error"] == ""
+    assert row["ended_at"] == 0
