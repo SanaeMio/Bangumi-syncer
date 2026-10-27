@@ -1133,3 +1133,30 @@ class TestReplayResponseTolerantModel:
         assert all(
             isinstance(tc, trace.ReplayToolCall) for tc in result.missing_tool_calls
         )
+
+
+class TestReplayPrefersLastChatRowWithResponse:
+    """同轮 error chat 行 + 成功 chat 行：replay 必须用成功行。"""
+
+    def test_retry_error_row_does_not_shadow_success(self, dbm):
+        run_id = "run-retry-chat"
+        _write_seed(dbm, run_id, [Message(role="user", content="ctx")])
+        _ensure_run(dbm, run_id)
+
+        # 第一次 LLM 调用失败：error 行，无 response
+        error_span = trace.start_span(run_id, "llm_chat", 0, 0)
+        trace.end_span(error_span, status="error", error="boom")
+
+        # 重试成功：同 iteration 再写一条带 response 的 chat 行
+        _write_llm_chat(
+            dbm, run_id, 0, [], stop_reason="end_turn", content="ok", tokens=7
+        )
+
+        result = trace.replay(run_id)
+
+        # 终局轮（无 tool_calls）不计入 executed_iterations，但 last_response
+        # 必须来自成功行；若仍取第一条 error 行，这里会是 None。
+        assert result.executed_iterations == 0
+        assert result.last_response is not None
+        assert result.last_response.stop_reason == "end_turn"
+        assert result.total_tokens == 7
