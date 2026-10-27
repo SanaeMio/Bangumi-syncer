@@ -702,6 +702,16 @@ def test_check_season_info_in_title(mock_config, mock_database):
 
     assert service._check_season_info_in_title("某番第3季上半", 3) is True
 
+    # 结尾数字形式的续作名（无「第N季」字样）。
+    # Bangumi 11145 = 「バカとテストと召喚獸にっ！」即第二季，
+    # 它既不含第N季也不含 S2；中文名则是「笨蛋，测验，召唤兽2」。
+    # 旧实现判为 False → 后续沿续集链找第 2 季失败 →
+    # 「不存在或集数过多」。
+    assert service._check_season_info_in_title("笨蛋，测验，召唤兽2", 2) is True
+    assert service._check_season_info_in_title("偶像大师 II", 2) is True
+    # 作品编号不得当成季号
+    assert service._check_season_info_in_title("機動戦士ガンダム0083", 2) is False
+
 
 @contextmanager
 def _patched_sync_service_deps():
@@ -1911,3 +1921,65 @@ class TestResolveSeasonEpisodeMediaTypeDispatch:
         )
 
         assert bgm.get_target_season_episode_id.call_args.kwargs["target_ep"] == 9
+
+
+class TestVerifySeasonByRelation:
+    """bangumi-data 命中条目的季度关系验证
+
+    回归 Emby S02E12「バカとテストと召喚獣にっ！」：bangumi-data 精确命中
+    第二季条目（11145），但该原名不含任何季号、日期也对不上，于是被判成
+    「只命中了系列根条目」→ 执行阶段爬续集链找第 2 季 → 链上无下一季 →
+    报「不存在或集数过多」。
+    """
+
+    @staticmethod
+    def _ctx(season: int, subject_id: str = "11145", prequels=None, raise_exc=None):
+        from app.services.matching.steps.bangumi_data import BangumiDataStep
+
+        ctx = MagicMock()
+        ctx.item.season = season
+        ctx.subject_id = subject_id
+        if raise_exc is not None:
+            ctx.bgm.search_previous_subjects.side_effect = raise_exc
+        else:
+            ctx.bgm.search_previous_subjects.return_value = prequels or []
+        return ctx, BangumiDataStep
+
+    def test_one_prequel_confirms_second_season(self):
+        """前传链长度 1 == season-1 → 命中条目就是第二季"""
+        ctx, step = self._ctx(season=2, prequels=[879])
+        assert step._verify_season_by_relation(ctx) is True
+
+    def test_no_prequel_rejects_second_season(self):
+        """无前传 → 命中条目是第一季，不能当第二季用"""
+        ctx, step = self._ctx(season=2, prequels=[])
+        assert step._verify_season_by_relation(ctx) is False
+
+    def test_too_many_prequels_rejects(self):
+        """前传链长度不等于 season-1 → 不是目标季"""
+        ctx, step = self._ctx(season=2, prequels=[1, 2])
+        assert step._verify_season_by_relation(ctx) is False
+
+    def test_third_season_needs_two_prequels(self):
+        ctx, step = self._ctx(season=3, prequels=[1, 2])
+        assert step._verify_season_by_relation(ctx) is True
+
+    def test_max_hops_follows_season(self):
+        """回溯层数按 season-1 给定，避免无谓的深层遍历"""
+        ctx, step = self._ctx(season=3, prequels=[1, 2])
+        step._verify_season_by_relation(ctx)
+        ctx.bgm.search_previous_subjects.assert_called_once_with(11145, max_hops=2)
+
+    def test_exception_falls_back_to_false(self):
+        """关系查询异常 → 按无法确认处理，不引入新的失败面"""
+        ctx, step = self._ctx(season=2, raise_exc=RuntimeError("network"))
+        assert step._verify_season_by_relation(ctx) is False
+
+    def test_missing_subject_id_is_false(self):
+        ctx, step = self._ctx(season=2, subject_id="")
+        assert step._verify_season_by_relation(ctx) is False
+
+    def test_bgm_unavailable_is_false(self):
+        ctx, step = self._ctx(season=2)
+        ctx.bgm = None
+        assert step._verify_season_by_relation(ctx) is False

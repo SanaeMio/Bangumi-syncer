@@ -14,6 +14,48 @@ _SEASON_NUM_RE = re.compile(r"第\s*(\d+)\s*[期季]")
 _SEASON_CN_RE = re.compile(r"第\s*([一二三四五六七八九十]+)\s*[期季]")
 _SEASON_ORDINAL_RE = re.compile(r"(\d+)(?:st|nd|rd|th)\s+season", re.IGNORECASE)
 _SEASON_WORD_RE = re.compile(r"season\s*(\d+)", re.IGNORECASE)
+# 紧贴标题末尾的季号：``XXX2`` / ``XXXⅡ``
+#
+# Bangumi 有条目把续作写成「标题+数字」而**不写**「第N季」字样，实测
+# ``笨蛋，测验，召唤兽2``（11145，第二季）。这类命名的特征是数字直接**紧贴**
+# 在标题本体后面：
+# - 不能允许空格分隔 —— ``機動戦士ガンダム0083``（作品编号）、
+#   ``コードギアス 亡国のアキト 第3章「…」``（章号）之类会被误判成季号，
+#   实测放宽后 L1 黄金集 28 条错配（把短标题条目挤出榜首）；
+# - 数字前必须已有标题本体（``86`` 这种整名是数字的标题不算）。
+_SEASON_TRAILING_RE = re.compile(r"[^\d\s]\s*(\d{1,2})(?![\d])$")
+# 罗马数字季号（``偶像大师 II`` / ``灰与幻想的格林姆迦尔Ⅲ``）
+#
+# 前置字符不能是罗马数字或拉丁字母（避免 ``AIV`` 之类），但允许空格、标点，
+# 也允许直接紧贴汉字（``格林姆迦尔Ⅲ``）。用负向后顾而非「吞一个字符」：
+# 后者在 ``偶像大师 II``（数字前有空格）时会吃掉空格，导致 $ 落空。
+_SEASON_ROMAN_RE = re.compile(
+    r"(?<![\u2160-\u216BA-Za-z])([\u2160-\u216B]|II|III|IV|V|VI)$"
+)
+_ROMAN_VALUES = {
+    "Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5, "Ⅵ": 6, "Ⅶ": 7,
+    "Ⅷ": 8, "Ⅸ": 9, "Ⅹ": 10, "Ⅺ": 11, "Ⅻ": 12,
+    "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6,
+}  # fmt: skip
+
+
+def _trailing_season(text: str) -> int | None:
+    """标题**结尾紧贴**的季号（``笨蛋，测验，召唤兽2`` → 2；``86`` → None）
+
+    只认尾部数字/罗马数字，且必须紧贴标题本体（不隔空格），避免把作品编号
+    （``ガンダム0083``）与章号（``第3章``）当成季号。
+    """
+    stripped = text.rstrip()
+    m = _SEASON_ROMAN_RE.search(stripped)
+    if m:
+        return _ROMAN_VALUES.get(m.group(1))
+    m = _SEASON_TRAILING_RE.search(stripped)
+    if m:
+        n = int(m.group(1))
+        # 只接受「像季号」的值（2-12）；0083 这类多位编号已由上界排除
+        if 2 <= n <= 12:
+            return n
+    return None
 
 
 def extract_explicit_season(title: str) -> int | None:
@@ -23,7 +65,8 @@ def extract_explicit_season(title: str) -> int | None:
     - 明确声明第 N 季时返回 N（>=1）
     - 标题不含季度声明时返回 None（可能是第一季本体，也可能是总集篇等）
 
-    覆盖形式：第 X 季 / 第 X 期（阿拉伯与中文数字）、Xnd/Xrd/Xth season、Season X
+    覆盖形式：第 X 季 / 第 X 期（阿拉伯与中文数字）、Xnd/Xrd/Xth season、Season X，
+    以及**标题结尾紧贴的季号**（``笨蛋，测验，召唤兽2`` → 2、``XXX II`` → 2）。
 
     注意：标题里若出现**多个互相矛盾**的季号（如既有 "Season 1" 又有
     "第二季"，真实媒体库存在这种脏数据），本函数按模式优先级返回**首个**
@@ -54,7 +97,8 @@ def extract_explicit_season(title: str) -> int | None:
     m = _SEASON_WORD_RE.search(text)
     if m:
         return int(m.group(1))
-    return None
+    # 标题结尾的季号（无「第N季」字样）
+    return _trailing_season(text)
 
 
 def extract_season_candidates(title: str) -> set[int]:
@@ -95,5 +139,9 @@ def extract_season_candidates(title: str) -> set[int]:
 
     for m in _SEASON_WORD_RE.finditer(text):
         found.add(int(m.group(1)))
+
+    trailing = _trailing_season(text)
+    if trailing is not None:
+        found.add(trailing)
 
     return found

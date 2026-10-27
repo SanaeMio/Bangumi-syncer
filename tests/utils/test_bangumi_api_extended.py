@@ -1273,6 +1273,37 @@ class TestExtractExplicitSeason:
         assert extract_explicit_season("凡人修仙传") is None
         assert extract_explicit_season("") is None
 
+    def test_trailing_number_is_season(self):
+        """标题结尾紧贴的季号（Bangumi 常见写法，不写「第N季」）
+
+        回归：``笨蛋，测验，召唤兽2``（bgm 11145 = 第二季）被判成「未声明季号」
+        → is_season_matched_id=False → 沿续集链找「第 2 季」→ 链上无下一季
+        → 「不存在或集数过多」。Emby S02E12 因此同步失败。
+        """
+        assert extract_explicit_season("笨蛋，测验，召唤兽2") == 2
+        assert extract_explicit_season("辉夜大小姐想让我告白2") == 2
+
+    def test_trailing_season_requires_adjacency(self):
+        """只有**紧贴**标题本体的尾部数字才算季号
+
+        放宽到空格分隔会让作品编号（ガンダム0083）与章号（第3章「…」）被当成
+        季号 —— 实测 L1 黄金集出现 28 条错配（短标题条目被挤出榜首）。
+        """
+        assert extract_explicit_season("機動戦士ガンダム0083") is None
+        assert extract_explicit_season("機動戦士ガンダム0083 ジオンの残光") is None
+        assert (
+            extract_explicit_season(
+                "コードギアス 亡国のアキト 第3章「輝くもの天より堕つ」"
+            )
+            is None
+        )
+        # 整名就是数字的标题没有「标题本体」，不算季号
+        assert extract_explicit_season("86") is None
+
+    def test_trailing_roman_numeral_is_season(self):
+        assert extract_explicit_season("偶像大师 II") == 2
+        assert extract_explicit_season("灰与幻想的格林姆迦尔Ⅲ") == 3
+
 
 class TestExtractSeasonNumber:
     """_extract_season_number：从条目名与中文名中提取季编号

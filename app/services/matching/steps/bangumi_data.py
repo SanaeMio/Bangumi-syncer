@@ -129,6 +129,10 @@ class BangumiDataStep(MatchStepBase):
                 )
 
             # 季度ID可信度判定
+            #
+            # _verify_season_by_relation 需要读 ctx.subject_id 做前传链查询，
+            # 故先回填命中 ID（本步骤是终止步骤，ctx.subject_id 的最终值不变）。
+            ctx.subject_id = bangumi_data_id
             is_season_matched_id = self._judge_season_matched_id(
                 ctx, matched_title, date_matched, matched_item
             )
@@ -137,7 +141,6 @@ class BangumiDataStep(MatchStepBase):
             if guard_diff is not None and guard_diff > DATE_GUARD_LOW_CONFIDENCE_DAYS:
                 date_guard = "low_confidence"
 
-            ctx.subject_id = bangumi_data_id
             ctx.match_stage = "bangumi_data"
             ctx.is_season_matched_id = is_season_matched_id
             outputs = {
@@ -229,11 +232,24 @@ class BangumiDataStep(MatchStepBase):
     ) -> bool:
         """判断 bangumi-data 命中的 ID 是否为特定季度ID
 
-        判定与下游季节过滤器（_filter_candidates_by_season / _candidate_season_numbers）
-        共用同一证据基：除了检查选定的 matched_title，还扫描命中条目的全部标题变体。
-        命中条目任一变体声明了目标季号即视为季度可信，避免「过滤器放行、季度检查却因
-        首个变体季号模糊而拒绝」的自相矛盾（issue #280：11145 的 zh-Hans[0] 为
-        「笨蛋，测验，召唤兽2」不含季号，但另一变体「笨蛋测试召唤兽 第二季」声明了第2季）。
+        四条判据依次尝试（任一成立即认为「命中的就是目标季」）：
+        1. 请求本身是第一季 → 无需判断；
+        2. 日期匹配 → 命中条目与请求同档期，视为同季；
+        3. 标题含季度信息 —— 判定与下游季节过滤器
+           （_filter_candidates_by_season / _candidate_season_numbers）共用同一
+           证据基：先扫描命中条目的全部标题变体，任一变体声明了目标季号即视为
+           季度可信，避免「过滤器放行、季度检查却因首个变体季号模糊而拒绝」的
+           自相矛盾（issue #280：11145 的 zh-Hans[0] 为「笨蛋，测验，召唤兽2」
+           不含季号，但另一变体「笨蛋测试召唤兽 第二季」声明了第2季）；兜底再查
+           选定的 matched_title 本身（``第2季`` / ``S2`` / 结尾数字 ``XXX2`` 等）。
+        4. 关联关系验证（本函数下方）—— 标题启发式的兜底。
+
+        为什么需要第 4 条：Bangumi 大量续作的原名**完全不含季号**，例如
+        ``バカとテストと召喚獣にっ！``（11145 = 第二季，仅靠 ``にっ！`` 暗示
+        续作）、``WORKING'!!``。这类条目即使 bangumi-data 精确命中，前三条
+        也全部为假 → 被误判成「命中的只是系列根条目」→ 执行阶段去爬续集链
+        找第 N 季 → 链上已无下一季 → 报「不存在或集数过多」。Emby 推
+        S02E12 的失败即由此而来。
         """
         if ctx.item.season <= 1:
             return True
@@ -246,4 +262,51 @@ class BangumiDataStep(MatchStepBase):
         ):
             return True
         # 兜底：检查选定的标题本身是否含季度信息
-        return ctx.service._check_season_info_in_title(matched_title, ctx.item.season)
+        if ctx.service._check_season_info_in_title(matched_title, ctx.item.season):
+            return True
+        return BangumiDataStep._verify_season_by_relation(ctx)
+
+    @staticmethod
+    def _verify_season_by_relation(ctx: MatchContext) -> bool:
+        """用 Bangumi 关联关系确认「命中条目就是第 N 季」
+
+        判据：沿「前传」链回溯，若链上条目数 == season - 1，则命中条目本身
+        就是第 season 季（第一季无前传 → 命中条目是第 1 季；有一条前传链
+        → 命中条目是第 2 季）。权威关系优于标题正则，且不受续作命名风格影响。
+
+        仅在 ``season > 1`` 且前面三条判据都不成立时调用，因此这一次关系查询
+        只发生在「本来就会失败」的路径上 —— 不增加正常请求的开销。Archive
+        启用时走本地短路，几乎零 API 成本。
+
+        任何异常（网络 / 归档不可用）都按「无法确认」处理，回落到原有行为
+        （is_season_matched_id=False，由执行阶段爬续集链），不让新逻辑引入
+        新的失败面。
+        """
+        season = ctx.item.season
+        subject_id = ctx.subject_id
+        if not subject_id:
+            return False
+        try:
+            bgm = ctx.bgm
+            if bgm is None:
+                return False
+            prequels = bgm.search_previous_subjects(
+                int(subject_id), max_hops=max(1, season - 1)
+            )
+            prequels = prequels or []
+        except Exception as e:  # noqa: BLE001 — 关系不可用时回落到原有行为
+            logger.debug(f"季度关系验证跳过（关系查询失败）: {e!r}"[:120])
+            return False
+
+        # 前传链长度 == season - 1 → 命中条目恰为第 season 季
+        if len(prequels) == season - 1:
+            logger.debug(
+                f"季度关系验证通过: subject_id={subject_id}, season={season}, "
+                f"前传链={prequels}"
+            )
+            return True
+        logger.debug(
+            f"季度关系验证未通过: subject_id={subject_id}, season={season}, "
+            f"前传链长度={len(prequels)}"
+        )
+        return False
