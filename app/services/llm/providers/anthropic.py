@@ -28,7 +28,11 @@ from app.services.llm.models import (
     ToolUseBlock,
     Usage,
 )
-from app.services.llm.providers.base import BaseProvider, open_stream_response
+from app.services.llm.providers.base import (
+    BaseProvider,
+    ProviderStreamError,
+    open_stream_response,
+)
 from app.services.llm.sse import SSEEvent, iter_sse_events
 
 
@@ -216,6 +220,22 @@ class AnthropicProvider(BaseProvider):
                 yield _attach_model(stop_chunk)
             elif etype == "message_stop":
                 return
+            elif etype == "error":
+                # Anthropic 在 200 流内用 event: error 报告
+                # overloaded / api_error / rate_limit_error 等；必须抛出，
+                # 不能静默结束让调用方把半截输出当成功。
+                error = payload.get("error") or {}
+                error_type = str(error.get("type") or "")
+                message = str(error.get("message") or payload)
+                raise ProviderStreamError(
+                    message,
+                    retryable=error_type
+                    in {
+                        "overloaded_error",
+                        "api_error",
+                        "rate_limit_error",
+                    },
+                )
             else:
                 # 宽容处理：SSE 规范允许未知事件类型，忽略并记录
                 logger.debug("忽略未知 SSE 事件类型：%r", etype)

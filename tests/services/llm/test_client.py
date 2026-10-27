@@ -1637,3 +1637,95 @@ class TestOpenAIResponsesProviderFactory:
 
         with pytest.raises(ValidationError):
             LLMConfigUpdate(provider=cast("Any", "banana"))
+
+
+# ===================================================================
+# ProviderStreamError：provider 200 流内错误事件 → client 重试/终态
+# ===================================================================
+
+
+def _stream_error_then_success(exc, chunks, calls):
+    """首次调用抛 provider 错误，第二次调用产出成功事件。"""
+
+    async def _gen(messages, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise exc
+        for chunk in chunks:
+            yield chunk
+
+    return _gen
+
+
+class TestProviderStreamErrorMapping:
+    """Provider 流内错误事件的重试 / 终态映射。"""
+
+    @pytest.mark.asyncio
+    async def test_retryable_provider_error_retries_before_first_chunk(
+        self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
+    ):
+        from app.services.llm.providers.base import ProviderStreamError
+
+        calls: list[dict] = []
+        mock_sleep = AsyncMock()
+        exc = ProviderStreamError("overloaded", retryable=True)
+        chunks = [
+            StreamChunk(type="text_delta", text="ok"),
+            StreamChunk(type="stop", stop_reason="end_turn"),
+        ]
+
+        with patch(_sleep_patch_path(), mock_sleep):
+            client = _build_client()
+            client._provider.stream = _stream_error_then_success(exc, chunks, calls)
+            response = await collect(
+                client.stream_chat([Message(role="user", content="Q")])
+            )
+
+        assert response.content == "ok"
+        assert len(calls) == 2
+        assert mock_sleep.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_terminal_provider_error_does_not_retry(
+        self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
+    ):
+        from app.services.llm.client import LLMCallError
+        from app.services.llm.providers.base import ProviderStreamError
+
+        calls: list[dict] = []
+        mock_sleep = AsyncMock()
+        exc = ProviderStreamError("invalid request", retryable=False)
+
+        with patch(_sleep_patch_path(), mock_sleep):
+            client = _build_client()
+            client._provider.stream = _stream_error_then_success(exc, [], calls)
+            with pytest.raises(LLMCallError) as exc_info:
+                await collect(client.stream_chat([Message(role="user", content="Q")]))
+
+        assert exc_info.value.retryable is False
+        assert len(calls) == 1
+        assert mock_sleep.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_provider_error_after_first_chunk_no_retry(
+        self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
+    ):
+        from app.services.llm.client import LLMCallError
+        from app.services.llm.providers.base import ProviderStreamError
+
+        calls: list[dict] = []
+        mock_sleep = AsyncMock()
+        exc = ProviderStreamError("overloaded", retryable=True)
+
+        with patch(_sleep_patch_path(), mock_sleep):
+            client = _build_client()
+            client._provider.stream = _stream_partial_then_error(
+                [StreamChunk(type="text_delta", text="partial")], exc, calls
+            )
+            with pytest.raises(LLMCallError) as exc_info:
+                await collect(client.stream_chat([Message(role="user", content="Q")]))
+
+        assert exc_info.value.retryable is True
+        assert len(calls) == 1
+        assert mock_sleep.await_count == 0
+        assert mock_log_usage.call_args[1]["status"] == "error"
