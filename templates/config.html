@@ -2479,72 +2479,37 @@
   async function testSummaryJob(name) {
     var btn = event && event.target ? event.target.closest('button') : null
     await setButtonLoading(btn, '测试中...', async () => {
-      await streamSummaryTest(name)
-    })
-  }
-
-  // 流式试生成：SSE 增量渲染摘要文本，done 后展示用量/延迟（T9）
-  function streamSummaryTest(name) {
-    return new Promise((resolve) => {
-      var url =
-        '/api/summary/jobs/' + encodeURIComponent(name) + '/test/stream'
-      var source = new EventSource(url)
-      var text = ''
-      var finished = false
-      var finalize = () => {
-        if (finished) return
-        finished = true
-        source.close()
-        resolve()
-      }
-
-      document.getElementById('summary-test-modal-job').textContent = name
-      document.getElementById('summary-test-modal-info').innerHTML =
-        '流式生成中...'
-      document.getElementById('summary-test-modal-text').textContent = ''
-      showModal('summaryTestResultModal')
-
-      source.onmessage = (ev) => {
-        var data
-        try {
-          data = JSON.parse(ev.data)
-        } catch (e) {
-          return // 非 JSON 数据（如心跳）忽略
-        }
-        if (data.type === 'delta') {
-          text += data.text || ''
-          document.getElementById('summary-test-modal-text').textContent = text
-        } else if (data.type === 'done') {
+      try {
+        var d = await apiFetch(
+          '/api/summary/jobs/' + encodeURIComponent(name) + '/test',
+          { method: 'POST' },
+        )
+        if (d.success) {
+          document.getElementById('summary-test-modal-job').textContent = name
           document.getElementById('summary-test-modal-info').innerHTML =
             '模型: ' +
-            escapeHtml(data.model || '') +
+            escapeHtml(d.model) +
             ' | Token: P' +
-            data.prompt_tokens +
+            d.prompt_tokens +
             '/C' +
-            data.completion_tokens +
+            d.completion_tokens +
             '/T' +
-            data.total_tokens +
+            d.total_tokens +
             ' | 延迟: ' +
-            data.latency_ms +
+            d.latency_ms +
             'ms | 记录数: ' +
-            data.record_count
-          if (!text) {
-            document.getElementById('summary-test-modal-text').textContent =
-              '（无输出）'
-          }
-          finalize()
-        } else if (data.type === 'error') {
-          document.getElementById('summary-test-modal-info').innerHTML = ''
-          showAlert('测试失败: ' + (data.message || '未知错误'), 'danger')
-          finalize()
+            d.record_count
+          document.getElementById('summary-test-modal-text').textContent =
+            d.summary_text || '（无输出）'
+          showModal('summaryTestResultModal')
+        } else {
+          showAlert(
+            '测试失败: ' + (d.error_message || d.message || '未知错误'),
+            'danger',
+          )
         }
-        // type === 'thinking' 暂不展示，忽略即可
-      }
-
-      source.onerror = () => {
-        if (finished) return // done/error 后主动 close 触发的 onerror
-        showAlert('测试连接中断', 'danger')
-        finalize()
+      } catch (e) {
+        showAlert('测试请求失败: ' + e.message, 'danger')
       }
     })
   }
