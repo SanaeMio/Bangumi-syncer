@@ -29,6 +29,13 @@ EPISODES = {
 }
 
 
+class _ArchiveMiss:
+    """让 _find_episode_by_sort 跳过 archive 短路、落到 mock 的 get_episodes"""
+
+    hit = False
+    data = None
+
+
 def _make_api(chain):
     """真实 BangumiApi 实例，仅替换网络相关方法"""
     api = BangumiApi(username="u", access_token="t")
@@ -114,3 +121,19 @@ class TestSeasonNumberSemantics:
         with patch.object(api, "_episode_lookup_failed", return_value=(None, None)):
             result = api._find_multi_season_episode(100, 2, 1, 2, "", None)
         assert result == (200, 2001)
+
+    def test_starting_subject_is_target_season_locates_in_place(self):
+        """issue #280: 命中条目本身就是目标季（如匹配到的是第2季条目 200 本身，
+        而非其第1季）时，应在条目内直接定位，而非一律当作第1季向前遍历续集。
+
+        200 无续集，旧实现 `next_id is None → 立即失败`；修复后先按目标季号在
+        起点条目内定位，返回 (200, 2001)，不再走到 _episode_lookup_failed。
+        """
+        api = _make_api({200: None})  # 200 无续集
+        api._archive.try_get_episodes = lambda *a, **k: _ArchiveMiss()
+        with patch.object(
+            api, "_episode_lookup_failed", return_value=(None, None)
+        ) as failed:
+            result = api._find_multi_season_episode(200, 2, 1, 2, "", None)
+        assert result == (200, 2001)
+        failed.assert_not_called()
