@@ -83,7 +83,7 @@ async def trigger_upgrade(
         raise HTTPException(status_code=409, detail="已有升级任务进行中")
 
     try:
-        upgrade_id = await upgrade_service.start_upgrade(req.target_version)
+        upgrade_id = await upgrade_service.start_upgrade()
         return UpgradeTriggerResponse(status="started", upgrade_id=upgrade_id)
     except RuntimeError as e:
         return UpgradeTriggerResponse(status="error", detail=str(e))
