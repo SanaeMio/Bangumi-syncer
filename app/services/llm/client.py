@@ -21,7 +21,7 @@ from .models import (
     Usage,
 )
 from .providers.anthropic import AnthropicProvider
-from .providers.base import BaseProvider
+from .providers.base import BaseProvider, ProviderStreamError
 from .providers.openai_compat import OpenAICompatProvider
 from .providers.openai_responses import OpenAIResponsesProvider
 
@@ -334,6 +334,30 @@ class LLMClient:
                         f"{_format_error_detail(e)}"
                     )
                     raise
+                if isinstance(e, ProviderStreamError) and not started:
+                    # provider 在 200 流内报告的错误事件：未产出内容时可按
+                    # retryable 重试；已产出内容走下方 started 分支，不重试但报错。
+                    error_detail = _format_error_detail(e)
+                    if e.retryable and attempt < self.MAX_RETRIES:
+                        delay = _retry_delay(e, self.RETRY_BACKOFF[attempt])
+                        logger.warning(
+                            f"LLM stream retry {attempt + 1}/{self.MAX_RETRIES} "
+                            f"after {delay}s: {error_detail}"
+                        )
+                        await asyncio.sleep(delay)
+                        attempt += 1
+                        t_attempt = time.time()
+                        continue
+                    logger.error(
+                        f"LLM stream 收到 provider 错误事件，不再重试: {error_detail}"
+                    )
+                    self._log_error(
+                        error_detail,
+                        job_id=job_id,
+                        job_name=job_name,
+                        latency_ms=int((time.time() - t_attempt) * 1000),
+                    )
+                    raise LLMCallError(error_detail, retryable=e.retryable) from e
                 if started:
                     # 已产出内容：不回滚、不重试，包装为可重试错误抛出
                     latency_ms = int((time.time() - t_attempt) * 1000)
