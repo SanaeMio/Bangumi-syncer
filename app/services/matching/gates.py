@@ -147,6 +147,23 @@ EPISODE_ALREADY_RESOLVED = Gate(
 )
 
 
+def _movie_subject_marked(ctx: Any, prev: Any = None) -> bool:
+    """剧场版正片已按「只标条目在看」处理，无需跨季回退。
+
+    剧场版是整片观看，不存在「第几集」的概念。fongmi 一类客户端推电影时固定
+    带 ``season=1, episode=1``，若让它走跨季链查找，会按 ``sort=1`` 去别的
+    季里找章节，命中就错标、找不到就报「不存在或集数过多」。
+    """
+    return bool(prev and prev.get("movie_subject_marked"))
+
+
+MOVIE_SUBJECT_MARKED = Gate(
+    name="movie_subject_marked",
+    describe="剧场版正片只标条目在看，无需跨季回退",
+    check=_movie_subject_marked,
+)
+
+
 # ============================================================================
 # 登记表：全部执行门的清单（供文档 / 测试 / 排查枚举）
 # ============================================================================
@@ -158,6 +175,7 @@ ALL_GATES: tuple[Gate, ...] = (
     NO_VALID_DATE,
     EXACT_SEARCH_HIT,
     EPISODE_ALREADY_RESOLVED,
+    MOVIE_SUBJECT_MARKED,
 )
 
 #: 门名 → Gate，便于按 trace 里的 gate 字段反查

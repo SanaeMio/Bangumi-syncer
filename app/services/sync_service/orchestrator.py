@@ -206,12 +206,17 @@ class SyncOrchestrator:
             other_results = self._sync._mark_episode_for_other_accounts(
                 item, bgm, bgm_se_id, bgm_ep_id, bgm_title
             )
+            # 无单集（剧场版正片）时 mark_status 是「在看」语义，文案随之切换
             account_outcomes = self._sync._build_account_outcomes(
                 item,
                 bgm,
                 other_results,
                 "success",
-                self._sync._format_mark_status_message(mark_status),
+                (
+                    self._sync._format_mark_status_message(mark_status)
+                    if bgm_ep_id
+                    else self._sync._format_watching_status_message(mark_status)
+                ),
                 primary_mark_status=mark_status,
             )
 

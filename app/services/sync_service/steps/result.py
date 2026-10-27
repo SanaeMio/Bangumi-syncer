@@ -50,7 +50,13 @@ class ResultStep(ExecutionStepBase):
         # 回填最终剧集 ID 到 trace
         trace.final_episode_id = str(bgm_ep_id)
 
-        result_message = ctx.service._format_mark_status_message(mark_status)
+        # 无单集（剧场版正片）时用「在看」文案：mark_status 语义不同
+        # （0=无需变更，1=已设为在看），说「已标记为看过」会误导用户。
+        result_message = (
+            ctx.service._format_mark_status_message(mark_status)
+            if bgm_ep_id
+            else ctx.service._format_watching_status_message(mark_status)
+        )
         trace.final_action = str(mark_status)
         trace.final_status = "success"
         trace.final_message = result_message
