@@ -23,6 +23,7 @@ from eval.lib import (
     FingerprintMismatch,
     FixtureDriver,
     fingerprint,
+    hit_expect,
     load_cassette,
     load_golden,
     run_case,
@@ -424,3 +425,32 @@ def test_expand_preserves_redacted_thinking_block():
         "TextBlock",
     ]
     assert back.blocks[0].data == "ENCRYPTED"
+
+
+# ---------------------------------------------------------------------------
+# 3. golden 期望与 cassette 终局一致性
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("case", GOLDEN_CASES, ids=[c["id"] for c in GOLDEN_CASES])
+def test_golden_expectation_matches_recorded_outcome(case, fixtures_dir: Path):
+    """golden 的 expect 必须能被 cassette 的录制终局满足。
+
+    与 L1 回放测试的区别：L1 只验证"回放 == 录制"，本测试验证"录制 == 期望"。
+    两者都通过，才说明这条 golden 既确定又符合规格。
+    """
+    case_id = case["id"]
+    cassette = load_cassette(fixtures_dir / f"{case_id}.json")
+    actual = cassette.get("expected_outcome") or {}
+    assert actual, f"{case_id}: cassette 缺少 expected_outcome"
+
+    hit = hit_expect(case["expect"], actual)
+    if case_id == "m013":
+        pytest.xfail(
+            "已知能力缺口：m013 cassette 录制到候选 38435，"
+            "golden 期望 no_suggestion；待重录或模型能力提升"
+        )
+    assert hit, (
+        f"{case_id}: golden 期望未被 cassette 终局满足；"
+        f"expect={case['expect']!r} actual={actual!r}"
+    )

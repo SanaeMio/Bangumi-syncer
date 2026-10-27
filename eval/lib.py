@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import tempfile
@@ -463,7 +464,25 @@ def _maybe_patch_legacy_search(bgm) -> None:
             for it in items
         ]
 
+    async def _legacy_search_async(
+        title,
+        start_date="",
+        end_date="",
+        limit=5,
+        list_only=True,
+        subject_types=None,
+        **_kwargs,
+    ):
+        # 复用同步实现；eval 的异步链路（llm_assist）走这里。
+        return await asyncio.to_thread(
+            _legacy_search,
+            title,
+            subject_types=subject_types,
+            limit=limit,
+        )
+
     bgm.search = _legacy_search
+    bgm.search_async = _legacy_search_async
 
 
 def collect_outcome(dbm, run_id: str, sync_record_id: int, notifier) -> dict:
