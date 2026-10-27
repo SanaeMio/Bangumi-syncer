@@ -16,6 +16,17 @@ from app.services.llm.models import Message, StreamChunk
 from app.utils.http_client import create_async_client
 
 
+class ProviderStreamError(Exception):
+    """Provider 在 200 流内报告的错误事件。
+
+    ``retryable`` 由 provider 按错误类型判定；LLMClient 统一决定重试或终态。
+    """
+
+    def __init__(self, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
 @asynccontextmanager
 async def open_stream_response(
     *,
