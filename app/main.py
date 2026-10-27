@@ -13,6 +13,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
+from .api.agent_runs import router as agent_runs_router
 from .api.airing_calendar import router as airing_calendar_router
 from .api.app_release import router as app_release_router
 from .api.auth import router as auth_router
@@ -231,6 +232,7 @@ app.include_router(bangumi_accounts_router)
 app.include_router(bangumi_archive_router)
 app.include_router(bangumi_oauth_router)
 app.include_router(bangumi_replay_router)
+app.include_router(agent_runs_router)
 app.include_router(airing_calendar_router)
 
 
