@@ -16,6 +16,7 @@ from app.services.matching.context import MatchContext
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 from app.services.sync_service.match_trace import MatchCandidate
 from app.utils.bangumi_constants import (
+    EPISODE_TYPE_NORMAL,
     SUBJECT_TYPE_ANIME,
     SUBJECT_TYPE_REAL,
 )
@@ -218,6 +219,20 @@ class APISearchStep(MatchStepBase):
                 bgm_data, is_movie=is_movie_request, limit=15
             )
 
+            # 集数一致性加权（可选，默认关闭）
+            #
+            # 放在 platform 排序之后、post_search 改选之前：改选是领域逻辑
+            # （季度/媒体类型/关联条目），必须以加权后的队首为起点才有意义；
+            # 而加权本身只是给「章节数装得下请求集数」的候选一次微调。
+            #
+            # 只在 season 与 episode 都有效时参与：episode 是逐集推送的，
+            # 第一次同步（E01）时集数几乎对任何条目都成立，没有区分度。
+            episode_weight_notes: list[str] = []
+            if self._episode_weight_enabled():
+                bgm_data, episode_weight_notes = self._apply_episode_weight(
+                    bgm_data, item, bgm
+                )
+
             original_top = bgm_data[0] if bgm_data else {}
             original_top_id = original_top.get("id")
             original_top_name = (
@@ -370,6 +385,13 @@ class APISearchStep(MatchStepBase):
                     "total_candidates": len(bgm_data),
                     "is_archive_hit": is_archive_hit,
                     "score": verdict.score,
+                    # 集数一致性加权的调整说明（仅在开关开启且有调整时出现），
+                    # 便于排查「为什么这条候选排到了后面」
+                    **(
+                        {"episode_weight": episode_weight_notes}
+                        if episode_weight_notes
+                        else {}
+                    ),
                     **(
                         {"arbiter": verdict.decision.to_dict()}
                         if verdict.decision is not None
@@ -405,6 +427,62 @@ class APISearchStep(MatchStepBase):
                 request_params=request_params,
                 is_terminal=True,
             )
+
+    # ------------------------------------------------------------------
+    # 集数一致性加权（可选）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _episode_weight_enabled() -> bool:
+        """读 ``[matching] episode_count_weight``（默认关闭）
+
+        延迟导入 config_manager：与 sync_service 内部使用同一引用，使测试
+        patch("app.services.sync_service.config_manager") 生效。
+        """
+        from app.services.sync_service import config_manager
+
+        try:
+            return bool(
+                config_manager.get("matching", "episode_count_weight", fallback=False)
+            )
+        except Exception as e:  # noqa: BLE001 — 配置读取失败按关闭处理
+            logger.debug(f"读取 episode_count_weight 失败，按关闭处理: {e!r}"[:120])
+            return False
+
+    @staticmethod
+    def _apply_episode_weight(
+        bgm_data: list[dict[str, Any]], item: Any, bgm: Any
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """对候选按集数一致性微调顺序
+
+        章节数取候选条目自己的本篇章节数：候选本身就是某个季条目。
+        取不到（条目无章节数据 / 查询失败 / 无可用 API 实例）时本候选不加不减。
+        """
+        from app.services.matching.episode_weight import apply_episode_count_weight
+
+        target_ep = getattr(item, "episode", None)
+        if bgm is None or not target_ep:
+            return bgm_data, []
+
+        def _count(subject_id: Any) -> int | None:
+            episodes = bgm.get_episodes(int(subject_id))
+            data = episodes.get("data") if isinstance(episodes, dict) else None
+            if not data:
+                return None
+            # 只数本篇（type=0）：OVA/SP 章节不该计入正片集数
+            normals = [
+                e
+                for e in data
+                if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+            ]
+            return len(normals) or None
+
+        ordered, notes = apply_episode_count_weight(
+            bgm_data, int(target_ep), _count, limit=5
+        )
+        if notes:
+            logger.debug(f"集数一致性加权: {'; '.join(notes)}")
+        return ordered, notes
 
     # ------------------------------------------------------------------
     # 置信度 / 裁决（P3）
