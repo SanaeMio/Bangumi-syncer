@@ -430,7 +430,13 @@ def replay(run_id: str) -> ReplayResult:
 
     for it in sorted(steps_by_iter.keys()):
         isteps = steps_by_iter[it]
-        chat = next((s for s in isteps if s["name"] == "llm_chat"), None)
+        chat_rows = [s for s in isteps if s["name"] == "llm_chat"]
+        # 同轮可能先写 error 行、重试后再写成功行：必须选最后一条带 response
+        # 的行，否则 error 行会让 replay 从该轮 break、丢掉已完成轮次。
+        chat = next(
+            (s for s in reversed(chat_rows) if _parse_response(s) is not None),
+            chat_rows[-1] if chat_rows else None,
+        )
         if chat is None:
             # 该轮无 llm_chat（异常数据）：在该轮 break，交回调用方从该轮重新 chat
             logger.warning(
