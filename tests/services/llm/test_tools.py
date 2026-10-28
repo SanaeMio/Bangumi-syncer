@@ -1598,12 +1598,19 @@ async def test_execute_batch_non_idempotent_read_tool_runs_serially():
 async def test_execute_batch_idempotent_write_tool_runs_in_parallel():
     """新语义：access=write + idempotent=True 的写工具按幂等处理，并行执行。"""
     reg = ToolRegistry()
-    starts: dict[str, float] = {}
+    # 并发探针：记录同时执行的 handler 峰值，避免墙钟阈值在 CI 上抖动
+    active = 0
+    peak = 0
 
     async def make_handler(key):
         async def handler(args):
-            starts[key] = asyncio.get_event_loop().time()
-            await asyncio.sleep(0.05)
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            try:
+                await asyncio.sleep(0.05)
+            finally:
+                active -= 1
             return key
 
         return handler
@@ -1620,12 +1627,9 @@ async def test_execute_batch_idempotent_write_tool_runs_in_parallel():
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("a", "b")]
-    t0 = asyncio.get_event_loop().time()
     await reg.execute_batch(calls)
-    elapsed = asyncio.get_event_loop().time() - t0
-    # 并行：总耗时约等于单条（若串行则 >= 0.09）
-    assert elapsed < 0.09
-    assert max(starts.values()) - min(starts.values()) < 0.04
+    # 并行：两个 handler 必须同时在执行（若串行则峰值为 1）
+    assert peak == 2
 
 
 # ---------------------------------------------------------------------------
