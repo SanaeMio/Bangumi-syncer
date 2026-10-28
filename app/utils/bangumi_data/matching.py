@@ -74,7 +74,7 @@ class MatchingMixin:
         season: int = 1,
         media_type: str = "",
         candidates_out: list[dict] | None = None,
-    ) -> tuple[str, str, bool] | None:
+    ) -> tuple[str, str, bool, dict | None] | None:
         """
         根据标题和其他信息查找 bangumi id
 
@@ -90,8 +90,12 @@ class MatchingMixin:
                 为取候选再全表扫描一次。仅在真正发生扫描时写入。
 
         Returns:
-            找到匹配的 (bangumi_id, matched_title, date_matched) 或 None
+            找到匹配的 (bangumi_id, matched_title, date_matched, matched_item) 或 None
             date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
+            matched_item: 命中条目本身的 bangumi-data 原始数据（含 title 与
+                titleTranslate 全量变体）。季度可信度判定需要它来与下游季节
+                过滤器共用同一证据基——仅看选定 matched_title 会漏掉「首变体
+                无季号、但另一变体声明了目标季」的情况（issue #280）。
         """
         logger.debug(
             f"正在查找番剧 ID: {title=}, {ori_title=}, {release_date=}, {season=}, {media_type=}"
@@ -132,7 +136,7 @@ class MatchingMixin:
         release_date: str,
         media_type: str = "",
         season: int = 1,
-    ) -> tuple[str, str, bool] | None:
+    ) -> tuple[str, str, bool, dict] | None:
         """尝试通过标题索引进行精确匹配（O(1)查找，避免线性扫描）
 
         :param season: 请求的季度。>1 时同一标题键下可能同时挂着本季与**上一季**
@@ -177,7 +181,7 @@ class MatchingMixin:
                         diff = abs((d1 - d2).days)
                         if diff < min_diff:
                             min_diff = diff
-                            best = (bangumi_id, matched_key, True)
+                            best = (bangumi_id, matched_key, True, item)
                 if best:
                     if min_diff <= 180:
                         return best
@@ -194,10 +198,10 @@ class MatchingMixin:
                     )
                     if best:
                         item, bangumi_id, matched_key = best
-                        return (bangumi_id, matched_key, False)
+                        return (bangumi_id, matched_key, False, item)
                 # 无 media_type 或择优未命中（候选均不匹配该类型），回退首个
                 first = exact_candidates[0]
-                return (first[1], first[2], False)
+                return (first[1], first[2], False, first[0])
 
         return None
 
@@ -499,7 +503,7 @@ class MatchingMixin:
         partial_matches: list,
         release_date: str,
         season: int,
-    ) -> tuple[str, str, bool] | None:
+    ) -> tuple[str, str, bool, dict | None] | None:
         """从完全匹配结果中选择最佳匹配
 
         Returns:
@@ -584,7 +588,7 @@ class MatchingMixin:
                         logger.debug(
                             f"因完全匹配结果日期差异过大，采纳日期择优番剧: {matched_title} (日期差距 {diff} 天)"
                         )
-                        return (pm_id, matched_title, True)
+                        return (pm_id, matched_title, True, pm_item)
 
                     logger.debug(
                         f"拒绝日期择优: {pm_item.get('title', '')} 虽然日期接近，但名称差异过大"
@@ -597,7 +601,12 @@ class MatchingMixin:
                 )
                 matched_title = self._get_best_matched_title(best_exact_match[0])
                 date_matched = season > 1 and min_exact_diff <= 180
-                return (best_exact_match[1], matched_title, date_matched)
+                return (
+                    best_exact_match[1],
+                    matched_title,
+                    date_matched,
+                    best_exact_match[0],
+                )
 
         # 返回最高优先级的匹配结果
         result_item = exact_matches[0][0]
@@ -609,7 +618,7 @@ class MatchingMixin:
         # 获取匹配到的标题
         matched_title = self._get_best_matched_title(result_item)
         # 没有通过日期筛选，标记为非日期匹配
-        return (exact_matches[0][1], matched_title, False)
+        return (exact_matches[0][1], matched_title, False, result_item)
 
     def _pick_season_from_partial(self, partial_matches: list, season: int):
         """从部分匹配里挑出**明确声明了目标季号**的条目（issue #269）。
@@ -629,13 +638,13 @@ class MatchingMixin:
                     f"完全匹配指向其它季，改按季号从部分匹配中采纳: "
                     f"{matched_title} (目标季={season})"
                 )
-                return (match_id, matched_title, True)
+                return (match_id, matched_title, True, match_item)
         return None
 
     def _select_from_partial_matches(
         self,
         partial_matches: list,
-    ) -> tuple[str, str, bool] | None:
+    ) -> tuple[str, str, bool, dict | None] | None:
         """从部分匹配结果中选择最佳匹配（模糊匹配）
 
         Returns:
@@ -667,7 +676,7 @@ class MatchingMixin:
             # 获取匹配到的标题
             matched_title = self._get_best_matched_title(best_match)
             # 模糊匹配标记为非日期匹配
-            return (bangumi_id, matched_title, False)
+            return (bangumi_id, matched_title, False, best_match)
 
         return None
 
@@ -682,7 +691,7 @@ class MatchingMixin:
         season: int = 1,
         media_type: str = "",
         candidates_out: list[dict] | None = None,
-    ) -> tuple[str, str, bool] | None:
+    ) -> tuple[str, str, bool, dict | None] | None:
         """优化的番剧ID查找算法，避免重复计算相似度
 
         candidates_out 见 find_bangumi_id 同名参数：以**最后一次**扫描的结果
@@ -690,8 +699,11 @@ class MatchingMixin:
         等价（递归用原始标题重试时，写入的即原始标题的候选）。
 
         Returns:
-            Optional[tuple[str, str, bool]]: (bangumi_id, matched_title, date_matched) 或 None
+            Optional[tuple[str, str, bool, dict | None]]:
+                (bangumi_id, matched_title, date_matched, matched_item) 或 None
             date_matched: 是否通过日期匹配找到的（用于判断季度ID的可信度）
+            matched_item: 命中条目原始数据，供季度可信度判定与下游季节过滤器
+                共用同一证据基（见 find_bangumi_id 同名字段）。
         """
         # 首先尝试精确匹配索引（O(1)查找，避免线性扫描）
         result = self._try_exact_match(

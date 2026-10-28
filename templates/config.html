@@ -70,7 +70,7 @@
         </aside>
         <!-- 右侧：配置表单 -->
         <div class="col-lg-9">
-            <form id="config-form" class="config-form">
+            <form id="config-form" class="config-form" autocomplete="off">
                 {% include "config/_sync.html" %}
                 {% include "config/_blocked_keywords.html" %}
                 {% include
@@ -100,8 +100,9 @@
                         <h6 class="m-0 fw-semibold card-header-title">配置操作</h6>
                     </div>
                 </div>
-                <div class="card-body text-center py-4">
-                    <div class="btn-group me-3" role="group">
+                <div class="card-body d-flex flex-wrap align-items-center justify-content-center gap-3 py-4">
+                    <div class="btn-group app-action-capsule app-action-capsule--fill"
+                         role="group">
                         <button type="button" class="btn btn-primary px-4" onclick="saveConfig()">
                             <i class="bi bi-save me-2"></i>保存配置
                         </button>
@@ -111,7 +112,8 @@
                             <i class="bi bi-arrow-clockwise me-2"></i>重新加载
                         </button>
                     </div>
-                    <div class="btn-group" role="group">
+                    <div class="btn-group app-action-capsule app-action-capsule--fill"
+                         role="group">
                         <button type="button"
                                 class="btn btn-outline-primary px-4"
                                 onclick="backupConfig()">
@@ -251,7 +253,7 @@
                             </div>
                             <div class="mt-2 ms-4">
                                 <label for="keepCount" class="form-label">保留数量：</label>
-                                <select class="form-select" id="keepCount">
+                                <select class="form-select" id="keepCount" autocomplete="off">
                                     <option value="3">3个</option>
                                     <option value="5" selected>5个</option>
                                     <option value="10">10个</option>
@@ -273,7 +275,7 @@
                             </div>
                             <div class="mt-2 ms-4">
                                 <label for="keepDays" class="form-label">保留天数：</label>
-                                <select class="form-select" id="keepDays">
+                                <select class="form-select" id="keepDays" autocomplete="off">
                                     <option value="7">7天</option>
                                     <option value="30" selected>30天</option>
                                     <option value="90">90天</option>
@@ -582,7 +584,6 @@
     if (modalElement) {
       try {
         restoreConfigModal = getModal('restoreConfigModal')
-        console.log('恢复配置模态框初始化成功')
       } catch (error) {
         console.error('模态框初始化失败:', error)
       }
@@ -929,7 +930,7 @@
     // OAuth 账号提供「断开 OAuth」按钮（回退为手动模式，保留 access_token）
     const disconnectBtn =
       !isNew && authMethod === 'oauth'
-        ? `<button type="button" class="btn btn-outline-warning" onclick="disconnectBangumiAccountOAuth(this)">
+        ? `<button type="button" class="btn btn-sm btn-outline-warning" onclick="disconnectBangumiAccountOAuth(this)">
              <i class="bi bi-link-45deg"></i> 断开 OAuth
            </button>`
         : ''
@@ -938,35 +939,35 @@
     const enabledToggleBtn = isNew
       ? ''
       : isEnabled
-        ? `<button type="button" class="btn btn-outline-secondary" onclick="setBangumiAccountEnabled(this, false)">
+        ? `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="setBangumiAccountEnabled(this, false)">
              <i class="bi bi-pause-circle"></i> 停用
            </button>`
-        : `<button type="button" class="btn btn-outline-success" onclick="setBangumiAccountEnabled(this, true)">
+        : `<button type="button" class="btn btn-sm btn-outline-success" onclick="setBangumiAccountEnabled(this, true)">
              <i class="bi bi-play-circle"></i> 启用
            </button>`
 
     accountDiv.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-2 mb-2">
             <h6 class="mb-0">
                 Bangumi 账号 ${id + 1}
                 ${primaryBadge}
                 ${disabledBadge}
                 ${oauthBadge}
             </h6>
-            <div class="btn-group btn-group-sm">
+            <div class="d-flex flex-wrap gap-2">
                 ${
                   !isPrimary
-                    ? `<button type="button" class="btn btn-outline-success" onclick="setPrimaryBangumiAccount(this)">
+                    ? `<button type="button" class="btn btn-sm btn-outline-success" onclick="setPrimaryBangumiAccount(this)">
                          <i class="bi bi-check-circle"></i> 设为首选
                        </button>`
                     : ''
                 }
                 ${enabledToggleBtn}
-                <button type="button" class="btn btn-outline-primary" onclick="saveBangumiAccountRow(this)">
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="saveBangumiAccountRow(this)">
                     <i class="bi bi-save"></i> 保存
                 </button>
                 ${disconnectBtn}
-                <button type="button" class="btn btn-outline-danger" onclick="deleteBangumiAccountRow(this)">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteBangumiAccountRow(this)">
                     <i class="bi bi-trash"></i> 删除
                 </button>
             </div>
@@ -974,13 +975,13 @@
         <div class="row g-2">
             <div class="col-md-4">
                 <label class="form-label small">Bangumi 用户名</label>
-                <input type="text" class="form-control bangumi-account-username" value="${escapeHtml(acc.username || '')}" placeholder="Bangumi 用户名或 UID">
+                <input type="text" class="form-control bangumi-account-username" value="${escapeHtml(acc.username || '')}" placeholder="Bangumi 用户名或 UID" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
             </div>
             <div class="col-md-4">
                 <label class="form-label small" title="Plex/Emby/Jellyfin 登录名，须与媒体服务器一致。多个用户名对应本 Bangumi 账号时可用英文逗号分隔。">
                     媒体服务器用户名
                 </label>
-                <input type="text" class="form-control bangumi-account-media-username" value="${escapeHtml((acc.media_server_usernames || []).join(', '))}" placeholder="多个用英文逗号分隔">
+                <input type="text" class="form-control bangumi-account-media-username" value="${escapeHtml((acc.media_server_usernames || []).join(', '))}" placeholder="多个用英文逗号分隔" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
             </div>
             <div class="col-md-4">
                 <label class="form-label small">
@@ -988,7 +989,7 @@
                     ${authMethod === 'oauth' ? '<span class="text-muted">（由 OAuth 管理）</span>' : ''}
                 </label>
                 <div class="position-relative">
-                    <input type="password" class="form-control pe-5 bangumi-account-token" value="" placeholder="${authMethod === 'oauth' ? '已由 OAuth 授权' : '输入访问令牌'}">
+                    <input type="password" class="form-control pe-5 bangumi-account-token" value="" placeholder="${authMethod === 'oauth' ? '已由 OAuth 授权' : '输入访问令牌'}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
                     <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-1 password-toggle-btn" type="button" onclick="toggleTokenVisibility(this)">
                         <i class="bi bi-eye text-muted"></i>
                     </button>
@@ -1288,16 +1289,13 @@
 
   // 显示恢复配置模态框
   async function showRestoreModal() {
-    console.log('尝试显示恢复配置模态框')
 
     // 确保模态框已初始化
     if (!restoreConfigModal) {
-      console.log('模态框未初始化，尝试重新初始化')
       const modalElement = document.getElementById('restoreConfigModal')
       if (modalElement) {
         try {
           restoreConfigModal = getModal('restoreConfigModal')
-          console.log('模态框重新初始化成功')
         } catch (error) {
           console.error('模态框初始化失败:', error)
           showAlert('恢复配置功能初始化失败', 'danger')
@@ -1312,7 +1310,6 @@
 
     try {
       restoreConfigModal.show()
-      console.log('模态框显示成功')
       await loadBackupFiles()
     } catch (error) {
       console.error('显示模态框失败:', error)
@@ -1916,78 +1913,6 @@
 
   // ========== Webhook 配置管理 ==========
 
-  // 加载 Webhook 配置列表
-  async function loadWebhookConfigs() {
-    try {
-      const data = await apiFetch('/api/notification/webhooks')
-
-      if (data.status === 'success') {
-        renderWebhookConfigs(data.data)
-      } else {
-        console.error('加载 Webhook 配置失败:', data.message)
-      }
-    } catch (error) {
-      console.error('加载 Webhook 配置失败:', error)
-    }
-  }
-
-  // 渲染 Webhook 配置列表
-  function renderWebhookConfigs(webhooks) {
-    const container = document.getElementById('webhook-configs-container')
-
-    if (!webhooks || webhooks.length === 0) {
-      container.innerHTML = `
-            <div class="app-empty-state app-empty-state--sm">
-                <i class="bi bi-inbox app-empty-state__icon"></i>
-                <p class="text-muted mt-3 mb-0">暂无 Webhook 配置</p>
-                <button type="button" class="btn btn-outline-primary btn-sm" onclick="showChannelConfigModal()">
-                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                </button>
-            </div>
-        `
-      return
-    }
-
-    let html = '<div class="row g-3">'
-    webhooks.forEach((webhook) => {
-      html += `
-            <div class="col-12">
-                <div class="card border ${webhook.enabled ? 'border-primary' : 'border-secondary'}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-send ${webhook.enabled ? 'text-success' : 'text-muted'} me-2"></i>
-                                <h6 class="card-title mb-0">Webhook #${webhook.id}</h6>
-                            </div>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="webhook-enabled-${webhook.id}"
-                                       ${webhook.enabled ? 'checked' : ''} onchange="toggleWebhookEnabled(${webhook.id}, this.checked)">
-                                <label class="form-check-label" for="webhook-enabled-${webhook.id}"></label>
-                            </div>
-                        </div>
-                        <p class="card-text small text-muted mb-2">
-                            <i class="bi bi-link-45deg me-1"></i>${webhook.url}
-                        </p>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="showChannelConfigModal()">
-                                <i class="bi bi-pencil me-1"></i>编辑
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="testWebhook(${webhook.id})">
-                                <i class="bi bi-play-circle me-1"></i>测试
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteWebhookInline(${webhook.id})">
-                                <i class="bi bi-trash me-1"></i>删除
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `
-    })
-    html += '</div>'
-    container.innerHTML = html
-  }
-
   // 切换 Webhook 启用状态
   async function toggleWebhookEnabled(webhookId, enabled) {
     try {
@@ -2001,7 +1926,7 @@
 
       if (data.status === 'success') {
         showAlert(enabled ? 'Webhook 已启用' : 'Webhook 已禁用', 'success')
-        await loadWebhookConfigs()
+        await loadWebhookListInChannelModal()
       } else {
         showAlert('操作失败: ' + data.message, 'danger')
         // 恢复开关状态
@@ -2576,14 +2501,18 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">名称</label>
-                            <input class="form-control" id="summary-job-name" placeholder="每日追番总结" />
+                            <input class="form-control"
+                                   id="summary-job-name"
+                                   placeholder="每日追番总结"
+                                   autocomplete="off" />
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Cron 表达式</label>
                             <input class="form-control"
                                    id="summary-job-cron"
                                    placeholder="0 21 * * *"
-                                   data-cron-preview />
+                                   data-cron-preview
+                                   autocomplete="off" />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">回溯天数</label>
@@ -2592,11 +2521,15 @@
                                    id="summary-job-lookback"
                                    value="1"
                                    min="1"
-                                   max="30" />
+                                   max="30"
+                                   autocomplete="off" />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">用户名</label>
-                            <input class="form-control" id="summary-job-user" placeholder="留空=所有用户" />
+                            <input class="form-control"
+                                   id="summary-job-user"
+                                   placeholder="留空=所有用户"
+                                   autocomplete="off" />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">
@@ -2611,7 +2544,8 @@
                                    id="summary-job-max-records"
                                    value="-1"
                                    min="-1"
-                                   max="10000" />
+                                   max="10000"
+                                   autocomplete="off" />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">
@@ -2624,7 +2558,8 @@
                                    id="summary-job-memory-limit"
                                    value="0"
                                    min="0"
-                                   max="1000" />
+                                   max="1000"
+                                   autocomplete="off" />
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">
@@ -2639,7 +2574,8 @@
                                    id="summary-job-related-limit"
                                    value="0"
                                    min="0"
-                                   max="1000" />
+                                   max="1000"
+                                   autocomplete="off" />
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
                             <button type="button"
@@ -2662,7 +2598,10 @@
                                    data-bs-container="body"
                                    title="告诉LLM如何总结"></i>
                             </label>
-                            <textarea class="form-control" id="summary-job-prompt" rows="4"></textarea>
+                            <textarea class="form-control"
+                                      id="summary-job-prompt"
+                                      rows="4"
+                                      autocomplete="off"></textarea>
                         </div>
                     </div>
                 </div>
@@ -2738,7 +2677,7 @@
                             aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="notification-rule-form">
+                    <form id="notification-rule-form" autocomplete="off">
                         <input type="hidden" id="notification-rule-id" />
                         <div class="mb-3">
                             <div class="form-check form-switch">
@@ -2760,7 +2699,8 @@
                                    class="form-control"
                                    id="notification-rule-name"
                                    required
-                                   placeholder="例如：同步失败邮件通知" />
+                                   placeholder="例如：同步失败邮件通知"
+                                   autocomplete="off" />
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold">
@@ -2915,7 +2855,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-webhook-title">添加 Webhook 配置</span>
                                 </h6>
-                                <form id="inline-webhook-form">
+                                <form id="inline-webhook-form" autocomplete="off">
                                     <input type="hidden" id="inline-webhook-id" />
                                     <div class="row g-3 mb-3">
                                         <div class="col-md-2">
@@ -2939,13 +2879,14 @@
                                                    class="form-control"
                                                    id="inline-webhook-url"
                                                    required
-                                                   placeholder="https://your-webhook-url.com/hook" />
+                                                   placeholder="https://your-webhook-url.com/hook"
+                                                   autocomplete="off" />
                                         </div>
                                         <div class="col-md-4">
                                             <label for="inline-webhook-method" class="form-label fw-semibold">
                                                 <i class="bi bi-arrow-right-circle me-1"></i>请求方法
                                             </label>
-                                            <select class="form-select" id="inline-webhook-method">
+                                            <select class="form-select" id="inline-webhook-method" autocomplete="off">
                                                 <option value="POST">POST</option>
                                                 <option value="GET">GET</option>
                                             </select>
@@ -2958,7 +2899,8 @@
                                         <textarea class="form-control"
                                                   id="inline-webhook-headers"
                                                   rows="2"
-                                                  placeholder='{"Authorization": "Bearer token"}'></textarea>
+                                                  placeholder='{"Authorization": "Bearer token"}'
+                                                  autocomplete="off"></textarea>
                                         <div class="form-text">支持 JSON 格式，例如：{"Authorization": "Bearer token"}</div>
                                     </div>
                                     <div class="mb-3">
@@ -2968,7 +2910,8 @@
                                         <textarea class="form-control"
                                                   id="inline-webhook-template"
                                                   rows="5"
-                                                  placeholder='留空则使用内置模板（推荐）'></textarea>
+                                                  placeholder='留空则使用内置模板（推荐）'
+                                                  autocomplete="off"></textarea>
                                         <div class="form-text">
                                             <strong>建议留空</strong>：留空时使用内置模板，并自动附带该通知类型的专属内容（如追番总结的总结正文），且随版本升级自动改进。
                                             只有需要自定义 JSON 结构时才填写 —— 自定义模板会<strong>完全替换</strong>内置结构，升级后新增的字段不会自动出现。
@@ -3021,7 +2964,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-email-title">添加邮件配置</span>
                                 </h6>
-                                <form id="inline-email-form">
+                                <form id="inline-email-form" autocomplete="off">
                                     <input type="hidden" id="inline-email-id" />
                                     <div class="mb-3">
                                         <div class="form-check form-switch">
@@ -3044,7 +2987,8 @@
                                                    class="form-control"
                                                    id="inline-email-smtp-server"
                                                    required
-                                                   placeholder="smtp.qq.com" />
+                                                   placeholder="smtp.qq.com"
+                                                   autocomplete="off" />
                                         </div>
                                         <div class="col-md-4">
                                             <label for="inline-email-smtp-port" class="form-label fw-semibold">
@@ -3058,7 +3002,8 @@
                                                    placeholder="465"
                                                    min="1"
                                                    max="65535"
-                                                   value="465" />
+                                                   value="465"
+                                                   autocomplete="off" />
                                         </div>
                                     </div>
                                     <div class="row g-3 mb-3">
@@ -3071,7 +3016,13 @@
                                                    class="form-control"
                                                    id="inline-email-smtp-username"
                                                    required
-                                                   placeholder="your-email@qq.com" />
+                                                   placeholder="your-email@qq.com"
+                                                   autocomplete="off"
+                                                   data-1p-ignore
+                                                   data-lpignore="true"
+                                                   data-bwignore
+                                                   data-protonpass-ignore
+                                                   data-form-type="other" />
                                         </div>
                                         <div class="col-md-6">
                                             <label for="inline-email-smtp-password" class="form-label fw-semibold">
@@ -3081,7 +3032,13 @@
                                             <input type="password"
                                                    class="form-control"
                                                    id="inline-email-smtp-password"
-                                                   placeholder="授权码或密码" />
+                                                   placeholder="授权码或密码"
+                                                   autocomplete="off"
+                                                   data-1p-ignore
+                                                   data-lpignore="true"
+                                                   data-bwignore
+                                                   data-protonpass-ignore
+                                                   data-form-type="other" />
                                         </div>
                                     </div>
                                     <div class="row g-3 mb-3">
@@ -3092,7 +3049,8 @@
                                             <input type="email"
                                                    class="form-control"
                                                    id="inline-email-from"
-                                                   placeholder="留空使用 SMTP 用户名" />
+                                                   placeholder="留空使用 SMTP 用户名"
+                                                   autocomplete="off" />
                                         </div>
                                         <div class="col-md-6">
                                             <label for="inline-email-to" class="form-label fw-semibold">
@@ -3103,7 +3061,8 @@
                                                    class="form-control"
                                                    id="inline-email-to"
                                                    required
-                                                   placeholder="recipient@example.com" />
+                                                   placeholder="recipient@example.com"
+                                                   autocomplete="off" />
                                         </div>
                                     </div>
                                     <div class="mb-3">
@@ -3125,7 +3084,8 @@
                                                class="form-control"
                                                id="inline-email-subject"
                                                value="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}"
-                                               placeholder="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}" />
+                                               placeholder="[Bangumi-Syncer] {error_type} - {title} S{season}E{episode}"
+                                               autocomplete="off" />
                                         <div class="form-text">
                                             通用变量：{timestamp}, {user_name}, {bgm_username}, {title}, {ori_title},
                                             {bgm_title}, {season}, {episode}, {source}, {error_type},
@@ -3141,7 +3101,8 @@
                                         </label>
                                         <select class="form-select"
                                                 id="inline-email-template-select"
-                                                onchange="onEmailTemplateSelectChange()"></select>
+                                                onchange="onEmailTemplateSelectChange()"
+                                                autocomplete="off"></select>
                                         <div class="form-text">
                                             选择模板；可在模板目录（./templates/notifications/email）放置
                                             .html 文件自定义模板
@@ -3188,7 +3149,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-wecom-title">添加企业微信配置</span>
                                 </h6>
-                                <form id="inline-wecom-form">
+                                <form id="inline-wecom-form" autocomplete="off">
                                     <input type="hidden" id="inline-wecom-id" />
                                     <div class="mb-3">
                                         <div class="form-check form-switch">
@@ -3207,12 +3168,18 @@
                                                class="form-control"
                                                id="inline-wecom-key"
                                                required
-                                               placeholder="企业微信机器人 key" />
+                                               placeholder="企业微信机器人 key"
+                                               autocomplete="off"
+                                               data-1p-ignore
+                                               data-lpignore="true"
+                                               data-bwignore
+                                               data-protonpass-ignore
+                                               data-form-type="other" />
                                         <div class="form-text">企业微信群的机器人Webhook key</div>
                                     </div>
                                     <div class="mb-3">
                                         <label for="inline-wecom-msg-type" class="form-label fw-semibold">消息类型</label>
-                                        <select class="form-select" id="inline-wecom-msg-type">
+                                        <select class="form-select" id="inline-wecom-msg-type" autocomplete="off">
                                             <option value="text">文本</option>
                                             <option value="markdown">Markdown</option>
                                         </select>
@@ -3224,7 +3191,8 @@
                                         <textarea class="form-control"
                                                   id="inline-wecom-template"
                                                   rows="5"
-                                                  placeholder='{"msgtype": "text", "text": {"content": "{type_display_name}: {title}"}}'></textarea>
+                                                  placeholder='{"msgtype": "text", "text": {"content": "{type_display_name}: {title}"}}'
+                                                  autocomplete="off"></textarea>
                                         <div class="form-text">留空使用默认格式；可填写完整企业微信请求体 JSON</div>
                                     </div>
                                     <div class="d-flex gap-2">
@@ -3256,7 +3224,7 @@
                                 <h6 class="fw-semibold mb-3">
                                     <i class="bi bi-pencil-square me-1"></i><span id="inline-dingtalk-title">添加钉钉配置</span>
                                 </h6>
-                                <form id="inline-dingtalk-form">
+                                <form id="inline-dingtalk-form" autocomplete="off">
                                     <input type="hidden" id="inline-dingtalk-id" />
                                     <div class="mb-3">
                                         <div class="form-check form-switch">
@@ -3275,7 +3243,13 @@
                                                class="form-control"
                                                id="inline-dingtalk-access-token"
                                                required
-                                               placeholder="钉钉机器人 access_token" />
+                                               placeholder="钉钉机器人 access_token"
+                                               autocomplete="off"
+                                               data-1p-ignore
+                                               data-lpignore="true"
+                                               data-bwignore
+                                               data-protonpass-ignore
+                                               data-form-type="other" />
                                         <div class="form-text">支持直接填写token或完整的Webhook URL</div>
                                     </div>
                                     <div class="mb-3">
@@ -3283,11 +3257,17 @@
                                         <input type="password"
                                                class="form-control"
                                                id="inline-dingtalk-secret"
-                                               placeholder="加签密钥，留空不启用签名" />
+                                               placeholder="加签密钥，留空不启用签名"
+                                               autocomplete="off"
+                                               data-1p-ignore
+                                               data-lpignore="true"
+                                               data-bwignore
+                                               data-protonpass-ignore
+                                               data-form-type="other" />
                                     </div>
                                     <div class="mb-3">
                                         <label for="inline-dingtalk-msg-type" class="form-label fw-semibold">消息类型</label>
-                                        <select class="form-select" id="inline-dingtalk-msg-type">
+                                        <select class="form-select" id="inline-dingtalk-msg-type" autocomplete="off">
                                             <option value="text">文本</option>
                                             <option value="markdown">Markdown</option>
                                         </select>
@@ -3299,7 +3279,8 @@
                                         <textarea class="form-control"
                                                   id="inline-dingtalk-template"
                                                   rows="5"
-                                                  placeholder='{"msgtype": "text", "text": {"content": "{type_display_name}: {title}"}}'></textarea>
+                                                  placeholder='{"msgtype": "text", "text": {"content": "{type_display_name}: {title}"}}'
+                                                  autocomplete="off"></textarea>
                                         <div class="form-text">留空使用默认格式；可填写完整钉钉请求体 JSON</div>
                                     </div>
                                     <div class="d-flex gap-2">
@@ -3324,81 +3305,6 @@
     <script>
   // ========== 邮件配置管理 ==========
 
-  // 加载邮件配置列表
-  async function loadEmailConfigs() {
-    try {
-      const data = await apiFetch('/api/notification/emails')
-
-      if (data.status === 'success') {
-        renderEmailConfigs(data.data)
-      } else {
-        console.error('加载邮件配置失败:', data.message)
-      }
-    } catch (error) {
-      console.error('加载邮件配置失败:', error)
-    }
-  }
-
-  // 渲染邮件配置列表
-  function renderEmailConfigs(emails) {
-    const container = document.getElementById('email-configs-container')
-
-    if (!emails || emails.length === 0) {
-      container.innerHTML = `
-            <div class="app-empty-state app-empty-state--sm">
-                <i class="bi bi-inbox app-empty-state__icon"></i>
-                <p class="text-muted mt-3 mb-0">暂无邮件配置</p>
-                <button type="button" class="btn btn-outline-primary btn-sm" onclick="showChannelConfigModal()">
-                    <i class="bi bi-plus-lg me-1"></i>添加第一个配置
-                </button>
-            </div>
-        `
-      return
-    }
-
-    let html = '<div class="row g-3">'
-    emails.forEach((email) => {
-      html += `
-            <div class="col-12">
-                <div class="card border ${email.enabled ? 'border-success' : 'border-secondary'}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-envelope ${email.enabled ? 'text-success' : 'text-muted'} me-2"></i>
-                                <h6 class="card-title mb-0">邮件配置 #${email.id}</h6>
-                            </div>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="email-enabled-${email.id}"
-                                       ${email.enabled ? 'checked' : ''} onchange="toggleEmailEnabled(${email.id}, this.checked)">
-                                <label class="form-check-label" for="email-enabled-${email.id}"></label>
-                            </div>
-                        </div>
-                        <p class="card-text small text-muted mb-2">
-                            <i class="bi bi-envelope-check me-1"></i>${email.email_to}
-                        </p>
-                        <p class="card-text small text-muted mb-2">
-                            <i class="bi bi-server me-1"></i>${email.smtp_server}:${email.smtp_port}
-                        </p>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="showChannelConfigModal()">
-                                <i class="bi bi-pencil me-1"></i>编辑
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="testEmail(${email.id})">
-                                <i class="bi bi-play-circle me-1"></i>测试
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteEmailInline(${email.id})">
-                                <i class="bi bi-trash me-1"></i>删除
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `
-    })
-    html += '</div>'
-    container.innerHTML = html
-  }
-
   // 切换邮件配置启用状态
   async function toggleEmailEnabled(emailId, enabled) {
     try {
@@ -3410,7 +3316,7 @@
 
       if (data.status === 'success') {
         showAlert(enabled ? '邮件配置已启用' : '邮件配置已禁用', 'success')
-        await loadEmailConfigs()
+        await loadEmailListInChannelModal()
       } else {
         showAlert('操作失败: ' + data.message, 'danger')
       }

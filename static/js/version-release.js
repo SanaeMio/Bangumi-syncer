@@ -9,6 +9,10 @@
     var TTL_AUTH_MS = 5 * 60 * 1000;
     var TTL_ANON_MS = 2 * 60 * 1000;
 
+    /** 最近一次版本信息；弹窗正文在打开时渲染，页面加载阶段不注入正文与图片 */
+    var pendingReleaseInfo = null;
+    var modalRendered = false;
+
     function hasSessionCookie() {
         return /(?:^|;\s*)session_token=/.test(document.cookie || '');
     }
@@ -154,8 +158,35 @@
         if (!el || typeof bootstrap === 'undefined') {
             return;
         }
+        renderModalIfNeeded();
         var modal = bootstrap.Modal.getOrCreateInstance(el);
         modal.show();
+    }
+
+    /** 版本信息到达时先暂存：弹窗未打开则不注入正文（正文图片随之不请求）。 */
+    function setPendingReleaseInfo(j) {
+        pendingReleaseInfo = j;
+        if (isReleaseNotesModalOpen()) {
+            modalRendered = true;
+            renderModal(j);
+        } else {
+            // 弹窗关闭时收到新信息：已渲染标记与待渲染内容失步，须让标记失效，
+            // 下次打开按新信息渲染
+            modalRendered = false;
+        }
+    }
+
+    function isReleaseNotesModalOpen() {
+        var el = document.getElementById('releaseNotesModal');
+        return !!(el && el.classList.contains('show'));
+    }
+
+    function renderModalIfNeeded() {
+        if (modalRendered || !pendingReleaseInfo) {
+            return;
+        }
+        modalRendered = true;
+        renderModal(pendingReleaseInfo);
     }
 
     function setBehindPill(j, listLen) {
@@ -425,7 +456,7 @@
                 pillNl.classList.add('d-none');
                 pillNl.textContent = '';
             }
-            renderModal({
+            setPendingReleaseInfo({
                 remote_loaded: false,
                 current_version_display: verDisp,
                 current_version: j.current_version,
@@ -468,7 +499,7 @@
             return;
         }
 
-        renderModal(j);
+        setPendingReleaseInfo(j);
         applyUpdatePillAfterResponse(j);
         if (window.initUpgradeUI) window.initUpgradeUI(j);
     }
@@ -539,5 +570,17 @@
         setClassAll('.js-app-github-error', 'd-none', true);
         applyCachedReleaseInfoIfAny();
         scheduleFetchReleaseInfoWhenNeeded();
+
+        // 关闭发行说明弹窗前先把焦点移出弹窗：Bootstrap 在隐藏时会设置
+        // aria-hidden，若焦点仍在弹窗内（如关闭按钮），浏览器会阻止该属性并告警
+        var notesModal = document.getElementById('releaseNotesModal');
+        if (notesModal) {
+            notesModal.addEventListener('hide.bs.modal', function () {
+                var active = document.activeElement;
+                if (active && notesModal.contains(active) && active.blur) {
+                    active.blur();
+                }
+            });
+        }
     });
 })();

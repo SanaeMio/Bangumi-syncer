@@ -2321,6 +2321,43 @@ class TestBangumiDataComprehensiveMerged:
         assert result[0] == "123456"
         assert result[1] == "劇場版サンプル映画"
 
+    @patch("app.utils.bangumi_data.BangumiData._preload_data_to_memory")
+    @patch("app.utils.bangumi_data.BangumiData._parse_data")
+    def test_find_bangumi_id_returns_matched_item_as_fourth_element(
+        self, mock_parse_data, mock_preload
+    ):
+        """find_bangumi_id 返回 4 元组：前 3 元素保留原语义，第 4 元素为命中条目本身。
+
+        上游原返回 3 元组 (bangumi_id, matched_title, date_matched)；扩展后新增
+        matched_item 供季度可信度判定与下游季节过滤器共用同一证据基。该测试固定这一
+        契约：避免后续改动悄悄把第 4 元素改回 None 或错对象（会破坏 is_season_matched_id
+        的变体证据基判定），同时确认前 3 元素语义未因扩展而漂移。
+        """
+        from app.utils.bangumi_data import BangumiData
+
+        data = BangumiData()
+        item = {
+            "title": "劇場版サンプル映画",
+            "begin": "2020-03-15",
+            "sites": [{"site": "bangumi", "id": "123456"}],
+        }
+        mock_parse_data.return_value = [item]
+        result = data.find_bangumi_id(
+            title="某中文片名",
+            ori_title="劇場版サンプル映画",
+            release_date="2020-03-15",
+            season=1,
+        )
+        assert result is not None
+        assert len(result) == 4
+        bangumi_id, matched_title, date_matched, matched_item = result
+        assert bangumi_id == "123456"
+        assert matched_title == "劇場版サンプル映画"
+        assert isinstance(date_matched, bool)
+        assert matched_item is not None
+        assert matched_item.get("title") == "劇場版サンプル映画"
+        assert matched_item.get("sites") == [{"site": "bangumi", "id": "123456"}]
+
     def test_calculate_match_score(self):
         """计算匹配分数返回数值。"""
         from app.utils.bangumi_data import BangumiData
