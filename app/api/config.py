@@ -187,6 +187,44 @@ async def get_scheduler_status(
     return {"status": "success", "data": scheduler_registry.get_status_list()}
 
 
+def _truthy(value: Any) -> bool:
+    """宽松布尔解析：实际 bool 或字符串 true/1/yes/on/enabled（任意大小写）。"""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("true", "1", "yes", "on", "enabled")
+
+
+def _llm_match_assist_will_be_enabled(data: dict) -> bool:
+    """计算保存后 llm_match_assist 是否将处于开启态。
+
+    payload 携带 sync.llm_match_assist 时以 payload 为准，否则取当前配置。
+    """
+    sync = data.get("sync") or {}
+    if "llm_match_assist" in sync:
+        return _truthy(sync["llm_match_assist"])
+    return bool(config_manager.get("sync", "llm_match_assist", fallback=False))
+
+
+def _effective_llm_api_key_nonempty(data: dict) -> bool:
+    """计算保存后生效的 LLM api_key 是否非空。
+
+    payload 同时携带 llm.api_key（非空且非掩码值）时视为将生效；
+    否则以当前 get_llm_config()["api_key"] 为准。
+    """
+    current = (config_manager.get_llm_config().get("api_key") or "").strip()
+    llm = data.get("llm") or {}
+    incoming = llm.get("api_key")
+    if (
+        isinstance(incoming, str)
+        and incoming.strip()
+        and not incoming.startswith("***")
+    ):
+        return True
+    return bool(current)
+
+
 @router.post("/config")
 async def update_config(
     request: Request, _=Depends(get_current_user_flexible)
@@ -204,6 +242,13 @@ async def update_config(
         # 遗留单用户段 [bangumi] 账号字段已迁移到 DB，忽略前端回写避免与 DB 真相源分裂
         data.pop("bangumi", None)
 
+        # ── 开启 llm_match_assist 时校验 LLM api_key 已配置 ──
+        # 拒绝原因须为"需先配置 LLM"。HTTPException 需透传，
+        # 不能被下方 except Exception 吞掉成 500。
+        if _llm_match_assist_will_be_enabled(data) and not (
+            _effective_llm_api_key_nonempty(data)
+        ):
+            raise HTTPException(status_code=400, detail="需先配置 LLM")
 
         # 更新常规配置
         password_updated = False
