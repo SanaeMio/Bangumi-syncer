@@ -252,13 +252,15 @@ LLM 连接是独立模块，追番总结和调试工具共用。在「配置管�
 
 - **提供商（provider）**：LLM 服务提供商。可选值：`openai_compat`（默认，兼容 OpenAI / DeepSeek / Ollama 等 OpenAI 接口格式的服务）、`anthropic_compat`（兼容 Anthropic Messages API，官方 API 或遵循 `/v1/messages` 规范的代理/网关均可）。
 - **API 地址（api_base）**：LLM 服务商的 API 端点，需兼容所选 provider 的接口格式。`openai_compat` 默认 `https://api.openai.com/v1`，OpenAI 兼容接口请以 `/v1` 结尾填写完整地址；`anthropic_compat` 默认 `https://api.anthropic.com/v1`，使用第三方兼容网关时按其文档填写。
+- **端点需支持流式（SSE）**：LLM 调用一律走流式接口（请求体带 `stream: true`，或 Responses API 的流式模式），请确认所选服务/网关支持 SSE 流式返回。**不支持流式的端点会在首次调用时直接报错并提示更换端点或升级网关**，不会退化为非流式请求；`anthropic_compat` 网关还需支持 `/v1/messages` 流式返回。
 - **API 密钥（api_key）**：服务商提供的 API Key。**加密存储**，页面回显为掩码。
 - **模型（model）**：要调用的模型名称，默认 `gpt-4o-mini`。`openai_compat` 请确认模型支持 Chat Completions 接口；`anthropic_compat` 请填写 Claude 模型（如 `claude-sonnet-4-6`、`claude-opus-4-6` 等）。
 - **最大 Token（max_tokens）**：单次请求最大输出 token 数，默认 2000。根据模型上下文窗口和总结长度调整。Anthropic Messages API 的 max_tokens 为必填字段，请保持不小于所需输出长度。开启思考强度时该值会被自动抬升到不低于 `budget_tokens + 1024`（Anthropic 约束：思考 token 计入 max_tokens 上限，`budget_tokens` 必须小于 `max_tokens`），无需手动调大。
 - **温度（temperature）**：生成随机性，0~2 之间，默认 0.7。越低越确定/保守，越高越有创意。注意开启思考后该值会被强制为 1（Anthropic 与 OpenAI o 系列均要求）。
-- **思考强度（thinking_level）**：可选 `off` / `low` / `medium` / `high`，默认 `off` 不启用思考。`anthropic_compat` 开启后映射为 Anthropic extended thinking 的 `budget_tokens`（依次为 2048 / 4096 / 8192），`low` 适合日常总结，高质量总结可试 `high`；`claude-haiku` 系列等不支持 extended thinking 的模型会自动降级为 `off`（日志有提示）。`openai_compat` 开启后映射为 OpenAI `reasoning_effort`（`low` / `medium` / `high`），仅 o 系列推理模型（o1/o3/o4-mini 等）生效，其余模型自动忽略（debug 日志有提示）。
 - **超时时间（timeout）**：请求超时秒数，默认 60。遇到超时错误可适当调大。
 - **调用记录保留（retention_days）**：LLM 调用记录（Token 用量、延迟等）在数据库中保留天数，默认 365 天。
+
+> 思考强度不再由 LLM 卡片统一设置，而是**按任务在各自配置处设置**（如「AI 追番总结」任务）。
 
 配置后可点击「测试连接」按钮验证 LLM 是否可达。
 
@@ -346,6 +348,9 @@ LLM 连接是独立模块，追番总结和调试工具共用。在「配置管�
 ```
 
 </details>
+
+- **最大记录数（max_records）**：每次发送给 LLM 的最大观影记录条数，默认 -1（不限制）。季度/年度总结保持 -1 即可，日常总结可设为 200 控制上下文长度。
+- **思考强度（thinking_level）**：可选 `off` / `low` / `medium` / `high`，默认 `off` 不启用思考。每个总结任务可独立设置，执行时该值会透传到 LLM provider：`anthropic_compat` 映射为 Anthropic extended thinking 的 `budget_tokens`（依次为 2048 / 4096 / 8192），`low` 适合日常总结，高质量总结可试 `high`，不支持 extended thinking 的模型会自动降级为 `off`（日志有提示）；`openai_compat` 映射为 OpenAI `reasoning_effort`（`low` / `medium` / `high`），仅 o 系列推理模型（o1/o3/o4-mini 等）生效，其余模型自动忽略（debug 日志有提示）。
 
 ### 记忆与同剧关联
 

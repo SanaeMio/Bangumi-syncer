@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from app.utils.bangumi_archive._store import ArchiveStore
 from app.utils.bangumi_archive._wiki_parser import (
     _split_top_level_params,
@@ -270,7 +272,8 @@ class TestParseInfoboxEdgeCases:
 
     def test_none_input(self) -> None:
         """None 输入返回空列表（不抛异常）"""
-        assert parse_infobox(None) == []  # type: ignore[arg-type]
+        # None 属刻意覆盖的非法输入；cast(Any) 绕过静态类型
+        assert parse_infobox(cast(Any, None)) == []
 
     def test_non_infobox_template(self) -> None:
         """非 Infobox 模板返回空"""

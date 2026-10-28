@@ -350,6 +350,14 @@ class TestMappingFileSafetyEndToEnd:
         path.write_text('{"mappings": {"a": "1"}, BROKEN', encoding="utf-8")
         original = path.read_text(encoding="utf-8")
 
+        # 本用例只验证「损坏文件拒绝写入」，与 POST 的改动 ID 校验无关；该校验会
+        # 走真实网络（进程级限速器 + 并行测试下偶发 429/超时 → 400），固定为
+        # 通过以聚焦写保护断言。
+        monkeypatch.setattr(
+            "app.utils.bangumi_api.subject_validation.validate_subject_id",
+            lambda sid: (True, ""),
+        )
+
         svc = MappingService()
         set_mapping_service(svc)
         svc.load_custom_mappings()
