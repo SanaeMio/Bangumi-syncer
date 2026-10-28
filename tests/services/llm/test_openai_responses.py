@@ -286,19 +286,20 @@ class TestDegradation:
 
     def test_force_tool_choice_degraded_to_auto(self):
         provider = _provider()
-        provider._force_tool_choice_degraded = True
         body = provider._build_request(
-            [Message(role="user", content="q")], tool_choice="search"
+            [Message(role="user", content="q")],
+            tool_choice="search",
+            force_tool_choice_degraded=True,
         )
         assert body["tool_choice"] == "auto"
 
     def test_extras_disabled_omits_tools_choice_and_reasoning(self):
         provider = _provider(model="o4-mini", thinking_level="high")
-        provider._extras_disabled = True
         body = provider._build_request(
             [Message(role="user", content="q")],
             tools=[{"name": "search", "description": "d", "parameters": {}}],
             tool_choice="search",
+            extras_disabled=True,
         )
         assert "tools" not in body
         assert "tool_choice" not in body

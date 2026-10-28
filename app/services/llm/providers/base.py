@@ -73,18 +73,15 @@ class BaseProvider(ABC):
     子类必须实现 async stream() 方法，接收消息列表和额外关键字参数，
     逐条产出归一化的 StreamChunk。
 
-    Attributes:
-        _extras_disabled: 端点拒绝扩展参数（thinking/reasoning 等）后由
-            LLMClient 置位的降级标记——置位后 _build_request 不再构造
-            扩展字段（双重保险第二道，见 client._is_param_rejection）。
-        _force_tool_choice_degraded: 端点拒绝强制工具选择（如 thinking 模式
+    每次调用可携带以下降级参数（由 LLMClient 在参数被拒后仅对重试传入，
+    不写入 provider 实例状态，避免一次误判污染后续调用）：
+        extras_disabled: 端点拒绝扩展参数（thinking/reasoning 等）→
+            _build_request 不再构造扩展字段（双重保险第二道，见
+            client._is_param_rejection）。
+        force_tool_choice_degraded: 端点拒绝强制工具选择（如 thinking 模式
             下的服务端约束："Thinking mode does not support this
-            tool_choice"）后由 LLMClient 置位的降级标记——置位后
-            _build_request 将强制 tool_choice 降级为 auto。
+            tool_choice"）→ _build_request 将强制 tool_choice 降级为 auto。
     """
-
-    _extras_disabled: bool = False
-    _force_tool_choice_degraded: bool = False
 
     @abstractmethod
     def stream(

@@ -332,7 +332,7 @@ class LLMClient:
 
         - 首 chunk 前失败：
           stream 拒绝（400/422）→ 抛确定性 LLMCallError（不重试、不降级、不伪装）；
-          参数拒绝 → 置降级标记后立即重试一次；
+          参数拒绝 → 仅对本次重试传入降级参数（不改 provider 实例状态）；
           429/5xx/连接超时 → 退避重试（MAX_RETRIES）；
           确定性 4xx/refusal → 终态。
         - 首 chunk 后失败：一律不重试（已产出内容不回滚），包装为
@@ -343,10 +343,22 @@ class LLMClient:
         t_attempt = time.time()
         attempt = 0
         extras_degraded = False  # 参数类 400 降级只做一次，不计入退避次数
+        degrade_tool_choice = False
         started = False
 
         while attempt <= self.MAX_RETRIES:
-            source = provider.stream(messages, **kwargs)
+            # 降级参数只作用于本次重试，不写入 provider 实例，
+            # 避免一次误判污染进程内后续调用。
+            attempt_kwargs = (
+                {
+                    **kwargs,
+                    "extras_disabled": True,
+                    "force_tool_choice_degraded": degrade_tool_choice,
+                }
+                if extras_degraded
+                else kwargs
+            )
+            source = provider.stream(messages, **attempt_kwargs)
             try:
                 async for chunk in source:
                     started = True
@@ -420,7 +432,21 @@ class LLMClient:
                     ) from e
                 if not extras_degraded and _is_param_rejection(e):
                     extras_degraded = True
-                    self._degrade_extras(e)
+                    degrade_tool_choice = (
+                        "tool_choice"
+                        in (
+                            getattr(getattr(e, "response", None), "text", "") or ""
+                        ).lower()
+                    )
+                    if degrade_tool_choice:
+                        logger.warning(
+                            "LLM endpoint rejected forced tool_choice, "
+                            f"degraded to auto: {_format_error_detail(e)}"
+                        )
+                    logger.warning(
+                        "LLM endpoint rejected extra params, "
+                        f"degraded retry without them: {_format_error_detail(e)}"
+                    )
                     # 降级重试前重置计时，避免把首次失败请求耗时计入 latency
                     t_attempt = time.time()
                     continue
@@ -470,26 +496,6 @@ class LLMClient:
         ):
             retryable = False
         raise LLMCallError(error_detail, retryable=retryable) from last_error
-
-    def _degrade_extras(self, e: Exception) -> None:
-        """参数类 400/422 降级：置位 provider 的扩展参数/强制 tool_choice 标记。"""
-        resp_text = (getattr(getattr(e, "response", None), "text", "") or "").lower()
-        if "tool_choice" in resp_text and hasattr(
-            self._provider, "_force_tool_choice_degraded"
-        ):
-            # 专用降级：部分端点（thinking 模式）拒绝强制工具选择，
-            # 仅降级 tool_choice，保留 thinking 等其它参数
-            self._provider._force_tool_choice_degraded = True
-            logger.warning(
-                "LLM endpoint rejected forced tool_choice, "
-                f"degraded to auto: {_format_error_detail(e)}"
-            )
-        if hasattr(self._provider, "_extras_disabled"):
-            self._provider._extras_disabled = True
-        logger.warning(
-            "LLM endpoint rejected extra params, "
-            f"degraded retry without them: {_format_error_detail(e)}"
-        )
 
     def _log_success(
         self,
