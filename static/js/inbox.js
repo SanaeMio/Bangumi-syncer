@@ -12,6 +12,13 @@
 
     var escapeHtml = window.escapeHtml;
 
+    // 通知类型 → 目标页面（未列出的类型跳转到同步记录）
+    var NOTIFICATION_TARGETS = {
+        summary_llm_failed: '/config#config-section-llm',
+        summary_job_failed: '/config#config-section-summary',
+        airing_today: '/dashboard#airing-calendar-row',
+    };
+
     function levelBadgeClass(level) {
         if (level === 'important') return 'bg-danger';
         if (level === 'warning') return 'bg-warning text-dark';
@@ -373,14 +380,11 @@
                 await refreshSummary();
                 var type = card.getAttribute('data-type');
                 var refId = card.getAttribute('data-ref-id');
-                var url;
-                if (type === 'summary_llm_failed') {
-                    url = appUrl('/config') + '#config-section-llm';
-                } else if (type === 'summary_job_failed') {
-                    url = appUrl('/config') + '#config-section-summary';
-                } else {
-                    url = appUrl('/records');
-                    if (refId) url += '?open=' + encodeURIComponent(refId);
+                var target = NOTIFICATION_TARGETS[type];
+                var url = appUrl(target || '/records');
+                if (!target && refId) {
+                    // 同步失败类通知直接打开对应记录详情
+                    url += '?open=' + encodeURIComponent(refId);
                 }
                 window.location.href = url;
             });
