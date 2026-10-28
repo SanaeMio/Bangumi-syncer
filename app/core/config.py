@@ -690,61 +690,6 @@ class ConfigManager:
             merged["timeout"] = int(merged["timeout"])
         return merged
 
-    def get_sync_llm_match_config(self) -> dict[str, Any]:
-        """获取 [sync] 段 LLM 匹配增强（llm_match_*）配置，集中填充默认值。
-
-        上游调度器/编排曾各自直接 ``get("sync", "llm_match_*", fallback=...)``；
-        本方法将其正式化为单一读取入口，保证默认值一致。
-
-        返回字段：
-        - llm_match_assist (bool, 默认 false)
-        - llm_match_cron (str, 默认 "*/1 * * * *")
-        - llm_match_retention_days (int, 默认 30)
-        - llm_match_max_iterations (str, 默认空=按 thinking_level 映射)
-        - llm_match_recovery_timeout_s (int, 默认 120)
-        - llm_match_concurrency (int, 默认 3)
-        - llm_match_thinking_level (str, 默认 "medium")
-        """
-
-        def _to_bool(v: Any, default: bool) -> bool:
-            if isinstance(v, bool):
-                return v
-            if v is None:
-                return default
-            return str(v).strip().lower() in ("true", "1", "yes", "on", "enabled")
-
-        def _to_int(v: Any, default: int) -> int:
-            try:
-                return int(v)
-            except (TypeError, ValueError):
-                return default
-
-        return {
-            "llm_match_assist": _to_bool(
-                self.get("sync", "llm_match_assist", fallback=False), False
-            ),
-            "llm_match_cron": self.get(
-                "sync", "llm_match_cron", fallback="*/1 * * * *"
-            ),
-            "llm_match_retention_days": _to_int(
-                self.get("sync", "llm_match_retention_days", fallback=30), 30
-            ),
-            "llm_match_max_iterations": self.get(
-                "sync", "llm_match_max_iterations", fallback=""
-            )
-            or "",
-            "llm_match_recovery_timeout_s": _to_int(
-                self.get("sync", "llm_match_recovery_timeout_s", fallback=120), 120
-            ),
-            "llm_match_concurrency": _to_int(
-                self.get("sync", "llm_match_concurrency", fallback=3), 3
-            ),
-            "llm_match_thinking_level": self._normalize_thinking_level(
-                self.get("sync", "llm_match_thinking_level", fallback="medium"),
-                default="medium",
-            ),
-        }
-
     def get_fongmi_config(self) -> dict[str, Any]:
         """fongmi 局域网轮询同步配置（默认关闭）
 
