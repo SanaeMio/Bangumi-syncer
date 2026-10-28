@@ -314,6 +314,8 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="ssl_verify", default_true=True),
             FieldMeta(name="update_cron", default="0 8 * * 3"),
             FieldMeta(name="data_dir", default="./data/archive"),
+            # 下载源顺序：mirror=镜像优先（默认，国内）、github=直连优先（海外）
+            FieldMeta(name="download_source", default="mirror"),
             FieldMeta(name="min_disk_space_mb", default=3000),
             # BK-tree 模糊匹配开关：默认关闭，开启后对归档标题构建 BK-tree
             # 索引以支持编辑距离模糊查询，提升形近/缺字标题的召回率。

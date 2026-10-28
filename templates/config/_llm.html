@@ -19,7 +19,7 @@
                 <input class="form-control"
                        id="llm-api-base"
                        name="llm.api_base"
-                       placeholder="https://api.openai.com/v1">
+                       placeholder="https://api.openai.com/v1" autocomplete="off">
             </div>
             <div class="col-md-6">
                 <label class="form-label">API 密钥</label>
@@ -27,11 +27,12 @@
                        class="form-control"
                        id="llm-api-key"
                        name="llm.api_key"
-                       placeholder="sk-...">
+                       placeholder="sk-..."
+                       autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
             </div>
             <div class="col-md-6">
                 <label class="form-label">Provider</label>
-                <select class="form-select" id="llm-provider" name="llm.provider">
+                <select class="form-select" id="llm-provider" name="llm.provider" autocomplete="off">
                     <option value="openai_compat">openai_compat</option>
                     <option value="anthropic_compat">anthropic_compat</option>
                     <option value="openai_responses">openai_responses</option>
@@ -42,7 +43,7 @@
                 <input class="form-control"
                        id="llm-model"
                        name="llm.model"
-                       placeholder="gpt-4o-mini">
+                       placeholder="gpt-4o-mini" autocomplete="off">
             </div>
             <div class="col-md-3">
                 <label class="form-label">最大 Token</label>
@@ -51,7 +52,7 @@
                        data-type="number"
                        id="llm-max-tokens"
                        name="llm.max_tokens"
-                       value="2000">
+                       value="2000" autocomplete="off">
             </div>
             <div class="col-md-3">
                 <label class="form-label">温度</label>
@@ -61,7 +62,7 @@
                        data-type="float"
                        id="llm-temperature"
                        name="llm.temperature"
-                       value="0.7">
+                       value="0.7" autocomplete="off">
             </div>
             <div class="col-md-3">
                 <label class="form-label">超时(秒)</label>
@@ -70,7 +71,7 @@
                        data-type="number"
                        id="llm-timeout"
                        name="llm.timeout"
-                       value="60">
+                       value="60" autocomplete="off">
             </div>
             <div class="col-md-3 d-flex align-items-end">
                 <button type="button" class="btn btn-primary" onclick="saveLLMAndTest()">

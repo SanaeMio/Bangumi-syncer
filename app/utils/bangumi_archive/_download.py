@@ -44,6 +44,7 @@ class ArchiveDownloader:
         http_proxy: HTTP 代理（None 表示不使用代理）
         ssl_verify: SSL 证书校验
         mirrors: GitHub 镜像源前缀列表
+        github_first: True 时 GitHub 直连在前、镜像兜底；False 时镜像在前
         progress_cb: 进度回调 (task_id, stage, percent, message)
     """
 
@@ -52,11 +53,13 @@ class ArchiveDownloader:
         http_proxy: Optional[str] = None,
         ssl_verify: bool = True,
         mirrors: tuple[str, ...] = (),
+        github_first: bool = False,
         progress_cb: Optional[ProgressCb] = None,
     ) -> None:
         self.http_proxy = http_proxy
         self.ssl_verify = ssl_verify
         self.mirrors = mirrors
+        self.github_first = github_first
         self._progress_cb = progress_cb
 
     def _emit(
@@ -69,13 +72,10 @@ class ArchiveDownloader:
 
     async def fetch_latest(self, latest_json_url: str) -> dict[str, Any]:
         """拉取 latest.json，返回解析后的字典"""
-        urls = self._build_latest_urls(latest_json_url)
+        sources = self._ordered_sources(latest_json_url)
         last_error: Optional[Exception] = None
 
-        for url_idx, url in enumerate(urls):
-            source_label = (
-                "GitHub" if url_idx == len(urls) - 1 else f"镜像{url_idx + 1}"
-            )
+        for url, source_label in sources:
             try:
                 async with AsyncHttpClient(
                     label="Archive-latest",
@@ -103,15 +103,21 @@ class ArchiveDownloader:
                 )
 
         raise RuntimeError(
-            f"拉取 latest.json 失败（已尝试 {len(urls)} 个源）: {last_error}"
+            f"拉取 latest.json 失败（已尝试 {len(sources)} 个源）: {last_error}"
         )
 
-    def _build_latest_urls(self, latest_json_url: str) -> list[str]:
-        urls: list[str] = []
-        for mirror in self.mirrors:
-            urls.append(f"{mirror}{latest_json_url}")
-        urls.append(latest_json_url)
-        return urls
+    def _ordered_sources(self, github_url: str) -> list[tuple[str, str]]:
+        """返回 (url, 来源标签) 列表，按配置的下载源顺序排序。
+
+        github_first 时 GitHub 直连在前、镜像兜底；否则镜像在前、GitHub 兜底。
+        """
+        github = (github_url, "GitHub")
+        mirrors = [
+            (f"{m}{github_url}", f"镜像{i + 1}") for i, m in enumerate(self.mirrors)
+        ]
+        if self.github_first:
+            return [github, *mirrors]
+        return [*mirrors, github]
 
     # ===== zip 下载 =====
 
@@ -132,7 +138,7 @@ class ArchiveDownloader:
         if not download_url:
             raise RuntimeError("latest.json 缺少 browser_download_url 字段")
 
-        urls = self._build_download_urls(download_url)
+        sources = self._ordered_sources(download_url)
 
         # 在 tmp_dir 下为本次任务创建独立子目录，便于导入后统一清理
         task_dir = tmp_dir / task_id
@@ -145,11 +151,7 @@ class ArchiveDownloader:
 
         last_error: Optional[Exception] = None
 
-        for url_idx, url in enumerate(urls):
-            source_label = (
-                "GitHub" if url_idx == len(urls) - 1 else f"镜像{url_idx + 1}"
-            )
-
+        for url_idx, (url, source_label) in enumerate(sources):
             if url_idx > 0:
                 self._emit(
                     task_id,
@@ -207,16 +209,9 @@ class ArchiveDownloader:
             proxy_hint = "。若网络受限，请在配置文件 [bangumi-archive] http_proxy 或 [dev] script_proxy 中设置代理"
 
         raise RuntimeError(
-            f"下载失败（已尝试 {len(urls)} 个源，每个重试 {_DOWNLOAD_MAX_RETRIES} 次）"
+            f"下载失败（已尝试 {len(sources)} 个源，每个重试 {_DOWNLOAD_MAX_RETRIES} 次）"
             f"{proxy_hint}: {last_error}"
         )
-
-    def _build_download_urls(self, github_download_url: str) -> list[str]:
-        urls: list[str] = []
-        for mirror in self.mirrors:
-            urls.append(f"{mirror}{github_download_url}")
-        urls.append(github_download_url)
-        return urls
 
     async def _download_single(
         self,

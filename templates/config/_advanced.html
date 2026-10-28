@@ -61,7 +61,7 @@
                                        class="form-control"
                                        id="bgm-api-proxy"
                                        name="dev.bgm_api_proxy"
-                                       placeholder="留空则使用默认地址">
+                                       placeholder="留空则使用默认地址" autocomplete="off">
                             </div>
                             <div class="col-md-6">
                                 <label for="bgm-next-proxy" class="form-label fw-semibold">
@@ -74,7 +74,7 @@
                                        class="form-control"
                                        id="bgm-next-proxy"
                                        name="dev.bgm_next_proxy"
-                                       placeholder="留空则使用默认地址">
+                                       placeholder="留空则使用默认地址" autocomplete="off">
                             </div>
                             <div class="col-md-6">
                                 <label for="bgm-image-proxy" class="form-label fw-semibold">
@@ -87,7 +87,7 @@
                                        class="form-control"
                                        id="bgm-image-proxy"
                                        name="dev.bgm_image_proxy"
-                                       placeholder="留空则使用默认图片 CDN 地址">
+                                       placeholder="留空则使用默认图片 CDN 地址" autocomplete="off">
                             </div>
                             <div class="col-12">
                                 <label for="script-proxy" class="form-label fw-semibold">
@@ -101,7 +101,7 @@
                                            class="form-control"
                                            id="script-proxy"
                                            name="dev.script_proxy"
-                                           placeholder="如：http://127.0.0.1:7890">
+                                           placeholder="如：http://127.0.0.1:7890" autocomplete="off">
                                     <button class="btn btn-primary fw-bold"
                                             type="button"
                                             onclick="showProxyHelper()"
@@ -137,7 +137,7 @@
                                                            min="1"
                                                            max="65535"
                                                            onchange="updateProxySuggestions()"
-                                                           placeholder="如：7890">
+                                                           placeholder="如：7890" autocomplete="off">
                                                 </div>
                                                 <div class="col-md-6 d-flex align-items-end">
                                                     <button type="button"
@@ -168,7 +168,7 @@
                                                                class="form-control"
                                                                id="test-host"
                                                                placeholder="如：192.168.1.100"
-                                                               value="">
+                                                               value="" autocomplete="off">
                                                     </div>
                                                     <div class="col-md-3">
                                                         <label for="test-port" class="form-label">端口</label>
@@ -177,7 +177,7 @@
                                                                id="test-port"
                                                                value="7890"
                                                                min="1"
-                                                               max="65535">
+                                                               max="65535" autocomplete="off">
                                                     </div>
                                                     <div class="col-md-3">
                                                         <label for="test-timeout" class="form-label">超时(秒)</label>
@@ -186,7 +186,7 @@
                                                                id="test-timeout"
                                                                value="5"
                                                                min="1"
-                                                               max="30">
+                                                               max="30" autocomplete="off">
                                                     </div>
                                                     <div class="col-md-2 d-flex align-items-end">
                                                         <button type="button"
@@ -255,7 +255,7 @@
                                 </label>
                                 <select class="form-select"
                                         id="log-level"
-                                        name="dev.log_level">
+                                        name="dev.log_level" autocomplete="off">
                                     <option value="DEBUG">DEBUG（最详细）</option>
                                     <option value="INFO">INFO（默认）</option>
                                     <option value="WARNING">WARNING（仅警告与错误）</option>
@@ -273,7 +273,7 @@
                                        class="form-control"
                                        id="log-file"
                                        name="dev.log_file"
-                                       placeholder="如：./log.txt，留空则禁用">
+                                       placeholder="如：./log.txt，留空则禁用" autocomplete="off">
                             </div>
                             <div class="col-6 col-md-3">
                                 <label for="sync-records-retention-days" class="form-label fw-semibold">
@@ -288,7 +288,7 @@
                                        id="sync-records-retention-days"
                                        name="dev.sync_records_retention_days"
                                        min="0"
-                                       placeholder="0 表示永不清理">
+                                       placeholder="0 表示永不清理" autocomplete="off">
                             </div>
                         </div>
                         <div class="row g-3 mt-2">
@@ -301,7 +301,7 @@
                                 </label>
                                 <select class="form-select"
                                         id="ech-mode"
-                                        name="dev.ech_mode">
+                                        name="dev.ech_mode" autocomplete="off">
                                     <option value="off">关闭</option>
                                     <option value="doh">自动（DoH）</option>
                                     <option value="manual">手动配置</option>
@@ -318,7 +318,7 @@
                                        class="form-control"
                                        id="ech-doh-url"
                                        name="dev.ech_doh_url"
-                                       placeholder="默认 https://dns.alidns.com/resolve">
+                                       placeholder="默认 https://dns.alidns.com/resolve" autocomplete="off">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label fw-semibold">
@@ -346,7 +346,7 @@
                                        class="form-control"
                                        id="ech-hosts"
                                        name="dev.ech_hosts"
-                                       placeholder="默认 bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv">
+                                       placeholder="默认 bgm.tv,chii.in,next.bgm.tv,lain.bgm.tv" autocomplete="off">
                             </div>
                             <div class="col-12">
                                 <label for="ech-ech-config" class="form-label fw-semibold">
@@ -359,7 +359,7 @@
                                           id="ech-ech-config"
                                           name="dev.ech_ech_config"
                                           rows="3"
-                                          placeholder="粘贴 base64 编码的 ECHConfigList"></textarea>
+                                          placeholder="粘贴 base64 编码的 ECHConfigList" autocomplete="off"></textarea>
                             </div>
                         </div>
                     </div>
