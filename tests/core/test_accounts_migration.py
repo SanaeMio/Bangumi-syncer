@@ -6,6 +6,31 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.database import DatabaseManager
+
+
+def _account(db: DatabaseManager, section_name: str) -> dict:
+    """显式收窄可选查询结果（测试前提：目标账号存在）"""
+    acc = db.get_bangumi_account(section_name)
+    assert acc is not None, f"账号 {section_name} 应存在"
+    return acc
+
+
+def _primary(db: DatabaseManager) -> dict:
+    """显式收窄首选账号查询结果（测试前提：首选账号存在）"""
+    acc = db.get_primary_bangumi_account()
+    assert acc is not None, "应有首选账号"
+    return acc
+
+
+def _config_for_user(user_name: str) -> dict:
+    """显式收窄账号配置查询结果（测试前提：目标用户已绑定账号）"""
+    import app.core.accounts as accounts_mod
+
+    cfg = accounts_mod.get_bangumi_config_for_user(user_name)
+    assert cfg is not None, f"用户 {user_name} 应有账号配置"
+    return cfg
+
 
 @pytest.fixture
 def ini_config(temp_dir, reset_singletons, monkeypatch):
@@ -47,12 +72,12 @@ def test_migrate_ini_accounts_to_db(
     accs = db.list_bangumi_accounts()
     assert {a["section_name"] for a in accs} == {"bangumi", "bangumi-foo"}
 
-    single = db.get_bangumi_account("bangumi")
+    single = _account(db, "bangumi")
     assert single["username"] == "single_user"
     assert single["access_token"] == "AT0"
     assert single["media_server_usernames"] == ["plex1"]
 
-    foo = db.get_bangumi_account("bangumi-foo")
+    foo = _account(db, "bangumi-foo")
     assert foo["username"] == "foo"
     # 逗号分隔的 media_server_username 应规范化为列表
     assert foo["media_server_usernames"] == ["plex2", "emby2"]
@@ -146,7 +171,7 @@ def test_migrate_skips_when_db_already_has_section(
         n = accounts_mod.migrate_ini_accounts_to_db()
     # 仅 bangumi 被迁移，bangumi-foo 已存在故跳过
     assert n == 1
-    assert db.get_bangumi_account("bangumi-foo")["username"] == "prefilled"
+    assert _account(db, "bangumi-foo")["username"] == "prefilled"
 
 
 def test_migrate_numeric_username_from_ini(temp_dir, reset_singletons, monkeypatch):
@@ -358,7 +383,7 @@ def test_distinct_media_users_keep_one_to_one_routing(
         "carol": ["bangumi-friend"],
     }
     for name, expected in (("alice", "u1"), ("bob", "u2"), ("carol", "u3")):
-        assert accounts_mod.get_bangumi_config_for_user(name)["username"] == expected
+        assert _config_for_user(name)["username"] == expected
 
 
 def test_one_account_with_multiple_media_users(temp_dir, reset_singletons, monkeypatch):
@@ -384,7 +409,7 @@ def test_one_account_with_multiple_media_users(temp_dir, reset_singletons, monke
         "bob": ["bangumi-944646"],
         "dave": ["bangumi-944646"],
     }
-    assert accounts_mod.get_bangumi_config_for_user("dave")["username"] == "u2"
+    assert _config_for_user("dave")["username"] == "u2"
 
 
 def test_accounts_are_enabled_by_default(temp_dir, reset_singletons, monkeypatch):
@@ -426,9 +451,9 @@ def test_disabled_primary_hands_over_to_next_account(
     db = _accounts_db(temp_dir, _two_accounts_one_media_user())
     monkeypatch.setattr(accounts_mod, "database_manager", db)
 
-    assert accounts_mod.get_bangumi_config_for_user("Elegy233")["username"] == "u1"
+    assert _config_for_user("Elegy233")["username"] == "u1"
     db.set_enabled_bangumi_account("bangumi", False)
-    assert accounts_mod.get_bangumi_config_for_user("Elegy233")["username"] == "u2"
+    assert _config_for_user("Elegy233")["username"] == "u2"
 
 
 def test_reenabled_account_restores_sync(temp_dir, reset_singletons, monkeypatch):
@@ -503,7 +528,7 @@ def test_old_db_is_active_renamed_to_is_primary(temp_dir, reset_singletons):
         accs = {a["section_name"]: a for a in db2.list_bangumi_accounts()}
         assert set(accs) == {"bangumi", "bangumi-b"}
         # 原 is_active=1 的账号现为首选
-        assert db2.get_primary_bangumi_account()["section_name"] == "bangumi"
+        assert _primary(db2)["section_name"] == "bangumi"
         assert accs["bangumi"]["is_primary"] is True
         assert accs["bangumi-b"]["is_primary"] is False
         # 新列存在、旧列已删除
@@ -567,7 +592,7 @@ def test_fresh_account_inherits_branch_defaults(
                 "access_token": "AT",
             }
         )
-        acc = db.get_bangumi_account("bangumi")
+        acc = _account(db, "bangumi")
         assert acc["enabled"] is True
         assert acc["is_primary"] is False
     finally:
@@ -595,8 +620,8 @@ def test_disabled_primary_keeps_primary_identity(
     # 首选身份保留，不因停用而转交给其余账号
     assert db.get_primary_bangumi_account()["section_name"] == "bangumi"
     # 同步路由顺延到下一个启用账号
-    assert accounts_mod.get_bangumi_config_for_user("Elegy233")["username"] == "u2"
+    assert _config_for_user("Elegy233")["username"] == "u2"
 
     db.set_enabled_bangumi_account("bangumi", True)
     assert db.get_primary_bangumi_account()["section_name"] == "bangumi"
-    assert accounts_mod.get_bangumi_config_for_user("Elegy233")["username"] == "u1"
+    assert _config_for_user("Elegy233")["username"] == "u1"

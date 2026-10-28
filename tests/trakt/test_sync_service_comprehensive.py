@@ -195,9 +195,10 @@ async def test_sync_watched_history_movie_calls_sync_custom_item():
         assert r.synced_count == 1
         assert r.skipped_count == 0
         ss.sync_custom_item_async.assert_awaited_once()
-        call_kw = ss.sync_custom_item_async.await_args.kwargs
-        assert call_kw.get("source") == "trakt"
-        ci = ss.sync_custom_item_async.await_args.args[0]
+        call = ss.sync_custom_item_async.await_args
+        assert call is not None
+        assert call.kwargs.get("source") == "trakt"
+        ci = call.args[0]
         assert ci.media_type == "movie"
         assert ci.title == "Film X"
 
@@ -464,7 +465,8 @@ async def test_start_user_sync_task_stores_result():
         assert got is not None
         assert got.success is True
     finally:
-        svc.sync_user_trakt_data = real_sync
+        # 经实例 __dict__ 还原类方法，避免绑定方法与函数签名不匹配的类型告警
+        svc.__dict__["sync_user_trakt_data"] = real_sync
 
 
 def test_get_active_sync_tasks_running_only():

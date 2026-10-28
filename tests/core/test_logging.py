@@ -3,6 +3,8 @@ Logger tests - Simplified version
 """
 
 from pathlib import Path
+from types import ModuleType
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 from app.core.logging import (
@@ -154,7 +156,7 @@ class TestLoggerFileOperations:
 
         # 临时从 sys.modules 移除 config 模块让 import 失败
         saved = sys.modules.pop("app.core.config", None)
-        sys.modules["app.core.config"] = None  # type: ignore[assignment]
+        sys.modules["app.core.config"] = cast(ModuleType, None)  # 模拟模块不可导入
         try:
             assert logger._setup_log_file() is False
             assert logger._log_file_import_warned is True
@@ -265,7 +267,7 @@ class TestLoggerLogLevel:
         import sys
 
         saved = sys.modules.pop("app.core.config", None)
-        sys.modules["app.core.config"] = None  # type: ignore[assignment]
+        sys.modules["app.core.config"] = cast(ModuleType, None)  # 模拟模块不可导入
         try:
             assert logger.log_level == "INFO"
             assert logger._log_level is None
@@ -362,7 +364,7 @@ class TestLoggerDebugMode:
         import sys
 
         saved = sys.modules.pop("app.core.config", None)
-        sys.modules["app.core.config"] = None  # type: ignore[assignment]
+        sys.modules["app.core.config"] = cast(ModuleType, None)  # 模拟模块不可导入
         try:
             assert logger.debug_mode is False
         finally:

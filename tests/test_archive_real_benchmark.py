@@ -70,6 +70,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Any, cast
 
 # 确保项目根目录在 sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -79,7 +80,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # UTF-8 输出（Windows 终端兼容）
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
+        cast(Any, sys.stdout).reconfigure(encoding="utf-8")
     except (AttributeError, OSError):
         pass
 
@@ -830,7 +831,7 @@ def generate_same_name_cases(
 
     from collections import defaultdict
 
-    groups: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
+    groups: dict[str, list[tuple[int, int | None, str]]] = defaultdict(list)
     for sid, name, date in rows:
         nk = _normalize_key(name)
         if not nk:
@@ -1836,7 +1837,7 @@ def setup_archive(db_path: Path) -> tuple[ArchiveShortcut, int]:
 
     # 初始化 ArchiveShortcut
     shortcut = ArchiveShortcut()
-    shortcut._enabled = True  # 直接启用，绕过 config
+    shortcut.set_enabled(True)  # 直接启用，绕过 config
 
     if not shortcut.enabled:
         print("错误: ArchiveShortcut 启用失败")

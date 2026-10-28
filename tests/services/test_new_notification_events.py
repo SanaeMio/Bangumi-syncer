@@ -7,6 +7,7 @@
 - _maybe_notify_match_ambiguous 在 top1/top2 分数接近时触发，差距足够大时不触发
 """
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from app.core.notification_registry import (
@@ -40,6 +41,13 @@ NEW_TYPES = {
 }
 
 
+def _meta(type_id: str):
+    """显式收窄 get_type_meta 返回值（测试前提：事件类型已注册）。"""
+    meta = get_type_meta(type_id)
+    assert meta is not None, f"事件 {type_id} 未注册"
+    return meta
+
+
 def test_all_new_types_registered():
     """所有新增事件类型都已注册到 _TYPES"""
     for t in NEW_TYPES:
@@ -59,9 +67,9 @@ def test_new_types_listed_in_user_choices():
 
 def test_item_level_flag_correct():
     """match_ambiguous 应为 item_level，其余系统级事件应为非 item_level"""
-    assert get_type_meta("match_ambiguous").is_item_level is True
+    assert _meta("match_ambiguous").is_item_level is True
     for t in NEW_TYPES - {"match_ambiguous"}:
-        assert get_type_meta(t).is_item_level is False, f"{t} 应为系统级"
+        assert _meta(t).is_item_level is False, f"{t} 应为系统级"
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -253,4 +261,4 @@ def test_match_ambiguous_swallows_exceptions():
     item.source = "trakt"
 
     # 传 None 作为 trace，应被 try/except 吞掉
-    svc._maybe_notify_match_ambiguous(None, item, "trakt")  # type: ignore[arg-type]
+    svc._maybe_notify_match_ambiguous(cast("Any", None), item, "trakt")

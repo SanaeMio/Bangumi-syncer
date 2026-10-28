@@ -1,16 +1,16 @@
-"""MemoryService 测试（Phase 2.0.3 统一入口）。
+"""MemoryService 测试（统一入口）。
 
-覆盖：rename_task / clear_task 委托（C1/C3 语义）+ 读写能力收口。
+覆盖：rename_task / clear_task 委托（语义）+ 读写能力收口。
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.models.memory import MemoryEntry
-from app.services.llm.models import ChatResponse
+from app.services.llm.models import ChatResponse, StreamChunk
 from app.services.memory.service import MemoryService
 from app.services.summary.models import SummaryRecord
 
@@ -29,7 +29,7 @@ def _make_service(db) -> MemoryService:
 
 class TestRenameTask:
     def test_rename_migrates_memory(self, temp_dir, reset_singletons):
-        """C1：经 MemoryService 改名迁移记忆（主表）。"""
+        """经 MemoryService 改名迁移记忆（主表）。"""
         db = _make_db(temp_dir)
         db.memory.store_and_mark(
             MemoryEntry(
@@ -52,7 +52,7 @@ class TestRenameTask:
 
 class TestClearTask:
     def test_clear_removes_memory_and_marks(self, temp_dir, reset_singletons):
-        """C3：经 MemoryService 清空记忆 + 消费标记。"""
+        """经 MemoryService 清空记忆 + 消费标记。"""
         db = _make_db(temp_dir)
         r1 = db.log_sync_record(
             "dad",
@@ -94,8 +94,13 @@ class TestReadWriteDelegation:
     async def test_extract_and_store_delegates(self):
         repo = MagicMock()
         svc = MemoryService(repo)
+        # stream 唯一形态：摘要经 collect(stream_chat) 消费，mock 需产出事件流
         llm = MagicMock()
-        llm.chat = AsyncMock(return_value=ChatResponse(content="一句话", model="m"))
+
+        async def _stream_chat(messages, **kwargs):
+            yield StreamChunk(type="text_delta", text="一句话")
+
+        llm.stream_chat = MagicMock(side_effect=_stream_chat)
         svc._extractor._llm = llm
 
         await svc.extract_and_store(
@@ -110,6 +115,8 @@ class TestReadWriteDelegation:
         )
 
         repo.store_and_mark.assert_called_once()
+        entry = repo.store_and_mark.call_args.args[0]
+        assert entry.summary == "一句话"
 
     def test_retrieve_delegates(self):
         repo = MagicMock()

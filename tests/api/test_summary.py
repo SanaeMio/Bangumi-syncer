@@ -2,6 +2,7 @@
 Summary API 模型验证测试与端点集成测试。
 """
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,6 +18,7 @@ from app.models.summary import (
     SummaryJobTestResponse,
     SummaryJobUpdate,
 )
+from app.services.summary.models import SummaryResult
 
 # ========== LLMConfigResponse ==========
 
@@ -34,7 +36,8 @@ class TestLLMConfigResponse:
         assert model.temperature == 0.7
         assert model.timeout == 60
         assert model.provider == "openai_compat"
-        assert model.thinking_level == "off"
+        # 全局 thinking_level 已移除：响应模型不再携带该字段
+        assert "thinking_level" not in model.model_dump()
 
     def test_override_values(self):
         """验证显式字段值可被接受。"""
@@ -101,25 +104,22 @@ class TestLLMConfigUpdate:
         assert data["model"] == "gpt-4"
         assert "api_base" not in data
 
-    def test_valid_enum_values_accepted(self):
-        """provider / thinking_level 的合法枚举值可被接受。"""
-        model = LLMConfigUpdate(provider="anthropic_compat", thinking_level="high")
+    def test_valid_provider_accepted(self):
+        """provider 的合法枚举值可被接受（thinking_level 全局字段已移除）。"""
+        model = LLMConfigUpdate(provider="anthropic_compat")
         assert model.provider == "anthropic_compat"
-        assert model.thinking_level == "high"
 
     def test_invalid_provider_rejected(self):
         """非法 provider 在模型层抛 ValidationError。"""
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            LLMConfigUpdate(provider="banana")
+            LLMConfigUpdate(provider=cast(Any, "banana"))  # 故意传入非法枚举值
 
-    def test_invalid_thinking_level_rejected(self):
-        """非法 thinking_level 在模型层抛 ValidationError（不静默兜底为 off）。"""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            LLMConfigUpdate(thinking_level="banana")
+    def test_legacy_thinking_level_key_ignored(self):
+        """移除全局字段后，旧客户端仍发送 thinking_level 应被 pydantic 默认忽略。"""
+        model = LLMConfigUpdate.model_validate({"thinking_level": "banana"})
+        assert "thinking_level" not in model.model_dump(exclude_none=True)
 
 
 # ========== LLMTestResponse ==========
@@ -288,7 +288,6 @@ class TestSummaryJobResponse:
     def test_creation_with_all_fields(self):
         """验证使用所有字段创建模型。"""
         model = SummaryJobResponse(
-            id=1,
             name="Test Job",
             cron="0 21 * * *",
             lookback_days=1,
@@ -304,7 +303,6 @@ class TestSummaryJobResponse:
     def test_notification_type_empty_by_default(self):
         """验证 notification_type 默认为空字符串。"""
         model = SummaryJobResponse(
-            id=1,
             name="Test Job",
             cron="0 21 * * *",
             lookback_days=1,
@@ -419,7 +417,7 @@ class TestSummaryJobResponse:
         assert model.name == "Extra Keys"
 
     def test_from_config_dict_invalid_int_falls_back_to_default(self):
-        """F3（H2 同源）：lookback_days/max_records 为非法字符串时回落默认而非抛 500。
+        """lookback_days/max_records 为非法字符串时回落默认而非抛 500。
 
         config.ini 写 `lookback_days=abc`/`max_records=abc` 不得让整个端点 500。
         """
@@ -570,8 +568,8 @@ class TestGetLLMConfig:
                 assert response.json()["api_key"] == ""
 
     @pytest.mark.asyncio
-    async def test_returns_provider_and_thinking_level(self):
-        """Scenario 6.2: GET /llm 返回 provider 与 thinking_level。"""
+    async def test_returns_provider_and_omits_thinking_level(self):
+        """Scenario 6.2: GET /llm 返回 provider，且不再返回全局 thinking_level。"""
         from httpx import ASGITransport, AsyncClient
 
         app = self._create_test_app()
@@ -592,11 +590,11 @@ class TestGetLLMConfig:
                 response = await client.get("/api/llm/conf")
                 data = response.json()
                 assert data["provider"] == "anthropic_compat"
-                assert data["thinking_level"] == "high"
+                assert "thinking_level" not in data
 
     @pytest.mark.asyncio
-    async def test_returns_thinking_level_default(self):
-        """Scenario 6.3: 未配置 provider/thinking_level 时返回缺省值。"""
+    async def test_returns_provider_default_without_thinking_level(self):
+        """Scenario 6.3: 未配置 provider 时返回缺省 provider，且不含 thinking_level。"""
         from httpx import ASGITransport, AsyncClient
 
         app = self._create_test_app()
@@ -615,7 +613,7 @@ class TestGetLLMConfig:
                 response = await client.get("/api/llm/conf")
                 data = response.json()
                 assert data["provider"] == "openai_compat"
-                assert data["thinking_level"] == "off"
+                assert "thinking_level" not in data
 
     def _create_test_app(self):
         """创建一个带有认证覆盖的 FastAPI 测试应用。"""
@@ -671,8 +669,8 @@ class TestUpdateLLMConfig:
                 mock_cm.reload_config.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_updates_provider_and_thinking_level(self):
-        """Scenario 6.1: PUT 保存 provider 与 thinking_level。"""
+    async def test_updates_provider(self):
+        """Scenario 6.1: PUT 保存 provider（全局 thinking_level 已移除）。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -691,18 +689,46 @@ class TestUpdateLLMConfig:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                payload = {"provider": "anthropic_compat", "thinking_level": "medium"}
+                payload = {"provider": "anthropic_compat"}
                 response = await client.put("/api/llm/conf", json=payload)
                 assert response.status_code == 200
                 assert response.json()["status"] == "success"
 
-                assert mock_cm.set_config.call_count == 2
+                assert mock_cm.set_config.call_count == 1
                 options = [c.args[1] for c in mock_cm.set_config.call_args_list]
-                assert set(options) == {"provider", "thinking_level"}
+                assert set(options) == {"provider"}
                 # 均写入 [llm] 段
                 assert all(
                     c.args[0] == "llm" for c in mock_cm.set_config.call_args_list
                 )
+                mock_cm.reload_config.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_legacy_thinking_level_field_ignored(self):
+        """旧客户端 PUT 携带已移除的 thinking_level 时应被忽略，不写入配置。"""
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.llm import router
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        with patch("app.api.llm.config_manager") as mock_cm:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.put(
+                    "/api/llm/conf", json={"thinking_level": "medium"}
+                )
+                assert response.status_code == 200
+                mock_cm.set_config.assert_not_called()
                 mock_cm.reload_config.assert_called_once()
 
     @pytest.mark.asyncio
@@ -737,11 +763,10 @@ class TestUpdateLLMConfig:
         "payload",
         [
             {"provider": "banana"},
-            {"thinking_level": "banana"},
         ],
     )
     async def test_invalid_enum_values_rejected(self, payload):
-        """非法 provider / thinking_level 应在 API 边界被拒绝（422），不写入配置。"""
+        """非法 provider 应在 API 边界被拒绝（422），不写入配置。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
@@ -765,18 +790,44 @@ class TestUpdateLLMConfig:
                 mock_cm.set_config.assert_not_called()
 
 
+class _FakeLLMStream:
+    """可控的异步流对象，模拟 ``client.stream_chat()`` 返回值。
+
+    支持 ``async for``（``__aiter__``/``__anext__``）与显式 ``aclose()``，
+    并记录 ``aclose`` 是否被调用——用于断言端点在收到首个内容事件后主动关闭流。
+    """
+
+    def __init__(self, chunks, *, error=None):
+        self._chunks = list(chunks)
+        self._error = error
+        self.aclose_called = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._error is not None:
+            raise self._error
+        if not self._chunks:
+            raise StopAsyncIteration
+        return self._chunks.pop(0)
+
+    async def aclose(self):
+        self.aclose_called = True
+
+
 class TestTestLLMConnection:
-    """POST /api/llm/test 端点测试。"""
+    """POST /api/llm/test 端点测试（改走流式 stream_chat）。"""
 
     @pytest.mark.asyncio
     async def test_successful_llm_connection(self):
-        """POST /api/llm/test 在 LLM 有效时应返回成功。"""
+        """POST /api/llm/test 收到首个内容事件即返回成功（流式连通，不等待全量）。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
         from app.api.deps import get_current_user_flexible
         from app.api.llm import router
-        from app.services.llm.models import ChatResponse, Usage
+        from app.services.llm.models import StreamChunk
 
         app = FastAPI()
         app.include_router(router)
@@ -786,16 +837,22 @@ class TestTestLLMConnection:
 
         app.dependency_overrides[get_current_user_flexible] = mock_auth
 
-        mock_client = MagicMock()
-        mock_client.chat = AsyncMock(
-            return_value=ChatResponse(
-                content="Hello! How can I help you?",
-                model="gpt-4o-mini",
-                usage=Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-            )
+        fake_stream = _FakeLLMStream(
+            [
+                StreamChunk(type="text_delta", text="H", model="real-model-42"),
+                StreamChunk(type="text_delta", text="i"),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.stream_chat = MagicMock(return_value=fake_stream)
 
-        with patch("app.api.llm.get_llm_client", return_value=mock_client):
+        with (
+            patch("app.api.llm.get_llm_client", return_value=mock_client),
+            patch(
+                "app.api.llm.config_manager.get_llm_config",
+                return_value={"model": "gpt-4o-mini"},
+            ),
+        ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -803,27 +860,30 @@ class TestTestLLMConnection:
                 assert response.status_code == 200
                 data = response.json()
                 assert data["success"] is True
-                # 响应不含回复正文（S12：message 为固定文案，短回复截停无展示价值）
+                # 响应不含回复正文（固定文案，短回复截停无展示价值）
                 assert data["message"] == "连接成功"
-                assert "Hello! How can I help you?" not in data["message"]
-                assert data["model"] == "gpt-4o-mini"
+                # model 取首个事件真实值（优先于配置）
+                assert data["model"] == "real-model-42"
                 assert data["latency_ms"] is not None
                 # 连通性 ping 应限制生成长度（max_tokens=8）且 prompt 极简
-                call_kwargs = mock_client.chat.await_args.kwargs
+                call_kwargs = mock_client.stream_chat.call_args.kwargs
                 assert call_kwargs["max_tokens"] == 8
-                assert call_kwargs["job_name"] == "llm_test"
-                msgs = mock_client.chat.await_args.args[0]
+                assert call_kwargs["job_name"] == "连接测试"
+                msgs = mock_client.stream_chat.call_args.args[0]
                 assert len(msgs) == 1
                 assert msgs[0].content == "ping"
+                # 首个内容事件后主动 aclose（不等待全量；未耗尽 → 不落成功计数）
+                assert fake_stream.aclose_called is True
 
     @pytest.mark.asyncio
-    async def test_llm_connection_failure(self):
-        """POST /api/llm/test 在 LLM 出错时应返回失败。"""
+    async def test_connection_model_falls_back_to_config(self):
+        """首个事件未携带 model → 回退当前配置 model（展示口径）。"""
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
         from app.api.deps import get_current_user_flexible
         from app.api.llm import router
+        from app.services.llm.models import StreamChunk
 
         app = FastAPI()
         app.include_router(router)
@@ -833,8 +893,50 @@ class TestTestLLMConnection:
 
         app.dependency_overrides[get_current_user_flexible] = mock_auth
 
+        fake_stream = _FakeLLMStream([StreamChunk(type="text_delta", text="Hi")])
         mock_client = MagicMock()
-        mock_client.chat = AsyncMock(side_effect=Exception("Connection refused"))
+        mock_client.stream_chat = MagicMock(return_value=fake_stream)
+
+        with (
+            patch("app.api.llm.get_llm_client", return_value=mock_client),
+            patch(
+                "app.api.llm.config_manager.get_llm_config",
+                return_value={"model": "cfg-fallback"},
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/llm/test")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["model"] == "cfg-fallback"
+
+    @pytest.mark.asyncio
+    async def test_llm_connection_failure(self):
+        """POST /api/llm/test 流中抛 LLMCallError → 返回失败（现有格式）。"""
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.llm import router
+        from app.services.llm.client import LLMCallError
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        fake_stream = _FakeLLMStream(
+            [], error=LLMCallError("Connection refused", retryable=True)
+        )
+        mock_client = MagicMock()
+        mock_client.stream_chat = MagicMock(return_value=fake_stream)
 
         with patch("app.api.llm.get_llm_client", return_value=mock_client):
             async with AsyncClient(
@@ -845,20 +947,21 @@ class TestTestLLMConnection:
                 data = response.json()
                 assert data["success"] is False
                 assert "Connection refused" in data["message"]
+                assert fake_stream.aclose_called is True
 
     @pytest.mark.asyncio
-    async def test_llm_connection_empty_content_with_model_fails(self):
-        """F2（H1 同步）：content 为空但 model 存在 → 仍视为失败（仅判 not content）。
+    async def test_connection_succeeds_on_thinking_delta_first(self):
+        """首个内容事件为 thinking_delta（无 text）→ 判定连通成功。
 
-        旧逻辑 `not response.model and not response.content` 在 model 存在时会误判为
-        成功；修复后与 summary 侧一致，仅 `not content` 即失败。
+        anthropic_compat 开思考后 ``thinking_delta`` 先行，若只认 text_delta
+        会在长思考期间超时/误报失败。
         """
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
 
         from app.api.deps import get_current_user_flexible
         from app.api.llm import router
-        from app.services.llm.models import ChatResponse, Usage
+        from app.services.llm.models import StreamChunk
 
         app = FastAPI()
         app.include_router(router)
@@ -868,14 +971,98 @@ class TestTestLLMConnection:
 
         app.dependency_overrides[get_current_user_flexible] = mock_auth
 
-        mock_client = MagicMock()
-        mock_client.chat = AsyncMock(
-            return_value=ChatResponse(
-                content="",
-                model="gpt-4o-mini",
-                usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-            )
+        fake_stream = _FakeLLMStream(
+            [
+                StreamChunk(
+                    type="thinking_delta",
+                    thinking="思考中",
+                    model="claude-thinking-1",
+                ),
+            ]
         )
+        mock_client = MagicMock()
+        mock_client.stream_chat = MagicMock(return_value=fake_stream)
+
+        with (
+            patch("app.api.llm.get_llm_client", return_value=mock_client),
+            patch(
+                "app.api.llm.config_manager.get_llm_config",
+                return_value={"model": "cfg-fallback"},
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/llm/test")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["model"] == "claude-thinking-1"
+        # 首个内容事件后立即 break 并关闭流（不等待 text）
+        assert fake_stream.aclose_called is True
+
+    @pytest.mark.asyncio
+    async def test_connection_empty_thinking_delta_still_fails(self):
+        """thinking_delta 但 thinking 为空 → 不计入连通判定（保持失败语义）。"""
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.llm import router
+        from app.services.llm.models import StreamChunk
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        fake_stream = _FakeLLMStream(
+            [
+                StreamChunk(type="thinking_delta", thinking=""),
+                StreamChunk(type="stop", stop_reason="max_tokens"),
+            ]
+        )
+        mock_client = MagicMock()
+        mock_client.stream_chat = MagicMock(return_value=fake_stream)
+
+        with patch("app.api.llm.get_llm_client", return_value=mock_client):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post("/api/llm/test")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert fake_stream.aclose_called is True
+
+    @pytest.mark.asyncio
+    async def test_llm_connection_empty_content_with_model_fails(self):
+        """流中无 text_delta（如仅 stop）→ 仍视为失败（与旧 not content 语义一致）。"""
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+
+        from app.api.deps import get_current_user_flexible
+        from app.api.llm import router
+        from app.services.llm.models import StreamChunk
+
+        app = FastAPI()
+        app.include_router(router)
+
+        async def mock_auth(request=None, credentials=None):
+            return {"username": "testuser"}
+
+        app.dependency_overrides[get_current_user_flexible] = mock_auth
+
+        fake_stream = _FakeLLMStream(
+            [StreamChunk(type="stop", stop_reason="max_tokens")]
+        )
+        mock_client = MagicMock()
+        mock_client.stream_chat = MagicMock(return_value=fake_stream)
 
         with patch("app.api.llm.get_llm_client", return_value=mock_client):
             async with AsyncClient(
@@ -885,6 +1072,7 @@ class TestTestLLMConnection:
                 assert response.status_code == 200
                 data = response.json()
                 assert data["success"] is False
+                assert fake_stream.aclose_called is True
 
 
 class TestGetLLMStats:
@@ -1017,7 +1205,7 @@ class TestListSummaryJobs:
 
     @pytest.mark.asyncio
     async def test_returns_200_with_invalid_int_config(self):
-        """F3（API 级）：config.ini 含非法整型字段时整体返回 200 而非 500。
+        """config.ini 含非法整型字段时整体返回 200 而非 500。
 
         旧实现裸 `int()` 会让 `lookback_days=abc`/`max_records=abc` 直接 500。
         """
@@ -1342,16 +1530,16 @@ class TestTestSummaryJob:
                 },
             ]
             mock_service.generate_summary = AsyncMock(
-                return_value={
-                    "summary_text": "Today you watched 3 episodes.",
-                    "model": "gpt-4o-mini",
-                    "usage": Usage(
+                return_value=SummaryResult(
+                    summary_text="Today you watched 3 episodes.",
+                    model="gpt-4o-mini",
+                    usage=Usage(
                         prompt_tokens=100, completion_tokens=50, total_tokens=150
                     ),
-                    "record_count": 3,
-                    "date_from": "2024-01-01",
-                    "date_to": "2024-01-02",
-                }
+                    record_count=3,
+                    date_from="2024-01-01",
+                    date_to="2024-01-02",
+                )
             )
 
             async with AsyncClient(
@@ -1407,9 +1595,9 @@ class TestTestSummaryJob:
 
     @pytest.mark.asyncio
     async def test_empty_summary_text_with_usage_fails(self):
-        """F6（H1-API 回归）：summary_text 为空但 usage 存在 → success=False + error_message。
+        """summary_text 为空但 usage 存在 → success=False + error_message。
 
-        H1 修复后判定条件为仅 `not summary_text`；此前缺此缺陷场景测试。
+        修复后判定条件为仅 `not summary_text`；此前缺此缺陷场景测试。
         """
         from fastapi import FastAPI
         from httpx import ASGITransport, AsyncClient
@@ -1443,16 +1631,16 @@ class TestTestSummaryJob:
                 },
             ]
             mock_service.generate_summary = AsyncMock(
-                return_value={
-                    "summary_text": "",  # 空正文（如重试耗尽）
-                    "model": "gpt-4o-mini",
-                    "usage": Usage(
+                return_value=SummaryResult(
+                    summary_text="",  # 空正文（如重试耗尽）
+                    model="gpt-4o-mini",
+                    usage=Usage(
                         prompt_tokens=100, completion_tokens=0, total_tokens=100
                     ),
-                    "record_count": 3,
-                    "date_from": "2024-01-01",
-                    "date_to": "2024-01-02",
-                }
+                    record_count=3,
+                    date_from="2024-01-01",
+                    date_to="2024-01-02",
+                )
             )
 
             async with AsyncClient(
@@ -1622,7 +1810,7 @@ class TestLLMUsageStatsResponse:
         assert len(model.daily) == 1
 
 
-# ========== 记忆清理与改名联动（Phase 2.0.3，S1/S3/S5） ==========
+# ========== 记忆清理与改名联动 ==========
 
 
 def _make_summary_app():
@@ -1658,7 +1846,7 @@ def _assert_422_detail_contract(response, loc_field):
 
 
 class TestSummaryLimitValidation:
-    """记忆/关联条数越界契约测试（T1）。
+    """记忆/关联条数越界契约测试。
 
     锁定后端对 memory_limit / related_limit 的校验契约：
     非法值 → 422 且 detail 为对象数组（含 msg 与 loc），且不得入库；
@@ -1762,7 +1950,7 @@ class TestSummaryLimitValidation:
 class TestClearMemoryApi:
     @pytest.mark.asyncio
     async def test_requires_confirm(self):
-        """C4/S3：无 confirm → 422，不删除。"""
+        """无 confirm → 422，不删除。"""
         from httpx import ASGITransport, AsyncClient
 
         app = _make_summary_app()
@@ -1779,7 +1967,7 @@ class TestClearMemoryApi:
 
     @pytest.mark.asyncio
     async def test_clear_memory_success(self):
-        """S3：confirm=true → success + deleted_records，委托 MemoryService。"""
+        """confirm=true → success + deleted_records，委托 MemoryService。"""
         from httpx import ASGITransport, AsyncClient
 
         app = _make_summary_app()
@@ -1822,7 +2010,7 @@ class TestClearMemoryApi:
 
     @pytest.mark.asyncio
     async def test_clear_failure_returns_error(self):
-        """S5：清空失败返回错误响应（不影响任务配置）。"""
+        """清空失败返回错误响应（不影响任务配置）。"""
         from httpx import ASGITransport, AsyncClient
 
         app = _make_summary_app()
@@ -1847,7 +2035,7 @@ class TestClearMemoryApi:
 class TestRenameMemoryLinkage:
     @pytest.mark.asyncio
     async def test_rename_migrates_memory(self):
-        """S1：改名 PUT → MemoryService.rename_task 联动（记忆跟随）。"""
+        """改名 PUT → MemoryService.rename_task 联动（记忆跟随）。"""
         from httpx import ASGITransport, AsyncClient
 
         app = _make_summary_app()
@@ -2119,7 +2307,7 @@ class TestSummaryJobRuntimeSyncDegradation:
 
 
 class TestMemoryStatsApi:
-    """S10'/S11'：memory-stats 返回记忆总量与注入估算（绝对量，无百分比）。"""
+    """memory-stats 返回记忆总量与注入估算（绝对量，无百分比）。"""
 
     @pytest.mark.asyncio
     async def test_stats_with_no_memory(self):
@@ -2191,7 +2379,7 @@ class TestMemoryStatsApi:
 
     @pytest.mark.asyncio
     async def test_stats_excludes_placeholder_rows(self):
-        """T2：摘要失败占位行（summary=""）不计入 total_count/chars/avg 与注入估算。"""
+        """摘要失败占位行（summary=""）不计入 total_count/chars/avg 与注入估算。"""
         from httpx import ASGITransport, AsyncClient
 
         from app.models.memory import MemoryEntry
@@ -2242,7 +2430,7 @@ class TestMemoryStatsApi:
 
 
 class TestMemoryStatsEstimateM11:
-    """M11：注入估算需体现 related 独立生效（不因 memory_limit=0 而遗漏 related）。"""
+    """注入估算需体现 related 独立生效（不因 memory_limit=0 而遗漏 related）。"""
 
     @pytest.mark.asyncio
     async def test_stats_includes_related_when_memory_zero(self):
@@ -2271,3 +2459,300 @@ class TestMemoryStatsEstimateM11:
         data = response.json()["data"]
         # related 独立生效：估算 = (min(1,0)=0 + 2) × 80 × 0.7 = 112
         assert data["injected_estimate_tokens"] == 112
+
+
+class TestSummaryThinkingLevelAPIFlow:
+    """任务级 thinking_level 的 API 链路（e2e「编辑弹窗回填」缺陷的单元防线）。
+
+    背景：e2e 场景 2 失败——POST 保存 thinking_level=low 后，编辑弹窗回填 off。
+    根因：API 模型（Create/Update/Response）缺 thinking_level 字段——Pydantic
+    丢弃请求值、响应也不返回，config 层白名单（_SUMMARY_FIELDS）存取因此不可达。
+    """
+
+    def test_create_model_accepts_thinking_level(self):
+        """SummaryJobCreate：默认 off，合法枚举接受，非法拒绝。"""
+        assert SummaryJobCreate().thinking_level == "off"
+        assert SummaryJobCreate(thinking_level="low").thinking_level == "low"
+        with pytest.raises(ValidationError):
+            SummaryJobCreate(thinking_level=cast(Any, "ultra"))  # 故意传入非法枚举值
+
+    def test_update_model_accepts_thinking_level(self):
+        """SummaryJobUpdate：可选字段（None 表示不更新）。"""
+        assert SummaryJobUpdate().thinking_level is None
+        assert SummaryJobUpdate(thinking_level="high").thinking_level == "high"
+
+    def test_response_from_config_dict_carries_thinking_level(self):
+        """SummaryJobResponse.from_config_dict 携带 thinking_level（前端回填数据源）。"""
+        resp = SummaryJobResponse.from_config_dict(
+            {"name": "T", "thinking_level": "medium"}
+        )
+        assert resp.thinking_level == "medium"
+        # 缺省回落 off（兼容无该键的老配置）
+        assert (
+            SummaryJobResponse.from_config_dict({"name": "T"}).thinking_level == "off"
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_persists_thinking_level(self):
+        """POST 带 thinking_level → save_summary_config 收到该字段。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                response = await client.post(
+                    "/api/summary/jobs",
+                    json={"name": "TLJob", "thinking_level": "low"},
+                )
+        assert response.status_code == 200
+        saved = mock_cm.save_summary_config.call_args[0][0]
+        assert saved["thinking_level"] == "low"
+
+    @pytest.mark.asyncio
+    async def test_update_persists_thinking_level(self):
+        """PUT 带 thinking_level → save_summary_config 收到该字段。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_scheduler") as mock_scheduler,
+            ):
+                mock_scheduler.apply_config_after_save = AsyncMock()
+                response = await client.put(
+                    "/api/summary/jobs/TLJob", json={"thinking_level": "high"}
+                )
+        assert response.status_code == 200
+        saved = mock_cm.save_summary_config.call_args[0][0]
+        assert saved["thinking_level"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_list_returns_thinking_level(self):
+        """GET 列表响应含 thinking_level（前端回填值）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                mock_cm.get_summary_configs.return_value = [
+                    {"name": "TLJob", "thinking_level": "low"}
+                ]
+                response = await client.get("/api/summary/jobs")
+        assert response.status_code == 200
+        job = response.json()["data"][0]
+        assert job["thinking_level"] == "low"
+
+
+# ========== 试生成流式 SSE 端点 ==========
+
+
+def _parse_sse_data_events(body: str) -> list[dict]:
+    """解析 SSE 响应体中的 ``data:`` 行（忽略注释/心跳/ping）。"""
+    import json
+
+    events: list[dict] = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[len("data:") :].strip()
+        if payload:
+            events.append(json.loads(payload))
+    return events
+
+
+def _job_config_dict(name: str = "Test Job") -> dict:
+    return {
+        "id": 1,
+        "name": name,
+        "cron": "0 21 * * *",
+        "lookback_days": 1,
+        "user_name": "",
+        "system_prompt": "",
+        "max_records": 200,
+        "enabled": True,
+    }
+
+
+class TestTestSummaryJobStream:
+    """GET /api/summary/jobs/{id}/test/stream SSE 端点测试。"""
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_delta_sequence_and_done(self):
+        """正常流：delta 事件逐条推送，末尾 done 携带 usage/latency/model。"""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.services.llm.models import StreamChunk, Usage
+
+        app = _make_summary_app()
+
+        async def _fake_stream(job_config, result=None):
+            for text in ("你", "好"):
+                yield StreamChunk(type="text_delta", text=text)
+            if result is not None:
+                result.model = "gpt-4o-mini"
+                result.usage = Usage(
+                    prompt_tokens=100, completion_tokens=50, total_tokens=150
+                )
+                result.latency_ms = 123
+                result.record_count = 3
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_service") as mock_service,
+            ):
+                mock_cm.get_summary_configs.return_value = [_job_config_dict()]
+                mock_service.generate_summary_stream = _fake_stream
+
+                response = await client.get("/api/summary/jobs/Test%20Job/test/stream")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+
+        events = _parse_sse_data_events(response.text)
+        deltas = [e for e in events if e.get("type") == "delta"]
+        assert [d["text"] for d in deltas] == ["你", "好"]
+
+        done = next(e for e in events if e.get("type") == "done")
+        assert done["model"] == "gpt-4o-mini"
+        assert done["prompt_tokens"] == 100
+        assert done["completion_tokens"] == 50
+        assert done["total_tokens"] == 150
+        assert done["latency_ms"] == 123
+        assert done["record_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_thinking_event(self):
+        """thinking_delta 作为 thinking 事件推送（可选展示，不阻断主文本）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.services.llm.models import StreamChunk
+
+        app = _make_summary_app()
+
+        async def _fake_stream(job_config, result=None):
+            yield StreamChunk(type="thinking_delta", thinking="思考中")
+            yield StreamChunk(type="text_delta", text="正文")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_service") as mock_service,
+            ):
+                mock_cm.get_summary_configs.return_value = [_job_config_dict()]
+                mock_service.generate_summary_stream = _fake_stream
+
+                response = await client.get("/api/summary/jobs/Test%20Job/test/stream")
+
+        events = _parse_sse_data_events(response.text)
+        thinking = next(e for e in events if e.get("type") == "thinking")
+        assert thinking["text"] == "思考中"
+        assert any(e.get("type") == "delta" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_stream_error_event_without_500(self):
+        """流中异常 → 200 + error 事件（不 500，不伪装成功）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.services.llm.models import StreamChunk
+
+        app = _make_summary_app()
+
+        async def _fake_stream(job_config, result=None):
+            yield StreamChunk(type="text_delta", text="开头")
+            raise RuntimeError("LLM down")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_service") as mock_service,
+            ):
+                mock_cm.get_summary_configs.return_value = [_job_config_dict()]
+                mock_service.generate_summary_stream = _fake_stream
+
+                response = await client.get("/api/summary/jobs/Test%20Job/test/stream")
+
+        assert response.status_code == 200
+        events = _parse_sse_data_events(response.text)
+        assert any(e.get("type") == "delta" for e in events)
+        error = next(e for e in events if e.get("type") == "error")
+        assert "LLM down" in error["message"]
+        # 出错后不再补 done（避免前端误判成功）
+        assert not any(e.get("type") == "done" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_stream_404_for_nonexistent_job(self):
+        """任务不存在 → 404（在返回 SSE 响应前抛出）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.summary_jobs.config_manager") as mock_cm:
+                mock_cm.get_summary_configs.return_value = [
+                    _job_config_dict("Other Job")
+                ]
+                response = await client.get("/api/summary/jobs/Nonexistent/test/stream")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_post_test_endpoint_still_aggregates(self):
+        """回归：POST /test 仍走聚合 generate_summary（行为不变）。"""
+        from httpx import ASGITransport, AsyncClient
+
+        from app.services.llm.models import Usage
+
+        app = _make_summary_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with (
+                patch("app.api.summary_jobs.config_manager") as mock_cm,
+                patch("app.api.summary_jobs.summary_service") as mock_service,
+            ):
+                mock_cm.get_summary_configs.return_value = [_job_config_dict()]
+                mock_service.generate_summary = AsyncMock(
+                    return_value=SummaryResult(
+                        summary_text="聚合结果",
+                        model="gpt-4o-mini",
+                        usage=Usage(
+                            prompt_tokens=10, completion_tokens=5, total_tokens=15
+                        ),
+                        record_count=3,
+                        date_from="2024-01-01",
+                        date_to="2024-01-02",
+                    )
+                )
+
+                response = await client.post("/api/summary/jobs/Test%20Job/test")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["summary_text"] == "聚合结果"
+        assert data["total_tokens"] == 15
+        mock_service.generate_summary.assert_awaited_once()
+        mock_service.generate_summary_stream.assert_not_called()

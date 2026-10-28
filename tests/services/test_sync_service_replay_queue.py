@@ -8,6 +8,7 @@
 """
 
 import time
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -58,7 +59,7 @@ class TestRetryMarkEpisodeQueueing:
         assert call_kwargs.kwargs["ep_id"] == 456
         assert call_kwargs.kwargs["reason"] == "api_unreachable"
         # payload 必须原样透传（user_name 由 _enqueue_pending_sync 内部从 payload 读取，
-        # 不再依赖 bgm_api.username；具体校验见 TestEnqueuePendingSyncUserName）
+        # 不使用 Bangumi 账号名；具体校验见 TestEnqueuePendingSyncUserName）
         assert call_kwargs.kwargs["payload"]["user_name"] == "plex_user_b"
 
     def test_raises_when_replay_disabled(self):
@@ -197,13 +198,10 @@ class TestPendingSyncQueuedException:
 
 
 class TestEnqueuePendingSyncUserName:
-    """_enqueue_pending_sync 必须用 payload 里的媒体库用户名，而不是 bgm_api.username"""
+    """_enqueue_pending_sync 必须用 payload 里的媒体库用户名（而非 Bangumi 账号名）"""
 
     def test_uses_payload_user_name_not_bangumi_username(self):
         from app.services.sync_service import SyncService
-
-        bgm = MagicMock()
-        bgm.username = "bangumi_account_a"  # Bangumi 账号名
 
         payload = {
             "title": "测试番剧",
@@ -221,7 +219,6 @@ class TestEnqueuePendingSyncUserName:
             ) as mock_sched,
         ):
             SyncService._enqueue_pending_sync(
-                bgm_api=bgm,
                 subject_id=123,
                 ep_id=456,
                 reason="api_unreachable",
@@ -244,9 +241,6 @@ class TestEnqueuePendingSyncUserName:
     def test_falls_back_to_empty_string_when_payload_missing_user_name(self):
         from app.services.sync_service import SyncService
 
-        bgm = MagicMock()
-        bgm.username = "bangumi_account_a"
-
         payload = {"title": "测试", "season": 1, "episode": 1}
 
         with (
@@ -254,7 +248,6 @@ class TestEnqueuePendingSyncUserName:
             patch("app.services.bangumi_replay_scheduler.bangumi_replay_scheduler"),
         ):
             SyncService._enqueue_pending_sync(
-                bgm_api=bgm,
                 subject_id=1,
                 ep_id=2,
                 reason="api_unreachable",
@@ -263,15 +256,13 @@ class TestEnqueuePendingSyncUserName:
             )
 
         call_kwargs = mock_db.enqueue_pending_sync.call_args.kwargs
-        # 缺失时回退为空串，而不是 bgm_api.username
+        # 缺失时回退为空串，而不是 Bangumi 账号名
         assert call_kwargs["user_name"] == ""
 
     def test_trigger_failure_does_not_raise(self):
         """trigger_immediate_run 抛异常时不应影响入队流程"""
         from app.services.sync_service import SyncService
 
-        bgm = MagicMock()
-        bgm.username = "bangumi_account_a"
         payload = {"title": "x", "season": 1, "episode": 1, "user_name": "u"}
 
         with (
@@ -283,7 +274,6 @@ class TestEnqueuePendingSyncUserName:
             mock_sched.trigger_immediate_run.side_effect = RuntimeError("boom")
             # 不应抛出
             SyncService._enqueue_pending_sync(
-                bgm_api=bgm,
                 subject_id=1,
                 ep_id=None,
                 reason="api_unreachable",
@@ -563,6 +553,7 @@ class TestFindMatchingSubjectQuickDegrade:
 
         assert subject_id is None
         assert is_season is False
+        assert err_resp is not None
         assert err_resp.status == "ignored"
         assert "不可达" in err_resp.message
         mock_find.assert_not_called()
@@ -643,6 +634,7 @@ class TestFindMatchingSubjectQuickDegrade:
             )
 
         assert subject_id is None
+        assert err_resp is not None
         assert err_resp.status == "ignored"
         mock_find.assert_not_called()
 
@@ -671,7 +663,7 @@ class TestResetAllApiUnreachableFlags:
         svc = SyncService()
         api = MagicMock()
         api.is_api_unreachable.return_value = False
-        svc._bangumi_api_cache = {"u1": (api, None)}
+        svc._bangumi_api_cache = cast("Any", {"u1": (api, None)})
 
         count = svc.reset_all_api_unreachable_flags()
 

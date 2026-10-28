@@ -41,38 +41,45 @@ _PUNCTUATION_TRANS = str.maketrans(PUNCTUATION_MAP)
 _MULTI_SPACE = re.compile(r"\s+")
 
 
+def normalize_title_text(title: str) -> str:
+    """对标题进行归一化处理，去除噪声片段，标准化标点与空白。
+
+    处理步骤：
+    1. 中文标点 → 半角/标准形式
+    2. 去除发布组/分辨率/编码等噪声片段
+    3. 折叠连续空白为单个空格
+    4. 去除首尾空白与首尾标点
+
+    纯函数，不依赖任何单例；normalize 前后有差异时记 debug 日志。
+    """
+    if not title:
+        return ""
+
+    # 1. 中文标点归一化
+    cleaned = title.translate(_PUNCTUATION_TRANS)
+
+    # 2. 去除噪声片段
+    for pattern in _NOISE_PATTERNS:
+        cleaned = pattern.sub(" ", cleaned)
+
+    # 3. 折叠连续空白
+    cleaned = _MULTI_SPACE.sub(" ", cleaned)
+
+    # 4. 去除首尾空白与首尾常见标点
+    cleaned = cleaned.strip().strip(" -_·.:;,").strip()
+
+    if cleaned != title:
+        logger.debug(f"标题归一化：{title!r} → {cleaned!r}")
+    return cleaned
+
+
 class TitleNormalizeMixin:
     """标题归一化与候选排序（纯逻辑，无外部依赖）。"""
 
     @staticmethod
     def normalize_title(title: str) -> str:
-        """对标题进行归一化处理，去除噪声片段，标准化标点与空白。
-
-        处理步骤：
-        1. 中文标点 → 半角/标准形式
-        2. 去除发布组/分辨率/编码等噪声片段
-        3. 折叠连续空白为单个空格
-        4. 去除首尾空白与首尾标点
-        """
-        if not title:
-            return ""
-
-        # 1. 中文标点归一化
-        cleaned = title.translate(_PUNCTUATION_TRANS)
-
-        # 2. 去除噪声片段
-        for pattern in _NOISE_PATTERNS:
-            cleaned = pattern.sub(" ", cleaned)
-
-        # 3. 折叠连续空白
-        cleaned = _MULTI_SPACE.sub(" ", cleaned)
-
-        # 4. 去除首尾空白与首尾常见标点
-        cleaned = cleaned.strip().strip(" -_·.:;,").strip()
-
-        if cleaned != title:
-            logger.debug(f"标题归一化：{title!r} → {cleaned!r}")
-        return cleaned
+        """对标题进行归一化处理（委托给 normalize_title_text，行为逐字不变）。"""
+        return normalize_title_text(title)
 
     @staticmethod
     def _sort_candidates_by_platform(

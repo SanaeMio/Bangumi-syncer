@@ -1,6 +1,7 @@
 """config_secret_crypto 单元测试。"""
 
 from configparser import ConfigParser
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from app.core import config_secret_crypto as csc
@@ -47,7 +48,7 @@ def test_encrypt_empty():
 
 
 def test_encrypt_none_returns_empty():
-    assert csc.encrypt(None) == ""
+    assert csc.encrypt(cast(Any, None)) == ""
 
 
 def test_decrypt_prefixed_without_master_logs_warning():
@@ -74,6 +75,45 @@ def test_encrypt_without_master_returns_plaintext():
     """无 secret_key 时不应写入不可解的占位，保持明文。"""
     with patch.object(csc, "_master_secret", return_value=""):
         assert csc.encrypt("still-plain") == "still-plain"
+
+
+def test_encrypt_warns_once_when_secret_missing(monkeypatch):
+    """无 secret_key 时 encrypt 仅 warning 一次（防刷屏），且行为保持明文透传。"""
+    monkeypatch.setattr(csc, "_master_secret", lambda: "")
+    # 重置模块级 flag，保证测试独立
+    monkeypatch.setattr(csc, "_encrypt_missing_master_warned", False)
+
+    with patch("app.core.logging.logger.warning") as warn_warn:
+        out1 = csc.encrypt("first-secret")
+        out2 = csc.encrypt("second-secret")
+
+    assert out1 == "first-secret"
+    assert out2 == "second-secret"
+    # 仅第一次调用触发 warning
+    assert warn_warn.call_count == 1
+    msg = warn_warn.call_args[0][0]
+    assert "secret_key" in msg
+
+
+def test_warn_if_master_missing_helper(monkeypatch):
+    """启动期 helper：无 secret_key 时 warning 一次并返回 True。"""
+    monkeypatch.setattr(csc, "_master_secret", lambda: "")
+    with patch("app.core.logging.logger.warning") as warn_warn:
+        result = csc.warn_if_master_missing()
+    assert result is True
+    assert warn_warn.call_count == 1
+    msg = warn_warn.call_args[0][0]
+    assert "secret_key" in msg
+    assert "明文" in msg
+
+
+def test_warn_if_master_present_helper(monkeypatch):
+    """启动期 helper：有 secret_key 时不告警并返回 False。"""
+    monkeypatch.setattr(csc, "_master_secret", lambda: "configured-key")
+    with patch("app.core.logging.logger.warning") as warn_warn:
+        result = csc.warn_if_master_missing()
+    assert result is False
+    warn_warn.assert_not_called()
 
 
 def test_decrypt_wrong_key_returns_ciphertext_string():

@@ -1,7 +1,7 @@
 """
 配置页注释悬浮化改造测试
 
-目标：验证 config 页面中原本以 ``<small class="text-muted">`` 平铺的 8 处注释，
+目标：验证 config 页面中原本以 ``<small class="text-muted">`` 平铺的 7 处注释，
 全部改为 label/按钮旁的问号图标
 （``<i class="bi bi-question-circle ms-1 text-muted" data-bs-toggle="tooltip" title="...">``），
 弹窗内图标需带 ``data-bs-container="body"``。
@@ -109,18 +109,6 @@ def test_llm_api_base_comment_becomes_tooltip_icon():
     )
 
 
-def test_llm_thinking_level_comment_becomes_tooltip_icon():
-    """LLM 卡片 思考强度 label 旁应出现问号图标，title 同时覆盖双 provider 映射。"""
-    _, llm, _ = _fetch_config_html()
-    title = _find_tooltip_title(llm, "reasoning_effort")
-    assert title is not None, (
-        "LLM 卡片『思考强度』旁应出现问号图标，title 含『reasoning_effort』"
-    )
-    assert "budget_tokens" in title, (
-        "思考强度图标 title 需同时含『budget_tokens』，实际 title={title!r}"
-    )
-
-
 def test_llm_card_title_comment_becomes_tooltip_icon():
     """LLM 卡片标题『LLM 配置』旁应出现问号图标，title 含原底部安全提示。"""
     _, llm, _ = _fetch_config_html()
@@ -207,7 +195,7 @@ def test_summary_modal_has_no_small_text_muted():
 
 
 def test_summary_modal_all_tooltips_have_bs_container():
-    """弹窗内 tooltip 数量 == data-bs-container 数量，且应为 5 个。"""
+    """弹窗内 tooltip 数量 == data-bs-container 数量，且应为 6 个。"""
     _, _, modal = _fetch_config_html()
     tooltip_count = modal.count('data-bs-toggle="tooltip"')
     container_count = modal.count('data-bs-container="body"')
@@ -215,8 +203,8 @@ def test_summary_modal_all_tooltips_have_bs_container():
         '每个问号图标都应带 data-bs-container="body"，'
         f"tooltip={tooltip_count} container={container_count}"
     )
-    assert tooltip_count == 5, (
-        f"追番总结弹窗应有 5 个悬浮注释图标，实际 {tooltip_count}"
+    assert tooltip_count == 6, (
+        f"追番总结弹窗应有 6 个悬浮注释图标，实际 {tooltip_count}"
     )
 
 
