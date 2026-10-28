@@ -1794,37 +1794,36 @@ def test_register_match_tools_idempotent_consistent_with_access():
 @pytest.mark.asyncio
 async def test_execute_batch_match_tools_idempotent_segment_and_terminal_capture():
     """match 5 工具批量：4 幂等查询并行成段，submit_suggestion 捕获为 terminal。"""
-    import asyncio as _asyncio
-
     from app.services.agent.execution.tools import TerminalCapture
 
-    class _SlowBgm:
-        def search(self, **kwargs):
-            time.sleep(0.05)
-            return [{"id": 1}]
+    class _ConcurrencyProbeBgm:
+        """记录 async 查询的并发峰值，替代易抖动的墙钟断言。"""
 
-        def get_subject(self, sid):
-            time.sleep(0.05)
-            return {"name": f"subject-{sid}"}
+        def __init__(self) -> None:
+            self.active = 0
+            self.peak = 0
 
-        def get_related_subjects(self, sid):
-            time.sleep(0.05)
-            return []
+        async def _probe(self, result):
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            try:
+                await asyncio.sleep(0.05)
+            finally:
+                self.active -= 1
+            return result
 
         async def search_async(self, **kwargs):
-            await asyncio.sleep(0.05)
-            return [{"id": 1}]
+            return await self._probe([{"id": 1}])
 
         async def get_subject_async(self, sid):
-            await asyncio.sleep(0.05)
-            return {"name": f"subject-{sid}"}
+            return await self._probe({"name": f"subject-{sid}"})
 
         async def get_related_subjects_async(self, sid):
-            await asyncio.sleep(0.05)
-            return []
+            return await self._probe([])
 
+    probe = _ConcurrencyProbeBgm()
     registry = ToolRegistry()
-    llm_assist.register_match_tools(registry, _SlowBgm())
+    llm_assist.register_match_tools(registry, probe)
 
     calls = [
         ToolUseBlock(id="s", name="search_bangumi", input={"title": "x"}),
@@ -1833,12 +1832,10 @@ async def test_execute_batch_match_tools_idempotent_segment_and_terminal_capture
         ToolUseBlock(id="r", name="get_related_subjects", input={"subject_id": "1"}),
         ToolUseBlock(id="sub", name="submit_suggestion", input={"reason": "done"}),
     ]
-    t0 = _asyncio.get_event_loop().time()
     results = await registry.execute_batch(calls)
-    elapsed = _asyncio.get_event_loop().time() - t0
 
-    # 4 个幂等查询并行（串行则约 3×0.05=0.15s）
-    assert elapsed < 0.13
+    # 3 个网络查询必须并发执行（串行时峰值为 1）
+    assert probe.peak == 3
     # 槽位一一对应：4 个查询成功 + 1 个 terminal 捕获（ordered 唯一视图）
     slots = {oid: item for oid, item in results.ordered}
     for key in ("s", "g", "c", "r"):
