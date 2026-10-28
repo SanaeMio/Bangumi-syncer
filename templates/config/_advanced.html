@@ -37,6 +37,15 @@
                                        name="dev.mcp_base_url"
                                        placeholder="留空则用默认 http://localhost:8000"
                                        autocomplete="off">
+                                <div class="form-text mt-1">
+                                    <i class="bi bi-lightbulb text-warning me-1"></i>
+                                    <small class="text-muted">检测到当前访问地址：<code id="mcp-detected-origin">—</code></small>
+                                    <button type="button"
+                                            class="btn btn-outline-secondary btn-sm ms-2"
+                                            onclick="fillMcpBaseUrl()">
+                                        <i class="bi bi-box-arrow-in-down me-1"></i>一键填入
+                                    </button>
+                                </div>
                                 <div class="form-text">
                                     <small class="text-muted">MCP 客户端将通过该地址访问；反代 / 局域网 / 域名部署请填此处（含端口，如 http://192.168.1.10:8000；不含子路径）。仅本机使用可留空。</small>
                                 </div>
