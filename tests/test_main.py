@@ -243,13 +243,53 @@ class TestCspHeader:
         ):
             yield
 
+    def test_img_src_allows_github_attachments(self):
+        """正文图片主机（GitHub 附件）与清洗器准入同一份名单，需在 img-src 放行。"""
+        from app.main import _build_csp_header
+
+        img_src = _build_csp_header().split("img-src ", 1)[1].split(";", 1)[0]
+        hosts = img_src.split()
+        assert "https://github.com" in hosts
+        assert "https://*.githubusercontent.com" in hosts
+
+    def test_img_src_does_not_allow_any_https(self):
+        """img-src 只放行站点自身与已配置的图片源，不整体放行 https。"""
+        from app.main import _build_csp_header
+
+        img_src = _build_csp_header().split("img-src ", 1)[1].split(";", 1)[0]
+        assert "https:" not in img_src.split()
+
     def test_default_img_src(self):
         from app.main import _build_csp_header
 
         header = _build_csp_header()
-        assert "img-src 'self' data: https://*.lain.bgm.tv; " in header
+        img_src = header.split("img-src ", 1)[1].split(";", 1)[0].split()
+        for source in (
+            "'self'",
+            "data:",
+            "https://lain.bgm.tv",
+            "https://*.lain.bgm.tv",
+            "https://github.com",
+            "https://*.githubusercontent.com",
+            "https://github-production-user-asset-6210df.s3.amazonaws.com",
+        ):
+            assert source in img_src, source
+        assert "https:" not in img_src
         assert "default-src 'self'; " in header
         assert header.endswith("base-uri 'self'")
+
+    def test_default_img_src_allows_apex_lain(self):
+        """API 返回的封面使用 apex 域名，须与子域通配符一并放行。
+
+        CSP 的 ``https://*.lain.bgm.tv`` 只匹配子域名，不匹配 ``lain.bgm.tv``
+        本身；仅放行通配符时，未配置图片反代的部署会拦截仪表板封面。
+        """
+        from app.main import _build_csp_header
+
+        img_src = _build_csp_header().split("img-src ", 1)[1].split(";", 1)[0]
+        hosts = img_src.split()
+        assert "https://lain.bgm.tv" in hosts
+        assert "https://*.lain.bgm.tv" in hosts
 
     def test_proxy_domain_allowed(self):
         from app.main import _build_csp_header
@@ -288,13 +328,13 @@ class TestCspHeader:
 
         with patch("app.main.config_manager.get", return_value=bad):
             header = _build_csp_header()
-        assert "img-src 'self' data: https://*.lain.bgm.tv; " in header
-        for token in ("default-src *", "user:pass", "alert(1)", "b.com"):
-            assert token not in header
+        with patch("app.main.config_manager.get", return_value=""):
+            assert header == _build_csp_header()
 
     def test_schema_mismatch_value_silently_skipped(self):
         from app.main import _build_csp_header
 
         with patch("app.main.config_manager.get", side_effect=ValueError):
             header = _build_csp_header()
-        assert "img-src 'self' data: https://*.lain.bgm.tv; " in header
+        with patch("app.main.config_manager.get", return_value=""):
+            assert header == _build_csp_header()

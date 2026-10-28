@@ -56,6 +56,7 @@ from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.mapping_service import mapping_service
 from .services.scheduler_bootstrap import register_all as register_schedulers
 from .services.sync_service import sync_service
+from .utils.release_markdown import content_img_sources
 
 # 创建FastAPI应用（root_path 便于反代子路径下 OpenAPI 等）
 _app_kw: dict = {
@@ -297,9 +298,18 @@ app.mount("/", mcp_app)
 # CSP 响应头（纵深防御，限制外域资源加载 + 禁用内联事件外的脚本注入）
 # ─────────────────────────────────────────────────────────────────────────
 # 现状：base.html 含内联防闪烁脚本，需保留 'unsafe-inline'
-# 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与时间线封面图（lain.bgm.tv
-#           或用户配置的图片反代），img-src 动态放行这些图片域名
-_CSP_DEFAULT_IMG_HOSTS = ["https://*.lain.bgm.tv"]
+# 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与图片——时间线封面图
+#           （lain.bgm.tv 或用户配置的图片反代）、发行说明与公告正文的图片
+#           （GitHub 附件主机，见 release_markdown._CONTENT_IMG_HOSTS）；正文里
+#           名单外主机的图片在清洗阶段改为链接，img-src 只放行这些固定主机。
+# lain.bgm.tv 的封面地址使用 apex 域名；CSP 的 `*.lain.bgm.tv` 只匹配子域名，
+# 不包含 apex 本身，故两个 host-source 都需放行（未配置图片反代时封面依赖此项）。
+_CSP_DEFAULT_IMG_HOSTS = [
+    "https://lain.bgm.tv",
+    "https://*.lain.bgm.tv",
+    # 发行说明 / 公告正文的图片来自 GitHub 附件，与清洗器的图片准入同一份名单
+    *content_img_sources(),
+]
 
 # CSS 源码级数据里 netloc 允许的字符：字母数字 + 点 + 连字符（+ 可选用 ":" 端口与 IPv6 方括号）
 _CSP_NETLOC_CHARS = frozenset(

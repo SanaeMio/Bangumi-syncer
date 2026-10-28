@@ -5,6 +5,7 @@ requires-python = ">=3.10"
 dependencies = [
     "APScheduler>=3.10.0",
     "bleach>=6.2.0",
+    "certifi>=2026.10.19",
     "cryptography>=42.0.0",
     "fastapi>=0.133.0",
     "fastmcp>=4.0.3",

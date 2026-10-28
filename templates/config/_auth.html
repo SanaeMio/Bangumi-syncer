@@ -33,7 +33,7 @@
                                        class="form-control"
                                        id="auth-username"
                                        name="auth.username"
-                                       placeholder="admin">
+                                       placeholder="admin" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
                             </div>
                             <div class="col-md-3">
                                 <label for="auth-password" class="form-label fw-semibold">
@@ -47,7 +47,8 @@
                                            class="form-control pe-5"
                                            id="auth-password"
                                            name="auth.password"
-                                           placeholder="留空表示不修改密码">
+                                           placeholder="留空表示不修改密码"
+                                           autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
                                     <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-2 password-toggle-btn"
                                             type="button"
                                             id="toggle-auth-password-visibility">
@@ -69,7 +70,7 @@
                                        name="auth.session_timeout"
                                        placeholder="3600"
                                        min="300"
-                                       max="86400">
+                                       max="86400" autocomplete="off">
                             </div>
                         </div>
                         <div class="row g-3 mt-2">
@@ -102,7 +103,7 @@
                                        name="auth.max_login_attempts"
                                        placeholder="5"
                                        min="1"
-                                       max="20">
+                                       max="20" autocomplete="off">
                             </div>
                             <div class="col-md-3">
                                 <label for="lockout-duration" class="form-label fw-semibold">
@@ -118,7 +119,7 @@
                                        name="auth.lockout_duration"
                                        placeholder="900"
                                        min="60"
-                                       max="86400">
+                                       max="86400" autocomplete="off">
                             </div>
                         </div>
                         <div class="alert alert-warning mt-3">
