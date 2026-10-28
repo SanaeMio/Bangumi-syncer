@@ -941,7 +941,7 @@ def test_jellyfin_sync_item_success(mock_config, mock_database, mock_bangumi_api
 def test_find_subject_id_season_gt1_date_matched_sets_season_flag():
     with _patched_sync_service_deps() as cfg:
         sid, flag, _ = _find_subject_via_bangumi_data(
-            cfg, ("99", "标题", True), season=2
+            cfg, ("99", "标题", True, None), season=2
         )
         assert sid == "99"
         assert flag is True
@@ -950,7 +950,7 @@ def test_find_subject_id_season_gt1_date_matched_sets_season_flag():
 def test_find_subject_id_season_gt1_title_has_season_info():
     with _patched_sync_service_deps() as cfg:
         sid, flag, _ = _find_subject_via_bangumi_data(
-            cfg, ("88", "某番 第2季", False), season=2
+            cfg, ("88", "某番 第2季", False, None), season=2
         )
         assert sid == "88"
         assert flag is True
@@ -959,7 +959,7 @@ def test_find_subject_id_season_gt1_title_has_season_info():
 def test_find_subject_id_season_gt1_no_date_no_season_keyword():
     with _patched_sync_service_deps() as cfg:
         sid, flag, _ = _find_subject_via_bangumi_data(
-            cfg, ("77", "无季标", False), season=2
+            cfg, ("77", "无季标", False, None), season=2
         )
         assert sid == "77"
         assert flag is False
@@ -968,7 +968,7 @@ def test_find_subject_id_season_gt1_no_date_no_season_keyword():
 def test_find_subject_id_season1_sets_season_matched_true():
     with _patched_sync_service_deps() as cfg:
         sid, flag, _ = _find_subject_via_bangumi_data(
-            cfg, ("66", "第一季", False), season=1
+            cfg, ("66", "第一季", False, None), season=1
         )
         assert sid == "66"
         assert flag is True

@@ -36,6 +36,7 @@ Bangumi Archive 是一项**本地归档**功能：把 [Bangumi 官方 Archive �
 | **定时更新 Cron** | `0 8 * * 3`      | 五段式 cron，默认每周三 08:00（北京时间）执行，晚于官方 05:00 发布                    |
 | **数据目录**      | `./data/archive` | 存放归档数据库的目录。**Docker 部署建议挂载到 `/app/data`**，避免容器重建时数据丢失   |
 | **HTTP 代理**     | 空               | 下载 dump zip 时使用的代理。**留空则自动继承 `[dev] script_proxy`**，国内用户建议配置 |
+| **下载源顺序**    | `mirror`         | `mirror`=镜像优先（默认，国内网络更快）；`github`=GitHub 直连优先（海外直连更快）      |
 | **磁盘阈值 (MB)** | `3000`           | 低于此可用空间时跳过导入，避免磁盘写满                                                |
 | **SSL 校验**      | 开启             | 下载时是否校验 SSL 证书，自签名环境可关闭                                             |
 | **BK-tree 模糊匹配** | 关闭          | 开启后对归档标题构建 BK-tree 索引，支持编辑距离模糊查询，提升形近/缺字标题的召回率。首次启用在后台异步构建，不阻塞查询 |
@@ -49,6 +50,7 @@ enabled = true
 data_dir = ./data/archive
 http_proxy = http://127.0.0.1:7890       ; 国内建议配置代理
 ssl_verify = true
+download_source = mirror                ; mirror=镜像优先（国内）/ github=直连优先（海外）
 update_cron = 0 8 * * 3                  ; 每周三 08:00 自动更新
 min_disk_space_mb = 3000
 use_bktree = false                      ; 模糊匹配开关，按需开启

@@ -226,6 +226,7 @@ class TestBangumiDataStep:
             "66",
             "测试番剧",
             True,
+            None,
         )
         ctx.service._get_bangumi_data.return_value = mock_bgm_data
 
@@ -305,6 +306,87 @@ class TestBangumiDataStep:
         assert outcome.is_terminal is False
         assert "db corrupted" in outcome.reason
         assert outcome.error_detail["type"] == "RuntimeError"
+
+
+class TestBangumiDataStepIssue280:
+    """issue #280：笨蛋测试召唤兽 第二季 匹配问题回归
+
+    根因：季度可信度判定 _judge_season_matched_id 只看选定的 matched_title
+    （zh-Hans[0] 为「笨蛋，测验，召唤兽2」裸数字、无季关键词），与下游季节
+    过滤器（扫全部标题变体）证据基不一致——过滤器因另一变体「笨蛋测试召唤兽
+    第二季」放行，但判定却判 False，导致 is_season_matched_id=False，
+    继而走续集遍历，而命中条目（第2季）无续集必失败。
+    """
+
+    def _issue280_item(self) -> dict:
+        """模拟 bangumi-data 中 11145（笨蛋测试召唤兽 第二季）的标题结构"""
+        return {
+            "title": "バカとテストと召喚獣にっ!",
+            "titleTranslate": {
+                "zh-Hans": [
+                    "笨蛋，测验，召唤兽2",  # 首个变体：裸数字，无季关键词
+                    "笨蛋测试召唤兽 第二季",  # 另一变体：明确声明第2季
+                ]
+            },
+        }
+
+    def test_judge_season_matched_id_item_variant_declares_target(self):
+        """命中条目的某变体声明了目标季 → 与过滤器共用证据基，返回 True"""
+        ctx = _build_ctx(season=2)
+        # 模拟标题检查失败（裸「2」不含「第2季」等关键词），证明靠变体证据救回
+        ctx.service._check_season_info_in_title.return_value = False
+
+        result = BangumiDataStep._judge_season_matched_id(
+            ctx, "笨蛋，测验，召唤兽2", False, self._issue280_item()
+        )
+        assert result is True
+
+    def test_judge_season_matched_id_item_lacks_target_season_false(self):
+        """变体均未声明目标季且标题检查失败 → 回到原判定 False（不误判）"""
+        ctx = _build_ctx(season=2)
+        ctx.service._check_season_info_in_title.return_value = False
+
+        item = {
+            "title": "某番",
+            "titleTranslate": {"zh-Hans": ["某番", "某番 前传"]},
+        }
+        result = BangumiDataStep._judge_season_matched_id(ctx, "某番", False, item)
+        assert result is False
+
+    def test_judge_season_matched_id_none_item_falls_back(self):
+        """matched_item 为 None（上游未提供）时仍走原标题检查逻辑"""
+        ctx = _build_ctx(season=2)
+        ctx.service._check_season_info_in_title.return_value = True
+        result = BangumiDataStep._judge_season_matched_id(
+            ctx, "某番 第2季", False, None
+        )
+        assert result is True
+
+    def test_hit_season_matched_via_item_variant(self):
+        """step 级回归：find_bangumi_id 返回含变体声明的条目时，
+        is_season_matched_id 应为 True（即使选定标题本身无季关键词）。"""
+        ctx = _build_ctx(season=2)
+        mock_bgm_data = MagicMock()
+        mock_bgm_data.find_bangumi_id.return_value = (
+            "11145",
+            "笨蛋，测验，召唤兽2",
+            False,
+            self._issue280_item(),
+        )
+        ctx.service._get_bangumi_data.return_value = mock_bgm_data
+        # 标题检查失败，证明靠条目变体证据基救回
+        ctx.service._check_season_info_in_title.return_value = False
+
+        with patch("app.services.sync_service.config_manager") as mock_cfg:
+            mock_cfg.get.side_effect = lambda s, k, fallback=None: (
+                True if (s, k) == ("bangumi_data", "enabled") else fallback
+            )
+            outcome = BangumiDataStep().execute(ctx)
+
+        assert outcome.status == "hit"
+        assert outcome.subject_id == "11145"
+        assert ctx.is_season_matched_id is True
+        assert outcome.outputs["is_season_matched_id"] is True
 
 
 class TestAPISearchStep:

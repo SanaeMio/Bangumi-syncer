@@ -32,7 +32,7 @@
                                        class="form-control"
                                        id="feiniu-db-path"
                                        name="feiniu.db_path"
-                                       placeholder="/app/data/feiniu-db/trimmedia.db">
+                                       placeholder="/app/data/feiniu-db/trimmedia.db" autocomplete="off">
                             </div>
                             <div class="col-md-4">
                                 <label for="feiniu-min-percent" class="form-label fw-semibold">
@@ -48,7 +48,7 @@
                                        name="feiniu.min_percent"
                                        min="1"
                                        max="100"
-                                       value="85">
+                                       value="85" autocomplete="off">
                             </div>
                             <div class="col-md-4">
                                 <label for="feiniu-user-filter" class="form-label fw-semibold">
@@ -61,7 +61,7 @@
                                        class="form-control"
                                        id="feiniu-user-filter"
                                        name="feiniu.user_filter"
-                                       placeholder="all 或用户 guid">
+                                       placeholder="all 或用户 guid" autocomplete="off">
                             </div>
                             <div class="col-md-4">
                                 <label for="feiniu-time-range" class="form-label fw-semibold">
@@ -70,7 +70,7 @@
                                        data-bs-toggle="tooltip"
                                        title="在同步起点水位之上，再限制只处理最近一段时间内有更新的播放记录；选「全部」则不做该维度的过滤。"></i>
                                 </label>
-                                <select class="form-select" id="feiniu-time-range" name="feiniu.time_range">
+                                <select class="form-select" id="feiniu-time-range" name="feiniu.time_range" autocomplete="off">
                                     <option value="all">全部</option>
                                     <option value="1day">最近 1 天</option>
                                     <option value="1week">最近 1 周</option>
@@ -89,7 +89,7 @@
                                        id="feiniu-sync-interval"
                                        name="feiniu.sync_interval"
                                        placeholder="*/15 * * * *"
-                                       data-cron-preview>
+                                       data-cron-preview autocomplete="off">
                             </div>
                             <div class="col-md-6">
                                 <label for="feiniu-limit" class="form-label fw-semibold">
@@ -105,7 +105,7 @@
                                        name="feiniu.limit"
                                        min="1"
                                        max="500"
-                                       value="100">
+                                       value="100" autocomplete="off">
                             </div>
                         </div>
                     </div>
