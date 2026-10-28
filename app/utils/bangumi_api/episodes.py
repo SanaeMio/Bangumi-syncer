@@ -1425,10 +1425,10 @@ class EpisodesMixin:
         season_num = 1
         last_season_num = None
         visited = {subject_id}  # 防环：Bangumi 关系数据可能存在循环引用
-        # 命中条目自身可能就是目标季（如匹配到的就是第 N 季条目本身，而非其第一季）：
-        # 先按目标季号直接在条目内定位，避免一律当作第一季向前遍历续集却找不到
-        # （末季无续集必失败，issue #280 的续集遍历失败即此情形）。标题季号提取成功
-        # 且与目标季一致时才短路，脏标题误判不在此路径处理。
+        # 续集遍历的起点条目自身可能就是目标季（匹配到的就是第 N 季条目本身，
+        # 而非其父级第 1 季）：起点标题季号提取成功且与目标季一致时，先在该条目
+        # 内按集定位，避免一律当作第 1 季向前遍历续集却找不到。脏标题无法提取
+        # 季号时不在此路径短路，交由后续续集遍历处理。
         start_info = self.get_subject(subject_id)
         if start_info:
             start_season = self._extract_season_number(

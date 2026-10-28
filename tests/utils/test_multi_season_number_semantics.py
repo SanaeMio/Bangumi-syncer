@@ -123,11 +123,12 @@ class TestSeasonNumberSemantics:
         assert result == (200, 2001)
 
     def test_starting_subject_is_target_season_locates_in_place(self):
-        """issue #280: 命中条目本身就是目标季（如匹配到的是第2季条目 200 本身，
-        而非其第1季）时，应在条目内直接定位，而非一律当作第1季向前遍历续集。
+        """续集遍历的起点条目本身就是目标季（标题显式声明第 N 季、且 N 即目标季）时，
+        应在条目内直接定位，而非一律当作第 1 季向前遍历续集。
 
-        200 无续集，旧实现 `next_id is None → 立即失败`；修复后先按目标季号在
-        起点条目内定位，返回 (200, 2001)，不再走到 _episode_lookup_failed。
+        起点标题含显式季号「第二季」（start_season=2 与目标季一致）时直接短路，
+        返回 (200, 2001)，不走到 _episode_lookup_failed；若标题无显式季号则不进入
+        此路径（见 test_starting_subject_bare_trailing_digit_title_does_not_short_circuit）。
         """
         api = _make_api({200: None})  # 200 无续集
         api._archive.try_get_episodes = lambda *a, **k: _ArchiveMiss()
@@ -137,3 +138,26 @@ class TestSeasonNumberSemantics:
             result = api._find_multi_season_episode(200, 2, 1, 2, "", None)
         assert result == (200, 2001)
         failed.assert_not_called()
+
+    def test_starting_subject_bare_trailing_digit_title_does_not_short_circuit(self):
+        """起点标题为裸尾数字（如线上「笨蛋，测验，召唤兽2！」）时不触发起点短路。
+
+        extract_explicit_season 对裸尾数字返回 None，故 start_season != target_season，
+        Fix D 的起点条目内定位捷径不会生效；函数改走续集遍历，起点无续集时落到
+        _episode_lookup_failed。验证该窄防护不会误把「裸数字标题」当成「显式第 N 季」。
+        """
+        api = _make_api({200: None})  # 200 无续集
+        api.get_subject = lambda sid: {
+            "id": sid,
+            "type": 2,
+            "platform": "",
+            "name": "笨蛋，测验，召唤兽",
+            "name_cn": "笨蛋，测验，召唤兽2！",
+        }
+        api._archive.try_get_episodes = lambda *a, **k: _ArchiveMiss()
+        with patch.object(
+            api, "_episode_lookup_failed", return_value=(None, None)
+        ) as failed:
+            result = api._find_multi_season_episode(200, 2, 1, 2, "", None)
+        assert result == (None, None)
+        failed.assert_called_once()
