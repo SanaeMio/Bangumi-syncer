@@ -16,7 +16,7 @@ from app.services.matching.steps.base import (
     skipped_outcome,
 )
 from app.services.sync_service.match_trace import MatchCandidate
-from app.utils.bangumi_data.matching import date_diff_days
+from app.utils.bangumi_data.matching import MatchingMixin, date_diff_days
 
 # 日期硬校验阈值（#4）：
 # - 请求带 release_date 且命中条目有 begin 时，日期差 > REJECT 天数的命中
@@ -97,7 +97,7 @@ class BangumiDataStep(MatchStepBase):
                     candidates=candidates,
                 )
 
-            bangumi_data_id, matched_title, date_matched = result
+            bangumi_data_id, matched_title, date_matched, matched_item = result
 
             # ---- 日期硬校验（#4） ----
             # 命中条目与请求日期相差过大时不采信：bangumi-data 可能只收录了同名异条目
@@ -130,7 +130,7 @@ class BangumiDataStep(MatchStepBase):
 
             # 季度ID可信度判定
             is_season_matched_id = self._judge_season_matched_id(
-                ctx, matched_title, date_matched
+                ctx, matched_title, date_matched, matched_item
             )
 
             date_guard = "ok"
@@ -222,12 +222,28 @@ class BangumiDataStep(MatchStepBase):
 
     @staticmethod
     def _judge_season_matched_id(
-        ctx: MatchContext, matched_title: str, date_matched: bool
+        ctx: MatchContext,
+        matched_title: str,
+        date_matched: bool,
+        matched_item: dict | None = None,
     ) -> bool:
-        """判断 bangumi-data 命中的 ID 是否为特定季度ID"""
+        """判断 bangumi-data 命中的 ID 是否为特定季度ID
+
+        判定与下游季节过滤器（_filter_candidates_by_season / _candidate_season_numbers）
+        共用同一证据基：除了检查选定的 matched_title，还扫描命中条目的全部标题变体。
+        命中条目任一变体声明了目标季号即视为季度可信，避免「过滤器放行、季度检查却因
+        首个变体季号模糊而拒绝」的自相矛盾（issue #280：11145 的 zh-Hans[0] 为
+        「笨蛋，测验，召唤兽2」不含季号，但另一变体「笨蛋测试召唤兽 第二季」声明了第2季）。
+        """
         if ctx.item.season <= 1:
             return True
         if date_matched:
             return True
-        # 未通过日期匹配，检查标题是否包含季度信息
+        # 命中条目的任一标题变体声明了目标季号即置信（与过滤器口径一致）
+        if (
+            matched_item is not None
+            and ctx.item.season in MatchingMixin._candidate_season_numbers(matched_item)
+        ):
+            return True
+        # 兜底：检查选定的标题本身是否含季度信息
         return ctx.service._check_season_info_in_title(matched_title, ctx.item.season)
