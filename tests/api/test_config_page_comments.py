@@ -195,7 +195,7 @@ def test_summary_modal_has_no_small_text_muted():
 
 
 def test_summary_modal_all_tooltips_have_bs_container():
-    """弹窗内 tooltip 数量 == data-bs-container 数量，且应为 6 个。"""
+    """弹窗内 tooltip 数量 == data-bs-container 数量，且应为 5 个（本段无 summary-thinking-level）。"""
     _, _, modal = _fetch_config_html()
     tooltip_count = modal.count('data-bs-toggle="tooltip"')
     container_count = modal.count('data-bs-container="body"')
@@ -203,8 +203,8 @@ def test_summary_modal_all_tooltips_have_bs_container():
         '每个问号图标都应带 data-bs-container="body"，'
         f"tooltip={tooltip_count} container={container_count}"
     )
-    assert tooltip_count == 6, (
-        f"追番总结弹窗应有 6 个悬浮注释图标，实际 {tooltip_count}"
+    assert tooltip_count == 5, (
+        f"追番总结弹窗应有 5 个悬浮注释图标，实际 {tooltip_count}"
     )
 
 
