@@ -137,12 +137,29 @@ def _cleanup_config_backups(strategy: str, data: dict) -> int:
     return deleted_count
 
 
+def _mask_llm_api_key(config_data: dict[str, Any]) -> None:
+    """就地掩码 ``llm.api_key``，避免明文密钥随 GET /api/config 下发前端。
+
+    口径与 ``GET /api/llm/conf`` 一致：``***`` + 后 4 位，短于 5 位全遮。
+    前端 ``getLLMApiKeyValue()`` 见到 ``***`` 前缀返回 null，``update_config``
+    亦跳过 ``***`` 开头的敏感值，故掩码不会被写回配置文件。
+    """
+    llm = config_data.get("llm")
+    if not isinstance(llm, dict):
+        return
+    key = llm.get("api_key")
+    if not isinstance(key, str) or not key:
+        return
+    llm["api_key"] = "***" + key[-4:] if len(key) > 4 else "***"
+
+
 @router.get("/config")
 async def get_config(_=Depends(get_current_user_flexible)) -> dict[str, Any]:
     """获取配置信息"""
     try:
         config_data = config_manager.get_all_config()
         decrypt_api_config_payload(config_data)
+        _mask_llm_api_key(config_data)
 
         # 处理敏感信息：不向前端返回加密的密码
         if "auth" in config_data and "password" in config_data["auth"]:
