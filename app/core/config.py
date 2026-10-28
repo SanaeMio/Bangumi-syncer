@@ -767,7 +767,7 @@ class ConfigManager:
         """归一化 thinking_level：strip + 小写，非法值回落 ``default``。
 
         合法值集合复用 ``_VALID_THINKING_LEVELS``（与 summary 配置同一来源）。
-        调用方显式传入 ``default``（llm_match 为 medium，summary 为 off），避免隐藏默认值。
+        调用方显式传入 ``default``（如 medium / off），避免隐藏默认值。
         """
         normalized = str(raw or "").strip().lower()
         if normalized not in self._VALID_THINKING_LEVELS:
