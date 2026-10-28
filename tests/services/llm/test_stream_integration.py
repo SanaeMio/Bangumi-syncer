@@ -503,9 +503,11 @@ class TestRawSSEErrorRetry:
     ):
         """首个 400（参数拒绝）→ 降级并立即重试 → 第二次成功；共 2 次请求。"""
         calls = {"n": 0}
+        bodies: list[dict] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             calls["n"] += 1
+            bodies.append(json.loads(request.content))
             if calls["n"] == 1:
                 return httpx.Response(400, text=self._REJECT_TEXT)
             return _sse_response(self._OK_BODY)
@@ -513,6 +515,7 @@ class TestRawSSEErrorRetry:
         provider = OpenAICompatProvider(
             api_base="https://test.api.com/v1",
             api_key="sk-test",
+            model="o3-mini",
             thinking_level="high",
         )
         client = _build_client(provider)
@@ -527,7 +530,9 @@ class TestRawSSEErrorRetry:
 
         assert resp.content == "ok"
         assert calls["n"] == 2  # 降级后立即重试，无退避
-        assert provider._extras_disabled is True
+        # 降级只作用于本次重试：首次带 reasoning_effort，重试不带
+        assert bodies[0]["reasoning_effort"] == "high"
+        assert "reasoning_effort" not in bodies[1]
         mock_sleep.assert_not_awaited()
 
     @pytest.mark.asyncio
