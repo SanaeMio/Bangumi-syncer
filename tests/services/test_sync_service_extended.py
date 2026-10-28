@@ -5,6 +5,7 @@ SyncService 更多测试
 import os
 import sys
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,7 +28,7 @@ def patched_sync_deps():
 
 
 def _branch_custom_item(**kwargs):
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         user_name="testuser",
         title="番剧A",
         ori_title="A",
@@ -1378,6 +1379,7 @@ class TestMultiAccountSyncFanOut:
             )
 
         assert result.status == "success"
+        assert result.data is not None
         assert result.data["account_results"] == outcomes
         assert holder[0] == "success"
 

@@ -84,6 +84,14 @@ class ArchiveShortcut:
         if self._enabled:
             logger.debug("bangumi_archive 短路已启用，读操作将优先走 Archive")
 
+    def set_enabled(self, enabled: bool) -> None:
+        """设置启用状态
+
+        供测试隔离与运行时切换使用；注意后续调用 reload_config()
+        会按用户配置再次覆盖本次手动设置。
+        """
+        self._enabled = bool(enabled)
+
     @property
     def enabled(self) -> bool:
         return self._enabled
@@ -150,7 +158,7 @@ class ArchiveShortcut:
             logger.warning(f"bangumi_archive 短路 get_episodes 异常: {e}")
             return ShortcutResult(False, None, "archive_error")
 
-    def try_get_related_subjects(self, subject_id: int) -> ShortcutResult:
+    def try_get_related_subjects(self, subject_id: int | str) -> ShortcutResult:
         """短路 get_related_subjects
 
         Returns:

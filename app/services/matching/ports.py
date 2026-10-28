@@ -54,7 +54,7 @@ class BangumiSearchPort(Protocol):
     ) -> dict[str, Any]: ...
 
     def get_related_subjects(
-        self, subject_id: int
+        self, subject_id: int | str
     ) -> list[dict[str, Any]] | dict[str, Any]: ...
 
     def get_episodes(

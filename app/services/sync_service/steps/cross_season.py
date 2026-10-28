@@ -81,8 +81,12 @@ class CrossSeasonStep(ExecutionStepBase):
                 target_ep,
                 target_season=target_season,
             )
-        except Exception:
-            logger.debug(f"关联季条目链查找异常: {ctx.subject_id}", exc_info=True)
+        except Exception as e:
+            # 自定义 Logger.debug 不支持 exc_info（传了会 TypeError），
+            # 故将异常信息并入 message，保持可排查性。
+            logger.debug(
+                f"关联季条目链查找异常: {ctx.subject_id} ({type(e).__name__}: {e})"
+            )
             chain_pick = None
 
         if not chain_pick:

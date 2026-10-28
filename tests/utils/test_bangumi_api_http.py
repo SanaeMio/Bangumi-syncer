@@ -34,6 +34,7 @@ def test_search_success():
         api = BangumiApi()
         result = api.search("test", "2024-01-01", "2024-12-31")
 
+        assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["id"] == 1
         assert result[0]["name"] == "Test Anime"
@@ -95,6 +96,7 @@ def test_get_episodes():
         api = BangumiApi()
         result = api.get_episodes(123)
 
+        assert isinstance(result, dict)
         assert result["total"] == 2
         assert len(result["data"]) == 2
         assert result["data"][0]["ep"] == 1
@@ -261,6 +263,7 @@ def test_get_related_subjects():
         api = BangumiApi()
         result = api.get_related_subjects(123)
 
+        assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["relation"] == "续集"
 
@@ -425,3 +428,85 @@ def test_title_diff_ratio_infobox_extraction():
 
     # 无关名称，相似度应低于阈值
     assert api.title_diff_ratio("毫无关系的名称", "", bgm_data_mock) < 0.5
+
+
+# ---------------------------------------------------------------------------
+# 重试与限速：每次尝试都经过 limiter；429 快速失败
+# ---------------------------------------------------------------------------
+
+
+def _patch_limiter_and_sleep():
+    """同时 patch 限速器取用与退避 sleep，返回 (patcher_ctx, limiter)。"""
+    from unittest.mock import MagicMock
+
+    limiter = MagicMock()
+    return (
+        patch(
+            "app.utils.bangumi_api.http_layer.get_bgm_rate_limiter",
+            return_value=limiter,
+        ),
+        patch("app.utils.bangumi_api.http_layer.time.sleep"),
+        limiter,
+    )
+
+
+def test_request_429_freezes_and_does_not_retry():
+    """429：通知 limiter 后快速失败，不进行内部重试。"""
+    import httpx
+
+    resp_429 = _mock_response(429)
+    resp_429.headers = {"Retry-After": "5"}
+    resp_200 = _mock_response(200, {})
+
+    limiter_patch, sleep_patch, limiter = _patch_limiter_and_sleep()
+    with (
+        patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls,
+        limiter_patch,
+        sleep_patch,
+        patch("app.services.notification_service.notification_service.notify"),
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.request.side_effect = [resp_429, resp_200]
+
+        api = BangumiApi()
+        with pytest.raises(httpx.HTTPStatusError):
+            api._request_with_retry("GET", api.req, f"{api.host}/subjects/1")
+
+    assert mock_client.request.call_count == 1, "429 不应内部重试"
+    assert limiter.acquire.call_count == 1
+    assert limiter.notify_rate_limited.call_count == 1
+    # 429 只冻结令牌桶，不触发 300s 不可达熔断（否则搜索会被 TTL 短路）
+    assert api.is_api_unreachable() is False
+
+
+def test_request_5xx_retries_and_acquires_each_attempt():
+    """5xx：外层重试，每次尝试前都 acquire（共 4 次尝试）。"""
+    responses = [
+        _mock_response(500),
+        _mock_response(502),
+        _mock_response(503),
+        _mock_response(200, {}),
+    ]
+
+    limiter_patch, sleep_patch, limiter = _patch_limiter_and_sleep()
+    with (
+        patch("app.utils.bangumi_api.httpx.Client") as mock_client_cls,
+        limiter_patch,
+        sleep_patch,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.request.side_effect = responses
+
+        api = BangumiApi()
+        res = api._request_with_retry("GET", api.req, f"{api.host}/subjects/1")
+
+    assert res.status_code == 200
+    assert mock_client.request.call_count == 4, "首次 + 3 次重试"
+    assert limiter.acquire.call_count == 4, "每次尝试前都必须经过限速器"
+
+
+def test_bangumi_clients_disable_internal_retries():
+    """Bangumi 的重试只能在请求层：client 内部重试必须为 0。"""
+    api = BangumiApi()
+    assert api.req._max_retries == 0, "内部重试会绕过 limiter，禁止开启"
+    assert api._req_not_auth._max_retries == 0, "内部重试会绕过 limiter，禁止开启"

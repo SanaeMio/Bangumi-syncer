@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from app.utils.text_constants import (
@@ -19,7 +21,7 @@ from app.utils.text_constants import (
 try:  # 该模块位于 sync_service 包内，导入失败时跳过排序相关用例
     from app.services.sync_service.title_normalize import TitleNormalizeMixin
 except Exception:  # noqa: BLE001
-    TitleNormalizeMixin = None  # type: ignore[assignment]
+    TitleNormalizeMixin = None
 
 TYPE_ANIME = 2
 TYPE_REAL = 6
@@ -108,6 +110,7 @@ class TestSortCandidatesByPlatform:
 
     def test_archive_numeric_codes_are_sorted(self) -> None:
         """修复前：全部回落 50 → 稳定排序保持原序；修复后按权重重排。"""
+        assert TitleNormalizeMixin is not None
         candidates = [
             {"id": 1, "type": TYPE_REAL, "platform": "3"},  # 华语剧 85
             {"id": 2, "type": TYPE_ANIME, "platform": "5"},  # WEB 90
@@ -120,6 +123,7 @@ class TestSortCandidatesByPlatform:
 
     def test_anime_preferred_over_real_on_type_conflict(self) -> None:
         """同名跨媒体：动画 TV/WEB 应优先于三次元（凡人修仙传场景）。"""
+        assert TitleNormalizeMixin is not None
         candidates = [
             {"id": 434076, "type": TYPE_REAL, "platform": "3"},  # 华语剧 85
             {"id": 348240, "type": TYPE_ANIME, "platform": "5"},  # WEB 90
@@ -132,6 +136,7 @@ class TestSortCandidatesByPlatform:
         assert out[-1]["id"] == 434076  # 真人剧沉底
 
     def test_movie_mode_prefers_movie_over_tv(self) -> None:
+        assert TitleNormalizeMixin is not None
         candidates = [
             {"id": 1, "type": TYPE_ANIME, "platform": "1"},  # TV → movie 模式 40
             {"id": 2, "type": TYPE_ANIME, "platform": "3"},  # 剧场版 → 100
@@ -143,6 +148,7 @@ class TestSortCandidatesByPlatform:
 
     def test_chinese_name_path_unchanged(self) -> None:
         """中文名（API 路径）行为保持不变 —— 回归保护。"""
+        assert TitleNormalizeMixin is not None
         candidates = [
             {"id": 1, "type": TYPE_ANIME, "platform": "OVA"},
             {"id": 2, "type": TYPE_ANIME, "platform": "TV"},
@@ -154,6 +160,7 @@ class TestSortCandidatesByPlatform:
 
     def test_unknown_code_falls_back_to_default_weight(self) -> None:
         """无法解码 → 回落默认权重，不抛异常。"""
+        assert TitleNormalizeMixin is not None
         candidates = [
             {"id": 1, "type": TYPE_ANIME, "platform": "9999"},
             {"id": 2, "type": TYPE_ANIME, "platform": None},
@@ -165,6 +172,7 @@ class TestSortCandidatesByPlatform:
         assert DEFAULT_PLATFORM_WEIGHT == 50
 
     def test_limit_respected(self) -> None:
+        assert TitleNormalizeMixin is not None
         candidates = [
             {"id": 1, "type": TYPE_ANIME, "platform": "1"},
             {"id": 2, "type": TYPE_ANIME, "platform": "5"},
@@ -176,9 +184,11 @@ class TestSortCandidatesByPlatform:
         assert len(out) == 2
 
     def test_non_list_input_returned_as_is(self) -> None:
+        assert TitleNormalizeMixin is not None
+        # 非 list 属刻意覆盖：运行期直接原样返回，用 cast 绕过静态类型
         assert (
             TitleNormalizeMixin._sort_candidates_by_platform(
-                None, is_movie=False, limit=5
+                cast(Any, None), is_movie=False, limit=5
             )
             is None
         )

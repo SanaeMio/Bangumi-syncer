@@ -58,18 +58,6 @@ timeout = 120
         assert cfg["temperature"] == 0.3
         assert cfg["timeout"] == 120
 
-    def test_thinking_level_default_off(self, tmp_path):
-        """Scenario 6.3（配置层）: 未配置 thinking_level 时缺省 off。"""
-        cm = _cm_from_ini(tmp_path, "[bangumi]\nusername = u\n")
-        cfg = cm.get_llm_config()
-        assert cfg["thinking_level"] == "off"
-
-    def test_thinking_level_custom_value(self, tmp_path):
-        """thinking_level 从配置读取。"""
-        cm = _cm_from_ini(tmp_path, "[llm]\nthinking_level = high\n")
-        cfg = cm.get_llm_config()
-        assert cfg["thinking_level"] == "high"
-
     def test_provider_default_openai_compat(self, tmp_path):
         """未配置 provider 时缺省 openai_compat。"""
         cm = _cm_from_ini(tmp_path, "[bangumi]\nusername = u\n")
@@ -81,12 +69,6 @@ timeout = 120
         cm = _cm_from_ini(tmp_path, "[llm]\nprovider =\n")
         cfg = cm.get_llm_config()
         assert cfg["provider"] == "openai_compat"
-
-    def test_thinking_level_empty_string_falls_back_to_off(self, tmp_path):
-        """thinking_level 为空字符串时回退默认值 off。"""
-        cm = _cm_from_ini(tmp_path, "[llm]\nthinking_level =\n")
-        cfg = cm.get_llm_config()
-        assert cfg["thinking_level"] == "off"
 
     def test_type_coercion_numeric_fields(self, tmp_path):
         """max_tokens、temperature、timeout 的字符串值被强制转换为正确类型。"""
@@ -118,6 +100,17 @@ temperature = 0.0
         assert cfg["api_key"] == ""
         assert cfg["max_tokens"] == 2000
         assert cfg["timeout"] == 60
+
+    def test_retention_days_default_365(self, tmp_path):
+        """[llm].retention_days 是活配置（llm_usage 清理读取），缺省应回退 365。"""
+        cm = _cm_from_ini(tmp_path, "[bangumi]\nusername = u\n")
+        cfg = cm.get_llm_config()
+        assert cfg["retention_days"] == 365
+
+    def test_retention_days_from_config(self, tmp_path):
+        """config.ini 显式配置 retention_days 时应覆盖默认值。"""
+        cm = _cm_from_ini(tmp_path, "[llm]\nretention_days = 30\n")
+        assert cm.get_llm_config()["retention_days"] == 30
 
     def test_api_key_encryption_roundtrip(self, tmp_path):
         """当 auth.secret_key 已设置时，通过 set_config 存储的 api_key 以 BGS1:
@@ -184,6 +177,30 @@ api_base = 12345
         # 这是一个已知的边界情况 — 当键缺失时默认类型胜出，
         # 但当键存在时 raw 的类型胜出。记录此行为。
         pass
+
+
+class TestLegacyThinkingLevelTolerated:
+    """旧 config.ini 残留 thinking_level 键应被容忍（ConfigParser 天然容忍多余键）。"""
+
+    def test_legacy_thinking_level_in_ini_does_not_error(self, tmp_path):
+        """BDD 场景4: config.ini [llm] 段手工存在 thinking_level=high → 加载配置不报错。
+
+        删除全局 thinking_level 后，get_llm_config() 不再从 defaults 填充该键，
+        但 ConfigParser 仍会读取 config.ini 中的残留键。该键存在于 merged dict 中
+        但不再被任何代码读取，因此无害。本测试固化"加载不报错 + 其他字段正常"的行为。
+        """
+        cm = _cm_from_ini(
+            tmp_path,
+            "[llm]\napi_key = sk-test\nthinking_level = high\n",
+        )
+        # 加载不报错即成功（ConfigParser 天然容忍多余键）
+        cfg = cm.get_llm_config()
+        # 其他字段正常读取
+        assert cfg["api_key"] == "sk-test"
+        assert cfg["provider"] == "openai_compat"
+        assert cfg["model"] == "gpt-4o-mini"
+        # 不再从 defaults 填充 thinking_level，但 raw 中的残留键仍存在于 merged dict
+        # 关键断言：没有代码再读取该键，因此其存在无害
 
 
 class TestLLMConfigZeroValues:

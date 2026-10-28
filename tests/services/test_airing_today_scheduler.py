@@ -350,6 +350,15 @@ class TestRunSyncJob:
         s = AiringTodayScheduler()
         s._scheduler_config = {"job_timeout": 120}
 
+        def _timeout_and_close(coro, timeout=None):
+            """模拟 wait_for 超时：真实实现会取消内部协程，这里显式 close。
+
+            调用方在传参时已创建 _fetch_and_notify 协程对象，若 mock 直接抛异常
+            而不消费该协程，GC 时会报 "coroutine ... was never awaited"。
+            """
+            coro.close()
+            raise asyncio.TimeoutError
+
         with (
             patch.object(s, "_is_enabled", return_value=True),
             patch("app.services.airing_today_scheduler.bangumi_archive") as ba,
@@ -366,7 +375,7 @@ class TestRunSyncJob:
             patch(
                 "app.services.airing_today_scheduler.asyncio.wait_for",
                 new_callable=AsyncMock,
-                side_effect=asyncio.TimeoutError,
+                side_effect=_timeout_and_close,
             ),
         ):
             ba.get_active_db_path.return_value = _existing_path()

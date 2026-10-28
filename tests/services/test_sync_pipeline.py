@@ -532,6 +532,7 @@ def test_cross_season_step_writes_match_path_to_trace(
 
     cross_step = next(s for s in trace.steps if s.stage == "cross_season")
     assert cross_step.status == "hit"
+    assert cross_step.outputs is not None
     assert cross_step.outputs["match_path"] == path
     assert expected_label in cross_step.reason
 
