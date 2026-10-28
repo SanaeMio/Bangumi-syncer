@@ -4,8 +4,6 @@
 is_sensitive_ini_field）在改造为从 SectionMeta 派生后语义不变。
 """
 
-import pytest
-
 from app.core import config_schema
 from app.core.config_secret_crypto import is_sensitive_ini_field
 
@@ -63,16 +61,11 @@ class TestEnvOverrides:
         assert overrides[("dev", "log_level")] == "LOG_LEVEL"
         assert overrides[("web", "base_path")] == "APPLICATION_ROOT"
 
-    def test_includes_sync_llm_match_cron(self):
-        """llm_match_cron 降级为环境变量高级配置入口。"""
-        overrides = config_schema.all_env_overrides()
-        assert overrides[("sync", "llm_match_cron")] == "LLM_MATCH_CRON"
-
     def test_count_matches_original(self):
         """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条、
-        log_level 共 1 条、sync 的 llm_match_cron 共 1 条"""
+        log_level 共 1 条"""
         overrides = config_schema.all_env_overrides()
-        assert len(overrides) == 18
+        assert len(overrides) == 17
 
 
 class TestIsSensitiveField:
@@ -524,54 +517,6 @@ class TestSerializeSchema:
     def test_loose_true_fields_consistent_with_helper(self):
         schema = config_schema.serialize_schema()
         assert schema["loose_true_fields"] == config_schema.loose_true_fields()
-
-
-class TestLlmMatchManualKeys:
-    """[sync] 段 llm_match_* 四个专家项以 manual_keys 登记（方案 B：无 UI 入口）
-
-    四键均被 ``get_sync_llm_match_config()`` 读取并在调度器 / budget 生效，
-    但 ``config.example.ini`` 中以注释示例出现（非活跃键），故 **只登记 manual_keys**：
-    若登记进 ``fields``，TestConfigCoverage.test_schema_fields_exist_in_example_ini
-    会因示例键处于注释态而失败。这与 ``llm_match_retention_days`` 不同 —— 后者是
-    活跃示例键，故可同时进 fields 与 manual_keys。
-    """
-
-    LLM_MATCH_KEYS = (
-        "llm_match_thinking_level",
-        "llm_match_max_iterations",
-        "llm_match_recovery_timeout_s",
-        "llm_match_concurrency",
-    )
-
-    @pytest.mark.parametrize("key", LLM_MATCH_KEYS)
-    def test_llm_match_key_registered_in_manual_keys(self, key):
-        """四键必须在 [sync].manual_keys 中登记，否则成为「文档有、界面没有」的隐藏项。"""
-        meta = config_schema.SECTIONS["sync"]
-        assert key in meta.manual_keys, f"[sync] {key} 未登记 manual_keys"
-
-    @pytest.mark.parametrize(
-        ("key", "default_hint"),
-        [
-            ("llm_match_thinking_level", "medium"),
-            ("llm_match_max_iterations", "空"),
-            ("llm_match_recovery_timeout_s", "120"),
-            ("llm_match_concurrency", "3"),
-        ],
-    )
-    def test_llm_match_manual_key_reason_has_usage_default_and_hint(
-        self, key, default_hint
-    ):
-        """原因字符串须含：用途 + 默认值 + 修改指引（编辑 config.ini 的 [sync] 段）。"""
-        reason = config_schema.SECTIONS["sync"].manual_keys[key]
-        assert reason.strip()
-        assert default_hint in reason, f"{key} 原因缺少默认值提示 {default_hint!r}"
-        assert "config.ini" in reason, f"{key} 原因缺少修改指引"
-
-    def test_llm_match_keys_are_not_ui_fields(self):
-        """方案 B：四键不做配置页表单入口（仅 manual_keys 说明原因）。"""
-        field_names = {f.name for f in config_schema.SECTIONS["sync"].fields}
-        for key in self.LLM_MATCH_KEYS:
-            assert key not in field_names, f"[sync] {key} 不应登记为 UI 表单字段"
 
 
 class TestLlmRetentionDaysManualKey:
