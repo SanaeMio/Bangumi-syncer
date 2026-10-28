@@ -118,7 +118,7 @@ def run_case(client: BangumiData, case: dict[str, Any]) -> dict[str, Any]:
             )
         except Exception:  # 候选回传失败不影响主流程判定
             out = []
-    sid, matched, date_hit = result if result else ("", "", False)
+    sid, matched, date_hit, _ = result if result else ("", "", False, None)
     return {
         "subject_id": str(sid),
         "matched_title": matched,

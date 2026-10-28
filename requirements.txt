@@ -118,10 +118,11 @@ caio==0.12.4 ; python_full_version >= '3.11' \
     --hash=sha256:ee9de68d6ede7ed69e55a1c09073ce146d9f9470088796d55238c485a93fe203 \
     --hash=sha256:f063624a98a64bab387430c5eaea61ef3825a98399104a297b8da4741c15139f
     # via aiofile
-certifi==2026.2.25 \
-    --hash=sha256:027692e4402ad994f1c42e52a4997a9763c646b73e4096e4d5d6db8af1d6f0fa \
-    --hash=sha256:e887ab5cee78ea814d3472169153c2d12cd43b14bd03329a39a9c6e2e80bfba7
+certifi==2026.10.19 \
+    --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
+    --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
     # via
+    #   bangumi-syncer
     #   httpcore
     #   httpx
 cffi==2.0.0 ; platform_python_implementation != 'PyPy' \

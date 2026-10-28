@@ -8,7 +8,7 @@ function showAlert(message, type = 'info', duration = 5000) {
         toastContainer = document.createElement('div');
         toastContainer.id = 'toast-container';
         toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
-        toastContainer.style.zIndex = '1055';
+        toastContainer.style.zIndex = '1090';
         document.body.appendChild(toastContainer);
     }
 

@@ -518,38 +518,39 @@ class TestArchiveStoreAiringQuery:
 
 
 class TestArchiveDownloader:
-    def test_build_download_urls_with_mirrors(self):
-        """镜像源应拼接 GitHub URL"""
+    def test_ordered_sources_mirrors_first_by_default(self):
+        """默认镜像在前、GitHub 兜底（国内部署的默认顺序）。"""
         downloader = ArchiveDownloader(
-            http_proxy=None,
-            ssl_verify=True,
             mirrors=("https://ghfast.top/", "https://gh-proxy.com/"),
         )
-        urls = downloader._build_download_urls(
+        sources = downloader._ordered_sources(
             "https://github.com/bangumi/Archive/releases/download/archive/dump.zip"
         )
-        assert len(urls) == 3
+        urls = [url for url, _ in sources]
+        labels = [label for _, label in sources]
         assert urls[0].startswith("https://ghfast.top/")
         assert urls[1].startswith("https://gh-proxy.com/")
-        assert (
-            urls[2]
-            == "https://github.com/bangumi/Archive/releases/download/archive/dump.zip"
+        assert urls[2] == (
+            "https://github.com/bangumi/Archive/releases/download/archive/dump.zip"
         )
+        assert labels == ["镜像1", "镜像2", "GitHub"]
 
-    def test_build_download_urls_no_mirrors(self):
-        """无镜像时仅返回 GitHub 直连"""
+    def test_ordered_sources_github_first(self):
+        """github_first 时 GitHub 直连在前、镜像兜底。"""
+        downloader = ArchiveDownloader(
+            mirrors=("https://ghfast.top/",), github_first=True
+        )
+        sources = downloader._ordered_sources("https://github.com/test.zip")
+        assert sources[0] == ("https://github.com/test.zip", "GitHub")
+        assert sources[1][0].startswith("https://ghfast.top/")
+        assert sources[1][1] == "镜像1"
+
+    def test_ordered_sources_no_mirrors(self):
+        """无镜像时仅返回 GitHub 直连。"""
         downloader = ArchiveDownloader(mirrors=())
-        urls = downloader._build_download_urls("https://github.com/test.zip")
-        assert urls == ["https://github.com/test.zip"]
-
-    def test_build_latest_urls(self):
-        """latest.json URL 也支持镜像 fallback"""
-        downloader = ArchiveDownloader(mirrors=("https://ghfast.top/",))
-        urls = downloader._build_latest_urls(
-            "https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json"
-        )
-        assert len(urls) == 2
-        assert "ghfast.top" in urls[0]
+        assert downloader._ordered_sources("https://github.com/test.zip") == [
+            ("https://github.com/test.zip", "GitHub")
+        ]
 
     @pytest.mark.asyncio
     async def test_verify_sha256_match(self, tmp_path: Path):
@@ -752,6 +753,26 @@ class TestBangumiArchive:
         # 不应切换
         assert archive.data_dir == data_dir
         assert archive.db_a_path == data_dir / "bangumi_archive_a.db"
+
+    def test_load_config_download_source(self, tmp_path: Path, monkeypatch):
+        """download_source 决定 github_first：github 直连优先，缺省/其它值镜像优先。"""
+        from app.core.config import config_manager
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        config_manager.set("bangumi-archive", "enabled", "true")
+        config_manager.set("bangumi-archive", "data_dir", str(data_dir))
+        config_manager.set("bangumi-archive", "min_disk_space_mb", "1")
+
+        config_manager.set("bangumi-archive", "download_source", "github")
+        assert BangumiArchive().github_first is True
+
+        config_manager.set("bangumi-archive", "download_source", "mirror")
+        assert BangumiArchive().github_first is False
+
+        config_manager.set("bangumi-archive", "download_source", "unknown")
+        assert BangumiArchive().github_first is False
 
     def test_cleanup_stale_tmp_removes_old_dirs(self, isolated_archive: BangumiArchive):
         """_cleanup_stale_tmp 删除超过阈值的残留子目录，保留新目录"""

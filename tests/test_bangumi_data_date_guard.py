@@ -62,7 +62,7 @@ def _run(
             if hit_begin is not None:
                 cand["date"] = hit_begin
             out[:] = [cand]
-        return (hit_id, matched_title, date_matched)
+        return (hit_id, matched_title, date_matched, None)
 
     mock_bgm_data.find_bangumi_id.side_effect = _fake_find
     ctx.service._get_bangumi_data.return_value = mock_bgm_data

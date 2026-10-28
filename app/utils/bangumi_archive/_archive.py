@@ -234,6 +234,11 @@ class BangumiArchive:
         self.ssl_verify = bool(
             config_manager.get("bangumi-archive", "ssl_verify", fallback=True)
         )
+        # 下载源顺序：mirror=镜像优先（默认，国内）、github=直连优先（海外）
+        self.github_first = (
+            config_manager.get("bangumi-archive", "download_source", fallback="mirror")
+            == "github"
+        )
         self.update_cron = (
             config_manager.get("bangumi-archive", "update_cron", fallback="")
             or _DEFAULT_UPDATE_CRON
@@ -699,6 +704,7 @@ class BangumiArchive:
             http_proxy=self.http_proxy,
             ssl_verify=self.ssl_verify,
             mirrors=_GH_PROXY_MIRRORS,
+            github_first=self.github_first,
             progress_cb=self._make_progress_cb(task_id),
         )
         latest = await downloader.fetch_latest(_LATEST_JSON_URL)

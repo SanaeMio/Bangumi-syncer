@@ -12,6 +12,8 @@ from uuid import uuid4
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from fastmcp.utilities.lifespan import combine_lifespans
+from starlette.responses import JSONResponse
 
 from .api.agent_runs import router as agent_runs_router
 from .api.airing_calendar import router as airing_calendar_router
@@ -49,10 +51,12 @@ from .core.logging import log_request_id, logger
 from .core.public_url import get_public_base_path
 from .core.scheduler_registry import scheduler_registry
 from .core.startup_info import startup_info
+from .mcp.server import mcp_app
 from .services.feiniu.sync_service import ensure_feiniu_startup_watermark
 from .services.mapping_service import mapping_service
 from .services.scheduler_bootstrap import register_all as register_schedulers
 from .services.sync_service import sync_service
+from .utils.release_markdown import content_img_sources
 
 # 创建FastAPI应用（root_path 便于反代子路径下 OpenAPI 等）
 _app_kw: dict = {
@@ -166,7 +170,9 @@ async def lifespan(app: FastAPI):
         logger.error(f"关闭数据库连接失败: {e}")
 
 
-app = FastAPI(**_app_kw, lifespan=lifespan)
+# 合并 MCP lifespan（FastMCP 内部资源启停）到主应用 lifespan
+_app_kw["lifespan"] = combine_lifespans(lifespan, mcp_app.lifespan)
+app = FastAPI(**_app_kw)
 
 
 # X-Request-ID 透传/生成规则：仅接受可见 ASCII 标点类安全字符，
@@ -237,12 +243,55 @@ app.include_router(airing_calendar_router)
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# FastMCP 子应用挂载
+# 官方推荐：把 FastMCP 子应用以 Mount 方式嵌入，保持其原始根路径
+# （/.well-known/*、/authorize、/token、/consent、/mcp）。
+# 必须是 catch-all，放在所有具体路由之后。
+# - user_middleware：由 Mount 自动生效，无需手动迁移。
+# - lifespan：嵌套子应用的 lifespan 不会被外层自动运行，必须经
+#   combine_lifespans(lifespan, mcp_app.lifespan) 合并（见上方 app 构造）。
+#
+# 为何只有 MCP 需要这两处额外装配？——router 与 mount 的 ASGI 语义不同：
+# - 上方 app.include_router(...) 注册的是"同一个 app 内"的路由集合，天然共享
+#   外层 lifespan / middleware / exception handler，无需额外接线。
+# - app.mount("/", mcp_app) 挂载的 mcp_app 是 mcp.http_app() 产出的"独立
+#   ASGI 子应用"，有自己的 Router / 中间件栈 / 异常处理：外层生命周期不会
+#   代跑子应用 lifespan，子应用内抛出的异常也不会冒泡到外层 FastAPI 处理器。
+# 因此上面合并 lifespan、下面注册 404 处理器都是 ASGI 嵌套语义的必然要求，
+# 不是代码设计缺陷，改动时不要把这两步当冗余删除。
+# ─────────────────────────────────────────────────────────────────────────
+# 根级 catch-all Mount 会把未匹配请求交给 mcp_app，其 Router.not_found 在
+# "app" in scope 时 raise HTTPException(404)，由子应用自身异常中间件处理，
+# 外层 FastAPI 的 404 处理器无法拦截。此处仅在子应用上注册整数 404 处理器
+# （不泛化到 StarletteHTTPException 全类），把默认 text/plain "Not Found"
+# 统一为与 FastAPI 一致的 JSON 404；子应用内其他 HTTPException（如 /authorize
+# 的 400）不受影响。
+async def _mcp_json_404(request: Request, exc: Exception) -> JSONResponse:
+    """让挂载的 MCP 子应用对未匹配路径返回与 FastAPI 一致的 JSON 404。"""
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+
+mcp_app.add_exception_handler(404, _mcp_json_404)
+
+app.mount("/", mcp_app)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # CSP 响应头（纵深防御，限制外域资源加载 + 禁用内联事件外的脚本注入）
 # ─────────────────────────────────────────────────────────────────────────
 # 现状：base.html 含内联防闪烁脚本，需保留 'unsafe-inline'
-# 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与时间线封面图（lain.bgm.tv
-#           或用户配置的图片反代），img-src 动态放行这些图片域名
-_CSP_DEFAULT_IMG_HOSTS = ["https://*.lain.bgm.tv"]
+# 外域资源：仅 <a href> 跳转（bgm.tv / github.com）与图片——时间线封面图
+#           （lain.bgm.tv 或用户配置的图片反代）、发行说明与公告正文的图片
+#           （GitHub 附件主机，见 release_markdown._CONTENT_IMG_HOSTS）；正文里
+#           名单外主机的图片在清洗阶段改为链接，img-src 只放行这些固定主机。
+# lain.bgm.tv 的封面地址使用 apex 域名；CSP 的 `*.lain.bgm.tv` 只匹配子域名，
+# 不包含 apex 本身，故两个 host-source 都需放行（未配置图片反代时封面依赖此项）。
+_CSP_DEFAULT_IMG_HOSTS = [
+    "https://lain.bgm.tv",
+    "https://*.lain.bgm.tv",
+    # 发行说明 / 公告正文的图片来自 GitHub 附件，与清洗器的图片准入同一份名单
+    *content_img_sources(),
+]
 
 # CSS 源码级数据里 netloc 允许的字符：字母数字 + 点 + 连字符（+ 可选用 ":" 端口与 IPv6 方括号）
 _CSP_NETLOC_CHARS = frozenset(
