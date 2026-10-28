@@ -20,7 +20,7 @@ def test_llm_provider_select_renders(authed_page, base_url: str):
     select = page.locator("#llm-provider")
     assert select.is_visible()
     options = select.locator("option").all_inner_texts()
-    assert options == ["openai_compat", "anthropic_compat"]
+    assert options == ["openai_compat", "anthropic_compat", "openai_responses"]
     assert select.input_value() == "openai_compat"
 
 

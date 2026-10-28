@@ -71,7 +71,6 @@ class _BufferedResponse:
 def _request_with_retry(
     url: str,
     proxies: dict[str, str] | None = None,
-    stream: bool = False,
     max_retries: int = 3,
     ssl_verify: bool = True,
 ) -> _BufferedResponse:

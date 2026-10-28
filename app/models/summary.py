@@ -34,7 +34,9 @@ class LLMConfigUpdate(BaseModel):
     max_tokens: int | None = None
     temperature: float | None = None
     timeout: int | None = None
-    provider: Literal["openai_compat", "anthropic_compat"] | None = None
+    provider: (
+        Literal["openai_compat", "anthropic_compat", "openai_responses"] | None
+    ) = None
     thinking_level: Literal["off", "low", "medium", "high"] | None = None
 
 

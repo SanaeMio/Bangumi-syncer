@@ -249,7 +249,7 @@ class TraktAuthService:
         result = self.oauth.consume_state("trakt", state)
         return result["account_key"] if result else None
 
-    def _cleanup_expired_states(self, max_age: int = 300) -> int:
+    def _cleanup_expired_states(self) -> int:
         """清理过期的 state，返回删除行数。"""
         return database_manager.cleanup_oauth_states_expired()
 

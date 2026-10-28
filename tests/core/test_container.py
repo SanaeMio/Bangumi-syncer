@@ -3,9 +3,12 @@
 约定：每个用例在 finally 中复位单例，避免污染同进程内的其它用例。
 """
 
+from typing import cast
+
 import pytest
 
 from app.core.config import (
+    ConfigManager,
     config_manager,
     get_config_manager,
     reset_config_manager,
@@ -75,7 +78,8 @@ def test_mapping_service_getters_and_inject():
     try:
         assert get_mapping_service() is mapping_service
         fake = object()
-        set_mapping_service(fake)
+        # 注入任意哨兵对象验证 get/set 同一性，无需是真实服务实例
+        set_mapping_service(cast(MappingService, fake))
         assert get_mapping_service() is fake
         reset_mapping_service()
         assert get_mapping_service() is not fake
@@ -102,7 +106,8 @@ def test_notification_service_getters_and_inject():
     try:
         assert get_notification_service() is notification_service
         fake = object()
-        set_notification_service(fake)
+        # 注入任意哨兵对象验证 get/set 同一性，无需是真实服务实例
+        set_notification_service(cast(NotificationService, fake))
         assert get_notification_service() is fake
         reset_notification_service()
         assert get_notification_service() is not fake
@@ -118,7 +123,8 @@ def test_sync_service_getters_and_inject():
     try:
         assert get_sync_service().__class__ is SyncService
         fake = object()
-        set_sync_service(fake)
+        # 注入任意哨兵对象验证 get/set 同一性，无需是真实服务实例
+        set_sync_service(cast(SyncService, fake))
         assert get_sync_service() is fake
         reset_sync_service()
         assert get_sync_service() is not fake
@@ -134,7 +140,8 @@ def test_database_manager_getters_and_inject():
     try:
         assert get_database_manager().__class__ is DatabaseManager
         fake = object()
-        set_database_manager(fake)
+        # 注入任意哨兵对象验证 get/set 同一性，无需是真实服务实例
+        set_database_manager(cast(DatabaseManager, fake))
         assert get_database_manager() is fake
         reset_database_manager()
         assert get_database_manager() is not fake
@@ -150,7 +157,8 @@ def test_config_manager_getters_and_inject():
     try:
         assert get_config_manager() is config_manager
         fake = object()
-        set_config_manager(fake)
+        # 注入任意哨兵对象验证 get/set 同一性，无需是真实服务实例
+        set_config_manager(cast(ConfigManager, fake))
         assert get_config_manager() is fake
         reset_config_manager()
         assert get_config_manager() is config_manager

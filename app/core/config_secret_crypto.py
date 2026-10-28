@@ -21,6 +21,9 @@ PREFIX = "BGS1:"
 _HKDF_SALT = b"bangumi-syncer-config-v1"
 _HKDF_INFO = b"config-secret-fernet-v1"
 
+# 模块级 flag：无 secret_key 时 encrypt 仅 warning 一次，避免刷屏
+_encrypt_missing_master_warned: bool = False
+
 
 def is_sensitive_ini_field(section: str, option: str) -> bool:
     """判断字段是否敏感（委托给 SectionMeta 注册表）
@@ -53,6 +56,7 @@ def _master_secret() -> str:
 
 
 def encrypt(plaintext: str, *, master: str | None = None) -> str:
+    global _encrypt_missing_master_warned
     if plaintext is None or plaintext == "":
         return ""
     if plaintext.startswith(PREFIX):
@@ -61,9 +65,27 @@ def encrypt(plaintext: str, *, master: str | None = None) -> str:
         master = _master_secret()
     f = _fernet_for_master(master)
     if f is None:
+        if not _encrypt_missing_master_warned:
+            _encrypt_missing_master_warned = True
+            logger.warning(
+                "未配置 [auth] secret_key，配置类敏感值与 agent replay_delta 将以明文存储"
+            )
         return plaintext
     token = f.encrypt(plaintext.encode("utf-8")).decode("ascii")
     return PREFIX + token
+
+
+def warn_if_master_missing() -> bool:
+    """启动期校验入口：secret_key 为空时 warning 一次。
+
+    返回是否触发了告警（True = 缺失，已告警；False = 已配置）。
+    """
+    if not _master_secret():
+        logger.warning(
+            "未配置 [auth] secret_key，配置类敏感值与 agent replay_delta 将以明文存储"
+        )
+        return True
+    return False
 
 
 def decrypt(stored: Any, *, master: str | None = None) -> str:

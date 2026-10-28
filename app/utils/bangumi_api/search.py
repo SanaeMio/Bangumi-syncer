@@ -19,6 +19,69 @@ if TYPE_CHECKING:
     from app.services.sync_service.match_trace import MatchTrace
 
 
+def _search_cache_key(
+    title: str,
+    start_date: str,
+    end_date: str,
+    limit: int,
+    list_only: bool,
+    subject_types: list[int] | None,
+) -> tuple:
+    """``search`` / ``search_async`` 共用的实例缓存键（与历史键结构逐字一致）。"""
+    return (
+        title,
+        start_date,
+        end_date,
+        limit,
+        list_only,
+        tuple(subject_types or [SUBJECT_TYPE_ANIME]),
+    )
+
+
+def _search_request_payload(
+    title: str,
+    start_date: str,
+    end_date: str,
+    subject_types: list[int] | None,
+) -> dict[str, Any]:
+    """``search`` / ``search_async`` 共用的请求体（air_date 与类型过滤）。"""
+    air_date_filter: list[str] = []
+    if start_date:
+        air_date_filter.append(f">={start_date}")
+    if end_date:
+        air_date_filter.append(f"<{end_date}")
+    subject_filter: dict[str, Any] = {
+        "type": subject_types if subject_types else [SUBJECT_TYPE_ANIME],
+        "nsfw": True,
+    }
+    if air_date_filter:
+        subject_filter["air_date"] = air_date_filter
+    return {"keyword": title, "filter": subject_filter}
+
+
+def _coerce_json(
+    res: httpx.Response,
+    *,
+    context: str,
+    accept: type | tuple[type, ...],
+    fallback: Any,
+    type_label: str = "异常类型",
+) -> Any:
+    """JSON 解析 + 类型兜底（search / get_subject / get_related_subjects 同源口径）。
+
+    解析失败或类型不符时记 error 并返回 ``fallback``（调用方语义各自的占位）。
+    """
+    try:
+        data = res.json()
+    except ValueError as e:
+        logger.error(f"{context} JSON解析失败: {e}")
+        return fallback
+    if not isinstance(data, accept):
+        logger.error(f"{context} API返回{type_label}: {type(data)}, 内容: {data}")
+        return fallback
+    return data
+
+
 class SearchMixin:
     """搜索与匹配相关方法（供 BangumiApi 组合）"""
 
@@ -55,14 +118,9 @@ class SearchMixin:
         list_only: bool = True,
         subject_types: list[int] | None = None,
     ) -> list[dict[str, Any]] | dict[str, Any]:
-        # 使用实例缓存避免内存泄漏
-        cache_key = (
-            title,
-            start_date,
-            end_date,
-            limit,
-            list_only,
-            tuple(subject_types or [SUBJECT_TYPE_ANIME]),
+        # 使用实例缓存避免内存泄漏（键与 async 版共用构造）
+        cache_key = _search_cache_key(
+            title, start_date, end_date, limit, list_only, subject_types
         )
         if cache_key in self._cache["search"]:
             return self._cache["search"][cache_key]
@@ -78,27 +136,15 @@ class SearchMixin:
             return [] if list_only else {"data": []}
 
         try:
-            # air_date 过滤：start_date/end_date 任一为空时不加该 filter，
-            # 用于无日期兜底搜索（原 search_old 场景，v0 search 已替代 legacy 接口）
-            air_date_filter: list[str] = []
-            if start_date:
-                air_date_filter.append(f">={start_date}")
-            if end_date:
-                air_date_filter.append(f"<{end_date}")
-            subject_filter: dict[str, Any] = {
-                "type": subject_types if subject_types else [SUBJECT_TYPE_ANIME],
-                "nsfw": True,
-            }
-            if air_date_filter:
-                subject_filter["air_date"] = air_date_filter
+            # 请求体构造与 async 版共用（air_date 过滤：任一日期为空不加该 filter，
+            # 用于无日期兜底搜索；v0 search 已替代 legacy 接口）
             res = self._request_with_retry(
                 "POST",
                 self._req_not_auth,
                 f"{self.host}/search/subjects",
-                json={
-                    "keyword": title,
-                    "filter": subject_filter,
-                },
+                json=_search_request_payload(
+                    title, start_date, end_date, subject_types
+                ),
                 params={"limit": limit},
             )
         except httpx.HTTPError as e:
@@ -108,21 +154,71 @@ class SearchMixin:
             # 也会让"JSON解析失败"日志误导排查方向。
             logger.error(f"search API 请求失败（网络错误）: {e}")
             return [] if list_only else {"data": []}
-        try:
-            res = res.json()
-            # 确保返回的是字典类型
-            if not isinstance(res, dict):
-                logger.error(f"search API返回非字典类型: {type(res)}, 内容: {res}")
-                res = {"data": []}
-        except ValueError as e:
-            logger.error(f"search JSON解析失败: {e}")
-            res = {"data": []}
+        payload = _coerce_json(
+            res,
+            context="search",
+            accept=dict,
+            fallback={"data": []},
+            type_label="非字典类型",
+        )
 
-        result = res.get("data", []) if list_only else res
+        result = payload.get("data", []) if list_only else payload
         self._put_cache("search", cache_key, result)
         return result
 
-    def get_subject(self, subject_id: int, use_archive: bool = True) -> dict[str, Any]:
+    async def search_async(
+        self,
+        title: str,
+        start_date: str = "",
+        end_date: str = "",
+        limit: int = 5,
+        list_only: bool = True,
+        subject_types: list[int] | None = None,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
+        """``search`` 的异步版（agent 等异步语境；与同步版共享缓存与解析口径）
+
+        走异步请求层（``_request_async``：``acquire_async`` 与同步 ``acquire``
+        共享同一进程级令牌桶）。语义与 :meth:`search` 一致：实例缓存命中直接
+        返回、API 不可达 TTL 内降级空结果、网络错误降级空结果。
+        """
+        cache_key = _search_cache_key(
+            title, start_date, end_date, limit, list_only, subject_types
+        )
+        if cache_key in self._cache["search"]:
+            return self._cache["search"][cache_key]
+
+        if self.is_api_unreachable():
+            logger.warning("📚 Bangumi API 不可达（TTL 内），search_async 返回空结果")
+            return [] if list_only else {"data": []}
+
+        try:
+            res = await self._request_async(
+                "POST",
+                f"{self.host}/search/subjects",
+                auth=False,
+                json=_search_request_payload(
+                    title, start_date, end_date, subject_types
+                ),
+                params={"limit": limit},
+            )
+        except httpx.HTTPError as e:
+            logger.error(f"search API 请求失败（网络错误）: {e}")
+            return [] if list_only else {"data": []}
+
+        payload = _coerce_json(
+            res,
+            context="search",
+            accept=dict,
+            fallback={"data": []},
+            type_label="非字典类型",
+        )
+        result = payload.get("data", []) if list_only else payload
+        self._put_cache("search", cache_key, result)
+        return result
+
+    def get_subject(
+        self, subject_id: int | str, use_archive: bool = True
+    ) -> dict[str, Any]:
         # 使用实例缓存避免内存泄漏。key 区分 use_archive：Archive 数据不含
         # images 字段，混用同一槽位会污染 API 结果的封面解析。
         cache_key = (subject_id, use_archive)
@@ -151,21 +247,62 @@ class SearchMixin:
             # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
             logger.error(f"get_subject API 请求失败（网络错误）: {e}")
             return {}
-        try:
-            res = res.json()
-            # 确保返回的是字典类型
-            if not isinstance(res, dict):
-                logger.error(f"get_subject API返回非字典类型: {type(res)}, 内容: {res}")
-                res = {}
-        except ValueError as e:
-            logger.error(f"get_subject JSON解析失败: {e}")
-            res = {}
+        res = _coerce_json(
+            res,
+            context="get_subject",
+            accept=dict,
+            fallback={},
+            type_label="非字典类型",
+        )
 
         self._put_cache("get_subject", cache_key, res)
         return res
 
+    async def get_subject_async(
+        self, subject_id: int | str, use_archive: bool = True
+    ) -> dict[str, Any]:
+        """``get_subject`` 的异步版（共享缓存键 / 归档短路 / 解析口径）
+
+        与同步版一致：Archive 命中直接返回（不触网）；API 不可达 TTL 内返回空；
+        网络错误降级返回空。
+        """
+        cache_key = (subject_id, use_archive)
+        if cache_key in self._cache["get_subject"]:
+            return self._cache["get_subject"][cache_key]
+
+        if use_archive:
+            shortcut = self._archive.try_get_subject(subject_id)
+            if shortcut.hit:
+                self._put_cache("get_subject", cache_key, shortcut.data)
+                return shortcut.data
+
+        if self.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达（TTL 内），"
+                f"get_subject_async({subject_id}) 返回空"
+            )
+            return {}
+
+        try:
+            res = await self._request_async("GET", f"{self.host}/subjects/{subject_id}")
+            self.mark_api_reachable()
+            res = self._validate_response(res)
+        except httpx.HTTPError as e:
+            logger.error(f"get_subject API 请求失败（网络错误）: {e}")
+            return {}
+
+        res = _coerce_json(
+            res,
+            context="get_subject",
+            accept=dict,
+            fallback={},
+            type_label="非字典类型",
+        )
+        self._put_cache("get_subject", cache_key, res)
+        return res
+
     def get_related_subjects(
-        self, subject_id: int
+        self, subject_id: int | str
     ) -> list[dict[str, Any]] | dict[str, Any]:
         # 使用实例缓存避免内存泄漏
         if subject_id in self._cache["get_related_subjects"]:
@@ -191,18 +328,54 @@ class SearchMixin:
             # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
             logger.error(f"get_related_subjects API 请求失败（网络错误）: {e}")
             return []
-        try:
-            res = res.json()
-            # get_related_subjects 可能返回列表或字典，都是正常的
-            if not isinstance(res, (dict, list)):
-                logger.error(
-                    f"get_related_subjects API返回异常类型: {type(res)}, 内容: {res}"
-                )
-                res = []
-        except ValueError as e:
-            logger.error(f"get_related_subjects JSON解析失败: {e}")
-            res = []
+        # 可能返回列表或字典，都是正常的（解析口径与 async 版共用）
+        res = _coerce_json(
+            res,
+            context="get_related_subjects",
+            accept=(dict, list),
+            fallback=[],
+            type_label="异常类型",
+        )
 
+        self._put_cache("get_related_subjects", subject_id, res)
+        return res
+
+    async def get_related_subjects_async(
+        self, subject_id: int | str
+    ) -> list[dict[str, Any]] | dict[str, Any]:
+        """``get_related_subjects`` 的异步版（共享缓存 / 归档短路 / 解析口径）"""
+        if subject_id in self._cache["get_related_subjects"]:
+            return self._cache["get_related_subjects"][subject_id]
+
+        shortcut = self._archive.try_get_related_subjects(subject_id)
+        if shortcut.hit:
+            self._put_cache("get_related_subjects", subject_id, shortcut.data)
+            return shortcut.data
+
+        if self.is_api_unreachable():
+            logger.warning(
+                f"📚 Bangumi API 不可达（TTL 内），"
+                f"get_related_subjects_async({subject_id}) 返回空"
+            )
+            return []
+
+        try:
+            res = await self._request_async(
+                "GET", f"{self.host}/subjects/{subject_id}/subjects"
+            )
+            self.mark_api_reachable()
+            res = self._validate_response(res)
+        except httpx.HTTPError as e:
+            logger.error(f"get_related_subjects API 请求失败（网络错误）: {e}")
+            return []
+
+        res = _coerce_json(
+            res,
+            context="get_related_subjects",
+            accept=(dict, list),
+            fallback=[],
+            type_label="异常类型",
+        )
         self._put_cache("get_related_subjects", subject_id, res)
         return res
 

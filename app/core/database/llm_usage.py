@@ -43,6 +43,8 @@ class DailyStats:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    error_count: int = 0
+    avg_latency_ms: int = 0
 
 
 @dataclass
@@ -280,7 +282,10 @@ class LLMUsageRepository(BaseRepository):
                    COUNT(*) AS calls,
                    COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
                    COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
-                   COALESCE(SUM(total_tokens), 0) AS total_tokens
+                   COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                   COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0)
+                       AS error_count,
+                   COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
             FROM {self._TABLE}
         """
         where, params = self._days_filter(days)
@@ -293,6 +298,8 @@ class LLMUsageRepository(BaseRepository):
                 prompt_tokens=r[2] or 0,
                 completion_tokens=r[3] or 0,
                 total_tokens=r[4] or 0,
+                error_count=r[5] or 0,
+                avg_latency_ms=int(r[6] or 0),
             )
             for r in cursor.fetchall()
         ]
