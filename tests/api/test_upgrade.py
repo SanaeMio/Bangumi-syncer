@@ -152,6 +152,7 @@ class TestTriggerUpgrade:
         assert body["upgrade_id"] == "abc123"
         mock_service.start_upgrade.assert_awaited_once_with(None)
 
+
 class TestUpgradeProgress:
     """升级进度端点测试"""
 
