@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from app.utils.bangumi_api import BangumiApi
 from app.utils.bangumi_api._archive_shortcut import ShortcutResult
+from app.utils.bangumi_constants import SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL
 from app.utils.season_title import extract_explicit_season
 
 
@@ -1038,7 +1039,7 @@ class TestFindEpisodeAcrossSeasons:
         assert result[1] == 30002
 
     def test_archive_sequel_chain_no_target_falls_back_to_hop_by_hop(self):
-        """archive 命中但链上无 target_ep 时降级到逐跳 API（P1-5 修复）。
+        """archive 命中但链上无 target_ep 时降级到逐跳 API。
 
         场景：archive 链 [200] 但 S2 的 sort 范围不含 target_ep=1000，
         且 200 无续集。archive 链不完整时必须降级到逐跳 API 兜底，
@@ -1060,7 +1061,7 @@ class TestFindEpisodeAcrossSeasons:
 
         result = api.find_episode_across_seasons(100, 1000)
         assert result is None
-        # P1-5 修复：archive 链未命中目标时应降级到逐跳 API
+        # archive 链未命中目标时应降级到逐跳 API
         assert api.get_related_subjects.called
 
     def test_archive_prequel_chain_finds_target_sort(self):
@@ -1731,6 +1732,31 @@ class TestFindEpisodeFranchiseFallback:
 
         result = api.find_episode_across_seasons(100, 120)
         assert result is None
+
+    def test_chain_traversal_default_skips_real_type_subject(self):
+        """链遍历默认口径仅动画：REAL（type=6）条目即便 sort 命中也被跳过。
+
+        守卫当前**有意**设计：sequel/prequel 链沿「同一作品连续性」定位季集归属，
+        限定 ANIME 是保守策略（避免真人同名/改编作品误配）；放行 REAL 的宽口径
+        只留给 franchise 兜底（见 _try_find_episode_in_franchise）。若未来产品
+        确认需覆盖「真人改编链」，应把此处默认 allowed_types 一并放行 REAL。
+        """
+        episodes = {900: {"data": self._make_eps(101, 60, 90001), "total": 60}}
+        api = self._make_api(episodes, {})
+
+        # 默认 allowed_types=(ANIME,) → type=6 的 900 被跳过（不命中）
+        assert api._find_episode_in_chain([900], 120, set()) is None
+
+        # 显式放行 REAL（franchise 口径）时同一链可命中，佐证差异仅来自类型过滤
+        hit = api._find_episode_in_chain(
+            [900],
+            120,
+            set(),
+            allowed_types=(SUBJECT_TYPE_ANIME, SUBJECT_TYPE_REAL),
+        )
+        assert hit is not None
+        assert hit[0] == 900
+        assert hit[1] == 90020  # sort 120 -> id 90001 + (120 - 101)
 
 
 class TestFindSeasonOneEpisodeNoHang:

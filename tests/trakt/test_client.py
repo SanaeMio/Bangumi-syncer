@@ -2,6 +2,7 @@
 Trakt 客户端测试
 """
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -128,7 +129,7 @@ class TestTraktClientMethods:
             from app.services.trakt.client import TraktClient
 
             client = TraktClient(access_token="test_token")
-            result = await client.get_all_watched_history("shows")
+            result = await client.get_all_watched_history(cast(Any, "shows"))
 
             assert result == []
 

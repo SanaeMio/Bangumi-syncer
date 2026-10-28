@@ -62,7 +62,8 @@ class TestEnvOverrides:
         assert overrides[("web", "base_path")] == "APPLICATION_ROOT"
 
     def test_count_matches_original(self):
-        """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条、log_level 共 1 条"""
+        """原硬编码共 14 条映射，新增 bangumi-oauth 的 client_id/client_secret 共 2 条、
+        log_level 共 1 条"""
         overrides = config_schema.all_env_overrides()
         assert len(overrides) == 17
 
@@ -516,6 +517,23 @@ class TestSerializeSchema:
     def test_loose_true_fields_consistent_with_helper(self):
         schema = config_schema.serialize_schema()
         assert schema["loose_true_fields"] == config_schema.loose_true_fields()
+
+
+class TestLlmRetentionDaysManualKey:
+    """[llm].retention_days 是活配置（DB 清理读取），登记 manual_keys 说明。"""
+
+    def test_registered_in_manual_keys_with_reason(self):
+        meta = config_schema.SECTIONS["llm"]
+        assert "retention_days" in meta.manual_keys
+        reason = meta.manual_keys["retention_days"]
+        assert reason.strip()
+        assert "365" in reason
+        assert "config.ini" in reason
+
+    def test_retention_days_is_not_ui_field(self):
+        """示例键为注释态，不做配置页表单入口，故只登记 manual_keys。"""
+        field_names = {f.name for f in config_schema.SECTIONS["llm"].fields}
+        assert "retention_days" not in field_names
 
 
 class TestConfigCoverage:

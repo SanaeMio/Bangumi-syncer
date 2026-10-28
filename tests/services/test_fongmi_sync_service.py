@@ -1,5 +1,6 @@
 """fongmi sync_service 同步流程与去重"""
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -26,7 +27,7 @@ def _enabled_cfg(**kwargs) -> dict:
 
 
 def _sample_record(**kwargs) -> FongmiWatchRecord:
-    base = dict(
+    base: dict[str, Any] = dict(
         device_ip="192.168.1.100",
         device_name="客厅电视",
         title="测试番剧",

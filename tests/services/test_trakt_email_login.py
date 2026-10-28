@@ -139,7 +139,7 @@ class TestStartEmailLogin:
             "app.services.trakt.email_login._send_magic",
             new_callable=AsyncMock,
             return_value=(True, ""),
-        ):
+        ) as mock_send:
             first = await start_email_login("u1", "user@example.com")
             assert first["success"] is True
 
@@ -150,7 +150,7 @@ class TestStartEmailLogin:
             assert second["retry_after"] is not None
             assert second.get("rate_limited") is True
             # 发信应只被调用一次（第二次被限流拦截）
-            assert email_login._send_magic.await_count == 1
+            assert mock_send.await_count == 1
 
     @pytest.mark.asyncio
     async def test_resend_after_cooldown_overwrites_pending(self):

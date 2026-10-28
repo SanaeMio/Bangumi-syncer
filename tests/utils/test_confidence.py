@@ -1,5 +1,7 @@
 """置信度分级工具单元测试（功能三）。"""
 
+from typing import Any, cast
+
 from app.utils.confidence import (
     classify_confidence,
     confidence_badge_class,
@@ -25,10 +27,11 @@ def test_classify_confidence_low():
 
 def test_classify_confidence_none_and_invalid():
     assert classify_confidence(None) == "low"
-    assert classify_confidence("abc") == "low"
+    # 非法/字符串输入属刻意覆盖：用 cast 绕过静态类型，运行期由函数内 float() 处理
+    assert classify_confidence(cast(Any, "abc")) == "low"
     # 字符串数值应被安全转换
-    assert classify_confidence("0.9") == "high"
-    assert classify_confidence("0.4") == "low"
+    assert classify_confidence(cast(Any, "0.9")) == "high"
+    assert classify_confidence(cast(Any, "0.4")) == "low"
 
 
 def test_confidence_label():

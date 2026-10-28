@@ -406,18 +406,27 @@ SECTIONS: dict[str, SectionMeta] = {
         visible_in_ui=False,
         hidden_reason="在配置页「AI 追番总结」卡片中管理（经 /api/summary/jobs）",
         # summary 调度器为 instance 类型，配置联动由 summary_jobs API 直调
+        fields=(FieldMeta(name="thinking_level", default="off"),),
     ),
     "llm": SectionMeta(
         name="llm",
         display_name="LLM 配置",
         order=610,
         sensitive_fields=frozenset({"api_key"}),
+        # retention_days 是活配置（DB 启动时按它清理 llm_usage 记录），但示例键为
+        # 注释态、不做配置页入口，故仅登记 manual_keys（登记进 fields 会因
+        # TestConfigCoverage.test_schema_fields_exist_in_example_ini 失败）。
+        manual_keys={
+            "retention_days": "LLM 调用记录在数据库中的保留天数（默认 365 天），"
+            "内部运维参数，一般无需修改；如需调整，编辑 config.ini 的 [llm] 段",
+        },
         fields=(
+            # provider 受控取值（与 _PROVIDER_MAP / LLMConfigUpdate.provider 一致）：
+            # openai_compat / anthropic_compat / openai_responses
             FieldMeta(name="provider", default="openai_compat"),
             FieldMeta(name="max_tokens", default=2000),
             FieldMeta(name="temperature", default=0.7),
             FieldMeta(name="timeout", default=60),
-            FieldMeta(name="thinking_level", default="off"),
         ),
     ),
     # ── 调度器全局（order 900）──
