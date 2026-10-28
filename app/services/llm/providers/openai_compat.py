@@ -107,7 +107,7 @@ class OpenAICompatProvider(BaseProvider):
         """以 SSE 流式方式发送聊天补全请求。
 
         请求构造复用 :meth:`_build_request`（reasoning_effort 映射、
-        _extras_disabled / _force_tool_choice_degraded 降级、tools 规范化
+        extras_disabled / force_tool_choice_degraded 降级、tools 规范化
         全部沿用），并追加 stream / stream_options 以启用增量与 usage 上报。
 
         provider 层不重试、不吞异常：httpx 异常/状态错误直接向上抛，
@@ -294,12 +294,14 @@ class OpenAICompatProvider(BaseProvider):
         }
 
         # thinking_level：每任务 kwargs 覆盖 > 全局默认；非 o 系列模型忽略并告警；
-        # 端点拒绝过扩展参数时（_extras_disabled）不再发送
+        # 本次调用被端点拒绝过扩展参数时（extras_disabled）不再发送
+        extras_disabled = bool(kwargs.get("extras_disabled", False))
+        force_tool_choice_degraded = bool(
+            kwargs.get("force_tool_choice_degraded", False)
+        )
         level = kwargs.get("thinking_level", self.thinking_level)
         effort = (
-            None
-            if self._extras_disabled
-            else self._reasoning_effort(level, body["model"])
+            None if extras_disabled else self._reasoning_effort(level, body["model"])
         )
         if effort is not None:
             body["reasoning_effort"] = effort
@@ -322,7 +324,7 @@ class OpenAICompatProvider(BaseProvider):
             if tc is not None:
                 normalized_tc = self._normalize_openai_tool_choice(tc)
                 if (
-                    self._force_tool_choice_degraded
+                    force_tool_choice_degraded
                     and isinstance(normalized_tc, dict)
                     and normalized_tc.get("type") == "function"
                 ):

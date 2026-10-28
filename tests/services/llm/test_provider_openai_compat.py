@@ -611,32 +611,35 @@ class TestOpenAICompatProviderStream:
         }
 
     async def test_request_body_honors_extras_disabled(self):
-        """_extras_disabled 置位时流式请求体同样不发送 reasoning_effort。"""
+        """extras_disabled=True 的本次调用不发送 reasoning_effort。"""
         payloads = [_chunk_payload({"content": "ok"}), "[DONE]"]
         mock_client = _make_mock_stream_client(sse_lines=_sse_lines(*payloads))
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             provider = self._provider(model="o4-mini", thinking_level="high")
-            provider._extras_disabled = True
-            await self._collect(provider, [Message(role="user", content="Q")])
+            await self._collect(
+                provider,
+                [Message(role="user", content="Q")],
+                extras_disabled=True,
+            )
 
         body = mock_client.stream.call_args[1]["json"]
         assert "reasoning_effort" not in body
         assert body["stream"] is True
 
     async def test_request_body_honors_force_tool_choice_degraded(self):
-        """_force_tool_choice_degraded 置位时强制 tool_choice 降级为 auto。"""
+        """force_tool_choice_degraded=True 时强制 tool_choice 降级为 auto。"""
         payloads = [_chunk_payload({"content": "ok"}), "[DONE]"]
         mock_client = _make_mock_stream_client(sse_lines=_sse_lines(*payloads))
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             provider = self._provider()
-            provider._force_tool_choice_degraded = True
             await self._collect(
                 provider,
                 [Message(role="user", content="Q")],
                 tools=[{"name": "get_weather", "description": "查天气"}],
                 tool_choice="get_weather",
+                force_tool_choice_degraded=True,
             )
 
         body = mock_client.stream.call_args[1]["json"]
