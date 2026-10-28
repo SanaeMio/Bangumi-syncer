@@ -2097,6 +2097,8 @@
       document.getElementById('llm-timeout').value = d.timeout || 60
       document.getElementById('llm-provider').value =
         d.provider || 'openai_compat'
+      document.getElementById('llm-thinking-level').value =
+        d.thinking_level || 'off'
     } catch (e) {
       /* silent */
     }
@@ -2127,6 +2129,7 @@
             parseFloat(document.getElementById('llm-temperature').value) || 0.7,
           timeout: parseInt(document.getElementById('llm-timeout').value) || 60,
           provider: document.getElementById('llm-provider').value,
+          thinking_level: document.getElementById('llm-thinking-level').value,
         }),
       })
       if (saveD.status !== 'success')
@@ -2232,7 +2235,6 @@
     document.getElementById('summary-job-max-records').value = '-1'
     document.getElementById('summary-job-memory-limit').value = '0'
     document.getElementById('summary-job-related-limit').value = '0'
-    document.getElementById('summary-thinking-level').value = 'off'
     document.getElementById('summary-job-clear-memory-btn').disabled = true
     document.getElementById('summary-job-prompt').value =
       '你是一个轻松有趣的追番助手。用户会给你一段指定时间范围内的观影记录，请你用亲切自然的中文生成追番总结。\n\n' +
@@ -2292,8 +2294,6 @@
         job.memory_limit || 0
       document.getElementById('summary-job-related-limit').value =
         job.related_limit || 0
-      document.getElementById('summary-thinking-level').value =
-        job.thinking_level || 'off'
       document.getElementById('summary-job-clear-memory-btn').disabled = false
       document.getElementById('summary-job-prompt').value =
         job.system_prompt || ''
@@ -2328,7 +2328,6 @@
         document.getElementById('summary-job-related-limit').value,
         10,
       ) || 0,
-      thinking_level: document.getElementById('summary-thinking-level').value,
       system_prompt: document.getElementById('summary-job-prompt').value,
     }
     // 前端校验：名称不能含逗号，不能与已有任务重名
@@ -2614,21 +2613,6 @@
                                    value="0"
                                    min="0"
                                    max="1000" />
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">
-                                思考强度
-                                <i class="bi bi-question-circle ms-1 text-muted"
-                                   data-bs-toggle="tooltip"
-                                   data-bs-container="body"
-                                   title="LLM 推理思考深度，off 为关闭"></i>
-                            </label>
-                            <select class="form-select" id="summary-thinking-level">
-                                <option value="off">off（关闭）</option>
-                                <option value="low">low（低）</option>
-                                <option value="medium">medium（中）</option>
-                                <option value="high">high（高）</option>
-                            </select>
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
                             <button type="button"
