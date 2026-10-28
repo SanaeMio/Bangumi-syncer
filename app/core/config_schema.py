@@ -137,29 +137,6 @@ SECTIONS: dict[str, SectionMeta] = {
         name="sync",
         display_name="同步设置",
         order=20,
-        # llm_match_cron 是内部调度机制，不在配置页暴露；仅提供环境变量
-        # 高级调优入口（LLM_MATCH_CRON 覆盖 [sync] llm_match_cron）。
-        env_overrides={"llm_match_cron": "LLM_MATCH_CRON"},
-        # 以下 llm_match_* 均为内部运维/专家参数，无配置页入口（原因见 manual_keys）。
-        # 注意登记形态：仅有活跃示例键（如 llm_match_retention_days）才可进 fields；
-        # 以注释示例出现的四个专家键若进 fields，会因
-        # TestConfigCoverage.test_schema_fields_exist_in_example_ini 失败。
-        manual_keys={
-            "llm_match_retention_days": "LLM 匹配结果保留策略参数（默认 30 天），"
-            "属内部运维项、一般无需修改；如需调整，编辑 config.ini 的 [sync] 段",
-            "llm_match_thinking_level": "LLM 匹配的思考强度等级（默认 medium，"
-            "可选 off / low / medium / high），专家项/内部运维参数，一般无需修改；"
-            "如需调整，编辑 config.ini 的 [sync] 段",
-            "llm_match_max_iterations": "单次 LLM 匹配最大迭代次数（默认空，"
-            "空时按思考强度自动映射），专家项/内部运维参数，一般无需修改；"
-            "如需调整，编辑 config.ini 的 [sync] 段",
-            "llm_match_recovery_timeout_s": "LLM 匹配恢复超时秒数（默认 120 秒），"
-            "专家项/内部运维参数，一般无需修改；如需调整，"
-            "编辑 config.ini 的 [sync] 段",
-            "llm_match_concurrency": "单轮 recover + pending 并发消费限额"
-            "（默认 3，最小 1），专家项/内部运维参数，一般无需修改；"
-            "如需调整，编辑 config.ini 的 [sync] 段",
-        },
         fields=(
             FieldMeta(name="movie_playback_start_mark_watching", default_true=True),
             FieldMeta(name="movie_mark_subject_completed", default_true=True),
@@ -168,8 +145,6 @@ SECTIONS: dict[str, SectionMeta] = {
             # 模糊匹配置信度阈值（0~1）：低于该相似度的 Bangumi API 匹配
             # 不会自动采用，而是沉淀到待审队列由用户在 Web 界面人工确认。
             FieldMeta(name="match_confidence_threshold", default=0.6),
-            # LLM 匹配结果滑动窗口轮转天数（终态超窗 + 过期死行一并清理）
-            FieldMeta(name="llm_match_retention_days", default=30),
         ),
     ),
     "auth": SectionMeta(
