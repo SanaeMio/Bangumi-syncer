@@ -681,7 +681,7 @@ class TestGetLlmClient:
 
 
 class TestParamRejectionDegradation:
-    """端点拒绝扩展参数 → provider._extras_disabled 置位 → 立即重试。"""
+    """端点拒绝扩展参数 → 降级参数只作用于本次重试 → 立即重试。"""
 
     @pytest.mark.asyncio
     async def test_param_rejection_degrades_and_retries(
@@ -715,7 +715,41 @@ class TestParamRejectionDegradation:
 
         assert resp.content == "ok"
         assert len(calls) == 2  # 降级后立即重试，无退避
-        assert provider._extras_disabled is True
+        assert "extras_disabled" not in calls[0]
+        assert calls[1]["extras_disabled"] is True
+        assert calls[1]["force_tool_choice_degraded"] is False
+
+    @pytest.mark.asyncio
+    async def test_param_degradation_scoped_to_retry(
+        self, reset_llm_singleton, mock_config, mock_log_usage
+    ):
+        """降级只作用于本次重试：下一次独立调用不再携带降级参数。"""
+        from app.services.llm.client import LLMClient
+        from app.services.llm.providers.openai_compat import OpenAICompatProvider
+
+        calls: list[dict] = []
+        ok = _response_chunks(ChatResponse(content="ok", model="gpt-4o", usage=None))
+        reject = _httpx_status(
+            400,
+            '{"error": "Unrecognized request argument supplied: reasoning_effort"}',
+        )
+
+        provider = OpenAICompatProvider(
+            api_base="https://test.api.com/v1",
+            api_key="sk-test",
+            thinking_level="high",
+        )
+        # 第一次调用：400 → 降级重试成功；第二次调用：直接成功
+        provider.stream = _stream_fn([reject, ok, ok], calls)
+
+        client = LLMClient()
+        client._provider = provider
+        await collect(client.stream_chat([Message(role="user", content="Q1")]))
+        await collect(client.stream_chat([Message(role="user", content="Q2")]))
+
+        assert len(calls) == 3
+        assert calls[1]["extras_disabled"] is True
+        assert "extras_disabled" not in calls[2]
 
     @pytest.mark.asyncio
     async def test_tool_choice_rejection_degrades_and_retries(
@@ -761,8 +795,8 @@ class TestParamRejectionDegradation:
 
         assert resp.content == "ok"
         assert len(calls) == 2  # 降级后立即重试，无退避
-        assert provider._force_tool_choice_degraded is True
-        assert provider._extras_disabled is True
+        assert calls[1]["extras_disabled"] is True
+        assert calls[1]["force_tool_choice_degraded"] is True
 
     @pytest.mark.asyncio
     async def test_param_rejection_latency_excludes_failed_attempt(
@@ -830,7 +864,7 @@ class TestParamRejectionDegradation:
 
         assert len(calls) == 1  # 确定性 400 → 终态，不重试
         assert exc_info.value.retryable is False
-        assert provider._extras_disabled is False  # 未降级
+        assert "extras_disabled" not in calls[0]  # 未降级
         assert mock_sleep.await_count == 0
 
 
@@ -1324,7 +1358,7 @@ class TestStreamChat:
     async def test_stream_param_rejection_degrades_and_retries(
         self, reset_llm_singleton, mock_config, mock_log_usage, mock_logger
     ):
-        """场景 5：首 chunk 前 400 参数拒绝 → 置 _extras_disabled 立即重试。"""
+        """场景 5：首 chunk 前 400 参数拒绝 → 降级参数仅随重试传入。"""
         from app.services.llm.client import LLMClient
         from app.services.llm.providers.openai_compat import OpenAICompatProvider
 
@@ -1352,7 +1386,7 @@ class TestStreamChat:
 
         assert resp.content == "ok"
         assert len(calls) == 2
-        assert provider._extras_disabled is True
+        assert calls[1]["extras_disabled"] is True
 
     @pytest.mark.asyncio
     async def test_stream_rejection_raises_llm_call_error_no_retry(
@@ -1383,7 +1417,7 @@ class TestStreamChat:
         assert "端点不支持流式调用" in str(exc_info.value)
         assert len(stream_calls) == 1  # 不重试
         assert mock_sleep.await_count == 0  # 无退避
-        assert provider._extras_disabled is False  # 不降级
+        assert "extras_disabled" not in stream_calls[0]  # 不降级
         mock_log_usage.assert_called_once()
         assert mock_log_usage.call_args[1]["status"] == "error"
 
@@ -1418,7 +1452,7 @@ class TestStreamChat:
         assert exc_info.value.retryable is False
         assert len(stream_calls) == 1  # 不重试 stream
         # 关键：不得走普通参数降级（否则会带 stream 重试直至耗尽）
-        assert provider._extras_disabled is False
+        assert "extras_disabled" not in stream_calls[0]
         mock_log_usage.assert_called_once()
         assert mock_log_usage.call_args[1]["status"] == "error"
 

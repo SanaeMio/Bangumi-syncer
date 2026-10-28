@@ -451,6 +451,10 @@ class AnthropicProvider(BaseProvider):
         #   （如 cache_control）一并无损保留。
         # - tool_choice 字符串 → {"type":"tool","name":<str>}；dict → 透传；
         #   None → 不发送该键。
+        # 本次调用被端点拒绝过强制工具选择时，仅对本次请求降级为 auto。
+        force_tool_choice_degraded = bool(
+            kwargs.get("force_tool_choice_degraded", False)
+        )
         tools = kwargs.get("tools")
         if tools is not None:
             body["tools"] = [self._normalize_anthropic_tool(t) for t in tools]
@@ -458,7 +462,7 @@ class AnthropicProvider(BaseProvider):
         if tool_choice is not None:
             normalized_tc = self._normalize_anthropic_tool_choice(tool_choice)
             if (
-                self._force_tool_choice_degraded
+                force_tool_choice_degraded
                 and isinstance(normalized_tc, dict)
                 and normalized_tc.get("type") in ("tool", "any")
             ):
@@ -471,11 +475,12 @@ class AnthropicProvider(BaseProvider):
                 normalized_tc = {"type": "auto"}
             body["tool_choice"] = normalized_tc
         # thinking_level：每任务 kwargs 覆盖 > 全局默认；模型不支持时降级；
-        # 端点拒绝过扩展参数时（_extras_disabled）不再发送
+        # 本次调用被端点拒绝过扩展参数时（extras_disabled）不再发送
+        extras_disabled = bool(kwargs.get("extras_disabled", False))
         level = kwargs.get("thinking_level", self.thinking_level)
         budget = (
             0
-            if self._extras_disabled
+            if extras_disabled
             else self._thinking_enabled(level, kwargs.get("model", self.model))
         )
         if budget > 0:
