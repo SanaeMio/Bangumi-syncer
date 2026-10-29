@@ -776,3 +776,46 @@ class TestTerminalResultStepHelper:
         trace = MatchTrace()
         self._run(trace, reason="r", message="同一条消息")
         assert trace.final_message == "同一条消息"
+
+
+class TestOrchestratorMovieFile:
+    """绔埌绔細fongmi 鎺ㄥ墽鍦虹増姝ｇ墖锛屾暣鏉?sync_custom_item 鍙爣鏉＄洰鍦ㄧ湅"""
+
+    def test_fongmi_movie_marks_subject_watching(self, mock_config, mock_database):
+        """鐢ㄧ湡瀹?fongmi payload 璺戝畬鏁存祦绋?
+        鏂█ ensure_subject_watching 琚皟鐢ㄣ€乵ark_episode_watched /
+        get_movie_main_episode_id / find_episode_across_seasons 鍧囨湭琚皟鐢?鈥斺€?        鍗冲墽鍦虹増鏃笉鍘诲畾浣嶇珷鑺傦紝涔熶笉璺ㄥ鏌ユ壘锛屾洿涓嶇偣鍗曢泦銆?"""
+        from tests.services.test_sync_pipeline import _make_mock_bangumi_api
+
+        item = CustomItem(
+            user_name="testuser",
+            title="仙逆剧场版 弑仙之战",
+            season=1,
+            episode=1,
+            media_type="movie",
+            release_date="2024-01-01",
+            source="fongmi",
+            sync_action=None,
+            raw_payload={"media": {"url": "http://nas/video/movie.mkv"}},
+        )
+        service = SyncService()
+
+        with _make_mock_bangumi_api() as api:
+            api.return_value.ensure_subject_watching.return_value = 1
+            with patch.object(
+                service,
+                "_get_bangumi_config_for_user",
+                return_value={
+                    "username": "testuser",
+                    "access_token": "tok",
+                    "private": True,
+                },
+            ):
+                result = service.sync_custom_item(item, "fongmi")
+
+        assert result.status == "success"
+        api.return_value.ensure_subject_watching.assert_called_once_with("577198")
+        api.return_value.mark_episode_watched.assert_not_called()
+        api.return_value.get_movie_main_episode_id.assert_not_called()
+        api.return_value.find_episode_across_seasons.assert_not_called()
+        assert "在看" in result.message

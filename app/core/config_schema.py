@@ -326,6 +326,10 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="min_score", default=0.85),
             FieldMeta(name="min_margin", default=0.10),
             FieldMeta(name="ambiguous_margin", default=0.05),
+            # 季集一致性加权（媒体源季号+集数一同参与候选排序）：
+            # 默认关闭，未设置视为关（与后端
+            # ``config_manager.get(... fallback=False)`` 的兜底一致）
+            FieldMeta(name="episode_count_weight", loose_true=True),
         ),
     ),
     # ── 通知配置（order 500-599，多实例）──

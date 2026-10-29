@@ -90,4 +90,17 @@ class SeasonInfoMixin:
                     logger.debug(f'匹配标题 "{title}" 包含复杂季度信息: {full_pattern}')
                     return True
 
+        # 结构化季号解析兜底。
+        #
+        # 上面的子串匹配覆盖不到两类真实条目名：
+        # - 结尾数字：``笨蛋，测验，召唤兽2``（11145 = 第二季）—— 不含「第2季」
+        #   字样，也没有 ``S2``，于是 S2 的请求被判成「未声明季号」，再沿续集链
+        #   找「第 2 季」，链上已无下一季 → 报「不存在或集数过多」；
+        # - 罗马数字结尾：``偶像大师 II``。
+        # 用与跨季定位同一套解析器判定，口径保持一致。
+        parsed = self._get_explicit_season_from_title(title)
+        if parsed is not None and parsed == season:
+            logger.debug(f'匹配标题 "{title}" 通过季号解析判定为第 {season} 季')
+            return True
+
         return False

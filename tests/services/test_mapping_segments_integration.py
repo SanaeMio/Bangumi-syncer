@@ -130,7 +130,7 @@ class TestIssue267EndToEnd:
         bgm.get_target_season_episode_id.return_value = (639938, 999888)
         service = MagicMock()
         service._resolve_season_episode.side_effect = (
-            lambda b, i, sid, is_season, target_episode=None, mapping_is_explicit=False: (
+            lambda b, i, sid, is_season, target_episode=None, mapping_is_explicit=False, has_movie_episode=False: (
                 bgm.get_target_season_episode_id(
                     subject_id=sid,
                     target_season=i.season,

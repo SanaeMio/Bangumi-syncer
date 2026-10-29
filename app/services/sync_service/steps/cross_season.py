@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
-from app.services.matching.gates import EPISODE_ALREADY_RESOLVED
+from app.services.matching.gates import (
+    EPISODE_ALREADY_RESOLVED,
+    MOVIE_SUBJECT_MARKED,
+)
 from app.services.matching.steps.base import StepOutcome, skipped_outcome
 from app.services.sync_service.context import ExecutionContext
 from app.services.sync_service.steps.base import ExecutionStepBase
@@ -42,6 +45,10 @@ class CrossSeasonStep(ExecutionStepBase):
         # gate：上游已有 ep_id（本季直接命中）则跳过
         if prev and prev.get("episode_id"):
             return skipped_outcome(EPISODE_ALREADY_RESOLVED)
+
+        # gate：剧场版正片只标条目在看，不存在「第几集」，不得跨季改选。
+        if prev and prev.get("movie_subject_marked"):
+            return skipped_outcome(MOVIE_SUBJECT_MARKED)
 
         # gate：用户显式绑定条目时**禁止跨季改选**。
         # 自定义映射（季度感知格式 / 带 segments）是用户的明确意图；此时若按

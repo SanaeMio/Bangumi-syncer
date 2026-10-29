@@ -40,6 +40,7 @@ def _make_ctx(**overrides):
     service._resolve_season_episode.return_value = ("100", "200")
     service._retry_mark_episode.return_value = 1
     service._format_mark_status_message.return_value = "已标记为看过"
+    service._format_watching_status_message.return_value = "已标记为在看"
 
     item = CustomItem(
         user_name="u",
@@ -195,13 +196,47 @@ class TestSyncPipelineExecution:
         assert outcome.is_terminal is True
 
     def test_sync_action_auth_failure_terminal_error(self):
-        """标记认证失败：以 (sync_action, error) 终态短路"""
+        """标记认证失败：以 (sync_action, error) 终态短路
+
+        必须让上游产出 episode_id：无单集时走「只标条目在看」分支（剧场版正片
+        语义），那条路径抛的是 ensure_subject_watching 的 ValueError，见
+        test_sync_action_no_episode_auth_failure_is_terminal_error。
+        """
         ctx = _make_ctx()
+        ctx.service._resolve_season_episode.return_value = ("100", "200")
         ctx.service._retry_mark_episode.side_effect = ValueError(
             "认证失败: access_token 无效"
         )
 
-        terminal = SyncPipeline([SyncActionStep()]).run(ctx)
+        terminal = SyncPipeline([EpisodeResolveStep(), SyncActionStep()]).run(ctx)
+
+        assert terminal is not None
+        stage, outcome = terminal
+        assert stage == "sync_action"
+        assert outcome.status == "error"
+        assert outcome.error_detail["type"] == "auth_failed"
+
+    def test_sync_action_no_episode_marks_subject_watching(self):
+        """无单集（剧场版正片）：只标条目在看，不调 mark_episode_watched"""
+        ctx = _make_ctx()
+        ctx.service._resolve_season_episode.return_value = ("100", None)
+        ctx.bgm.ensure_subject_watching.return_value = 1
+
+        terminal = SyncPipeline([EpisodeResolveStep(), SyncActionStep()]).run(ctx)
+
+        assert terminal is None
+        ctx.bgm.ensure_subject_watching.assert_called_once_with("100")
+        ctx.service._retry_mark_episode.assert_not_called()
+
+    def test_sync_action_no_episode_auth_failure_is_terminal_error(self):
+        """无单集分支的认证失败同样是终态 error"""
+        ctx = _make_ctx()
+        ctx.service._resolve_season_episode.return_value = ("100", None)
+        ctx.bgm.ensure_subject_watching.side_effect = ValueError(
+            "认证失败: access_token 无效"
+        )
+
+        terminal = SyncPipeline([EpisodeResolveStep(), SyncActionStep()]).run(ctx)
 
         assert terminal is not None
         stage, outcome = terminal

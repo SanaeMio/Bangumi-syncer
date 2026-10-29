@@ -269,3 +269,81 @@ def test_media_to_debug_dict_includes_is_movie():
     assert d["media"]["is_movie"] is True
     assert d["media"]["parsed_season"] == 1
     assert d["media"]["parsed_episode"] == 1
+
+
+def test_detect_media_type_duration_signals():
+    """时长证据：≥70 分钟判 movie、<70 分钟证伪年份推断、未知时退回命名习惯"""
+    from app.services.fongmi.client import (
+        _MOVIE_MIN_DURATION_MS,
+        detect_media_type_from_media,
+    )
+
+    M = 60 * 1000  # 一分钟的毫秒数
+
+    # 无季集结构 + 长时长 → movie（新信号：无任何命名线索的电影文件）
+    assert detect_media_type_from_media("http://x/君の名は.mp4", "", 106 * M) == "movie"
+    # 70 分钟边界：恰好达标 / 差一毫秒
+    assert (
+        detect_media_type_from_media(
+            "http://x/zhengpian.mkv", "", _MOVIE_MIN_DURATION_MS
+        )
+        == "movie"
+    )
+    assert (
+        detect_media_type_from_media(
+            "http://x/zhengpian.mkv", "", _MOVIE_MIN_DURATION_MS - 1
+        )
+        == "episode"
+    )
+    # 短时长证伪「带年份=电影」：带年份的 OVA/SP 是旧规则主要误判源
+    assert (
+        detect_media_type_from_media("http://x/OVA.2016.mkv", "", 24 * M) == "episode"
+    )
+    # 时长未知（未传 / None）→ 年份规则保持原行为（向后兼容）
+    assert detect_media_type_from_media("http://x/OVA.2016.mkv", "") == "movie"
+    assert detect_media_type_from_media("http://x/OVA.2016.mkv", "", None) == "movie"
+    # 非法 duration（bool / 0 / 负数 / 直播 LONG_MIN / 非数值）一律视为未知
+    from app.services.fongmi.client import _LONG_MIN
+
+    for bad in (True, 0, -1, _LONG_MIN, "7200000"):
+        assert (
+            detect_media_type_from_media("http://x/OVA.2016.mkv", "", bad) == "movie"
+        ), bad
+    # 季集结构仍是最强信号：长时长抢不走
+    assert (
+        detect_media_type_from_media("http://x/Show.S01E05.mkv", "", 120 * M)
+        == "episode"
+    )
+    # 电影关键词仍优先于短时长（关键词是显式意图）
+    assert (
+        detect_media_type_from_media("http://x/剧场版/短篇.mp4", "", 20 * M) == "movie"
+    )
+
+
+def test_media_to_record_long_duration_movie():
+    """无命名信号的 106 分钟文件凭时长判 movie：is_movie=True, season=1, episode=1"""
+    media = {
+        "title": "某电影",
+        "url": "http://x/media/君の名は.1080p.mkv",
+        "duration": 6360000,  # 106 分钟
+        "position": 1000,
+    }
+    rec = media_to_record(_device(), media)
+    assert rec is not None
+    assert rec.is_movie is True
+    assert rec.media_type == "movie"
+    assert (rec.season, rec.episode) == (1, 1)
+
+
+def test_media_to_record_short_duration_ov_with_year_stays_episode():
+    """带年份但只有 24 分钟的文件：时长证伪年份推断，判 episode"""
+    media = {
+        "title": "某 OVA",
+        "url": "http://x/media/某作品.OVA.2016.1080p.mkv",
+        "duration": 1440000,  # 24 分钟
+        "position": 500,
+    }
+    rec = media_to_record(_device(), media)
+    assert rec is not None
+    assert rec.is_movie is False
+    assert rec.media_type == "episode"
