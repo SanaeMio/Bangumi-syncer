@@ -219,19 +219,25 @@ class APISearchStep(MatchStepBase):
                 bgm_data, is_movie=is_movie_request, limit=15
             )
 
-            # 集数一致性加权（可选，默认关闭）
+            # 季集一致性加权（可选，默认关闭）
             #
             # 放在 platform 排序之后、post_search 改选之前：改选是领域逻辑
             # （季度/媒体类型/关联条目），必须以加权后的队首为起点才有意义；
-            # 而加权本身只是给「章节数装得下请求集数」的候选一次微调。
+            # 而加权本身只是给「章节数装得下请求集数 / 标题季号声明一致」的
+            # 候选一次微调。
             #
-            # 只在 season 与 episode 都有效时参与：episode 是逐集推送的，
-            # 第一次同步（E01）时集数几乎对任何条目都成立，没有区分度。
+            # 媒体源推来的季号与集数**一同**参与（求和后单次稳定排序）：
+            # - episode 是逐集推送的，第一次同步（E01）时集数几乎对任何
+            #   条目都成立，没有区分度 —— 此时季号声明仍可单独起作用；
+            # - 季号只在候选标题明确声明季号时加减分，未声明不参与。
             episode_weight_notes: list[str] = []
+            season_weight_notes: list[str] = []
             if self._episode_weight_enabled():
-                bgm_data, episode_weight_notes = self._apply_episode_weight(
-                    bgm_data, item, bgm
-                )
+                (
+                    bgm_data,
+                    episode_weight_notes,
+                    season_weight_notes,
+                ) = self._apply_episode_weight(bgm_data, item, bgm)
 
             original_top = bgm_data[0] if bgm_data else {}
             original_top_id = original_top.get("id")
@@ -393,6 +399,11 @@ class APISearchStep(MatchStepBase):
                         else {}
                     ),
                     **(
+                        {"season_weight": season_weight_notes}
+                        if season_weight_notes
+                        else {}
+                    ),
+                    **(
                         {"arbiter": verdict.decision.to_dict()}
                         if verdict.decision is not None
                         else {}
@@ -452,17 +463,26 @@ class APISearchStep(MatchStepBase):
     @staticmethod
     def _apply_episode_weight(
         bgm_data: list[dict[str, Any]], item: Any, bgm: Any
-    ) -> tuple[list[dict[str, Any]], list[str]]:
-        """对候选按集数一致性微调顺序
+    ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+        """对候选按「季号 + 集数」一致性微调顺序（一同纳入，单次排序）
 
-        章节数取候选条目自己的本篇章节数：候选本身就是某个季条目。
-        取不到（条目无章节数据 / 查询失败 / 无可用 API 实例）时本候选不加不减。
+        集数证据的章节数取候选条目自己的本篇章节数：候选本身就是某个季条目。
+        取不到（条目无章节数据 / 查询失败）时本候选不加不减。
+        季号证据是纯标题解析，无需 API；季号与集数任一有效即参与加权。
         """
-        from app.services.matching.episode_weight import apply_episode_count_weight
+        from app.services.matching.episode_weight import apply_season_episode_weight
 
         target_ep = getattr(item, "episode", None)
-        if bgm is None or not target_ep:
-            return bgm_data, []
+        target_season = getattr(item, "season", None)
+        # 季号只接受 int / 纯数字字符串；其余（含解析垃圾值）视为无效不参与
+        if isinstance(target_season, int) and not isinstance(target_season, bool):
+            pass
+        elif isinstance(target_season, str) and target_season.strip().isdigit():
+            target_season = int(target_season.strip())
+        else:
+            target_season = None
+        if not target_ep and not target_season:
+            return bgm_data, [], []
 
         def _count(subject_id: Any) -> int | None:
             episodes = bgm.get_episodes(int(subject_id))
@@ -477,12 +497,18 @@ class APISearchStep(MatchStepBase):
             ]
             return len(normals) or None
 
-        ordered, notes = apply_episode_count_weight(
-            bgm_data, int(target_ep), _count, limit=5
+        ordered, ep_notes, season_notes = apply_season_episode_weight(
+            bgm_data,
+            target_season=target_season,
+            target_ep=int(target_ep) if target_ep else None,
+            fetch_episode_count=_count,
+            limit=5,
         )
-        if notes:
-            logger.debug(f"集数一致性加权: {'; '.join(notes)}")
-        return ordered, notes
+        if ep_notes:
+            logger.debug(f"集数一致性加权: {'; '.join(ep_notes)}")
+        if season_notes:
+            logger.debug(f"季号一致性加权: {'; '.join(season_notes)}")
+        return ordered, ep_notes, season_notes
 
     # ------------------------------------------------------------------
     # 置信度 / 裁决（P3）
