@@ -162,12 +162,21 @@ _MULTI_EP_RE = re.compile(
     r"|(?:全集|合集|全\s*\d{1,3}\s*[集话話])"
 )
 
+# 时长证据：≥70 分钟的单文件几乎不可能是「某部剧的单集」，而 OVA/SP/单集
+# 普遍在 70 分钟以内 —— 物理时长比文件名命名习惯更可信。
+# fongmi /media 的 duration 单位为毫秒（ExoPlayer 约定）。
+_MOVIE_MIN_DURATION_MS = 70 * 60 * 1000
 
-def detect_media_type_from_media(url: str, artist: str | None) -> str:
-    """从 fongmi 的 url / artist 判定媒体类型（文件名结构优先）。
 
-    fongmi 是**唯一没有类型字段**的源（播放器只推 title/url/artist），
-    因此必须从文件名推断。历史实现只做关键词扫描，准确率低：
+
+
+def detect_media_type_from_media(
+    url: str, artist: str | None, duration_ms: float | None = None
+) -> str:
+    """从 fongmi 的 url / artist / duration 判定媒体类型（文件名结构优先）。
+
+    fongmi 是**唯一没有类型字段**的源（播放器只推 title/url/artist/duration），
+    因此必须从文件名与时长推断。历史实现只做关键词扫描，准确率低：
     「特别篇」被当作 OVA、「真人」被当作三次元等。
 
     改为**结构化信号优先**：
@@ -177,12 +186,18 @@ def detect_media_type_from_media(url: str, artist: str | None) -> str:
     2. **有范围/合集标记**（``EP01-12`` / ``全集``）→ ``episode``
        （合集仍属剧集，交由后续跨季/集数解析处理）
     3. **命中电影关键词**（剧场版/劇場版/电影/Movie/Film）→ ``movie``
-    4. **无季集结构 + 带年份** → ``movie``（单片命名习惯）
+    4. **无季集结构 + 物理时长证据**：
+       - 时长 ≥70 分钟 → ``movie``：长文件几乎不可能是单集（OVA/SP/单集
+         普遍 ≤70 分钟），这是比命名习惯更可信的物理证据；
+       - 时长 <70 分钟 → 不再依据年份判 ``movie``：短时长证伪「带年份=电影」
+         的单片命名推断（带年份的 OVA/SP 是旧规则的主要误判源）；
+       - 时长未知（取不到 / 非法 / 直播流）→ 退回命名习惯：带年份 → ``movie``。
     5. 其余 → ``episode``（保守默认，与历史行为一致）
 
     这样 ``[1.11GB] 201- 201 4K V2.mkv`` 会因 ``[201]`` 之外无季集结构、
     且带 ``4K`` 而落到默认 episode（国漫大集数），
-    而 ``S01E081`` 明确判 episode，``劇場版/mugen_train.mp4`` 判 movie。
+    而 ``S01E081`` 明确判 episode，``劇場版/mugen_train.mp4`` 判 movie，
+    无任何命名信号的 106 分钟电影文件（``君の名は.mkv``）也能凭时长判 movie。
 
     Returns:
         ``movie`` / ``episode``。fongmi **不细分 OVA/OAD** —— 文件名里没有
@@ -209,10 +224,20 @@ def detect_media_type_from_media(url: str, artist: str | None) -> str:
         if _MOVIE_KEYWORD_RE.search(text):
             return "movie"
 
-    # 4. 无季集结构 + 带年份 → movie（单片命名习惯）
-    for text in sources:
-        if _MOVIE_YEAR_RE.search(text):
+    # 4. 无季集结构 + 物理时长证据（duration 为毫秒，见 _MOVIE_MIN_DURATION_MS）
+    duration_known = (
+        isinstance(duration_ms, (int, float))
+        and not isinstance(duration_ms, bool)
+        and duration_ms > 0
+    )
+    if duration_known:
+        if duration_ms >= _MOVIE_MIN_DURATION_MS:
             return "movie"
+    else:
+        # 时长未知时退回命名习惯：带年份 → movie（单片命名习惯）
+        for text in sources:
+            if _MOVIE_YEAR_RE.search(text):
+                return "movie"
 
     # 5. 保守默认
     return "episode"
@@ -450,7 +475,7 @@ def media_is_complete(media: dict, min_percent: int) -> bool:
 def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | None:
     """将 /media 转为 FongmiWatchRecord（仅提取字段，不判断是否完成）
 
-    fongmi 无类型字段，媒体类型由**文件名结构**判定（见
+    fongmi 无类型字段，媒体类型由**文件名结构 + 物理时长**判定（见
     :func:`detect_media_type_from_media`）：
     - 电影：season=1, episode=1, is_movie=True
     - 剧集：season/episode 由 :func:`parse_episode_info` 解析
@@ -463,7 +488,7 @@ def media_to_record(device: FongmiDevice, media: dict) -> FongmiWatchRecord | No
     artist_s = str(artist) if artist else None
 
     # 文件名结构优先的类型判定（替代旧的关键词扫描）
-    detected_type = detect_media_type_from_media(url, artist_s)
+    detected_type = detect_media_type_from_media(url, artist_s, media.get("duration"))
     is_movie = detected_type == "movie"
     if is_movie:
         season, episode = 1, 1
@@ -506,7 +531,10 @@ def media_to_debug_dict(device: FongmiDevice, media: dict | None) -> dict:
     url = str(media.get("url") or "")
     artist = media.get("artist")
     artist_s = str(artist) if artist else ""
-    is_movie = detect_media_type_from_media(url, artist_s or None) == "movie"
+    is_movie = (
+        detect_media_type_from_media(url, artist_s or None, media.get("duration"))
+        == "movie"
+    )
     if is_movie:
         season, episode = 1, 1
     else:
