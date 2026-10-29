@@ -284,7 +284,9 @@ def test_detect_media_type_duration_signals():
     assert detect_media_type_from_media("http://x/君の名は.mp4", "", 106 * M) == "movie"
     # 70 分钟边界：恰好达标 / 差一毫秒
     assert (
-        detect_media_type_from_media("http://x/zhengpian.mkv", "", _MOVIE_MIN_DURATION_MS)
+        detect_media_type_from_media(
+            "http://x/zhengpian.mkv", "", _MOVIE_MIN_DURATION_MS
+        )
         == "movie"
     )
     assert (

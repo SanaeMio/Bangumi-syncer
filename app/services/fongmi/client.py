@@ -168,8 +168,6 @@ _MULTI_EP_RE = re.compile(
 _MOVIE_MIN_DURATION_MS = 70 * 60 * 1000
 
 
-
-
 def detect_media_type_from_media(
     url: str, artist: str | None, duration_ms: float | None = None
 ) -> str:
