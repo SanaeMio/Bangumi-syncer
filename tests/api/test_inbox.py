@@ -84,7 +84,7 @@ async def test_inbox_summary(
         message="失败原因",
         source="test",
     )
-    # P4.5：显式创建站内信（log_sync_record 不再自动写站内信）
+    # 显式创建站内信（log_sync_record 不再自动写站内信）
     db.insert_notification(
         "sync_failed", "同步失败：番剧 S1E1", "失败原因", ref_id=record_id
     )
@@ -125,7 +125,7 @@ async def test_inbox_list_and_read_all(
         message="err",
         source="test",
     )
-    # P4.5：显式创建站内信
+    # 显式创建站内信
     db.insert_notification(
         "sync_failed", "同步失败：番剧 S1E2", "err", ref_id=record_id
     )
@@ -175,7 +175,7 @@ async def test_mark_single_read(
         message="x",
         source="test",
     )
-    # P4.5：显式创建站内信
+    # 显式创建站内信
     db.insert_notification("sync_failed", "同步失败：番剧 S1E3", "x", ref_id=record_id)
     notifs = db.list_in_app_notifications()
     notif_id = notifs[0]["id"]
@@ -247,7 +247,7 @@ async def test_inbox_notification_aggregation(
             message=f"err{ep}",
             source="test",
         )
-        # P4.5：显式创建站内信
+        # 显式创建站内信
         db.insert_notification(
             "sync_failed",
             f"同步失败：同一番剧 S1E{ep}",
@@ -293,7 +293,7 @@ async def test_inbox_read_all_by_category(
         message="e",
         source="test",
     )
-    # P4.5：显式创建站内信
+    # 显式创建站内信
     db.insert_notification("sync_failed", "同步失败：番剧 S1E1", "e", ref_id=record_id)
 
     with (

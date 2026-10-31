@@ -3,6 +3,7 @@ FastAPI 主应用测试
 """
 
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -66,11 +67,11 @@ class TestMainApp:
 
 
 @contextmanager
-def _main_lifespan_mocks(**replace: object):
+def _main_lifespan_mocks(**replace: Any):
     """为 TestClient 进入/退出触发的 startup/shutdown 打桩；replace 为 patch 目标 -> patch 的 kwargs 字典。"""
     from contextlib import ExitStack
 
-    defaults: dict[str, dict] = {
+    defaults: dict[str, dict[str, Any]] = {
         "app.main.startup_info.print_info": {},
         "app.main.startup_info.print_separator": {},
         "app.main.startup_info.print_success": {},
@@ -80,6 +81,9 @@ def _main_lifespan_mocks(**replace: object):
         "app.main.mapping_service.get_all_mappings": {"return_value": {}},
         "app.main.ensure_feiniu_startup_watermark": {},
         "app.main.database_manager.cleanup_pending_sync_queue": {},
+        "app.main.database_manager.agent_runs.mark_residual_running_spans": {
+            "new": MagicMock(return_value=0)
+        },
         "app.main.config_manager.get_scheduler_config": {
             "return_value": {"startup_delay": 0}
         },
@@ -192,6 +196,40 @@ def test_main_startup_retention_defaults_to_no_cleanup():
 
     mock_get_config.assert_any_call("dev", "sync_records_retention_days", 0)
     mock_cleanup.assert_called_once_with(0)
+
+
+def test_main_startup_marks_residual_running_spans():
+    """启动时清理未闭合 span（进程中断遗留的 running → error）。"""
+    from app.main import app
+
+    mock_mark = MagicMock(return_value=2)
+
+    with _main_lifespan_mocks(
+        **{
+            "app.main.database_manager.agent_runs.mark_residual_running_spans": {
+                "new": mock_mark
+            }
+        }
+    ):
+        with TestClient(app):
+            pass
+
+    mock_mark.assert_called_once()
+
+
+def test_main_startup_residual_span_failure_only_logs():
+    """清理异常不影响应用启动（仅日志）。"""
+    from app.main import app
+
+    with _main_lifespan_mocks(
+        **{
+            "app.main.database_manager.agent_runs.mark_residual_running_spans": {
+                "new": MagicMock(side_effect=RuntimeError("db boom"))
+            }
+        }
+    ):
+        with TestClient(app):
+            pass
 
 
 class TestCspHeader:

@@ -9,9 +9,30 @@
 6. 已 synced 的行不再被 upsert 命中（部分唯一索引仅覆盖 pending）
 """
 
+import sqlite3
 from pathlib import Path
 
 from app.core.database import DatabaseManager
+
+
+def _db_conn(dbm: DatabaseManager) -> sqlite3.Connection:
+    """返回底层 sqlite3 连接（测试构造后必然非 None，显式收窄）"""
+    conn = dbm._connection._conn
+    assert conn is not None, "测试数据库连接未初始化"
+    return conn
+
+
+def _row_id(value: int | None) -> int:
+    """显式收窄入队返回的行 id（测试前提：入队成功）"""
+    assert value is not None, "入队应返回行 id"
+    return value
+
+
+def _record(dbm: DatabaseManager, row_id: int | None) -> dict:
+    """读取待同步记录并显式收窄（测试前提：记录存在）"""
+    record = dbm.get_pending_sync_record_by_id(_row_id(row_id))
+    assert record is not None, "待同步记录应存在"
+    return record
 
 
 def _make_db(tmp_path: Path) -> DatabaseManager:
@@ -56,7 +77,7 @@ class TestPendingSyncQueueEnqueue:
             stats = dbm.get_pending_sync_stats()
             assert stats["pending"] == 1
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_upserts_on_duplicate_key(self, tmp_path):
         """同 key (user+subject+episode+source) 重复入队时更新而非插入新行"""
@@ -96,13 +117,13 @@ class TestPendingSyncQueueEnqueue:
             assert stats["pending"] == 1
 
             # 内容应已更新
-            record = dbm.get_pending_sync_record_by_id(id1)
+            record = _record(dbm, id1)
             assert "测试番剧-新" in record["payload_json"]
             assert record["last_error"] == "service unavailable"
             # attempts 被重置为 0
             assert record["attempts"] == 0
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_inserts_different_keys_independently(self, tmp_path):
         """不同 key 各自独立插入"""
@@ -146,7 +167,7 @@ class TestPendingSyncQueueEnqueue:
             stats = dbm.get_pending_sync_stats()
             assert stats["pending"] == 3
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_upsert_does_not_touch_synced_rows(self, tmp_path):
         """已 synced 的行不影响 upsert（部分唯一索引仅覆盖 pending）"""
@@ -163,7 +184,7 @@ class TestPendingSyncQueueEnqueue:
                 media_type="episode",
                 payload=_make_payload(),
             )
-            dbm.mark_pending_sync_synced(row_id)
+            dbm.mark_pending_sync_synced(_row_id(row_id))
 
             # 同 key 再次入队（应插入新行，因为旧行已 synced）
             new_id = dbm.enqueue_pending_sync(
@@ -180,7 +201,7 @@ class TestPendingSyncQueueEnqueue:
             assert new_id != row_id
             assert dbm.count_pending_sync() == 1
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
 
 class TestPendingSyncQueueFetch:
@@ -213,13 +234,13 @@ class TestPendingSyncQueueFetch:
                 payload=_make_payload("番剧B"),
             )
             # 把第一条标记为 synced
-            dbm.mark_pending_sync_synced(id1)
+            dbm.mark_pending_sync_synced(_row_id(id1))
 
             records = dbm.fetch_pending_sync(limit=10)
             assert len(records) == 1
             assert records[0]["subject_id"] == "222"
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_fetch_filters_by_max_attempts(self, tmp_path):
         """max_attempts 过滤超过重试次数的任务"""
@@ -249,14 +270,14 @@ class TestPendingSyncQueueFetch:
             )
             # 第一条累加 3 次 attempts
             for _ in range(3):
-                dbm.increment_pending_sync_attempts(id1, "test error")
+                dbm.increment_pending_sync_attempts(_row_id(id1), "test error")
 
             # max_attempts=3 应只返回 attempts<3 的（即第二条）
             records = dbm.fetch_pending_sync(limit=10, max_attempts=3)
             assert len(records) == 1
             assert records[0]["subject_id"] == "222"
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
 
 class TestPendingSyncQueueStateTransitions:
@@ -276,13 +297,13 @@ class TestPendingSyncQueueStateTransitions:
                 media_type="episode",
                 payload=_make_payload(),
             )
-            assert dbm.mark_pending_sync_synced(row_id) is True
+            assert dbm.mark_pending_sync_synced(_row_id(row_id)) is True
 
             stats = dbm.get_pending_sync_stats()
             assert stats["pending"] == 0
             assert stats["synced"] == 1
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_increment_attempts(self, tmp_path):
         dbm = _make_db(tmp_path)
@@ -298,14 +319,18 @@ class TestPendingSyncQueueStateTransitions:
                 media_type="episode",
                 payload=_make_payload(),
             )
-            assert dbm.increment_pending_sync_attempts(row_id, "fail 1") is True
-            assert dbm.increment_pending_sync_attempts(row_id, "fail 2") is True
+            assert (
+                dbm.increment_pending_sync_attempts(_row_id(row_id), "fail 1") is True
+            )
+            assert (
+                dbm.increment_pending_sync_attempts(_row_id(row_id), "fail 2") is True
+            )
 
-            record = dbm.get_pending_sync_record_by_id(row_id)
+            record = _record(dbm, row_id)
             assert record["attempts"] == 2
             assert record["last_error"] == "fail 2"
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_mark_abandoned(self, tmp_path):
         dbm = _make_db(tmp_path)
@@ -321,13 +346,15 @@ class TestPendingSyncQueueStateTransitions:
                 media_type="episode",
                 payload=_make_payload(),
             )
-            assert dbm.mark_pending_sync_abandoned(row_id, "exceeded max") is True
+            assert (
+                dbm.mark_pending_sync_abandoned(_row_id(row_id), "exceeded max") is True
+            )
 
             stats = dbm.get_pending_sync_stats()
             assert stats["pending"] == 0
             assert stats["abandoned"] == 1
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_delete_record(self, tmp_path):
         dbm = _make_db(tmp_path)
@@ -343,11 +370,11 @@ class TestPendingSyncQueueStateTransitions:
                 media_type="episode",
                 payload=_make_payload(),
             )
-            assert dbm.delete_pending_sync_record(row_id) is True
-            assert dbm.get_pending_sync_record_by_id(row_id) is None
+            assert dbm.delete_pending_sync_record(_row_id(row_id)) is True
+            assert dbm.get_pending_sync_record_by_id(_row_id(row_id)) is None
             assert dbm.count_pending_sync() == 0
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
 
 class TestPendingSyncQueueList:
@@ -394,7 +421,7 @@ class TestPendingSyncQueueList:
             )
             assert pending_only["total"] == 4
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
 
 class TestPendingSyncQueueSyncRecordId:
@@ -421,10 +448,10 @@ class TestPendingSyncQueueSyncRecordId:
             )
             assert row_id is not None
 
-            record = dbm.get_pending_sync_record_by_id(row_id)
+            record = _record(dbm, row_id)
             assert record["sync_record_id"] == 99
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_enqueue_without_sync_record_id_defaults_null(self, tmp_path):
         """不传 sync_record_id 时默认 NULL（旧数据兼容）"""
@@ -441,10 +468,10 @@ class TestPendingSyncQueueSyncRecordId:
                 media_type="episode",
                 payload=_make_payload(),
             )
-            record = dbm.get_pending_sync_record_by_id(row_id)
+            record = _record(dbm, row_id)
             assert record["sync_record_id"] is None
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_upsert_refreshes_sync_record_id(self, tmp_path):
         """同 key 重复入队时刷新 sync_record_id 为最新值"""
@@ -477,11 +504,11 @@ class TestPendingSyncQueueSyncRecordId:
             )
             assert id1 == id2
 
-            record = dbm.get_pending_sync_record_by_id(id1)
+            record = _record(dbm, id1)
             # 应为最新值 200
             assert record["sync_record_id"] == 200
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_link_sync_record_id_by_soft_key(self, tmp_path):
         """link_pending_sync_to_record 按四元组软匹配回填"""
@@ -500,7 +527,7 @@ class TestPendingSyncQueueSyncRecordId:
                 payload=_make_payload(),
             )
             # 验证初始为 None
-            assert dbm.get_pending_sync_record_by_id(row_id)["sync_record_id"] is None
+            assert _record(dbm, row_id)["sync_record_id"] is None
 
             # 回填
             ok = dbm.link_pending_sync_to_record(
@@ -512,10 +539,10 @@ class TestPendingSyncQueueSyncRecordId:
             )
             assert ok is True
 
-            record = dbm.get_pending_sync_record_by_id(row_id)
+            record = _record(dbm, row_id)
             assert record["sync_record_id"] == 777
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_link_returns_false_when_no_pending_row(self, tmp_path):
         """无匹配 pending 行时返回 False（已 synced 或不存在）"""
@@ -532,7 +559,7 @@ class TestPendingSyncQueueSyncRecordId:
                 media_type="episode",
                 payload=_make_payload(),
             )
-            dbm.mark_pending_sync_synced(row_id)
+            dbm.mark_pending_sync_synced(_row_id(row_id))
 
             # 已 synced，部分唯一索引不再覆盖，link 找不到 pending 行
             ok = dbm.link_pending_sync_to_record(
@@ -544,7 +571,7 @@ class TestPendingSyncQueueSyncRecordId:
             )
             assert ok is False
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_fetch_pending_returns_sync_record_id(self, tmp_path):
         """fetch_pending 返回值包含 sync_record_id 字段"""
@@ -566,7 +593,7 @@ class TestPendingSyncQueueSyncRecordId:
             assert len(records) == 1
             assert records[0]["sync_record_id"] == 55
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
 
 class TestPendingSyncQueueMarkSyncedBySyncRecordId:
@@ -601,7 +628,7 @@ class TestPendingSyncQueueMarkSyncedBySyncRecordId:
             stats = dbm.get_pending_sync_stats()
             assert stats["synced"] == 1
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_returns_zero_when_no_match(self, tmp_path):
         """无匹配 sync_record_id 时返回 0（不报错）"""
@@ -610,7 +637,7 @@ class TestPendingSyncQueueMarkSyncedBySyncRecordId:
             affected = dbm.mark_pending_sync_synced_by_sync_record_id(999)
             assert affected == 0
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_does_not_touch_synced_rows(self, tmp_path):
         """已 synced 的行不受影响（仅清理 pending）"""
@@ -628,13 +655,13 @@ class TestPendingSyncQueueMarkSyncedBySyncRecordId:
                 payload=_make_payload(),
                 sync_record_id=42,
             )
-            dbm.mark_pending_sync_synced(row_id)
+            dbm.mark_pending_sync_synced(_row_id(row_id))
 
             # 已 synced，再次按 sync_record_id 清理应返回 0
             affected = dbm.mark_pending_sync_synced_by_sync_record_id(42)
             assert affected == 0
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()
 
     def test_does_not_touch_other_sync_record_ids(self, tmp_path):
         """只清理目标 sync_record_id，不影响其他行"""
@@ -669,4 +696,4 @@ class TestPendingSyncQueueMarkSyncedBySyncRecordId:
             assert affected == 1
             assert dbm.count_pending_sync() == 1
         finally:
-            dbm._connection._conn.close()
+            _db_conn(dbm).close()

@@ -13,11 +13,14 @@ order: 100
 | --------------------------------------- | ------------------------------------------------------------- |
 | [🔄 同步服务](./sync-service)           | `CustomItem` 统一模型、`SyncService` 主流程、三段式匹配数据流 |
 | [⏰ 调度器框架](./scheduler)            | `BaseScheduler` 继承、`SchedulerRegistry` 注册、cron 与时区   |
+| [🤖 Agent 运行时与场景协议](./agent-runtime) | 通用运行时、`ScenarioHooks` 协议、扩展新 Agent 场景步骤 |
 | [⚙️ 配置系统](./config)                 | `ConfigManager`、`SectionMeta` 注册表、`FieldMeta` 布尔语义   |
 | [🗄️ 数据库仓储层](./database)           | SQLite 表结构、Repository 模式、迁移机制                      |
 | [🔐 OAuth 集成](./oauth)                | `OAuthProvider` 注册表、`OAuthService` 通用流程、如何接入新提供方 |
 | [🔔 通知系统](./notifications)          | `NotificationChannel` 抽象、如何新增通知渠道                  |
 | [🧪 测试与 CI](./testing)               | pytest 组织、HTTP mock、CI 工作流                             |
+| [🧾 日志分级约定](./logging)             | 级别判据（error/warning/info/debug）、默认级别与监听器、agent 生态守卫 |
+| [🧪 LLM 匹配 Eval 方案](./eval)         | 两层评测（离线回放进 CI + 真实模型 eval）、cassette 与 judge |
 | [📦 开发环境](./environment)            | uv 安装、代码风格、依赖管理、文档协作                         |
 | [🧩 新驱动接入指南](./new-driver-guide) | 从零开始接入新媒体服务器的完整流程                            |
 | [📝 贡献指南](./contributing)           | 开发环境搭建、提交前自检、pre-commit 钩子                     |

@@ -34,10 +34,28 @@ order: 30
 - **TV系列同步后自动将整部番标为看过**（`anime_mark_subject_completed`）：仅对 **TV 动画**生效。当你看完该番剧下的所有正片格子时，自动把整个条目标为「看过」。默认关闭。
 - **启用三次元（日剧/电影）支持**（`enable_real_action`）：默认关闭，程序只认 Bangumi 的**动画**条目。开启后，动画找不到时会继续尝试**三次元**条目（日剧、真人版、真人电影等）。默认关闭。
 - **测试同步跳过用户名校验**（`test_skip_permission_check`）：开启后，「测试同步」这类调试接口不再检查媒体服务器用户名，方便你还没配好用户名时先验证匹配效果。**只对测试接口生效**，正常同步不受影响。
+- **每秒请求数**（`api_rate_limit`）：向 Bangumi 接口发请求的速度上限，默认 `1`（每秒 1 次）。调大可加快同步，过高可能被 Bangumi 限流或封禁；最大 `10`。
+- **突发请求数**（`api_rate_burst`）：允许短时间内的突发请求数量，默认 `3`。例如设为 `3` 时，可以连续发 3 个请求再回到每秒 1 个的节奏。旧版配置写在 `[bangumi]` 段，程序仍兼容读取；新配置请写在 `[sync]` 段或直接改配置页。
 
 ::: tip 单人用还是多人用
 程序按「Bangumi 账号」卡片里的账号数量自动判断：只有一个账号就是单人模式；添加了多个账号，就会按各自填写的媒体服务器用户名把记录分给对应账号。**不需要手动切换模式**。
 :::
+
+## LLM 匹配增强
+
+> **前提**：需要先完成 [LLM 全局配置](#llm-全局配置)，LLM 匹配增强依赖 LLM 来做候选条目判定。
+
+当 Bangumi API 模糊匹配相似度不足时，LLM 匹配增强可借助 LLM 推理能力做二次判定，提升匹配准确率。配置存放在 `[sync]` 段，除内部调度参数外均可通过 Web 界面操作，无需手动编辑配置文件。
+
+- **启用 LLM 辅助匹配（llm_match_assist）**：总开关，默认关闭。开启前必须先在 `[llm]` 段配置 `api_key`，否则通过 Web 界面保存会被拒绝（返回"需先配置 LLM"）。
+- **调度周期（内部机制）**：LLM 匹配任务默认每分钟执行一次（cron `*/1 * * * *`），由内部调度器统一管理，用户无需在界面配置。如需高级调优，可通过环境变量 `LLM_MATCH_CRON` 覆盖（如 `LLM_MATCH_CRON="*/5 * * * *"`）。
+- **结果保留天数（llm_match_retention_days）**：LLM 匹配结果在数据库中保留天数，默认 30 天。
+- **最大迭代次数（llm_match_max_iterations）**：单次 LLM 匹配的最大循环轮次。留空（默认）时按思考开关自动映射（见下方）；填写正整数时显式覆盖。
+- **业务键去重（business_key）**：同一用户、同一剧集（归一化标题 + 季）只保留一个在途评估，键为 `{task_type}|{user}|{normalized_title}|{season}`，来源（`source` / `retry-*`）不参与身份判定。最新 run 为 `failed` 时按同键失败行累计 `total_attempts` 判断：未达上限（`MATCH_ASSIST_MAX_TOTAL_ATTEMPTS=10`）则每次新建 run 重试，达上限则 `exhausted` 不再入队。最新 run 为 `succeeded` 时（含「无建议」这类成功结束）按候选子状态复用、不重复调用 LLM：用户已接受且映射仍有效 → `reuse_accepted`（不限时间）；候选待审 → `reuse_holding`（无限期）；用户已拒绝且在处理窗口（`MATCH_ASSIST_REUSE_WINDOW_DAYS=30` 天）内 → `reuse_holding`，出窗则重新评估。
+- **恢复超时（llm_match_recovery_timeout_s）**：LLM 匹配恢复超时秒数，默认 120 秒。
+- **思考开关（llm_match_thinking_level）**：可选 `off` / `low` / `medium` / `high`，默认 `medium`。该字段同时控制两个维度：
+  - **Agent 循环轮次**：`off`→1 / `low`→2 / `medium`→3 / `high`→5；若设置了 `llm_match_max_iterations` 则显式覆盖轮次上限。
+  - **LLM 调用的思考强度参数**：`anthropic_compat` 透传为 `budget_tokens`，`openai_compat` 透传为 `reasoning_effort`（仅 o 系列模型生效），使匹配的 LLM 请求按自身思考强度工作。
 
 ## 屏蔽关键词
 
@@ -250,15 +268,17 @@ Trakt 有**自己的配置页面**（左侧菜单「Trakt 同步」），不在�
 
 LLM 连接是独立模块，追番总结和调试工具共用。在「配置管理」页面顶部的 LLM 卡片中修改，对应 `[llm]` 段。
 
-- **提供商（provider）**：LLM 服务提供商。可选值：`openai_compat`（默认，兼容 OpenAI / DeepSeek / Ollama 等 OpenAI 接口格式的服务）、`anthropic_compat`（兼容 Anthropic Messages API，官方 API 或遵循 `/v1/messages` 规范的代理/网关均可）。
-- **API 地址（api_base）**：LLM 服务商的 API 端点，需兼容所选 provider 的接口格式。`openai_compat` 默认 `https://api.openai.com/v1`，OpenAI 兼容接口请以 `/v1` 结尾填写完整地址；`anthropic_compat` 默认 `https://api.anthropic.com/v1`，使用第三方兼容网关时按其文档填写。
+- **提供商（provider）**：LLM 服务提供商。可选值：`openai_compat`（默认，兼容 OpenAI / DeepSeek / Ollama 等 OpenAI 接口格式的服务）、`anthropic_compat`（兼容 Anthropic Messages API，官方 API 或遵循 `/v1/messages` 规范的代理/网关均可）、`openai_responses`（OpenAI Responses API，遵循 `/v1/responses` 规范，支持推理摘要，适用于官方 OpenAI 及支持该 API 的服务）。
+- **API 地址（api_base）**：LLM 服务商的 API 端点，需兼容所选 provider 的接口格式。`openai_compat` 默认 `https://api.openai.com/v1`，OpenAI 兼容接口请以 `/v1` 结尾填写完整地址；`anthropic_compat` 默认 `https://api.anthropic.com/v1`，使用第三方兼容网关时按其文档填写；`openai_responses` 同样填写 OpenAI 风格的 `/v1` 地址。
+- **端点需支持流式（SSE）**：LLM 调用一律走流式接口（请求体带 `stream: true`，或 Responses API 的流式模式），请确认所选服务/网关支持 SSE 流式返回。**不支持流式的端点会在首次调用时直接报错并提示更换端点或升级网关**，不会退化为非流式请求；`anthropic_compat` 网关还需支持 `/v1/messages` 流式返回。
 - **API 密钥（api_key）**：服务商提供的 API Key。**加密存储**，页面回显为掩码。
-- **模型（model）**：要调用的模型名称，默认 `gpt-4o-mini`。`openai_compat` 请确认模型支持 Chat Completions 接口；`anthropic_compat` 请填写 Claude 模型（如 `claude-sonnet-4-6`、`claude-opus-4-6` 等）。
+- **模型（model）**：要调用的模型名称，默认 `gpt-4o-mini`。`openai_compat` 请确认模型支持 Chat Completions 接口；`anthropic_compat` 请填写 Claude 模型（如 `claude-sonnet-4-6`、`claude-opus-4-6` 等）；`openai_responses` 请填写支持 Responses API 的模型（如 `gpt-4o`、`o3` 等）。
 - **最大 Token（max_tokens）**：单次请求最大输出 token 数，默认 2000。根据模型上下文窗口和总结长度调整。Anthropic Messages API 的 max_tokens 为必填字段，请保持不小于所需输出长度。开启思考强度时该值会被自动抬升到不低于 `budget_tokens + 1024`（Anthropic 约束：思考 token 计入 max_tokens 上限，`budget_tokens` 必须小于 `max_tokens`），无需手动调大。
 - **温度（temperature）**：生成随机性，0~2 之间，默认 0.7。越低越确定/保守，越高越有创意。注意开启思考后该值会被强制为 1（Anthropic 与 OpenAI o 系列均要求）。
-- **思考强度（thinking_level）**：可选 `off` / `low` / `medium` / `high`，默认 `off` 不启用思考。`anthropic_compat` 开启后映射为 Anthropic extended thinking 的 `budget_tokens`（依次为 2048 / 4096 / 8192），`low` 适合日常总结，高质量总结可试 `high`；`claude-haiku` 系列等不支持 extended thinking 的模型会自动降级为 `off`（日志有提示）。`openai_compat` 开启后映射为 OpenAI `reasoning_effort`（`low` / `medium` / `high`），仅 o 系列推理模型（o1/o3/o4-mini 等）生效，其余模型自动忽略（debug 日志有提示）。
 - **超时时间（timeout）**：请求超时秒数，默认 60。遇到超时错误可适当调大。
 - **调用记录保留（retention_days）**：LLM 调用记录（Token 用量、延迟等）在数据库中保留天数，默认 365 天。
+
+> 思考强度不再由 LLM 卡片统一设置，而是**按任务在各自配置处设置**（如「AI 追番总结」任务、LLM 匹配增强的 `llm_match_thinking_level`）。
 
 配置后可点击「测试连接」按钮验证 LLM 是否可达。
 
@@ -346,6 +366,9 @@ LLM 连接是独立模块，追番总结和调试工具共用。在「配置管�
 ```
 
 </details>
+
+- **最大记录数（max_records）**：每次发送给 LLM 的最大观影记录条数，默认 -1（不限制）。季度/年度总结保持 -1 即可，日常总结可设为 200 控制上下文长度。
+- **思考强度（thinking_level）**：可选 `off` / `low` / `medium` / `high`，默认 `off` 不启用思考。每个总结任务可独立设置，执行时该值会透传到 LLM provider：`anthropic_compat` 映射为 Anthropic extended thinking 的 `budget_tokens`（依次为 2048 / 4096 / 8192），`low` 适合日常总结，高质量总结可试 `high`，不支持 extended thinking 的模型会自动降级为 `off`（日志有提示）；`openai_compat` 映射为 OpenAI `reasoning_effort`（`low` / `medium` / `high`），仅 o 系列推理模型（o1/o3/o4-mini 等）生效，其余模型自动忽略（debug 日志有提示）；`openai_responses` 映射为 `reasoning.effort`，规则同 `openai_compat`。
 
 ### 记忆与同剧关联
 

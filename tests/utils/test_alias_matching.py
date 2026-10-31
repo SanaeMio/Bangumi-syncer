@@ -14,6 +14,7 @@ _collect_candidates_fts 用 subject_fts.aliases MATCH 召回候选）。
 """
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -71,7 +72,8 @@ def _make_db(path: Path) -> None:
 
 def _setup(path: Path):
     q = archive_fts_query
-    q._get_active_path = lambda: path
+    # 测试内用零参 lambda 替换实例方法；cast(Any) 绕过绑定方法签名差异
+    q._get_active_path = cast(Any, lambda: path)
     q.invalidate()
     q._ensure_built()
     q.use_bktree = False  # 别名是精确路径，关 BK 避免后台构建

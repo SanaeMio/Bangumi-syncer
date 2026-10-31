@@ -224,6 +224,24 @@ class TestLLMUsageRepository:
         assert today_entry.calls >= 2
         assert today_entry.total_tokens >= 300
 
+    def test_get_stats_daily_includes_error_count_and_avg_latency(
+        self, temp_dir, reset_singletons
+    ):
+        """daily 明细含错误数与平均延迟（仪表板 LLM 质量趋势图数据面）。"""
+        db = self._make_db(temp_dir)
+        repo = db.llm_usage
+
+        repo.log_usage(model="m", total_tokens=100, latency_ms=200, status="success")
+        repo.log_usage(model="m", total_tokens=200, latency_ms=400, status="success")
+        repo.log_usage(model="m", total_tokens=0, latency_ms=300, status="error")
+
+        stats = repo.get_stats(scope="detailed", days=30)
+        today_entry = stats.daily[-1]
+        assert today_entry.calls == 3
+        assert today_entry.total_tokens == 300
+        assert today_entry.error_count == 1
+        assert today_entry.avg_latency_ms == 300  # (200+400+300)/3
+
     def test_get_stats_detailed_respects_days(self, temp_dir, reset_singletons):
         db = self._make_db(temp_dir)
         repo = db.llm_usage

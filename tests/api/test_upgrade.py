@@ -150,6 +150,7 @@ class TestTriggerUpgrade:
         body = r.json()
         assert body["status"] == "started"
         assert body["upgrade_id"] == "abc123"
+        mock_service.start_upgrade.assert_awaited_once_with(None)
 
 
 class TestUpgradeProgress:

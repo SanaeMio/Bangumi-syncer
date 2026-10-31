@@ -125,6 +125,16 @@ async def pending_candidates_page(request: Request):
     )
 
 
+@router.get("/agent-runs", response_class=HTMLResponse)
+async def agent_runs_page(request: Request):
+    """运行观测页面（Agent 会话列表 + 执行过程详情）"""
+    user = get_current_user_from_cookie(request)
+    if not user:
+        return _login_redirect(request)
+
+    return templates.TemplateResponse(request, "agent_runs.html", {"user": user})
+
+
 @router.get("/bangumi-replay", response_class=HTMLResponse)
 async def bangumi_replay_page(request: Request):
     """待同步队列（Replay 补发）页面"""

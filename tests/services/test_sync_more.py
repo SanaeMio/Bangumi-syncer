@@ -2,6 +2,7 @@
 更多 sync_service 测试
 """
 
+from typing import Any, cast
 from unittest.mock import patch
 
 from app.models.sync import CustomItem
@@ -117,7 +118,9 @@ class TestTitleNormalize:
 
     def test_sort_candidates_non_list_input_returns_unchanged(self):
         """非列表输入原样返回（防御异常调用方）"""
-        assert TitleNormalizeMixin._sort_candidates_by_platform(None) is None
+        assert (
+            TitleNormalizeMixin._sort_candidates_by_platform(cast("Any", None)) is None
+        )
 
 
 class TestSyncServiceHelper:

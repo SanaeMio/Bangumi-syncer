@@ -26,7 +26,7 @@ def test_dashboard_renders(authed_page, base_url: str):
 
 
 def test_dashboard_scheduler_status_card(authed_page, base_url: str):
-    """仪表盘调度器状态卡渲染（P6 新增）"""
+    """仪表盘调度器状态卡渲染（新增）"""
     page = authed_page
     page.goto(f"{base_url}/dashboard")
     # 调度器状态卡可能正在异步加载，等待一下
@@ -47,7 +47,7 @@ def test_config_page_renders(authed_page, base_url: str):
     page.goto(f"{base_url}/config")
     page.wait_for_load_state("networkidle")
 
-    # TOC 侧栏存在（P0 重构后的配置页双栏布局）
+    # TOC 侧栏存在（重构后的配置页双栏布局）
     sidebar = page.locator(".config-sidebar, [data-toc], #config-toc").first
     assert sidebar.is_visible(), "配置页 TOC 侧栏未渲染"
 

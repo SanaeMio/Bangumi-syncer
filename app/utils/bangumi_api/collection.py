@@ -88,7 +88,7 @@ class CollectionMixin:
                 break
         return results[:max_total]
 
-    def get_subject_collection(self, subject_id: int) -> dict[str, Any]:
+    def get_subject_collection(self, subject_id: int | str) -> dict[str, Any]:
         res = self.get(f"users/{self.username}/collections/{subject_id}")
         if res.status_code == 404:
             return {}
@@ -105,7 +105,7 @@ class CollectionMixin:
             res = {}
         return res
 
-    def get_ep_collection(self, episode_id: int) -> dict[str, Any]:
+    def get_ep_collection(self, episode_id: int | str) -> dict[str, Any]:
         res = self.get(f"users/-/collections/-/episodes/{episode_id}")
         if res.status_code == 404:
             return {}
@@ -130,7 +130,7 @@ class CollectionMixin:
     #   并重新抛异常；本方法捕获后入队
     # ------------------------------------------------------------------
 
-    def ensure_subject_watching(self, subject_id: int) -> int:
+    def ensure_subject_watching(self, subject_id: int | str) -> int:
         """
         仅将条目收藏置为「在看」(COLLECTION_TYPE_DOING)，不修改单集进度。
 
@@ -171,7 +171,7 @@ class CollectionMixin:
             # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队，正常抛出
             raise
 
-    def _do_ensure_subject_watching(self, subject_id: int) -> int:
+    def _do_ensure_subject_watching(self, subject_id: int | str) -> int:
         """实际执行 ensure_subject_watching 的子步骤（原逻辑）"""
         data = self.get_subject_collection(subject_id)
         if not data:
@@ -196,7 +196,7 @@ class CollectionMixin:
     #   并重新抛异常；上层捕获后再决定入队
     # ------------------------------------------------------------------
 
-    def mark_episode_watched(self, subject_id: int, ep_id: int) -> int:
+    def mark_episode_watched(self, subject_id: int | str, ep_id: int | str) -> int:
         """标记单集为已看
 
         返回值：
@@ -235,7 +235,7 @@ class CollectionMixin:
             # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队，正常抛出
             raise
 
-    def _do_mark_episode_watched(self, subject_id: int, ep_id: int) -> int:
+    def _do_mark_episode_watched(self, subject_id: int | str, ep_id: int | str) -> int:
         """实际执行 mark_episode_watched 的子步骤（原逻辑）"""
         data = self.get_subject_collection(subject_id)
 
@@ -269,7 +269,7 @@ class CollectionMixin:
 
     def add_collection_subject(
         self,
-        subject_id: int,
+        subject_id: int | str,
         private: bool | None = None,
         state: int = COLLECTION_TYPE_DOING,
     ) -> None:
@@ -281,7 +281,7 @@ class CollectionMixin:
 
     def change_collection_state(
         self,
-        subject_id: int,
+        subject_id: int | str,
         private: bool | None = None,
         state: int = COLLECTION_TYPE_DOING,
     ) -> None:
@@ -292,10 +292,13 @@ class CollectionMixin:
         )
 
     def change_episode_state(
-        self, ep_id: int, state: int = COLLECTION_TYPE_DONE
+        self, ep_id: int | str, state: int = COLLECTION_TYPE_DONE
     ) -> None:
         res = self.put(f"users/-/collections/-/episodes/{ep_id}", _json={"type": state})
-        if 333 < res.status_code < 444:
+        # 任何 4xx/5xx 都表示标记未成功，必须抛出触发上层失败/重试，
+        # 否则调用方会把未落库的标记当作成功（假阳性）。
+        # 旧实现 ``333 < status < 444`` 会漏掉 444-499（如 451/444）等失败码。
+        if res.status_code >= 400:
             raise ValueError(f"{res.status_code=} {res.text}")
         return res
 
@@ -315,8 +318,8 @@ class _PendingSyncQueued(Exception):
 
     def __init__(
         self,
-        subject_id: int,
-        ep_id: Optional[int] = None,
+        subject_id: int | str,
+        ep_id: int | str | None = None,
         reason: str = "api_unreachable",
         cause: Optional[BaseException] = None,
     ) -> None:

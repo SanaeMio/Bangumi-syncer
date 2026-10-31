@@ -141,8 +141,10 @@ async def test_cleanup_config_backups_by_date_removes_old_only(
     new_f = rel / "new.ini"
     old_f.write_text("a", encoding="utf-8")
     new_f.write_text("b", encoding="utf-8")
-    os.utime(old_f, (time.time() - 40 * 24 * 3600,) * 2)
-    os.utime(new_f, (time.time() - 1 * 24 * 3600,) * 2)
+    old_ts = time.time() - 40 * 24 * 3600
+    new_ts = time.time() - 1 * 24 * 3600
+    os.utime(old_f, (old_ts, old_ts))
+    os.utime(new_f, (new_ts, new_ts))
 
     app_auth.include_router(config.router)
     transport = ASGITransport(app=app_auth)

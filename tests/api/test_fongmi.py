@@ -10,6 +10,21 @@ from httpx import ASGITransport, AsyncClient
 from app.api import deps, fongmi
 from app.services.fongmi.sync_service import FongmiSyncResult
 
+# 保存原始 wait_for：测试内 patch 全局 asyncio.wait_for 时用它做真实超时，
+# 使被取消的协程被真实实现回收，避免残留未 await 协程。
+_REAL_WAIT_FOR = asyncio.wait_for
+
+
+async def _wait_for_short_timeout(awaitable, timeout):
+    """以真实 asyncio.wait_for + 极短超时替换端点内的 wait_for。
+
+    真实 wait_for 超时后会取消并 await 传入的协程（Python 3.9 走
+    ``_cancel_and_wait``），协程得到消费；直接用会被丢弃的 mock 抛
+    TimeoutError 会让传入协程残留，GC 时触发
+    ``PytestUnraisableExceptionWarning: coroutine ... was never awaited``。
+    """
+    return await _REAL_WAIT_FOR(awaitable, timeout=0.01)
+
 
 def _fongmi_cfg(**overrides):
     base = {
@@ -192,11 +207,8 @@ async def test_fongmi_debug_scan_timeout(app_fongmi):
         "app.api.fongmi.fongmi_sync_service.debug_scan", new_callable=AsyncMock
     ) as ds:
         ds.side_effect = _hang
-        # 缩短 wait_for 超时以加速测试
-        with patch(
-            "app.api.fongmi.asyncio.wait_for",
-            AsyncMock(side_effect=asyncio.TimeoutError()),
-        ):
+        # 缩短 wait_for 超时以加速测试（真实 wait_for 会回收被取消的协程）
+        with patch("app.api.fongmi.asyncio.wait_for", _wait_for_short_timeout):
             transport = ASGITransport(app=app_fongmi)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 r = await ac.post("/api/fongmi/debug/scan")
@@ -258,10 +270,7 @@ async def test_fongmi_debug_sync_one_timeout(app_fongmi):
         "app.api.fongmi.fongmi_sync_service.debug_sync_one", new_callable=AsyncMock
     ) as ds:
         ds.side_effect = _hang
-        with patch(
-            "app.api.fongmi.asyncio.wait_for",
-            AsyncMock(side_effect=asyncio.TimeoutError()),
-        ):
+        with patch("app.api.fongmi.asyncio.wait_for", _wait_for_short_timeout):
             transport = ASGITransport(app=app_fongmi)
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 r = await ac.post(

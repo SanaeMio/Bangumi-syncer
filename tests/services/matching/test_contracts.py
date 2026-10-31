@@ -1,4 +1,4 @@
-"""契约层单元测试（P2）
+"""契约层单元测试
 
 覆盖 SubjectRef / EpisodeRef / 候选构造 / margin 三态语义。
 契约层不改变匹配控制流，这里验证的是「数据形态归一」本身。
@@ -200,7 +200,7 @@ class TestMargin:
 
 
 class TestAdaptEpisodeRowIntegration:
-    """_store._adapt_episode_row 落地验证（C2 消费点）
+    """_store._adapt_episode_row 落地验证（消费点）
 
     该方法 docstring 声称「将 Archive 行适配为 BangumiApi 返回结构」，
     此前实现是 ``return row``——契约从未被强制执行。

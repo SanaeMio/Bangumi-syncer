@@ -9,6 +9,7 @@
 import os
 import time
 from pathlib import Path
+from typing import Any, cast
 
 from app.core.config import config_manager
 
@@ -120,7 +121,8 @@ class TestRegisteredCacheInvalidation:
         import app.utils.bgm_poster_service as poster_mod
 
         poster_mod._poster_url_cache[("ns", 1)] = ("url", time.time() + 3600)
-        poster_mod._bgm_api_instances[("k",)] = object()
+        # 哨兵条目：键/值类型无需真实匹配，仅验证 reload 会清空缓存
+        poster_mod._bgm_api_instances[cast(Any, ("k",))] = cast(Any, object())
         config_manager.reload_config()
         assert poster_mod._poster_url_cache == {}
         assert poster_mod._bgm_api_instances == {}

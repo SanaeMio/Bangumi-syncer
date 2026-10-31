@@ -156,7 +156,7 @@ def fetch_completed_watch_records(
         cur = conn.cursor()
         item_cols = _table_columns(cur, "item")
         query, params = _build_watch_records_query(
-            cur, item_cols, user_guid, time_range, min_update_time_ms, limit
+            item_cols, user_guid, time_range, min_update_time_ms, limit
         )
         cur.execute(query, params)
 
@@ -175,7 +175,6 @@ def fetch_completed_watch_records(
 
 
 def _build_watch_records_query(
-    cur: sqlite3.Cursor,
     item_cols: set[str],
     user_guid: str,
     time_range: str,

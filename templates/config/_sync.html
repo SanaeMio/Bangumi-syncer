@@ -161,12 +161,79 @@
                                                 <i class="bi bi-question-circle ms-1 text-muted"
                                                    data-bs-toggle="tooltip"
                                                    title="开启后 /api/test-sync 与 /api/fongmi/debug/sync 等测试接口不再校验 media_server_username / 用户映射，方便未配置用户名时验证匹配与标记。仅对测试来源生效，生产 webhook 路径不受影响。"></i>
+                                             </label>
+                                         </div>
+                                     </div>
+                                <!-- 匹配增强（LLM）：开关显隐由 config.html 的 loadLLMMatchAssist() 依据 llm_available 控制 -->
+                                <div class="col-12 mt-2 pt-3 border-top">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="bi bi-robot me-2 text-primary"></i>
+                                        <h6 class="m-0 fw-semibold">匹配增强（LLM）</h6>
+                                    </div>
+                                    <div id="llm-match-assist-switch"
+                                         class="form-check form-switch d-flex align-items-center mb-0 d-none">
+                                        <input class="form-check-input me-2"
+                                               type="checkbox"
+                                               id="llm-match-assist"
+                                               name="sync.llm_match_assist">
+                                        <label class="form-check-label" for="llm-match-assist">
+                                            启用 LLM 匹配增强
+                                            <i class="bi bi-question-circle ms-1 text-muted"
+                                               data-bs-toggle="tooltip"
+                                               title="开启后，匹配失败时由 LLM Agent 提供候选建议，沉淀到待审队列由人工确认，原失败逻辑不受影响。需先在「LLM 配置」中配置 API 地址与密钥。"></i>
+                                        </label>
+                                    </div>
+                                    <div id="llm-match-assist-tip"
+                                         class="alert alert-warning py-2 mb-0 d-none">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        需先配置 LLM（在「LLM 配置」卡片填写 API 地址与密钥）才能启用「匹配增强」。
+                                    </div>
+                                </div>
+                                <!-- Bangumi API 限速（令牌桶）：旧版位于 [bangumi] 段，代码兼容读取 -->
+                                <div class="col-12 mt-2 pt-3 border-top">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="bi bi-speedometer2 me-2 text-primary"></i>
+                                        <h6 class="m-0 fw-semibold">Bangumi API 限速</h6>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-12 col-md-6">
+                                            <label for="api-rate-limit" class="form-label">
+                                                每秒请求数
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="令牌桶每秒补充的令牌数，默认 1（即 1 请求/秒）。上限 10。"></i>
                                             </label>
+                                            <input type="number"
+                                                   class="form-control"
+                                                   autocomplete="off"
+                                                   id="api-rate-limit"
+                                                   name="sync.api_rate_limit"
+                                                   min="0.1"
+                                                   max="10"
+                                                   step="0.1"
+                                                   placeholder="1">
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label for="api-rate-burst" class="form-label">
+                                                突发请求数
+                                                <i class="bi bi-question-circle ms-1 text-muted"
+                                                   data-bs-toggle="tooltip"
+                                                   title="令牌桶容量，允许短时间内的突发请求数，默认 3。"></i>
+                                            </label>
+                                            <input type="number"
+                                                   class="form-control"
+                                                   autocomplete="off"
+                                                   id="api-rate-burst"
+                                                   name="sync.api_rate_burst"
+                                                   min="1"
+                                                   step="1"
+                                                   placeholder="3">
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
+                                 </div>
+                             </div>
+                         </div>
                     </div>
                 </div>
             </div>

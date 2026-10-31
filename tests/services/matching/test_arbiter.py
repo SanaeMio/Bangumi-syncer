@@ -1,10 +1,12 @@
-"""裁决层单元测试（P3）
+"""裁决层单元测试
 
 覆盖门控三分支、margin 三态、跨源聚合与权重、配置解析回退。
 裁决层是纯函数（只读候选与 policy），这里不依赖任何外部数据。
 """
 
 from __future__ import annotations
+
+from typing import cast
 
 import pytest
 
@@ -168,7 +170,10 @@ class TestCrossSourceAggregation:
 
     def test_non_numeric_score_treated_as_zero(self):
         """mock / 脏数据的非数值分数不应让排序抛异常"""
-        bad = MatchCandidate(subject_id="1", score=None, source=SOURCE_ARCHIVE)
+        # 故意注入 None 模拟脏数据（MatchCandidate.score 声明为 float）
+        bad = MatchCandidate(
+            subject_id="1", score=cast("float", None), source=SOURCE_ARCHIVE
+        )
         d = Arbiter().decide(
             [bad, cand("2", 0.95)], MatchPolicy(min_score=0.5, min_margin=0.0)
         )
