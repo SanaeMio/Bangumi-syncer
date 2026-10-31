@@ -973,10 +973,22 @@ def test_request_with_retry_notifies_success_on_ok():
 # ---------------------------------------------------------------------------
 
 
-def _patch_config(monkeypatch, values: dict) -> None:
+def _patch_config(
+    monkeypatch, values: dict, *, sync_values: dict | None = None
+) -> None:
+    """模拟 config_manager.get。
+
+    ``values`` 对应旧位置 ``[bangumi]``；``sync_values`` 对应新位置 ``[sync]``。
+    未提供的 section 返回 None，触发代码回退到另一位置。
+    """
+    sync_values = sync_values or {}
+
     def fake_get(section, key, fallback=None):
-        assert section == "bangumi"
-        return values.get(key, fallback)
+        if section == "sync":
+            return sync_values.get(key)
+        if section == "bangumi":
+            return values.get(key, fallback)
+        return fallback
 
     monkeypatch.setattr(config_manager, "get", fake_get)
 
@@ -990,6 +1002,36 @@ def test_config_values_applied(monkeypatch):
 
     assert limiter.rate == pytest.approx(2.0)
     assert limiter.burst == 5
+
+
+def test_sync_section_takes_precedence_over_bangumi(monkeypatch):
+    """[sync] 有值时优先于旧位置 [bangumi]（配置页写入的是 [sync]）"""
+    reset_bgm_rate_limiter(None)
+    _patch_config(
+        monkeypatch,
+        {"api_rate_limit": "1", "api_rate_burst": "2"},
+        sync_values={"api_rate_limit": "5", "api_rate_burst": "8"},
+    )
+
+    limiter = get_bgm_rate_limiter()
+
+    assert limiter.rate == pytest.approx(5.0)
+    assert limiter.burst == 8
+
+
+def test_sync_section_partial_falls_back_per_key(monkeypatch):
+    """[sync] 只配一个键时，另一个键仍回退 [bangumi]（逐键回退）"""
+    reset_bgm_rate_limiter(None)
+    _patch_config(
+        monkeypatch,
+        {"api_rate_limit": "2", "api_rate_burst": "6"},
+        sync_values={"api_rate_limit": "4"},
+    )
+
+    limiter = get_bgm_rate_limiter()
+
+    assert limiter.rate == pytest.approx(4.0)
+    assert limiter.burst == 6
 
 
 def test_config_rate_above_upper_bound_is_clamped(monkeypatch):

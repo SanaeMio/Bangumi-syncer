@@ -934,13 +934,23 @@
     return { primary, rgb }
   }
 
+  // 本地日期字符串 YYYY-MM-DD。不能直接用 toISOString()：
+  // 它返回 UTC 日期，与图表标签的 toLocaleDateString()（本地）不一致，
+  // 非 UTC 时区会整体错一天。
+  function localDateStr(date) {
+    var y = date.getFullYear()
+    var m = String(date.getMonth() + 1).padStart(2, '0')
+    var d = String(date.getDate()).padStart(2, '0')
+    return y + '-' + m + '-' + d
+  }
+
   function buildLast7Days(daily) {
     var dates = []
     var rows = []
     for (var i = 6; i >= 0; i--) {
       var date = new Date()
       date.setDate(date.getDate() - i)
-      var dateStr = date.toISOString().split('T')[0]
+      var dateStr = localDateStr(date)
       dates.push(new Date(date).toLocaleDateString())
       var found = daily.find(function (item) {
         return item.date === dateStr
@@ -1086,7 +1096,7 @@
     for (var i = 6; i >= 0; i--) {
       var date = new Date()
       date.setDate(date.getDate() - i)
-      var dateStr = date.toISOString().split('T')[0]
+      var dateStr = localDateStr(date)
       dates.push(new Date(date).toLocaleDateString())
       var found = dailyStats.find(function (item) {
         return item.date === dateStr

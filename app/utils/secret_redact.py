@@ -57,9 +57,11 @@ _SECRET_RE = re.compile(
       |
         (?P<key>["']?(?:{"|".join(_SECRET_KEYS)})["']?)
         (?P<sep>\s*[:=]\s*)
-        (?P<quote>["']?)
-        (?P<value>{_VALUE})
-        (?P<closing>["']?)
+        (?:
+            (?P<vquote>["'])(?P<vquoted>.*?)(?P=vquote)
+          |
+            (?P<value>{_VALUE})
+        )
     )
     """
 )
@@ -82,10 +84,11 @@ def _replace(match: re.Match) -> str:
         )
     if match.group("scheme") is not None:
         return f"{match.group('scheme')} {MASK}"
+    if match.group("vquote") is not None:
+        quote = match.group("vquote")
+        return f"{match.group('key')}{match.group('sep')}{quote}{MASK}{quote}"
     return (
-        f"{match.group('key')}{match.group('sep')}"
-        f"{match.group('quote')}{_mask_value(match.group('value'))}"
-        f"{match.group('closing')}"
+        f"{match.group('key')}{match.group('sep')}{_mask_value(match.group('value'))}"
     )
 
 

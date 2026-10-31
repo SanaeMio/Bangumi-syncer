@@ -133,8 +133,11 @@ class TestTruncateFailureLogging:
         assert "RecursionError" in msg
         mock_logger.warning.assert_not_called()
 
-    def test_build_truncation_shell_invalid_json_logs_error(self):
-        """包壳拼接结果非法 JSON 时记录 error 级别日志并继续缩减预算。"""
+    def test_build_truncation_shell_invalid_json_logs_debug(self):
+        """包壳拼接结果非法 JSON 时记录 debug 日志并继续缩减预算。
+
+        日志级别为 debug：预算过紧是预期路径，不能用 ERROR 刷屏。
+        """
         # 前若干个切片字符含未转义控制字符，使拼接串不是合法 JSON
         text = "\x00" * 5000
 
@@ -144,10 +147,10 @@ class TestTruncateFailureLogging:
         # 最终仍返回合法包壳（预算耗尽后仅剩标记）
         json.loads(result)
         assert result.endswith(SHRINKED_MARKER + '"}')
-        mock_logger.error.assert_called()
-        msgs = [str(c.args[0]) for c in mock_logger.error.call_args_list if c.args]
-        assert any("JSON" in m for m in msgs), msgs
+        mock_logger.error.assert_not_called()
         mock_logger.warning.assert_not_called()
+        mock_logger.debug.assert_called()
+        assert mock_logger.debug.call_count <= 64
 
 
 class TestTruncateTextWithMarkerTinyBudget:

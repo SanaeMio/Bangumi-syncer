@@ -127,7 +127,12 @@ def _build_truncation_shell(text: str, max_bytes: int) -> str:
     overhead = len(prefix.encode("utf-8")) + len(suffix.encode("utf-8"))
     # 保守初始预算：预留标记空间后取半（最坏情况每字符都转义为 2 字节）
     budget = max(0, (max_bytes - overhead - len(SHRINKED_MARKER.encode("utf-8"))) // 2)
-    while budget > 0:
+    # 预算过紧时（如 max_bytes 接近包壳开销）会连续失败；这是可预期结果，
+    # 不是错误，故降为 debug 并设上限，避免刷屏数百条 ERROR。
+    attempts = 0
+    max_attempts = 64
+    while budget > 0 and attempts < max_attempts:
+        attempts += 1
         preview = text[:budget] + SHRINKED_MARKER
         result = prefix + preview + suffix
         if len(result.encode("utf-8")) <= max_bytes:
@@ -135,10 +140,8 @@ def _build_truncation_shell(text: str, max_bytes: int) -> str:
             try:
                 json.loads(result)
                 return result
-            except (ValueError, TypeError) as e:
-                logger.error(
-                    f"❌ 截断包壳 JSON 校验失败，继续缩减预算 (budget={budget}): {e}"
-                )
+            except (ValueError, TypeError):
+                logger.debug(f"截断包壳 JSON 校验失败，缩减预算 (budget={budget})")
         budget -= 1
     # 预算耗尽：仅返回标记包壳
     return prefix + SHRINKED_MARKER + suffix

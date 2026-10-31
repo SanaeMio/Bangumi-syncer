@@ -610,7 +610,7 @@
       console.warn('未找到 MCP 访问地址提示元素 mcp-detected-origin，跳过回填')
       return
     }
-    el.textContent = window.location.origin
+    el.textContent = window.location.origin + (window.__APP_BASE_PATH__ || '')
   }
 
   function fillMcpBaseUrl() {
@@ -623,7 +623,7 @@
       showAlert('MCP 服务公共 URL 已有值，如需替换请手动修改', 'warning')
       return
     }
-    input.value = window.location.origin
+    input.value = window.location.origin + (window.__APP_BASE_PATH__ || '')
   }
 
   // ── Bangumi OAuth ──────────────────────────────────────────

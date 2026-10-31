@@ -561,8 +561,11 @@ class SyncOrchestrator:
         try:
             from . import config_manager
 
-            raw = config_manager.get("sync", "llm_match_assist", fallback=False)
-            enabled = str(raw).strip().lower() in ("true", "1", "yes", "on")
+            # 统一走 config_manager.get_sync_llm_match_config()，与保存校验、
+            # 调度器读取同一口径；非 dict（如测试 mock）按未启用处理。
+            cfg = config_manager.get_sync_llm_match_config()
+            raw = cfg.get("llm_match_assist", False) if isinstance(cfg, dict) else False
+            enabled = str(raw).strip().lower() in ("true", "1", "yes", "on", "enabled")
             if not enabled:
                 return False
             llm_cfg = config_manager.get_llm_config() or {}

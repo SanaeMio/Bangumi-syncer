@@ -112,7 +112,7 @@ def test_handle_match_failure_enqueues_when_enabled(
         "decision": "created",
         "run_id": "generated-run",
     }
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {
         "api_key": "sk-test",
         "provider": "openai_compat",
@@ -165,7 +165,7 @@ def test_handle_match_failure_switch_off_no_enqueue(mock_db, mock_cfg, mock_noti
     """开关关 → 原失败逻辑完全不变（无 agent_runs 调用、无 trace step）"""
     orch = _make_orchestrator()
     agent_runs = MagicMock()
-    mock_cfg.get.return_value = "false"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": False}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk-test"}
     mock_db.agent_runs = agent_runs
 
@@ -188,7 +188,7 @@ def test_handle_match_failure_llm_missing_no_enqueue(
     """LLM 配置缺失 → 不落任务 + 日志含 'LLM 配置缺失'"""
     orch = _make_orchestrator()
     agent_runs = MagicMock()
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": ""}
     mock_db.agent_runs = agent_runs
 
@@ -213,7 +213,7 @@ def test_enqueue_decision_in_flight_logged(mock_db, mock_cfg, mock_notify, capsy
         "decision": "in_flight",
         "run_id": "existing-run",
     }
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = agent_runs
 
@@ -244,7 +244,7 @@ def test_enqueue_decision_reuse_holding_logged(mock_db, mock_cfg, mock_notify, c
         "decision": "reuse_holding",
         "run_id": "holding-run",
     }
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = agent_runs
 
@@ -282,7 +282,7 @@ def test_trace_records_actual_new_run_id_when_created(mock_db, mock_cfg, mock_no
         "decision": "created",
         "run_id": kw["run_id"],
     }
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = agent_runs
 
@@ -319,7 +319,7 @@ def test_trace_records_actual_reused_run_id(mock_db, mock_cfg, mock_notify, deci
     """复用/在途 → trace 记录的是实际承担评估的已有 run B（非预生成 id）"""
     orch = _make_orchestrator()
     agent_runs = _make_orchestrator_agent_runs(decision=decision, run_id="run-B")
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = agent_runs
 
@@ -351,7 +351,7 @@ def test_run_link_and_pointer_written_after_persist(mock_cfg, mock_notify, tmp_p
     dbm = DatabaseManager(str(tmp_path / "t6_link.db"))
     try:
         orch = _make_orchestrator()
-        mock_cfg.get.return_value = "true"
+        mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
         mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
 
         item = _make_item()
@@ -390,7 +390,7 @@ def test_llm_assist_step_after_result_step(mock_db, mock_cfg, mock_notify):
     """llm_assist step 出现在 result 之后，且通过公开接口挂入"""
     orch = _make_orchestrator()
     agent_runs = _make_orchestrator_agent_runs()
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = agent_runs
 
@@ -419,7 +419,7 @@ def test_existing_llm_assist_step_not_reenqueued(mock_db, mock_cfg, mock_notify)
     """trace 已含 llm_assist（异常重入）→ 不重复 enqueue、不重复挂 step、不写关联"""
     orch = _make_orchestrator()
     agent_runs = _make_orchestrator_agent_runs()
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = agent_runs
 
@@ -451,7 +451,7 @@ def test_message_and_notify_mention_ai_assist_when_enabled(
 ):
     """启用时 SyncResponse.message 与 anime_not_found 通知含启用说明"""
     orch = _make_orchestrator()
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = _make_orchestrator_agent_runs()
 
@@ -477,7 +477,7 @@ def test_message_and_notify_mention_ai_assist_when_enabled(
 def test_message_plain_when_assist_disabled(mock_db, mock_cfg, mock_notify):
     """未启用时保持原文案，不含启用说明"""
     orch = _make_orchestrator()
-    mock_cfg.get.return_value = "false"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": False}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = _make_orchestrator_agent_runs()
 
@@ -502,7 +502,7 @@ def test_enqueue_exception_degrades_without_blocking(
     orch = _make_orchestrator()
     agent_runs = MagicMock()
     agent_runs.enqueue_match_run.side_effect = RuntimeError("db down")
-    mock_cfg.get.return_value = "true"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": True}
     mock_cfg.get_llm_config.return_value = {"api_key": "sk"}
     mock_db.agent_runs = agent_runs
 
@@ -720,7 +720,7 @@ def test_candidate_persist_failure_updates_message(mock_db, mock_cfg, mock_notif
     from app.services.sync_service.errors import PendingCandidatePersistError
 
     orch = _make_orchestrator()
-    mock_cfg.get.return_value = "false"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": False}
     mock_cfg.get_llm_config.return_value = {"api_key": ""}
     mock_db.agent_runs = _make_orchestrator_agent_runs()
 
@@ -749,7 +749,7 @@ def test_candidate_contract_error_keeps_plain_message(mock_db, mock_cfg, mock_no
     from app.services.sync_service.errors import PendingCandidateContractError
 
     orch = _make_orchestrator()
-    mock_cfg.get.return_value = "false"
+    mock_cfg.get_sync_llm_match_config.return_value = {"llm_match_assist": False}
     mock_cfg.get_llm_config.return_value = {"api_key": ""}
     mock_db.agent_runs = _make_orchestrator_agent_runs()
 
