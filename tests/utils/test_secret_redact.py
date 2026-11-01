@@ -44,6 +44,14 @@ class TestRedactPatterns:
             ("'password': 'hunter2'", "'password': '***'", "hunter2"),
             # 冒号分隔（无引号）
             ("token: abc123", "token: ***", "abc123"),
+            # 带空格的值（引号包裹，整体遮蔽）
+            ('password="my secret"', 'password="***"', "my secret"),
+            ("password='two words'", "password='***'", "two words"),
+            (
+                '"api_key": "key with spaces"',
+                '"api_key": "***"',
+                "key with spaces",
+            ),
         ],
     )
     def test_secret_value_masked_and_key_preserved(self, raw, expected, leaked):
