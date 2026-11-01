@@ -174,6 +174,10 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="match_confidence_threshold", default=0.6),
             # LLM 匹配结果滑动窗口轮转天数（终态超窗 + 过期死行一并清理）
             FieldMeta(name="llm_match_retention_days", default=30),
+            # Bangumi API 限速（令牌桶）：每秒补充令牌数 / 突发容量。
+            # 旧版定义在 [bangumi] 段，代码仍兼容读取；配置页与文档以本段为准。
+            FieldMeta(name="api_rate_limit", default="1"),
+            FieldMeta(name="api_rate_burst", default=3),
         ),
     ),
     "auth": SectionMeta(
