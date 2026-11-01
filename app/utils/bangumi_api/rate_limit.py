@@ -451,21 +451,29 @@ def _read_positive_int(raw: object, default: int) -> int:
 
 
 def get_bgm_rate_limiter() -> RateLimiter:
-    """获取进程级令牌桶单例（首次调用时从配置惰性构建）"""
+    """获取进程级令牌桶单例（首次调用时从配置惰性构建）
+
+    读取顺序：``[sync]`` 优先（配置页可见），回退旧版 ``[bangumi]``
+    （历史位置，兼容既有 config.ini），最后用默认值。
+    """
     global _limiter
     if _limiter is None:
         with _limiter_lock:
             if _limiter is None:
-                rate = _clamp_configurable_rate(
-                    _read_positive_float(
-                        config_manager.get("bangumi", "api_rate_limit", fallback=1),
-                        DEFAULT_RATE,
+                raw_rate = config_manager.get("sync", "api_rate_limit", fallback=None)
+                if raw_rate is None:
+                    raw_rate = config_manager.get(
+                        "bangumi", "api_rate_limit", fallback=1
                     )
+                raw_burst = config_manager.get("sync", "api_rate_burst", fallback=None)
+                if raw_burst is None:
+                    raw_burst = config_manager.get(
+                        "bangumi", "api_rate_burst", fallback=3
+                    )
+                rate = _clamp_configurable_rate(
+                    _read_positive_float(raw_rate, DEFAULT_RATE)
                 )
-                burst = _read_positive_int(
-                    config_manager.get("bangumi", "api_rate_burst", fallback=3),
-                    DEFAULT_BURST,
-                )
+                burst = _read_positive_int(raw_burst, DEFAULT_BURST)
                 _limiter = RateLimiter(rate=rate, burst=burst)
                 logger.info(f"🚦 Bangumi API 限速器已初始化：{rate}/s，burst={burst}")
     return _limiter
