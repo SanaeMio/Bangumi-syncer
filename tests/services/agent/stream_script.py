@@ -25,7 +25,7 @@ from typing import Any
 
 from app.services.agent.execution.streaming import StreamingToolExecutor
 from app.services.agent.execution.tools import serialize_tool_result
-from app.services.agent.protocols import TerminalCapture
+from app.services.agent.protocols import TerminalCapture, ToolKind
 from app.services.llm.models import (
     ChatResponse,
     Message,
@@ -156,10 +156,10 @@ def scripted_stream(responses: list[ChatResponse]) -> ScriptedStream:
 
 
 def terminal_schema(name: str = "submit_suggestion"):
-    """测试用终止工具 schema（``access="terminal"``，供 loop 派生终止集合）。"""
+    """测试用终止工具 schema（``kind=ToolKind.TERMINAL``，供 loop 派生终止集合）。"""
     from app.services.agent.protocols import ToolSchema
 
-    return ToolSchema(name=name, description="", parameters={}, access="terminal")
+    return ToolSchema(name=name, description="", parameters={}, kind=ToolKind.TERMINAL)
 
 
 def raw_handler_runner(handler: Callable[[ToolUseBlock], Any]):

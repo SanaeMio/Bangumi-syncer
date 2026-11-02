@@ -12,7 +12,7 @@ import sqlite3
 import threading
 import time
 from contextlib import suppress
-from typing import Any, Literal, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -30,6 +30,7 @@ from app.services.agent.observe.trace import (
     ReplayResult,
     ReplayToolCall,
 )
+from app.services.agent.protocols import ToolKind
 from app.services.agent.run import runtime
 from app.services.llm.models import (
     ChatResponse,
@@ -3876,7 +3877,7 @@ def test_replay_missing_tool_appends_tool_result_to_messages():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=_handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
 
@@ -3943,9 +3944,7 @@ def _last_tool_result(messages: list) -> ToolResultBlock | None:
     return None
 
 
-def _registry_with(
-    name: str, access: Literal["read", "write", "terminal"], called: list
-) -> ToolRegistry:
+def _registry_with(name: str, kind: ToolKind, called: list) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
         ToolDefinition(
@@ -3953,7 +3952,7 @@ def _registry_with(
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=lambda args: called.append(name) or "X",
-            access=access,
+            kind=kind,
         )
     )
     return registry
@@ -3962,7 +3961,7 @@ def _registry_with(
 def test_replay_missing_write_tool_appends_placeholder_tool_result(log_records):
     """write 缺失工具不重放副作用，但回填占位 tool_result 闭合协议；记 info。"""
     called: list = []
-    registry = _registry_with("write_mapping", "write", called)
+    registry = _registry_with("write_mapping", ToolKind.WRITE, called)
     messages = [
         Message(
             role="assistant",
@@ -3994,7 +3993,7 @@ def test_replay_missing_write_tool_appends_placeholder_tool_result(log_records):
 def test_replay_missing_terminal_tool_appends_placeholder_tool_result():
     """terminal 缺失工具不重放，回填占位 tool_result。"""
     called: list = []
-    registry = _registry_with("submit_suggestion", "terminal", called)
+    registry = _registry_with("submit_suggestion", ToolKind.TERMINAL, called)
     messages: list = []
 
     asyncio.run(
@@ -4047,7 +4046,7 @@ def test_replay_missing_tool_serializes_dict_result_as_json():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=_handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     messages: list = []
@@ -4070,40 +4069,42 @@ def test_replay_missing_tool_serializes_dict_result_as_json():
 # 补执行门控以 access == "read"（无副作用语义）为准，与 idempotent 正交 ---------
 
 
-def test_replay_missing_non_idempotent_read_tool_still_replayed():
-    """access=read 但 idempotent=False：补执行门控看 access，仍会补执行（不重放副作用语义）。"""
+def test_replay_missing_read_tool_replayed():
+    """READ：无副作用，补执行并回填真实结果。"""
     called: list = []
     registry = ToolRegistry()
     registry.register(
         ToolDefinition(
-            name="read_non_idem",
+            name="read_tool",
             description="d",
             parameters={"type": "object", "properties": {}},
-            handler=lambda args: called.append("read_non_idem") or "R",
-            access="read",
-            idempotent=False,
+            handler=lambda args: called.append("read_tool") or "R",
+            kind=ToolKind.READ,
         )
     )
     messages: list = []
 
     asyncio.run(
         runtime._replay_missing_tool(
-            ReplayToolCall(id="r1", name="read_non_idem", input={}),
+            ReplayToolCall(id="r1", name="read_tool", input={}),
             registry,
             messages,
         )
     )
 
-    # access == "read" 门控放行：handler 被补执行
-    assert called == ["read_non_idem"]
+    assert called == ["read_tool"]
     blk = _last_tool_result(messages)
     assert blk is not None
     assert blk.tool_use_id == "r1"
     assert blk.content == '"R"'
 
 
-def test_replay_missing_idempotent_write_tool_appends_placeholder():
-    """access=write 但 idempotent=True：幂等 ≠ 无副作用，补执行门控仍回填占位不重放。"""
+def test_replay_missing_idempotent_write_tool_replayed():
+    """IDEMPOTENT_WRITE：重复执行安全，补执行并回填真实结果。
+
+    这是 ToolKind 单枚举的核心收益：幂等写（CAS + 防 ABA）不再被
+    旧 access=="read" 门控挡在门外。
+    """
     called: list = []
     registry = ToolRegistry()
     registry.register(
@@ -4112,8 +4113,7 @@ def test_replay_missing_idempotent_write_tool_appends_placeholder():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=lambda args: called.append("write_idem") or "W",
-            access="write",
-            idempotent=True,
+            kind=ToolKind.IDEMPOTENT_WRITE,
         )
     )
     messages: list = []
@@ -4126,12 +4126,11 @@ def test_replay_missing_idempotent_write_tool_appends_placeholder():
         )
     )
 
-    # 副作用语义门控：不补执行，仅回填占位闭合协议
-    assert called == []
+    assert called == ["write_idem"]
     blk = _last_tool_result(messages)
     assert blk is not None
     assert blk.tool_use_id == "w1"
-    assert blk.content == _SKIP_PLACEHOLDER
+    assert blk.content == '"W"'
     assert blk.is_error is False
 
 
@@ -4141,7 +4140,7 @@ def test_replay_missing_idempotent_write_tool_appends_placeholder():
 def test_replay_missing_unnamed_tool_logs_info(log_records):
     """缺失工具无 name（防御分支）：跳过并记 info（不静默）。"""
     called: list = []
-    registry = _registry_with("x", "read", called)
+    registry = _registry_with("x", ToolKind.READ, called)
     messages: list = []
 
     asyncio.run(
@@ -4172,7 +4171,7 @@ def test_replay_missing_read_tool_failure_logs_warning(caplog):
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=_boom,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     messages = [
@@ -5572,7 +5571,7 @@ def test_replay_missing_read_tool_capture_falls_back_to_placeholder(
             description="d",
             parameters={},
             handler=_boom,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
 

@@ -21,7 +21,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from enum import Enum
+from typing import Protocol
 
 from app.services.agent.chat_span import ChatSpan
 from app.services.llm.models import StreamChunk, ToolResultBlock, ToolUseBlock
@@ -37,16 +38,42 @@ StreamFn = Callable[..., AsyncIterator[StreamChunk]]
 # 工具 schema（agent 内部形态 → provider wire 形态）
 # ---------------------------------------------------------------------------
 
-#: 工具副作用语义：read（只读）/ write（写，执行前审计）/ terminal（终止性，仅捕获参数）。
-ToolAccess = Literal["read", "write", "terminal"]
+
+#: 工具能力分类：单一枚举锁定四种合法状态，避免 access + idempotent 组合出非法值。
+#:
+#: - ``READ``：只读查询，无副作用，可并行 / 可提前执行 / 恢复可重跑；
+#: - ``IDEMPOTENT_WRITE``：幂等写（如 CAS + 防 ABA），有副作用但重复执行安全，
+#:   可并行 / 可提前执行 / 恢复可重跑，且执行前写审计日志；
+#: - ``WRITE``：非幂等写，有副作用且重复执行不安全，仅串行，恢复只回填占位；
+#: - ``TERMINAL``：终止信号，捕获参数后结束循环，不执行 handler，永不可重跑。
+class ToolKind(str, Enum):
+    READ = "read"
+    IDEMPOTENT_WRITE = "idempotent_write"
+    WRITE = "write"
+    TERMINAL = "terminal"
+
+
+def is_idempotent(kind: ToolKind) -> bool:
+    """重复执行是否安全（并行调度 / 流式提前执行 / 恢复补执行的统一判据）。"""
+    return kind in (ToolKind.READ, ToolKind.IDEMPOTENT_WRITE)
+
+
+def is_terminal(kind: ToolKind) -> bool:
+    """是否终止工具：捕获参数即结束循环，不执行 handler。"""
+    return kind is ToolKind.TERMINAL
+
+
+def needs_write_audit(kind: ToolKind) -> bool:
+    """执行 handler 前是否需要写审计日志。"""
+    return kind in (ToolKind.WRITE, ToolKind.IDEMPOTENT_WRITE)
 
 
 @dataclass(frozen=True)
 class ToolSchema:
-    """工具的内部 schema：wire 三字段 + 执行语义 ``access``。
+    """工具的内部 schema：wire 三字段 + 执行语义 ``kind``。
 
     - ``name`` / ``description`` / ``parameters``：provider ``tools`` 参数所需字段；
-    - ``access``：**执行语义**（终止工具派生等），仅供 agent 内部使用，
+    - ``kind``：**执行语义**（终止工具派生等），仅供 agent 内部使用，
       ``to_wire()`` **绝不输出**（LLM 不可见，天然防诱导）。
 
     wire 形态是跨层契约（三家 provider 的 ``_normalize_*`` 与 eval cassette 指纹都
@@ -57,7 +84,7 @@ class ToolSchema:
     name: str
     description: str
     parameters: dict
-    access: ToolAccess
+    kind: ToolKind
 
     def to_wire(self) -> dict:
         """转换为 provider ``tools`` 参数条目（仅三字段，键序固定）。"""
@@ -75,7 +102,7 @@ class ToolSchema:
 
 @dataclass(frozen=True)
 class TerminalCapture:
-    """终止性工具（access=terminal）的捕获结果：**正常结束**语义。
+    """终止性工具（kind=ToolKind.TERMINAL）的捕获结果：**正常结束**语义。
 
     仅记录参数、不执行 handler（无副作用）；由循环收到即终止（终止工具优先）。
     """
