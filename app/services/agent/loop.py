@@ -17,7 +17,7 @@
   ``finish_reason`` **流末集中补发**停点 → 仍提前执行但**无重叠收益**；eval replay
   **无停点** → 纯轮级降级。非幂等工具在流结束后按 ``execute_batch`` 语义（连续幂等段
   并行、非幂等串行、保序）执行。执行器由 ``executor_factory`` 按轮构造。
-- **终止工具优先**：本轮含终止工具（``ToolSchema.access == "terminal"``）→ 捕获参数即 break，同轮其他工具不执行。
+- **终止工具优先**：本轮含终止工具（``ToolSchema.kind == ToolKind.TERMINAL``）→ 捕获参数即 break，同轮其他工具不执行。
   流式路径下同轮已提前启动的幂等工具可能已执行完成，其结果保留但走终止分支时被忽略
   （无害；terminal 抑制保证后续停点不再启动新任务）。
 - **透明预算**：每轮递减后仅当仍有后续轮次（remaining>0）才追加预算消息；
@@ -47,6 +47,7 @@ from app.services.agent.protocols import (
     StreamFn,
     StreamingExecutor,
     TerminalCapture,
+    ToolKind,
     ToolSchema,
 )
 from app.services.llm.models import (
@@ -353,13 +354,13 @@ async def run_loop(
         # 显式契约：stream_fn 为唯一 LLM 调用入口，必须提供
         raise ValueError("run 需要 stream_fn")
 
-    # provider wire 形态在边界一次性转换（ToolSchema.access 仅供 agent 内部使用，
+    # provider wire 形态在边界一次性转换（ToolSchema.kind 仅供 agent 内部使用，
     # 绝不进入请求体；键序与历史 flat 形态逐字一致）
     tools_wire = [s.to_wire() for s in tools_schemas]
 
-    # 终止工具由注册表语义（access="terminal"）**单点派生**：末轮强制定向、终止判定、
+    # 终止工具由注册表语义（kind==ToolKind.TERMINAL）**单点派生**：末轮强制定向、终止判定、
     # 收尾 tools 过滤都只用它；>1 个由 runtime 入口 fail-fast（loop 防御式取首个）。
-    terminals = [s for s in tools_schemas if s.access == "terminal"]
+    terminals = [s for s in tools_schemas if s.kind == ToolKind.TERMINAL]
     terminal_name = terminals[0].name if terminals else None
     if len(terminals) > 1:
         logger.warning(
@@ -418,7 +419,7 @@ async def run_loop(
         assistant_blocks: list[ContentBlock] = list(resp.blocks)
         messages.append(Message(role="assistant", content=assistant_blocks))
 
-        # ③ 终止工具优先：含终止工具（access="terminal"）→ 捕获即 break（其他工具不执行）
+        # ③ 终止工具优先：含终止工具（kind==ToolKind.TERMINAL）→ 捕获即 break（其他工具不执行）
         terminal_tc: ToolUseBlock | None = None
         terminal_idx = -1
         for idx, tc in enumerate(tool_calls):

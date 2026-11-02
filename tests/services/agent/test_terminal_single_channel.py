@@ -1,4 +1,4 @@
-"""终端单通道契约守卫：终止工具由注册表 ``access="terminal"`` 派生。
+"""终端单通道契约守卫：终止工具由注册表 ``kind=ToolKind.TERMINAL`` 派生。
 
 BDD：
 
@@ -21,7 +21,7 @@ import pytest
 from app.core.database import DatabaseManager, set_database_manager
 from app.services.agent import loop
 from app.services.agent.execution.tools import ToolDefinition, ToolRegistry
-from app.services.agent.protocols import ToolSchema
+from app.services.agent.protocols import ToolKind, ToolSchema
 from app.services.agent.run import runtime
 from app.services.agent.run.scenario import ScenarioHooks
 from app.services.llm.models import Message, StreamChunk
@@ -90,7 +90,9 @@ def test_zero_terminal_tools_natural_exhaustion_without_recovery_call():
         return await loop.run_loop(
             stream_fn=stream_fn,
             tools_schemas=[
-                ToolSchema(name="read_x", description="", parameters={}, access="read")
+                ToolSchema(
+                    name="read_x", description="", parameters={}, kind=ToolKind.READ
+                )
             ],
             max_iterations=1,
             seed_messages=_SEED,
@@ -116,7 +118,7 @@ def _two_terminal_defns(registry: ToolRegistry):
             description="",
             parameters={},
             handler=lambda args: {},
-            access="terminal",
+            kind=ToolKind.TERMINAL,
         )
         registry.register(defn, quiet=True)
         defns.append(defn)
@@ -157,7 +159,7 @@ def test_multi_terminal_tools_fail_fast_at_runtime_entry(dbm):
 
 
 def test_scenario_hooks_has_no_terminal_tool_field():
-    """ScenarioHooks 不再承载 terminal_tool（单一来源=注册表 access="terminal"）。"""
+    """ScenarioHooks 不再承载 terminal_tool（单一来源=注册表 kind=ToolKind.TERMINAL）。"""
     assert "terminal_tool" not in ScenarioHooks.__dataclass_fields__, (
         "terminal_tool 字段应已删除（终止集合由注册表派生）"
     )

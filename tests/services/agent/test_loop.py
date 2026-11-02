@@ -21,6 +21,7 @@ import asyncio
 from app.services.agent.chat_span import PlainChatSpan
 from app.services.agent.execution.tools import ToolError
 from app.services.agent.loop import RunResult, run_loop
+from app.services.agent.protocols import ToolKind
 from app.services.llm.models import (
     ChatResponse,
     Message,
@@ -71,14 +72,14 @@ _FINAL_RECOVERY_KEYWORDS = (
 )
 
 
-def _schema(name: str, *, access: str = "read"):
-    """构造测试用 ToolSchema（wire 三字段留空，仅名字/access 有意义）。"""
+def _schema(name: str, *, kind: ToolKind = ToolKind.READ):
+    """构造测试用 ToolSchema（wire 三字段留空，仅名字/kind 有意义）。"""
     from app.services.agent.protocols import ToolSchema
 
-    return ToolSchema(name=name, description="", parameters={}, access=access)
+    return ToolSchema(name=name, description="", parameters={}, kind=kind)
 
 
-_TERMINAL_SCHEMA = _schema("submit_suggestion", access="terminal")
+_TERMINAL_SCHEMA = _schema("submit_suggestion", kind=ToolKind.TERMINAL)
 
 
 def _assert_final_round_message(content: str) -> None:
@@ -868,7 +869,7 @@ async def test_exhausted_final_recovery_tools_only_terminal_schema():
     executed: list[str] = []
     schemas = [
         _schema("search_bangumi"),
-        _schema("submit_suggestion", access="terminal"),
+        _schema("submit_suggestion", kind=ToolKind.TERMINAL),
     ]
 
     await run_loop(
@@ -1750,7 +1751,7 @@ async def test_run_does_not_mutate_caller_seed_list():
 
 async def test_terminal_branch_prefers_executor_capture_args():
     """终止分支：执行器产出的 capture 优先作为 RunResult 载荷（无 capture 时才回退参数）。"""
-    from app.services.agent.protocols import TerminalCapture
+    from app.services.agent.protocols import TerminalCapture, ToolKind
 
     class _CaptureExecutor:
         def feed(self, chunk):  # noqa: ANN001 - 测试替身
@@ -1770,7 +1771,7 @@ async def test_terminal_branch_prefers_executor_capture_args():
         stream_fn=stream,
         executor_factory=lambda: _CaptureExecutor(),
         tools_schemas=[
-            _schema("submit_suggestion", access="terminal"),
+            _schema("submit_suggestion", kind=ToolKind.TERMINAL),
             _TERMINAL_SCHEMA,
         ],
         max_iterations=2,

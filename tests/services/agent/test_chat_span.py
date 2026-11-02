@@ -27,6 +27,7 @@ import pytest
 from app.core.database import DatabaseManager, set_database_manager
 from app.services.agent import loop
 from app.services.agent.observe.recorder import TraceRecorder
+from app.services.agent.protocols import ToolKind
 from app.services.agent.run import runtime
 from app.services.agent.run.scenario import ScenarioHooks
 from app.services.llm import models as llm_models
@@ -131,7 +132,7 @@ def _run_runtime(
             description="",
             parameters={},
             handler=lambda args: {},
-            access="terminal",
+            kind=ToolKind.TERMINAL,
         )
         registry.register(defn, quiet=True)
         return [defn]
