@@ -102,7 +102,7 @@ class ToolSchema:
 
 @dataclass(frozen=True)
 class TerminalCapture:
-    """终止性工具（access=terminal）的捕获结果：**正常结束**语义。
+    """终止性工具（kind=ToolKind.TERMINAL）的捕获结果：**正常结束**语义。
 
     仅记录参数、不执行 handler（无副作用）；由循环收到即终止（终止工具优先）。
     """

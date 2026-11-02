@@ -58,6 +58,7 @@ from app.services.agent.execution.tools import (
     ToolRegistry,
 )
 from app.services.agent.loop import RunResult
+from app.services.agent.protocols import ToolKind
 from app.services.agent.run.registry import ScenarioRuntime
 from app.services.agent.run.scenario import RunFailure, ScenarioHooks
 from app.services.base.notifier_helpers import notify_agent_run_failed
@@ -216,8 +217,7 @@ def register_match_tools(registry: ToolRegistry, bgm: Any) -> list[ToolDefinitio
                 "required": ["title"],
             },
             handler=_search,
-            access="read",
-            idempotent=True,  # 幂等：纯查询，重复执行无副作用
+            kind=ToolKind.READ,
         ),
         ToolDefinition(
             name="get_subject_detail",
@@ -234,8 +234,7 @@ def register_match_tools(registry: ToolRegistry, bgm: Any) -> list[ToolDefinitio
                 "required": ["subject_id"],
             },
             handler=_get_detail,
-            access="read",
-            idempotent=True,  # 幂等：纯查询，重复执行无副作用
+            kind=ToolKind.READ,
         ),
         ToolDefinition(
             name="check_subject",
@@ -252,8 +251,7 @@ def register_match_tools(registry: ToolRegistry, bgm: Any) -> list[ToolDefinitio
                 "required": ["subject_id"],
             },
             handler=_check,
-            access="read",
-            idempotent=True,  # 幂等：纯查询，重复执行无副作用
+            kind=ToolKind.READ,
         ),
         ToolDefinition(
             name="get_related_subjects",
@@ -270,8 +268,7 @@ def register_match_tools(registry: ToolRegistry, bgm: Any) -> list[ToolDefinitio
                 "required": ["subject_id"],
             },
             handler=_related,
-            access="read",
-            idempotent=True,  # 幂等：纯查询，重复执行无副作用
+            kind=ToolKind.READ,
         ),
         ToolDefinition(
             name=_TERMINAL_TOOL,
@@ -301,8 +298,7 @@ def register_match_tools(registry: ToolRegistry, bgm: Any) -> list[ToolDefinitio
                 "required": ["reason"],
             },
             handler=_noop,
-            access="terminal",
-            idempotent=False,  # 非幂等：terminal 状态提交（提交/放弃），不可重复执行
+            kind=ToolKind.TERMINAL,
         ),
     ]
     for d in defns:
@@ -705,7 +701,7 @@ async def _match_handle_terminal(
     )
 
 
-#: 终止工具名（场景侧单一常量：注册与终局分派共用；由注册表 access="terminal" 派生）
+#: 终止工具名（场景侧单一常量：注册与终局分派共用；由注册表 kind=ToolKind.TERMINAL 派生）
 _TERMINAL_TOOL = "submit_suggestion"
 
 #: 场景任务类型（注册表 / hooks / 运行时 / 通知共用，单一来源）
