@@ -36,7 +36,12 @@ from app.services.agent.loop import (
 )
 from app.services.agent.observe import trace
 from app.services.agent.observe.recorder import TraceRecorder
-from app.services.agent.protocols import TerminalCapture, ToolSchema, ToolSpanRecorder
+from app.services.agent.protocols import (
+    TerminalCapture,
+    ToolKind,
+    ToolSchema,
+    ToolSpanRecorder,
+)
 from app.services.agent.run.scenario import CtxT, RunFailure, ScenarioHooks
 from app.services.llm.client import LLMCallError
 from app.services.llm.models import ChatResponse, Message, ToolResultBlock, ToolUseBlock
@@ -185,7 +190,7 @@ def _assert_terminals_unique(tools_schemas: Sequence[ToolSchema]) -> None:
     >1 个时末轮"强制定向"无法表达（provider 只支持单一具名），属场景配置错误，
     入口立即报错，避免静默走错分支。
     """
-    terminals = [s.name for s in tools_schemas if s.access == "terminal"]
+    terminals = [s.name for s in tools_schemas if s.kind == ToolKind.TERMINAL]
     if len(terminals) > 1:
         raise ValueError(
             f"场景注册了 {len(terminals)} 个终止工具（{', '.join(terminals)}）；"
@@ -299,7 +304,7 @@ async def continue_run(
         defns = hooks.register_tools(registry, ctx)
         tools_schemas = [d.to_schema() for d in defns]
         _assert_terminals_unique(tools_schemas)
-        terminal_names = {s.name for s in tools_schemas if s.access == "terminal"}
+        terminal_names = {s.name for s in tools_schemas if s.kind == ToolKind.TERMINAL}
 
         # seed 由 replay 从 agent_steps 的 seed 行提取，无需此处重建
         replay_result = trace.replay(run_id)
@@ -633,8 +638,9 @@ async def _replay_missing_tool(
     tool_result 闭合协议（否则 assistant 的 tool_use 悬空，provider 报协议错误）；
     真实调用留给续跑 loop 自然触发。
 
-    门控判据是 ``access == "read"``（无副作用语义），**不是** ``idempotent``：幂等 ≠ 无副作用，
-    幂等的 write 工具重复执行仍会留下副作用记录，故仍走占位不补执行。
+    门控判据是 ``kind`` 派生的 ``idempotent``：重复执行安全（结果一致且副作用可控）。
+    read 默认幂等；幂等写（CAS + 防 ABA）显式标注后同样可补执行；
+    非幂等写与 terminal 只回填占位，不重放副作用。
 
     当 ``span_recorder`` 不为 None 时，为每条缺失工具写 ``tool_execute`` span
     （iteration 由调用方通过 ``begin_replayed_round`` 锚定），保证二次 replay
@@ -650,7 +656,7 @@ async def _replay_missing_tool(
     defn = registry.get(name)
     tool_use_block = ToolUseBlock(id=tool_use_id, name=name, input=args or {})
 
-    if defn is None or defn.access != "read":
+    if defn is None or not defn.idempotent:
         logger.info(f"🤖 恢复补执行：工具 {name} 非只读/未注册，回填占位结果")
         _append_tool_result(
             messages, tool_use_id, _SKIP_PLACEHOLDER_CONTENT, is_error=False
