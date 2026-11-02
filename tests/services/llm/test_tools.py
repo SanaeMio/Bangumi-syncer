@@ -19,7 +19,7 @@ from app.services.agent.execution.tools import (
     ToolRegistry,
     serialize_tool_result,
 )
-from app.services.agent.protocols import TerminalCapture
+from app.services.agent.protocols import TerminalCapture, ToolKind
 from app.services.llm.models import ToolResultBlock, ToolUseBlock
 
 
@@ -44,7 +44,7 @@ def _result_of(results, tool_use_id):
 # ---------------------------------------------------------------------------
 
 
-def test_tool_definition_to_schema_excludes_access_and_idempotent():
+def test_tool_definition_to_schema_excludes_kind():
     d = ToolDefinition(
         name="search",
         description="search bangumi",
@@ -54,20 +54,20 @@ def test_tool_definition_to_schema_excludes_access_and_idempotent():
             "required": ["title"],
         },
         handler=_noop_handler,
-        access="read",
+        kind=ToolKind.READ,
     )
     schema = d.to_schema()
     # 内部形态：带 access 的 ToolSchema（属性访问）
     assert schema.name == "search"
     assert schema.description == "search bangumi"
-    assert schema.access == "read"
+    assert schema.kind is ToolKind.READ
     assert schema.parameters["properties"]["title"]["maxLength"] == 200
     # wire 形态：仅三字段，access 绝不外泄
     wire = schema.to_wire()
     assert set(wire.keys()) == {"name", "description", "parameters"}
     assert wire["name"] == "search"
-    # access / idempotent 均不外泄到 wire（LLM 不可见，天然防诱导）
-    assert "access" not in wire and "idempotent" not in wire
+    # kind 不外泄到 wire（LLM 不可见，天然防诱导）
+    assert "kind" not in wire
 
 
 # ---------------------------------------------------------------------------
@@ -79,10 +79,18 @@ def test_register_duplicate_warns_and_overwrites(caplog):
     reg = ToolRegistry()
     caplog.set_level(logging.WARNING)
     first = ToolDefinition(
-        name="dup", description="a", parameters={}, handler=_noop_handler, access="read"
+        name="dup",
+        description="a",
+        parameters={},
+        handler=_noop_handler,
+        kind=ToolKind.READ,
     )
     second = ToolDefinition(
-        name="dup", description="b", parameters={}, handler=_noop_handler, access="read"
+        name="dup",
+        description="b",
+        parameters={},
+        handler=_noop_handler,
+        kind=ToolKind.READ,
     )
     reg.register(first)
     reg.register(second)
@@ -104,10 +112,18 @@ def test_register_quiet_overwrite_logs_info_not_warning(caplog):
     """quiet 覆盖注册是正常的重绑定路径，记 info（非 warning），仍完成覆盖。"""
     reg = ToolRegistry()
     old = ToolDefinition(
-        name="q", description="old", parameters={}, handler=_noop_handler, access="read"
+        name="q",
+        description="old",
+        parameters={},
+        handler=_noop_handler,
+        kind=ToolKind.READ,
     )
     new = ToolDefinition(
-        name="q", description="new", parameters={}, handler=_noop_handler, access="read"
+        name="q",
+        description="new",
+        parameters={},
+        handler=_noop_handler,
+        kind=ToolKind.READ,
     )
     reg.register(old)
     with caplog.at_level(logging.INFO, logger="app.services.llm.tools"):
@@ -160,7 +176,7 @@ async def test_execute_missing_required_does_not_call_handler():
             description="d",
             parameters=schema,
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     with pytest.raises(ToolError):
@@ -188,7 +204,7 @@ async def test_execute_pattern_mismatch_does_not_call_handler():
             description="d",
             parameters=schema,
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     with pytest.raises(ToolError):
@@ -216,7 +232,7 @@ async def test_execute_maxlength_exceeded_does_not_call_handler():
             description="d",
             parameters=schema,
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     with pytest.raises(ToolError):
@@ -238,7 +254,7 @@ def _tool_registry(name: str, schema: dict, handler) -> ToolRegistry:
             description="d",
             parameters=schema,
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     return reg
@@ -533,7 +549,7 @@ async def test_execute_valid_args_calls_handler_with_args():
                 "required": ["x"],
             },
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     result = await reg.execute("ok", {"x": "hello"})
@@ -556,7 +572,7 @@ async def test_write_access_audit_log_before_execution(caplog):
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=_noop_handler,
-            access="write",
+            kind=ToolKind.WRITE,
         )
     )
     await reg.execute("write_tool", {})
@@ -586,7 +602,7 @@ async def test_terminal_access_does_not_run_handler_returns_capture():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="terminal",
+            kind=ToolKind.TERMINAL,
         )
     )
     result = await reg.execute("submit", {"subject_id": "123"})
@@ -615,7 +631,7 @@ async def test_read_handler_timeout_raises_tool_error():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=slow,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     with pytest.raises(ToolError):
@@ -690,7 +706,7 @@ async def test_execute_batch_readonly_segment_runs_in_parallel():
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(k),
-                access="read",
+                kind=ToolKind.READ,
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("a", "b", "c")]
@@ -733,14 +749,14 @@ async def test_execute_batch_preserves_order_with_write_in_middle():
         return handler
 
     for k in ("ra", "rb", "wc", "rd"):
-        access = "write" if k == "wc" else "read"
+        kind = ToolKind.WRITE if k == "wc" else ToolKind.READ
         reg.register(
             ToolDefinition(
                 name=k,
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(k),
-                access=access,  # type: ignore[arg-type]
+                kind=kind,
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("ra", "rb", "wc", "rd")]
@@ -771,7 +787,7 @@ async def test_execute_batch_handler_exception_wrapped_as_error_block():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=boom,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     calls = [ToolUseBlock(id="x1", name="boom", input={})]
@@ -819,7 +835,7 @@ async def test_execute_batch_duplicate_tool_use_id_executes_only_first():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     calls = [
@@ -860,7 +876,7 @@ async def test_execute_batch_duplicate_write_tool_keeps_first_result():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="write",
+            kind=ToolKind.WRITE,
         )
     )
     calls = [
@@ -893,7 +909,7 @@ async def test_execute_batch_duplicate_does_not_affect_unique_ids():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     calls = [
@@ -968,7 +984,7 @@ async def test_execute_batch_terminal_returns_capture_without_handler():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="terminal",
+            kind=ToolKind.TERMINAL,
         )
     )
     calls = [ToolUseBlock(id="s1", name="submit", input={"subject_id": "9"})]
@@ -1085,7 +1101,7 @@ async def test_recorder_真实时序_start在handler前_end在handler后():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     await reg.execute_batch(
@@ -1124,7 +1140,7 @@ async def test_recorder_逐工具即刻落库_前序工具end在异常工具之�
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=fast,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     reg.register(
@@ -1133,7 +1149,7 @@ async def test_recorder_逐工具即刻落库_前序工具end在异常工具之�
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=fast,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     reg.register(
@@ -1142,7 +1158,7 @@ async def test_recorder_逐工具即刻落库_前序工具end在异常工具之�
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=boom,
-            access="write",
+            kind=ToolKind.WRITE,
         )
     )
     calls = [
@@ -1182,14 +1198,14 @@ async def test_recorder_并行串行时序_并行重叠_串行有序():
         return handler
 
     for k in ("ra", "rb", "wc"):
-        access = "write" if k == "wc" else "read"
+        kind = ToolKind.WRITE if k == "wc" else ToolKind.READ
         reg.register(
             ToolDefinition(
                 name=k,
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(),
-                access=access,  # type: ignore[arg-type]
+                kind=kind,
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("ra", "rb", "wc")]
@@ -1227,7 +1243,7 @@ async def test_recorder_异常必达_工具抛异常时end仍调用且error非�
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=boom,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     calls = [ToolUseBlock(id="x1", name="boom", input={})]
@@ -1263,7 +1279,7 @@ async def test_recorder_重复id_占位错误块同样有span且is_error():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     calls = [
@@ -1291,73 +1307,68 @@ async def test_recorder_重复id_占位错误块同样有span且is_error():
 
 
 # ---------------------------------------------------------------------------
-# 幂等（idempotent）维度 —— 默认推导 + 显式覆盖
-#   幂等 ≠ 无副作用：access 是副作用语义，idempotent 是重复执行安全性，二者正交
+# ---------------------------------------------------------------------------
+# ToolKind 派生：幂等 / 终止 / 写审计由单一枚举派生，不存在非法组合
 # ---------------------------------------------------------------------------
 
 
-def test_tool_definition_idempotent_derives_true_for_read_access():
-    """默认推导：access=read → idempotent=True。"""
+def test_tool_definition_read_is_idempotent():
+    """READ：无副作用且可重复执行。"""
     d = ToolDefinition(
-        name="t", description="d", parameters={}, handler=_noop_handler, access="read"
+        name="t",
+        description="d",
+        parameters={},
+        handler=_noop_handler,
+        kind=ToolKind.READ,
     )
     assert d.idempotent is True
+    assert d.terminal is False
 
 
-def test_tool_definition_idempotent_derives_false_for_write_access():
-    """默认推导：access=write → idempotent=False。"""
-    d = ToolDefinition(
-        name="t", description="d", parameters={}, handler=_noop_handler, access="write"
-    )
-    assert d.idempotent is False
-
-
-def test_tool_definition_idempotent_derives_false_for_terminal_access():
-    """默认推导：access=terminal → idempotent=False。"""
+def test_tool_definition_idempotent_write_is_idempotent():
+    """IDEMPOTENT_WRITE：有副作用但重复执行安全（CAS + 防 ABA）。"""
     d = ToolDefinition(
         name="t",
         description="d",
         parameters={},
         handler=_noop_handler,
-        access="terminal",
-    )
-    assert d.idempotent is False
-
-
-def test_tool_definition_idempotent_explicit_override_write_true():
-    """显式覆盖：access=write 但幂等（如幂等写接口）→ idempotent=True。"""
-    d = ToolDefinition(
-        name="t",
-        description="d",
-        parameters={},
-        handler=_noop_handler,
-        access="write",
-        idempotent=True,
+        kind=ToolKind.IDEMPOTENT_WRITE,
     )
     assert d.idempotent is True
-    # access 副作用语义不受 idempotent 影响（正交）
-    assert d.access == "write"
+    assert d.terminal is False
 
 
-def test_tool_definition_idempotent_explicit_override_read_false():
-    """显式覆盖：access=read 但非幂等（读操作含非幂等副作用）→ idempotent=False。"""
+def test_tool_definition_write_is_not_idempotent():
+    """WRITE：非幂等写，恢复时只回填占位。"""
     d = ToolDefinition(
         name="t",
         description="d",
         parameters={},
         handler=_noop_handler,
-        access="read",
-        idempotent=False,
+        kind=ToolKind.WRITE,
     )
     assert d.idempotent is False
+    assert d.terminal is False
 
 
-# ---------------------------------------------------------------------------
+def test_tool_definition_terminal_is_not_idempotent():
+    """TERMINAL：不执行 handler，永不可重跑。"""
+    d = ToolDefinition(
+        name="t",
+        description="d",
+        parameters={},
+        handler=_noop_handler,
+        kind=ToolKind.TERMINAL,
+    )
+    assert d.idempotent is False
+    assert d.terminal is True
+
+
 # ToolRegistry.is_idempotent 查询
 # ---------------------------------------------------------------------------
 
 
-def test_is_idempotent_true_for_read_default_and_explicit_write():
+def test_is_idempotent_true_for_read_and_idempotent_write():
     reg = ToolRegistry()
     reg.register(
         ToolDefinition(
@@ -1365,7 +1376,7 @@ def test_is_idempotent_true_for_read_default_and_explicit_write():
             description="d",
             parameters={},
             handler=_noop_handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     reg.register(
@@ -1374,15 +1385,14 @@ def test_is_idempotent_true_for_read_default_and_explicit_write():
             description="d",
             parameters={},
             handler=_noop_handler,
-            access="write",
-            idempotent=True,
+            kind=ToolKind.IDEMPOTENT_WRITE,
         )
     )
     assert reg.is_idempotent("r") is True
     assert reg.is_idempotent("w") is True
 
 
-def test_is_idempotent_false_for_write_default_and_explicit_read():
+def test_is_idempotent_false_for_write_and_terminal():
     reg = ToolRegistry()
     reg.register(
         ToolDefinition(
@@ -1390,7 +1400,7 @@ def test_is_idempotent_false_for_write_default_and_explicit_read():
             description="d",
             parameters={},
             handler=_noop_handler,
-            access="write",
+            kind=ToolKind.WRITE,
         )
     )
     reg.register(
@@ -1399,8 +1409,7 @@ def test_is_idempotent_false_for_write_default_and_explicit_read():
             description="d",
             parameters={},
             handler=_noop_handler,
-            access="read",
-            idempotent=False,
+            kind=ToolKind.TERMINAL,
         )
     )
     assert reg.is_idempotent("w") is False
@@ -1418,16 +1427,20 @@ def test_is_idempotent_unregistered_returns_false():
 # ---------------------------------------------------------------------------
 
 
-def test_is_terminal_true_only_for_terminal_access():
+def test_is_terminal_true_only_for_terminal_kind():
     reg = ToolRegistry()
-    for name, access in (("r", "read"), ("w", "write"), ("t", "terminal")):
+    for name, kind in (
+        ("r", ToolKind.READ),
+        ("w", ToolKind.WRITE),
+        ("t", ToolKind.TERMINAL),
+    ):
         reg.register(
             ToolDefinition(
                 name=name,
                 description="d",
                 parameters={},
                 handler=_noop_handler,
-                access=access,
+                kind=kind,
             )
         )
     assert reg.is_terminal("t") is True
@@ -1469,7 +1482,7 @@ async def test_execute_batch_idempotent_segment_runs_in_parallel():
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(k),
-                access="read",
+                kind=ToolKind.READ,
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("a", "b", "c")]
@@ -1509,7 +1522,7 @@ async def test_execute_batch_non_idempotent_tools_run_serially():
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(k),
-                access="write",  # 默认非幂等
+                kind=ToolKind.WRITE,  # 默认非幂等
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("a", "b")]
@@ -1539,14 +1552,18 @@ async def test_execute_batch_mixed_segments_preserve_order():
         return handler
 
     # a/c 幂等（默认 read），b 非幂等（write）
-    for k, access in (("a", "read"), ("b", "write"), ("c", "read")):
+    for k, kind in (
+        ("a", ToolKind.READ),
+        ("b", ToolKind.WRITE),
+        ("c", ToolKind.READ),
+    ):
         reg.register(
             ToolDefinition(
                 name=k,
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(k),
-                access=access,  # type: ignore[arg-type]
+                kind=kind,
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("a", "b", "c")]
@@ -1559,8 +1576,8 @@ async def test_execute_batch_mixed_segments_preserve_order():
 
 
 @pytest.mark.asyncio
-async def test_execute_batch_non_idempotent_read_tool_runs_serially():
-    """新语义：access=read + idempotent=False 的读工具按非幂等处理，串行执行。"""
+async def test_execute_batch_write_tool_runs_serially():
+    """WRITE 非幂等：串行执行，不进入并行段。"""
     reg = ToolRegistry()
     starts: dict[str, float] = {}
     ends: dict[str, float] = {}
@@ -1581,8 +1598,7 @@ async def test_execute_batch_non_idempotent_read_tool_runs_serially():
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(k),
-                access="read",
-                idempotent=False,
+                kind=ToolKind.WRITE,
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("a", "b")]
@@ -1596,7 +1612,7 @@ async def test_execute_batch_non_idempotent_read_tool_runs_serially():
 
 @pytest.mark.asyncio
 async def test_execute_batch_idempotent_write_tool_runs_in_parallel():
-    """新语义：access=write + idempotent=True 的写工具按幂等处理，并行执行。"""
+    """IDEMPOTENT_WRITE：重复执行安全，进入并行段。"""
     reg = ToolRegistry()
     # 并发探针：记录同时执行的 handler 峰值，避免墙钟阈值在 CI 上抖动
     active = 0
@@ -1622,8 +1638,7 @@ async def test_execute_batch_idempotent_write_tool_runs_in_parallel():
                 description="d",
                 parameters={"type": "object", "properties": {}},
                 handler=await make_handler(k),
-                access="write",
-                idempotent=True,
+                kind=ToolKind.IDEMPOTENT_WRITE,
             )
         )
     calls = [ToolUseBlock(id=k, name=k, input={}) for k in ("a", "b")]
@@ -1660,7 +1675,7 @@ async def test_execute_batch_idempotent_segment_caps_parallelism():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     n = _MAX_PARALLEL_TOOLS * 2 + 5
@@ -1693,7 +1708,7 @@ async def test_execute_batch_under_cap_still_parallel():
             description="d",
             parameters={"type": "object", "properties": {}},
             handler=handler,
-            access="read",
+            kind=ToolKind.READ,
         )
     )
     calls = [ToolUseBlock(id=f"t{i}", name="h", input={}) for i in range(5)]
@@ -1728,7 +1743,7 @@ class TestRunTool:
                 description="d",
                 parameters={},
                 handler=handler,
-                access="read",
+                kind=ToolKind.READ,
             )
         )
         recorder = FakeRecorder()
@@ -1762,7 +1777,7 @@ class TestRunTool:
                 description="d",
                 parameters={},
                 handler=boom,
-                access="read",
+                kind=ToolKind.READ,
             )
         )
         recorder = FakeRecorder()
@@ -1800,7 +1815,7 @@ class TestRunTool:
                 description="d",
                 parameters={},
                 handler=handler,
-                access="terminal",
+                kind=ToolKind.TERMINAL,
             )
         )
         recorder = FakeRecorder()
@@ -1834,7 +1849,7 @@ class TestRunTool:
                 description="d",
                 parameters={},
                 handler=boom,
-                access="read",
+                kind=ToolKind.READ,
             )
         )
 

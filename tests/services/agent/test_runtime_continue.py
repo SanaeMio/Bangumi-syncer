@@ -23,6 +23,7 @@ from app.core.database import (
     set_database_manager,
 )
 from app.services.agent.observe import trace
+from app.services.agent.protocols import ToolKind
 from app.services.agent.run import runtime
 from app.services.agent.run.scenario import ScenarioHooks
 
@@ -127,7 +128,7 @@ class _FakeHooks:
             description="",
             parameters={},
             handler=lambda args: {},
-            access="terminal",
+            kind=ToolKind.TERMINAL,
         )
         registry.register(defn, quiet=True)
         return [defn]

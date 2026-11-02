@@ -1,7 +1,7 @@
 """通用工具注册表与执行器。
 
 提供：
-- ``ToolDefinition``：工具元信息（含 access 枚举与 idempotent 推导）
+- ``ToolDefinition``：工具元信息（``ToolKind`` 单一分类，派生幂等/终止/审计）
 - ``ToolRegistry``：注册 / 执行 / JSON Schema 轻量校验 / 分段并行批量执行（按幂等分段）
 
 零新增依赖：JSON Schema 校验使用手写轻量实现（必填字段、类型、pattern、maxLength），
@@ -18,10 +18,13 @@ from typing import Any
 
 from app.services.agent.protocols import (
     TerminalCapture,
-    ToolAccess,
+    ToolKind,
     ToolRunner,
     ToolSchema,
     ToolSpanRecorder,
+    is_idempotent,
+    is_terminal,
+    needs_write_audit,
 )
 from app.services.llm.models import ToolResultBlock, ToolUseBlock
 
@@ -68,11 +71,9 @@ def serialize_tool_result(result: Any) -> str:
 class ToolDefinition:
     """单一工具定义。
 
-    - ``access``：read（只读）/ write（写，执行前审计）/ terminal（终止性，仅捕获参数）。
-      表示**副作用语义**，用于 write 审计、terminal 捕获、补执行门控。
-    - ``idempotent``：表示**重复执行安全性**，决定 ``execute_batch`` 的并行调度判据；
-      与 ``access`` 正交（幂等 write 重复执行仍有副作用记录）。默认由 ``access``
-      推导（read→True；write/terminal→False），工具开发者可显式标注覆盖。
+    - ``kind``：单一能力分类（:class:`~app.services.agent.protocols.ToolKind`）。
+      四种取值互斥，派生 ``idempotent`` / ``terminal`` / ``needs_write_audit``，
+      调用方无法组合出非法状态。
     - ``parameters``：OpenAI function calling 标准的 JSON Schema
     """
 
@@ -80,25 +81,29 @@ class ToolDefinition:
     description: str
     parameters: dict
     handler: Callable[[dict], Any]
-    access: ToolAccess
-    idempotent: bool | None = None
+    kind: ToolKind
 
-    def __post_init__(self) -> None:
-        # 显式标注优先；未标注时以 access 作便捷推导
-        if self.idempotent is None:
-            self.idempotent = self.access == "read"
+    @property
+    def idempotent(self) -> bool:
+        """重复执行是否安全（并行 / 提前执行 / 恢复补执行的判据）。"""
+        return is_idempotent(self.kind)
+
+    @property
+    def terminal(self) -> bool:
+        """是否终止工具（捕获参数即结束循环）。"""
+        return is_terminal(self.kind)
 
     def to_schema(self) -> ToolSchema:
         """转换为内部 :class:`~app.services.agent.protocols.ToolSchema`。
 
-        ``access`` 供 agent 内部派生终止工具等语义；**调用 provider 前**须经
-        ``ToolSchema.to_wire()`` 转换（access 不序列化，LLM 不可见，天然防诱导）。
+        ``kind`` 供 agent 内部派生终止工具等语义；**调用 provider 前**须经
+        ``ToolSchema.to_wire()`` 转换（kind 不序列化，LLM 不可见，天然防诱导）。
         """
         return ToolSchema(
             name=self.name,
             description=self.description,
             parameters=self.parameters,
-            access=self.access,
+            kind=self.kind,
         )
 
 
@@ -144,10 +149,10 @@ class ToolRegistry(ToolRunner):
     def is_idempotent(self, name: str) -> bool:
         """工具是否幂等（连续幂等段可并行执行的判据）。"""
         defn = self._tools.get(name)
-        return defn is not None and bool(defn.idempotent)
+        return defn is not None and defn.idempotent
 
     def is_terminal(self, name: str) -> bool:
-        """工具是否终止性（``access == "terminal"``）。
+        """工具是否终止性（``kind == ToolKind.TERMINAL``）。
 
         与 :meth:`is_idempotent` 对称的**属性自查询**：调用方（loop / 执行器）
         无需自行解包 ``ToolDefinition``，也无需在通用层另写一份判定函数。
@@ -155,7 +160,7 @@ class ToolRegistry(ToolRunner):
         未注册工具返回 ``False``（不抛错），与 :meth:`is_idempotent` 同口径。
         """
         defn = self._tools.get(name)
-        return defn is not None and defn.access == "terminal"
+        return defn is not None and defn.terminal
 
     # -- 校验 ---------------------------------------------------------------
 
@@ -274,10 +279,10 @@ class ToolRegistry(ToolRunner):
 
         self._validate(defn, args)
 
-        if defn.access == "terminal":
+        if defn.terminal:
             return TerminalCapture(name=defn.name, args=args)
 
-        if defn.access == "write":
+        if needs_write_audit(defn.kind):
             logger.info("审计日志：执行写工具 %r args=%s", defn.name, args)
 
         try:
