@@ -19,9 +19,9 @@ Bangumi 官方公开 API 已限流（社区实测约 300 请求/分钟/IP，超�
 - :meth:`RateLimiter.acquire_async` 提供 async 兼容层：复用同一预约计算，
   等待改用 ``asyncio.sleep``，与同步 :meth:`RateLimiter.acquire` 共享令牌桶状态；
 - 构造支持注入 ``clock`` / ``sleep``，便于测试不真实等待；
-- 模块级惰性单例 :func:`get_bgm_rate_limiter`，从 ``[bangumi]`` 段读取
+- 模块级惰性单例 :func:`get_bgm_rate_limiter`，从 ``[sync]`` 段读取
   ``api_rate_limit``（默认 1/s）与 ``api_rate_burst``（默认 3），解析失败回退默认；
-  ``api_rate_limit`` 在配置层截断到 :data:`MAX_CONFIGURABLE_RATE`（100/s），
+  ``api_rate_limit`` 在配置层截断到 :data:`MAX_CONFIGURABLE_RATE`（10/s），
   防止极端速率与长冻结相乘产生巨额令牌债务；
 - 收到 429 时由 :meth:`RateLimiter.notify_rate_limited` 冻结令牌桶：
   默认 60s，连续命中按 60→120→240 指数延长，上限 3600s；
@@ -60,7 +60,7 @@ MAX_COOLDOWN = 3600.0
 # 冻结/等待延长会把「额外秒数 × rate」折算为令牌债务；若 rate 被配置得极大，
 # 一次长冻结即可产生数万乃至更大的债务，令令牌桶长期瘫痪。配置层读取时统一
 # 截断到该上界（不影响 ``RateLimiter`` 自身的构造语义，测试可用高速率实例）。
-MAX_CONFIGURABLE_RATE = 100.0
+MAX_CONFIGURABLE_RATE = 10.0
 
 # 单次 acquire 允许预约（排队）的最长等待秒数，超过则放弃并抛
 # RateLimitTimeoutError，避免请求被无上限地挂起。
