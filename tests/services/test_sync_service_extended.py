@@ -1332,6 +1332,72 @@ class TestMultiAccountSyncFanOut:
         assert outcomes[0]["primary"] is True
         assert outcomes[1] == {**other_result, "primary": False}
 
+    def test_orchestrator_movie_fans_out_watching_for_other_accounts(self):
+        """剧场版正片（无单集）：其余账号走「在看」补标而非按空 ep_id 点单集。
+
+        回归 review 重点项：多账号补标须与首选账号的标记语义一致。
+        """
+        from unittest.mock import MagicMock, patch
+
+        from app.models.sync import SyncResponse
+        from app.services.sync_service import SyncService
+        from app.services.sync_service.match_trace import MatchTrace
+        from app.services.sync_service.orchestrator import SyncOrchestrator
+
+        svc = SyncService()
+        orch = SyncOrchestrator(svc)
+        bgm = MagicMock()
+        bgm.username = "main-account"
+        exec_ctx = MagicMock()
+        exec_ctx.terminal = None
+        exec_ctx.current_outputs = {
+            "subject_id": "100",
+            "episode_id": "",  # 剧场版正片：无单集
+            "bgm_title": "剧场版",
+            "mark_status": 1,
+            "message": "",
+        }
+
+        fan_out = []
+        with (
+            patch("app.services.sync_service.notification_service"),
+            patch.object(svc, "_normalize_custom_item_params", return_value=None),
+            patch.object(svc, "_get_bangumi_api_for_user", return_value=bgm),
+            patch.object(svc, "_maybe_notify_match_ambiguous", return_value=None),
+            patch.object(
+                svc,
+                "_get_bangumi_account_targets_for_user",
+                return_value=[("bangumi", bgm)],
+            ),
+            patch.object(
+                svc,
+                "_mark_episode_for_other_accounts",
+                side_effect=AssertionError("剧场版正片不得按单集补标"),
+            ),
+            patch.object(
+                svc,
+                "_mark_movie_watching_for_other_accounts",
+                side_effect=lambda item, primary, subject_id: (
+                    fan_out.append((primary, subject_id)) or []
+                ),
+            ),
+            patch.object(
+                orch,
+                "_match_subject",
+                return_value=("100", False, None, MatchTrace()),
+            ),
+            patch.object(orch, "_run_execution_pipeline", return_value=exec_ctx),
+            patch.object(
+                orch,
+                "_finalize_success",
+                return_value=SyncResponse(status="success", message="ok"),
+            ),
+        ):
+            result = orch.sync_custom_item(self._item(), source="custom")
+
+        assert result.status == "success"
+        assert fan_out == [(bgm, "100")]
+
     def test_finalize_success_response_carries_account_results(self):
         """收尾响应的 data 携带各账号结果，供调试页与同步记录详情读取。"""
         from app.services.sync_service import SyncService
