@@ -8,8 +8,6 @@ import threading
 import time
 from typing import Any, Optional
 
-import httpx
-
 from ...core.config import config_manager
 from ...core.logging import logger
 from ...utils.bangumi_constants import (
@@ -20,6 +18,7 @@ from ...utils.bangumi_constants import (
     SUBJECT_TYPE_ANIME,
     SUBJECT_TYPE_REAL,
 )
+from .failure import FailureKind, classify_failure, write_failure_reason
 
 
 class CollectionMixin:
@@ -148,28 +147,20 @@ class CollectionMixin:
 
         try:
             return self._do_ensure_subject_watching(subject_id)
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            # 连接错误：标记不可达并触发入队
-            self.mark_api_unreachable()
+        except Exception as e:
+            kind = classify_failure(e)
+            if kind is FailureKind.CLIENT_ERROR:
+                # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队
+                raise
+            if kind is FailureKind.UNREACHABLE:
+                self.mark_api_unreachable()
+            # 429 / 限速超时：只入队，依赖令牌桶冷却，不叠 300s 熔断
             raise _PendingSyncQueued(
                 subject_id=subject_id,
                 ep_id=None,
-                reason="connect_error_movie_watching",
+                reason=write_failure_reason(e, movie=True),
                 cause=e,
             ) from e
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code if e.response is not None else 0
-            # 5xx/429：服务端不可用，入队等重试
-            if status in (429, 500, 502, 503, 504):
-                self.mark_api_unreachable()
-                raise _PendingSyncQueued(
-                    subject_id=subject_id,
-                    ep_id=None,
-                    reason=f"http_{status}_movie_watching",
-                    cause=e,
-                ) from e
-            # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队，正常抛出
-            raise
 
     def _do_ensure_subject_watching(self, subject_id: int | str) -> int:
         """实际执行 ensure_subject_watching 的子步骤（原逻辑）"""
@@ -215,25 +206,20 @@ class CollectionMixin:
 
         try:
             return self._do_mark_episode_watched(subject_id, ep_id)
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            # 连接错误：标记不可达并触发入队
-            self.mark_api_unreachable()
-            raise _PendingSyncQueued(
-                subject_id=subject_id, ep_id=ep_id, reason="connect_error", cause=e
-            ) from e
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code if e.response is not None else 0
-            # 5xx/429：服务端不可用，入队等重试
-            if status in (429, 500, 502, 503, 504):
+        except Exception as e:
+            kind = classify_failure(e)
+            if kind is FailureKind.CLIENT_ERROR:
+                # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队
+                raise
+            if kind is FailureKind.UNREACHABLE:
                 self.mark_api_unreachable()
-                raise _PendingSyncQueued(
-                    subject_id=subject_id,
-                    ep_id=ep_id,
-                    reason=f"http_{status}",
-                    cause=e,
-                ) from e
-            # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队，正常抛出
-            raise
+            # 429 / 限速超时：只入队，依赖令牌桶冷却，不叠 300s 熔断
+            raise _PendingSyncQueued(
+                subject_id=subject_id,
+                ep_id=ep_id,
+                reason=write_failure_reason(e),
+                cause=e,
+            ) from e
 
     def _do_mark_episode_watched(self, subject_id: int | str, ep_id: int | str) -> int:
         """实际执行 mark_episode_watched 的子步骤（原逻辑）"""

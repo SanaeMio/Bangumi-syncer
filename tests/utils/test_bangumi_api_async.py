@@ -303,18 +303,18 @@ async def test_async_request_notifies_limiter_on_429():
     assert api.is_api_unreachable() is False
 
 
-async def test_search_async_shares_bucket_with_sync_and_fails_fast():
-    """共享令牌桶：同步侧已耗尽令牌 → async 快速失败（不发出请求）。"""
+async def test_search_async_shares_bucket_with_sync_and_degrades_to_empty():
+    """共享令牌桶：同步侧已耗尽令牌 → async 读降级为空（不发出请求）。"""
     limiter = RateLimiter(rate=0.01, burst=1)
     _install_limiter(limiter)
     limiter.acquire()  # 同步客户端先消耗唯一令牌（模拟同步设施）
 
     api = BangumiApi()
     with _patch_async_client():
-        with pytest.raises(RateLimitTimeoutError):
-            await api.search_async("t")
+        result = await api.search_async("t")
 
-    # 快速失败（C1 口径）：请求未发出
+    # 快速失败（C1 口径）：请求未发出；读路径降级为空
+    assert result == []
     assert _FakeAsyncHttpClient.requests == []
 
 
@@ -376,3 +376,17 @@ def test_async_client_factory_disables_internal_retries():
 
     client = create_bgm_async_client(proxy=None, verify=True, ech="off", headers={})
     assert client._max_retries == 0, "内部重试会绕过 limiter，禁止开启"
+
+
+@pytest.mark.asyncio
+async def test_search_async_returns_empty_when_rate_limit_timeout(monkeypatch):
+    """异步读路径：冷却期 acquire 超时同样降级为空。"""
+    api = BangumiApi()
+    limiter = MagicMock()
+    limiter.acquire_async = AsyncMock(side_effect=RateLimitTimeoutError("x"))
+    monkeypatch.setattr(
+        "app.utils.bangumi_api.async_http_layer.get_bgm_rate_limiter",
+        lambda: limiter,
+    )
+
+    assert await api.search_async("async-rate-limit-timeout") == []
