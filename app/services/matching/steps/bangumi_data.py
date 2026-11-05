@@ -290,8 +290,12 @@ class BangumiDataStep(MatchStepBase):
             bgm = ctx.bgm
             if bgm is None:
                 return False
+            # 多走一跳（max_hops=season 而非 season-1）：search_previous_subjects
+            # 在 max_hops 处截断，若按 season-1 截断，实际命中第 3+ 季条目时前传
+            # 链被截成 season-1 条，会被误判成「就是第 season 季」。多要一跳后，
+            # 被截断的链长度 ≥ season > season-1，判据不再有截断歧义。
             prequels = bgm.search_previous_subjects(
-                int(subject_id), max_hops=max(1, season - 1)
+                int(subject_id), max_hops=max(1, season)
             )
             prequels = prequels or []
         except Exception as e:  # noqa: BLE001 — 关系不可用时回落到原有行为

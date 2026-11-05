@@ -1284,10 +1284,16 @@ class TestExtractExplicitSeason:
         assert extract_explicit_season("辉夜大小姐想让我告白2") == 2
 
     def test_trailing_season_requires_adjacency(self):
-        """只有**紧贴**标题本体的尾部数字才算季号
+        """尾部数字必须是标题**结尾**的 1-2 位（本体 + 可选空格）
 
-        放宽到空格分隔会让作品编号（ガンダム0083）与章号（第3章「…」）被当成
-        季号 —— 实测 L1 黄金集出现 28 条错配（短标题条目被挤出榜首）。
+        误判防护靠「1-2 位 + $ 锚定 + 数字前须有本体」三约束：四位作品编号
+        （ガンダム0083）结构性不匹配；章号（第3章）以「章」结尾不落在尾部；
+        整名就是数字的标题没有「标题本体」。
+
+        注意空格分隔**允许**（``タイトル 2`` → 2）：titleTranslate 外语言
+        变体常用「空格+尾数字」声明季号，收紧到紧贴会让候选丢掉季号声明，
+        季过滤器把候选当第一季剔除 —— 实测 L1 黄金集 9 条用例整链失败
+        （2026-11-05，PR #289 review）。
         """
         assert extract_explicit_season("機動戦士ガンダム0083") is None
         assert extract_explicit_season("機動戦士ガンダム0083 ジオンの残光") is None
@@ -1299,6 +1305,8 @@ class TestExtractExplicitSeason:
         )
         # 整名就是数字的标题没有「标题本体」，不算季号
         assert extract_explicit_season("86") is None
+        # 空格分隔的尾部数字算季号（titleTranslate 变体的常见写法）
+        assert extract_explicit_season("タイトル 2") == 2
 
     def test_trailing_roman_numeral_is_season(self):
         assert extract_explicit_season("偶像大师 II") == 2

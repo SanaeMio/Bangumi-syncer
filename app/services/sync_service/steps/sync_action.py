@@ -18,6 +18,12 @@ from app.services.matching.steps.base import StepOutcome
 from app.services.sync_service.context import ExecutionContext
 from app.services.sync_service.retry import MARK_QUEUED
 from app.services.sync_service.steps.base import ExecutionStepBase
+from app.utils.bangumi_api.collection import (
+    _PendingSyncQueued,
+    is_replay_enabled,
+)
+
+from ....core.logging import logger
 
 _AUTH_ERROR_HINTS = ("认证失败", "access_token")
 
@@ -54,8 +60,27 @@ class SyncActionStep(ExecutionStepBase):
         }
 
         # 无单集：剧场版正片只标条目在看，不碰章节。
+        # 加固：必须有剧场版语义（上游 movie_subject_marked 或媒体类型是
+        # 剧场版）才允许走「只标条目在看」。无单集又无剧场版语义说明上游
+        # 漏解析了单集，静默把剧集条目标成「在看」属于错标，显式报错。
         if not bgm_ep_id:
-            return self._mark_subject_watching(ctx, bgm_se_id, inputs)
+            movie_signal = (
+                bool(outputs.get("movie_subject_marked"))
+                or ctx.item.media_type == "movie"
+            )
+            if movie_signal:
+                return self._mark_subject_watching(ctx, bgm_se_id, inputs)
+            return StepOutcome(
+                status="error",
+                reason="缺少 episode_id 且无剧场版语义，拒绝按「条目在看」兜底",
+                inputs=inputs,
+                outputs={"mark_status": "error", "error": "missing_episode_id"},
+                error_detail={
+                    "type": "missing_episode_id",
+                    "message": "episode_id missing without movie semantics",
+                },
+                is_terminal=True,
+            )
 
         try:
             mark_status = ctx.service._retry_mark_episode(
@@ -114,6 +139,34 @@ class SyncActionStep(ExecutionStepBase):
         """
         try:
             mark_status = ctx.bgm.ensure_subject_watching(bgm_se_id)
+        except _PendingSyncQueued as e:
+            # API 不可达：与集数路径（_retry_mark_episode 内部入队）及
+            # sync_movie_watching 对称，入待同步队列而非整体报错。
+            if not is_replay_enabled():
+                raise
+            ctx.service._enqueue_pending_sync(
+                bgm_api=ctx.bgm,
+                subject_id=e.subject_id,
+                ep_id=e.ep_id,
+                reason=e.reason,
+                last_error=str(e.cause) if e.cause else e.reason,
+                payload=ctx.item.model_dump(),
+            )
+            logger.warning(
+                f"📚 API 不可达，已入待同步队列: subject={e.subject_id} "
+                f"reason={e.reason}"
+            )
+            return StepOutcome(
+                status="hit",
+                subject_id=bgm_se_id,
+                reason="API 不可达，已入待同步队列，等待补发调度器重放",
+                inputs=inputs,
+                outputs={
+                    "mark_status": MARK_QUEUED,
+                    "queued": True,
+                },
+                is_terminal=True,
+            )
         except ValueError as ve:
             if _is_auth_error(ve):
                 return self._auth_error(inputs)

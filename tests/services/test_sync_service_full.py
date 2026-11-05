@@ -1965,9 +1965,24 @@ class TestVerifySeasonByRelation:
         assert step._verify_season_by_relation(ctx) is True
 
     def test_max_hops_follows_season(self):
-        """回溯层数按 season-1 给定，避免无谓的深层遍历"""
+        """回溯层数随 season 取（max_hops=season）：多一跳防截断误判"""
         ctx, step = self._ctx(season=3, prequels=[1, 2])
         step._verify_season_by_relation(ctx)
+        ctx.bgm.search_previous_subjects.assert_called_once_with(11145, max_hops=3)
+
+    def test_truncated_longer_chain_is_rejected(self):
+        """请求第 2 季但命中第 3 季条目：max_hops 截断不得伪装成 season-1
+
+        回归 review 指出的截断误判：真实前传链长 2（命中条目实为第 3 季），
+        若按 max_hops=season-1=1 截断只剩 1 条，会被误判成「就是第 2 季」。
+        max_hops=season 后返回 2 条 ≠ season-1，正确拒绝。
+        """
+        ctx, step = self._ctx(season=2)
+        real_chain = [879, 11144]  # 第 2 季、第 1 季（命中条目实为第 3 季）
+        ctx.bgm.search_previous_subjects.side_effect = lambda subject_id, max_hops: (
+            real_chain[:max_hops]
+        )
+        assert step._verify_season_by_relation(ctx) is False
         ctx.bgm.search_previous_subjects.assert_called_once_with(11145, max_hops=2)
 
     def test_exception_falls_back_to_false(self):
