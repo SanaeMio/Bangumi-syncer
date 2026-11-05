@@ -219,15 +219,27 @@ class SyncOrchestrator:
             )
 
             # 13. 其余 Bangumi 账号补标记（同一媒体服务器用户名绑定多个账号）
-            other_results = self._sync._mark_episode_for_other_accounts(
-                item, bgm, bgm_se_id, bgm_ep_id, bgm_title
-            )
+            # 剧场版正片无单集：走「在看」补标，与首选账号语义一致 ——
+            # 按空 ep_id 点单集在其余账号上必然失败。
+            if bgm_ep_id:
+                other_results = self._sync._mark_episode_for_other_accounts(
+                    item, bgm, bgm_se_id, bgm_ep_id, bgm_title
+                )
+            else:
+                other_results = self._sync._mark_movie_watching_for_other_accounts(
+                    item, bgm, bgm_se_id
+                )
+            # 无单集（剧场版正片）时 mark_status 是「在看」语义，文案随之切换
             account_outcomes = self._sync._build_account_outcomes(
                 item,
                 bgm,
                 other_results,
                 "success",
-                self._sync._format_mark_status_message(mark_status),
+                (
+                    self._sync._format_mark_status_message(mark_status)
+                    if bgm_ep_id
+                    else self._sync._format_watching_status_message(mark_status)
+                ),
                 primary_mark_status=mark_status,
             )
 
