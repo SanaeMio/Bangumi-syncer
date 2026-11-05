@@ -20,6 +20,7 @@ from ..retry import (
     RETRY_STATUS_CODES,
     compute_backoff_delay,
 )
+from .failure import FailureKind, classify_status, should_mark_unreachable
 from .rate_limit import get_bgm_rate_limiter
 
 #: Bangumi 请求的 User-Agent（同步 ``init`` 与异步请求层共用）
@@ -305,7 +306,8 @@ class HttpLayerMixin:
                     self._diagnose_network_issue(url)
 
                 # 标记 API 不可达，TTL 内后续请求直接走降级（写/读降级由配置控制）
-                self.mark_api_unreachable()
+                if should_mark_unreachable(e):
+                    self.mark_api_unreachable()
                 raise
 
             # 429：_request_once 已冻结令牌桶；快速失败，不重试。
@@ -352,7 +354,8 @@ class HttpLayerMixin:
                     error_message=(f"HTTP {res.status_code} 重试 {attempt} 次后仍失败"),
                     retry_count=attempt,
                 )
-                self.mark_api_unreachable()
+                if classify_status(res.status_code) is FailureKind.UNREACHABLE:
+                    self.mark_api_unreachable()
                 raise httpx.HTTPStatusError(
                     f"HTTP {res.status_code} 错误，已达到最大重试次数",
                     request=res.request,

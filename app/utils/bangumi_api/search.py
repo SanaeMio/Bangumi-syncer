@@ -14,6 +14,7 @@ from ..bangumi_archive._title_normalize import (
 )
 from ..bangumi_constants import SUBJECT_TYPE_ANIME
 from ..season_title import extract_explicit_season, extract_season_candidates
+from .failure import READ_FALLBACK_ERRORS
 
 if TYPE_CHECKING:
     from app.services.sync_service.match_trace import MatchTrace
@@ -147,7 +148,7 @@ class SearchMixin:
                 ),
                 params={"limit": limit},
             )
-        except httpx.HTTPError as e:
+        except READ_FALLBACK_ERRORS as e:
             # 网络不可达/重试耗尽：_request_with_retry 已标记不可达并告警，
             # 这里直接返回空结果，保证 bgm_search 等调用方继续走 fallback。
             # 不进入下方 .json() 逻辑：res 此时为占位 dict 会触发 AttributeError，
@@ -201,7 +202,7 @@ class SearchMixin:
                 ),
                 params={"limit": limit},
             )
-        except httpx.HTTPError as e:
+        except READ_FALLBACK_ERRORS as e:
             logger.error(f"search API 请求失败（网络错误）: {e}")
             return [] if list_only else {"data": []}
 
@@ -243,7 +244,7 @@ class SearchMixin:
 
         try:
             res = self.get(f"subjects/{subject_id}")
-        except httpx.HTTPError as e:
+        except READ_FALLBACK_ERRORS as e:
             # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
             logger.error(f"get_subject API 请求失败（网络错误）: {e}")
             return {}
@@ -287,7 +288,7 @@ class SearchMixin:
             res = await self._request_async("GET", f"{self.host}/subjects/{subject_id}")
             self.mark_api_reachable()
             res = self._validate_response(res)
-        except httpx.HTTPError as e:
+        except READ_FALLBACK_ERRORS as e:
             logger.error(f"get_subject API 请求失败（网络错误）: {e}")
             return {}
 
@@ -324,7 +325,7 @@ class SearchMixin:
 
         try:
             res = self.get(f"subjects/{subject_id}/subjects")
-        except httpx.HTTPError as e:
+        except READ_FALLBACK_ERRORS as e:
             # 网络错误直接返回空结果，不进入 .json() 逻辑（同 search）
             logger.error(f"get_related_subjects API 请求失败（网络错误）: {e}")
             return []
@@ -365,7 +366,7 @@ class SearchMixin:
             )
             self.mark_api_reachable()
             res = self._validate_response(res)
-        except httpx.HTTPError as e:
+        except READ_FALLBACK_ERRORS as e:
             logger.error(f"get_related_subjects API 请求失败（网络错误）: {e}")
             return []
 
