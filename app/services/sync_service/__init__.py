@@ -1110,6 +1110,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         is_season_matched_id: bool,
         target_episode: int | None = None,
         mapping_is_explicit: bool = False,
+        has_movie_episode: bool = False,
     ) -> tuple[str, str]:
         """根据 media_type 解析 Bangumi 季度与集数 ID。
 
@@ -1123,6 +1124,10 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             该集后沿续集链改选到别的条目 —— 否则用户的明确指定会被程序猜测
             覆盖，且「改选」发生在这一步（早于 CrossSeasonStep 的守卫），
             会把 episode 静默标记到另一部番上（issue #267）。
+        :param has_movie_episode: 媒体库推来的是剧场版**正片文件**（如 fongmi
+            推电影时 season=1, episode=1）。此时 movie 分支返回
+            ``(subject_id, None)`` —— 条目标记为「在看」、不点单集，
+            与 ``sync_movie_watching`` 同一语义。见下方 movie 分派说明。
         """
         release_for_ep = None
         if item.release_date and len(item.release_date) >= 8:
@@ -1139,7 +1144,19 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         # 若把 real_action 也塞进电影分支，它会用 episode 去当「章节定位」，
         # 导致剧集被解析到错误集。以剧集路径为准，与本函数下方的 season 解析
         # 及 _normalize_custom_item_params 保持一致。
+        #
+        # has_movie_episode：剧场版**正片文件**不点单集。曾经的实现无论有没有
+        # 正片文件都拿 episode 当 target_sort 定位章节，推来 E01 时：
+        # - 章节 sort 从 0 开始的条目（常见）定位失败 → 执行管线的
+        #   CrossSeasonStep 视 ep_id 为空，再按 sort=1 跨季查找，失败即判
+        #   「不存在或集数过多」，剧场版**永远同步不了**；
+        # - 就算定位到，也会把一个正的 EP 章节点成「看过」。
+        # 剧场版是整片观看，正确动作与 sync_movie_watching 一致：只把条目
+        # 标为在看，不碰章节。sync_action=mark_watching 时上游已走
+        # sync_movie_watching，不会到这里。
         if item.media_type == "movie":
+            if has_movie_episode:
+                return subject_id, None
             return bgm.get_movie_main_episode_id(subject_id, target_sort=ep)
         return bgm.get_target_season_episode_id(
             subject_id=subject_id,
