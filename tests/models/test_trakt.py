@@ -1,5 +1,6 @@
 """app.models.trakt Pydantic 模型与令牌时间逻辑。"""
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,7 +33,8 @@ class _MockDateTime:
 
 
 def test_trakt_config_from_dict_none():
-    assert TraktConfig.from_dict(None) is None
+    # None 属刻意覆盖的非法输入，运行期由 from_dict 内部判空处理
+    assert TraktConfig.from_dict(cast(Any, None)) is None
 
 
 def test_trakt_config_bearer_fields_roundtrip():
@@ -51,6 +53,7 @@ def test_trakt_config_bearer_fields_roundtrip():
     assert d["expires_at"] == 1_700_000_000
 
     restored = TraktConfig.from_dict(d)
+    assert restored is not None
     assert restored.auth_type == "bearer"
     assert restored.access_token == "access-token"
     assert restored.refresh_token == "refresh-token"
@@ -70,12 +73,14 @@ def test_trakt_config_auth_type_defaults_and_validation():
     restored = TraktConfig.from_dict(
         {"user_id": "u1", "access_token": "t", "auth_type": "hack"}
     )
+    assert restored is not None
     assert restored.auth_type == "oauth"
 
     # bearer 模式保留
     restored_b = TraktConfig.from_dict(
         {"user_id": "u1", "access_token": "t", "auth_type": "bearer"}
     )
+    assert restored_b is not None
     assert restored_b.auth_type == "bearer"
 
 
@@ -85,9 +90,15 @@ def test_trakt_config_from_dict_enabled_variants():
         "access_token": "t",
         "expires_at": 1,
     }
-    assert TraktConfig.from_dict({**base, "enabled": 1}).enabled is True
-    assert TraktConfig.from_dict({**base, "enabled": 0}).enabled is False
-    assert TraktConfig.from_dict(dict(base)).enabled is True
+    cfg_enabled_1 = TraktConfig.from_dict({**base, "enabled": 1})
+    cfg_enabled_0 = TraktConfig.from_dict({**base, "enabled": 0})
+    cfg_default = TraktConfig.from_dict(dict(base))
+    assert cfg_enabled_1 is not None
+    assert cfg_enabled_0 is not None
+    assert cfg_default is not None
+    assert cfg_enabled_1.enabled is True
+    assert cfg_enabled_0.enabled is False
+    assert cfg_default.enabled is True
 
 
 def test_trakt_config_to_dict_roundtrip():
@@ -105,6 +116,7 @@ def test_trakt_config_to_dict_roundtrip():
     d = cfg.to_dict()
     assert d["enabled"] == 0
     back = TraktConfig.from_dict(d)
+    assert back is not None
     assert back.user_id == "u1"
     assert back.access_token == "at"
     assert back.enabled is False
@@ -141,12 +153,14 @@ def test_trakt_sync_history_to_dict_and_from_dict():
     d = h.to_dict()
     assert d["media_type"] == "episode"
     back = TraktSyncHistory.from_dict(d)
+    assert back is not None
     assert back.user_id == "u"
     assert back.synced_at == 6
 
 
 def test_trakt_sync_history_from_dict_none():
-    assert TraktSyncHistory.from_dict(None) is None
+    # None 属刻意覆盖的非法输入，运行期由 from_dict 内部判空处理
+    assert TraktSyncHistory.from_dict(cast(Any, None)) is None
 
 
 def test_trakt_sync_history_synced_at_default():
@@ -160,6 +174,7 @@ def test_trakt_sync_history_synced_at_default():
                 "watched_at": 1,
             }
         )
+        assert h is not None
         assert h.synced_at == 42
 
 

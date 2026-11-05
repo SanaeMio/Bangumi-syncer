@@ -9,8 +9,14 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from app.models.sync import CustomItem
 from app.services.sync_service import SyncService
+from app.services.sync_service.errors import (
+    PendingCandidateContractError,
+    PendingCandidatePersistError,
+)
 from app.services.sync_service.match_trace import MatchCandidate, MatchTrace
 
 
@@ -90,7 +96,7 @@ class TestSedimentPendingCandidateNotification:
             return_value=1,
         ) as mock_log:
             with patch("app.services.sync_service.notification_service") as mock_notify:
-                svc._sediment_pending_candidate(item, "plex", trace)
+                svc._sediment_pending_candidate(item, "plex", trace, decision="created")
 
         # 验证沉淀写入
         mock_log.assert_called_once()
@@ -115,13 +121,13 @@ class TestSedimentPendingCandidateNotification:
             "app.services.sync_service.database_manager.log_pending_candidate"
         ) as mock_log:
             with patch("app.services.sync_service.notification_service") as mock_notify:
-                svc._sediment_pending_candidate(item, "plex", trace)
+                svc._sediment_pending_candidate(item, "plex", trace, decision="created")
 
         mock_log.assert_not_called()
         mock_notify.notify.assert_not_called()
 
     def test_sediment_db_failure_no_notification(self):
-        """沉淀写入失败时不通知"""
+        """沉淀写入失败：抛 persist 异常，且不发送通知。"""
         svc = self._make_service()
         item = _make_item()
         trace = _make_trace_with_candidates()
@@ -131,8 +137,10 @@ class TestSedimentPendingCandidateNotification:
             side_effect=Exception("db error"),
         ) as mock_log:
             with patch("app.services.sync_service.notification_service") as mock_notify:
-                # 不应抛出异常（不影响主流程）
-                svc._sediment_pending_candidate(item, "plex", trace)
+                with pytest.raises(PendingCandidatePersistError):
+                    svc._sediment_pending_candidate(
+                        item, "plex", trace, decision="created"
+                    )
 
         mock_log.assert_called_once()
         mock_notify.notify.assert_not_called()
@@ -150,7 +158,7 @@ class TestSedimentPendingCandidateNotification:
             with patch("app.services.sync_service.notification_service") as mock_notify:
                 mock_notify.notify.side_effect = Exception("notify error")
                 # 不应抛出异常
-                svc._sediment_pending_candidate(item, "plex", trace)
+                svc._sediment_pending_candidate(item, "plex", trace, decision="created")
 
     def test_sediment_top_candidate_falls_back_to_name(self):
         """首选候选 name_cn 为空时回退到 name"""
@@ -179,9 +187,43 @@ class TestSedimentPendingCandidateNotification:
             return_value=1,
         ):
             with patch("app.services.sync_service.notification_service") as mock_notify:
-                svc._sediment_pending_candidate(item, "plex", trace)
+                svc._sediment_pending_candidate(item, "plex", trace, decision="created")
 
         kwargs = mock_notify.notify.call_args.kwargs
         assert kwargs["top_candidate_name"] == "english name"
         assert kwargs["top_candidate_id"] == "111"
         assert kwargs["candidates_count"] == 1
+
+    def test_sediment_rejects_non_created_decision(self):
+        """非 created/enqueue_failed 的 decision 直接抛契约异常，不写库。"""
+        svc = self._make_service()
+        item = _make_item()
+        trace = _make_trace_with_candidates()
+
+        with patch(
+            "app.services.sync_service.database_manager.log_pending_candidate"
+        ) as mock_log:
+            with pytest.raises(PendingCandidateContractError):
+                svc._sediment_pending_candidate(
+                    item, "plex", trace, decision="reuse_holding"
+                )
+
+        mock_log.assert_not_called()
+
+    def test_sediment_persist_failure_raises_without_notification(self):
+        """该写但写失败：抛 persist 异常，且不发送候选通知。"""
+        svc = self._make_service()
+        item = _make_item()
+        trace = _make_trace_with_candidates()
+
+        with patch(
+            "app.services.sync_service.database_manager.log_pending_candidate",
+            return_value=None,
+        ):
+            with patch("app.services.sync_service.notification_service") as mock_notify:
+                with pytest.raises(PendingCandidatePersistError):
+                    svc._sediment_pending_candidate(
+                        item, "plex", trace, decision="created"
+                    )
+
+        mock_notify.notify.assert_not_called()

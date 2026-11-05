@@ -71,8 +71,8 @@ class ConfigManager:
         self.platform = platform.system()
         self.cwd = Path(__file__).parent.parent.parent
 
-        # 配置文件路径
-        self.config_paths = self._get_config_paths()
+        # 配置文件路径（env 可能为 None/str，其余键为 Path）
+        self.config_paths: dict[str, Path | str | None] = self._get_config_paths()
         self.active_config_path = self._find_active_config()
         # 首次运行：active 是 default 路径但文件不存在时，从 config.example.ini 自动复制
         self._ensure_default_config()
@@ -103,8 +103,8 @@ class ConfigManager:
         startup_info.print_banner()
         startup_info.print_system_info(self.active_config_path)
 
-    def _get_config_paths(self) -> dict[str, Path]:
-        """获取可能的配置文件路径"""
+    def _get_config_paths(self) -> dict[str, Path | str | None]:
+        """获取可能的配置文件路径（env 为 None/str，其余为 Path）"""
         return {
             "env": os.environ.get("CONFIG_FILE"),
             "mounted": Path("/app/config/config.ini"),
@@ -115,19 +115,26 @@ class ConfigManager:
     def _find_active_config(self) -> Path:
         """查找活动的配置文件"""
         # 1. 环境变量指定的配置文件
-        if self.config_paths["env"] and Path(self.config_paths["env"]).exists():
-            return Path(self.config_paths["env"])
+        env_path = self.config_paths["env"]
+        if env_path and Path(env_path).exists():
+            return Path(env_path)
 
-        # 2. Docker挂载的配置文件
-        if self.config_paths["mounted"].exists():
-            return self.config_paths["mounted"]
+        # 2/3. 显式路径候选（mounted / dev），构造时恒为 Path
+        for key in ("mounted", "dev"):
+            candidate = self.config_paths[key]
+            if isinstance(candidate, Path) and candidate.exists():
+                return candidate
 
-        # 3. 开发配置文件
-        if self.config_paths["dev"].exists():
-            return self.config_paths["dev"]
+        # 4. 默认配置文件（可能尚不存在，由 _ensure_default_config 兜底创建）
+        default_path = self.config_paths["default"]
+        if isinstance(default_path, Path):
+            return default_path
 
-        # 4. 默认配置文件
-        return self.config_paths["default"]
+        # config_paths 被外部注入非法值（正常构造不会走到）→ 显式告警并回退
+        logger.warning(
+            "config_paths['default'] 非 Path，回退 cwd/config.ini: %r", default_path
+        )
+        return self.cwd / "config.ini"
 
     def _ensure_default_config(self) -> None:
         """首次运行时从 config.example.ini 复制到 config.ini。
@@ -136,6 +143,12 @@ class ConfigManager:
         且 default 文件不存在时触发，避免在测试或自定义配置环境下产生副作用。
         """
         default_path = self.config_paths["default"]
+        if not isinstance(default_path, Path):
+            # config_paths 被外部注入非法值（正常构造不会走到）→ 跳过并告警
+            logger.warning(
+                "config_paths['default'] 非 Path，跳过默认配置生成: %r", default_path
+            )
+            return
         # active 不是 default 路径时，说明用户通过 env/mounted/dev 指定了配置，无需复制
         if self.active_config_path != default_path:
             return
@@ -219,6 +232,7 @@ class ConfigManager:
         """获取配置对象（内部调用，需已持有锁或单线程上下文）"""
         if self._check_config_updated():
             self._load_config()
+        assert self._config_cache is not None  # _load_config 已保证
         return self._config_cache
 
     def get_config_parser(self) -> ConfigParser:
@@ -291,7 +305,7 @@ class ConfigManager:
         return str(config.get("auth", "secret_key", fallback="") or "")
 
     def get_section(
-        self, section: str, fallback: dict[str, Any] = None
+        self, section: str, fallback: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """获取配置段"""
         config = self.get_config_parser()
@@ -658,7 +672,8 @@ class ConfigManager:
             "max_tokens": 2000,
             "temperature": 0.7,
             "timeout": 60,
-            "thinking_level": "off",
+            # LLM 调用记录保留天数：DB 启动时按此清理 llm_usage 旧记录
+            # （见 app/core/database/__init__.py）；属活配置而非死键。
             "retention_days": 365,
         }
         raw = self.get_section(LLM_SECTION, {})
@@ -666,8 +681,6 @@ class ConfigManager:
         # 空字符串会覆盖默认值（{**defaults, **raw} 语义），对关键枚举字段兜底
         if not merged.get("provider"):
             merged["provider"] = "openai_compat"
-        if not merged.get("thinking_level"):
-            merged["thinking_level"] = "off"
         # 确保类型正确（使用 is not None 以允许 0 等 falsy 值）
         if merged.get("max_tokens") is not None:
             merged["max_tokens"] = int(merged["max_tokens"])
@@ -676,6 +689,61 @@ class ConfigManager:
         if merged.get("timeout") is not None:
             merged["timeout"] = int(merged["timeout"])
         return merged
+
+    def get_sync_llm_match_config(self) -> dict[str, Any]:
+        """获取 [sync] 段 LLM 匹配增强（llm_match_*）配置，集中填充默认值。
+
+        上游调度器/编排曾各自直接 ``get("sync", "llm_match_*", fallback=...)``；
+        本方法将其正式化为单一读取入口，保证默认值一致。
+
+        返回字段：
+        - llm_match_assist (bool, 默认 false)
+        - llm_match_cron (str, 默认 "*/1 * * * *")
+        - llm_match_retention_days (int, 默认 30)
+        - llm_match_max_iterations (str, 默认空=按 thinking_level 映射)
+        - llm_match_recovery_timeout_s (int, 默认 120)
+        - llm_match_concurrency (int, 默认 3)
+        - llm_match_thinking_level (str, 默认 "medium")
+        """
+
+        def _to_bool(v: Any, default: bool) -> bool:
+            if isinstance(v, bool):
+                return v
+            if v is None:
+                return default
+            return str(v).strip().lower() in ("true", "1", "yes", "on", "enabled")
+
+        def _to_int(v: Any, default: int) -> int:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return default
+
+        return {
+            "llm_match_assist": _to_bool(
+                self.get("sync", "llm_match_assist", fallback=False), False
+            ),
+            "llm_match_cron": self.get(
+                "sync", "llm_match_cron", fallback="*/1 * * * *"
+            ),
+            "llm_match_retention_days": _to_int(
+                self.get("sync", "llm_match_retention_days", fallback=30), 30
+            ),
+            "llm_match_max_iterations": self.get(
+                "sync", "llm_match_max_iterations", fallback=""
+            )
+            or "",
+            "llm_match_recovery_timeout_s": _to_int(
+                self.get("sync", "llm_match_recovery_timeout_s", fallback=120), 120
+            ),
+            "llm_match_concurrency": _to_int(
+                self.get("sync", "llm_match_concurrency", fallback=3), 3
+            ),
+            "llm_match_thinking_level": self._normalize_thinking_level(
+                self.get("sync", "llm_match_thinking_level", fallback="medium"),
+                default="medium",
+            ),
+        }
 
     def get_fongmi_config(self) -> dict[str, Any]:
         """fongmi 局域网轮询同步配置（默认关闭）
@@ -745,7 +813,22 @@ class ConfigManager:
         "max_records",
         "memory_limit",
         "related_limit",
+        "thinking_level",
     )
+
+    _VALID_THINKING_LEVELS = frozenset({"off", "low", "medium", "high"})
+
+    def _normalize_thinking_level(self, raw: Any, *, default: str) -> str:
+        """归一化 thinking_level：strip + 小写，非法值回落 ``default``。
+
+        合法值集合复用 ``_VALID_THINKING_LEVELS``（与 summary 配置同一来源）。
+        调用方显式传入 ``default``（llm_match 为 medium，summary 为 off），避免隐藏默认值。
+        """
+        normalized = str(raw or "").strip().lower()
+        if normalized not in self._VALID_THINKING_LEVELS:
+            logger.warning(f"thinking_level 非法值 {raw!r}，回落默认档 {default!r}")
+            return default
+        return normalized
 
     def get_summary_configs(self) -> list[dict[str, Any]]:
         """获取所有 summary 配置节，按名称排序。"""
@@ -755,6 +838,10 @@ class ConfigManager:
             if section_name.startswith("summary-"):
                 section_config = self.get_section(section_name)
                 section_config["name"] = section_name[len("summary-") :]
+                # 容错：先归一化（去空格+小写），非法才回落默认值
+                section_config["thinking_level"] = self._normalize_thinking_level(
+                    section_config.get("thinking_level", ""), default="off"
+                )
                 configs.append(section_config)
         configs.sort(key=lambda x: x.get("name", ""))
         return configs

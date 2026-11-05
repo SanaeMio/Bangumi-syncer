@@ -69,6 +69,12 @@ def _run(ctx: MatchContext, bgm: MagicMock, enable_real=True):
         return ArchiveShortcutStep().execute(ctx)
 
 
+def _candidates(ctx: MatchContext) -> list:
+    """显式收窄 ctx.bgm_data（测试前提：步骤执行后必有候选列表）"""
+    assert ctx.bgm_data is not None, "步骤执行后应有候选列表"
+    return ctx.bgm_data
+
+
 class TestAnimeTypeConflictRecall:
     def test_recalls_anime_when_hit_is_all_real(self):
         """命中全为三次元 → 用 types=[2] 补查，动画候选排到前面"""
@@ -79,9 +85,9 @@ class TestAnimeTypeConflictRecall:
 
         assert bgm._archive.try_search.call_count == 2
         assert bgm._archive.try_search.call_args.kwargs["subject_types"] == [2]
-        ids = [c["id"] for c in ctx.bgm_data]
+        ids = [c["id"] for c in _candidates(ctx)]
         assert ids == [348240, 406306, 434076]
-        assert ctx.bgm_data[0]["type"] == 2
+        assert _candidates(ctx)[0]["type"] == 2
         assert outcome.status == "hit"
         assert outcome.subject_id == "348240"
 
@@ -121,7 +127,7 @@ class TestAnimeTypeConflictRecall:
 
         _run(ctx, bgm)
 
-        assert [c["id"] for c in ctx.bgm_data] == [434076]
+        assert [c["id"] for c in _candidates(ctx)] == [434076]
 
     def test_keeps_original_when_recall_raises(self):
         """补查抛异常 → 不阻断，沿用原候选"""
@@ -130,7 +136,7 @@ class TestAnimeTypeConflictRecall:
 
         _run(ctx, bgm)
 
-        assert [c["id"] for c in ctx.bgm_data] == [434076]
+        assert [c["id"] for c in _candidates(ctx)] == [434076]
 
     def test_recall_dedupes_existing_ids(self):
         """补查返回的 id 若已存在 → 不重复追加"""
@@ -139,7 +145,7 @@ class TestAnimeTypeConflictRecall:
 
         _run(ctx, bgm)
 
-        assert [c["id"] for c in ctx.bgm_data] == [348240, 434076]
+        assert [c["id"] for c in _candidates(ctx)] == [348240, 434076]
 
     def test_no_recall_for_movie_request(self):
         """电影请求不做补召回（只针对 episode）"""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from app.services.base.scheduler import BaseScheduler
@@ -17,7 +19,10 @@ class _FakeScheduler(BaseScheduler):
     def __init__(self):
         super().__init__()
         self.sync_called = False
-        self.config = {"enabled": True, "sync_interval": "*/10 * * * *"}
+        self.config: dict[str, Any] = {
+            "enabled": True,
+            "sync_interval": "*/10 * * * *",
+        }
 
     def _is_enabled(self) -> bool:
         return self.config.get("enabled", False)
@@ -174,6 +179,7 @@ class TestBaseSchedulerReloadJob:
         # 更改 cron 后 reload
         s.config["sync_interval"] = "*/30 * * * *"
         s.reload_job_if_running()
+        assert s.scheduler is not None
         job = s.scheduler.get_job(s.JOB_ID)
         assert job is not None
         await s.stop()
@@ -184,7 +190,7 @@ class TestBaseSchedulerAbstractEnforcement:
 
     def test_cannot_instantiate_base_directly(self):
         with pytest.raises(TypeError):
-            BaseScheduler()
+            cast("Any", BaseScheduler)()
 
     def test_subclass_without_abstract_methods_fails(self):
         class Incomplete(BaseScheduler):
@@ -193,4 +199,4 @@ class TestBaseSchedulerAbstractEnforcement:
             DRIVER_NAME = "test"
 
         with pytest.raises(TypeError):
-            Incomplete()
+            cast("Any", Incomplete)()

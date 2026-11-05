@@ -491,10 +491,10 @@ def gen_l2(n: int, seed: int, out: Path | None = None) -> int:
         return 1
 
     def _always_on(self) -> None:
-        self._enabled = True
+        self.set_enabled(True)
 
     ArchiveShortcut.reload_config = _always_on  # type: ignore[assignment]
-    archive_shortcut._enabled = True
+    archive_shortcut.set_enabled(True)
 
     service = _ProbeService()
     rnd = random.Random(seed)

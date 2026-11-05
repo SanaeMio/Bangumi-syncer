@@ -253,7 +253,7 @@ class ArchiveStore:
             logger.warning(f"bangumi_archive get_episodes_by_airdate 失败: {e}")
             return []
 
-    def get_related_subjects(self, subject_id: int) -> list[dict[str, Any]]:
+    def get_related_subjects(self, subject_id: int | str) -> list[dict[str, Any]]:
         """查询条目的关联条目
 
         Returns:

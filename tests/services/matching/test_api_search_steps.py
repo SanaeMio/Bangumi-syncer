@@ -1,7 +1,8 @@
-"""bgm_search 4 个 step 单测（阶段二）"""
+"""bgm_search 4 个 step 单测"""
 
 from __future__ import annotations
 
+import datetime
 from types import SimpleNamespace
 
 from app.models.sync import CustomItem
@@ -92,6 +93,7 @@ class TestDateExactSearchStep:
         ctx.bgm.search = lambda **kw: [{"id": 1, "name": "斗破苍穹年番"}]
         outcome = DateExactSearchStep().execute(ctx)
         assert outcome.status == "hit"
+        assert ctx.bgm_data is not None
         assert ctx.bgm_data[0]["id"] == 1
         assert ctx.start_date_str == "2024-01-13"
         assert ctx.end_date_str == "2024-01-17"
@@ -153,6 +155,39 @@ class TestDateExactSearchStep:
         # 剧场版扩展的 end_date 应为 air_date + 200 天 = 2024-08-02
         assert "2024-08-02" in end_dates
 
+    def test_movie_miss_keeps_original_end_date(self):
+        """movie 未命中时 end_date_str 保持原始 ±2 天（不被 +200 天窗口覆写）。"""
+        bgm = SimpleNamespace(
+            search=lambda **kw: [],  # 所有搜索返回空（未命中）
+            title_diff_ratio=lambda *a, **kw: 0.9,
+        )
+        ctx = MatchContext(
+            item=CustomItem(
+                media_type="movie",
+                title="测试电影",
+                ori_title=None,
+                season=1,
+                episode=1,
+                release_date="2024-01-15",
+                user_name="u",
+                source="test",
+            ),
+            bgm=bgm,
+            trace=MatchTrace(),
+            subject_types=[2],
+        )
+
+        outcome = DateExactSearchStep().execute(ctx)
+
+        air_date = datetime.datetime.fromisoformat("2024-01-15")
+        assert ctx.end_date_str == (air_date + datetime.timedelta(days=2)).strftime(
+            "%Y-%m-%d"
+        )
+        assert ctx.end_date_str != (air_date + datetime.timedelta(days=200)).strftime(
+            "%Y-%m-%d"
+        )
+        assert outcome.status == "miss"
+
     def test_invalid_date_falls_back(self):
         ctx = _build_ctx(premiere_date="invalid-date")
         outcome = DateExactSearchStep().execute(ctx)
@@ -175,6 +210,7 @@ class TestVariantFallbackSearchStep:
         ctx.bgm.title_diff_ratio = lambda *a, **kw: 0.9
         outcome = VariantFallbackSearchStep().execute(ctx)
         assert outcome.status == "hit"
+        assert ctx.bgm_data is not None
         assert ctx.bgm_data[0]["id"] == 10
 
     def test_runs_when_low_confidence(self):
@@ -215,7 +251,7 @@ class TestVariantFallbackSearchStep:
         assert ctx.matched_variant_method != ""
 
     def test_preserves_bgm_data_on_full_miss(self):
-        """全 miss 时保留 DateExactSearchStep 的低相似度候选（P1-3 修复）
+        """全 miss 时保留 DateExactSearchStep 的低相似度候选
 
         修复前：全 miss 时 ctx.bgm_data = None，丢弃精确搜索候选，
         导致 APISearchStep 无候选可沉淀为 pending_candidate。
