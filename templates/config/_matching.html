@@ -126,6 +126,34 @@
                                step="0.1"
                                placeholder="1.0" autocomplete="off">
                     </div>
+                    <div class="col-12">
+                        <hr class="my-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   role="switch"
+                                   data-type="bool"
+                                   id="matching-episode-count-weight"
+                                   name="matching.episode_count_weight">
+                            <label class="form-check-label fw-semibold"
+                                   for="matching-episode-count-weight">
+                                <i class="bi bi-123 me-1 text-info"></i>用媒体源的季号集数辅助判断
+                                <i class="bi bi-question-circle ms-1 text-muted"
+                                   data-bs-toggle="tooltip"
+                                   title="开启后，媒体库推来的季号和集数会一同参与挑选番剧：目标季的集数装得下请求的集数、或候选标题明确声明的季号与请求一致时，该条目排序靠前；反之靠后。标题未声明季号的候选不受影响。只在多个候选难分时起作用，不会单独决定结果。"></i>
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            适合媒体库刮削规范（Plex / Emby / Jellyfin 自动刮削 + 手动校对过）的情况。
+                            <br>
+                            <strong>不建议开启的情形：</strong>长篇连载在媒体库里被拆成
+                            <code>S01E120</code> 这种连续编号、剧场版被塞进
+                            <code>season=1, episode=1</code>、文件名解析出奇怪集号。
+                            这些情况下「集数对得上」并不代表条目选对了，反而可能把正确的候选排到后面。
+                            <br>
+                            开启后每个候选会多查一次章节；本地归档开启时走本地库，几乎不增加请求。
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
