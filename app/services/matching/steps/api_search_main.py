@@ -16,6 +16,7 @@ from app.services.matching.context import MatchContext
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 from app.services.sync_service.match_trace import MatchCandidate
 from app.utils.bangumi_constants import (
+    EPISODE_TYPE_NORMAL,
     SUBJECT_TYPE_ANIME,
     SUBJECT_TYPE_REAL,
 )
@@ -218,6 +219,26 @@ class APISearchStep(MatchStepBase):
                 bgm_data, is_movie=is_movie_request, limit=15
             )
 
+            # 季集一致性加权（可选，默认关闭）
+            #
+            # 放在 platform 排序之后、post_search 改选之前：改选是领域逻辑
+            # （季度/媒体类型/关联条目），必须以加权后的队首为起点才有意义；
+            # 而加权本身只是给「章节数装得下请求集数 / 标题季号声明一致」的
+            # 候选一次微调。
+            #
+            # 媒体源推来的季号与集数**一同**参与（求和后单次稳定排序）：
+            # - episode 是逐集推送的，第一次同步（E01）时集数几乎对任何
+            #   条目都成立，没有区分度 —— 此时季号声明仍可单独起作用；
+            # - 季号只在候选标题明确声明季号时加减分，未声明不参与。
+            episode_weight_notes: list[str] = []
+            season_weight_notes: list[str] = []
+            if self._episode_weight_enabled():
+                (
+                    bgm_data,
+                    episode_weight_notes,
+                    season_weight_notes,
+                ) = self._apply_episode_weight(bgm_data, item, bgm)
+
             original_top = bgm_data[0] if bgm_data else {}
             original_top_id = original_top.get("id")
             original_top_name = (
@@ -370,6 +391,18 @@ class APISearchStep(MatchStepBase):
                     "total_candidates": len(bgm_data),
                     "is_archive_hit": is_archive_hit,
                     "score": verdict.score,
+                    # 集数一致性加权的调整说明（仅在开关开启且有调整时出现），
+                    # 便于排查「为什么这条候选排到了后面」
+                    **(
+                        {"episode_weight": episode_weight_notes}
+                        if episode_weight_notes
+                        else {}
+                    ),
+                    **(
+                        {"season_weight": season_weight_notes}
+                        if season_weight_notes
+                        else {}
+                    ),
                     **(
                         {"arbiter": verdict.decision.to_dict()}
                         if verdict.decision is not None
@@ -405,6 +438,77 @@ class APISearchStep(MatchStepBase):
                 request_params=request_params,
                 is_terminal=True,
             )
+
+    # ------------------------------------------------------------------
+    # 集数一致性加权（可选）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _episode_weight_enabled() -> bool:
+        """读 ``[matching] episode_count_weight``（默认关闭）
+
+        延迟导入 config_manager：与 sync_service 内部使用同一引用，使测试
+        patch("app.services.sync_service.config_manager") 生效。
+        """
+        from app.services.sync_service import config_manager
+
+        try:
+            return bool(
+                config_manager.get("matching", "episode_count_weight", fallback=False)
+            )
+        except Exception as e:  # noqa: BLE001 — 配置读取失败按关闭处理
+            logger.debug(f"读取 episode_count_weight 失败，按关闭处理: {e!r}"[:120])
+            return False
+
+    @staticmethod
+    def _apply_episode_weight(
+        bgm_data: list[dict[str, Any]], item: Any, bgm: Any
+    ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+        """对候选按「季号 + 集数」一致性微调顺序（一同纳入，单次排序）
+
+        集数证据的章节数取候选条目自己的本篇章节数：候选本身就是某个季条目。
+        取不到（条目无章节数据 / 查询失败）时本候选不加不减。
+        季号证据是纯标题解析，无需 API；季号与集数任一有效即参与加权。
+        """
+        from app.services.matching.episode_weight import apply_season_episode_weight
+
+        target_ep = getattr(item, "episode", None)
+        target_season = getattr(item, "season", None)
+        # 季号只接受 int / 纯数字字符串；其余（含解析垃圾值）视为无效不参与
+        if isinstance(target_season, int) and not isinstance(target_season, bool):
+            pass
+        elif isinstance(target_season, str) and target_season.strip().isdigit():
+            target_season = int(target_season.strip())
+        else:
+            target_season = None
+        if not target_ep and not target_season:
+            return bgm_data, [], []
+
+        def _count(subject_id: Any) -> int | None:
+            episodes = bgm.get_episodes(int(subject_id))
+            data = episodes.get("data") if isinstance(episodes, dict) else None
+            if not data:
+                return None
+            # 只数本篇（type=0）：OVA/SP 章节不该计入正片集数
+            normals = [
+                e
+                for e in data
+                if e.get("type", EPISODE_TYPE_NORMAL) == EPISODE_TYPE_NORMAL
+            ]
+            return len(normals) or None
+
+        ordered, ep_notes, season_notes = apply_season_episode_weight(
+            bgm_data,
+            target_season=target_season,
+            target_ep=int(target_ep) if target_ep else None,
+            fetch_episode_count=_count,
+            limit=5,
+        )
+        if ep_notes:
+            logger.debug(f"集数一致性加权: {'; '.join(ep_notes)}")
+        if season_notes:
+            logger.debug(f"季号一致性加权: {'; '.join(season_notes)}")
+        return ordered, ep_notes, season_notes
 
     # ------------------------------------------------------------------
     # 置信度 / 裁决（P3）
