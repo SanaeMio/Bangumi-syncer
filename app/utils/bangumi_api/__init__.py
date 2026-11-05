@@ -14,17 +14,23 @@ import httpx  # noqa: F401
 
 from ...core.config import config_manager
 from ...core.logging import logger
-from ..http_base import SyncHttpClient
 from ._archive_shortcut import archive_shortcut
+from ._http_client import create_bgm_sync_client
+from .async_http_layer import AsyncHttpLayer
 from .collection import CollectionMixin
 from .episodes import EpisodesMixin
-from .http_layer import HttpLayerMixin
+from .http_layer import BGM_USER_AGENT, HttpLayerMixin
 from .relations import RelationMixin
 from .search import SearchMixin
 
 
 class BangumiApi(
-    HttpLayerMixin, SearchMixin, EpisodesMixin, CollectionMixin, RelationMixin
+    AsyncHttpLayer,
+    HttpLayerMixin,
+    SearchMixin,
+    EpisodesMixin,
+    CollectionMixin,
+    RelationMixin,
 ):
     def __init__(
         self,
@@ -53,37 +59,22 @@ class BangumiApi(
         # ECH 模式（"off"/"doh"/"manual"）；None 时按全局 [dev] ech_mode 处理，
         # 由 SyncHttpClient → create_sync_client(ech=…) 注入带 ECH 的 utls 上下文
         self.ech_mode = ech_mode or "off"
-        # 使用 SyncHttpClient 封装 httpx.Client（统一日志/重试）
-        # max_retries=3：重试由 SyncHttpClient 内置处理，_request_with_retry 仅负责代理回退
+        # Bangumi 专用 client：内部重试固定为 0（见 _http_client.py）。
+        # 重试统一在 _request_with_retry 中执行，每次尝试都先 acquire、
+        # 每次响应后通知 limiter（429 立即冻结并快速失败）。
         # timeout=10.0：单次请求 10s 超时，避免错误 subject_id 触发链式调用时
         # 每跳都要等 30s 才失败，导致整个同步流程卡死（线程池被占满）
-        self.req = (
-            SyncHttpClient(
-                label="Bangumi",
-                proxy=http_proxy,
-                verify=ssl_verify,
-                ech=self.ech_mode,
-                follow_redirects=True,
-                max_retries=3,
-                timeout=10.0,
-            )
-            .prefix("📚")
-            .success_tpl("Bangumi 请求成功")
-            .failure_tpl("Bangumi 请求失败")
+        self.req = create_bgm_sync_client(
+            label="Bangumi",
+            proxy=http_proxy,
+            verify=ssl_verify,
+            ech=self.ech_mode,
         )
-        self._req_not_auth = (
-            SyncHttpClient(
-                label="Bangumi",
-                proxy=http_proxy,
-                verify=ssl_verify,
-                ech=self.ech_mode,
-                follow_redirects=True,
-                max_retries=3,
-                timeout=10.0,
-            )
-            .prefix("📚")
-            .success_tpl("Bangumi 请求成功")
-            .failure_tpl("Bangumi 请求失败")
+        self._req_not_auth = create_bgm_sync_client(
+            label="Bangumi",
+            proxy=http_proxy,
+            verify=ssl_verify,
+            ech=self.ech_mode,
         )
 
         # 代理失败标记：一旦代理失败，后续请求都直接使用直连
@@ -198,7 +189,7 @@ class BangumiApi(
             r.client.headers.update(
                 {
                     "Accept": "application/json",
-                    "User-Agent": "SanaeMio/Bangumi-syncer (https://github.com/SanaeMio/Bangumi-syncer)",
+                    "User-Agent": BGM_USER_AGENT,
                 }
             )
             if self.access_token:

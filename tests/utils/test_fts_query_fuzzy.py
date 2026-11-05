@@ -7,6 +7,7 @@
 """
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -49,14 +50,21 @@ def _make_db(path: Path) -> None:
     conn.close()
 
 
+def _patch_active_path(q: ArchiveFTSQuery, path: Path) -> None:
+    """测试内用零参 lambda 替换实例方法；cast(Any) 绕过绑定方法签名差异。"""
+    q._get_active_path = cast(Any, lambda: path)
+
+
 def _setup(path: Path) -> ArchiveFTSQuery:
     q = archive_fts_query
-    q._get_active_path = lambda: path
+    _patch_active_path(q, path)
     q.invalidate()
     q._ensure_built()
     # 测试场景：显式开启 BK-tree 开关并同步构建索引，确保 BK 路径立即就绪
     q.use_bktree = True
-    q._ensure_bktree(q._ensure_conn())
+    conn = q._ensure_conn()
+    assert conn is not None
+    q._ensure_bktree(conn)
     return q
 
 
@@ -116,6 +124,7 @@ def test_query_bktree_edit_distance_guarantee():
 def test_collect_candidates_coverage(fuzzy_db):
     q = _setup(fuzzy_db)
     conn = q._ensure_conn()
+    assert conn is not None
     # 精确 key 应与自身共享全部 trigram（覆盖度过滤不丢）
     cov = _collect_candidates_coverage(conn, "attackontitan")
     assert 1 in cov
@@ -132,7 +141,7 @@ def test_bktree_off_does_not_build_cache(fuzzy_db):
     构建线程、不置 building 标志、不持有任何 BK-tree 缓存，直接走 OR+覆盖度兜底。
     """
     q = archive_fts_query
-    q._get_active_path = lambda: fuzzy_db
+    _patch_active_path(q, fuzzy_db)
     q.invalidate()
     q._ensure_built()
     # 复位为默认关闭（use_bktree=None → 读配置，默认 false）；
@@ -154,7 +163,9 @@ def test_bktree_off_does_not_build_cache(fuzzy_db):
 
     # set_bktree_enabled(False) 在曾开启后也应释放缓存
     q.set_bktree_enabled(True)
-    q._ensure_bktree(q._ensure_conn())
+    conn = q._ensure_conn()
+    assert conn is not None
+    q._ensure_bktree(conn)
     assert q._bk_tree is not None
     q.set_bktree_enabled(False)
     assert q._bk_tree is None, "关闭应释放已缓存的 BK-tree"
@@ -249,7 +260,7 @@ def test_empty_shell_fts_self_heals_on_query(tmp_path):
     db = tmp_path / "shell.db"
     _make_db_empty_shell(db)
     q = archive_fts_query
-    q._get_active_path = lambda: db
+    _patch_active_path(q, db)
     q.invalidate()
     try:
         # 首次查询触发重建并命中（"Attack on Titan" → id=1）
@@ -286,7 +297,7 @@ def test_year_disambiguation_orders_matching_year_first(tmp_path):
     db = tmp_path / "year.db"
     _make_db_year_disambig(db)
     q = archive_fts_query
-    q._get_active_path = lambda: db
+    _patch_active_path(q, db)
     q.invalidate()
     try:
         q._ensure_built()
@@ -317,7 +328,7 @@ def test_key_index_empty_table_triggers_rebuild(tmp_path):
     db = tmp_path / "keyidx.db"
     _make_db(db)
     q = archive_fts_query
-    q._get_active_path = lambda: db
+    _patch_active_path(q, db)
     q.invalidate()
     try:
         q._ensure_built()
@@ -355,7 +366,7 @@ def test_ensure_built_concurrent_self_heal(tmp_path):
     db = tmp_path / "heal.db"
     _make_db(db)
     q = archive_fts_query
-    q._get_active_path = lambda: db
+    _patch_active_path(q, db)
     q.invalidate()
     try:
         results: dict = {}
