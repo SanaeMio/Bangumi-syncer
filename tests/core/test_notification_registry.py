@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from app.core.notification_registry import (
     WATCHING_SUMMARY_PREFIX,
     all_types,
@@ -15,6 +17,43 @@ from app.core.notification_registry import (
     type_icon,
     ui_visible_types,
 )
+from app.services.notification_service import NotificationService
+from app.utils.notifier.channels_impl import InAppChannel
+
+
+class _FakeDB:
+    """捕获 insert_notification 调用的假数据库"""
+
+    def __init__(self):
+        self.calls = []
+
+    def insert_notification(self, notif_type, title, body, ref_id=None):
+        self.calls.append((notif_type, title, body, ref_id))
+
+
+def _make_service() -> tuple[NotificationService, _FakeDB]:
+    svc = NotificationService()
+    svc._in_app_channel = InAppChannel(
+        channel_id="in_app", config={"in_app_notification": True}
+    )
+    fake_db = _FakeDB()
+    svc._get_db_manager = MagicMock(return_value=fake_db)  # type: ignore[assignment]
+    return svc, fake_db
+
+
+def _pending_candidate_data(**overrides) -> dict:
+    data = {
+        "timestamp": "2026-07-16 12:00:00",
+        "user_name": "tester",
+        "title": "测试番剧",
+        "ori_title": "test anime",
+        "season": 2,
+        "episode": 5,
+        "source": "plex",
+        "media_type": "episode",
+    }
+    data.update(overrides)
+    return data
 
 
 class TestGetTypeMeta:
@@ -142,6 +181,91 @@ class TestAiringToday:
     def test_visible_in_ui(self):
         visible_ids = {t.id for t in ui_visible_types()}
         assert "airing_today" in visible_ids
+
+
+class TestPendingCandidateInAppMapping:
+    """pending_candidate 登记站内信映射"""
+
+    def test_pending_candidate_has_match_pending_in_app_type(self):
+        meta = get_type_meta("pending_candidate")
+        assert meta is not None
+        assert meta.in_app_type == "match_pending"
+        assert meta.in_app_title_template == "匹配待确认：{title} {ep_label}"
+
+    def test_resolve_pending_candidate_to_match_pending(self):
+        assert resolve_in_app_type("pending_candidate") == "match_pending"
+
+    def test_match_pending_is_registered_internal_type(self):
+        meta = get_type_meta("match_pending")
+        assert meta is not None
+        assert meta.visible_in_ui is False
+        assert meta.category == "match_quality"
+
+    def test_match_pending_not_in_ui_visible_list(self):
+        visible_ids = {t.id for t in ui_visible_types()}
+        assert "match_pending" not in visible_ids
+
+
+class TestPendingCandidateInAppBody:
+    """站内信正文：AI 标识前缀 + 转义"""
+
+    def test_is_llm_suggestion_true_adds_prefix_and_reason(self):
+        svc, fake_db = _make_service()
+        data = _pending_candidate_data(
+            is_llm_suggestion=True,
+            llm_reason="首选候选置信度较低，建议人工确认",
+        )
+        svc._write_in_app_notification(
+            "pending_candidate", data, None, None, None, None
+        )
+        assert fake_db.calls, "应写入一条站内信"
+        notif_type, title, body, ref_id = fake_db.calls[0]
+        assert notif_type == "match_pending"
+        assert body.startswith("[AI 建议] ")
+        assert "首选候选置信度较低，建议人工确认" in body
+
+    def test_is_llm_suggestion_false_no_prefix(self):
+        svc, fake_db = _make_service()
+        data = _pending_candidate_data(
+            is_llm_suggestion=False,
+            llm_reason="不应出现前缀",
+        )
+        svc._write_in_app_notification(
+            "pending_candidate", data, None, None, None, None
+        )
+        assert fake_db.calls
+        notif_type, title, body, ref_id = fake_db.calls[0]
+        assert not body.startswith("[AI 建议] ")
+        # 非 LLM 建议时不应将 llm_reason 透传进正文
+        assert "不应出现前缀" not in body
+
+    def test_reason_html_escaped_in_body(self):
+        svc, fake_db = _make_service()
+        evil = "<script>alert(1)</script> {{user.email}}"
+        data = _pending_candidate_data(is_llm_suggestion=True, llm_reason=evil)
+        svc._write_in_app_notification(
+            "pending_candidate", data, None, None, None, None
+        )
+        notif_type, title, body, ref_id = fake_db.calls[0]
+        # 危险标签被转义，不应以原始 <script> 出现
+        assert "<script>" not in body
+        assert "&lt;script&gt;" in body
+        # 模板语法 {{...}} 作为纯文本原样保留（不被执行）
+        assert "{{user.email}}" in body
+
+    def test_title_html_escaped_in_title(self):
+        svc, fake_db = _make_service()
+        evil_title = "<img src=x onerror=alert(1)> {{user.email}}"
+        data = _pending_candidate_data(title=evil_title, is_llm_suggestion=False)
+        svc._write_in_app_notification(
+            "pending_candidate", data, None, None, None, None
+        )
+        notif_type, title, body, ref_id = fake_db.calls[0]
+        assert "<img" not in title
+        assert "&lt;img" in title
+        assert "{{user.email}}" in title
+        # 标题模板前缀命中
+        assert title.startswith("匹配待确认：")
 
 
 class TestPayloadFields:

@@ -1,10 +1,11 @@
-"""MemoryRetriever 测试（Phase 2.0.2 读取侧）。
+"""MemoryRetriever 测试（读取侧）。
 
-覆盖 BDD 场景 R2/R3/R5/R9/D2/D5 与 format_memory_context。
+覆盖 BDD 场景与 format_memory_context。
 """
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock
 
 from app.models.memory import MemoryEntry
@@ -43,12 +44,12 @@ def _make_retriever(**repo_mocks) -> tuple[MemoryRetriever, MagicMock]:
     return MemoryRetriever(repo), repo
 
 
-# ── R2 task_type 过滤 / R3 双路径去重 / R9 不占额度 / R5 空关键词 ──────────
+# ── task_type 过滤 / 双路径去重 / 不占额度 / 空关键词 ──────────
 
 
 class TestRetrieve:
     def test_search_fts_called_with_task_type_filter(self):
-        """R2：FTS 检索必须带 task_type 过滤（跨任务不污染上下文）。"""
+        """FTS 检索必须带 task_type 过滤（跨任务不污染上下文）。"""
         retriever, repo = _make_retriever(get_recent=[], search_fts=[])
 
         retriever.retrieve("summary", "summary-daily", keywords=["芙莉莲"])
@@ -70,7 +71,7 @@ class TestRetrieve:
         )
 
     def test_deduplicate_by_run_id(self):
-        """R3：同记忆双路径命中（recent + keywords）只注入一次，recent 优先。"""
+        """同记忆双路径命中（recent + keywords）只注入一次，recent 优先。"""
         retriever, _ = _make_retriever(
             get_recent=[_entry("run-a"), _entry("run-b")],
             search_fts=[_entry("run-b"), _entry("run-c")],
@@ -81,7 +82,7 @@ class TestRetrieve:
         assert [e.run_id for e in result] == ["run-a", "run-b", "run-c"]
 
     def test_keywords_hits_not_capped_by_limit(self):
-        """R9：keywords 命中不占 memory_limit 额度（recent 5 + 命中 3 = 8）。"""
+        """keywords 命中不占 memory_limit 额度（recent 5 + 命中 3 = 8）。"""
         retriever, _ = _make_retriever(
             get_recent=[_entry(f"r{i}") for i in range(5)],
             search_fts=[_entry(f"k{i}") for i in range(3)],
@@ -92,11 +93,13 @@ class TestRetrieve:
         assert len(result) == 8
 
     def test_empty_keywords_skips_fts(self):
-        """R5：keywords 含空字符串/None → 过滤掉，FTS 不查空串。"""
+        """keywords 含空字符串/None → 过滤掉，FTS 不查空串。"""
         retriever, repo = _make_retriever(get_recent=[], search_fts=[])
 
         result = retriever.retrieve(
-            "summary", "summary-daily", keywords=["", None, "  "]
+            "summary",
+            "summary-daily",
+            keywords=cast("list[str]", ["", None, "  "]),
         )
 
         assert result == []
@@ -136,12 +139,12 @@ class TestFormatMemoryContext:
         assert retriever.format_memory_context([]) == ""
 
 
-# ── D2 重叠识别 / D5 无窗口限制 ────────────────────────────────────────
+# ── 重叠识别 / 无窗口限制 ────────────────────────────────────────
 
 
 class TestFindOverlaps:
     def test_returns_only_consumed_records(self):
-        """D2：只返回 consumed_run_ids 非空的记录。"""
+        """只返回 consumed_run_ids 非空的记录。"""
         retriever, _ = _make_retriever()
         records = [
             _record(consumed_run_ids={"run-1"}),
@@ -154,7 +157,7 @@ class TestFindOverlaps:
         assert [r.id for r in overlaps] == [1, 3]
 
     def test_any_old_consumed_record_hits(self):
-        """D5：无窗口限制——任意久远被消费都命中（精确到集）。"""
+        """无窗口限制——任意久远被消费都命中（精确到集）。"""
         retriever, _ = _make_retriever()
         records = [_record(consumed_run_ids={"very-old-run-id"}, id=99)]
 

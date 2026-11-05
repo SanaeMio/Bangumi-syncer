@@ -1,16 +1,17 @@
-"""测试 SummaryService：generate_summary 和 execute_job（任务 3.2）。"""
+"""测试 SummaryService：generate_summary 和 execute_job。"""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.models.memory import MemoryEntry
-from app.services.llm.models import ChatResponse, Usage
+from app.services.llm.models import ChatResponse, StreamChunk, Usage
 from app.services.memory.service import MemoryService
 from app.services.summary.models import SummaryJobConfig, SummaryRecord
 from app.services.summary.service import SummaryService, _utc_to_local_date
@@ -20,7 +21,7 @@ from app.services.summary.service import SummaryService, _utc_to_local_date
 
 def _make_config(**overrides) -> SummaryJobConfig:
     """使用默认测试值构建最小 SummaryJobConfig。"""
-    defaults = {
+    defaults: dict[str, Any] = {
         "name": "test_job",
         "enabled": True,
         "cron": "0 21 * * *",
@@ -73,6 +74,57 @@ def _mock_chat_response(
     if usage is None:
         usage = Usage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
     return ChatResponse(content=content, model=model, usage=usage)
+
+
+def _chunks_for_response(response: ChatResponse) -> list[StreamChunk]:
+    """把 ChatResponse 反向展开为等价 StreamChunk 事件流（新契约 mock）。
+
+    首个事件携带真实 model（对齐 provider "首个带 model 的事件填一次"行为）；
+    无正文时用 stop 事件承载 model，保证 collect 后 model 不丢。
+    """
+    if response.content:
+        first = StreamChunk(
+            type="text_delta", text=response.content, model=response.model
+        )
+    else:
+        first = StreamChunk(
+            type="stop",
+            stop_reason=response.stop_reason or "end_turn",
+            model=response.model,
+        )
+    chunks = [first]
+    if response.usage is not None:
+        chunks.append(StreamChunk(type="usage", usage=response.usage))
+    return chunks
+
+
+def _mock_stream_client(
+    response: ChatResponse | None = None,
+    *,
+    error: Exception | None = None,
+) -> MagicMock:
+    """构造 mock LLM 客户端：``stream_chat`` 产出等价事件流（新契约）。
+
+    - response：要还原的 ChatResponse（content/model/usage）
+    - error：若给定，流在首个事件前抛该异常（模拟 LLM 调用失败）
+
+    调用参数经 ``client.stream_chat.call_args`` 读取（args[0]=messages，
+    kwargs 含 job_name / thinking_level）。
+    """
+    client = MagicMock()
+    effective = response if response is not None else ChatResponse(content="")
+
+    def _stream_chat(messages, **kwargs):
+        async def _gen():
+            if error is not None:
+                raise error
+            for chunk in _chunks_for_response(effective):
+                yield chunk
+
+        return _gen()
+
+    client.stream_chat = MagicMock(side_effect=_stream_chat)
+    return client
 
 
 def _summary_record(**overrides) -> SummaryRecord:
@@ -130,8 +182,7 @@ class TestGenerateSummary:
         mock_records = _sample_records()
 
         # Patch LLM 客户端，使 chat() 返回 mock 响应。
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -148,8 +199,8 @@ class TestGenerateSummary:
         now = datetime.now()
         expected_date_to = now.strftime("%Y-%m-%d")
         expected_date_from = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-        assert result["date_from"] == expected_date_from
-        assert result["date_to"] == expected_date_to
+        assert result.date_from == expected_date_from
+        assert result.date_to == expected_date_to
 
     @pytest.mark.asyncio
     async def test_user_name_filter_passed_to_db(self):
@@ -157,8 +208,7 @@ class TestGenerateSummary:
         svc = SummaryService()
         config = _make_config(user_name="dad")
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -183,8 +233,7 @@ class TestGenerateSummary:
         svc = SummaryService()
         config = _make_config(user_name="")
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -202,14 +251,13 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_include_consumed_true_when_memory_on(self):
-        """P1：memory_limit>0 时传 include_consumed=True（消费排除所需）。"""
+        """memory_limit>0 时传 include_consumed=True（消费排除所需）。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
         config = _make_config(user_name="dad", memory_limit=5)
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -227,14 +275,13 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_include_consumed_false_when_memory_off(self):
-        """P1：memory_limit=0（默认）时传 include_consumed=False（轻量查询）。"""
+        """memory_limit=0（默认）时传 include_consumed=False（轻量查询）。"""
         from app.services.summary.service import SummaryService
 
         svc = SummaryService()
         config = _make_config(user_name="dad")  # memory_limit 默认 0
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -256,8 +303,7 @@ class TestGenerateSummary:
         svc = SummaryService()
         config = _make_config(system_prompt="Custom system instruction.")
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -270,7 +316,7 @@ class TestGenerateSummary:
 
             await svc.generate_summary(config)
 
-        args, _ = mock_llm_client.chat.call_args
+        args, _ = mock_llm_client.stream_chat.call_args
         messages = args[0]
         assert len(messages) >= 2
         assert messages[0].role == "system"
@@ -282,8 +328,7 @@ class TestGenerateSummary:
         svc = SummaryService()
         config = _make_config(system_prompt="   ")
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -296,7 +341,7 @@ class TestGenerateSummary:
 
             await svc.generate_summary(config)
 
-        args, _ = mock_llm_client.chat.call_args
+        args, _ = mock_llm_client.stream_chat.call_args
         messages = args[0]
         # 应使用类的默认值，而非空白字符串
         assert messages[0].content == SummaryJobConfig.system_prompt
@@ -307,8 +352,7 @@ class TestGenerateSummary:
         svc = SummaryService()
         config = _make_config(lookback_days=7)
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -321,7 +365,7 @@ class TestGenerateSummary:
 
             await svc.generate_summary(config)
 
-        args, _ = mock_llm_client.chat.call_args
+        args, _ = mock_llm_client.stream_chat.call_args
         messages = args[0]
         user_content = messages[1].content  # role="user"
 
@@ -374,8 +418,7 @@ class TestGenerateSummary:
         svc = SummaryService()
         config = _make_config()
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm_client = _mock_stream_client(_mock_chat_response())
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -388,9 +431,9 @@ class TestGenerateSummary:
 
             result = await svc.generate_summary(config)
 
-        assert result["record_count"] == 0
+        assert result.record_count == 0
         # 验证用户提示中包含"（无记录）"
-        args, _ = mock_llm_client.chat.call_args
+        args, _ = mock_llm_client.stream_chat.call_args
         user_content = args[0][1].content
         assert "（无记录）" in user_content
 
@@ -404,8 +447,7 @@ class TestGenerateSummary:
             content="summary here", model="gpt-4", usage=expected_usage
         )
 
-        mock_llm_client = MagicMock()
-        mock_llm_client.chat = AsyncMock(return_value=expected_response)
+        mock_llm_client = _mock_stream_client(expected_response)
 
         with (
             patch("app.services.summary.service.database_manager") as mock_db,
@@ -418,12 +460,12 @@ class TestGenerateSummary:
 
             result = await svc.generate_summary(config)
 
-        assert result["summary_text"] == "summary here"
-        assert result["model"] == "gpt-4"
-        assert result["usage"] is expected_usage
-        assert result["record_count"] == 2
-        assert result["date_from"] is not None
-        assert result["date_to"] is not None
+        assert result.summary_text == "summary here"
+        assert result.model == "gpt-4"
+        assert result.usage is expected_usage
+        assert result.record_count == 2
+        assert result.date_from is not None
+        assert result.date_to is not None
 
 
 # ── execute_job ─────────────────────────────────────────────────────────
@@ -436,9 +478,9 @@ class TestExecuteJob:
     def _make_svc() -> SummaryService:
         return SummaryService()
 
-    def _patch_llm(self, response: ChatResponse):
-        mock_client = MagicMock()
-        mock_client.chat = AsyncMock(return_value=response)
+    @staticmethod
+    def _patch_llm(response: ChatResponse):
+        mock_client = _mock_stream_client(response)
         return patch(
             "app.services.summary.service.get_llm_client",
             return_value=mock_client,
@@ -456,7 +498,7 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             await svc.execute_job(config)
@@ -477,7 +519,7 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             await svc.execute_job(config)
@@ -530,12 +572,32 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             await svc.execute_job(config)
 
         assert mock_ns.notify.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_job_passes_job_name_to_stream_chat(self):
+        """去鸭子容器契约后，job_name 仍经 stream_chat 显式传入（落库归属正确）。"""
+        svc = self._make_svc()
+        config = _make_config(name="attribution_job")
+        _llm_patch, mock_client = self._patch_llm(_mock_chat_response())
+
+        with (
+            patch.object(
+                svc,
+                "_query_records",
+                return_value=(_records(), "2026-07-14", "2026-07-15"),
+            ),
+            _llm_patch,
+            patch("app.services.summary.service.notification_service"),
+        ):
+            await svc.execute_job(config)
+
+        assert mock_client.stream_chat.call_args.kwargs["job_name"] == "attribution_job"
 
     @pytest.mark.asyncio
     async def test_exception_in_query_is_caught(self):
@@ -564,11 +626,10 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_chat_exception_sends_llm_failed_notification(self):
-        """chat 异常：按统一策略也要通知，且文案标注入阶段（summary_llm_failed）。"""
+        """LLM 流异常：按统一策略也要通知，且文案标注入阶段（summary_llm_failed）。"""
         svc = self._make_svc()
         config = _make_config(name="chat_fail_job")
-        mock_client = MagicMock()
-        mock_client.chat = AsyncMock(side_effect=RuntimeError("API down"))
+        mock_client = _mock_stream_client(error=RuntimeError("API down"))
 
         with (
             patch.object(
@@ -612,7 +673,7 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
             patch("app.services.summary.service.logger") as mock_logger,
         ):
@@ -645,7 +706,7 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
             patch("app.services.summary.service.logger") as mock_logger,
         ):
@@ -668,7 +729,7 @@ class TestExecuteJob:
             patch.object(
                 svc, "_query_records", return_value=([], "2026-07-14", "2026-07-15")
             ),
-            TestExecuteJob._patch_llm(svc, empty)[0],
+            TestExecuteJob._patch_llm(empty)[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
             patch("app.services.summary.service.logger") as mock_logger,
         ):
@@ -708,7 +769,7 @@ class TestExecuteJob:
         data = mock_ns.notify.call_args.kwargs
         assert data["tokens_used"] == 0
 
-    # ── 记忆注入（Phase 2.0.2）──────────────────────────────────────
+    # ── 记忆注入──────────────────────────────────────
 
     @staticmethod
     def _svc_with_real_memory(temp_dir, job_name="test_job"):
@@ -722,7 +783,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_memory_disabled_short_circuits(self, temp_dir, reset_singletons):
-        """R4：memory_limit=0（默认）→ 不注入不写入。"""
+        """memory_limit=0（默认）→ 不注入不写入。"""
         svc, db = TestExecuteJob._svc_with_real_memory(temp_dir)
         db.memory.store_and_mark(
             MemoryEntry(
@@ -747,14 +808,14 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        messages = mock_client.chat.call_args.args[0]
+        messages = mock_client.stream_chat.call_args.args[0]
         assert messages[0].content == "You are a helpful assistant."
         assert "历史执行上下文" not in messages[0].content
         svc.memory.extract_and_store.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_memory_injects_recent_context(self, temp_dir, reset_singletons):
-        """R1：memory_limit>0 → system prompt 含历史上下文（最近 2 条摘要）。"""
+        """memory_limit>0 → system prompt 含历史上下文（最近 2 条摘要）。"""
         svc, db = TestExecuteJob._svc_with_real_memory(temp_dir)
         db.memory.store_and_mark(
             MemoryEntry(
@@ -788,7 +849,7 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        messages = mock_client.chat.call_args.args[0]
+        messages = mock_client.stream_chat.call_args.args[0]
         assert len([m for m in messages if m.role == "system"]) == 1
         assert "## 历史执行上下文" in messages[0].content
         assert "- 昨日看了芙莉莲" in messages[0].content
@@ -798,7 +859,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_recent_limit_passed_to_service(self, temp_dir, reset_singletons):
-        """R8：memory_limit 透传给 memory.recent；related_limit=0 时不调 related。"""
+        """memory_limit 透传给 memory.recent；related_limit=0 时不调 related。"""
         svc, _ = self._svc_with_real_memory(temp_dir)
         config = _make_config(memory_limit=3, related_limit=0)
 
@@ -808,7 +869,7 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service"),
             patch.object(svc, "memory") as mock_memory,
         ):
@@ -823,7 +884,7 @@ class TestExecuteJob:
     async def test_extract_failure_does_not_block_notification(
         self, temp_dir, reset_singletons
     ):
-        """R7：提取记忆失败（DB 异常）不影响 _dispatch_notification。"""
+        """提取记忆失败（DB 异常）不影响 _dispatch_notification。"""
         svc, _ = self._svc_with_real_memory(temp_dir)
         svc.memory.extract_and_store = AsyncMock(side_effect=RuntimeError("db down"))
         config = _make_config(memory_limit=5)
@@ -834,7 +895,7 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
             patch("app.services.summary.service.logger") as mock_logger,
         ):
@@ -880,7 +941,7 @@ class TestExecuteJob:
 
     @pytest.mark.asyncio
     async def test_no_consumed_no_exclusion(self, temp_dir, reset_singletons):
-        """S3a：明细全部未消费 → 记录全部进 user prompt，无排除。"""
+        """明细全部未消费 → 记录全部进 user prompt，无排除。"""
         svc, _ = self._svc_with_real_memory(temp_dir)
         config = _make_config(memory_limit=5)
         _llm_patch, mock_client = self._patch_llm(_mock_chat_response())
@@ -896,7 +957,7 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        messages = mock_client.chat.call_args.args[0]
+        messages = mock_client.stream_chat.call_args.args[0]
         assert "葬送的芙莉莲" in messages[1].content
         assert "鬼灭之刃" in messages[1].content
 
@@ -904,7 +965,7 @@ class TestExecuteJob:
     async def test_consumed_records_excluded_from_prompt(
         self, temp_dir, reset_singletons
     ):
-        """S2：本任务已消费记录不进 user prompt（信息由摘要承继）；未消费记录正常。"""
+        """本任务已消费记录不进 user prompt（信息由摘要承继）；未消费记录正常。"""
         svc, db = TestExecuteJob._svc_with_real_memory(temp_dir)
         # 先写入本任务的记忆条目（run-own 属于本任务），再标记对应记录已消费
         db.memory.store_and_mark(
@@ -938,7 +999,7 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        user_content = mock_client.chat.call_args.args[0][1].content
+        user_content = mock_client.stream_chat.call_args.args[0][1].content
         assert "番剧A" not in user_content  # 本任务已消费 → 排除
         assert "番剧B" in user_content  # 未消费 → 保留
 
@@ -946,7 +1007,7 @@ class TestExecuteJob:
     async def test_consumed_by_other_task_kept_in_prompt(
         self, temp_dir, reset_singletons
     ):
-        """S2c（跨任务隔离）：记录被其他任务消费（consumed_run_id 非空但不属于
+        """记录被其他任务消费（consumed_run_id 非空但不属于
         本任务）→ 仍保留在 prompt——每日总结消费后年度总结仍可消费。"""
         svc, db = TestExecuteJob._svc_with_real_memory(temp_dir)
         # 其他任务（summary-yearly）消费了 run-other；本任务无该 run
@@ -978,12 +1039,12 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        user_content = mock_client.chat.call_args.args[0][1].content
+        user_content = mock_client.stream_chat.call_args.args[0][1].content
         assert "番剧A" in user_content  # 其他任务消费 → 本任务保留
 
     @pytest.mark.asyncio
     async def test_all_consumed_results_in_no_records(self, temp_dir, reset_singletons):
-        """S2b：窗口内全部被【本任务】消费 → user prompt 记录为空（走"无记录"路径）。"""
+        """窗口内全部被【本任务】消费 → user prompt 记录为空（走"无记录"路径）。"""
         svc, db = TestExecuteJob._svc_with_real_memory(temp_dir)
         db.memory.store_and_mark(
             MemoryEntry(
@@ -1012,14 +1073,14 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        user_content = mock_client.chat.call_args.args[0][1].content
+        user_content = mock_client.stream_chat.call_args.args[0][1].content
         assert "（无记录）" in user_content
 
     @pytest.mark.asyncio
     async def test_placeholder_row_prevents_rerun_of_consumed_records(
         self, temp_dir, reset_singletons
     ):
-        """T2 端到端防重跑：第一次执行摘要提取失败 → 写占位行 + 消费标记；
+        """端到端防重跑：第一次执行摘要提取失败 → 写占位行 + 消费标记；
         第二次执行同窗口 → 这批记录被消费排除（不再进 LLM prompt）。"""
         db = _temp_db(temp_dir)
         svc = SummaryService()
@@ -1047,10 +1108,14 @@ class TestExecuteJob:
         )
 
         # 主总结成功；摘要提取 LLM 失败 → 触发占位行
+        # （stream 唯一形态：摘要走 collect(stream_chat)，故 mock stream_chat 抛错）
         failing_summary_client = MagicMock()
-        failing_summary_client.chat = AsyncMock(
-            side_effect=RuntimeError("summary llm down")
-        )
+
+        async def _failing_stream_chat(messages, **kwargs):
+            raise RuntimeError("summary llm down")
+            yield  # pragma: no cover - 使函数成为 async generator
+
+        failing_summary_client.stream_chat = MagicMock(side_effect=_failing_stream_chat)
         _llm_patch, _mock_client = self._patch_llm(_mock_chat_response("主总结正文"))
 
         with (
@@ -1093,7 +1158,7 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        user_content = mock_client2.chat.call_args.args[0][1].content
+        user_content = mock_client2.stream_chat.call_args.args[0][1].content
         assert "葬送的芙莉莲" not in user_content
         assert "鬼灭之刃" not in user_content
         assert "（无记录）" in user_content
@@ -1115,7 +1180,7 @@ class TestExecuteJob:
                 "_query_records",
                 return_value=(records, "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service"),
             patch.object(svc, "memory") as mock_memory,
         ):
@@ -1150,7 +1215,7 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        messages = mock_client.chat.call_args.args[0]
+        messages = mock_client.stream_chat.call_args.args[0]
         user_content = messages[1].content
         assert "葬送的芙莉莲" in user_content
 
@@ -1174,13 +1239,13 @@ class TestExecuteJob:
         ):
             await svc.execute_job(config)
 
-        messages = mock_client.chat.call_args.args[0]
+        messages = mock_client.stream_chat.call_args.args[0]
         user_content = messages[1].content
         assert "葬送的芙莉莲" in user_content
 
 
 class TestRelatedInjection:
-    """related 注入：合并去重 + [同剧历史] 前缀（F2 S5/S6）。"""
+    """related 注入：合并去重 + [同剧历史] 前缀。"""
 
     @pytest.mark.asyncio
     async def test_related_prefix_and_dedup(self, temp_dir, reset_singletons):
@@ -1224,7 +1289,7 @@ class TestRelatedInjection:
 
 
 class TestMemoryContextSkipsPlaceholder:
-    """T2：摘要失败占位行（summary=""）不得进入提示词注入（recent 与 related 两路径）。"""
+    """摘要失败占位行（summary=""）不得进入提示词注入（recent 与 related 两路径）。"""
 
     def test_placeholder_skipped_in_recent(self):
         """recent 返回 [正常行, 占位行] → 注入文本只含正常摘要，无空条目。"""
@@ -1326,7 +1391,7 @@ class TestUTCToLocalDate:
 
 
 class TestIncrementalWindow:
-    """T3 增量窗口：记忆开启时 date_from = 上次总结点（本任务最后一条记忆的
+    """增量窗口：记忆开启时 date_from = 上次总结点（本任务最后一条记忆的
     created_at 日期）；无历史记忆时回退 lookback_days。"""
 
     def _svc(self, temp_dir):
@@ -1460,7 +1525,7 @@ class TestIncrementalWindow:
     def test_placeholder_row_serves_as_incremental_start(
         self, temp_dir, reset_singletons
     ):
-        """T2：最近一条是摘要失败占位行（summary=""）时，增量窗口起点仍取它的
+        """最近一条是摘要失败占位行（summary=""）时，增量窗口起点仍取它的
         created_at 日期——占位行是有效的"上次总结点"，不得因空摘要被跳过导致窗口回退。"""
         svc, db = self._svc(temp_dir)
         with (
@@ -1588,7 +1653,7 @@ class TestIncrementalWindow:
         """wiring：execute_job 调用 _query_records 时必须传 incremental=True。"""
         svc, db = TestExecuteJob._svc_with_real_memory(temp_dir)
         config = _make_config(memory_limit=5, lookback_days=7)
-        _llm_patch, mock_client = TestExecuteJob._patch_llm(svc, _mock_chat_response())
+        _llm_patch, mock_client = TestExecuteJob._patch_llm(_mock_chat_response())
 
         with (
             patch.object(
@@ -1606,8 +1671,7 @@ class TestIncrementalWindow:
         """wiring：generate_summary（预览）调用 _query_records 时 incremental 默认 False。"""
         svc = SummaryService()
         config = _make_config(memory_limit=5, lookback_days=7)
-        mock_llm = MagicMock()
-        mock_llm.chat = AsyncMock(return_value=_mock_chat_response())
+        mock_llm = _mock_stream_client(_mock_chat_response())
 
         with (
             patch.object(
@@ -1624,7 +1688,7 @@ class TestIncrementalWindow:
 
 
 class TestEmptyContentWithModel:
-    """H1：空 content 但 model 非空 → 仍须判失败（旧逻辑误走成功分支）。"""
+    """空 content 但 model 非空 → 仍须判失败（旧逻辑误走成功分支）。"""
 
     @pytest.mark.asyncio
     async def test_empty_content_with_model_name_sends_failure(
@@ -1639,7 +1703,7 @@ class TestEmptyContentWithModel:
             patch.object(
                 svc, "_query_records", return_value=([], "2026-07-14", "2026-07-15")
             ),
-            TestExecuteJob._patch_llm(svc, empty)[0],
+            TestExecuteJob._patch_llm(empty)[0],
             patch("app.services.summary.service.notification_service") as mock_ns,
         ):
             await svc.execute_job(config)
@@ -1649,7 +1713,7 @@ class TestEmptyContentWithModel:
 
 
 class TestRelatedIndependentOfMemoryLimit:
-    """M1：related_limit 独立于 memory_limit（0/关 不影响 related 生效）。"""
+    """related_limit 独立于 memory_limit（0/关 不影响 related 生效）。"""
 
     @pytest.mark.asyncio
     async def test_related_works_when_memory_limit_zero(
@@ -1666,7 +1730,7 @@ class TestRelatedIndependentOfMemoryLimit:
                 "_query_records",
                 return_value=(records, "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service"),
             patch.object(svc, "memory") as mock_memory,
         ):
@@ -1689,7 +1753,7 @@ class TestConcurrentExecutionGuard:
 
     @staticmethod
     def _gated_llm(release: asyncio.Event, started=None, block_name=None):
-        """构造 chat 受 release 控制的 mock client。
+        """构造 stream_chat 受 release 控制的 mock client。
 
         block_name=None 时阻塞所有调用；否则仅阻塞 job_name==block_name 的调用。
         ``started`` 在进入被阻塞调用时 set，供测试等待"已持锁"。
@@ -1698,16 +1762,21 @@ class TestConcurrentExecutionGuard:
         client = MagicMock()
         called_jobs: list[str | None] = []
 
-        async def _chat(messages, **kwargs):
+        def _stream_chat(messages, **kwargs):
             job_name = kwargs.get("job_name")
             called_jobs.append(job_name)
-            if block_name is None or job_name == block_name:
-                if started is not None:
-                    started.set()
-                await release.wait()
-            return _mock_chat_response()
 
-        client.chat = AsyncMock(side_effect=_chat)
+            async def _gen():
+                if block_name is None or job_name == block_name:
+                    if started is not None:
+                        started.set()
+                    await release.wait()
+                for chunk in _chunks_for_response(_mock_chat_response()):
+                    yield chunk
+
+            return _gen()
+
+        client.stream_chat = MagicMock(side_effect=_stream_chat)
         return client, called_jobs
 
     @pytest.mark.asyncio
@@ -1742,7 +1811,7 @@ class TestConcurrentExecutionGuard:
         assert first_result is True
         assert second is False
         assert called_jobs == ["concurrent_job"]
-        assert client.chat.await_count == 1
+        assert client.stream_chat.call_count == 1
         mock_ns.notify.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1783,7 +1852,7 @@ class TestConcurrentExecutionGuard:
         assert second is False
         # 跳过的调用零副作用：查询/LLM/记忆/通知都只发生第一次
         assert mock_query.call_count == 1
-        assert client.chat.await_count == 1
+        assert client.stream_chat.call_count == 1
         assert mock_memory.extract_and_store.await_count == 1
         mock_ns.notify.assert_called_once()
 
@@ -1808,7 +1877,7 @@ class TestConcurrentExecutionGuard:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service"),
         ):
             second = await svc.execute_job(config)
@@ -1850,7 +1919,7 @@ class TestConcurrentExecutionGuard:
                 "_query_records",
                 return_value=(_records(), "2026-07-14", "2026-07-15"),
             ),
-            TestExecuteJob._patch_llm(svc, _mock_chat_response())[0],
+            TestExecuteJob._patch_llm(_mock_chat_response())[0],
             patch("app.services.summary.service.notification_service"),
         ):
             assert await svc.execute_job(config) is True

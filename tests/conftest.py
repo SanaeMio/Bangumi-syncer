@@ -12,6 +12,17 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+
+def _set_attr(obj: object, name: str, value: object) -> None:
+    """运行时注入动态属性（测试替身 / 单例重置）。
+
+    这些属性（``_instance``、DatabaseManager 上的 trakt 测试替身、TraktClient
+    的旧 ``_client``）在类型注解中并未声明，直接属性赋值会触发静态检查；
+    用 ``object.__setattr__`` 保持原赋值语义，不改变 fixture 行为。
+    """
+    object.__setattr__(obj, name, value)
+
+
 # ===== 在导入 app 模块前重定向 CONFIG_FILE =====
 # 优先使用 git 跟踪的 config.example.ini 作为测试基线（安全、可复现），
 # 避免 config.ini 中的本地配置（token、enabled=True、proxy 等）污染测试。
@@ -86,6 +97,14 @@ _database_module.database_manager = _database_module.DatabaseManager(_TEST_DB_PA
 from app.core.config import config_manager  # noqa: E402
 from app.core.database import database_manager  # noqa: E402
 from app.models.trakt import TraktConfig  # noqa: E402
+
+# ===== 场景装配（Composition Root）=====
+# 必须在任何测试运行前、且在 CONFIG_FILE / DB 重定向等环境准备完成后执行：
+# 静态装配 match 场景，使调度器等经 get_scenario("match") 取用运行时可用。
+# import llm_assist 会触发其依赖链加载，故置于环境准备之后。
+from app.services.scenarios import wire_scenarios  # noqa: E402
+
+wire_scenarios()
 
 
 @pytest.fixture
@@ -331,11 +350,11 @@ def mock_database_manager(test_db):
 
             return {"records": records, "total": len(records)}
 
-        # 临时替换方法
-        database_manager.get_trakt_config = get_trakt_config
-        database_manager.save_trakt_config = save_trakt_config
-        database_manager.add_trakt_sync_history = add_trakt_sync_history
-        database_manager.get_trakt_sync_history = get_trakt_sync_history
+        # 临时替换方法（运行时注入的测试替身，DatabaseManager 上并无同名声明）
+        _set_attr(database_manager, "get_trakt_config", get_trakt_config)
+        _set_attr(database_manager, "save_trakt_config", save_trakt_config)
+        _set_attr(database_manager, "add_trakt_sync_history", add_trakt_sync_history)
+        _set_attr(database_manager, "get_trakt_sync_history", get_trakt_sync_history)
 
         yield database_manager
 
@@ -426,17 +445,17 @@ def reset_singletons():
     from app.core.database import database_manager
     from app.core.security import security_manager
 
-    # 重置单例
-    config_manager._instance = None
-    database_manager._instance = None
-    security_manager._instance = None
+    # 重置单例（_instance 为类外动态属性，静态注解未声明；保持原赋值语义）
+    _set_attr(config_manager, "_instance", None)
+    _set_attr(database_manager, "_instance", None)
+    _set_attr(security_manager, "_instance", None)
 
     yield
 
     # 清理
-    config_manager._instance = None
-    database_manager._instance = None
-    security_manager._instance = None
+    _set_attr(config_manager, "_instance", None)
+    _set_attr(database_manager, "_instance", None)
+    _set_attr(security_manager, "_instance", None)
 
 
 # 只有在没有安装 pytest-playwright 时才定义 event_loop
@@ -468,18 +487,19 @@ async def mock_trakt_client():
 
     client = TraktClient(access_token="test_token")
 
-    # 模拟内部客户端
-    client._client = AsyncMock()
+    # 模拟内部客户端（_client 为历史命名，当前实现实际使用 _http）
+    mock_client = AsyncMock()
+    _set_attr(client, "_client", mock_client)
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.json = AsyncMock(return_value=[])
     mock_response.headers = {}
-    client._client.request = AsyncMock(return_value=mock_response)
+    mock_client.request = AsyncMock(return_value=mock_response)
 
     yield client
 
     # 清理
-    client._client = None
+    _set_attr(client, "_client", None)
 
 
 @pytest.fixture
@@ -518,6 +538,53 @@ def clean_proxy_env():
 
 
 @pytest.fixture(autouse=True)
+def _speed_up_bangumi_rate_limit():
+    """测试加速：把进程级 Bangumi API 令牌桶替换为高速率实例。
+
+    令牌桶默认 1 req/s、burst=3，多个测试连续发请求会触发真实 sleep 拖慢套件。
+    需要验证限速行为的测试（tests/utils/test_bangumi_rate_limit.py）会在用例内
+    显式 reset 为注入假时钟的实例，不受此 fixture 影响。
+    """
+    from app.utils.bangumi_api.rate_limit import (
+        RateLimiter,
+        reset_bgm_rate_limiter,
+    )
+
+    reset_bgm_rate_limiter(RateLimiter(rate=1_000_000.0, burst=1_000_000))
+    yield
+    reset_bgm_rate_limiter(RateLimiter(rate=1_000_000.0, burst=1_000_000))
+
+
+@pytest.fixture(autouse=True)
+def _clear_llm_match_active_runs():
+    """测试隔离：清空 LLM 匹配调度器的进程级 active run 集合。
+
+    ``llm_match_scheduler._active_run_ids`` 是模块级进程状态，测试中预置或
+    残留会跨用例、跨测试模块污染（导致恢复扫描被误跳过）。此处统一在每条
+    测试前后清空，与 ``_speed_up_bangumi_rate_limit`` 等全局 fixture 风格一致。
+    """
+    from app.services.llm_match_scheduler import _clear_active_runs
+
+    _clear_active_runs()
+    yield
+    _clear_active_runs()
+
+
+@pytest.fixture(autouse=True)
+def _reset_agent_run_notified_cache():
+    """测试隔离：清空 agent_run_failed 的进程内去重缓存。
+
+    ``notifier_helpers`` 的 run_id 级 LRU 缓存是模块级进程状态；多个用例
+    复用同一 run_id 时会被去重跳过，统一在每条测试前后清空。
+    """
+    from app.services.base.notifier_helpers import _reset_run_notified_cache
+
+    _reset_run_notified_cache()
+    yield
+    _reset_run_notified_cache()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_archive_shortcut(monkeypatch):
     """每个测试默认禁用全局 archive_shortcut，避免用户 config.ini 中
     bangumi-archive.enabled=True 通过 conftest 复制污染测试。
@@ -532,7 +599,7 @@ def _isolate_archive_shortcut(monkeypatch):
     """
     from app.utils.bangumi_api._archive_shortcut import archive_shortcut
 
-    archive_shortcut._enabled = False
+    archive_shortcut.set_enabled(False)
     # mock reload_config 为 noop，防止 BangumiApi.init() 重新读取 config 启用
     monkeypatch.setattr(archive_shortcut, "reload_config", lambda: None)
     yield

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from typing import Any, cast
 
 from app.services.base.models import BaseSyncResult, BaseWatchRecord
 
@@ -66,7 +67,7 @@ class TestBaseWatchRecord:
             title="x", season=1, episode=1, release_date="", user_name=""
         )
         try:
-            r.title = "modified"
+            cast("Any", r).title = "modified"
             raise AssertionError("应抛出 FrozenInstanceError")
         except FrozenInstanceError:
             pass
