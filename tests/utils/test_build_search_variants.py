@@ -30,7 +30,7 @@ from app.utils.bangumi_archive._title_normalize import (
 def _oracle(title: str, ori_title: str = "") -> list[SearchVariant]:
     """当前 build_search_variants 行为的精确复刻（oracle），携带派生方式。
 
-    与重构前（2026-09-08 P0~P3 期间）的内联实现差异：入口做 NFKC
+    与重构前（2026-09-08）的内联实现差异：入口做 NFKC
     归一化（与 _normalize_title_for_match / _normalize_key 索引侧对齐）。
     实测（240 条 L2 黄金集 S9_全角半角 场景）一次拿回 15 条漏标。
     用于断言 build_search_variants 与预期行为一致（含 method 标注）。

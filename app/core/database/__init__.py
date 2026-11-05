@@ -20,6 +20,7 @@ from typing import Any
 from ..logging import logger as logger
 from .accounts import BangumiAccountRepository, OAuthStateRepository
 from .agent_memory import AgentMemoryRepository
+from .agent_runs import AgentRunsRepository
 from .blocked_rules import BlockedRuleRepository
 from .connection import (
     FEINIU_MIN_UPDATE_WATERMARK_META_KEY as FEINIU_MIN_UPDATE_WATERMARK_META_KEY,
@@ -60,6 +61,7 @@ class DatabaseManager:
         self._oauth_state = OAuthStateRepository(self._connection)
         self.llm_usage = LLMUsageRepository(self._connection)
         self.memory = AgentMemoryRepository(self._connection)
+        self.agent_runs = AgentRunsRepository(self._connection)
         self._pending = PendingCandidatesRepository(self._connection)
         self._pending_sync = PendingSyncQueueRepository(self._connection)
         # 屏蔽关键词（统一黑名单入口）：合并了历史 [sync] blocked_keywords
@@ -259,6 +261,7 @@ class DatabaseManager:
         candidates: list | None = None,
         trace: dict | None = None,
         sync_record_id: int | None = None,
+        business_key: str = "",
     ) -> int | None:
         """沉淀一条待确认候选"""
         return self._pending.log_pending_candidate(
@@ -271,6 +274,38 @@ class DatabaseManager:
             candidates=candidates,
             trace=trace,
             sync_record_id=sync_record_id,
+            business_key=business_key,
+        )
+
+    def persist_llm_suggestion(
+        self,
+        *,
+        run_id: str,
+        sync_record_id: int | None,
+        sync_record: dict,
+        business_key: str,
+        subject_id: str,
+        reason: str,
+        stop_reason: str,
+        total_tokens: int = 0,
+        bgm_title: str = "",
+    ) -> int | None:
+        """单一事务落库 LLM 建议候选并置 run succeeded（含 CAS 竞态守卫）。
+
+        场景侧（``llm_assist._persist_llm_candidate``）经此转发到
+        ``PendingCandidatesRepository.persist_llm_suggestion``；返回候选行 id，
+        竞态跳过返回 ``None``，异常由仓储 ``reraise=True`` 向上抛。
+        """
+        return self._pending.persist_llm_suggestion(
+            run_id=run_id,
+            sync_record_id=sync_record_id,
+            sync_record=sync_record,
+            business_key=business_key,
+            subject_id=subject_id,
+            reason=reason,
+            stop_reason=stop_reason,
+            total_tokens=total_tokens,
+            bgm_title=bgm_title,
         )
 
     def get_pending_candidates(
@@ -287,6 +322,12 @@ class DatabaseManager:
     def get_pending_candidate_by_id(self, candidate_id: int) -> dict[str, Any] | None:
         """获取单条待确认候选详情"""
         return self._pending.get_pending_candidate_by_id(candidate_id)
+
+    def get_pending_candidate_by_sync_record_id(
+        self, sync_record_id: int
+    ) -> dict[str, Any] | None:
+        """按 sync_record_id 查询关联的候选记录（records 页「查看候选」入口）"""
+        return self._pending.get_pending_candidate_by_sync_record_id(sync_record_id)
 
     def update_pending_candidate_status(
         self,
@@ -312,6 +353,7 @@ class DatabaseManager:
         status: str,
         confirmed_subject_id: str = "",
         exclude_id: int | None = None,
+        business_key: str = "",
     ) -> int:
         """批量更新同 key 的 pending 候选状态，返回受影响行数"""
         return self._pending.resolve_similar_pending_candidates(
@@ -322,6 +364,7 @@ class DatabaseManager:
             status=status,
             confirmed_subject_id=confirmed_subject_id,
             exclude_id=exclude_id,
+            business_key=business_key,
         )
 
     # ------------------------------------------------------------------
@@ -780,6 +823,9 @@ def reset_database_manager() -> None:
     """复位数据库管理器单例，下次访问时重建。"""
     global _database_manager
     _database_manager = None
+
+
+database_manager: DatabaseManager
 
 
 def __getattr__(name: str):

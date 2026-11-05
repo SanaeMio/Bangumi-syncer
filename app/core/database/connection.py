@@ -40,6 +40,12 @@ class DatabaseConnection:
                 logger.info(f"已从旧路径迁移数据库 {legacy} -> {self.db_path}")
 
         self._lock = threading.Lock()
+        self._media_type_migrated = False
+        self._bgm_title_migrated = False
+        self._trakt_filter_migrated = False
+        self._match_fields_migrated = False
+        self._pending_sync_sync_record_id_migrated = False
+        self._pending_candidates_sync_record_id_migrated = False
         self._conn: sqlite3.Connection | None = None
         self._agent_memory_migrated = False
         # 已确认存在（或已补上）的列集合，避免每次读写前的 ensure_schema
@@ -74,6 +80,7 @@ class DatabaseConnection:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA foreign_keys = ON")
             self._conn = conn
         return self._conn
 
@@ -254,6 +261,33 @@ class DatabaseConnection:
             message="pending_candidates 已迁移：增加 sync_record_id 列",
         )
 
+    def _ensure_pending_candidates_llm_columns(self, cursor) -> None:
+        """旧库迁移：为 pending_candidates 增加 llm_subject_id / llm_reason（AI 推荐字段）。
+
+        承载 LLM 匹配增强给出的建议 subject 与理由。
+        """
+        self._ensure_columns(
+            cursor,
+            "pending_candidates",
+            [
+                ("llm_subject_id", "TEXT DEFAULT ''"),
+                ("llm_reason", "TEXT DEFAULT ''"),
+            ],
+            message="pending_candidates 已迁移：增加 llm_subject_id / llm_reason 列",
+        )
+
+    def _ensure_pending_candidates_business_key(self, cursor) -> None:
+        """旧库迁移：为 pending_candidates 增加 business_key（业务身份去重用）。
+
+        对齐 agent_runs 的去重键语义：(user_name, normalize(title), season)。
+        """
+        self._ensure_columns(
+            cursor,
+            "pending_candidates",
+            [("business_key", "TEXT DEFAULT ''")],
+            message="pending_candidates 已迁移：增加 business_key 列",
+        )
+
     def _ensure_bangumi_accounts_private(self, cursor) -> None:
         """旧库迁移：为 bangumi_accounts 增加 private（收藏是否私有）。
 
@@ -389,6 +423,71 @@ class DatabaseConnection:
             "CREATE INDEX IF NOT EXISTS idx_sync_records_consumed_run_id "
             "ON sync_records_consumed(run_id)"
         )
+
+    def _ensure_agent_runs_business_key(self, cursor) -> None:
+        """旧库迁移：为 agent_runs 增加 business_key（业务键去重用）。"""
+        self._ensure_columns(
+            cursor,
+            "agent_runs",
+            [("business_key", "TEXT DEFAULT ''")],
+            message="agent_runs 已迁移：增加 business_key 列",
+        )
+
+    def _ensure_agent_run_sync_records(self, cursor) -> None:
+        """agent_run ↔ sync_record 关联表：多对一（N 条集级 record 关联 1 个剧集级 run）。
+
+        与 agent_steps 的 FK 风格一致（run 删除时级联清理关联行）。
+        sync_records 表不加字段，关联关系独立承载，避免污染通用同步记录表。
+        SQL 幂等（IF NOT EXISTS），重复执行安全。
+        """
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_run_sync_records (
+                run_id         TEXT NOT NULL REFERENCES agent_runs(run_id)
+                    ON DELETE CASCADE,
+                sync_record_id INTEGER NOT NULL,
+                decision       TEXT DEFAULT '',
+                created_at     INTEGER NOT NULL,
+                PRIMARY KEY (run_id, sync_record_id)
+            )
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_run_sync_records_record "
+            "ON agent_run_sync_records(sync_record_id)"
+        )
+
+    def _migrate_agent_run_terminal_statuses(self, cursor) -> None:
+        """旧库迁移：业务特化终态 applied/rejected 收敛为 succeeded。
+
+        用户处理结果改由 pending_candidates（status + resolved_at）承载，
+        agent_runs 回归通用框架、不再持有业务状态。幂等：首次迁移后
+        重复执行影响 0 行。
+        """
+        cursor.execute(
+            "UPDATE agent_runs SET status='succeeded' "
+            "WHERE status IN ('applied', 'rejected')"
+        )
+        if cursor.rowcount > 0:
+            logger.info(
+                f"agent_runs 已迁移：{cursor.rowcount} 条 applied/rejected 收敛为 succeeded"
+            )
+
+    def _migrate_agent_run_no_suggestion(self, cursor) -> None:
+        """旧库迁移：``no_suggestion`` 终态收敛为 ``succeeded``。
+
+        「成功结束但未产出建议」不再是独立终态（它就是 succeeded，差异由
+        ``stop_reason`` 承载）。遗留行必须迁移，否则既不在终态集合内
+        （``cleanup_expired`` 清不掉、留孤儿行），也不在活性态内（不会被恢复扫描
+        捞起）—— 处于两不管的死状态。幂等：首次迁移后重复执行影响 0 行。
+        """
+        cursor.execute(
+            "UPDATE agent_runs SET status='succeeded' WHERE status='no_suggestion'"
+        )
+        if cursor.rowcount > 0:
+            logger.info(
+                f"agent_runs 已迁移：{cursor.rowcount} 条 no_suggestion 收敛为 succeeded"
+            )
 
     def _ensure_sync_records_account_results(self, cursor) -> None:
         """旧库迁移：为 sync_records 增加 account_results（各 Bangumi 账号的同步结果）。
@@ -614,10 +713,13 @@ class DatabaseConnection:
                 status TEXT DEFAULT 'pending',
                 confirmed_subject_id TEXT DEFAULT '',
                 resolved_at DATETIME,
-                sync_record_id INTEGER
+                sync_record_id INTEGER,
+                business_key TEXT DEFAULT ''
             )
         """)
         self._ensure_pending_candidates_sync_record_id(cursor)
+        self._ensure_pending_candidates_llm_columns(cursor)
+        self._ensure_pending_candidates_business_key(cursor)
 
         # 待同步队列：Bangumi API 不可达时缓存已匹配的同步请求，API 恢复后补发
         cursor.execute("""
@@ -641,6 +743,77 @@ class DatabaseConnection:
             )
         """)
         self._ensure_pending_sync_queue_sync_record_id(cursor)
+
+        # Agent 通用会话表：agent_runs（一次会话状态机）+ agent_steps（span 可重放日志）
+        # status 枚举：pending/processing/succeeded/failed/cancelled
+        # （applied/rejected 已移除，用户处理结果由 pending_candidates 承载；
+        #   exhausted 仅作 stop_reason，不作 status）
+        # 时间列统一 epoch 秒整数（写入方显式写入，DEFAULT 0 占位）。
+        # agent_runs 必须先于 agent_steps / agent_run_sync_records 创建（FK 引用 runs）。
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL UNIQUE,
+                task_type TEXT NOT NULL,
+                sync_record_id INTEGER,
+                business_key TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                stop_reason TEXT DEFAULT '',
+                attempts INTEGER DEFAULT 0,
+                total_attempts INTEGER DEFAULT 0,
+                last_attempt_at INTEGER DEFAULT 0,
+                last_error TEXT,
+                total_tokens INTEGER DEFAULT 0,
+                started_at INTEGER DEFAULT 0,
+                ended_at INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT 0
+            )
+        """)
+        self._ensure_agent_runs_business_key(cursor)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_steps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL REFERENCES agent_runs(run_id)
+                    ON DELETE CASCADE,
+                span_id TEXT NOT NULL,
+                parent_id TEXT DEFAULT '',
+                name TEXT NOT NULL,
+                status TEXT DEFAULT 'ok',
+                model TEXT DEFAULT '',
+                tokens INTEGER DEFAULT 0,
+                latency_ms INTEGER DEFAULT 0,
+                tool_name TEXT DEFAULT '',
+                input_summary TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                iteration INTEGER DEFAULT 0,
+                sequence INTEGER DEFAULT 0,
+                replay_delta TEXT DEFAULT '',
+                started_at INTEGER DEFAULT 0,
+                ended_at INTEGER DEFAULT 0
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_runs_sync_record_id "
+            "ON agent_runs(sync_record_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status)"
+        )
+        # 业务键索引：部分唯一索引防在途重复 + 普通索引加速查询
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_runs_business_key_active "
+            "ON agent_runs(business_key) "
+            "WHERE status IN ('pending','processing') AND business_key != ''"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_runs_business_key "
+            "ON agent_runs(business_key, status)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_steps_run_id ON agent_steps(run_id)"
+        )
+        # run ↔ sync_record 关联表（多对一），须在 agent_runs 之后创建（FK 引用）
+        self._ensure_agent_run_sync_records(cursor)
 
         # Bangumi 账号（含 OAuth 令牌）：以「账号列表」为唯一真相源，
         # 取代散落在 INI 各 [bangumi-*] 段的配置。
@@ -728,12 +901,15 @@ class DatabaseConnection:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_pending_candidates_status ON pending_candidates(status)"
         )
-        # 部分唯一索引：同一 (title, season, user, source) 仅允许一个 pending 行，
-        # 用于 pending_candidates 去重（upsert 依赖此索引）
+        # 删除旧的 4 元组唯一索引（对齐 business_key 去重后废弃）
+        cursor.execute("DROP INDEX IF EXISTS idx_pending_candidates_dedup")
+        # 部分唯一索引：同一 business_key 仅允许一个 pending 行（空 key 不参与约束，
+        # 兼容老数据 / 手动沉淀）。去重键对齐 agent_runs 业务身份：
+        # (user_name, normalize(title), season)
         cursor.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_candidates_dedup "
-            "ON pending_candidates(request_title, request_season, user_name, source) "
-            "WHERE status = 'pending'"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_candidates_business_key_active "
+            "ON pending_candidates(business_key) "
+            "WHERE status = 'pending' AND business_key != ''"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_pending_sync_queue_status ON pending_sync_queue(status)"
@@ -757,6 +933,10 @@ class DatabaseConnection:
 
         # Agent 工作记忆（热表 + 归档冷表 + FTS5 + 同步触发器）
         self._ensure_agent_memory(cursor)
+
+        # 旧库迁移：applied/rejected 业务特化终态收敛为 succeeded（幂等）
+        self._migrate_agent_run_terminal_statuses(cursor)
+        self._migrate_agent_run_no_suggestion(cursor)
 
         # 一次性数据迁移：加密历史明文 token（仓储层已改为写入即加密）
         self._ensure_tokens_encrypted(cursor)

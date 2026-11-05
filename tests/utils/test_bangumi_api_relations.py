@@ -7,6 +7,7 @@
 - 类型过滤（仅 anime/real）、系列全集去重
 """
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from app.utils.bangumi_api import BangumiApi
@@ -14,6 +15,11 @@ from app.utils.bangumi_archive._store import archive_store
 
 REL_SEQUEL = "续集"
 REL_PREQUEL = "前传"
+
+
+def _archive(api: BangumiApi) -> MagicMock:
+    """api._archive 由 _make_api 注入为 MagicMock；收窄类型以访问 mock 行为。"""
+    return cast(MagicMock, api._archive)
 
 
 def _make_api() -> BangumiApi:
@@ -46,7 +52,7 @@ class TestSearchNextSubject:
     def test_archive_hit_returns_id(self) -> None:
         """Archive 命中续集时直接返回 id，不调用在线 get_related_subjects"""
         api = _make_api()
-        api._archive.try_find_next_sequel_id.return_value = _hit(42)
+        _archive(api).try_find_next_sequel_id.return_value = _hit(42)
         api.get_related_subjects = MagicMock()
         assert api.search_next_subject(1) == 42
         api.get_related_subjects.assert_not_called()
@@ -54,7 +60,7 @@ class TestSearchNextSubject:
     def test_archive_hit_none(self) -> None:
         """Archive 确认无续集时返回 None，不调用在线 API"""
         api = _make_api()
-        api._archive.try_find_next_sequel_id.return_value = _hit(None)
+        _archive(api).try_find_next_sequel_id.return_value = _hit(None)
         api.get_related_subjects = MagicMock()
         assert api.search_next_subject(1) is None
         api.get_related_subjects.assert_not_called()
@@ -62,7 +68,7 @@ class TestSearchNextSubject:
     def test_archive_miss_falls_back_and_finds_sequel(self) -> None:
         """Archive 未命中时降级 get_related_subjects，命中 Sequel 返回 id"""
         api = _make_api()
-        api._archive.try_find_next_sequel_id.return_value = _miss()
+        _archive(api).try_find_next_sequel_id.return_value = _miss()
         api.get_related_subjects = MagicMock(
             return_value=[
                 {"id": 7, "relation": "番外篇"},
@@ -76,7 +82,7 @@ class TestSearchNextSubject:
     def test_archive_miss_skips_non_anime_sequel(self) -> None:
         """降级命中续集但类型非 anime/real（如游戏）时返回 None"""
         api = _make_api()
-        api._archive.try_find_next_sequel_id.return_value = _miss()
+        _archive(api).try_find_next_sequel_id.return_value = _miss()
         api.get_related_subjects = MagicMock(
             return_value=[{"id": 42, "relation": REL_SEQUEL}]
         )
@@ -86,7 +92,7 @@ class TestSearchNextSubject:
     def test_archive_miss_no_sequel(self) -> None:
         """降级后无任何 Sequel 关联时返回 None"""
         api = _make_api()
-        api._archive.try_find_next_sequel_id.return_value = _miss()
+        _archive(api).try_find_next_sequel_id.return_value = _miss()
         api.get_related_subjects = MagicMock(return_value=[])
         assert api.search_next_subject(1) is None
 
@@ -97,7 +103,7 @@ class TestSearchPreviousSubjects:
     def test_archive_hit_returns_chain(self) -> None:
         """Archive 命中前传链时直接返回，不降级 _walk_prequel_flat"""
         api = _make_api()
-        api._archive.try_find_prequel_chain.return_value = _hit([10, 5])
+        _archive(api).try_find_prequel_chain.return_value = _hit([10, 5])
         api._walk_prequel_flat = MagicMock()
         assert api.search_previous_subjects(1) == [10, 5]
         api._walk_prequel_flat.assert_not_called()
@@ -105,7 +111,7 @@ class TestSearchPreviousSubjects:
     def test_archive_hit_empty(self) -> None:
         """archive 命中但链为空时降级到 API 逐跳（关联数据可能不完整）"""
         api = _make_api()
-        api._archive.try_find_prequel_chain.return_value = _hit([])
+        _archive(api).try_find_prequel_chain.return_value = _hit([])
         api._walk_prequel_flat = MagicMock(return_value=[])
         assert api.search_previous_subjects(1) == []
         api._walk_prequel_flat.assert_called_once()
@@ -113,7 +119,7 @@ class TestSearchPreviousSubjects:
     def test_archive_miss_falls_back_to_walk(self) -> None:
         """Archive 未命中时降级 _walk_prequel_flat"""
         api = _make_api()
-        api._archive.try_find_prequel_chain.return_value = _miss()
+        _archive(api).try_find_prequel_chain.return_value = _miss()
         api._walk_prequel_flat = MagicMock(return_value=[10, 5])
         assert api.search_previous_subjects(1) == [10, 5]
         api._walk_prequel_flat.assert_called_once()
@@ -170,7 +176,7 @@ class TestGetSeriesSubjectIds:
     def test_all_via_archive_shortcut(self) -> None:
         """续集方向全程走 Archive 短路，不回退在线 get_related_subjects"""
         api = _make_api()
-        api._archive.try_find_next_sequel_id.side_effect = [
+        _archive(api).try_find_next_sequel_id.side_effect = [
             _hit(2),
             _hit(3),
             _hit(None),
@@ -179,7 +185,7 @@ class TestGetSeriesSubjectIds:
         api.get_subject = MagicMock(return_value={"id": 0, "type": 2})
         ids = api.get_series_subject_ids(1)
         assert set(ids) == {1, 2, 3, 100}
-        api._archive.try_find_next_sequel_id.assert_called()
+        _archive(api).try_find_next_sequel_id.assert_called()
 
 
 class TestSeriesClosureBFS:
@@ -189,7 +195,7 @@ class TestSeriesClosureBFS:
         """离线闭包应收回分支型 IP 的全部兄弟续集/前传（单链 LIMIT 1 会丢失）"""
         api = _make_api()
         # seed=1：续集 1->2，2->[3,4]（分支），前传 1->5
-        api._archive.try_find_series_closure.return_value = _hit([2, 5, 3, 4])
+        _archive(api).try_find_series_closure.return_value = _hit([2, 5, 3, 4])
         api.get_subject = MagicMock(side_effect=lambda sid: {"id": sid, "type": 2})
         ids = api.get_series_subject_ids_bfs(1)
         assert ids[0] == 1
@@ -198,7 +204,7 @@ class TestSeriesClosureBFS:
     def test_online_fallback_closure(self) -> None:
         """Archive miss 时降级在线 get_related_subjects 双向 BFS，仍收回分支"""
         api = _make_api()
-        api._archive.try_find_series_closure.return_value = _miss()
+        _archive(api).try_find_series_closure.return_value = _miss()
         related_map = {
             1: [
                 {"id": 2, "relation": REL_SEQUEL},
@@ -223,7 +229,7 @@ class TestSeriesClosureBFS:
     def test_filters_non_anime(self) -> None:
         """闭包中含非 anime/real 节点时被过滤（seed 始终保留）"""
         api = _make_api()
-        api._archive.try_find_series_closure.return_value = _hit(
+        _archive(api).try_find_series_closure.return_value = _hit(
             [2, 3]
         )  # 2=动画 3=游戏
         api.get_subject = MagicMock(
@@ -273,7 +279,7 @@ class TestFranchiseClosureBFS:
     def test_offline_closure_includes_franchise_relations(self) -> None:
         """离线闭包应沿同 IP 关系（改编/相同世界观等）收回兄弟作品"""
         api = _make_api()
-        api._archive.try_find_franchise_closure.return_value = _hit([2, 3, 4])
+        _archive(api).try_find_franchise_closure.return_value = _hit([2, 3, 4])
         api.get_subject = MagicMock(side_effect=lambda sid: {"id": sid, "type": 2})
         ids = api.get_franchise_subject_ids_bfs(1)
         assert ids[0] == 1
@@ -282,7 +288,7 @@ class TestFranchiseClosureBFS:
     def test_offline_empty_closure_no_online_fallback(self) -> None:
         """Archive 命中空闭包（hit=True, data=[]，seed 存在但无关联）不降级在线"""
         api = _make_api()
-        api._archive.try_find_franchise_closure.return_value = _hit([])
+        _archive(api).try_find_franchise_closure.return_value = _hit([])
         api.get_related_subjects = MagicMock()
         ids = api.get_franchise_subject_ids_bfs(1)
         assert ids == [1]
@@ -291,7 +297,7 @@ class TestFranchiseClosureBFS:
     def test_online_fallback_excludes_noise_edges(self) -> None:
         """在线降级应排除「角色出演/不同世界观/联动」等噪声边"""
         api = _make_api()
-        api._archive.try_find_franchise_closure.return_value = _miss()
+        _archive(api).try_find_franchise_closure.return_value = _miss()
         related_map = {
             1: [
                 {"id": 2, "relation": "续集"},
@@ -316,7 +322,7 @@ class TestFranchiseClosureBFS:
     def test_online_fallback_max_hops_truncates(self) -> None:
         """max_hops 节点数上限截断：超过上限的节点不入闭包"""
         api = _make_api()
-        api._archive.try_find_franchise_closure.return_value = _miss()
+        _archive(api).try_find_franchise_closure.return_value = _miss()
         # 1 -> 2 -> 3 -> 4 -> 5 -> 6（线性链，每跳 1 个新节点）
         related_map = {
             1: [{"id": 2, "relation": "续集"}],
@@ -338,7 +344,7 @@ class TestFranchiseClosureBFS:
     def test_filters_non_anime(self) -> None:
         """闭包中含非 anime/real 节点时被过滤（seed 始终保留）"""
         api = _make_api()
-        api._archive.try_find_franchise_closure.return_value = _hit([2, 3])
+        _archive(api).try_find_franchise_closure.return_value = _hit([2, 3])
         api.get_subject = MagicMock(
             side_effect=lambda sid: {"id": sid, "type": 2 if sid == 2 else 4}
         )
@@ -348,7 +354,7 @@ class TestFranchiseClosureBFS:
     def test_archive_error_falls_back_online(self) -> None:
         """Archive 异常（reason=archive_error）应降级在线 BFS"""
         api = _make_api()
-        api._archive.try_find_franchise_closure.return_value = _miss("archive_error")
+        _archive(api).try_find_franchise_closure.return_value = _miss("archive_error")
         api.get_related_subjects = MagicMock(
             return_value=[{"id": 2, "relation": "续集"}]
         )
@@ -415,3 +421,22 @@ class TestFindFranchiseClosureStore:
         monkeypatch.setattr(archive_store, "_get_connection", lambda: MagicMock())
         closure = archive_store.find_franchise_closure(1, relation_types=())
         assert closure == []
+
+
+class TestCollectRelatedSubjectsCycleTypeNormalization:
+    """跨季链 visited 去重需 str 归一化（起始 id 为 str、API 返回 int）。"""
+
+    def test_cycle_with_int_sequel_id_is_not_revisited(self) -> None:
+        """续集链 123(str) → 456(int) → 123(int) 成环：回到起始即终止，不重复收录。"""
+        api = _make_api()
+        _archive(api).try_find_sequel_chain.return_value = _miss()
+        api.search_previous_subjects = MagicMock(return_value=[])
+        id_map = {"123": 456, "456": 123}
+        api._find_related_id_by_relation = MagicMock(
+            side_effect=lambda sid, rel: id_map.get(str(sid))
+        )
+
+        # 起始 id 为 str 属刻意覆盖（跨季链 str/int 混用），cast 绕过静态类型
+        chain = api._collect_related_subjects(cast(Any, "123"), max_depth=10)
+
+        assert chain == ["123", 456]
