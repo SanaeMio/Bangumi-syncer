@@ -21,6 +21,7 @@ import httpx
 from ...core.logging import logger
 from ..retry import RETRY_STATUS_CODES, compute_backoff_delay
 from ._http_client import create_bgm_async_client
+from .failure import FailureKind, classify_status, should_mark_unreachable
 from .http_layer import (
     BGM_REQUEST_BACKOFF_BASE,
     BGM_REQUEST_MAX_ATTEMPTS,
@@ -71,7 +72,7 @@ class AsyncHttpLayer:
                 )
                 async with client:
                     res = await client.request(method, url, **kwargs)
-            except httpx.HTTPError:
+            except httpx.HTTPError as e:
                 if attempt < BGM_REQUEST_MAX_ATTEMPTS - 1:
                     delay = compute_backoff_delay(
                         attempt, base=BGM_REQUEST_BACKOFF_BASE
@@ -84,7 +85,8 @@ class AsyncHttpLayer:
                     await asyncio.sleep(delay)
                     continue
                 # 连接层错误：与同步一致标记不可达（读写降级），异常原样上抛
-                self.mark_api_unreachable()
+                if should_mark_unreachable(e):
+                    self.mark_api_unreachable()
                 raise
 
             # 429 冻结令牌桶 / 成功重置升级计数（与同步同源；每次响应都通知）
@@ -118,7 +120,8 @@ class AsyncHttpLayer:
                 logger.warning(
                     f"📚 Bangumi API HTTP {res.status_code}（重试耗尽），标记不可达"
                 )
-                self.mark_api_unreachable()
+                if classify_status(res.status_code) is FailureKind.UNREACHABLE:
+                    self.mark_api_unreachable()
                 raise httpx.HTTPStatusError(
                     f"HTTP {res.status_code} 错误，已达到最大重试次数",
                     request=res.request,
