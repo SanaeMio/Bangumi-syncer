@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.utils.bangumi_api import BangumiApi
+from app.utils.bangumi_api.rate_limit import RateLimitTimeoutError
 
 
 def _mock_response(status_code=200, json_data=None):
@@ -510,3 +511,36 @@ def test_bangumi_clients_disable_internal_retries():
     api = BangumiApi()
     assert api.req._max_retries == 0, "内部重试会绕过 limiter，禁止开启"
     assert api._req_not_auth._max_retries == 0, "内部重试会绕过 limiter，禁止开启"
+
+
+def _raise_rate_limit_timeout(*args, **kwargs):
+    raise RateLimitTimeoutError("限速排队 60s，超过 timeout=30s")
+
+
+def test_search_returns_empty_when_rate_limit_timeout():
+    """冷却期 acquire 超时：读降级为空，不向调用方冒泡。"""
+    with patch("app.utils.bangumi_api.http_layer.get_bgm_rate_limiter") as mock_limiter:
+        mock_limiter.return_value.acquire.side_effect = _raise_rate_limit_timeout
+        api = BangumiApi()
+        assert api.search("test", "2024-01-01", "2024-12-31") == []
+
+
+def test_get_subject_returns_empty_when_rate_limit_timeout():
+    with patch("app.utils.bangumi_api.http_layer.get_bgm_rate_limiter") as mock_limiter:
+        mock_limiter.return_value.acquire.side_effect = _raise_rate_limit_timeout
+        api = BangumiApi()
+        assert api.get_subject(1) == {}
+
+
+def test_get_episodes_returns_empty_when_rate_limit_timeout():
+    with patch("app.utils.bangumi_api.http_layer.get_bgm_rate_limiter") as mock_limiter:
+        mock_limiter.return_value.acquire.side_effect = _raise_rate_limit_timeout
+        api = BangumiApi()
+        assert api.get_episodes(1) == {"data": [], "total": 0}
+
+
+def test_get_related_subjects_returns_empty_when_rate_limit_timeout():
+    with patch("app.utils.bangumi_api.http_layer.get_bgm_rate_limiter") as mock_limiter:
+        mock_limiter.return_value.acquire.side_effect = _raise_rate_limit_timeout
+        api = BangumiApi()
+        assert api.get_related_subjects(1) == []
