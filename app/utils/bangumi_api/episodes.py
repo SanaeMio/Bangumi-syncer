@@ -7,8 +7,6 @@ import re
 import time
 from typing import Any
 
-import httpx
-
 from ...core.config import config_manager
 from ...core.logging import logger
 from ...utils.bangumi_constants import (
@@ -21,6 +19,7 @@ from ...utils.bangumi_constants import (
     SUBJECT_TYPE_REAL,
 )
 from ...utils.season_title import extract_explicit_season
+from .failure import READ_FALLBACK_ERRORS
 
 # 关联类型中文名（由 ID 常量推导，避免硬编码字符串）
 _RELATION_CN_SEQUEL = RELATIONS[RELATION_ID_SEQUEL]
@@ -73,7 +72,7 @@ class EpisodesMixin:
                     "offset": offset,
                 },
             )
-        except httpx.HTTPError as e:
+        except READ_FALLBACK_ERRORS as e:
             # 网络不可达/重试耗尽：吞掉异常返回空分页，
             # 保证调用方（章节查找/续集链遍历）继续降级而不是崩溃
             logger.error(f"get_episodes API 请求失败（网络错误）: {e}")
