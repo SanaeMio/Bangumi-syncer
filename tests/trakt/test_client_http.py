@@ -40,6 +40,7 @@ async def test_get_user_profile(mock_config):
     async with client:
         result = await client.get_user_profile()
 
+    assert result is not None
     assert result["username"] == "testuser"
     assert result["id"] == 12345
     assert mock_route.called
@@ -80,7 +81,9 @@ async def test_get_watched_history(mock_config):
         result = await client.get_watched_history()
 
     assert len(result) == 1
-    assert result[0].show["title"] == "Test Show"
+    show = result[0].show
+    assert show is not None
+    assert show["title"] == "Test Show"
     assert mock_route.called
 
 
@@ -187,7 +190,9 @@ async def test_get_collection(mock_config):
         result = await client.get_collection("shows")
 
     assert len(result) == 1
-    assert result[0].show["title"] == "Test Show"
+    show = result[0].show
+    assert show is not None
+    assert show["title"] == "Test Show"
     assert mock_route.called
 
 
@@ -215,6 +220,7 @@ async def test_get_movie_info(mock_config):
     async with client:
         result = await client.get_movie_info(123)
 
+    assert result is not None
     assert result["title"] == "Test Movie"
     assert result["year"] == 2024
     assert mock_route.called
@@ -242,8 +248,9 @@ async def test_get_show_info(mock_config):
 
     client = TraktClient(access_token="test_token")
     async with client:
-        result = await client.get_show_info(123)
+        result = await client.get_show_info("123")
 
+    assert result is not None
     assert result["title"] == "Test Show"
     assert mock_route.called
 
@@ -273,6 +280,7 @@ async def test_get_episode_info(mock_config):
     async with client:
         result = await client.get_episode_info(123, 1, 1)
 
+    assert result is not None
     assert result["title"] == "Episode 1"
     assert mock_route.called
 

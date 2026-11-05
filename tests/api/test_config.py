@@ -1022,3 +1022,175 @@ async def test_refresh_webhook_key_exception(app_with_auth, mock_config_manager)
         ) as client:
             response = await client.post("/api/config/auth/refresh-webhook-key")
             assert response.status_code == 500
+
+
+# ========== [sync] llm_match_* 保存校验 + /api/config 暴露字段 ==========
+
+
+@pytest.fixture
+def mock_sync_cm():
+    """可控 config_manager：用于配置保存校验与 /api/config 字段暴露测试。"""
+    with patch("app.api.config.config_manager") as mock_cm:
+        mock_cm.active_config_path = "/tmp/test_config.ini"
+        mock_cm.get_config_parser.return_value = MagicMock()
+        mock_cm.get_feiniu_config.return_value = {"enabled": False}
+        mock_cm.set_config.return_value = None
+        mock_cm.save_config.return_value = None
+        mock_cm.reload_config.return_value = None
+        # 当前 llm_match_assist 默认关闭、LLM 未配置
+        mock_cm.get.return_value = False
+        mock_cm.get_llm_config.return_value = {"api_key": ""}
+        yield mock_cm
+
+
+@pytest.mark.asyncio
+async def test_sync_config_endpoint_removed(app_with_auth, mock_config_manager):
+    """GET /api/sync/config 已删除，前端改为复用 /api/config 数据。"""
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/sync/config")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_config_masks_llm_key_and_exposes_match_assist(
+    app_with_auth, mock_config_manager
+):
+    """GET /api/config 掩码 llm.api_key，同时暴露 sync.llm_match_assist。
+
+    前端 loadLLMMatchAssist 只需判断 api_key 是否非空；掩码口径与
+    /api/llm/conf 一致（***last4），getLLMApiKeyValue 见到 *** 前缀跳过写入。
+    """
+    mock_config_manager.get_all_config.return_value = {
+        "llm": {"api_key": "sk-liveabcd1234"},
+        "sync": {"llm_match_assist": True},
+    }
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["llm"]["api_key"] == "***1234"
+    assert "sk-liveabcd1234" not in str(data)
+    assert data["sync"]["llm_match_assist"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_config_masks_short_llm_key_fully(app_with_auth, mock_config_manager):
+    """短于 5 位的 key 全遮，不泄露尾部。"""
+    mock_config_manager.get_all_config.return_value = {"llm": {"api_key": "abc"}}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["llm"]["api_key"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_get_config_keeps_empty_llm_key(app_with_auth, mock_config_manager):
+    """空 key 保持空串：前端据此判定 LLM 未配置。"""
+    mock_config_manager.get_all_config.return_value = {"llm": {"api_key": ""}}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["llm"]["api_key"] == ""
+
+
+@pytest.mark.asyncio
+async def test_get_config_without_llm_section(app_with_auth, mock_config_manager):
+    """配置缺 llm 段时不得抛错。"""
+    mock_config_manager.get_all_config.return_value = {"auth": {"username": "u"}}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config")
+
+    assert response.status_code == 200
+    assert "llm" not in response.json()["data"]
+
+
+@pytest.mark.asyncio
+async def test_update_config_rejects_assist_enabled_without_llm_key(
+    app_with_auth, mock_sync_cm
+):
+    """开启 llm_match_assist 且 LLM 未配置 → 拒绝 + 原因"需先配置 LLM"。"""
+    mock_sync_cm.get_llm_config.return_value = {"api_key": ""}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/config", json={"sync": {"llm_match_assist": True}}
+        )
+
+    assert response.status_code == 400
+    assert "需先配置 LLM" in response.json()["detail"]
+    # 校验失败不应写入任何配置
+    mock_sync_cm.set_config.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_config_accepts_assist_enabled_with_llm_key_in_payload(
+    app_with_auth, mock_sync_cm
+):
+    """同请求携带 llm.api_key → 视为将生效，接受保存。"""
+    mock_sync_cm.get_llm_config.return_value = {"api_key": ""}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/config",
+            json={
+                "sync": {"llm_match_assist": True},
+                "llm": {"api_key": "sk-newabcd1234"},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_update_config_accepts_assist_enabled_when_llm_already_configured(
+    app_with_auth, mock_sync_cm
+):
+    """LLM 已配置（当前 api_key 非空）时开启开关 → 接受。"""
+    mock_sync_cm.get_llm_config.return_value = {"api_key": "sk-existing1234"}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/config", json={"sync": {"llm_match_assist": True}}
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_config_assist_disabled_no_llm_key_ok(app_with_auth, mock_sync_cm):
+    """开关关闭时即使 LLM 未配置也允许保存。"""
+    mock_sync_cm.get_llm_config.return_value = {"api_key": ""}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/config", json={"sync": {"llm_match_assist": False}}
+        )
+
+    assert response.status_code == 200

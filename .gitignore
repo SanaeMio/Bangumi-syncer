@@ -187,6 +187,7 @@ sync_records.db-shm
 # Claude Code
 .claude/
 
+
 # 本地嵌套的第三方仓库（如 jellyfin-plugin-bangumi），仅本地开发用，不纳入分发
 rrr/mcp_server
 # rrr/ 下整体忽略：内含第三方仓库 clone 与本地调试脚本，避免 git add -A 误提交
@@ -202,3 +203,13 @@ rrr/mcp_server
 
 # MCP 端到端实测过程记录（一次性报告/指南，保留本地、不纳入分发）
 /e2e-test/
+
+# Pi Agent
+.pi
+
+# 本地待办与内部任务稿（不随仓库提交）
+/scripts/memory_selfcheck.py
+/log.txt.*
+
+# eval 运行产物（本地生成，不入库）
+/eval-out/

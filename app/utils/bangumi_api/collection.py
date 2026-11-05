@@ -8,8 +8,6 @@ import threading
 import time
 from typing import Any, Optional
 
-import httpx
-
 from ...core.config import config_manager
 from ...core.logging import logger
 from ...utils.bangumi_constants import (
@@ -20,6 +18,7 @@ from ...utils.bangumi_constants import (
     SUBJECT_TYPE_ANIME,
     SUBJECT_TYPE_REAL,
 )
+from .failure import FailureKind, classify_failure, write_failure_reason
 
 
 class CollectionMixin:
@@ -88,7 +87,7 @@ class CollectionMixin:
                 break
         return results[:max_total]
 
-    def get_subject_collection(self, subject_id: int) -> dict[str, Any]:
+    def get_subject_collection(self, subject_id: int | str) -> dict[str, Any]:
         res = self.get(f"users/{self.username}/collections/{subject_id}")
         if res.status_code == 404:
             return {}
@@ -105,7 +104,7 @@ class CollectionMixin:
             res = {}
         return res
 
-    def get_ep_collection(self, episode_id: int) -> dict[str, Any]:
+    def get_ep_collection(self, episode_id: int | str) -> dict[str, Any]:
         res = self.get(f"users/-/collections/-/episodes/{episode_id}")
         if res.status_code == 404:
             return {}
@@ -130,7 +129,7 @@ class CollectionMixin:
     #   并重新抛异常；本方法捕获后入队
     # ------------------------------------------------------------------
 
-    def ensure_subject_watching(self, subject_id: int) -> int:
+    def ensure_subject_watching(self, subject_id: int | str) -> int:
         """
         仅将条目收藏置为「在看」(COLLECTION_TYPE_DOING)，不修改单集进度。
 
@@ -148,30 +147,22 @@ class CollectionMixin:
 
         try:
             return self._do_ensure_subject_watching(subject_id)
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            # 连接错误：标记不可达并触发入队
-            self.mark_api_unreachable()
+        except Exception as e:
+            kind = classify_failure(e)
+            if kind is FailureKind.CLIENT_ERROR:
+                # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队
+                raise
+            if kind is FailureKind.UNREACHABLE:
+                self.mark_api_unreachable()
+            # 429 / 限速超时：只入队，依赖令牌桶冷却，不叠 300s 熔断
             raise _PendingSyncQueued(
                 subject_id=subject_id,
                 ep_id=None,
-                reason="connect_error_movie_watching",
+                reason=write_failure_reason(e, movie=True),
                 cause=e,
             ) from e
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code if e.response is not None else 0
-            # 5xx/429：服务端不可用，入队等重试
-            if status in (429, 500, 502, 503, 504):
-                self.mark_api_unreachable()
-                raise _PendingSyncQueued(
-                    subject_id=subject_id,
-                    ep_id=None,
-                    reason=f"http_{status}_movie_watching",
-                    cause=e,
-                ) from e
-            # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队，正常抛出
-            raise
 
-    def _do_ensure_subject_watching(self, subject_id: int) -> int:
+    def _do_ensure_subject_watching(self, subject_id: int | str) -> int:
         """实际执行 ensure_subject_watching 的子步骤（原逻辑）"""
         data = self.get_subject_collection(subject_id)
         if not data:
@@ -196,7 +187,7 @@ class CollectionMixin:
     #   并重新抛异常；上层捕获后再决定入队
     # ------------------------------------------------------------------
 
-    def mark_episode_watched(self, subject_id: int, ep_id: int) -> int:
+    def mark_episode_watched(self, subject_id: int | str, ep_id: int | str) -> int:
         """标记单集为已看
 
         返回值：
@@ -215,27 +206,22 @@ class CollectionMixin:
 
         try:
             return self._do_mark_episode_watched(subject_id, ep_id)
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            # 连接错误：标记不可达并触发入队
-            self.mark_api_unreachable()
-            raise _PendingSyncQueued(
-                subject_id=subject_id, ep_id=ep_id, reason="connect_error", cause=e
-            ) from e
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code if e.response is not None else 0
-            # 5xx/429：服务端不可用，入队等重试
-            if status in (429, 500, 502, 503, 504):
+        except Exception as e:
+            kind = classify_failure(e)
+            if kind is FailureKind.CLIENT_ERROR:
+                # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队
+                raise
+            if kind is FailureKind.UNREACHABLE:
                 self.mark_api_unreachable()
-                raise _PendingSyncQueued(
-                    subject_id=subject_id,
-                    ep_id=ep_id,
-                    reason=f"http_{status}",
-                    cause=e,
-                ) from e
-            # 4xx（除 401 已在 _check_auth_error 处理）：业务错误，不入队，正常抛出
-            raise
+            # 429 / 限速超时：只入队，依赖令牌桶冷却，不叠 300s 熔断
+            raise _PendingSyncQueued(
+                subject_id=subject_id,
+                ep_id=ep_id,
+                reason=write_failure_reason(e),
+                cause=e,
+            ) from e
 
-    def _do_mark_episode_watched(self, subject_id: int, ep_id: int) -> int:
+    def _do_mark_episode_watched(self, subject_id: int | str, ep_id: int | str) -> int:
         """实际执行 mark_episode_watched 的子步骤（原逻辑）"""
         data = self.get_subject_collection(subject_id)
 
@@ -269,7 +255,7 @@ class CollectionMixin:
 
     def add_collection_subject(
         self,
-        subject_id: int,
+        subject_id: int | str,
         private: bool | None = None,
         state: int = COLLECTION_TYPE_DOING,
     ) -> None:
@@ -281,7 +267,7 @@ class CollectionMixin:
 
     def change_collection_state(
         self,
-        subject_id: int,
+        subject_id: int | str,
         private: bool | None = None,
         state: int = COLLECTION_TYPE_DOING,
     ) -> None:
@@ -292,10 +278,13 @@ class CollectionMixin:
         )
 
     def change_episode_state(
-        self, ep_id: int, state: int = COLLECTION_TYPE_DONE
+        self, ep_id: int | str, state: int = COLLECTION_TYPE_DONE
     ) -> None:
         res = self.put(f"users/-/collections/-/episodes/{ep_id}", _json={"type": state})
-        if 333 < res.status_code < 444:
+        # 任何 4xx/5xx 都表示标记未成功，必须抛出触发上层失败/重试，
+        # 否则调用方会把未落库的标记当作成功（假阳性）。
+        # 旧实现 ``333 < status < 444`` 会漏掉 444-499（如 451/444）等失败码。
+        if res.status_code >= 400:
             raise ValueError(f"{res.status_code=} {res.text}")
         return res
 
@@ -315,8 +304,8 @@ class _PendingSyncQueued(Exception):
 
     def __init__(
         self,
-        subject_id: int,
-        ep_id: Optional[int] = None,
+        subject_id: int | str,
+        ep_id: int | str | None = None,
         reason: str = "api_unreachable",
         cause: Optional[BaseException] = None,
     ) -> None:

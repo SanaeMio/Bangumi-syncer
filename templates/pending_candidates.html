@@ -186,6 +186,7 @@ function displayPendingCandidates(records, total) {
         row.dataset.recordId = String(record.id);
         const statusBadge = renderCandidateStatusBadge(record.status);
         const candidatesCount = parseCandidatesCount(record.candidates_json);
+        const aiBadge = renderAgentRunBadge(record.agent_run_status, record.llm_subject_id);
 
         applyAppTableRowEnter(row, index);
 
@@ -196,7 +197,7 @@ function displayPendingCandidates(records, total) {
             <td>S${String(record.request_season).padStart(2, '0')}E${String(record.request_episode).padStart(2, '0')}</td>
             <td class="col-hide-sm">${renderSourceBadge(record.source)}</td>
             <td class="col-hide-sm col-hide-md"><span class="badge rounded-pill bg-info">${candidatesCount}</span></td>
-            <td>${statusBadge}</td>
+            <td>${statusBadge}${aiBadge}</td>
             <td class="col-hide-sm text-nowrap records-table-actions">
                 <button type="button" class="btn btn-action btn-outline-primary" onclick="showCandidateDetail(${record.id})" title="查看候选">
                     <i class="bi bi-list-ul"></i>
@@ -266,6 +267,54 @@ async function showCandidateDetail(candidateId) {
                 </div>
             </div>
         `;
+
+        // AI 推荐区块：当 llm_subject_id 有值时展示（含推荐条目 + 理由 + 应用建议按钮）
+        if (record.llm_subject_id) {
+            const sid = escapeHtml(String(record.llm_subject_id));
+            const reason = escapeHtml(record.llm_reason || '');
+            html += `
+                <div class="card mb-3 border-primary">
+                    <div class="card-header py-2">
+                        <strong><i class="bi bi-stars me-1 text-primary"></i>AI 推荐</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <a href="https://bgm.tv/subject/${sid}" target="_blank" rel="noopener">subject/${sid}</a>
+                        </div>
+                        ${reason ? `<div class="mb-2 text-muted"><small>${reason}</small></div>` : ''}
+                        ${
+                            record.status === 'pending'
+                                ? `<button type="button" class="btn btn-sm btn-primary" data-candidate-id="${record.id}" data-llm-subject-id="${sid}" onclick="_applyLlmSuggestion(this.dataset.candidateId, this.dataset.llmSubjectId)">
+                                        <i class="bi bi-check2-circle me-1"></i>应用建议
+                                    </button>`
+                                : `<div class="text-muted small">该候选已处理，建议不可再应用</div>`
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        // AI 评估过程折叠区：关联 agent run 存在时展示（GET /api/agent/runs/{run_id}/steps）
+        if (record.agent_run_id) {
+            const rid = escapeHtml(String(record.agent_run_id));
+            html += `
+                <div class="accordion mt-3" id="agentRunAccordion-${record.id}">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="agentRunHeading-${record.id}">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#agentRunBody-${record.id}" aria-expanded="false" aria-controls="agentRunBody-${record.id}" data-run-id="${rid}" onclick="_loadAgentRunSteps(this.dataset.runId, 'agentRunSteps-${record.id}')">
+                                <i class="bi bi-activity me-2"></i> AI 评估过程
+                            </button>
+                        </h2>
+                        <div id="agentRunBody-${record.id}" class="accordion-collapse collapse" aria-labelledby="agentRunHeading-${record.id}">
+                            <div class="accordion-body" id="agentRunSteps-${record.id}">
+                                <span class="text-muted">点击展开以加载评估过程…</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
 
         // 候选列表
         if (candidates.length > 0) {
@@ -345,13 +394,21 @@ async function confirmCandidate(candidateId, subjectId) {
 /**
  * 确认候选的核心逻辑（不做二次确认，由调用方决定是否需要 confirm）。
  * 供 confirmCandidate 与「手动指定 ID」流程的 onSaved 回调复用。
+ *
+ * @param {number} candidateId 候选记录 id
+ * @param {string} subjectId 确认的 Bangumi subject id
+ * @param {object} [options] 额外选项
+ * @param {boolean} [options.llmSuggestion] 为 true 时按 AI 推荐提交（body 携带 llm_subject_id）
  */
-async function _confirmCandidateCore(candidateId, subjectId) {
+async function _confirmCandidateCore(candidateId, subjectId, options = {}) {
     try {
+        const body = options.llmSuggestion
+            ? { llm_subject_id: String(subjectId) }
+            : { subject_id: String(subjectId) };
         const data = await apiFetch(`/api/pending-candidates/${candidateId}/confirm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subject_id: subjectId })
+            body: JSON.stringify(body)
         });
         if (data.status === 'success') {
             // message 中可能包含「补发结果」，含「失败/异常/忽略」时用 warning 色提示
@@ -367,6 +424,17 @@ async function _confirmCandidateCore(candidateId, subjectId) {
         console.error('确认失败:', error);
         showAlert('确认失败', 'danger');
     }
+}
+
+/**
+ * 应用 AI 推荐建议（bypass 手动流程）：
+ * 复用 _confirmCandidateCore 成功流，body 携带 llm_subject_id。
+ */
+async function _applyLlmSuggestion(candidateId, llmSubjectId) {
+    if (!confirm('应用 AI 推荐并写入自定义映射？确认后将自动补发。')) {
+        return;
+    }
+    await _confirmCandidateCore(Number(candidateId), llmSubjectId, { llmSuggestion: true });
 }
 
 /**

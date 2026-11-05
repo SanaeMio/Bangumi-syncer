@@ -305,7 +305,7 @@ class TestAutoReplayAfterConfirm:
 
     def test_no_sync_record_id_skips_replay(self):
         """无 sync_record_id 时不触发补发"""
-        msg = self.svc._auto_replay_after_confirm(None, {}, "title")
+        msg = self.svc._auto_replay_after_confirm(None, "title")
         assert msg == ""
 
     def test_record_not_found_skips_replay(self):
@@ -314,7 +314,7 @@ class TestAutoReplayAfterConfirm:
             "app.services.sync_service.database_manager.get_sync_record_by_id",
             return_value=None,
         ):
-            msg = self.svc._auto_replay_after_confirm(99, {}, "title")
+            msg = self.svc._auto_replay_after_confirm(99, "title")
         assert msg == ""
 
     def test_record_success_skips_replay(self):
@@ -323,7 +323,7 @@ class TestAutoReplayAfterConfirm:
             "app.services.sync_service.database_manager.get_sync_record_by_id",
             return_value={"id": 1, "status": "success"},
         ):
-            msg = self.svc._auto_replay_after_confirm(1, {}, "title")
+            msg = self.svc._auto_replay_after_confirm(1, "title")
         assert msg == ""
 
     def test_replay_success_writes_retried_and_cleans_pending(self):
@@ -352,7 +352,7 @@ class TestAutoReplayAfterConfirm:
             ) as mock_update,
             patch.object(self.svc, "_cleanup_pending_for_replay") as mock_cleanup,
         ):
-            msg = self.svc._auto_replay_after_confirm(10, {}, "测试")
+            msg = self.svc._auto_replay_after_confirm(10, "测试")
 
         assert "补发成功" in msg
         mock_build.assert_called_once()
@@ -385,7 +385,7 @@ class TestAutoReplayAfterConfirm:
                 return_value=2,
             ) as mock_mark,
         ):
-            msg = self.svc._auto_replay_after_confirm(20, {}, "测试")
+            msg = self.svc._auto_replay_after_confirm(20, "测试")
 
         assert "补发成功" in msg
         mock_mark.assert_called_once_with(20)
@@ -408,7 +408,7 @@ class TestAutoReplayAfterConfirm:
             ) as mock_update,
             patch.object(self.svc, "_cleanup_pending_for_replay") as mock_cleanup,
         ):
-            msg = self.svc._auto_replay_after_confirm(30, {}, "测试")
+            msg = self.svc._auto_replay_after_confirm(30, "测试")
 
         assert "补发失败" in msg
         assert "API 不可达" in msg
@@ -430,7 +430,7 @@ class TestAutoReplayAfterConfirm:
                 side_effect=RuntimeError("boom"),
             ),
         ):
-            msg = self.svc._auto_replay_after_confirm(40, {}, "测试")
+            msg = self.svc._auto_replay_after_confirm(40, "测试")
 
         assert "补发异常" in msg
         assert "boom" in msg

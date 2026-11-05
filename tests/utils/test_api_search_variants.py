@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -57,7 +57,8 @@ def _capture_fallback_search_titles(api: BangumiApi) -> list[str]:
         # 全部返回空列表，迫使 bgm_search 遍历所有变体
         return []
 
-    api.search = fake_search  # type: ignore[method-assign]
+    # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+    cast(Any, api).search = fake_search
     return seen
 
 
@@ -247,7 +248,8 @@ class TestBgmSearchHitBehavior:
                     return [{"id": 999, "name": "测试", "name_cn": "测试"}]
             return []
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         result = api.bgm_search(title="测试", ori_title=None, premiere_date="")
 
@@ -271,7 +273,8 @@ class TestBgmSearchHitBehavior:
                     return [{"id": 100, "name": "完美世界", "name_cn": "完美世界"}]
             return []
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         result = api.bgm_search(
             title="完美世界 S06E279", ori_title=None, premiere_date=""
@@ -308,7 +311,8 @@ class TestBgmSearchOutMetaVariantMethod:
                     return [{"id": 100, "name": "完美世界", "name_cn": "完美世界"}]
             return []
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         out_meta: dict[str, Any] = {}
         result = api.bgm_search(
@@ -337,7 +341,8 @@ class TestBgmSearchOutMetaVariantMethod:
         ):
             return []
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         out_meta: dict[str, Any] = {}
         result = api.bgm_search(
@@ -356,7 +361,8 @@ class TestBgmSearchOutMetaVariantMethod:
         ):
             return [{"id": 100, "name": "测试", "name_cn": "测试"}]
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         result = api.bgm_search(title="测试", ori_title=None, premiere_date="")
 
@@ -383,7 +389,8 @@ class TestBgmSearchPreciseSearchPath:
             # 精确搜索（带日期）命中
             return [{"id": 1, "name": "测试", "name_cn": "测试"}]
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         result = api.bgm_search(
             title="测试", ori_title=None, premiere_date="2024-01-01"
@@ -407,7 +414,8 @@ class TestBgmSearchPreciseSearchPath:
                     return [{"id": 100, "name": "完美世界", "name_cn": "完美世界"}]
             return []
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         result = api.bgm_search(
             title="完美世界 S06E279", ori_title=None, premiere_date="2024-01-01"
@@ -555,7 +563,8 @@ class TestBgmSearchNetworkResilience:
             seen.append(title)
             return []
 
-        api.search = fake_search  # type: ignore[method-assign]
+        # 测试内替换 search 方法（签名不同）；cast(Any) 绕过静态方法签名检查
+        cast(Any, api).search = fake_search
 
         result = api.bgm_search(
             title="测试", ori_title=None, premiere_date="2024-01-01"

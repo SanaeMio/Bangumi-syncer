@@ -7,7 +7,7 @@ from app.core import app_version as av
 
 def test_get_version_name_and_description():
     assert av.get_version_name() == av.VERSION_NAME
-    assert av.VERSION_DESCRIPTION
+    assert av.VERSION_DESCRIPTION != ""
 
 
 def test_get_version_env_overrides_manifest(tmp_path, monkeypatch):

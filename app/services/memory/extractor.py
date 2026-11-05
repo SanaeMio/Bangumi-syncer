@@ -1,7 +1,7 @@
 """记忆提取器：总结执行后提炼一行摘要并写入记忆（含消费标记）。
 
 摘要成功 → 正常记忆行；摘要失败（LLM 异常/空响应）→ 写 summary 留空的
-「消费占位行」，使本次 run 在记忆表中有归属、消费标记生效（见 B1 修订）。
+「消费占位行」，使本次 run 在记忆表中有归属、消费标记生效。
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from app.core.database.agent_memory import AgentMemoryRepository
 from app.core.logging import logger
 from app.models.memory import MemoryEntry
-from app.services.llm import Message, get_llm_client
+from app.services.llm import Message, collect, get_llm_client
 from app.services.llm.models import ChatResponse
 
 _SUMMARY_PROMPT = (
@@ -19,7 +19,7 @@ _SUMMARY_PROMPT = (
 
 
 class MemoryExtractor:
-    """提炼一行摘要写入记忆：成功写正常行，失败写「消费占位行」（B1）。"""
+    """提炼一行摘要写入记忆：成功写正常行，失败写「消费占位行」。"""
 
     def __init__(self, repo: AgentMemoryRepository, llm_client=None):
         self._repo = repo
@@ -51,7 +51,7 @@ class MemoryExtractor:
                 tokens_used=tokens_used,
             )
         else:
-            # B1 消费占位行：摘要失败（LLM 异常/空响应）不再直接 return，而是写一条
+            # 消费占位行：摘要失败（LLM 异常/空响应）不再直接 return，而是写一条
             # summary 留空的占位记忆——让本次 run 在记忆表中有归属，store_and_mark
             # 同事务打上消费标记，消费排除因此生效，下次调度不再重复总结同一批记录
             # （避免重复通知 + token 白烧）。空 summary 由读取侧过滤，不注入、不统计；
@@ -70,7 +70,7 @@ class MemoryExtractor:
         # _STAGE_STORE 失败通知机制（不在此吞异常）。
         self._repo.store_and_mark(entry, record_ids=record_ids)
         # 清理旧记忆（独立 best-effort 事务，失败不回滚上面的 run）
-        # L4：魔数收编——保留上限与 prune 上限同源（closeout §4 E3）
+        # 魔数收编——保留上限与 prune 上限同源
         # 占位行也参与 1000 条上限，与成功行一致
         self._repo.prune(task_type, task_id, keep=1000)
 
@@ -94,12 +94,11 @@ class MemoryExtractor:
             summary_messages.append(Message(role="assistant", content=response.content))
             summary_messages.append(Message(role="user", content=_SUMMARY_PROMPT))
             llm = self._llm or get_llm_client()
-            resp = await llm.chat(summary_messages, job_name=job_name)
+            resp = await collect(llm.stream_chat(summary_messages, job_name=job_name))
             if resp.content:
                 return resp.content.strip()
         except Exception as e:
             # LLM 摘要失败：返回空串，由 extract_and_store 写消费占位行——不保留
             # 截断兜底，保证所有非空入库摘要均为 LLM 完整输出、零截断
-            # （见 closeout §4 修订）
             logger.warning(f"摘要 LLM 调用失败，将写消费占位行: {e}")
         return ""

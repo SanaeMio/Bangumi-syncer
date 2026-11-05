@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -132,7 +133,8 @@ class TestNormalizeKey:
         assert _normalize_key("") == ""
 
     def test_non_string(self) -> None:
-        assert _normalize_key(None) == ""  # type: ignore[arg-type]
+        # None 属刻意覆盖的非法输入；cast(Any) 绕过静态类型
+        assert _normalize_key(cast(Any, None)) == ""
 
     def test_nfkc_normalization(self) -> None:
         """NFKC 标准化：全角→半角"""
@@ -476,7 +478,7 @@ class TestTrySearchLazyBuild:
     def test_try_search_returns_miss_when_not_ready(self) -> None:
         """索引未就绪时 try_search 返回 archive_miss"""
         shortcut = ArchiveShortcut()
-        shortcut._enabled = True
+        shortcut.set_enabled(True)
 
         with patch(
             "app.utils.bangumi_api._archive_shortcut.archive_title_index"
@@ -494,7 +496,7 @@ class TestTrySearchLazyBuild:
     def test_try_search_skips_lazy_build_when_ready(self) -> None:
         """索引就绪时 try_search 不触发后台构建"""
         shortcut = ArchiveShortcut()
-        shortcut._enabled = True
+        shortcut.set_enabled(True)
 
         with (
             patch(

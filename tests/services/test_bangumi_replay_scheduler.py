@@ -26,6 +26,17 @@ def _make_get_side_effect(values: dict[tuple[str, str], object]):
     return _get
 
 
+def _wait_for_timeout(coro, timeout, *, loop=None):
+    """模拟 asyncio.wait_for 超时：先关闭被包装的协程，再抛 TimeoutError。
+
+    真实 wait_for 超时时会取消内部任务，进而关闭被包装的协程；若 mock 直接
+    抛异常而丢弃传入协程，该协程（如 asyncio.to_thread(...)）会触发
+    RuntimeWarning: coroutine 'to_thread' was never awaited。
+    """
+    coro.close()
+    raise asyncio.TimeoutError
+
+
 # ----------------------------------------------------------------------
 # 1. _is_enabled
 # ----------------------------------------------------------------------
@@ -534,7 +545,7 @@ class TestRunSyncJob:
             patch(
                 "app.services.bangumi_replay_scheduler.asyncio.wait_for",
                 new_callable=AsyncMock,
-                side_effect=asyncio.TimeoutError,
+                side_effect=_wait_for_timeout,
             ),
             patch(
                 "app.core.database.database_manager.count_pending_sync", return_value=5

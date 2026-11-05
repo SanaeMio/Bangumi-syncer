@@ -86,6 +86,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if request.url.path == '/agent-runs' %}active{% endif %}"
+                               href="{{ '/agent-runs' | p }}">
+                                <i class="bi bi-activity me-2"></i>运行观测
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if request.url.path == '/debug' %}active{% endif %}"
                                href="{{ '/debug' | p }}">
                                 <i class="bi bi-bug me-2"></i>调试工具
@@ -194,6 +200,13 @@
                                    href="{{ '/pending-candidates' | p }}">
                                     <i class="bi bi-list-check me-2"></i>
                                     候选确认
+                                </a>
+                            </li>
+                            <li class="nav-item mb-1">
+                                <a class="nav-link {% if request.url.path == '/agent-runs' %}active{% endif %}"
+                                   href="{{ '/agent-runs' | p }}">
+                                    <i class="bi bi-activity me-2"></i>
+                                    运行观测
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
@@ -545,6 +558,8 @@
         <script src="{{ '/static/js/ui-utils.js' | static_v }}"></script>
         <script src="{{ '/static/js/blocked-keywords.js' | static_v }}"></script>
         <script src="{{ '/static/js/records-detail.js' | static_v }}"></script>
+        <script src="{{ '/static/js/agent-run-steps.js' | static_v }}"></script>
+        <script src="{{ '/static/js/agent_runs.js' | static_v }}"></script>
         <script src="{{ '/static/js/auth.js' | static_v }}"></script>
         <script src="{{ '/static/js/sync-retry.js' | static_v }}"></script>
         <script src="{{ '/static/js/theme.js' | static_v }}"></script>

@@ -1,5 +1,6 @@
 """飞牛 sync_service 启动水位与 run_sync"""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,7 +25,7 @@ def _enabled_cfg(db_path: str) -> dict:
 
 
 def _sample_record(**kwargs) -> FeiniuWatchRecord:
-    base = dict(
+    base: dict[str, Any] = dict(
         item_guid="it1",
         user_guid="u1",
         username="viewer",

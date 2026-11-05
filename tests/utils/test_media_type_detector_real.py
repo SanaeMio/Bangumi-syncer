@@ -570,6 +570,7 @@ class TestPickMainlineEpisodeCandidateReal:
         assert 175141 in ids, f"175141 双食记不在 episode 候选中: {ids}"
 
         best = SyncService._pick_mainline_episode_candidate(episode_cands, "完美世界")
+        assert best is not None
         # 择优结果不应是 6 集的双食记
         assert best.get("id") != 175141, (
             f"择优错误：选中了 175141 双食记，应为 eps=52 的主线剧集，"
@@ -595,6 +596,7 @@ class TestPickMainlineEpisodeCandidateReal:
         episode_cands = self._filter_episode_candidates(_DOULUO)
         assert len(episode_cands) >= 7
         best = SyncService._pick_mainline_episode_candidate(episode_cands, "斗罗大陆")
+        assert best is not None
         # 199425 是精确标题匹配的第一季本体
         assert best.get("id") == 199425, (
             f"应选精确匹配的 199425，实际选了 {best.get('name_cn')}"
@@ -614,6 +616,7 @@ class TestPickMainlineEpisodeCandidateReal:
         cands_without_exact = [c for c in _DOULUO if c.get("id") != 199425]
         episode_cands = self._filter_episode_candidates(cands_without_exact)
         best = SyncService._pick_mainline_episode_candidate(episode_cands, "斗罗大陆 X")
+        assert best is not None
         # 294773 含「第三季」声明，应优先于 eps=182 但无季番声明的 345803
         assert best.get("id") == 294773, (
             f"应选含「第三季」声明的 294773，实际选了 {best.get('name_cn')}"
