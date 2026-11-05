@@ -146,8 +146,7 @@ SECTIONS: dict[str, SectionMeta] = {
             # 不会自动采用，而是沉淀到待审队列由用户在 Web 界面人工确认。
             FieldMeta(name="match_confidence_threshold", default=0.6),
             # Bangumi API 限速（令牌桶）：每秒补充令牌数 / 突发容量。
-            # 旧版定义在 [bangumi] 段，代码仍兼容读取；配置页与文档以本段为准。
-            FieldMeta(name="api_rate_limit", default="1"),
+            FieldMeta(name="api_rate_limit", default=1),
             FieldMeta(name="api_rate_burst", default=3),
         ),
     ),
