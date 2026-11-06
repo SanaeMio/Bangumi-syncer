@@ -60,7 +60,7 @@ class CacheMixin:
             from . import _request_with_retry
 
             response = _request_with_retry(
-                self.data_url, proxies=proxies, stream=True, ssl_verify=self.ssl_verify
+                self.data_url, proxies=proxies, ssl_verify=self.ssl_verify
             )
 
             # 确保缓存目录存在
@@ -152,7 +152,6 @@ class CacheMixin:
                 with _request_with_retry(
                     self.data_url,
                     proxies=proxies,
-                    stream=True,
                     ssl_verify=self.ssl_verify,
                 ) as response:
                     for item in ijson.items(response.raw, "items.item", use_float=True):
@@ -289,7 +288,6 @@ class CacheMixin:
                     with _request_with_retry(
                         self.data_url,
                         proxies=proxies,
-                        stream=True,
                         ssl_verify=self.ssl_verify,
                     ) as response:
                         for item in ijson.items(
