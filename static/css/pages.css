@@ -1606,6 +1606,39 @@ pre {
     border-color: var(--app-primary);
 }
 
+/* Bangumi 账号卡片：三个输入框与「仅自己可见」开关同排。
+   宽屏一行放四个；窄一档改成两列，开关正好落在「访问令牌」右侧，
+   不会像纯换行那样单独占一行 */
+.bangumi-account-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: 0.5rem;
+}
+
+.bangumi-account-field {
+    min-width: 0;
+}
+
+/* 开关和输入框一样是「标签 + 控件」两行，控件与输入框等高并上下居中：
+   0.9rem × 1.5 行高 + 上下 0.5625rem 内边距 + 上下各 1px 边框 */
+.bangumi-account-field--switch .form-check {
+    min-height: calc(0.9rem * 1.5 + 1.125rem + 2px);
+    margin-bottom: 0;
+}
+
+@media (max-width: 1199.98px) {
+    .bangumi-account-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767.98px) {
+    .bangumi-account-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* 配置页面按钮组样式 */
 .config-form .btn-group .btn {
     transition: all 0.3s ease;

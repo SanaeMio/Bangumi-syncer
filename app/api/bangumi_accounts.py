@@ -91,6 +91,30 @@ class AccountEnabledRequest(BaseModel):
     enabled: bool = Field(description="true 启用、false 停用（停用后不参与任务同步）")
 
 
+class AccountBulkRequest(BaseModel):
+    """批量保存账号请求（配置页「保存配置」一次性提交全部账号条目）"""
+
+    accounts: list[AccountUpsertRequest] = Field(
+        default_factory=list, description="账号列表，按页面顺序依次写入"
+    )
+
+
+class AccountBulkItem(BaseModel):
+    """批量保存后单个账号的处理结果"""
+
+    section_name: str = Field(description="账号段名（新增时由后端生成）")
+    username: str = Field(default="", description="Bangumi 用户名")
+    created: bool = Field(default=False, description="本次是否为新增")
+    changed: bool = Field(default=False, description="本次是否有实际改动")
+
+
+class AccountBulkResponse(BaseModel):
+    status: str = "success"
+    message: str = ""
+    changed: int = Field(default=0, description="实际有改动的账号数（含新增）")
+    data: list[AccountBulkItem] = Field(default_factory=list)
+
+
 # ── 辅助函数 ──────────────────────────────────────────────────────
 
 
@@ -123,6 +147,75 @@ def _generate_section_name(username: str) -> str:
     return candidate
 
 
+def _apply_account_upsert(request: AccountUpsertRequest) -> tuple[str, bool, bool]:
+    """写入单个账号（新增或更新），返回 (段名, 是否新增, 是否有实际改动)。
+
+    调用方须先校验用户名非空、更新目标段已存在（见 upsert_account 与
+    bulk_upsert_accounts 的预校验），本函数不再重复报 400/404。
+
+    与库里完全一致的账号不重复写库：配置页「保存配置」每次都会提交全部
+    账号条目，未改动的账号没必要再写一遍，也免得日志刷屏。
+    """
+    username = (request.username or "").strip()
+    access_token = (request.access_token or "").strip()
+    media_usernames = [
+        u.strip() for u in (request.media_server_usernames or []) if u.strip()
+    ]
+
+    section = (request.section_name or "").strip()
+    is_new = not section
+    if is_new:
+        section = _generate_section_name(username)
+
+    # 构建账号 dict（保留已有 OAuth 字段）
+    existing = get_bangumi_account(section) or {}
+    # 手动粘贴了新令牌：上一份 OAuth 凭据的刷新令牌与过期时间对新令牌无效，
+    # 继续保留会让界面一直显示「令牌已过期」（并让同步层反复拿旧 refreshed_token
+    # 去刷新）。按 disconnect() 的同一套语义落成手动模式。
+    token_replaced = bool(access_token) and access_token != existing.get(
+        "access_token", ""
+    )
+    account = {
+        "section_name": section,
+        "username": username,
+        "media_server_usernames": media_usernames,
+        "auth_method": "manual"
+        if token_replaced
+        else existing.get("auth_method", "manual"),
+        "access_token": access_token or existing.get("access_token", ""),
+        "refresh_token": "" if token_replaced else existing.get("refresh_token", ""),
+        "token_type": existing.get("token_type", "Bearer"),
+        "expires_at": None if token_replaced else existing.get("expires_at"),
+        "bangumi_user_id": existing.get("bangumi_user_id", ""),
+        "nickname": existing.get("nickname", ""),
+        "avatar": existing.get("avatar", ""),
+        "private": request.private,
+        "is_primary": existing.get("is_primary", False),
+        "enabled": existing.get("enabled", True),
+    }
+
+    changed = is_new or (
+        username != existing.get("username", "")
+        or bool(request.private) != bool(existing.get("private"))
+        or media_usernames != list(existing.get("media_server_usernames") or [])
+        or (access_token != "" and access_token != existing.get("access_token", ""))
+    )
+    if not changed:
+        return section, False, False
+
+    if not save_bangumi_account(account):
+        raise HTTPException(status_code=500, detail="保存账号失败")
+
+    # 首个账号自动首选
+    if count_bangumi_accounts() == 1:
+        set_primary_bangumi_account(section)
+
+    logger.info(
+        f"{'新增' if is_new else '更新'} Bangumi 账号: {section} (username={username})"
+    )
+    return section, is_new, True
+
+
 # ── 路由 ──────────────────────────────────────────────────────────
 
 
@@ -153,55 +246,74 @@ async def upsert_account(
     if not username:
         raise HTTPException(status_code=400, detail="用户名不能为空")
 
-    access_token = (request.access_token or "").strip()
-    media_usernames = [
-        u.strip() for u in (request.media_server_usernames or []) if u.strip()
-    ]
-
     section = (request.section_name or "").strip()
-    is_new = not section
+    if section and not get_bangumi_account(section):
+        raise HTTPException(status_code=404, detail=f"账号 {section} 不存在，无法更新")
 
-    if is_new:
-        section = _generate_section_name(username)
-    else:
-        existing = get_bangumi_account(section)
-        if not existing:
+    _section, is_new, _changed = _apply_account_upsert(request)
+    return AccountActionResponse(
+        status="success",
+        message=f"账号 {'新增' if is_new else '更新'}成功",
+    )
+
+
+@router.post("/bulk", response_model=AccountBulkResponse)
+async def bulk_upsert_accounts(
+    request: AccountBulkRequest,
+    _current_user: dict = Depends(get_current_user_flexible),
+) -> AccountBulkResponse:
+    """批量新增/更新账号（配置页「保存配置」一次性提交全部账号条目）。
+
+    先整体校验再逐个写入：任一账号校验不通过则整批拒绝，不会只写一半。
+    """
+    accounts = request.accounts or []
+
+    # 1. 先校验：用户名非空、更新目标段存在
+    for index, item in enumerate(accounts, start=1):
+        if not (item.username or "").strip():
+            raise HTTPException(
+                status_code=400, detail=f"第 {index} 个账号：用户名不能为空"
+            )
+        section = (item.section_name or "").strip()
+        if section and not get_bangumi_account(section):
             raise HTTPException(
                 status_code=404, detail=f"账号 {section} 不存在，无法更新"
             )
 
-    # 构建账号 dict（保留已有 OAuth 字段）
-    existing = get_bangumi_account(section) or {}
-    account = {
-        "section_name": section,
-        "username": username,
-        "media_server_usernames": media_usernames,
-        "auth_method": existing.get("auth_method", "manual"),
-        "access_token": access_token or existing.get("access_token", ""),
-        "refresh_token": existing.get("refresh_token", ""),
-        "token_type": existing.get("token_type", "Bearer"),
-        "expires_at": existing.get("expires_at"),
-        "bangumi_user_id": existing.get("bangumi_user_id", ""),
-        "nickname": existing.get("nickname", ""),
-        "avatar": existing.get("avatar", ""),
-        "private": request.private,
-        "is_primary": existing.get("is_primary", False),
-        "enabled": existing.get("enabled", True),
-    }
+    # 2. 逐个写入（新增段名按顺序生成，不会互相冲突）
+    results: list[AccountBulkItem] = []
+    for item in accounts:
+        section, is_new, changed = _apply_account_upsert(item)
+        results.append(
+            AccountBulkItem(
+                section_name=section,
+                username=(item.username or "").strip(),
+                created=is_new,
+                changed=changed,
+            )
+        )
 
-    if not save_bangumi_account(account):
-        raise HTTPException(status_code=500, detail="保存账号失败")
-
-    # 首个账号自动首选
-    if count_bangumi_accounts() == 1:
-        set_primary_bangumi_account(section)
-
+    created = sum(1 for r in results if r.created)
+    updated = sum(1 for r in results if not r.created and r.changed)
+    changed_count = sum(1 for r in results if r.changed)
     logger.info(
-        f"{'新增' if is_new else '更新'} Bangumi 账号: {section} (username={username})"
+        f"批量保存 Bangumi 账号: 共 {len(results)} 个（有改动 {changed_count} 个）"
     )
-    return AccountActionResponse(
+    if not results:
+        message = "没有需要保存的账号"
+    elif created and updated:
+        message = f"账号已保存（新增 {created} 个、更新 {updated} 个）"
+    elif created:
+        message = f"账号已保存（新增 {created} 个）"
+    elif updated:
+        message = f"账号已保存（更新 {updated} 个）"
+    else:
+        message = "账号信息没有变化"
+    return AccountBulkResponse(
         status="success",
-        message=f"账号 {'新增' if is_new else '更新'}成功",
+        message=message,
+        changed=changed_count,
+        data=results,
     )
 
 
