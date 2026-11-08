@@ -1474,6 +1474,19 @@ main.app-main>*:nth-child(12) {
     border-bottom: 2px solid var(--app-primary, #f09199);
 }
 
+.inbox-tabs__count {
+    display: inline-block;
+    margin-left: 0.3rem;
+    padding: 0.08em 0.42em;
+    border-radius: 999px;
+    background: var(--app-primary, #f09199);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.25;
+    vertical-align: 0.06em;
+}
+
 .inbox-read-all-btn {
     font-size: 0.8rem;
     text-decoration: none;
