@@ -657,7 +657,7 @@ def test_loop_no_trace_imports():
     """loop.py 不应 import trace 相关符号（零 span 逻辑）。"""
     import ast
 
-    with open("app/services/agent/loop.py") as f:
+    with open("app/services/agent/loop.py", encoding="utf-8") as f:
         tree = ast.parse(f.read())
 
     for node in ast.walk(tree):
