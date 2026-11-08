@@ -14,6 +14,11 @@ from app.api import pages
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# 带字标的整张 logo.png 曾被当作 rel="icon"，浏览器压成 16px 后只剩一条模糊横线。
+# 这里只断言"图标链接"不再指向它；侧边栏/登录页的 <img> 仍用整张 logo 是正常的。
+_LOGO_LINK_AS_ICON = """/static/logo.png' | static_v }}"
+              rel="icon\""""
+
 
 class TestPages:
     """测试页面路由"""
@@ -536,9 +541,12 @@ class TestConfigConsoleErrors:
 
     def test_login_page_declares_favicon(self):
         """登录页为独立模板，同样声明站点图标，避免回退请求 /favicon.ico。"""
+        # 图标必须是方形图标本身：整张 logo.png 带 "Bangumi-syncer" 字标，
+        # 被浏览器压成 16px 时会变成一条模糊的横线
         login = (_REPO_ROOT / "templates/login.html").read_text(encoding="utf-8")
         assert 'rel="icon"' in login
-        assert "/static/logo.png" in login
+        assert "/static/favicon.ico" in login
+        assert _LOGO_LINK_AS_ICON not in login
 
     def test_release_notes_render_deferred_until_open(self):
         """发行说明正文延迟到打开弹窗时渲染，页面加载阶段不注入图片。"""
@@ -562,6 +570,8 @@ class TestConfigConsoleErrors:
 
     def test_base_template_declares_favicon(self):
         """基础模板声明站点图标，避免浏览器默认请求 /favicon.ico 返回 404。"""
+        # 同上：图标用方形 favicon.ico，而不是带字标的整张 logo.png
         base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
         assert 'rel="icon"' in base
-        assert "/static/logo.png" in base
+        assert "/static/favicon.ico" in base
+        assert _LOGO_LINK_AS_ICON not in base
