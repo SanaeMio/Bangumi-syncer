@@ -268,48 +268,51 @@ async def update_config(
             raise HTTPException(status_code=400, detail="需先配置 LLM")
 
         # 更新常规配置
-        password_updated = False
-        for section, items in data.items():
-            # 将下划线转换为连字符，以匹配配置文件格式
-            normalized_section = section.replace("_", "-")
-            for key, value in items.items():
-                # 特殊处理auth段的password字段
-                if normalized_section == "auth" and key == "password":
-                    # 如果提交的密码为空，跳过更新（保持现有密码不变）
-                    if not value or str(value).strip() == "":
-                        logger.debug("跳过空密码更新，保持现有密码不变")
-                        continue
+        with config_manager.batch():
+            password_updated = False
+            for section, items in data.items():
+                # 将下划线转换为连字符，以匹配配置文件格式
+                normalized_section = section.replace("_", "-")
+                for key, value in items.items():
+                    # 特殊处理auth段的password字段
+                    if normalized_section == "auth" and key == "password":
+                        # 如果提交的密码为空，跳过更新（保持现有密码不变）
+                        if not value or str(value).strip() == "":
+                            logger.debug("跳过空密码更新，保持现有密码不变")
+                            continue
 
-                    # 检查密码是否需要加密（如果长度小于64，说明是明文密码）
-                    if len(str(value)) < 64:
-                        # 获取当前的secret_key用于加密
-                        auth_config = security_manager.get_auth_config()
-                        encrypted_password = security_manager.hash_password(
-                            str(value), auth_config["secret_key"]
-                        )
-                        config_manager.set_config(
-                            normalized_section, key, encrypted_password
-                        )
-                        password_updated = True
-                        logger.info("密码已在保存时自动加密")
+                        # 检查密码是否需要加密（如果长度小于64，说明是明文密码）
+                        if len(str(value)) < 64:
+                            # 获取当前的secret_key用于加密
+                            auth_config = security_manager.get_auth_config()
+                            encrypted_password = security_manager.hash_password(
+                                str(value), auth_config["secret_key"]
+                            )
+                            config_manager.set_config(
+                                normalized_section, key, encrypted_password
+                            )
+                            password_updated = True
+                            logger.info("密码已在保存时自动加密")
+                        else:
+                            # 已经是加密密码，直接保存
+                            config_manager.set_config(normalized_section, key, value)
                     else:
-                        # 已经是加密密码，直接保存
+                        if is_sensitive_ini_field(normalized_section, key) and (
+                            value is None
+                            or str(value).strip() == ""
+                            or str(value).startswith("***")
+                        ):
+                            logger.debug(
+                                "跳过空/掩码敏感字段更新: %s.%s",
+                                normalized_section,
+                                key,
+                            )
+                            continue
+                        # 其他配置项正常保存（敏感项在 set_config 中加密）
                         config_manager.set_config(normalized_section, key, value)
-                else:
-                    if is_sensitive_ini_field(normalized_section, key) and (
-                        value is None
-                        or str(value).strip() == ""
-                        or str(value).startswith("***")
-                    ):
-                        logger.debug(
-                            "跳过空/掩码敏感字段更新: %s.%s", normalized_section, key
-                        )
-                        continue
-                    # 其他配置项正常保存（敏感项在 set_config 中加密）
-                    config_manager.set_config(normalized_section, key, value)
 
-        # 保存配置
-        config_manager.save_config()
+            # 保存配置
+            config_manager.save_config()
 
         new_feiniu_enabled = bool(
             config_manager.get_feiniu_config().get("enabled", False)

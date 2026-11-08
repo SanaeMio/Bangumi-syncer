@@ -151,3 +151,66 @@ class TestRegisteredCacheInvalidation:
 
         bd = bangumi_data_module.bangumi_data
         assert any(getattr(cb, "__self__", None) is bd for cb in cbs)
+
+
+class TestBatchConfigWrite:
+    """批量写入（ConfigManager.batch）：整批只写一次盘、只触发一次回调。
+
+    配置页保存是逐键调用 set_config 的，若每次写盘 + 回调，会产生几十次
+    文件写入与缓存重建风暴（历史问题：日志同一请求刷出几十条刷新记录）。
+    """
+
+    @staticmethod
+    def _cleanup_dev_keys(*keys):
+        parser = config_manager.get_config_parser()
+        if not parser.has_section("dev"):
+            return
+        removed = False
+        for key in keys:
+            if parser.has_option("dev", key):
+                parser.remove_option("dev", key)
+                removed = True
+        if removed:
+            config_manager.save_config()
+
+    def test_batch_writes_once_and_fires_once(self, monkeypatch):
+        writes = []
+        original_save = config_manager._save_config
+
+        def counting_save(config):
+            writes.append(1)
+            original_save(config)
+
+        monkeypatch.setattr(config_manager, "_save_config", counting_save)
+        fired = []
+        cb = _register_cb(config_manager, fired)
+        try:
+            with config_manager.batch():
+                config_manager.set_config("dev", "batch_test_key_a", "value_a")
+                config_manager.set_config("dev", "batch_test_key_b", "value_b")
+                config_manager.save_config()
+                # 批量期间不落盘、不回调
+                assert writes == []
+                assert fired == []
+            assert len(writes) == 1, "批量写入应只写一次盘"
+            assert fired == [1], "批量写入应只触发一次变更回调"
+            assert config_manager.get("dev", "batch_test_key_a") == "value_a"
+            assert config_manager.get("dev", "batch_test_key_b") == "value_b"
+        finally:
+            config_manager.unregister_config_change_listener(cb)
+            self._cleanup_dev_keys("batch_test_key_a", "batch_test_key_b")
+
+    def test_nested_batch_flushes_at_outermost_exit(self):
+        fired = []
+        cb = _register_cb(config_manager, fired)
+        try:
+            with config_manager.batch():
+                config_manager.set_config("dev", "batch_test_key_c", "value_c1")
+                with config_manager.batch():
+                    config_manager.set_config("dev", "batch_test_key_c", "value_c2")
+                assert fired == [], "内层 batch 退出不应触发回调"
+            assert fired == [1]
+            assert config_manager.get("dev", "batch_test_key_c") == "value_c2"
+        finally:
+            config_manager.unregister_config_change_listener(cb)
+            self._cleanup_dev_keys("batch_test_key_c")
