@@ -19,6 +19,8 @@
     --app-brand-logo-height: 32px;
     --app-sidebar-logo-width: 175px;
     --app-sidebar-logo-height: 100px;
+    --app-sidebar-width: 200px;
+    --app-sidebar-collapsed-width: 76px;
 
     /* 主题色 - 默认班娘粉 */
     --app-primary: #f09199;
@@ -530,6 +532,39 @@
     transform: scale(1.02);
 }
 
+/* 折叠态改用方形图标（与站点图标同源，透明底，深浅色主题都可用） */
+.app-sidebar-mark {
+    display: none;
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+}
+
+.sidebar-collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: calc(100% - 1rem);
+    margin: 0 0.5rem 1rem;
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--app-text-muted);
+    background: transparent;
+    border: 1px dashed var(--app-divider);
+    border-radius: var(--app-radius-btn);
+    cursor: pointer;
+    transition: color 0.22s var(--app-ease-smooth), background-color 0.22s var(--app-ease-smooth),
+        border-color 0.22s var(--app-ease-smooth);
+}
+
+.sidebar-collapse-btn:hover {
+    color: var(--app-text);
+    background-color: var(--app-surface-hover);
+    border-color: var(--app-primary);
+}
+
 html {
     scroll-behavior: smooth;
     overflow-x: hidden;
@@ -646,6 +681,104 @@ body {
 
     .app-shell .app-main {
         min-height: auto;
+    }
+}
+
+/* 宽屏：侧栏固定宽度，不再按比例跟着视口一起变宽 */
+@media (min-width: 1200px) {
+    :root {
+        --app-sidebar-logo-width: 152px;
+        --app-sidebar-logo-height: 87px;
+    }
+
+    .app-shell__layout>.sidebar {
+        flex: 0 0 var(--app-sidebar-width);
+        width: var(--app-sidebar-width);
+        max-width: var(--app-sidebar-width);
+    }
+
+    .app-shell__layout>.app-main {
+        flex: 1 1 0;
+        width: auto;
+        max-width: none;
+        min-width: 0;
+    }
+}
+
+/* 侧栏折叠：收成图标栏，状态挂在 html[data-sidebar] 上（见 static/js/sidebar.js） */
+@media (min-width: 768px) {
+    .app-shell__layout>.sidebar {
+        transition: flex-basis 0.26s var(--app-ease-smooth), width 0.26s var(--app-ease-smooth),
+            max-width 0.26s var(--app-ease-smooth);
+    }
+
+    html[data-sidebar="collapsed"] .app-shell__layout>.sidebar {
+        flex: 0 0 var(--app-sidebar-collapsed-width);
+        width: var(--app-sidebar-collapsed-width);
+        max-width: var(--app-sidebar-collapsed-width);
+    }
+
+    html[data-sidebar="collapsed"] .app-shell__layout>.app-main {
+        flex: 1 1 0;
+        width: auto;
+        max-width: none;
+        min-width: 0;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar .app-sidebar-logo {
+        display: none;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar .app-sidebar-mark {
+        display: inline-block;
+    }
+
+    /* 深色主题下图标里的深蓝几乎融进背景，提亮后才看得出完整六边形 */
+    html[data-theme="dark"][data-sidebar="collapsed"] .sidebar .app-sidebar-mark {
+        filter: brightness(1.9);
+    }
+
+    html[data-sidebar="collapsed"] .sidebar .nav-link {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+        margin: 0 0.5rem;
+        font-size: 0;
+        transform: none;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar .nav-link.active {
+        margin-left: 0.5rem;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar .nav-link i {
+        margin-right: 0 !important;
+        font-size: 1rem;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-user-block>.d-flex {
+        justify-content: center;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-user-block>.d-flex i {
+        margin-right: 0 !important;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-user-block>.d-flex small {
+        display: none;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-user-block .nav-link {
+        font-size: 0;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-collapse-btn {
+        padding: 0.5rem 0;
+        border-color: transparent;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-collapse-btn__label {
+        display: none;
     }
 }
 

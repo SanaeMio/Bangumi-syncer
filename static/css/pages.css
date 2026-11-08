@@ -39,6 +39,20 @@
     text-decoration: none;
 }
 
+/* 宽屏下收窄左侧目录栏：原 3/12 在 1400px+ 会空出大片留白，固定 280px 刚好放下最长条目 */
+@media (min-width: 1400px) {
+
+    .config-sidebar-col {
+        flex: 0 0 280px;
+        max-width: 280px;
+    }
+
+    .config-main-col {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}
+
 @media (min-width: 992px) {
 
     [id^="config-section"],

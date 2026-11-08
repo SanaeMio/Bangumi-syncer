@@ -9,7 +9,7 @@
 {% block content %}
     <div class="row g-3">
         <!-- 左侧：竖向 TOC + 配置操作（lg+ 显示，sticky 侧栏） -->
-        <aside class="col-lg-3 d-none d-lg-block">
+        <aside class="col-lg-3 config-sidebar-col d-none d-lg-block">
             <div class="config-sidebar">
                 <nav class="card mb-3 config-page-toc" aria-label="配置页目录">
                     <div class="card-header py-2 px-3">
@@ -69,7 +69,7 @@
             </div>
         </aside>
         <!-- 右侧：配置表单 -->
-        <div class="col-lg-9">
+        <div class="col-lg-9 config-main-col">
             <form id="config-form" class="config-form" autocomplete="off">
                 {% include "config/_sync.html" %}
                 {% include "config/_blocked_keywords.html" %}

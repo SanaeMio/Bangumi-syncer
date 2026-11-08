@@ -13,6 +13,8 @@
             document.documentElement.setAttribute('data-theme',t);
             document.documentElement.setAttribute('data-color',c);
             document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
+            var sb=localStorage.getItem('app-sidebar');
+            document.documentElement.setAttribute('data-sidebar',sb==='collapsed'?'collapsed':'expanded');
         })();
         </script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -167,8 +169,20 @@
                                 <img src="{{ '/static/logo.png' | static_v }}"
                                      alt="Bangumi-Syncer"
                                      class="app-sidebar-logo">
+                                <img src="{{ '/static/apple-touch-icon.png' | static_v }}"
+                                     alt=""
+                                     class="app-sidebar-mark">
                             </a>
                         </div>
+                        <button type="button"
+                                class="sidebar-collapse-btn"
+                                id="sidebarCollapseBtn"
+                                aria-label="收起侧栏"
+                                aria-expanded="true"
+                                title="收起侧栏">
+                            <i class="bi bi-chevron-double-left sidebar-collapse-btn__icon"></i>
+                            <span class="sidebar-collapse-btn__label">收起侧栏</span>
+                        </button>
                         <ul class="nav flex-column px-2">
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/dashboard' or request.url.path.endswith('/dashboard') %}active{% endif %}"
@@ -566,6 +580,7 @@
         <script src="{{ '/static/js/auth.js' | static_v }}"></script>
         <script src="{{ '/static/js/sync-retry.js' | static_v }}"></script>
         <script src="{{ '/static/js/theme.js' | static_v }}"></script>
+        <script src="{{ '/static/js/sidebar.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/chart.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/version-release.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/upgrade.js' | static_v }}"></script>
