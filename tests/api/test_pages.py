@@ -385,6 +385,37 @@ class TestSharedModals:
         assert "hidden.bs.modal" in body
 
 
+class TestSidebarCollapse:
+    """侧边栏折叠：宽屏下收成图标栏，状态记在 localStorage。"""
+
+    @staticmethod
+    def _dashboard_html() -> str:
+        app = FastAPI()
+        app.include_router(pages.router)
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            return TestClient(app).get("/dashboard", follow_redirects=False).text
+
+    def test_dashboard_has_sidebar_toggle(self):
+        """侧栏底部有折叠按钮，折叠态改用方形图标。"""
+        html = self._dashboard_html()
+        assert 'id="sidebarCollapseBtn"' in html
+        assert "app-sidebar-mark" in html
+
+    def test_sidebar_state_applied_before_paint(self):
+        """展开/折叠状态在 <head> 内联脚本里先行落盘，避免刷新时闪一下。"""
+        base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert "localStorage.getItem('app-sidebar')" in base
+        assert "/static/js/sidebar.js" in base
+
+    def test_collapsed_styles_present(self):
+        """折叠样式与宽屏固定宽度都挂在 theme-base.css 上。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert 'html[data-sidebar="collapsed"]' in css
+        assert "--app-sidebar-width" in css
+
+
 class TestConfigConsoleErrors:
     """配置页控制台报错的回归约束。"""
 
