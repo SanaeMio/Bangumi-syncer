@@ -153,6 +153,9 @@ class TestPagesAuthenticated:
             client = TestClient(app)
             r = client.get("/dashboard", follow_redirects=False)
         assert r.status_code == 200
+        # 收件箱标签上的未读计数锚点（JS 通过这两个 id 写入分类未读数）
+        assert 'id="inboxTabAnnCount"' in r.text
+        assert 'id="inboxTabNotifCount"' in r.text
 
     def test_config_authenticated(self):
         """已认证用户访问配置页"""
