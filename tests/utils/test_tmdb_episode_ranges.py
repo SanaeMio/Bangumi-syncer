@@ -228,6 +228,16 @@ class TestResolveTmdbEpisode:
         idx = _index(items)
         assert idx.resolve_tmdb_episode(BASE, 1, 13) is None
 
+    def test_non_string_tmdb_id_is_skipped(self):
+        """site id 非字符串时不参与集边界，避免异常类型引发崩溃。"""
+        items = [
+            _item("本篇", BASE, S1_ID, S1_BEGIN),
+            _item("异常 id", f"{BASE}/season/1/episode/13", "9999", S2_BEGIN),
+        ]
+        items[1]["sites"][0]["id"] = 12345
+        idx = _index(items)
+        assert idx.resolve_tmdb_episode(BASE, 1, 13) is None
+
     def test_season_level_query_resolves_by_season(self):
         """季级 key（形如 tv/94664/season/3）按季解析，与集级索引互不影响。"""
         items = [
@@ -288,7 +298,7 @@ class TestTraktEpisodeRangeConversion:
         raw.episode["first_aired"] = "2026-08-01T00:00:00.000Z"
         with patch("app.services.trakt.sync_service.bangumi_data", idx):
             item = TraktSyncService()._convert_trakt_history_to_custom_item("u", raw)
-        assert item.release_date == "2026-08-01T00:00:00.000Z"
+        assert item.release_date == "2026-08-01"
 
     def test_show_first_aired_outranks_episode_begin(self):
         """show.first_aired 存在时既有第二级仍优先，集级 begin 不越级。
@@ -301,7 +311,7 @@ class TestTraktEpisodeRangeConversion:
         raw.show["first_aired"] = "2026-01-11T08:00:00.000Z"
         with patch("app.services.trakt.sync_service.bangumi_data", idx):
             item = TraktSyncService()._convert_trakt_history_to_custom_item("u", raw)
-        assert item.release_date == "2026-01-11T08:00:00.000Z"
+        assert item.release_date == "2026-01-11"
         assert idx.resolve_tmdb_episode(BASE, 1, 13).target_episode == 1
 
     def test_no_tmdb_id_falls_back_to_year(self):
@@ -375,6 +385,20 @@ class TestBangumiDataStepEpisodeRange:
         outcome = _run_bangumi_data_step(ctx)
         assert ctx.mapping_target_episode is None
         assert outcome.outputs.get("match_method") != "tmdb_episode_range"
+
+    def test_index_error_falls_back_to_existing_chain(self):
+        """索引查询抛异常时回落既有匹配链，不中断同步。"""
+        idx = _index(_case_items())
+
+        def _raise(*_args, **_kwargs):
+            raise RuntimeError("索引不可用")
+
+        idx.resolve_tmdb_episode = _raise
+        ctx = _match_ctx(13)
+        ctx.service._get_bangumi_data.return_value = idx
+        outcome = _run_bangumi_data_step(ctx)
+        assert outcome.outputs.get("match_method") != "tmdb_episode_range"
+        assert ctx.mapping_target_episode is None
 
     def test_disabled_bangumi_data_skips_episode_range(self):
         cfg = MagicMock()
