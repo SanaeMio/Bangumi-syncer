@@ -43,8 +43,9 @@ class MatchContext:
     # 为 True 时执行阶段禁止跨季链改选 —— 用户已明确指定条目，改选等于
     # 否定用户意图（issue #267 的错误即由此产生）。
     mapping_is_explicit: bool = False
-    # 集数分段映射算出的目标集号（媒体集号经 offset 换算后的目标条目内集号）。
+    # 换算后的目标条目内集号（自定义映射 segments / bangumi-data 集级起点）。
     # 非 None 时执行阶段直接按它定位，不再用 item.episode 重新推导。
+    # 与 mapping_is_explicit 解耦：后者才决定是否禁止跨季链改选。
     mapping_target_episode: int | None = None
     match_stage: str = ""  # archive / api_search
     match_method_detail: str = ""  # 细粒度派生方式（替代死状态 last_match_method）

@@ -166,8 +166,9 @@ class MatchTrace:
     # 同一路径）。为 True 时执行阶段禁止跨季链改选 —— 用户已明确指定条目，
     # 改选等于否定用户意图（issue #267 的错误即由此产生）。
     mapping_is_explicit: bool = False
-    # 集数分段映射算出的目标集号（媒体集号经 offset / episodes_of 换算后的
-    # 目标条目内集号）。非 None 时执行阶段直接采用，不再用 item.episode 推导。
+    # 换算后的目标条目内集号（自定义映射 segments / bangumi-data 集级起点）。
+    # 非 None 时执行阶段直接采用，item.episode 不参与推导。
+    # 由 _find_subject_id 从 ctx 回填；与 mapping_is_explicit 解耦。
     mapping_target_episode: int | None = None
     # P2: 全流程总耗时（receive 开始到 result 结束，由编排器统一 finish 结算），
     # 用于性能排错。执行阶段（SyncPipeline）的耗时会计入 total_elapsed_ms。

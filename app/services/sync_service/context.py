@@ -41,7 +41,8 @@ class ExecutionContext:
     is_season_matched_id: bool
     # 自定义映射是否显式指定了目标条目（True 时禁止跨季链改选）
     mapping_is_explicit: bool = False
-    # 集数分段映射算出的目标集号（非 None 时集数解析直接采用）
+    # 换算后的目标条目内集号（自定义映射 segments / bangumi-data 集级起点）。
+    # 非 None 时集数解析直接采用；与 mapping_is_explicit 解耦。
     mapping_target_episode: int | None = None
 
     # 结果链（SyncPipeline 统一回填，step 只读不写）

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.utils.bangumi_data import bangumi_data
+from app.utils.bangumi_data.index import TmdbEpisodeMatch
 
 from ...core.background_tasks import register_background_task
 from ...core.database import database_manager
@@ -753,18 +754,30 @@ class TraktSyncService:
             season = episode.get("season", 1)
             episode_num = episode.get("number", 1)
 
-            # 获取发行日期：episode.first_aired → show.first_aired → bangumi_data begin → show.year → watched_at
+            # 获取发行日期：episode.first_aired → show.first_aired →
+            # bangumi_data 集级 begin → bangumi_data begin → show.year → watched_at
             release_date = ""
             if episode.get("first_aired"):
                 release_date = episode["first_aired"]
             elif show.get("first_aired"):
                 release_date = show["first_aired"]
             elif show_tmdb is not None:
-                bgm_begin = bangumi_data.get_begin_by_tmdb_id(
-                    f"tv/{show_tmdb}", season=episode.get("season")
+                tmdb_key = f"tv/{show_tmdb}"
+                episode_match = bangumi_data.resolve_tmdb_episode(
+                    tmdb_key, season, episode_num
                 )
-                if bgm_begin and isinstance(bgm_begin, str):
-                    release_date = bgm_begin[:10]
+                if (
+                    isinstance(episode_match, TmdbEpisodeMatch)
+                    and episode_match.begin
+                    and isinstance(episode_match.begin, str)
+                ):
+                    release_date = episode_match.begin[:10]
+                if not release_date:
+                    bgm_begin = bangumi_data.get_begin_by_tmdb_id(
+                        tmdb_key, season=episode.get("season")
+                    )
+                    if bgm_begin and isinstance(bgm_begin, str):
+                        release_date = bgm_begin[:10]
             if not release_date and show.get("year"):
                 release_date = f"{show['year']}-01-01"
 
@@ -787,6 +800,7 @@ class TraktSyncService:
                 release_date=release_date,
                 user_name=user_id,  # 使用 user_id 作为 user_name
                 source="trakt",
+                tmdb_id=(f"tv/{show_tmdb}" if show_tmdb is not None else None),
                 raw_payload={
                     "source": "trakt",
                     "history_kind": "episode",
