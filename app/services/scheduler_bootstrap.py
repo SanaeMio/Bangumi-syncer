@@ -19,7 +19,17 @@ from ..core.scheduler_registry import JobSpec, scheduler_registry
 
 
 def register_all() -> None:
-    """注册所有调度器到 registry（幂等，重复调用会覆盖并告警）"""
+    """注册所有调度器到 registry（幂等，重复调用会覆盖并告警）
+
+    同时装配 Agent 场景（Composition Root）：调度器取用
+    ``get_scenario(task_type)`` 前场景必须已登记，故先装配场景再注册调度器。
+    """
+
+    # ── 场景装配（Composition Root）：须先于消费场景的调度器注册 ──
+
+    from .scenarios import wire_scenarios
+
+    wire_scenarios()
 
     # ── INI 驱动的单 job 调度器（spec 注册）──
 
@@ -50,6 +60,12 @@ def register_all() -> None:
 
     scheduler_registry.register_spec(
         JobSpec(scheduler_id="bangumi_replay", runner=bangumi_replay_scheduler)
+    )
+
+    from .llm_match_scheduler import llm_match_scheduler
+
+    scheduler_registry.register_spec(
+        JobSpec(scheduler_id="llm_match", runner=llm_match_scheduler)
     )
 
     from .airing_today_scheduler import airing_today_scheduler

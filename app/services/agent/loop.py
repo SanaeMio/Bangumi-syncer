@@ -358,7 +358,7 @@ async def run_loop(
     # 绝不进入请求体；键序与历史 flat 形态逐字一致）
     tools_wire = [s.to_wire() for s in tools_schemas]
 
-    # 终止工具由注册表语义（access="terminal"）**单点派生**：末轮强制定向、终止判定、
+    # 终止工具由注册表语义（kind==ToolKind.TERMINAL）**单点派生**：末轮强制定向、终止判定、
     # 收尾 tools 过滤都只用它；>1 个由 runtime 入口 fail-fast（loop 防御式取首个）。
     terminals = [s for s in tools_schemas if s.kind == ToolKind.TERMINAL]
     terminal_name = terminals[0].name if terminals else None
@@ -419,7 +419,7 @@ async def run_loop(
         assistant_blocks: list[ContentBlock] = list(resp.blocks)
         messages.append(Message(role="assistant", content=assistant_blocks))
 
-        # ③ 终止工具优先：含终止工具（access="terminal"）→ 捕获即 break（其他工具不执行）
+        # ③ 终止工具优先：含终止工具（kind==ToolKind.TERMINAL）→ 捕获即 break（其他工具不执行）
         terminal_tc: ToolUseBlock | None = None
         terminal_idx = -1
         for idx, tc in enumerate(tool_calls):

@@ -5,9 +5,10 @@ SequenceMatcher vs rapidfuzz 对比测试
 """
 
 import sys
+from typing import Any, cast
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
-    sys.stdout.reconfigure(encoding="utf-8")
+    cast(Any, sys.stdout).reconfigure(encoding="utf-8")
 
 from difflib import SequenceMatcher
 

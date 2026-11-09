@@ -665,6 +665,7 @@ async def test_full_start_stop_with_multiple_jobs():
         s = SummaryScheduler()
         ok = await s.start()
         assert ok is True
+        assert s.scheduler is not None
         jobs = s.scheduler.get_jobs()
         assert len(jobs) == 2
         job_ids = {j.id for j in jobs}

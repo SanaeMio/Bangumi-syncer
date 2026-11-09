@@ -24,25 +24,12 @@ def test_llm_provider_select_renders(authed_page, base_url: str):
     assert select.input_value() == "openai_compat"
 
 
-def test_llm_thinking_level_select_renders(authed_page, base_url: str):
-    """Scenario 6.2: 思考强度下拉框渲染，默认 off。"""
-    page = authed_page
-    _open_config_page(page, base_url)
-
-    select = page.locator("#llm-thinking-level")
-    assert select.is_visible()
-    options = select.locator("option").all_inner_texts()
-    assert options == ["off", "low", "medium", "high"]
-    assert select.input_value() == "off"
-
-
-def test_llm_save_payload_includes_new_fields(authed_page, base_url: str):
-    """Scenario 6.3: 保存并测试的 PUT 请求携带 provider 与 thinking_level。"""
+def test_llm_save_payload_includes_provider(authed_page, base_url: str):
+    """保存并测试的 PUT 请求携带 provider（不再含 thinking_level）。"""
     page = authed_page
     _open_config_page(page, base_url)
 
     page.select_option("#llm-provider", "anthropic_compat")
-    page.select_option("#llm-thinking-level", "medium")
 
     with page.expect_response(
         lambda r: "/api/llm/conf" in r.url and r.request.method == "PUT"
@@ -54,16 +41,16 @@ def test_llm_save_payload_includes_new_fields(authed_page, base_url: str):
     body = resp.request.post_data_json
     assert body is not None
     assert body["provider"] == "anthropic_compat"
-    assert body["thinking_level"] == "medium"
+    # 不再发送 thinking_level
+    assert "thinking_level" not in body
 
 
 def test_llm_values_restored_after_reload(authed_page, base_url: str):
-    """Scenario 6.4: 保存后刷新页面，下拉框回显保存值。"""
+    """保存后刷新页面，下拉框回显保存值（仅 provider）。"""
     page = authed_page
     _open_config_page(page, base_url)
 
     page.select_option("#llm-provider", "anthropic_compat")
-    page.select_option("#llm-thinking-level", "high")
     with page.expect_response(
         lambda r: "/api/llm/conf" in r.url and r.request.method == "PUT"
     ):
@@ -72,4 +59,3 @@ def test_llm_values_restored_after_reload(authed_page, base_url: str):
     page.reload()
     page.wait_for_load_state("networkidle")
     assert page.locator("#llm-provider").input_value() == "anthropic_compat"
-    assert page.locator("#llm-thinking-level").input_value() == "high"

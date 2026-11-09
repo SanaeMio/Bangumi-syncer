@@ -2,9 +2,11 @@
 Summary AI 观影报告任务管理 API。
 """
 
+import json
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException
+from sse_starlette.sse import EventSourceResponse
 
 from ..core.config import config_manager
 from ..core.database import database_manager
@@ -16,8 +18,10 @@ from ..models.summary import (
     SummaryJobTestResponse,
     SummaryJobUpdate,
 )
+from ..services.llm.models import StreamChunk
 from ..services.memory.service import MemoryService
 from ..services.summary import SummaryJobConfig, summary_scheduler, summary_service
+from ..services.summary.service import SummaryStreamResult
 from .deps import get_current_user_flexible
 
 router = APIRouter(prefix="/api/summary/jobs", tags=["summary_jobs"])
@@ -153,29 +157,84 @@ async def test_summary_job(name: str, _=Depends(get_current_user_flexible)):
     target = _find_config(decoded)
     job_config = SummaryJobConfig.from_config_dict(target)
     result = await summary_service.generate_summary(job_config)
-    summary_text = result["summary_text"]
-    usage = result.get("usage")
+    summary_text = result.summary_text
+    usage = result.usage
 
     if not summary_text:
-        # H1-API 修正：空内容即失败（usage 存在但空 choices 仍可能是失败调用）
+        # 空内容即失败（usage 存在但空 choices 仍可能是失败调用）
         return SummaryJobTestResponse(
             success=False,
             job_name=job_config.name,
             error_message="LLM 调用失败：所有重试均已耗尽",
-            record_count=result["record_count"],
+            record_count=result.record_count,
         )
 
     return SummaryJobTestResponse(
         success=True,
         job_name=job_config.name,
         summary_text=summary_text,
-        model=result["model"],
+        model=result.model,
         prompt_tokens=usage.prompt_tokens if usage else 0,
         completion_tokens=usage.completion_tokens if usage else 0,
         total_tokens=usage.total_tokens if usage else 0,
-        latency_ms=result.get("latency_ms", 0),
-        record_count=result["record_count"],
+        latency_ms=result.latency_ms,
+        record_count=result.record_count,
     )
+
+
+def _chunk_to_stream_event(chunk: StreamChunk) -> dict | None:
+    """把 LLM 归一化事件映射为前端可消费的 SSE 事件体。
+
+    仅透传正文/思考增量；usage/stop/tool_use 等由服务层聚合为 done 事件，
+    不在增量阶段重复推送（返回 None 表示该事件不产生 SSE 输出）。
+    """
+    if chunk.type == "text_delta":
+        return {"type": "delta", "text": chunk.text}
+    if chunk.type == "thinking_delta":
+        return {"type": "thinking", "text": chunk.thinking}
+    return None
+
+
+async def _summary_test_stream_generator(job_config: SummaryJobConfig):
+    """试生成 SSE 事件生成器：delta/thinking 增量 → done（聚合）→ 或 error。"""
+    result = SummaryStreamResult()
+    try:
+        async for chunk in summary_service.generate_summary_stream(job_config, result):
+            event = _chunk_to_stream_event(chunk)
+            if event is not None:
+                yield {"data": json.dumps(event, ensure_ascii=False)}
+
+        usage = result.usage
+        done = {
+            "type": "done",
+            "model": result.model,
+            "prompt_tokens": usage.prompt_tokens if usage else 0,
+            "completion_tokens": usage.completion_tokens if usage else 0,
+            "total_tokens": usage.total_tokens if usage else 0,
+            "latency_ms": result.latency_ms,
+            "record_count": result.record_count,
+        }
+        yield {"data": json.dumps(done, ensure_ascii=False)}
+    except Exception as e:
+        # 异常统一转 error 事件（不 500）：前端据 type=error 展示失败。
+        # CancelledError（客户端断开）不属 Exception，会向上传播终止生成器。
+        logger.error(f"Summary job '{job_config.name}' 流式试生成失败: {e}")
+        yield {
+            "data": json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)
+        }
+
+
+@router.get("/{name:path}/test/stream")
+async def test_summary_job_stream(name: str, _=Depends(get_current_user_flexible)):
+    """流式试生成摘要（SSE）——逐 token 推送，末尾 done 携带用量/延迟。
+
+    与 POST /test 的区别：不等待全量结果，正文增量渲染；预览语义一致
+    （不含记忆注入、不写记忆、不发通知）。任务不存在时在建立流之前返回 404。
+    """
+    decoded = unquote(name)
+    target = _find_config(decoded)
+    job_config = SummaryJobConfig.from_config_dict(target)
+    return EventSourceResponse(_summary_test_stream_generator(job_config))
 
 
 @router.post("/{name:path}/trigger")
@@ -229,14 +288,14 @@ async def summary_job_memory_stats(name: str, _=Depends(get_current_user_flexibl
     - total_count / total_chars / avg_chars：任务已积累的摘要规模（热层）
     - memory_limit / related_limit：当前配置
     - injected_estimate_tokens：按配置估算的注入量（估算口径：
-      字符数 × 0.7 粗略中文 token 系数，见 closeout §评测；仅展示参考）
+      字符数 × 0.7 粗略中文 token 系数，仅展示参考）
     """
     decoded = unquote(name)
     _find_config(decoded)  # 任务不存在 404
     task_id = f"summary-{decoded}"
 
     rows = database_manager.memory.get_recent("summary", task_id, limit=1000)
-    # 摘要失败占位行（summary=""）只承载消费标记，不计入统计与注入估算（B1 读取侧适配）
+    # 摘要失败占位行（summary=""）只承载消费标记，不计入统计与注入估算（读取侧适配）
     rows = [e for e in rows if e.summary]
     total_count = len(rows)
     total_chars = sum(len(e.summary) for e in rows)

@@ -185,7 +185,7 @@ async def run(
 
 
 def _assert_terminals_unique(tools_schemas: Sequence[ToolSchema]) -> None:
-    """终止工具（``access="terminal"``）唯一性 fail-fast（0 个允许：自然收尾）。
+    """终止工具（``kind==ToolKind.TERMINAL``）唯一性 fail-fast（0 个允许：自然收尾）。
 
     >1 个时末轮"强制定向"无法表达（provider 只支持单一具名），属场景配置错误，
     入口立即报错，避免静默走错分支。
@@ -194,7 +194,7 @@ def _assert_terminals_unique(tools_schemas: Sequence[ToolSchema]) -> None:
     if len(terminals) > 1:
         raise ValueError(
             f"场景注册了 {len(terminals)} 个终止工具（{', '.join(terminals)}）；"
-            '框架要求至多一个（access="terminal"）'
+            "框架要求至多一个（kind==ToolKind.TERMINAL）"
         )
 
 
@@ -207,7 +207,7 @@ def _make_executor_factory(
       文本由入口收口）
     - ``batch_execute_fn``：延迟执行复用 ``execute_batch``（分段并行/保序 + span 包裹）
     - ``is_idempotent``：停点是否提前启动的判据
-    - ``is_terminal``：access=terminal 判定（terminal 不执行、且抑制后续停点启动）
+    - ``is_terminal``：kind==ToolKind.TERMINAL 判定（terminal 不执行、且抑制后续停点启动）
     - ``on_recorder``：为提前执行的工具落 tool span（延迟执行由 execute_batch 自带）
     """
 
@@ -269,7 +269,7 @@ async def continue_run(
          响应）：含终止工具调用 → 走场景终局处理；否则一律 ``exhausted``
          （响应文本交场景 ``parse_suggestion`` 兜底解析）——**不**按 provider
          原始 stop_reason 归一化，与 ``_final_recovery`` 的二分判据对齐
-       - 匹配的终止工具调用（注册表 ``access="terminal"`` 派生）→ 走场景终局处理
+       - 匹配的终止工具调用（注册表 ``kind==ToolKind.TERMINAL`` 派生）→ 走场景终局处理
        - ``stop_reason`` 为终止工具名但无匹配调用 → 防御降级 exhausted
        - 其余按 ``normalize_stop_reason`` 归一化（与 ``loop.run_loop`` 共用判据）：
          ``end_turn`` → mark_succeeded；``max_tokens`` / 空壳 ``llm_error``

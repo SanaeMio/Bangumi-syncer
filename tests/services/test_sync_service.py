@@ -4,6 +4,7 @@ SyncService 单元测试
 
 import os
 import sys
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -523,7 +524,7 @@ class TestSyncMovieWatching:
     def _movie_item(**kwargs):
         from app.models.sync import CustomItem
 
-        base = {
+        base: dict[str, Any] = {
             "media_type": "movie",
             "title": "剧场版测试",
             "ori_title": None,
