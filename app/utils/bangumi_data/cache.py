@@ -176,6 +176,7 @@ class CacheMixin:
         # 随数据解析一并恢复（与标题索引生命周期一致，避免首查询重建风暴）
         self._cache_tmdb_mapping.clear()
         self._cache_tmdb_begin.clear()
+        self._cache_tmdb_episode_ranges.clear()
         self._build_tmdb_mapping()
 
         # 从内存缓存中yield数据
@@ -226,6 +227,7 @@ class CacheMixin:
             # 数据已换新，TMDB 映射一并失效，随下次解析对称重建
             self._cache_tmdb_mapping.clear()
             self._cache_tmdb_begin.clear()
+            self._cache_tmdb_episode_ranges.clear()
         return success
 
     # ----- 启动时检查与预加载 -----

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.utils.bangumi_data import bangumi_data
+from app.utils.bangumi_data.index import TmdbEpisodeMatch
 
 from ...core.background_tasks import register_background_task
 from ...core.database import database_manager
@@ -360,16 +361,45 @@ class TraktSyncService:
 
         返回 True 表示应跳过该条目。
         """
+        if self._is_genre_filtered_out(
+            item,
+            sync_filter_enabled,
+            show_genres,
+            show_original_titles,
+            custom_mappings,
+        ):
+            show = item.show or {}
+            title = show.get("title", "")
+            genres = show_genres.get(
+                str((show.get("ids") or {}).get("trakt") or ""), []
+            )
+            logger.debug(f"Trakt 类型过滤——跳过非动画条目: {title} (genres={genres})")
+            return True
+        return False
+
+    @staticmethod
+    def _is_genre_filtered_out(
+        item: TraktHistoryItem,
+        sync_filter_enabled: bool,
+        show_genres: dict[str, list[str]],
+        show_original_titles: dict[str, str],
+        custom_mappings: dict,
+    ) -> bool:
+        """类型过滤判定（纯判定，无副作用）。
+
+        返回 True 表示该条目会被类型过滤跳过。供收集阶段预判，避免为
+        注定被跳过的条目发起额外请求。
+        """
         if not sync_filter_enabled:
             return False
         if item.type == "episode":
-            show = item.show
-            item_title = (show or {}).get("title", "")
-            trakt_id = (show or {}).get("ids", {}).get("trakt")
+            show = item.show or {}
+            item_title = show.get("title", "")
+            trakt_id = (show.get("ids") or {}).get("trakt")
         else:
             m = item.movie or {}
             item_title = m.get("title", "")
-            trakt_id = m.get("ids", {}).get("trakt")
+            trakt_id = (m.get("ids") or {}).get("trakt")
         tid = str(trakt_id) if trakt_id else ""
         genres = show_genres.get(tid, []) if tid else []
         ori_title = show_original_titles.get(tid, "") if tid else ""
@@ -378,11 +408,155 @@ class TraktSyncService:
             or item_title in custom_mappings
             or ori_title in custom_mappings
         ):
-            logger.debug(
-                f"Trakt 类型过滤——跳过非动画条目: {item_title} (genres={genres})"
-            )
             return True
         return False
+
+    @staticmethod
+    def _bangumi_data_release_date(
+        tmdb_key: str, season: int | None, episode_num: int
+    ) -> str:
+        """bangumi-data 能给出的该集/该季发行日期，取不到返回空串。
+
+        集级起点（``tv/{id}/season/{s}/episode/{start}``）命中时给出该条目
+        的 begin，否则回落到季级 key 与基 key 的 begin。
+        """
+        match = bangumi_data.resolve_tmdb_episode(tmdb_key, season, episode_num)
+        if isinstance(match, TmdbEpisodeMatch) and isinstance(match.begin, str):
+            if match.begin:
+                return match.begin[:10]
+        begin = bangumi_data.get_begin_by_tmdb_id(tmdb_key, season=season)
+        if begin and isinstance(begin, str):
+            return begin[:10]
+        return ""
+
+    @staticmethod
+    def _season_episode_key(item: TraktHistoryItem) -> tuple[str, int, int] | None:
+        """观看记录对应的 (show, season, episode) 标识，取不到返回 None。
+
+        show 标识用 Trakt 剧集 id，季与集号取整数形式；缺任一项或类型不合法
+        时返回 None，调用方据此跳过该条目。
+        """
+        episode = item.episode or {}
+        show = item.show or {}
+        if not episode or not show:
+            return None
+        ids = show.get("ids") or {}
+        show_id = ids.get("trakt")
+        season = episode.get("season")
+        number = episode.get("number")
+        if not show_id or season is None or number is None:
+            return None
+        try:
+            return (str(show_id), int(season), int(number))
+        except (TypeError, ValueError):
+            return None
+
+    def _collect_season_air_date_tasks(
+        self,
+        pending_items: list[TraktHistoryItem],
+        sync_filter_enabled: bool,
+        show_genres: dict[str, list[str]],
+        show_original_titles: dict[str, str],
+        custom_mappings: dict,
+    ) -> list[tuple[str, int]]:
+        """收集需要从 Trakt 取播出日期的季，按 (show, season) 去重。
+
+        仅当该集在 Trakt 记录与 bangumi-data 中都取不到日期时才需要请求：
+        本地数据能给出日期时不产生任何额外请求。类型过滤会跳过的条目
+        同样不纳入，避免为注定不参与同步的剧集发请求。
+        """
+        tasks: list[tuple[str, int]] = []
+        seen: set[tuple[str, int]] = set()
+        for item in pending_items:
+            episode = item.episode or {}
+            show = item.show or {}
+            if item.type != "episode" or not episode or not show:
+                continue
+            if episode.get("first_aired") or show.get("first_aired"):
+                continue
+            if self._is_genre_filtered_out(
+                item,
+                sync_filter_enabled,
+                show_genres,
+                show_original_titles,
+                custom_mappings,
+            ):
+                continue
+            key = self._season_episode_key(item)
+            if key is None:
+                continue
+            tmdb_id = (show.get("ids") or {}).get("tmdb")
+            if tmdb_id is not None:
+                local_date = self._bangumi_data_release_date(
+                    f"tv/{tmdb_id}", episode.get("season"), episode.get("number")
+                )
+                if local_date:
+                    continue
+            season_key = (key[0], key[1])
+            if season_key in seen:
+                continue
+            seen.add(season_key)
+            tasks.append(season_key)
+        return tasks
+
+    async def _fetch_season_air_dates_batch(
+        self,
+        season_tasks: list[tuple[str, int]],
+        client: TraktClient,
+        pending_items: list[TraktHistoryItem],
+    ) -> None:
+        """并发获取整季剧集列表，把每集 first_aired 回填到观看记录。
+
+        回填后转换层按 ``episode.first_aired`` 取日期，无需额外分支。
+        同一季只请求一次；取不到日期的条目保持原样，转换层按既有回退链
+        继续处理。
+        """
+        if not season_tasks:
+            return
+        sem = asyncio.Semaphore(5)
+
+        async def _fetch_one(show_id: str, season: int):
+            async with sem:
+                return (
+                    show_id,
+                    season,
+                    await client.get_season_episodes(show_id, season),
+                )
+
+        results = await asyncio.gather(
+            *[_fetch_one(show_id, season) for show_id, season in season_tasks],
+            return_exceptions=True,
+        )
+        air_dates: dict[tuple[str, int, int], str] = {}
+        for result in results:
+            if isinstance(result, Exception):
+                if isinstance(result, TraktAuthError):
+                    # 401：token 失效，向上传播触发整体刷新重试
+                    raise result
+                logger.debug(f"获取 Trakt 整季剧集列表失败: {result}")
+                continue
+            show_id, season, episodes = result
+            for ep in episodes:
+                number = ep.get("number")
+                first_aired = ep.get("first_aired")
+                if number is None or not first_aired:
+                    continue
+                try:
+                    key = (str(show_id), int(season), int(number))
+                except (TypeError, ValueError):
+                    continue
+                air_dates[key] = str(first_aired)
+
+        for item in pending_items:
+            episode = item.episode or {}
+            if not episode or episode.get("first_aired"):
+                continue
+            key = self._season_episode_key(item)
+            if key is None:
+                continue
+            first_aired = air_dates.get(key)
+            if first_aired:
+                episode["first_aired"] = first_aired
 
     async def _convert_and_sync_items(
         self,
@@ -557,6 +731,19 @@ class TraktSyncService:
                 sync_filter_enabled,
                 show_original_titles,
                 show_genres,
+            )
+
+            # 整季播出日期：本地数据取不到日期的季才请求，同一季只请求一次；
+            # 结果回填到 episode.first_aired，转换层按既有回退链取用
+            season_air_date_tasks = self._collect_season_air_date_tasks(
+                pending_items,
+                sync_filter_enabled,
+                show_genres,
+                show_original_titles,
+                custom_mappings,
+            )
+            await self._fetch_season_air_dates_batch(
+                season_air_date_tasks, client, pending_items
             )
 
             # 转换为 CustomItem 并同步
@@ -753,18 +940,19 @@ class TraktSyncService:
             season = episode.get("season", 1)
             episode_num = episode.get("number", 1)
 
-            # 获取发行日期：episode.first_aired → show.first_aired → bangumi_data begin → show.year → watched_at
+            # 获取发行日期：episode.first_aired → show.first_aired →
+            # bangumi_data 集级 begin → bangumi_data begin → show.year → watched_at
+            # Trakt 的 first_aired 是带时区的完整时间戳，按 CustomItem 的
+            # release_date 约定（YYYY-MM-DD）截取日期部分
             release_date = ""
             if episode.get("first_aired"):
-                release_date = episode["first_aired"]
+                release_date = episode["first_aired"][:10]
             elif show.get("first_aired"):
-                release_date = show["first_aired"]
+                release_date = show["first_aired"][:10]
             elif show_tmdb is not None:
-                bgm_begin = bangumi_data.get_begin_by_tmdb_id(
-                    f"tv/{show_tmdb}", season=episode.get("season")
+                release_date = self._bangumi_data_release_date(
+                    f"tv/{show_tmdb}", season, episode_num
                 )
-                if bgm_begin and isinstance(bgm_begin, str):
-                    release_date = bgm_begin[:10]
             if not release_date and show.get("year"):
                 release_date = f"{show['year']}-01-01"
 
@@ -787,6 +975,7 @@ class TraktSyncService:
                 release_date=release_date,
                 user_name=user_id,  # 使用 user_id 作为 user_name
                 source="trakt",
+                tmdb_id=(f"tv/{show_tmdb}" if show_tmdb is not None else None),
                 raw_payload={
                     "source": "trakt",
                     "history_kind": "episode",

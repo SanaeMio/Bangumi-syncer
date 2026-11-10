@@ -38,7 +38,8 @@ class EpisodeResolveStep(ExecutionStepBase):
         return False
 
     def execute(self, ctx: ExecutionContext, prev: dict | None = None) -> StepOutcome:
-        # 集数分段映射换算出的目标集号（非 None 时优先于请求集号）
+        # 换算后的目标条目内集号（自定义映射 segments / 集级起点；非 None 时
+        # 优先于请求集号）。为 None 时 _resolve_season_episode 回落 item.episode。
         target_ep = ctx.mapping_target_episode
         has_movie_episode = ctx.item.media_type == "movie" and self._is_movie_file(
             ctx.item

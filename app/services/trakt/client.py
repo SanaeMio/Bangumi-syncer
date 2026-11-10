@@ -429,7 +429,19 @@ class TraktClient:
     async def get_episode_info(
         self, show_id: int, season: int, episode: int
     ) -> dict | None:
-        """获取剧集详细信息"""
+        """获取单集剧集详细信息
+
+        返回值默认包含 season、number、first_aired 等字段。适用于只需要
+        单集的场景；同一季有多集需要时用 get_season_episodes 一次取回整季。
+
+        Args:
+            show_id: Trakt 剧集 ID
+            season: 季编号
+            episode: 集编号
+
+        Returns:
+            单集详情 dict；请求失败或返回结构不符时返回 None
+        """
         try:
             endpoint = f"/shows/{show_id}/seasons/{season}/episodes/{episode}"
 
@@ -442,6 +454,38 @@ class TraktClient:
         except Exception as e:
             logger.error(f"获取剧集详情失败: {e}")
             return None
+
+    async def get_season_episodes(self, show_id: str, season: int) -> list[dict]:
+        """获取整季的剧集列表（含每集 first_aired）
+
+        整季一次取回：同一季的多条观看记录只需一次请求，避免逐集请求
+        把请求量放大到集数级别。
+
+        返回的每条记录默认包含 number 与 first_aired；extended=full 额外带回
+        单集元数据（简介、片长、评分等），与 get_show_info / get_movie_info
+        的取数方式保持一致。
+
+        Args:
+            show_id: Trakt 剧集 ID 或 slug
+            season: 季编号
+
+        Returns:
+            剧集 dict 列表；请求失败或返回结构不符时返回空列表
+        """
+        try:
+            endpoint = f"/shows/{show_id}/seasons/{season}"
+            params = {"extended": "full"}
+            data = await self._make_request("GET", endpoint, params)
+
+            if isinstance(data, list):
+                return [ep for ep in data if isinstance(ep, dict)]
+            return []
+
+        except TraktAuthError:
+            raise
+        except Exception as e:
+            logger.error(f"获取剧集 {show_id} 第 {season} 季剧集列表失败: {e}")
+            return []
 
     async def test_connection(self) -> bool:
         """测试连接是否正常"""
