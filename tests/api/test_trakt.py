@@ -787,8 +787,10 @@ async def test_email_login_start_success(
         assert data["success"] is True
         assert data["message"]
         mock_start.assert_awaited_once()
-        assert mock_start.await_args[0][0] == "testuser"
-        assert mock_start.await_args[0][1] == "u@example.com"
+        call = mock_start.await_args
+        assert call is not None
+        assert call[0][0] == "testuser"
+        assert call[0][1] == "u@example.com"
 
 
 @pytest.mark.asyncio
@@ -875,8 +877,10 @@ async def test_email_login_complete_success(
         assert data["success"] is True
         assert data["expires_at"] == 1_700_000_000
         mock_complete.assert_awaited_once()
-        assert mock_complete.await_args[0][0] == "testuser"
-        assert mock_complete.await_args[0][1] == "123456"
+        call = mock_complete.await_args
+        assert call is not None
+        assert call[0][0] == "testuser"
+        assert call[0][1] == "123456"
 
 
 @pytest.mark.asyncio

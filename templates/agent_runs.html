@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}运行观测 - Bangumi Syncer{% endblock %}
+{% block page_title %}运行观测{% endblock %}
+{% block page_actions %}
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-primary" onclick="loadAgentRuns(1)">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+{% endblock %}
+{% block content %}
+    <!-- 说明信息 -->
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>运行观测说明：</strong>展示 Agent 会话（匹配 / 摘要等任务）的最近运行，创建时间倒序，默认统计最近 30 天。
+        点击任意行查看完整执行过程（LLM 调用 / 工具执行 / 预算消息）；失败原因见「结束原因 / 最近错误」列。
+    </div>
+    <!-- 筛选条件 -->
+    <div class="card mb-4 filter-card">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-funnel me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">筛选条件</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="filter-status" class="form-label">状态</label>
+                    <select class="form-select" id="filter-status">
+                        <option value="">全部</option>
+                        <option value="pending">待处理</option>
+                        <option value="processing">执行中</option>
+                        <option value="succeeded">成功</option>
+                        <option value="failed">失败</option>
+                        <option value="cancelled">已取消</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="filter-task-type" class="form-label">任务类型</label>
+                    <select class="form-select" id="filter-task-type">
+                        <option value="">全部</option>
+                        <option value="match">匹配</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filter-days" class="form-label">时间窗口</label>
+                    <select class="form-select" id="filter-days">
+                        <option value="1">最近 1 天</option>
+                        <option value="7">最近 7 天</option>
+                        <option value="30" selected>最近 30 天</option>
+                        <option value="90">最近 90 天</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex align-items-end gap-2">
+                    <button type="button"
+                            class="btn btn-outline-primary flex-fill"
+                            onclick="loadAgentRuns(1)">
+                        <i class="bi bi-funnel me-1"></i>应用筛选
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary flex-fill"
+                            onclick="clearAgentRunFilters()">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置筛选
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 运行列表 -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-activity me-2 card-header-icon"></i>
+                <h6 class="m-0 fw-semibold card-header-title">运行列表</h6>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="agent-runs-table-wrap" class="records-table-wrap">
+                <table class="table table-hover table-striped align-middle app-data-table"
+                       id="agent-runs-table">
+                    <thead>
+                        <tr>
+                            <th>状态</th>
+                            <th>任务</th>
+                            <th>创建时间</th>
+                            <th>耗时</th>
+                            <th>尝试</th>
+                            <th>Tokens</th>
+                            <th>结束原因 / 最近错误</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+            <nav class="app-pagination" id="pagination-nav" aria-label="分页导航">
+                <ul class="pagination app-pagination__list mb-0" id="pagination">
+                </ul>
+                <div class="app-pagination__summary text-muted" id="pagination-summary"></div>
+            </nav>
+            <!-- 加载状态 -->
+            <div id="loading" class="app-loading-state is-hidden">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 运行详情弹窗 -->
+    <div class="modal fade"
+         id="agentRunDetailModal"
+         tabindex="-1"
+         aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-activity me-2"></i>运行详情
+                        <span class="text-muted small ms-1" id="agent-run-detail-id"></span>
+                    </h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="关闭"></button>
+                </div>
+                <div class="modal-body" id="agent-run-detail-content">
+                    <span class="text-muted">加载中…</span>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            loadAgentRuns(1);
+        });
+    </script>
+{% endblock %}

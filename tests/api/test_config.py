@@ -1055,13 +1055,13 @@ async def test_sync_config_endpoint_removed(app_with_auth, mock_config_manager):
 
 
 @pytest.mark.asyncio
-async def test_get_config_exposes_llm_key_and_match_assist(
+async def test_get_config_masks_llm_key_and_exposes_match_assist(
     app_with_auth, mock_config_manager
 ):
-    """GET /api/config 暴露 llm.api_key 与 sync.llm_match_assist 供前端复用。
+    """GET /api/config 掩码 llm.api_key，同时暴露 sync.llm_match_assist。
 
-    前端 loadLLMMatchAssist 以 llm.api_key 非空判定开关可用性、以
-    sync.llm_match_assist 回填勾选，故这两个字段必须在 /api/config 响应中可见。
+    前端 loadLLMMatchAssist 只需判断 api_key 是否非空；掩码口径与
+    /api/llm/conf 一致（***last4），getLLMApiKeyValue 见到 *** 前缀跳过写入。
     """
     mock_config_manager.get_all_config.return_value = {
         "llm": {"api_key": "sk-liveabcd1234"},
@@ -1075,8 +1075,51 @@ async def test_get_config_exposes_llm_key_and_match_assist(
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["llm"]["api_key"] == "sk-liveabcd1234"
+    assert data["llm"]["api_key"] == "***1234"
+    assert "sk-liveabcd1234" not in str(data)
     assert data["sync"]["llm_match_assist"] is True
+
+
+@pytest.mark.asyncio
+async def test_get_config_masks_short_llm_key_fully(app_with_auth, mock_config_manager):
+    """短于 5 位的 key 全遮，不泄露尾部。"""
+    mock_config_manager.get_all_config.return_value = {"llm": {"api_key": "abc"}}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["llm"]["api_key"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_get_config_keeps_empty_llm_key(app_with_auth, mock_config_manager):
+    """空 key 保持空串：前端据此判定 LLM 未配置。"""
+    mock_config_manager.get_all_config.return_value = {"llm": {"api_key": ""}}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["llm"]["api_key"] == ""
+
+
+@pytest.mark.asyncio
+async def test_get_config_without_llm_section(app_with_auth, mock_config_manager):
+    """配置缺 llm 段时不得抛错。"""
+    mock_config_manager.get_all_config.return_value = {"auth": {"username": "u"}}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/config")
+
+    assert response.status_code == 200
+    assert "llm" not in response.json()["data"]
 
 
 @pytest.mark.asyncio

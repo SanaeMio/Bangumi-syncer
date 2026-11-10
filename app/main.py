@@ -76,6 +76,14 @@ async def lifespan(app: FastAPI):
     startup_info.print_info("🚀 应用启动中...")
     startup_info.print_separator()
 
+    # 启动期校验：未配置 [auth] secret_key 时告警（敏感值与 replay_delta 将明文存储）
+    try:
+        from app.core.config_secret_crypto import warn_if_master_missing
+
+        warn_if_master_missing()
+    except Exception as e:
+        logger.warning(f"启动期 secret_key 校验失败: {e}")
+
     # 将旧 INI 账号段一次性迁移到数据库（幂等），账号以 DB 为唯一真相源
     try:
         from app.core.accounts import migrate_ini_accounts_to_db
@@ -126,6 +134,16 @@ async def lifespan(app: FastAPI):
         database_manager.cleanup_pending_sync_queue(retention_days)
     except Exception as e:
         logger.warning(f"启动时清理旧同步记录失败（不影响主流程）: {e}")
+
+    # 标记残留的未闭合 span（上次进程中断遗留的 running → error），best-effort
+    try:
+        marked = database_manager.agent_runs.mark_residual_running_spans()
+        if marked:
+            logger.info(
+                f"启动清理：{marked} 条未闭合 span 已标记为 error（进程中断遗留）"
+            )
+    except Exception as e:
+        logger.warning(f"启动清理未闭合 span 失败（不影响主流程）: {e}")
 
     try:
         register_schedulers()
