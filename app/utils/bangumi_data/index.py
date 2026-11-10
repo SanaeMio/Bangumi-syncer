@@ -4,11 +4,13 @@
 - 构建 TMDB id → 番剧名映射（供 trakt 同步快速查找）
 - 构建标题 → item 精确匹配索引（加速常用查找）
 - 根据 TMDB id 与可选季度查询番剧名
+- 根据 TMDB 集级起点推算条目归属与条目内集号
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -32,6 +34,32 @@ _SEASON_SUFFIX = re.compile(
     re.IGNORECASE,
 )
 
+# TMDB 集级 site id：tv/{id}/season/{season}/episode/{start}
+# 用于表达「TMDB 未把该作品拆成多季」时，某个 bangumi-data 条目从合并季的
+# 第 start 集开始。同一 base 可有多个起点，按顺序划出各条目的集边界。
+_TMDB_EPISODE_KEY = re.compile(r"^(tv/\d+)/season/(\d+)/episode/(\d+)$")
+
+
+@dataclass(frozen=True)
+class TmdbEpisodeMatch:
+    """集级起点命中的条目与换算结果。"""
+
+    subject_id: str
+    title: str
+    begin: str
+    start_episode: int
+    target_episode: int
+
+
+@dataclass(frozen=True)
+class _TmdbEpisodeRange:
+    """单个集级起点对应的条目信息，按 start_episode 升序组成集边界。"""
+
+    start_episode: int
+    subject_id: str
+    title: str
+    begin: str
+
 
 class IndexMixin:
     """索引构建与查询相关方法"""
@@ -51,13 +79,19 @@ class IndexMixin:
         - 优先选任意标题均不含季度标记的条目。
         - 均含标记时选元数据日期最早的条目。
         - 多条目时去除尾部季度标识符。
+
+        ``tv/{id}/season/{season}/episode/{start}`` 形式的 site id 额外构建
+        集边界索引：这类 key 表示「TMDB 未拆分季度」时某个条目从合并季的
+        第 start 集开始，据此可把媒体集号换算成条目内集号。
         """
         # 幂等：无论从 __init__ / _parse_data 对称重建 / _ensure_tmdb_mapping
         # 哪条路径进入，都从干净状态全量构建
         self._cache_tmdb_mapping.clear()
         self._cache_tmdb_begin.clear()
+        self._cache_tmdb_episode_ranges.clear()
 
         candidates: dict[str, list[dict[str, Any]]] = {}
+        ranges: dict[tuple[str, int], list[_TmdbEpisodeRange]] = {}
         for item in self._parse_data():
             # 提取 TMDB id
             for site in item.get("sites", []):
@@ -67,6 +101,7 @@ class IndexMixin:
                     if not title.strip():
                         break
                     candidates.setdefault(tmdb_id, []).append(item)
+                    self._collect_episode_range(tmdb_id, item, ranges)
                     break
 
         selected_count = 0
@@ -88,9 +123,49 @@ class IndexMixin:
                 picks.sort(key=lambda e: self._parse_begin(e.get("begin", "") or ""))
                 self._cache_tmdb_begin[tmdb_id] = picks[0].get("begin", "") or ""
 
+        for key in ranges:
+            ranges[key].sort(key=lambda r: r.start_episode)
+        self._cache_tmdb_episode_ranges.update(ranges)
+
         logger.info(
             f"TMDB 映射构建完成，共 {len(candidates)} 个唯一 ID "
             f"({selected_count} 单节目, {multi_count} 多节目)"
+        )
+
+    @staticmethod
+    def _collect_episode_range(
+        tmdb_id: str,
+        item: dict[str, Any],
+        ranges: dict[tuple[str, int], list[_TmdbEpisodeRange]],
+    ) -> None:
+        """登记集级 site id 对应的条目起点。
+
+        只接纳带 ``site=bangumi`` 的条目：换算结果要直接作为目标 subject_id，
+        缺 id 时无法安全定位，交给既有匹配链处理。
+        """
+        if not isinstance(tmdb_id, str):
+            return
+        match = _TMDB_EPISODE_KEY.match(tmdb_id)
+        if not match:
+            return
+        subject_id = ""
+        for site in item.get("sites", []):
+            if site.get("site") == "bangumi" and site.get("id"):
+                subject_id = str(site["id"])
+                break
+        if not subject_id:
+            return
+        base, season, start = match.group(1), int(match.group(2)), int(match.group(3))
+        # 起点 1 与基 key 等价，不构成分段；只有起点 >= 2 才表达集边界。
+        if start < 2:
+            return
+        ranges.setdefault((base, season), []).append(
+            _TmdbEpisodeRange(
+                start_episode=start,
+                subject_id=subject_id,
+                title=item.get("title", ""),
+                begin=item.get("begin", "") or "",
+            )
         )
 
     @staticmethod
@@ -201,3 +276,48 @@ class IndexMixin:
             if begin:
                 return begin
         return self._cache_tmdb_begin.get(tmdb_id, "")
+
+    def resolve_tmdb_episode(
+        self, tmdb_id: str, season: int, episode: int
+    ) -> TmdbEpisodeMatch | None:
+        """按集级起点换算目标条目与条目内集号。
+
+        ``tv/{id}/season/{s}/episode/{start}`` 表示某个 bangumi-data 条目在
+        TMDB 未拆分季度的合并季里从第 ``start`` 集开始。取不大于请求集号
+        的最大起点，该起点所属条目即目标条目，条目内集号为
+        ``episode - start + 1``。请求集号落在首个起点之前时返回 None ——
+        此时属于基 key 条目，沿用既有匹配链。
+
+        Args:
+            tmdb_id: TMDB 基 id（形如 tv/278043）
+            season: 请求的季编号
+            episode: 请求的集编号（媒体库集号）
+
+        Returns:
+            命中的条目与换算结果；无集边界或请求集号落在首个起点之前时为 None
+        """
+        self._ensure_tmdb_mapping()
+        if (
+            not isinstance(season, int)
+            or not isinstance(episode, int)
+            or episode < 1
+            or season < 0
+        ):
+            return None
+        entries = self._cache_tmdb_episode_ranges.get((tmdb_id, season))
+        if not entries:
+            return None
+        picked: _TmdbEpisodeRange | None = None
+        for entry in entries:
+            if entry.start_episode > episode:
+                break
+            picked = entry
+        if picked is None:
+            return None
+        return TmdbEpisodeMatch(
+            subject_id=picked.subject_id,
+            title=picked.title,
+            begin=picked.begin,
+            start_episode=picked.start_episode,
+            target_episode=episode - picked.start_episode + 1,
+        )

@@ -30,8 +30,13 @@ class CustomItem(BaseModel):
         description="驱动获取到的原始数据（webhook payload / /media response 等），"
         "用于在同步记录详情的「接收请求」步骤展示驱动原始输入",
     )
+    tmdb_id: str | None = Field(
+        None,
+        description="剧集在 TMDB 的基 id（形如 tv/278043）。由携带该 id 的驱动填入，"
+        "供 bangumi-data 集级起点解析条目归属与条目内集号",
+    )
 
-    @field_validator("ori_title", "source", "sync_action", mode="before")
+    @field_validator("ori_title", "source", "sync_action", "tmdb_id", mode="before")
     @classmethod
     def _blank_optional_to_none(cls, v: Any) -> Any:
         """把空白串哨兵值统一为 None（248-A 根因）

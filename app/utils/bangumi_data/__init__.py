@@ -25,7 +25,7 @@ from ...core.config import config_manager
 from ...core.logging import logger
 from ._http import _BufferedResponse, _request_with_retry  # noqa: F401
 from .cache import CacheMixin
-from .index import IndexMixin
+from .index import IndexMixin, _TmdbEpisodeRange
 from .matching import MatchingMixin
 
 
@@ -64,6 +64,10 @@ class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
         self._cache_tmdb_mapping: dict[str, str] = {}
         # TMDB id → begin 日期，供 trakt 同步取 release_date
         self._cache_tmdb_begin: dict[str, str] = {}
+        # (基 TMDB id, 季) → 按 start_episode 升序的集边界
+        self._cache_tmdb_episode_ranges: dict[
+            tuple[str, int], list[_TmdbEpisodeRange]
+        ] = {}
         # 精确匹配索引：title → [item]，加速常用查询
         self._title_index: dict[str, list[dict]] = {}
         # TMDB 映射/索引构建互斥锁（防并发重建重复解析与交错写入）
@@ -134,6 +138,7 @@ class BangumiData(CacheMixin, MatchingMixin, IndexMixin):
             self.clear_cache()
             self._cache_tmdb_mapping.clear()
             self._cache_tmdb_begin.clear()
+            self._cache_tmdb_episode_ranges.clear()
             if self.data_url != old_data_url:
                 # 缓存文件有效性检查只看 mtime+TTL，改数据源 URL 需强制重下
                 self._force_redownload = True

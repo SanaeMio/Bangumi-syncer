@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import (
+    SOURCE_BANGUMI_DATA,
+    SubjectRef,
+    make_candidate,
+)
 from app.services.matching.gates import BANGUMI_DATA_DISABLED
 from app.services.matching.steps.base import (
     MatchStepBase,
@@ -16,6 +21,7 @@ from app.services.matching.steps.base import (
     skipped_outcome,
 )
 from app.services.sync_service.match_trace import MatchCandidate
+from app.utils.bangumi_data.index import TmdbEpisodeMatch
 from app.utils.bangumi_data.matching import MatchingMixin, date_diff_days
 
 # 日期硬校验阈值（#4）：
@@ -62,10 +68,18 @@ class BangumiDataStep(MatchStepBase):
             "release_date": release_date or "",
             "season": ctx.item.season,
             "media_type": ctx.item.media_type,
+            "tmdb_id": ctx.item.tmdb_id or "",
         }
 
         try:
             bgm_data = ctx.service._get_bangumi_data()
+
+            # 集级起点是 TMDB id + 集号的确定性映射，优先于标题近似匹配。
+            # 命中时只写换算集号，不置 mapping_is_explicit：跨季链兜底与
+            # 显式绑定语义均保持不变。未命中时完全回落到既有匹配链。
+            episode_match = self._resolve_tmdb_episode(ctx, bgm_data)
+            if episode_match is not None:
+                return self._episode_range_outcome(ctx, episode_match, inputs)
 
             # 候选出参：复用 find_bangumi_id 内部那一次扫描的结果
             candidates_out: list[dict] = []
@@ -184,6 +198,78 @@ class BangumiDataStep(MatchStepBase):
                 # （SyncPipeline 见 status="error" 会无条件终止），见 StepOutcome 文档。
                 is_terminal=False,
             )
+
+    @staticmethod
+    def _resolve_tmdb_episode(ctx: MatchContext, bgm_data) -> TmdbEpisodeMatch | None:
+        """按请求的 TMDB 基 id 与集号解析集级起点。
+
+        仅当请求携带 TMDB 基 id、且索引给出确定性的集级起点时返回结果。
+        返回类型严格校验：bgm_data 可能是 mock 对象，任意方法的返回值
+        不得被当成命中。
+        """
+        # 集级起点表达的是「剧集在合并季里的集边界」，剧场版没有集号概念。
+        if ctx.item.media_type == "movie":
+            return None
+        tmdb_id = getattr(ctx.item, "tmdb_id", None)
+        if not tmdb_id or not isinstance(tmdb_id, str):
+            return None
+        try:
+            match = bgm_data.resolve_tmdb_episode(
+                tmdb_id, ctx.item.season, ctx.item.episode
+            )
+        except Exception as e:  # noqa: BLE001 — 索引不可用时回落既有匹配链
+            logger.debug(f"集级起点解析跳过: {e!r}"[:120])
+            return None
+        return match if isinstance(match, TmdbEpisodeMatch) else None
+
+    @staticmethod
+    def _episode_range_outcome(
+        ctx: MatchContext, match: TmdbEpisodeMatch, inputs: dict
+    ) -> StepOutcome:
+        """集级起点命中的产物：直接采信条目与换算集号。
+
+        日期硬护栏针对「标题近似匹配可能采信同名异条目」；集级起点由
+        TMDB id 与集号确定性定位，不经该护栏。请求日期保留在 inputs 中供
+        trace 观测。换算集号写入 mapping_target_episode（与自定义映射
+        segments 共用）；mapping_is_explicit 保持原值，执行阶段的跨季链
+        兜底不变。
+        """
+        ctx.subject_id = match.subject_id
+        ctx.match_stage = "bangumi_data"
+        ctx.is_season_matched_id = True
+        ctx.mapping_target_episode = match.target_episode
+        outputs = {
+            "subject_id": match.subject_id,
+            "matched_title": match.title,
+            "is_season_matched_id": True,
+            "tmdb_start_episode": match.start_episode,
+            "target_episode": str(match.target_episode),
+            "match_method": "tmdb_episode_range",
+        }
+        # C4：任何策略命中都必须产出候选，不许只回一个裸 id
+        candidate = make_candidate(
+            SubjectRef(
+                subject_id=match.subject_id,
+                name=match.title,
+                air_date=match.begin[:10] if match.begin else "",
+                source=SOURCE_BANGUMI_DATA,
+            ),
+            score=1.0,
+        )
+        return StepOutcome(
+            status="hit",
+            subject_id=match.subject_id,
+            reason=(
+                f"bangumi-data 集级起点命中：{match.title}，"
+                f"媒体 S{ctx.item.season}E{ctx.item.episode} → "
+                f"条目内第 {match.target_episode} 集"
+            ),
+            score=1.0,
+            inputs=inputs,
+            outputs=outputs,
+            candidates=[candidate],
+            is_terminal=True,
+        )
 
     @staticmethod
     def _to_match_candidates(candidates_out: list[dict]) -> list[MatchCandidate]:

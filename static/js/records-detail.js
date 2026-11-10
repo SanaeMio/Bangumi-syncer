@@ -532,6 +532,8 @@ const COMMON_PAYLOAD_LABELS = {
     match_method: '匹配方式',
     match_method_detail: '匹配方式细节',
     match_stage: '匹配阶段',
+    tmdb_id: 'TMDB ID',
+    tmdb_start_episode: 'TMDB 起始集',
     is_archive_hit: 'archive 命中',
     mark_status: '标记状态',
     queued: '已入队',
