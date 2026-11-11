@@ -534,10 +534,12 @@
                                 </div>
                                 <div class="progress" style="height: 8px;">
                                     <div id="upgradeProgressBar"
-                                         class="progress-bar progress-bar-striped progress-bar-animated"
+                                         class="progress-bar"
                                          role="progressbar"
-                                         style="width: 0%;
-                                                transition: width 0.6s ease"></div>
+                                         aria-valuemin="0"
+                                         aria-valuemax="100"
+                                         aria-valuenow="0"
+                                         style="width: 0%"></div>
                                 </div>
                             </div>
                             <!-- 升级错误 -->

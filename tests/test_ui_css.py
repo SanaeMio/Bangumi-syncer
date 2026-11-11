@@ -238,3 +238,52 @@ class TestArchiveUploadRow:
         assert "flex-wrap: nowrap" in block
         control = _block(css, ".input-group.archive-upload-row .form-control")
         assert "min-width: 0" in control
+
+
+class TestProgressBarAnimation:
+    """进度条：条纹可见、可停、结束态用状态色。"""
+
+    def test_fill_uses_solid_color_so_state_class_wins(self):
+        """底色必须是 background-color：渐变简写会盖掉 bg-success 等状态色。"""
+        block = _block(_css("components.css"), ".progress-bar")
+        assert "background-color: var(--app-primary)" in block
+        assert "background: var(--app-gradient-primary)" not in block
+
+    def test_stripes_stack_on_top_of_fill(self):
+        """条纹只覆盖 background-image，才能叠在底色之上。"""
+        block = _block(_css("components.css"), ".progress-bar-striped")
+        assert "background-image: linear-gradient(" in block
+        assert "background-size: 0.9rem 0.9rem" in block
+
+    def test_animation_uses_project_keyframes(self):
+        """动画指向本仓库的 keyframes，慢一点更稳，避免高频重绘看着抖。"""
+        css = _css("components.css")
+        assert "animation: app-progress-stripes 1.1s linear infinite" in _block(
+            css, ".progress-bar-animated"
+        )
+        keyframes = css.split("@keyframes app-progress-stripes {", 1)[1]
+        assert "background-position: 0.9rem 0" in keyframes
+
+    def test_reduced_motion_stops_animation(self):
+        """系统开启减少动效时不再流动。"""
+        block = _last_media_block(
+            _css("components.css"), "(prefers-reduced-motion: reduce)"
+        )
+        assert ".progress-bar-animated" in block
+        assert "animation: none" in block
+
+    def test_archive_progress_bar_animation_is_stage_driven(self):
+        """导入进度条由阶段决定是否显示条纹，完成后停在纯色。"""
+        html = (_REPO_ROOT / "templates/bangumi_archive.html").read_text(
+            encoding="utf-8"
+        )
+        assert 'class="progress-bar"' in html
+        assert "progress-bar-animated progress-bar-striped" not in html
+        assert "bar.classList.toggle('progress-bar-animated', busy)" in html
+        assert "['idle', 'done', 'error', 'skipped'].includes(stage)" in html
+
+    def test_upgrade_progress_bar_stops_at_completion(self):
+        """一键升级进度条在完成后摘下动画，避免 100% 还在流动。"""
+        js = (_REPO_ROOT / "static/js/upgrade.js").read_text(encoding="utf-8")
+        assert "function setBarRunning(running)" in js
+        assert js.count("setBarRunning(false)") == 2

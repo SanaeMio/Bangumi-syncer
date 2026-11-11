@@ -36,6 +36,17 @@
         setText('upgradePercentText', percent + '%');
     }
 
+    /**
+     * 条纹动画只在下载/安装过程中出现，结束后摘掉，
+     * 否则进度停在 100% 时还一直流动，看上去像卡住了。
+     */
+    function setBarRunning(running) {
+        var bar = document.getElementById('upgradeProgressBar');
+        if (!bar) return;
+        bar.classList.toggle('progress-bar-striped', running);
+        bar.classList.toggle('progress-bar-animated', running);
+    }
+
     function stopSSE() {
         if (_eventSource) {
             _eventSource.close();
@@ -102,6 +113,7 @@
         showElement('upgradeError', false);
         setText('upgradeStatusText', '准备开始升级...');
         setProgress(0);
+        setBarRunning(true);
 
         apiFetch('/api/app/upgrade', {
             method: 'POST',
@@ -164,6 +176,7 @@
     function onUpgradeDone() {
         setText('upgradeStatusText', '升级完成，正在重启服务...');
         setProgress(100);
+        setBarRunning(false);
         // 延迟 2 秒后自动重启，确保 SSE 事件已被前端接收
         setTimeout(function () {
             triggerRestartInternal();
@@ -221,6 +234,7 @@
 
     function showUpgradeError(message) {
         stopSSE();
+        setBarRunning(false);
         showElement('upgradeProgress', false);
         showElement('upgradeError', true);
         setText('upgradeErrorMessage', message);
