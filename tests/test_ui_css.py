@@ -84,9 +84,9 @@ class TestThemeToggleAlignment:
 class TestActionCapsule:
     """操作按钮胶囊：窄屏内部分段不换行、整体收窄。"""
 
+    # dashboard.html 唯一一处胶囊在「我在追的放送」卡片头部，该卡片已暂时隐藏
     TEMPLATES = {
         "config.html": 2,
-        "dashboard.html": 1,
         "mappings.html": 4,
         "bangumi_archive.html": 1,
         "bangumi_replay.html": 1,
