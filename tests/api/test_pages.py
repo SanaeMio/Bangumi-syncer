@@ -157,6 +157,24 @@ class TestPagesAuthenticated:
         assert 'id="inboxTabAnnCount"' in r.text
         assert 'id="inboxTabNotifCount"' in r.text
 
+    def test_dashboard_hides_airing_and_scheduler_cards(self):
+        """首页精简：放送日历与调度器状态卡暂时隐藏。
+
+        两张卡的 DOM 与脚本都已从页面撤掉；对应前端逻辑（airing_calendar.js、
+        dashboard.js 的调度器状态段）保留空节点保护，节点不存在时不发请求。
+        """
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/dashboard", follow_redirects=False)
+        assert r.status_code == 200
+        assert "我在追的放送" not in r.text
+        assert "调度器状态" not in r.text
+        assert "airing_calendar.js" not in r.text
+        assert "cron-desc.js" not in r.text
+
     def test_config_authenticated(self):
         """已认证用户访问配置页"""
         app = self._make_app()
