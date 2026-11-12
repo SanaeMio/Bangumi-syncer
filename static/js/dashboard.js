@@ -41,9 +41,17 @@
   let llmTokensChartInstance = null
   let llmQualityChartInstance = null
 
+  // 时间线保留条数（与后端实时推送的 DASHBOARD_RECENT_LIMIT 对应）
+  const DASHBOARD_TIMELINE_LIMIT = 6
+  // 首屏静态加载是否已落地：落地前忽略 SSE 首帧，避免重复渲染
+  let dashboardLoaded = false
+
   document.addEventListener('DOMContentLoaded', function () {
     pruneStalePosterCache()
-    loadDashboardData()
+    loadDashboardData().finally(function () {
+      dashboardLoaded = true
+      connectDashboardStream()
+    })
     // 调度器状态卡（独立于仪表板数据，可并行加载）
     loadSchedulerStatus()
 
@@ -137,7 +145,7 @@
   // getSourceColor 已在 app.js 全局定义（window.getSourceColor），此处不再重复
 
   async function loadDashboardData() {
-    apiFetch('/api/stats')
+    const statsRequest = apiFetch('/api/stats')
       .then(function (statsData) {
         if (statsData.status === 'success') {
           const stats = statsData.data
@@ -155,7 +163,7 @@
         showAlert('加载数据失败', 'danger')
       })
 
-    apiFetch('/api/records?limit=6&skip_count=true')
+    const recordsRequest = apiFetch('/api/records?limit=6&skip_count=true')
       .then(function (recordsData) {
         if (recordsData.status === 'success') {
           renderTimeline(recordsData.data.records)
@@ -166,7 +174,7 @@
         showAlert('加载数据失败', 'danger')
       })
 
-    apiFetch('/api/stats/heatmap')
+    const heatmapRequest = apiFetch('/api/stats/heatmap')
       .then(function (heatmapData) {
         if (heatmapData.status === 'success') {
           cachedHeatmapData = heatmapData.data
@@ -180,7 +188,7 @@
 
     // LLM 用量统计
     var _llmDetail = null
-    apiFetch('/api/llm/stats?scope=detailed')
+    const llmRequest = apiFetch('/api/llm/stats?scope=detailed')
       .then(function (d) {
         if (d.total_calls > 0 || d.error_count > 0) {
           document.getElementById('llm-stats-row').style.display = 'flex'
@@ -304,6 +312,14 @@
         tooltip.style.display = 'none'
       })
     })()
+
+    // 四个请求并行，等全部落地再启动实时流，避免首屏与推送两路同时渲染
+    await Promise.all([
+      statsRequest,
+      recordsRequest,
+      heatmapRequest,
+      llmRequest,
+    ])
   }
 
   // ========== 调度器状态卡 ==========
@@ -510,6 +526,24 @@
     return weeks + '周前'
   }
 
+  // 时间线条目的状态/来源样式映射（整表渲染与实时增量共用）
+  const statusMap = {
+    success: { text: '成功', class: 'success', icon: 'bi-check-circle-fill' },
+    error: { text: '失败', class: 'error', icon: 'bi-x-circle-fill' },
+    ignored: { text: '忽略', class: 'ignored', icon: 'bi-skip-circle-fill' },
+    retried: { text: '已重试', class: 'retried', icon: 'bi-arrow-repeat' },
+  }
+
+  const sourceClassMap = {
+    plex: 'tl-source--plex',
+    emby: 'tl-source--emby',
+    jellyfin: 'tl-source--jellyfin',
+    custom: 'tl-source--custom',
+    feiniu: 'tl-source--feiniu',
+    fongmi: 'tl-source--fongmi',
+    test: 'tl-source--test',
+  }
+
   function renderTimeline(records) {
     const container = document.getElementById('sync-timeline')
     if (!records || records.length === 0) {
@@ -518,25 +552,19 @@
       return
     }
 
-    const statusMap = {
-      success: { text: '成功', class: 'success', icon: 'bi-check-circle-fill' },
-      error: { text: '失败', class: 'error', icon: 'bi-x-circle-fill' },
-      ignored: { text: '忽略', class: 'ignored', icon: 'bi-skip-circle-fill' },
-      retried: { text: '已重试', class: 'retried', icon: 'bi-arrow-repeat' },
-    }
-
-    const sourceClassMap = {
-      plex: 'tl-source--plex',
-      emby: 'tl-source--emby',
-      jellyfin: 'tl-source--jellyfin',
-      custom: 'tl-source--custom',
-      feiniu: 'tl-source--feiniu',
-      fongmi: 'tl-source--fongmi',
-      test: 'tl-source--test',
-    }
-
     let html = '<div class="tl-track">'
     records.forEach(function (record, index) {
+      html += buildTimelineItemHtml(record, index, '')
+    })
+    html += '</div>'
+
+    container.innerHTML = html
+
+    loadTimelinePosters(records)
+  }
+
+  // 单条时间线条目：整表渲染与实时增量插入共用同一套标记，避免两处走偏
+  function buildTimelineItemHtml(record, index, extraClass) {
       const status = statusMap[record.status] || {
         text: record.status,
         class: 'error',
@@ -595,8 +623,12 @@
         }
       }
 
-      html +=
-        '<div class="tl-item tl-item--clickable" style="animation-delay:' + index * 0.06 + 's" data-record-id="' + record.id + '" onclick="showRecordDetail(' + record.id + ')">' +
+      return (
+        '<div class="tl-item tl-item--clickable' +
+        (extraClass ? ' ' + extraClass : '') +
+        '" style="animation-delay:' +
+        index * 0.06 +
+        's" data-record-id="' + record.id + '" onclick="showRecordDetail(' + record.id + ')">' +
         '<div class="tl-dot-wrap"><div class="tl-dot tl-dot--' + status.class + '"></div></div>' +
         posterHtml +
         '<div class="tl-body">' +
@@ -620,12 +652,133 @@
         msgHtml +
         '</div>' +
         '</div>'
+    )
+  }
+
+  // 实时增量：只把新记录插到顶部，已有条目原地不动（避免整表重排闪烁）
+  function prependTimelineRecords(records) {
+    const container = document.getElementById('sync-timeline')
+    if (!container) return
+
+    const track = container.querySelector('.tl-track')
+    if (!track) {
+      // 之前是空状态（暂无记录），有新记录时整表渲染
+      renderTimeline(records)
+      return
+    }
+
+    const existingIds = {}
+    track.querySelectorAll('.tl-item').forEach(function (item) {
+      existingIds[item.getAttribute('data-record-id')] = true
     })
-    html += '</div>'
 
-    container.innerHTML = html
+    const fresh = records.filter(function (record) {
+      return !existingIds[String(record.id)]
+    })
+    if (fresh.length === 0) return
 
-    loadTimelinePosters(records)
+    const scratch = document.createElement('div')
+    scratch.innerHTML = fresh
+      .map(function (record, index) {
+        return buildTimelineItemHtml(record, index, 'tl-item--new')
+      })
+      .join('')
+
+    const firstItem = track.firstElementChild
+    while (scratch.firstElementChild) {
+      track.insertBefore(scratch.firstElementChild, firstItem)
+    }
+
+    // 时间线只保留最近 6 条，多出来的从尾部移除
+    const items = track.querySelectorAll('.tl-item')
+    for (let i = DASHBOARD_TIMELINE_LIMIT; i < items.length; i += 1) {
+      items[i].remove()
+    }
+
+    // 高亮动画结束后摘掉标记类，避免元素越攒越多
+    window.setTimeout(function () {
+      track.querySelectorAll('.tl-item--new').forEach(function (item) {
+        item.classList.remove('tl-item--new')
+      })
+    }, 2000)
+
+    loadTimelinePosters(fresh)
+  }
+
+  // 数字变化时轻弹一下（CSS 里控制，reduced-motion 下自动关闭）
+  function setStatValue(id, value) {
+    const el = document.getElementById(id)
+    if (!el) return
+
+    const next = String(value)
+    if (el.textContent === next) return
+
+    el.textContent = next
+    el.classList.remove('stats-value--updated')
+    void el.offsetWidth
+    el.classList.add('stats-value--updated')
+  }
+
+  // 应用一帧实时数据：统计卡片、趋势、热力图、最近同步
+  function applyDashboardPayload(payload) {
+    if (!payload) return
+
+    if (payload.stats) {
+      setStatValue('total-syncs', payload.stats.total_syncs)
+      setStatValue('success-rate', payload.stats.success_rate + '%')
+      setStatValue('today-syncs', payload.stats.today_syncs)
+      setStatValue('error-syncs', payload.stats.error_syncs)
+      cachedDailyStats = payload.stats.daily_stats
+      drawDailyChart(cachedDailyStats)
+    }
+
+    if (payload.heatmap) {
+      cachedHeatmapData = payload.heatmap
+      renderHeatmap(cachedHeatmapData, true)
+    }
+
+    if (payload.records) {
+      prependTimelineRecords(payload.records)
+    }
+  }
+
+  // 首页实时推送：一条 SSE 连接，服务端只在数据变化时下发
+  let dashboardStream = null
+
+  function connectDashboardStream() {
+    if (!window.EventSource || dashboardStream) return
+
+    const source = new EventSource('/api/stats/stream')
+    dashboardStream = source
+
+    source.addEventListener('dashboard', function (event) {
+      // 首屏数据由 loadDashboardData 负责，避免两路同时渲染
+      if (!dashboardLoaded) return
+
+      let payload = null
+      try {
+        payload = JSON.parse(event.data)
+      } catch (e) {
+        return
+      }
+      applyDashboardPayload(payload)
+    })
+
+    source.addEventListener('open', function () {
+      const dot = document.getElementById('dashboardLiveDot')
+      if (dot) dot.classList.remove('d-none')
+    })
+
+    source.addEventListener('error', function () {
+      const dot = document.getElementById('dashboardLiveDot')
+      if (dot) dot.classList.add('d-none')
+      if (source.readyState === EventSource.CLOSED) dashboardStream = null
+    })
+
+    window.addEventListener('beforeunload', function () {
+      source.close()
+      dashboardStream = null
+    })
   }
 
   function removePosterHint() {

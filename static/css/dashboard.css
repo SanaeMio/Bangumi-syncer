@@ -1036,6 +1036,79 @@ main.app-main>*:nth-child(12) {
     }
 }
 
+/* ========== 实时更新动效 ========== */
+
+/* 统计数字变化时轻弹一下（由 dashboard.js 的 applyDashboardPayload 触发） */
+.stats-value--updated {
+    animation: stats-value-bump 0.9s var(--app-ease-smooth);
+}
+
+@keyframes stats-value-bump {
+    0% {
+        transform: scale(1);
+    }
+
+    28% {
+        transform: scale(1.12);
+        color: var(--app-primary);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* 实时插入的新条目：除了原有的入场动画，再叠一层淡出高亮 */
+.tl-item--new {
+    position: relative;
+}
+
+.tl-item--new::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--app-radius-card-sm);
+    background: rgba(var(--app-primary-rgb), 0.12);
+    pointer-events: none;
+    animation: tl-item-highlight 2s var(--app-ease-smooth) forwards;
+}
+
+@keyframes tl-item-highlight {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+/* 卡片头部的实时连接指示点：连上 SSE 才显示 */
+.dashboard-live-dot {
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-left: 0.45rem;
+    border-radius: 50%;
+    background: var(--app-green);
+    box-shadow: 0 0 0 0 rgba(var(--app-green-rgb), 0.5);
+    animation: dashboard-live-pulse 2s var(--app-ease-smooth) infinite;
+}
+
+@keyframes dashboard-live-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--app-green-rgb), 0.5);
+    }
+
+    70% {
+        box-shadow: 0 0 0 0.35rem rgba(var(--app-green-rgb), 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(var(--app-green-rgb), 0);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto !important;
@@ -1060,6 +1133,9 @@ main.app-main>*:nth-child(12) {
     .tl-dot,
     .tl-msg,
     .tl-track::before,
+    .stats-value--updated,
+    .tl-item--new::after,
+    .dashboard-live-dot,
     #records-table tbody tr.records-table-row--enter,
     .records-table-wrap tbody tr.records-table-row--enter,
     .records-table-wrap.records-table-wrap--enter .app-data-table,
