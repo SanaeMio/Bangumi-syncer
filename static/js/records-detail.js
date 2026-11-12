@@ -1116,7 +1116,6 @@ function updateRecordDetailModalChrome(record) {
     const headerEl = document.getElementById('record-detail-modal-header');
     const titleEl = document.getElementById('record-detail-modal-title');
     const subtitleEl = document.getElementById('record-detail-modal-subtitle');
-    const statusEl = document.getElementById('record-detail-modal-status');
     const retryBtn = document.getElementById('record-detail-retry-btn');
     const helpLink = document.querySelector('.record-detail-modal__help');
 
@@ -1124,12 +1123,12 @@ function updateRecordDetailModalChrome(record) {
     const displayTitle = record.bgm_title || record.title || '同步记录';
     const epLabel = getRecordEpisodeLabel(record);
     const statusChrome = {
-        success: ['bi-check-circle-fill', 'record-detail-modal__header--success'],
-        error: ['bi-x-circle-fill', 'record-detail-modal__header--error'],
-        ignored: ['bi-dash-circle-fill', 'record-detail-modal__header--warning'],
-        retried: ['bi-arrow-repeat', 'record-detail-modal__header--success'],
+        success: 'record-detail-modal__header--success',
+        error: 'record-detail-modal__header--error',
+        ignored: 'record-detail-modal__header--warning',
+        retried: 'record-detail-modal__header--success',
     };
-    const [statusIcon, statusClass] = statusChrome[record.status] || ['bi-journal-text', ''];
+    const statusClass = statusChrome[record.status] || '';
 
     if (titleEl) {
         titleEl.innerHTML = `${escapeHtml(displayTitle)}<span class="text-muted fw-normal"> · ${epLabel}</span>`;
@@ -1162,12 +1161,6 @@ function updateRecordDetailModalChrome(record) {
         }
     }
 
-    if (statusEl) {
-        statusEl.innerHTML = `<i class="bi ${statusIcon}"></i>`;
-        statusEl.title = getSyncRecordStatusText(record.status);
-        statusEl.setAttribute('aria-label', getSyncRecordStatusText(record.status));
-    }
-
     if (retryBtn) {
         const showRetry = record.status !== 'success';
         retryBtn.classList.toggle('d-none', !showRetry);
@@ -1184,6 +1177,18 @@ function updateRecordDetailModalChrome(record) {
 }
 
 // 弹窗头部核心信息 chips（仅展示 modal-title 里没有的字段）
+// 详情弹窗的胶囊只有一层：颜色区分召回方式，副信息用虚线胶囊
+function renderToneChip(tone, innerHtml) {
+    return (
+        `<span class="record-detail-modal__chip record-detail-modal__chip--match ` +
+        `record-detail-modal__chip--match-${tone || 'secondary'}">${innerHtml}</span>`
+    );
+}
+
+function renderSubChip(text) {
+    return `<span class="record-detail-modal__chip record-detail-modal__chip--sub">${escapeHtml(text)}</span>`;
+}
+
 function renderPipelineSummaryChips(record, trace) {
     const t = trace || {};
     const season = t.request_season ?? record.season ?? 1;
@@ -1215,15 +1220,19 @@ function renderPipelineSummaryChips(record, trace) {
     const matchMethodDetail = legacyCross ? '' : rawDetail;
     const episodePathDetail = t.final_episode_path_detail || (legacyCross ? rawDetail : '');
     if (matchMethod) {
-        let methodHtml = renderMatchMethodBadge(matchMethod);
+        const [methodTone, methodLabel] = window.getMatchMethodMeta(matchMethod);
+        chips.push(renderToneChip(methodTone, escapeHtml(methodLabel)));
         if (matchMethodDetail) {
-            methodHtml += ' ' + renderMatchMethodDetailBadge(matchMethodDetail);
+            const [, detailLabel] = window.getMatchDetailMeta(matchMethodDetail);
+            chips.push(renderSubChip(detailLabel));
         }
-        chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--match-method">${methodHtml}</span>`);
     }
     // 跨季路径独立成 chip（仅跨季回退命中时有值）
     if (episodePathDetail) {
-        chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--match-method">${renderEpisodePathDetailBadge(episodePathDetail)}</span>`);
+        const [pathTone, pathLabel] = window.getEpisodePathMeta(episodePathDetail);
+        chips.push(
+            renderToneChip(pathTone, `<i class="bi bi-signpost-split"></i>${escapeHtml(pathLabel)}`)
+        );
     }
 
     // subject 链接（条目标题已在弹窗标题上，这里只留可点的 ID）

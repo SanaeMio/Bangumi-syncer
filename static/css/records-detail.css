@@ -7,14 +7,20 @@
 }
 
 .record-detail-modal__dialog {
-    max-width: 80em;
+    /* 80em 在 1440 以上的屏上每行太长，收到 68rem 更像详情页而不是数据表 */
+    max-width: 68rem;
 }
 
 .record-detail-modal__header {
     align-items: flex-start;
-    gap: 0.625rem;
-    padding: 0.75rem 1rem;
+    gap: 0.9rem;
+    padding: 1rem 1.15rem 0.9rem;
     border-bottom: 1px solid var(--app-border);
+}
+
+.record-detail-modal__header .btn-close {
+    flex: 0 0 auto;
+    margin: 0.1rem 0 0 auto;
 }
 
 .record-detail-modal__header--error {
@@ -22,42 +28,14 @@
     border-bottom-color: color-mix(in srgb, var(--app-red) 18%, var(--app-border));
 }
 
-.record-detail-modal__header--error .record-detail-modal__status {
-    background: var(--app-red-soft);
-    color: var(--app-red);
-}
-
-.record-detail-modal__header--success .record-detail-modal__status {
-    background: var(--app-green-soft);
-    color: var(--app-green);
-}
-
-.record-detail-modal__header--warning .record-detail-modal__status {
-    background: var(--app-orange-soft);
-    color: var(--app-orange);
-}
-
-.record-detail-modal__status {
-    flex: 0 0 auto;
-    width: 2.125rem;
-    height: 2.125rem;
-    border-radius: var(--app-radius-btn);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.05rem;
-    background: var(--app-primary-soft);
-    color: var(--app-primary);
-}
-
 .record-detail-modal__poster {
     flex: 0 0 auto;
-    width: 2.75rem;
+    width: 3.1rem;
     aspect-ratio: 3 / 4;
-    border-radius: var(--app-radius-btn);
+    border-radius: 0.625rem;
     overflow: hidden;
     background: var(--app-bg-input);
-    box-shadow: inset 0 0 0 1px var(--app-border);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12), inset 0 0 0 1px var(--app-border);
 }
 
 .record-detail-modal__poster img {
@@ -69,7 +47,7 @@
 
 @media (min-width: 576px) {
     .record-detail-modal__poster {
-        width: 3.25rem;
+        width: 3.6rem;
     }
 }
 
@@ -79,17 +57,24 @@
 }
 
 .record-detail-modal__title {
-    font-size: 0.9375rem;
-    line-height: 1.35;
-    margin-bottom: 0.2rem;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.01em;
     word-break: break-word;
+}
+
+.record-detail-modal__title .text-muted {
+    font-size: 0.875rem;
+    font-weight: 400;
 }
 
 .record-detail-modal__subtitle {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.3rem 0.45rem;
+    gap: 0.25rem 0.4rem;
     font-size: 0.75rem;
     color: var(--app-text-muted);
 }
@@ -102,14 +87,14 @@
 }
 
 .record-detail-modal__summary {
-    margin-top: 0.4rem;
+    margin-top: 0.55rem;
 }
 
 .record-detail-modal__chips {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.3rem 0.35rem;
+    gap: 0.28rem 0.3rem;
 }
 
 .record-detail-modal__chip {
@@ -125,6 +110,50 @@
     color: var(--app-text);
     text-decoration: none;
     transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* 匹配方式/跨季路径：单个胶囊，颜色区分召回方式（info 借用紫色系） */
+.record-detail-modal__chip--match {
+    border-color: transparent;
+    font-weight: 600;
+}
+
+.record-detail-modal__chip--match-primary {
+    background: var(--app-primary-soft);
+    color: var(--app-primary);
+}
+
+.record-detail-modal__chip--match-success {
+    background: var(--app-green-soft);
+    color: var(--app-green-hover);
+}
+
+.record-detail-modal__chip--match-warning {
+    background: var(--app-orange-soft);
+    color: var(--app-orange-hover);
+}
+
+.record-detail-modal__chip--match-info,
+.record-detail-modal__chip--match-purple {
+    background: var(--app-purple-soft);
+    color: var(--app-purple-hover);
+}
+
+.record-detail-modal__chip--match-danger {
+    background: var(--app-red-soft);
+    color: var(--app-red-hover);
+}
+
+.record-detail-modal__chip--match-secondary {
+    background: var(--app-gray-soft);
+    color: var(--app-text-muted);
+}
+
+.record-detail-modal__chip--sub {
+    background: transparent;
+    border-style: dashed;
+    color: var(--app-text-muted);
+    font-size: 0.66rem;
 }
 
 .record-detail-modal__chip--mono {
@@ -182,7 +211,7 @@
 }
 
 .record-detail-modal__body {
-    padding: 0.625rem;
+    padding: 0.75rem 0.85rem 0.9rem;
     background: color-mix(in srgb, var(--app-bg) 55%, var(--app-bg-card));
 }
 
@@ -200,7 +229,7 @@
 #record-pipeline-content {
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: 0.75rem;
 }
 
 /* ===== 总览卡：结果 + 耗时表现 ===== */
@@ -209,7 +238,7 @@
     border: 1px solid var(--app-border);
     background: var(--app-bg-card);
     box-shadow: var(--app-shadow-card);
-    padding: 0.75rem 0.875rem;
+    padding: 0.8rem 0.95rem;
 }
 
 .record-detail-hero--success {
@@ -1303,6 +1332,34 @@ summary.record-detail-step__head:hover .record-detail-step__name {
 
 /* ===== 响应式 ===== */
 @media (max-width: 575.98px) {
+    /* 手机上空出更多横向空间给标题与 chips */
+    .record-detail-modal__header {
+        gap: 0.7rem;
+        padding: 0.85rem 0.9rem 0.8rem;
+    }
+
+    .record-detail-modal__poster {
+        width: 2.6rem;
+        border-radius: 0.5rem;
+    }
+
+    .record-detail-modal__title {
+        font-size: 0.9375rem;
+    }
+
+    .record-detail-modal__title .text-muted {
+        font-size: 0.8rem;
+    }
+
+    .record-detail-modal__chip {
+        padding: 0.12rem 0.42rem;
+        font-size: 0.66rem;
+    }
+
+    .record-detail-modal__chip--sub {
+        font-size: 0.62rem;
+    }
+
     .record-detail-hero__top {
         flex-direction: column;
         align-items: flex-start;
