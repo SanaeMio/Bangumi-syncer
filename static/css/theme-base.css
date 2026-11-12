@@ -17,8 +17,6 @@
     --app-shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
     --app-blur: blur(10px);
     --app-brand-logo-height: 32px;
-    --app-sidebar-logo-width: 175px;
-    --app-sidebar-logo-height: 100px;
     --app-sidebar-width: 200px;
     --app-sidebar-collapsed-width: 76px;
 
@@ -517,51 +515,88 @@
     object-fit: contain;
 }
 
-.app-sidebar-logo {
-    width: var(--app-sidebar-logo-width);
-    height: var(--app-sidebar-logo-height);
-    object-fit: contain;
+/* 深色主题下图标里的深蓝几乎融进背景，整体提亮才看得出完整六边形 */
+html[data-theme="dark"] .sidebar .sidebar-brand__mark {
+    filter: brightness(1.75);
 }
 
-.app-sidebar-brand-link {
-    transition: opacity 0.2s ease, transform 0.22s var(--app-ease-smooth);
+/* 侧栏品牌：两种状态共用同一个方形图标，展开时右侧跟站名，折叠时只留图标，
+   行高恒为 34px，所以收起/展开时下方菜单不会上下跳 */
+.sidebar-brand {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.125rem;
+    padding: 0 0.75rem;
+    margin-bottom: 1.4rem;
 }
 
-.app-sidebar-brand-link:hover {
-    opacity: 0.92;
-    transform: scale(1.02);
+.sidebar-brand__link {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    text-decoration: none;
+    transition: opacity 0.2s ease;
 }
 
-/* 折叠态改用方形图标（与站点图标同源，透明底，深浅色主题都可用） */
-.app-sidebar-mark {
-    display: none;
+.sidebar-brand__link:hover {
+    opacity: 0.88;
+}
+
+.sidebar-brand__mark {
+    flex: 0 0 auto;
     width: 34px;
     height: 34px;
     object-fit: contain;
+    animation: app-fade-in 0.5s ease 0.05s backwards;
 }
 
-.sidebar-collapse-btn {
-    display: flex;
+.sidebar-brand__name {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--app-text);
+    white-space: nowrap;
+    transition: opacity 0.18s var(--app-ease-smooth), transform 0.24s var(--app-ease-smooth);
+}
+
+/* 折叠按钮：浮在品牌行右端、压着侧栏分隔线，平时隐身，悬停或键盘聚焦时出现 */
+.sidebar-brand__toggle {
+    position: absolute;
+    top: 50%;
+    right: -0.8rem;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.4rem;
-    width: calc(100% - 1rem);
-    margin: 0 0.5rem 1rem;
-    padding: 0.45rem 0.5rem;
-    font-size: 0.8rem;
-    font-weight: 500;
+    width: 1.7rem;
+    height: 1.7rem;
+    padding: 0;
+    font-size: 0.72rem;
     color: var(--app-text-muted);
-    background: transparent;
-    border: 1px dashed var(--app-divider);
-    border-radius: var(--app-radius-btn);
+    background-color: var(--app-bg-card);
+    border: 1px solid var(--app-divider);
+    border-radius: 50%;
+    box-shadow: var(--app-shadow-card);
     cursor: pointer;
-    transition: color 0.22s var(--app-ease-smooth), background-color 0.22s var(--app-ease-smooth),
-        border-color 0.22s var(--app-ease-smooth);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-50%) scale(0.9);
+    transition: opacity 0.18s var(--app-ease-smooth), transform 0.2s var(--app-ease-smooth),
+        color 0.18s var(--app-ease-smooth), border-color 0.18s var(--app-ease-smooth);
 }
 
-.sidebar-collapse-btn:hover {
-    color: var(--app-text);
-    background-color: var(--app-surface-hover);
+.sidebar-brand:hover .sidebar-brand__toggle,
+.sidebar-brand:focus-within .sidebar-brand__toggle,
+.sidebar-brand__toggle:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(-50%) scale(1);
+}
+
+.sidebar-brand__toggle:hover {
+    color: var(--app-primary);
     border-color: var(--app-primary);
 }
 
@@ -614,7 +649,15 @@ body {
     margin: 0 0.5rem;
     display: flex;
     align-items: center;
+    white-space: nowrap;
     border-left: none;
+}
+
+/* 菜单文字用 max-width 过渡：折叠时文字滑出，而不是瞬间消失 */
+.sidebar .nav-link__text {
+    overflow: hidden;
+    max-width: 12rem;
+    transition: max-width 0.3s var(--app-ease-smooth), opacity 0.18s var(--app-ease-smooth);
 }
 
 .sidebar .nav-link:hover {
@@ -684,13 +727,9 @@ body {
     }
 }
 
-/* 宽屏：侧栏固定宽度，不再按比例跟着视口一起变宽 */
-@media (min-width: 1200px) {
-    :root {
-        --app-sidebar-logo-width: 152px;
-        --app-sidebar-logo-height: 87px;
-    }
-
+/* 宽屏：侧栏固定宽度，不再按比例跟着视口一起变宽。
+   992px 起就固定，因为这一档 col-lg-2 只有 165px 左右，放不下图标 + 站名 */
+@media (min-width: 992px) {
     .app-shell__layout>.sidebar {
         flex: 0 0 var(--app-sidebar-width);
         width: var(--app-sidebar-width);
@@ -708,8 +747,8 @@ body {
 /* 侧栏折叠：收成图标栏，状态挂在 html[data-sidebar] 上（见 static/js/sidebar.js） */
 @media (min-width: 768px) {
     .app-shell__layout>.sidebar {
-        transition: flex-basis 0.26s var(--app-ease-smooth), width 0.26s var(--app-ease-smooth),
-            max-width 0.26s var(--app-ease-smooth);
+        transition: flex-basis 0.3s var(--app-ease-smooth), width 0.3s var(--app-ease-smooth),
+            max-width 0.3s var(--app-ease-smooth);
     }
 
     html[data-sidebar="collapsed"] .app-shell__layout>.sidebar {
@@ -725,17 +764,40 @@ body {
         min-width: 0;
     }
 
-    html[data-sidebar="collapsed"] .sidebar .app-sidebar-logo {
-        display: none;
+    /* 折叠态：只留图标，站名绝对定位隐藏，品牌行高度不变 */
+    html[data-sidebar="collapsed"] .sidebar-brand {
+        justify-content: center;
+        gap: 0;
+        padding: 0;
     }
 
-    html[data-sidebar="collapsed"] .sidebar .app-sidebar-mark {
-        display: inline-block;
+    html[data-sidebar="collapsed"] .sidebar-brand__link {
+        gap: 0;
     }
 
-    /* 深色主题下图标里的深蓝几乎融进背景，提亮后才看得出完整六边形 */
-    html[data-theme="dark"][data-sidebar="collapsed"] .sidebar .app-sidebar-mark {
-        filter: brightness(1.9);
+    html[data-sidebar="collapsed"] .sidebar-brand__name {
+        position: absolute;
+        opacity: 0;
+        transform: translateX(-4px);
+        pointer-events: none;
+    }
+
+    /* 折叠态：按钮留在同一位置，常驻半透明，提示可以再展开 */
+    html[data-sidebar="collapsed"] .sidebar-brand__toggle {
+        right: -0.85rem;
+        opacity: 0.62;
+        pointer-events: auto;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-brand:hover .sidebar-brand__toggle,
+    html[data-sidebar="collapsed"] .sidebar-brand__toggle:focus-visible {
+        opacity: 1;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar-brand:hover .sidebar-brand__toggle,
+    html[data-sidebar="collapsed"] .sidebar-brand__toggle:focus-visible {
+        opacity: 1;
+        transform: translateY(-50%);
     }
 
     html[data-sidebar="collapsed"] .sidebar .nav-link {
@@ -743,8 +805,12 @@ body {
         padding-left: 0;
         padding-right: 0;
         margin: 0 0.5rem;
-        font-size: 0;
         transform: none;
+    }
+
+    html[data-sidebar="collapsed"] .sidebar .nav-link__text {
+        max-width: 0;
+        opacity: 0;
     }
 
     html[data-sidebar="collapsed"] .sidebar .nav-link.active {
@@ -772,13 +838,37 @@ body {
         font-size: 0;
     }
 
-    html[data-sidebar="collapsed"] .sidebar-collapse-btn {
-        padding: 0.5rem 0;
-        border-color: transparent;
+    /* 折叠后文字已隐藏，悬停时用浮层标签说清这是哪个菜单 */
+    html[data-sidebar="collapsed"] .sidebar .nav-link {
+        position: relative;
     }
 
-    html[data-sidebar="collapsed"] .sidebar-collapse-btn__label {
-        display: none;
+    html[data-sidebar="collapsed"] .sidebar .nav-link::after {
+        content: attr(data-sidebar-label);
+        position: absolute;
+        left: calc(100% + 0.55rem);
+        top: 50%;
+        z-index: 5;
+        padding: 0.28rem 0.55rem;
+        font-size: 0.78rem;
+        font-weight: 500;
+        line-height: 1.2;
+        color: var(--app-text);
+        white-space: nowrap;
+        background-color: var(--app-bg-card);
+        border: 1px solid var(--app-border);
+        border-radius: 0.5rem;
+        box-shadow: var(--app-shadow-card);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-50%) scale(0.96);
+        transition: opacity 0.14s ease, transform 0.16s var(--app-ease-smooth);
+    }
+
+    html[data-sidebar="collapsed"] .sidebar .nav-link:hover::after,
+    html[data-sidebar="collapsed"] .sidebar .nav-link:focus-visible::after {
+        opacity: 1;
+        transform: translateY(-50%) scale(1);
     }
 }
 

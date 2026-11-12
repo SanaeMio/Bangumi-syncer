@@ -160,82 +160,79 @@
                 <!-- 侧边栏 -->
                 <nav class="col-md-3 col-lg-2 d-none d-md-block sidebar">
                     <div class="position-sticky pt-4">
-                        <div class="text-center mb-4 px-3">
+                        <div class="sidebar-brand">
                             <a href="{{ '/dashboard' | p }}"
-                               class="d-inline-block text-decoration-none app-sidebar-brand-link"
+                               class="sidebar-brand__link"
                                title="返回仪表板">
-                                <img src="{{ '/static/logo.png' | static_v }}"
-                                     alt="Bangumi-Syncer"
-                                     class="app-sidebar-logo">
                                 <img src="{{ '/static/apple-touch-icon.png' | static_v }}"
-                                     alt=""
-                                     class="app-sidebar-mark">
+                                     alt="Bangumi-Syncer"
+                                     class="sidebar-brand__mark">
+                                <span class="sidebar-brand__name">Bangumi-Syncer</span>
                             </a>
+                            <button type="button"
+                                    class="sidebar-brand__toggle"
+                                    id="sidebarCollapseBtn"
+                                    aria-label="收起侧栏"
+                                    aria-expanded="true"
+                                    title="收起侧栏">
+                                <i class="bi bi-chevron-double-left sidebar-brand__toggle-icon"></i>
+                            </button>
                         </div>
-                        <button type="button"
-                                class="sidebar-collapse-btn"
-                                id="sidebarCollapseBtn"
-                                aria-label="收起侧栏"
-                                aria-expanded="true"
-                                title="收起侧栏">
-                            <i class="bi bi-chevron-double-left sidebar-collapse-btn__icon"></i>
-                            <span class="sidebar-collapse-btn__label">收起侧栏</span>
-                        </button>
                         <ul class="nav flex-column px-2">
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/dashboard' or request.url.path.endswith('/dashboard') %}active{% endif %}"
                                    href="{{ '/dashboard' | p }}">
                                     <i class="bi bi-house-door me-2"></i>
-                                    仪表板
+                                    <span class="nav-link__text">仪表板</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/config' %}active{% endif %}"
                                    href="{{ '/config' | p }}">
                                     <i class="bi bi-gear me-2"></i>
-                                    配置管理
+                                    <span class="nav-link__text">配置管理</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/records' %}active{% endif %}"
                                    href="{{ '/records' | p }}">
                                     <i class="bi bi-journal-text me-2"></i>
-                                    同步记录
+                                    <span class="nav-link__text">同步记录</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/mappings' %}active{% endif %}"
                                    href="{{ '/mappings' | p }}">
                                     <i class="bi bi-diagram-3 me-2"></i>
-                                    映射管理
+                                    <span class="nav-link__text">映射管理</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/pending-candidates' %}active{% endif %}"
                                    href="{{ '/pending-candidates' | p }}">
                                     <i class="bi bi-list-check me-2"></i>
-                                    候选确认
+                                    <span class="nav-link__text">候选确认</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/agent-runs' %}active{% endif %}"
                                    href="{{ '/agent-runs' | p }}">
                                     <i class="bi bi-activity me-2"></i>
-                                    运行观测
+                                    <span class="nav-link__text">运行观测</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/debug' %}active{% endif %}"
                                    href="{{ '/debug' | p }}">
                                     <i class="bi bi-bug me-2"></i>
-                                    调试工具
+                                    <span class="nav-link__text">调试工具</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/logs' %}active{% endif %}"
                                    href="{{ '/logs' | p }}">
                                     <i class="bi bi-file-text me-2"></i>
-                                    日志管理
+                                    <span class="nav-link__text">日志管理</span>
                                 </a>
                             </li>
                             {% if archive_enabled() %}
@@ -243,7 +240,7 @@
                                     <a class="nav-link {% if request.url.path == '/bangumi-archive' %}active{% endif %}"
                                        href="{{ '/bangumi-archive' | p }}">
                                         <i class="bi bi-database-fill me-2"></i>
-                                        Archive 离线库
+                                        <span class="nav-link__text">Archive 离线库</span>
                                     </a>
                                 </li>
                             {% endif %}
@@ -252,7 +249,7 @@
                                     <a class="nav-link {% if request.url.path == '/bangumi-replay' %}active{% endif %}"
                                        href="{{ '/bangumi-replay' | p }}">
                                         <i class="bi bi-clock-history me-2"></i>
-                                        待同步队列
+                                        <span class="nav-link__text">待同步队列</span>
                                     </a>
                                 </li>
                             {% endif %}
@@ -260,7 +257,7 @@
                                 <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
                                    href="{{ '/trakt/config' | p }}">
                                     <i class="bi bi-tv me-2"></i>
-                                    Trakt 同步
+                                    <span class="nav-link__text">Trakt 同步</span>
                                 </a>
                             </li>
                         </ul>
