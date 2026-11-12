@@ -294,28 +294,37 @@ class ArchiveFTSQuery:
             ).fetchone()
             if r is None:
                 return False
-            # 行数 > 0 是必要条件（表存在但未建/构建中断的残留仍可能为 0）
-            cnt = conn.execute("SELECT COUNT(*) FROM subject_fts").fetchone()
-            if cnt[0] == 0:
+            # 存在性探针：只需一行即可判定，不必数完整个 FTS 索引
+            if conn.execute("SELECT 1 FROM subject_fts LIMIT 1").fetchone() is None:
                 return False
             # 内容探针：取一条确定存在、且含 ≥3 个可索引字符的 subject 名，
             # 按与构建一致的归一化取前 3 字符作为 MATCH token（trigram 至少 3 字符）。
             # 优先取较长的 name（ORDER BY LENGTH DESC），避免全库只有短标题（如
             # 「銀魂」2 字符）时探针 token 不足 3 字符导致 MATCH 永远 0 命中、
             # 误判为空壳触发无限重建。
+            # 取一条长度 ≥6 的名字做探针：归一化后通常仍 ≥3 字符，足以构成
+            # trigram。原实现用 ORDER BY LENGTH(name) DESC，必须扫完 5.6 万行
+            # 再排序（实测 9.5ms）；改成 LIMIT 1 后扫描在第一条满足条件处即停。
             probe = conn.execute(
                 "SELECT name FROM subject "
-                "WHERE name IS NOT NULL AND name <> '' "
-                "ORDER BY LENGTH(name) DESC LIMIT 1"
+                "WHERE name IS NOT NULL AND name <> '' AND length(name) >= 6 "
+                "ORDER BY id LIMIT 1"
             ).fetchone()
+            if probe is None:
+                # 小库可能没有 ≥6 字符的标题，退化为任意一条
+                probe = conn.execute(
+                    "SELECT name FROM subject "
+                    "WHERE name IS NOT NULL AND name <> '' "
+                    "ORDER BY id LIMIT 1"
+                ).fetchone()
             if probe is None:
                 # subject 表本身为空，无内容可索引，等同未就绪
                 return False
             token = _normalize_key(probe[0])[:3]
             if len(token) < 3:
                 # 标题归一化后不足 3 字符（如 CJK 2 字标题），trigram 无法 MATCH，
-                # 退化为行数判定，避免误杀合法短标题库
-                return cnt[0] > 0
+                # 上面已确认表非空，直接视为就绪
+                return True
             hit = conn.execute(
                 "SELECT rowid FROM subject_fts WHERE name MATCH ? LIMIT 1",
                 (token,),
@@ -879,9 +888,9 @@ class ArchiveFTSQuery:
           候选少，用于精确查询预筛
         - 模糊模式（fuzzy=True）：trigram OR 预筛，任一 trigram 命中即入候选，
           候选多，用于模糊查询预筛（兼容 typo / 词序差异）
-        - 短查询（<5 字符）：trigram 切片后只有 1-2 个 trigram，phrase MATCH
-          退化为单 trigram 匹配，候选爆炸（如 "the" 命中数千条英文标题）。
-          回退 subject 表 LIKE，避免回表 + infobox 解析爆炸。
+        - 不足 3 字符：trigram 切片为空，MATCH 无从下手，回退 subject 表
+          LIKE。3 字查询恰好落在一个 trigram 内，phrase MATCH 即精确子串
+          匹配（实测最大扇出 118 条），因此门槛是 3 而不是 5。
 
         SQL LIMIT 控制候选集上限，避免短查询命中数万条导致
         后续关联查询超过 SQLite 占位符上限（999）或性能退化。
@@ -897,7 +906,7 @@ class ArchiveFTSQuery:
         if not query:
             return []
         try:
-            if len(query) >= 5:
+            if len(query) >= 3:
                 if fuzzy:
                     # 模糊查询：提取 trigram 用 OR 语义查询（任一命中即可）
                     # 复刻原 bigram 倒排索引的 OR 预筛行为，兼容 typo/词序
@@ -915,9 +924,11 @@ class ArchiveFTSQuery:
                     (expr,) * 3,
                 ).fetchall()
             else:
-                # 短查询（<5 字符）：trigram 切片后只有 1-2 个 trigram，
-                # phrase MATCH 退化为单 trigram 匹配，候选爆炸。
-                # 回退 subject 表 LIKE，避免回表 + infobox 解析爆炸。
+                # 不足 3 字符：trigram 切片为空，MATCH 无法使用。
+                # 门槛取 3 而非 5：3 字查询恰好是一个 trigram，phrase MATCH 即
+                # 精确子串匹配（实测最大扇出 118 条、0.12ms），此前按 <5 一律
+                # 回退 LIKE 会把 3-4 字标题拖进全表扫描（实测 243ms）。
+                # 2 字查询仍在 trigram 覆盖范围外，只能走 LIKE。
                 # 含 infobox 列，覆盖别名场景（如 "TA" 匹配 alias=TA）
                 rows = conn.execute(
                     "SELECT id FROM subject "
@@ -1029,11 +1040,13 @@ def _ensure_key_index(conn: sqlite3.Connection) -> bool:
                 (_KEY_INDEX_TABLE,),
             ).fetchone()
             if r is not None:
-                # 表存在：追加 COUNT 探针，空表（损坏残留）触发重建
-                cnt = conn.execute(
-                    f"SELECT COUNT(*) FROM {_KEY_INDEX_TABLE}"
-                ).fetchone()
-                if cnt and cnt[0] > 0:
+                # 表存在：追加非空探针，空表（损坏残留）触发重建。
+                # 用 SELECT 1 ... LIMIT 1 而非 COUNT(*)：后者要数完 14 万行
+                # 索引项（实测 8ms+，冷缓存下可达百毫秒），而这里只问「有没有一行」。
+                if (
+                    conn.execute(f"SELECT 1 FROM {_KEY_INDEX_TABLE} LIMIT 1").fetchone()
+                    is not None
+                ):
                     return True
                 # 表存在但为空：落入重建路径
         except sqlite3.Error:

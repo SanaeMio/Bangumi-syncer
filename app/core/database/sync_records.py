@@ -4,7 +4,7 @@
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from ..logging import (
@@ -220,6 +220,62 @@ class SyncRecordsRepository(BaseRepository):
             error_msg="获取同步记录失败",
             reraise=True,
             ensure_schema=_ensure_schema,
+        )
+
+    def find_recent_success(
+        self,
+        user_name: str,
+        title: str,
+        season: int,
+        episode: int,
+        media_type: str = "episode",
+        within_seconds: int = 600,
+    ) -> dict[str, Any] | None:
+        """查找时间窗口内同一集的成功同步记录（入口幂等用）
+
+        只匹配 ``status='success'``：失败记录的自动重试是有意义的补偿路径，
+        不能被幂等挡住，否则一次网络抖动会让该集在窗口内永远无法重试成功。
+
+        Returns:
+            命中时返回 ``{id, timestamp, subject_id, match_method}``，否则 None
+        """
+        cutoff = (datetime.now() - timedelta(seconds=within_seconds)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        def _read(conn):
+            row = conn.execute(
+                """
+                SELECT id, timestamp, subject_id, match_method
+                FROM sync_records
+                WHERE user_name = ? AND title = ? AND season = ? AND episode = ?
+                  AND media_type = ? AND status = 'success' AND timestamp >= ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (
+                    user_name or "",
+                    title or "",
+                    season,
+                    episode,
+                    media_type or "episode",
+                    cutoff,
+                ),
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "id": row[0],
+                "timestamp": row[1],
+                "subject_id": row[2],
+                "match_method": row[3],
+            }
+
+        return self._run_read(
+            _read,
+            error_msg="查询幂等记录失败",
+            default=None,
+            ensure_schema=lambda cur: self._conn._ensure_sync_records_media_type(cur),
         )
 
     def get_sync_record_by_id(self, record_id: int) -> dict[str, Any] | None:
