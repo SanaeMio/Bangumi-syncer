@@ -149,11 +149,22 @@
       .then(function (statsData) {
         if (statsData.status === 'success') {
           const stats = statsData.data
-          document.getElementById('total-syncs').textContent = stats.total_syncs
-          document.getElementById('success-rate').textContent =
+          animateStatNumber(
+            document.getElementById('total-syncs'),
+            stats.total_syncs
+          )
+          animateStatNumber(
+            document.getElementById('success-rate'),
             stats.success_rate + '%'
-          document.getElementById('today-syncs').textContent = stats.today_syncs
-          document.getElementById('error-syncs').textContent = stats.error_syncs
+          )
+          animateStatNumber(
+            document.getElementById('today-syncs'),
+            stats.today_syncs
+          )
+          animateStatNumber(
+            document.getElementById('error-syncs'),
+            stats.error_syncs
+          )
           cachedDailyStats = stats.daily_stats
           drawDailyChart(cachedDailyStats)
         }
@@ -655,7 +666,7 @@
     )
   }
 
-  // 实时增量：只把新记录插到顶部，已有条目原地不动（避免整表重排闪烁）
+  // 实时增量：队列式补间 —— 新记录从顶部滑入，原有条目整体下移一格，末尾的滑出
   function prependTimelineRecords(records) {
     const container = document.getElementById('sync-timeline')
     if (!container) return
@@ -677,6 +688,18 @@
     })
     if (fresh.length === 0) return
 
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches
+
+    // 插队之前先记下每条旧记录的位置，插完用位移补间拉回视觉连续
+    const beforeTops = new Map()
+    if (!reduceMotion) {
+      track.querySelectorAll('.tl-item').forEach(function (item) {
+        beforeTops.set(item, item.getBoundingClientRect().top)
+      })
+    }
+
     const scratch = document.createElement('div')
     scratch.innerHTML = fresh
       .map(function (record, index) {
@@ -689,10 +712,52 @@
       track.insertBefore(scratch.firstElementChild, firstItem)
     }
 
-    // 时间线只保留最近 6 条，多出来的从尾部移除
-    const items = track.querySelectorAll('.tl-item')
-    for (let i = DASHBOARD_TIMELINE_LIMIT; i < items.length; i += 1) {
-      items[i].remove()
+    // 时间线只保留最近 6 条：多出来的先脱离文档流占住原位，再滑出淡出
+    const items = Array.prototype.slice.call(
+      track.querySelectorAll('.tl-item')
+    )
+    const overflow = items.slice(DASHBOARD_TIMELINE_LIMIT)
+    const trackRect = track.getBoundingClientRect()
+    overflow.forEach(function (item) {
+      if (reduceMotion) {
+        item.remove()
+        return
+      }
+      const rect = item.getBoundingClientRect()
+      item.style.position = 'absolute'
+      item.style.left = rect.left - trackRect.left + 'px'
+      item.style.top = rect.top - trackRect.top + 'px'
+      item.style.width = rect.width + 'px'
+      item.style.margin = '0'
+      item.style.pointerEvents = 'none'
+      const anim = item.animate(
+        [
+          { opacity: 1, transform: 'translateY(0)' },
+          { opacity: 0, transform: 'translateY(18px)' },
+        ],
+        { duration: 260, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' }
+      )
+      anim.onfinish = function () {
+        item.remove()
+      }
+    })
+
+    if (!reduceMotion) {
+      // 旧条目：从原位置补间到新位置（整体下移一格）
+      track.querySelectorAll('.tl-item').forEach(function (item) {
+        if (overflow.indexOf(item) !== -1) return
+        const before = beforeTops.get(item)
+        if (before == null) return
+        const delta = before - item.getBoundingClientRect().top
+        if (Math.abs(delta) < 1) return
+        item.animate(
+          [
+            { transform: 'translateY(' + delta + 'px)' },
+            { transform: 'translateY(0)' },
+          ],
+          { duration: 340, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)' }
+        )
+      })
     }
 
     // 高亮动画结束后摘掉标记类，避免元素越攒越多
@@ -705,15 +770,63 @@
     loadTimelinePosters(fresh)
   }
 
+  // 数字滚动：首屏从 0 累加，实时更新从当前显示值补间过去（reduced-motion 直接落值）
+  function animateStatNumber(el, value) {
+    if (!el) return
+
+    const nextText = String(value)
+    const matched = nextText.match(/^(-?\d+(?:\.\d+)?)(.*)$/)
+    if (!matched) {
+      el.textContent = nextText
+      return
+    }
+
+    const target = parseFloat(matched[1])
+    const suffix = matched[2] || ''
+    const decimals = (matched[1].split('.')[1] || '').length
+
+    const current = String(el.textContent || '').match(/-?\d+(?:\.\d+)?/)
+    const from = current ? parseFloat(current[0]) : 0
+
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches
+    if (reduceMotion || from === target) {
+      el.textContent = nextText
+      return
+    }
+
+    if (el._statRaf) cancelAnimationFrame(el._statRaf)
+
+    const duration = 620
+    const startedAt = performance.now()
+    function tick(now) {
+      const progress = Math.min(1, (now - startedAt) / duration)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const currentValue = from + (target - from) * eased
+      el.textContent =
+        (decimals
+          ? currentValue.toFixed(decimals)
+          : String(Math.round(currentValue))) + suffix
+      if (progress < 1) {
+        el._statRaf = requestAnimationFrame(tick)
+      } else {
+        el.textContent = nextText
+        el._statRaf = null
+      }
+    }
+    el._statRaf = requestAnimationFrame(tick)
+  }
+
   // 数字变化时轻弹一下（CSS 里控制，reduced-motion 下自动关闭）
   function setStatValue(id, value) {
     const el = document.getElementById(id)
     if (!el) return
 
     const next = String(value)
-    if (el.textContent === next) return
+    if (el.textContent === next && !el._statRaf) return
 
-    el.textContent = next
+    animateStatNumber(el, next)
     el.classList.remove('stats-value--updated')
     void el.offsetWidth
     el.classList.add('stats-value--updated')
@@ -764,14 +877,7 @@
       applyDashboardPayload(payload)
     })
 
-    source.addEventListener('open', function () {
-      const dot = document.getElementById('dashboardLiveDot')
-      if (dot) dot.classList.remove('d-none')
-    })
-
     source.addEventListener('error', function () {
-      const dot = document.getElementById('dashboardLiveDot')
-      if (dot) dot.classList.add('d-none')
       if (source.readyState === EventSource.CLOSED) dashboardStream = null
     })
 
