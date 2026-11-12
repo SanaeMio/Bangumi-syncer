@@ -86,16 +86,31 @@
         return apiFetch(url, options || {});
     }
 
-    function updateBadge(summary) {
-        var badge = document.getElementById('inboxBadge');
-        if (!badge) return;
-        var total = (summary && summary.total) || 0;
-        if (total > 0) {
-            badge.textContent = total > 99 ? '99+' : String(total);
-            badge.classList.remove('d-none');
+    function setCountBadge(el, count) {
+        if (!el) return;
+        if (count > 0) {
+            el.textContent = count > 99 ? '99+' : String(count);
+            el.classList.remove('d-none');
         } else {
-            badge.classList.add('d-none');
+            el.textContent = '0';
+            el.classList.add('d-none');
         }
+    }
+
+    function updateBadge(summary) {
+        // 分标签显示未读数：展开收件箱后能一眼看出哪个分类还有未读
+        setCountBadge(
+            document.getElementById('inboxBadge'),
+            (summary && summary.total) || 0
+        );
+        setCountBadge(
+            document.getElementById('inboxTabAnnCount'),
+            (summary && summary.announcements) || 0
+        );
+        setCountBadge(
+            document.getElementById('inboxTabNotifCount'),
+            (summary && summary.notifications) || 0
+        );
     }
 
     function updateRemoteAlert(remoteError) {

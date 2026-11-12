@@ -6,8 +6,9 @@ import os
 import platform
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from configparser import ConfigParser
+from contextlib import contextmanager
 from datetime import date as _date
 from pathlib import Path
 from typing import Any
@@ -88,6 +89,10 @@ class ConfigManager:
         self._config_version = 0
         self._change_listeners: list[Callable[[], None]] = []
         self._change_dirty = False
+
+        # 批量写入状态（见 batch()）：深度 > 0 时暂缓写盘与回调
+        self._batch_depth = 0
+        self._batch_dirty = False
 
         # 初始化配置
         self._load_config()
@@ -259,6 +264,32 @@ class ConfigManager:
     # 配置变更回调（供模块级缓存订阅失效）
     # ------------------------------------------------------------------
 
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """批量写入上下文：期间的 set_config 只改内存，退出时统一写盘并触发一次回调。
+
+        保存配置页这类场景会逐键调用 set_config（一次保存几十个键），若每次都
+        写整个 INI 并对全部监听者触发一次变更回调，会产生几十次文件写入与
+        「缓存全量重建」风暴（表现为日志里同一请求刷出几十条刷新记录）。
+        """
+        # getattr 兜底：部分测试绕过 __init__ 构造实例（patch __init__）
+        with self._lock:
+            self._batch_depth = getattr(self, "_batch_depth", 0) + 1
+        try:
+            yield
+        finally:
+            flush = False
+            with self._lock:
+                self._batch_depth -= 1
+                if self._batch_depth == 0 and getattr(self, "_batch_dirty", False):
+                    self._batch_dirty = False
+                    parser = self._config_cache
+                    if parser is not None:
+                        self._save_config(parser)
+                        flush = True
+            if flush:
+                self._fire_pending_changes()
+
     def get_config_version(self) -> int:
         """当前配置版本号（每次配置重载/保存自增）。
 
@@ -373,8 +404,16 @@ class ConfigManager:
             master = self._get_master_secret(config)
             stored = encrypt_if_sensitive(section, key, str(value), master=master)
             config.set(section, key, stored)
-            self._save_config(config)
-        self._fire_pending_changes()
+            # getattr 兜底：部分测试绕过 __init__ 构造实例（patch __init__）
+            if getattr(self, "_batch_depth", 0):
+                # 批量模式：只改内存，由 batch() 退出时统一写盘 + 触发一次回调
+                self._batch_dirty = True
+                deferred = True
+            else:
+                self._save_config(config)
+                deferred = False
+        if not deferred:
+            self._fire_pending_changes()
 
     def set(self, section: str, key: str, value: Any) -> None:
         """设置配置值（别名）"""
@@ -938,10 +977,16 @@ class ConfigManager:
         return result
 
     def save_config(self) -> None:
-        """保存配置"""
+        """保存配置（批量模式下并入 batch() 的统一写盘）。"""
         config = self.get_config_parser()
-        self._save_config(config)
-        self._fire_pending_changes()
+        with self._lock:
+            deferred = bool(getattr(self, "_batch_depth", 0))
+            if deferred:
+                self._batch_dirty = True
+            else:
+                self._save_config(config)
+        if not deferred:
+            self._fire_pending_changes()
 
     def _needs_migration(self) -> bool:
         """检查是否需要执行配置迁移"""

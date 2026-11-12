@@ -9,7 +9,7 @@
 {% block content %}
     <div class="row g-3">
         <!-- 左侧：竖向 TOC + 配置操作（lg+ 显示，sticky 侧栏） -->
-        <aside class="col-lg-3 d-none d-lg-block">
+        <aside class="col-lg-3 config-sidebar-col d-none d-lg-block">
             <div class="config-sidebar">
                 <nav class="card mb-3 config-page-toc" aria-label="配置页目录">
                     <div class="card-header py-2 px-3">
@@ -69,7 +69,7 @@
             </div>
         </aside>
         <!-- 右侧：配置表单 -->
-        <div class="col-lg-9">
+        <div class="col-lg-9 config-main-col">
             <form id="config-form" class="config-form" autocomplete="off">
                 {% include "config/_sync.html" %}
                 {% include "config/_blocked_keywords.html" %}
@@ -124,27 +124,6 @@
                                 onclick="showRestoreModal()">
                             <i class="bi bi-upload me-2"></i>恢复配置
                         </button>
-                    </div>
-                </div>
-            </div>
-            <!-- 调试工具导航 -->
-            <div class="row">
-                <div class="col-12">
-                    <div class="card mb-4 border-info border-opacity-25">
-                        <div class="card-body text-center py-4">
-                            <div class="mb-3">
-                                <i class="bi bi-bug display-4 text-info"></i>
-                            </div>
-                            <h5 class="card-title text-info mb-3">需要测试同步功能？</h5>
-                            <p class="card-text text-muted mb-4">
-                                测试同步和网络诊断功能已移至专门的调试工具页面，
-                                <br />
-                                提供更丰富的调试功能和更好的用户体验。
-                            </p>
-                            <a href="{{ '/debug' | p }}" class="btn btn-primary px-4">
-                                <i class="bi bi-arrow-right-circle me-2"></i>前往调试工具
-                            </a>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -891,43 +870,32 @@
     accountDiv.dataset.authMethod = authMethod
 
     const primaryBadge = isPrimary
-      ? '<span class="badge bg-success ms-2 js-primary-badge">首选中</span>'
+      ? '<span class="badge bg-success js-primary-badge">首选中</span>'
       : ''
     const disabledBadge =
       !isNew && !isEnabled
-        ? '<span class="badge bg-secondary ms-1 js-enabled-badge">已停用</span>'
+        ? '<span class="badge bg-secondary js-enabled-badge">已停用</span>'
         : ''
-    const oauthBadge =
-      authMethod === 'oauth'
-        ? '<span class="badge bg-info ms-1">OAuth</span>'
-        : ''
-
-    // OAuth 相关信息：授权方式、Bangumi 用户 ID、令牌过期时间
-    let oauthInfoHtml = ''
+    // 账号元信息徽标：认证方式 / 令牌过期时间
+    // 取不到的信息直接不显示，避免出现「-」「未知」这类占位
+    const metaBadges = []
     if (!isNew) {
-      const userIdText = acc.bangumi_user_id
-        ? escapeHtml(String(acc.bangumi_user_id))
-        : '-'
-      let expText = '未知'
-      if (authMethod === 'oauth' && acc.expires_at) {
-        const expTs = Number(acc.expires_at)
-        if (expTs > 0) {
-          const expired = expTs * 1000 <= Date.now()
-          expText =
-            new Date(expTs * 1000).toLocaleString() +
-            (expired ? '（已过期，下次调用将自动刷新）' : '')
-        }
+      metaBadges.push(
+        authMethod === 'oauth'
+          ? '<span class="badge bg-info">OAuth 授权</span>'
+          : '<span class="badge bg-secondary">手动令牌</span>',
+      )
+      const expTs = Number(acc.expires_at || 0)
+      if (authMethod === 'oauth' && expTs > 0) {
+        const expDate = new Date(expTs * 1000).toLocaleDateString()
+        metaBadges.push(
+          expTs * 1000 <= Date.now()
+            ? `<span class="badge bg-danger" title="令牌已过期，下次调用将自动刷新">令牌 ${expDate} 已过期</span>`
+            : `<span class="badge bg-secondary" title="令牌过期时间">令牌 ${expDate} 到期</span>`,
+        )
       }
-      oauthInfoHtml = `
-        <div class="col-12 mt-1">
-          <div class="small text-muted">
-            <span class="me-3">认证方式：${authMethod === 'oauth' ? 'OAuth 授权' : '手动令牌'}</span>
-            <span class="me-3">Bangumi 用户 ID：${userIdText}</span>
-            <span>令牌过期时间：${expText}</span>
-          </div>
-        </div>
-      `
     }
+    const metaBadgesHtml = metaBadges.join('')
 
     // OAuth 账号提供「断开 OAuth」按钮（回退为手动模式，保留 access_token）
     const disconnectBtn =
@@ -949,14 +917,14 @@
            </button>`
 
     accountDiv.innerHTML = `
-        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-2 mb-2">
-            <h6 class="mb-0">
-                Bangumi 账号 ${id + 1}
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div class="account-title-row d-flex flex-wrap align-items-center gap-2">
+                <h6 class="mb-0">Bangumi 账号 ${id + 1}</h6>
                 ${primaryBadge}
                 ${disabledBadge}
-                ${oauthBadge}
-            </h6>
-            <div class="d-flex flex-wrap gap-2">
+                ${metaBadgesHtml}
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
                 ${
                   !isPrimary
                     ? `<button type="button" class="btn btn-sm btn-outline-success" onclick="setPrimaryBangumiAccount(this)">
@@ -965,45 +933,37 @@
                     : ''
                 }
                 ${enabledToggleBtn}
-                <button type="button" class="btn btn-sm btn-outline-primary" onclick="saveBangumiAccountRow(this)">
-                    <i class="bi bi-save"></i> 保存
-                </button>
                 ${disconnectBtn}
                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteBangumiAccountRow(this)">
                     <i class="bi bi-trash"></i> 删除
                 </button>
             </div>
         </div>
-        <div class="row g-2">
-            <div class="col-md-4">
+        <div class="bangumi-account-fields">
+            <div class="bangumi-account-field">
                 <label class="form-label small">Bangumi 用户名</label>
                 <input type="text" class="form-control bangumi-account-username" value="${escapeHtml(acc.username || '')}" placeholder="Bangumi 用户名或 UID" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
             </div>
-            <div class="col-md-4">
+            <div class="bangumi-account-field">
                 <label class="form-label small" title="Plex/Emby/Jellyfin 登录名，须与媒体服务器一致。多个用户名对应本 Bangumi 账号时可用英文逗号分隔。">
                     媒体服务器用户名
                 </label>
                 <input type="text" class="form-control bangumi-account-media-username" value="${escapeHtml((acc.media_server_usernames || []).join(', '))}" placeholder="多个用英文逗号分隔" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
             </div>
-            <div class="col-md-4">
-                <label class="form-label small">
-                    访问令牌
-                    ${authMethod === 'oauth' ? '<span class="text-muted">（由 OAuth 管理）</span>' : ''}
-                </label>
+            <div class="bangumi-account-field">
+                <label class="form-label small"${authMethod === 'oauth' ? ' title="OAuth 授权账号的访问令牌由系统自动管理"' : ''}>访问令牌</label>
                 <div class="position-relative">
-                    <input type="password" class="form-control pe-5 bangumi-account-token" value="" placeholder="${authMethod === 'oauth' ? '已由 OAuth 授权' : '输入访问令牌'}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
+                    <input type="password" class="form-control pe-5 bangumi-account-token" value="" placeholder="${authMethod === 'oauth' ? '已由 OAuth 授权' : '粘贴访问令牌'}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore data-form-type="other">
                     <button class="btn btn-link position-absolute top-50 end-0 translate-middle-y me-1 password-toggle-btn" type="button" onclick="toggleTokenVisibility(this)">
                         <i class="bi bi-eye text-muted"></i>
                     </button>
                 </div>
             </div>
-        </div>
-        ${oauthInfoHtml}
-        <div class="row mt-2">
-            <div class="col-md-4">
+            <div class="bangumi-account-field bangumi-account-field--switch">
+                <label class="form-label small" for="bangumi-account-private-${id}">观看记录仅自己可见</label>
                 <div class="form-check form-switch d-flex align-items-center mb-0">
-                    <input class="form-check-input me-2 bangumi-account-private" type="checkbox" id="bangumi-account-private-${id}" ${acc.private ? 'checked' : ''}>
-                    <label class="form-check-label small" for="bangumi-account-private-${id}">观看记录仅自己可见</label>
+                    <input class="form-check-input me-2 bangumi-account-private" type="checkbox" id="bangumi-account-private-${id}" ${acc.private ? 'checked' : ''} onchange="this.nextElementSibling.textContent = this.checked ? '开启' : '关闭'">
+                    <label class="form-check-label small text-nowrap js-private-state" for="bangumi-account-private-${id}">${acc.private ? '开启' : '关闭'}</label>
                 </div>
             </div>
         </div>
@@ -1025,55 +985,65 @@
     }
   }
 
-  async function saveBangumiAccountRow(btn) {
-    const card = btn.closest('[id^="bangumi-account-"]')
-    if (!card) return
-
-    const username = card.querySelector('.bangumi-account-username').value.trim()
-    const mediaUsername = card
-      .querySelector('.bangumi-account-media-username')
-      .value.trim()
-    const token = card.querySelector('.bangumi-account-token').value
-    const isPrivate = card.querySelector('.bangumi-account-private').checked
-    const sectionName = card.dataset.sectionName || ''
-    const isNew = card.dataset.isNew === '1'
-
-    if (!username) {
-      showAlert('用户名不能为空', 'danger')
-      return
-    }
-
-    const mediaUsernames = mediaUsername
-      ? mediaUsername.split(',').map((s) => s.trim()).filter(Boolean)
-      : []
-
-    // 新账号或手动账号必须有 token；OAuth 账号 token 可空（保留原值）
-    if (isNew && !token) {
-      showAlert('新账号需要填写访问令牌', 'danger')
-      return
-    }
-
-    try {
-      const res = await apiFetch('/api/bangumi/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          section_name: isNew ? null : sectionName,
-          username: username,
-          access_token: token,
-          media_server_usernames: mediaUsernames,
-          private: isPrivate,
-        }),
-      })
-      if (res.status === 'success') {
-        showAlert(res.message || '账号保存成功', 'success')
-        await loadBangumiAccounts()
-      } else {
-        showAlert(res.detail || '保存失败', 'danger')
+  // 收集页面上全部账号条目，供「保存配置」统一提交
+  // 账号存 DB、常规配置存 INI，保存配置时先提交账号，再提交配置
+  function collectBangumiAccounts() {
+    // 只取账号卡片本身：卡片内部的「仅自己可见」复选框 id 也以 bangumi-account- 开头
+    const cards = document.querySelectorAll(
+      '#bangumi-accounts-container > [id^="bangumi-account-"]',
+    )
+    const accounts = []
+    cards.forEach((card, index) => {
+      const username = card
+        .querySelector('.bangumi-account-username')
+        .value.trim()
+      if (!username) {
+        throw new Error(`Bangumi 账号 ${index + 1} 的用户名不能为空`)
       }
-    } catch (e) {
-      showAlert('保存账号失败: ' + e.message, 'danger')
+      const mediaUsername = card
+        .querySelector('.bangumi-account-media-username')
+        .value.trim()
+      const token = card.querySelector('.bangumi-account-token').value.trim()
+      const isNew = card.dataset.isNew === '1'
+      // 新账号必须填令牌；已有账号留空表示保留原令牌（OAuth 账号本就由 OAuth 管理）
+      if (isNew && !token) {
+        throw new Error(`Bangumi 账号 ${index + 1} 需要填写访问令牌`)
+      }
+      // 令牌框是 type="password"，浏览器的密码管理器常把登录密码自动填进来，
+      // 存进库里只会换来 401「令牌过期」，所以按令牌形态先挡一道
+      if (token && !/^[A-Za-z0-9._~+/=-]{20,}$/.test(token)) {
+        throw new Error(
+          `Bangumi 账号 ${index + 1} 的访问令牌格式不对（可能被浏览器自动填成了密码），请粘贴 Bangumi 生成的令牌`,
+        )
+      }
+      accounts.push({
+        section_name: isNew ? null : card.dataset.sectionName || null,
+        username: username,
+        access_token: token,
+        media_server_usernames: mediaUsername
+          ? mediaUsername
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [],
+        private: card.querySelector('.bangumi-account-private').checked,
+      })
+    })
+    return accounts
+  }
+
+  // 批量提交账号；无账号时不发请求
+  async function saveBangumiAccounts(accounts) {
+    if (!accounts.length) return null
+    const res = await apiFetch('/api/bangumi/accounts/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts: accounts }),
+    })
+    if (res.status !== 'success') {
+      throw new Error(res.detail || '账号保存失败')
     }
+    return res
   }
 
   async function deleteBangumiAccountRow(btn) {
@@ -1162,15 +1132,16 @@
       .querySelectorAll('#bangumi-accounts-container [id^="bangumi-account-"]')
       .forEach((card) => {
         const section = card.dataset.sectionName
-        const titleEl = card.querySelector('h6')
-        if (!titleEl) return
+        const titleRow = card.querySelector('.account-title-row')
+        const titleEl = titleRow ? titleRow.querySelector('h6') : null
+        if (!titleRow || !titleEl) return
         // 仅更新首选徽章，保留 OAuth / 已停用等其余徽章
-        titleEl.querySelectorAll('.js-primary-badge').forEach((b) => b.remove())
+        titleRow.querySelectorAll('.js-primary-badge').forEach((b) => b.remove())
         if (section === primarySection) {
           const badge = document.createElement('span')
-          badge.className = 'badge bg-success ms-2 js-primary-badge'
+          badge.className = 'badge bg-success js-primary-badge'
           badge.textContent = '首选中'
-          titleEl.appendChild(badge)
+          titleEl.insertAdjacentElement('afterend', badge)
         }
       })
   }
@@ -1226,7 +1197,14 @@
         configData.auth.password = authPassword
       }
 
-      // 5. Bangumi 账号由 /api/bangumi/accounts 独立管理，此处仅保存常规配置
+      // 5. 先保存 Bangumi 账号（存 DB）；账号校验或写入失败即中止，不动 INI
+      let accountResult = null
+      try {
+        accountResult = await saveBangumiAccounts(collectBangumiAccounts())
+      } catch (accountError) {
+        showAlert(accountError.message || '账号保存失败', 'danger')
+        return
+      }
 
       const result = await apiFetch('/api/config', {
         method: 'POST',
@@ -1237,7 +1215,16 @@
       })
 
       if (result.status === 'success') {
-        showAlert('配置保存成功', 'success')
+        if (accountResult && accountResult.changed) {
+          // 新增账号此刻才拿到段名，重新渲染让卡片转为已保存状态
+          await loadBangumiAccounts()
+        }
+        showAlert(
+          accountResult && accountResult.changed
+            ? '账号与配置已保存'
+            : '配置保存成功',
+          'success',
+        )
 
         // 如果修改了密码，提示需要重新登录
         if (authPassword.trim() !== '') {

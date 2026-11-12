@@ -84,9 +84,9 @@ class TestThemeToggleAlignment:
 class TestActionCapsule:
     """操作按钮胶囊：窄屏内部分段不换行、整体收窄。"""
 
+    # dashboard.html 唯一一处胶囊在「我在追的放送」卡片头部，该卡片已暂时隐藏
     TEMPLATES = {
         "config.html": 2,
-        "dashboard.html": 1,
         "mappings.html": 4,
         "bangumi_archive.html": 1,
         "bangumi_replay.html": 1,
@@ -238,3 +238,275 @@ class TestArchiveUploadRow:
         assert "flex-wrap: nowrap" in block
         control = _block(css, ".input-group.archive-upload-row .form-control")
         assert "min-width: 0" in control
+
+
+class TestProgressBarAnimation:
+    """进度条：条纹可见、可停、结束态用状态色。"""
+
+    def test_fill_uses_solid_color_so_state_class_wins(self):
+        """底色必须是 background-color：渐变简写会盖掉 bg-success 等状态色。"""
+        block = _block(_css("components.css"), ".progress-bar")
+        assert "background-color: var(--app-primary)" in block
+        assert "background: var(--app-gradient-primary)" not in block
+
+    def test_stripes_stack_on_top_of_fill(self):
+        """条纹只覆盖 background-image，才能叠在底色之上。"""
+        block = _block(_css("components.css"), ".progress-bar-striped")
+        assert "background-image: linear-gradient(" in block
+        assert "background-size: 0.9rem 0.9rem" in block
+
+    def test_animation_uses_project_keyframes(self):
+        """动画指向本仓库的 keyframes，慢一点更稳，避免高频重绘看着抖。"""
+        css = _css("components.css")
+        assert "animation: app-progress-stripes 1.1s linear infinite" in _block(
+            css, ".progress-bar-animated"
+        )
+        keyframes = css.split("@keyframes app-progress-stripes {", 1)[1]
+        assert "background-position: 0.9rem 0" in keyframes
+
+    def test_reduced_motion_stops_animation(self):
+        """系统开启减少动效时不再流动。"""
+        block = _last_media_block(
+            _css("components.css"), "(prefers-reduced-motion: reduce)"
+        )
+        assert ".progress-bar-animated" in block
+        assert "animation: none" in block
+
+    def test_archive_progress_bar_animation_is_stage_driven(self):
+        """导入进度条由阶段决定是否显示条纹，完成后停在纯色。"""
+        html = (_REPO_ROOT / "templates/bangumi_archive.html").read_text(
+            encoding="utf-8"
+        )
+        assert 'class="progress-bar"' in html
+        assert "progress-bar-animated progress-bar-striped" not in html
+        assert "bar.classList.toggle('progress-bar-animated', busy)" in html
+        assert "['idle', 'done', 'error', 'skipped'].includes(stage)" in html
+
+    def test_upgrade_progress_bar_stops_at_completion(self):
+        """一键升级进度条在完成后摘下动画，避免 100% 还在流动。"""
+        js = (_REPO_ROOT / "static/js/upgrade.js").read_text(encoding="utf-8")
+        assert "function setBarRunning(running)" in js
+        assert js.count("setBarRunning(false)") == 2
+
+
+class TestDashboardRealtime:
+    """首页实时更新：SSE 接线、增量插入与变化动效。"""
+
+    def test_dashboard_opens_stats_stream(self):
+        """仪表板通过一条 SSE 连接接收统计/热力图/最近记录。"""
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "new EventSource('/api/stats/stream')" in js
+        assert "source.addEventListener('dashboard'" in js
+        # 首屏静态数据落地后才连流，避免两路同时渲染
+        assert "dashboardLoaded = true" in js
+        assert "connectDashboardStream()" in js
+
+    def test_new_records_slide_in_with_queue_motion(self):
+        """新记录从顶部滑入，旧条目整体下移，末尾的滑出。"""
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "function prependTimelineRecords(records)" in js
+        assert "track.insertBefore(scratch.firstElementChild, firstItem)" in js
+        # 队列动效：插入前记录旧位置，插入后按位移补间；末尾条目脱离文档流滑出
+        assert "const beforeTops = new Map()" in js
+        assert "const delta = before - item.getBoundingClientRect().top" in js
+        assert "const overflow = items.slice(DASHBOARD_TIMELINE_LIMIT)" in js
+        assert "item.style.position = 'absolute'" in js
+        assert "anim.onfinish = function () {" in js
+
+    def test_stat_values_animate_on_change(self):
+        """数字变化才触发动画，值没变不动。"""
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "function setStatValue(id, value)" in js
+        assert "el.classList.add('stats-value--updated')" in js
+        # 首屏数字从 0 累加，更新时从当前值补间
+        assert "function animateStatNumber(el, value)" in js
+        assert "el._statRaf = requestAnimationFrame(tick)" in js
+        assert (
+            "animateStatNumber(\n            document.getElementById('total-syncs'),"
+            in js
+        )
+
+        css = _css("dashboard.css")
+        assert "animation: stats-value-bump" in _block(css, ".stats-value--updated")
+        assert "@keyframes stats-value-bump {" in css
+        assert "animation: tl-item-highlight" in _block(css, ".tl-item--new::after")
+
+    def test_realtime_has_no_status_dot(self):
+        """实时连接不再挂绿点，改由排队动效表达。"""
+        html = (_REPO_ROOT / "templates/dashboard.html").read_text(encoding="utf-8")
+        assert "dashboardLiveDot" not in html
+        assert "dashboard-live-dot" not in html
+
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "dashboardLiveDot" not in js
+        assert "dashboard-live-dot" not in _css("dashboard.css")
+
+    def test_realtime_animations_respect_reduced_motion(self):
+        """系统要求减少动效时不再跳动与高亮。"""
+        block = _last_media_block(
+            _css("dashboard.css"), "(prefers-reduced-motion: reduce)"
+        )
+        for selector in (
+            ".stats-value--updated",
+            ".tl-item--new::after",
+        ):
+            assert selector in block
+
+
+class TestRecordDetailCopy:
+    """同步记录详情：步骤状态文案、说明去重与封面。"""
+
+    def test_step_badges_follow_pipeline_stage(self):
+        """同一个 hit 在不同阶段说不同的话，不再一律叫「命中」。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "STEP_STAGE_STATUS_LABELS" in js
+        assert "getStepStatusMeta(status, step.stage)" in js
+        # 徽标上不再出现「命中 / 未命中」这种内部术语
+        assert "hit: '命中'" not in js
+        assert "miss: '未命中'" not in js
+
+    def test_step_reason_is_normalized_and_deduped(self):
+        """说明文字展示前翻译，与总览卡重复的不再重复显示。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "RECORD_TEXT_REWRITES" in js
+        assert "normalizeRecordText(step.reason)" in js
+        assert "reasonText !== options.heroMessage" in js
+
+    def test_links_inside_steps_are_deduped(self):
+        """同一条目/单集在多个步骤里只挂一次链接。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "seen.subjects.has" in js
+        assert "seen.episodes.has" in js
+
+    def test_poster_shown_in_modal_header(self):
+        """详情弹窗头部左侧显示条目封面。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert 'id="record-detail-modal-poster"' in html
+
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "function setRecordPoster(subjectId)" in js
+        assert "/poster" in js
+
+        css = _css("records-detail.css")
+        assert "align-self: stretch" in _block(css, ".record-detail-modal__poster")
+
+
+class TestRecordDetailHeaderLayout:
+    """详情弹窗头部：海报 + 标题 + 元信息 + 胶囊，状态不重复表达。"""
+
+    def test_status_icon_removed_from_header(self):
+        """同步结果由下方总览卡表达，头部不再放重复的状态图标。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert "record-detail-modal__status" not in html
+        assert "record-detail-modal__status" not in _css("records-detail.css")
+
+    def test_match_method_is_single_capsule(self):
+        """匹配方式只套一层胶囊：不再把 Bootstrap badge 塞进 chip 里。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "window.getMatchMethodMeta" in js
+        assert "record-detail-modal__chip--match-method" not in js
+        assert "renderMatchMethodBadge(" not in js
+
+        css = _css("records-detail.css")
+        for tone in ("primary", "success", "warning", "info", "danger"):
+            assert f".record-detail-modal__chip--match-{tone}" in css
+
+    def test_poster_sits_left_of_title(self):
+        """头部位图是条目封面，高度跟着右侧文字块走（窄屏也不会矮一截）。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        poster_at = html.index('id="record-detail-modal-poster"')
+        head_at = html.index('class="record-detail-modal__head"')
+        assert poster_at < head_at
+
+        css = _css("records-detail.css")
+        block = _block(css, ".record-detail-modal__poster")
+        assert "align-self: stretch" in block
+        assert "flex: 0 0 auto" in block
+        assert "aspect-ratio" not in block
+        assert "object-fit: cover" in _block(css, ".record-detail-modal__poster img")
+
+    def test_header_chips_skip_facts_repeated_below(self):
+        """条目 / 单集 / 置信度在流水线各步骤里都有，头部不再重复。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        chips_fn = js[
+            js.index("function renderPipelineSummaryChips") : js.index(
+                "function setRecordSummaryHtml"
+            )
+        ]
+        assert "bgm.tv/subject/" not in chips_fn
+        assert "bgm.tv/ep/" not in chips_fn
+        assert "chip--score" not in chips_fn
+        assert "record-detail-modal__chip--score" not in js
+        assert "record-detail-step__score" not in js
+
+    def test_meta_and_chips_share_one_block(self):
+        """时间、来源、日志链接和胶囊同处一个 meta 块，避免多行各说各的。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        head_at = html.index('class="record-detail-modal__head"')
+        meta_at = html.index('class="record-detail-modal__meta"')
+        summary_at = html.index('id="record-detail-modal-summary"')
+        assert head_at < meta_at < summary_at
+
+        css = _css("records-detail.css")
+        block = _block(css, ".record-detail-modal__meta")
+        assert "flex-direction: column" in block
+        assert "record-detail-meta-dot" not in css
+        assert "record-detail-meta-dot" not in (
+            _REPO_ROOT / "static/js/records-detail.js"
+        ).read_text(encoding="utf-8")
+
+    def test_pipeline_enters_with_staggered_transform_animation(self):
+        """流水线入场只动 transform / opacity，并按步骤错峰。"""
+        css = _css("records-detail.css")
+        assert (
+            ".record-detail-step:not(.record-detail-step--flash) {\n    animation: record-step-in"
+            in css
+        )
+        assert "animation-delay: calc(min(var(--step-i, 0), 8) * 45ms)" in css
+
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert 'style="--step-i:${stepIndex}"' in js
+        assert "const stepIndex = Math.min(Math.max(idx - 1, 0), 8);" in js
+
+        for keyframe in ("record-step-in", "record-step-line-grow", "record-hero-in"):
+            assert f"@keyframes {keyframe}" in css
+
+        reduced = css[css.index("@media (prefers-reduced-motion: reduce)") :]
+        assert ".record-detail-step__line," in reduced
+        assert (
+            ".record-detail-step__card[open] .record-detail-step__content {" in reduced
+        )
+
+
+class TestSidebarNavSlider:
+    """侧栏导航：选中态滑块从旧条目滑到新条目。"""
+
+    def test_slider_pill_moves_between_items(self):
+        """点击另一个菜单项时只移动滑块，不重绘选中样式。"""
+        js = (_REPO_ROOT / "static/js/sidebar.js").read_text(encoding="utf-8")
+        assert "function moveNavSlider(link, animate)" in js
+        assert "navSlider.style.transform =" in js
+        assert "'translate3d(' + link.offsetLeft" in js
+        assert "initNavSlider()" in js
+        # 白字等滑块走到一半再换，避免新条目提前变白压在淡底上看不清
+        assert "window.setTimeout(swapActive, 190)" in js
+
+    def test_slider_styles_take_over_active_gradient(self):
+        """JS 接管后选中项自身不再画渐变，脚本失败时仍保留旧样式。"""
+        css = _css("theme-base.css")
+        assert ".sidebar-nav__slider {" in css
+        assert "transition: transform 0.26s" in _block(css, ".sidebar-nav__slider")
+        assert "html.js-nav-slider .sidebar-nav .nav-link.active" in css
+        assert "background: transparent" in _block(
+            css, "html.js-nav-slider .sidebar-nav .nav-link.active"
+        )
+
+    def test_stats_bump_does_not_flash_theme_color(self):
+        """数字弹跳只改缩放，不改颜色；等宽数字避免滚动时抖动。"""
+        css = _css("dashboard.css")
+        frames = css.split("@keyframes stats-value-bump {", 1)[1].split("\n@", 1)[0]
+        assert "color:" not in frames
+        assert "scale(1.035)" in frames
+
+        base = _css("theme-base.css")
+        assert "font-variant-numeric: tabular-nums" in _block(base, ".stats-value")

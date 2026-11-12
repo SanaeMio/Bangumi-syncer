@@ -213,3 +213,6 @@ rrr/mcp_server
 
 # eval 运行产物（本地生成，不入库）
 /eval-out/
+
+# UI 改造过程中的本地截图/探针脚本（不随仓库提交）
+/.preview/

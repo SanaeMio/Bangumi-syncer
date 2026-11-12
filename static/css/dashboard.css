@@ -89,9 +89,7 @@ main.app-main>*:nth-child(12) {
 }
 
 /* 侧栏 Logo */
-.sidebar .text-center.mb-4 img {
-    animation: app-fade-in 0.55s ease 0.05s backwards;
-}
+/* 侧栏品牌图标的淡入写在 theme-base.css（两态共用同一图标） */
 
 /* 侧栏菜单项错峰 */
 .sidebar .nav.flex-column>.nav-item>.nav-link {
@@ -377,7 +375,7 @@ main.app-main>*:nth-child(12) {
 }
 
 .theme-color-item[data-color="sakura"] .theme-color-dot {
-    --theme-dot-color: #f09199;
+    --theme-dot-color: #f3a2a8;
 }
 
 .theme-color-item[data-color="amber"] .theme-color-dot {
@@ -1036,6 +1034,52 @@ main.app-main>*:nth-child(12) {
     }
 }
 
+/* ========== 实时更新动效 ========== */
+
+/* 统计数字变化时轻弹一下（由 dashboard.js 的 applyDashboardPayload 触发） */
+.stats-value--updated {
+    animation: stats-value-bump 0.55s var(--app-ease-smooth);
+}
+
+@keyframes stats-value-bump {
+    0% {
+        transform: scale(1);
+    }
+
+    35% {
+        transform: scale(1.035);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* 实时插入的新条目：除了原有的入场动画，再叠一层淡出高亮 */
+.tl-item--new {
+    position: relative;
+}
+
+.tl-item--new::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--app-radius-card-sm);
+    background: rgba(var(--app-primary-rgb), 0.12);
+    pointer-events: none;
+    animation: tl-item-highlight 2s var(--app-ease-smooth) forwards;
+}
+
+@keyframes tl-item-highlight {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto !important;
@@ -1060,6 +1104,8 @@ main.app-main>*:nth-child(12) {
     .tl-dot,
     .tl-msg,
     .tl-track::before,
+    .stats-value--updated,
+    .tl-item--new::after,
     #records-table tbody tr.records-table-row--enter,
     .records-table-wrap tbody tr.records-table-row--enter,
     .records-table-wrap.records-table-wrap--enter .app-data-table,
@@ -1092,13 +1138,13 @@ main.app-main>*:nth-child(12) {
     .card:hover .stats-icon,
     .badge:hover,
     .navbar-nav .nav-link:hover,
-    .app-sidebar-brand-link:hover,
+    .sidebar-brand__link:hover,
     .tl-item:hover,
     .tl-item:hover .timeline-poster {
         transform: none !important;
     }
 
-    .app-sidebar-brand-link {
+    .sidebar-brand__link {
         transition: none !important;
     }
 
@@ -1472,6 +1518,19 @@ main.app-main>*:nth-child(12) {
     font-weight: 600;
     background: transparent;
     border-bottom: 2px solid var(--app-primary, #f09199);
+}
+
+.inbox-tabs__count {
+    display: inline-block;
+    margin-left: 0.3rem;
+    padding: 0.08em 0.42em;
+    border-radius: 999px;
+    background: var(--app-primary, #f09199);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.25;
+    vertical-align: 0.06em;
 }
 
 .inbox-read-all-btn {

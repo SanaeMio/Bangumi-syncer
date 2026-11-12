@@ -116,14 +116,14 @@ class SyncActionStep(ExecutionStepBase):
             )
 
         action_label = {
-            0: "已在看/看过（无变更）",
+            0: "已在看或看过，无需改动",
             1: "已标记为看过",
             2: "已添加收藏",
         }.get(mark_status, f"mark_status={mark_status}")
         return StepOutcome(
             status="hit",
             subject_id=bgm_se_id,
-            reason=f"mark_episode_watched 返回 {mark_status}（{action_label}）",
+            reason=f"标记剧集已看：{action_label}",
             inputs=inputs,
             outputs={"mark_status": mark_status},
         )

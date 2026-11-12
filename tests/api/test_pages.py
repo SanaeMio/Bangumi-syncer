@@ -14,6 +14,11 @@ from app.api import pages
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# 带字标的整张 logo.png 曾被当作 rel="icon"，浏览器压成 16px 后只剩一条模糊横线。
+# 这里只断言"图标链接"不再指向它；侧边栏/登录页的 <img> 仍用整张 logo 是正常的。
+_LOGO_LINK_AS_ICON = """/static/logo.png' | static_v }}"
+              rel="icon\""""
+
 
 class TestPages:
     """测试页面路由"""
@@ -148,6 +153,27 @@ class TestPagesAuthenticated:
             client = TestClient(app)
             r = client.get("/dashboard", follow_redirects=False)
         assert r.status_code == 200
+        # 收件箱标签上的未读计数锚点（JS 通过这两个 id 写入分类未读数）
+        assert 'id="inboxTabAnnCount"' in r.text
+        assert 'id="inboxTabNotifCount"' in r.text
+
+    def test_dashboard_hides_airing_and_scheduler_cards(self):
+        """首页精简：放送日历与调度器状态卡暂时隐藏。
+
+        两张卡的 DOM 与脚本都已从页面撤掉；对应前端逻辑（airing_calendar.js、
+        dashboard.js 的调度器状态段）保留空节点保护，节点不存在时不发请求。
+        """
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/dashboard", follow_redirects=False)
+        assert r.status_code == 200
+        assert "我在追的放送" not in r.text
+        assert "调度器状态" not in r.text
+        assert "airing_calendar.js" not in r.text
+        assert "cron-desc.js" not in r.text
 
     def test_config_authenticated(self):
         """已认证用户访问配置页"""
@@ -377,6 +403,74 @@ class TestSharedModals:
         assert "hidden.bs.modal" in body
 
 
+class TestSidebarCollapse:
+    """侧边栏折叠：宽屏下收成图标栏，状态记在 localStorage。"""
+
+    @staticmethod
+    def _dashboard_html() -> str:
+        app = FastAPI()
+        app.include_router(pages.router)
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            return TestClient(app).get("/dashboard", follow_redirects=False).text
+
+    def test_dashboard_has_sidebar_toggle(self):
+        """品牌区始终用一个方形图标，折叠按钮在品牌行右端。"""
+        html = self._dashboard_html()
+        assert 'id="sidebarCollapseBtn"' in html
+        assert 'class="sidebar-brand__mark"' in html
+        assert 'class="sidebar-brand__wordmark"' in html
+        assert "/static/logo-wordmark.png" in html
+        assert 'class="app-sidebar-logo"' not in html
+        # 横版组合：方形图标 + logo 里的字标，带字标的整张 logo 不再出现在页面里
+        # 三处：apple-touch-icon 链接、侧栏品牌图标、窄屏顶部导航栏图标
+        assert html.count("/static/apple-touch-icon.png") == 3
+        assert "/static/logo.png" not in html
+
+    def test_sidebar_state_applied_before_paint(self):
+        """展开/折叠状态在 <head> 内联脚本里先行落盘，避免刷新时闪一下。"""
+        base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert "localStorage.getItem('app-sidebar')" in base
+        assert "/static/js/sidebar.js" in base
+
+    def test_collapsed_styles_present(self):
+        """折叠样式与宽屏固定宽度都挂在 theme-base.css 上。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert 'html[data-sidebar="collapsed"]' in css
+        assert "--app-sidebar-width" in css
+
+    def test_nav_labels_animate_instead_of_disappearing(self):
+        """菜单文字包在 .nav-link__text 里，靠 max-width 过渡滑出。"""
+        html = self._dashboard_html()
+        assert '<span class="nav-link__text">仪表板</span>' in html
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert ".sidebar .nav-link__text {" in css
+        assert "max-width: 12rem" in css
+        collapsed = css.split(
+            'html[data-sidebar="collapsed"] .sidebar .nav-link__text {', 1
+        )
+        assert "max-width: 0" in collapsed[1].split("}", 1)[0]
+
+    def test_collapsed_nav_shows_label_tooltip(self):
+        """折叠后悬停菜单项要有浮层标签，说清这是哪个菜单。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert "content: attr(data-sidebar-label)" in css
+        js = (_REPO_ROOT / "static/js/sidebar.js").read_text(encoding="utf-8")
+        assert "link.dataset.sidebarLabel = text" in js
+
+    def test_brand_row_height_is_stable_between_states(self):
+        """品牌行高度由图标决定，站名折叠时绝对定位隐藏，避免菜单上下跳。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        brand = css.split(".sidebar-brand {", 1)[1].split("}", 1)[0]
+        assert "min-height: 2.125rem" in brand
+        collapsed_name = css.split(
+            'html[data-sidebar="collapsed"] .sidebar-brand__wordmark {', 1
+        )[1].split("}", 1)[0]
+        assert "position: absolute" in collapsed_name
+        assert "opacity: 0" in collapsed_name
+
+
 class TestConfigConsoleErrors:
     """配置页控制台报错的回归约束。"""
 
@@ -536,9 +630,12 @@ class TestConfigConsoleErrors:
 
     def test_login_page_declares_favicon(self):
         """登录页为独立模板，同样声明站点图标，避免回退请求 /favicon.ico。"""
+        # 图标必须是方形图标本身：整张 logo.png 带 "Bangumi-syncer" 字标，
+        # 被浏览器压成 16px 时会变成一条模糊的横线
         login = (_REPO_ROOT / "templates/login.html").read_text(encoding="utf-8")
         assert 'rel="icon"' in login
-        assert "/static/logo.png" in login
+        assert "/static/favicon.ico" in login
+        assert _LOGO_LINK_AS_ICON not in login
 
     def test_release_notes_render_deferred_until_open(self):
         """发行说明正文延迟到打开弹窗时渲染，页面加载阶段不注入图片。"""
@@ -562,6 +659,8 @@ class TestConfigConsoleErrors:
 
     def test_base_template_declares_favicon(self):
         """基础模板声明站点图标，避免浏览器默认请求 /favicon.ico 返回 404。"""
+        # 同上：图标用方形 favicon.ico，而不是带字标的整张 logo.png
         base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
         assert 'rel="icon"' in base
-        assert "/static/logo.png" in base
+        assert "/static/favicon.ico" in base
+        assert _LOGO_LINK_AS_ICON not in base

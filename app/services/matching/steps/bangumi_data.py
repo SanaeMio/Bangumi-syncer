@@ -170,10 +170,11 @@ class BangumiDataStep(MatchStepBase):
                 status="hit",
                 subject_id=bangumi_data_id,
                 reason=(
-                    f"bangumi-data 匹配命中：{matched_title}，"
-                    f"日期匹配={date_matched}，季度ID可信={is_season_matched_id}"
+                    f"bangumi-data 匹配到「{matched_title}」"
+                    f"（日期{'对得上' if date_matched else '未对上'}，"
+                    f"季度 ID {'可信' if is_season_matched_id else '存疑'}）"
                     + (
-                        f"，日期差={guard_diff}天（低置信）"
+                        f"，播出日期相差 {guard_diff} 天（低置信）"
                         if date_guard != "ok"
                         else ""
                     )

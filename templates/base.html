@@ -13,15 +13,23 @@
             document.documentElement.setAttribute('data-theme',t);
             document.documentElement.setAttribute('data-color',c);
             document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
+            var sb=localStorage.getItem('app-sidebar');
+            document.documentElement.setAttribute('data-sidebar',sb==='collapsed'?'collapsed':'expanded');
+            // 站内跳转时侧栏不再重播入场动画，只有右侧内容重新入场
+            try{
+                if(sessionStorage.getItem('app-nav')) document.documentElement.setAttribute('data-nav','quiet');
+                sessionStorage.setItem('app-nav','1');
+            }catch(e){}
         })();
         </script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>
             {% block title %}Bangumi Syncer{% endblock %}
         </title>
-        <link href="{{ '/static/logo.png' | static_v }}"
-              rel="icon"
-              type="image/png">
+        <link href="{{ '/static/favicon.ico' | static_v }}" rel="icon" sizes="any">
+        <link href="{{ '/static/apple-touch-icon.png' | static_v }}"
+              rel="apple-touch-icon"
+              sizes="180x180">
         <link href="{{ '/static/css/bootstrap.min.css' | static_v }}"
               rel="stylesheet">
         <link href="{{ '/static/css/bootstrap-icons.css' | static_v }}"
@@ -41,11 +49,14 @@
         <!-- 移动端顶部导航栏 -->
         <nav class="navbar navbar-expand-md navbar-light border-bottom d-md-none fixed-top app-mobile-navbar">
             <div class="container-fluid">
-                <a class="navbar-brand d-flex align-items-center"
+                <a class="navbar-brand d-flex align-items-center app-brand"
                    href="{{ '/dashboard' | p }}">
-                    <img src="{{ '/static/logo.png' | static_v }}"
+                    <img src="{{ '/static/apple-touch-icon.png' | static_v }}"
+                         alt=""
+                         class="app-brand__mark">
+                    <img src="{{ '/static/logo-wordmark.png' | static_v }}"
                          alt="Bangumi-Syncer"
-                         class="app-brand-logo">
+                         class="app-brand__wordmark">
                 </a>
                 <button class="navbar-toggler"
                         type="button"
@@ -157,70 +168,81 @@
                 <!-- 侧边栏 -->
                 <nav class="col-md-3 col-lg-2 d-none d-md-block sidebar">
                     <div class="position-sticky pt-4">
-                        <div class="text-center mb-4 px-3">
+                        <div class="sidebar-brand">
                             <a href="{{ '/dashboard' | p }}"
-                               class="d-inline-block text-decoration-none app-sidebar-brand-link"
+                               class="sidebar-brand__link"
                                title="返回仪表板">
-                                <img src="{{ '/static/logo.png' | static_v }}"
+                                <img src="{{ '/static/apple-touch-icon.png' | static_v }}"
                                      alt="Bangumi-Syncer"
-                                     class="app-sidebar-logo">
+                                     class="sidebar-brand__mark">
+                                <img src="{{ '/static/logo-wordmark.png' | static_v }}"
+                                     alt="Bangumi-Syncer"
+                                     class="sidebar-brand__wordmark">
                             </a>
+                            <button type="button"
+                                    class="sidebar-brand__toggle"
+                                    id="sidebarCollapseBtn"
+                                    aria-label="收起侧栏"
+                                    aria-expanded="true"
+                                    title="收起侧栏">
+                                <i class="bi bi-chevron-double-left sidebar-brand__toggle-icon"></i>
+                            </button>
                         </div>
-                        <ul class="nav flex-column px-2">
+                        <ul class="nav flex-column px-2 sidebar-nav">
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/dashboard' or request.url.path.endswith('/dashboard') %}active{% endif %}"
                                    href="{{ '/dashboard' | p }}">
                                     <i class="bi bi-house-door me-2"></i>
-                                    仪表板
+                                    <span class="nav-link__text">仪表板</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/config' %}active{% endif %}"
                                    href="{{ '/config' | p }}">
                                     <i class="bi bi-gear me-2"></i>
-                                    配置管理
+                                    <span class="nav-link__text">配置管理</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/records' %}active{% endif %}"
                                    href="{{ '/records' | p }}">
                                     <i class="bi bi-journal-text me-2"></i>
-                                    同步记录
+                                    <span class="nav-link__text">同步记录</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/mappings' %}active{% endif %}"
                                    href="{{ '/mappings' | p }}">
                                     <i class="bi bi-diagram-3 me-2"></i>
-                                    映射管理
+                                    <span class="nav-link__text">映射管理</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/pending-candidates' %}active{% endif %}"
                                    href="{{ '/pending-candidates' | p }}">
                                     <i class="bi bi-list-check me-2"></i>
-                                    候选确认
+                                    <span class="nav-link__text">候选确认</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/agent-runs' %}active{% endif %}"
                                    href="{{ '/agent-runs' | p }}">
                                     <i class="bi bi-activity me-2"></i>
-                                    运行观测
+                                    <span class="nav-link__text">运行观测</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/debug' %}active{% endif %}"
                                    href="{{ '/debug' | p }}">
                                     <i class="bi bi-bug me-2"></i>
-                                    调试工具
+                                    <span class="nav-link__text">调试工具</span>
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
                                 <a class="nav-link {% if request.url.path == '/logs' %}active{% endif %}"
                                    href="{{ '/logs' | p }}">
                                     <i class="bi bi-file-text me-2"></i>
-                                    日志管理
+                                    <span class="nav-link__text">日志管理</span>
                                 </a>
                             </li>
                             {% if archive_enabled() %}
@@ -228,7 +250,7 @@
                                     <a class="nav-link {% if request.url.path == '/bangumi-archive' %}active{% endif %}"
                                        href="{{ '/bangumi-archive' | p }}">
                                         <i class="bi bi-database-fill me-2"></i>
-                                        Archive 离线库
+                                        <span class="nav-link__text">Archive 离线库</span>
                                     </a>
                                 </li>
                             {% endif %}
@@ -237,7 +259,7 @@
                                     <a class="nav-link {% if request.url.path == '/bangumi-replay' %}active{% endif %}"
                                        href="{{ '/bangumi-replay' | p }}">
                                         <i class="bi bi-clock-history me-2"></i>
-                                        待同步队列
+                                        <span class="nav-link__text">待同步队列</span>
                                     </a>
                                 </li>
                             {% endif %}
@@ -245,7 +267,7 @@
                                 <a class="nav-link {% if request.url.path == '/trakt/config' %}active{% endif %}"
                                    href="{{ '/trakt/config' | p }}">
                                     <i class="bi bi-tv me-2"></i>
-                                    Trakt 同步
+                                    <span class="nav-link__text">Trakt 同步</span>
                                 </a>
                             </li>
                         </ul>
@@ -380,17 +402,18 @@
                 <div class="modal-content">
                     <div class="modal-header record-detail-modal__header"
                          id="record-detail-modal-header">
-                        <div class="record-detail-modal__status"
-                             id="record-detail-modal-status"
-                             role="img">
-                            <i class="bi bi-journal-check"></i>
+                        <div class="record-detail-modal__poster d-none"
+                             id="record-detail-modal-poster">
+                            <img src="" alt="" loading="lazy">
                         </div>
                         <div class="record-detail-modal__head">
                             <h5 class="modal-title record-detail-modal__title"
                                 id="record-detail-modal-title">同步记录详情</h5>
-                            <div class="record-detail-modal__subtitle"
-                                 id="record-detail-modal-subtitle"></div>
-                            <div class="record-detail-modal__summary" id="record-detail-modal-summary"></div>
+                            <div class="record-detail-modal__meta">
+                                <div class="record-detail-modal__subtitle"
+                                     id="record-detail-modal-subtitle"></div>
+                                <div class="record-detail-modal__summary" id="record-detail-modal-summary"></div>
+                            </div>
                         </div>
                         <button type="button"
                                 class="btn-close"
@@ -519,10 +542,12 @@
                                 </div>
                                 <div class="progress" style="height: 8px;">
                                     <div id="upgradeProgressBar"
-                                         class="progress-bar progress-bar-striped progress-bar-animated"
+                                         class="progress-bar"
                                          role="progressbar"
-                                         style="width: 0%;
-                                                transition: width 0.6s ease"></div>
+                                         aria-valuemin="0"
+                                         aria-valuemax="100"
+                                         aria-valuenow="0"
+                                         style="width: 0%"></div>
                                 </div>
                             </div>
                             <!-- 升级错误 -->
@@ -563,6 +588,7 @@
         <script src="{{ '/static/js/auth.js' | static_v }}"></script>
         <script src="{{ '/static/js/sync-retry.js' | static_v }}"></script>
         <script src="{{ '/static/js/theme.js' | static_v }}"></script>
+        <script src="{{ '/static/js/sidebar.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/chart.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/version-release.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/upgrade.js' | static_v }}"></script>

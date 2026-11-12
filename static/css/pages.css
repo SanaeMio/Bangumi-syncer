@@ -39,6 +39,20 @@
     text-decoration: none;
 }
 
+/* 宽屏下收窄左侧目录栏：原 3/12 在 1400px+ 会空出大片留白，固定 280px 刚好放下最长条目 */
+@media (min-width: 1400px) {
+
+    .config-sidebar-col {
+        flex: 0 0 280px;
+        max-width: 280px;
+    }
+
+    .config-main-col {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}
+
 @media (min-width: 992px) {
 
     [id^="config-section"],
@@ -1590,6 +1604,39 @@ pre {
 .config-form .form-check-input:checked {
     background-color: var(--app-primary);
     border-color: var(--app-primary);
+}
+
+/* Bangumi 账号卡片：三个输入框与「仅自己可见」开关同排。
+   宽屏一行放四个；窄一档改成两列，开关正好落在「访问令牌」右侧，
+   不会像纯换行那样单独占一行 */
+.bangumi-account-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: 0.5rem;
+}
+
+.bangumi-account-field {
+    min-width: 0;
+}
+
+/* 开关和输入框一样是「标签 + 控件」两行，控件与输入框等高并上下居中：
+   0.9rem × 1.5 行高 + 上下 0.5625rem 内边距 + 上下各 1px 边框 */
+.bangumi-account-field--switch .form-check {
+    min-height: calc(0.9rem * 1.5 + 1.125rem + 2px);
+    margin-bottom: 0;
+}
+
+@media (max-width: 1199.98px) {
+    .bangumi-account-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767.98px) {
+    .bangumi-account-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 /* 配置页面按钮组样式 */
