@@ -87,15 +87,21 @@ function renderSyncSubStatusBadge(record) {
     return ` <span class="badge rounded-pill bg-${color} bg-opacity-75" style="font-size:0.7em">${text}</span>`;
 }
 
+// 匹配方式配色表：徽章与详情弹窗的胶囊共用同一份，避免两处各写一套
+const _MATCH_METHOD_META = {
+    custom_mapping: ['primary', '自定义映射'],
+    bangumi_data: ['success', 'bangumi-data'],
+    archive: ['warning', '本地归档'],
+    api_search: ['info', 'API 搜索'],
+    failed: ['danger', '失败'],
+};
+
+function getMatchMethodMeta(method) {
+    return _MATCH_METHOD_META[method] || ['secondary', '未知'];
+}
+
 function renderMatchMethodBadge(method) {
-    const badges = {
-        custom_mapping: ['primary', '自定义映射'],
-        bangumi_data: ['success', 'bangumi-data'],
-        archive: ['warning', '本地归档'],
-        api_search: ['info', 'API 搜索'],
-        failed: ['danger', '失败'],
-    };
-    const [color, text] = badges[method] || ['secondary', '未知'];
+    const [color, text] = getMatchMethodMeta(method);
     return `<span class="badge rounded-pill bg-${color}">${text}</span>`;
 }
 
@@ -106,40 +112,50 @@ function renderMatchMethodBadge(method) {
 //
 // 兼容旧记录：历史上该字段还混装过跨季路径（cross_season_*），
 // 仍保留对应映射，避免旧记录显示成裸字符串。
+const _MATCH_DETAIL_META = {
+    exact: ['success', '精确命中'],
+    prefix_variant: ['info', '前缀变体'],
+    season_stripped: ['info', '剥离季号'],
+    media_suffix_stripped: ['info', '剥离后缀'],
+    unwrapped: ['info', '去包裹'],
+    main_segment: ['secondary', '主段'],
+    fuzzy: ['warning', '模糊匹配'],
+    // 旧记录兼容（新记录这些值出现在 final_episode_path_detail）
+    cross_season_chain: ['primary', '跨季链'],
+    cross_season_franchise_archive: ['purple', '同IP改编·归档'],
+    cross_season_franchise_online: ['info', '同IP改编·在线'],
+};
+
+function getMatchDetailMeta(detail) {
+    return _MATCH_DETAIL_META[detail] || ['secondary', detail];
+}
+
 function renderMatchMethodDetailBadge(detail) {
     if (!detail) {
         return '';
     }
-    const badges = {
-        exact: ['success', '精确命中'],
-        prefix_variant: ['info', '前缀变体'],
-        season_stripped: ['info', '剥离季号'],
-        media_suffix_stripped: ['info', '剥离后缀'],
-        unwrapped: ['info', '去包裹'],
-        main_segment: ['secondary', '主段'],
-        fuzzy: ['warning', '模糊匹配'],
-        // 旧记录兼容（新记录这些值出现在 final_episode_path_detail）
-        cross_season_chain: ['primary', '跨季链'],
-        cross_season_franchise_archive: ['purple', '同IP改编·归档'],
-        cross_season_franchise_online: ['info', '同IP改编·在线'],
-    };
-    const [color, text] = badges[detail] || ['secondary', detail];
+    const [color, text] = getMatchDetailMeta(detail);
     return `<span class="badge rounded-pill bg-${color} bg-opacity-75" style="font-size:0.75em">${text}</span>`;
 }
 
 // 跨季路径徽章：对应 MatchTrace.final_episode_path_detail
 // 仅表示「集数是在哪个条目上被找到的」：
 // cross_season_chain / cross_season_franchise_archive / cross_season_franchise_online
+const _EPISODE_PATH_META = {
+    cross_season_chain: ['primary', '跨季链'],
+    cross_season_franchise_archive: ['purple', '同IP改编·归档'],
+    cross_season_franchise_online: ['info', '同IP改编·在线'],
+};
+
+function getEpisodePathMeta(detail) {
+    return _EPISODE_PATH_META[detail] || ['secondary', detail];
+}
+
 function renderEpisodePathDetailBadge(detail) {
     if (!detail) {
         return '';
     }
-    const badges = {
-        cross_season_chain: ['primary', '跨季链'],
-        cross_season_franchise_archive: ['purple', '同IP改编·归档'],
-        cross_season_franchise_online: ['info', '同IP改编·在线'],
-    };
-    const [color, text] = badges[detail] || ['secondary', detail];
+    const [color, text] = getEpisodePathMeta(detail);
     return `<span class="badge rounded-pill bg-${color} bg-opacity-75" style="font-size:0.75em"><i class="bi bi-signpost-split me-1"></i>${text}</span>`;
 }
 
@@ -193,7 +209,10 @@ window.getSyncRecordStatusText = getSyncRecordStatusText;
 window.getStatusColor = getSyncRecordStatusColor;
 window.getStatusText = getSyncRecordStatusText;
 window.renderSyncStatusBadge = renderSyncStatusBadge;
+window.getMatchMethodMeta = getMatchMethodMeta;
 window.renderMatchMethodBadge = renderMatchMethodBadge;
+window.getMatchDetailMeta = getMatchDetailMeta;
+window.getEpisodePathMeta = getEpisodePathMeta;
 window.renderMatchMethodDetailBadge = renderMatchMethodDetailBadge;
 window.renderCandidateStatusBadge = renderCandidateStatusBadge;
 window.renderMediaTypeBadge = renderMediaTypeBadge;

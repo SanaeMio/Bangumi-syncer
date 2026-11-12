@@ -379,3 +379,36 @@ class TestRecordDetailCopy:
 
         css = _css("records-detail.css")
         assert "aspect-ratio: 3 / 4" in _block(css, ".record-detail-modal__poster")
+
+
+class TestRecordDetailHeaderLayout:
+    """详情弹窗头部：海报 + 标题 + 元信息 + 胶囊，状态不重复表达。"""
+
+    def test_status_icon_removed_from_header(self):
+        """同步结果由下方总览卡表达，头部不再放重复的状态图标。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert "record-detail-modal__status" not in html
+        assert "record-detail-modal__status" not in _css("records-detail.css")
+
+    def test_match_method_is_single_capsule(self):
+        """匹配方式只套一层胶囊：不再把 Bootstrap badge 塞进 chip 里。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "window.getMatchMethodMeta" in js
+        assert "record-detail-modal__chip--match-method" not in js
+        assert "renderMatchMethodBadge(" not in js
+
+        css = _css("records-detail.css")
+        for tone in ("primary", "success", "warning", "info", "danger"):
+            assert f".record-detail-modal__chip--match-{tone}" in css
+
+    def test_poster_sits_left_of_title(self):
+        """头部位图是条目封面，纵向与标题区对齐。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        poster_at = html.index('id="record-detail-modal-poster"')
+        head_at = html.index('class="record-detail-modal__head"')
+        assert poster_at < head_at
+
+        css = _css("records-detail.css")
+        block = _block(css, ".record-detail-modal__poster")
+        assert "aspect-ratio: 3 / 4" in block
+        assert "flex: 0 0 auto" in block
