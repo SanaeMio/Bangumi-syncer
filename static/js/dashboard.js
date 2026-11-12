@@ -798,11 +798,15 @@
 
     if (el._statRaf) cancelAnimationFrame(el._statRaf)
 
-    const duration = 620
+    const duration = 720
     const startedAt = performance.now()
     function tick(now) {
       const progress = Math.min(1, (now - startedAt) / duration)
-      const eased = 1 - Math.pow(1 - progress, 3)
+      // 缓入缓出：起步和收尾都更柔和，数字不会先窜后顿
+      const eased =
+        progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2
       const currentValue = from + (target - from) * eased
       el.textContent =
         (decimals

@@ -375,7 +375,7 @@ main.app-main>*:nth-child(12) {
 }
 
 .theme-color-item[data-color="sakura"] .theme-color-dot {
-    --theme-dot-color: #f09199;
+    --theme-dot-color: #f3a2a8;
 }
 
 .theme-color-item[data-color="amber"] .theme-color-dot {
@@ -1038,7 +1038,7 @@ main.app-main>*:nth-child(12) {
 
 /* 统计数字变化时轻弹一下（由 dashboard.js 的 applyDashboardPayload 触发） */
 .stats-value--updated {
-    animation: stats-value-bump 0.9s var(--app-ease-smooth);
+    animation: stats-value-bump 0.55s var(--app-ease-smooth);
 }
 
 @keyframes stats-value-bump {
@@ -1046,9 +1046,8 @@ main.app-main>*:nth-child(12) {
         transform: scale(1);
     }
 
-    28% {
-        transform: scale(1.12);
-        color: var(--app-primary);
+    35% {
+        transform: scale(1.035);
     }
 
     100% {

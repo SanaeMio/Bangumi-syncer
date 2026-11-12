@@ -321,7 +321,10 @@ class TestDashboardRealtime:
         # 首屏数字从 0 累加，更新时从当前值补间
         assert "function animateStatNumber(el, value)" in js
         assert "el._statRaf = requestAnimationFrame(tick)" in js
-        assert "animateStatNumber(\n            document.getElementById('total-syncs')," in js
+        assert (
+            "animateStatNumber(\n            document.getElementById('total-syncs'),"
+            in js
+        )
 
         css = _css("dashboard.css")
         assert "animation: stats-value-bump" in _block(css, ".stats-value--updated")
@@ -473,3 +476,37 @@ class TestRecordDetailHeaderLayout:
         assert (
             ".record-detail-step__card[open] .record-detail-step__content {" in reduced
         )
+
+
+class TestSidebarNavSlider:
+    """侧栏导航：选中态滑块从旧条目滑到新条目。"""
+
+    def test_slider_pill_moves_between_items(self):
+        """点击另一个菜单项时只移动滑块，不重绘选中样式。"""
+        js = (_REPO_ROOT / "static/js/sidebar.js").read_text(encoding="utf-8")
+        assert "function moveNavSlider(link, animate)" in js
+        assert "navSlider.style.transform =" in js
+        assert "'translate3d(' + link.offsetLeft" in js
+        assert "initNavSlider()" in js
+        # 白字等滑块走到一半再换，避免新条目提前变白压在淡底上看不清
+        assert "window.setTimeout(swapActive, 190)" in js
+
+    def test_slider_styles_take_over_active_gradient(self):
+        """JS 接管后选中项自身不再画渐变，脚本失败时仍保留旧样式。"""
+        css = _css("theme-base.css")
+        assert ".sidebar-nav__slider {" in css
+        assert "transition: transform 0.26s" in _block(css, ".sidebar-nav__slider")
+        assert "html.js-nav-slider .sidebar-nav .nav-link.active" in css
+        assert "background: transparent" in _block(
+            css, "html.js-nav-slider .sidebar-nav .nav-link.active"
+        )
+
+    def test_stats_bump_does_not_flash_theme_color(self):
+        """数字弹跳只改缩放，不改颜色；等宽数字避免滚动时抖动。"""
+        css = _css("dashboard.css")
+        frames = css.split("@keyframes stats-value-bump {", 1)[1].split("\n@", 1)[0]
+        assert "color:" not in frames
+        assert "scale(1.035)" in frames
+
+        base = _css("theme-base.css")
+        assert "font-variant-numeric: tabular-nums" in _block(base, ".stats-value")
