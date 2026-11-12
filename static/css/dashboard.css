@@ -89,9 +89,7 @@ main.app-main>*:nth-child(12) {
 }
 
 /* 侧栏 Logo */
-.sidebar .text-center.mb-4 img {
-    animation: app-fade-in 0.55s ease 0.05s backwards;
-}
+/* 侧栏品牌图标的淡入写在 theme-base.css（两态共用同一图标） */
 
 /* 侧栏菜单项错峰 */
 .sidebar .nav.flex-column>.nav-item>.nav-link {
@@ -1168,13 +1166,13 @@ main.app-main>*:nth-child(12) {
     .card:hover .stats-icon,
     .badge:hover,
     .navbar-nav .nav-link:hover,
-    .app-sidebar-brand-link:hover,
+    .sidebar-brand__link:hover,
     .tl-item:hover,
     .tl-item:hover .timeline-poster {
         transform: none !important;
     }
 
-    .app-sidebar-brand-link {
+    .sidebar-brand__link {
         transition: none !important;
     }
 

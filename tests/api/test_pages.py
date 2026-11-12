@@ -416,10 +416,14 @@ class TestSidebarCollapse:
             return TestClient(app).get("/dashboard", follow_redirects=False).text
 
     def test_dashboard_has_sidebar_toggle(self):
-        """侧栏底部有折叠按钮，折叠态改用方形图标。"""
+        """品牌区始终用一个方形图标，折叠按钮在品牌行右端。"""
         html = self._dashboard_html()
         assert 'id="sidebarCollapseBtn"' in html
-        assert "app-sidebar-mark" in html
+        assert 'class="sidebar-brand__mark"' in html
+        assert 'class="sidebar-brand__name">Bangumi-Syncer<' in html
+        assert 'class="app-sidebar-logo"' not in html
+        # 只剩窄屏顶部导航栏还在用带字标的整张 logo
+        assert html.count("/static/logo.png") == 1
 
     def test_sidebar_state_applied_before_paint(self):
         """展开/折叠状态在 <head> 内联脚本里先行落盘，避免刷新时闪一下。"""
@@ -432,6 +436,36 @@ class TestSidebarCollapse:
         css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
         assert 'html[data-sidebar="collapsed"]' in css
         assert "--app-sidebar-width" in css
+
+    def test_nav_labels_animate_instead_of_disappearing(self):
+        """菜单文字包在 .nav-link__text 里，靠 max-width 过渡滑出。"""
+        html = self._dashboard_html()
+        assert '<span class="nav-link__text">仪表板</span>' in html
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert ".sidebar .nav-link__text {" in css
+        assert "max-width: 12rem" in css
+        collapsed = css.split(
+            'html[data-sidebar="collapsed"] .sidebar .nav-link__text {', 1
+        )
+        assert "max-width: 0" in collapsed[1].split("}", 1)[0]
+
+    def test_collapsed_nav_shows_label_tooltip(self):
+        """折叠后悬停菜单项要有浮层标签，说清这是哪个菜单。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert "content: attr(data-sidebar-label)" in css
+        js = (_REPO_ROOT / "static/js/sidebar.js").read_text(encoding="utf-8")
+        assert "link.dataset.sidebarLabel = text" in js
+
+    def test_brand_row_height_is_stable_between_states(self):
+        """品牌行高度由图标决定，站名折叠时绝对定位隐藏，避免菜单上下跳。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        brand = css.split(".sidebar-brand {", 1)[1].split("}", 1)[0]
+        assert "min-height: 2.125rem" in brand
+        collapsed_name = css.split(
+            'html[data-sidebar="collapsed"] .sidebar-brand__name {', 1
+        )[1].split("}", 1)[0]
+        assert "position: absolute" in collapsed_name
+        assert "opacity: 0" in collapsed_name
 
 
 class TestConfigConsoleErrors:

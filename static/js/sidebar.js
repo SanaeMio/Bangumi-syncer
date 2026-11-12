@@ -20,12 +20,15 @@
                     var text = link.textContent.replace(/\s+/g, ' ').trim();
                     if (text) {
                         link.setAttribute('title', text);
+                        // 折叠态的浮层标签由 data 属性驱动（见 theme-base.css）
+                        link.dataset.sidebarLabel = text;
                         link.dataset.sidebarTitle = 'auto';
                     }
                 }
             } else if (link.dataset.sidebarTitle === 'auto') {
                 link.removeAttribute('title');
                 delete link.dataset.sidebarTitle;
+                delete link.dataset.sidebarLabel;
             }
         });
     }
@@ -37,13 +40,11 @@
             var label = collapsed ? '展开侧栏' : '收起侧栏';
             btn.setAttribute('aria-label', label);
             btn.setAttribute('title', label);
-            var icon = btn.querySelector('.sidebar-collapse-btn__icon');
+            var icon = btn.querySelector('.sidebar-brand__toggle-icon');
             if (icon) {
                 icon.classList.toggle('bi-chevron-double-left', !collapsed);
                 icon.classList.toggle('bi-chevron-double-right', collapsed);
             }
-            var text = btn.querySelector('.sidebar-collapse-btn__label');
-            if (text) text.textContent = label;
         }
         syncNavTitles(collapsed);
     }
