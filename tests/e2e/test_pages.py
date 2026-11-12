@@ -14,7 +14,8 @@ def test_dashboard_renders(authed_page, base_url: str):
     """仪表盘页面渲染核心元素"""
     page = authed_page
     page.goto(f"{base_url}/dashboard")
-    page.wait_for_load_state("networkidle")
+    # 首页常驻 SSE 连接（/api/stats/stream）不会进入空闲，不能用 networkidle
+    page.wait_for_load_state("load")
 
     # 页面 body 存在且有内容
     assert page.locator("body").is_visible()

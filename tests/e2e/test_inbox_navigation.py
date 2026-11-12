@@ -47,7 +47,7 @@ def test_airing_notification_opens_dashboard_airing_card(authed_page, base_url: 
         ),
     )
     page.goto(f"{base_url}/dashboard")
-    page.wait_for_load_state("networkidle")
+    page.wait_for_load_state("load")
 
     _inject_notification(page, notif_type="airing_today")
     _click_notification(page)
@@ -68,7 +68,7 @@ def test_sync_failed_notification_opens_record_detail(authed_page, base_url: str
         ),
     )
     page.goto(f"{base_url}/dashboard")
-    page.wait_for_load_state("networkidle")
+    page.wait_for_load_state("load")
 
     _inject_notification(page, notif_type="sync_failed", ref_id="42")
     _click_notification(page)
@@ -102,7 +102,7 @@ def test_airing_deep_link_scrolls_card_into_view(authed_page, base_url: str):
     )
 
     page.goto(f"{base_url}/dashboard#airing-calendar-row")
-    page.wait_for_load_state("networkidle")
+    page.wait_for_load_state("load")
     page.wait_for_timeout(1000)
 
     calls = page.evaluate("() => window.__scrollCalls")

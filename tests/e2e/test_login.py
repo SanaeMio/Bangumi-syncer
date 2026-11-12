@@ -97,8 +97,9 @@ def test_authed_access_to_dashboard(page, base_url: str):
     page.click("#loginBtn")
     page.wait_for_url("**/dashboard", timeout=10000)
 
-    # 直接访问 dashboard（已登录不会被重定向，可用 networkidle）
+    # 直接访问 dashboard（已登录不会被重定向）
     page.goto(f"{base_url}/dashboard")
-    page.wait_for_load_state("networkidle")
+    # 首页常驻 SSE 连接（/api/stats/stream）不会进入空闲，不能用 networkidle
+    page.wait_for_load_state("load")
     assert "/dashboard" in page.url
     assert "/login" not in page.url
