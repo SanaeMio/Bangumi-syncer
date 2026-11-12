@@ -116,7 +116,7 @@ class SyncActionStep(ExecutionStepBase):
             )
 
         action_label = {
-            0: "已在看/看过（无变更）",
+            0: "已在看或看过，无需改动",
             1: "已标记为看过",
             2: "已添加收藏",
         }.get(mark_status, f"mark_status={mark_status}")
