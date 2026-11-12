@@ -1081,32 +1081,6 @@ main.app-main>*:nth-child(12) {
     }
 }
 
-/* 卡片头部的实时连接指示点：连上 SSE 才显示 */
-.dashboard-live-dot {
-    display: inline-block;
-    width: 0.4rem;
-    height: 0.4rem;
-    margin-left: 0.45rem;
-    border-radius: 50%;
-    background: var(--app-green);
-    box-shadow: 0 0 0 0 rgba(var(--app-green-rgb), 0.5);
-    animation: dashboard-live-pulse 2s var(--app-ease-smooth) infinite;
-}
-
-@keyframes dashboard-live-pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(var(--app-green-rgb), 0.5);
-    }
-
-    70% {
-        box-shadow: 0 0 0 0.35rem rgba(var(--app-green-rgb), 0);
-    }
-
-    100% {
-        box-shadow: 0 0 0 0 rgba(var(--app-green-rgb), 0);
-    }
-}
-
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto !important;
@@ -1133,7 +1107,6 @@ main.app-main>*:nth-child(12) {
     .tl-track::before,
     .stats-value--updated,
     .tl-item--new::after,
-    .dashboard-live-dot,
     #records-table tbody tr.records-table-row--enter,
     .records-table-wrap tbody tr.records-table-row--enter,
     .records-table-wrap.records-table-wrap--enter .app-data-table,

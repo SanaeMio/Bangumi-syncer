@@ -301,34 +301,42 @@ class TestDashboardRealtime:
         assert "dashboardLoaded = true" in js
         assert "connectDashboardStream()" in js
 
-    def test_new_records_are_prepended_not_rerendered(self):
-        """新记录插到时间线顶部，已有条目原地不动。"""
+    def test_new_records_slide_in_with_queue_motion(self):
+        """新记录从顶部滑入，旧条目整体下移，末尾的滑出。"""
         js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
         assert "function prependTimelineRecords(records)" in js
         assert "track.insertBefore(scratch.firstElementChild, firstItem)" in js
-        # 只保留最近 6 条，多出来的从尾部移除
-        assert "for (let i = DASHBOARD_TIMELINE_LIMIT; i < items.length" in js
+        # 队列动效：插入前记录旧位置，插入后按位移补间；末尾条目脱离文档流滑出
+        assert "const beforeTops = new Map()" in js
+        assert "const delta = before - item.getBoundingClientRect().top" in js
+        assert "const overflow = items.slice(DASHBOARD_TIMELINE_LIMIT)" in js
+        assert "item.style.position = 'absolute'" in js
+        assert "anim.onfinish = function () {" in js
 
     def test_stat_values_animate_on_change(self):
         """数字变化才触发动画，值没变不动。"""
         js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
         assert "function setStatValue(id, value)" in js
         assert "el.classList.add('stats-value--updated')" in js
+        # 首屏数字从 0 累加，更新时从当前值补间
+        assert "function animateStatNumber(el, value)" in js
+        assert "el._statRaf = requestAnimationFrame(tick)" in js
+        assert "animateStatNumber(\n            document.getElementById('total-syncs')," in js
 
         css = _css("dashboard.css")
         assert "animation: stats-value-bump" in _block(css, ".stats-value--updated")
         assert "@keyframes stats-value-bump {" in css
         assert "animation: tl-item-highlight" in _block(css, ".tl-item--new::after")
 
-    def test_live_dot_marks_open_stream(self):
-        """卡片头的绿点只在连接建立后出现。"""
+    def test_realtime_has_no_status_dot(self):
+        """实时连接不再挂绿点，改由排队动效表达。"""
         html = (_REPO_ROOT / "templates/dashboard.html").read_text(encoding="utf-8")
-        assert 'id="dashboardLiveDot"' in html
-        assert "dashboard-live-dot d-none" in html
+        assert "dashboardLiveDot" not in html
+        assert "dashboard-live-dot" not in html
 
         js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
-        assert "dot.classList.remove('d-none')" in js
-        assert "dot.classList.add('d-none')" in js
+        assert "dashboardLiveDot" not in js
+        assert "dashboard-live-dot" not in _css("dashboard.css")
 
     def test_realtime_animations_respect_reduced_motion(self):
         """系统要求减少动效时不再跳动与高亮。"""
@@ -338,7 +346,6 @@ class TestDashboardRealtime:
         for selector in (
             ".stats-value--updated",
             ".tl-item--new::after",
-            ".dashboard-live-dot",
         ):
             assert selector in block
 
