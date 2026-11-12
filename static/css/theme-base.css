@@ -520,6 +520,10 @@ html[data-theme="dark"] .sidebar .sidebar-brand__mark {
     filter: brightness(1.75);
 }
 
+html[data-theme="dark"] .sidebar .sidebar-brand__wordmark {
+    filter: brightness(1.4);
+}
+
 /* 侧栏品牌：两种状态共用同一个方形图标，展开时右侧跟站名，折叠时只留图标，
    行高恒为 34px，所以收起/展开时下方菜单不会上下跳 */
 .sidebar-brand {
@@ -553,12 +557,11 @@ html[data-theme="dark"] .sidebar .sidebar-brand__mark {
     animation: app-fade-in 0.5s ease 0.05s backwards;
 }
 
-.sidebar-brand__name {
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    color: var(--app-text);
-    white-space: nowrap;
+/* 站名直接用 logo 里那段横版字标，字体和颜色与整张 logo 保持一致 */
+.sidebar-brand__wordmark {
+    display: block;
+    width: auto;
+    height: 15px;
     transition: opacity 0.18s var(--app-ease-smooth), transform 0.24s var(--app-ease-smooth);
 }
 
@@ -775,7 +778,7 @@ body {
         gap: 0;
     }
 
-    html[data-sidebar="collapsed"] .sidebar-brand__name {
+    html[data-sidebar="collapsed"] .sidebar-brand__wordmark {
         position: absolute;
         opacity: 0;
         transform: translateX(-4px);

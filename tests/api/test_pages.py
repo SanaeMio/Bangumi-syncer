@@ -420,7 +420,8 @@ class TestSidebarCollapse:
         html = self._dashboard_html()
         assert 'id="sidebarCollapseBtn"' in html
         assert 'class="sidebar-brand__mark"' in html
-        assert 'class="sidebar-brand__name">Bangumi-Syncer<' in html
+        assert 'class="sidebar-brand__wordmark"' in html
+        assert '/static/logo-wordmark.png' in html
         assert 'class="app-sidebar-logo"' not in html
         # 只剩窄屏顶部导航栏还在用带字标的整张 logo
         assert html.count("/static/logo.png") == 1
@@ -462,7 +463,7 @@ class TestSidebarCollapse:
         brand = css.split(".sidebar-brand {", 1)[1].split("}", 1)[0]
         assert "min-height: 2.125rem" in brand
         collapsed_name = css.split(
-            'html[data-sidebar="collapsed"] .sidebar-brand__name {', 1
+            'html[data-sidebar="collapsed"] .sidebar-brand__wordmark {', 1
         )[1].split("}", 1)[0]
         assert "position: absolute" in collapsed_name
         assert "opacity: 0" in collapsed_name
