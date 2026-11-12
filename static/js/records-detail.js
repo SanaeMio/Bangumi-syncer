@@ -905,9 +905,6 @@ function renderStepCard(step, idx, totalMs, opts) {
         headMeta += `<a href="https://bgm.tv/ep/${escapeHtml(episodeKey)}" target="_blank" rel="noopener" class="record-detail-step__ep-link" title="在 Bangumi 查看剧集" onclick="event.stopPropagation()">`
             + `<i class="bi bi-play-circle"></i>ep/${escapeHtml(episodeKey)}</a>`;
     }
-    if (step.score !== null && step.score !== undefined) {
-        headMeta += `<span class="record-detail-step__score">${formatMatchScore(step.score)}</span>`;
-    }
     if (step.candidates && step.candidates.length > 0) {
         headMeta += `<span class="record-detail-step__cand-count">候选 ${step.candidates.length}</span>`;
     }
@@ -931,7 +928,8 @@ function renderStepCard(step, idx, totalMs, opts) {
     const slowCls = ['hot', 'critical'].includes(heat) ? ` record-detail-step--slow-${heat}` : '';
     const nestedCls = nested ? ' record-detail-step--nested' : '';
 
-    let html = `<article class="record-detail-step record-detail-step--${status}${nestedCls}${slowCls}" id="record-step-${idx}" tabindex="-1">`;
+    const stepIndex = Math.min(Math.max(idx - 1, 0), 8);
+    let html = `<article class="record-detail-step record-detail-step--${status}${nestedCls}${slowCls}" id="record-step-${idx}" tabindex="-1" style="--step-i:${stepIndex}">`;
     if (!nested) {
         html += '<div class="record-detail-step__rail" aria-hidden="true">';
         html += `<span class="record-detail-step__index">${idx}</span>`;
@@ -1154,7 +1152,8 @@ function updateRecordDetailModalChrome(record) {
                 `<i class="bi bi-card-list"></i> 同步日志</a>`
             );
         }
-        subtitleEl.innerHTML = parts.join('<span class="record-detail-meta-dot">·</span>');
+        // 不用「·」分隔：窄屏换行时会剩下一个孤零零的点，靠间距区分就够了
+        subtitleEl.innerHTML = parts.join('');
     }
 
     if (headerEl) {
@@ -1198,19 +1197,10 @@ function renderSubChip(text) {
 
 function renderPipelineSummaryChips(record, trace) {
     const t = trace || {};
-    const season = t.request_season ?? record.season ?? 1;
-    const episode = t.request_episode ?? record.episode ?? 0;
     const mediaType = t.request_media_type || record.media_type || 'episode';
-    const isSuccess = record.status === 'success' || record.status === 'retried';
 
-    const subjectId = record.subject_id || t.final_subject_id;
-    const episodeId = record.episode_id || t.final_episode_id;
-    const score = (t.final_score !== null && t.final_score !== undefined)
-        ? t.final_score
-        : record.match_score;
-    const bgmTitle = record.bgm_title || '';
-
-    // 季集写在标题里、状态由总览卡和头部图标表达，这里只留标题里没有的事实
+    // 季集写在标题里；条目/单集/置信度在下面的流水线各步骤里都有，头部不再重复，
+    // 这里只留「什么类型 + 怎么匹配上的」这两条标题里没有的事实
     const chips = [];
 
     // 媒体类型
@@ -1240,21 +1230,6 @@ function renderPipelineSummaryChips(record, trace) {
         chips.push(
             renderToneChip(pathTone, `<i class="bi bi-signpost-split"></i>${escapeHtml(pathLabel)}`)
         );
-    }
-
-    // subject 链接（条目标题已在弹窗标题上，这里只留可点的 ID）
-    if (subjectId) {
-        chips.push(`<a href="https://bgm.tv/subject/${escapeHtml(subjectId)}" target="_blank" rel="noopener" class="record-detail-modal__chip record-detail-modal__chip--link" title="${escapeHtml(bgmTitle || '')}"><i class="bi bi-collection"></i>subject/${escapeHtml(String(subjectId))}</a>`);
-    }
-
-    // episode 链接
-    if (episodeId) {
-        chips.push(`<a href="https://bgm.tv/ep/${escapeHtml(episodeId)}" target="_blank" rel="noopener" class="record-detail-modal__chip record-detail-modal__chip--link"><i class="bi bi-play-circle"></i>ep/${escapeHtml(episodeId)}</a>`);
-    }
-
-    // 置信度
-    if (score !== null && score !== undefined && isSuccess) {
-        chips.push(`<span class="record-detail-modal__chip record-detail-modal__chip--score">置信度 ${(score * 100).toFixed(0)}%</span>`);
     }
 
     return `<div class="record-detail-modal__chips">${chips.join('')}</div>`;

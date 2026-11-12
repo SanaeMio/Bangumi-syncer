@@ -28,10 +28,12 @@
     border-bottom-color: color-mix(in srgb, var(--app-red) 18%, var(--app-border));
 }
 
+/* 封面高度跟右侧文字块对齐（align-self: stretch），宽度按屏幕微调，
+   图片用 object-fit: cover 裁切，避免 3:4 比例与文字高度对不上时留空 */
 .record-detail-modal__poster {
     flex: 0 0 auto;
-    width: 3.1rem;
-    aspect-ratio: 3 / 4;
+    align-self: stretch;
+    width: 4.4rem;
     border-radius: 0.625rem;
     overflow: hidden;
     background: var(--app-bg-input);
@@ -74,7 +76,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0.4rem;
+    gap: 0.25rem 0.55rem;
     font-size: 0.75rem;
     color: var(--app-text-muted);
 }
@@ -86,8 +88,16 @@
     line-height: 1.4;
 }
 
+.record-detail-modal__meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
 .record-detail-modal__summary {
-    margin-top: 0.55rem;
+    margin-top: 0;
 }
 
 .record-detail-modal__chips {
@@ -197,17 +207,6 @@
     background: color-mix(in srgb, var(--app-purple) 22%, transparent);
     color: var(--app-purple-hover);
     text-decoration: none;
-}
-
-.record-detail-modal__chip--score {
-    background: var(--app-green-soft);
-    color: var(--app-green-hover);
-    border-color: transparent;
-    font-weight: 600;
-}
-
-.record-detail-meta-dot {
-    opacity: 0.5;
 }
 
 .record-detail-modal__body {
@@ -648,6 +647,7 @@
     background: var(--app-bg-card);
     box-shadow: var(--app-shadow-card);
     min-width: 0;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .record-detail-step--hit .record-detail-step__card {
@@ -796,17 +796,6 @@ summary.record-detail-step__head:hover .record-detail-step__name {
     background: color-mix(in srgb, var(--app-green) 20%, transparent);
     color: var(--app-green-hover);
     text-decoration: none;
-}
-
-.record-detail-step__score {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.08rem 0.4rem;
-    border-radius: var(--app-radius-pill);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    background: var(--app-cyan-soft);
-    color: var(--app-cyan-hover);
 }
 
 .record-detail-step__cand-count {
@@ -1339,7 +1328,7 @@ summary.record-detail-step__head:hover .record-detail-step__name {
     }
 
     .record-detail-modal__poster {
-        width: 2.6rem;
+        width: 3.4rem;
         border-radius: 0.5rem;
     }
 
@@ -1375,6 +1364,69 @@ summary.record-detail-step__head:hover .record-detail-step__name {
 }
 
 /* 降低动态偏好：关闭瀑布入场与闪烁动画 */
+/* ===== 流水线进入动画 =====
+   只动 transform / opacity，不动宽高，避免触发重排；错峰最多 8 档（约 360ms 收尾），
+   弹窗关掉后节点被替换，下次打开自然会重新播一遍。 */
+/* :not(--flash)：深链定位时这一步要播高亮呼吸动画，不能被入场动画覆盖 */
+.record-detail-step:not(.record-detail-step--flash) {
+    animation: record-step-in 0.42s var(--app-ease-smooth) backwards;
+    animation-delay: calc(min(var(--step-i, 0), 8) * 45ms);
+}
+
+.record-detail-step__index,
+.record-detail-step__dot {
+    animation: record-step-dot-in 0.4s var(--app-ease-smooth) backwards;
+    animation-delay: calc(min(var(--step-i, 0), 8) * 45ms);
+}
+
+.record-detail-step__line {
+    transform-origin: top center;
+    animation: record-step-line-grow 0.5s var(--app-ease-smooth) backwards;
+    animation-delay: calc(min(var(--step-i, 0), 8) * 45ms + 80ms);
+}
+
+.record-detail-hero {
+    animation: record-hero-in 0.4s var(--app-ease-smooth) backwards;
+}
+
+.record-detail-step__card[open] .record-detail-step__content {
+    animation: record-step-content-in 0.26s var(--app-ease-smooth);
+}
+
+@keyframes record-step-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+
+@keyframes record-step-dot-in {
+    from {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+
+@keyframes record-step-line-grow {
+    from {
+        transform: scaleY(0);
+    }
+}
+
+@keyframes record-hero-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+
+@keyframes record-step-content-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .record-detail-waterfall__seg {
         animation: none;
@@ -1382,6 +1434,19 @@ summary.record-detail-step__head:hover .record-detail-step__name {
 
     .record-detail-step--flash {
         animation: none;
+    }
+
+    .record-detail-step,
+    .record-detail-step__index,
+    .record-detail-step__dot,
+    .record-detail-step__line,
+    .record-detail-hero,
+    .record-detail-step__card[open] .record-detail-step__content {
+        animation: none;
+    }
+
+    .record-detail-step__card {
+        transition: none;
     }
 }
 

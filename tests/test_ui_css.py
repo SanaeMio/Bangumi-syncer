@@ -378,7 +378,7 @@ class TestRecordDetailCopy:
         assert "/poster" in js
 
         css = _css("records-detail.css")
-        assert "aspect-ratio: 3 / 4" in _block(css, ".record-detail-modal__poster")
+        assert "align-self: stretch" in _block(css, ".record-detail-modal__poster")
 
 
 class TestRecordDetailHeaderLayout:
@@ -402,7 +402,7 @@ class TestRecordDetailHeaderLayout:
             assert f".record-detail-modal__chip--match-{tone}" in css
 
     def test_poster_sits_left_of_title(self):
-        """头部位图是条目封面，纵向与标题区对齐。"""
+        """头部位图是条目封面，高度跟着右侧文字块走（窄屏也不会矮一截）。"""
         html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
         poster_at = html.index('id="record-detail-modal-poster"')
         head_at = html.index('class="record-detail-modal__head"')
@@ -410,5 +410,59 @@ class TestRecordDetailHeaderLayout:
 
         css = _css("records-detail.css")
         block = _block(css, ".record-detail-modal__poster")
-        assert "aspect-ratio: 3 / 4" in block
+        assert "align-self: stretch" in block
         assert "flex: 0 0 auto" in block
+        assert "aspect-ratio" not in block
+        assert "object-fit: cover" in _block(css, ".record-detail-modal__poster img")
+
+    def test_header_chips_skip_facts_repeated_below(self):
+        """条目 / 单集 / 置信度在流水线各步骤里都有，头部不再重复。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        chips_fn = js[
+            js.index("function renderPipelineSummaryChips") : js.index(
+                "function setRecordSummaryHtml"
+            )
+        ]
+        assert "bgm.tv/subject/" not in chips_fn
+        assert "bgm.tv/ep/" not in chips_fn
+        assert "chip--score" not in chips_fn
+        assert "record-detail-modal__chip--score" not in js
+        assert "record-detail-step__score" not in js
+
+    def test_meta_and_chips_share_one_block(self):
+        """时间、来源、日志链接和胶囊同处一个 meta 块，避免多行各说各的。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        head_at = html.index('class="record-detail-modal__head"')
+        meta_at = html.index('class="record-detail-modal__meta"')
+        summary_at = html.index('id="record-detail-modal-summary"')
+        assert head_at < meta_at < summary_at
+
+        css = _css("records-detail.css")
+        block = _block(css, ".record-detail-modal__meta")
+        assert "flex-direction: column" in block
+        assert "record-detail-meta-dot" not in css
+        assert "record-detail-meta-dot" not in (
+            _REPO_ROOT / "static/js/records-detail.js"
+        ).read_text(encoding="utf-8")
+
+    def test_pipeline_enters_with_staggered_transform_animation(self):
+        """流水线入场只动 transform / opacity，并按步骤错峰。"""
+        css = _css("records-detail.css")
+        assert (
+            ".record-detail-step:not(.record-detail-step--flash) {\n    animation: record-step-in"
+            in css
+        )
+        assert "animation-delay: calc(min(var(--step-i, 0), 8) * 45ms)" in css
+
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert 'style="--step-i:${stepIndex}"' in js
+        assert "const stepIndex = Math.min(Math.max(idx - 1, 0), 8);" in js
+
+        for keyframe in ("record-step-in", "record-step-line-grow", "record-hero-in"):
+            assert f"@keyframes {keyframe}" in css
+
+        reduced = css[css.index("@media (prefers-reduced-motion: reduce)") :]
+        assert ".record-detail-step__line," in reduced
+        assert (
+            ".record-detail-step__card[open] .record-detail-step__content {" in reduced
+        )
