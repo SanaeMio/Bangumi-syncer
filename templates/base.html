@@ -15,6 +15,11 @@
             document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
             var sb=localStorage.getItem('app-sidebar');
             document.documentElement.setAttribute('data-sidebar',sb==='collapsed'?'collapsed':'expanded');
+            // 站内跳转时侧栏不再重播入场动画，只有右侧内容重新入场
+            try{
+                if(sessionStorage.getItem('app-nav')) document.documentElement.setAttribute('data-nav','quiet');
+                sessionStorage.setItem('app-nav','1');
+            }catch(e){}
         })();
         </script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -44,11 +49,14 @@
         <!-- 移动端顶部导航栏 -->
         <nav class="navbar navbar-expand-md navbar-light border-bottom d-md-none fixed-top app-mobile-navbar">
             <div class="container-fluid">
-                <a class="navbar-brand d-flex align-items-center"
+                <a class="navbar-brand d-flex align-items-center app-brand"
                    href="{{ '/dashboard' | p }}">
-                    <img src="{{ '/static/logo.png' | static_v }}"
+                    <img src="{{ '/static/apple-touch-icon.png' | static_v }}"
+                         alt=""
+                         class="app-brand__mark">
+                    <img src="{{ '/static/logo-wordmark.png' | static_v }}"
                          alt="Bangumi-Syncer"
-                         class="app-brand-logo">
+                         class="app-brand__wordmark">
                 </a>
                 <button class="navbar-toggler"
                         type="button"

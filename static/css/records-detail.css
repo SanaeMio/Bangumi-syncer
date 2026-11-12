@@ -717,6 +717,11 @@ summary.record-detail-step__head:hover .record-detail-step__name {
     transition: transform 0.18s var(--app-ease-smooth);
 }
 
+/* 不可展开的步骤也留出箭头位，保证各行的耗时胶囊右边缘对齐 */
+.record-detail-step__chevron--ghost {
+    visibility: hidden;
+}
+
 .record-detail-step__card[open] .record-detail-step__chevron {
     transform: rotate(180deg);
 }
@@ -809,10 +814,20 @@ summary.record-detail-step__head:hover .record-detail-step__name {
 }
 
 /* 耗时 chip：热度着色 */
-.record-detail-step__time {
+.record-detail-step__tail {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
+    gap: 0.3rem;
+    flex: 0 0 auto;
+}
+
+.record-detail-step__time {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 4.3rem;
+    font-variant-numeric: tabular-nums;
     gap: 0.25rem;
     padding: 0.08rem 0.45rem;
     border-radius: var(--app-radius-pill);
