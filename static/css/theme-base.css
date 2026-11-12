@@ -11,9 +11,9 @@
     --app-radius-input: var(--app-radius-pill);
     --app-radius-btn: 14px;
     --app-radius-shell: 28px;
-    --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.03), 0 2px 8px rgba(15, 23, 42, 0.04);
-    --app-shadow-card-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 8px 18px rgba(15, 23, 42, 0.06);
-    --app-shadow-card-strong: 0 4px 12px rgba(15, 23, 42, 0.06), 0 12px 28px rgba(15, 23, 42, 0.05);
+    --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.025), 0 3px 10px rgba(15, 23, 42, 0.035);
+    --app-shadow-card-hover: 0 2px 4px rgba(15, 23, 42, 0.03), 0 10px 22px rgba(15, 23, 42, 0.05);
+    --app-shadow-card-strong: 0 4px 12px rgba(15, 23, 42, 0.05), 0 14px 30px rgba(15, 23, 42, 0.045);
     --app-shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
     --app-blur: blur(10px);
     --app-brand-logo-height: 32px;
@@ -21,34 +21,34 @@
     --app-sidebar-collapsed-width: 76px;
 
     /* 主题色 - 默认班娘粉 */
-    --app-primary: #f09199;
-    --app-primary-rgb: 240, 145, 153;
-    --app-primary-soft: rgba(240, 145, 153, 0.1);
-    --app-primary-hover: #e08189;
+    --app-primary: #f3a2a8;
+    --app-primary-rgb: 243, 162, 168;
+    --app-primary-soft: rgba(243, 162, 168, 0.12);
+    --app-primary-hover: #e89098;
     --app-gradient-primary: linear-gradient(135deg, var(--app-primary), var(--app-primary-hover));
-    --theme-dot-color: #f09199;
+    --theme-dot-color: #f3a2a8;
 
     /* 氛围光晕（同色系、低饱和，避免脏灰混色） */
-    --app-ambient-a: rgba(240, 145, 153, 0.11);
-    --app-ambient-b: rgba(240, 145, 153, 0.07);
-    --app-ambient-c: rgba(240, 145, 153, 0.04);
+    --app-ambient-a: rgba(243, 162, 168, 0.085);
+    --app-ambient-b: rgba(243, 162, 168, 0.05);
+    --app-ambient-c: rgba(243, 162, 168, 0.03);
 
     /* 玻璃面板 */
     --app-glass-bg: rgba(255, 255, 255, 0.94);
     --app-glass-border: rgba(30, 30, 36, 0.06);
 
     /* 浅色模式：主题晕染画布 + 白色内容面（随 data-color 主色轻微变色） */
-    --app-bg: color-mix(in srgb, #ffffff 90%, var(--app-primary));
+    --app-bg: color-mix(in srgb, #ffffff 95%, var(--app-primary));
     --app-bg-card: #ffffff;
-    --app-bg-shell: color-mix(in srgb, #ffffff 96%, var(--app-primary));
+    --app-bg-shell: color-mix(in srgb, #ffffff 97%, var(--app-primary));
     --app-bg-card-rgb: 255, 255, 255;
-    --app-bg-sidebar-start: color-mix(in srgb, #ffffff 94%, var(--app-primary));
-    --app-bg-sidebar-mid: color-mix(in srgb, #ffffff 92%, var(--app-primary));
-    --app-bg-sidebar-end: color-mix(in srgb, #ffffff 90%, var(--app-primary));
+    --app-bg-sidebar-start: color-mix(in srgb, #ffffff 96%, var(--app-primary));
+    --app-bg-sidebar-mid: color-mix(in srgb, #ffffff 95%, var(--app-primary));
+    --app-bg-sidebar-end: color-mix(in srgb, #ffffff 93%, var(--app-primary));
     --app-bg-sidebar-surface: transparent;
-    --app-bg-card-header: color-mix(in srgb, #ffffff 90%, var(--app-primary-soft));
-    --app-bg-hover: rgba(var(--app-primary-rgb), 0.07);
-    --app-bg-input: color-mix(in srgb, #ffffff 98%, var(--app-primary));
+    --app-bg-card-header: color-mix(in srgb, #ffffff 94%, var(--app-primary-soft));
+    --app-bg-hover: rgba(var(--app-primary-rgb), 0.06);
+    --app-bg-input: color-mix(in srgb, #ffffff 99%, var(--app-primary));
     --app-text: #1a1a22;
     --app-text-muted: #6e6e7a;
     --app-text-dim: #45454f;
@@ -154,14 +154,14 @@
 /* ========== ACG 主题色 ========== */
 
 [data-color="sakura"] {
-    --app-primary: #f09199;
-    --app-primary-rgb: 240, 145, 153;
-    --app-primary-soft: rgba(240, 145, 153, 0.1);
-    --app-primary-hover: #e08189;
-    --theme-dot-color: #f09199;
-    --app-ambient-a: rgba(240, 145, 153, 0.12);
-    --app-ambient-b: rgba(240, 145, 153, 0.08);
-    --app-ambient-c: rgba(240, 145, 153, 0.05);
+    --app-primary: #f3a2a8;
+    --app-primary-rgb: 243, 162, 168;
+    --app-primary-soft: rgba(243, 162, 168, 0.12);
+    --app-primary-hover: #e89098;
+    --theme-dot-color: #f3a2a8;
+    --app-ambient-a: rgba(243, 162, 168, 0.09);
+    --app-ambient-b: rgba(243, 162, 168, 0.06);
+    --app-ambient-c: rgba(243, 162, 168, 0.035);
 }
 
 [data-color="amber"] {
@@ -709,6 +709,44 @@ body {
     color: #fff !important;
 }
 
+/* 侧栏选中滑块：切换页面时从旧条目滑到新条目 */
+.sidebar-nav {
+    position: relative;
+}
+
+.sidebar-nav__slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 0;
+    border-radius: var(--app-radius-btn);
+    background: var(--app-gradient-primary);
+    box-shadow: 0 2px 10px rgba(var(--app-primary-rgb), 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.26s var(--app-ease-smooth), width 0.26s var(--app-ease-smooth),
+        height 0.26s var(--app-ease-smooth), opacity 0.18s ease;
+}
+
+.sidebar-nav__slider--visible {
+    opacity: 1;
+}
+
+.sidebar-nav__slider--instant {
+    transition: none;
+}
+
+html.js-nav-slider .sidebar-nav .nav-link {
+    position: relative;
+    z-index: 1;
+    transition: color 0.12s linear;
+}
+
+html.js-nav-slider .sidebar-nav .nav-link.active {
+    background: transparent;
+    box-shadow: none;
+}
+
 .sidebar .nav-link i {
     width: 1.25rem;
     text-align: center;
@@ -958,6 +996,7 @@ main.app-main>.d-flex:first-child {
 
 .stats-value {
     color: var(--app-text);
+    font-variant-numeric: tabular-nums;
 }
 
 .stats-value--compact {

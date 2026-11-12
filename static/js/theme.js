@@ -7,7 +7,7 @@ class ThemeManager {
         this.THEME_KEY = 'app-theme';
         this.COLOR_KEY = 'app-color';
         this.COLORS = {
-            sakura:    '#f09199',
+            sakura:    '#f3a2a8',
             amber:     '#f78c50',
             sakuragi:  '#e9485e',
             sanae:     '#8cb48c',

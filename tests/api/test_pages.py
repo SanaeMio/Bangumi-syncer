@@ -421,7 +421,7 @@ class TestSidebarCollapse:
         assert 'id="sidebarCollapseBtn"' in html
         assert 'class="sidebar-brand__mark"' in html
         assert 'class="sidebar-brand__wordmark"' in html
-        assert '/static/logo-wordmark.png' in html
+        assert "/static/logo-wordmark.png" in html
         assert 'class="app-sidebar-logo"' not in html
         # 横版组合：方形图标 + logo 里的字标，带字标的整张 logo 不再出现在页面里
         # 三处：apple-touch-icon 链接、侧栏品牌图标、窄屏顶部导航栏图标

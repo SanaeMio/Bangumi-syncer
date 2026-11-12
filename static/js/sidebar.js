@@ -60,11 +60,98 @@
             // 隐私模式下 localStorage 可能不可写，忽略即可
         }
         syncUI(collapsed);
+        // 折叠时导航宽度变了，滑块跟着重新贴合（不做动画）
+        moveNavSlider(activeNavLink(), false);
+    }
+
+    // ---------- 导航选中滑块：切换页面时从旧条目滑到新条目 ----------
+
+    var navSlider = null;
+    var navTimer = 0;
+    var navSwapTimer = 0;
+
+    function navList() {
+        return document.querySelector('.sidebar .sidebar-nav');
+    }
+
+    function moveNavSlider(link, animate) {
+        var nav = navList();
+        if (!nav || !link) return;
+        if (!navSlider) {
+            navSlider = document.createElement('span');
+            navSlider.className = 'sidebar-nav__slider';
+            navSlider.setAttribute('aria-hidden', 'true');
+            nav.appendChild(navSlider);
+        }
+        if (!animate) navSlider.classList.add('sidebar-nav__slider--instant');
+        navSlider.style.width = link.offsetWidth + 'px';
+        navSlider.style.height = link.offsetHeight + 'px';
+        navSlider.style.transform =
+            'translate3d(' + link.offsetLeft + 'px,' + link.offsetTop + 'px,0)';
+        navSlider.classList.add('sidebar-nav__slider--visible');
+        if (!animate) {
+            // 强制一次布局，避免 --instant 被提前移除而滑进来
+            void navSlider.offsetWidth;
+            navSlider.classList.remove('sidebar-nav__slider--instant');
+        }
+    }
+
+    function activeNavLink() {
+        var nav = navList();
+        return nav ? nav.querySelector('.nav-link.active') : null;
+    }
+
+    function initNavSlider() {
+        var nav = navList();
+        if (!nav) return;
+
+        document.documentElement.classList.add('js-nav-slider');
+        moveNavSlider(activeNavLink(), false);
+
+        nav.addEventListener('click', function (event) {
+            var link = event.target.closest ? event.target.closest('.nav-link') : null;
+            if (!link || link.classList.contains('active')) return;
+            // 组合键与中键仍走浏览器原生行为（新标签页等）
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            if (event.button !== 0) return;
+            var href = link.getAttribute('href');
+            if (!href || href.charAt(0) === '#') return;
+
+            event.preventDefault();
+            var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            function swapActive() {
+                nav.querySelectorAll('.nav-link').forEach(function (el) {
+                    el.classList.remove('active');
+                });
+                link.classList.add('active');
+            }
+
+            moveNavSlider(link, !reduce);
+            window.clearTimeout(navSwapTimer);
+            window.clearTimeout(navTimer);
+            if (reduce) {
+                swapActive();
+                window.location.href = href;
+                return;
+            }
+            // 白字在滑块走到一半时再换，避免新条目提前变白压在淡底上看不清
+            navSwapTimer = window.setTimeout(swapActive, 190);
+            navTimer = window.setTimeout(function () {
+                window.location.href = href;
+            }, 300);
+        });
+
+        window.addEventListener('resize', function () {
+            window.clearTimeout(navTimer);
+            moveNavSlider(activeNavLink(), false);
+        });
     }
 
     function init() {
         var collapsed = isCollapsed();
         syncUI(collapsed);
+        initNavSlider();
         var btn = document.getElementById('sidebarCollapseBtn');
         if (btn) {
             btn.addEventListener('click', function () {
