@@ -341,3 +341,41 @@ class TestDashboardRealtime:
             ".dashboard-live-dot",
         ):
             assert selector in block
+
+
+class TestRecordDetailCopy:
+    """同步记录详情：步骤状态文案、说明去重与封面。"""
+
+    def test_step_badges_follow_pipeline_stage(self):
+        """同一个 hit 在不同阶段说不同的话，不再一律叫「命中」。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "STEP_STAGE_STATUS_LABELS" in js
+        assert "getStepStatusMeta(status, step.stage)" in js
+        # 徽标上不再出现「命中 / 未命中」这种内部术语
+        assert "hit: '命中'" not in js
+        assert "miss: '未命中'" not in js
+
+    def test_step_reason_is_normalized_and_deduped(self):
+        """说明文字展示前翻译，与总览卡重复的不再重复显示。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "RECORD_TEXT_REWRITES" in js
+        assert "normalizeRecordText(step.reason)" in js
+        assert "reasonText !== options.heroMessage" in js
+
+    def test_links_inside_steps_are_deduped(self):
+        """同一条目/单集在多个步骤里只挂一次链接。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "seen.subjects.has" in js
+        assert "seen.episodes.has" in js
+
+    def test_poster_shown_in_modal_header(self):
+        """详情弹窗头部左侧显示条目封面。"""
+        html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert 'id="record-detail-modal-poster"' in html
+
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "function setRecordPoster(subjectId)" in js
+        assert "/poster" in js
+
+        css = _css("records-detail.css")
+        assert "aspect-ratio: 3 / 4" in _block(css, ".record-detail-modal__poster")

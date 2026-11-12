@@ -123,7 +123,7 @@ class SyncActionStep(ExecutionStepBase):
         return StepOutcome(
             status="hit",
             subject_id=bgm_se_id,
-            reason=f"mark_episode_watched 返回 {mark_status}（{action_label}）",
+            reason=f"标记剧集已看：{action_label}",
             inputs=inputs,
             outputs={"mark_status": mark_status},
         )
