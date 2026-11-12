@@ -908,7 +908,6 @@ function renderStepCard(step, idx, totalMs, opts) {
     if (step.candidates && step.candidates.length > 0) {
         headMeta += `<span class="record-detail-step__cand-count">候选 ${step.candidates.length}</span>`;
     }
-    headMeta += renderStepTimeChip(elapsed, totalMs);
 
     // 说明文字与总览卡 message 相同的（典型是「同步结果」步骤）不再重复一遍
     const reasonText = normalizeRecordText(step.reason);
@@ -921,7 +920,10 @@ function renderStepCard(step, idx, totalMs, opts) {
                 <strong class="record-detail-step__name">${escapeHtml(stageName)}</strong>
                 <span class="record-detail-step__badge record-detail-step__badge--${status}"><i class="bi ${meta.icon}"></i>${escapeHtml(meta.label)}</span>
                 ${headMeta}
-                ${expandable ? '<i class="bi bi-chevron-down record-detail-step__chevron" aria-hidden="true"></i>' : ''}
+                <span class="record-detail-step__tail">
+                    ${renderStepTimeChip(elapsed, totalMs)}
+                    <i class="bi bi-chevron-down record-detail-step__chevron${expandable ? '' : ' record-detail-step__chevron--ghost'}" aria-hidden="true"></i>
+                </span>
             </span>
             ${reasonHtml}`;
 
@@ -1148,7 +1150,7 @@ function updateRecordDetailModalChrome(record) {
         if (runId) {
             parts.push(
                 `<a class="record-detail-modal__chip record-detail-modal__chip--link" ` +
-                `href="${appUrl('/logs')}?run_id=${encodeURIComponent(runId)}" target="_blank">` +
+                `href="${appUrl('/logs')}?run_id=${encodeURIComponent(runId)}">` +
                 `<i class="bi bi-card-list"></i> 同步日志</a>`
             );
         }

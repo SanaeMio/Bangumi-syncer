@@ -509,10 +509,29 @@
     filter: invert(1);
 }
 
-.app-brand-logo {
+/* 移动端顶部导航栏也用横版组合：方形图标 + logo 里的字标 */
+.app-brand {
+    gap: 0.45rem;
+}
+
+/* 用 .app-brand 前缀压过 pages.css 里 .navbar-brand img 的固定高度 */
+.app-brand .app-brand__mark {
     height: var(--app-brand-logo-height);
     width: auto;
     object-fit: contain;
+}
+
+.app-brand .app-brand__wordmark {
+    height: 13px;
+    width: auto;
+}
+
+html[data-theme="dark"] .app-brand__mark {
+    filter: brightness(1.75);
+}
+
+html[data-theme="dark"] .app-brand__wordmark {
+    filter: brightness(1.4);
 }
 
 /* 深色主题下图标里的深蓝几乎融进背景，整体提亮才看得出完整六边形 */
@@ -522,6 +541,13 @@ html[data-theme="dark"] .sidebar .sidebar-brand__mark {
 
 html[data-theme="dark"] .sidebar .sidebar-brand__wordmark {
     filter: brightness(1.4);
+}
+
+/* 站内跳转只让右侧内容重新入场：侧栏保持静止，不再重播淡入与错峰上浮 */
+html[data-nav="quiet"] .sidebar .nav.flex-column>.nav-item>.nav-link,
+html[data-nav="quiet"] .sidebar-brand__mark,
+html[data-nav="quiet"] .sidebar-brand__wordmark {
+    animation: none;
 }
 
 /* 侧栏品牌：两种状态共用同一个方形图标，展开时右侧跟站名，折叠时只留图标，

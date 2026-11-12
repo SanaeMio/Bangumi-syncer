@@ -423,8 +423,10 @@ class TestSidebarCollapse:
         assert 'class="sidebar-brand__wordmark"' in html
         assert '/static/logo-wordmark.png' in html
         assert 'class="app-sidebar-logo"' not in html
-        # 只剩窄屏顶部导航栏还在用带字标的整张 logo
-        assert html.count("/static/logo.png") == 1
+        # 横版组合：方形图标 + logo 里的字标，带字标的整张 logo 不再出现在页面里
+        # 三处：apple-touch-icon 链接、侧栏品牌图标、窄屏顶部导航栏图标
+        assert html.count("/static/apple-touch-icon.png") == 3
+        assert "/static/logo.png" not in html
 
     def test_sidebar_state_applied_before_paint(self):
         """展开/折叠状态在 <head> 内联脚本里先行落盘，避免刷新时闪一下。"""
