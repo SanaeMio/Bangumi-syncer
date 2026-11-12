@@ -287,3 +287,57 @@ class TestProgressBarAnimation:
         js = (_REPO_ROOT / "static/js/upgrade.js").read_text(encoding="utf-8")
         assert "function setBarRunning(running)" in js
         assert js.count("setBarRunning(false)") == 2
+
+
+class TestDashboardRealtime:
+    """首页实时更新：SSE 接线、增量插入与变化动效。"""
+
+    def test_dashboard_opens_stats_stream(self):
+        """仪表板通过一条 SSE 连接接收统计/热力图/最近记录。"""
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "new EventSource('/api/stats/stream')" in js
+        assert "source.addEventListener('dashboard'" in js
+        # 首屏静态数据落地后才连流，避免两路同时渲染
+        assert "dashboardLoaded = true" in js
+        assert "connectDashboardStream()" in js
+
+    def test_new_records_are_prepended_not_rerendered(self):
+        """新记录插到时间线顶部，已有条目原地不动。"""
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "function prependTimelineRecords(records)" in js
+        assert "track.insertBefore(scratch.firstElementChild, firstItem)" in js
+        # 只保留最近 6 条，多出来的从尾部移除
+        assert "for (let i = DASHBOARD_TIMELINE_LIMIT; i < items.length" in js
+
+    def test_stat_values_animate_on_change(self):
+        """数字变化才触发动画，值没变不动。"""
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "function setStatValue(id, value)" in js
+        assert "el.classList.add('stats-value--updated')" in js
+
+        css = _css("dashboard.css")
+        assert "animation: stats-value-bump" in _block(css, ".stats-value--updated")
+        assert "@keyframes stats-value-bump {" in css
+        assert "animation: tl-item-highlight" in _block(css, ".tl-item--new::after")
+
+    def test_live_dot_marks_open_stream(self):
+        """卡片头的绿点只在连接建立后出现。"""
+        html = (_REPO_ROOT / "templates/dashboard.html").read_text(encoding="utf-8")
+        assert 'id="dashboardLiveDot"' in html
+        assert "dashboard-live-dot d-none" in html
+
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "dot.classList.remove('d-none')" in js
+        assert "dot.classList.add('d-none')" in js
+
+    def test_realtime_animations_respect_reduced_motion(self):
+        """系统要求减少动效时不再跳动与高亮。"""
+        block = _last_media_block(
+            _css("dashboard.css"), "(prefers-reduced-motion: reduce)"
+        )
+        for selector in (
+            ".stats-value--updated",
+            ".tl-item--new::after",
+            ".dashboard-live-dot",
+        ):
+            assert selector in block

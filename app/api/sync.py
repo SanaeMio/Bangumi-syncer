@@ -881,6 +881,69 @@ async def get_heatmap_stats(
         raise HTTPException(status_code=500, detail=f"获取热力图数据失败: {str(e)}")
 
 
+# 首页实时推送：轮询间隔（秒）与最近记录条数（与仪表板时间线一致）
+DASHBOARD_STREAM_INTERVAL = 2.0
+DASHBOARD_RECENT_LIMIT = 6
+
+
+def _build_dashboard_snapshot() -> dict[str, Any]:
+    """采集首页实时数据与变化指纹（同步 IO，调用方需放到线程中执行）
+
+    指纹只取会影响页面展示的字段：统计计数、热力图总量、最近记录的 id 与状态。
+    指纹不变就不推数据，避免空推送把前端动画刷个不停。
+    """
+    stats = sync_service.get_sync_stats()
+    heatmap = sync_service.get_heatmap_stats()
+    records_payload = sync_service.get_sync_records(
+        limit=DASHBOARD_RECENT_LIMIT, skip_count=True
+    )
+    records = records_payload.get("records", []) if records_payload else []
+
+    signature = (
+        stats.get("total_syncs"),
+        stats.get("success_syncs"),
+        stats.get("error_syncs"),
+        stats.get("today_syncs"),
+        sum(item.get("count", 0) for item in heatmap or []),
+        tuple((record.get("id"), record.get("status")) for record in records),
+    )
+
+    return {
+        "signature": signature,
+        "payload": {"stats": stats, "heatmap": heatmap, "records": records},
+    }
+
+
+@router.get("/stats/stream")
+async def stream_dashboard_stats(
+    request: Request, current_user: dict = Depends(get_current_user_flexible)
+):
+    """首页数据实时推送（SSE）：统计、热力图、最近记录变化时增量下发"""
+
+    async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
+        last_signature: Any = None
+        while True:
+            if await request.is_disconnected():
+                break
+
+            try:
+                snapshot = await asyncio.to_thread(_build_dashboard_snapshot)
+            except Exception as e:
+                logger.error(f"采集首页实时数据失败: {e}")
+                snapshot = None
+
+            if snapshot is not None and snapshot["signature"] != last_signature:
+                last_signature = snapshot["signature"]
+                yield {
+                    "event": "dashboard",
+                    "data": json.dumps(snapshot["payload"], ensure_ascii=False),
+                }
+
+            await asyncio.sleep(DASHBOARD_STREAM_INTERVAL)
+
+    return EventSourceResponse(event_generator())
+
+
 # ========== 媒体服务器专用接口 ==========
 
 

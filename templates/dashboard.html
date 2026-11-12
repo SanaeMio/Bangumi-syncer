@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}仪表板 - Bangumi Syncer{% endblock %}
 {% block page_title %}仪表板{% endblock %}
 {% block page_actions %}
@@ -268,6 +268,10 @@
                     <div class="d-flex align-items-center">
                         <i class="bi bi-clock-history me-2 card-header-icon"></i>
                         <h6 class="m-0 fw-semibold card-header-title">最近同步</h6>
+                        <span class="dashboard-live-dot d-none"
+                              id="dashboardLiveDot"
+                              title="数据实时更新中"
+                              aria-hidden="true"></span>
                     </div>
                 </div>
                 <div class="card-body p-3">
