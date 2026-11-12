@@ -50,6 +50,29 @@
     color: var(--app-primary);
 }
 
+.record-detail-modal__poster {
+    flex: 0 0 auto;
+    width: 2.75rem;
+    aspect-ratio: 3 / 4;
+    border-radius: var(--app-radius-btn);
+    overflow: hidden;
+    background: var(--app-bg-input);
+    box-shadow: inset 0 0 0 1px var(--app-border);
+}
+
+.record-detail-modal__poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+@media (min-width: 576px) {
+    .record-detail-modal__poster {
+        width: 3.25rem;
+    }
+}
+
 .record-detail-modal__head {
     min-width: 0;
     flex: 1 1 auto;
