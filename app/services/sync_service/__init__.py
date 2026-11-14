@@ -6,6 +6,7 @@ from __future__ import annotations
 
 # time/asyncio 重新导出以兼容测试 patch（app.services.sync_service.time.sleep 等）
 import asyncio  # noqa: F401
+import copy
 import json
 import threading
 import time  # noqa: F401
@@ -37,7 +38,7 @@ from ...utils.bangumi_constants import (
 )
 from ...utils.bangumi_data import BangumiData, bangumi_data
 from ...utils.media_type_detector import detect_media_type as detect_media_type
-from ..mapping_service import mapping_service
+from ..mapping_service import get_mapping_revision, mapping_service
 from ..matching.identity import build_match_business_key
 from ..notification_service import notification_service
 from .errors import PendingCandidateContractError, PendingCandidatePersistError
@@ -117,6 +118,30 @@ def _detect_candidate_media_type(cand: dict) -> str:
         return ""
 
 
+# 匹配结果记忆化的容量与有效期。
+# TTL 兜底数据源在进程内变更（archive 重建、映射文件热更新）却没引起
+# 配置版本号变化的情况；256 条足以覆盖单批同步的全部作品。
+_MATCH_CACHE_MAXSIZE = 256
+_MATCH_CACHE_TTL_SECONDS = 300.0
+# 命中缓存时需要回填的 trace 汇总字段。request_* 属于本次请求，不覆盖；
+# _current_step/_trace_start 等内部计时也不覆盖，让本次耗时如实结算。
+_CACHED_TRACE_FIELDS = (
+    "normalized_title",
+    "final_subject_id",
+    "final_episode_id",
+    "final_match_method",
+    "final_match_method_detail",
+    "final_episode_path_detail",
+    "final_score",
+    "final_status",
+    "final_message",
+    "final_action",
+    "is_ambiguous",
+    "mapping_is_explicit",
+    "mapping_target_episode",
+)
+
+
 class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeMixin):
     """同步服务"""
 
@@ -125,6 +150,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         self._cached_mappings: dict[str, str] = {}
         self._mapping_file_path: str | None = None
         self._last_modified_time: float = 0
+        # 匹配结果记忆化：条目级匹配是 (标题, 季, 日期, 用户) 的纯函数，
+        # 同标题的多集（真实库里「斗破苍穹年番」12 集）会重复跑完整的 5 步管线。
+        # 键里带 episode 是为了让 trace 的 mapping_target_episode（分段映射
+        # 按媒体集号换算）与真实重跑完全一致；不带 episode 会缓存错这个副作用。
+        # 只缓存**成功**结果：失败可能来自网络/限流，缓存会把一次抖动固化。
+        self._match_cache: dict[tuple, tuple] = {}
         # BangumiApi 实例缓存：user_name → (实例, 配置快照)
         # 配置快照变更时自动失效重建，避免每次同步都重新构造 httpx.Client
         self._bangumi_api_cache: dict[str, tuple[BangumiApi, dict]] = {}
@@ -1711,6 +1742,83 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         except (TypeError, ValueError):
             return 0.6
 
+    # ------------------------------------------------------------------
+    # 匹配结果记忆化
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _match_cache_key(item: CustomItem, wildcard_episode: bool = False) -> tuple:
+        """匹配缓存键：覆盖所有会改变匹配结果的输入
+
+        - config_version：配置重载后自增，旧键自然不再命中，无需订阅回调
+        - mapping_revision：bangumi_mapping.json 的 ``(路径, mtime_ns, size)``。
+          自定义映射是**按文件 mtime 热读**的，改映射不会抬升 config_version，
+          若键里不带这一维，命中缓存会跳过整个 MatchPipeline（含
+          CustomMapping），刚改的映射要等 TTL 到期才生效。
+          取 mtime 而非内容哈希：与 ``load_custom_mappings`` 的热重载判据同源，
+          且只多一次 stat。
+        - user_name：API 凭据按用户区分（映射本身是全局的，不区分用户）
+        - episode：条目选择与集号无关，但分段映射会按媒体集号算出
+          ``mapping_target_episode``。因此额外维护一个 episode 置零的
+          「集无关键」，只在换算结果为 None 时写入——这样同标题不同集
+          能共享条目级结果，而按集换算过的结果绝不会被跨集复用。
+        """
+        return (
+            config_manager.get_config_version(),
+            get_mapping_revision(),
+            (getattr(item, "title", None) or "").strip(),
+            (getattr(item, "ori_title", None) or "").strip(),
+            int(getattr(item, "season", None) or 1),
+            0 if wildcard_episode else int(getattr(item, "episode", None) or 0),
+            getattr(item, "media_type", None) or "",
+            (getattr(item, "release_date", None) or "")[:10],
+            getattr(item, "user_name", None) or "",
+        )
+
+    def _load_cached_match(
+        self, key: tuple, wildcard_key: tuple, trace: MatchTrace | None
+    ) -> tuple[str | None, bool, str] | None:
+        """命中则回填 trace 并返回结果三元组；未命中或已过期返回 None
+
+        先查精确键（含 episode），再查集无关键。后者只在换算结果与集号无关
+        时写入，因此不会把「按集换算过的目标集号」跨集复用。
+        """
+        entry = self._match_cache.get(key)
+        if entry is None:
+            entry = self._match_cache.get(wildcard_key)
+        if entry is None:
+            return None
+        result, snapshot, stored_at = entry
+        if time.monotonic() - stored_at > _MATCH_CACHE_TTL_SECONDS:
+            self._match_cache.pop(key, None)
+            self._match_cache.pop(wildcard_key, None)
+            return None
+        if trace is not None:
+            # deepcopy：MatchStep / MatchCandidate 都是可变 dataclass，
+            # 共享实例会让两次请求的 trace 互相污染。
+            trace.steps.extend(copy.deepcopy(snapshot["steps"]))
+            for name, value in snapshot["fields"].items():
+                setattr(trace, name, value)
+        return result
+
+    def _store_cached_match(
+        self, keys: tuple[tuple, ...], result: tuple, trace: MatchTrace
+    ) -> None:
+        """写入缓存（FIFO 淘汰）。调用方保证只传成功结果。
+
+        多个键共享同一份 snapshot：读取侧先 deepcopy 再消费，共享安全，
+        避免为「精确键 + 集无关键」重复复制 trace。
+        """
+        snapshot = {
+            "steps": copy.deepcopy(trace.steps),
+            "fields": {name: getattr(trace, name) for name in _CACHED_TRACE_FIELDS},
+        }
+        stored_at = time.monotonic()
+        for key in dict.fromkeys(keys):
+            if len(self._match_cache) >= _MATCH_CACHE_MAXSIZE:
+                self._match_cache.pop(next(iter(self._match_cache)), None)
+            self._match_cache[key] = (result, snapshot, stored_at)
+
     def _find_subject_id(
         self, item: CustomItem, trace: MatchTrace | None = None
     ) -> tuple[str | None, bool, str]:
@@ -1724,6 +1832,12 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         通过 MatchPipeline 编排 4 个 step（Normalize/CustomMapping/
         BangumiData/APISearch），trace 填充收敛到 _record_trace 单一入口。
         """
+        cache_key = self._match_cache_key(item)
+        wildcard_key = self._match_cache_key(item, wildcard_episode=True)
+        cached = self._load_cached_match(cache_key, wildcard_key, trace)
+        if cached is not None:
+            return cached
+
         # 构建管道上下文
         from app.services.matching.context import MatchContext
         from app.services.matching.pipeline import MatchPipeline
@@ -1776,10 +1890,73 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         # 匹配歧义检测已前移到 APISearchStep（设置 ctx.is_ambiguous），
         # 通知职责由编排器统一发送，_find_subject_id 不再直接发通知。
 
-        return (
+        final_result = (
             result.subject_id,
             result.is_season_matched_id,
             result.failure_detail,
+        )
+        # 只缓存成功结果：失败可能来自网络抖动/限流，缓存会把一次偶发
+        # 故障固化 5 分钟，与「宁可漏标也不写错」的方向相反。
+        if result.subject_id:
+            # 集号换算结果为空时，匹配与集号无关，额外写一条集无关键，
+            # 让同标题的后续集直接命中条目级结果。
+            cache_keys = [cache_key]
+            if actual_trace.mapping_target_episode is None:
+                cache_keys.append(wildcard_key)
+            self._store_cached_match(cache_keys, final_result, actual_trace)
+        return final_result
+
+    # 入口幂等窗口（秒）。只挡「刚刚成功过又被重推」的请求：
+    # 客户端在网络抖动时的自动重推通常集中在几分钟内。
+    _IDEMPOTENT_WINDOW_SECONDS = 600
+
+    def _check_idempotent_skip(
+        self, item: CustomItem, actual_source: str
+    ) -> SyncResponse | None:
+        """窗口内已成功同步过的同一集直接短路，返回既成响应
+
+        放行规则：
+        - ``retry-*`` 来源：重试器/用户显式要求重跑，必须放行
+        - ``test*`` 来源：用例与调试不参与幂等，避免相互干扰
+        - 剧场版（episode<=0）：没有集号语义，走各自标记路径
+
+        只认 ``status='success'`` 的历史记录。失败不在幂等范围内——
+        失败重试是有效补偿，挡住它等于让一次网络抖动永久生效。
+        """
+        source = actual_source or ""
+        if source.startswith("retry") or source.startswith("test"):
+            return None
+        if not item.title or int(item.episode or 0) <= 0:
+            return None
+
+        hit = database_manager.find_recent_success(
+            user_name=item.user_name or "",
+            title=item.title,
+            season=int(item.season or 1),
+            episode=int(item.episode or 0),
+            media_type=item.media_type or "episode",
+            within_seconds=self._IDEMPOTENT_WINDOW_SECONDS,
+        )
+        # 严格校验返回形状：Mock/异常实现可能返回非 None 的哨兵对象，
+        # 只判 is None 会把它们误当成「有历史成功记录」而错误短路。
+        if not isinstance(hit, dict) or hit.get("id") is None:
+            return None
+
+        logger.info(
+            f"幂等命中，跳过重复同步: {item.title} S{int(item.season or 1):02d}"
+            f"E{int(item.episode or 0):02d} -> 记录 #{hit['id']}"
+            f"（{hit['timestamp']}, subject={hit['subject_id']}）"
+        )
+        return SyncResponse(
+            status="success",
+            message=(
+                f"幂等命中：该集已于 {hit['timestamp']} 同步成功，本次跳过重复处理"
+            ),
+            data={
+                "idempotent": True,
+                "original_record_id": hit["id"],
+                "subject_id": hit["subject_id"],
+            },
         )
 
     def _get_bangumi_config_for_user(self, user_name: str) -> dict[str, str] | None:

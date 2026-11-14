@@ -173,6 +173,25 @@ class DatabaseManager:
             account_results=account_results,
         )
 
+    def find_recent_success(
+        self,
+        user_name: str,
+        title: str,
+        season: int,
+        episode: int,
+        media_type: str = "episode",
+        within_seconds: int = 600,
+    ) -> dict[str, Any] | None:
+        """查找窗口内同一集的成功同步记录（入口幂等用）"""
+        return self._sync.find_recent_success(
+            user_name=user_name,
+            title=title,
+            season=season,
+            episode=episode,
+            media_type=media_type,
+            within_seconds=within_seconds,
+        )
+
     def get_sync_records(
         self,
         limit: int = 100,
