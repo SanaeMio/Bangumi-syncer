@@ -38,7 +38,7 @@ from ...utils.bangumi_constants import (
 )
 from ...utils.bangumi_data import BangumiData, bangumi_data
 from ...utils.media_type_detector import detect_media_type as detect_media_type
-from ..mapping_service import mapping_service
+from ..mapping_service import get_mapping_revision, mapping_service
 from ..matching.identity import build_match_business_key
 from ..notification_service import notification_service
 from .errors import PendingCandidateContractError, PendingCandidatePersistError
@@ -1751,7 +1751,13 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """匹配缓存键：覆盖所有会改变匹配结果的输入
 
         - config_version：配置重载后自增，旧键自然不再命中，无需订阅回调
-        - user_name：自定义映射与 API 凭据都按用户区分
+        - mapping_revision：bangumi_mapping.json 的 ``(路径, mtime_ns, size)``。
+          自定义映射是**按文件 mtime 热读**的，改映射不会抬升 config_version，
+          若键里不带这一维，命中缓存会跳过整个 MatchPipeline（含
+          CustomMapping），刚改的映射要等 TTL 到期才生效。
+          取 mtime 而非内容哈希：与 ``load_custom_mappings`` 的热重载判据同源，
+          且只多一次 stat。
+        - user_name：API 凭据按用户区分（映射本身是全局的，不区分用户）
         - episode：条目选择与集号无关，但分段映射会按媒体集号算出
           ``mapping_target_episode``。因此额外维护一个 episode 置零的
           「集无关键」，只在换算结果为 None 时写入——这样同标题不同集
@@ -1759,6 +1765,7 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """
         return (
             config_manager.get_config_version(),
+            get_mapping_revision(),
             (getattr(item, "title", None) or "").strip(),
             (getattr(item, "ori_title", None) or "").strip(),
             int(getattr(item, "season", None) or 1),
@@ -1767,10 +1774,6 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
             (getattr(item, "release_date", None) or "")[:10],
             getattr(item, "user_name", None) or "",
         )
-
-    def invalidate_match_cache(self) -> None:
-        """清空匹配结果缓存（数据源或映射在进程内变更后调用）"""
-        self._match_cache.clear()
 
     def _load_cached_match(
         self, key: tuple, wildcard_key: tuple, trace: MatchTrace | None

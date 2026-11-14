@@ -53,6 +53,30 @@ class MappingService:
                 return path
         return None
 
+    def get_revision(self) -> tuple[str, int, int] | None:
+        """返回映射配置的当前修订标识 ``(路径, mtime_ns, size)``
+
+        供上层构造「按文件内容失效」的缓存键：映射是**按文件 mtime 热读**的，
+        改映射不会抬升 ``config_version``，所以缓存键必须自带这一维，否则命中
+        缓存会跳过整个 MatchPipeline（含 CustomMapping），刚改的映射要等 TTL
+        到期才生效。
+
+        只做 stat、不解析文件，判据与 :meth:`load_custom_mappings` 的热重载
+        一致（同一个 ``_find_existing_path`` + 修改时间）。文件不存在时返回
+        ``None``——此时 ``load_custom_mappings`` 会创建默认文件，下一次调用
+        即可拿到标识，最多让缓存多走一次管线。
+        """
+        path = self._find_existing_path()
+        if path is None:
+            return None
+        try:
+            st = os.stat(path)
+        except OSError:
+            # 文件在 exists() 与 stat() 之间被删除：退化为「无标识」，
+            # 下一次调用会重新探测，不需要为此抛错。
+            return None
+        return (path, st.st_mtime_ns, st.st_size)
+
     def load_custom_mappings(self) -> dict[str, Any]:
         """从外部JSON文件读取自定义映射配置
 
@@ -701,6 +725,15 @@ def get_mapping_service() -> MappingService:
 def set_mapping_service(instance: MappingService) -> None:
     """替换映射服务实例（测试/DI 注入）。"""
     _injectable.set(instance)
+
+
+def get_mapping_revision() -> tuple[str, int, int] | None:
+    """返回**当前生效**映射服务的修订标识，供匹配缓存键使用。
+
+    走 ``_injectable.get()`` 而不是模块级属性，确保与 CustomMappingStep 实际
+    使用的实例一致（测试注入替换后依然成立）。
+    """
+    return get_mapping_service().get_revision()
 
 
 def reset_mapping_service() -> None:
