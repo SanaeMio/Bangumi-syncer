@@ -3129,3 +3129,42 @@ class TestOriginalTitlePriority:
         result = data._try_exact_match("Candy☆Boy", "", "", media_type="episode")
         assert result is not None
         assert result[0] == self.TV_ID
+
+
+class TestExactIndexUsesSharedDateDiff:
+    """O(1) 标题索引路径的日期比较必须走 ``_date_diff``
+
+    历史实现里索引路径自带一份 ``abs((d1 - d2).days)``，与线性扫描路径的
+    ``_date_diff`` 构成两套口径。重复代码本身无害，问题是**分叉**：任何日期
+    语义调整只要落在 ``_date_diff`` 里，索引路径就会静默绕过 —— 实测
+    ``MFゴースト`` 在索引路径按首播日 400 天否决、在扫描路径按外推 288 天通过，
+    同一请求在同一次调用里得到两种答案。
+    """
+
+    @staticmethod
+    def _data(begin: str):
+        data = _make_data()
+        data._title_index = {
+            "某番": [
+                {
+                    "title": "某番",
+                    "begin": begin,
+                    "sites": [{"site": "bangumi", "id": "1"}],
+                }
+            ]
+        }
+        return data
+
+    def test_index_path_skips_when_date_diff_says_too_far(self):
+        data = self._data("2000-01-01")
+        result = data._try_exact_match("某番", None, "2010-01-01", "", 1, "某番")
+        assert result is None
+
+    def test_index_path_honours_overridden_date_diff(self):
+        """把 _date_diff 改成 0 后必须命中 —— 否则说明索引路径没走它"""
+        data = self._data("2000-01-01")
+        data._date_diff = lambda date1, date2: 0
+        result = data._try_exact_match("某番", None, "2010-01-01", "", 1, "某番")
+        assert result is not None
+        assert result[0] == "1"
+        assert result[2] is True

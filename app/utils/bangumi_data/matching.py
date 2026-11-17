@@ -198,22 +198,26 @@ class MatchingMixin:
             if not exact_candidates:
                 return None
             if release_date:
-                # 请求日期在整轮候选里是常量，解析一次即可。
-                # 原实现写在 for 内，同一日期会被重复解析 N 次（实测单次
-                # 全表扫描 33,518 次调用、仅 8,926 个不同输入）。
-                d1 = _coerce_ymd(release_date)
                 min_diff = float("inf")
                 best = None
                 for item, bangumi_id, matched_key in exact_candidates:
                     item_date = item.get("begin", "")
-                    if item_date:
-                        d2 = _coerce_ymd(item_date)
-                        if d1 is None or d2 is None:
-                            continue
-                        diff = abs((d1 - d2).days)
-                        if diff < min_diff:
-                            min_diff = diff
-                            best = (bangumi_id, matched_key, True, item)
+                    if not item_date:
+                        continue
+                    # 统一走 _date_diff：**候选 begin 与请求日期的比较只有这一个
+                    # 实现**。此处曾经直接写 abs((d1 - d2).days)（自带一份解析），
+                    # 与线性扫描路径的 _date_diff 构成两套逻辑。后果不是重复代码
+                    # 而是口径分叉：任何日期语义的调整只落在 _date_diff 里（例如
+                    # 按集号把 begin 外推到预期播出日），这条 O(1) 索引路径就会
+                    # 静默绕过 —— 同一个候选在两条路径上算出不同的天数（实测同一
+                    # 条目：索引路径 400 天、扫描路径 288 天），是否被采信取决于
+                    # 请求恰好走进了哪条路径，这种差异事后极难归因。
+                    # 解析代价不是问题：_coerce_ymd 走 _parse_ymd_cached，重复
+                    # 解析同一个 release_date 是缓存命中。
+                    diff = self._date_diff(item_date, release_date)
+                    if diff < min_diff:
+                        min_diff = diff
+                        best = (bangumi_id, matched_key, True, item)
                 if best:
                     if min_diff <= _EXACT_MATCH_DATE_TOLERANCE_DAYS:
                         return best
