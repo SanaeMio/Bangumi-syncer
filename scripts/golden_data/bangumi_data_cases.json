@@ -78195,31 +78195,26 @@
    "scenario": "S12_日期漂移",
    "desc": "首播日期 +400 天（>180 天门槛），考验扫描兜底",
    "input": {
-    "title": "MFゴースト",
-    "ori_title": "MFゴースト",
-    "release_date": "2024-11-03",
+    "title": "セキレイ",
+    "ori_title": "セキレイ",
+    "release_date": "2009-08-06",
     "season": 1,
     "media_type": "episode"
    },
    "oracle": {
-    "subject_id": "364252",
-    "title": "极速车魂",
+    "subject_id": "325",
+    "title": "鹡鸰女神",
     "alt_ids": []
    },
    "baseline": {
-    "subject_id": "470738",
-    "matched_title": "极速车魂 第二季",
-    "date_matched": true,
+    "subject_id": "325",
+    "matched_title": "鹡鸰女神",
+    "date_matched": false,
     "candidates": [
      {
-      "id": "364252",
-      "name": "MFゴースト",
+      "id": "325",
+      "name": "セキレイ",
       "score": 1.0
-     },
-     {
-      "id": "470738",
-      "name": "MFゴースト 2nd Season",
-      "score": 0.407
      }
     ]
    }

@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import random
@@ -36,6 +37,7 @@ import re
 import sqlite3
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +123,79 @@ def _pick(pool: list[Any], want: int, rnd: random.Random) -> list[Any]:
     if len(pool) <= want:
         return list(pool)
     return [pool[i] for i in sorted(rnd.sample(range(len(pool)), want))]
+
+
+# S12 构造守卫用到的常量：与 app/utils/bangumi_data/matching.py 对齐
+# （_DATE_PREFERENCE_WINDOW_DAYS / _EXACT_MATCH_DATE_TOLERANCE_DAYS），改动那边需同步
+_S12_PREF_WINDOW = 90
+_S12_GUARD_DAYS = 180
+_S12_SEASON_RE = re.compile(
+    r"\s*(第\s*[0-9一二三四五六七八九十]+\s*[期季部]"
+    r"|[0-9]+(?:st|nd|rd|th)\s+Season|\d+期|[IVX]+$|Season\s*\d+)",
+    re.IGNORECASE,
+)
+_S12_MOVIE_RE = re.compile(r"^(劇場版|剧场版|映画|劇場総集編|剧场总集编)\s*")
+
+
+def _as_day(s: str) -> datetime | None:
+    try:
+        return datetime.strptime((s or "")[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+@functools.cache
+def _family_key(title: str) -> str:
+    """剥掉剧场版前缀与季后缀后的「同族」键"""
+    t = _S12_MOVIE_RE.sub("", title or "").strip()
+    t = _S12_SEASON_RE.sub("", t).strip()
+    return re.sub(r"[\s　]+", "", t).lower()
+
+
+def _title_related(a: str, b: str) -> bool:
+    """两条标题是否可能互相部分匹配（续作 / 衍生 / 总集篇）"""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    ka, kb = _family_key(a), _family_key(b)
+    if ka and ka == kb:
+        return True
+    # 互为子串：要求长度差 >= 2，避免单字碰撞把不相关条目算进来
+    if len(a) >= 3 and len(b) - len(a) >= 2 and a in b:
+        return True
+    if len(b) >= 3 and len(a) - len(b) >= 2 and b in a:
+        return True
+    return False
+
+
+def _s12_reject(items: list[dict], target: dict, day: str) -> str:
+    """S12 目标是否会让漂移日期指向别的条目；返回拒绝原因（空串=通过）"""
+    d = _as_day(day)
+    begin, end = _as_day(_begin(target)), _as_day(target.get("end") or "")
+    if not d or not begin:
+        return "no_date"
+    if not end:
+        return "no_end"
+    if (d - end).days < _S12_GUARD_DAYS:
+        return "own_span_too_long"
+    tid = _bgm_id(target)
+    for other in items:
+        if _bgm_id(other) == tid:
+            continue
+        if not _title_related(target.get("title", ""), other.get("title", "")):
+            continue
+        ob, oe = _as_day(_begin(other)), _as_day(other.get("end") or "")
+        if not ob:
+            continue
+        oe = oe or ob
+        if (
+            ob - timedelta(days=_S12_PREF_WINDOW)
+            <= d
+            <= oe + timedelta(days=_S12_PREF_WINDOW)
+        ):
+            return "near_variant"
+    return ""
 
 
 # =====================================================================
@@ -234,15 +309,34 @@ def build_l1_cases(items: list[dict], n: int, rnd: random.Random) -> list[dict]:
     # S12：日期漂移（首播日期偏移 +400 天）
     #   精确索引的日期门槛是 180 天，偏移 400 天必然回退线性扫描，
     #   用来锁住「索引命中 vs 扫描兜底」这条分界。
-    from datetime import datetime, timedelta
-
-    for it in _pick(usable, n, rnd):
+    #
+    #   构造约束（踩过的坑）：只加 400 天不够，漂移日期必须**只可能指向目标自身**。
+    #   MFゴースト 那条就翻在这里：请求日 2024-11-03 正是续作 S2 的第 5 集播出日，
+    #   日期择优按设计把精确匹配的 S1 换成部分匹配的 S2，于是 oracle 与引擎长期
+    #   矛盾，还被当成引擎缺陷查了一轮。判据见 _s12_reject：
+    #     (a) 漂移日期距目标自身 end >= 180 天（真跨过门槛，否则没测到漂移）
+    #     (b) 漂移日期不落在任何同族标题条目的 [begin-90, end+90] 内
+    #   不合格的候选跳过并补采，保持场景条数仍是 n。
+    s12_pool = _pick(usable, n * 4, rnd)
+    s12_skipped: dict[str, int] = {}
+    s12_picked = 0
+    for it in s12_pool:
+        if s12_picked >= n:
+            break
         try:
             base = datetime.strptime(_begin(it), "%Y-%m-%d")
         except ValueError:
             continue
         drifted = (base + timedelta(days=400)).strftime("%Y-%m-%d")
+        reason = _s12_reject(usable, it, drifted)
+        if reason:
+            s12_skipped[reason] = s12_skipped.get(reason, 0) + 1
+            continue
         cases.append(mk("S12_日期漂移", it, it["title"], release_date=drifted))
+        s12_picked += 1
+    if s12_skipped:
+        total = sum(s12_skipped.values())
+        print(f"[gen] S12 跳过 {total} 条构造不安全候选: {s12_skipped}")
 
     # S13：负例（数据库中不存在的标题，期望不命中）
     #   防止「为提升召回而放宽阈值」导致凭空匹配；这类回归在正例集上
