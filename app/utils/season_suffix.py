@@ -13,7 +13,7 @@ r"""季/部后缀剥离的单一登记处（一份词表 + 四套匹配几何）
 
 | scope            | 输入                       | 剥什么                                       | 匹配几何                             | 结果                         |
 |------------------|----------------------------|----------------------------------------------|--------------------------------------|------------------------------|
-| ``bangumi_data`` | bangumi-data 条目标题      | 显式季词 + 纯数字尾                          | 两段：季词命中即停；数字尾按序各一次 | 全部替换为空；剥空则保留原样 |
+| ``bangumi_data`` | bangumi-data 条目标题      | 显式季词 + 纯数字尾                          | 两段：季词命中即停；数字尾按序各一次，之后可再试一次季词 | 全部替换为空；剥空则保留原样 |
 | ``caller_title`` | fongmi/媒体库推送的脏标题  | 季/集标 + ``上半``/``第N部`` + 调用方额外后缀 | 按序 ``search``，首条命中截断        | 截断；核心 <2 字则放弃该条   |
 | ``tmdb_title``   | bangumi-data 的 TMDB 季标题 | 季/部/篇 + ``Part/Act/Phase`` + クール        | 单条尾部锚定                         | 删匹配 + strip               |
 | ``filename``     | 文件名（集号兜底扫描前）   | 仅显式「第N季」/``Season N>1``               | 两条全文替换                         | 替换为空格                   |
@@ -23,7 +23,7 @@ r"""季/部后缀剥离的单一登记处（一份词表 + 四套匹配几何）
 | 原子                                  | bangumi_data  | caller_title        | tmdb_title  | filename              |
 |---------------------------------------|:-------------:|:-------------------:|:-----------:|:---------------------:|
 | ``Season N``                          | ✓（阶段 1）   | ✓ 含 ``2nd season`` | ✓           | ✓ 仅 N>1（捕获季号）  |
-| ``S N``                               | ✓（阶段 1）   | ✓（仅句尾）         | ✓           | ✗                     |
+| ``S N``                               | ✓（阶段 1）   | ✓（句尾 + ``SxxExx`` 容空白） | ✓           | ✗                     |
 | ``第N季`` / ``第N期``（阿拉伯+中文）  | ✓（阶段 2）   | ✓（无「第」需空白） | ✓           | ✓ 仅 N>1              |
 | ``第N部``                             | ✗             | ✓（仅句尾）         | ✓（并入单位类） | ✗                 |
 | ``第N期`` / ``第N話`` / ``第N集`` 尾巴 | ✓             | ✗                   | ✗           | ✗                     |
@@ -83,6 +83,11 @@ r"""季/部后缀剥离的单一登记处（一份词表 + 四套匹配几何）
 才逐层剥离**（``XX 2期12話`` → ``XX 2期`` → ``XX``）。任一步剥成空串都回退
 上一步 —— 宁可留着季标，也不给下游一个空查询。
 
+数字尾剥完后**允许再试一次季词**（只一次，不循环）：bangumi-data 里有
+``スーパー戦隊“魂” II 2006`` 这类「季词 + 年份」的条目，年份被剥掉后 ``II`` 才
+暴露到句尾。不补这一步就只能剥掉年份、留下 ``II``，精确索引查不到本体
+（语料 5 条）。不循环的理由同上：循环会把标题自带的编号当成季标继续吃。
+
 新增/修改规则：**先在本文件对应 scope 里改，词法优先复用已有原子**，再跑
 ``tests/utils/test_season_suffix.py``；不要在调用方「顺手补一条」，那正是本模块
 要消灭的漂移。
@@ -133,7 +138,12 @@ _SEASON_EN_STEM = r"Season\s*0*"
 # 这里漏过一次（tmdb_title），别再复制粘贴出第二份。
 _SEASON_S = r"(?<![A-Za-z])S\d+"
 
-# --- 集号尾巴：与 _SEASON_S 拼成 SxxExx ---
+# SxxExx 专用：S 与季号之间容许空白（媒体库里有 ``S 06E27`` 写法）。
+# 比句尾裸 S 宽松是安全的 —— 后面必须跟 ``E\d+``，词内 ``cos0``
+# 那类歧义根本不可能命中；旧实现本来就有这个容错，收敛时丢了。
+_SEASON_S_LOOSE = r"(?<![A-Za-z])S\s*\d+"
+
+# --- 集号尾巴：与季号拼成 SxxExx ---
 _EPISODE_TAIL = r"\s*E\s*\d+"
 
 # --- 罗马数字：一个概念的三层粒度，各 scope 只认自己那一层（既有差异）---
@@ -143,7 +153,10 @@ _EPISODE_TAIL = r"\s*E\s*\d+"
 # 详见头注「为什么不能直接用超集」。
 # 字符集直接写在模式里：三层的字符集各只被引用一次，抽成中间常量只是转手。
 # Unicode 层收满 U+2160~U+2169（``Ⅰ`` 一度漏掉，``烈阳天道Ⅰ`` 这类没剥）。
-_ROMAN_ASCII_II = r"I{2,}"  # 第 1 层（= ``II+``）：bangumi_data
+# 第 1 层的 ``(?<![IVX])`` 是「不能是更长罗马数字的尾巴」：``I{2,}$`` 会从
+# ``VII`` 里摘走尾部 ``II``、留下 ``V``（``スーパー戦隊“魂” VII 2013`` 实测），
+# 剥出半个罗马数字比不剥更糟。
+_ROMAN_ASCII_II = r"(?<![IVX])I{2,}"  # 第 1 层（= ``II+``）：bangumi_data
 _ROMAN_ASCII_IVX = r"[IVX]{2,}"  # 第 2 层：caller_title
 _ROMAN_UNICODE = r"[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+"  # 第 3 层：tmdb_title
 
@@ -152,7 +165,8 @@ _ROMAN_UNICODE = r"[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+"  # 第 3 层：tmdb_title
 #
 # 阶段 1 = 显式季词，命中即整段剥掉并**停止**（否则数字兜底会继续吃掉
 # 「机动战士敢达00」的 00）；阶段 2 = 纯数字尾，固定顺序各作用一次，
-# 让「2期12話」这种两层尾巴逐层剥。理由见头注「为什么是两段」。
+# 让「2期12話」这种两层尾巴逐层剥；阶段 2 改变了文本时再补一次阶段 1，
+# 处理「II 2006」这类季词被年份挡住的写法。理由见头注「为什么是两段」。
 _BANGUMI_DATA_SPECIFIC: tuple[re.Pattern[str], ...] = (
     re.compile(rf"\s*{_SEASON_EN_STEM}\d+$", re.IGNORECASE),
     re.compile(rf"{_SEASON_S}$", re.IGNORECASE),
@@ -161,7 +175,10 @@ _BANGUMI_DATA_SPECIFIC: tuple[re.Pattern[str], ...] = (
 _BANGUMI_DATA_NUMERIC: tuple[re.Pattern[str], ...] = (
     # 第2期12話 / 2期 / 第3話 / 第4集（含「話」的繁简两形）
     re.compile(r"\s*第?\s*\d+\s*期?[話话集]?$"),
-    # 裸数字尾：bangumi-data 里「XX 2」按季拆分的条目很常见
+    # 裸数字尾。与上一条**看似重复、其实是第二层**：模式按序各作用一次，
+    # 不是重复执行同一条，所以再写一遍等价规则 = 多一层剥离机会
+    # （``完美世界 2 3`` → ``完美世界 2`` → ``完美世界``）。删掉它会让
+    # 「多层裸数字」只剥掉一层，别当死模式清理。
     re.compile(r"\s*\d+$"),
     re.compile(rf"\s*第?\s*\d+\s*{_SEASON_UNIT}$"),
 )
@@ -170,8 +187,8 @@ _BANGUMI_DATA_NUMERIC: tuple[re.Pattern[str], ...] = (
 # 「标题 第二季」等。archive 里存的是第一季本体名，剥完再查 archive。
 # 几何：按序 search，首条命中即从匹配处截断（模式自带 `.*$` 才能到句尾）。
 _CALLER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # S06E279 / S6E27 / S01E01
-    re.compile(rf"\s*{_SEASON_S}\s*{_EPISODE_TAIL}.*$", re.IGNORECASE),
+    # S06E279 / S6E27 / S01E01 / S 06E27（S 与季号之间可有空白）
+    re.compile(rf"\s*{_SEASON_S_LOOSE}\s*{_EPISODE_TAIL}.*$", re.IGNORECASE),
     # 裸 S2 / S06（仅句尾）：媒体库常推「完美世界 S2」，archive 里只有本体名。
     # 只认句尾 —— 句中 S2 可能是作品名的一部分，SxxExx 上面已覆盖。
     re.compile(rf"\s*{_SEASON_S}$", re.IGNORECASE),
@@ -331,8 +348,31 @@ def _strip_staged(
       停在 ``机动战士敢达00``，不会被裸数字规则继续吃掉 ``00``。
     - 阶段 2 每条模式各作用一次（固定顺序），既能让 ``2期12話`` 逐层剥成
       ``XX``，又不会在剥完「第N季」后再吃标题自带年份（``华纳巨星总动员2011``）。
+    - 阶段 2 改变了文本时再试一次阶段 1（只一次）：``XX II 2006`` → ``XX II``
+      → ``XX``。不循环，否则等于「反复剥」，会吃掉标题自带编号。
     - 任一阶段剥成空串都回退到上一步（``1923 Season 1`` → ``1923`` 而非 ``""``）。
     """
+    stripped = _strip_specific(text, specific)
+    if stripped:
+        return stripped
+
+    out = text
+    for pattern in numeric:
+        candidate = pattern.sub("", out)
+        if candidate.strip():
+            out = candidate
+
+    # 纯数字尾剥掉后可能露出新的显式季词：``XX II 2006`` → ``XX II`` → ``XX``。
+    # 只补这一次 —— 再循环下去就是「反复剥」，会把标题自带的编号也吃掉。
+    if out != text:
+        stripped = _strip_specific(out, specific)
+        if stripped:
+            return stripped
+    return out
+
+
+def _strip_specific(text: str, specific: tuple[re.Pattern[str], ...]) -> str:
+    """按序剥掉第一条命中的显式季词；无命中（或剥成空串）返回 ``""``。"""
     for pattern in specific:
         if pattern.search(text) is None:
             continue
@@ -340,13 +380,7 @@ def _strip_staged(
         candidate = pattern.sub("", text).strip()
         if candidate:
             return candidate
-
-    out = text
-    for pattern in numeric:
-        candidate = pattern.sub("", out)
-        if candidate.strip():
-            out = candidate
-    return out
+    return ""
 
 
 def has_season_marker(text: str, scope: SeasonSuffixScope) -> bool:

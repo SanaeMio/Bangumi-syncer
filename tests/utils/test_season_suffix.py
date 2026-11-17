@@ -89,6 +89,39 @@ def test_bangumi_data_s_requires_word_boundary() -> None:
     )
 
 
+def test_bangumi_data_retries_season_word_after_numeric_tail() -> None:
+    """数字尾剥掉后露出的季词要再剥一次。
+
+    bangumi-data 里有 ``スーパー戦隊“魂” II 2006`` 这类「季词 + 年份」条目：
+    第一轮季词因为年份挡在句尾匹配不到，剥完年份必须再试一次，否则精确索引
+    只能查「…“魂” II」——查不到本体。
+    """
+    assert (
+        strip_season_markers("スーパー戦隊“魂” II 2006", SCOPE_BANGUMI_DATA)
+        == "スーパー戦隊“魂”"
+    )
+    assert (
+        strip_season_markers("スーパー戦隊“魂”III 2008", SCOPE_BANGUMI_DATA)
+        == "スーパー戦隊“魂”"
+    )
+
+
+def test_bangumi_data_roman_tail_is_not_a_partial_roman() -> None:
+    """``I{2,}`` 不能从 ``VII`` 里摘走尾部 ``II``。
+
+    剥出半个罗马数字（``VII`` → ``V``）比不剥更糟：它是一个不存在的标题，
+    精确索引必然 miss，还会让排查者以为「季标已经剥过了」。
+    """
+    assert (
+        strip_season_markers("スーパー戦隊“魂” VII 2013", SCOPE_BANGUMI_DATA)
+        == "スーパー戦隊“魂” VII"
+    )
+    assert (
+        strip_season_markers("スーパー戦隊“魂” XII 2018", SCOPE_BANGUMI_DATA)
+        == "スーパー戦隊“魂” XII"
+    )
+
+
 def test_bangumi_data_never_returns_empty() -> None:
     """剥成空串就保留上一步：空查询会让下游精确索引必然 miss。"""
     assert strip_season_markers("1923 Season 1", SCOPE_BANGUMI_DATA) == "1923"
@@ -119,6 +152,10 @@ def test_bangumi_data_strips_trailing_number_only_in_this_scope() -> None:
     [
         ("完美世界 S06E279", "完美世界"),
         ("完美世界 S1E1", "完美世界"),
+        # S 与季号之间的空白：``S 06E27`` 是媒体库里的真实写法，
+        # 收敛词法时换成 ``S\\d+`` 丢掉了它（旧实现是 ``S\\s*\\d+``）
+        ("完美世界 S 06E27", "完美世界"),
+        ("完美世界 S 06 E 27", "完美世界"),
         # 裸 S 简写（召回缺口）：媒体库常推「完美世界 S2」，archive 只有本体名
         ("完美世界 S2", "完美世界"),
         ("完美世界 S12", "完美世界"),
@@ -310,9 +347,12 @@ def test_season_s_patterns_all_keep_word_boundary() -> None:
     for scope, profile in season_suffix._PROFILES.items():
         patterns = (*profile.patterns, *profile.numeric_patterns)
         for pattern in patterns:
-            if r"S\d" not in pattern.pattern:
+            text = pattern.pattern
+            # 两种写法都要覆盖：句尾裸 S（``S\\d+``）与 SxxExx 的宽松版
+            # （``S\\s*\\d+``，S 与季号之间可有空白）。
+            if r"S\d" not in text and r"S\s*\d" not in text:
                 continue
-            assert r"(?<![A-Za-z])S\d" in pattern.pattern, (scope, pattern.pattern)
+            assert r"(?<![A-Za-z])" in text, (scope, text)
 
 
 def test_season_s_atom_is_shared_by_three_scopes() -> None:
@@ -371,7 +411,9 @@ def test_wide_atoms_derive_from_narrow_ones() -> None:
     assert season_suffix._SEASON_UNIT_WITH_PART == f"[{season_suffix._SEASON_UNITS}部]"
     # 英文季标只留 STEM 一个原子（实测把 `Season` 换成它 0 改动）
     assert season_suffix._SEASON_EN_STEM == r"Season\s*0*"
-    assert season_suffix._ROMAN_ASCII_II == "I{2,}"
+    assert season_suffix._ROMAN_ASCII_II == r"(?<![IVX])I{2,}"
+    # SxxExx 的宽松版只是把 S 与季号之间的空白放开，词边界与句尾版一致
+    assert season_suffix._SEASON_S_LOOSE == r"(?<![A-Za-z])S\s*\d+"
     assert season_suffix._ROMAN_ASCII_IVX == "[IVX]{2,}"
     assert season_suffix._ROMAN_UNICODE == "[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+"
 
