@@ -60,10 +60,14 @@ def _is_login_orphan(line: str) -> bool:
 
 
 def _parse_timestamp_dt(ts: str) -> datetime | None:
-    try:
-        return datetime.strptime(ts, "%Y/%m/%d %H:%M:%S.%f")
-    except ValueError:
-        return None
+    # 毫秒可选（TIMESTAMP_RE 同时接受两种写法）：历史日志与外部导入的日志
+    # 常没有毫秒，只按 .%f 解析会让这些行的 duration_ms 静默变成 None。
+    for fmt in ("%Y/%m/%d %H:%M:%S.%f", "%Y/%m/%d %H:%M:%S"):
+        try:
+            return datetime.strptime(ts, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def _duration_ms(timestamps: list[str]) -> int | None:

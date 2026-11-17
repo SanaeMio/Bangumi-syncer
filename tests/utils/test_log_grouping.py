@@ -100,6 +100,15 @@ class TestGroupLogLines:
         group = group_log_lines(lines)["groups"][0]
         assert group["duration_ms"] == 1970
 
+    def test_duration_ms_without_millis(self):
+        """毫秒可选：无毫秒日志也要能算出时长（不能静默变 None）"""
+        lines = [
+            "[2026/07/16 09:50:37] [INFO] [run:retry_2] 同步开始: 番剧A S01E01 (plex)",
+            "[2026/07/16 09:50:39] [INFO] [run:retry_2] 同步结束: status=error",
+        ]
+        group = group_log_lines(lines)["groups"][0]
+        assert group["duration_ms"] == 2000
+
     def test_unrecognized_group_goes_to_orphans(self):
         lines = [_line("sync_test_1", "INFO", "hello sync")]
         result = group_log_lines(lines)
