@@ -34,6 +34,7 @@ from typing import Any, Optional
 from rapidfuzz.distance import DamerauLevenshtein, JaroWinkler
 
 from ...core.logging import logger
+from ..infobox import ALIAS_KEYS, iter_infobox_aliases
 from ..title_patterns import YEAR_RE, extract_year
 from ._title_normalize import (
     ARCHIVE_FUZZY_THRESHOLD,
@@ -43,12 +44,9 @@ from ._title_normalize import (
     strip_numeral_variant,
     strip_year_suffix,
 )
-from ._wiki_parser import parse_infobox
 
-# infobox 中视为别名的 key（与原 _title_index.py 保持一致）
-_ALIAS_KEYS = frozenset(
-    {"别名", "alias", "aliases", "中文名", "英文名", "罗马音", "假名"}
-)
+# 别名 key 集合与抽取实现统一在 app.utils.infobox（archive 索引要扩大召回，
+# 故传 ALIAS_KEYS；匹配打分层只认「别名」，两处差异是显式参数）
 
 # 模糊查询候选集上限（与原 _CANDIDATE_LIMIT 一致）
 _CANDIDATE_LIMIT = 200
@@ -158,21 +156,10 @@ def _extract_alias_text(infobox_raw: Any) -> str:
     """
     if not isinstance(infobox_raw, str) or not infobox_raw:
         return ""
-    parsed = parse_infobox(infobox_raw)
-    aliases: list[str] = []
-    for item in parsed:
-        key_lower = str(item.get("key", "")).strip().lower()
-        if key_lower not in _ALIAS_KEYS:
-            continue
-        value = item.get("value")
-        if isinstance(value, list):
-            for v in value:
-                text = v.get("v") if isinstance(v, dict) else v
-                if isinstance(text, str) and text.strip():
-                    aliases.append(_normalize_key(text))
-        elif isinstance(value, str) and value.strip():
-            aliases.append(_normalize_key(value))
-    return " ".join(aliases)
+    return " ".join(
+        _normalize_key(text)
+        for text in iter_infobox_aliases(infobox_raw, ALIAS_KEYS)
+    )
 
 
 def _year_of(date_str: Any) -> Optional[int]:
