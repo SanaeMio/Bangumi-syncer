@@ -31,6 +31,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Optional
 
+from rapidfuzz import fuzz
 from rapidfuzz.distance import DamerauLevenshtein, JaroWinkler
 
 from ...core.logging import logger
@@ -146,6 +147,24 @@ def _score_candidate(query: str, candidate: str) -> float:
         )
         * 100.0
     )
+
+
+def _score_alias(query: str, alias: str) -> float:
+    """别名相似度（0~100）：只认整体相似度，不做子串/partial 抬升。
+
+    别名是条目的**完整**别称，不是查询的一个片段。沿用标题那条
+    「子串直接满分 + partial×0.9」会给短别名开侧门：查询
+    ``achristmascwrol``（``A Christmas Carol`` 单字符 typo）与某条目别名
+    ``christmas`` 判 100 分，压过真正候选的 93.3，于是错标成另一部作品
+    （L2-S8-071 实测）。别名只认 ratio 反而召回更高
+    （``research/matching-pipeline/eval_alias_scoring.py``：94.5% vs 92.5%），
+    因为满分噪声会把真候选挤出 ``limit`` 截断。
+    """
+    if not query or not alias:
+        return 0.0
+    if query == alias:
+        return 100.0
+    return fuzz.ratio(query, alias)
 
 
 def _extract_alias_text(infobox_raw: Any) -> str:
@@ -851,7 +870,7 @@ class ArchiveFTSQuery:
                         for alias_key in alias_text.split():
                             if not alias_key:
                                 continue
-                            score = _score_candidate(key, alias_key)
+                            score = _score_alias(key, alias_key)
                             if score > best_score:
                                 best_score = score
                 if best_score < threshold:
@@ -899,14 +918,23 @@ class ArchiveFTSQuery:
                     trigrams = [query[i : i + 3] for i in range(len(query) - 2)]
                     expr = " OR ".join(trigrams)
                     limit = 500  # 模糊预筛上限，外层再截断到 _CANDIDATE_LIMIT
+                    # 必须按 bm25 相关度排序而不是默认的 rowid 顺序：
+                    # OR 表达式里只要有一个高频 trigram（三字标题常见的
+                    # "the"/"and"），命中数就上万，直接 LIMIT 500 拿到的是
+                    # 「id 最小的 500 条」——真实候选（通常 id 靠后）被截掉，
+                    # 表现为长英文标题的单字符 typo 查不到（L2-S8 实测 9 条）。
+                    # 排序后打分仍是全候选遍历，因此只影响截断取舍，
+                    # 不改变既有命中的排序语义（实测最坏 31ms @ 1.1 万命中）。
+                    order = " ORDER BY rank"
                 else:
                     # 精确查询：phrase MATCH（所有 trigram 按序匹配）
                     expr = query
                     limit = 2000  # 精确预筛上限，覆盖同名条目场景
+                    order = ""
                 rows = conn.execute(
                     f"SELECT rowid FROM subject_fts "
-                    f"WHERE name MATCH ? OR name_cn MATCH ? OR aliases MATCH ? "
-                    f"LIMIT {limit}",
+                    f"WHERE name MATCH ? OR name_cn MATCH ? OR aliases MATCH ?"
+                    f"{order} LIMIT {limit}",
                     (expr,) * 3,
                 ).fetchall()
             else:
