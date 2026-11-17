@@ -12,8 +12,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.logging import logger
-from app.services.matching.contracts import DEFAULT_AMBIGUOUS_MARGIN
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import (
+    DEFAULT_AMBIGUOUS_MARGIN,
+    STATUS_ERROR,
+    STATUS_HIT,
+    STATUS_LOW_CONFIDENCE,
+    STATUS_MISS,
+)
 from app.services.matching.steps.base import MatchStepBase, StepOutcome
 from app.services.sync_service.match_trace import MatchCandidate
 from app.utils.bangumi_constants import (
@@ -110,7 +116,7 @@ class APISearchStep(MatchStepBase):
         if not bgm:
             ctx.failure_detail = "无法创建 Bangumi API 实例，无法搜索条目"
             return StepOutcome(
-                status="error",
+                status=STATUS_ERROR,
                 reason="无法创建 Bangumi API 实例",
                 inputs={
                     "title": item.title,
@@ -199,7 +205,7 @@ class APISearchStep(MatchStepBase):
             if not bgm_data:
                 ctx.failure_detail = "Bangumi 搜索无结果"
                 return StepOutcome(
-                    status="miss",
+                    status=STATUS_MISS,
                     reason="Bangumi API 搜索无结果",
                     inputs=inputs,
                     outputs={
@@ -318,7 +324,7 @@ class APISearchStep(MatchStepBase):
             if not verdict.accepted:
                 ctx.failure_detail = verdict.failure_detail
                 return StepOutcome(
-                    status="low_confidence",
+                    status=STATUS_LOW_CONFIDENCE,
                     subject_id=anchor_id,
                     reason=verdict.reason,
                     score=verdict.score,
@@ -378,7 +384,7 @@ class APISearchStep(MatchStepBase):
                 final_reason = f"{final_reason}；{verdict.reason}"
 
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=str(bgm_data[0]["id"]),
                 reason=final_reason,
                 score=verdict.score,
@@ -430,7 +436,7 @@ class APISearchStep(MatchStepBase):
             ) = _import_sync_helpers()
             ctx.failure_detail = detail
             return StepOutcome(
-                status="error",
+                status=STATUS_ERROR,
                 reason=detail,
                 inputs=inputs,
                 outputs={"subject_id": "", "error": str(e)},
@@ -660,7 +666,7 @@ class APISearchStep(MatchStepBase):
             after_id = after.get("id")
             after_name = after.get("name_cn") or after.get("name") or ""
             outcome = StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=str(after_id) if after_id is not None else None,
                 reason=post_reason or "搜索后处理改选",
                 inputs={

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.matching.contracts import STATUS_ERROR
 from app.services.matching.steps.base import StepOutcome
 from app.services.sync_service.context import ExecutionContext
 from app.services.sync_service.steps.base import ExecutionStepBase
@@ -53,7 +54,7 @@ class SyncPipeline:
             if outcome.outputs:
                 current = {**current, **self._merge_outputs(outcome.outputs)}
                 ctx.step_outputs[step.stage] = dict(outcome.outputs)
-            if outcome.is_terminal or outcome.status == "error":
+            if outcome.is_terminal or outcome.status == STATUS_ERROR:
                 ctx.current_outputs = current
                 return step.stage, outcome
         ctx.current_outputs = current

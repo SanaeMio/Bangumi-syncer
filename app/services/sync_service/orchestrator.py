@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from ...core.logging import get_sync_run_id, logger, sync_log_context
 from ...models.sync import CustomItem, SyncResponse
+from ..matching.contracts import STATUS_ERROR, STATUS_MISS
 from .context import ExecutionContext
 from .errors import PendingCandidateContractError, PendingCandidatePersistError
 from .match_trace import MatchTrace
@@ -147,7 +148,7 @@ class SyncOrchestrator:
             terminal = exec_ctx.terminal
             if terminal is not None:
                 stage, outcome = terminal
-                if stage == "episode_resolve" and outcome.status == "error":
+                if stage == "episode_resolve" and outcome.status == STATUS_ERROR:
                     # 认证失败等：走统一异常处理（保持原 raise 语义）
                     err = ValueError(
                         (outcome.error_detail or {}).get("message", outcome.reason)
@@ -155,7 +156,7 @@ class SyncOrchestrator:
                     return self._handle_sync_exception(
                         item, actual_source, trace, err, status_holder
                     )
-                if stage == "cross_season" and outcome.status == "miss":
+                if stage == "cross_season" and outcome.status == STATUS_MISS:
                     # 集数不存在：不发 bangumi_id_found（旧实现 resolve 成功后
                     # 才通知，避免"已找到"与失败通知的矛盾序列）
                     #
@@ -177,7 +178,7 @@ class SyncOrchestrator:
                         status_holder,
                         detail=detail,
                     )
-                if stage == "sync_action" and outcome.status == "error":
+                if stage == "sync_action" and outcome.status == STATUS_ERROR:
                     status_holder[0] = "error"
                     return SyncResponse(
                         status="error",

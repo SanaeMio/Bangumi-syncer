@@ -19,6 +19,7 @@ import httpx
 
 from app.core.logging import logger
 from app.services.matching.context import MatchContext
+from app.services.matching.contracts import STATUS_HIT, STATUS_MISS, STATUS_SKIPPED
 from app.services.matching.gates import EXACT_SEARCH_HIT, NO_VALID_DATE
 from app.services.matching.steps.base import (
     MatchStepBase,
@@ -65,7 +66,7 @@ class SearchResetStep(MatchStepBase):
         # 这里保留 skipped 以避免引入另一种误导（hit 的 UI 文案是「命中」，
         # 对一个纯预处理步骤同样不准确）；改动它只影响详情页文案，不影响行为。
         return StepOutcome(
-            status="skipped",
+            status=STATUS_SKIPPED,
             reason="状态重置完成",
             inputs={"title": ctx.item.title, "ori_title": ctx.item.ori_title or ""},
             outputs={
@@ -163,7 +164,7 @@ class DateExactSearchStep(MatchStepBase):
                 f"首播日期格式解析失败: {premiere_date}，降级至无日期模式搜索"
             )
             return StepOutcome(
-                status="miss",
+                status=STATUS_MISS,
                 reason="日期格式解析失败，降级兜底",
                 inputs=inputs,
                 outputs={"total_candidates": 0, "error": "日期格式解析失败"},
@@ -172,7 +173,7 @@ class DateExactSearchStep(MatchStepBase):
             # 网络不可达/重试耗尽：精确搜索失败不中断，降级到阶段C
             logger.error(f"精确搜索 API 失败（网络错误）: {e}")
             return StepOutcome(
-                status="miss",
+                status=STATUS_MISS,
                 reason="网络错误，降级兜底",
                 inputs=inputs,
                 outputs={"total_candidates": 0, "error": "网络错误"},
@@ -180,13 +181,13 @@ class DateExactSearchStep(MatchStepBase):
 
         if ctx.bgm_data:
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 reason="日期精确搜索命中",
                 inputs=inputs,
                 outputs={"total_candidates": len(ctx.bgm_data)},
             )
         return StepOutcome(
-            status="miss",
+            status=STATUS_MISS,
             reason="日期精确搜索未命中",
             inputs=inputs,
             outputs={"total_candidates": 0},
@@ -267,7 +268,7 @@ class VariantFallbackSearchStep(MatchStepBase):
                         # （bgm_search 收尾时经 out_meta 回传给主 ctx）
                         ctx.matched_variant_method = v.method
                         return StepOutcome(
-                            status="hit",
+                            status=STATUS_HIT,
                             subject_id=str(matched[0].get("id", "")),
                             reason=f"兜底变体命中: {v.method}",
                             inputs=inputs,
@@ -281,7 +282,7 @@ class VariantFallbackSearchStep(MatchStepBase):
         # 执行置信度检查 → low_confidence 时沉淀为 pending_candidate 供用户确认。
         # 若 DateExactSearchStep 本身也无结果，ctx.bgm_data 已为空，无需显式清空。
         return StepOutcome(
-            status="miss",
+            status=STATUS_MISS,
             reason="变体兜底未命中",
             inputs=inputs,
             outputs={"total_candidates": len(ctx.bgm_data) if ctx.bgm_data else 0},
@@ -303,7 +304,7 @@ class SearchFinalizeStep(MatchStepBase):
             # 清空预测性匹配方式标记，避免残留上次精确命中的 method 造成脏读
             ctx.matched_variant_method = ""
             return StepOutcome(
-                status="miss",
+                status=STATUS_MISS,
                 reason="无匹配结果",
                 inputs=inputs,
                 outputs={"total_candidates": 0},
@@ -311,7 +312,7 @@ class SearchFinalizeStep(MatchStepBase):
             )
         subject_id = str(ctx.bgm_data[0].get("id", ""))
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=subject_id,
             inputs=inputs,
             outputs={

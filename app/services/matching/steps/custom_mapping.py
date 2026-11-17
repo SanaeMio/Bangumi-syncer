@@ -16,6 +16,8 @@ from __future__ import annotations
 from app.services.matching.context import MatchContext
 from app.services.matching.contracts import (
     SOURCE_CUSTOM_MAPPING,
+    STATUS_HIT,
+    STATUS_MISS,
     SubjectRef,
     make_candidate,
 )
@@ -86,7 +88,7 @@ class CustomMappingStep(MatchStepBase):
             )
 
         return StepOutcome(
-            status="miss", reason="自定义映射与正则规则均未命中", inputs=mapping_inputs
+            status=STATUS_MISS, reason="自定义映射与正则规则均未命中", inputs=mapping_inputs
         )
 
     @staticmethod
@@ -125,7 +127,7 @@ class CustomMappingStep(MatchStepBase):
             outputs["target_episode"] = str(target_episode)
 
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=subject_id,
             reason=reason,
             score=1.0,
