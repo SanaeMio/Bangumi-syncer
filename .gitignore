@@ -213,3 +213,11 @@ rrr/mcp_server
 
 # eval 运行产物（本地生成，不入库）
 /eval-out/
+
+# 测试/脚本在仓库根生成的临时配置目录与 pytest 临时根
+/bs_*/
+/eval_m*/
+/pytest-of-*/
+
+# 本地一次性分析脚本与输出
+/.tmp/
