@@ -61,6 +61,9 @@ class TestConfigChangeListener:
             # 保证 mtime 大于上次加载记录（放文件系统时间戳粒度保险）
             path.write_text(original + "\n", encoding="utf-8")
             os.utime(path, (time.time() + 10, time.time() + 10))
+            # 放行 mtime 探测节流（见 ConfigManager._check_config_updated），
+            # 本用例只验证「外部修改会触发回调」
+            config_manager._last_stat_check = 0.0
             config_manager.get_config_parser()
             assert fired, "外部配置文件修改后应触发变更回调"
         finally:

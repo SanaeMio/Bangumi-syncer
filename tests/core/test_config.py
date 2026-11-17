@@ -173,8 +173,29 @@ class TestConfigManagerBranches:
         p.write_text("[a]\nx = 2\n", encoding="utf-8")
         future = cm._last_modified + 2
         os.utime(p, (future, future))
+        # mtime 探测有 1 秒节流（见 _check_config_updated），这里显式放行，
+        # 只验证「发现变化后能重载」这一能力本身；
+        # 节流窗口行为由 test_config_stat_throttled_within_window 覆盖。
+        cm._last_stat_check = 0.0
         second = cm.get_config_parser()
         assert second.get("a", "x") == "2"
+
+    def test_config_stat_throttled_within_window(self, tmp_path):
+        """节流窗口内不重复探测 mtime，越过窗口后恢复检测"""
+        cm = _config_manager_from_ini(tmp_path, "[a]\nx = 1\n")
+        assert cm.get_config_parser().get("a", "x") == "1"
+
+        p = tmp_path / "config.ini"
+        p.write_text("[a]\nx = 2\n", encoding="utf-8")
+        future = cm._last_modified + 2
+        os.utime(p, (future, future))
+
+        # 窗口内：按缓存继续用旧值（不 stat）
+        assert cm.get_config_parser().get("a", "x") == "1"
+
+        # 越过窗口：下一次调用重新比对 mtime 并重载
+        cm._last_stat_check = 0.0
+        assert cm.get_config_parser().get("a", "x") == "2"
 
     def test_get_section_missing_returns_fallback(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[sync]\nmode = single\n")

@@ -108,6 +108,14 @@ class SyncOrchestrator:
                 status_holder[0] = validation_error.status
                 return validation_error
 
+            # 2.5 入口幂等：窗口内已成功同步过的同一集直接短路。
+            # 放在参数校验之后（此时 title/season/episode 已归一化），
+            # 匹配之前（避免重复跑完整管线与标记请求）。
+            idempotent_response = self._sync._check_idempotent_skip(item, actual_source)
+            if idempotent_response is not None:
+                status_holder[0] = idempotent_response.status
+                return idempotent_response
+
             # 3-6. 匹配（构建 trace + receive step + API 不可达短路 + 管道 + 失败处理）
             subject_id, is_season_matched_id, error_response, trace = (
                 self._match_subject(item, actual_source)

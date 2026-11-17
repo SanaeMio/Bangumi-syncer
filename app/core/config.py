@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import threading
+import time
 from collections.abc import Callable
 from configparser import ConfigParser
 from datetime import date as _date
@@ -31,6 +32,9 @@ _BANGUMI_NON_ACCOUNT_SECTIONS: tuple[str, ...] = non_account_bangumi_sections()
 # 段名/key 白名单正则：仅允许小写字母、数字、下划线、连字符
 # 拒绝换行、等号、方括号等可用于 INI 注入的字符
 _SECTION_KEY_RE = re.compile(r"^[a-z0-9_-]+$")
+
+# 配置文件变更探测的最小间隔（秒）。只在自动发现外部修改时生效。
+_CONFIG_STAT_THROTTLE_SECONDS = 1.0
 
 
 def _validate_section_key(section: str, key: str) -> None:
@@ -67,6 +71,10 @@ class ConfigManager:
 
     _lock = threading.Lock()
 
+    # 配置 mtime 探测节流时间戳。声明为类属性作兜底：测试会用
+    # ConfigManager.__new__() 跳过 __init__，实例上可能没有该字段。
+    _last_stat_check: float = 0.0
+
     def __init__(self) -> None:
         self.platform = platform.system()
         self.cwd = Path(__file__).parent.parent.parent
@@ -80,6 +88,10 @@ class ConfigManager:
         # 配置缓存
         self._config_cache: ConfigParser | None = None
         self._last_modified = 0
+        # 配置文件 mtime 探测节流：每条同步记录会读几十次配置，每次都
+        # exists()+stat() 是纯固定开销（实测 ~70µs/次）。热更新是人工操作，
+        # 1 秒的发现延迟无感知；显式 reload_config() 不受节流影响。
+        self._last_stat_check = 0.0
 
         # 配置变更追踪：版本号自增 + 变更监听回调。
         # 供各模块的进程级缓存（watching/poster/bangumi-data 等）在配置
@@ -218,7 +230,18 @@ class ConfigManager:
                 config.set(section, option, env_value)
 
     def _check_config_updated(self) -> bool:
-        """检查配置文件是否已更新"""
+        """检查配置文件是否已更新（1 秒节流）
+
+        节流只影响「自动发现外部修改」这一条路径：显式调用
+        :meth:`reload_config` 仍会立即重载。节流窗口内返回 False 表示
+        「按缓存继续用」，不会掩盖任何一次真实的文件变更——窗口外的
+        下一次调用仍会比对 mtime。
+        """
+        now = time.monotonic()
+        if now - self._last_stat_check < _CONFIG_STAT_THROTTLE_SECONDS:
+            return False
+        self._last_stat_check = now
+
         if not self.active_config_path.exists():
             return False
 
