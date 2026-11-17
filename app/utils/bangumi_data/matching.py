@@ -223,6 +223,25 @@ class MatchingMixin:
                         f"{_EXACT_MATCH_DATE_TOLERANCE_DAYS}，回退线性扫描检查部分匹配"
                     )
             else:
+                # 原名精确优先：请求**原文标题**与某候选的原文标题逐字相同时，
+                # 这个证据比「候选别名里含 OVA / 剧场版 等类型词」的旁证更硬。
+                # L1-S4-039：请求 Candy☆Boy（无日期），95419 原名逐字相等，但
+                # 中文别名是「Candy☆Boy OVA」，media_type 择优据此把它判成 OVA，
+                # 改选了别名相同的 2829。媒体库给的原名与条目原名一致就应当优先。
+                #
+                # 只认 ori_title，不认 title：title 常是**中文名**，它命中候选的
+                # 原文标题只说明「这个名字被当成原名登记了」，不足以推翻类型识别
+                # （完美世界 请求会命中第一季条目，而用户要看的是剧场版）。
+                # 多个原名精确候选时仍然交给 media_type 择优（同名不同版本）。
+                if ori_title:
+                    primary = [
+                        c
+                        for c in exact_candidates
+                        if (c[0].get("title") or "") == ori_title
+                    ]
+                    if primary:
+                        exact_candidates = primary
+
                 # 无日期时：若提供了 media_type 且有多个候选，
                 # 按 detect_media_type(候选标题) 与请求 media_type 一致性择优
                 if media_type and len(exact_candidates) > 1:

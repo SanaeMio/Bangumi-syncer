@@ -3076,3 +3076,56 @@ class TestBuildFixtureItems:
         assert "銀の守墓り" in titles
         assert "银之守墓人" in titles
         assert titles.count("銀の守墓り") == 1
+
+
+class TestOriginalTitlePriority:
+    """请求**原名**与候选原名逐字相同时，优先于 media_type 旁证
+
+    L1-S4_无日期-039（Candy☆Boy）的实际数据：95419 的 title 与请求原名逐字
+    相等，但它的 zh-Hans 别名是 ``Candy☆Boy OVA``；2829 的 title 是大小写
+    不同的 ``Candy boy``，别名恰好就是请求名。media_type 择优只从别名里找
+    类型词，于是把 95419 判成 OVA、改选了**另一部作品** 2829。
+
+    结论：媒体库给的原名与条目原名逐字一致，比「别名里含 OVA / 剧场版」这种
+    旁证更硬。但只认 ori_title —— title 常常是中文名，它命中候选的原文标题只
+    说明「这个名字被当成原名登记了」，不足以推翻类型识别。
+    """
+
+    OVA_ID = "95419"
+    TV_ID = "2829"
+
+    @staticmethod
+    def _data():
+        data = _make_data()
+        data._title_index = {
+            "Candy☆Boy": [
+                {
+                    "title": "Candy☆Boy",
+                    "titleTranslate": {"zh-Hans": ["Candy☆Boy OVA"]},
+                    "begin": "2007-11-22",
+                    "sites": [{"site": "bangumi", "id": "95419"}],
+                },
+                {
+                    "title": "Candy boy",
+                    "titleTranslate": {"zh-Hans": ["Candy☆Boy", "糖果男孩"]},
+                    "begin": "2008-05-02",
+                    "sites": [{"site": "bangumi", "id": "2829"}],
+                },
+            ]
+        }
+        return data
+
+    def test_original_title_exact_wins_over_media_type(self):
+        data = self._data()
+        result = data._try_exact_match(
+            "Candy☆Boy", "Candy☆Boy", "", media_type="episode"
+        )
+        assert result is not None
+        assert result[0] == self.OVA_ID
+
+    def test_no_ori_title_keeps_media_type_decision(self):
+        """没有原名信号时行为不变：media_type 择优仍是唯一依据"""
+        data = self._data()
+        result = data._try_exact_match("Candy☆Boy", "", "", media_type="episode")
+        assert result is not None
+        assert result[0] == self.TV_ID
