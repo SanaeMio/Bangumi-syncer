@@ -192,9 +192,19 @@ class MatchingMixin:
                 # 续作条目不存在时落回日期吻合的基础条目（详见
                 # ``_fallback_to_base_entry``）。放在索引路径而不是只放线性
                 # 扫描里，是为了让 matched_title / date_matched 与旧行为一致。
-                exact_candidates = self._fallback_to_base_entry(
-                    evidence_title or title, indexed_candidates, release_date, season
-                )
+                #
+                # 但索引路径有一个它自己看不见的盲区：``season > 1`` 时
+                # ``find_bangumi_id`` 会**先把季标剥掉**再进来（``XX Season 2``
+                # → ``XX``），于是索引只查得到基础条目。「这个索引键下没有本季」
+                # 并不等于「库里没有本季」：真实续作往往挂在另一个别名下
+                # （``XX 2nd Season``），只有线性扫描的 ``_pick_season_from_partial``
+                # 看得见。因此季标被改写过就不在此兜底，交回线性扫描 —— 否则
+                # 一条「单季番被加了后缀」的兜底会吃掉真实存在的续作。
+                evidence = evidence_title or title
+                if evidence == title:
+                    exact_candidates = self._fallback_to_base_entry(
+                        evidence, indexed_candidates, release_date, season
+                    )
             if not exact_candidates:
                 return None
             if release_date:
@@ -299,10 +309,9 @@ class MatchingMixin:
         收敛规则（仅在 season > 1 时生效，绝不改变第一季的既有行为）：
 
         1. 有候选**明确声明**了请求季号 → 只保留它们（正例，最可信）。
-        2. 否则，剔除**声明了其它季号**的候选。
-        3. 全部候选都指向别的季（含只有 1 条、且它无季号 = 第 1 季的情形）
+        2. 否则（候选全部指向别的季，含只有 1 条、且它无季号 = 第 1 季的情形）
            → 返回空列表判定未命中，让调用方回退线性扫描。
-        4. 无季号信息的候选按**第 1 季**视之：请求第 N (>1) 季时它们不匹配。
+        3. 无季号信息的候选按**第 1 季**视之：请求第 N (>1) 季时它们不匹配。
 
         season == 1 时直接返回原列表：请求方没有可用的季号信息，任何筛选都
         可能误伤（第一季条目常常根本不写季号）。
@@ -327,16 +336,13 @@ class MatchingMixin:
                 )
             return matched
 
-        # 规则 2：剔除声明了其它季的候选
-        kept = [c for c, seasons in declared if season in seasons]
-        if kept:
-            logger.debug(
-                f"按季号筛选候选: 目标季={season}，"
-                f"{len(candidates)} → {len(kept)} 条（剔除异季）"
-            )
-            return kept
-
-        # 规则 3：候选全部指向别的季 —— 判未命中，回退线性扫描。
+        # 规则 2：候选全部指向别的季 —— 判未命中，回退线性扫描。
+        #
+        # 这里原本还有一条「剔除声明了其它季号的候选」，但它的推导式与规则 1
+        # 逐字相同（``season in seasons``），而 ``seasons or {1}`` 保证每个候选
+        # 至少声明了第 1 季 —— 规则 1 已经把所有声明本季的候选取走了，走到这里
+        # 时该表达式必然为空，那条分支永远不可达（已删）。文档里「剔除异季」
+        # 的语义由规则 1 的补集天然实现：留下的就是异季。
         #
         # 扫描会同时找出 S1（精确 score=1.0）与 S2（部分 score≈0.81），
         # 再由 _select_from_exact_matches(..., season) 按季号选中正确条目。
@@ -601,6 +607,12 @@ class MatchingMixin:
         # 此时放弃既有的「日期差 ≤180 就直接采信」捷径，改由下方按季号
         # 在 partial_matches 中择优。
         season_exact = self._filter_candidates_by_season(exact_matches, season)
+        # 是否走了「落回基础条目」的兜底。兜底命中意味着请求本身就是单季番
+        # 被加了季后缀，日期吻合就是它的全部证据 —— 下面必须按 date_matched=True
+        # 返回，否则下游 _judge_season_matched_id 会判「命中的不是目标季」，
+        # 转而去爬续集链并报「不存在或集数过多」，兜底等于白兜。索引路径一直
+        # 是这么返回的，两条路径不能两种口径。
+        used_base_fallback = False
         if not season_exact and season > 1:
             picked = self._pick_season_from_partial(
                 title, partial_matches, release_date, season
@@ -616,6 +628,7 @@ class MatchingMixin:
             season_exact = self._fallback_to_base_entry(
                 evidence_title or title, exact_matches, release_date, season
             )
+            used_base_fallback = bool(season_exact)
         exact_matches = season_exact
         if not exact_matches:
             return None
@@ -709,8 +722,8 @@ class MatchingMixin:
         )
         # 获取匹配到的标题
         matched_title = self._get_best_matched_title(result_item)
-        # 没有通过日期筛选，标记为非日期匹配
-        return (exact_matches[0][1], matched_title, False, result_item)
+        # 没有通过日期筛选，标记为非日期匹配（兜底命中除外，见上方注释）
+        return (exact_matches[0][1], matched_title, used_base_fallback, result_item)
 
     def _pick_season_from_partial(
         self,

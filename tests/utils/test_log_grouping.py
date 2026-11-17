@@ -109,6 +109,19 @@ class TestGroupLogLines:
         group = group_log_lines(lines)["groups"][0]
         assert group["duration_ms"] == 2000
 
+    def test_duration_ms_with_long_fraction(self):
+        """小数秒超过 6 位（%f 只吃 1~6 位）：截断后照常算时长，不能静默丢
+
+        TIMESTAMP_RE 放行 ``\\.\\d+``，但 strptime 的 %f 只接受 1~6 位。
+        不截断的话整行解析失败 —— 分组还在，duration_ms 却是 None，最难发现。
+        """
+        lines = [
+            "[2026/07/16 09:50:37.1234567] [INFO] [run:retry_3] 同步开始: 番剧A S01E01 (plex)",
+            "[2026/07/16 09:50:39.1234567] [INFO] [run:retry_3] 同步结束: status=error",
+        ]
+        group = group_log_lines(lines)["groups"][0]
+        assert group["duration_ms"] == 2000
+
     def test_unrecognized_group_goes_to_orphans(self):
         lines = [_line("sync_test_1", "INFO", "hello sync")]
         result = group_log_lines(lines)

@@ -158,3 +158,121 @@ class TestSeasonedPartialPickEvidence:
         )
         assert picked is not None
         assert picked[0] == BASE_ID
+
+
+# ----- 索引路径的兜底不许盖掉真实续作（审查 F1） -----
+
+SEQ_BASE_ID = "1001"
+SEQ_SEQ_ID = "1002"
+SEQ_BASE_TITLE = "テストアニメ"
+SEQ_BASE_DATE = "2026-01-11"
+
+WITH_SEQUEL = [
+    {
+        "title": SEQ_BASE_TITLE,
+        "titleTranslate": {"zh-Hans": ["测试动画"]},
+        "type": "tv",
+        "begin": "2026-01-11T15:00:00.000Z",
+        "end": "2026-03-29T15:00:00.000Z",
+        "sites": [{"site": "bangumi", "id": SEQ_BASE_ID}],
+    },
+    {
+        "title": f"{SEQ_BASE_TITLE} 2nd Season",
+        "titleTranslate": {"zh-Hans": ["测试动画 第二季"]},
+        "type": "tv",
+        "begin": "2026-07-04T15:00:00.000Z",
+        "end": "2026-09-26T15:00:00.000Z",
+        "sites": [{"site": "bangumi", "id": SEQ_SEQ_ID}],
+    },
+]
+
+
+def _make_data_of(items) -> BangumiData:
+    """只含给定条目的离线 BangumiData（同 ``_make_data``，语料可换）"""
+    with (
+        patch.object(BangumiData, "_check_and_download_cache_on_startup"),
+        patch.object(BangumiData, "_preload_data_to_memory"),
+        patch.object(BangumiData, "_build_tmdb_mapping"),
+    ):
+        data = BangumiData()
+    data._data_cache = list(items)
+    data._cache_items = list(items)
+    data.local_cache_path = ""
+    data.use_cache = False
+    with patch.object(data, "_ensure_fresh_data"):
+        data._build_title_index()
+    return data
+
+
+class TestIndexPathFallbackGuard:
+    """季标被剥离改写过时，索引路径不许用兜底抢先返回基础条目
+
+    ``find_bangumi_id`` 在 season>1 时先把季标剥掉（``XX Season 2`` → ``XX``），
+    索引于是只查得到基础条目。若此时按「索引里没有本季」就兜底，真实续作
+    （挂在 ``XX 2nd Season`` 这个别名下、只有线性扫描看得见）会被永久盖掉 ——
+    正是 #269 修好的那个错，而且 ``date_matched=True`` 会让下游直接采信。
+    """
+
+    def _find(self, title, ori_title=None, date="2026-07-04"):
+        return _make_data_of(WITH_SEQUEL).find_bangumi_id(
+            title=title,
+            ori_title=ori_title,
+            release_date=date,
+            season=2,
+            media_type="episode",
+        )
+
+    def test_english_season_suffix_keeps_real_sequel(self):
+        result = self._find("测试动画 Season 2")
+        assert result is not None
+        assert result[0] == SEQ_SEQ_ID, "英文季标被剥离后不许把续作降级成第一季"
+
+    def test_arabic_season_suffix_keeps_real_sequel(self):
+        result = self._find("测试动画 第2季")
+        assert result is not None
+        assert result[0] == SEQ_SEQ_ID
+
+    def test_chinese_season_suffix_keeps_real_sequel(self):
+        """中文季标不剥，走的是线性扫描（原本就正确，钉住不回归）"""
+        result = self._find("测试动画 第二季")
+        assert result is not None
+        assert result[0] == SEQ_SEQ_ID
+
+
+class TestFallbackDateMatchedConsistency:
+    """同一个基础条目、同一日期，两条路径的 date_matched 必须一致（审查 F2）
+
+    索引路径一直返回 True；线性路径原本返回 False。差异会顺流到
+    ``_judge_season_matched_id``（True 则跳过前传链验证）与 ``score``
+    （1.0 vs 0.8）—— 同一条命中，走哪条路径决定它「可不可信」。
+    """
+
+    def test_same_entry_same_flag_on_both_paths(self):
+        # 索引命中（键来自 ori_title）+ 兜底
+        indexed = _find("マジカノ 第二季", BASE_TITLE, BASE_DATE)
+        # 索引查不到（title 被剥成基础标题后不准再由索引兜底）→ 线性扫描 + 兜底
+        linear = _find("マジカノ Season 2", None, BASE_DATE)
+
+        assert indexed is not None and linear is not None
+        assert indexed[0] == linear[0] == BASE_ID
+        assert indexed[2] is True
+        assert linear[2] is True, "线性路径落回基础条目时也必须标记为日期匹配"
+
+    def test_linear_path_marks_date_matched_on_fallback(self):
+        """直接走线性选择函数：兜底命中必须返回 date_matched=True
+
+        上一条只断言「两条路径一致」，现状下索引路径会替线性路径把答案答了，
+        测不到线性路径自己。这里绕开 ``find_bangumi_id`` 直接调。
+        """
+        data = _make_data()
+        result = data._select_from_exact_matches(
+            "マジカノ 第二季",
+            [(ITEMS[0], BASE_ID, "title")],
+            [(ITEMS[1], 0.5, DISTRACTOR_ID)],
+            BASE_DATE,
+            2,
+            "マジカノ 第二季",
+        )
+        assert result is not None
+        assert result[0] == BASE_ID
+        assert result[2] is True, "线性路径落回基础条目时也必须标记为日期匹配"

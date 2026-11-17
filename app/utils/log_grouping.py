@@ -67,6 +67,18 @@ def _parse_timestamp_dt(ts: str) -> datetime | None:
             return datetime.strptime(ts, fmt)
         except ValueError:
             continue
+    # 小数秒位数超过 6（TIMESTAMP_RE 放行 ``\.\d+``，而 %f 只吃 1~6 位）：
+    # 截断到微秒再解析。不截断的话整行会解析失败，duration_ms 静默变 None，
+    # 而分组本身还在 —— 排查时最难发现的那一类丢失。
+    head, dot, frac = ts.partition(".")
+    if dot and head:
+        digits = "".join(ch for ch in frac if ch.isdigit())
+        try:
+            return datetime.strptime(head, "%Y/%m/%d %H:%M:%S").replace(
+                microsecond=int((digits + "000000")[:6])
+            )
+        except ValueError:
+            return None
     return None
 
 
