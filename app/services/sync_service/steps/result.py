@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from app.services.matching.contracts import STATUS_HIT
 from app.services.matching.steps.base import StepOutcome
 from app.services.sync_service.context import ExecutionContext
 from app.services.sync_service.steps.base import ExecutionStepBase
@@ -75,7 +76,7 @@ class ResultStep(ExecutionStepBase):
             logger.debug(f"获取条目标题失败: {bgm_se_id} ({type(e).__name__}: {e})")
 
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=bgm_se_id,
             reason=(
                 f"{result_message} · https://bgm.tv/subject/{bgm_se_id}"

@@ -14,6 +14,10 @@ queued 与认证失败均为终态（is_terminal=True）：
 
 from __future__ import annotations
 
+from app.services.matching.contracts import (
+    STATUS_ERROR,
+    STATUS_HIT,
+)
 from app.services.matching.steps.base import StepOutcome
 from app.services.sync_service.context import ExecutionContext
 from app.services.sync_service.retry import MARK_QUEUED
@@ -42,7 +46,7 @@ class SyncActionStep(ExecutionStepBase):
     def _auth_error(inputs: dict) -> StepOutcome:
         """认证失败的统一终态产出"""
         return StepOutcome(
-            status="error",
+            status=STATUS_ERROR,
             reason="认证失败: Bangumi 账号 token 无效或已过期",
             inputs=inputs,
             outputs={"mark_status": "error", "error": "auth_failed"},
@@ -71,7 +75,7 @@ class SyncActionStep(ExecutionStepBase):
             if movie_signal:
                 return self._mark_subject_watching(ctx, bgm_se_id, inputs)
             return StepOutcome(
-                status="error",
+                status=STATUS_ERROR,
                 reason="缺少 episode_id 且无剧场版语义，拒绝按「条目在看」兜底",
                 inputs=inputs,
                 outputs={"mark_status": "error", "error": "missing_episode_id"},
@@ -92,7 +96,7 @@ class SyncActionStep(ExecutionStepBase):
         except ValueError as ve:
             if _is_auth_error(ve):
                 return StepOutcome(
-                    status="error",
+                    status=STATUS_ERROR,
                     reason=f"认证失败: {ve}",
                     inputs=inputs,
                     outputs={"mark_status": "error", "error": str(ve)},
@@ -104,7 +108,7 @@ class SyncActionStep(ExecutionStepBase):
         if mark_status == MARK_QUEUED:
             # API 不可达：已入待同步队列，等待补发调度器重放（无 result step）
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=bgm_se_id,
                 reason="API 不可达，已入待同步队列，等待补发调度器重放",
                 inputs=inputs,
@@ -121,7 +125,7 @@ class SyncActionStep(ExecutionStepBase):
             2: "已添加收藏",
         }.get(mark_status, f"mark_status={mark_status}")
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=bgm_se_id,
             reason=f"mark_episode_watched 返回 {mark_status}（{action_label}）",
             inputs=inputs,
@@ -157,7 +161,7 @@ class SyncActionStep(ExecutionStepBase):
                 f"reason={e.reason}"
             )
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=bgm_se_id,
                 reason="API 不可达，已入待同步队列，等待补发调度器重放",
                 inputs=inputs,
@@ -174,7 +178,7 @@ class SyncActionStep(ExecutionStepBase):
 
         if mark_status == MARK_QUEUED:
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=bgm_se_id,
                 reason="API 不可达，已入待同步队列，等待补发调度器重放",
                 inputs=inputs,
@@ -186,7 +190,7 @@ class SyncActionStep(ExecutionStepBase):
             )
 
         return StepOutcome(
-            status="hit",
+            status=STATUS_HIT,
             subject_id=bgm_se_id,
             reason=f"剧场版正片：ensure_subject_watching 返回 {mark_status}",
             inputs=inputs,

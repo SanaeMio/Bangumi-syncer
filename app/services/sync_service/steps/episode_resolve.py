@@ -6,6 +6,11 @@
 
 from __future__ import annotations
 
+from app.services.matching.contracts import (
+    STATUS_ERROR,
+    STATUS_HIT,
+    STATUS_MISS,
+)
 from app.services.matching.steps.base import StepOutcome
 from app.services.sync_service.context import ExecutionContext
 from app.services.sync_service.steps.base import ExecutionStepBase
@@ -71,7 +76,7 @@ class EpisodeResolveStep(ExecutionStepBase):
         except ValueError as ve:
             if "认证失败" in str(ve) or "access_token" in str(ve):
                 return StepOutcome(
-                    status="error",
+                    status=STATUS_ERROR,
                     reason=f"认证失败: {ve}",
                     inputs=inputs,
                     outputs={
@@ -97,7 +102,7 @@ class EpisodeResolveStep(ExecutionStepBase):
         # sort=1 去跨季找章节（命中即错标、找不到即「不存在或集数过多」）。
         if has_movie_episode and bgm_se_id and not bgm_ep_id:
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=str(bgm_se_id),
                 reason=(f"剧场版正片：subject={bgm_se_id} 标记在看（不点单集）"),
                 inputs=inputs,
@@ -112,7 +117,7 @@ class EpisodeResolveStep(ExecutionStepBase):
 
         if bgm_ep_id:
             return StepOutcome(
-                status="hit",
+                status=STATUS_HIT,
                 subject_id=str(bgm_se_id),
                 reason=(
                     f"集数解析：subject={bgm_se_id} episode={shown_ep} → "
@@ -129,7 +134,7 @@ class EpisodeResolveStep(ExecutionStepBase):
             )
 
         return StepOutcome(
-            status="miss",
+            status=STATUS_MISS,
             subject_id=str(bgm_se_id) if bgm_se_id else None,
             reason=f"集数解析未命中：subject={bgm_se_id} episode={shown_ep}",
             inputs=inputs,
