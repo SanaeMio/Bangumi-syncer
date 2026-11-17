@@ -15,23 +15,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ...core.logging import logger
-
-# 标题尾部季/部/篇/クール等序列标识符，用于检测条目是否附带季度信息以及多条目冲突时清理基标题。
-# 覆盖：中文简繁体数字季期部、英文 Season/S/Part/Act/Phase、Unicode 罗马数字、日文クール。
-_SEASON_SUFFIX = re.compile(
-    r"\s*("
-    # 第X季/第X期/第X部（简繁体中文数字 + 阿拉伯数字）
-    r"[第]?\s*(?:\d+|[一二三四五六七八九十]+)\s*[季期部]"
-    # Season X（大小写无关）
-    r"|Season\s*\d+"
-    # SX / Part X / Act X / Phase X
-    r"|S\d+|Part\s*\d+|Act\s*\d+|Phase\s*\d+"
-    # Unicode 罗马数字 ⅡⅢⅣⅤⅥⅦⅧⅨⅩ（连续出现视为一个整体）
-    r"|[ⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+"
-    # (第Xクール)
-    r"|\([^)]*クール[^)]*\)"
-    r")\s*$",
-    re.IGNORECASE,
+from ..season_suffix import (
+    SCOPE_TMDB_TITLE,
+    has_season_marker,
+    strip_season_markers,
 )
 
 # TMDB 集级 site id：tv/{id}/season/{season}/episode/{start}
@@ -185,10 +172,9 @@ class IndexMixin:
     @classmethod
     def _has_season_indicator(cls, item: dict[str, Any]) -> bool:
         """检测条目的任一标题是否包含季度标记。"""
-        for t in cls._item_all_titles(item):
-            if _SEASON_SUFFIX.search(t):
-                return True
-        return False
+        return any(
+            has_season_marker(t, SCOPE_TMDB_TITLE) for t in cls._item_all_titles(item)
+        )
 
     @classmethod
     def _pick_best_tmdb_title(
@@ -206,7 +192,7 @@ class IndexMixin:
         title = picks[0].get("title", "")
 
         if strip_suffix and len(entries) > 1:
-            title = _SEASON_SUFFIX.sub("", title).strip()
+            title = strip_season_markers(title, SCOPE_TMDB_TITLE)
         return title
 
     def _build_title_index(self) -> None:

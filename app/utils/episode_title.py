@@ -25,6 +25,12 @@ from __future__ import annotations
 
 import re
 
+from .season_suffix import (
+    FILENAME_SEASON_CN_RE,
+    FILENAME_SEASON_EN_RE,
+    SCOPE_FILENAME,
+    strip_season_markers,
+)
 from .text_constants import CN_NUM
 
 # 集号上界。历史教训：feiniu 侧没有上界，``第1234集`` 会被当成集号，靠下游
@@ -51,12 +57,12 @@ _RANGE_RE = re.compile(r"\b\d{1,4}\s*-\s*\d{1,4}\b")
 _FIRST_NUM_RE = re.compile(r"\d{1,3}")
 
 # ===== 文件名季号标记 =====
-# 比 season_title 的标题解析**窄得多**，不要替换成 extract_explicit_season：
+# 模式单源在 ``app.utils.season_suffix``（filename profile），与其余三套季剥离
+# 模式并排维护；本模块只用它的捕获组读季号、用 strip_season_markers 做清理。
+# 语义比 season_title 的标题解析**窄得多**，不要替换成 extract_explicit_season：
 # 这里的输入是文件名，结尾数字多为分辨率/集号（``05 1080p.mp4``），标题解析器
 # 的「结尾数字=季号」规则会误判。故只认带「季/期」或 Season 字样的标记，
 # 且只接受 N>1（S01/无标记一律视为第一季，见 fongmi 方案 B）。
-_FILENAME_SEASON_CN_RE = re.compile(r"第\s*([一二三四五六七八九十2-9])\s*[季期]")
-_FILENAME_SEASON_EN_RE = re.compile(r"[Ss]eason\s*0*([2-9]\d?)", re.IGNORECASE)
 
 
 def _bounded_episode(raw: str) -> int | None:
@@ -109,8 +115,7 @@ def extract_episode_from_filename(text: str) -> int:
     filename = _SIZE_RE.sub(" ", filename)
     filename = _RESOLUTION_RE.sub(" ", filename)
     filename = _RANGE_RE.sub(" ", filename)
-    filename = _FILENAME_SEASON_CN_RE.sub(" ", filename)
-    filename = _FILENAME_SEASON_EN_RE.sub(" ", filename)
+    filename = strip_season_markers(filename, SCOPE_FILENAME)
     m = _FIRST_NUM_RE.search(filename)
     if m:
         n = int(m.group())
@@ -127,13 +132,13 @@ def detect_filename_season(text: str) -> int:
     """
     if not text:
         return 1
-    m = _FILENAME_SEASON_CN_RE.search(text)
+    m = FILENAME_SEASON_CN_RE.search(text)
     if m:
         token = m.group(1)
         n = CN_NUM.get(token) or (int(token) if token.isdigit() else 0)
         if n > 1:
             return n
-    m = _FILENAME_SEASON_EN_RE.search(text)
+    m = FILENAME_SEASON_EN_RE.search(text)
     if m:
         n = int(m.group(1))
         if n > 1:

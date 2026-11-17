@@ -14,6 +14,8 @@
    - ``SxxExx`` 两侧锚定与位数不同（fongmi 解析用户文件名、log_grouping 解析
      自家日志）；
    - fongmi 季号"仅 N>1"（方案 B 策略，见 ``fongmi/client.py`` 头注）。
+5. **季/部后缀剥离** → 一律去 :mod:`app.utils.season_suffix`。四套输入域的
+   模式集合与剥离流程在那里并排维护，本模块不再持有季后缀模式。
 
 ## 为什么是「片段」而不是「全部 compiled」
 
@@ -39,19 +41,9 @@ YEAR_RE = re.compile(YEAR_TOKEN)
 # 深度归一直接删空（``_title_normalize``），两者语义不同。
 WHITESPACE_RE = re.compile(r"\s+")
 
-# 季度标记剥离（尾部锚定，按优先级排序）：
-# bangumi_data/matching.find_bangumi_id 在 season>1 时用这组模式
-# 把「XX 第2季 / XX Season 2 / XX 2期12話 / XX II」剥回第一季核心标题。
-# 模式集合与 _title_normalize._SEASON_EPISODE_PATTERNS（调用方脏标题清洗）
-# 有意不同：本组面向 bangumi-data 侧的标题（第N期[話话集] 后缀等），勿合并。
-SEASON_SUFFIX_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\s*[第]?\s*\d+\s*期?[話话集]?$"),
-    re.compile(r"\s*Season\s*\d+$", re.IGNORECASE),
-    re.compile(r"\s*S\d+$", re.IGNORECASE),
-    re.compile(r"\s*\d+$"),
-    re.compile(r"\s*II+$"),
-    re.compile(r"\s*[第]?\s*\d+\s*[期季]$"),
-)
+# 季度标记剥离不在这里：四套输入域（bangumi-data / 调用方脏标题 / TMDB 季标题 /
+# 文件名）的模式集合有意不同，已集中登记在 ``app.utils.season_suffix``，调用方
+# 按 scope 取用，勿再各写一份模式。
 
 
 def extract_year(text: str) -> int | None:

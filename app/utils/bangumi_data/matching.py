@@ -21,8 +21,8 @@ from rapidfuzz import fuzz
 from ...core.config_schema import DEFAULT_MATCH_CONFIDENCE_THRESHOLD
 from ...core.logging import logger
 from ...utils.media_type_detector import detect_media_type
+from ..season_suffix import SCOPE_BANGUMI_DATA, strip_season_markers
 from ..season_title import extract_season_candidates
-from ..title_patterns import SEASON_SUFFIX_PATTERNS
 
 # 日期解析记忆化：bangumi-data 的 begin 是条目常量，但 _calculate_match_info
 # 会对每条候选重复调用 strptime（8.8k 条目 × 2 次 30/120 天判定 ≈ 每次查询 3.5 万次），
@@ -123,10 +123,8 @@ class MatchingMixin:
         # 如果是非第一季，尝试从标题中识别第一季的标题
         original_title = title
         if season > 1:
-            # 尝试移除标题中可能包含的季度信息（模式单源 title_patterns）
-            title_without_season = title
-            for _pat in SEASON_SUFFIX_PATTERNS:
-                title_without_season = _pat.sub("", title_without_season)
+            # 移除标题中可能包含的季度信息（模式单源 season_suffix）
+            title_without_season = strip_season_markers(title, SCOPE_BANGUMI_DATA)
 
             if title_without_season != title:
                 logger.debug(f"移除季度信息后的标题: {title_without_season}")

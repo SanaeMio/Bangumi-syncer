@@ -976,7 +976,7 @@ def generate_single_season_cases(
     return cases
 
 
-# 季后缀格式变体（覆盖 _SEASON_EPISODE_PATTERNS 的各模式）
+# 季后缀格式变体（覆盖 season_suffix.CALLER_TITLE 的各模式）
 _SEASON_SUFFIX_VARIANTS: tuple[str, ...] = (
     " 第二季",
     " 第2季",
