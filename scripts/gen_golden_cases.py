@@ -284,21 +284,44 @@ def build_fixture_items(
 
     为什么要带干扰项：黄金集的价值一半在于「不该被误吸走」。若子集中只有
     目标条目，任何算法退化都表现为命中正确，闸门形同虚设。
+
+    **同一个 bangumi id 可能挂着多条 bangumi-data 记录**：同一个 subject 有
+    时按语言拆成 ``lang=ja``（title 为原文、中文名在 titleTranslate）与
+    ``lang=zh-Hans``（title 就是中文名、没有翻译）两条，也有两条同语言的
+    重复登记（``Fate/strange Fake`` 与其 ``(TVシリーズ)``）。旧实现用
+    ``{_bgm_id(it): it}`` 建立在后覆盖，一个 id 只留最后一条，于是被媒体库
+    当作标题的那一半（常常正是中文名那条）整条消失 ——
+    ``銀の守墓り`` / ``Bloodivores`` 两条 L1 用例就是这么失败的。
+
+    因此改为**按 id 整组收录**：一个 id 要么全收，要么不收。只收其中一条
+    会让 fixture 自己制造「同 id 两条标题不同」的假象，也会让候选列表出现
+    重复 id 却缺另一半标题。
     """
     from golden_helpers import slim_item  # noqa: PLC0415
     from rapidfuzz import fuzz, process
 
     titles = [it.get("title", "") for it in items]
 
-    chosen: dict[str, dict] = {}
-    by_id = {_bgm_id(it): it for it in items if _bgm_id(it)}
+    by_id: dict[str, list[dict]] = {}
+    for it in items:
+        sid = _bgm_id(it)
+        if sid:
+            by_id.setdefault(sid, []).append(it)
+
+    chosen: list[dict] = []
+    taken: set[str] = set()
+
+    def take(sid: str) -> None:
+        """整组收录该 id 的全部记录（已收过则跳过）"""
+        if not sid or sid in taken:
+            return
+        taken.add(sid)
+        chosen.extend(by_id.get(sid, []))
+
     for c in cases:
-        sid = c["oracle"]["subject_id"]
-        if sid in by_id:
-            chosen[sid] = by_id[sid]
+        take(c["oracle"]["subject_id"])
         for alt in c["oracle"].get("alt_ids", []):
-            if alt in by_id:
-                chosen[alt] = by_id[alt]
+            take(alt)
 
     # 逐条取 top-K 相似条目作为干扰项（cdist 需要 numpy，这里避免引入依赖）
     for c in cases:
@@ -310,16 +333,15 @@ def build_fixture_items(
         )
         want = k
         for _title, _score, idx in matches:
-            it = items[idx]
-            sid = _bgm_id(it)
-            if not sid or sid in chosen:
+            sid = _bgm_id(items[idx])
+            if not sid or sid in taken:
                 continue
-            chosen[sid] = it
+            take(sid)
             want -= 1
             if want <= 0:
                 break
 
-    fixture = [slim_item(it) for it in chosen.values()]
+    fixture = [slim_item(it) for it in chosen]
     return fixture, len(fixture)
 
 

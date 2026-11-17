@@ -366,15 +366,33 @@ class MatchingMixin:
 
         精确匹配优先（score=1.0，按出现顺序），其余按 score 降序填充至 limit。
 
+        **按 bangumi id 去重**：同一 subject 在 bangumi-data 里可能有两条记录
+        （原文一条 + 中文名一条，或两条重复登记），它们共享同一个 id。不去重
+        时同一条目会占掉多个 top-5 名额 —— 实测 ``Fate/strange Fake`` 返回
+        ``['443831', '290', '95225', '3484', '443831']``，5 个位置里有 2 个是
+        同一条目。候选列表是候选队列展示与人工确认的输入，重复项既是噪声，
+        也会挤掉真正的第五名。
+
         抽成独立方法供 find_bangumi_candidates 与
         find_bangumi_id(candidates_out=...) 共用：后者在扫描出结果后顺手产出候选，
         避免「先 find_bangumi_id 判无果、再 find_bangumi_candidates 重扫一遍」。
         """
         candidates: list[dict] = []
+        seen_ids: set[str] = set()
 
-        # 精确匹配优先（score=1.0），按出现顺序
-        for item, bangumi_id, _match_type in exact_matches[:limit]:
-            candidates.append(
+        def _push(entry_id: str, payload: dict) -> bool:
+            """收一条；同 id 已收过则跳过并返回 False"""
+            if entry_id in seen_ids:
+                return False
+            seen_ids.add(entry_id)
+            candidates.append(payload)
+            return True
+
+        # 精确匹配优先（score=1.0），按出现顺序。这里**不预先切片**：切片按
+        # 「未去重」的条数算，被去重掉的位置会白白少收一条。
+        for item, bangumi_id, _match_type in exact_matches:
+            if not _push(
+                str(bangumi_id),
                 {
                     "id": str(bangumi_id),
                     "name": item.get("title", ""),
@@ -382,18 +400,21 @@ class MatchingMixin:
                     "score": 1.0,
                     "date": item.get("begin", ""),
                     "source": "bangumi_data_exact",
-                }
-            )
+                },
+            ):
+                continue
             if len(candidates) >= limit:
                 return candidates
 
         # 部分匹配按 score 降序填充。用 sorted 而非 list.sort：本方法的输入可能
         # 仍被调用方（_find_bangumi_id_optimized）继续使用，就地排序会改变其
         # 并列时的遍历次序，进而影响 _select_from_exact_matches 的日期择优。
+        # 去重在这里保留**首次出现**，也就是 score 最高的那条记录。
         for item, score, bangumi_id in sorted(
             partial_matches, key=lambda x: x[1], reverse=True
         ):
-            candidates.append(
+            if not _push(
+                str(bangumi_id),
                 {
                     "id": str(bangumi_id),
                     "name": item.get("title", ""),
@@ -401,8 +422,9 @@ class MatchingMixin:
                     "score": round(score, 3),
                     "date": item.get("begin", ""),
                     "source": "bangumi_data_partial",
-                }
-            )
+                },
+            ):
+                continue
             if len(candidates) >= limit:
                 break
 

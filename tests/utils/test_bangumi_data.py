@@ -2974,3 +2974,105 @@ class TestFindBangumiIdCandidatesOut:
         )
         assert result is not None
         assert out == []
+
+
+class TestCollectCandidatesDedup:
+    """候选列表按 bangumi id 去重
+
+    bangumi-data 里同一个 subject 可能有两条记录（原文一条 + 中文名一条，
+    或两条重复登记），它们共享同一个 id。不去重时同一条目会占掉多个 top-5
+    名额（实测 Fate/strange Fake 的 5 个位置里 2 个是 443831）。
+    """
+
+    @staticmethod
+    def _item(title: str) -> dict[str, Any]:
+        return {"title": title, "begin": "2020-01-01"}
+
+    def test_same_id_appears_once(self):
+        data = _make_data()
+        cands = data._collect_candidates(
+            [
+                (self._item("銀の守墓り"), "173850", "exact"),
+                (self._item("银之守墓人"), "173850", "exact"),
+            ],
+            [],
+            limit=5,
+        )
+        assert [c["id"] for c in cands] == ["173850"]
+
+    def test_dedup_does_not_shrink_final_limit(self):
+        """去重腾出的名额要由部分匹配补上，而不是提前 return"""
+        data = _make_data()
+        exact = [
+            (self._item("甲"), "1", "exact"),
+            (self._item("甲-重复"), "1", "exact"),
+            (self._item("乙"), "2", "exact"),
+            (self._item("丙"), "3", "exact"),
+            (self._item("丁"), "4", "exact"),
+        ]
+        partial = [(self._item("戊"), 0.9, "5")]
+        cands = data._collect_candidates(exact, partial, limit=5)
+        assert [c["id"] for c in cands] == ["1", "2", "3", "4", "5"]
+
+    def test_partial_dedup_keeps_highest_score(self):
+        """部分匹配按分数降序，去重保留首个 = 最高分那条"""
+        data = _make_data()
+        cands = data._collect_candidates(
+            [],
+            [(self._item("低分"), 0.6, "9"), (self._item("高分"), 0.95, "9")],
+            limit=5,
+        )
+        assert len(cands) == 1
+        assert cands[0]["score"] == 0.95
+        assert cands[0]["name"] == "高分"
+
+
+class TestBuildFixtureItems:
+    """离线夹具必须保留同 id 的全部记录
+
+    旧实现 ``{_bgm_id(it): it}`` 一个 id 只留最后一条，会把「中文名那条」
+    整条丢掉；媒体库的请求标题常常正是被丢掉的那一半。
+    """
+
+    @staticmethod
+    def _module():
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[2] / "scripts" / "gen_golden_cases.py"
+        spec = importlib.util.spec_from_file_location("gen_golden_cases_ut", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_same_id_keeps_both_language_records(self):
+        items = [
+            {
+                "title": "銀の守墓り",
+                "titleTranslate": {"zh-Hans": ["银之守墓人"]},
+                "begin": "2017-04-01",
+                "sites": [{"site": "bangumi", "id": "173850"}],
+            },
+            {
+                "title": "银之守墓人",
+                "begin": "2017-04-01",
+                "sites": [{"site": "bangumi", "id": "173850"}],
+            },
+            {
+                "title": "无关干扰",
+                "begin": "2019-01-01",
+                "sites": [{"site": "bangumi", "id": "999"}],
+            },
+        ]
+        cases = [
+            {
+                "input": {"title": "银之守墓人"},
+                "oracle": {"subject_id": "173850", "alt_ids": []},
+            }
+        ]
+        fixture, n = self._module().build_fixture_items(items, cases, k=1)
+        titles = [it["title"] for it in fixture]
+        assert n == len(fixture)
+        assert "銀の守墓り" in titles
+        assert "银之守墓人" in titles
+        assert titles.count("銀の守墓り") == 1
