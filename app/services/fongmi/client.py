@@ -20,6 +20,7 @@ from ...core.logging import logger
 from ...utils.episode_title import has_episode_marker, parse_season_episode
 from ...utils.http_base import AsyncHttpClient
 from ...utils.media_type_detector import MOVIE_KEYWORD_RE as _MOVIE_KEYWORD_RE
+from ...utils.title_patterns import YEAR_TOKEN
 from .models import FongmiDevice, FongmiWatchRecord
 
 # 端口与超时
@@ -52,8 +53,10 @@ def parse_episode_info(url: str, artist: str) -> tuple[int, int]:
 
 # ===== fongmi 媒体类型判定（文件名结构优先） =====
 
-# 电影常见容器/命名特征：无季集结构且带年份、或含 4K/BluRay 等单片标记
-_MOVIE_YEAR_RE = re.compile(r"(?:^|[\s._\-\[(])(19|20)\d{2}(?:[\s._\-\])]|$)")
+# 电影常见容器/命名特征：无季集结构且带年份、或含 4K/BluRay 等单片标记。
+# 年份词元来自 title_patterns.YEAR_TOKEN；这里额外要求前后是文件名分隔符，
+# 否则「12020」这类串也会被当成年份。捕获组改非捕获（调用方只取真值）。
+_MOVIE_YEAR_RE = re.compile(rf"(?:^|[\s._\-\[(]){YEAR_TOKEN}(?:[\s._\-\])]|$)")
 # 多集/合集标记：出现"第N集""EP..-EP.."或明显的范围，说明是剧集
 _MULTI_EP_RE = re.compile(
     r"[Ee][Pp]?\s*\d{1,3}\s*[-~]\s*[Ee]?[Pp]?\s*\d{1,3}"  # EP01-12

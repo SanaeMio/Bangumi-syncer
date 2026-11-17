@@ -13,7 +13,6 @@ API 规范的端点通信。
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -29,7 +28,11 @@ from app.services.llm.models import (
     ToolUseBlock,
     Usage,
 )
-from app.services.llm.providers.base import BaseProvider, open_stream_response
+from app.services.llm.providers.base import (
+    REASONING_MODEL_RE,
+    BaseProvider,
+    open_stream_response,
+)
 from app.services.llm.sse import iter_sse_events
 
 
@@ -449,11 +452,8 @@ class OpenAICompatProvider(BaseProvider):
         """thinking_level → reasoning_effort；off/不支持时返回 None（不传字段）。"""
         if level == "off":
             return None
-        # reasoning_effort 仅 o 系列模型支持（o1/o3/o4-mini 等）。用 ^o\d 而非
-        # startswith("o")：避免 "ollama/…"、"openrouter/…" 等第三方网关模型名
-        # 误中导致向不支持的端点发送未知参数。OpenAI 对未知参数的行为因 API 版本
-        # 而异，不冒险传给非 o 系列。
-        if not re.match(r"^o\d", model):
+        # 判定与理由见 base.REASONING_MODEL_RE（两个 provider 共用一份）。
+        if not REASONING_MODEL_RE.match(model):
             # 配置/模型不匹配是静态事实，warning 刷屏无益——降为 debug
             # （用户可通过 stats/日志在调优期定位）
             logger.debug(

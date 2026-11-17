@@ -16,6 +16,7 @@ from ...utils.text_constants import (
     PLATFORM_WEIGHT_TV_MODE,
     PUNCTUATION_MAP,
 )
+from ...utils.title_patterns import WHITESPACE_RE
 
 # 释放组/分辨率/编码标记等噪声片段
 _NOISE_PATTERNS = [
@@ -36,9 +37,6 @@ _NOISE_PATTERNS = [
 
 # 中文标点翻译表（由 PUNCTUATION_MAP 构造）
 _PUNCTUATION_TRANS = str.maketrans(PUNCTUATION_MAP)
-
-# 连续空白
-_MULTI_SPACE = re.compile(r"\s+")
 
 
 def normalize_title_text(title: str) -> str:
@@ -63,7 +61,7 @@ def normalize_title_text(title: str) -> str:
         cleaned = pattern.sub(" ", cleaned)
 
     # 3. 折叠连续空白
-    cleaned = _MULTI_SPACE.sub(" ", cleaned)
+    cleaned = WHITESPACE_RE.sub(" ", cleaned)
 
     # 4. 去除首尾空白与首尾常见标点
     cleaned = cleaned.strip().strip(" -_·.:;,").strip()

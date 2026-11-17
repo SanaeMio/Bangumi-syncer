@@ -13,7 +13,10 @@ from typing import Any
 RUN_ID_RE = re.compile(r"\[run:([^\]]+)\]")
 REQUEST_ID_RE = re.compile(r"\[req:([^\]]+)\]")
 BATCH_ID_RE = re.compile(r"\[batch:([^\]]+)\]")
-TIMESTAMP_RE = re.compile(r"^\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]")
+# 日志行时间戳。毫秒**可选**：本程序日志固定带 3 位毫秒，但历史日志与
+# 外部导入的日志可能没有 —— 放宽到可选后，日志页与分组解析对同一行的
+# 判定一致（此前 mcp/tools 另有更强的一份，两处口径不同）。
+TIMESTAMP_RE = re.compile(r"^\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)\]")
 LEVEL_RE = re.compile(r"\[(DEBUG|INFO ?|WARN(?:ING)? ?|ERROR)\]")
 
 SYNC_START_RE = re.compile(

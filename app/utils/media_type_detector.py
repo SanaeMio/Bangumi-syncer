@@ -44,7 +44,12 @@ MOVIE_KEYWORD_RE = re.compile(
     re.IGNORECASE,
 )
 
-# OVA/OAD 关键词
+# OVA / OAD 的**被判类型**判别（决定返回 "ova" 还是 "oad"）。
+# 是下面 OVA_KEYWORD_RE 的子集，单独成常量是因为它们要先于泛关键词判定。
+OVA_EXACT_RE = re.compile(r"\bOVA\b", re.IGNORECASE)
+OAD_EXACT_RE = re.compile(r"\bOAD\b", re.IGNORECASE)
+
+# OVA/OAD 关键词（含特别篇等泛形式，只用于判「是否 OVA 类」）
 OVA_KEYWORD_RE = re.compile(
     r"\bOVA\b|\bOAD\b|特别篇|特別篇|_special|\.SP\b|\bSP\b",
     re.IGNORECASE,
@@ -143,12 +148,12 @@ def detect_media_type(
 
     # 1. OVA（精确匹配，避免 "OVA" 出现在无关词中）
     for text in texts:
-        if text and re.search(r"\bOVA\b", text, re.IGNORECASE):
+        if text and OVA_EXACT_RE.search(text):
             return "ova"
 
     # 2. OAD
     for text in texts:
-        if text and re.search(r"\bOAD\b", text, re.IGNORECASE):
+        if text and OAD_EXACT_RE.search(text):
             return "oad"
 
     # 3. 特别篇等泛 OVA 关键词

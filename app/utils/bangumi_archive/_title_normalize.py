@@ -27,6 +27,8 @@ from typing import NamedTuple
 
 from rapidfuzz import fuzz
 
+from ..title_patterns import WHITESPACE_RE, YEAR_TOKEN
+
 
 def _nfkc(text: str) -> str:
     """Unicode NFKC 归一化（全角→半角、半角片假名→全角等）。
@@ -198,8 +200,6 @@ _TITLE_DECORATORS = (
 # 而「X 番外」(真实外传条目) 末尾的"番外"应剥除以比对本体。
 _TITLE_DECORATORS_TRAILING = ("番外",)
 
-_RE_WHITESPACE = re.compile(r"\s+")
-
 
 def _normalize_title_for_match(text: str) -> str:
     """匹配相似度用的标题归一化。
@@ -213,7 +213,7 @@ def _normalize_title_for_match(text: str) -> str:
     # 0. NFKC：与索引侧 _normalize_key 对齐，全角标题先折半角再参与打分
     text = _nfkc(text)
     # 1. 折叠所有空白字符为无
-    norm = _RE_WHITESPACE.sub("", text)
+    norm = WHITESPACE_RE.sub("", text)
     # 2. 去除修饰词（处理"斗破苍穹年番"与"斗破苍穹 年番"两种写法）
     for dec in _TITLE_DECORATORS:
         # 修饰词前后可能带空格（已被折叠为空，此处直接去词）
@@ -348,8 +348,9 @@ _DECOR_SMALL_KANA = frozenset("ァィゥェォッャュョヮヵヶ")
 # 数字编号：第N / S# / #N 等（区别于季数后缀，这里覆盖更宽）
 _DECOR_NUMERAL_RE = re.compile(r"第\s*[0-9一二三四五六七八九十百千万]+|S\d{1,2}|#\d+")
 
-# 年份后缀：19xx / 20xx（含括号包裹），如「Name 2021」→「Name」
-_DECOR_YEAR_RE = re.compile(r"[(（]?(?:19|20)\d{2}[)）]?")
+# 年份后缀：19xx / 20xx（含括号包裹），如「Name 2021」→「Name」。
+# 年份词元与 title_patterns.YEAR_TOKEN 单源，这里只加「连括号一起剥」的外壳。
+_DECOR_YEAR_RE = re.compile(rf"[(（]?{YEAR_TOKEN}[)）]?")
 
 
 def strip_bracket_content(text: str) -> str:

@@ -22,6 +22,7 @@ from app.core.config_schema import (
     multi_instance_prefixes,
 )
 from app.core.logging import resolved_dev_log_file_path
+from app.utils.log_grouping import TIMESTAMP_RE as _LOG_TIMESTAMP_RE
 
 # 日志级别白名单（get_logs 参数校验）
 VALID_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR"})
@@ -117,9 +118,6 @@ _MCP_WRITE_FOLLOWUP: dict[tuple[str, str], str] = {
         "已更新 Bangumi OAuth 应用密钥，需重新完成 OAuth 授权流程才能生效"
     ),
 }
-
-# 日志行时间戳格式: [2026/09/03 12:00:00.123]
-_LOG_TIMESTAMP_RE = re.compile(r"^\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)\]")
 
 
 def _parse_log_timestamp(line: str) -> datetime | None:

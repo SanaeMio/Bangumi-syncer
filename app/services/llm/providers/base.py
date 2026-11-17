@@ -4,6 +4,7 @@
 （流式为唯一调用形态；聚合由 models.collect() 复用消费）。
 """
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,6 +15,12 @@ import httpx
 from app.core.logging import logger
 from app.services.llm.models import Message, StreamChunk
 from app.utils.http_client import create_async_client
+
+# o 系列推理模型（o1/o3/o4-mini …）。用 ^o\d 而非 startswith("o")：
+# "ollama/…"、"openrouter/…" 等第三方网关模型名不能命中，否则会向不支持
+# reasoning_effort / reasoning.effort 的端点发送未知参数（OpenAI 对未知
+# 参数的处理随 API 版本而变，不冒险）。两个 openai provider 共用一份判定。
+REASONING_MODEL_RE = re.compile(r"^o\d")
 
 
 class ProviderStreamError(Exception):
