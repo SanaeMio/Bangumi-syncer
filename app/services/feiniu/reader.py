@@ -5,16 +5,14 @@
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from ...core.logging import logger
+from ...utils.episode_title import extract_episode_number
 from .models import FeiniuUser, FeiniuWatchRecord
-
-_EPISODE_TITLE_RE = re.compile(r"(?:第|E|ep)\s*0*(\d+)(?:集|话|話)?", re.IGNORECASE)
 
 
 def _sqlite_ro_uri(db_path: str) -> str:
@@ -277,9 +275,12 @@ def _parse_watch_record_row(
         except (TypeError, ValueError):
             ep_num = 1
     else:
-        m = _EPISODE_TITLE_RE.search(base_name)
-        if m:
-            ep_num = max(1, int(m.group(1)))
+        # 标题兜底：只认结构化集号（SxxExx / EPxx / 第N集 / #N / [N]）。
+        # 旧实现是 ``(?:第|E|ep)\s*0*(\d+)``，会把「斗破苍穹 第2季」读成第
+        # 2 集（后缀可选导致「第2」即命中），且对 ``E12`` 无词边界。
+        ep_from_title = extract_episode_number(base_name)
+        if ep_from_title is not None:
+            ep_num = ep_from_title
             episode_from_db = True
 
     real_name = _real_series_title(r, str(r["item_guid"]))
