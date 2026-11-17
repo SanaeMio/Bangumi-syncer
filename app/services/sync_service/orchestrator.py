@@ -20,6 +20,7 @@ import traceback
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from ...core.config import to_bool
 from ...core.logging import get_sync_run_id, logger, sync_log_context
 from ...models.sync import CustomItem, SyncResponse
 from ..matching.contracts import STATUS_ERROR, STATUS_MISS
@@ -586,7 +587,7 @@ class SyncOrchestrator:
             # 调度器读取同一口径；非 dict（如测试 mock）按未启用处理。
             cfg = config_manager.get_sync_llm_match_config()
             raw = cfg.get("llm_match_assist", False) if isinstance(cfg, dict) else False
-            enabled = str(raw).strip().lower() in ("true", "1", "yes", "on", "enabled")
+            enabled = to_bool(raw)
             if not enabled:
                 return False
             llm_cfg = config_manager.get_llm_config() or {}

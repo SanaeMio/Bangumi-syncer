@@ -221,6 +221,16 @@ class TestConfigManagerBranches:
         assert cm.get_config("a-b", "k") == "hyphen"
         assert cm.get_config("a_b", "k") == "underscore"
 
+    def test_section_alias_only_applies_to_schema_sections(self, tmp_path):
+        """动态段名（summary-<用户命名>）不做 - 与 _ 互换重试。
+
+        ``summary-a_b`` 与 ``summary-a-b`` 是两个用户建的任务；把前者当后者的
+        别名会静默读到另一个任务的配置。别名只服务 schema 登记过的段名。
+        """
+        cm = _config_manager_from_ini(tmp_path, "[summary-a-b]\nname = a-b\n")
+        assert cm.get_section("summary-a_b") == {}
+        assert cm.get_section("summary-a-b") == {"name": "a-b"}
+
     def test_get_set_reload_aliases(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[sync]\nmode = single\n")
         cm.set("sync", "extra", "hello")

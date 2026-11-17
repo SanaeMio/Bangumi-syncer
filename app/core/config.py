@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_schema import (
+    SECTIONS,
     all_env_overrides,
     non_account_bangumi_sections,
 )
@@ -69,9 +70,14 @@ def _resolve_section_name(config: ConfigParser, section: str) -> str | None:
     if config.has_section(section):
         return section
     alt = section.replace("-", "_") if "-" in section else section.replace("_", "-")
-    if alt != section and config.has_section(alt):
-        return alt
-    return None
+    if alt == section:
+        return None
+    # 只对 schema 登记过的段名重试：动态段名（summary-<用户命名>、
+    # notify-email-N …）里的下划线属于用户数据，把 summary-a_b 重试成
+    # summary-a-b 会静默读到另一个任务的配置。
+    if section not in SECTIONS and alt not in SECTIONS:
+        return None
+    return alt if config.has_section(alt) else None
 
 
 def _validate_section_key(section: str, key: str) -> None:
