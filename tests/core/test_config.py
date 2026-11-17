@@ -207,6 +207,20 @@ class TestConfigManagerBranches:
         assert cm.get_config("missing", "k", fallback="d") == "d"
         assert cm.get("sync", "nope", fallback=9) == 9
 
+    def test_get_config_section_name_accepts_underscore_alias(self, tmp_path):
+        """段名写成下划线也要能读到连字符段（#1：bangumi_data 开关关不掉）"""
+        cm = _config_manager_from_ini(tmp_path, "[bangumi-data]\nenabled = false\n")
+        assert cm.get_config("bangumi_data", "enabled", fallback=True) is False
+        assert cm.get_section("bangumi_data")["enabled"] is False
+
+    def test_get_config_section_name_exact_match_wins(self, tmp_path):
+        """两种写法同时存在时精确匹配优先，不做模糊猜测"""
+        cm = _config_manager_from_ini(
+            tmp_path, "[a-b]\nk = hyphen\n[a_b]\nk = underscore\n"
+        )
+        assert cm.get_config("a-b", "k") == "hyphen"
+        assert cm.get_config("a_b", "k") == "underscore"
+
     def test_get_set_reload_aliases(self, tmp_path):
         cm = _config_manager_from_ini(tmp_path, "[sync]\nmode = single\n")
         cm.set("sync", "extra", "hello")

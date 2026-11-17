@@ -37,6 +37,21 @@ _SECTION_KEY_RE = re.compile(r"^[a-z0-9_-]+$")
 _CONFIG_STAT_THROTTLE_SECONDS = 1.0
 
 
+def _resolve_section_name(config: ConfigParser, section: str) -> str | None:
+    """按段名查找配置段，兼容连字符与下划线两种写法。
+
+    INI 段名约定用连字符（``[bangumi-data]``），而前端 form name 和部分调用方
+    用下划线（``bangumi_data``）。只做**一次** - ↔ _ 互换重试，不做模糊匹配，
+    避免误命中相邻段；两种写法同时存在时精确匹配优先。
+    """
+    if config.has_section(section):
+        return section
+    alt = section.replace("-", "_") if "-" in section else section.replace("_", "-")
+    if alt != section and config.has_section(alt):
+        return alt
+    return None
+
+
 def _validate_section_key(section: str, key: str) -> None:
     """校验段名/key 格式合法性，防止 INI 注入。
 
@@ -330,13 +345,14 @@ class ConfigManager:
     def get_section(
         self, section: str, fallback: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """获取配置段"""
+        """获取配置段（段名兼容 - 与 _ 两种写法）"""
         config = self.get_config_parser()
-        if not config.has_section(section):
+        resolved = _resolve_section_name(config, section)
+        if resolved is None:
             return fallback or {}
 
         result = {}
-        for key, value in config.items(section):
+        for key, value in config.items(resolved):
             # 尝试转换为适当的数据类型
             if value.lower() in ("true", "false"):
                 result[key] = value.lower() == "true"
@@ -348,20 +364,21 @@ class ConfigManager:
         master = self._get_master_secret(config)
         for k, v in list(result.items()):
             if isinstance(v, str):
-                result[k] = decrypt_if_sensitive(section, k, v, master=master)
+                result[k] = decrypt_if_sensitive(resolved, k, v, master=master)
 
         return result
 
     def get_config(self, section: str, key: str, fallback: Any = None) -> Any:
-        """获取配置值"""
+        """获取配置值（段名兼容 - 与 _ 两种写法）"""
         config = self.get_config_parser()
-        if not config.has_section(section):
+        resolved = _resolve_section_name(config, section)
+        if resolved is None:
             return fallback
 
-        if not config.has_option(section, key):
+        if not config.has_option(resolved, key):
             return fallback
 
-        value = config.get(section, key)
+        value = config.get(resolved, key)
 
         # 尝试转换为适当的数据类型
         if value.lower() in ("true", "false"):
@@ -370,7 +387,7 @@ class ConfigManager:
             return int(value)
         else:
             master = self._get_master_secret(config)
-            out = decrypt_if_sensitive(section, key, value, master=master)
+            out = decrypt_if_sensitive(resolved, key, value, master=master)
             return out if isinstance(out, str) else value
 
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
