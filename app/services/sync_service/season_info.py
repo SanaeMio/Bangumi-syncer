@@ -1,14 +1,19 @@
 """
-季度信息检测 Mixin：检查标题中是否包含季度关键词。
-纯函数逻辑，不依赖任何单例。
+季度信息检测 Mixin：把「标题声明了第几季」的判定转发给纯函数。
+
+历史上这里有两套并行实现：一组本地关键词表 + 内联中文数字表，与
+``app/utils/season_title.py`` 的结构化解析器各自演进。后果是口径漂移 ——
+``笨蛋，测验，召唤兽2`` / ``偶像大师 II`` 这类不含「第N季」字样的续作只有
+解析器认得，季过滤器因此把这些候选当第一季剔除（L1 黄金集曾整链失败）。
+
+现在两个方法都只是转发，判定逻辑只有一份（``app.utils.season_title``），
+匹配层、单测与跨季选集看到的是同一套行为。保留 Mixin 是因为调用方通过
+``service._check_season_info_in_title`` 访问（也有测试替身依赖这个入口）。
 """
 
 from __future__ import annotations
 
-import re
-
-from ...core.logging import logger
-from ...utils.season_title import extract_explicit_season
+from ...utils.season_title import extract_explicit_season, title_declares_season
 
 
 class SeasonInfoMixin:
@@ -21,86 +26,16 @@ class SeasonInfoMixin:
         - 明确声明第 N 季时返回 N（>=1）
         - 标题不含季度声明时返回 None（可能是第一季本体，也可能是总集篇等）
 
-        覆盖形式：第 X 季 / 第 X 期（阿拉伯与中文数字）、Xnd/Xrd/Xth season、Season X
+        覆盖形式：第 X 季 / 第 X 期（阿拉伯与中文数字）、Xnd/Xrd/Xth season、
+        Season X，以及标题结尾的季号与罗马数字（见
+        :func:`app.utils.season_title.extract_explicit_season`）。
         """
         return extract_explicit_season(title)
 
     def _check_season_info_in_title(self, title: str, season: int) -> bool:
-        """检查标题中是否包含季度信息"""
-        # 中文数字映射
-        chinese_numbers = {
-            1: "一",
-            2: "二",
-            3: "三",
-            4: "四",
-            5: "五",
-            6: "六",
-            7: "七",
-            8: "八",
-            9: "九",
-            10: "十",
-        }
+        """判断标题是否声称自己就是第 ``season`` 季。
 
-        # 数字形式
-        season_keywords = [
-            f"第{season}季",
-            f"第{season}期",
-            f"{season}期",
-            f"{season}季",
-            f"Season {season}",
-            f"S{season}",
-        ]
-
-        # 中文数字形式
-        if season in chinese_numbers:
-            chinese_num = chinese_numbers[season]
-            season_keywords.extend(
-                [
-                    f"第{chinese_num}季",
-                    f"第{chinese_num}期",
-                    f"{chinese_num}期",
-                    f"{chinese_num}季",
-                ]
-            )
-
-        # 检查基本季度关键词
-        for keyword in season_keywords:
-            if keyword in title:
-                logger.debug(f'匹配标题 "{title}" 包含季度信息: {keyword}')
-                return True
-
-        # 检查更复杂的格式
-        chinese_num = chinese_numbers.get(season, "")
-
-        # 基础模式：第X季 或 X季
-        base_patterns = [rf"第{season}季", rf"{season}季"]
-
-        # 如果有中文数字，添加中文数字模式
-        if chinese_num:
-            base_patterns.extend([rf"第{chinese_num}季", rf"{chinese_num}季"])
-
-        # 部分标识符
-        part_indicators = [r"\s+上半", r"\s+下半", r"\s+第2部分", r"\s+第二部分"]
-
-        # 组合所有模式
-        for base_pattern in base_patterns:
-            for indicator in part_indicators:
-                full_pattern = base_pattern + indicator
-                if re.search(full_pattern, title):
-                    logger.debug(f'匹配标题 "{title}" 包含复杂季度信息: {full_pattern}')
-                    return True
-
-        # 结构化季号解析兜底。
-        #
-        # 上面的子串匹配覆盖不到两类真实条目名：
-        # - 结尾数字：``笨蛋，测验，召唤兽2``（11145 = 第二季）—— 不含「第2季」
-        #   字样，也没有 ``S2``，于是 S2 的请求被判成「未声明季号」，再沿续集链
-        #   找「第 2 季」，链上已无下一季 → 报「不存在或集数过多」；
-        # - 罗马数字结尾：``偶像大师 II``。
-        # 用与跨季定位同一套解析器判定，口径保持一致。
-        parsed = self._get_explicit_season_from_title(title)
-        if parsed is not None and parsed == season:
-            logger.debug(f'匹配标题 "{title}" 通过季号解析判定为第 {season} 季')
-            return True
-
-        return False
+        实现见 :func:`app.utils.season_title.title_declares_season`（关键词、
+        裸 ``S{N}``、结构化解析三级判定）。
+        """
+        return title_declares_season(title, season)

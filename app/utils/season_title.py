@@ -61,6 +61,61 @@ def _trailing_season(text: str) -> int | None:
     return None
 
 
+# 数字 → 中文的季号写法（与 CN_NUM 互逆；只取单字键，保证一一对应）
+_CN_SEASON_DIGITS: dict[int, str] = {v: k for k, v in CN_NUM.items() if len(k) == 1}
+
+
+def _season_text_tokens(season: int) -> list[str]:
+    """季号的文字写法集合（不含 ``S{N}``，那条要按边界正则判）。
+
+    刻意保留两种「宽松」写法 —— 裸 ``N季`` / ``N期`` 与 ``第N季`` 前半段 ——
+    因为媒体库真实存在 ``凡人修仙传5季``、``某番 3期`` 这类省略「第」的命名。
+    收紧会让 S5 请求被误判成「未声明季号」，进而沿续集链找错条目。
+    """
+    tokens = [
+        f"第{season}季",
+        f"第{season}期",
+        f"{season}期",
+        f"{season}季",
+        f"Season {season}",
+    ]
+    cn = _CN_SEASON_DIGITS.get(season)
+    if cn:
+        tokens.extend([f"第{cn}季", f"第{cn}期", f"{cn}期", f"{cn}季"])
+    return tokens
+
+
+def title_declares_season(title: str, season: int) -> bool:
+    """判断标题是否**声称自己就是第 season 季**。
+
+    这是 :func:`extract_explicit_season` 的反向查询，供匹配层校验候选季号
+    （原 ``SeasonInfoMixin._check_season_info_in_title`` 的实现搬到这里，各层
+    共用同一口径，不再各自维护一份关键词表）。
+
+    判定顺序：
+    1. 带「第N季 / N季 / N期 / Season N」字样的直接命中（中英文数字都认）；
+    2. 裸 ``S{N}`` 标记（媒体库常见 ``某剧 S3``）—— 要求前面不是字母、后面
+       不是数字，否则 ``S1`` 会命中 ``S12``，把第 12 季误判成第 1 季；
+    3. 结构化解析兜底：``笨蛋，测验，召唤兽2`` / ``偶像大师 II`` 这类不含
+       「第N季」字样的续作写法。
+
+    与 :func:`extract_season_candidates` 的关系：后者回答「标题里出现了哪些
+    季号」，本函数回答「是不是这一季」，用途不同。
+    """
+    if not title or season < 1:
+        return False
+
+    for token in _season_text_tokens(season):
+        if token in title:
+            return True
+
+    if re.search(rf"(?<![A-Za-z])S{season}(?!\d)", title):
+        return True
+
+    parsed = extract_explicit_season(title)
+    return parsed is not None and parsed == season
+
+
 def extract_explicit_season(title: str) -> int | None:
     """从标题中提取明确声明的季度编号。
 
