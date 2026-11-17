@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generated_at": "2026-09-09 13:00:55",
+ "generated_at": "2026-11-17 15:56:55",
  "seed": 20260908,
  "n": 30,
  "source": {
@@ -1426,12 +1426,12 @@
     "title": "马鸪先生的小车"
    },
    "baseline": {
-    "subject_id": "",
-    "match_method": "failed",
-    "match_detail": "",
-    "score": null,
+    "subject_id": "132388",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.96,
     "ambiguous": false,
-    "failure": "Bangumi 搜索无结果"
+    "failure": ""
    }
   },
   {
@@ -1449,12 +1449,12 @@
     "title": "吃鸟瘾"
    },
    "baseline": {
-    "subject_id": "",
-    "match_method": "failed",
-    "match_detail": "",
-    "score": null,
+    "subject_id": "132389",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.9285714285714286,
     "ambiguous": false,
-    "failure": "Bangumi 搜索无结果"
+    "failure": ""
    }
   },
   {
@@ -1495,12 +1495,12 @@
     "title": "马罗"
    },
    "baseline": {
-    "subject_id": "",
-    "match_method": "failed",
-    "match_detail": "",
-    "score": null,
+    "subject_id": "132393",
+    "match_method": "archive",
+    "match_detail": "fuzzy",
+    "score": 0.8,
     "ambiguous": false,
-    "failure": "Bangumi 搜索无结果"
+    "failure": ""
    }
   },
   {
@@ -5521,8 +5521,8 @@
    },
    "baseline": {
     "subject_id": "496081",
-    "match_method": "archive",
-    "match_detail": "exact",
+    "match_method": "bangumi_data",
+    "match_detail": "",
     "score": 1.0,
     "ambiguous": false,
     "failure": ""

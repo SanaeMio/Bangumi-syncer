@@ -490,6 +490,16 @@ def gen_l2(n: int, seed: int, out: Path | None = None) -> int:
         print("[L2] 归档索引构建失败")
         return 1
 
+    # 模糊兜底有两条路径：BK-tree（编辑距离保证单字符 typo 召回）与 trigram
+    # OR 兜底（按相关度排序后的截断候选）。BK-tree 由后台线程异步构建（约
+    # 12s），用例跑得比构建快时会落到 OR 兜底 —— 同一批用例的基线于是取决于
+    # 「构建有没有赶上」，每次重跑都可能差几条（L2-S8 实测 9 条）。
+    # 基线必须记录**稳态**行为，所以这里同步等构建完成；生产稳态同样走
+    # BK-tree 路径（见 set_bktree_enabled 说明）。
+    _conn = archive_title_index._ensure_conn()
+    if _conn is not None and archive_title_index._resolve_use_bktree():
+        archive_title_index._ensure_bktree(_conn)
+
     def _always_on(self) -> None:
         self.set_enabled(True)
 
