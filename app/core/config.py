@@ -36,6 +36,28 @@ _SECTION_KEY_RE = re.compile(r"^[a-z0-9_-]+$")
 # 配置文件变更探测的最小间隔（秒）。只在自动发现外部修改时生效。
 _CONFIG_STAT_THROTTLE_SECONDS = 1.0
 
+# INI / DB 中视为「真」的字符串取值。
+# 账号段与 LLM 段曾各有一套判定：账号段不认 "enabled"，同一个词写在不同段里
+# 得到相反结果。这里收成单一来源。
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on", "enabled"})
+
+
+def to_bool(value: Any, default: bool = False) -> bool:
+    """把配置值规范化为 bool（兼容 INI 字符串、DB 0/1 与 None）。
+
+    - bool 原样返回
+    - None 返回 ``default``（调用方据此表达「缺失时的语义」）
+    - 数字按真值转换（0 → False）
+    - 字符串按 ``_TRUE_VALUES`` 匹配，其余一律 False（fail-closed）
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in _TRUE_VALUES
+
 
 def _resolve_section_name(config: ConfigParser, section: str) -> str | None:
     """按段名查找配置段，兼容连字符与下划线两种写法。
@@ -746,13 +768,6 @@ class ConfigManager:
         - llm_match_thinking_level (str, 默认 "medium")
         """
 
-        def _to_bool(v: Any, default: bool) -> bool:
-            if isinstance(v, bool):
-                return v
-            if v is None:
-                return default
-            return str(v).strip().lower() in ("true", "1", "yes", "on", "enabled")
-
         def _to_int(v: Any, default: int) -> int:
             try:
                 return int(v)
@@ -760,7 +775,7 @@ class ConfigManager:
                 return default
 
         return {
-            "llm_match_assist": _to_bool(
+            "llm_match_assist": to_bool(
                 self.get("sync", "llm_match_assist", fallback=False), False
             ),
             "llm_match_cron": self.get(

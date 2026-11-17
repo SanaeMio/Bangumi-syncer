@@ -826,3 +826,25 @@ class TestConfigValueLiteral:
 
         assert cm.get("sync", "note") == "%(missing)s"
         assert cm.get_section("sync")["note"] == "%(missing)s"
+
+
+class TestToBool:
+    """配置布尔解析只有一套实现（账号段曾不认 enabled）"""
+
+    def test_true_values(self):
+        from app.core.config import to_bool
+
+        for value in ("1", "true", "TRUE", "yes", "on", "enabled", True, 1):
+            assert to_bool(value) is True, value
+
+    def test_false_values(self):
+        from app.core.config import to_bool
+
+        for value in ("0", "false", "no", "off", "", "whatever", False, 0):
+            assert to_bool(value) is False, value
+
+    def test_none_uses_default(self):
+        from app.core.config import to_bool
+
+        assert to_bool(None) is False
+        assert to_bool(None, True) is True
