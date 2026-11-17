@@ -890,17 +890,19 @@ class MatchingMixin:
         return False
 
     def _date_diff(self, date1: str, date2: str) -> int:
-        """计算两个日期之间的天数差（解析结果记忆化）
+        """计算两个日期之间的天数差；解析失败时返回 999999 哨兵
 
-        原实现对每条候选都重新 strptime 两次；日期解析是纯函数，
-        记忆化后语义完全一致，仅消除常量上的重复解析。
+        实现统一委托 ``date_diff_days``，避免两套解析逻辑各自演化。
+        哨兵把「日期缺失」与「日期差极大」压成同一个值，用于候选择优
+        可以接受（两者都算最差）；但**日期硬校验**必须直接用
+        ``date_diff_days`` 并显式区分 None，否则会把「条目没有放送日期」
+        误判成「日期差 55 年」而误杀（参见 #4）。
         """
-        d1 = _coerce_ymd(date1)
-        d2 = _coerce_ymd(date2)
-        if d1 is None or d2 is None:
+        diff = date_diff_days(date1, date2)
+        if diff is None:
             logger.debug(f"日期解析失败，按不匹配处理: {date1!r} / {date2!r}")
             return 999999  # 返回一个非常大的数字表示不匹配
-        return abs((d2 - d1).days)
+        return diff
 
     def _calculate_match_info(
         self, item: dict, title: str, ori_title: str = None, release_date: str = None
