@@ -88,7 +88,9 @@ class CustomMappingStep(MatchStepBase):
             )
 
         return StepOutcome(
-            status=STATUS_MISS, reason="自定义映射与正则规则均未命中", inputs=mapping_inputs
+            status=STATUS_MISS,
+            reason="自定义映射与正则规则均未命中",
+            inputs=mapping_inputs,
         )
 
     @staticmethod

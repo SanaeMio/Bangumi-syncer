@@ -157,8 +157,7 @@ def _extract_alias_text(infobox_raw: Any) -> str:
     if not isinstance(infobox_raw, str) or not infobox_raw:
         return ""
     return " ".join(
-        _normalize_key(text)
-        for text in iter_infobox_aliases(infobox_raw, ALIAS_KEYS)
+        _normalize_key(text) for text in iter_infobox_aliases(infobox_raw, ALIAS_KEYS)
     )
 
 
