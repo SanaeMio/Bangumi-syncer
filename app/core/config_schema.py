@@ -18,6 +18,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+# 模糊匹配置信度默认阈值（0~1）：低于该分数的 Bangumi API 匹配不自动采用。
+# 单一来源：字段默认值、同步侧读取兜底、bangumi-data 部分匹配门槛都引用它，
+# 避免同一语义在四处各写一个 0.6。
+DEFAULT_MATCH_CONFIDENCE_THRESHOLD = 0.6
+
 
 @dataclass(frozen=True)
 class FieldMeta:
@@ -171,7 +176,10 @@ SECTIONS: dict[str, SectionMeta] = {
             FieldMeta(name="anime_mark_subject_completed"),
             # 模糊匹配置信度阈值（0~1）：低于该相似度的 Bangumi API 匹配
             # 不会自动采用，而是沉淀到待审队列由用户在 Web 界面人工确认。
-            FieldMeta(name="match_confidence_threshold", default=0.6),
+            FieldMeta(
+                name="match_confidence_threshold",
+                default=DEFAULT_MATCH_CONFIDENCE_THRESHOLD,
+            ),
             # LLM 匹配结果滑动窗口轮转天数（终态超窗 + 过期死行一并清理）
             FieldMeta(name="llm_match_retention_days", default=30),
             # Bangumi API 限速（令牌桶）：每秒补充令牌数 / 突发容量。

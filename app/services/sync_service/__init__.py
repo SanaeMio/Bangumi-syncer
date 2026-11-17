@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from ...core.config import config_manager
+from ...core.config_schema import DEFAULT_MATCH_CONFIDENCE_THRESHOLD
 from ...core.database import database_manager
 from ...core.logging import (
     batch_log_context,
@@ -1734,13 +1735,17 @@ class SyncService(TaskManagerMixin, RetryMixin, SeasonInfoMixin, TitleNormalizeM
         """读取同步配置 `match_confidence_threshold`（模糊匹配自动采用阈值）。
 
         低于该相似度的 Bangumi API 匹配不会自动采用，而是沉淀到待审队列。
-        默认 0.6；配置缺失或非法时回退到默认值。
+        默认值见 ``DEFAULT_MATCH_CONFIDENCE_THRESHOLD``；配置缺失或非法时回退到它。
         """
         try:
-            val = config_manager.get("sync", "match_confidence_threshold", fallback=0.6)
+            val = config_manager.get(
+                "sync",
+                "match_confidence_threshold",
+                fallback=DEFAULT_MATCH_CONFIDENCE_THRESHOLD,
+            )
             return float(val)
         except (TypeError, ValueError):
-            return 0.6
+            return DEFAULT_MATCH_CONFIDENCE_THRESHOLD
 
     # ------------------------------------------------------------------
     # 匹配结果记忆化

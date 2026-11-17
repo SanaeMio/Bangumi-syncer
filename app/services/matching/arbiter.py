@@ -50,6 +50,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.services.matching.contracts import (
+    DEFAULT_AMBIGUOUS_MARGIN,
     SOURCE_API_SEARCH,
     SOURCE_ARCHIVE,
     SOURCE_BANGUMI_DATA,
@@ -85,7 +86,6 @@ APPLICABLE_WEIGHT_SOURCES: frozenset[str] = frozenset(
 )
 DEFAULT_MIN_SCORE = 0.85
 DEFAULT_MIN_MARGIN = 0.10
-DEFAULT_AMBIGUOUS_MARGIN = 0.05
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ from functools import lru_cache
 
 from rapidfuzz import fuzz
 
+from ...core.config_schema import DEFAULT_MATCH_CONFIDENCE_THRESHOLD
 from ...core.logging import logger
 from ...utils.media_type_detector import detect_media_type
 from ..season_title import extract_season_candidates
@@ -28,6 +29,14 @@ from ..title_patterns import SEASON_SUFFIX_PATTERNS
 # 实测占全表扫描耗时的 ~78%。strptime 是纯函数，记忆化不改变任何匹配语义，
 # 仅避免在常量上反复解析（Windows 上还会连带触发 setlocale/getlocale）。
 _DATE_PARSE_CACHE_SIZE = 8192
+
+# 日期容差（天）。仅用于 bangumi-data 单层匹配，与 step 层的
+# DATE_GUARD_REJECT_DAYS（365，硬校验拒绝）是不同语义，勿合并：
+# - 精确索引命中时，日期差 <= 该值才直接采信，否则回退线性扫描找更接近的条目
+# - 多个完全匹配择优时，用它判断 date_matched（是否为同一档期的同一条目）
+_EXACT_MATCH_DATE_TOLERANCE_DAYS = 180
+# 全局日期择优窗口：仅日期差 <= 该值的部分匹配参与择优
+_DATE_PREFERENCE_WINDOW_DAYS = 90
 
 
 @lru_cache(maxsize=_DATE_PARSE_CACHE_SIZE)
@@ -196,11 +205,12 @@ class MatchingMixin:
                             min_diff = diff
                             best = (bangumi_id, matched_key, True, item)
                 if best:
-                    if min_diff <= 180:
+                    if min_diff <= _EXACT_MATCH_DATE_TOLERANCE_DAYS:
                         return best
-                    # 日期差>180天，fall through 到线性扫描检查部分匹配
+                    # 日期差超过容差，fall through 到线性扫描检查部分匹配
                     logger.debug(
-                        f"标题索引命中但日期差 {min_diff} 天 > 180，回退线性扫描检查部分匹配"
+                        f"标题索引命中但日期差 {min_diff} 天 > "
+                        f"{_EXACT_MATCH_DATE_TOLERANCE_DAYS}，回退线性扫描检查部分匹配"
                     )
             else:
                 # 无日期时：若提供了 media_type 且有多个候选，
@@ -555,9 +565,9 @@ class MatchingMixin:
                         min_exact_diff = diff
                         best_exact_match = (match_item, match_id, match_type)
 
-            # 当完全匹配的最佳日期相差大于 180 天时，检查部分匹配列表中是否存在日期更接近的条目
+            # 当完全匹配的最佳日期相差超过容差时，检查部分匹配列表中是否存在日期更接近的条目
             # 用于处理同名 OVA 或前传导致误判正片的情况
-            if min_exact_diff > 180 and partial_matches:
+            if min_exact_diff > _EXACT_MATCH_DATE_TOLERANCE_DAYS and partial_matches:
                 logger.debug(
                     f"完全匹配的最佳日期误差高达 {min_exact_diff} 天，启动全局日期择优机制"
                 )
@@ -576,9 +586,9 @@ class MatchingMixin:
                         )
                 dated_candidates.sort(key=lambda x: x[0])
 
-                # 仅日期误差小于等于 90 天的条目参与日期择优（升序排列，超出即可终止）
+                # 仅日期误差在择优窗口内的条目参与日期择优（升序排列，超出即可终止）
                 for diff, pm_item, pm_id, pm_score in dated_candidates:
-                    if diff > 90:
+                    if diff > _DATE_PREFERENCE_WINDOW_DAYS:
                         break
 
                     # 收集该条目的原名和所有中文翻译
@@ -613,7 +623,9 @@ class MatchingMixin:
                     f"从多个完全匹配中择优: {best_exact_match[0].get('title', '')}, 日期差距: {min_exact_diff}天"
                 )
                 matched_title = self._get_best_matched_title(best_exact_match[0])
-                date_matched = season > 1 and min_exact_diff <= 180
+                date_matched = (
+                    season > 1 and min_exact_diff <= _EXACT_MATCH_DATE_TOLERANCE_DAYS
+                )
                 return (
                     best_exact_match[1],
                     matched_title,
@@ -677,7 +689,7 @@ class MatchingMixin:
                     f"  {i + 1}. {item.get('title', '')}, 中文翻译: {zh_hans_str}, 匹配度: {score}"
                 )
 
-        if partial_matches[0][1] >= 0.6:
+        if partial_matches[0][1] >= DEFAULT_MATCH_CONFIDENCE_THRESHOLD:
             best_match = partial_matches[0][0]
             highest_score = partial_matches[0][1]
             bangumi_id = partial_matches[0][2]

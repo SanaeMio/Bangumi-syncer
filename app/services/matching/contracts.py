@@ -38,6 +38,11 @@ SOURCE_API_SEARCH = "api_search"
 SOURCE_BANGUMI_DATA = "bangumi_data"
 SOURCE_CUSTOM_MAPPING = "custom_mapping"
 
+# 歧义判定默认容差：top1 与 top2 分数差小于该值即视为难分伯仲。
+# 单一来源：arbiter 的默认策略与 APISearchStep 的歧义标记共用，避免只改一处
+# 导致「配置了 ambiguous_margin 但未启用 arbiter 时不生效」。
+DEFAULT_AMBIGUOUS_MARGIN = 0.05
+
 # 集数类型（对齐 Bangumi API 的 episode type 定义）——
 # canonical 定义已收拢至 bangumi_constants.EPISODE_TYPE_*，此处保留
 # 项目内既有短名作为别名（避免调用点批量改名）
