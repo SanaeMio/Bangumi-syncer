@@ -18,7 +18,7 @@
  "scenarios": {
   "S1_原名精确": "媒体库推送 JP 原名 + 首播日期，期望命中自身",
   "S2_中文名精确": "媒体库推送中文名 + 首播日期，期望命中自身",
-  "S3_季后缀": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+  "S3_季后缀": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
   "S4_无日期": "原名但无首播日期（年份消歧失效），期望命中自身",
   "S5_剧场版前缀剥离": "取「劇場版 X」条目，用剥离前缀后的 X 查询",
   "S7_短标题碰撞": "短标题（<=5 字）易被长标题包含，期望命中自身",
@@ -71073,7 +71073,7 @@
   {
    "id": "L1-S3_季后缀-121",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "創聖のアクエリオン 第二季",
     "ori_title": "創聖のアクエリオン",
@@ -71102,9 +71102,9 @@
   {
    "id": "L1-S3_季后缀-122",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "最終兵器彼女 第二季",
+    "title": "最終兵器彼女 第2季",
     "ori_title": "最終兵器彼女",
     "release_date": "2002-06-02",
     "season": 2,
@@ -71117,7 +71117,7 @@
    },
    "baseline": {
     "subject_id": "1931",
-    "matched_title": "最終兵器彼女",
+    "matched_title": "最终兵器彼女",
     "date_matched": true,
     "candidates": [
      {
@@ -71128,7 +71128,7 @@
      {
       "id": "5874",
       "name": "最終兵器彼女 Another love song",
-      "score": 0.432
+      "score": 0.42
      }
     ]
    }
@@ -71136,9 +71136,9 @@
   {
    "id": "L1-S3_季后缀-123",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "NARUTO -ナルト- 疾風伝 第二季",
+    "title": "NARUTO -ナルト- 疾風伝 Season 2",
     "ori_title": "NARUTO -ナルト- 疾風伝",
     "release_date": "2007-02-15",
     "season": 2,
@@ -71151,7 +71151,7 @@
    },
    "baseline": {
     "subject_id": "2782",
-    "matched_title": "NARUTO -ナルト- 疾風伝",
+    "matched_title": "火影忍者疾风传",
     "date_matched": true,
     "candidates": [
      {
@@ -71162,12 +71162,12 @@
      {
       "id": "20359",
       "name": "劇場版 NARUTO -ナルト- 疾風伝",
-      "score": 0.433
+      "score": 0.442
      },
      {
       "id": "22444",
       "name": "劇場版 NARUTO -ナルト- 疾風伝 絆",
-      "score": 0.423
+      "score": 0.433
      }
     ]
    }
@@ -71175,9 +71175,9 @@
   {
    "id": "L1-S3_季后缀-124",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "劇場版“文学少女” 第二季",
+    "title": "劇場版“文学少女” 2nd Season",
     "ori_title": "劇場版“文学少女”",
     "release_date": "2010-05-01",
     "season": 2,
@@ -71204,9 +71204,9 @@
   {
    "id": "L1-S3_季后缀-125",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "機神大戦 ギガンティック・フォーミュラ 第二季",
+    "title": "機神大戦 ギガンティック・フォーミュラ S2",
     "ori_title": "機神大戦 ギガンティック・フォーミュラ",
     "release_date": "2007-04-04",
     "season": 2,
@@ -71219,7 +71219,7 @@
    },
    "baseline": {
     "subject_id": "7376",
-    "matched_title": "機神大戦 ギガンティック・フォーミュラ",
+    "matched_title": "机神大战",
     "date_matched": true,
     "candidates": [
      {
@@ -71233,9 +71233,9 @@
   {
    "id": "L1-S3_季后缀-126",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "獣兵衛忍風帖 第二季",
+    "title": "獣兵衛忍風帖 第2期",
     "ori_title": "獣兵衛忍風帖",
     "release_date": "1993-06-04",
     "season": 2,
@@ -71248,7 +71248,7 @@
    },
    "baseline": {
     "subject_id": "8582",
-    "matched_title": "獣兵衛忍風帖",
+    "matched_title": "兽兵卫忍风帖",
     "date_matched": true,
     "candidates": [
      {
@@ -71259,7 +71259,7 @@
      {
       "id": "36484",
       "name": "獣兵衛忍風帖 龍宝玉篇",
-      "score": 0.54
+      "score": 0.524
      }
     ]
    }
@@ -71267,7 +71267,7 @@
   {
    "id": "L1-S3_季后缀-127",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "マジカノ 第二季",
     "ori_title": "マジカノ",
@@ -71301,9 +71301,9 @@
   {
    "id": "L1-S3_季后缀-128",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "ゲッターロボG 第二季",
+    "title": "ゲッターロボG 第2季",
     "ori_title": "ゲッターロボG",
     "release_date": "1975-05-14",
     "season": 2,
@@ -71316,7 +71316,7 @@
    },
    "baseline": {
     "subject_id": "25921",
-    "matched_title": "ゲッターロボG",
+    "matched_title": "盖塔机器人G",
     "date_matched": true,
     "candidates": [
      {
@@ -71330,9 +71330,9 @@
   {
    "id": "L1-S3_季后缀-129",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "機動戦士ガンダム0083 ジオンの残光 第二季",
+    "title": "機動戦士ガンダム0083 ジオンの残光 Season 2",
     "ori_title": "機動戦士ガンダム0083 ジオンの残光",
     "release_date": "1992-08-29",
     "season": 2,
@@ -71345,7 +71345,7 @@
    },
    "baseline": {
     "subject_id": "41742",
-    "matched_title": "機動戦士ガンダム0083 ジオンの残光",
+    "matched_title": "机动战士高达0083 吉恩的残光",
     "date_matched": true,
     "candidates": [
      {
@@ -71354,14 +71354,14 @@
       "score": 1.0
      },
      {
-      "id": "1010",
-      "name": "機動戦士ガンダム00 セカンドシーズン",
-      "score": 0.429
-     },
-     {
       "id": "286",
       "name": "機動戦士ガンダム00",
-      "score": 0.423
+      "score": 0.44
+     },
+     {
+      "id": "50",
+      "name": "機動戦士ガンダム",
+      "score": 0.402
      }
     ]
    }
@@ -71369,9 +71369,9 @@
   {
    "id": "L1-S3_季后缀-130",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "THE IDOLM@STER SHINY FESTA 第二季",
+    "title": "THE IDOLM@STER SHINY FESTA 2nd Season",
     "ori_title": "THE IDOLM@STER SHINY FESTA",
     "release_date": "2012-10-25",
     "season": 2,
@@ -71395,12 +71395,12 @@
      {
       "id": "22562",
       "name": "ハヤテのごとく！ CAN'T TAKE MY EYES OFF YOU",
-      "score": 0.435
+      "score": 0.433
      },
      {
       "id": "496276",
       "name": "攻殻機動隊 THE GHOST IN THE SHELL",
-      "score": 0.413
+      "score": 0.403
      }
     ]
    }
@@ -71408,9 +71408,9 @@
   {
    "id": "L1-S3_季后缀-131",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "聖☆おにいさん 第二季",
+    "title": "聖☆おにいさん S2",
     "ori_title": "聖☆おにいさん",
     "release_date": "2013-05-10",
     "season": 2,
@@ -71423,18 +71423,13 @@
    },
    "baseline": {
     "subject_id": "54338",
-    "matched_title": "聖☆おにいさん",
+    "matched_title": "圣哥传",
     "date_matched": true,
     "candidates": [
      {
       "id": "54338",
       "name": "聖☆おにいさん",
       "score": 1.0
-     },
-     {
-      "id": "62281",
-      "name": "キングダム(第2シリーズ)",
-      "score": 0.403
      }
     ]
    }
@@ -71442,9 +71437,9 @@
   {
    "id": "L1-S3_季后缀-132",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "ログ・ホライズン 第二季",
+    "title": "ログ・ホライズン 第2期",
     "ori_title": "ログ・ホライズン",
     "release_date": "2013-10-05",
     "season": 2,
@@ -71457,28 +71452,13 @@
    },
    "baseline": {
     "subject_id": "64140",
-    "matched_title": "ログ・ホライズン",
+    "matched_title": "记录的地平线",
     "date_matched": true,
     "candidates": [
      {
       "id": "64140",
       "name": "ログ・ホライズン",
       "score": 1.0
-     },
-     {
-      "id": "100517",
-      "name": "ログ・ホライズン(第2シリーズ)",
-      "score": 0.518
-     },
-     {
-      "id": "298698",
-      "name": "ログ・ホライズン 円卓崩壊",
-      "score": 0.492
-     },
-     {
-      "id": "78404",
-      "name": "フリージング ヴァイブレーション",
-      "score": 0.465
      }
     ]
    }
@@ -71486,7 +71466,7 @@
   {
    "id": "L1-S3_季后缀-133",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "太陽の法 第二季",
     "ori_title": "太陽の法",
@@ -71515,9 +71495,9 @@
   {
    "id": "L1-S3_季后缀-134",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "コードギアス 亡国のアキト 第3章「輝くもの天より堕つ」 第二季",
+    "title": "コードギアス 亡国のアキト 第3章「輝くもの天より堕つ」 第2季",
     "ori_title": "コードギアス 亡国のアキト 第3章「輝くもの天より堕つ」",
     "release_date": "2015-05-02",
     "season": 2,
@@ -71530,7 +71510,7 @@
    },
    "baseline": {
     "subject_id": "86773",
-    "matched_title": "コードギアス 亡国のアキト 第3章「輝くもの天より堕つ」",
+    "matched_title": "Code Geass 亡国的阿基德 第三章「辉芒陨落」",
     "date_matched": true,
     "candidates": [
      {
@@ -71541,7 +71521,7 @@
      {
       "id": "113887",
       "name": "コードギアス 亡国のアキト 第4章「憎しみの記憶から」",
-      "score": 0.42
+      "score": 0.432
      }
     ]
    }
@@ -71549,9 +71529,9 @@
   {
    "id": "L1-S3_季后缀-135",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "それでも世界は美しい 第二季",
+    "title": "それでも世界は美しい Season 2",
     "ori_title": "それでも世界は美しい",
     "release_date": "2014-04-05",
     "season": 2,
@@ -71564,7 +71544,7 @@
    },
    "baseline": {
     "subject_id": "93424",
-    "matched_title": "それでも世界は美しい",
+    "matched_title": "尽管如此世界依然美丽",
     "date_matched": true,
     "candidates": [
      {
@@ -71578,9 +71558,9 @@
   {
    "id": "L1-S3_季后缀-136",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "A・LI・CE 第二季",
+    "title": "A・LI・CE 2nd Season",
     "ori_title": "A・LI・CE",
     "release_date": "2000-02-04",
     "season": 2,
@@ -71600,11 +71580,6 @@
       "id": "112655",
       "name": "A・LI・CE",
       "score": 1.0
-     },
-     {
-      "id": "4008",
-      "name": "ICE",
-      "score": 0.437
      }
     ]
    }
@@ -71612,9 +71587,9 @@
   {
    "id": "L1-S3_季后缀-137",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "南国少年パプワくん 第二季",
+    "title": "南国少年パプワくん S2",
     "ori_title": "南国少年パプワくん",
     "release_date": "1992-10-09",
     "season": 2,
@@ -71627,18 +71602,13 @@
    },
    "baseline": {
     "subject_id": "121287",
-    "matched_title": "南国少年パプワくん",
+    "matched_title": "南国少年巴布华",
     "date_matched": true,
     "candidates": [
      {
       "id": "121287",
       "name": "南国少年パプワくん",
       "score": 1.0
-     },
-     {
-      "id": "464593",
-      "name": "地縛少年花子くん2",
-      "score": 0.433
      }
     ]
    }
@@ -71646,9 +71616,9 @@
   {
    "id": "L1-S3_季后缀-138",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "劇場版 弱虫ペダル 第二季",
+    "title": "劇場版 弱虫ペダル 第2期",
     "ori_title": "劇場版 弱虫ペダル",
     "release_date": "2015-08-28",
     "season": 2,
@@ -71661,7 +71631,7 @@
    },
    "baseline": {
     "subject_id": "129222",
-    "matched_title": "劇場版 弱虫ペダル",
+    "matched_title": "飙速宅男 剧场版",
     "date_matched": true,
     "candidates": [
      {
@@ -71672,7 +71642,7 @@
      {
       "id": "59583",
       "name": "弱虫ペダル",
-      "score": 0.448
+      "score": 0.486
      }
     ]
    }
@@ -71680,7 +71650,7 @@
   {
    "id": "L1-S3_季后缀-139",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "大家さんは思春期！ 第二季",
     "ori_title": "大家さんは思春期！",
@@ -71709,9 +71679,9 @@
   {
    "id": "L1-S3_季后缀-140",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "シートン動物記 第二季",
+    "title": "シートン動物記 第2季",
     "ori_title": "シートン動物記",
     "release_date": "1989-10-13",
     "season": 2,
@@ -71731,11 +71701,6 @@
       "id": "188947",
       "name": "シートン動物記",
       "score": 1.0
-     },
-     {
-      "id": "53926",
-      "name": "シティーハンター3",
-      "score": 0.452
      }
     ]
    }
@@ -71743,7 +71708,7 @@
   {
    "id": "L1-S3_季后缀-141",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "ワールドフールニュース PARTII 第二季",
     "ori_title": "ワールドフールニュース PARTII",
@@ -71772,7 +71737,7 @@
   {
    "id": "L1-S3_季后缀-142",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "モブサイコ100II 第二季",
     "ori_title": "モブサイコ100II",
@@ -71811,7 +71776,7 @@
   {
    "id": "L1-S3_季后缀-143",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "オーバーロードIII 第二季",
     "ori_title": "オーバーロードIII",
@@ -71845,9 +71810,9 @@
   {
    "id": "L1-S3_季后缀-144",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "少女☆寸劇 オールスタァライト 第二季",
+    "title": "少女☆寸劇 オールスタァライト 第2期",
     "ori_title": "少女☆寸劇 オールスタァライト",
     "release_date": "2019-07-04",
     "season": 2,
@@ -71860,7 +71825,7 @@
    },
    "baseline": {
     "subject_id": "279541",
-    "matched_title": "少女☆寸劇 オールスタァライト",
+    "matched_title": "少女☆寸剧 All Starlight",
     "date_matched": true,
     "candidates": [
      {
@@ -71874,7 +71839,7 @@
   {
    "id": "L1-S3_季后缀-145",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "ハローキティとミミィのハッピーバースデー 第二季",
     "ori_title": "ハローキティとミミィのハッピーバースデー",
@@ -71903,9 +71868,9 @@
   {
    "id": "L1-S3_季后缀-146",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "骸骨騎士様、只今異世界へお出掛け中 第二季",
+    "title": "骸骨騎士様、只今異世界へお出掛け中 第2季",
     "ori_title": "骸骨騎士様、只今異世界へお出掛け中",
     "release_date": "2022-04-07",
     "season": 2,
@@ -71918,7 +71883,7 @@
    },
    "baseline": {
     "subject_id": "333448",
-    "matched_title": "骸骨騎士様、只今異世界へお出掛け中",
+    "matched_title": "骸骨骑士大人异世界冒险中",
     "date_matched": true,
     "candidates": [
      {
@@ -71929,7 +71894,7 @@
      {
       "id": "528828",
       "name": "骸骨騎士様、只今異世界へお出掛け中Ⅱ",
-      "score": 0.716
+      "score": 0.61
      }
     ]
    }
@@ -71937,7 +71902,7 @@
   {
    "id": "L1-S3_季后缀-147",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
     "title": "ゆるキャン△ SEASON3 第二季",
     "ori_title": "ゆるキャン△ SEASON3",
@@ -71971,9 +71936,9 @@
   {
    "id": "L1-S3_季后缀-148",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "ピューと吹く!ジャガー ~いま、吹きにゆきます~ 第二季",
+    "title": "ピューと吹く!ジャガー ~いま、吹きにゆきます~ 2nd Season",
     "ori_title": "ピューと吹く!ジャガー ~いま、吹きにゆきます~",
     "release_date": "2008-12-31",
     "season": 2,
@@ -72000,9 +71965,9 @@
   {
    "id": "L1-S3_季后缀-149",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "劇場総集編ぼっち・ざ・ろっく！ Re:Re: 第二季",
+    "title": "劇場総集編ぼっち・ざ・ろっく！ Re:Re: S2",
     "ori_title": "劇場総集編ぼっち・ざ・ろっく！ Re:Re:",
     "release_date": "2024-08-08",
     "season": 2,
@@ -72015,7 +71980,7 @@
    },
    "baseline": {
     "subject_id": "459642",
-    "matched_title": "劇場総集編ぼっち・ざ・ろっく！ Re:Re:",
+    "matched_title": "剧场总集篇孤独摇滚！ Re:Re:",
     "date_matched": true,
     "candidates": [
      {
@@ -72026,7 +71991,7 @@
      {
       "id": "436738",
       "name": "劇場総集編ぼっち・ざ・ろっく！ Re:",
-      "score": 0.608
+      "score": 0.628
      }
     ]
    }
@@ -72034,9 +71999,9 @@
   {
    "id": "L1-S3_季后缀-150",
    "scenario": "S3_季后缀",
-   "desc": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+   "desc": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
    "input": {
-    "title": "ラーメン赤猫 第二季",
+    "title": "ラーメン赤猫 第2期",
     "ori_title": "ラーメン赤猫",
     "release_date": "2024-07-04",
     "season": 2,
@@ -72049,33 +72014,13 @@
    },
    "baseline": {
     "subject_id": "467243",
-    "matched_title": "ラーメン赤猫",
+    "matched_title": "拉面红猫",
     "date_matched": true,
     "candidates": [
      {
       "id": "467243",
       "name": "ラーメン赤猫",
       "score": 1.0
-     },
-     {
-      "id": "20692",
-      "name": "猫ラーメン~俺の醤油味~",
-      "score": 0.486
-     },
-     {
-      "id": "481662",
-      "name": "こねこのチー ポンポンらー夏休み",
-      "score": 0.457
-     },
-     {
-      "id": "394996",
-      "name": "神之塔 -Tower of God- 王子の帰還",
-      "score": 0.432
-     },
-     {
-      "id": "469400",
-      "name": "ライジングインパクト シーズン1",
-      "score": 0.432
      }
     ]
    }

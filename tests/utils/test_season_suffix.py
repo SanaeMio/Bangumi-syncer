@@ -460,7 +460,7 @@ def test_narrow_atoms_are_not_replaced_by_supersets(
         # 第N季：三套都认
         ("完美世界 第2季", "完美世界", "完美世界", "完美世界"),
         # 裸「2期」：caller 要求「第」存在（见模块头注第 2 条）
-        ("完美世界 2期", "完美世界", "完美世界 2期", "完美世界"),
+        ("完美世界 2期", "完美世界", "完美世界", "完美世界"),
         # 第N期12話 这种数字尾只有 bangumi_data 逐层剥
         ("完美世界 2期12話", "完美世界", "完美世界 2期12話", "完美世界 2期12話"),
         # 「第N部」只有 caller / tmdb 认（bangumi_data 阶段 2 只剥季/期）
@@ -482,6 +482,21 @@ def test_narrow_atoms_are_not_replaced_by_supersets(
         ("完美世界 2019", "完美世界", "完美世界 2019", "完美世界 2019"),
         # v2 版本号只有 caller 认；bangumi_data 只吃到裸数字，留个 v
         ("完美世界 v2", "完美世界 v", "完美世界", "完美世界 v2"),
+        # 裸 N季 与裸 N期同构（媒体库真实写法），只有 caller 认
+        ("完美世界 3季", "完美世界", "完美世界", "完美世界"),
+        # 第N章：caller 认章回分段；bangumi_data 的「第N話/集」不含「章」
+        ("完美世界 第2章", "完美世界 第2章", "完美世界", "完美世界 第2章"),
+        # 上/下篇 只有 caller 认，且带前边界（「地上篇」是作品名）
+        ("完美世界 下篇", "完美世界 下篇", "完美世界", "完美世界 下篇"),
+        # 英文序数词 + season：只有 caller 认（bangumi_data 只认 Season N）
+        (
+            "Perfect World Second Season",
+            "Perfect World Second Season",
+            "Perfect World",
+            "Perfect World Second Season",
+        ),
+        # 罗马数字紧贴前文：caller 认（左边界），bangumi_data 也认
+        ("完美世界Ⅱ", "完美世界Ⅱ", "完美世界", "完美世界"),
         # SxxExx 只有 caller 会整段截断；bangumi_data 只剥尾部数字
         ("完美世界 S06E279", "完美世界 S06E", "完美世界", "完美世界 S06E279"),
     ],
@@ -513,6 +528,144 @@ def test_caller_title_bare_chinese_season_requires_leading_space() -> None:
     # 「第」在时不受空白约束，但核心不足 2 字仍回退原样（min_core）
     assert strip_season_markers("完美世界第2季", SCOPE_CALLER_TITLE) == "完美世界"
     assert strip_season_markers("桥第三季", SCOPE_CALLER_TITLE) == "桥第三季"
+
+
+# ===== 真实语料挖出来的写法（archive 9.4 万条 + bangumi-data）=====
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("忍たま乱太郎 1期", "忍たま乱太郎"),
+        ("忍たま乱太郎 17期", "忍たま乱太郎"),
+        ("てーきゅう 2期", "てーきゅう"),
+        ("流言终结者 2013季", "流言终结者"),
+    ],
+)
+def test_caller_title_strips_bare_period_suffix(title: str, expected: str) -> None:
+    """裸 ``N期`` / ``N季``（不带「第」）是媒体库与 archive 的高频真实写法。
+
+    此前 caller_title 只认带「第」的形式，archive 里 116 条这类站名剥不掉。
+    只认句尾：句中 ``N期`` 可能是活动名（``103期Fes×ReC``）。
+    """
+    assert strip_season_markers(title, SCOPE_CALLER_TITLE) == expected
+
+
+def test_bare_period_does_not_leave_dangling_di() -> None:
+    """``A 第2季``：带「第」那条被 min_core 拒掉后，裸季标不许再剥一次。
+
+    否则 `` 2季`` 被当成裸季标截断，核心变成 ``A 第`` —— 比不剥更糟。
+    """
+    assert strip_season_markers("A 第2季", SCOPE_CALLER_TITLE) == "A 第2季"
+    assert strip_season_markers("第2季", SCOPE_CALLER_TITLE) == "第2季"
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        # 紧贴前文（NFKC 把 Ⅱ 折成 II 之后仍然要能剥）
+        ("黒執事Ⅱ", "黒執事"),
+        ("狼と香辛料Ⅱ", "狼と香辛料"),
+        # 带空格
+        ("ハチミツとクローバー II", "ハチミツとクローバー"),
+        ("金田一少年事件簿 II", "金田一少年事件簿"),
+        ("機甲艦隊ダイラガーXV", "機甲艦隊ダイラガー"),
+    ],
+)
+def test_caller_title_roman_needs_no_leading_space(title: str, expected: str) -> None:
+    r"""罗马数字季标在日文/中文标题里**紧贴**前文，不能要求前置空白。
+
+    旧写法 ``\s+[IVX]{2,}$`` 遇到 ``黒執事Ⅱ`` 时，NFKC 已把 Ⅱ 折成 II，
+    却因为前面没有空格而剥不掉，最终只返回 ``黒執事II``（语料实测 217 条）。
+    """
+    assert strip_season_markers(title, SCOPE_CALLER_TITLE) == expected
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "アミテージ・ザ・サード POLY-MATRIX",
+        "奥美帝III POLY-MATRIX",
+        "Fate/Zero Remix",
+        "The Animatrix",
+        "Immortal Grand Prix",
+    ],
+)
+def test_caller_title_roman_left_boundary_keeps_latin_words(title: str) -> None:
+    """左边界 ``(?<![A-Za-z])`` 挡住「拉丁词尾恰好是 IX/XI」的情况。
+
+    去掉前置空白要求的同时必须加左边界，否则 ``POLY-MATRIX`` → ``POLY-MATR``、
+    ``Remix`` → ``Rem``（IGNORECASE 下）—— 这是「宁可漏剥不可错剥」的底线。
+    """
+    assert strip_season_markers(title, SCOPE_CALLER_TITLE) == title
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("Princess Principal Crown Handler 第1章", "Princess Principal Crown Handler"),
+        ("緋色の欠片 第二章", "緋色の欠片"),
+        # NFKC 会把 ㋮ 折成 マ（caller_title 的既有行为）
+        ("今日から㋮王! 第3章", "今日からマ王!"),
+    ],
+)
+def test_caller_title_strips_chapter_suffix(title: str, expected: str) -> None:
+    """章回分段「第N章 / 第N篇」：与「前篇/後篇」不同，必须带「第」。"""
+    assert strip_season_markers(title, SCOPE_CALLER_TITLE) == expected
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("伍六七之玄武国篇 下篇", "伍六七之玄武国篇"),
+        ("少年歌行 风花雪月篇 上部", "少年歌行 风花雪月篇"),
+        ("苍兰诀 下部", "苍兰诀"),
+        ("秦时明月之沧海横流 上篇", "秦时明月之沧海横流"),
+    ],
+)
+def test_caller_title_strips_half_part_suffix(title: str, expected: str) -> None:
+    """上/下部、篇、半 是真的分段标记（国产动画常见）。"""
+    assert strip_season_markers(title, SCOPE_CALLER_TITLE) == expected
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "宇宙皇子 地上篇",  # 「地上篇」是作品名
+        "总之就是非常可爱 女子高中篇",  # 「高中篇」里的「中篇」不是分段
+    ],
+)
+def test_half_part_requires_leading_boundary(title: str) -> None:
+    r"""中文没有词边界：前边界是这条规则唯一的防线。
+
+    不设 ``(?<=\s)`` 会把「地上篇」剥成「地」、「女子高中篇」剥成「女子高」。
+    """
+    assert strip_season_markers(title, SCOPE_CALLER_TITLE) == title
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        # 纯序数词
+        ("逮捕しちゃうぞ Second Season", "逮捕しちゃうぞ"),
+        ("GIRLSブラボー first season", "GIRLSブラボー"),
+        # The + Final
+        ("進撃の巨人 The Final Season", "進撃の巨人"),
+        ("僕のヒーローアカデミア FINAL SEASON", "僕のヒーローアカデミア"),
+        # 连接符一起吃掉，不留「ダイヤのA -」
+        ("ダイヤのA -SECOND SEASON-", "ダイヤのA"),
+        ("ダイヤのA ‐SECOND SEASON‐", "ダイヤのA"),
+        # 全角波浪线包裹
+        ("マジで航海してます。～Second Season～", "マジで航海してます。"),
+        ("花にけだもの～Second Season～", "花にけだもの"),
+    ],
+)
+def test_caller_title_strips_spelled_ordinal_season(title: str, expected: str) -> None:
+    r"""``\d+(?:st|nd|rd|th)?`` 抓不到拼写序数词与 ``Final Season``。
+
+    语料里 29 条真实标题属于这类（日剧/欧美剧为主），此前一律剥不掉。
+    """
+    assert strip_season_markers(title, SCOPE_CALLER_TITLE) == expected
 
 
 # ===== 通用契约 =====

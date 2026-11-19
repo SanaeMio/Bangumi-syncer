@@ -59,10 +59,43 @@ DEFAULT_SEED = 20260908
 DEFAULT_N = 33  # 每场景用例数（9 个场景 → 约 300 条）
 DEFAULT_DISTRACTORS = 10  # 每个目标条目附带的易混淆干扰条目数
 
+# S3 的后缀写法轮转。四类真实写法分别落在不同的剥离路径上，只写中文 `第二季`
+# 会让整条「季标被剥离 → 索引命中基础条目 → 季号筛空 → 兜底」的链路零覆盖
+# （SCOPE_BANGUMI_DATA 不剥中文数字，中文写法走的是线性扫描）：
+#   第二季    → 不剥（中文数字），线性扫描 + 兜底
+#   第2季     → 剥（阶段 2），索引路径 + 兜底
+#   Season 2  → 剥（阶段 1），索引路径 + 兜底
+#   2nd Season→ 不剥（bangumi_data 只认 Season N），线性扫描
+#   S2        → 剥（阶段 1），索引路径 + 兜底
+#   第2期     → 剥（阶段 2），索引路径 + 兜底
+SEASON_WRITINGS: tuple[str, ...] = (
+    "第二季",
+    "第2季",
+    "Season 2",
+    "2nd Season",
+    "S2",
+    "第2期",
+)
+
+
+def _s3_suffix(base_title: str, i: int) -> str:
+    """S3 的后缀选择：条目自身已声明季号时只能配不剥离的中文写法。
+
+    ``ゆるキャン△ SEASON3`` 这类样本再加 ``Season 2`` 会让标题同时声明
+    第 3 季与第 2 季，``extract_explicit_season`` 取到 3、与请求的 season=2
+    冲突，兜底拒绝 —— 那是构造矛盾，不是引擎缺陷。
+    """
+    from app.utils.season_suffix import SCOPE_BANGUMI_DATA, has_season_marker
+
+    if has_season_marker(base_title, SCOPE_BANGUMI_DATA):
+        return SEASON_WRITINGS[0]
+    return SEASON_WRITINGS[i % len(SEASON_WRITINGS)]
+
+
 SCENARIOS: dict[str, str] = {
     "S1_原名精确": "媒体库推送 JP 原名 + 首播日期，期望命中自身",
     "S2_中文名精确": "媒体库推送中文名 + 首播日期，期望命中自身",
-    "S3_季后缀": "原名 + ' 第二季' 且 season=2，考验季后缀剥离",
+    "S3_季后缀": "原名 + 季后缀（中文/阿拉伯/英文/简写轮转）且 season=2，考验季后缀剥离",
     "S4_无日期": "原名但无首播日期（年份消歧失效），期望命中自身",
     "S5_剧场版前缀剥离": "取「劇場版 X」条目，用剥离前缀后的 X 查询",
     "S7_短标题碰撞": "短标题（<=5 字）易被长标题包含，期望命中自身",
@@ -249,9 +282,11 @@ def build_l1_cases(items: list[dict], n: int, rnd: random.Random) -> list[dict]:
     for it in _pick(zh_pool, n, rnd):
         cases.append(mk("S2_中文名精确", it, _zh(it)))
 
-    # S3：季后缀
-    for it in _pick(usable, n, rnd):
-        cases.append(mk("S3_季后缀", it, f"{it['title']} 第二季", season=2))
+    # S3：季后缀（写法轮转，见 SEASON_WRITINGS）
+    for i, it in enumerate(_pick(usable, n, rnd)):
+        cases.append(
+            mk("S3_季后缀", it, f"{it['title']} {_s3_suffix(it['title'], i)}", season=2)
+        )
 
     # S5：剧场版前缀剥离（推送剥离后的名字，剧场版本身与同名条目都算对）
     movie_re = re.compile(r"^(劇場版|剧场版|映画)\s*")
@@ -734,9 +769,15 @@ def _build_archive_cases(
     ):
         out.append(mk("S2_中文名精确", r, r["name_cn"], ori_title=r["name"]))
 
-    for r in qs(base_sql, (), n):
+    for i, r in enumerate(qs(base_sql, (), n)):
         out.append(
-            mk("S3_季后缀", r, f"{r['name']} 第二季", season=2, ori_title=r["name"])
+            mk(
+                "S3_季后缀",
+                r,
+                f"{r['name']} {_s3_suffix(r['name'], i)}",
+                season=2,
+                ori_title=r["name"],
+            )
         )
 
     for r in qs(
