@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from functools import cache
 
 from .text_constants import CN_NUM
 
@@ -71,6 +72,10 @@ def _season_text_tokens(season: int) -> list[str]:
     刻意保留两种「宽松」写法 —— 裸 ``N季`` / ``N期`` 与 ``第N季`` 前半段 ——
     因为媒体库真实存在 ``凡人修仙传5季``、``某番 3期`` 这类省略「第」的命名。
     收紧会让 S5 请求被误判成「未声明季号」，进而沿续集链找错条目。
+
+    返回值是**裸字面量**，只用于构造匹配模式。判定请走
+    :func:`_season_token_patterns`：直接 ``token in title`` 会让短季号吃掉
+    长季号（``Season 12`` 含 ``Season 1``）。
     """
     tokens = [
         f"第{season}季",
@@ -85,6 +90,45 @@ def _season_text_tokens(season: int) -> list[str]:
     return tokens
 
 
+# 中文数字字符：边界判定要连它们一起挡（``一季`` 不能命中 ``第十一季``）
+_CN_DIGIT_CHARS = "〇一二三四五六七八九十"
+
+
+def _bounded_token_pattern(token: str) -> re.Pattern[str]:
+    """把季号字面量编译成「两侧不许再挂数字」的正则。
+
+    纯子串匹配会让短季号吃掉长季号的前缀，全是**错配**而不是漏标：
+    ``Season 12`` ⊃ ``Season 1``、``第11季`` ⊃ ``1季``、``第12季`` ⊃ ``2季``、
+    ``第十一季`` ⊃ ``一季``。季过滤器据此认为候选「已声明第 1/2 季」而放行。
+
+    只给尾部加 ``(?!\\d)`` 不够：``第11季`` 的问题是前缀（``1季`` 前面还有
+    一个 ``1``），中文数字同理（``一季`` 前面是 ``十``）。因此按 token 首尾
+    字符的类型分别补前缀/后缀边界：
+
+    - 首字符是阿拉伯数字 → ``(?<!\\d)``；是中文数字 → ``(?<![〇一…十])``；
+    - 尾字符同理加对应的负向先行断言。
+
+    ``第`` 开头的 token（``第2季``）不需要前缀边界：它不可能是更长季号的
+    后缀。``第十季`` 里的 ``十季`` 由后缀/前缀两侧共同保证不会误判。
+    """
+    prefix = suffix = ""
+    if token[:1].isdigit():
+        prefix = r"(?<!\d)"
+    elif token[:1] in _CN_DIGIT_CHARS:
+        prefix = rf"(?<![{_CN_DIGIT_CHARS}])"
+    if token[-1:].isdigit():
+        suffix = r"(?!\d)"
+    elif token[-1:] in _CN_DIGIT_CHARS:
+        suffix = rf"(?![{_CN_DIGIT_CHARS}])"
+    return re.compile(prefix + re.escape(token) + suffix)
+
+
+@cache
+def _season_token_patterns(season: int) -> tuple[re.Pattern[str], ...]:
+    """``_season_text_tokens`` 的带边界版本（按季号缓存，构造只做一次）"""
+    return tuple(_bounded_token_pattern(t) for t in _season_text_tokens(season))
+
+
 def title_declares_season(title: str, season: int) -> bool:
     """判断标题是否**声称自己就是第 season 季**。
 
@@ -93,7 +137,9 @@ def title_declares_season(title: str, season: int) -> bool:
     共用同一口径，不再各自维护一份关键词表）。
 
     判定顺序：
-    1. 带「第N季 / N季 / N期 / Season N」字样的直接命中（中英文数字都认）；
+    1. 带「第N季 / N季 / N期 / Season N」字样的直接命中（中英文数字都认）。
+       两侧都不许再挂数字，否则 ``Season 12`` 会被判成第 1 季、``第12季``
+       会被判成第 2 季 —— 见 :func:`_bounded_token_pattern`；
     2. 裸 ``S{N}`` 标记（媒体库常见 ``某剧 S3``）—— 要求前面不是字母、后面
        不是数字，否则 ``S1`` 会命中 ``S12``，把第 12 季误判成第 1 季；
     3. 结构化解析兜底：``笨蛋，测验，召唤兽2`` / ``偶像大师 II`` 这类不含
@@ -105,8 +151,8 @@ def title_declares_season(title: str, season: int) -> bool:
     if not title or season < 1:
         return False
 
-    for token in _season_text_tokens(season):
-        if token in title:
+    for pattern in _season_token_patterns(season):
+        if pattern.search(title):
             return True
 
     if re.search(rf"(?<![A-Za-z])S{season}(?!\d)", title):

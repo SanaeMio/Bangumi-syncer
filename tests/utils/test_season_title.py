@@ -49,6 +49,53 @@ def test_bare_s_marker_respects_digit_boundary():
     assert title_declares_season("某剧 S3", 3) is True
 
 
+@pytest.mark.parametrize(
+    "title,season",
+    [
+        ("Test Anime Season 12", 1),
+        ("Test Anime Season 10", 1),
+        ("某番 第11季", 1),
+        ("某番 第12季", 2),
+        ("某番 11季", 1),
+        ("某番 第十一季", 1),
+        ("某番 第十季", 1),
+    ],
+)
+def test_long_season_number_not_matched_by_shorter_one(title, season):
+    """短季号不许吃掉长季号的前缀（PR #293 review）。
+
+    ``Season 12`` 含 ``Season 1``、``第11季`` 含 ``1季``、``第12季`` 含 ``2季``、
+    ``第十一季`` 含 ``一季`` —— 纯子串匹配下，请求第 1/2 季时季过滤器会把
+    一个第 10~12 季的候选判成「已声明本季」而放行，是错配不是漏标。
+    尾部边界不够用（``第11季`` 的问题在**前缀**），中文数字要一起挡。
+    """
+    assert title_declares_season(title, season) is False
+
+
+@pytest.mark.parametrize(
+    "title,season",
+    [
+        ("Test Anime Season 12", 12),
+        ("Test Anime Season 10", 10),
+        ("某番 第11季", 11),
+        ("某番 第12季", 12),
+        ("某番 11季", 11),
+        ("某番 第十一季", 11),
+        ("某番 第十季", 10),
+    ],
+)
+def test_long_season_number_still_matches_itself(title, season):
+    """加了边界之后，长季号仍要能命中自己（别把误判修成漏判）"""
+    assert title_declares_season(title, season) is True
+
+
+def test_loose_writings_survive_the_boundary():
+    """宽松写法（省略「第」的 ``N季`` / ``N期``）不能被边界收紧掉"""
+    assert title_declares_season("凡人修仙传5季", 5) is True
+    assert title_declares_season("某番 3期", 3) is True
+    assert title_declares_season("测试动画 1季", 1) is True
+
+
 def test_invalid_inputs():
     assert title_declares_season("", 1) is False
     assert title_declares_season("某番 第一季", 0) is False
