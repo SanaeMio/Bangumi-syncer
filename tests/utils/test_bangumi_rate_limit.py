@@ -87,6 +87,49 @@ class AbortOnSleep:
         raise _AbortReservation
 
 
+class AsyncSleepGate:
+    """可注入的 async sleep：挂起等待，由测试显式放行（不真实等待）
+
+    ``acquire_async`` 的取消路径只在「等待中」才可达。若用真实
+    ``asyncio.sleep`` + 真实时钟断言，等待是否已经结束取决于机器负载
+    （全量跑时高负载下首轮 0.005s 可能已经到期），测试会变成时序赌博。
+    这里把等待变成可观测的挂起点：测试等它挂上再取消，时机完全确定。
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[float] = []
+        self._pending: asyncio.Future[None] | None = None
+
+    async def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        self._pending = asyncio.get_running_loop().create_future()
+        try:
+            await self._pending
+        finally:
+            self._pending = None
+
+    @property
+    def waiting(self) -> bool:
+        """当前是否已有等待挂起"""
+        return self._pending is not None
+
+    def release(self) -> None:
+        """放行当前挂起的等待，模拟 sleep 正常到期"""
+        if self._pending is not None:
+            self._pending.set_result(None)
+
+
+async def _wait_for_gate(gate: AsyncSleepGate, round_no: int) -> None:
+    """推进事件循环，直到第 ``round_no`` 次等待挂上 gate（不依赖真实时间）"""
+    for _ in range(200):
+        if len(gate.calls) >= round_no and gate.waiting:
+            return
+        await asyncio.sleep(0)
+    raise AssertionError(
+        f"acquire_async 未按预期进入第 {round_no} 轮等待（已记录 {gate.calls}）"
+    )
+
+
 class RecordingLimiter:
     """记录调用的假限速器，用于验证 http_layer 的挂载点"""
 
@@ -469,37 +512,44 @@ async def test_sync_and_async_share_same_bucket_state():
 
 async def test_acquire_async_cancel_rolls_back_reserved_token():
     """等待期间被取消：已预约的令牌在锁内归还，不残留透支"""
-    limiter = RateLimiter(rate=1.0, burst=1)
+    clock = FakeClock()
+    gate = AsyncSleepGate()
+    limiter = RateLimiter(rate=1.0, burst=1, clock=clock, async_sleep=gate)
 
     await limiter.acquire_async()  # 耗尽唯一令牌
     with limiter._lock:
         before = limiter._tokens
 
     task = asyncio.create_task(limiter.acquire_async(timeout=30.0))
-    await asyncio.sleep(0.05)  # 让任务进入 asyncio.sleep 等待
-    assert not task.done()
+    await _wait_for_gate(gate, 1)
+    assert gate.calls[0] == pytest.approx(1.0)  # 预约放行时刻在 1s 后
 
+    # 等待已流逝 0.4s：回滚须先按当前时刻 refill，再冲销预约扣减的 1 令牌
+    clock.advance(0.4)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
 
     with limiter._lock:
         after = limiter._tokens
-    # 自然补充约 0.05s 令牌；若未回滚则残留约 -1.0 的透支
-    assert after == pytest.approx(0.05, abs=0.05)
+    # 0.4（自然补充）- 1.0（预约）+ 1.0（回滚）= 0.4；未回滚则为 -0.6
+    assert after == pytest.approx(0.4)
     assert after > before
 
 
 async def test_acquire_async_cancel_rolls_back_freeze_debt():
     """预约已折算 429 冻结债务时，取消也要一并冲销该债务"""
-    limiter = RateLimiter(rate=1.0, burst=1)
+    clock = FakeClock()
+    gate = AsyncSleepGate()
+    limiter = RateLimiter(rate=1.0, burst=1, clock=clock, async_sleep=gate)
 
     await limiter.acquire_async()  # 耗尽唯一令牌
     limiter.notify_rate_limited(0.0)  # 冻结 60s，预约会折算约 60 令牌债务
 
-    task = asyncio.create_task(limiter.acquire_async(timeout=4000.0))
-    await asyncio.sleep(0.05)
-    assert not task.done()
+    task = asyncio.create_task(limiter.acquire_async(timeout=_FREEZE_TIMEOUT))
+    await _wait_for_gate(gate, 1)
+    # 放行时刻被冻结推到 60s 后：预约扣减 = 1 令牌 + 59s × 1.0/s 债务
+    assert gate.calls[0] == pytest.approx(60.0)
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -508,20 +558,22 @@ async def test_acquire_async_cancel_rolls_back_freeze_debt():
     with limiter._lock:
         after = limiter._tokens
     # 冻结债务必须随预约一起冲销；未回滚则残留约 -60
-    assert after == pytest.approx(0.05, abs=0.1)
+    assert after == pytest.approx(0.0, abs=1e-9)
 
 
 async def test_acquire_async_cancel_rolls_back_wait_loop_freeze_extension_debt():
     """等待循环中 429 冻结延长追加的债务，取消时也要冲销"""
-    limiter = RateLimiter(rate=100.0, burst=1)
+    clock = FakeClock()
+    gate = AsyncSleepGate()
+    limiter = RateLimiter(rate=100.0, burst=1, clock=clock, async_sleep=gate)
 
     await limiter.acquire_async()  # 耗尽唯一令牌
 
-    task = asyncio.create_task(limiter.acquire_async(timeout=4000.0))
-    await asyncio.sleep(0.005)  # 首轮预约约 0.01s
+    task = asyncio.create_task(limiter.acquire_async(timeout=_FREEZE_TIMEOUT))
+    await _wait_for_gate(gate, 1)  # 首轮预约约 0.01s
     limiter.notify_rate_limited(0.0)  # 冻结 60s，下一轮 _remaining_wait 折算债务
-    await asyncio.sleep(0.05)  # 等首轮结束、进入冻结等待轮
-    assert not task.done()
+    gate.release()  # 首轮等待「到期」
+    await _wait_for_gate(gate, 2)  # 进入冻结等待轮
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -532,25 +584,29 @@ async def test_acquire_async_cancel_rolls_back_wait_loop_freeze_extension_debt()
     # 桶容量即上限：回滚不得把令牌推过 burst
     assert after <= limiter.burst + 1e-9
     # 回滚有效：全部债务（含循环追加）被冲销，未残留透支
-    assert after >= 0.0
+    assert after == pytest.approx(0.0, abs=1e-9)
 
 
 async def test_acquire_async_cancel_clamps_tokens_to_burst_after_freeze():
     """复现 edge：rate=100/burst=1，令牌占满后等待期间收到 429 冻结并取消
 
-    首轮预约把桶扣减为负；等待循环里的 ``_refill`` 会在负桶上补令牌，取消时
-    直接把净债务加回会把 ``_tokens`` 推过桶容量（实测约 1.09）。桶容量即上限，
-    回滚必须夹紧到 ``burst``，且后续 acquire 不被永久拖累、不超发。
+    首轮预约把桶扣减为负；等待期间 ``_refill`` 会在负桶上补令牌，取消时
+    直接把净债务加回会把 ``_tokens`` 推过桶容量。桶容量即上限，回滚必须
+    夹紧到 ``burst``，且后续 acquire 不被永久拖累、不超发。
     """
-    limiter = RateLimiter(rate=100.0, burst=1)
+    clock = FakeClock()
+    gate = AsyncSleepGate()
+    limiter = RateLimiter(rate=100.0, burst=1, clock=clock, async_sleep=gate)
 
     await limiter.acquire_async()  # 耗尽唯一令牌
-    task = asyncio.create_task(limiter.acquire_async(timeout=4000.0))
-    await asyncio.sleep(0.005)  # 首轮预约约 0.01s
+    task = asyncio.create_task(limiter.acquire_async(timeout=_FREEZE_TIMEOUT))
+    await _wait_for_gate(gate, 1)  # 首轮预约约 0.01s
     limiter.notify_rate_limited(0.0)  # 冻结 60s，下一轮折算债务
-    await asyncio.sleep(0.05)  # 等首轮结束、进入冻结等待轮
-    assert not task.done()
+    gate.release()  # 首轮等待「到期」
+    await _wait_for_gate(gate, 2)  # 进入冻结等待轮
 
+    # 冻结窗口走满：refill 的 6000 令牌几乎抵掉 6001 的预约扣减
+    clock.advance(60.0)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -558,6 +614,7 @@ async def test_acquire_async_cancel_clamps_tokens_to_burst_after_freeze():
     with limiter._lock:
         after = limiter._tokens
     assert after <= limiter.burst + 1e-9  # 桶容量即上限，不得超发
+    assert after == pytest.approx(float(limiter.burst))  # 归还后恰好补满
     assert after >= 0.0  # 回滚有效：未残留透支（不被永久拖累）
 
     # 冻结仍在内存中（60s），测试直接清除以便验证后续行为

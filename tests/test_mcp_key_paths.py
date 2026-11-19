@@ -14,8 +14,13 @@ from __future__ import annotations
 
 import os
 import tempfile
+from unittest.mock import MagicMock
 
+import pytest
+
+from app.mcp import keys as keys_module
 from app.mcp.keys import RSAKeyManager
+from tests.mcp_helpers import assert_private_key_owner_only
 
 
 class TestDefaultKeyPaths:
@@ -68,4 +73,36 @@ class TestKeyParentDirAutoCreate:
 
         assert nested_private.exists()
         assert nested_public.exists()
-        assert (nested_private.stat().st_mode & 0o777) == 0o600
+        assert_private_key_owner_only(nested_private)
+
+
+class TestPrivateKeyPermissionHardening:
+    """私钥权限收紧的平台差异。
+
+    Windows 的 ``os.chmod`` 只映射只读位、``st_mode`` 不反映 NTFS ACL，
+    无法回读校验 0o600（见 ``keys._POSIX_MODE_SUPPORTED``）；POSIX 侧必须
+    保持「回读到非 0600 就告警并强制修正」的原有行为。
+    """
+
+    @pytest.mark.skipif(
+        os.name != "posix", reason="Windows 无法用 st_mode 表达 0o600 权限位"
+    )
+    def test_权限位不符时_告警并强制修正为0600(self, tmp_path, monkeypatch):
+        """POSIX：已有私钥权限宽松时，加载阶段应修正为 0600 并留下告警。"""
+        private_path = tmp_path / "mcp_private.pem"
+        public_path = tmp_path / "mcp_public.pem"
+        manager = RSAKeyManager(
+            private_key_path=str(private_path),
+            public_key_path=str(public_path),
+        )
+        manager.load_or_generate()
+        private_path.chmod(0o644)  # 模拟权限被放宽
+
+        # 项目 logger 是自制 Logger（非 logging.Logger），caplog 抓不到，直接盯调用。
+        warning = MagicMock()
+        monkeypatch.setattr(keys_module.logger, "warning", warning)
+        manager._ensure_private_key_permissions()
+
+        assert (private_path.stat().st_mode & 0o777) == 0o600
+        assert warning.call_args is not None
+        assert warning.call_args[0][-1] == 0o644  # 告警里带上原权限位

@@ -16,6 +16,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 logger = logging.getLogger(__name__)
 
+# ``os.chmod`` 在 Windows 上只映射「只读」位，``os.stat().st_mode`` 不反映
+# NTFS ACL，根本无法表达 0o600。只有 POSIX 才能回读校验权限位。
+_POSIX_MODE_SUPPORTED = os.name == "posix"
+
 
 class RSAKeyManager:
     """管理用于 JWT 签名（RS256）的 RSA 密钥对。"""
@@ -112,7 +116,17 @@ class RSAKeyManager:
         self._public_key = key
 
     def _ensure_private_key_permissions(self) -> None:
-        """对已有私钥强制设置仅属主（0o600）权限。"""
+        """对已有私钥强制设置仅属主（0o600）权限。
+
+        POSIX 上 ``0o600`` 语义完整，可回读 ``st_mode`` 校验并修正；Windows
+        上 ``os.chmod`` 只影响只读位、``st_mode`` 不反映 NTFS ACL，回读必然
+        看到 ``0o666`` —— 若据此告警，每次加载都会刷一条永远修不好的
+        warning。因此该平台只调用一次 chmod（保证可写位正确）不做校验，
+        私钥保护由 ``data/`` 目录隔离与 NTFS 继承 ACL 承担。
+        """
+        if not _POSIX_MODE_SUPPORTED:
+            os.chmod(self.private_key_path, 0o600)
+            return
         current_mode = os.stat(self.private_key_path).st_mode & 0o777
         if current_mode != 0o600:
             logger.warning(
