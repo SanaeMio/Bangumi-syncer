@@ -1,0 +1,23 @@
+<div class="card stats-card h-100 position-relative">
+    <span id="llm-detail-trigger"
+          style="display: none;
+                 cursor: pointer;
+                 position: absolute;
+                 top: 8px;
+                 right: 10px;
+                 opacity: 0.55"
+          class="hover-opacity">
+        <i class="bi bi-info-circle"></i>
+    </span>
+    <div class="card-body p-4">
+        <div class="d-flex align-items-center">
+            <div class="stats-icon me-3 bg-primary-soft">
+                <i class="bi bi-robot"></i>
+            </div>
+            <div>
+                <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">近 30 天 LLM 调用</div>
+                <div class="h4 mb-0 fw-bold stats-value" id="llm-total-calls">--</div>
+            </div>
+        </div>
+    </div>
+</div>

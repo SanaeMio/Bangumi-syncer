@@ -576,7 +576,7 @@ def test_cross_season_step_skipped_when_episode_resolved():
     outcome = CrossSeasonStep().execute(ctx, {"subject_id": "100", "episode_id": "200"})
 
     assert outcome.status == "skipped"
-    assert outcome.reason == "集数解析已命中，无需跨季回退"
+    assert outcome.reason == "集数已解析，无需跨季查找"
     assert "cross_season" not in ctx.step_outputs
     assert ctx.current_outputs == {}
     bgm.find_episode_across_seasons.assert_not_called()

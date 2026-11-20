@@ -83,7 +83,7 @@ class TestSyncPipelineExecution:
         assert ep_step.outputs["subject_id"] == "100"
         assert ep_step.outputs["episode_id"] == "200"
         assert cross_step.status == "skipped"
-        assert cross_step.reason == "集数解析已命中，无需跨季回退"
+        assert cross_step.reason == "集数已解析，无需跨季查找"
         assert action_step.status == "hit"
         assert action_step.outputs["mark_status"] == 1
         assert result_step.status == "hit"

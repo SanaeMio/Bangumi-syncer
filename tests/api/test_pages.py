@@ -14,6 +14,11 @@ from app.api import pages
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# 带字标的整张 logo.png 曾被当作 rel="icon"，浏览器压成 16px 后只剩一条模糊横线。
+# 这里只断言"图标链接"不再指向它；侧边栏/登录页的 <img> 仍用整张 logo 是正常的。
+_LOGO_LINK_AS_ICON = """/static/logo.png' | static_v }}"
+              rel="icon\""""
+
 
 class TestPages:
     """测试页面路由"""
@@ -148,6 +153,34 @@ class TestPagesAuthenticated:
             client = TestClient(app)
             r = client.get("/dashboard", follow_redirects=False)
         assert r.status_code == 200
+        # 收件箱标签上的未读计数锚点（JS 通过这两个 id 写入分类未读数）
+        assert 'id="inboxTabAnnCount"' in r.text
+        assert 'id="inboxTabNotifCount"' in r.text
+
+    def test_dashboard_airing_and_scheduler_cards_registered_hidden(self):
+        """放送日历与调度器状态卡已登记进注册表，但默认隐藏。
+
+        两张卡都在 DOM 里（自定义弹窗要能列出、用户可以自己打开），默认带
+        d-none；对应前端逻辑在卡片隐藏时不发 /api/airing-calendar 与
+        /api/scheduler/status 请求。
+        """
+        app = self._make_app()
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            client = TestClient(app)
+            r = client.get("/dashboard", follow_redirects=False)
+        assert r.status_code == 200
+        body = r.text
+        for card_id in ("airing-calendar", "scheduler-status"):
+            marker = f'data-dashboard-card="{card_id}"'
+            assert marker in body, card_id
+            tag_start = body.rindex("<div", 0, body.index(marker))
+            assert "d-none" in body[tag_start : body.index(marker)], card_id
+        assert "我在追的放送" in body
+        assert "调度器状态" in body
+        assert "airing_calendar.js" in body
+        assert "cron-desc.js" in body
 
     def test_config_authenticated(self):
         """已认证用户访问配置页"""
@@ -313,7 +346,11 @@ def test_agent_runs_page():
 
 
 def test_dashboard_llm_trend_canvases():
-    """仪表板含 LLM 用量趋势容器（tokens 与质量双图；已登录）"""
+    """LLM 用量趋势容器（tokens 与质量双图）随 LLM 卡片一起出现；已登录。
+
+    LLM 卡片默认隐藏但仍会渲染进 DOM（自定义弹窗要能列出它们），
+    所以这里校验「默认存在但带 d-none」与「启用后可见」。
+    """
     app = FastAPI()
     app.include_router(pages.router)
 
@@ -321,13 +358,17 @@ def test_dashboard_llm_trend_canvases():
     with patch.object(
         pages, "get_current_user_from_cookie", return_value={"username": "u"}
     ):
-        response = client.get("/dashboard")
+        default_body = client.get("/dashboard").text
+        with patch.object(pages, "_llm_cards_enabled", return_value=True):
+            enabled_body = client.get("/dashboard").text
 
-    assert response.status_code == 200
-    body = response.text
-    assert 'id="llm-trend-row"' in body
-    assert 'id="llmTokensChart"' in body
-    assert 'id="llmQualityChart"' in body
+    assert 'id="llmTokensChart"' in default_body
+    assert 'data-dashboard-card="llm-trend"' in default_body
+    assert 'class="dashboard-grid__item d-none"' in default_body
+    assert 'id="llmTokensChart"' in enabled_body
+    assert 'id="llmQualityChart"' in enabled_body
+    assert 'data-llm-available="0"' in default_body
+    assert 'data-llm-available="1"' in enabled_body
 
 
 class TestSharedModals:
@@ -375,6 +416,74 @@ class TestSharedModals:
         )[0]
         assert "recordDetailModal" in body
         assert "hidden.bs.modal" in body
+
+
+class TestSidebarCollapse:
+    """侧边栏折叠：宽屏下收成图标栏，状态记在 localStorage。"""
+
+    @staticmethod
+    def _dashboard_html() -> str:
+        app = FastAPI()
+        app.include_router(pages.router)
+        with patch.object(
+            pages, "get_current_user_from_cookie", return_value={"username": "u"}
+        ):
+            return TestClient(app).get("/dashboard", follow_redirects=False).text
+
+    def test_dashboard_has_sidebar_toggle(self):
+        """品牌区始终用一个方形图标，折叠按钮在品牌行右端。"""
+        html = self._dashboard_html()
+        assert 'id="sidebarCollapseBtn"' in html
+        assert 'class="sidebar-brand__mark"' in html
+        assert 'class="sidebar-brand__wordmark"' in html
+        assert "/static/logo-wordmark.png" in html
+        assert 'class="app-sidebar-logo"' not in html
+        # 横版组合：方形图标 + logo 里的字标，带字标的整张 logo 不再出现在页面里
+        # 三处：apple-touch-icon 链接、侧栏品牌图标、窄屏顶部导航栏图标
+        assert html.count("/static/apple-touch-icon.png") == 3
+        assert "/static/logo.png" not in html
+
+    def test_sidebar_state_applied_before_paint(self):
+        """展开/折叠状态在 <head> 内联脚本里先行落盘，避免刷新时闪一下。"""
+        base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
+        assert "localStorage.getItem('app-sidebar')" in base
+        assert "/static/js/sidebar.js" in base
+
+    def test_collapsed_styles_present(self):
+        """折叠样式与宽屏固定宽度都挂在 theme-base.css 上。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert 'html[data-sidebar="collapsed"]' in css
+        assert "--app-sidebar-width" in css
+
+    def test_nav_labels_animate_instead_of_disappearing(self):
+        """菜单文字包在 .nav-link__text 里，靠 max-width 过渡滑出。"""
+        html = self._dashboard_html()
+        assert '<span class="nav-link__text">仪表板</span>' in html
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert ".sidebar .nav-link__text {" in css
+        assert "max-width: 12rem" in css
+        collapsed = css.split(
+            'html[data-sidebar="collapsed"] .sidebar .nav-link__text {', 1
+        )
+        assert "max-width: 0" in collapsed[1].split("}", 1)[0]
+
+    def test_collapsed_nav_shows_label_tooltip(self):
+        """折叠后悬停菜单项要有浮层标签，说清这是哪个菜单。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        assert "content: attr(data-sidebar-label)" in css
+        js = (_REPO_ROOT / "static/js/sidebar.js").read_text(encoding="utf-8")
+        assert "link.dataset.sidebarLabel = text" in js
+
+    def test_brand_row_height_is_stable_between_states(self):
+        """品牌行高度由图标决定，站名折叠时绝对定位隐藏，避免菜单上下跳。"""
+        css = (_REPO_ROOT / "static/css/theme-base.css").read_text(encoding="utf-8")
+        brand = css.split(".sidebar-brand {", 1)[1].split("}", 1)[0]
+        assert "min-height: 2.125rem" in brand
+        collapsed_name = css.split(
+            'html[data-sidebar="collapsed"] .sidebar-brand__wordmark {', 1
+        )[1].split("}", 1)[0]
+        assert "position: absolute" in collapsed_name
+        assert "opacity: 0" in collapsed_name
 
 
 class TestConfigConsoleErrors:
@@ -536,9 +645,12 @@ class TestConfigConsoleErrors:
 
     def test_login_page_declares_favicon(self):
         """登录页为独立模板，同样声明站点图标，避免回退请求 /favicon.ico。"""
+        # 图标必须是方形图标本身：整张 logo.png 带 "Bangumi-syncer" 字标，
+        # 被浏览器压成 16px 时会变成一条模糊的横线
         login = (_REPO_ROOT / "templates/login.html").read_text(encoding="utf-8")
         assert 'rel="icon"' in login
-        assert "/static/logo.png" in login
+        assert "/static/favicon.ico" in login
+        assert _LOGO_LINK_AS_ICON not in login
 
     def test_release_notes_render_deferred_until_open(self):
         """发行说明正文延迟到打开弹窗时渲染，页面加载阶段不注入图片。"""
@@ -562,6 +674,8 @@ class TestConfigConsoleErrors:
 
     def test_base_template_declares_favicon(self):
         """基础模板声明站点图标，避免浏览器默认请求 /favicon.ico 返回 404。"""
+        # 同上：图标用方形 favicon.ico，而不是带字标的整张 logo.png
         base = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
         assert 'rel="icon"' in base
-        assert "/static/logo.png" in base
+        assert "/static/favicon.ico" in base
+        assert _LOGO_LINK_AS_ICON not in base

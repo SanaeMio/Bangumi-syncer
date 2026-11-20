@@ -35,7 +35,8 @@ def _do_login(page, base_url: str) -> None:
     page.fill("#password", "admin")
     page.click("#loginBtn")
     page.wait_for_url("**/dashboard", timeout=10000)
-    page.wait_for_load_state("networkidle")
+    # 首页常驻 SSE 连接（/api/stats/stream）不会进入空闲，不能用 networkidle
+    page.wait_for_load_state("load")
 
 
 @pytest.fixture(scope="session")

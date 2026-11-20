@@ -246,10 +246,54 @@
     background: var(--app-bg-card-header);
     border-radius: var(--app-radius-pill);
     overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
+/* 底色用纯色：Bootstrap 的 bg-success / bg-danger 只改 background-color，
+   之前这里写的渐变（background 简写）会把条纹和状态色一起盖掉 */
 .progress-bar {
-    background: var(--app-gradient-primary);
+    background-color: var(--app-primary);
+    transition: width 0.45s var(--app-ease-smooth),
+        background-color 0.3s var(--app-ease-smooth);
+}
+
+/* 条纹叠在底色之上，进度推进时可见；动画停在终点后由脚本摘掉 .progress-bar-animated */
+.progress-bar-striped {
+    background-image: linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.24) 25%,
+        transparent 25%,
+        transparent 50%,
+        rgba(255, 255, 255, 0.24) 50%,
+        rgba(255, 255, 255, 0.24) 75%,
+        transparent 75%,
+        transparent
+    );
+    background-size: 0.9rem 0.9rem;
+}
+
+.progress-bar-animated {
+    animation: app-progress-stripes 1.1s linear infinite;
+}
+
+@keyframes app-progress-stripes {
+    from {
+        background-position: 0.9rem 0;
+    }
+
+    to {
+        background-position: 0 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .progress-bar {
+        transition: none;
+    }
+
+    .progress-bar-animated {
+        animation: none;
+    }
 }
 
 /* 统计卡片样式 */

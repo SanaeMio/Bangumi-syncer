@@ -284,6 +284,21 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    html,
+    body,
+    .app-shell {
+        scroll-behavior: auto !important;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+    }
+
     .app-body::before {
         animation: none;
     }

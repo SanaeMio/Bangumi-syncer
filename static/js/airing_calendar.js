@@ -15,10 +15,18 @@
     linkedScrolled: false, // 已按深链滚动到本卡片
   }
 
-  document.addEventListener('DOMContentLoaded', function () {
-    var row = document.getElementById('airing-calendar-row')
-    if (!row) return
+  // 首页自由网格里卡片默认隐藏（.d-none），隐藏时不发请求
+  var booted = false
+  var cardsApi = null
 
+  function isCardVisible() {
+    var row = document.getElementById('airing-calendar-row')
+    if (!row) return false
+    var item = row.closest('.dashboard-grid__item')
+    return !item || !item.classList.contains('d-none')
+  }
+
+  function bindToolbar(row) {
     // 工具栏：类型切换
     var typeBtns = row.querySelectorAll('.airing-type-btn')
     typeBtns.forEach(function (btn) {
@@ -41,12 +49,46 @@
         loadAiringCalendar()
       })
     }
+  }
 
-    // 先加载账号列表（判断多用户模式 + 填充 dropdown），再拉取放送数据
+  /**
+   * 卡片可见时才启动：工具栏绑定 + 账号列表 + 放送数据。
+   * 卡片默认隐藏，用户打开后再加载，避免每次进首页都多发两个请求。
+   */
+  function bootAiring() {
+    if (booted || !isCardVisible()) return
+    booted = true
+    bindToolbar(document.getElementById('airing-calendar-row'))
     loadBangumiAccounts().then(function () {
       loadAiringCalendar()
     })
+  }
+
+  /**
+   * 深链 #airing-calendar-row（收件箱「今日放送」）时把隐藏的卡片自动打开。
+   * dashboard-cards.js 可能先于本脚本执行完，所以两个来源都试一遍。
+   */
+  function openIfDeepLinked() {
+    if (location.hash !== '#airing-calendar-row') return
+    if (isCardVisible()) return
+    var api = window.dashboardCards || cardsApi
+    if (api && api.setVisible) api.setVisible('airing-calendar', true)
+  }
+
+  document.addEventListener('dashboard:cards-ready', function (e) {
+    cardsApi = e.detail
+    openIfDeepLinked()
+    bootAiring()
   })
+
+  // 用户在自定义弹窗里打开卡片后补加载
+  document.addEventListener('dashboard:layout-changed', bootAiring)
+
+  // dashboard-cards.js 在 defer 阶段就可能已经完成初始化（事件已经错过），
+  // 这里直接尝试一次，DOMContentLoaded 再补一次兜底
+  openIfDeepLinked()
+  bootAiring()
+  document.addEventListener('DOMContentLoaded', bootAiring)
 
   /**
    * 加载 Bangumi 账号列表，多用户且 >1 账号时显示右上角切换 dropdown。
@@ -128,9 +170,6 @@
     if (!row || !container) return
 
     state.loading = true
-    // 进入加载态前确保行可见，避免上次 archive_enabled=false 把行隐藏后，
-    // 本次请求失败时错误提示也无法显示
-    row.style.display = ''
     container.innerHTML =
       '<div class="text-center py-3 app-text-muted-block"><div class="spinner-border spinner-border-sm" role="status"></div></div>'
     if (summary) summary.classList.add('d-none')
@@ -157,9 +196,6 @@
       .catch(function (err) {
         state.loading = false
         console.error('加载在追番剧放送失败:', err)
-        // catch 分支必须重置 display，否则上次 archive 未启用时 row 被隐藏，
-        // 错误提示永远看不见
-        row.style.display = ''
         if (summary) summary.classList.add('d-none')
         container.innerHTML =
           '<div class="text-center py-3 app-text-muted-block"><i class="bi bi-exclamation-triangle d-block mb-1"></i><span class="small">加载失败</span></div>'
@@ -174,7 +210,7 @@
     if (state.linkedScrolled) return
     if (window.location.hash !== '#airing-calendar-row') return
     var row = document.getElementById('airing-calendar-row')
-    if (!row || row.style.display === 'none') return
+    if (!row) return
     state.linkedScrolled = true
     row.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -189,12 +225,16 @@
     var summary = document.getElementById('airing-calendar-summary')
     if (!row || !container) return
 
-    // Archive 未启用：隐藏整行
+    // Archive 未启用：卡片保留但给出提示（直接隐藏会在网格里留下空白卡位）
     if (!data.archive_enabled) {
-      row.style.display = 'none'
+      container.innerHTML =
+        '<div class="text-center py-4 app-text-muted-block">' +
+        '<i class="bi bi-database-slash d-block mb-2 fs-4"></i>' +
+        '<span class="small">未启用 Archive 离线库，无法显示放送日程</span>' +
+        '</div>'
+      if (summary) summary.classList.add('d-none')
       return
     }
-    row.style.display = ''
 
     // Archive 启用但未导入
     if (data.status === 'archive_not_imported') {

@@ -240,10 +240,12 @@
         <div class="card-body">
             <div class="progress mb-3" style="height: 12px;">
                 <div id="archive-progress-bar"
-                     class="progress-bar progress-bar-striped progress-bar-animated"
+                     class="progress-bar"
                      role="progressbar"
-                     style="width: 0%;
-                            transition: width 0.4s ease"></div>
+                     aria-valuemin="0"
+                     aria-valuemax="100"
+                     aria-valuenow="0"
+                     style="width: 0%"></div>
             </div>
             <div class="small text-muted mb-2" id="archive-progress-message">暂无任务</div>
             <div class="bg-dark text-light p-3 rounded small"
@@ -389,11 +391,17 @@
             const stage = p.stage || 'idle';
             document.getElementById('archive-progress-stage').textContent = _stageLabel(stage);
             document.getElementById('archive-progress-percent').textContent = percent + '%';
-            document.getElementById('archive-progress-bar').style.width = percent + '%';
+            const bar = document.getElementById('archive-progress-bar');
+            bar.style.width = percent + '%';
+            bar.setAttribute('aria-valuenow', String(percent));
             document.getElementById('archive-progress-message').textContent = p.message || '';
 
+            // 条纹动画只在推进时出现；结束/失败/空闲后摘掉，避免看着像永远在转
+            const busy = !['idle', 'done', 'error', 'skipped'].includes(stage);
+            bar.classList.toggle('progress-bar-striped', busy);
+            bar.classList.toggle('progress-bar-animated', busy);
+
             // 进度条颜色
-            const bar = document.getElementById('archive-progress-bar');
             bar.classList.remove('bg-success', 'bg-danger', 'bg-warning');
             if (stage === 'done') {
                 bar.classList.add('bg-success');
