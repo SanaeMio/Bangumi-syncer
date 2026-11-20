@@ -724,6 +724,7 @@ body {
     box-shadow: 0 2px 10px rgba(var(--app-primary-rgb), 0.18);
     opacity: 0;
     pointer-events: none;
+    will-change: transform, width, height;
     transition: transform 0.26s var(--app-ease-smooth), width 0.26s var(--app-ease-smooth),
         height 0.26s var(--app-ease-smooth), opacity 0.18s ease;
 }
@@ -745,6 +746,23 @@ html.js-nav-slider .sidebar-nav .nav-link {
 html.js-nav-slider .sidebar-nav .nav-link.active {
     background: transparent;
     box-shadow: none;
+}
+
+/* 切页入场：滑块从上次的选中项滑到当前项，标签颜色跟着滑块走，
+   否则新条目会提前变白、压在浅色底上看不清 */
+html.js-nav-arriving .sidebar .nav-link.is-slider-origin,
+html.js-nav-arriving .sidebar .nav-link.is-slider-origin i {
+    color: #fff !important;
+}
+
+html.js-nav-arriving .sidebar .nav-link.active,
+html.js-nav-arriving .sidebar .nav-link.active i {
+    color: var(--app-text-muted) !important;
+}
+
+html.js-nav-arriving .sidebar .nav-link.is-slider-origin,
+html.js-nav-arriving .sidebar .nav-link.active {
+    transition: none;
 }
 
 .sidebar .nav-link i {

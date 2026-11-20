@@ -482,14 +482,18 @@ class TestSidebarNavSlider:
     """侧栏导航：选中态滑块从旧条目滑到新条目。"""
 
     def test_slider_pill_moves_between_items(self):
-        """点击另一个菜单项时只移动滑块，不重绘选中样式。"""
+        """切换页面时滑块从旧条目滑到新条目，且不再拦截跳转。"""
         js = (_REPO_ROOT / "static/js/sidebar.js").read_text(encoding="utf-8")
-        assert "function moveNavSlider(link, animate)" in js
+        assert "function placeSlider(link, animate)" in js
         assert "navSlider.style.transform =" in js
-        assert "'translate3d(' + link.offsetLeft" in js
+        assert "link.getBoundingClientRect()" in js
         assert "initNavSlider()" in js
-        # 白字等滑块走到一半再换，避免新条目提前变白压在淡底上看不清
-        assert "window.setTimeout(swapActive, 190)" in js
+        # 出发项记在 sessionStorage，新页面据此把滑块滑过来
+        assert "app-nav-slider-from" in js
+        assert "js-nav-arriving" in js
+        # 折叠/展开时宽度在过渡，滑块必须跟着每帧重新贴合
+        assert "new ResizeObserver" in js
+        assert "preventDefault" not in js
 
     def test_slider_styles_take_over_active_gradient(self):
         """JS 接管后选中项自身不再画渐变，脚本失败时仍保留旧样式。"""
@@ -500,6 +504,9 @@ class TestSidebarNavSlider:
         assert "background: transparent" in _block(
             css, "html.js-nav-slider .sidebar-nav .nav-link.active"
         )
+        # 入场滑动期间标签颜色跟着滑块走
+        assert "html.js-nav-arriving .sidebar .nav-link.is-slider-origin" in css
+        assert "html.js-nav-arriving .sidebar .nav-link.active" in css
 
     def test_stats_bump_does_not_flash_theme_color(self):
         """数字弹跳只改缩放，不改颜色；等宽数字避免滚动时抖动。"""
