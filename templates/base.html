@@ -573,23 +573,20 @@
                 </div>
             </div>
         </div>
-        <script src="{{ '/static/js/bootstrap.bundle.min.js' | static_v }}"></script>
-        <script src="{{ '/static/js/format.js' | static_v }}"></script>
-        <script src="{{ '/static/js/badges.js' | static_v }}"></script>
-        <script src="{{ '/static/js/table-utils.js' | static_v }}"></script>
-        <script src="{{ '/static/js/mapping-modal.js' | static_v }}"></script>
-        <script src="{{ '/static/js/api-utils.js' | static_v }}"></script>
-        <script src="{{ '/static/js/toast-ui.js' | static_v }}"></script>
-        <script src="{{ '/static/js/ui-utils.js' | static_v }}"></script>
-        <script src="{{ '/static/js/blocked-keywords.js' | static_v }}"></script>
-        <script src="{{ '/static/js/records-detail.js' | static_v }}"></script>
-        <script src="{{ '/static/js/agent-run-steps.js' | static_v }}"></script>
-        <script src="{{ '/static/js/agent_runs.js' | static_v }}"></script>
-        <script src="{{ '/static/js/auth.js' | static_v }}"></script>
-        <script src="{{ '/static/js/sync-retry.js' | static_v }}"></script>
-        <script src="{{ '/static/js/theme.js' | static_v }}"></script>
-        <script src="{{ '/static/js/sidebar.js' | static_v }}"></script>
-        <script defer src="{{ '/static/js/chart.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/bootstrap.bundle.min.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/format.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/badges.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/api-utils.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/toast-ui.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/ui-utils.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/auth.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/theme.js' | static_v }}"></script>
+        <script defer src="{{ '/static/js/sidebar.js' | static_v }}"></script>
+        {% if request.url.path.endswith('/dashboard') %}
+            <script defer src="{{ '/static/js/chart.js' | static_v }}"></script>
+            <script defer src="{{ '/static/js/records-detail.js' | static_v }}"></script>
+            <script defer src="{{ '/static/js/sync-retry.js' | static_v }}"></script>
+        {% endif %}
         <script defer src="{{ '/static/js/version-release.js' | static_v }}"></script>
         <script defer src="{{ '/static/js/upgrade.js' | static_v }}"></script>
         <script>
@@ -669,8 +666,27 @@
             }
         });
 
-        window.addEventListener('resize', positionThemeColorsPanel);
-        window.addEventListener('scroll', positionThemeColorsPanel, true);
+        document.addEventListener('keydown', function(e) {
+            var colors = document.getElementById('headerThemeColors');
+            var btn = document.getElementById('themeColorBtn');
+            if (e.key !== 'Escape' || !colors || !btn || !colors.classList.contains('show')) return;
+            colors.classList.remove('show');
+            btn.setAttribute('aria-expanded', 'false');
+            resetThemeColorsPosition();
+            btn.focus();
+        });
+
+        var themeColorPositionFrame = null;
+        function scheduleThemeColorsPosition() {
+            if (themeColorPositionFrame !== null) return;
+            themeColorPositionFrame = requestAnimationFrame(function() {
+                themeColorPositionFrame = null;
+                positionThemeColorsPanel();
+            });
+        }
+
+        window.addEventListener('resize', scheduleThemeColorsPosition);
+        window.addEventListener('scroll', scheduleThemeColorsPosition, true);
 
         document.addEventListener('DOMContentLoaded', function() {
             updateThemeToggleUI();

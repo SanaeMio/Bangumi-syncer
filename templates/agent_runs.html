@@ -132,6 +132,9 @@
     </div>
 {% endblock %}
 {% block scripts %}
+    <script defer src="{{ '/static/js/table-utils.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/agent-run-steps.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/agent_runs.js' | static_v }}"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             loadAgentRuns(1);

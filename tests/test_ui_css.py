@@ -437,6 +437,14 @@ class TestRecordDetailCopy:
         assert "seen.subjects.has" in js
         assert "seen.episodes.has" in js
 
+    def test_detail_uses_embedded_trace_without_second_request(self):
+        """详情接口已返回 match_trace，弹窗直接解析，避免重复请求。"""
+        js = (_REPO_ROOT / "static/js/records-detail.js").read_text(encoding="utf-8")
+        assert "function loadMatchTraceContent(record)" in js
+        assert "const trace = parseRecordMatchTrace(record);" in js
+        assert "loadMatchTraceContent(record);" in js
+        assert "/api/match-records/" not in js
+
     def test_poster_shown_in_modal_header(self):
         """详情弹窗头部左侧显示条目封面。"""
         html = (_REPO_ROOT / "templates/base.html").read_text(encoding="utf-8")
@@ -535,6 +543,77 @@ class TestRecordDetailHeaderLayout:
         assert (
             ".record-detail-step__card[open] .record-detail-step__content {" in reduced
         )
+
+
+class TestPageScriptLoading:
+    """公共脚本延迟执行，页面专用脚本只在实际使用页加载。"""
+
+    @staticmethod
+    def _template(name: str) -> str:
+        return (_REPO_ROOT / "templates" / name).read_text(encoding="utf-8")
+
+    @staticmethod
+    def _scripts(html: str) -> list[tuple[str, str]]:
+        return re.findall(r"(<script\b[^>]*\bsrc=\"([^\"]+)\"[^>]*>)", html)
+
+    def test_common_scripts_are_deferred_and_dashboard_only_scripts_are_scoped(self):
+        base = self._template("base.html")
+        dashboard_marker = "{% if request.url.path.endswith('/dashboard') %}"
+        dashboard_block = base.split(dashboard_marker, 1)[1].split("{% endif %}", 1)[0]
+        for name in ("chart.js", "records-detail.js", "sync-retry.js"):
+            assert f"/static/js/{name}" in dashboard_block
+            tag = next(
+                tag for tag, src in self._scripts(dashboard_block) if name in src
+            )
+            assert "defer" in tag
+
+        before_dashboard, remainder = base.split(dashboard_marker, 1)
+        common = before_dashboard + remainder.split("{% endif %}", 1)[1]
+        for name in ("table-utils.js", "mapping-modal.js", "agent_runs.js"):
+            assert f"/static/js/{name}" not in common
+        for tag, src in self._scripts(common):
+            assert "defer" in tag, src
+
+    def test_page_specific_scripts_follow_template_dependencies(self):
+        expected = {
+            "records.html": (
+                "table-utils.js",
+                "blocked-keywords.js",
+                "records-detail.js",
+                "sync-retry.js",
+            ),
+            "config.html": ("blocked-keywords.js",),
+            "mappings.html": ("table-utils.js", "mapping-modal.js"),
+            "pending_candidates.html": (
+                "table-utils.js",
+                "mapping-modal.js",
+                "agent-run-steps.js",
+            ),
+            "bangumi_replay.html": ("table-utils.js",),
+            "agent_runs.html": (
+                "table-utils.js",
+                "agent-run-steps.js",
+                "agent_runs.js",
+            ),
+            "trakt/config.html": ("table-utils.js",),
+        }
+        for template, names in expected.items():
+            scripts = self._scripts(self._template(template))
+            for name in names:
+                assert sum(name in src for _, src in scripts) == 1, (template, name)
+
+    def test_login_drops_unused_detail_and_table_scripts(self):
+        scripts = self._scripts(self._template("login.html"))
+        names = [src.rsplit("/", 1)[-1].split("'", 1)[0] for _, src in scripts]
+        assert names == [
+            "bootstrap.bundle.min.js",
+            "api-utils.js",
+            "toast-ui.js",
+            "ui-utils.js",
+            "auth.js",
+            "theme.js",
+        ]
+        assert all("defer" in tag for tag, _ in scripts)
 
 
 class TestSidebarNavSlider:

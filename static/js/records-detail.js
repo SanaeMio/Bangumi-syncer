@@ -467,8 +467,10 @@ function jumpToRecordStep(idx) {
         }
         parent = parent.parentElement;
     }
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
     target.classList.remove('record-detail-step--flash');
+    if (reduceMotion) return;
     void target.offsetWidth;
     target.classList.add('record-detail-step--flash');
 }
@@ -1244,13 +1246,6 @@ function setRecordSummaryHtml(record, trace) {
     }
 }
 
-function clearRecordSummaryHtml() {
-    const head = document.getElementById('record-detail-modal-summary');
-    if (head) {
-        head.innerHTML = '';
-    }
-}
-
 // ========== 弹窗加载流程 ==========
 
 function renderRecordDetailLoading() {
@@ -1263,7 +1258,7 @@ function renderRecordDetailLoading() {
 }
 
 let _recordDetailModal = null;
-const _matchTraceCache = {};
+let _recordDetailRequestSerial = 0;
 
 function getRecordDetailModal() {
     const modalEl = document.getElementById('recordDetailModal');
@@ -1276,38 +1271,20 @@ function getRecordDetailModal() {
     return _recordDetailModal;
 }
 
-async function loadMatchTraceContent(recordId, record) {
+function loadMatchTraceContent(record) {
     const pipelineContent = document.getElementById('record-pipeline-content');
     if (!pipelineContent) {
         return;
     }
 
-    setRecordSummaryHtml(record, parseRecordMatchTrace(record));
-    pipelineContent.innerHTML = renderRecordDetailLoading();
-
-    try {
-        let traceData = _matchTraceCache[recordId];
-        if (!traceData) {
-            const data = await apiFetch(`/api/match-records/${recordId}/trace`);
-            if (data.status !== 'success') {
-                throw new Error('获取匹配详情失败');
-            }
-            traceData = data.data;
-            _matchTraceCache[recordId] = traceData;
-        }
-
-        const traceRecord = traceData.record || record;
-        const trace = traceData.trace;
-        setRecordSummaryHtml(traceRecord, trace);
-        pipelineContent.innerHTML = renderPipelineHtml(traceRecord, trace);
-    } catch (error) {
-        console.error('加载匹配过程失败:', error);
-        clearRecordSummaryHtml();
-        pipelineContent.innerHTML = '<p class="record-detail-empty-hint record-detail-empty-hint--error mb-0">加载匹配流水线失败</p>';
-    }
+    // 记录详情接口已经返回 match_trace；直接复用，避免再次请求同一行的 trace。
+    const trace = parseRecordMatchTrace(record);
+    setRecordSummaryHtml(record, trace);
+    pipelineContent.innerHTML = renderPipelineHtml(record, trace);
 }
 
 async function showRecordDetail(recordId, options) {
+    const requestSerial = ++_recordDetailRequestSerial;
     const opts = typeof options === 'string'
         ? { scrollToMatch: options === 'match' }
         : (options || {});
@@ -1326,28 +1303,29 @@ async function showRecordDetail(recordId, options) {
 
     try {
         const result = await apiFetch(`/api/records/${recordId}`, { method: 'GET' });
+        if (requestSerial !== _recordDetailRequestSerial) return;
 
         if (result.status !== 'success' || !result.data) {
             throw new Error('获取记录数据失败');
         }
 
         const record = result.data;
-        delete _matchTraceCache[recordId];
-
         const embeddedTrace = parseRecordMatchTrace(record);
         updateRecordDetailModalChrome(record);
         setRecordSummaryHtml(record, embeddedTrace);
         pipelineContent.innerHTML = renderRecordDetailLoading();
         modal.show();
-        await loadMatchTraceContent(recordId, record);
+        loadMatchTraceContent(record);
 
         if (opts.scrollToMatch) {
             const pipelineSection = document.getElementById('record-pipeline-content');
             if (pipelineSection) {
-                pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                pipelineSection.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
             }
         }
     } catch (error) {
+        if (requestSerial !== _recordDetailRequestSerial) return;
         console.error('显示记录详情失败:', error);
         showAlert('显示记录详情失败', 'danger');
     }

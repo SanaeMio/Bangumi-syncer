@@ -62,6 +62,14 @@ function bindAppTableMobileRowClick(tableSelector, onRowClick) {
 function replayAppTableAnimation(wrapId) {
     const wrap = document.getElementById(wrapId);
     if (!wrap) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        wrap.classList.remove('records-table-wrap--enter');
+        return;
+    }
+    if (!wrap.classList.contains('records-table-wrap--enter')) {
+        wrap.classList.add('records-table-wrap--enter');
+        return;
+    }
     wrap.classList.remove('records-table-wrap--enter');
     void wrap.offsetWidth;
     wrap.classList.add('records-table-wrap--enter');
@@ -71,6 +79,11 @@ function replayAppTableAnimation(wrapId) {
  * 给行添加入场动画类与延迟
  */
 function applyAppTableRowEnter(row, index) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        row.classList.remove('records-table-row--enter');
+        row.style.animationDelay = '';
+        return;
+    }
     row.classList.add('records-table-row--enter');
     row.style.animationDelay = `${Math.min(index * 0.04, 0.36)}s`;
 }
@@ -113,6 +126,14 @@ function createAppEllipsisItem() {
 function replayAppPaginationAnimation(navId) {
     const nav = document.getElementById(navId);
     if (!nav || nav.classList.contains('is-hidden')) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        nav.classList.remove('records-pagination--enter');
+        return;
+    }
+    if (!nav.classList.contains('records-pagination--enter')) {
+        nav.classList.add('records-pagination--enter');
+        return;
+    }
     nav.classList.remove('records-pagination--enter');
     void nav.offsetWidth;
     nav.classList.add('records-pagination--enter');
@@ -177,6 +198,10 @@ function renderAppPagination(options) {
     prevLink.className = 'page-link';
     prevLink.href = '#';
     prevLink.setAttribute('aria-label', '上一页');
+    if (currentPage === 1) {
+        prevLink.tabIndex = -1;
+        prevLink.setAttribute('aria-disabled', 'true');
+    }
     prevLink.innerHTML = '<i class="bi bi-chevron-left" aria-hidden="true"></i><span class="d-none d-sm-inline">上一页</span>';
     prevLink.addEventListener('click', (e) => {
         e.preventDefault();
@@ -212,6 +237,10 @@ function renderAppPagination(options) {
     nextLink.className = 'page-link';
     nextLink.href = '#';
     nextLink.setAttribute('aria-label', '下一页');
+    if (currentPage === totalPages) {
+        nextLink.tabIndex = -1;
+        nextLink.setAttribute('aria-disabled', 'true');
+    }
     nextLink.innerHTML = '<span class="d-none d-sm-inline">下一页</span><i class="bi bi-chevron-right" aria-hidden="true"></i>';
     nextLink.addEventListener('click', (e) => {
         e.preventDefault();
