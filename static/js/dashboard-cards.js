@@ -1,338 +1,722 @@
 /**
- * 仪表盘卡片自定义（显示 / 排序）
+ * 仪表盘卡片的拖动、拉伸与显示开关。
  *
- * 卡片清单由服务端按 app/core/dashboard_registry.py 渲染到 #dashboardGrid，
- * 这里只负责按浏览器本地偏好重排与隐藏。偏好存在 localStorage
- * （key: app-dashboard-cards，值 {version, order, hidden}），不落服务端。
+ * 卡片清单与默认尺寸 / 摆放由后端注册表给出（app/core/dashboard_registry.py），
+ * 本文件只做三件事：
+ *   1. 把布局写进卡片的 --dg-x/--dg-y/--dg-w/--dg-h 自定义属性（定位交给 CSS）；
+ *   2. 拖动换位、拖右下角改尺寸，并把偏好存进 localStorage（不落服务端）；
+ *   3. 自定义弹窗里只控制「显示哪些卡片」，顺序与大小在首页拖出来。
  *
- * 新增卡片无需改本文件：注册表里的卡片会自动出现在自定义弹窗末尾。
+ * 布局单位：横向按 12 栏栅格（列），纵向按像素（高度吸附到 HEIGHT_STEP）。
+ * 每次改动后按「重力」向上压缩，避免出现悬空的空隙。
  */
-;(function () {
-  'use strict'
+(function () {
+    'use strict'
 
-  var STORAGE_KEY = 'app-dashboard-cards'
-  var STORAGE_VERSION = 1
-  var ITEM_SELECTOR = '.dashboard-grid__item'
+    var STORAGE_KEY = 'app-dashboard-cards'
+    var STORAGE_VERSION = 2
+    var FALLBACK_COLUMNS = 12
+    var FALLBACK_GAP = 24
+    var FALLBACK_HEIGHT = 106
+    var FALLBACK_MIN_HEIGHT = 96
+    var HEIGHT_STEP = 8
+    var MAX_HEIGHT = 1600
+    var MOBILE_MAX_WIDTH = 767
+    var DRAG_THRESHOLD = 3
 
-  // 注册表默认状态（首次访问 / 恢复默认时使用），init 时从 DOM 抓一次
-  var defaults = null
-  // 当前编辑中的偏好
-  var state = null
-  var modalEl = null
-  var modalInstance = null
+    var grid = null
+    var placeholder = null
+    var modalEl = null
+    var modalInstance = null
+    var state = null
+    var defaults = null
+    var dragState = null
+    var resizeTimer = null
+    var readyDispatched = false
 
-  function getGrid() {
-    return document.getElementById('dashboardGrid')
-  }
+    // ========== 基础工具 ==========
 
-  function getItems() {
-    var grid = getGrid()
-    if (!grid) return []
-    return Array.prototype.slice.call(grid.querySelectorAll(ITEM_SELECTOR))
-  }
-
-  function cardId(el) {
-    return el.getAttribute('data-dashboard-card') || ''
-  }
-
-  function escapeHtml(value) {
-    return String(value == null ? '' : value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-  }
-
-  function isStringArray(value) {
-    return (
-      Array.isArray(value) &&
-      value.every(function (item) {
-        return typeof item === 'string'
-      })
-    )
-  }
-
-  // ========== 偏好读写 ==========
-
-  function readState() {
-    try {
-      var raw = window.localStorage.getItem(STORAGE_KEY)
-      if (!raw) return null
-      var parsed = JSON.parse(raw)
-      if (!parsed || parsed.version !== STORAGE_VERSION) return null
-      return {
-        version: STORAGE_VERSION,
-        order: isStringArray(parsed.order) ? parsed.order.slice() : [],
-        hidden: isStringArray(parsed.hidden) ? parsed.hidden.slice() : [],
-      }
-    } catch (e) {
-      // 隐私模式下 localStorage 不可读或 JSON 损坏，按「无偏好」处理
-      return null
+    function getGrid() {
+        if (!grid || !grid.isConnected) grid = document.getElementById('dashboardGrid')
+        return grid
     }
-  }
 
-  function writeState(next) {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    } catch (e) {
-      // 隐私模式下 localStorage 可能不可写，忽略即可（本次会话内仍然生效）
+    function getItems() {
+        var target = getGrid()
+        if (!target) return []
+        return Array.prototype.slice.call(
+            target.querySelectorAll('.dashboard-grid__item')
+        )
     }
-  }
 
-  function captureDefaults() {
-    var items = getItems()
-    defaults = {
-      order: items.map(cardId),
-      hidden: items
-        .filter(function (el) {
-          return el.classList.contains('d-none')
+    function cardId(el) {
+        return el.getAttribute('data-dashboard-card') || ''
+    }
+
+    function numberAttr(el, name, fallback) {
+        var value = parseInt(el.getAttribute(name), 10)
+        return isNaN(value) ? fallback : value
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value))
+    }
+
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+    }
+
+    function isMobile() {
+        return window.innerWidth <= MOBILE_MAX_WIDTH
+    }
+
+    function metrics() {
+        var target = getGrid()
+        var style = window.getComputedStyle(target)
+        var columns =
+            parseInt(style.getPropertyValue('--dg-cols'), 10) || FALLBACK_COLUMNS
+        var gap = parseFloat(style.getPropertyValue('--dg-gap'))
+        if (isNaN(gap) || gap < 0) gap = FALLBACK_GAP
+        var width = target.clientWidth
+        var colWidth = (width - (columns - 1) * gap) / columns
+        return {
+            columns: columns,
+            gap: gap,
+            width: width,
+            colWidth: colWidth,
+            stride: colWidth + gap
+        }
+    }
+
+    function snapHeight(value) {
+        return clamp(
+            Math.round(value / HEIGHT_STEP) * HEIGHT_STEP,
+            FALLBACK_MIN_HEIGHT,
+            MAX_HEIGHT
+        )
+    }
+
+    function minWidthOf(el) {
+        return numberAttr(el, 'data-min-width', 2)
+    }
+
+    function minHeightOf(el) {
+        return numberAttr(el, 'data-min-height', FALLBACK_MIN_HEIGHT)
+    }
+
+    // ========== 状态读写 ==========
+
+    function geometryOf(el) {
+        var style = el.style
+        var x = parseInt(style.getPropertyValue('--dg-x'), 10)
+        var y = parseFloat(style.getPropertyValue('--dg-y'))
+        var w = parseInt(style.getPropertyValue('--dg-w'), 10)
+        var h = parseFloat(style.getPropertyValue('--dg-h'))
+        return {
+            x: isNaN(x) ? 0 : x,
+            y: isNaN(y) ? 0 : y,
+            w: isNaN(w) ? numberAttr(el, 'data-card-width', 3) : w,
+            h: isNaN(h) ? numberAttr(el, 'data-card-height', FALLBACK_HEIGHT) : h
+        }
+    }
+
+    function captureDefaults() {
+        var layout = {}
+        var hidden = []
+        getItems().forEach(function (el) {
+            var id = cardId(el)
+            if (!id) return
+            layout[id] = geometryOf(el)
+            if (el.classList.contains('d-none')) hidden.push(id)
         })
-        .map(cardId),
+        defaults = { version: STORAGE_VERSION, layout: layout, hidden: hidden }
     }
-  }
 
-  // ========== 应用到网格 ==========
+    function sanitize(raw) {
+        if (!raw || raw.version !== STORAGE_VERSION) return null
+        if (!raw.layout || typeof raw.layout !== 'object') return null
 
-  function applyState(next) {
-    var grid = getGrid()
-    if (!grid || !next) return
+        var layout = {}
+        Object.keys(raw.layout).forEach(function (id) {
+            var item = raw.layout[id]
+            if (!item) return
+            var x = parseInt(item.x, 10)
+            var y = parseFloat(item.y)
+            var w = parseInt(item.w, 10)
+            var h = parseFloat(item.h)
+            layout[id] = {
+                x: isNaN(x) ? 0 : clamp(x, 0, FALLBACK_COLUMNS - 1),
+                y: isNaN(y) ? 0 : Math.max(0, y),
+                w: isNaN(w) ? 3 : clamp(w, 1, FALLBACK_COLUMNS),
+                h: isNaN(h)
+                    ? FALLBACK_HEIGHT
+                    : clamp(h, FALLBACK_MIN_HEIGHT, MAX_HEIGHT)
+            }
+        })
 
-    var items = getItems()
-    var position = {}
-    next.order.forEach(function (id, index) {
-      position[id] = index
-    })
-    // 模型未记录过的卡片排在已记录卡片之后，并保持 DOM 原序
-    var domIndex = {}
-    items.forEach(function (el, index) {
-      domIndex[cardId(el)] = index
-    })
-    items.sort(function (a, b) {
-      var left = position[cardId(a)]
-      var right = position[cardId(b)]
-      if (left === undefined) left = next.order.length + domIndex[cardId(a)]
-      if (right === undefined) right = next.order.length + domIndex[cardId(b)]
-      return left - right
-    })
-
-    items.forEach(function (el) {
-      var id = cardId(el)
-      grid.appendChild(el)
-      el.classList.toggle('d-none', next.hidden.indexOf(id) !== -1)
-    })
-  }
-
-  function persist() {
-    writeState(state)
-    applyState(state)
-  }
-
-  // ========== 弹窗 ==========
-
-  function ensureModal() {
-    if (modalEl) return modalEl
-
-    modalEl = document.createElement('div')
-    modalEl.className = 'modal fade dashboard-customize-modal'
-    modalEl.id = 'dashboardCustomizeModal'
-    modalEl.tabIndex = -1
-    modalEl.setAttribute('aria-labelledby', 'dashboardCustomizeModalLabel')
-    modalEl.setAttribute('aria-hidden', 'true')
-    modalEl.innerHTML =
-      '<div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">' +
-      '<div class="modal-content dashboard-customize__content">' +
-      '<div class="modal-header dashboard-customize__header">' +
-      '<div class="dashboard-customize__head">' +
-      '<h5 class="modal-title dashboard-customize__title" id="dashboardCustomizeModalLabel">自定义仪表盘</h5>' +
-      '<div class="dashboard-customize__hint">选择要显示的卡片，并调整它们的顺序。偏好只保存在当前浏览器。</div>' +
-      '</div>' +
-      '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>' +
-      '</div>' +
-      '<div class="modal-body dashboard-customize__body">' +
-      '<ul class="dashboard-customize__list" id="dashboardCustomizeList"></ul>' +
-      '</div>' +
-      '<div class="modal-footer dashboard-customize__footer">' +
-      '<button type="button" class="btn btn-outline-secondary btn-sm dashboard-customize__reset" id="dashboardCustomizeReset">恢复默认</button>' +
-      '<button type="button" class="btn btn-primary btn-sm dashboard-customize__done" data-bs-dismiss="modal">完成</button>' +
-      '</div>' +
-      '</div></div>'
-    document.body.appendChild(modalEl)
-
-    modalEl.addEventListener('click', onModalClick)
-    modalEl.addEventListener('change', onModalChange)
-    return modalEl
-  }
-
-  /** 按当前偏好排出弹窗里的卡片顺序 */
-  function orderedItems() {
-    var items = getItems()
-    var byId = {}
-    items.forEach(function (el) {
-      byId[cardId(el)] = el
-    })
-
-    var ordered = []
-    state.order.forEach(function (id) {
-      if (byId[id]) {
-        ordered.push(byId[id])
-        delete byId[id]
-      }
-    })
-    items.forEach(function (el) {
-      var id = cardId(el)
-      if (byId[id]) {
-        ordered.push(byId[id])
-        delete byId[id]
-      }
-    })
-    return ordered
-  }
-
-  function buildRow(el, index, total) {
-    var id = cardId(el)
-    var title = el.getAttribute('data-card-title') || id
-    var description = el.getAttribute('data-card-description') || ''
-    var visible = state.hidden.indexOf(id) === -1
-
-    return (
-      '<li class="dashboard-customize__row" data-card-id="' +
-      escapeHtml(id) +
-      '">' +
-      '<div class="dashboard-customize__info">' +
-      '<div class="dashboard-customize__name">' +
-      escapeHtml(title) +
-      '</div>' +
-      (description
-        ? '<div class="dashboard-customize__desc">' +
-          escapeHtml(description) +
-          '</div>'
-        : '') +
-      '</div>' +
-      '<div class="dashboard-customize__actions">' +
-      '<button type="button" class="dashboard-customize__move" data-dir="up" aria-label="上移"' +
-      (index === 0 ? ' disabled' : '') +
-      '><i class="bi bi-arrow-up"></i></button>' +
-      '<button type="button" class="dashboard-customize__move" data-dir="down" aria-label="下移"' +
-      (index === total - 1 ? ' disabled' : '') +
-      '><i class="bi bi-arrow-down"></i></button>' +
-      '<div class="form-check form-switch dashboard-customize__switch mb-0">' +
-      '<input class="form-check-input" type="checkbox" role="switch" data-role="visible"' +
-      (visible ? ' checked' : '') +
-      ' aria-label="显示' +
-      escapeHtml(title) +
-      '">' +
-      '</div>' +
-      '</div></li>'
-    )
-  }
-
-  function renderList() {
-    if (!modalEl) return
-    var list = modalEl.querySelector('#dashboardCustomizeList')
-    if (!list) return
-
-    var items = orderedItems()
-    var html = ''
-    items.forEach(function (el, index) {
-      html += buildRow(el, index, items.length)
-    })
-    list.innerHTML = html
-  }
-
-  function move(id, dir) {
-    var order = state.order.slice()
-    var index = order.indexOf(id)
-    if (index === -1) return
-    var target = dir === 'up' ? index - 1 : index + 1
-    if (target < 0 || target >= order.length) return
-    order[index] = order[target]
-    order[target] = id
-    state.order = order
-    persist()
-    renderList()
-  }
-
-  function onModalClick(event) {
-    var moveBtn = event.target.closest('.dashboard-customize__move')
-    if (moveBtn) {
-      var row = moveBtn.closest('[data-card-id]')
-      if (row) move(row.getAttribute('data-card-id'), moveBtn.dataset.dir)
-      return
+        var hidden = Array.isArray(raw.hidden)
+            ? raw.hidden.filter(function (id) {
+                  return typeof id === 'string'
+              })
+            : []
+        return { version: STORAGE_VERSION, layout: layout, hidden: hidden }
     }
-    if (event.target.closest('#dashboardCustomizeReset')) {
-      resetAll()
+
+    function readState() {
+        try {
+            var raw = window.localStorage.getItem(STORAGE_KEY)
+            if (!raw) return null
+            return sanitize(JSON.parse(raw))
+        } catch (e) {
+            return null
+        }
     }
-  }
 
-  function onModalChange(event) {
-    var input = event.target.closest('input[data-role="visible"]')
-    if (!input) return
-    var row = input.closest('[data-card-id]')
-    if (!row) return
-
-    var id = row.getAttribute('data-card-id')
-    var hidden = state.hidden.filter(function (item) {
-      return item !== id
-    })
-    if (!input.checked) hidden.push(id)
-    state.hidden = hidden
-    persist()
-  }
-
-  function resetAll() {
-    try {
-      window.localStorage.removeItem(STORAGE_KEY)
-    } catch (e) {
-      // 忽略：即使删不掉，下面的内存状态也会恢复到默认
+    function writeState(next) {
+        try {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        } catch (e) {
+            // 隐私模式等场景写不进去：本次会话内的排序仍然生效
+        }
     }
-    state = {
-      version: STORAGE_VERSION,
-      order: defaults.order.slice(),
-      hidden: defaults.hidden.slice(),
+
+    function cloneDefaults() {
+        var layout = {}
+        Object.keys(defaults.layout).forEach(function (id) {
+            var item = defaults.layout[id]
+            layout[id] = { x: item.x, y: item.y, w: item.w, h: item.h }
+        })
+        return {
+            version: STORAGE_VERSION,
+            layout: layout,
+            hidden: defaults.hidden.slice()
+        }
     }
-    applyState(state)
-    renderList()
-  }
 
-  /** 把 DOM 中新增的卡片追加到偏好末尾，避免注册表更新后新卡被丢掉 */
-  function normalizeState(next) {
-    var domIds = getItems().map(cardId)
-    domIds.forEach(function (id) {
-      if (next.order.indexOf(id) === -1) next.order.push(id)
-    })
-    return next
-  }
+    /** 注册表新增 / 删除了卡片时，让本地偏好跟上 DOM */
+    function normalize(next) {
+        var result = { version: STORAGE_VERSION, layout: {}, hidden: [] }
+        var known = {}
 
-  function openModal() {
-    ensureModal()
-    state = normalizeState(readState() || {
-      version: STORAGE_VERSION,
-      order: defaults.order.slice(),
-      hidden: defaults.hidden.slice(),
-    })
-    renderList()
+        getItems().forEach(function (el) {
+            var id = cardId(el)
+            if (!id) return
+            known[id] = true
+            var item = next.layout[id]
+            if (!item) {
+                item = defaults.layout[id] || geometryOf(el)
+            }
+            result.layout[id] = {
+                x: clamp(item.x, 0, FALLBACK_COLUMNS - 1),
+                y: Math.max(0, item.y),
+                w: clamp(item.w, 1, FALLBACK_COLUMNS),
+                h: clamp(item.h, FALLBACK_MIN_HEIGHT, MAX_HEIGHT)
+            }
+        })
 
-    if (window.bootstrap && window.bootstrap.Modal) {
-      if (!modalInstance) modalInstance = new window.bootstrap.Modal(modalEl)
-      modalInstance.show()
+        result.hidden = next.hidden.filter(function (id) {
+            return known[id]
+        })
+        return result
     }
-  }
 
-  function init() {
-    if (!getGrid()) return
-    captureDefaults()
+    // ========== 布局运算 ==========
 
-    var stored = readState()
-    if (stored) applyState(normalizeState(stored))
+    function overlaps(a, b, gap) {
+        return (
+            a.x < b.x + b.w &&
+            b.x < a.x + a.w &&
+            a.y < b.y + b.h + gap &&
+            b.y < a.y + a.h + gap
+        )
+    }
 
-    var btn = document.getElementById('dashboardCustomizeBtn')
-    if (btn) btn.addEventListener('click', openModal)
-  }
+    /** 把被移动卡片压到的其它卡片依次往下推（连锁） */
+    function pushDown(movedId, gap) {
+        var queue = [movedId]
+        var guard = 0
+        while (queue.length && guard < 500) {
+            guard += 1
+            var currentId = queue.shift()
+            var current = state.layout[currentId]
+            if (!current) continue
+            Object.keys(state.layout).forEach(function (id) {
+                if (id === currentId || state.hidden.indexOf(id) !== -1) return
+                var other = state.layout[id]
+                if (overlaps(current, other, gap)) {
+                    other.y = current.y + current.h + gap
+                    queue.push(id)
+                }
+            })
+        }
+    }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init)
-  } else {
-    init()
-  }
+    /** 重力压缩：按 (y, x) 顺序让每张卡尽量往上贴，消除悬空空隙 */
+    function compact(gap) {
+        var ids = Object.keys(state.layout).filter(function (id) {
+            return state.hidden.indexOf(id) === -1
+        })
+        ids.sort(function (a, b) {
+            var left = state.layout[a]
+            var right = state.layout[b]
+            return left.y - right.y || left.x - right.x
+        })
+
+        var placed = []
+        ids.forEach(function (id) {
+            var item = state.layout[id]
+            var y = 0
+            placed.forEach(function (other) {
+                if (item.x < other.x + other.w && other.x < item.x + item.w) {
+                    y = Math.max(y, other.y + other.h + gap)
+                }
+            })
+            item.y = y
+            placed.push(item)
+        })
+    }
+
+    function maxBottom() {
+        var bottom = 0
+        getItems().forEach(function (el) {
+            var id = cardId(el)
+            if (state.hidden.indexOf(id) !== -1) return
+            var item = state.layout[id]
+            if (item) bottom = Math.max(bottom, item.y + item.h)
+        })
+        return bottom
+    }
+
+    // ========== 渲染 ==========
+
+    function writeGeometry(el, item) {
+        el.style.setProperty('--dg-x', String(item.x))
+        el.style.setProperty('--dg-y', item.y + 'px')
+        el.style.setProperty('--dg-w', String(item.w))
+        el.style.setProperty('--dg-h', item.h + 'px')
+    }
+
+    function apply() {
+        var target = getGrid()
+        if (!target) return
+
+        var mobile = isMobile()
+        var bottom = 0
+
+        getItems().forEach(function (el) {
+            var id = cardId(el)
+            var item = state.layout[id]
+            if (!item) return
+            var hidden = state.hidden.indexOf(id) !== -1
+            el.classList.toggle('d-none', hidden)
+            writeGeometry(el, item)
+            if (!hidden && !mobile) bottom = Math.max(bottom, item.y + item.h)
+        })
+
+        target.style.setProperty('--dg-height', mobile ? 'auto' : bottom + 'px')
+        target.classList.toggle('is-mobile', mobile)
+
+        if (readyDispatched) {
+            document.dispatchEvent(
+                new CustomEvent('dashboard:layout-changed', {
+                    detail: { layout: snapshot() }
+                })
+            )
+        }
+    }
+
+    function snapshot() {
+        var out = {}
+        Object.keys(state.layout).forEach(function (id) {
+            var item = state.layout[id]
+            out[id] = { x: item.x, y: item.y, w: item.w, h: item.h }
+        })
+        return out
+    }
+
+    function persist() {
+        writeState(state)
+        apply()
+    }
+
+    // ========== 拖动 / 拉伸 ==========
+
+    function ensurePlaceholder() {
+        if (placeholder && placeholder.isConnected) return placeholder
+        placeholder = document.createElement('div')
+        placeholder.className = 'dashboard-grid__item dashboard-grid__placeholder'
+        placeholder.setAttribute('aria-hidden', 'true')
+        getGrid().appendChild(placeholder)
+        return placeholder
+    }
+
+    function removePlaceholder() {
+        if (placeholder && placeholder.parentNode) {
+            placeholder.parentNode.removeChild(placeholder)
+        }
+        placeholder = null
+    }
+
+    function movePlaceholder(target) {
+        var el = ensurePlaceholder()
+        var m = metrics()
+        el.style.left = target.x * m.stride + 'px'
+        el.style.top = target.y + 'px'
+        el.style.width = Math.max(0, target.w * m.stride - m.gap) + 'px'
+        el.style.height = target.h + 'px'
+    }
+
+    function startInteraction(event, el, mode) {
+        var id = cardId(el)
+        var item = state.layout[id]
+        if (!item || isMobile()) return
+
+        dragState = {
+            id: id,
+            el: el,
+            mode: mode,
+            startX: event.clientX,
+            startY: event.clientY,
+            origin: { x: item.x, y: item.y, w: item.w, h: item.h },
+            target: { x: item.x, y: item.y, w: item.w, h: item.h },
+            minWidth: minWidthOf(el),
+            minHeight: minHeightOf(el),
+            moved: false
+        }
+
+        el.classList.add(mode === 'move' ? 'is-dragging' : 'is-resizing')
+        getGrid().classList.add('is-interacting')
+        movePlaceholder(dragState.target)
+
+        document.addEventListener('pointermove', onPointerMove)
+        document.addEventListener('pointerup', onPointerUp)
+        document.addEventListener('pointercancel', onPointerUp)
+        event.preventDefault()
+    }
+
+    function onPointerMove(event) {
+        if (!dragState) return
+
+        var dx = event.clientX - dragState.startX
+        var dy = event.clientY - dragState.startY
+        if (!dragState.moved) {
+            if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
+            dragState.moved = true
+        }
+
+        var m = metrics()
+        var origin = dragState.origin
+        var target = dragState.target
+
+        if (dragState.mode === 'move') {
+            target.x = clamp(
+                Math.round((origin.x * m.stride + dx) / m.stride),
+                0,
+                m.columns - origin.w
+            )
+            target.y = Math.max(
+                0,
+                Math.round((origin.y + dy) / HEIGHT_STEP) * HEIGHT_STEP
+            )
+            dragState.el.style.transform =
+                'translate3d(' + dx + 'px,' + dy + 'px,0)'
+        } else {
+            target.w = clamp(
+                Math.round((origin.w * m.stride + dx) / m.stride),
+                dragState.minWidth,
+                m.columns - origin.x
+            )
+            target.h = clamp(
+                Math.round((origin.h + dy) / HEIGHT_STEP) * HEIGHT_STEP,
+                dragState.minHeight,
+                MAX_HEIGHT
+            )
+            writeGeometry(dragState.el, {
+                x: origin.x,
+                y: origin.y,
+                w: target.w,
+                h: target.h
+            })
+        }
+
+        movePlaceholder(target)
+    }
+
+    function onPointerUp() {
+        document.removeEventListener('pointermove', onPointerMove)
+        document.removeEventListener('pointerup', onPointerUp)
+        document.removeEventListener('pointercancel', onPointerUp)
+
+        var current = dragState
+        dragState = null
+        if (!current) return
+
+        current.el.classList.remove('is-dragging', 'is-resizing')
+        current.el.style.transform = ''
+        getGrid().classList.remove('is-interacting')
+        removePlaceholder()
+
+        if (!current.moved) {
+            apply()
+            return
+        }
+
+        var gap = metrics().gap
+        var item = state.layout[current.id]
+        item.x = current.target.x
+        item.y = current.target.y
+        item.w = current.target.w
+        item.h = current.target.h
+
+        pushDown(current.id, gap)
+        compact(gap)
+        persist()
+    }
+
+    function onPointerDown(event) {
+        if (event.button !== 0 || isMobile()) return
+        var el = event.target.closest('.dashboard-grid__item')
+        if (!el || el.classList.contains('dashboard-grid__placeholder')) return
+
+        if (event.target.closest('[data-card-resize]')) {
+            startInteraction(event, el, 'resize')
+            return
+        }
+
+        var grip = event.target.closest('[data-card-drag]')
+        var header = event.target.closest('.card-header')
+        if (!grip && !header) return
+        if (event.target.closest('a, button, input, select, textarea') && !grip) return
+        startInteraction(event, el, 'move')
+    }
+
+    // ========== 自定义弹窗 ==========
+
+    function ensureModal() {
+        if (modalEl && modalEl.isConnected) return modalEl
+
+        modalEl = document.createElement('div')
+        modalEl.className = 'modal fade dashboard-customize-modal'
+        modalEl.id = 'dashboardCustomizeModal'
+        modalEl.tabIndex = -1
+        modalEl.setAttribute('aria-labelledby', 'dashboardCustomizeModalLabel')
+        modalEl.setAttribute('aria-hidden', 'true')
+        modalEl.innerHTML =
+            '<div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">' +
+            '<div class="modal-content dashboard-customize__content">' +
+            '<div class="modal-header dashboard-customize__header">' +
+            '<div class="dashboard-customize__head">' +
+            '<h5 class="modal-title dashboard-customize__title" id="dashboardCustomizeModalLabel">自定义仪表盘</h5>' +
+            '<div class="dashboard-customize__hint">这里控制显示哪些卡片；勾选后回到首页直接拖动卡片调整位置，拖右下角改变大小。偏好只保存在当前浏览器。</div>' +
+            '</div>' +
+            '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>' +
+            '</div>' +
+            '<div class="modal-body dashboard-customize__body">' +
+            '<ul class="dashboard-customize__list" id="dashboardCustomizeList"></ul>' +
+            '</div>' +
+            '<div class="modal-footer dashboard-customize__footer">' +
+            '<button type="button" class="btn btn-outline-secondary btn-sm dashboard-customize__reset" id="dashboardCustomizeReset">恢复默认布局</button>' +
+            '<button type="button" class="btn btn-primary btn-sm dashboard-customize__done" data-bs-dismiss="modal">完成</button>' +
+            '</div>' +
+            '</div></div>'
+        document.body.appendChild(modalEl)
+
+        modalEl.addEventListener('change', onModalChange)
+        modalEl.addEventListener('click', onModalClick)
+        return modalEl
+    }
+
+    var GROUP_LABELS = {
+        stats: '统计',
+        llm: 'LLM 用量',
+        activity: '活动'
+    }
+
+    // LLM 未配置时，LLM 卡片仍然列出，但开关先禁掉并给出提示
+    function isLocked(el) {
+        var group = el.getAttribute('data-card-group') || 'stats'
+        var target = getGrid()
+        if (group !== 'llm') return false
+        return !target || target.getAttribute('data-llm-available') === '0'
+    }
+
+    function buildRow(el) {
+        var id = cardId(el)
+        var title = el.getAttribute('data-card-title') || id
+        var description = el.getAttribute('data-card-description') || ''
+        var group = el.getAttribute('data-card-group') || 'stats'
+        var visible = state.hidden.indexOf(id) === -1
+        var locked = isLocked(el)
+
+        return {
+            group: GROUP_LABELS[group] || group,
+            html:
+                '<li class="dashboard-customize__row' +
+                (visible ? '' : ' dashboard-customize__row--off') +
+                (locked ? ' dashboard-customize__row--locked' : '') +
+                '" data-card-id="' +
+                escapeHtml(id) +
+                '">' +
+                '<div class="dashboard-customize__info">' +
+                '<div class="dashboard-customize__name">' +
+                escapeHtml(title) +
+                '</div>' +
+                (locked
+                    ? '<div class="dashboard-customize__desc">未配置 LLM，先在配置页填写 API Key 后可用。</div>'
+                    : description
+                      ? '<div class="dashboard-customize__desc">' +
+                        escapeHtml(description) +
+                        '</div>'
+                      : '') +
+                '</div>' +
+                '<div class="dashboard-customize__actions">' +
+                '<div class="form-check form-switch dashboard-customize__switch mb-0">' +
+                '<input class="form-check-input" type="checkbox" role="switch" data-role="visible"' +
+                (visible ? ' checked' : '') +
+                (locked ? ' disabled' : '') +
+                ' aria-label="显示' +
+                escapeHtml(title) +
+                '">' +
+                '</div>' +
+                '</div></li>'
+        }
+    }
+
+    function renderList() {
+        if (!modalEl) return
+        var list = modalEl.querySelector('#dashboardCustomizeList')
+        if (!list) return
+
+        var html = ''
+        var lastGroup = ''
+        getItems().forEach(function (el) {
+            var row = buildRow(el)
+            if (row.group !== lastGroup) {
+                lastGroup = row.group
+                html +=
+                    '<li class="dashboard-customize__group">' +
+                    escapeHtml(row.group) +
+                    '</li>'
+            }
+            html += row.html
+        })
+        list.innerHTML = html
+    }
+
+    function setVisible(id, visible) {
+        var hidden = state.hidden.filter(function (item) {
+            return item !== id
+        })
+        if (!visible) {
+            hidden.push(id)
+        } else if (!state.layout[id]) {
+            state.layout[id] = { x: 0, y: maxBottom(), w: 3, h: FALLBACK_HEIGHT }
+        }
+        state.hidden = hidden
+
+        if (visible) {
+            var gap = metrics().gap
+            var el = getItems().filter(function (item) {
+                return cardId(item) === id
+            })[0]
+            var item = state.layout[id]
+            if (item) {
+                item.x = 0
+                item.y = maxBottom()
+                if (el) {
+                    if (!item.w) item.w = numberAttr(el, 'data-card-width', 3)
+                    if (!item.h) {
+                        item.h = numberAttr(el, 'data-card-height', FALLBACK_HEIGHT)
+                    }
+                }
+            }
+            pushDown(id, gap)
+            compact(gap)
+        }
+
+        persist()
+        renderList()
+    }
+
+    function onModalChange(event) {
+        var input = event.target.closest('input[data-role="visible"]')
+        if (!input) return
+        var row = input.closest('[data-card-id]')
+        if (!row) return
+        setVisible(row.getAttribute('data-card-id'), input.checked)
+    }
+
+    function onModalClick(event) {
+        if (event.target.closest('#dashboardCustomizeReset')) resetAll()
+    }
+
+    function resetAll() {
+        try {
+            window.localStorage.removeItem(STORAGE_KEY)
+        } catch (e) {
+            // 忽略：删不掉时内存状态也会回到默认
+        }
+        state = cloneDefaults()
+        apply()
+        renderList()
+    }
+
+    function openModal() {
+        ensureModal()
+        renderList()
+
+        if (window.bootstrap && window.bootstrap.Modal) {
+            if (!modalInstance) modalInstance = new window.bootstrap.Modal(modalEl)
+            modalInstance.show()
+        }
+    }
+
+    // ========== 初始化 ==========
+
+    function onResize() {
+        if (resizeTimer) window.clearTimeout(resizeTimer)
+        resizeTimer = window.setTimeout(function () {
+            resizeTimer = null
+            apply()
+        }, 160)
+    }
+
+    function init() {
+        if (!getGrid()) return
+        captureDefaults()
+
+        var stored = readState()
+        state = normalize(stored || cloneDefaults())
+        compact(metrics().gap)
+        apply()
+
+        var btn = document.getElementById('dashboardCustomizeBtn')
+        if (btn) btn.addEventListener('click', openModal)
+
+        getGrid().addEventListener('pointerdown', onPointerDown)
+        window.addEventListener('resize', onResize)
+
+        readyDispatched = true
+        document.dispatchEvent(
+            new CustomEvent('dashboard:cards-ready', {
+                detail: {
+                    layout: snapshot(),
+                    reset: resetAll,
+                    setVisible: setVisible,
+                    relayout: apply
+                }
+            })
+        )
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init)
+    } else {
+        init()
+    }
 })()

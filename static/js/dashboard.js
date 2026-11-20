@@ -108,6 +108,17 @@
         if (cachedLlmDaily) drawLlmTrendCharts(cachedLlmDaily)
       }, 200)
     })
+
+    // 卡片拖动 / 拉伸后容器尺寸变化，画布需要按新尺寸重绘
+    var layoutTimer
+    document.addEventListener('dashboard:layout-changed', function () {
+      clearTimeout(layoutTimer)
+      layoutTimer = setTimeout(function () {
+        if (cachedHeatmapData) renderHeatmap(cachedHeatmapData)
+        if (cachedDailyStats) drawDailyChart(cachedDailyStats)
+        if (cachedLlmDaily) drawLlmTrendCharts(cachedLlmDaily)
+      }, 120)
+    })
   })
 
   // ========== 记录详情 ==========

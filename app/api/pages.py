@@ -9,7 +9,10 @@ from fastapi.responses import HTMLResponse
 
 from ..core.app_version import get_display_version
 from ..core.config import config_manager
-from ..core.dashboard_registry import dashboard_cards
+from ..core.dashboard_registry import (
+    dashboard_layout,
+    layout_height,
+)
 from ..core.public_url import get_public_base_path, redirect_public
 from ..core.web_templates import get_templates
 from ..utils.bgm_image_url import build_poster_cache_namespace
@@ -28,10 +31,10 @@ def _login_redirect(request: Request):
 
 
 def _llm_cards_enabled() -> bool:
-    """LLM 相关卡片是否进入仪表盘卡片清单
+    """LLM 相关卡片是否已有调用数据可展示
 
     口径与 llm_match_scheduler 一致：未配置 LLM api_key 时不会有任何调用记录，
-    LLM 卡片与趋势图自然不该出现在首页。是否显示仍由用户偏好（localStorage）决定。
+    首页的 LLM 卡片默认保持隐藏（用户仍可在「自定义」里打开）。
     """
     return bool(config_manager.get_llm_config().get("api_key"))
 
@@ -55,13 +58,16 @@ async def dashboard(request: Request):
     if not user:
         return _login_redirect(request)
 
+    cards_layout = dashboard_layout()
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
             "user": user,
             "app_display_version": get_display_version(),
-            "dashboard_cards": dashboard_cards(llm_enabled=_llm_cards_enabled()),
+            "dashboard_layout": cards_layout,
+            "dashboard_grid_height": layout_height(cards_layout),
+            "dashboard_llm_available": _llm_cards_enabled(),
             "poster_cache_ns": build_poster_cache_namespace(
                 config_manager.get("dev", "bgm_api_proxy", fallback=""),
                 config_manager.get("dev", "bgm_image_proxy", fallback=""),
