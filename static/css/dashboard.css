@@ -1911,3 +1911,159 @@ main.app-main>*:nth-child(12) {
     }
 }
 
+/* ========== 仪表盘卡片网格（app/core/dashboard_registry.py） ========== */
+
+/* 注册表里带 d-flex 的卡片（如时间线 / 热力图）让卡片本体撑满栅格单元，
+   否则 flex 行方向的子项会按内容收缩，同排卡片宽高不齐。 */
+.dashboard-grid__item.d-flex > .card {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+}
+
+/* ========== 仪表盘卡片自定义弹窗（static/js/dashboard-cards.js） ========== */
+
+.dashboard-customize__content {
+    border-radius: var(--app-radius-card, 24px);
+    border: 1px solid var(--app-border, #e9ecef);
+    background: var(--app-bg-card);
+    box-shadow: var(--app-shadow-elevated);
+}
+
+.dashboard-customize__header {
+    align-items: flex-start;
+    padding: 1rem 1.15rem 0.85rem;
+    border-bottom: 1px solid var(--app-border, #e9ecef);
+}
+
+.dashboard-customize__head {
+    flex: 1;
+    min-width: 0;
+    padding-right: 0.5rem;
+}
+
+.dashboard-customize__title {
+    margin-bottom: 0.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.dashboard-customize__hint {
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--app-text-muted);
+}
+
+.dashboard-customize__body {
+    padding: 0.75rem 1.15rem;
+}
+
+.dashboard-customize__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.dashboard-customize__row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--app-radius-card-sm, 16px);
+    border: 1px solid transparent;
+    transition: background var(--app-ease-smooth), border-color var(--app-ease-smooth);
+}
+
+.dashboard-customize__row:hover {
+    background: rgba(var(--app-primary-rgb), 0.06);
+    border-color: var(--app-border, #e9ecef);
+}
+
+.dashboard-customize__info {
+    flex: 1;
+    min-width: 0;
+}
+
+.dashboard-customize__name {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.dashboard-customize__desc {
+    margin-top: 0.15rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--app-text-muted);
+}
+
+.dashboard-customize__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.dashboard-customize__move {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    border-radius: var(--app-radius-pill, 999px);
+    border: 1px solid var(--app-border, #e9ecef);
+    background: var(--app-bg-card);
+    color: var(--app-text-muted);
+    font-size: 0.75rem;
+    transition: color var(--app-ease-smooth), background var(--app-ease-smooth),
+        border-color var(--app-ease-smooth);
+}
+
+.dashboard-customize__move:hover:not(:disabled) {
+    color: var(--app-primary);
+    background: rgba(var(--app-primary-rgb), 0.08);
+    border-color: rgba(var(--app-primary-rgb), 0.35);
+}
+
+.dashboard-customize__move:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.dashboard-customize__switch .form-check-input {
+    margin: 0;
+    cursor: pointer;
+}
+
+.dashboard-customize__footer {
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 1.15rem 0.75rem;
+    border-top: 1px solid var(--app-border, #e9ecef);
+}
+
+.dashboard-customize__reset,
+.dashboard-customize__done {
+    min-width: 5.5rem;
+    padding: 0.3rem 1.1rem;
+    font-size: 0.82rem;
+    border-radius: var(--app-radius-pill, 999px);
+}
+
+@media (max-width: 575.98px) {
+    .dashboard-customize__row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.45rem;
+    }
+
+    .dashboard-customize__actions {
+        justify-content: flex-end;
+    }
+}
+

@@ -197,20 +197,15 @@
         showAlert('加载数据失败', 'danger')
       })
 
-    // LLM 用量统计
+    // LLM 用量统计（LLM 卡片是否渲染由 dashboard_registry 决定，节点可能不存在）
     var _llmDetail = null
     const llmRequest = apiFetch('/api/llm/stats?scope=detailed')
       .then(function (d) {
         if (d.total_calls > 0 || d.error_count > 0) {
-          document.getElementById('llm-stats-row').style.display = 'flex'
-          document.getElementById('llm-total-calls').textContent =
-            d.total_calls || 0
-          document.getElementById('llm-total-tokens').textContent =
-            formatNumber(d.total_tokens || 0)
-          document.getElementById('llm-avg-latency').textContent =
-            (d.avg_latency_ms || 0) + 'ms'
-          document.getElementById('llm-error-count').textContent =
-            d.error_count || 0
+          setStatValue('llm-total-calls', d.total_calls || 0)
+          setStatValue('llm-total-tokens', formatNumber(d.total_tokens || 0))
+          setStatValue('llm-avg-latency', (d.avg_latency_ms || 0) + 'ms')
+          setStatValue('llm-error-count', d.error_count || 0)
           // 有数据时显示详情图标
           if (
             (d.by_model && d.by_model.length) ||
@@ -218,11 +213,11 @@
             (d.daily && d.daily.length)
           ) {
             _llmDetail = d
-            document.getElementById('llm-detail-trigger').style.display = ''
+            var detailTrigger = document.getElementById('llm-detail-trigger')
+            if (detailTrigger) detailTrigger.style.display = ''
           }
           if (d.daily && d.daily.length) {
             cachedLlmDaily = d.daily
-            document.getElementById('llm-trend-row').style.display = 'flex'
             drawLlmTrendCharts(cachedLlmDaily)
           }
         }
@@ -237,6 +232,9 @@
       var tooltip = document.getElementById('llm-detail-tooltip')
       var inner = document.getElementById('llm-detail-tooltip-inner')
       var hideTimer = null
+
+      // LLM 卡片未启用时这三个节点都不存在，直接跳过事件绑定
+      if (!trigger || !tooltip || !inner) return
 
       function buildDetailHTML(d) {
         var h = ''

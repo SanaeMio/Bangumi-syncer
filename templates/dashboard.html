@@ -2,6 +2,18 @@
 {% block title %}仪表板 - Bangumi Syncer{% endblock %}
 {% block page_title %}仪表板{% endblock %}
 {% block page_actions %}
+    <button type="button"
+            class="inbox-header-chip flex-shrink-0"
+            id="dashboardCustomizeBtn"
+            title="自定义卡片显示与排序"
+            aria-haspopup="dialog">
+        <span class="inbox-header-chip__track">
+            <span class="inbox-header-chip__icon" aria-hidden="true">
+                <i class="bi bi-sliders"></i>
+            </span>
+            <span class="inbox-header-chip__label d-none d-md-inline">自定义</span>
+        </span>
+    </button>
     <div class="dropdown inbox-dropdown flex-shrink-0" id="inboxDropdownWrap">
         <button type="button"
                 class="inbox-header-chip"
@@ -94,162 +106,15 @@
     </div>
 {% endblock %}
 {% block content %}
-    <!-- 统计卡片 -->
-    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-4 mb-4">
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-arrow-repeat"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">总同步次数</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="total-syncs">-</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-calendar-day"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">今日同步</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="today-syncs">-</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">成功率</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="success-rate">-</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-exclamation-triangle"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">失败次数</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="error-syncs">-</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- LLM 用量卡片 -->
-    <div id="llm-stats-row" class="row g-3 mb-4" style="display: none">
-        <div class="col">
-            <div class="card stats-card h-100 position-relative">
-                <span id="llm-detail-trigger"
-                      style="display: none;
-                             cursor: pointer;
-                             position: absolute;
-                             top: 8px;
-                             right: 10px;
-                             opacity: 0.55"
-                      class="hover-opacity">
-                    <i class="bi bi-info-circle"></i>
-                </span>
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-robot"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">近 30 天 LLM 调用</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="llm-total-calls">--</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-database"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">近 30 天 Token</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="llm-total-tokens">--</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-speedometer2"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">平均延迟</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="llm-avg-latency">--</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card stats-card h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center">
-                        <div class="stats-icon me-3 bg-primary-soft">
-                            <i class="bi bi-exclamation-triangle"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted fw-semibold text-uppercase mb-1 stats-label">调用失败</div>
-                            <div class="h4 mb-0 fw-bold stats-value" id="llm-error-count">--</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- LLM 用量趋势（tokens / 质量双图） -->
-    <div id="llm-trend-row" class="row g-4 mb-4" style="display: none">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-activity me-2 card-header-icon"></i>
-                        <h6 class="m-0 fw-semibold card-header-title">LLM 用量趋势（最近7天）</h6>
-                    </div>
-                </div>
-                <div class="card-body p-4">
-                    <div class="chart-area w-100" style="height: 180px">
-                        <canvas id="llmTokensChart"></canvas>
-                    </div>
-                    <div class="chart-area w-100 mt-4" style="height: 180px">
-                        <canvas id="llmQualityChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <!-- 仪表盘卡片区：卡片清单与栅格宽度见 app/core/dashboard_registry.py；
+         显示/排序偏好由 static/js/dashboard-cards.js 记在 localStorage（不落服务端） -->
+    <div class="row g-4 mb-4 dashboard-grid" id="dashboardGrid">
+        {% for card in dashboard_cards %}
+            <div class="{{ card.span }} dashboard-grid__item{% if not card.default_visible %} d-none{% endif %}"
+                 data-dashboard-card="{{ card.id }}"
+                 data-card-title="{{ card.title }}"
+                 data-card-description="{{ card.description }}">{% include card.template %}</div>
+        {% endfor %}
     </div>
     <div id="llm-detail-tooltip"
          class="app-tooltip"
@@ -258,72 +123,6 @@
                 z-index: 9999;
                 max-width: 480px">
         <div class="tooltip-inner p-3" id="llm-detail-tooltip-inner"></div>
-    </div>
-    <!-- 时间线 + 热力图 + 图表 -->
-    <div class="row g-4 mb-4">
-        <!-- 左侧：最近同步时间线 -->
-        <div class="col-xl-5 col-lg-6 d-flex">
-            <div class="card flex-fill">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-clock-history me-2 card-header-icon"></i>
-                        <h6 class="m-0 fw-semibold card-header-title">最近同步</h6>
-                    </div>
-                </div>
-                <div class="card-body p-3">
-                    <div class="sync-timeline" id="sync-timeline">
-                        <div class="text-center py-4 app-text-muted-block">
-                            <div class="spinner-border spinner-border-sm" role="status"></div>
-                            <div class="mt-2 small">加载中...</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <!-- 右侧：热力图 + 折线图 垂直堆叠 -->
-        <div class="col-xl-7 col-lg-6 d-flex flex-column">
-            <!-- 热力图 -->
-            <div class="card heatmap-card mb-4">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-grid-3x3-gap me-2 card-header-icon"></i>
-                            <h6 class="m-0 fw-semibold card-header-title">同步热力图</h6>
-                        </div>
-                        <div class="heatmap-legend">
-                            <span>少</span>
-                            <div class="heatmap-legend__cell heatmap-legend__cell--l0"></div>
-                            <div class="heatmap-legend__cell heatmap-legend__cell--l1"></div>
-                            <div class="heatmap-legend__cell heatmap-legend__cell--l2"></div>
-                            <div class="heatmap-legend__cell heatmap-legend__cell--l3"></div>
-                            <div class="heatmap-legend__cell heatmap-legend__cell--l4"></div>
-                            <span>多</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body px-3 pt-2 pb-2">
-                    <div class="heatmap-container" id="heatmap-container">
-                        <div class="text-center py-3 app-text-muted-block">
-                            <div class="spinner-border spinner-border-sm" role="status"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- 折线图 -->
-            <div class="card flex-grow-1">
-                <div class="card-header py-3">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-graph-up me-2 card-header-icon"></i>
-                        <h6 class="m-0 fw-semibold card-header-title">最近7天趋势</h6>
-                    </div>
-                </div>
-                <div class="card-body p-4 d-flex align-items-center flex-grow-1">
-                    <div class="chart-area w-100">
-                        <canvas id="dailyChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
     {# 首页精简：「我在追的放送」与「调度器状态」两卡暂时隐藏。
        放送日历/调度器状态的前端逻辑（airing_calendar.js、dashboard.js 里的
@@ -377,4 +176,5 @@
     <script defer src="{{ '/static/js/inbox.js' | static_v }}"></script>
     <script>window.__DASHBOARD_DATA__ = { poster_cache_ns: {{ poster_cache_ns | tojson }} };</script>
     <script defer src="{{ '/static/js/dashboard.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/dashboard-cards.js' | static_v }}"></script>
 {% endblock %}

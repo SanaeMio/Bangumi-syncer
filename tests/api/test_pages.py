@@ -339,7 +339,11 @@ def test_agent_runs_page():
 
 
 def test_dashboard_llm_trend_canvases():
-    """仪表板含 LLM 用量趋势容器（tokens 与质量双图；已登录）"""
+    """LLM 用量趋势容器（tokens 与质量双图）随 LLM 卡片一起出现；已登录。
+
+    LLM 卡片默认不渲染（未配置 api_key），启用后由卡片注册表提供，
+    所以这里分别校验「默认无」与「启用后有」。
+    """
     app = FastAPI()
     app.include_router(pages.router)
 
@@ -347,13 +351,13 @@ def test_dashboard_llm_trend_canvases():
     with patch.object(
         pages, "get_current_user_from_cookie", return_value={"username": "u"}
     ):
-        response = client.get("/dashboard")
+        default_body = client.get("/dashboard").text
+        with patch.object(pages, "_llm_cards_enabled", return_value=True):
+            enabled_body = client.get("/dashboard").text
 
-    assert response.status_code == 200
-    body = response.text
-    assert 'id="llm-trend-row"' in body
-    assert 'id="llmTokensChart"' in body
-    assert 'id="llmQualityChart"' in body
+    assert 'id="llmTokensChart"' not in default_body
+    assert 'id="llmTokensChart"' in enabled_body
+    assert 'id="llmQualityChart"' in enabled_body
 
 
 class TestSharedModals:
