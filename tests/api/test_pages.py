@@ -157,11 +157,12 @@ class TestPagesAuthenticated:
         assert 'id="inboxTabAnnCount"' in r.text
         assert 'id="inboxTabNotifCount"' in r.text
 
-    def test_dashboard_hides_airing_and_scheduler_cards(self):
-        """首页精简：放送日历与调度器状态卡暂时隐藏。
+    def test_dashboard_airing_and_scheduler_cards_registered_hidden(self):
+        """放送日历与调度器状态卡已登记进注册表，但默认隐藏。
 
-        两张卡的 DOM 与脚本都已从页面撤掉；对应前端逻辑（airing_calendar.js、
-        dashboard.js 的调度器状态段）保留空节点保护，节点不存在时不发请求。
+        两张卡都在 DOM 里（自定义弹窗要能列出、用户可以自己打开），默认带
+        d-none；对应前端逻辑在卡片隐藏时不发 /api/airing-calendar 与
+        /api/scheduler/status 请求。
         """
         app = self._make_app()
         with patch.object(
@@ -170,10 +171,16 @@ class TestPagesAuthenticated:
             client = TestClient(app)
             r = client.get("/dashboard", follow_redirects=False)
         assert r.status_code == 200
-        assert "我在追的放送" not in r.text
-        assert "调度器状态" not in r.text
-        assert "airing_calendar.js" not in r.text
-        assert "cron-desc.js" not in r.text
+        body = r.text
+        for card_id in ("airing-calendar", "scheduler-status"):
+            marker = f'data-dashboard-card="{card_id}"'
+            assert marker in body, card_id
+            tag_start = body.rindex("<div", 0, body.index(marker))
+            assert "d-none" in body[tag_start : body.index(marker)], card_id
+        assert "我在追的放送" in body
+        assert "调度器状态" in body
+        assert "airing_calendar.js" in body
+        assert "cron-desc.js" in body
 
     def test_config_authenticated(self):
         """已认证用户访问配置页"""

@@ -257,6 +257,44 @@
     }
 
     /** 重力压缩：按 (y, x) 顺序让每张卡尽量往上贴，消除悬空空隙 */
+    /**
+     * 为刚打开的卡片找第一个空位（列优先扫描，语义与后端 dashboard_registry._first_fit 一致）。
+     * 直接追加到最底部会让两张同宽度的卡上下堆叠，看起来像丢了一行。
+     */
+    function firstFit(w, h, gap, skipId) {
+        var occupied = getItems()
+            .filter(function (el) {
+                var id = cardId(el)
+                return id !== skipId && state.hidden.indexOf(id) === -1
+            })
+            .map(function (el) {
+                return state.layout[cardId(el)]
+            })
+            .filter(Boolean)
+        if (!occupied.length) return { x: 0, y: 0 }
+
+        var columns = metrics().columns
+        var candidates = [0]
+        occupied.forEach(function (item) {
+            candidates.push(item.y + item.h + gap)
+        })
+        candidates.sort(function (a, b) {
+            return a - b
+        })
+
+        for (var c = 0; c < candidates.length; c += 1) {
+            var y = candidates[c]
+            for (var x = 0; x + w <= columns; x += 1) {
+                var box = { x: x, y: y, w: w, h: h }
+                var clash = occupied.some(function (item) {
+                    return overlaps(box, item, gap)
+                })
+                if (!clash) return { x: x, y: y }
+            }
+        }
+        return { x: 0, y: maxBottom() }
+    }
+
     function compact(gap) {
         var ids = Object.keys(state.layout).filter(function (id) {
             return state.hidden.indexOf(id) === -1
@@ -626,14 +664,15 @@
             })[0]
             var item = state.layout[id]
             if (item) {
-                item.x = 0
-                item.y = maxBottom()
                 if (el) {
                     if (!item.w) item.w = numberAttr(el, 'data-card-width', 3)
                     if (!item.h) {
                         item.h = numberAttr(el, 'data-card-height', FALLBACK_HEIGHT)
                     }
                 }
+                var slot = firstFit(item.w, item.h, gap, id)
+                item.x = slot.x
+                item.y = slot.y
             }
             pushDown(id, gap)
             compact(gap)
@@ -702,15 +741,17 @@
         window.addEventListener('resize', onResize)
 
         readyDispatched = true
+        // 同一份 API 既挂到 window（供先执行的脚本/插件直接调用），
+        // 也通过事件分发给后执行的脚本
+        var api = {
+            layout: snapshot(),
+            reset: resetAll,
+            setVisible: setVisible,
+            relayout: apply
+        }
+        window.dashboardCards = api
         document.dispatchEvent(
-            new CustomEvent('dashboard:cards-ready', {
-                detail: {
-                    layout: snapshot(),
-                    reset: resetAll,
-                    setVisible: setVisible,
-                    relayout: apply
-                }
-            })
+            new CustomEvent('dashboard:cards-ready', { detail: api })
         )
     }
 

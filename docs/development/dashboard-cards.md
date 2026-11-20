@@ -64,7 +64,12 @@ document.addEventListener('dashboard:layout-changed', function (event) {
 ```
 
 - `dashboard:cards-ready`：布局首次就绪（含 `layout`、`reset()`、`setVisible()`、`relayout()`）。
+  同一份 API 也挂在 `window.dashboardCards` 上，供先于它执行的脚本直接调用。
 - `dashboard:layout-changed`：用户拖动 / 拉伸 / 显隐后触发。
+
+默认隐藏的卡片（例如「我在追的放送」「调度器状态」）在用户打开前**不要发起网络请求**：
+脚本先判断 `document.querySelector('[data-dashboard-card="<id>"]')` 是否带 `d-none`，
+隐藏时只监听上面两个事件，等卡片可见后再加载。
 
 ## 插件接入自定义卡片
 
@@ -97,7 +102,7 @@ register_card(
 - `group`：只能是 `stats` / `llm` / `activity`；
 - `template` 与 `render` 必须且只能提供一个；
 - `default_visible=False` 的卡片同样会渲染进 DOM（自定义弹窗要能列出它），
-  但默认隐藏、不参与默认摆放，用户打开时会追加到现有布局下方；
+  但默认隐藏、不参与默认摆放，用户打开时由前端按「首次适配」找第一个空位；
 - 移除卡片用 `unregister_card(card_id)`；本地偏好里已不存在的 id 会被自动丢弃。
 
 ## 自检

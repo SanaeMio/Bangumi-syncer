@@ -2003,6 +2003,13 @@ main.app-main>*:nth-child(12) {
     overflow-y: auto;
 }
 
+/* 放送清单同理：高度跟随栅格，清单在卡片内部滚动 */
+.dashboard-grid__item #airing-calendar-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
 /* 拖动把手（悬停显现，键盘用户不参与拖拽） */
 .dashboard-card__chrome {
     position: absolute;

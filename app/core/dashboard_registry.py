@@ -278,6 +278,32 @@ def _register_builtin_cards() -> None:
             min_width=4,
         )
     )
+    register_card(
+        DashboardCard(
+            id="airing-calendar",
+            title="我在追的放送",
+            description="未来 30 天在追番剧的放送日程（需启用 Archive 离线库）。",
+            template="dashboard/cards/airing_calendar.html",
+            group="activity",
+            width=7,
+            height=360,
+            min_width=4,
+            default_visible=False,
+        )
+    )
+    register_card(
+        DashboardCard(
+            id="scheduler-status",
+            title="调度器状态",
+            description="各调度器任务的下次运行时间。",
+            template="dashboard/cards/scheduler_status.html",
+            group="activity",
+            width=5,
+            height=360,
+            min_width=3,
+            default_visible=False,
+        )
+    )
 
 
 _register_builtin_cards()

@@ -80,7 +80,18 @@ class TestDashboardRegistry:
 
     def test_llm_cards_hidden_by_default(self):
         for card in CARDS:
-            assert card.default_visible is (card.group != "llm"), card.id
+            if card.group != "llm":
+                continue
+            assert card.default_visible is False, card.id
+
+    def test_airing_and_scheduler_registered_but_hidden(self):
+        """放送日历、调度器状态已登记（可在自定义里打开），但默认不占首屏。"""
+        by_id = {card.id: card for card in CARDS}
+        for card_id in ("airing-calendar", "scheduler-status"):
+            card = by_id[card_id]
+            assert card.group == "activity"
+            assert card.default_visible is False
+            assert (TEMPLATES_DIR / card.template).is_file(), card.template
 
     def test_stats_cards_share_one_row(self):
         """四张统计卡横排一行（旧版观感）。"""

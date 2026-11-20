@@ -207,8 +207,10 @@
     </div>
 {% endblock %}
 {% block scripts %}
+    <script defer src="{{ '/static/js/cron-desc.js' | static_v }}"></script>
     <script defer src="{{ '/static/js/inbox.js' | static_v }}"></script>
     <script>window.__DASHBOARD_DATA__ = { poster_cache_ns: {{ poster_cache_ns | tojson }} };</script>
     <script defer src="{{ '/static/js/dashboard.js' | static_v }}"></script>
     <script defer src="{{ '/static/js/dashboard-cards.js' | static_v }}"></script>
+    <script defer src="{{ '/static/js/airing_calendar.js' | static_v }}"></script>
 {% endblock %}

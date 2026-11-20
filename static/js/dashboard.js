@@ -52,8 +52,8 @@
       dashboardLoaded = true
       connectDashboardStream()
     })
-    // 调度器状态卡（独立于仪表板数据，可并行加载）
-    loadSchedulerStatus()
+    // 调度器状态卡（独立于仪表板数据，可并行加载；卡片隐藏时不发请求）
+    initSchedulerStatus()
 
     // 主题变更时重新绘制图表
     if (window.themeManager) {
@@ -343,6 +343,44 @@
   }
 
   // ========== 调度器状态卡 ==========
+
+  // 调度器状态卡默认隐藏（首页自由网格），隐藏时不发请求
+  let schedulerLoaded = false
+  let schedulerLoading = false
+
+  function schedulerCardVisible() {
+    const el = document.querySelector('[data-dashboard-card="scheduler-status"]')
+    return !el || !el.classList.contains('d-none')
+  }
+
+  /**
+   * 卡片可见且还没加载过时才拉取，用户打开卡片后由事件补触发。
+   */
+  function maybeLoadSchedulerStatus() {
+    if (schedulerLoaded || schedulerLoading) return
+    if (!schedulerCardVisible()) return
+    schedulerLoading = true
+    loadSchedulerStatus().finally(function () {
+      schedulerLoading = false
+      schedulerLoaded = true
+    })
+  }
+
+  /**
+   * 绑定调度器状态卡的加载时机与刷新按钮。
+   */
+  function initSchedulerStatus() {
+    maybeLoadSchedulerStatus()
+    document.addEventListener('dashboard:cards-ready', maybeLoadSchedulerStatus)
+    document.addEventListener('dashboard:layout-changed', maybeLoadSchedulerStatus)
+    const refreshBtn = document.getElementById('scheduler-status-refresh')
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function () {
+        schedulerLoaded = false
+        maybeLoadSchedulerStatus()
+      })
+    }
+  }
 
   /**
    * 从 /api/scheduler/status 加载调度器状态并渲染到状态卡。
