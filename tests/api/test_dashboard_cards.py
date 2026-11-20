@@ -93,6 +93,25 @@ class TestDashboardRegistry:
             assert card.default_visible is False
             assert (TEMPLATES_DIR / card.template).is_file(), card.template
 
+    def test_content_driven_cards_mark_fit_height(self):
+        """列表 / 热力图按内容长高，图表与统计卡保持固定高度。"""
+        by_id = {card.id: card for card in CARDS}
+        for card_id in ("sync-timeline", "sync-heatmap"):
+            assert by_id[card_id].fit_height is True, card_id
+        for card_id in ("stats-totals", "sync-daily-trend", "llm-trend"):
+            assert by_id[card_id].fit_height is False, card_id
+
+    def test_activity_default_heights_show_full_content(self):
+        """默认高度以「6 条记录 / 完整热力图」为准，右列与左列齐底。"""
+        by_id = {card.id: card for card in CARDS}
+        assert by_id["sync-timeline"].height >= 780
+        assert by_id["sync-heatmap"].height >= 200
+
+        layout = {item.card.id: item for item in dashboard_layout()}
+        timeline = layout["sync-timeline"]
+        bottom_right = layout["sync-daily-trend"].y + layout["sync-daily-trend"].h
+        assert timeline.y + timeline.h == bottom_right
+
     def test_stats_cards_share_one_row(self):
         """四张统计卡横排一行（旧版观感）。"""
         stats = [card for card in CARDS if card.group == "stats"]
@@ -262,6 +281,18 @@ class TestDashboardPageRendersCards:
             assert f'data-min-width="{item.card.min_width}"' in body
             assert f"--dg-w:{item.w}" in body
         assert f"--dg-height: {layout_height(dashboard_layout())}px" in body
+
+    def test_fit_height_attribute_rendered(self):
+        body = _render_dashboard()
+        for card in CARDS:
+            marker = f'data-dashboard-card="{card.id}"'
+            start = body.index(marker)
+            tag_end = body.index(">", start)
+            tag = body[start:tag_end]
+            expected = (
+                'data-fit-height="1"' if card.fit_height else 'data-fit-height="0"'
+            )
+            assert expected in tag, card.id
 
     def test_legacy_rows_are_gone(self):
         body = _render_dashboard()

@@ -21,7 +21,7 @@
     var FALLBACK_MIN_HEIGHT = 96
     var HEIGHT_STEP = 8
     var MAX_HEIGHT = 1600
-    var MOBILE_MAX_WIDTH = 767
+    var MOBILE_MAX_WIDTH = 991
     var DRAG_THRESHOLD = 3
 
     var grid = null
@@ -32,7 +32,9 @@
     var defaults = null
     var dragState = null
     var resizeTimer = null
+    var fitTimer = null
     var readyDispatched = false
+    var editing = false
 
     // ========== 基础工具 ==========
 
@@ -332,6 +334,50 @@
 
     // ========== 渲染 ==========
 
+    // 内容比默认高度高的卡片（最近同步、热力图）按内容长高，避免默认高度截断内容。
+    // 只长不缩：数据变少时保持用户当前尺寸，重置布局即可回到默认。
+    function fitCardHeight(el, item) {
+        var prev = el.style.height
+        el.style.height = 'auto'
+        var natural = Math.ceil(el.getBoundingClientRect().height)
+        el.style.height = prev
+        if (!natural || natural >= 100000) return false
+        if (natural <= item.h) return false
+        var target = Math.ceil(natural / HEIGHT_STEP) * HEIGHT_STEP
+        if (target <= item.h) return false
+        item.h = Math.min(target, MAX_HEIGHT)
+        return true
+    }
+
+    function fitHeights() {
+        if (!state || isMobile()) return
+        var gap = metrics().gap
+        var changed = false
+
+        getItems().forEach(function (el) {
+            if (el.getAttribute('data-fit-height') !== '1') return
+            var id = cardId(el)
+            var item = state.layout[id]
+            if (!item || state.hidden.indexOf(id) !== -1) return
+            if (fitCardHeight(el, item)) {
+                pushDown(id, gap)
+                changed = true
+            }
+        })
+
+        if (!changed) return
+        compact(gap)
+        apply()
+    }
+
+    function scheduleFit() {
+        if (fitTimer) window.clearTimeout(fitTimer)
+        fitTimer = window.setTimeout(function () {
+            fitTimer = null
+            fitHeights()
+        }, 80)
+    }
+
     function writeGeometry(el, item) {
         el.style.setProperty('--dg-x', String(item.x))
         el.style.setProperty('--dg-y', item.y + 'px')
@@ -517,7 +563,7 @@
     }
 
     function onPointerDown(event) {
-        if (event.button !== 0 || isMobile()) return
+        if (!editing || event.button !== 0 || isMobile()) return
         var el = event.target.closest('.dashboard-grid__item')
         if (!el || el.classList.contains('dashboard-grid__placeholder')) return
 
@@ -550,7 +596,7 @@
             '<div class="modal-header dashboard-customize__header">' +
             '<div class="dashboard-customize__head">' +
             '<h5 class="modal-title dashboard-customize__title" id="dashboardCustomizeModalLabel">自定义仪表盘</h5>' +
-            '<div class="dashboard-customize__hint">这里控制显示哪些卡片；勾选后回到首页直接拖动卡片调整位置，拖右下角改变大小。偏好只保存在当前浏览器。</div>' +
+            '<div class="dashboard-customize__hint">勾选要显示的卡片。位置和大小在首页点「自定义」后调整：拖动标题栏换位置，拖右下角改大小。偏好只保存在当前浏览器。</div>' +
             '</div>' +
             '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>' +
             '</div>' +
@@ -705,6 +751,50 @@
         renderList()
     }
 
+    // ========== 编辑态：只有开启后才能拖动 / 拉伸 ==========
+
+    function customizeButton() {
+        return document.getElementById('dashboardCustomizeBtn')
+    }
+
+    function manageButton() {
+        return document.getElementById('dashboardManageCardsBtn')
+    }
+
+    function setEditing(next) {
+        editing = !!next
+        document.body.classList.toggle('is-dashboard-editing', editing)
+
+        var gridEl = getGrid()
+        if (gridEl) gridEl.classList.toggle('is-editing', editing)
+
+        var btn = customizeButton()
+        if (btn) {
+            btn.classList.toggle('is-active', editing)
+            btn.setAttribute('aria-pressed', editing ? 'true' : 'false')
+            btn.title = editing ? '完成布局调整' : '自定义卡片显示与布局'
+            var label = btn.querySelector('.inbox-header-chip__label')
+            if (label) label.textContent = editing ? '完成' : '自定义'
+            var icon = btn.querySelector('.bi')
+            if (icon) icon.className = editing ? 'bi bi-check-lg' : 'bi bi-sliders'
+        }
+
+        var manage = manageButton()
+        if (manage) manage.classList.toggle('d-none', !editing)
+
+        if (!editing) {
+            if (dragState) {
+                dragState = null
+                removePlaceholder()
+                getItems().forEach(function (el) {
+                    el.classList.remove('is-dragging')
+                })
+            }
+            if (gridEl) gridEl.classList.remove('is-interacting')
+            persist()
+        }
+    }
+
     function openModal() {
         ensureModal()
         renderList()
@@ -722,6 +812,7 @@
         resizeTimer = window.setTimeout(function () {
             resizeTimer = null
             apply()
+            fitHeights()
         }, 160)
     }
 
@@ -734,11 +825,27 @@
         compact(metrics().gap)
         apply()
 
-        var btn = document.getElementById('dashboardCustomizeBtn')
-        if (btn) btn.addEventListener('click', openModal)
+        var btn = customizeButton()
+        if (btn) {
+            btn.addEventListener('click', function () {
+                setEditing(!editing)
+            })
+        }
+
+        var manage = manageButton()
+        if (manage) manage.addEventListener('click', openModal)
+
+        document.addEventListener('keydown', function (event) {
+            if (!editing) return
+            if (event.key !== 'Escape') return
+            if (modalEl && modalEl.classList.contains('show')) return
+            setEditing(false)
+        })
 
         getGrid().addEventListener('pointerdown', onPointerDown)
         window.addEventListener('resize', onResize)
+        document.addEventListener('dashboard:content-changed', scheduleFit)
+        window.requestAnimationFrame(fitHeights)
 
         readyDispatched = true
         // 同一份 API 既挂到 window（供先执行的脚本/插件直接调用），
@@ -747,7 +854,12 @@
             layout: snapshot(),
             reset: resetAll,
             setVisible: setVisible,
-            relayout: apply
+            relayout: apply,
+            setEditing: setEditing,
+            isEditing: function () {
+                return editing
+            },
+            fit: fitHeights
         }
         window.dashboardCards = api
         document.dispatchEvent(

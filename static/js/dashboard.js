@@ -155,6 +155,11 @@
 
   // getSourceColor 已在 app.js 全局定义（window.getSourceColor），此处不再重复
 
+  // 卡片内容（记录条数、热力图行数等）变化后通知布局层重新贴合高度
+  function notifyContentChanged() {
+    document.dispatchEvent(new CustomEvent('dashboard:content-changed'))
+  }
+
   async function loadDashboardData() {
     const statsRequest = apiFetch('/api/stats')
       .then(function (statsData) {
@@ -340,6 +345,7 @@
       heatmapRequest,
       llmRequest,
     ])
+    notifyContentChanged()
   }
 
   // ========== 调度器状态卡 ==========
@@ -904,6 +910,8 @@
     if (payload.records) {
       prependTimelineRecords(payload.records)
     }
+
+    notifyContentChanged()
   }
 
   // 首页实时推送：一条 SSE 连接，服务端只在数据变化时下发

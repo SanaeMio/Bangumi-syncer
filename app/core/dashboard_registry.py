@@ -51,6 +51,8 @@ class DashboardCard:
     :param height: 默认高度（px，>= ``min_height``）；
     :param min_width: 允许拖到的最小列数；
     :param min_height: 允许拖到的最小高度（px）；
+    :param fit_height: 是否按内容自动长高（只长不缩），用于列表 / 热力图这类
+        内容高度随数据变化的卡片，避免默认高度把内容截断；
     :param group: 分组，见 :data:`GROUPS`；
     :param default_visible: 首次访问时是否显示（``False`` 的卡不进默认布局）。
     """
@@ -64,6 +66,7 @@ class DashboardCard:
     height: int = DEFAULT_CARD_HEIGHT
     min_width: int = 2
     min_height: int = MIN_CARD_HEIGHT
+    fit_height: bool = False
     group: str = "stats"
     default_visible: bool = True
 
@@ -250,8 +253,10 @@ def _register_builtin_cards() -> None:
             template="dashboard/cards/sync_timeline.html",
             group="activity",
             width=5,
-            height=535,
+            height=780,
             min_width=3,
+            min_height=280,
+            fit_height=True,
         )
     )
     register_card(
@@ -262,8 +267,10 @@ def _register_builtin_cards() -> None:
             template="dashboard/cards/sync_heatmap.html",
             group="activity",
             width=7,
-            height=148,
+            height=200,
             min_width=4,
+            min_height=140,
+            fit_height=True,
         )
     )
     register_card(
@@ -274,8 +281,9 @@ def _register_builtin_cards() -> None:
             template="dashboard/cards/sync_daily_trend.html",
             group="activity",
             width=7,
-            height=363,
+            height=556,
             min_width=4,
+            min_height=300,
         )
     )
     register_card(

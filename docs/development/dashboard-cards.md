@@ -16,7 +16,7 @@ order: 12
 | `app/core/dashboard_registry.py` | `DashboardCard` 数据结构、内置卡片登记、默认摆放算法、插件登记入口 |
 | `templates/dashboard/cards/*.html` | 卡片本体的局部模板（一个 `.card` 元素） |
 | `templates/dashboard.html` | 单一 `#dashboardGrid` 容器，循环 `dashboard_layout` |
-| `static/js/dashboard-cards.js` | 12 栏自由布局、拖动换位、拉伸尺寸、显隐弹窗、`localStorage` 偏好 |
+| `static/js/dashboard-cards.js` | 12 栏自由布局、编辑态拖动 / 拉伸、显隐弹窗、按内容长高、`localStorage` 偏好 |
 | `static/css/dashboard.css` | `.dashboard-grid*` / `.dashboard-card__*` / `.dashboard-customize__*` 样式 |
 | `tests/api/test_dashboard_cards.py` | 注册表、默认布局与页面渲染的契约测试 |
 
@@ -31,7 +31,12 @@ order: 12
   （最近同步占左 5 列，热力图 + 趋势叠在右 7 列）。
 - 用户拖动后按「重力」向上压缩，不留悬空缝隙；偏好存 `localStorage`
   的 `app-dashboard-cards`（`{version: 2, layout, hidden}`），不落服务端。
-- 宽度 `< 768px` 时降级为单列堆叠，拖动与拉伸自动禁用。
+- **编辑态**：点顶栏「自定义」才进入编辑态（按钮变成「完成」、卡片显示虚线框、
+  拖动与右下角拉伸把手可用），此时才出现「管理卡片」按钮打开显隐弹窗；
+  点「完成」或按 `Esc` 退出并保存。平时卡片不可拖动、不可拉伸，避免误操作。
+- 宽度 `< 992px` 时降级为单列堆叠（表单式阅读），拖动与拉伸自动禁用。
+- `fit_height=True` 的卡片（最近同步、热力图）在数据渲染后按内容高度自动长高
+  （只长不缩），避免默认高度把内容截断；用户手动改过尺寸后仍以用户值为准。
 
 ## 新增内置卡片
 
@@ -48,6 +53,8 @@ register_card(
         template="dashboard/cards/sync_weekly_report.html",
         width=6,                           # 默认占 6 列
         height=300,                        # 默认 300px 高
+        min_height=160,                    # 允许拖到的最小高度
+        fit_height=True,                   # 内容比 300px 高时按内容长高
         group="activity",                  # stats / llm / activity
     )
 )
@@ -99,6 +106,8 @@ register_card(
 
 - `id`：非空小写 kebab-case，**全局唯一**（重复登记直接报错），建议加插件名前缀；
 - `width`：`1..12`，且 `min_width <= width`；`height >= min_height >= 96`；
+- `fit_height`：内容高度随数据变化（列表、日历、热力图一类）时设 `True`，
+  前端渲染后会按内容把卡片长高；纯图表、统计数字保持 `False`（图表自己撑满卡片）；
 - `group`：只能是 `stats` / `llm` / `activity`；
 - `template` 与 `render` 必须且只能提供一个；
 - `default_visible=False` 的卡片同样会渲染进 DOM（自定义弹窗要能列出它），

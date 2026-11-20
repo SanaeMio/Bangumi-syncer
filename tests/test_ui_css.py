@@ -353,6 +353,65 @@ class TestDashboardRealtime:
             assert selector in block
 
 
+class TestDashboardEditMode:
+    """首页卡片的拖动 / 拉伸只在「自定义」编辑态可用。"""
+
+    def test_handles_hidden_until_editing(self):
+        css = _css("dashboard.css")
+        chrome = _block(css, ".dashboard-card__chrome")
+        resize = _block(css, ".dashboard-card__resize")
+        assert "opacity: 0" in chrome and "pointer-events: none" in chrome
+        assert "opacity: 0" in resize and "pointer-events: none" in resize
+        # 只有编辑态（body.is-dashboard-editing）才亮出把手
+        assert "body.is-dashboard-editing .dashboard-card__chrome" in css
+        assert "body.is-dashboard-editing .dashboard-card__resize" in css
+        assert ".dashboard-grid__item:hover .dashboard-card__chrome" not in css
+
+    def test_header_is_grab_handle_only_in_edit_mode(self):
+        css = _css("dashboard.css")
+        header = _block(css, ".dashboard-grid__item .card-header")
+        assert "cursor: grab" not in header
+        assert "body.is-dashboard-editing .dashboard-grid__item .card-header" in css
+
+    def test_pointer_drag_requires_edit_mode(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        assert "var editing = false" in js
+        assert "if (!editing || event.button !== 0 || isMobile()) return" in js
+        assert "function setEditing(next)" in js
+        assert "classList.toggle('is-dashboard-editing', editing)" in js
+        assert "dashboardManageCardsBtn" in js
+
+    def test_customize_button_toggles_edit_mode(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        html = (_REPO_ROOT / "templates/dashboard.html").read_text(encoding="utf-8")
+        # 顶栏「自定义」进入编辑态，编辑态里才出现「管理卡片」按钮（点开弹窗）
+        assert 'id="dashboardCustomizeBtn"' in html
+        assert 'id="dashboardManageCardsBtn"' in html
+        assert "setEditing(!editing)" in js
+        assert "manage.addEventListener('click', openModal)" in js
+        assert "event.key !== 'Escape'" in js
+
+
+class TestDashboardContentFit:
+    """内容高度随数据变化的卡片按内容长高，避免默认高度截断内容。"""
+
+    def test_fit_height_cards_grow_to_content(self):
+        js = (_REPO_ROOT / "static/js/dashboard-cards.js").read_text(encoding="utf-8")
+        assert "function fitCardHeight(el, item)" in js
+        assert "function fitHeights()" in js
+        assert "if (natural <= item.h) return false" in js
+        assert (
+            "document.addEventListener('dashboard:content-changed', scheduleFit)" in js
+        )
+
+    def test_dashboard_notifies_content_changes(self):
+        js = (_REPO_ROOT / "static/js/dashboard.js").read_text(encoding="utf-8")
+        assert "function notifyContentChanged()" in js
+        assert "new CustomEvent('dashboard:content-changed')" in js
+        # 首屏数据落地与实时推送后各通知一次
+        assert js.count("notifyContentChanged()") == 3
+
+
 class TestRecordDetailCopy:
     """同步记录详情：步骤状态文案、说明去重与封面。"""
 

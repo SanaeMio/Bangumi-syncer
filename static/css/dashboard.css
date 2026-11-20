@@ -1985,15 +1985,31 @@ main.app-main>*:nth-child(12) {
     min-height: 0;
 }
 
-/* 卡片标题栏既是拖动把手，也给右侧手柄预留位置，避免盖住图例 / 徽标 */
+/* 卡片标题栏在编辑态才是拖动把手，平时只是标题（也避免误拖） */
 .dashboard-grid__item .card-header {
     padding-right: 2.5rem;
-    cursor: grab;
     user-select: none;
 }
 
-.dashboard-grid__item.is-dragging .card-header {
+body.is-dashboard-editing .dashboard-grid__item .card-header {
+    cursor: grab;
+}
+
+body.is-dashboard-editing .dashboard-grid__item.is-dragging .card-header {
     cursor: grabbing;
+}
+
+/* 编辑态：虚线框提示「这些卡可以摆弄」，退出后恢复原样 */
+body.is-dashboard-editing .dashboard-grid__item:not(.d-none) {
+    outline: 1px dashed rgba(var(--app-primary-rgb), 0.45);
+    outline-offset: 2px;
+    border-radius: var(--app-radius-card, 0.75rem);
+}
+
+body.is-dashboard-editing .dashboard-grid__item.is-dragging,
+body.is-dashboard-editing .dashboard-grid__item.is-resizing {
+    outline-style: solid;
+    outline-color: rgba(var(--app-primary-rgb), 0.7);
 }
 
 /* 高度由栅格决定的卡片：内容超出时内部滚动，而不是把卡片撑破 */
@@ -2001,6 +2017,13 @@ main.app-main>*:nth-child(12) {
 .dashboard-grid__item .heatmap-container {
     min-height: 0;
     overflow-y: auto;
+}
+
+/* 热力图高度固定但格子尺寸不变：剩余空间留在上下两侧，看起来才是居中 */
+.dashboard-grid__item .heatmap-card .card-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 /* 放送清单同理：高度跟随栅格，清单在卡片内部滚动 */
@@ -2017,13 +2040,14 @@ main.app-main>*:nth-child(12) {
     right: 0.4rem;
     z-index: 3;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.16s linear;
 }
 
-.dashboard-grid__item:hover .dashboard-card__chrome,
-.dashboard-grid__item:focus-within .dashboard-card__chrome,
+body.is-dashboard-editing .dashboard-card__chrome,
 .dashboard-grid__item.is-dragging .dashboard-card__chrome {
     opacity: 1;
+    pointer-events: auto;
 }
 
 .dashboard-card__grip {
@@ -2061,13 +2085,14 @@ main.app-main>*:nth-child(12) {
     background: transparent;
     cursor: nwse-resize;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.16s linear;
 }
 
-.dashboard-grid__item:hover .dashboard-card__resize,
-.dashboard-grid__item:focus-within .dashboard-card__resize,
+body.is-dashboard-editing .dashboard-card__resize,
 .dashboard-grid__item.is-resizing .dashboard-card__resize {
     opacity: 1;
+    pointer-events: auto;
 }
 
 .dashboard-card__resize::after {
@@ -2095,8 +2120,8 @@ main.app-main>*:nth-child(12) {
         width 0.16s var(--app-ease-smooth), height 0.16s var(--app-ease-smooth);
 }
 
-/* 移动端：改为单列堆叠，禁用拖动 / 拉伸 */
-@media (max-width: 767.98px) {
+/* 窄屏（含平板竖屏）：改为单列堆叠，禁用拖动 / 拉伸 */
+@media (max-width: 991.98px) {
     .dashboard-grid {
         height: auto;
     }
@@ -2135,6 +2160,13 @@ main.app-main>*:nth-child(12) {
     align-items: flex-start;
     padding: 1rem 1.15rem 0.85rem;
     border-bottom: 1px solid var(--app-border, #e9ecef);
+}
+
+/* 顶栏「自定义」按钮在编辑态高亮，提示当前可拖动 / 拉伸 */
+.inbox-header-chip.is-active {
+    border-color: rgba(var(--app-primary-rgb), 0.55);
+    background: rgba(var(--app-primary-rgb), 0.12);
+    color: var(--app-primary);
 }
 
 .dashboard-customize__head {

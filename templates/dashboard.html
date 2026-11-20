@@ -14,6 +14,18 @@
             <span class="inbox-header-chip__label d-none d-md-inline">自定义</span>
         </span>
     </button>
+    <button type="button"
+            class="inbox-header-chip flex-shrink-0 d-none"
+            id="dashboardManageCardsBtn"
+            title="选择要显示的卡片"
+            aria-haspopup="dialog">
+        <span class="inbox-header-chip__track">
+            <span class="inbox-header-chip__icon" aria-hidden="true">
+                <i class="bi bi-grid-3x3-gap"></i>
+            </span>
+            <span class="inbox-header-chip__label d-none d-md-inline">管理卡片</span>
+        </span>
+    </button>
     <div class="dropdown inbox-dropdown flex-shrink-0" id="inboxDropdownWrap">
         <button type="button"
                 class="inbox-header-chip"
@@ -123,6 +135,7 @@
                  data-card-height="{{ card.height }}"
                  data-min-width="{{ card.min_width }}"
                  data-min-height="{{ card.min_height }}"
+                 data-fit-height="{{ '1' if card.fit_height else '0' }}"
                  style="{{ item.grid_style }}">
                 <div class="dashboard-card__chrome">
                     <button type="button"
